@@ -354,6 +354,23 @@ class _LoseCompletionOnceRepository:
         )
 
 
+class _FailDispatchWriteOnceRepository:
+    """Raise after preparation but before dispatch to exercise immediate no-spend handoff."""
+
+    def __init__(self, delegate: PostgresCrawlRepository) -> None:
+        self.delegate = delegate
+        self.remaining = 1
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self.delegate, name)
+
+    async def mark_attempt_dispatched(self, lease: CrawlLease, attempt: Any) -> bool:
+        if self.remaining:
+            self.remaining -= 1
+            raise RuntimeError("injected pre-dispatch repository failure")
+        return await self.delegate.mark_attempt_dispatched(lease, attempt)
+
+
 def _coordinator(
     *,
     repository: Any,
@@ -844,6 +861,96 @@ def test_idle_workers_stay_available_for_links_discovered_by_a_slow_page(tmp_pat
     run_async(_run())
 
 
+def test_high_fanout_acquisition_and_expansion_share_frontier_without_deadlocks(
+    tmp_path: Path,
+) -> None:
+    """Mirror the live Scrapling overlap: page FK writes race concurrent link expansion."""
+
+    async def _run() -> None:
+        workspace_id = ""
+        async with db_lifespan() as engine:
+            try:
+                async with engine.begin() as conn:
+                    workspace_id, brand_id, recon_run_id = await _seed_scope(conn)
+                root = "https://example.com/"
+                seeds = (
+                    "https://example.com/pricing",
+                    "https://example.com/products/alpha",
+                    "https://example.com/products/beta",
+                    "https://example.com/products/gamma",
+                    "https://example.com/customers/one",
+                    "https://example.com/customers/two",
+                    "https://example.com/about",
+                    "https://example.com/partners",
+                    "https://example.com/trust",
+                    "https://example.com/blog",
+                )
+                links: dict[str, tuple[str, ...]] = {root: seeds}
+                delays = {root: 0.03}
+                for index, seed in enumerate(seeds):
+                    links[seed] = tuple(
+                        f"https://example.com/products/detail-{index}-{child}" for child in range(5)
+                    )
+                    delays[seed] = 0.03
+                    delays.update(dict.fromkeys(links[seed], 0.03))
+                config = _config(
+                    workers=10,
+                    per_host=10,
+                    fast_ceiling=30,
+                    total_ceiling=100,
+                )
+                repository = PostgresCrawlRepository()
+                run_id = await _create_run(
+                    repository,
+                    workspace_id=workspace_id,
+                    brand_id=brand_id,
+                    recon_run_id=recon_run_id,
+                    urls=(root,),
+                    config=config,
+                )
+                fetcher = _ScenarioFetcher(links=links, delays=delays)
+                result = await _coordinator(
+                    repository=repository,
+                    storage_path=tmp_path / "high-fanout",
+                    root=root,
+                    fetcher=fetcher,
+                ).run_phase(_phase_request(workspace_id, run_id, config, idle_polls=100))
+
+                assert result.worker_errors == 0
+                assert result.link_expansions_retried == 0
+                assert result.link_expansions_failed == 0
+                assert fetcher.max_active >= 2
+                assert max(Counter(fetcher.calls).values()) == 1
+                async with engine.connect() as conn:
+                    max_page_generation = (
+                        await conn.execute(
+                            text(
+                                "SELECT max(lease_generation) "
+                                "FROM official_site_crawl_page WHERE crawl_run_id = :run_id"
+                            ),
+                            {"run_id": run_id},
+                        )
+                    ).scalar_one()
+                    max_expansion_attempt = (
+                        await conn.execute(
+                            text(
+                                "SELECT max(attempt_count) "
+                                "FROM official_site_link_expansion "
+                                "WHERE crawl_run_id = :run_id"
+                            ),
+                            {"run_id": run_id},
+                        )
+                    ).scalar_one()
+                assert max_page_generation == 1
+                assert max_expansion_attempt == 1
+            finally:
+                if workspace_id:
+                    async with engine.begin() as conn:
+                        await _cleanup_scope(conn, workspace_id)
+
+    run_async(_run())
+
+
 def test_graceful_shutdown_finishes_active_call_and_stops_new_claims(tmp_path: Path) -> None:
     async def _run() -> None:
         workspace_id = ""
@@ -1011,17 +1118,8 @@ def test_link_discovery_replays_after_completion_crash_without_provider_refetch(
                 ).run_phase(_phase_request(workspace_id, run_id, config))
                 assert first.fenced_workers == 1
                 assert fetcher.calls == [root]
-                async with engine.begin() as conn:
-                    await conn.execute(
-                        text(
-                            "UPDATE official_site_crawl_page "
-                            "SET lease_acquired_at = now() - interval '2 seconds', "
-                            "lease_expires_at = now() - interval '1 second' "
-                            "WHERE crawl_run_id = :run_id "
-                            "AND state = 'persistence_pending'"
-                        ),
-                        {"run_id": run_id},
-                    )
+                # The failed completion is handed to persistence recovery immediately; no
+                # artificial lease expiry or 90-second wait is required.
                 second = await _coordinator(
                     repository=base,
                     storage_path=tmp_path / "completion-crash",
@@ -1051,6 +1149,84 @@ def test_link_discovery_replays_after_completion_crash_without_provider_refetch(
                     ).scalar_one()
                 assert snapshots == 1
                 assert linked_observations == 1
+            finally:
+                if workspace_id:
+                    async with engine.begin() as conn:
+                        await _cleanup_scope(conn, workspace_id)
+
+    run_async(_run())
+
+
+def test_pre_dispatch_worker_failure_requeues_immediately_without_provider_duplication(
+    tmp_path: Path,
+) -> None:
+    async def _run() -> None:
+        workspace_id = ""
+        async with db_lifespan() as engine:
+            try:
+                async with engine.begin() as conn:
+                    workspace_id, brand_id, recon_run_id = await _seed_scope(conn)
+                config = _config(workers=2, per_host=2)
+                root = "https://example.com/"
+                base = PostgresCrawlRepository()
+                run_id = await _create_run(
+                    base,
+                    workspace_id=workspace_id,
+                    brand_id=brand_id,
+                    recon_run_id=recon_run_id,
+                    urls=(root,),
+                    config=config,
+                )
+                fetcher = _ScenarioFetcher()
+                result = await _coordinator(
+                    repository=_FailDispatchWriteOnceRepository(base),
+                    storage_path=tmp_path / "immediate-handoff",
+                    root=root,
+                    fetcher=fetcher,
+                ).run_phase(_phase_request(workspace_id, run_id, config, idle_polls=30))
+
+                assert result.worker_errors == 0
+                assert result.pages_completed == 1
+                assert fetcher.calls == [root]
+                async with engine.connect() as conn:
+                    page = (
+                        (
+                            await conn.execute(
+                                text(
+                                    """
+                                SELECT state, lease_generation, attempt_count
+                                FROM official_site_crawl_page
+                                WHERE crawl_run_id = :run_id AND fetch_key = :root
+                                """
+                                ),
+                                {"run_id": run_id, "root": root},
+                            )
+                        )
+                        .mappings()
+                        .one()
+                    )
+                    attempts = (
+                        await conn.execute(
+                            text(
+                                """
+                                SELECT state, spend_status
+                                FROM official_site_fetch_attempt
+                                WHERE crawl_run_id = :run_id
+                                ORDER BY attempt_number
+                                """
+                            ),
+                            {"run_id": run_id},
+                        )
+                    ).all()
+                assert page == {
+                    "state": "fetched",
+                    "lease_generation": 2,
+                    "attempt_count": 2,
+                }
+                assert [tuple(row) for row in attempts] == [
+                    ("failed", "no_spend"),
+                    ("persisted", "no_spend"),
+                ]
             finally:
                 if workspace_id:
                     async with engine.begin() as conn:

@@ -126,6 +126,10 @@ class CrawlRepository(Protocol):
         outcome: AttemptOutcome,
     ) -> bool: ...
 
+    async def recover_worker_failure(self, lease: CrawlLease) -> str | None:
+        """Release a failed worker's exact fence into the safest durable recovery state."""
+        ...
+
     async def reclaim_expired_leases(
         self, *, workspace_id: str, crawl_run_id: UUID
     ) -> ReclaimResult: ...

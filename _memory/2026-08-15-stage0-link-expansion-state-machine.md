@@ -67,3 +67,41 @@
   background latency/noise as production-ready.
 - Browser diagnostics contained only Clerk development-key warnings. Retained logs contained no
   test identity, verification code, bearer/JWT material, raw claim values, or evidence spans.
+
+## Lock-order correction and final live acceptance
+
+- Root cause was the discovery transaction taking `FOR UPDATE` on the crawl-run parent while
+  attempt/snapshot transactions held page rows and then acquired the parent's FK `KEY SHARE`.
+  The inverse parent-to-page versus page-to-parent acquisition order formed the observed cycle.
+- Discovery now uses explicit `FOR NO KEY UPDATE`: it still serializes page-ceiling/discovery
+  accounting, but it is compatible with child-FK `KEY SHARE`. Checkpoint transitions retain the
+  stronger `FOR UPDATE` lock. A narrow transaction-only SQLSTATE `40P01` retry adds bounded
+  jittered protection without ever wrapping provider or artifact I/O.
+- Unexpected acquisition failures now perform immediate owner/generation-fenced handoff. A
+  prepared/no-spend attempt requeues; a dispatched ambiguous attempt moves directly to
+  reconciliation; persistence/reconciliation leases are released. Only the two forward-progress
+  transitions keep a local worker alive. Repeat-prone or unresolved recovery remains fatal.
+- Repository and coordinator tests cover lock compatibility, stale fences, each attempt-state
+  handoff, no-spend replay, high-fanout ten-worker acquisition/expansion overlap, and one provider
+  call per URL. The complete `tests/official_site` target passed 201 tests on retained isolated DB
+  `clue_deadlock_fix_20260815_c1`; targeted Ruff/format/mypy and all 25 import contracts passed.
+- Retain the first diagnostic DB/root `clue_deadlock_fix_browser_20260815_c2` and
+  `/private/tmp/clue-deadlock-fix-browser-20260815-c2`: its apex robots redirect was refused before
+  acquisition and therefore did not exercise the concurrency correction.
+- Retain the intermediate DB/root `clue_deadlock_fix_browser_20260815_c3` and
+  `/private/tmp/clue-deadlock-fix-browser-20260815-c3`: it proved zero deadlocks and immediate
+  quarantine, but safely recovered exceptions still counted as worker errors and left the fleet
+  task failed. That final composition flaw was corrected before the accepted run.
+- Accepted fixture-free Clerk/Scrapling/Luna browser run is retained as
+  `clue_deadlock_fix_browser_20260815_c4` with root
+  `/private/tmp/clue-deadlock-fix-browser-20260815-c4`. Browser released automatically to Home.
+  Crawl run `bffb2d2e-dbf4-4267-bf32-7c077cb931ad` completed in 23.569 seconds: immutable fast
+  checkpoint froze 12 snapshots at 2.181 seconds, and background froze 52 at 13.003 seconds before
+  Luna materialization completed.
+- Final C4 state: 52 fetched pages, 52 generation-one completed expansions, 52 persisted attempts,
+  two conservatively quarantined ambiguous Scrapling outcomes, zero page with multiple attempts,
+  and both fleet tasks `done` in one attempt. The two validation failures moved immediately to
+  reconciliation and did not emit `worker_failed` or stop the phase.
+- Fleet logs contain zero `40P01`, deadlock, DBAPIError, repository-deadlock-retry, or fatal worker
+  entries. PostgreSQL has no deadlock entry during the C4 window. Retained logs contain no test
+  identity, verification code, bearer/JWT material, raw claim values, or evidence spans.

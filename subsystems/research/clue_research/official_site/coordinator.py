@@ -41,6 +41,7 @@ from clue_research.official_site.contracts import (
     RetryClass,
     SpendStatus,
 )
+from clue_research.official_site.db_retry import database_sqlstate
 from clue_research.official_site.discovery import OfficialSiteDiscoveryPolicy
 from clue_research.official_site.progress import (
     CrawlProgressEvent,
@@ -469,6 +470,7 @@ class ConcurrentCrawlCoordinator:
                     worker_id=worker_id,
                     failure_stage="worker_loop",
                     failure_class=type(exc).__name__[:200],
+                    sqlstate=database_sqlstate(exc),
                 )
                 return
             if handled:
@@ -501,15 +503,23 @@ class ConcurrentCrawlCoordinator:
             counters.persistence_claims += 1
             acquirer = self._acquirer(counters=counters)
             operation_started = time.monotonic()
-            result = await self._while_active(
-                counters,
-                action=lambda: self._with_heartbeat(
+            try:
+                result = await self._while_active(
+                    counters,
+                    action=lambda: self._with_heartbeat(
+                        persistence.lease,
+                        request=request,
+                        counters=counters,
+                        action=lambda: acquirer.resume_persistence(persistence),
+                    ),
+                )
+            except Exception as exc:
+                await self._recover_page_worker_failure(
                     persistence.lease,
-                    request=request,
-                    counters=counters,
-                    action=lambda: acquirer.resume_persistence(persistence),
-                ),
-            )
+                    failure_stage="persistence_recovery",
+                    exc=exc,
+                )
+                raise
             if result is not None and result.page_completed:
                 counters.pages_completed += 1
                 assert result.snapshot is not None
@@ -589,20 +599,28 @@ class ConcurrentCrawlCoordinator:
                     f"reconciliation:{request.config.robots_policy_version}:original-operation"
                 ),
             )
-            result = await self._while_active(
-                counters,
-                action=lambda: self._with_heartbeat(
-                    reconciliation.lease,
-                    request=request,
-                    counters=counters,
-                    action=lambda: acquirer.reconcile(
-                        reconciliation,
-                        fetch_request,
-                        lookup=self._operation_lookup,
-                        provider_request_id=reconciliation.attempt.provider_request_id,
+            try:
+                result = await self._while_active(
+                    counters,
+                    action=lambda: self._with_heartbeat(
+                        reconciliation.lease,
+                        request=request,
+                        counters=counters,
+                        action=lambda: acquirer.reconcile(
+                            reconciliation,
+                            fetch_request,
+                            lookup=self._operation_lookup,
+                            provider_request_id=reconciliation.attempt.provider_request_id,
+                        ),
                     ),
-                ),
-            )
+                )
+            except Exception as exc:
+                await self._recover_page_worker_failure(
+                    reconciliation.lease,
+                    failure_stage="provider_reconciliation",
+                    exc=exc,
+                )
+                raise
             if result is not None and result.page_completed:
                 counters.pages_completed += 1
                 assert result.snapshot is not None
@@ -651,15 +669,35 @@ class ConcurrentCrawlCoordinator:
             subject=f"{lease.page_id}:g{lease.lease_generation}",
         )
         operation_started = time.monotonic()
-        result = await self._while_active(
-            counters,
-            action=lambda: self._with_heartbeat(
+        try:
+            result = await self._while_active(
+                counters,
+                action=lambda: self._with_heartbeat(
+                    lease,
+                    request=request,
+                    counters=counters,
+                    action=lambda: self._acquire_ordinary(
+                        lease, request=request, counters=counters
+                    ),
+                ),
+            )
+        except Exception as exc:
+            recovery_disposition = await self._recover_page_worker_failure(
                 lease,
-                request=request,
-                counters=counters,
-                action=lambda: self._acquire_ordinary(lease, request=request, counters=counters),
-            ),
-        )
+                failure_stage="ordinary_acquisition",
+                exc=exc,
+            )
+            # These two transitions make durable forward progress: a no-spend operation can be
+            # claimed afresh, while an ambiguous dispatched operation moves to reconciliation and
+            # can never trigger a blind provider retry.  Keeping the worker alive prevents a
+            # safely-contained page failure from making the whole crawl phase fail.  Other
+            # dispositions can repeat without progress and therefore remain fatal to this worker.
+            if recovery_disposition in {
+                "requeued_pre_dispatch",
+                "moved_to_reconciliation_pending",
+            }:
+                return True
+            raise
         if result.page_completed:
             counters.pages_completed += 1
             assert result.snapshot is not None
@@ -824,6 +862,7 @@ class ConcurrentCrawlCoordinator:
                 failure_stage="link_expansion",
                 failure_code="discovery_write_failed",
                 failure_class=type(exc).__name__[:200],
+                sqlstate=database_sqlstate(exc),
                 disposition=state.value,
                 retry_after_seconds=(
                     retry_after if state is LinkExpansionState.RETRY_WAIT else None
@@ -845,6 +884,44 @@ class ConcurrentCrawlCoordinator:
             kind=CrawlProgressEventKind.LINK_EXPANSION_COMPLETED,
             outcome="completed",
         )
+
+    async def _recover_page_worker_failure(
+        self,
+        lease: CrawlLease,
+        *,
+        failure_stage: str,
+        exc: Exception,
+    ) -> str | None:
+        """Hand a failed worker's exact lease to durable recovery without waiting for TTL."""
+
+        try:
+            disposition = await self._repository.recover_worker_failure(lease)
+        except Exception as recovery_exc:
+            log.error(
+                "stage0_official_site.worker_failure_recovery_failed",
+                workspace_id=lease.workspace_id,
+                crawl_run_id=str(lease.crawl_run_id),
+                page_id=str(lease.page_id),
+                lease_generation=lease.lease_generation,
+                failure_stage=failure_stage,
+                failure_class=type(exc).__name__[:200],
+                sqlstate=database_sqlstate(exc),
+                recovery_failure_class=type(recovery_exc).__name__[:200],
+                recovery_sqlstate=database_sqlstate(recovery_exc),
+            )
+            return None
+        log.warning(
+            "stage0_official_site.worker_failure_recovered",
+            workspace_id=lease.workspace_id,
+            crawl_run_id=str(lease.crawl_run_id),
+            page_id=str(lease.page_id),
+            lease_generation=lease.lease_generation,
+            failure_stage=failure_stage,
+            failure_class=type(exc).__name__[:200],
+            sqlstate=database_sqlstate(exc),
+            recovery_disposition=disposition or "fence_already_released",
+        )
+        return disposition
 
     @staticmethod
     async def _while_active(

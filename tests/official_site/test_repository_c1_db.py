@@ -813,6 +813,177 @@ def test_expiry_recovery_separates_paid_ambiguity_from_recorded_success() -> Non
     run_async(_run())
 
 
+def test_discovery_run_lock_allows_attempt_fk_and_worker_failures_handoff_immediately() -> None:
+    """The live deadlock cycle is absent and every safe failure stage avoids the 90s TTL."""
+
+    async def _run() -> None:
+        workspace_id = ""
+        async with db_lifespan() as engine:
+            try:
+                async with engine.begin() as conn:
+                    workspace_id, brand_id, recon_run_id = await _seed_scope(conn)
+                repository = PostgresCrawlRepository()
+                crawl_run_id = await _create_run_and_page(
+                    repository,
+                    workspace_id=workspace_id,
+                    brand_id=brand_id,
+                    recon_run_id=recon_run_id,
+                )
+                first = await repository.claim_next(
+                    ClaimNextRequest(
+                        workspace_id=workspace_id,
+                        crawl_run_id=crawl_run_id,
+                        worker_id="prepared-worker",
+                        eligible_phase=CrawlPhase.FAST,
+                        lease_ttl_seconds=90,
+                    )
+                )
+                assert first is not None
+
+                # Discovery's crawl-wide serialization lock must not block the KEY SHARE lock
+                # acquired by the attempt's run FK after the page row is locked.
+                async with engine.begin() as discovery_conn:
+                    await discovery_conn.execute(
+                        text(
+                            """
+                            SELECT id FROM official_site_crawl_run
+                            WHERE id = :crawl_run_id AND workspace_id = :workspace_id
+                            FOR NO KEY UPDATE
+                            """
+                        ),
+                        {"crawl_run_id": crawl_run_id, "workspace_id": workspace_id},
+                    )
+                    prepared = await asyncio.wait_for(
+                        repository.begin_attempt(
+                            first,
+                            provider_key="fixture",
+                            operation_key=f"op:{crawl_run_id}:prepared",
+                        ),
+                        timeout=0.75,
+                    )
+
+                assert await repository.recover_worker_failure(first) == "requeued_pre_dispatch"
+                second = await repository.claim_next(
+                    ClaimNextRequest(
+                        workspace_id=workspace_id,
+                        crawl_run_id=crawl_run_id,
+                        worker_id="dispatched-worker",
+                        eligible_phase=CrawlPhase.FAST,
+                        lease_ttl_seconds=90,
+                    )
+                )
+                assert second is not None
+                assert second.lease_generation == first.lease_generation + 1
+                second_attempt = await repository.begin_attempt(
+                    second,
+                    provider_key="fixture",
+                    operation_key=f"op:{crawl_run_id}:dispatched",
+                )
+                assert await repository.mark_attempt_dispatched(second, second_attempt)
+                assert (
+                    await repository.recover_worker_failure(second)
+                    == "moved_to_reconciliation_pending"
+                )
+                reconciliation = await repository.claim_reconciliation(
+                    ClaimReconciliationRequest(
+                        workspace_id=workspace_id,
+                        crawl_run_id=crawl_run_id,
+                        worker_id="reconciler",
+                        lease_ttl_seconds=90,
+                    )
+                )
+                assert reconciliation is not None
+                assert reconciliation.attempt.state.value == "spend_unknown"
+                assert (
+                    await repository.recover_worker_failure(reconciliation.lease)
+                    == "released_reconciliation_pending"
+                )
+
+                success_url = "https://example.com/pricing"
+                await repository.record_discoveries(
+                    DiscoveryBatch(
+                        workspace_id=workspace_id,
+                        crawl_run_id=crawl_run_id,
+                        observations=(
+                            UrlObservation(
+                                discovered_url=success_url,
+                                discovered_via=DiscoveredVia.SITEMAP,
+                                fetch_key=success_url,
+                                fetch_key_hash=hashlib.sha256(success_url.encode()).hexdigest(),
+                                graph_depth=None,
+                                priority=1,
+                                priority_reason=("pricing",),
+                                eligibility=CrawlEligibility.BOTH,
+                                policy_outcome=PolicyOutcome.ADMITTED,
+                            ),
+                        ),
+                    )
+                )
+                success_lease = await repository.claim_next(
+                    ClaimNextRequest(
+                        workspace_id=workspace_id,
+                        crawl_run_id=crawl_run_id,
+                        worker_id="persistence-worker",
+                        eligible_phase=CrawlPhase.FAST,
+                        lease_ttl_seconds=90,
+                    )
+                )
+                assert success_lease is not None
+                success_attempt = await repository.begin_attempt(
+                    success_lease,
+                    provider_key="fixture",
+                    operation_key=f"op:{crawl_run_id}:success-immediate",
+                )
+                assert await repository.mark_attempt_dispatched(success_lease, success_attempt)
+                assert await repository.record_provider_result(
+                    success_lease,
+                    success_attempt,
+                    ProviderResultMetadata(
+                        provider_key="fixture",
+                        provider_request_id=f"receipt-{uuid4()}",
+                        requested_url=success_url,
+                        final_url=success_url,
+                        provider_status="ok",
+                        http_status=200,
+                        media_type="text/html",
+                        size_bytes=7,
+                        fetched_at=datetime.now(UTC),
+                        cost_kind=CostKind.NONE,
+                        spend_status=SpendStatus.NO_SPEND,
+                        retry_class=RetryClass.SUCCESS,
+                    ),
+                )
+                assert (
+                    await repository.recover_worker_failure(success_lease)
+                    == "released_persistence_pending"
+                )
+                persistence = await repository.claim_persistence(
+                    ClaimPersistenceRequest(
+                        workspace_id=workspace_id,
+                        crawl_run_id=crawl_run_id,
+                        worker_id="persistence-recovery",
+                        lease_ttl_seconds=90,
+                    )
+                )
+                assert persistence is not None
+                assert persistence.attempt.fetch_attempt_id == success_attempt.fetch_attempt_id
+
+                async with engine.connect() as conn:
+                    prepared_state = (
+                        await conn.execute(
+                            text("SELECT state FROM official_site_fetch_attempt WHERE id = :id"),
+                            {"id": prepared.fetch_attempt_id},
+                        )
+                    ).scalar_one()
+                    assert prepared_state == "failed"
+            finally:
+                if workspace_id:
+                    async with engine.begin() as conn:
+                        await _cleanup_scope(conn, workspace_id)
+
+    run_async(_run())
+
+
 def test_success_persists_url_snapshot_and_freezes_immutable_checkpoint() -> None:
     async def _run() -> None:
         workspace_id = ""

@@ -351,6 +351,9 @@ class _RepositoryDouble:
     async def disposition_attempt(self, lease: Any, attempt: Any, outcome: AttemptOutcome) -> bool:
         raise NotImplementedError(lease, attempt, outcome)
 
+    async def recover_worker_failure(self, lease: CrawlLease) -> str | None:
+        raise NotImplementedError(lease)
+
     async def reclaim_expired_leases(
         self, *, workspace_id: str, crawl_run_id: UUID
     ) -> ReclaimResult:

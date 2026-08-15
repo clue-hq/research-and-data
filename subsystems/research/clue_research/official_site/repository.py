@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Mapping
+from enum import StrEnum
 from typing import Any, cast
 from urllib.parse import urlsplit
 from uuid import UUID, uuid4
@@ -58,6 +59,7 @@ from clue_research.official_site.contracts import (
     RetryClass,
     compute_snapshot_set_sha256,
 )
+from clue_research.official_site.db_retry import retry_deadlocked_transaction
 from clue_research.official_site.discovery import FAST_CATEGORY_ORDER, FAST_CATEGORY_QUOTAS
 from clue_research.official_site.models import (
     CrawlReplayConflictError,
@@ -80,6 +82,14 @@ _ACTIVE_LEASE_STATES = (
 
 _MAX_NO_SPEND_ATTEMPTS = 3
 _MAX_LINK_EXPANSION_ATTEMPTS = 3
+
+
+class _RunLockMode(StrEnum):
+    """Explicit run-row lock strength; call sites must choose rather than pass a boolean."""
+
+    NONE = ""
+    NO_KEY_UPDATE = " FOR NO KEY UPDATE"
+    UPDATE = " FOR UPDATE"
 
 
 def _json(value: Any) -> str:
@@ -320,6 +330,7 @@ class PostgresCrawlRepository:
             ).scalar_one()
         return float(remaining)
 
+    @retry_deadlocked_transaction(stage="record_discoveries")
     async def record_discoveries(self, batch: DiscoveryBatch) -> DiscoveryBatchResult:
         observations_recorded = 0
         pages_created = 0
@@ -328,7 +339,17 @@ class PostgresCrawlRepository:
         shortened_fetched_pages: dict[UUID, int] = {}
         expanded_sources: dict[UUID, int] = {}
         async with self._conn_factory() as conn:
-            run = await self._run(conn, batch.workspace_id, batch.crawl_run_id, lock=True)
+            # Discovery serializes crawl-wide page-ceiling accounting and competing discovery
+            # batches, but it never changes the run's key. NO KEY UPDATE therefore preserves the
+            # required serialization while remaining compatible with the KEY SHARE lock acquired
+            # by attempt/snapshot foreign keys. FOR UPDATE here caused the live page->run versus
+            # run->page lock-order cycle.
+            run = await self._run(
+                conn,
+                batch.workspace_id,
+                batch.crawl_run_id,
+                lock=_RunLockMode.NO_KEY_UPDATE,
+            )
             current_pages = int(
                 (
                     await conn.execute(
@@ -1143,6 +1164,7 @@ class PostgresCrawlRepository:
             )
             return result.rowcount == 1
 
+    @retry_deadlocked_transaction(stage="begin_attempt")
     async def begin_attempt(
         self, lease: CrawlLease, *, provider_key: str, operation_key: str
     ) -> FetchAttemptRef:
@@ -1244,6 +1266,7 @@ class PostgresCrawlRepository:
             assert attempt is not None
             return _attempt_from_row(attempt)
 
+    @retry_deadlocked_transaction(stage="mark_attempt_dispatched")
     async def mark_attempt_dispatched(self, lease: CrawlLease, attempt: FetchAttemptRef) -> bool:
         if not self._attempt_matches_lease(attempt, lease, require_same_generation=True):
             return False
@@ -1294,6 +1317,7 @@ class PostgresCrawlRepository:
             )
             return True
 
+    @retry_deadlocked_transaction(stage="record_provider_result")
     async def record_provider_result(
         self,
         lease: CrawlLease,
@@ -1412,6 +1436,7 @@ class PostgresCrawlRepository:
             )
             return True
 
+    @retry_deadlocked_transaction(stage="persist_snapshot")
     async def persist_snapshot(
         self,
         lease: CrawlLease,
@@ -1567,6 +1592,7 @@ class PostgresCrawlRepository:
             assert snapshot is not None
             return self._snapshot_ref(snapshot)
 
+    @retry_deadlocked_transaction(stage="complete_page")
     async def complete_page(
         self,
         lease: CrawlLease,
@@ -1811,6 +1837,147 @@ class PostgresCrawlRepository:
             )
             return True
 
+    @retry_deadlocked_transaction(stage="recover_worker_failure")
+    async def recover_worker_failure(self, lease: CrawlLease) -> str | None:
+        """Immediately hand off an abandoned exact lease without guessing about provider spend.
+
+        This is the synchronous counterpart to expiry recovery.  The coordinator calls it only
+        after the logical worker operation has raised and stopped.  Generation/owner predicates
+        make a late recovery harmless after another owner has already reclaimed the page.
+        """
+
+        async with self._conn_factory() as conn:
+            page = _row(
+                await conn.execute(
+                    text(
+                        """
+                        SELECT * FROM official_site_crawl_page
+                        WHERE id = :page_id AND workspace_id = :workspace_id
+                          AND crawl_run_id = :crawl_run_id
+                          AND lease_owner = :worker_id
+                          AND lease_generation = :lease_generation
+                        FOR UPDATE
+                        """
+                    ),
+                    self._lease_params(lease),
+                )
+            )
+            if page is None:
+                return None
+            attempt = _row(
+                await conn.execute(
+                    text(
+                        """
+                        SELECT * FROM official_site_fetch_attempt
+                        WHERE workspace_id = :workspace_id AND crawl_run_id = :crawl_run_id
+                          AND page_id = :page_id AND worker_id = :worker_id
+                          AND lease_generation = :lease_generation
+                        ORDER BY attempt_number DESC
+                        LIMIT 1
+                        FOR UPDATE
+                        """
+                    ),
+                    self._lease_params(lease),
+                )
+            )
+            page_state = CrawlPageState(page["state"])
+
+            if page_state is CrawlPageState.LEASED:
+                if attempt is not None and attempt["state"] != FetchAttemptState.PREPARED.value:
+                    return None
+                if attempt is not None:
+                    await conn.execute(
+                        text(
+                            """
+                            UPDATE official_site_fetch_attempt
+                            SET state = 'failed', spend_status = 'no_spend', finished_at = now()
+                            WHERE id = :attempt_id AND workspace_id = :workspace_id
+                              AND crawl_run_id = :crawl_run_id AND page_id = :page_id
+                              AND state = 'prepared' AND worker_id = :worker_id
+                              AND lease_generation = :lease_generation
+                            """
+                        ),
+                        {
+                            **self._lease_params(lease),
+                            "attempt_id": attempt["id"],
+                        },
+                    )
+                changed = await conn.execute(
+                    text(
+                        """
+                        UPDATE official_site_crawl_page
+                        SET state = 'queued', lease_owner = NULL, lease_acquired_at = NULL,
+                            lease_expires_at = NULL, queued_at = now(), updated_at = now()
+                        WHERE id = :page_id AND workspace_id = :workspace_id
+                          AND crawl_run_id = :crawl_run_id AND state = 'leased'
+                          AND lease_owner = :worker_id
+                          AND lease_generation = :lease_generation
+                        """
+                    ),
+                    self._lease_params(lease),
+                )
+                return "requeued_pre_dispatch" if changed.rowcount == 1 else None
+
+            if page_state is CrawlPageState.PROVIDER_STARTED:
+                if attempt is None or attempt["state"] != FetchAttemptState.DISPATCHED.value:
+                    return None
+                await conn.execute(
+                    text(
+                        """
+                        UPDATE official_site_fetch_attempt
+                        SET state = 'spend_unknown', spend_status = 'spend_unknown',
+                            retry_class = 'ambiguous', finished_at = NULL
+                        WHERE id = :attempt_id AND workspace_id = :workspace_id
+                          AND crawl_run_id = :crawl_run_id AND page_id = :page_id
+                          AND state = 'dispatched' AND worker_id = :worker_id
+                          AND lease_generation = :lease_generation
+                        """
+                    ),
+                    {**self._lease_params(lease), "attempt_id": attempt["id"]},
+                )
+                changed = await conn.execute(
+                    text(
+                        """
+                        UPDATE official_site_crawl_page
+                        SET state = 'reconciliation_pending', lease_owner = NULL,
+                            lease_acquired_at = NULL, lease_expires_at = NULL, updated_at = now()
+                        WHERE id = :page_id AND workspace_id = :workspace_id
+                          AND crawl_run_id = :crawl_run_id AND state = 'provider_started'
+                          AND lease_owner = :worker_id
+                          AND lease_generation = :lease_generation
+                        """
+                    ),
+                    self._lease_params(lease),
+                )
+                return "moved_to_reconciliation_pending" if changed.rowcount == 1 else None
+
+            if page_state in {
+                CrawlPageState.PERSISTENCE_PENDING,
+                CrawlPageState.RECONCILIATION_PENDING,
+            }:
+                changed = await conn.execute(
+                    text(
+                        """
+                        UPDATE official_site_crawl_page
+                        SET lease_owner = NULL, lease_acquired_at = NULL,
+                            lease_expires_at = NULL, updated_at = now()
+                        WHERE id = :page_id AND workspace_id = :workspace_id
+                          AND crawl_run_id = :crawl_run_id AND state = :state
+                          AND lease_owner = :worker_id
+                          AND lease_generation = :lease_generation
+                        """
+                    ),
+                    {**self._lease_params(lease), "state": page_state.value},
+                )
+                if changed.rowcount != 1:
+                    return None
+                return (
+                    "released_persistence_pending"
+                    if page_state is CrawlPageState.PERSISTENCE_PENDING
+                    else "released_reconciliation_pending"
+                )
+            return None
+
     async def reclaim_expired_leases(
         self, *, workspace_id: str, crawl_run_id: UUID
     ) -> ReclaimResult:
@@ -1858,7 +2025,7 @@ class PostgresCrawlRepository:
 
         async with self._conn_factory() as conn:
             await self._lock(conn, crawl_run_id, f"checkpoint:{phase.value}")
-            await self._run(conn, workspace_id, crawl_run_id, lock=True)
+            await self._run(conn, workspace_id, crawl_run_id, lock=_RunLockMode.UPDATE)
             existing = await self._latest_checkpoint(conn, workspace_id, crawl_run_id, phase)
             if existing is not None:
                 return self._checkpoint_ref(existing)
@@ -1877,7 +2044,7 @@ class PostgresCrawlRepository:
 
         async with self._conn_factory() as conn:
             await self._lock(conn, crawl_run_id, "checkpoint:fast")
-            run = await self._run(conn, workspace_id, crawl_run_id, lock=True)
+            run = await self._run(conn, workspace_id, crawl_run_id, lock=_RunLockMode.UPDATE)
             status = CrawlRunStatus(run["status"])
             if status is CrawlRunStatus.FAST_ACTIVE:
                 updated = await conn.execute(
@@ -2422,14 +2589,13 @@ class PostgresCrawlRepository:
         workspace_id: str,
         crawl_run_id: UUID,
         *,
-        lock: bool = False,
+        lock: _RunLockMode = _RunLockMode.NONE,
     ) -> Mapping[str, Any]:
-        suffix = " FOR UPDATE" if lock else ""
         run = _row(
             await conn.execute(
                 text(
                     "SELECT * FROM official_site_crawl_run "
-                    "WHERE id = :crawl_run_id AND workspace_id = :workspace_id" + suffix
+                    "WHERE id = :crawl_run_id AND workspace_id = :workspace_id" + lock.value
                 ),
                 {"crawl_run_id": crawl_run_id, "workspace_id": workspace_id},
             )
