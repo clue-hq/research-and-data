@@ -1176,14 +1176,21 @@ those layers without moving concurrency semantics out of C5.
 
 **Status: complete in default-off, allowlisted shadow mode (2026-08-14).** One recon now owns one
 durable crawl run/frontier, DB-time fast boundary, immutable fast/background checkpoints, and
-fleet-owned recon/crawl work. Recoverable phase blockers requeue instead of publishing false
-completion. The isolated Insight Health Firecrawl canary fetched 11 URL snapshots across a
-16-page frontier, froze 8 fast and 11 background snapshots, recovered the same run after lease
-expiry, and cold-replayed with zero new attempts. Exact contracts, settings, tests, and retained
-evidence are in the
+fleet-owned recon/crawl work. Recoverable background blockers and true fast execution faults
+requeue instead of publishing false completion. The isolated Insight Health Firecrawl canary
+fetched 11 URL snapshots across a 16-page frontier, froze 8 fast and 11 background snapshots,
+recovered the same run after lease expiry, and cold-replayed with zero new attempts. Exact
+contracts, settings, tests, and retained evidence are in the
 [C6 composition contract](./FI-stage0-durable-official-site-crawl-C6-composition-contract.md).
 Authoritative claim materialization landed in C7 and progress/recovery in C8; offline adversarial
 and live browser/cutover acceptance subsequently passed in C9–C10. C6's rollout mode defaults off.
+On 2026-08-15, a later Scrapling production journey exposed a lifecycle branch that cancelled the
+fast deadline when local workers went idle despite an externally held lease, extending eager recon
+to 103.759 seconds. The corrected lifecycle keeps the deadline armed, freezes the completed fast
+corpus at cutoff, publishes v1 without waiting for clean acquisition blockers, and leaves those
+pages on the same frontier for background. Deterministic deadline, authoritative v1/v2, and
+`fast_closing` replay regressions cover the correction; a fresh live no-override rerun remains the
+release proof for the downstream S6 journey.
 
 **Deliverables**
 

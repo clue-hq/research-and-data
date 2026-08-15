@@ -27,6 +27,10 @@ This repository is the data and research subsystem for the larger AI-native ABM 
 The central architecture bet is that verification must be modeled at the claim/data layer. LLM research is a last-resort tier-4 source, not the foundation. The product should prefer empty, flagged fields over fabricated fields.
 
 ## Topic notes
+- `2026-08-15-stage0-fast-page-deferral.md` — fixes the 103.759-second eager-recon lease wait:
+  clean unresolved fast pages now freeze out at the DB deadline and continue on the same
+  background frontier, with authoritative v1/v2/replay regressions and a fresh 61-test DB gate;
+  the no-override live Scrapling/browser rerun remains the release proof.
 - `2026-08-15-production-context-s6.md` — S6 composition complete: governed interview/recon
   publication, OTLP-safe observability, body-free operator refs, real catalog/product selection and
   exact product-claim use, immutable v1-to-v2 turn pins, stream-race fencing, and an executable

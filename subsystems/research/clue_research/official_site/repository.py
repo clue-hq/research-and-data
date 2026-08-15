@@ -1841,10 +1841,13 @@ class PostgresCrawlRepository:
         """Read durable phase blockers and the first DB-clock recovery boundary.
 
         Queued and delayed no-spend retries are valid at the fast boundary because background
-        resumes the same frontier. They are blockers at the final background boundary. Leased,
-        dispatched, reconciliation, and persistence work block both boundaries. The retry hint is
-        the earliest page-lease expiry or no-spend retry timestamp. Untimed queued work leaves the
-        hint null so the fleet can apply bounded exponential fallback.
+        resumes the same frontier. Leased, dispatched, reconciliation, and persistence work are
+        reported at the fast boundary so the lifecycle does not publish early while they might
+        still settle before the deadline. After the immutable fast checkpoint is frozen, those
+        states are deferred to background and do not block the fast Client-KB commit. Every listed
+        state blocks the final background boundary; queued and retry-wait block there as well. The
+        retry hint is the earliest page-lease expiry or no-spend retry timestamp. Untimed queued
+        work leaves the hint null so the fleet can apply bounded exponential fallback.
         """
 
         states = [

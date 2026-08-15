@@ -243,6 +243,25 @@ class _FaultedCoordinator(_ImmediateCoordinator):
         return replace(result, pages_completed=0, worker_errors=1)
 
 
+class _DeferredFastPageCoordinator(_ImmediateCoordinator):
+    """Model a page leased elsewhere during fast and acquired once by background."""
+
+    def __init__(self, repository: _Repository) -> None:
+        super().__init__(repository)
+        self.deferred_page_fetches = 0
+
+    async def run_phase(self, request: Any, *, stop_event: asyncio.Event | None = None):
+        del stop_event
+        self.calls.append(request.phase)
+        if request.phase is CrawlPhase.FAST:
+            return _phase_result(self.repository, CrawlPhase.FAST)
+        self.deferred_page_fetches += 1
+        self.repository.snapshots.append(uuid4())
+        self.repository.phase_blockers = 0
+        self.repository.phase_retry_after_seconds = None
+        return _phase_result(self.repository, CrawlPhase.BACKGROUND)
+
+
 class _ProviderOrderedSeedDiscoverer:
     async def discover(
         self,
@@ -459,6 +478,91 @@ def test_durable_worker_error_requeues_without_freezing_or_false_completion() ->
         )
         result = await resumed.run(_request(repository))
         assert result.status is CrawlRunStatus.COMPLETED
+
+    run_async(scenario())
+
+
+def test_clean_unresolved_fast_lease_waits_only_for_deadline_then_moves_to_background() -> None:
+    async def scenario() -> None:
+        repository = _Repository(_config(), deadline_seconds=0.05)
+        repository.phase_blockers = 1
+        # This models the live 87-second lease boundary. The eager phase must not wait for it.
+        repository.phase_retry_after_seconds = 87.7
+        coordinator = _DeferredFastPageCoordinator(repository)
+        lifecycle = OfficialSiteCrawlLifecycle(
+            repository=repository,
+            coordinator_factory=lambda **_: coordinator,
+        )
+
+        loop = asyncio.get_running_loop()
+        started = loop.time()
+        result = await asyncio.wait_for(lifecycle.run(_request(repository)), timeout=1)
+        elapsed = loop.time() - started
+
+        assert elapsed >= 0.04  # the fast checkpoint did not publish prematurely
+        assert elapsed < 1  # the 87.7-second lease hint did not gate eager release
+        assert result.status is CrawlRunStatus.COMPLETED
+        assert coordinator.calls == [CrawlPhase.FAST, CrawlPhase.BACKGROUND]
+        assert coordinator.deferred_page_fetches == 1
+        assert len(result.fast_checkpoint.snapshot_ids) == 1
+        assert len(result.background_checkpoint.snapshot_ids) == 2
+
+    run_async(scenario())
+
+
+def test_deferred_page_is_absent_from_authoritative_v1_and_enters_v2_once() -> None:
+    async def scenario() -> None:
+        repository = _Repository(_config(CrawlMode.AUTHORITATIVE), deadline_seconds=0.01)
+        repository.phase_blockers = 1
+        repository.phase_retry_after_seconds = 90
+        coordinator = _DeferredFastPageCoordinator(repository)
+        materializer = _BlockingMaterializer()
+        materializer.release.set()
+        lifecycle = OfficialSiteCrawlLifecycle(
+            repository=repository,
+            coordinator_factory=lambda **_: coordinator,
+            materializer=materializer,
+        )
+
+        result = await asyncio.wait_for(lifecycle.run(_request(repository)), timeout=1)
+
+        assert result.fast_materialization is not None
+        assert result.fast_materialization.client_kb_version == 1
+        assert result.background_materialization is not None
+        assert result.background_materialization.client_kb_version == 2
+        assert [call.checkpoint_id for call in materializer.calls] == [
+            result.fast_checkpoint.checkpoint_id,
+            result.background_checkpoint.checkpoint_id,
+        ]
+        assert len(result.fast_checkpoint.snapshot_ids) == 1
+        assert len(result.background_checkpoint.snapshot_ids) == 2
+        assert coordinator.deferred_page_fetches == 1
+
+    run_async(scenario())
+
+
+def test_fast_closing_replay_defers_clean_recovery_blocker_to_same_background_run() -> None:
+    async def scenario() -> None:
+        repository = _Repository(_config(), deadline_seconds=0)
+        repository.created = False
+        repository.status = CrawlRunStatus.FAST_CLOSING
+        repository.phase_blockers = 1
+        repository.phase_retry_after_seconds = 61
+        original_fast_checkpoint = repository._checkpoint(CrawlPhase.FAST)
+        coordinator = _DeferredFastPageCoordinator(repository)
+        lifecycle = OfficialSiteCrawlLifecycle(
+            repository=repository,
+            coordinator_factory=lambda **_: coordinator,
+        )
+
+        result = await asyncio.wait_for(lifecycle.run(_request(repository)), timeout=1)
+
+        assert result.status is CrawlRunStatus.COMPLETED
+        assert result.fast_checkpoint.checkpoint_id == original_fast_checkpoint.checkpoint_id
+        assert coordinator.calls == [CrawlPhase.FAST, CrawlPhase.BACKGROUND]
+        assert coordinator.deferred_page_fetches == 1
+        assert len(result.fast_checkpoint.snapshot_ids) == 1
+        assert len(result.background_checkpoint.snapshot_ids) == 2
 
     run_async(scenario())
 

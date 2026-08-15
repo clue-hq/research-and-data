@@ -250,6 +250,12 @@ those earlier `clue_s6_live_20260815_c2` rows.
   deadline at 11:23:54.201. The browser timed out and required the explicit Continue-anyway path.
   This is a measured typed exception, not a successful `<=40s` result, and blocks production
   release until corrected and rerun.
+- The lifecycle correction is now implemented offline: a clean unresolved lease no longer cancels
+  the fast deadline or blocks publication after the immutable checkpoint. It stays in the same
+  run/frontier, is eligible for exactly one fenced background acquisition, is absent from fast v1,
+  and may enter background v2. Tests cover a 90-second lease hint, authoritative v1/v2 separation,
+  and `fast_closing` cold replay. This changes the implementation state, not the retained R5
+  evidence; a fresh real-provider/browser run without Continue-anyway is still required.
 - A real catalog exposed Virtual Care Assistant and Aura Anywhere across the retained catalog
   lineage. The production human gate approved Aura Anywhere; subsequent turns composed its
   product profile/knowledge, listed exact product references, and inspected exact bounded
@@ -275,7 +281,8 @@ those earlier `clue_s6_live_20260815_c2` rows.
 
 R0–R5 implementation and evidence collection are complete, and the product-context customer
 journey is now live-proven. That does **not** make the branch production-release-ready: the final
-R5 run missed the fast release target by 63.759 seconds and required manual continuation. Release
+R5 run missed the fast release target by 63.759 seconds and required manual continuation. The
+stuck-page deferral correction is implemented and deterministically verified, but release still
 requires a new retained run at `<=40s` without the manual override. The two ambiguous Scrapling
 pages, raw gate-response presentation, real password/Device-Trust rerun, and the owned 32-node
 broad-suite debt remain explicit follow-ups. The model-visible `product_id` authority concern also

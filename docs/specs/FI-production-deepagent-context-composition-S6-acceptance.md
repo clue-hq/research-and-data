@@ -135,7 +135,12 @@ also exposed the blocking latency, stream-race, and gate-presentation issues rec
 ### Honest live exceptions
 
 1. The fast phase took 103.759 seconds and the browser required manual continuation. This blocks
-   production release even though the eventual catalog/product context was correct.
+   production release even though the eventual catalog/product context was correct. A subsequent
+   offline lifecycle correction now freezes at the configured fast deadline when a clean lease is
+   unresolved, publishes from the completed snapshot set, and defers that page on the same
+   frontier to background. Deterministic tests prove authoritative v1 excludes it and v2 includes
+   it after one background fetch. This historical live result remains failed until a fresh
+   no-override real-provider/browser rerun proves the correction at `<=40s`.
 2. Scrapling quarantined two `spend_unknown` pages (`/blog` and
    `/direct-access-colonoscopy`) without duplicate calls. The remaining 53 pages and both corpus
    checkpoints reconciled; these two ambiguous outcomes remain operator-visible.
@@ -214,9 +219,10 @@ have a production OTLP path; the human catalog selection and independent intervi
 worked through the production fleet.
 
 The branch is **not production-release-ready**. The final live fast phase missed the target by
-63.759 seconds and required manual continuation. Two Scrapling pages remain spend-unknown,
-password/Device-Trust entry was not rerun, the gate answer has a raw-JSON presentation defect, and
-the broad backend suite remains green only under an exact owned 32-node quarantine rather than in
-absolute terms. The product-context architecture is materially ready; release should wait for the
-fast-lane correction and a new no-override retained run. The model-visible product-scope authority
+63.759 seconds and required manual continuation. The stuck-page deferral fix is implemented and
+offline-proven, but has not yet replaced that failed live evidence. Two Scrapling pages remain
+spend-unknown, password/Device-Trust entry was not rerun, the gate answer has a raw-JSON
+presentation defect, and the broad backend suite remains green only under an exact owned 32-node
+quarantine rather than in absolute terms. The product-context architecture is materially ready;
+release should wait for a new no-override retained run. The model-visible product-scope authority
 issue remains deliberately deferred by founder direction.

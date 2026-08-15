@@ -38,11 +38,14 @@ after that same durable fact and cannot delay or counterfeit release.
    `official_site_crawl` task for the same recon. The payload contains only workspace/recon IDs.
 4. The crawl task rehydrates the company website and tenancy from PostgreSQL, then opens or
    replays the single run pinned to the recon.
-5. The C5 coordinator claims and fetches single pages concurrently. At the database fast deadline,
-   new fast claims stop. Already-dispatched work is awaited; it is never cancelled merely to meet
-   the UI deadline.
-6. The fast snapshot set freezes once. Late safe completions remain on the same frontier and can
-   enter only the background checkpoint.
+5. The C5 coordinator claims and fetches single pages concurrently. If it runs out of locally
+   claimable work while another process still owns a lease, the database fast deadline remains
+   armed. The lifecycle does not cancel that deadline and wait for the lease expiry instead.
+6. At the database fast deadline, new fast claims stop and the fast snapshot set freezes once.
+   Leased, provider-active, reconciliation, persistence, queued, and retrying pages remain on the
+   same durable frontier as background-deferred work. An already-dispatched provider call is not
+   cancelled; fast extraction can begin from the immutable checkpoint while it settles, and any
+   late safe completion can enter only the background checkpoint.
 7. Background resumes the same run. Completed pages are never fetched again. Recoverable blockers
    return `recovery_pending` with `requeue=true`; the task is durably delayed until the earliest
    DB-clock lease/retry boundary, or by bounded exponential fallback when no boundary exists. The
@@ -65,11 +68,13 @@ The database owns time. `fast_claim_deadline_at` is written at run creation and 
 computed with PostgreSQL `now()`. A process restart therefore cannot restart or extend the fast
 window.
 
-At the fast boundary, queued/delayed no-spend work may continue in background, but these states
-block publication: `leased`, `provider_started`, `reconciliation_pending`, and
-`persistence_pending`. At the background boundary, `queued` and `retry_wait` block as well. A C5
-worker/fence error with no durable recovery state is a hard error; an associated durable blocker
-is a requeue, never a false success.
+Before the fast deadline, `leased`, `provider_started`, `reconciliation_pending`, and
+`persistence_pending` prevent an early checkpoint because they may still settle inside the eager
+budget. Once the immutable deadline checkpoint exists, they are background-deferred acquisition
+states—not fast Client-KB publication blockers. Fast publication is still refused for checkpoint,
+database, artifact, materialization, or unaccounted coordinator/fencing failures. At the final
+background boundary, all active work plus `queued` and `retry_wait` block completion. A background
+blocker produces a DB-clock recovery hint and a requeue, never false terminal success.
 
 `fast_closing` is cold-resumable. It permits C4 persistence/reconciliation claims but C1 refuses a
 new ordinary fast URL claim. This lets a replacement worker publish retained bytes and complete
@@ -160,6 +165,10 @@ fails. Firecrawl startup without its API key fails. No wildcard allowlist exists
 Offline/database verification covers:
 
 - deadline stop, in-flight non-cancellation, late-result checkpoint separation, and cold replay;
+- a clean unresolved 90-second fast lease waiting only for the fast deadline, then being fetched
+  exactly once by background and appearing only in the background checkpoint/Client-KB version;
+- cold replay from `fast_closing` deferring the same clean blocker without changing the immutable
+  fast checkpoint;
 - materialization-before-fast-complete ordering;
 - recoverable worker errors refusing checkpoint/terminal publication;
 - one-run replay and DB-time deadline persistence;
