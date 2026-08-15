@@ -45,6 +45,23 @@ test("the C8 official-site fixture and live wire parse through the same additive
   assert.equal(parsed.official_site?.fetch_spend_unknown, 1);
   assert.equal(parsed.official_site?.partial, true);
   assert.equal(parsed.official_site?.last_event_seq, 42);
+  assert.equal(parsed.official_site?.expansion_completed, 7);
+});
+
+test("pre-expansion official-site payload receives additive zero defaults", () => {
+  const parsed = SetupStatusSchema.parse({
+    status: "running",
+    official_site: {
+      ...FIXTURE_OFFICIAL_SITE_PROGRESS,
+      expansion_queued: undefined,
+      expansion_leased: undefined,
+      expansion_retry_wait: undefined,
+      expansion_completed: undefined,
+      expansion_failed: undefined,
+    },
+  });
+  assert.equal(parsed.official_site?.expansion_queued, 0);
+  assert.equal(parsed.official_site?.expansion_completed, 0);
 });
 
 test("an unknown per-field status degrades to started rather than failing the parse", () => {

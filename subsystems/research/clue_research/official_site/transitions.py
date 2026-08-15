@@ -10,9 +10,10 @@ from clue_research.official_site.contracts import (
     CrawlPageState,
     CrawlRunStatus,
     FetchAttemptState,
+    LinkExpansionState,
 )
 
-StateT = TypeVar("StateT", CrawlRunStatus, CrawlPageState, FetchAttemptState)
+StateT = TypeVar("StateT", CrawlRunStatus, CrawlPageState, FetchAttemptState, LinkExpansionState)
 
 RUN_TRANSITIONS: Mapping[CrawlRunStatus, frozenset[CrawlRunStatus]] = MappingProxyType(
     {
@@ -123,6 +124,24 @@ ATTEMPT_TRANSITIONS: Mapping[FetchAttemptState, frozenset[FetchAttemptState]] = 
     }
 )
 
+LINK_EXPANSION_TRANSITIONS: Mapping[LinkExpansionState, frozenset[LinkExpansionState]] = (
+    MappingProxyType(
+        {
+            LinkExpansionState.QUEUED: frozenset({LinkExpansionState.LEASED}),
+            LinkExpansionState.LEASED: frozenset(
+                {
+                    LinkExpansionState.RETRY_WAIT,
+                    LinkExpansionState.COMPLETED,
+                    LinkExpansionState.FAILED,
+                }
+            ),
+            LinkExpansionState.RETRY_WAIT: frozenset({LinkExpansionState.QUEUED}),
+            LinkExpansionState.COMPLETED: frozenset(),
+            LinkExpansionState.FAILED: frozenset(),
+        }
+    )
+)
+
 
 def allows_transition(  # noqa: UP047 - mypy still consumes the shared bounded TypeVar cleanly
     graph: Mapping[StateT, frozenset[StateT]], old: StateT, new: StateT
@@ -144,11 +163,13 @@ def transition_manifest() -> dict[str, dict[str, list[str]]]:
         "crawl_run": render(RUN_TRANSITIONS),
         "crawl_page": render(PAGE_TRANSITIONS),
         "fetch_attempt": render(ATTEMPT_TRANSITIONS),
+        "link_expansion": render(LINK_EXPANSION_TRANSITIONS),
     }
 
 
 __all__ = [
     "ATTEMPT_TRANSITIONS",
+    "LINK_EXPANSION_TRANSITIONS",
     "PAGE_TRANSITIONS",
     "RUN_TRANSITIONS",
     "allows_transition",

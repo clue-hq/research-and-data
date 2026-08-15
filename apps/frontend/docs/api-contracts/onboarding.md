@@ -131,6 +131,12 @@ unconfigured deployment refuses `start_recon` everywhere, exactly as before slic
     "provider_active": 1,
     "reconciliation_pending": 0,
     "persistence_pending": 0,
+    "retry_wait": 0,
+    "expansion_queued": 1,
+    "expansion_leased": 0,
+    "expansion_retry_wait": 0,
+    "expansion_completed": 2,
+    "expansion_failed": 0,
     "fetched": 3,
     "total_pages": 8,
     "snapshots": 3,
@@ -181,6 +187,10 @@ unconfigured deployment refuses `start_recon` everywhere, exactly as before slic
   `provider-active`, `spend-unknown`, `persisted`, `extracted`, `partial`, `completed`. The frontend
   accepts future state/status strings but validates all known counts/booleans. C8 does not change
   the setup release condition: C10 owns the live browser/cutover gate.
+- A locally surfaced setup stall is not a backend terminal. The screen keeps polling after showing
+  “Try again / Continue anyway”; later committed progress clears the fallback, and a later
+  `status=complete` still releases automatically. `expansion_*` counts expose the independently
+  fenced link-discovery state without exposing URLs or bodies.
 
 ### Progress event vocabulary (D-5 Path B)
 

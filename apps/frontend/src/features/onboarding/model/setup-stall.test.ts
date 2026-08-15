@@ -4,6 +4,7 @@ import {
   MAX_STALL_POLLS,
   isStalled,
   progressSignature,
+  shouldStopSetupPolling,
   stallAdvance,
   type SetupStallSnapshot,
 } from "./setup-stall";
@@ -77,6 +78,27 @@ test("committed official-site crawl movement resets the stall budget", () => {
   assert.equal(stallAdvance(after, { ...after }, 7), 8);
 });
 
+test("durable link-expansion movement resets the stall budget", () => {
+  const before: SetupStallSnapshot = {
+    status: "running",
+    official_site: {
+      run_status: "fast_active",
+      expansion_queued: 1,
+      expansion_leased: 0,
+      expansion_completed: 0,
+    },
+  };
+  const after: SetupStallSnapshot = {
+    ...before,
+    official_site: {
+      ...before.official_site,
+      expansion_queued: 0,
+      expansion_leased: 1,
+    },
+  };
+  assert.equal(stallAdvance(before, after, 39), 0);
+});
+
 test("an overall status change resets the count", () => {
   assert.equal(stallAdvance(STARTING, { ...STARTING, status: "running" }, 20), 0);
 });
@@ -98,6 +120,14 @@ test("isStalled trips exactly at the 60s budget, not before", () => {
   assert.equal(isStalled(MAX_STALL_POLLS - 1), false);
   assert.equal(isStalled(MAX_STALL_POLLS), true);
   assert.equal(MAX_STALL_POLLS, 40); // 40 × 1.5s = 60s, the same budget the `none` path uses
+});
+
+test("stall fallback keeps polling while true backend terminals stop", () => {
+  assert.equal(shouldStopSetupPolling("stalled"), false);
+  assert.equal(shouldStopSetupPolling("session"), false);
+  assert.equal(shouldStopSetupPolling(null), false);
+  assert.equal(shouldStopSetupPolling("failed"), true);
+  assert.equal(shouldStopSetupPolling("unavailable"), true);
 });
 
 test("the signature ignores payload that is not progress", () => {

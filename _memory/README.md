@@ -27,6 +27,11 @@ This repository is the data and research subsystem for the larger AI-native ABM 
 The central architecture bet is that verification must be modeled at the claim/data layer. LLM research is a last-resort tier-4 source, not the foundation. The product should prefer empty, flagged fields over fabricated fields.
 
 ## Topic notes
+- `2026-08-15-stage0-link-expansion-state-machine.md` — decouples durable page publication from
+  recursive link expansion: fetched snapshots publish immediately, independently fenced expansion
+  jobs retry/background-resume without provider refetch, fast wakes respect the DB deadline, the
+  browser keeps polling after its timeout fallback, and a retained isolated 210-test DB gate plus
+  frontend/static/migration verification is green.
 - `2026-08-15-stage0-fast-page-deferral.md` — fixes the 103.759-second eager-recon lease wait:
   clean unresolved fast pages now freeze out at the DB deadline and continue on the same
   background frontier, with authoritative v1/v2/replay regressions and a fresh 61-test DB gate;

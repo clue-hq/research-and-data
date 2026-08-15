@@ -6,7 +6,11 @@ import {
   httpSetupProgressSource,
   type SetupProgressSource,
 } from "../data/setup-progress.repository";
-import { isStalled, stallAdvance } from "../model/setup-stall";
+import {
+  isStalled,
+  shouldStopSetupPolling,
+  stallAdvance,
+} from "../model/setup-stall";
 
 const POLL_INTERVAL_MS = 1500;
 /** Consecutive `none` reads tolerated after a successful start before surfacing (60s —
@@ -16,7 +20,12 @@ const MAX_PENDING_POLLS = 40;
 /** Consecutive transport failures tolerated before surfacing a connectivity message. */
 const MAX_POLL_ERRORS = 5;
 
-export type SetupTerminalKind = "failed" | "unavailable" | "session" | null;
+export type SetupTerminalKind =
+  | "failed"
+  | "unavailable"
+  | "session"
+  | "stalled"
+  | null;
 
 export interface SetupProgress {
   status: SetupStatus | null;
@@ -30,8 +39,9 @@ export interface SetupProgress {
  * durable lane truth at 1.5s, and releases the user into the app when the fast lane
  * completes. Start failures and poll findings are SEPARATE channels — a poll tick can never
  * wipe a start failure it knows nothing about (review FE-B1) — and every terminal state is
- * surfaced with real recovery controls (review FE-B2). Polling stops on terminal states and
- * after release; `location.replace` avoids the back-button trap (review FE-N6).
+ * surfaced with real recovery controls (review FE-B2). Polling stops on true backend terminals
+ * and after release; a local stall fallback keeps observing durable truth so later readiness can
+ * still release automatically. `location.replace` avoids the back-button trap (review FE-N6).
  *
  * Two independent budgets bound the wait, because neither covers the other: `MAX_PENDING_POLLS`
  * bounds consecutive `none` reads (nothing was ever requested), and the pure `stallAdvance`
@@ -71,7 +81,7 @@ export function useSetupProgress(
     function surface(message: string | null, kind: SetupTerminalKind) {
       setFailure(message);
       setTerminal(kind);
-      if (kind !== null && kind !== "session") {
+      if (shouldStopSetupPolling(kind)) {
         stopped.current = true;
         if (interval !== null) window.clearInterval(interval);
       }
@@ -137,7 +147,7 @@ export function useSetupProgress(
       if (current.status === "none") {
         pendingPolls.current += 1;
         if (pendingPolls.current > MAX_PENDING_POLLS) {
-          surface("Setup is taking longer than expected to start. You can retry.", "failed");
+          surface("Setup is taking longer than expected to start. You can retry.", "stalled");
         }
         return;
       }
@@ -150,7 +160,7 @@ export function useSetupProgress(
         surface(
           "Setup is taking longer than expected. You can try again, or continue into your "
             + "workspace.",
-          "failed",
+          "stalled",
         );
         return;
       }

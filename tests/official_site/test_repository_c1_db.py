@@ -117,6 +117,7 @@ async def _cleanup_scope(conn: object, workspace_id: str) -> None:
         for table in (
             "official_site_corpus_checkpoint",
             "official_site_alias_observation",
+            "official_site_link_expansion",
             # The page's latest-snapshot FK is deferred, so the snapshot can be removed before
             # the page while the reverse (snapshot -> page) immediate FK remains fail-closed.
             "official_site_page_snapshot",
@@ -230,6 +231,7 @@ def test_schema_contains_all_frozen_tables_and_recon_scope_anchor() -> None:
                 "official_site_link_edge",
                 "official_site_fetch_attempt",
                 "official_site_page_snapshot",
+                "official_site_link_expansion",
                 "official_site_alias_observation",
                 "official_site_corpus_checkpoint",
                 "official_site_extraction_operation",
@@ -309,7 +311,9 @@ def test_ten_concurrent_claimers_acquire_one_page_once_and_stale_generation_is_f
                 assert fresh.lease_generation == stale.lease_generation + 1
                 assert not await repository.renew_lease(stale, lease_ttl_seconds=90)
                 assert not await repository.mark_attempt_dispatched(stale, attempt)
-                assert not await repository.complete_page(stale, snapshot_id=uuid4())
+                assert not await repository.complete_page(
+                    stale, snapshot_id=uuid4(), outgoing_links=()
+                )
                 async with engine.connect() as conn:
                     state = (
                         await conn.execute(
@@ -886,7 +890,9 @@ def test_success_persists_url_snapshot_and_freezes_immutable_checkpoint() -> Non
                     lease, attempt, artifact, metadata, outgoing_links=()
                 )
                 assert snapshot is not None
-                assert await repository.complete_page(lease, snapshot_id=snapshot.snapshot_id)
+                assert await repository.complete_page(
+                    lease, snapshot_id=snapshot.snapshot_id, outgoing_links=()
+                )
                 checkpoint = await repository.freeze_corpus_checkpoint(
                     workspace_id=workspace_id,
                     crawl_run_id=crawl_run_id,

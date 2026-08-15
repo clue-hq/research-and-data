@@ -457,11 +457,15 @@ def test_coordinator_page_events_carry_hash_and_host_without_full_url(tmp_path: 
         assert [event.kind for event in sink.events] == [
             CrawlProgressEventKind.PAGE_STARTED,
             CrawlProgressEventKind.PAGE_FETCHED,
+            CrawlProgressEventKind.LINK_EXPANSION_STARTED,
+            CrawlProgressEventKind.LINK_EXPANSION_COMPLETED,
         ]
         assert all(event.url_hash is not None for event in sink.events)
         assert all(event.host == "example.com" for event in sink.events)
         assert all("https://" not in event.model_dump_json() for event in sink.events)
-        completed = sink.events[-1]
+        completed = next(
+            event for event in sink.events if event.kind is CrawlProgressEventKind.PAGE_FETCHED
+        )
         assert completed.provider_request_id is not None
         assert completed.provider_status == "ok"
         assert completed.http_status == 200

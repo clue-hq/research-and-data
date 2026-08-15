@@ -86,7 +86,6 @@ from clue_research.official_site.reconciliation import (
     DurableAcquisitionResult,
     DurablePageAcquirer,
     ProviderOperationLookup,
-    SnapshotBeforeCompleteHook,
 )
 from clue_research.official_site.repository import PostgresCrawlRepository
 from clue_research.official_site.robots import (
@@ -131,6 +130,7 @@ from clue_research.official_site.sitemap import (
 )
 from clue_research.official_site.transitions import (
     ATTEMPT_TRANSITIONS,
+    LINK_EXPANSION_TRANSITIONS,
     PAGE_TRANSITIONS,
     RUN_TRANSITIONS,
     allows_transition,
@@ -148,6 +148,7 @@ __all__ = [
     "AcquisitionFenceLostError",
     "AcquisitionPersistencePendingError",
     "ATTEMPT_TRANSITIONS",
+    "LINK_EXPANSION_TRANSITIONS",
     "BoundedLinks",
     "ConservativeUrlPolicy",
     "ConcurrentCrawlCoordinator",
@@ -221,7 +222,6 @@ __all__ = [
     "SAFETY_POLICY_VERSION",
     "SITEMAP_POLICY_VERSION",
     "SafetyDecision",
-    "SnapshotBeforeCompleteHook",
     "SitemapDocument",
     "SitemapEntry",
     "SitemapInventory",

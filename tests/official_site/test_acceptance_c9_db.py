@@ -366,7 +366,9 @@ def test_stale_generation_rejects_every_worker_publication() -> None:
                 assert (
                     await repository.persist_snapshot(stale, attempt, artifact, result, ()) is None
                 )
-                assert not await repository.complete_page(stale, snapshot_id=uuid4())
+                assert not await repository.complete_page(
+                    stale, snapshot_id=uuid4(), outgoing_links=()
+                )
                 assert not await repository.disposition_attempt(
                     stale,
                     attempt,

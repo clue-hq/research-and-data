@@ -257,7 +257,9 @@ async def _complete_page(
         outgoing_links=(),
     )
     assert snapshot is not None
-    assert await repository.complete_page(lease, snapshot_id=snapshot.snapshot_id)
+    assert await repository.complete_page(
+        lease, snapshot_id=snapshot.snapshot_id, outgoing_links=()
+    )
     return lease.page_id
 
 

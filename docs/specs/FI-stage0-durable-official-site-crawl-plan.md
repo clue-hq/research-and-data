@@ -466,7 +466,21 @@ artifact_key, content_sha256, size_bytes, robots_decision_ref, policy_version`.
 Two snapshots may point to the same `artifact_key/content_sha256`. They remain two snapshot rows
 because URL, redirect path, time, provider, cost receipt, and HTTP outcome are provenance.
 
-### 7.7 `official_site_alias_observation`
+### 7.7 `official_site_link_expansion`
+
+One provider-neutral discovery job per immutable snapshot:
+
+`id, workspace_id, crawl_run_id, page_id, snapshot_id,
+state{queued|leased|retry_wait|completed|failed}, outgoing_links_json,
+lease_owner, lease_generation, lease_acquired_at, lease_expires_at, attempt_count,
+next_attempt_at, failure_stage, failure_code, failure_class, created_at, updated_at, completed_at`.
+
+`snapshot_id` is unique and also supplies the deterministic job ID. Page completion and initial
+`queued` insertion are one transaction. The bounded outgoing-link array is evidence/provenance and
+is included in workspace/run DSAR reach. Completion/failure updates require the matching owner,
+generation, active lease, workspace, run, page, and snapshot. A failure never updates the page.
+
+### 7.8 `official_site_alias_observation`
 
 `id, crawl_run_id, source_page_id, alias_url, kind{redirect|canonical_hint},
 verification_status{observed|verified_same_content|verified_redirect|rejected_external|conflicting},
@@ -475,7 +489,7 @@ target_page_id, observed_at`.
 A canonical tag starts as `observed`. It never changes the fetch key or suppresses acquisition by
 itself. Cross-domain canonical hints are recorded as rejected and are never followed automatically.
 
-### 7.8 `official_site_corpus_checkpoint`
+### 7.9 `official_site_corpus_checkpoint`
 
 `id, workspace_id, crawl_run_id, phase{fast|background}, version, snapshot_ids_json,
 snapshot_set_sha256, coverage_json, created_at`.
@@ -483,7 +497,7 @@ snapshot_set_sha256, coverage_json, created_at`.
 The checkpoint is immutable. Extraction and Client-KB versions pin this exact corpus identity so a
 late background page cannot retroactively change the fast result.
 
-### 7.9 Global and host concurrency
+### 7.10 Global and host concurrency
 
 V1 uses PostgreSQL only. Claiming acquires a short transaction-scoped global claim advisory lock,
 then a host advisory lock derived from the normalized host, always in that order. Under those locks
@@ -649,6 +663,9 @@ No worker checks a Python set before this transaction.
 - A recorded success with expired persistence ownership remains `persistence_pending` with the
   lease cleared. `claim_persistence` obtains a new generation and resumes from its body-free result
   metadata/content-addressed blob; it never invokes the provider again.
+- Once snapshot persistence succeeds, page publication and creation of one snapshot-keyed link-
+  expansion job are atomic. The page lease is released immediately; outgoing-link discovery owns
+  a separate fenced lease and cannot roll the page back to `persistence_pending`.
 
 ### 10.4 Completion fence
 
@@ -663,6 +680,15 @@ WHERE page_id = :page_id
 
 Zero affected rows means stale completion. Artifact bytes may remain content-addressed/orphan-safe,
 but no page/snapshot/claim state is published from that stale authority.
+
+### 10.5 Independent link-expansion state machine (ratified 2026-08-15)
+
+`queued → leased → completed | retry_wait → queued | failed` is durable in PostgreSQL. Every claim,
+renewal, completion, and failure disposition carries `lease_generation`. Failures retain only a
+bounded code/class and use DB-clock exponential backoff; raw URLs/bodies/errors are not logged.
+The fast scheduler bounds any expansion recovery wake by the persisted fast deadline. Work not
+terminal at that boundary remains on the same run/frontier for background, with zero completed-page
+refetch. A terminal expansion failure is honest partial recursive coverage, not acquisition loss.
 
 ---
 

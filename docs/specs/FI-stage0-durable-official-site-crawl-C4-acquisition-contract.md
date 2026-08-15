@@ -21,7 +21,7 @@ ordinary CrawlLease
   -> sanitized body-free result/receipt (PostgreSQL)
   -> workspace-scoped content-addressed blob (PB-B2)
   -> URL-level page snapshot (PostgreSQL)
-  -> fetched page completion (PostgreSQL)
+  -> fetched page completion + queued link expansion (one PostgreSQL transaction)
 ```
 
 `DurablePageAcquirer` owns that protocol. `OfficialSiteArtifactStore` owns exact-byte capture,
@@ -51,11 +51,14 @@ For a new ordinary lease, acquisition executes these ordered committed boundarie
    the artifact.
 6. `persist_snapshot` writes or reuses one immutable URL-level snapshot and marks the attempt
    `persisted`.
-7. `complete_page` publishes that exact snapshot as the page result and clears its active lease.
+7. `complete_page` publishes that exact snapshot, clears its acquisition lease, and creates one
+   snapshot-keyed `official_site_link_expansion` row in the same transaction. Discovery writes do
+   not run inside page completion.
 
 The attempt row never stores page bytes or outgoing-link bodies. The artifact row owns bytes and
 content identity; the page snapshot owns requested/final URL, redirect, provider, fetch time,
-MIME/status, and attempt provenance. Two URL snapshots may therefore cite one artifact.
+MIME/status, and attempt provenance. The bounded expansion row retains the exact outgoing-link
+observations needed for provider-free retry. Two URL snapshots may therefore cite one artifact.
 
 PB-B2 is used without changing its storage abstraction:
 
@@ -88,8 +91,16 @@ snapshot/page without provider I/O.
 
 C4 closes an uncovered C1 crash boundary: `claim_persistence` also admits an attempt already in
 `persisted` when its page remains `persistence_pending`. `persist_snapshot` returns the existing
-immutable snapshot, then the replacement worker replays only `complete_page`. No duplicate
-snapshot or provider call is created.
+immutable snapshot, then the replacement worker replays only the atomic page-completion/expansion-
+enqueue transaction. No duplicate snapshot, expansion job, or provider call is created.
+
+### 3.4 Acquisition/expansion boundary amendment (2026-08-15)
+
+Link expansion is no longer a pre-completion hook. A durable snapshot is usable by the fast corpus
+as soon as page completion and expansion enqueue commit. Expansion has a separate generation-
+fenced lease, heartbeat, retry/backoff, and terminal partial-failure state. An expansion error can
+reduce recursive coverage, but it cannot relabel a captured page as `persistence_pending` or force
+the original provider request to run again.
 
 If a recorded provider success has neither caller-retained bytes nor a verified attached blob,
 recovery cannot reconstruct content. It quarantines the attempt/page with

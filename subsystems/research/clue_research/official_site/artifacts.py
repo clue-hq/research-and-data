@@ -89,6 +89,7 @@ class OfficialSiteEvidenceReach:
     attempt_ids: tuple[UUID, ...]
     snapshot_ids: tuple[UUID, ...]
     artifact_keys: tuple[str, ...]
+    link_expansion_ids: tuple[UUID, ...] = ()
     page_ids: tuple[UUID, ...] = ()
     observation_ids: tuple[UUID, ...] = ()
     link_edge_ids: tuple[UUID, ...] = ()
@@ -467,6 +468,7 @@ class OfficialSiteArtifactStore:
                 ("edges", "official_site_link_edge"),
                 ("aliases", "official_site_alias_observation"),
                 ("checkpoints", "official_site_corpus_checkpoint"),
+                ("link_expansions", "official_site_link_expansion"),
             ):
                 table_ids[label] = tuple(
                     sorted(
@@ -553,6 +555,7 @@ class OfficialSiteArtifactStore:
                 )
             ),
             page_ids=table_ids["pages"],
+            link_expansion_ids=table_ids["link_expansions"],
             observation_ids=table_ids["observations"],
             link_edge_ids=table_ids["edges"],
             alias_observation_ids=table_ids["aliases"],

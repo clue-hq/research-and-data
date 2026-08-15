@@ -136,6 +136,7 @@ async def _cleanup_scope(conn: Any, workspace_id: str) -> None:
         for table in (
             "official_site_corpus_checkpoint",
             "official_site_alias_observation",
+            "official_site_link_expansion",
             "official_site_page_snapshot",
             "official_site_fetch_attempt",
             "official_site_link_edge",
@@ -338,11 +339,19 @@ class _LoseCompletionOnceRepository:
     def __getattr__(self, name: str) -> Any:
         return getattr(self.delegate, name)
 
-    async def complete_page(self, lease: CrawlLease, *, snapshot_id: UUID) -> bool:
+    async def complete_page(
+        self,
+        lease: CrawlLease,
+        *,
+        snapshot_id: UUID,
+        outgoing_links: tuple[LinkObservation, ...],
+    ) -> bool:
         if self.remaining:
             self.remaining -= 1
             return False
-        return await self.delegate.complete_page(lease, snapshot_id=snapshot_id)
+        return await self.delegate.complete_page(
+            lease, snapshot_id=snapshot_id, outgoing_links=outgoing_links
+        )
 
 
 def _coordinator(

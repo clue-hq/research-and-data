@@ -122,6 +122,7 @@ async def _cleanup_scope(conn: Any, workspace_id: str) -> None:
         for table in (
             "official_site_corpus_checkpoint",
             "official_site_alias_observation",
+            "official_site_link_expansion",
             "official_site_page_snapshot",
             "official_site_fetch_attempt",
             "official_site_link_edge",

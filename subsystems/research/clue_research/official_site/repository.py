@@ -23,6 +23,7 @@ from clue_research.official_site.contracts import (
     AliasVerificationStatus,
     ArtifactRef,
     AttemptOutcome,
+    ClaimLinkExpansionRequest,
     ClaimNextRequest,
     ClaimPersistenceRequest,
     ClaimReconciliationRequest,
@@ -42,6 +43,8 @@ from clue_research.official_site.contracts import (
     DiscoveryBatchResult,
     FetchAttemptRef,
     FetchAttemptState,
+    LinkExpansionLease,
+    LinkExpansionState,
     LinkObservation,
     LinkRelation,
     OfficialSiteCrawlContractConfig,
@@ -51,6 +54,7 @@ from clue_research.official_site.contracts import (
     ProviderResultMetadata,
     ReclaimResult,
     ReconciliationClaim,
+    RedirectHop,
     RetryClass,
     compute_snapshot_set_sha256,
 )
@@ -75,6 +79,7 @@ _ACTIVE_LEASE_STATES = (
 )
 
 _MAX_NO_SPEND_ATTEMPTS = 3
+_MAX_LINK_EXPANSION_ATTEMPTS = 3
 
 
 def _json(value: Any) -> str:
@@ -120,6 +125,29 @@ def _attempt_from_row(row: Mapping[str, Any]) -> FetchAttemptRef:
         provider_key=row["provider_key"],
         provider_request_id=row["provider_request_id"],
         state=FetchAttemptState(row["state"]),
+    )
+
+
+def _link_expansion_from_row(row: Mapping[str, Any], *, phase: CrawlPhase) -> LinkExpansionLease:
+    return LinkExpansionLease(
+        workspace_id=row["workspace_id"],
+        crawl_run_id=row["crawl_run_id"],
+        expansion_id=row["id"],
+        page_id=row["page_id"],
+        snapshot_id=row["snapshot_id"],
+        worker_id=row["lease_owner"],
+        lease_generation=row["lease_generation"],
+        attempt_number=row["attempt_count"],
+        phase=phase,
+        source_url=row["final_url"],
+        source_graph_depth=row["graph_depth"],
+        redirect_chain=tuple(
+            RedirectHop.model_validate(item) for item in row["redirect_chain_json"]
+        ),
+        outgoing_links=tuple(
+            LinkObservation.model_validate(item) for item in row["outgoing_links_json"]
+        ),
+        expires_at=row["lease_expires_at"],
     )
 
 
@@ -976,6 +1004,84 @@ class PostgresCrawlRepository:
                 attempt=_attempt_from_row(attempt),
             )
 
+    async def claim_link_expansion(
+        self, request: ClaimLinkExpansionRequest
+    ) -> LinkExpansionLease | None:
+        """Claim one snapshot's provider-neutral discovery work under an independent fence."""
+
+        async with self._conn_factory() as conn:
+            await self._lock(conn, request.crawl_run_id, "claim-link-expansion")
+            await self._reclaim(conn, request.workspace_id, request.crawl_run_id)
+            run = await self._run(conn, request.workspace_id, request.crawl_run_id)
+            if request.eligible_phase is CrawlPhase.FAST:
+                if run["status"] != CrawlRunStatus.FAST_ACTIVE.value:
+                    return None
+                deadline_open = bool(
+                    (
+                        await conn.execute(
+                            text("SELECT now() < :deadline"),
+                            {"deadline": run["fast_claim_deadline_at"]},
+                        )
+                    ).scalar_one()
+                )
+                if not deadline_open:
+                    return None
+            elif run["status"] != CrawlRunStatus.BACKGROUND_ACTIVE.value:
+                return None
+
+            claimed = _row(
+                await conn.execute(
+                    text(
+                        """
+                        WITH candidate AS (
+                            SELECT expansion.id
+                            FROM official_site_link_expansion AS expansion
+                            WHERE expansion.workspace_id = :workspace_id
+                              AND expansion.crawl_run_id = :crawl_run_id
+                              AND expansion.state = 'queued'
+                            ORDER BY expansion.created_at, expansion.id
+                            FOR UPDATE SKIP LOCKED
+                            LIMIT 1
+                        ), leased AS (
+                            UPDATE official_site_link_expansion AS expansion
+                            SET state = 'leased', lease_owner = :worker_id,
+                                lease_generation = expansion.lease_generation + 1,
+                                lease_acquired_at = now(),
+                                lease_expires_at = now() + make_interval(secs => :ttl),
+                                attempt_count = expansion.attempt_count + 1,
+                                next_attempt_at = NULL, failure_stage = NULL,
+                                failure_code = NULL, failure_class = NULL,
+                                updated_at = now()
+                            FROM candidate
+                            WHERE expansion.id = candidate.id
+                            RETURNING expansion.*
+                        )
+                        SELECT leased.*, page.graph_depth, snapshot.final_url,
+                               snapshot.redirect_chain_json
+                        FROM leased
+                        JOIN official_site_crawl_page AS page
+                          ON page.id = leased.page_id
+                         AND page.crawl_run_id = leased.crawl_run_id
+                         AND page.workspace_id = leased.workspace_id
+                        JOIN official_site_page_snapshot AS snapshot
+                          ON snapshot.id = leased.snapshot_id
+                         AND snapshot.page_id = leased.page_id
+                         AND snapshot.crawl_run_id = leased.crawl_run_id
+                         AND snapshot.workspace_id = leased.workspace_id
+                        """
+                    ),
+                    {
+                        "workspace_id": request.workspace_id,
+                        "crawl_run_id": request.crawl_run_id,
+                        "worker_id": request.worker_id,
+                        "ttl": request.lease_ttl_seconds,
+                    },
+                )
+            )
+            if claimed is None:
+                return None
+            return _link_expansion_from_row(claimed, phase=request.eligible_phase)
+
     async def renew_lease(self, lease: CrawlLease, *, lease_ttl_seconds: int) -> bool:
         if lease_ttl_seconds < 3:
             raise ValueError("lease_ttl_seconds must be at least 3")
@@ -1000,6 +1106,39 @@ class PostgresCrawlRepository:
                     "worker_id": lease.worker_id,
                     "lease_generation": lease.lease_generation,
                     "states": list(_ACTIVE_LEASE_STATES),
+                },
+            )
+            return result.rowcount == 1
+
+    async def renew_link_expansion(
+        self, lease: LinkExpansionLease, *, lease_ttl_seconds: int
+    ) -> bool:
+        if lease_ttl_seconds < 3:
+            raise ValueError("lease_ttl_seconds must be at least 3")
+        async with self._conn_factory() as conn:
+            result = await conn.execute(
+                text(
+                    """
+                    UPDATE official_site_link_expansion
+                    SET lease_expires_at = now() + make_interval(secs => :ttl),
+                        updated_at = now()
+                    WHERE id = :expansion_id AND workspace_id = :workspace_id
+                      AND crawl_run_id = :crawl_run_id AND page_id = :page_id
+                      AND snapshot_id = :snapshot_id AND state = 'leased'
+                      AND lease_owner = :worker_id
+                      AND lease_generation = :lease_generation
+                      AND lease_expires_at > now()
+                    """
+                ),
+                {
+                    "ttl": lease_ttl_seconds,
+                    "expansion_id": lease.expansion_id,
+                    "workspace_id": lease.workspace_id,
+                    "crawl_run_id": lease.crawl_run_id,
+                    "page_id": lease.page_id,
+                    "snapshot_id": lease.snapshot_id,
+                    "worker_id": lease.worker_id,
+                    "lease_generation": lease.lease_generation,
                 },
             )
             return result.rowcount == 1
@@ -1428,7 +1567,15 @@ class PostgresCrawlRepository:
             assert snapshot is not None
             return self._snapshot_ref(snapshot)
 
-    async def complete_page(self, lease: CrawlLease, *, snapshot_id: UUID) -> bool:
+    async def complete_page(
+        self,
+        lease: CrawlLease,
+        *,
+        snapshot_id: UUID,
+        outgoing_links: tuple[LinkObservation, ...],
+    ) -> bool:
+        """Publish a durable page and enqueue its discovery work in one transaction."""
+
         async with self._conn_factory() as conn:
             result = await conn.execute(
                 text(
@@ -1458,7 +1605,113 @@ class PostgresCrawlRepository:
                 ),
                 {**self._lease_params(lease), "snapshot_id": snapshot_id},
             )
+            if result.rowcount != 1:
+                return False
+            await conn.execute(
+                text(
+                    """
+                    INSERT INTO official_site_link_expansion (
+                        id, workspace_id, crawl_run_id, page_id, snapshot_id,
+                        state, outgoing_links_json
+                    ) VALUES (
+                        :id, :workspace_id, :crawl_run_id, :page_id, :snapshot_id,
+                        'queued', CAST(:outgoing_links AS jsonb)
+                    )
+                    """
+                ),
+                {
+                    "id": snapshot_id,
+                    "workspace_id": lease.workspace_id,
+                    "crawl_run_id": lease.crawl_run_id,
+                    "page_id": lease.page_id,
+                    "snapshot_id": snapshot_id,
+                    "outgoing_links": _json(
+                        [link.model_dump(mode="json") for link in outgoing_links]
+                    ),
+                },
+            )
+            return True
+
+    async def complete_link_expansion(self, lease: LinkExpansionLease) -> bool:
+        async with self._conn_factory() as conn:
+            result = await conn.execute(
+                text(
+                    """
+                    UPDATE official_site_link_expansion
+                    SET state = 'completed', lease_owner = NULL,
+                        lease_acquired_at = NULL, lease_expires_at = NULL,
+                        next_attempt_at = NULL, failure_stage = NULL,
+                        failure_code = NULL, failure_class = NULL,
+                        completed_at = now(), updated_at = now()
+                    WHERE id = :expansion_id AND workspace_id = :workspace_id
+                      AND crawl_run_id = :crawl_run_id AND page_id = :page_id
+                      AND snapshot_id = :snapshot_id AND state = 'leased'
+                      AND lease_owner = :worker_id
+                      AND lease_generation = :lease_generation
+                      AND lease_expires_at > now()
+                    """
+                ),
+                self._link_expansion_params(lease),
+            )
             return result.rowcount == 1
+
+    async def fail_link_expansion(
+        self,
+        lease: LinkExpansionLease,
+        *,
+        failure_code: str,
+        failure_class: str,
+        retry_after_seconds: float,
+    ) -> LinkExpansionState | None:
+        if not failure_code or len(failure_code) > 120:
+            raise ValueError("failure_code must contain 1-120 characters")
+        if not failure_class or len(failure_class) > 200:
+            raise ValueError("failure_class must contain 1-200 characters")
+        if retry_after_seconds < 0:
+            raise ValueError("retry_after_seconds cannot be negative")
+        next_state = (
+            LinkExpansionState.FAILED
+            if lease.attempt_number >= _MAX_LINK_EXPANSION_ATTEMPTS
+            else LinkExpansionState.RETRY_WAIT
+        )
+        async with self._conn_factory() as conn:
+            row = _row(
+                await conn.execute(
+                    text(
+                        """
+                        UPDATE official_site_link_expansion
+                        SET state = :next_state, lease_owner = NULL,
+                            lease_acquired_at = NULL, lease_expires_at = NULL,
+                            next_attempt_at = CASE
+                                WHEN :next_state = 'retry_wait'
+                                THEN now() + make_interval(secs => :retry_after_seconds)
+                                ELSE NULL
+                            END,
+                            failure_stage = 'link_expansion', failure_code = :failure_code,
+                            failure_class = :failure_class,
+                            completed_at = CASE
+                                WHEN :next_state = 'failed' THEN now() ELSE NULL
+                            END,
+                            updated_at = now()
+                        WHERE id = :expansion_id AND workspace_id = :workspace_id
+                          AND crawl_run_id = :crawl_run_id AND page_id = :page_id
+                          AND snapshot_id = :snapshot_id AND state = 'leased'
+                          AND lease_owner = :worker_id
+                          AND lease_generation = :lease_generation
+                          AND lease_expires_at > now()
+                        RETURNING state
+                        """
+                    ),
+                    {
+                        **self._link_expansion_params(lease),
+                        "next_state": next_state.value,
+                        "retry_after_seconds": retry_after_seconds,
+                        "failure_code": failure_code,
+                        "failure_class": failure_class,
+                    },
+                )
+            )
+            return None if row is None else LinkExpansionState(row["state"])
 
     async def disposition_attempt(
         self,
@@ -1748,6 +2001,22 @@ class PostgresCrawlRepository:
             "quarantined": progress.quarantined,
             "refused": progress.refused,
             "snapshot_count": len(snapshot_ids),
+            "expansion_queued": progress.expansion_queued,
+            "expansion_leased": progress.expansion_leased,
+            "expansion_retry_wait": progress.expansion_retry_wait,
+            "expansion_completed": progress.expansion_completed,
+            "expansion_failed": progress.expansion_failed,
+            "discovery_terminal": (
+                progress.expansion_queued == 0
+                and progress.expansion_leased == 0
+                and progress.expansion_retry_wait == 0
+            ),
+            "discovery_complete": (
+                progress.expansion_queued == 0
+                and progress.expansion_leased == 0
+                and progress.expansion_retry_wait == 0
+                and progress.expansion_failed == 0
+            ),
         }
         checkpoint = _row(
             await conn.execute(
@@ -1840,14 +2109,10 @@ class PostgresCrawlRepository:
     ) -> CrawlPhaseBlockers:
         """Read durable phase blockers and the first DB-clock recovery boundary.
 
-        Queued and delayed no-spend retries are valid at the fast boundary because background
-        resumes the same frontier. Leased, dispatched, reconciliation, and persistence work are
-        reported at the fast boundary so the lifecycle does not publish early while they might
-        still settle before the deadline. After the immutable fast checkpoint is frozen, those
-        states are deferred to background and do not block the fast Client-KB commit. Every listed
-        state blocks the final background boundary; queued and retry-wait block there as well. The
-        retry hint is the earliest page-lease expiry or no-spend retry timestamp. Untimed queued
-        work leaves the hint null so the fleet can apply bounded exponential fallback.
+        Acquisition leases and independently fenced link expansion can both settle before the fast
+        deadline. The DB-clock retry hint is therefore bounded by that deadline: a long or abandoned
+        lease can never schedule the next fast wake after the publication boundary. Background owns
+        every remaining frontier and expansion state until it reaches an honest terminal outcome.
         """
 
         states = [
@@ -1863,13 +2128,31 @@ class PostgresCrawlRepository:
                     CrawlPageState.RETRY_WAIT.value,
                 ]
             )
+        expansion_states = [
+            LinkExpansionState.QUEUED.value,
+            LinkExpansionState.LEASED.value,
+            LinkExpansionState.RETRY_WAIT.value,
+        ]
         async with self._conn_factory() as conn:
-            await self._run(conn, workspace_id, crawl_run_id)
+            run = await self._run(conn, workspace_id, crawl_run_id)
             row = (
                 (
                     await conn.execute(
                         text(
                             """
+                            WITH blocker AS (
+                                SELECT lease_expires_at, next_attempt_at
+                                FROM official_site_crawl_page
+                                WHERE workspace_id = :workspace_id
+                                  AND crawl_run_id = :crawl_run_id
+                                  AND state = ANY(CAST(:states AS text[]))
+                                UNION ALL
+                                SELECT lease_expires_at, next_attempt_at
+                                FROM official_site_link_expansion
+                                WHERE workspace_id = :workspace_id
+                                  AND crawl_run_id = :crawl_run_id
+                                  AND state = ANY(CAST(:expansion_states AS text[]))
+                            )
                             SELECT count(*)::int AS blocker_count,
                                    min(
                                        CASE
@@ -1881,17 +2164,24 @@ class PostgresCrawlRepository:
                                            )
                                            ELSE NULL
                                        END
-                                   )::double precision AS retry_after_seconds
-                            FROM official_site_crawl_page
-                            WHERE workspace_id = :workspace_id
-                              AND crawl_run_id = :crawl_run_id
-                              AND state = ANY(CAST(:states AS text[]))
+                                   )::double precision AS retry_after_seconds,
+                                   greatest(
+                                       extract(
+                                           epoch FROM (
+                                               CAST(:fast_deadline AS timestamptz) - now()
+                                           )
+                                       ),
+                                       0
+                                   )::double precision AS deadline_after_seconds
+                            FROM blocker
                             """
                         ),
                         {
                             "workspace_id": workspace_id,
                             "crawl_run_id": crawl_run_id,
                             "states": states,
+                            "expansion_states": expansion_states,
+                            "fast_deadline": run["fast_claim_deadline_at"],
                         },
                     )
                 )
@@ -1899,6 +2189,11 @@ class PostgresCrawlRepository:
                 .one()
             )
         retry_after = row["retry_after_seconds"]
+        if int(row["blocker_count"]) and phase is CrawlPhase.FAST:
+            deadline_after = float(row["deadline_after_seconds"])
+            retry_after = (
+                deadline_after if retry_after is None else min(float(retry_after), deadline_after)
+            )
         return CrawlPhaseBlockers(
             count=int(row["blocker_count"]),
             retry_after_seconds=float(retry_after) if retry_after is not None else None,
@@ -2147,6 +2442,18 @@ class PostgresCrawlRepository:
     def _lease_params(lease: CrawlLease) -> dict[str, Any]:
         return {
             "page_id": lease.page_id,
+            "workspace_id": lease.workspace_id,
+            "crawl_run_id": lease.crawl_run_id,
+            "worker_id": lease.worker_id,
+            "lease_generation": lease.lease_generation,
+        }
+
+    @staticmethod
+    def _link_expansion_params(lease: LinkExpansionLease) -> dict[str, Any]:
+        return {
+            "expansion_id": lease.expansion_id,
+            "page_id": lease.page_id,
+            "snapshot_id": lease.snapshot_id,
             "workspace_id": lease.workspace_id,
             "crawl_run_id": lease.crawl_run_id,
             "worker_id": lease.worker_id,
@@ -2560,10 +2867,58 @@ class PostgresCrawlRepository:
             ),
             {**params, "max_attempts": _MAX_NO_SPEND_ATTEMPTS},
         )
+        # Expansion failures never roll a durable page back. Matured retry work returns to the
+        # expansion frontier; an expired worker lease gets a DB-clock exponential delay so the
+        # fleet does not produce the sub-second recovery-wake storm seen in live Scrapling runs.
+        await conn.execute(
+            text(
+                """
+                UPDATE official_site_link_expansion
+                SET state = 'queued', next_attempt_at = NULL,
+                    failure_stage = NULL, failure_code = NULL, failure_class = NULL,
+                    updated_at = now()
+                WHERE workspace_id = :workspace_id AND crawl_run_id = :crawl_run_id
+                  AND state = 'retry_wait' AND next_attempt_at <= now()
+                  AND attempt_count < :max_attempts
+                """
+            ),
+            {**params, "max_attempts": _MAX_LINK_EXPANSION_ATTEMPTS},
+        )
+        expired_expansions = await conn.execute(
+            text(
+                """
+                UPDATE official_site_link_expansion
+                SET state = CASE
+                        WHEN attempt_count >= :max_attempts THEN 'failed'
+                        ELSE 'retry_wait'
+                    END,
+                    lease_owner = NULL, lease_acquired_at = NULL, lease_expires_at = NULL,
+                    next_attempt_at = CASE
+                        WHEN attempt_count >= :max_attempts THEN NULL
+                        ELSE now() + make_interval(
+                            secs => LEAST(
+                                30,
+                                power(2::numeric, GREATEST(attempt_count - 1, 0))::integer
+                            )
+                        )
+                    END,
+                    failure_stage = 'link_expansion', failure_code = 'lease_expired',
+                    failure_class = 'LeaseExpired',
+                    completed_at = CASE
+                        WHEN attempt_count >= :max_attempts THEN now() ELSE NULL
+                    END,
+                    updated_at = now()
+                WHERE workspace_id = :workspace_id AND crawl_run_id = :crawl_run_id
+                  AND state = 'leased' AND lease_expires_at <= now()
+                """
+            ),
+            {**params, "max_attempts": _MAX_LINK_EXPANSION_ATTEMPTS},
+        )
         return ReclaimResult(
             requeued_pre_dispatch=pre_dispatch.rowcount,
             moved_to_reconciliation_pending=provider_started.rowcount,
             released_persistence_pending=persistence.rowcount,
+            released_link_expansions=expired_expansions.rowcount,
         )
 
     async def _read_progress(
@@ -2600,6 +2955,22 @@ class PostgresCrawlRepository:
                 )
             ).scalar_one()
         )
+        expansion_counts = {
+            row["state"]: row["count"]
+            for row in (
+                await conn.execute(
+                    text(
+                        """
+                        SELECT state, count(*)::int AS count
+                        FROM official_site_link_expansion
+                        WHERE workspace_id = :workspace_id AND crawl_run_id = :crawl_run_id
+                        GROUP BY state
+                        """
+                    ),
+                    {"workspace_id": workspace_id, "crawl_run_id": crawl_run_id},
+                )
+            ).mappings()
+        }
         return CrawlProgress(
             workspace_id=workspace_id,
             crawl_run_id=crawl_run_id,
@@ -2614,6 +2985,11 @@ class PostgresCrawlRepository:
             failed=counts.get(CrawlPageState.FAILED.value, 0),
             quarantined=counts.get(CrawlPageState.QUARANTINED.value, 0),
             spend_unknown=spend_unknown,
+            expansion_queued=expansion_counts.get(LinkExpansionState.QUEUED.value, 0),
+            expansion_leased=expansion_counts.get(LinkExpansionState.LEASED.value, 0),
+            expansion_retry_wait=expansion_counts.get(LinkExpansionState.RETRY_WAIT.value, 0),
+            expansion_completed=expansion_counts.get(LinkExpansionState.COMPLETED.value, 0),
+            expansion_failed=expansion_counts.get(LinkExpansionState.FAILED.value, 0),
         )
 
 
