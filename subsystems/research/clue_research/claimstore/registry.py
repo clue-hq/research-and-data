@@ -36,12 +36,14 @@ from clue_core import (
     FieldClass,
     FieldDef,
     PassKind,
+    ProductScopePolicy,
     ResearchScope,
     ReuseScope,
     classify_field_key,
     decode_jsonb,
     default_research_scope,
     field_namespace,
+    resolve_product_scope,
     resolve_research_scope,
     resolve_reuse_scope,
     serialize_value_json,
@@ -75,6 +77,10 @@ class ReuseScopeError(ValueError):
     ``public_footprint`` — refusing the write stops client-private data leaking into the shared
     cross-tenant base (substrate §2). A claim stamped *more* private than its field is allowed (a
     ``crm_import`` of a public-class field is correctly tenant-private)."""
+
+
+class ProductScopeError(ValueError):
+    """A field claim's ``product_id`` violates the field registry's effective product policy."""
 
 
 class ResearchScopeError(ValueError):
@@ -385,13 +391,14 @@ def _validate_payload(value: Any, schema: Mapping[str, Any], path: str = "value"
 # --- row <-> FieldDef helpers ----------------------------------------------
 _SELECT = (
     "field_key, value_type, validation, tier_plan, freshness_ttl, pass_kind, gate, signal_class, "
-    "reuse_scope, research_scope, field_class, value_schema, corroboration_min, "
+    "reuse_scope, research_scope, product_scope, field_class, value_schema, corroboration_min, "
     "single_source_sufficient, equality_mode, description, active, pack, version, created_at"
 )
 
 _WORKSPACE_SELECT = (
     "w.field_key, w.value_type, w.validation, w.tier_plan, w.freshness_ttl, w.pass_kind, "
-    "w.gate, w.signal_class, w.reuse_scope, w.research_scope, w.field_class, w.value_schema, "
+    "w.gate, w.signal_class, w.reuse_scope, w.research_scope, w.product_scope, w.field_class, "
+    "w.value_schema, "
     "w.corroboration_min, w.single_source_sufficient, w.equality_mode, w.description, "
     "(w.active AND r.field_key IS NULL) AS active, w.pack, "
     "w.definition_version AS version, w.promoted_at AS created_at, w.workspace_id, "
@@ -411,6 +418,7 @@ def _row_to_field_def(row: Mapping[str, Any]) -> FieldDef:
         signal_class=row["signal_class"],
         reuse_scope=row["reuse_scope"],
         research_scope=row["research_scope"],
+        product_scope=row["product_scope"],
     )
 
 
@@ -456,12 +464,13 @@ _INSERT = text(
     """
     INSERT INTO field_definition (
         field_key, value_type, validation, tier_plan, freshness_ttl, pass_kind, gate, signal_class,
-        reuse_scope, research_scope, field_class, value_schema, corroboration_min,
+        reuse_scope, research_scope, product_scope, field_class, value_schema, corroboration_min,
         single_source_sufficient, equality_mode, description, active, pack, version
     ) VALUES (
         :field_key, :value_type, CAST(:validation AS jsonb), CAST(:tier_plan AS jsonb),
         :freshness_ttl, CAST(:pass_kind AS field_pass), :gate, :signal_class,
-        CAST(:reuse_scope AS reuse_scope), :research_scope, CAST(:field_class AS field_class),
+        CAST(:reuse_scope AS reuse_scope), :research_scope, :product_scope,
+        CAST(:field_class AS field_class),
         CAST(:value_schema AS jsonb), :corroboration_min, :single_source_sufficient,
         CAST(:equality_mode AS equality_mode), :description, :active, :pack, :version
     )
@@ -472,7 +481,7 @@ _WORKSPACE_INSERT = text(
     """
     INSERT INTO workspace_field_definition (
         workspace_id, field_key, value_type, validation, value_schema, tier_plan, freshness_ttl,
-        pass_kind, gate, signal_class, reuse_scope, research_scope, field_class,
+        pass_kind, gate, signal_class, reuse_scope, research_scope, product_scope, field_class,
         corroboration_min, single_source_sufficient, equality_mode, description, pack,
         client_kb_role, active, definition_version, promoted_from_proposal_id,
         promotion_policy_version, promoted_by
@@ -480,7 +489,8 @@ _WORKSPACE_INSERT = text(
         :workspace_id, :field_key, :value_type, CAST(:validation AS jsonb),
         CAST(:value_schema AS jsonb), CAST(:tier_plan AS jsonb), :freshness_ttl,
         CAST(:pass_kind AS field_pass), :gate, :signal_class,
-        CAST(:reuse_scope AS reuse_scope), :research_scope, CAST(:field_class AS field_class),
+        CAST(:reuse_scope AS reuse_scope), :research_scope, :product_scope,
+        CAST(:field_class AS field_class),
         :corroboration_min, :single_source_sufficient, CAST(:equality_mode AS equality_mode),
         :description, :pack, :client_kb_role, :active, :definition_version,
         :promoted_from_proposal_id, :promotion_policy_version, :promoted_by
@@ -533,6 +543,7 @@ def _comparable(
     signal_class: str | None,
     reuse_scope: str | None,
     research_scope: str | None,
+    product_scope: str | None,
     field_class: str,
     value_schema: Mapping[str, Any] | None,
     corroboration_min: int,
@@ -560,6 +571,7 @@ def _comparable(
         "signal_class": signal_class,
         "reuse_scope": reuse_scope,
         "research_scope": research_scope,
+        "product_scope": product_scope,
         "field_class": field_class,
         "value_schema": dict(value_schema) if value_schema is not None else None,
         "corroboration_min": corroboration_min,
@@ -628,6 +640,9 @@ async def register_field(
         research_scope=(
             field_def.research_scope.value if field_def.research_scope is not None else None
         ),
+        product_scope=(
+            field_def.product_scope.value if field_def.product_scope is not None else None
+        ),
         field_class=field_class.value,
         value_schema=value_schema,
         corroboration_min=corroboration_min,
@@ -650,6 +665,7 @@ async def register_field(
             signal_class=existing["signal_class"],
             reuse_scope=existing["reuse_scope"],
             research_scope=existing["research_scope"],
+            product_scope=existing["product_scope"],
             field_class=existing["field_class"],
             value_schema=decode_jsonb(existing["value_schema"]),
             corroboration_min=existing["corroboration_min"],
@@ -686,6 +702,9 @@ async def register_field(
             ),
             "research_scope": (
                 field_def.research_scope.value if field_def.research_scope is not None else None
+            ),
+            "product_scope": (
+                field_def.product_scope.value if field_def.product_scope is not None else None
             ),
             "field_class": field_class.value,
             "value_schema": (
@@ -759,6 +778,7 @@ async def register_workspace_field(
         signal_class=field_def.signal_class,
         reuse_scope=ReuseScope.TENANT_PRIVATE.value,
         research_scope=ResearchScope.PROJECT_NEUTRAL.value,
+        product_scope=ProductScopePolicy.FORBIDDEN.value,
         field_class=FieldClass.PACK.value,
         value_schema=value_schema,
         corroboration_min=corroboration_min,
@@ -782,6 +802,7 @@ async def register_workspace_field(
             signal_class=existing["signal_class"],
             reuse_scope=existing["reuse_scope"],
             research_scope=existing["research_scope"],
+            product_scope=existing["product_scope"],
             field_class=existing["field_class"],
             value_schema=decode_jsonb(existing["value_schema"]),
             corroboration_min=existing["corroboration_min"],
@@ -822,6 +843,7 @@ async def register_workspace_field(
             "signal_class": field_def.signal_class,
             "reuse_scope": ReuseScope.TENANT_PRIVATE.value,
             "research_scope": ResearchScope.PROJECT_NEUTRAL.value,
+            "product_scope": ProductScopePolicy.FORBIDDEN.value,
             "field_class": FieldClass.PACK.value,
             "corroboration_min": corroboration_min,
             "single_source_sufficient": single_source_sufficient,
@@ -1198,8 +1220,9 @@ async def check_claim_writable(
     value_json: JsonValue,
     reuse_scope: ReuseScope,
     workspace_id: str | None,
+    product_id: str | None,
 ) -> None:
-    """The field-claim write gate (M1.3 + M2.5/ENG-165 W5) — one registry lookup, two checks.
+    """The field-claim write gate — one registry lookup, three checks.
 
     Called by :func:`insert_claim` for every *field*-flavored claim (discovery-provenance claims
     carry admission evidence, not a typed value, and skip it). It enforces, in a single
@@ -1214,6 +1237,10 @@ async def check_claim_writable(
        ``public_footprint`` claim (that would leak client-private data into the shared base). A
        claim stamped *more* private than its field is allowed (e.g. a ``crm_import`` of a
        public-class field). Both raise :class:`ReuseScopeError`.
+    3. **product binding** (FI context release closure R1) — a ``required`` field must carry a
+       product id and a ``forbidden`` field must not. This shared boundary keeps company/product
+       knowledge isolation independent of which resolver, interview path, or ingestion writer
+       produced the claim. Violations raise :class:`ProductScopeError`.
 
     This is the unbypassable backstop: even if a caller forgets :func:`identity.stamp_reuse`, a
     private field cannot be written public through :func:`insert_claim`.
@@ -1233,6 +1260,15 @@ async def check_claim_writable(
     definition = await validate_effective_value(
         conn, scope=scope, field_key=field_key, value_json=value_json
     )
+    product_scope = resolve_product_scope(definition.field_def)
+    if product_scope is ProductScopePolicy.REQUIRED and product_id is None:
+        raise ProductScopeError(
+            f"field_key {field_key!r} requires product_id; refusing a company-scoped write"
+        )
+    if product_scope is ProductScopePolicy.FORBIDDEN and product_id is not None:
+        raise ProductScopeError(
+            f"field_key {field_key!r} forbids product_id; refusing a product-scoped write"
+        )
     declared_scope = resolve_reuse_scope(definition.field_def)
     if declared_scope is None:
         raise ReuseScopeError(

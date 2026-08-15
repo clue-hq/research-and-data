@@ -35,7 +35,7 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_core import FieldDef, PassKind, ReuseScope
+from clue_core import FieldDef, PassKind, ProductScopePolicy, ReuseScope
 from clue_research.claimstore import SeedField, load_pack
 
 # --- the client-knowledge namespace + field keys ---------------------------
@@ -134,6 +134,11 @@ def _seed(
             freshness_ttl=freshness_ttl,
             pass_kind=PassKind.SCORING,
             reuse_scope=ReuseScope.TENANT_PRIVATE,
+            product_scope=(
+                ProductScopePolicy.REQUIRED
+                if field_key in PRODUCT_KNOWLEDGE_FIELDS
+                else ProductScopePolicy.FORBIDDEN
+            ),
         ),
         value_schema=value_schema,
         description=description,
@@ -353,6 +358,9 @@ CLIENT_KNOWLEDGE_PACK: tuple[SeedField, ...] = (
             tier_plan=(),
             pass_kind=PassKind.SCORING,
             reuse_scope=ReuseScope.TENANT_PRIVATE,
+            # One marker vocabulary versions both the account-wide Client-KB and each product's
+            # independent KB sequence, so both NULL and non-NULL product bindings are legitimate.
+            product_scope=ProductScopePolicy.OPTIONAL,
         ),
         value_schema={
             "type": "object",

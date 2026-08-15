@@ -47,6 +47,7 @@ from clue_core import (
     PreSpendGate,
     PreSpendRequest,
     PreSpendVerdict,
+    ProductScopePolicy,
     ResearchMode,
     RunId,
     SourceGate,
@@ -54,6 +55,7 @@ from clue_core import (
     VerificationStatus,
     account_claim,
     new_run_id,
+    resolve_product_scope,
 )
 from clue_obs.otel import (
     ATTR_COST_CENTS,
@@ -840,10 +842,16 @@ async def _pinned_field_claims(
         filters=FieldFilters(pack="client", active=None),
         include_retired=True,
     )
+    allowed_product_scopes = (
+        {ProductScopePolicy.FORBIDDEN, ProductScopePolicy.OPTIONAL}
+        if product_id is None
+        else {ProductScopePolicy.REQUIRED, ProductScopePolicy.OPTIONAL}
+    )
     knowledge_fields = {
         item.field_def.field_key
         for item in definitions
         if item.field_def.field_key != CLIENT_KB_VERSION
+        and resolve_product_scope(item.field_def) in allowed_product_scopes
     }
     markers = await claims_for(
         conn, client_entity_id, CLIENT_KB_VERSION, include_superseded=True, scope=scope

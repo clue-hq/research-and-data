@@ -226,6 +226,7 @@ async def insert_claim(
             value_json=claim.value_json,
             reuse_scope=claim.reuse_scope,
             workspace_id=claim.workspace_id,
+            product_id=claim.product_id,
         )
     if claim.verification_status is VerificationStatus.VERIFIED and not can_be_promoted(claim):
         raise ValueError(
