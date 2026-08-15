@@ -2,7 +2,7 @@
 
 Date: 2026-08-16
 Branch: `platform/integration-onboarding-pilot`
-Status: in progress; browser handoff required before the first UI action
+Status: in progress; Clerk onboarding and automatic fast release accepted after test-stack repair
 
 ## Isolated runtime
 
@@ -14,14 +14,14 @@ Status: in progress; browser handoff required before the first UI action
   workspaces, and projects.
 - The merged API is running on `127.0.0.1:8000` with real Clerk authentication, self-serve
   provisioning, frontend reads, chat, C7 reads/snapshots/evidence/handoff, filesystem storage, and
-  pilot budget controls off. It authorizes the existing localhost Clerk origin and the isolated
-  `3077` origin.
-- The merged frontend is running on `127.0.0.1:3077` with its authenticated same-origin BFF.
-- The fleet is intentionally not started yet. The browser must first provision the random fresh
-  workspace and enqueue setup; the worker can then be started with that exact workspace in both
-  the official-site crawl and agent-runtime allowlists.
+  pilot budget controls off. It authorizes the active `localhost:3000` Clerk origin and retains the
+  earlier isolated `3077` origin for diagnostic continuity.
+- The merged frontend now runs on `127.0.0.1:3000` with its authenticated same-origin BFF. The
+  earlier disposable `3077` process was stopped.
+- The fleet now runs with the fresh browser-provisioned workspace in both the official-site crawl
+  and agent-runtime allowlists.
 
-## Browser blocker
+## Resolved browser blocker
 
 - The in-app Browser connected successfully and its first request reached the frontend/API, but
   the first frontend process had an incorrectly overridden cross-origin project-chat URL. The
@@ -57,7 +57,29 @@ Status: in progress; browser handoff required before the first UI action
 
 ## Acceptance still outstanding
 
-All requested scenarios remain unclaimed until browser control resumes: Clerk provisioning,
-automatic fast release, same-frontier completion, Client-KB and product context, ICP revision and
-approval, FI-2 selected-account launch, budget controls in both modes, per-project product
-selection, replay/DSAR/historical receipts, and design-integration exclusion.
+ICP revision and approval, FI-2 selected-account launch, budget controls in both modes, per-project
+product selection, replay/DSAR/historical receipts, and design-integration exclusion remain
+outstanding.
+
+## Clerk onboarding and fast-release evidence
+
+- Real Clerk provisioning succeeded and created one fresh user/workspace. The setup BFF returned
+  `202` and the frontend began polling durable setup truth.
+- The first acceptance worker boot failed before claiming work because the isolated agent-workspace
+  root had mode `0755`; the runtime correctly requires an owner-private directory. With no worker,
+  the setup stayed at one durable frontier until the UI's honest stall budget exposed `Try again`
+  and `Continue anyway`. This was test-stack preparation drift, not a regression in onboarding
+  enqueue, polling, or release behavior.
+- Changed only the isolated agent-workspace root to `0700` and restarted the worker with the exact
+  fresh workspace allowlisted. It claimed the original task, bound the client entity, and enqueued
+  one authoritative Scrapling crawl.
+- Browser control selected `Try again`, which reloads the replay-safe start/read path. The app
+  observed the same durable run and automatically navigated through `/session/establish` to Home;
+  `Continue anyway` was not used.
+- After worker start, the fast checkpoint froze and fast extraction completed in about 11 seconds:
+  12 fast snapshots, 13 claims, eight filled company fields, one empty and one failed operation.
+  Client-KB v1 and one linked product were synchronized.
+- Same-frontier background work then completed about 16 seconds later under the same crawl and
+  recon ids: 52 background snapshots, 27 claims, all nine company fields filled with one failed
+  field operation preserved, Client-KB v2 synchronized, and the linked product received five
+  filled fields with two empty and two failed operations. No second crawl was created by retry.
