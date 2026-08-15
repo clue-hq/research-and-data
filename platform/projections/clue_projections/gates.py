@@ -87,12 +87,14 @@ class GateView(BaseModel):
     currency: str
     addressee_user_id: str
     created_at: datetime
+    snapshot_erased_at: datetime | None = None
+    snapshot_erasure_reason: str | None = None
     answer: GateAnswerView | None
     launches: tuple[GateLaunchView, ...]
 
     @property
     def is_open(self) -> bool:
-        return self.answer is None
+        return self.answer is None and self.snapshot_erased_at is None
 
 
 _OPEN_KINDS_SQL = text(
@@ -103,7 +105,7 @@ _OPEN_KINDS_SQL = text(
       ON a.gate_id = g.gate_id AND a.workspace_id = g.workspace_id
     WHERE g.workspace_id = :workspace_id
       AND g.thread_id = ANY(CAST(:thread_ids AS text[]))
-      AND a.gate_id IS NULL
+      AND a.gate_id IS NULL AND g.snapshot_erased_at IS NULL
     ORDER BY g.created_at, g.gate_id
     """
 )
@@ -141,6 +143,7 @@ _THREAD_GATES_SQL = text(
     SELECT g.gate_id, g.workspace_id, g.project_id, g.thread_id, g.turn_id, g.kind,
            g.subject_ref, g.subject_revision, g.expected_subject_sha256, g.subject_snapshot,
            g.max_spend_cents, g.currency, g.addressee_user_id, g.created_at,
+           g.snapshot_erased_at, g.snapshot_erasure_reason,
            a.turn_id AS answer_turn_id, a.action_ref, a.decision, a.selected_option_ref,
            a.answered_by_user_id,
            a.answered_at
@@ -249,6 +252,8 @@ async def thread_gates(
                 currency=str(row["currency"]),
                 addressee_user_id=str(row["addressee_user_id"]),
                 created_at=row["created_at"],
+                snapshot_erased_at=row["snapshot_erased_at"],
+                snapshot_erasure_reason=row["snapshot_erasure_reason"],
                 answer=answer,
                 launches=tuple(
                     launches_by_ref.get(answer.action_ref, ()) if answer is not None else ()

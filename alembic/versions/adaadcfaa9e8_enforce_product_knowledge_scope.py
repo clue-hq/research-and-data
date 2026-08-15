@@ -41,8 +41,20 @@ def upgrade() -> None:
             "must remain company/entity scoped.'"
         )
 
-    # These are the frozen S5 product-knowledge fields. Every other client.* field resolves to the
-    # fail-safe forbidden default. The dual company/product marker is explicitly optional.
+    # Materialize the fail-safe default for every already-registered client field so a later pack
+    # reload compares equal instead of seeing runtime ``forbidden`` and stored NULL as different
+    # definitions. Workspace-local dynamic Client-KB fields are company-wide by construction.
+    op.execute(
+        "UPDATE field_definition SET product_scope='forbidden' "
+        "WHERE field_key LIKE 'client.%'"
+    )
+    op.execute(
+        "UPDATE workspace_field_definition SET product_scope='forbidden' "
+        "WHERE field_key LIKE 'client.%'"
+    )
+
+    # These are the frozen S5 product-knowledge exceptions. The dual company/product marker is
+    # explicitly optional.
     op.execute(
         """
         UPDATE field_definition SET product_scope='required'

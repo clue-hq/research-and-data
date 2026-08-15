@@ -56,6 +56,26 @@ test("a part with no durable payload is unavailable, not answerable", () => {
   assert.equal(card.amountCents, null);
 });
 
+test("a privacy-redacted durable gate is unavailable with no choices or actions", () => {
+  const [gate] = ChatGateListResponseSchema.parse({
+    data: [
+      {
+        ...fixtureGates[0],
+        kind: "product_selection",
+        subject_snapshot: {},
+        snapshot_erased_at: "2026-08-15T12:30:00Z",
+        snapshot_erasure_reason: "dsar_subject_erasure",
+      },
+    ],
+  });
+  const card = gateCardModel({ gate, part: part() });
+  assert.ok(card);
+  assert.equal(card.state, "unavailable");
+  assert.match(card.unavailableReason ?? "", /reviewed subject was erased/);
+  assert.deepEqual(card.permittedDecisions, []);
+  assert.deepEqual(card.productOptions, []);
+});
+
 test("a gate part that carries the full snapshot is answerable without the read", () => {
   const card = gateCardModel({
     gate: null,

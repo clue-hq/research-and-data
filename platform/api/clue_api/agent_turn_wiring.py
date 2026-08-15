@@ -51,6 +51,7 @@ from clue_agents.turns import (
     PrivacyEraseResult,
     ReplayArtifactRef,
 )
+from clue_api.agent_gate import redact_gate_snapshots_for_subject
 from clue_api.context_observability import record_context_receipt
 from clue_api.thread_store import ensure_platform_thread
 from clue_core import ExecutionId
@@ -1634,7 +1635,7 @@ class AgentPrivacyService:
         subject_entity_id: UUID,
         reason_code: str = "dsar_subject_erasure",
     ) -> PrivacyEraseResult:
-        """Erase every artifact bound to this subject through ``agent_artifact_subject``."""
+        """Erase every artifact and exact gate snapshot bound to this subject."""
 
         async with self._conn_factory() as conn:
             artifact_result = await conn.execute(
@@ -1646,12 +1647,19 @@ class AgentPrivacyService:
                 {"workspace": workspace_id, "subject": subject_entity_id},
             )
             keys = tuple(artifact_result.scalars())
-        return await self.erase_artifacts(
+            redacted_gate_ids = await redact_gate_snapshots_for_subject(
+                conn,
+                workspace_id=workspace_id,
+                subject_entity_id=subject_entity_id,
+                reason_code=reason_code,
+            )
+        erased = await self.erase_artifacts(
             workspace_id=workspace_id,
             subject_entity_id=subject_entity_id,
             artifact_keys=keys,
             reason_code=reason_code,
         )
+        return erased.model_copy(update={"redacted_gate_ids": redacted_gate_ids})
 
     async def erase_project(
         self,

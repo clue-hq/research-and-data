@@ -65,6 +65,8 @@ const GateWireSchema = z.object({
   currency: z.string(),
   addressee_user_id: z.string(),
   created_at: z.string(),
+  snapshot_erased_at: z.string().nullable().default(null),
+  snapshot_erasure_reason: z.string().nullable().default(null),
   answer: GateAnswerWireSchema.nullable().default(null),
   launches: z.array(GateLaunchWireSchema).default([]),
 });
@@ -101,6 +103,8 @@ export interface ChatGate {
   currency: string;
   addresseeUserId: string;
   createdAt: string;
+  snapshotErasedAt: string | null;
+  snapshotErasureReason: string | null;
   answer: ChatGateAnswer | null;
   launches: readonly ChatGateLaunch[];
 }
@@ -120,6 +124,8 @@ function toGate(wire: z.infer<typeof GateWireSchema>): ChatGate {
     currency: wire.currency,
     addresseeUserId: wire.addressee_user_id,
     createdAt: wire.created_at,
+    snapshotErasedAt: wire.snapshot_erased_at,
+    snapshotErasureReason: wire.snapshot_erasure_reason,
     answer:
       wire.answer === null
         ? null
@@ -149,7 +155,7 @@ export const ChatGateListResponseSchema = z
 
 /** "Open" is the absence of an answer record (ratified §6-D3), never a column. */
 export function isGateOpen(gate: ChatGate): boolean {
-  return gate.answer === null;
+  return gate.answer === null && gate.snapshotErasedAt === null;
 }
 
 // --- the card state machine ---------------------------------------------
@@ -254,6 +260,7 @@ export function gateCardModel({
   const currency = gate?.currency ?? part?.currency ?? null;
   const decision =
     decisionOf(gate?.answer?.decision ?? null) ?? decisionOf(part?.decision ?? null);
+  const snapshotErased = gate?.snapshotErasedAt !== null && gate?.snapshotErasedAt !== undefined;
 
   // The subject digest alone decides answerability. It is the load-bearing
   // stale-approval guard in both deployment postures, whereas the amount is
@@ -262,7 +269,8 @@ export function gateCardModel({
   // a digest but no amount while controls are *on* is the rare read-failure
   // case; it stays clickable and the server answers with `GATE_AMOUNT_STALE`
   // rather than the client guessing which posture the deployment is in.
-  const answerable = expectedSubjectSha256 !== null && decision === null;
+  const answerable =
+    expectedSubjectSha256 !== null && decision === null && !snapshotErased;
   const productOptions = productSelectionOptions(gate?.subjectSnapshot);
 
   let state: GateCardState;
@@ -281,7 +289,9 @@ export function gateCardModel({
     currency,
     expectedSubjectSha256,
     permittedDecisions:
-      part && part.permittedDecisions.length > 0
+      state === "unavailable"
+        ? []
+        : part && part.permittedDecisions.length > 0
         ? part.permittedDecisions.filter((value): value is GateDecision =>
             ALL_DECISIONS.includes(value as GateDecision),
           )
@@ -293,7 +303,9 @@ export function gateCardModel({
     unavailableReason:
       state === "unavailable"
         ? (unavailableReason ??
-          "this deployment did not serve the gate's subject digest")
+          (snapshotErased
+            ? "this gate is unavailable because its reviewed subject was erased"
+            : "this deployment did not serve the gate's subject digest"))
         : null,
     launches: gate?.launches ?? [],
     productOptions,

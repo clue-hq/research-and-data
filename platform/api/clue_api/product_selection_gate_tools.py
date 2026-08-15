@@ -22,6 +22,7 @@ from pydantic import Field, JsonValue, StringConstraints
 from clue_api.agent_gate import (
     DEFAULT_GATE_CURRENCY,
     KIND_PRODUCT_SELECTION,
+    AgentGateSubjectBinding,
     insert_gate,
     product_selection_gate_id,
 )
@@ -156,6 +157,12 @@ class OpenProductSelectionGateTool(Tool):
                 max_spend_cents=Decimal(0),
                 currency=DEFAULT_GATE_CURRENCY,
                 addressee_user_id=resolved.addressee,
+                subject_bindings=(
+                    AgentGateSubjectBinding(
+                        subject_entity_id=UUID(str(resolved.snapshot["client_entity_id"])),
+                        binding_kind="client_product_catalog",
+                    ),
+                ),
             )
         return ToolResult(
             tool=self.name,

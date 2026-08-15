@@ -1494,6 +1494,12 @@ def build_chat_router(
                 code="GATE_KIND_UNSUPPORTED",
                 message=f"this surface cannot answer a {view.gate.kind} gate",
             )
+        if not view.gate.snapshot_available:
+            raise _refuse(
+                status_code=410,
+                code="GATE_SNAPSHOT_ERASED",
+                message="this gate is unavailable because its reviewed subject was erased",
+            )
         # Addressee, not membership: a colleague with a perfectly valid session and a perfectly
         # valid turn of their own still may not answer somebody else's gate.
         if view.gate.addressee_user_id != who.user_id:

@@ -26,6 +26,7 @@ has exactly one spelling.
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
@@ -44,6 +45,7 @@ __all__ = [
     "KIND_PRODUCT_SELECTION",
     "AgentGateAnswerRow",
     "AgentGateRow",
+    "AgentGateSubjectBinding",
     "GateAlreadyAnswered",
     "directive_confirmation_gate_id",
     "product_selection_gate_id",
@@ -53,6 +55,7 @@ __all__ = [
     "insert_gate_answer",
     "money_text",
     "open_gates_for_thread",
+    "redact_gate_snapshots_for_subject",
 ]
 
 #: The ``DomainObjectRef.object_type`` flavour a finalization's ``open_gate_refs`` carries. The
@@ -90,7 +93,7 @@ _PRODUCT_SELECTION_GATE_NAMESPACE = uuid5(
 _GATE_COLUMNS = (
     "gate_id, workspace_id, project_id, thread_id, turn_id, kind, subject_ref, "
     "subject_revision, expected_subject_sha256, subject_snapshot, max_spend_cents, currency, "
-    "addressee_user_id, created_at"
+    "addressee_user_id, created_at, snapshot_erased_at, snapshot_erasure_reason"
 )
 _ANSWER_COLUMNS = (
     "gate_id, workspace_id, turn_id, action_ref, decision, selected_option_ref, "
@@ -143,6 +146,24 @@ class AgentGateRow(BaseModel):
     currency: str
     addressee_user_id: str
     created_at: datetime
+    snapshot_erased_at: datetime | None = None
+    snapshot_erasure_reason: str | None = None
+
+    @property
+    def snapshot_available(self) -> bool:
+        return self.snapshot_erased_at is None
+
+
+@dataclass(frozen=True, slots=True)
+class AgentGateSubjectBinding:
+    """Body-free DSAR reach for one subject copied into a gate snapshot."""
+
+    subject_entity_id: UUID
+    binding_kind: str
+
+    def __post_init__(self) -> None:
+        if not self.binding_kind.strip():
+            raise ValueError("gate subject binding_kind cannot be empty")
 
 
 class AgentGateAnswerRow(BaseModel):
@@ -169,7 +190,7 @@ class GateView:
 
     @property
     def is_open(self) -> bool:
-        return self.answer is None
+        return self.answer is None and self.gate.snapshot_available
 
 
 def directive_confirmation_gate_id(
@@ -226,6 +247,7 @@ async def insert_gate(
     max_spend_cents: Decimal,
     currency: str,
     addressee_user_id: str,
+    subject_bindings: Sequence[AgentGateSubjectBinding] = (),
 ) -> tuple[AgentGateRow, bool]:
     """Present one gate, or replay it. Returns ``(row, created)``.
 
@@ -271,14 +293,31 @@ async def insert_gate(
         .mappings()
         .one_or_none()
     )
-    if inserted is not None:
-        return AgentGateRow.model_validate(_decoded(dict(inserted))), True
-    existing = await _gate_row(conn, workspace_id=workspace_id, gate_id=gate_id)
-    if existing is None:
+    created = inserted is not None
+    row = (
+        AgentGateRow.model_validate(_decoded(dict(inserted)))
+        if inserted is not None
+        else await _gate_row(conn, workspace_id=workspace_id, gate_id=gate_id)
+    )
+    if row is None:
         # Practically unreachable (the id is derived from the workspace), and refusing beats
         # leaking that another tenant holds this id.
         raise ValueError("this gate identity exists outside the requested workspace")
-    return existing, False
+    for binding in subject_bindings:
+        await conn.execute(
+            text(
+                "INSERT INTO agent_gate_subject "
+                "(workspace_id, gate_id, subject_entity_id, binding_kind) "
+                "VALUES (:workspace, :gate, :subject, :kind) ON CONFLICT DO NOTHING"
+            ),
+            {
+                "workspace": workspace_id,
+                "gate": gate_id,
+                "subject": binding.subject_entity_id,
+                "kind": binding.binding_kind,
+            },
+        )
+    return row, created
 
 
 async def get_gate(
@@ -321,6 +360,11 @@ async def insert_gate_answer(
 
     if decision not in DECISIONS:
         raise ValueError(f"unknown gate decision {decision!r}")
+    gate = await _gate_row(conn, workspace_id=workspace_id, gate_id=gate_id)
+    if gate is None:
+        raise ValueError("no such gate in the requested workspace")
+    if not gate.snapshot_available:
+        raise ValueError("an erased gate snapshot cannot be answered")
     inserted = (
         (
             await conn.execute(
@@ -402,7 +446,7 @@ async def open_gates_for_thread(
                     "LEFT JOIN agent_gate_answer a "
                     "  ON a.gate_id = g.gate_id AND a.workspace_id = g.workspace_id "
                     "WHERE g.workspace_id = :workspace_id AND g.thread_id = :thread_id "
-                    "  AND a.gate_id IS NULL "
+                    "  AND a.gate_id IS NULL AND g.snapshot_erased_at IS NULL "
                     "ORDER BY g.created_at, g.gate_id"
                 ),
                 {"workspace_id": workspace_id, "thread_id": thread_id},
@@ -412,6 +456,73 @@ async def open_gates_for_thread(
         .all()
     )
     return tuple(AgentGateRow.model_validate(_decoded(dict(row))) for row in rows)
+
+
+async def redact_gate_snapshots_for_subject(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    subject_entity_id: UUID,
+    reason_code: str,
+) -> tuple[UUID, ...]:
+    """Irreversibly blank every gate snapshot bound to ``subject_entity_id``.
+
+    Gate identity, subject reference, digest, version, and answer receipt remain body-free audit
+    facts. The exact snapshot becomes ``{}`` once, and deterministic privacy events make replay
+    idempotent without ever reconstructing the erased value.
+    """
+
+    gate_ids = tuple(
+        (
+            await conn.execute(
+                text(
+                    "SELECT binding.gate_id FROM agent_gate_subject binding "
+                    "WHERE binding.workspace_id=:workspace "
+                    "AND binding.subject_entity_id=:subject ORDER BY binding.gate_id"
+                ),
+                {
+                    "workspace": workspace_id,
+                    "subject": subject_entity_id,
+                },
+            )
+        ).scalars()
+    )
+    if gate_ids:
+        await conn.execute(
+            text(
+                "UPDATE agent_gate SET subject_snapshot='{}'::jsonb, "
+                "snapshot_erased_at=now(), snapshot_erasure_reason=:reason "
+                "WHERE workspace_id=:workspace AND gate_id=ANY(CAST(:gates AS uuid[])) "
+                "AND snapshot_erased_at IS NULL"
+            ),
+            {
+                "workspace": workspace_id,
+                "gates": list(gate_ids),
+                "reason": reason_code,
+            },
+        )
+    for gate_id in gate_ids:
+        await conn.execute(
+            text(
+                "INSERT INTO agent_privacy_event "
+                "(event_id, workspace_id, subject_entity_id, turn_id, action, reason_code) "
+                "SELECT :event, g.workspace_id, :subject, g.turn_id, "
+                "'gate_snapshot_redacted', :reason FROM agent_gate g "
+                "WHERE g.gate_id=:gate AND g.workspace_id=:workspace "
+                "ON CONFLICT (event_id) DO NOTHING"
+            ),
+            {
+                "event": uuid5(
+                    _GATE_NAMESPACE,
+                    f"privacy:{workspace_id}:{subject_entity_id}:{gate_id}",
+                ),
+                "workspace": workspace_id,
+                "subject": subject_entity_id,
+                "gate": gate_id,
+                "reason": reason_code,
+            },
+        )
+    return gate_ids
 
 
 async def _gate_row(

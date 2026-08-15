@@ -557,6 +557,8 @@ class GateWire(_Wire):
     currency: str
     addressee_user_id: str
     created_at: str
+    snapshot_erased_at: str | None
+    snapshot_erasure_reason: str | None
     answer: GateAnswerWire | None
     launches: tuple[GateLaunchWire, ...]
 
@@ -587,6 +589,10 @@ def gate_wire(view: GateView, *, budget_controls_enabled: bool = True) -> GateWi
         currency=view.currency,
         addressee_user_id=view.addressee_user_id,
         created_at=view.created_at.isoformat(),
+        snapshot_erased_at=(
+            None if view.snapshot_erased_at is None else view.snapshot_erased_at.isoformat()
+        ),
+        snapshot_erasure_reason=view.snapshot_erasure_reason,
         answer=(
             None
             if view.answer is None

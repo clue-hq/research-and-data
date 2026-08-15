@@ -42,6 +42,7 @@ from clue_api.account_research_estimate import (
 from clue_api.agent_gate import (
     DEFAULT_GATE_CURRENCY,
     KIND_DIRECTIVE_CONFIRMATION,
+    AgentGateSubjectBinding,
     directive_confirmation_gate_id,
     insert_gate,
     money_text,
@@ -253,6 +254,13 @@ class OpenDirectiveConfirmationGateTool(Tool):
                 # Derived from the durable submission, never proposed: the person who spoke is the
                 # person entitled to answer.
                 addressee_user_id=resolved.turn.submitted_by_user_id or "",
+                subject_bindings=tuple(
+                    AgentGateSubjectBinding(
+                        subject_entity_id=UUID(str(account_id)),
+                        binding_kind="research_directive_account",
+                    )
+                    for account_id in resolved.account_ids
+                ),
             )
         return ToolResult(
             tool=self.name,

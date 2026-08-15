@@ -27,7 +27,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
-from uuid import NAMESPACE_URL, uuid4, uuid5
+from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 import pytest
 from sqlalchemy import text
@@ -36,6 +36,7 @@ from sqlalchemy.exc import DBAPIError, IntegrityError
 from clue_api.agent_gate import (
     DEFAULT_GATE_CURRENCY,
     KIND_DIRECTIVE_CONFIRMATION,
+    AgentGateSubjectBinding,
     GateAlreadyAnswered,
     directive_confirmation_gate_id,
     get_gate,
@@ -45,7 +46,7 @@ from clue_api.agent_gate import (
     open_gates_for_thread,
 )
 from clue_api.agent_turn_submission import insert_submission
-from clue_api.agent_turn_wiring import DurableAgentArtifactStore
+from clue_api.agent_turn_wiring import AgentPrivacyService, DurableAgentArtifactStore
 from clue_api.conversation_capture import persist_user_turn
 from clue_api.turn_action import (
     GATE_ADDRESSEE_MISMATCH,
@@ -233,6 +234,7 @@ async def _present(
     amount: Decimal = Decimal("600"),
     kind: str = KIND_DIRECTIVE_CONFIRMATION,
     subject_ref: str = "research-directive:11111111-1111-4111-8111-111111111111:v1",
+    subject_bindings: tuple[AgentGateSubjectBinding, ...] = (),
 ) -> Any:
     gate_id = directive_confirmation_gate_id(
         workspace_id=seeded.workspace_id,
@@ -255,6 +257,7 @@ async def _present(
         max_spend_cents=amount,
         currency=DEFAULT_GATE_CURRENCY,
         addressee_user_id=USER_ID,
+        subject_bindings=subject_bindings,
     )
     return row, created
 
@@ -309,6 +312,116 @@ def test_representing_the_same_subject_in_the_same_turn_replays_one_gate(tmp_pat
             redrafted, created_redrafted = await _present(conn, seeded, digest=DIGEST_B)
             assert created_redrafted is True
             assert redrafted.gate_id != first.gate_id
+
+    run_async(scenario())
+
+
+def test_subject_dsar_redacts_gate_snapshot_and_cannot_resurrect_or_answer_it(
+    tmp_path: Path,
+) -> None:
+    """An exact gate snapshot has subject reach; its body is not an immortal receipt."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            seeded = await _seed(conn, tmp_path, workspace_id="ws-d4-dsar", label="dsar")
+            subject_id = UUID("11111111-1111-4111-8111-111111111111")
+            gate, created = await _present(
+                conn,
+                seeded,
+                subject_bindings=(
+                    AgentGateSubjectBinding(
+                        subject_entity_id=subject_id,
+                        binding_kind="research_directive_account",
+                    ),
+                ),
+            )
+            assert created is True and gate.subject_snapshot
+
+            # No artifact is involved in this fixture. The real privacy service must still reach
+            # and redact the row through agent_gate_subject rather than by inspecting JSON.
+            privacy = AgentPrivacyService(
+                storage=FsStorage(tmp_path / "gate-dsar-empty-artifacts"),
+                workspaces=object(),  # type: ignore[arg-type] -- no affected turn workspace
+                conn_factory=seeded.conn_factory,
+            )
+            erased = await privacy.erase_subject(
+                workspace_id=seeded.workspace_id,
+                subject_entity_id=subject_id,
+            )
+            assert erased.redacted_gate_ids == (gate.gate_id,)
+            assert erased.tombstoned_artifact_keys == ()
+
+            stored = await get_gate(
+                conn, workspace_id=seeded.workspace_id, gate_id=gate.gate_id
+            )
+            assert stored is not None
+            assert stored.gate.subject_snapshot == {}
+            assert stored.gate.snapshot_erased_at is not None
+            assert stored.gate.snapshot_erasure_reason == "dsar_subject_erasure"
+            assert stored.is_open is False
+            assert await open_gates_for_thread(
+                conn, workspace_id=seeded.workspace_id, thread_id=seeded.thread_id
+            ) == ()
+
+            # Re-presenting the same derived gate returns the redacted receipt and never restores
+            # caller-supplied bytes. Both application and database answer seams fail closed.
+            replayed, replay_created = await _present(
+                conn,
+                seeded,
+                subject_bindings=(
+                    AgentGateSubjectBinding(
+                        subject_entity_id=subject_id,
+                        binding_kind="research_directive_account",
+                    ),
+                ),
+            )
+            assert replay_created is False
+            assert replayed.subject_snapshot == {}
+            with pytest.raises(ValueError, match="erased gate snapshot cannot be answered"):
+                await insert_gate_answer(
+                    conn,
+                    gate_id=gate.gate_id,
+                    workspace_id=seeded.workspace_id,
+                    turn_id=seeded.turn_id,
+                    action_ref=derive_turn_action_ref(seeded.turn_id),
+                    decision="approved",
+                    answered_by_user_id=USER_ID,
+                )
+            with pytest.raises(DBAPIError):
+                async with conn.begin_nested():
+                    await conn.execute(
+                        text(
+                            "UPDATE agent_gate SET max_spend_cents=1 WHERE gate_id=:gate"
+                        ),
+                        {"gate": gate.gate_id},
+                    )
+
+            event_count = (
+                await conn.execute(
+                    text(
+                        "SELECT count(*) FROM agent_privacy_event "
+                        "WHERE workspace_id=:workspace AND subject_entity_id=:subject "
+                        "AND action='gate_snapshot_redacted'"
+                    ),
+                    {"workspace": seeded.workspace_id, "subject": subject_id},
+                )
+            ).scalar_one()
+            assert event_count == 1
+            erased_again = await privacy.erase_subject(
+                workspace_id=seeded.workspace_id,
+                subject_entity_id=subject_id,
+            )
+            assert erased_again.redacted_gate_ids == erased.redacted_gate_ids
+            assert (
+                await conn.execute(
+                    text(
+                        "SELECT count(*) FROM agent_privacy_event "
+                        "WHERE workspace_id=:workspace AND subject_entity_id=:subject "
+                        "AND action='gate_snapshot_redacted'"
+                    ),
+                    {"workspace": seeded.workspace_id, "subject": subject_id},
+                )
+            ).scalar_one() == event_count
 
     run_async(scenario())
 

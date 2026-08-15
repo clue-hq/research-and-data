@@ -135,6 +135,7 @@ class PrivacyEraseResult(TurnValue):
     workspace_id: str
     subject_entity_id: UUID
     tombstoned_artifact_keys: tuple[str, ...] = ()
+    redacted_gate_ids: tuple[UUID, ...] = ()
     affected_turn_ids: tuple[UUID, ...] = ()
     purged_workspace_root_ids: tuple[str, ...] = ()
 
