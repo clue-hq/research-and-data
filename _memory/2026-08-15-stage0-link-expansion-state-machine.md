@@ -105,3 +105,28 @@
 - Fleet logs contain zero `40P01`, deadlock, DBAPIError, repository-deadlock-retry, or fatal worker
   entries. PostgreSQL has no deadlock entry during the C4 window. Retained logs contain no test
   identity, verification code, bearer/JWT material, raw claim values, or evidence spans.
+
+## Repeat browser acceptance (C5)
+
+- Repeated the fixture-free profile-to-Home journey with the existing real Clerk session against
+  retained isolated database `clue_deadlock_fix_browser_20260815_c5` and retained evidence root
+  `/private/tmp/clue-deadlock-fix-browser-20260815-c5`. Provisioning created one internal user,
+  identity, workspace, brand, and owner membership; every observed backend API response was 2xx.
+- The setting-up screen released automatically to Home with no `Continue anyway`. Durable fast
+  materialization completed in 10.688 seconds from recon start and about 40.3 seconds from auth
+  provisioning start; fast Client-KB v1 contained 17 new claim refs from 12 snapshots.
+- The same crawl run completed in 30.523 seconds: the immutable fast checkpoint froze 12 snapshots
+  at 2.524 seconds and background froze 52 at 16.843 seconds. Final state was 52 fetched pages,
+  52 generation-one completed expansions, 52 persisted attempts, zero multi-attempt pages, and
+  both fleet tasks `done` on their first attempt.
+- Two Scrapling calls (`/blog` and `/direct-access-colonoscopy`) returned HTTP 200 at the transport
+  layer but raised result `ValidationError` before a durable receipt/snapshot could be retained.
+  The immediate handoff conservatively quarantined both as `spend_unknown` with no retry. This did
+  not delay fast release or fail the crawl, but remains a provider-adapter validation edge case.
+- PostgreSQL and fleet logs contain zero deadlock, SQLSTATE `40P01`, DBAPIError, repository retry,
+  or fatal worker entries. The final Client-KB reached v2 with 51 current official-site claims over
+  15 fields and two linked product rows. Customer-evidence extraction remained honestly partial:
+  one background field rejected invalid citations and two fields were empty.
+- Retained logs contain no test identity, verification code, bearer/JWT material, or raw page and
+  claim bodies. The backend and fleet were stopped after evidence capture; the verified Home tab
+  remains open.
