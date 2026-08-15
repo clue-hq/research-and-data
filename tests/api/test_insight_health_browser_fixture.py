@@ -159,7 +159,7 @@ def test_project_onboarding_result_is_identity_bound_provenance_complete_and_bef
                 EntityId(UUID(first.client_entity_id)),
                 workspace_id=WORKSPACE_ID,
                 version=first.client_kb_version,
-                product_id=PRODUCT_ID,
+                product_id=None,
             )
             assert set(claims) == set(first.client_claim_ids)
             assert all(claim.evidence_span for claim in claims.values())

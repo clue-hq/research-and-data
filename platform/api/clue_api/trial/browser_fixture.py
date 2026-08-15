@@ -460,7 +460,6 @@ async def seed_insight_health_browser_onboarding_result(
             workspace_id=binding.workspace_id,
             run_id=BROWSER_STAGE0_RUN_ID,
             budget_cap_cents=Decimal("20"),
-            product_id=binding.product_id,
             max_source_tier=2,
         )
     finally:
@@ -523,7 +522,7 @@ async def seed_insight_health_browser_onboarding_result(
         profile.ref.client_entity_id,
         workspace_id=binding.workspace_id,
         version=profile.ref.client_kb_version,
-        product_id=binding.product_id,
+        product_id=None,
     )
     _require(
         set(claims) == set(claim_sources),

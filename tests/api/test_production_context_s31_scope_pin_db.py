@@ -182,6 +182,7 @@ def test_turn_pin_freezes_independent_company_product_pair_and_preserves_v1_repl
                     ),
                     workspace_id=workspace_id,
                     product_id=product.product_id,
+                    knowledge_scope="product",
                     budget_cap_cents=Decimal(0),
                     max_source_tier=0,
                 )
@@ -290,6 +291,7 @@ def test_turn_pin_freezes_independent_company_product_pair_and_preserves_v1_repl
                 ),
                 workspace_id=workspace_id,
                 product_id=product.product_id,
+                knowledge_scope="product",
                 budget_cap_cents=Decimal(0),
                 max_source_tier=0,
             )

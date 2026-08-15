@@ -890,7 +890,7 @@ async def _ensure_deep_project_run(
         client_entity_id,
         workspace_id=WORKSPACE_ID,
         version=discovery.client_kb_version,
-        product_id=PRODUCT_ID,
+        product_id=None,
     )
     metrics = client_kb_readiness_metrics(claims)
     metrics["open_policy_blocks"] = 0

@@ -258,6 +258,7 @@ async def _seed_post_recon(conn: AsyncConnection, *, suffix: str) -> _Seeded:
             ),
             workspace_id=workspace_id,
             product_id=product.product_id,
+            knowledge_scope="product",
             budget_cap_cents=Decimal(0),
             max_source_tier=0,
         )

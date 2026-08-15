@@ -123,7 +123,7 @@ def test_discovery_fixture_is_real_db_backed_provenance_complete_and_replay_safe
                 EntityId(UUID(first.client_entity_id)),
                 workspace_id=WORKSPACE_ID,
                 version=first.client_kb_version,
-                product_id=PRODUCT_ID,
+                product_id=None,
             )
             assert set(claims) == set(first.client_claim_ids)
             for field_key, claim in claims.items():

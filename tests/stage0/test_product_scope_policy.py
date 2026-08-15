@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from decimal import Decimal
 from uuid import uuid4
 
 import pytest
@@ -32,8 +33,13 @@ from clue_research.identity import insert_account_entity
 from clue_research.stage0 import (
     CLIENT_KB_VERSION,
     CLIENT_PRODUCT_CAPABILITY,
+    CLIENT_PRODUCT_OVERVIEW,
     PRODUCT_KNOWLEDGE_FIELDS,
+    ClientInput,
+    VolunteeredMaterial,
+    current_kb_version,
     read_client_kb_claims,
+    reverse_profile,
 )
 from clue_research.stage0.fields import CLIENT_VALUE_PROP
 from clue_spine import create_brand, create_product
@@ -195,6 +201,98 @@ def test_valid_company_product_and_both_marker_forms_remain_writable() -> None:
     run_async(scenario())
 
 
+def test_reverse_profile_does_not_turn_company_recon_into_product_recon() -> None:
+    async def scenario() -> None:
+        workspace_id = f"product-scope-company-recon-{uuid4().hex[:10]}"
+        async with rollback_conn(workspace_id=workspace_id) as conn:
+            _, product_id = await _scope(conn, workspace_id)
+            result = await reverse_profile(
+                conn,
+                ClientInput(
+                    name="Scope Policy Client",
+                    website=f"https://{workspace_id}.example",
+                    materials=(
+                        VolunteeredMaterial(
+                            kind="onboarding",
+                            label="mixed ambient project context",
+                            asserted_fields={
+                                CLIENT_VALUE_PROP: "account-wide value",
+                                CLIENT_PRODUCT_OVERVIEW: "must not cross into product scope",
+                            },
+                        ),
+                    ),
+                ),
+                workspace_id=workspace_id,
+                product_id=product_id,
+                budget_cap_cents=Decimal(0),
+                max_source_tier=0,
+            )
+            assert result.ref.product_id is None
+            assert result.coverage.filled_fields == (CLIENT_VALUE_PROP,)
+            assert (
+                await current_kb_version(
+                    conn,
+                    result.ref.client_entity_id,
+                    workspace_id=workspace_id,
+                    product_id=None,
+                )
+                == 1
+            )
+            assert (
+                await current_kb_version(
+                    conn,
+                    result.ref.client_entity_id,
+                    workspace_id=workspace_id,
+                    product_id=product_id,
+                )
+                is None
+            )
+
+    run_async(scenario())
+
+
+def test_reverse_profile_requires_explicit_product_scope_for_product_recon() -> None:
+    async def scenario() -> None:
+        workspace_id = f"product-scope-explicit-recon-{uuid4().hex[:10]}"
+        async with rollback_conn(workspace_id=workspace_id) as conn:
+            _, product_id = await _scope(conn, workspace_id)
+            result = await reverse_profile(
+                conn,
+                ClientInput(
+                    name="Scope Policy Client",
+                    website=f"https://{workspace_id}.example",
+                    materials=(
+                        VolunteeredMaterial(
+                            kind="product_recon",
+                            label="selected product facts",
+                            asserted_fields={
+                                CLIENT_PRODUCT_OVERVIEW: "selected product overview",
+                                CLIENT_VALUE_PROP: "must not cross into company scope",
+                            },
+                        ),
+                    ),
+                ),
+                workspace_id=workspace_id,
+                product_id=product_id,
+                knowledge_scope="product",
+                budget_cap_cents=Decimal(0),
+                max_source_tier=0,
+            )
+            assert result.ref.product_id == product_id
+            assert result.coverage.filled_fields == (CLIENT_PRODUCT_OVERVIEW,)
+            assert result.coverage.surfaces == ()
+            claims = await read_client_kb_claims(
+                conn,
+                result.ref.client_entity_id,
+                workspace_id=workspace_id,
+                version=1,
+                product_id=product_id,
+            )
+            assert set(claims) == {CLIENT_PRODUCT_OVERVIEW}
+
+    run_async(scenario())
+
+
 def test_historical_mis_scoped_claim_is_audited_and_not_served() -> None:
     async def scenario() -> None:
         workspace_id = f"product-scope-history-{uuid4().hex[:10]}"
@@ -244,14 +342,18 @@ def test_historical_mis_scoped_claim_is_audited_and_not_served() -> None:
             )
 
             audited = (
-                await conn.execute(
-                    text(
-                        "SELECT claim_id FROM claim_product_scope_violation "
-                        "WHERE workspace_id=:workspace"
-                    ),
-                    {"workspace": workspace_id},
+                (
+                    await conn.execute(
+                        text(
+                            "SELECT claim_id FROM claim_product_scope_violation "
+                            "WHERE workspace_id=:workspace"
+                        ),
+                        {"workspace": workspace_id},
+                    )
                 )
-            ).scalars().all()
+                .scalars()
+                .all()
+            )
             assert audited == [legacy_id]
             company = await read_client_kb_claims(
                 conn,

@@ -26,7 +26,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Mapping
 from decimal import Decimal
-from typing import cast
+from typing import Literal, cast
 from uuid import NAMESPACE_URL, uuid5
 
 from pydantic import BaseModel, ConfigDict, JsonValue
@@ -93,6 +93,7 @@ from clue_research.sources import StopReason, resolve_field
 from clue_research.stage0.fields import (
     CLIENT_BASELINE_FIELDS,
     CLIENT_KB_VERSION,
+    PRODUCT_KNOWLEDGE_FIELDS,
     SURFACE_CLASS_FIELDS,
     load_client_knowledge_pack,
 )
@@ -147,6 +148,7 @@ async def reverse_profile(
     judge: FaithfulnessJudge | None = None,
     pre_spend_gate: PreSpendGate | None = None,
     product_id: str | None = None,
+    knowledge_scope: Literal["company", "product"] = "company",
     max_source_tier: int | None = None,
     on_client_resolved: Callable[[AccountEntity], None] | None = None,
     on_field_progress: FieldProgress | None = None,
@@ -171,6 +173,12 @@ async def reverse_profile(
     until its TTL ages it out (substrate §8 drift) — consumers wanting version-correct truth read
     through :func:`read_client_kb`, not the raw seam.
 
+    ``knowledge_scope`` is explicit because a project-selected ``product_id`` is ambient execution
+    context, not permission to turn company-wide onboarding facts into product facts. The default
+    ``company`` scope always writes account-wide baseline fields with ``product_id=NULL``. A
+    ``product`` run requires one exact ``product_id`` and writes only the independently versioned
+    product-knowledge field set.
+
     ``judge`` is the injected M9 seam used only for tier-4 client claims (consumed behind the judge
     — the tier-4 *synthesis* is M11). It is optional: the default tiers-1–3 pass needs no judge.
 
@@ -182,6 +190,13 @@ async def reverse_profile(
     a volunteered material, or cut off by the budget halt — announce **nothing**, so a consumer
     reads honest absence rather than fabricated motion.
     """
+    if knowledge_scope == "product" and product_id is None:
+        raise ValueError("product knowledge scope requires product_id")
+    effective_product_id = product_id if knowledge_scope == "product" else None
+    knowledge_fields = (
+        PRODUCT_KNOWLEDGE_FIELDS if knowledge_scope == "product" else CLIENT_BASELINE_FIELDS
+    )
+    knowledge_field_set = frozenset(knowledge_fields)
     scope = WorkspaceScope.for_workspace(workspace_id)
     run = run_id if run_id is not None else new_run_id()
 
@@ -207,7 +222,10 @@ async def reverse_profile(
         material_fields = {
             c.field_key
             for c in await claims_for(conn, client_entity_id, scope=scope)
-            if c.run_id == run and c.extraction_method is ExtractionMethod.HUMAN
+            if c.run_id == run
+            and c.extraction_method is ExtractionMethod.HUMAN
+            and c.product_id == effective_product_id
+            and c.field_key in knowledge_field_set
         }
 
         budget = BudgetTracker(envelope_cents=budget_cap_cents)
@@ -224,7 +242,8 @@ async def reverse_profile(
                 workspace_id=workspace_id,
                 run_id=run,
                 already_written=material_fields,
-                product_id=product_id,
+                product_id=effective_product_id,
+                allowed_fields=knowledge_field_set,
             )
             claims_written += len(wrote)
         filled_fields |= material_fields  # incl. fields carried in from a re-entered run
@@ -232,7 +251,7 @@ async def reverse_profile(
 
         # 2) Drive the waterfall (tiers 1–3) over each still-empty client field, honoring the cap.
         budget_exhausted = False
-        for field_key in CLIENT_BASELINE_FIELDS:
+        for field_key in knowledge_fields:
             if field_key in material_fields:
                 continue  # a volunteered fact already fills it — do not spend to re-derive
             if budget.exhausted:
@@ -254,7 +273,7 @@ async def reverse_profile(
                     budget_envelope=budget_cap_cents,
                     cost_so_far=budget.spent_cents,
                     reuse_policy=CLIENT_KNOWLEDGE_REUSE_POLICY,
-                    product_id=product_id,
+                    product_id=effective_product_id,
                     source_gate=_source_gate(
                         pre_spend_gate,
                         entity_id=client_entity_id,
@@ -287,14 +306,18 @@ async def reverse_profile(
             await _judge_tier4_claims(conn, client_entity_id, run_id=run, scope=scope, judge=judge)
 
         # 4) Coverage read (over what THIS run filled/attempted) + version marker.
-        coverage = _coverage(filled_fields, attempted_fields)
+        coverage = _coverage(
+            filled_fields,
+            attempted_fields,
+            knowledge_fields=knowledge_fields,
+        )
         version = await _write_version_marker(
             conn,
             client_entity_id=client_entity_id,
             workspace_id=workspace_id,
             run_id=run,
             coverage=coverage,
-            product_id=product_id,
+            product_id=effective_product_id,
         )
 
         apply_attributes(span, {ATTR_COST_CENTS: budget.spent_cents, ATTR_N_CLAIMS: claims_written})
@@ -303,7 +326,7 @@ async def reverse_profile(
         ref=ClientKnowledgeBaseRef(
             client_entity_id=client_entity_id,
             client_kb_version=version,
-            product_id=product_id,
+            product_id=effective_product_id,
         ),
         run_id=run,
         coverage=coverage,
@@ -364,7 +387,13 @@ async def finalize_client_kb_version(
         client_entity_id=client_entity_id,
         workspace_id=workspace_id,
         run_id=run_id,
-        coverage=_coverage(filled_fields, attempted_fields),
+        coverage=_coverage(
+            filled_fields,
+            attempted_fields,
+            knowledge_fields=(
+                PRODUCT_KNOWLEDGE_FIELDS if product_id is not None else CLIENT_BASELINE_FIELDS
+            ),
+        ),
         product_id=product_id,
         base_version=base_version,
     )
@@ -477,6 +506,7 @@ async def _ingest_material(
     run_id: RunId,
     already_written: set[str],
     product_id: str | None,
+    allowed_fields: frozenset[str],
 ) -> list[str]:
     """Write each fact a volunteered material asserts as a tier-1 ``human`` claim (idempotent on the
     run). Returns the field keys written. The raw excerpt becomes the ``evidence_span`` so even a
@@ -491,6 +521,8 @@ async def _ingest_material(
         :_EVIDENCE_SPAN_MAX
     ]
     for field_key, value in material.asserted_fields.items():
+        if field_key not in allowed_fields:
+            continue
         if field_key in already_written:
             continue  # idempotent re-entry / already filled by an earlier material
         if (
@@ -547,7 +579,12 @@ async def _judge_tier4_claims(
     return verdicts
 
 
-def _coverage(filled: set[str], attempted: set[str]) -> CoverageReport:
+def _coverage(
+    filled: set[str],
+    attempted: set[str],
+    *,
+    knowledge_fields: tuple[str, ...] = CLIENT_BASELINE_FIELDS,
+) -> CoverageReport:
     """Build the per-field / per-surface-class coverage read for one run.
 
     ``filled`` = client fields that gained a live claim this run; ``attempted`` = fields the run
@@ -555,18 +592,22 @@ def _coverage(filled: set[str], attempted: set[str]) -> CoverageReport:
     that missed, and excludes fields cut off by a budget halt). A surface is ``attempted`` iff the
     run reached ≥1 of its fields, so a budget-truncated run honestly reports later surfaces as
     *not* attempted (rather than a constant ``True``)."""
-    empty = tuple(f for f in CLIENT_BASELINE_FIELDS if f not in filled)
-    surfaces = tuple(
-        SurfaceCoverage(
-            surface_class=surface_class,
-            attempted=any(f in attempted for f in fields),
-            filled_fields=tuple(f for f in fields if f in filled),
-            empty_fields=tuple(f for f in fields if f not in filled),
+    empty = tuple(f for f in knowledge_fields if f not in filled)
+    surfaces = (
+        tuple(
+            SurfaceCoverage(
+                surface_class=surface_class,
+                attempted=any(f in attempted for f in fields),
+                filled_fields=tuple(f for f in fields if f in filled),
+                empty_fields=tuple(f for f in fields if f not in filled),
+            )
+            for surface_class, fields in SURFACE_CLASS_FIELDS.items()
         )
-        for surface_class, fields in SURFACE_CLASS_FIELDS.items()
+        if knowledge_fields == CLIENT_BASELINE_FIELDS
+        else ()
     )
     return CoverageReport(
-        filled_fields=tuple(f for f in CLIENT_BASELINE_FIELDS if f in filled),
+        filled_fields=tuple(f for f in knowledge_fields if f in filled),
         empty_fields=empty,
         surfaces=surfaces,
     )
@@ -702,7 +743,13 @@ async def client_kb_write_target_for_materialization(
             client_entity_id=client_entity_id,
             workspace_id=workspace_id,
             run_id=run_id,
-            coverage=_coverage(set(), set()),
+            coverage=_coverage(
+                set(),
+                set(),
+                knowledge_fields=(
+                    PRODUCT_KNOWLEDGE_FIELDS if product_id is not None else CLIENT_BASELINE_FIELDS
+                ),
+            ),
             product_id=product_id,
         )
         return ClientKbWriteTarget(version=version, run_id=run_id, created_new_version=True)
@@ -724,7 +771,10 @@ async def client_kb_write_target_for_materialization(
                     WHERE workspace_id = :workspace_id
                       AND client_entity_id = :client_entity_id
                       AND client_kb_version = :version
-                      AND product_id IS NOT DISTINCT FROM :product_id
+                      AND (
+                          :product_id IS NULL
+                          OR product_id IS NOT DISTINCT FROM :product_id
+                      )
                     UNION ALL
                     SELECT 1 FROM project_run
                     WHERE workspace_id = :workspace_id
@@ -752,7 +802,10 @@ async def client_kb_write_target_for_materialization(
         version=version,
         product_id=product_id,
     )
-    filled = set(prior_claims).intersection(CLIENT_BASELINE_FIELDS)
+    knowledge_fields = (
+        PRODUCT_KNOWLEDGE_FIELDS if product_id is not None else CLIENT_BASELINE_FIELDS
+    )
+    filled = set(prior_claims).intersection(knowledge_fields)
     # FI-2 P2 (spec §3), the derived-version branch: same workspace-level stage-0 registration as
     # the new-KB branch above, again only where a new version is actually minted.
     await record_run_lineage(conn, run_id=run_id, workspace_id=workspace_id, kind="stage0")
@@ -761,7 +814,7 @@ async def client_kb_write_target_for_materialization(
         client_entity_id=client_entity_id,
         workspace_id=workspace_id,
         run_id=run_id,
-        coverage=_coverage(filled, set(CLIENT_BASELINE_FIELDS)),
+        coverage=_coverage(filled, set(knowledge_fields), knowledge_fields=knowledge_fields),
         product_id=product_id,
         base_version=version,
     )

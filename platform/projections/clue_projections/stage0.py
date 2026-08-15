@@ -1199,9 +1199,10 @@ async def compile_stage0_project_card(
     Reads only; the card is a projection, never a write. Everything it shows is either durable
     truth or a count of what the size policy left out — an omission is surfaced, never silent.
 
-    ``product_id`` is the *candidate* product the Client-KB read is scoped to (Stage 0 profiles a
-    product before the human confirms it). The card's ``product.confirmed`` reflects the project
-    row, not this argument.
+    ``product_id`` is the candidate product represented by the project-specific card before the
+    human confirms it. Account-wide Client-KB knowledge is always read at ``product_id=NULL``;
+    selected-product knowledge has its own card and governed readers. The card's
+    ``product.confirmed`` reflects the project row, not this argument.
 
     ``include_client_knowledge=False`` is reserved for the production split-card composition. It
     reuses the established interview/readiness selection logic without allowing account-wide
@@ -1221,9 +1222,11 @@ async def compile_stage0_project_card(
     async with conn_factory() as conn:
         project = await _read_project(conn, project_id=project_id, workspace_id=workspace_id)
         confirmed_product_id = project["product_id"]
-        kb_product_id = product_id if product_id is not None else confirmed_product_id
+        candidate_product_id = product_id if product_id is not None else confirmed_product_id
         product_name = await _read_product_name(
-            conn, product_id=confirmed_product_id or kb_product_id, workspace_id=workspace_id
+            conn,
+            product_id=confirmed_product_id or candidate_product_id,
+            workspace_id=workspace_id,
         )
         claims = (
             await read_client_kb_claims(
@@ -1231,7 +1234,7 @@ async def compile_stage0_project_card(
                 client_entity_id,
                 workspace_id=workspace_id,
                 version=client_kb_version,
-                product_id=kb_product_id,
+                product_id=None,
             )
             if include_client_knowledge
             else {}
@@ -1256,7 +1259,7 @@ async def compile_stage0_project_card(
             conn,
             workspace_id=workspace_id,
             brand_id=str(project["brand_id"]),
-            product_id=kb_product_id,
+            product_id=candidate_product_id,
             project_id=project_id,
             limit=policy.max_pending_field_proposals,
         )
@@ -1316,12 +1319,10 @@ async def compile_stage0_project_card(
         name=str(project["name"]),
         workspace_id=workspace_id,
         brand_id=str(project["brand_id"]),
-        # The same id the Client-KB read above is scoped to, so the card cannot show the model an
-        # entity its own claims section was not compiled against.
         client_entity_id=str(client_entity_id),
     )
     card_product = Stage0CardProduct(
-        product_id=confirmed_product_id or kb_product_id,
+        product_id=confirmed_product_id or candidate_product_id,
         name=product_name,
         confirmed=confirmed_product_id is not None,
     )

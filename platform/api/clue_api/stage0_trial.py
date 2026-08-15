@@ -491,7 +491,6 @@ async def create_stage0_trial_session(
             ClientInput(name=company_name, website=website),
             workspace_id=workspace.workspace_id,
             budget_cap_cents=Decimal(0),
-            product_id=product.product_id,
             max_source_tier=0,
         )
     state = Stage0TrialState(
@@ -865,7 +864,7 @@ class Stage0Trial:
                 EntityId(self.state.client_entity_id),
                 workspace_id=self.state.workspace_id,
                 version=self.state.client_kb_version,
-                product_id=self.state.product_id,
+                product_id=None,
             )
             statements = await read_statements(
                 conn,
@@ -925,7 +924,7 @@ class Stage0Trial:
                 EntityId(self.state.client_entity_id),
                 workspace_id=self.state.workspace_id,
                 version=self.state.client_kb_version,
-                product_id=self.state.product_id,
+                product_id=None,
             )
             raw = await claims_for(
                 conn,
@@ -962,7 +961,6 @@ class Stage0Trial:
                 ),
                 workspace_id=self.state.workspace_id,
                 budget_cap_cents=Decimal(0),
-                product_id=self.state.product_id,
                 max_source_tier=0,
             )
         if UUID(str(refreshed.ref.client_entity_id)) != self.state.client_entity_id:
@@ -1132,7 +1130,7 @@ class Stage0Trial:
                 EntityId(self.state.client_entity_id),
                 workspace_id=self.state.workspace_id,
                 version=self.state.client_kb_version,
-                product_id=self.state.product_id,
+                product_id=None,
             )
             memories = await self._rows(
                 conn,

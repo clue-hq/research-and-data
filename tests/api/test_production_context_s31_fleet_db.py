@@ -381,6 +381,7 @@ def test_real_fleet_chain_keeps_original_pin_through_checkpoint_finalization_and
                     ),
                     workspace_id=seeded.workspace_id,
                     product_id=seeded.product.product_id,
+                    knowledge_scope="product",
                     budget_cap_cents=Decimal(0),
                     max_source_tier=0,
                 )

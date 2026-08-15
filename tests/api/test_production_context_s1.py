@@ -46,7 +46,7 @@ def test_production_envelope_is_v2_and_defaults_to_honest_s1_unavailability() ->
 
 
 def test_split_project_state_retains_statement_level_dsar_bindings() -> None:
-    client_id = UUID("00000000-0000-4000-8000-000000000001")
+    client_entity_id = UUID("00000000-0000-4000-8000-000000000001")
     statement_id = "00000000-0000-4000-8000-000000000002"
     card = Stage0ProjectStateCard(
         compiler_policy_version="stage0-project-state-policy-v1",
@@ -82,7 +82,7 @@ def test_split_project_state_retains_statement_level_dsar_bindings() -> None:
             source_policy_version="stage0-card-policy-v1",
         ),
     )
-    assert set(stage0_card_subject_bindings(card=card, base=((client_id, "context"),))) == {
-        (client_id, "context"),
+    assert set(stage0_card_subject_bindings(card=card, base=((client_entity_id, "context"),))) == {
+        (client_entity_id, "context"),
         (UUID(statement_id), STAGE0_CARD_QUOTE_BINDING_KIND),
     }

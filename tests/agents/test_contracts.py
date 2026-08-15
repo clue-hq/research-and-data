@@ -189,7 +189,7 @@ def test_constitution_and_turn_reject_cross_workspace_refs_and_extra_fields() ->
 
 def _production_project_context(
     *,
-    client_id: str = "client-1",
+    client_entity_id: str = "client-1",
     client_version: int = 7,
     project_id: str = "project-1",
 ) -> tuple[ProjectContextArtifact, ProjectContextArtifact]:
@@ -200,7 +200,7 @@ def _production_project_context(
             domain_ref=domain_ref("unused").model_copy(
                 update={
                     "object_type": "client_knowledge",
-                    "object_id": client_id,
+                    "object_id": client_entity_id,
                     "version": client_version,
                 }
             ),
@@ -227,7 +227,9 @@ def test_production_project_context_is_paired_and_exactly_scoped() -> None:
     with pytest.raises(ValidationError, match="constituted together"):
         constitution(project_context_artifacts=bundle[:1])
     with pytest.raises(ValidationError, match="constitution client"):
-        constitution(project_context_artifacts=_production_project_context(client_id="foreign"))
+        constitution(
+            project_context_artifacts=_production_project_context(client_entity_id="foreign")
+        )
     with pytest.raises(ValidationError, match="constitution project"):
         constitution(project_context_artifacts=_production_project_context(project_id="project-2"))
 
