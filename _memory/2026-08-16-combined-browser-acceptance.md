@@ -32,6 +32,24 @@ Status: in progress; browser handoff required before the first UI action
 - Resume condition: the user opens `http://localhost:3077` in the in-app Browser, then the agent
   claims that exact tab and continues the requested browser -> API -> PostgreSQL matrix.
 
+## Local rendering diagnosis
+
+- The user-opened in-app tab first exposed a complete `/onboarding/profile` accessibility tree,
+  while the isolated database remained zero-state. The initial root request took 5.4 seconds:
+  3.9 seconds in Next development compilation and about 1.5 seconds in proxy/application work.
+- The same Turbopack dev process then became genuinely unresponsive: direct probes to both `/` and
+  `/onboarding/profile` timed out after 15 seconds with zero response bytes even though the Node
+  listener remained open. The user's screenshot correctly showed a blank navigation, not merely a
+  slow rendered page.
+- Restarted only the disposable frontend with Next 16 webpack. Direct route probes then passed:
+  root returned its expected redirect in 2.6-2.9 seconds, and the onboarding profile returned 200
+  in 1.7-2.4 seconds. API, database, and fleet state were not the cause of the blank page.
+- Computer Use could not attach to the running Google Chrome application after three attempts.
+  The dedicated Chrome browser-control path did reach the webpack server—the server completed root
+  and profile responses—but the control operation itself remained pending for 45 seconds. This is
+  evidence of a browser-control/extension-side hang after a healthy server response; it is not a
+  completed visual Chrome acceptance.
+
 ## Acceptance still outstanding
 
 All requested scenarios remain unclaimed until browser control resumes: Clerk provisioning,
