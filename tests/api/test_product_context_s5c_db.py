@@ -208,6 +208,52 @@ def test_v2_company_catalog_profile_and_product_card_are_separate_and_exact(
     run_async(wrapped())
 
 
+def test_derived_company_version_inherits_catalog_claim_lineage(tmp_path: Path) -> None:
+    """An unrelated company update must not erase the inherited product catalog."""
+
+    async def scenario() -> None:
+        scope, products, _ = await _seed_product_context(tmp_path)
+        derived_run = RunId(uuid4())
+        async with transaction() as conn:
+            await record_run_lineage(
+                conn,
+                run_id=derived_run,
+                workspace_id=scope.workspace_id,
+                kind="stage0",
+            )
+            derived_version = await finalize_client_kb_version(
+                conn,
+                client_entity_id=scope.client_entity_id,
+                workspace_id=scope.workspace_id,
+                run_id=derived_run,
+                filled_fields=set(),
+                attempted_fields=set(),
+                product_id=None,
+                base_version=1,
+            )
+
+        card = await compile_client_knowledge_card_v2(
+            workspace_id=scope.workspace_id,
+            client_entity_id=scope.client_entity_id,
+            company_client_kb_version=derived_version,
+        )
+
+        assert derived_version == 2
+        assert [entry.product_id for entry in card.product_catalog.entries] == [
+            item.product_id for item in products
+        ]
+        assert all(
+            entry.catalog_claim_id == card.product_catalog.entries[0].catalog_claim_id
+            for entry in card.product_catalog.entries
+        )
+
+    async def wrapped() -> None:
+        async with db_lifespan():
+            await scenario()
+
+    run_async(wrapped())
+
+
 def test_product_card_cap_emits_tool_compatible_exact_cursor(tmp_path: Path) -> None:
     async def scenario() -> None:
         scope, products, product_version = await _seed_product_context(tmp_path)

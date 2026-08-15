@@ -246,10 +246,10 @@ def test_the_stage0_skill_survives_the_narrowed_surface(
     trial = registry.resolve(AgentRole.HEAD_OF_ABM, surface=STAGE0_CONVERSATION_TRIAL_SURFACE)
     disclosures = trial.skill_disclosures()
 
-    assert [item.resource.address for item in disclosures] == ["skill:stage0-interview@v14"]
+    assert [item.resource.address for item in disclosures] == ["skill:stage0-interview@v15"]
     required = {address.partition("@")[0] for address in disclosures[0].required_tool_addresses}
     assert required & _WITHHELD == set()
-    body = trial.open_skill("skill:stage0-interview@v14")
+    body = trial.open_skill("skill:stage0-interview@v15")
     assert "Ask one compact question" in body
     # The trial's framing lives on the surface policy, never in the shared skill.
     assert "manual-conversation-only" not in body

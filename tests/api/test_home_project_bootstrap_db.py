@@ -195,14 +195,14 @@ def test_home_read_is_real_scoped_and_capability_honest(require_chat_db: None) -
                     ],
                     "agent_profiles": [
                         {
-                            "id": "head-of-abm@v27",
+                            "id": "head-of-abm@v28",
                             "label": "GPT-5.6 Terra",
                             "short_label": "GPT-5.6 Terra",
                             "description": ("Clue's governed GPT-5.6 Terra conversation profile"),
                             "model_id": "openai/gpt-5.6-terra",
                         }
                     ],
-                    "default_agent_profile_id": "head-of-abm@v27",
+                    "default_agent_profile_id": "head-of-abm@v28",
                     "composer_capabilities": {
                         "context_refs": True,
                         "attachments": False,
@@ -251,7 +251,7 @@ def test_home_bootstrap_is_atomic_and_exact_replay_is_one_project_turn(
                 {"object_type": "account", "object_id": str(second_account)},
                 {"object_type": "account", "object_id": str(first_account)},
             ]
-            request_body["agent_profile_id"] = "head-of-abm@v27"
+            request_body["agent_profile_id"] = "head-of-abm@v28"
             async with _client(app) as client:
                 created = await client.post(
                     "/api/v1/projects",
@@ -340,7 +340,7 @@ def test_home_bootstrap_is_atomic_and_exact_replay_is_one_project_turn(
                     {"workspace_id": "ws-home-create"},
                 )
             ).scalar_one()
-            assert submission == "head-of-abm@v27"
+            assert submission == "head-of-abm@v28"
             context_rows = (
                 (
                     await conn.execute(

@@ -116,6 +116,10 @@ async def compile_client_knowledge_card_v2(
         catalog_claim = pinned.claims_by_field.get(CLIENT_PRODUCT_CATALOG)
         lineage_rows = []
         if catalog_claim is not None:
+            # A derived company KB marker inherits its base version's exact catalog claim. Lineage
+            # belongs to that immutable claim, not to every later marker that references it, so
+            # resolve by the pinned claim id. Requiring the requested marker version here would
+            # make an unrelated interview update erase the catalog from the next turn.
             lineage_rows = list(
                 (
                     await conn.execute(
@@ -127,7 +131,6 @@ async def compile_client_knowledge_card_v2(
                             "AND product.workspace_id=lineage.workspace_id "
                             "WHERE lineage.workspace_id=:workspace_id "
                             "AND lineage.client_entity_id=:client_entity_id "
-                            "AND lineage.company_client_kb_version=:company_version "
                             "AND lineage.catalog_claim_id=:claim_id "
                             "AND lineage.product_id IS NOT NULL "
                             "ORDER BY lineage.entry_ordinal"
@@ -135,7 +138,6 @@ async def compile_client_knowledge_card_v2(
                         {
                             "workspace_id": workspace_id,
                             "client_entity_id": client_entity_id,
-                            "company_version": company_client_kb_version,
                             "claim_id": catalog_claim.id,
                         },
                     )

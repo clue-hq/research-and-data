@@ -41,9 +41,11 @@ C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
     # after the human's own confirming turn.
     # v25 (FI context composition S4-D) cut production over to strict @2 Client-KB reads. v26
     # (S4-E) retains that exact tool graph while pinning the immutable injection-hardened Stage-0
-    # skill. S5-D v27 adds the separate trusted-scope product reads and v14 selection guidance;
+    # skill. S5-D v27 adds the separate trusted-scope product reads and v14 selection guidance.
+    # S6 live acceptance mints v28/v15 so a missing Product-KB blocks reads but never prevents a
+    # human-authored fact from seeding the confirmed product's first governed Product-KB version;
     # all older resources remain historical replay inputs and are never rewritten.
-    AgentRole.HEAD_OF_ABM: "v27",
+    AgentRole.HEAD_OF_ABM: "v28",
     AgentRole.RESEARCH: "v7",
     AgentRole.CONTENT_DRAFTER: "v5",
     AgentRole.REVIEWER: "v5",

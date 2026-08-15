@@ -70,8 +70,9 @@ def test_registry_resolves_exact_reviewed_profiles_and_stable_manifests(
         # FI context composition S4-D minted v25/v12 for strict @2 Client-KB reads. S4-E mints
         # v26/v13 with the same tools plus the explicit untrusted-evidence instruction boundary.
         # S5 mints v27/v14 for split company/product knowledge, plus the production-only human
-        # product-selection gate; every prior resource remains in the inventory for replay.
-        AgentRole.HEAD_OF_ABM: ("ab09ca1d3d594df7f89f407379c200de72beb8d80c8be7704001926411fd5e15"),
+        # product-selection gate. S6 mints v28/v15 so an absent Product-KB blocks reads but not the
+        # first governed human-authored product claim; every prior resource remains for replay.
+        AgentRole.HEAD_OF_ABM: ("768cbd93638a958357f798436939044fbde7d39f2f3ec48048c632733d1a7d7d"),
         AgentRole.RESEARCH: "23cff2335bb82e0549ee0c830316968971146e8b90c8d2090447ee0ed92eed6f",
         AgentRole.CONTENT_DRAFTER: (
             "8985c13ead086350d952f76e6d3c0ed3f4162cc92de290f8dd7edd7fcab44cbf"
@@ -231,9 +232,9 @@ def test_s4e_production_project_surface_resolves_strict_client_kb_v2_and_hardeni
     )
 
     addresses = {pin.address for pin in production.profile.tools}
-    assert production.profile_ref.address == "profile:head-of-abm@v27"
+    assert production.profile_ref.address == "profile:head-of-abm@v28"
     assert [item.resource.address for item in production.skill_disclosures()][0] == (
-        "skill:stage0-interview@v14"
+        "skill:stage0-interview@v15"
     )
     assert {"list_client_knowledge@2", "inspect_client_claim@2"} <= addresses
     assert {"list_product_knowledge@1", "inspect_product_claim@1"} <= addresses
@@ -241,6 +242,24 @@ def test_s4e_production_project_surface_resolves_strict_client_kb_v2_and_hardeni
     assert {"list_client_knowledge@1", "inspect_client_claim@1"}.isdisjoint(addresses)
     assert toolbelt.descriptor("list_client_knowledge").address == "list_client_knowledge@2"
     assert toolbelt.descriptor("inspect_client_claim").address == "inspect_client_claim@2"
+
+
+def test_stage0_skill_routes_first_selected_product_fact_without_a_product_kb() -> None:
+    """No published Product-KB blocks reads, not the first governed human-authored write."""
+
+    with hermetic_flag_env():
+        registry = build_agent_profile_registry(build_toolbelt(storage=None, gateway=None))
+    production = registry.resolve(
+        AgentRole.HEAD_OF_ABM,
+        surface=PROJECT_CONVERSATION_SURFACE,
+    )
+    body = production.open_skill("skill:stage0-interview@v15")
+
+    assert "A missing Product-KB card blocks historical product-knowledge reads" in body
+    assert "not block a human from supplying the first fact" in body
+    assert "Never leave a clearly matching fact unmapped" in body
+    assert "`client.product_use_case`" in body
+    assert "publishes Product-KB v1" in body
 
 
 def test_account_research_role_and_surface_are_not_active(
@@ -260,7 +279,7 @@ def test_progressive_skill_disclosure_exposes_metadata_before_body(
     disclosures = head.skill_disclosures()
 
     assert len(disclosures) == 2
-    assert disclosures[0].resource.address == "skill:stage0-interview@v14"
+    assert disclosures[0].resource.address == "skill:stage0-interview@v15"
     assert disclosures[1].resource.address == "skill:account-deep-steering@v3"
     assert "Ask one compact question" not in disclosures[0].model_dump_json()
     body = head.open_skill(disclosures[0].resource.address)
@@ -345,7 +364,7 @@ def test_stage0_quality_fixture_has_explicit_governed_behavior(
 ) -> None:
     del fixture
     head = registry.resolve(AgentRole.HEAD_OF_ABM)
-    body = head.open_skill("skill:stage0-interview@v14")
+    body = head.open_skill("skill:stage0-interview@v15")
 
     assert required_guidance in body
 
@@ -408,7 +427,7 @@ def test_resolved_snapshot_materializes_through_c61_backend(
         assert harness.lease.resources_frozen
         assert (
             harness.lease.backend.stat_entry_sync(
-                ".deepagent/skills/stage0-interview/v14/SKILL.md"
+                ".deepagent/skills/stage0-interview/v15/SKILL.md"
             ).sha256
             == resolved.profile.skills[0].resource.sha256
         )
