@@ -15,6 +15,7 @@ from uuid import UUID
 from pydantic import JsonValue
 from sqlalchemy import text
 
+from clue_api.client_context_binding import bind_workspace_client
 from clue_config import Settings, stage0_policy_from_settings
 from clue_core import EntityId, OnboardingInputId, ReconRunId, RunId, operation_id_from_key
 from clue_db import ConnFactory, transaction
@@ -191,6 +192,22 @@ class Stage0ReconWorkHandler:
         if recon_run_raw is None:
             raise ValueError("start_recon returned no recon_run_id")
         recon_run_id = UUID(str(recon_run_raw))
+        client_entity_raw = references.get("client_entity_id")
+        if client_entity_raw is not None:
+            async with self._conn_factory() as conn:
+                binding = await bind_workspace_client(
+                    conn,
+                    workspace_id=workspace_id,
+                    client_entity_id=EntityId(UUID(str(client_entity_raw))),
+                    source_recon_run_id=ReconRunId(recon_run_id),
+                )
+            log.info(
+                "stage0_setup.client_bound",
+                workspace_id=workspace_id,
+                recon_run_id=str(recon_run_id),
+                client_entity_id=str(binding.client_entity_id),
+                execution_owner="fleet",
+            )
         fast = str(references.get("fast_status", ""))
         background = str(references.get("background_status", ""))
         log.info(
@@ -272,6 +289,12 @@ class Stage0ReconWorkHandler:
                     workspace_id=workspace_id,
                     kind="stage0",
                 )
+            binding = await bind_workspace_client(
+                conn,
+                workspace_id=workspace_id,
+                client_entity_id=client_entity_id,
+                source_recon_run_id=recon.id,
+            )
             await record_run_lineage(
                 conn,
                 run_id=RunId(recon.background_run_id),
@@ -289,6 +312,14 @@ class Stage0ReconWorkHandler:
                 )
             elif recon.client_entity_id != client_entity_id:
                 raise ValueError("authoritative recon client identity changed during replay")
+
+        log.info(
+            "stage0_setup.client_bound",
+            workspace_id=workspace_id,
+            recon_run_id=str(recon.id),
+            client_entity_id=str(binding.client_entity_id),
+            execution_owner="fleet",
+        )
 
         enqueued = await self._crawl_enqueuer.enqueue(
             workspace_id=workspace_id,

@@ -618,7 +618,7 @@ def test_materialization_is_typed_replay_safe_open_to_reads_and_version_safe() -
                 conn,
                 workspace_id=scope.workspace_id,
                 client_entity_id=scope.client_entity_id,
-                product_id=scope.product_id,
+                product_id=None,
                 operation_key="seed-version",
             )
             assert seed_target.version == 1
@@ -663,7 +663,7 @@ def test_materialization_is_typed_replay_safe_open_to_reads_and_version_safe() -
                     conn,
                     scope.client_entity_id,
                     workspace_id=scope.workspace_id,
-                    product_id=scope.product_id,
+                    product_id=None,
                 )
                 == 2
             )
@@ -672,7 +672,7 @@ def test_materialization_is_typed_replay_safe_open_to_reads_and_version_safe() -
                 scope.client_entity_id,
                 workspace_id=scope.workspace_id,
                 version=1,
-                product_id=scope.product_id,
+                product_id=None,
             )
             assert (
                 await read_client_kb(
@@ -680,7 +680,7 @@ def test_materialization_is_typed_replay_safe_open_to_reads_and_version_safe() -
                     scope.client_entity_id,
                     workspace_id=scope.workspace_id,
                     version=2,
-                    product_id=scope.product_id,
+                    product_id=None,
                 )
             )["client.document_formats"] == ["SOAP", "APSO", "H&P"]
             claims = await read_client_kb_claims(
@@ -688,7 +688,7 @@ def test_materialization_is_typed_replay_safe_open_to_reads_and_version_safe() -
                 scope.client_entity_id,
                 workspace_id=scope.workspace_id,
                 version=2,
-                product_id=scope.product_id,
+                product_id=None,
             )
             claim = claims["client.document_formats"]
             assert claim.id == first.claim_id
@@ -713,10 +713,11 @@ def test_materialization_is_typed_replay_safe_open_to_reads_and_version_safe() -
                 required_field_keys=("client.document_formats",),
             )
             assert effective_metrics["available_field_keys"] == ["client.document_formats"]
-            # General/onboarding readiness defaults to the full eleven-field recon baseline;
-            # adding one workspace-local required field makes this one filled field out of 12.
-            # The active ICP-synthesis tool passes its narrower nine-field gate baseline explicitly.
-            assert effective_metrics["coverage_ratio"] == pytest.approx(1 / 12)
+            # The generic company-knowledge helper defaults to all 12 account-wide fields (the
+            # eleven onboarding fields plus catalog navigation). One workspace-local extension
+            # therefore makes this one filled field out of 13. ICP callers pass the stable
+            # nine-field gate baseline explicitly; onboarding progress uses its explicit eleven.
+            assert effective_metrics["coverage_ratio"] == pytest.approx(1 / 13)
 
             with pytest.raises(PermissionError, match="human authority"):
                 await set_workspace_client_kb_readiness_policy(
@@ -774,7 +775,7 @@ def test_project_card_bounds_hundreds_of_dynamic_fields_and_pending_refs_honestl
                 conn,
                 workspace_id=scope.workspace_id,
                 client_entity_id=scope.client_entity_id,
-                product_id=scope.product_id,
+                product_id=None,
                 operation_key="card-base",
             )
             quote = "This fixture supplies bounded supplemental boolean facts."
@@ -1142,7 +1143,7 @@ def test_workspace_erasure_removes_the_full_dynamic_kb_surface_and_blocks_resurr
                 conn,
                 scope.client_entity_id,
                 workspace_id=workspace_id,
-                product_id=scope.product_id,
+                product_id=None,
             )
             assert (
                 await conn.execute(

@@ -55,13 +55,13 @@ test("HTTP project shell maps only durable data and keeps Gallery empty", async 
           version: 2,
         }],
         agent_profiles: [{
-          id: "head-of-abm@v25",
+          id: "head-of-abm@v29",
           label: "GPT-5.6 Terra",
           short_label: "GPT-5.6 Terra",
           description: "Clue's governed GPT-5.6 Terra conversation profile",
           model_id: "openai/gpt-5.6-terra",
         }],
-        default_agent_profile_id: "head-of-abm@v25",
+        default_agent_profile_id: "head-of-abm@v29",
         composer_capabilities: {
           context_refs: true,
           attachments: false,
@@ -80,7 +80,7 @@ test("HTTP project shell maps only durable data and keeps Gallery empty", async 
     assert.equal(project.title, "Untitled project");
     assert.deepEqual(project.artifacts, []);
     assert.deepEqual(project.models.map((model) => model.id), [
-      "head-of-abm@v25",
+      "head-of-abm@v29",
     ]);
     assert.equal("plan" in project, false);
     assert.equal("questionnaire" in project, false);

@@ -38,7 +38,9 @@ from clue_research.official_site.lifecycle import (
 )
 from clue_research.official_site.materialization import (
     CORPUS_VERSION,
+    EXTRACTION_MAX_OUTPUT_TOKENS,
     EXTRACTION_PROMPT_VERSION,
+    EXTRACTION_REASONING_EFFORT,
     EXTRACTION_SCHEMA_VERSION,
     Corpus,
     CorpusPage,
@@ -47,6 +49,8 @@ from clue_research.official_site.materialization import (
     OfficialSiteClientKbCommitter,
     OfficialSiteCorpusReader,
     OfficialSiteExtractionPending,
+    OfficialSiteProductCatalogSynchronizer,
+    OfficialSiteProductTarget,
     normalize_snapshot_content,
 )
 from clue_research.official_site.models import (
@@ -82,7 +86,6 @@ from clue_research.official_site.reconciliation import (
     DurableAcquisitionResult,
     DurablePageAcquirer,
     ProviderOperationLookup,
-    SnapshotBeforeCompleteHook,
 )
 from clue_research.official_site.repository import PostgresCrawlRepository
 from clue_research.official_site.robots import (
@@ -127,6 +130,7 @@ from clue_research.official_site.sitemap import (
 )
 from clue_research.official_site.transitions import (
     ATTEMPT_TRANSITIONS,
+    LINK_EXPANSION_TRANSITIONS,
     PAGE_TRANSITIONS,
     RUN_TRANSITIONS,
     allows_transition,
@@ -144,6 +148,7 @@ __all__ = [
     "AcquisitionFenceLostError",
     "AcquisitionPersistencePendingError",
     "ATTEMPT_TRANSITIONS",
+    "LINK_EXPANSION_TRANSITIONS",
     "BoundedLinks",
     "ConservativeUrlPolicy",
     "ConcurrentCrawlCoordinator",
@@ -170,7 +175,9 @@ __all__ = [
     "DISCOVERY_POLICY_VERSION",
     "DurableAcquisitionResult",
     "DurablePageAcquirer",
+    "EXTRACTION_MAX_OUTPUT_TOKENS",
     "EXTRACTION_PROMPT_VERSION",
+    "EXTRACTION_REASONING_EFFORT",
     "EXTRACTION_SCHEMA_VERSION",
     "Corpus",
     "CorpusPage",
@@ -180,6 +187,8 @@ __all__ = [
     "OfficialSiteCorpusMaterializer",
     "GroundedOfficialSiteMaterializer",
     "OfficialSiteClientKbCommitter",
+    "OfficialSiteProductCatalogSynchronizer",
+    "OfficialSiteProductTarget",
     "OfficialSiteCorpusReader",
     "OfficialSiteExtractionPending",
     "OfficialSiteCrawlLifecycle",
@@ -213,7 +222,6 @@ __all__ = [
     "SAFETY_POLICY_VERSION",
     "SITEMAP_POLICY_VERSION",
     "SafetyDecision",
-    "SnapshotBeforeCompleteHook",
     "SitemapDocument",
     "SitemapEntry",
     "SitemapInventory",

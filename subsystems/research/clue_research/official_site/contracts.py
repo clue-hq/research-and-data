@@ -32,6 +32,7 @@ OFFICIAL_SITE_TABLE_NAMES: tuple[str, ...] = (
     "official_site_link_edge",
     "official_site_fetch_attempt",
     "official_site_page_snapshot",
+    "official_site_link_expansion",
     "official_site_alias_observation",
     "official_site_corpus_checkpoint",
 )
@@ -90,6 +91,16 @@ class FetchAttemptState(StrEnum):
     RECONCILED_NO_SPEND = "reconciled_no_spend"
     RECONCILED_SUCCEEDED = "reconciled_succeeded"
     QUARANTINED = "quarantined"
+
+
+class LinkExpansionState(StrEnum):
+    """Snapshot-keyed recursive discovery work, independent from page acquisition."""
+
+    QUEUED = "queued"
+    LEASED = "leased"
+    RETRY_WAIT = "retry_wait"
+    COMPLETED = "completed"
+    FAILED = "failed"
 
 
 class DiscoveredVia(StrEnum):
@@ -468,6 +479,16 @@ class ClaimPersistenceRequest(FrozenContractModel):
     lease_ttl_seconds: int = Field(ge=3)
 
 
+class ClaimLinkExpansionRequest(FrozenContractModel):
+    """Claim one durable snapshot expansion without authorizing provider I/O."""
+
+    workspace_id: str = Field(min_length=1)
+    crawl_run_id: UUID
+    worker_id: str = Field(min_length=1, max_length=200)
+    eligible_phase: CrawlPhase
+    lease_ttl_seconds: int = Field(ge=3)
+
+
 class CrawlLease(FrozenContractModel):
     workspace_id: str = Field(min_length=1)
     crawl_run_id: UUID
@@ -541,6 +562,25 @@ class PersistenceClaim(FrozenContractModel):
         }:
             raise ValueError("persistence claims require a recorded or persisted success")
         return self
+
+
+class LinkExpansionLease(FrozenContractModel):
+    """Generation-fenced ownership of outgoing-link expansion for one durable snapshot."""
+
+    workspace_id: str = Field(min_length=1)
+    crawl_run_id: UUID
+    expansion_id: UUID
+    page_id: UUID
+    snapshot_id: UUID
+    worker_id: str = Field(min_length=1, max_length=200)
+    lease_generation: int = Field(ge=1)
+    attempt_number: int = Field(ge=1)
+    phase: CrawlPhase
+    source_url: str = Field(min_length=1)
+    source_graph_depth: int | None = Field(default=None, ge=0, le=2)
+    redirect_chain: tuple[RedirectHop, ...] = ()
+    outgoing_links: tuple[LinkObservation, ...] = Field(default=(), max_length=200)
+    expires_at: UtcDatetime
 
 
 class ArtifactRef(FrozenContractModel):
@@ -643,6 +683,7 @@ class ReclaimResult(FrozenContractModel):
     requeued_pre_dispatch: int = Field(ge=0)
     moved_to_reconciliation_pending: int = Field(ge=0)
     released_persistence_pending: int = Field(ge=0)
+    released_link_expansions: int = Field(default=0, ge=0)
 
 
 class CrawlPhaseBlockers(FrozenContractModel):
@@ -672,6 +713,11 @@ class CrawlProgress(FrozenContractModel):
     failed: int = Field(ge=0)
     quarantined: int = Field(ge=0)
     spend_unknown: int = Field(ge=0)
+    expansion_queued: int = Field(default=0, ge=0)
+    expansion_leased: int = Field(default=0, ge=0)
+    expansion_retry_wait: int = Field(default=0, ge=0)
+    expansion_completed: int = Field(default=0, ge=0)
+    expansion_failed: int = Field(default=0, ge=0)
 
 
 class OfficialSiteMaterializationRequest(FrozenContractModel):
@@ -718,6 +764,7 @@ def enum_manifest() -> dict[str, list[str]]:
         CrawlRunStatus,
         CrawlPageState,
         FetchAttemptState,
+        LinkExpansionState,
         DiscoveredVia,
         LinkRelation,
         CrawlEligibility,
@@ -751,6 +798,7 @@ __all__ = [
     "AttemptOutcome",
     "CONTRACT_VERSION",
     "ClaimPersistenceRequest",
+    "ClaimLinkExpansionRequest",
     "ClaimReconciliationRequest",
     "ClaimNextRequest",
     "CorpusCheckpointRef",
@@ -773,6 +821,8 @@ __all__ = [
     "FetchAttemptState",
     "HISTORICAL_OFFICIAL_SITE_SOURCE_KEYS",
     "LinkObservation",
+    "LinkExpansionLease",
+    "LinkExpansionState",
     "LinkRelation",
     "OFFICIAL_SITE_SOURCE_KEY",
     "OFFICIAL_SITE_TABLE_NAMES",

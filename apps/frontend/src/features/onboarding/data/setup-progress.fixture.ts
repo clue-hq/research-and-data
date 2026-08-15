@@ -14,7 +14,7 @@
  *
  * 1. `starting` — the submission is durably captured, no recon row is visible yet (no field
  *    events at all, so the checklist shows its warm-up row and claims nothing else).
- * 2. the FAST lane walking the Client-KB baseline fields in budget order, announcing `started`
+ * 2. the FAST lane walking the eleven onboarding fields in budget order, announcing `started`
  *    as it reaches each one and exactly one terminal after (`resolved`, or `empty` — a field no
  *    source could answer is a *correct* outcome, not a failure). This whole walk is still served
  *    as `starting` with a null `recon_run_id`: the fast lane lives inside one transaction, so its
@@ -24,24 +24,25 @@
  *    vocabulary, and this script does not fabricate it.
  * 3. `complete` — the lane's transaction committed and the fast lane finished; this is the
  *    release-into-the-app signal, and it carries `fact_count` plus a terminal for all eleven
- *    baseline fields. The script **ends here**, where the screen's life ends: the hook releases
+ *    onboarding fields. The script **ends here**, where the screen's life ends: the hook releases
  *    on this frame and never polls again.
  *
  * Deliberately NOT scripted: the background lane's second pass. It is not a touch-up of the two
- * tier-3-only fields — it calls `reverse_profile` fresh over EVERY baseline field, and the
+ * tier-3-only fields — it calls `reverse_profile` fresh over broader company knowledge, and the
  * backend's reduction is last-writer-wins per field *across* lanes ("a lane's own field row wins
  * over an earlier lane's for the same field", `platform/api/clue_api/stage0_setup.py`), so a real
- * post-release poll shows all eleven rows migrating to `lane: "background"` in baseline order.
+ * post-release poll shows the checklist rows migrating to `lane: "background"` in onboarding
+ * order. Company navigation fields are filtered from this UI projection.
  * Scripting a partial migration would be a lie about the wire, and scripting the honest full
  * second walk would double the script for frames no consumer can reach.
  */
 
 import type { SetupStatus } from "./setup";
 
-/** The Client-KB baseline field order — the order the recon lane walks (its outer budget order)
- * and the order the backend serves the reduced per-field list in. Mirrors
- * `clue_research.stage0.fields.CLIENT_BASELINE_FIELDS`; the client never re-sorts. */
-export const FIXTURE_SETUP_BASELINE_FIELDS = [
+/** The explicit onboarding field order — the order the fast release lane walks and the backend
+ * serves to this checklist. Mirrors `clue_research.stage0.fields.CLIENT_ONBOARDING_FIELDS`; the
+ * client never re-sorts and never adds company navigation fields. */
+export const FIXTURE_SETUP_ONBOARDING_FIELDS = [
   "client.value_prop",
   "client.product",
   "client.differentiator",
@@ -67,7 +68,7 @@ const FIXTURE_COMPANY_WEBSITE = "https://cluehq.ai";
  * Keyed on the baseline union, not `string`: a mistyped or missing key is then a compile error
  * rather than an `undefined` status the schema would quietly degrade to `"started"`. */
 const FAST_LANE_OUTCOME: Record<
-  (typeof FIXTURE_SETUP_BASELINE_FIELDS)[number],
+  (typeof FIXTURE_SETUP_ONBOARDING_FIELDS)[number],
   "resolved" | "empty"
 > = {
   "client.value_prop": "resolved",
@@ -117,6 +118,12 @@ export const FIXTURE_OFFICIAL_SITE_PROGRESS = {
   provider_active: 0,
   reconciliation_pending: 0,
   persistence_pending: 0,
+  retry_wait: 0,
+  expansion_queued: 0,
+  expansion_leased: 0,
+  expansion_retry_wait: 0,
+  expansion_completed: 7,
+  expansion_failed: 0,
   fetched: 7,
   total_pages: 8,
   snapshots: 7,
@@ -145,7 +152,7 @@ function fastField(field_key: string, status: "started" | "resolved" | "empty"):
 
 /** The fast lane's per-field state after it has finished `count` fields and started nothing else. */
 function fastTerminals(count: number): SetupStatus["fields"] {
-  return FIXTURE_SETUP_BASELINE_FIELDS.slice(0, count).map((key) =>
+  return FIXTURE_SETUP_ONBOARDING_FIELDS.slice(0, count).map((key) =>
     fastField(key, FAST_LANE_OUTCOME[key]),
   );
 }
@@ -161,7 +168,7 @@ const FAST_LANE_BASE = {
  * The fast lane in flight: one frame per field, each showing the fields already finished plus the
  * one currently being resolved. A real 1.5s poll tick sees about this much motion.
  */
-const FAST_LANE_FRAMES: SetupStatus[] = FIXTURE_SETUP_BASELINE_FIELDS.map((key, index) =>
+const FAST_LANE_FRAMES: SetupStatus[] = FIXTURE_SETUP_ONBOARDING_FIELDS.map((key, index) =>
   frame({
     ...FAST_LANE_BASE,
     fields: [...fastTerminals(index), fastField(key, "started")],
@@ -171,7 +178,7 @@ const FAST_LANE_FRAMES: SetupStatus[] = FIXTURE_SETUP_BASELINE_FIELDS.map((key, 
 /** All eleven attempted, the lane's transaction not committed yet — a real snapshot, briefly. */
 const FAST_LANE_SETTLED: SetupStatus = frame({
   ...FAST_LANE_BASE,
-  fields: fastTerminals(FIXTURE_SETUP_BASELINE_FIELDS.length),
+  fields: fastTerminals(FIXTURE_SETUP_ONBOARDING_FIELDS.length),
 });
 
 /** The release: the fast lane completed, the background lane picked up behind it. */
@@ -184,7 +191,7 @@ const FAST_LANE_COMPLETE: SetupStatus = frame({
   fast_client_kb_version: 1,
   fact_count: FIXTURE_FACT_COUNT,
   fast_budget_exhausted: false,
-  fields: fastTerminals(FIXTURE_SETUP_BASELINE_FIELDS.length),
+  fields: fastTerminals(FIXTURE_SETUP_ONBOARDING_FIELDS.length),
 });
 
 /**

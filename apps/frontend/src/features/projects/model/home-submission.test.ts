@@ -34,7 +34,7 @@ test("Home draft identity includes ordered context and the promoted profile", ()
       { objectId: "account-b", objectType: "account" as const, version: null },
       { objectId: "account-a", objectType: "account" as const, version: null },
     ],
-    agentProfileId: "head-of-abm@v25",
+    agentProfileId: "head-of-abm@v29",
   };
   const parsed = parseHomeBootstrapDraft(base);
   const reversed = parseHomeBootstrapDraft({
@@ -54,7 +54,7 @@ test("Home draft identity includes ordered context and the promoted profile", ()
       "account-b",
       "account-a",
     ]);
-    assert.equal(parsed.request.agentProfileId, "head-of-abm@v25");
+    assert.equal(parsed.request.agentProfileId, "head-of-abm@v29");
     assert.notEqual(reversed.fingerprint, parsed.fingerprint);
     assert.notEqual(anotherProfile.fingerprint, parsed.fingerprint);
   }

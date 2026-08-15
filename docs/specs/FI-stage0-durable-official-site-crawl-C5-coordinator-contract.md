@@ -16,14 +16,18 @@ C5 implements one provider-neutral, bounded worker pool over the PostgreSQL fron
 ```text
 phase worker
   -> persistence recovery claim, if any
+  -> link-expansion claim, if any
   -> reconciliation claim, if any
   -> ordinary fast/background page claim
   -> C2 DNS/IP preflight
   -> bounded robots authorization
   -> one C4 durable acquisition operation
   -> C2 redirect/content/link validation
+  -> fenced page completion + expansion enqueue
+
+independent expansion worker
   -> durable link/alias observations and depth expansion
-  -> fenced page completion
+  -> fenced expansion completion/retry/partial failure
 ```
 
 `ConcurrentCrawlCoordinator` owns logical workers, heartbeats, graceful stopping, safety
@@ -99,9 +103,9 @@ claims but does not cancel an in-flight call whose spend may be ambiguous.
 ## 5. Worker lifecycle, heartbeat, and shutdown
 
 The pool size is exactly the run-pinned `worker_concurrency`. Each worker checks work in this
-order: persistence-only recovery, reconciliation, then ordinary phase work. This prioritizes
-finishing retained results and resolving spend ambiguity before new acquisition within the same
-run without allowing a recovery path to call `fetch_one`.
+order: persistence-only recovery, link expansion, reconciliation, then ordinary phase work. This
+prioritizes publishing retained results and unlocking their frontier before new acquisition,
+without allowing any recovery/expansion path to call `fetch_one`.
 
 Every claimed operation has a heartbeat task. Renewal includes workspace, run, page, worker, and
 `lease_generation`; zero updated rows fence the worker. The C0 invariant
@@ -128,17 +132,19 @@ After one provider call, the coordinator rechecks:
 - MIME allowlist and decompressed response-size ceiling;
 - the outgoing-link count/text ceilings.
 
-Only an admitted success can reach artifact/snapshot persistence. Before C4 publishes the page as
-`fetched`, a replay-safe hook records redirect/canonical/anchor observations through the C2
-discovery policy. Links from a known depth below two are admitted at `parent + 1`; links from a
-sitemap-only unknown-depth page remain parked. If that page is later found through a shorter
+Only an admitted success can reach artifact/snapshot persistence. C4 then atomically publishes the
+page as `fetched` and queues one snapshot-keyed expansion job. The coordinator claims that job
+under an independent generation fence and records redirect/canonical/anchor observations through
+the C2 discovery policy. Links from a known depth below two are admitted at `parent + 1`; links
+from a sitemap-only unknown-depth page remain parked. If that page is later found through a shorter
 homepage path, C1 expands its saved link edges at the new depth without fetching the page again.
 
-The hook runs while the page is still `persistence_pending`. If the process dies after snapshot
-persistence, a replacement generation reuses the same snapshot/artifact, deterministically
-replays discovery, and completes the page without re-fetching the original URL. Exact observation
-replay is idempotent; URL-level provenance remains distinct where the observed input is materially
-different.
+If discovery persistence fails, the already-fetched page and snapshot remain usable. The expansion
+job enters bounded DB-clock exponential backoff and the background phase resumes the same job. A
+stale expansion worker cannot renew, complete, or disposition a replacement generation. Exact
+observation replay is idempotent, so a crash after discovery commit but before expansion completion
+does not duplicate page nodes or force provider I/O. Three failed expansion attempts end in an
+explicit partial-coverage state without failing the page.
 
 ## 7. Acceptance and review record
 

@@ -21,6 +21,7 @@ from clue_api.agent_registry_wiring import (
     STAGE0_CONVERSATION_TRIAL_SURFACE,
     build_agent_profile_registry,
 )
+from clue_api.client_knowledge_tools import CLIENT_KNOWLEDGE_CURSOR_KIND
 from clue_api.recipe_wiring import load_system_recipe_definitions
 from clue_api.stage0_inspection_tools import (
     READINESS_CURSOR_KIND,
@@ -46,15 +47,12 @@ _CURSOR_KIND: dict[Stage0CardOmissionKind, str] = {
 _ACCEPTED_BY: dict[str, str] = {
     **dict.fromkeys(STATEMENT_CURSOR_KINDS, "inspect_statement_history"),
     READINESS_CURSOR_KIND: "inspect_readiness_history",
+    CLIENT_KNOWLEDGE_CURSOR_KIND: "list_client_knowledge",
 }
 
 #: Kinds with no resolving tool, each with the reason it is allowed to have none. An entry here is
 #: a *decision*, not an oversight — which is the whole point of making the walk exhaustive.
 _UNRESOLVABLE_BY_DESIGN: dict[Stage0CardOmissionKind, str] = {
-    # Spec §7 defers `inspect_client_claim` deliberately: an exact-claim/provenance read is
-    # platform-general, not a Stage-0 surface, and deciding it here would invite a fourth
-    # near-identical claim reader. Ledgered with the C6 toolbelt owner.
-    Stage0CardOmissionKind.CLIENT_KNOWLEDGE_OVER_CAP: "spec §7 deferred inspect_client_claim",
     # Self-describing: it says "there were more omissions than the cap", which is complete on its
     # own. `test_the_self_describing_omission_kind_carries_no_cursor` holds it to that.
     Stage0CardOmissionKind.OMISSIONS_TRUNCATED: "carries a count only, never a cursor",
@@ -166,8 +164,8 @@ def test_the_self_describing_omission_kind_carries_no_cursor() -> None:
     assert Stage0CardOmissionKind.OMISSIONS_TRUNCATED not in _CURSOR_KIND
 
 
-def test_the_deferred_kind_is_named_with_its_reason() -> None:
-    """A deferral without a reason is indistinguishable from a forgotten kind."""
+def test_every_unresolvable_kind_is_named_with_its_reason() -> None:
+    """An exception without a reason is indistinguishable from a forgotten kind."""
 
     for kind, reason in _UNRESOLVABLE_BY_DESIGN.items():
         assert reason.strip(), kind.value

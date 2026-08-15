@@ -55,11 +55,23 @@ def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
     # Lane E E3, same reasoning one slice on: an agent that could position on demand could spend N
     # completions on an account the research engine never finished.
     assert C6_AGENT_TOOL_AUTHORITY["synthesize_value_narrative"] == ()
-    # Merged Lane D (+5: four thread tools + the directive confirmation gate), Lane E (+2: the two
-    # machine-invoked synthesis tools), FI-2 (+1: selected-Account launch), and Stage-0 hardening
-    # (+1: ICP confirmation) off the shared 48-tool base.
-    assert len(C6_AGENT_TOOL_AUTHORITY) == 57
+    # The combined inventory retains both exact-subject human gates, FI-2's selected-Account
+    # launch, and S4/S5's company/product readers. Machine-only confirmation remains withheld.
+    assert len(C6_AGENT_TOOL_AUTHORITY) == 62
     assert C6_AGENT_TOOL_AUTHORITY["open_icp_confirmation_gate"] == (AgentRole.HEAD_OF_ABM,)
+    assert C6_AGENT_TOOL_AUTHORITY["list_client_knowledge"] == (AgentRole.HEAD_OF_ABM,)
+    assert C6_AGENT_TOOL_AUTHORITY["inspect_client_claim"] == (AgentRole.HEAD_OF_ABM,)
+    assert c6_roles_for_tool("list_client_knowledge@1") == ()
+    assert c6_roles_for_tool("inspect_client_claim@1") == ()
+    assert c6_roles_for_tool("list_client_knowledge@2") == (AgentRole.HEAD_OF_ABM,)
+    assert c6_roles_for_tool("inspect_client_claim@2") == (AgentRole.HEAD_OF_ABM,)
+    assert C6_AGENT_TOOL_AUTHORITY["list_product_knowledge"] == (AgentRole.HEAD_OF_ABM,)
+    assert C6_AGENT_TOOL_AUTHORITY["inspect_product_claim"] == (AgentRole.HEAD_OF_ABM,)
+    assert C6_AGENT_TOOL_AUTHORITY["open_product_selection_gate"] == (AgentRole.HEAD_OF_ABM,)
+    assert c6_roles_for_tool("list_product_knowledge@1") == (AgentRole.HEAD_OF_ABM,)
+    assert c6_roles_for_tool("inspect_product_claim@1") == (AgentRole.HEAD_OF_ABM,)
+    assert c6_roles_for_tool("open_product_selection_gate@1") == (AgentRole.HEAD_OF_ABM,)
+    assert C6_AGENT_TOOL_AUTHORITY["confirm_project_product"] == ()
     assert C6_AGENT_TOOL_AUTHORITY["inspect_statement_history"] == (AgentRole.HEAD_OF_ABM,)
     assert C6_AGENT_TOOL_AUTHORITY["inspect_readiness_history"] == (AgentRole.HEAD_OF_ABM,)
     assert C6_AGENT_TOOL_AUTHORITY["draft_account_research_directive"] == (AgentRole.HEAD_OF_ABM,)

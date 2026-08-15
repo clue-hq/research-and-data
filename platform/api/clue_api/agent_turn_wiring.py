@@ -51,9 +51,12 @@ from clue_agents.turns import (
     PrivacyEraseResult,
     ReplayArtifactRef,
 )
+from clue_api.agent_gate import redact_gate_snapshots_for_subject
+from clue_api.context_observability import record_context_receipt
 from clue_api.thread_store import ensure_platform_thread
 from clue_core import ExecutionId
 from clue_db import ConnFactory, transaction
+from clue_obs import get_logger
 from clue_storage import StorageBackend, artifact_key, content_address
 from clue_storage.artifacts import mark_erased, purge_erased_artifacts, record_artifact
 from clue_storage.protocol import ArtifactNotFound
@@ -71,6 +74,7 @@ _EVENT_NAMESPACE = UUID("f16bca96-c8c9-5fad-9f42-35ad7873f021")
 _REF_NAMESPACE = UUID("9431adab-a359-59ee-b2f3-af522f93016b")
 _PRIVACY_NAMESPACE = UUID("f4d51cff-a92e-5ed6-a07f-826cb2348241")
 _PROJECT_PRIVACY_NAMESPACE = UUID("cd318be1-c3cf-50c1-9ddd-826cd63fa5b3")
+log = get_logger("clue_api.agent_turn")
 
 
 def _event_id(turn_id: UUID, status: str) -> UUID:
@@ -517,6 +521,17 @@ class DbAgentTurnJournal:
             if receipt is None:  # pragma: no cover - same transaction invariant
                 raise RuntimeError("inserted agent turn vanished")
             return receipt
+
+    async def load(
+        self,
+        *,
+        turn_id: UUID,
+        workspace_id: str,
+    ) -> AgentTurnReceipt | None:
+        """Read one workspace-scoped immutable turn identity for replay validation."""
+
+        async with self._conn_factory() as conn:
+            return await self._read_turn(conn, workspace_id, turn_id)
 
     async def load_committed_outcome(
         self,
@@ -1250,6 +1265,24 @@ class DbAgentContextReceiptStore(ContextReceiptStore):
                 workspace_id=workspace_id,
                 status=AgentTurnStatus.CONTEXT_READY,
             )
+        included_count = sum(item.disposition == "included" for item in receipt.refs)
+        excluded_count = sum(item.disposition == "excluded" for item in receipt.refs)
+        log.info(
+            "agent_turn.context_receipt",
+            turn_id=str(request.turn_id),
+            workspace_id=workspace_id,
+            context_bundle_id=str(manifest.context_bundle_id),
+            schema_version=manifest.schema_version,
+            policy_version=receipt.policy_version,
+            aggregate_sha256=manifest.aggregate_sha256,
+            included_count=included_count,
+            excluded_count=excluded_count,
+        )
+        record_context_receipt(
+            schema_version=manifest.schema_version,
+            included_count=included_count,
+            excluded_count=excluded_count,
+        )
 
 
 class DbAgentHistoryStore(AgentHistoryStore):
@@ -1500,7 +1533,7 @@ class DbAgentReplayReader:
             return None
         rows_result = await conn.execute(  # type: ignore[attr-defined]
             text(
-                "SELECT l.ordinal AS layer_ordinal, l.layer, l.token_budget, r.*,"
+                "SELECT l.ordinal AS receipt_layer_ordinal, l.layer, l.token_budget, r.*,"
                 " a.media_type, a.size_bytes "
                 "FROM agent_context_layer l "
                 "LEFT JOIN agent_context_ref r "
@@ -1515,7 +1548,9 @@ class DbAgentReplayReader:
         layer_names: dict[int, str] = {}
         layer_budgets: dict[int, int] = {}
         for row in rows_result.mappings():
-            ordinal = int(row["layer_ordinal"])
+            # ``r.*`` contains its own nullable ``layer_ordinal``. Use the distinct layer-table
+            # alias so an intentionally empty layer in the LEFT JOIN remains replay-readable.
+            ordinal = int(row["receipt_layer_ordinal"])
             layer_names[ordinal] = row["layer"]
             layer_budgets[ordinal] = int(row["token_budget"])
             if row["id"] is not None:
@@ -1600,7 +1635,7 @@ class AgentPrivacyService:
         subject_entity_id: UUID,
         reason_code: str = "dsar_subject_erasure",
     ) -> PrivacyEraseResult:
-        """Erase every artifact bound to this subject through ``agent_artifact_subject``."""
+        """Erase every artifact and exact gate snapshot bound to this subject."""
 
         async with self._conn_factory() as conn:
             artifact_result = await conn.execute(
@@ -1612,12 +1647,19 @@ class AgentPrivacyService:
                 {"workspace": workspace_id, "subject": subject_entity_id},
             )
             keys = tuple(artifact_result.scalars())
-        return await self.erase_artifacts(
+            redacted_gate_ids = await redact_gate_snapshots_for_subject(
+                conn,
+                workspace_id=workspace_id,
+                subject_entity_id=subject_entity_id,
+                reason_code=reason_code,
+            )
+        erased = await self.erase_artifacts(
             workspace_id=workspace_id,
             subject_entity_id=subject_entity_id,
             artifact_keys=keys,
             reason_code=reason_code,
         )
+        return erased.model_copy(update={"redacted_gate_ids": redacted_gate_ids})
 
     async def erase_project(
         self,
@@ -1694,38 +1736,133 @@ class AgentPrivacyService:
         evidence the quote was sliced from — reuses this whole path (tombstone → ``mark_erased`` →
         purge → turn event → isolated-workspace purge) instead of re-implementing it.
 
-        Affected turns are found by artifact key rather than by re-joining the subject bindings;
-        for ``erase_subject`` the two are the same set, and for a caller-supplied closure the key
-        form is the one that is actually true. The array parameter is explicitly ``CAST(… AS
-        text[])`` — the codebase's own precedent (``readiness_override_refs``) — so an **empty**
-        key set stays a well-typed "matches nothing" instead of leaving Postgres to infer an
-        element type it has no evidence for. An empty set is a real case: a subject with no
-        artifact bindings must erase to a clean no-op, not an error.
+        S4-E extends that key root through one deliberately bounded propagation closure. An exact
+        tool result can be copied into LangGraph messages, a later model input/finalization, later
+        turns in the same thread, or a delegated child turn. The root artifact remains the reverse
+        index; every root/later-thread/descendant turn then contributes all of its data-bearing CAS
+        refs, its stream frames, and its own LangGraph namespace. Body-free journals, context
+        receipts, finalization receipts, hashes, costs, and operation identities remain for audit.
+
+        The array parameters are explicitly cast, so an **empty** root stays a well-typed clean
+        no-op rather than leaving Postgres to infer an element type it has no evidence for.
         """
 
-        keys = tuple(dict.fromkeys(sorted(artifact_keys)))
+        root_keys = tuple(dict.fromkeys(sorted(artifact_keys)))
         async with self._conn_factory() as conn:
             affected_result = await conn.execute(
                 text(
-                    "SELECT DISTINCT t.id, t.execution_id, t.project_id, t.workspace_root_id "
-                    "FROM agent_turn t WHERE t.workspace_id=:workspace AND ("
-                    " EXISTS (SELECT 1 FROM agent_artifact_ref r "
-                    "         WHERE r.turn_id=t.id AND r.workspace_id=t.workspace_id "
-                    "         AND r.artifact_key = ANY(CAST(:keys AS text[])))"
-                    " OR EXISTS (SELECT 1 FROM agent_context_bundle b "
-                    "            JOIN agent_context_ref r ON r.context_bundle_id=b.id "
-                    "            JOIN memory m ON r.object_type='scoped_memory' "
-                    "             AND m.memory_id=r.object_id "
-                    "            WHERE b.turn_id=t.id AND m.subject_entity_id=:subject)"
-                    ") ORDER BY t.id"
+                    """
+                    WITH RECURSIVE root_turn AS (
+                        SELECT t.id, t.execution_id, t.project_id, t.thread_id,
+                               t.workspace_root_id, t.requested_at
+                        FROM agent_turn t
+                        WHERE t.workspace_id=:workspace AND (
+                            EXISTS (
+                                SELECT 1 FROM agent_artifact_ref r
+                                WHERE r.turn_id=t.id AND r.workspace_id=t.workspace_id
+                                  AND r.artifact_key=ANY(CAST(:keys AS text[]))
+                            )
+                            OR EXISTS (
+                                SELECT 1 FROM agent_plan p
+                                JOIN agent_tool_result r ON r.plan_id=p.id
+                                WHERE p.turn_id=t.id AND p.workspace_id=t.workspace_id
+                                  AND r.result_artifact_key=ANY(CAST(:keys AS text[]))
+                            )
+                            OR EXISTS (
+                                SELECT 1 FROM agent_context_bundle b
+                                JOIN agent_context_ref r ON r.context_bundle_id=b.id
+                                WHERE b.turn_id=t.id AND b.workspace_id=t.workspace_id
+                                  AND r.artifact_key=ANY(CAST(:keys AS text[]))
+                            )
+                            OR EXISTS (
+                                SELECT 1 FROM agent_context_bundle b
+                                JOIN agent_context_ref r ON r.context_bundle_id=b.id
+                                JOIN memory m ON r.object_type='scoped_memory'
+                                  AND m.memory_id=r.object_id
+                                WHERE b.turn_id=t.id AND m.subject_entity_id=:subject
+                            )
+                        )
+                    ), thread_closure AS (
+                        SELECT DISTINCT t.id, t.execution_id, t.project_id, t.thread_id,
+                                        t.workspace_root_id, t.requested_at
+                        FROM agent_turn t
+                        JOIN root_turn root
+                          ON root.thread_id=t.thread_id
+                         AND t.requested_at >= root.requested_at
+                        WHERE t.workspace_id=:workspace
+                    ), affected_turn AS (
+                        SELECT * FROM thread_closure
+                        UNION
+                        SELECT child.id, child.execution_id, child.project_id, child.thread_id,
+                               child.workspace_root_id, child.requested_at
+                        FROM agent_turn child
+                        JOIN affected_turn parent
+                          ON child.parent_execution_id=parent.execution_id
+                        WHERE child.workspace_id=:workspace
+                    )
+                    SELECT DISTINCT id, execution_id, project_id, thread_id,
+                                    workspace_root_id, requested_at
+                    FROM affected_turn ORDER BY requested_at, id
+                    """
                 ),
                 {
                     "workspace": workspace_id,
                     "subject": subject_entity_id,
-                    "keys": list(keys),
+                    "keys": list(root_keys),
                 },
             )
             turns = tuple(affected_result.mappings())
+            turn_ids = [turn["id"] for turn in turns]
+            if turn_ids:
+                propagated_result = await conn.execute(
+                    text(
+                        """
+                        SELECT artifact_key FROM agent_artifact_ref
+                        WHERE workspace_id=:workspace
+                          AND turn_id=ANY(CAST(:turn_ids AS uuid[]))
+                          AND ref_role NOT IN ('budget_envelope', 'resource_manifest')
+                        UNION SELECT proposal_artifact_key FROM agent_plan
+                        WHERE workspace_id=:workspace
+                          AND turn_id=ANY(CAST(:turn_ids AS uuid[]))
+                        UNION SELECT validated_artifact_key FROM agent_plan
+                        WHERE workspace_id=:workspace
+                          AND turn_id=ANY(CAST(:turn_ids AS uuid[]))
+                        UNION SELECT operation.parameter_artifact_key
+                        FROM agent_plan_operation operation
+                        JOIN agent_plan plan ON plan.id=operation.plan_id
+                        WHERE plan.workspace_id=:workspace
+                          AND plan.turn_id=ANY(CAST(:turn_ids AS uuid[]))
+                        UNION SELECT result.result_artifact_key
+                        FROM agent_tool_result result
+                        JOIN agent_plan plan ON plan.id=result.plan_id
+                        WHERE plan.workspace_id=:workspace
+                          AND plan.turn_id=ANY(CAST(:turn_ids AS uuid[]))
+                        UNION SELECT task_artifact_key FROM agent_delegation
+                        WHERE workspace_id=:workspace
+                          AND turn_id=ANY(CAST(:turn_ids AS uuid[]))
+                        UNION SELECT result.finalization_artifact_key
+                        FROM agent_delegation_result result
+                        JOIN agent_delegation delegation
+                          ON delegation.id=result.delegation_id
+                        WHERE delegation.workspace_id=:workspace
+                          AND delegation.turn_id=ANY(CAST(:turn_ids AS uuid[]))
+                        UNION SELECT output.artifact_key
+                        FROM agent_delegation_output_ref output
+                        JOIN agent_delegation delegation
+                          ON delegation.id=output.delegation_id
+                        WHERE delegation.workspace_id=:workspace
+                          AND delegation.turn_id=ANY(CAST(:turn_ids AS uuid[]))
+                        UNION SELECT envelope_artifact_key FROM agent_finalization_commit
+                        WHERE workspace_id=:workspace
+                          AND turn_id=ANY(CAST(:turn_ids AS uuid[]))
+                        """
+                    ),
+                    {"workspace": workspace_id, "turn_ids": turn_ids},
+                )
+                propagated_keys = tuple(str(key) for key in propagated_result.scalars())
+            else:
+                propagated_keys = ()
+            keys = tuple(sorted(set(root_keys) | set(propagated_keys)))
             for key in keys:
                 await conn.execute(
                     text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
@@ -1772,6 +1909,38 @@ class AgentPrivacyService:
                     status=AgentTurnStatus.PRIVACY_TOMBSTONED,
                     reason_code=reason_code,
                 )
+                # The SSE table is a transport buffer, not an audit ledger. It may contain the
+                # final message and (before S4-E) exact tool output, so privacy deletes the bounded
+                # turn partition instead of retaining redacted payload-shaped ambiguity.
+                await conn.execute(
+                    text(
+                        "DELETE FROM agent_turn_event_stream "
+                        "WHERE workspace_id=:workspace AND turn_id=:turn"
+                    ),
+                    {"workspace": workspace_id, "turn": turn["id"]},
+                )
+                for table_name in ("checkpoint_writes", "checkpoint_blobs", "checkpoints"):
+                    exists = (
+                        await conn.execute(
+                            text("SELECT to_regclass(:table_name)"),
+                            {"table_name": table_name},
+                        )
+                    ).scalar_one()
+                    if exists is not None:
+                        await conn.execute(
+                            text(
+                                f"DELETE FROM {table_name} "  # noqa: S608 -- frozen table set
+                                "WHERE thread_id=:thread_id"
+                            ),
+                            {
+                                # A production AgentTurn has its own immutable execution id. Real
+                                # LangGraph versions may persist the root namespace as either the
+                                # configured value or the empty string and may add subgraph
+                                # namespaces. The execution id is therefore the durable, complete,
+                                # turn-local DSAR boundary.
+                                "thread_id": str(turn["execution_id"]),
+                            },
+                        )
 
         if keys:
             async with self._conn_factory() as conn:

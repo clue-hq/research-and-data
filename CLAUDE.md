@@ -33,6 +33,31 @@ This file is high-level orientation only. The full architecture is the doc set i
 10. `clue-hq-content-and-artifact-scaling.md` (Doc S) — **the content plane.** Content schema ↔ design slot contract, template finalization, per-account/per-contact scaled derivation; resolves overview D2. (The design engine — *havana* — is now merged into this monorepo under `subsystems/clue-design/`, with its own authoritative doc set there; see the design-integration paragraph above and `docs/specs/design-integration-master-plan.md`. The engine itself — Rust crates, wasm pipeline, `lumen-api-helper` seam — is untouched by the integration.)
 11. `docs/architecture/README.md` — **the one-page doc map**: full index, authority order when docs conflict, terminology, reading order. When in doubt about which doc governs, start there.
 
+## Production deepagent context composition — ratified 2026-08-14
+
+`docs/specs/FI-production-deepagent-context-composition.md` is the binding implementation plan.
+The production context mechanism composes independently owned, bounded artifacts: L2 brand and
+confirmed-product context; an always-present L3 project-conversation envelope; one account-wide
+Client-KB index shared by every project; and only the active project's Stage-0 state. Full claims
+stay out of opening context and are discovered/inspected through governed, version-pinned tools.
+Each production turn persists an immutable workspace/client/account-wide Client-KB scope receipt
+before composition; retries and replay keep that exact version even when background recon advances.
+The frozen V1 Client-KB scope is company/account-wide (`product_id IS NULL`). A confirmed project
+product is separate project context and cannot silently filter the shared card or S4 tools; any
+product-specific consumption must follow the ratified S5.0 child contract
+`docs/specs/FI-production-deepagent-context-S50-product-knowledge-contract.md`: detailed product
+facts use an independently versioned product scope; selected-product context uses both a bounded
+`ProductKnowledgeCard@1` and separate trusted-scope product tools; `ClientKnowledgeCard@2` owns
+only the bounded company product catalog; and new turns eventually use
+`company-and-selected-product-v2` to pin the company and optional selected-product versions in one
+DB snapshot. S5-A–F now implement that cutover for new production turns through Head-of-ABM
+profile `v27`, Stage-0 skill `v14`, and Recipe #0 `v9`; historical V1 receipts and resources remain
+immutable for replay. Product selection is a durable human gate: the agent may present the exact
+pinned catalog but cannot confirm or repoint a project product. Production Stage-0 cards
+reverse-bind every embedded quote to its statement for DSAR.
+Every slice must reach the real production turn worker, assembler, toolbelt, database/artifacts,
+and replay path; trial-only or compiler-only work does not satisfy an exit gate.
+
 ## Session memory protocol
 At the beginning of every agent session, read the files in `_memory/` before making architecture, implementation, or planning decisions. Start with `_memory/README.md` when present, then read the most recent session notes and any topic notes that match the task.
 

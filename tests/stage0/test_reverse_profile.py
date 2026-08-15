@@ -42,6 +42,8 @@ from clue_research.stage0 import (
     CLIENT_KB_VERSION,
     CLIENT_KNOWLEDGE_FIELDS,
     CLIENT_KNOWLEDGE_REUSE_POLICY,
+    CLIENT_ONBOARDING_FIELDS,
+    CLIENT_PRODUCT_CATALOG,
     ClientInput,
     FieldProgressStatus,
     SurfaceClass,
@@ -513,6 +515,37 @@ def test_per_field_progress_events_are_emitted_in_flight() -> None:
             empty = {k for k, s in seen if s is FieldProgressStatus.EMPTY}
             assert CLIENT_VALUE_PROP in resolved
             assert empty  # third-party/review surfaces have no resolver bound
+
+    run_async(_run())
+
+
+def test_fast_onboarding_field_policy_excludes_company_catalog() -> None:
+    """The catalog may enrich later, but cannot enter the eleven-field release/checklist walk."""
+
+    async def _run() -> None:
+        async with rollback_conn(workspace_id=_CLIENT) as conn:
+            _bind_firecrawl(_owned_values())
+            seen: list[tuple[str, FieldProgressStatus]] = []
+
+            async def record(
+                _conn: AsyncConnection, field_key: str, status: FieldProgressStatus
+            ) -> None:
+                seen.append((field_key, status))
+
+            result = await reverse_profile(
+                conn,
+                _input(),
+                workspace_id=_CLIENT,
+                company_field_keys=CLIENT_ONBOARDING_FIELDS,
+                max_source_tier=2,
+                on_field_progress=record,
+            )
+
+            starts = [key for key, status in seen if status is FieldProgressStatus.STARTED]
+            assert starts == list(CLIENT_ONBOARDING_FIELDS)
+            assert CLIENT_PRODUCT_CATALOG not in starts
+            assert CLIENT_PRODUCT_CATALOG not in result.coverage.filled_fields
+            assert CLIENT_PRODUCT_CATALOG not in result.coverage.empty_fields
 
     run_async(_run())
 

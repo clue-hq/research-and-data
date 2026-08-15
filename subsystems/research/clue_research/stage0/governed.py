@@ -733,7 +733,11 @@ async def compile_product_context(
     freshness_snapshot: Mapping[str, JsonValue] | None = None,
     compiler_version: str = "product-context@1",
 ) -> ProductContextRef:
-    """Compile an immutable reference manifest after validating product-scoped claim refs."""
+    """Compile an immutable reference manifest for one product context.
+
+    The manifest may reference account-wide company claims plus claims for this exact product.
+    Claims belonging to another product remain forbidden.
+    """
     unique_claims = tuple(dict.fromkeys(claim_refs))
     if unique_claims:
         count = (
@@ -742,9 +746,9 @@ async def compile_product_context(
                     """
                     SELECT count(*)
                     FROM claim
-                    WHERE id = ANY(CAST(:claim_ids AS uuid[]))
-                      AND workspace_id = :workspace_id
-                      AND product_id = :product_id
+                        WHERE id = ANY(CAST(:claim_ids AS uuid[]))
+                          AND workspace_id = :workspace_id
+                          AND (product_id IS NULL OR product_id = :product_id)
                     """
                 ),
                 {

@@ -262,13 +262,26 @@ export function turnStateForStreamEvent(
  * never appear here on any slice — `actor_id`, `action_ref`, or the amount to
  * *use*: authority is ambient and server-derived.
  */
-export const GateResponseSchema = z.object({
-  gateId: z.string().min(1),
-  decision: GateDecisionSchema,
-  expectedSubjectSha256: z.string().regex(/^[0-9a-f]{64}$/),
-  expectedEstimatedCostCents: z.number().nullable(),
-  revisionRequest: z.string().min(1).optional(),
-});
+export const GateResponseSchema = z
+  .object({
+    gateId: z.string().min(1),
+    decision: GateDecisionSchema,
+    expectedSubjectSha256: z.string().regex(/^[0-9a-f]{64}$/),
+    expectedEstimatedCostCents: z.number().nullable(),
+    revisionRequest: z.string().min(1).optional(),
+    selectedProductId: z.string().min(1).optional(),
+  })
+  .superRefine((response, ctx) => {
+    if (
+      response.revisionRequest !== undefined &&
+      response.selectedProductId !== undefined
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        message: "revisionRequest and selectedProductId are mutually exclusive",
+      });
+    }
+  });
 
 export type GateResponse = z.infer<typeof GateResponseSchema>;
 
@@ -308,6 +321,9 @@ export function turnRequestBody(submission: TurnSubmission): unknown {
   };
   if (submission.response.revisionRequest !== undefined) {
     gateResponse.revision_request = submission.response.revisionRequest;
+  }
+  if (submission.response.selectedProductId !== undefined) {
+    gateResponse.selected_product_id = submission.response.selectedProductId;
   }
   return {
     gate_response: gateResponse,

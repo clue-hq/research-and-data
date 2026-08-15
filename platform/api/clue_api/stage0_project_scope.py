@@ -115,14 +115,17 @@ async def resolve_stage0_project_scope_for_project(
         None if row["client_entity_id"] is None else EntityId(row["client_entity_id"])
     )
     product_id = None if row["product_id"] is None else str(row["product_id"])
+    # ``client_kb_version`` is the account-wide company lineage.  The selected product is a
+    # separate trusted pin on the project; product-specific knowledge has its own version and must
+    # never replace the company lineage used by ICP readiness/synthesis.
     client_kb_version = (
         None
-        if client_entity_id is None or product_id is None
+        if client_entity_id is None
         else await current_kb_version(
             conn,
             client_entity_id,
             workspace_id=workspace_id,
-            product_id=product_id,
+            product_id=None,
         )
     )
     return Stage0ProjectScope(

@@ -19,8 +19,9 @@ One narrow, flag-gated surface for the onboarding "setting up your workspace" sc
     but derived nothing is distinguishable from real coverage (review BE-M5). FI-4 slice 3
     adds honest granularity on top: ``fields`` is the per-field state reverse profiling
     actually reached (reduced last-writer-wins from the ``stage0.recon.field`` events, in
-    Client-KB baseline order), and ``{fast,background}_budget_exhausted`` say whether a
-    lane "completed" by finishing or by hitting its cap — ``None`` until that lane's
+    the explicit onboarding-checklist order), and
+    ``{fast,background}_budget_exhausted`` say whether a lane "completed" by finishing or by
+    hitting its cap — ``None`` until that lane's
     terminal event exists, never a guessed ``False``.
 
 Identity/replay model (review BE-B1/BE-B2):
@@ -86,7 +87,7 @@ from clue_research.official_site import (
     PostgresOfficialSiteOperations,
 )
 from clue_research.stage0 import (
-    CLIENT_BASELINE_FIELDS,
+    CLIENT_ONBOARDING_FIELDS,
     ReconLaneStatus,
     recon_dedupe_hash,
     submit_onboarding_input,
@@ -173,8 +174,8 @@ class SetupStatusResponse(BaseModel):
     # distinguishable from real coverage. None until the fast lane completes.
     fast_client_kb_version: int | None = None
     fact_count: int | None = None
-    # FI-4 slice 3: real per-field motion — what reverse profiling actually reached, in
-    # Client-KB baseline order. Empty until the running lane emits its first field.
+    # FI-4 slice 3: real per-field motion for the eleven-field onboarding checklist. Company
+    # navigation knowledge such as client.product_catalog is intentionally not a checklist row.
     fields: list[SetupFieldState] = []
     # None while a lane has not reached a terminal COMPLETED state (or for a run that
     # predates the flag): "we do not know yet", never a fabricated False.
@@ -442,7 +443,7 @@ def create_stage0_setup_router(
         fast lane reached, and the later answer is the truer one.
 
         One page suffices by construction: a recon run emits at most two field events per
-        baseline field per lane plus four transitions (~40), an order of magnitude under
+        onboarding field per lane plus four transitions (~50), an order of magnitude under
         ``list_run_events``' 1000-row page."""
         async with conn_factory() as conn:
             events = await list_run_events(
@@ -457,6 +458,8 @@ def create_stage0_setup_router(
             kind = payload.get("kind")
             if kind == RECON_FIELD_PROGRESS_KIND:
                 field_key = str(payload.get("field_key", ""))
+                if field_key not in CLIENT_ONBOARDING_FIELDS:
+                    continue
                 seen = latest_field.get(field_key)
                 if field_key and (seen is None or seen[0] < event.seq):
                     latest_field[field_key] = (
@@ -477,14 +480,12 @@ def create_stage0_setup_router(
                 if isinstance(exhausted, bool) and (held is None or held[0] < event.seq):
                     latest_budget[lane] = (event.seq, exhausted)
         budgets = {lane: value for lane, (_, value) in latest_budget.items()}
-        order = {key: index for index, key in enumerate(CLIENT_BASELINE_FIELDS)}
+        order = {key: index for index, key in enumerate(CLIENT_ONBOARDING_FIELDS)}
         fields = [
             SetupFieldState(field_key=field_key, lane=lane, status=status)
             for field_key, (_, lane, status) in sorted(
                 latest_field.items(),
-                # Baseline order is the order the screen shows them in; anything outside the
-                # baseline (a future pack field) sorts after it, alphabetically.
-                key=lambda item: (order.get(item[0], len(order)), item[0]),
+                key=lambda item: order[item[0]],
             )
         ]
         return fields, budgets

@@ -11,8 +11,8 @@ import { z } from "zod";
 /**
  * One Client-KB field's latest reported state (FI-4 slice 3). The backend has ALREADY reduced
  * the recon run's at-least-once progress events to one entry per field (last-writer-wins by
- * event `seq`) and ordered them by Client-KB baseline order — the client must not re-reduce,
- * it never sees `seq`.
+ * event `seq`) and filtered/ordered them by the eleven-field onboarding policy — the client must
+ * not re-reduce or add company navigation fields; it never sees `seq`.
  */
 export const SetupFieldStateSchema = z.object({
   field_key: z.string().min(1),
@@ -39,6 +39,12 @@ export const SetupOfficialSiteProgressSchema = z.object({
   provider_active: z.number().int().nonnegative(),
   reconciliation_pending: z.number().int().nonnegative(),
   persistence_pending: z.number().int().nonnegative(),
+  retry_wait: z.number().int().nonnegative().optional().default(0),
+  expansion_queued: z.number().int().nonnegative().optional().default(0),
+  expansion_leased: z.number().int().nonnegative().optional().default(0),
+  expansion_retry_wait: z.number().int().nonnegative().optional().default(0),
+  expansion_completed: z.number().int().nonnegative().optional().default(0),
+  expansion_failed: z.number().int().nonnegative().optional().default(0),
   fetched: z.number().int().nonnegative(),
   total_pages: z.number().int().nonnegative(),
   snapshots: z.number().int().nonnegative(),

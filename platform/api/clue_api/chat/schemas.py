@@ -136,6 +136,16 @@ class GateResponseRequest(_Request):
     expected_subject_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     expected_estimated_cost_cents: Decimal | None = Field(default=None, ge=0)
     revision_request: str | None = Field(default=None, min_length=1, max_length=4_000)
+    # Present only for a product-selection gate.  It is a human choice, never an authority
+    # coordinate: the server proves it is a member of the gate's immutable candidate snapshot and
+    # then invokes the human-only confirmation tool with ambient workspace/project authority.
+    selected_product_id: str | None = Field(default=None, min_length=1, max_length=200)
+
+    @model_validator(mode="after")
+    def one_bounded_auxiliary_answer(self) -> GateResponseRequest:
+        if self.revision_request is not None and self.selected_product_id is not None:
+            raise ValueError("revision_request and selected_product_id are mutually exclusive")
+        return self
 
 
 class ContextRefRequest(_Request):
@@ -257,6 +267,10 @@ def gate_response_message(response: GateResponseRequest) -> str:
     }
     if response.revision_request is not None:
         payload["revision_request"] = response.revision_request
+    # Preserve byte-for-byte compatibility for historical directive answers: an absent optional
+    # product choice adds no new null member to their canonical transcript record.
+    if response.selected_product_id is not None:
+        payload["selected_product_id"] = response.selected_product_id
     return json.dumps(
         payload,
         sort_keys=True,
@@ -543,6 +557,7 @@ class GateAnswerWire(_Wire):
     decision: str
     expected_subject_sha256: str
     decision_payload: dict[str, Any]
+    selected_option_ref: str | None
     answered_by_user_id: str
     answered_at: str
 
@@ -588,6 +603,8 @@ class GateWire(_Wire):
     currency: str | None
     addressee_user_id: str
     created_at: str
+    snapshot_erased_at: str | None
+    snapshot_erasure_reason: str | None
     answer: GateAnswerWire | None
     launches: tuple[GateLaunchWire, ...]
 
@@ -623,6 +640,10 @@ def gate_wire(view: GateView, *, budget_controls_enabled: bool = True) -> GateWi
         currency=view.currency,
         addressee_user_id=view.addressee_user_id,
         created_at=view.created_at.isoformat(),
+        snapshot_erased_at=(
+            None if view.snapshot_erased_at is None else view.snapshot_erased_at.isoformat()
+        ),
+        snapshot_erasure_reason=view.snapshot_erasure_reason,
         answer=(
             None
             if view.answer is None
@@ -632,6 +653,7 @@ def gate_wire(view: GateView, *, budget_controls_enabled: bool = True) -> GateWi
                 decision=view.answer.decision,
                 expected_subject_sha256=view.answer.expected_subject_sha256,
                 decision_payload=dict(view.answer.decision_payload),
+                selected_option_ref=view.answer.selected_option_ref,
                 answered_by_user_id=view.answer.answered_by_user_id,
                 answered_at=view.answer.answered_at.isoformat(),
             )

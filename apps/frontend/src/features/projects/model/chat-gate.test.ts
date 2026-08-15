@@ -100,6 +100,23 @@ test("a rich stream part can never substitute for the durable gate read", () => 
   assert.equal(card.recovery?.kind, "request_new_gate");
 });
 
+test("a privacy-redacted durable gate is unavailable with no choices or actions", () => {
+  const card = model({
+    gate: {
+      ...openGate,
+      kind: "product_selection",
+      subjectSnapshot: {},
+      snapshotErasedAt: "2026-08-15T12:30:00Z",
+      snapshotErasureReason: "dsar_subject_erasure",
+    },
+  });
+  assert.ok(card);
+  assert.equal(card.state, "unavailable");
+  assert.match(card.unavailableReason ?? "", /reviewed subject was erased/);
+  assert.deepEqual(card.permittedDecisions, []);
+  assert.deepEqual(card.productOptions, []);
+});
+
 test("human_only and non-agent refs are model-only notices, never object ids", () => {
   for (const gateRef of [
     { object_type: "icp_confirmation", object_id: "human_only" },
@@ -222,6 +239,7 @@ test("answered gates stay in history from their immutable receipt", () => {
       decision: "approved",
       expectedSubjectSha256: openGate.expectedSubjectSha256,
       decisionPayload: {},
+      selectedOptionRef: null,
       answeredByUserId: "usr_demo",
       answeredAt: "2026-08-09T11:10:00Z",
     },
@@ -245,18 +263,19 @@ test("answered gates stay in history from their immutable receipt", () => {
 
 test("a revised answer projects its immutable requested changes", () => {
   const revisedGate: ChatGate = {
-      ...openGate,
-      kind: "icp_confirmation",
-      answer: {
-        turnId: "t3",
-        actionRef: "turn-action:t3",
-        decision: "revised",
-        expectedSubjectSha256: openGate.expectedSubjectSha256,
-        decisionPayload: { revision_request: "Focus on multi-site practices." },
-        answeredByUserId: "usr_demo",
-        answeredAt: "2026-08-09T11:12:00Z",
-      },
-    };
+    ...openGate,
+    kind: "icp_confirmation",
+    answer: {
+      turnId: "t3",
+      actionRef: "turn-action:t3",
+      decision: "revised",
+      expectedSubjectSha256: openGate.expectedSubjectSha256,
+      decisionPayload: { revision_request: "Focus on multi-site practices." },
+      selectedOptionRef: null,
+      answeredByUserId: "usr_demo",
+      answeredAt: "2026-08-09T11:12:00Z",
+    },
+  };
   const card = model({ gate: revisedGate });
   assert.ok(card);
   assert.equal(card.state, "denied");
@@ -266,6 +285,27 @@ test("a revised answer projects its immutable requested changes", () => {
     detail: "Focus on multi-site practices.",
     label: "Changes requested",
   });
+});
+
+test("a rejected gate is denied — closed, recorded, never re-answerable", () => {
+  const card = model({
+    gate: {
+      ...openGate,
+      answer: {
+        turnId: "t3-rejected",
+        actionRef: "turn-action:t3-rejected",
+        decision: "rejected",
+        expectedSubjectSha256: openGate.expectedSubjectSha256,
+        decisionPayload: {},
+        selectedOptionRef: null,
+        answeredByUserId: "usr_demo",
+        answeredAt: "2026-08-09T11:12:00Z",
+      },
+    },
+  });
+  assert.ok(card);
+  assert.equal(card.state, "denied");
+  assert.equal(card.decision, "rejected");
 });
 
 test("a corrupt answer digest cannot masquerade as an immutable receipt", () => {
@@ -278,6 +318,7 @@ test("a corrupt answer digest cannot masquerade as an immutable receipt", () => 
         decision: "approved",
         expectedSubjectSha256: "f".repeat(64),
         decisionPayload: {},
+        selectedOptionRef: null,
         answeredByUserId: "usr_demo",
         answeredAt: "2026-08-09T11:14:00Z",
       },
@@ -298,6 +339,7 @@ test("a receipt recorded for someone other than the addressee is rejected", () =
         decision: "approved",
         expectedSubjectSha256: openGate.expectedSubjectSha256,
         decisionPayload: {},
+        selectedOptionRef: null,
         answeredByUserId: "usr_other",
         answeredAt: "2026-08-09T11:15:00Z",
       },
@@ -319,7 +361,11 @@ test("answer payloads preserve the gate digest and enforce typed ICP revision te
   });
   assert.ok(icp);
   assert.deepEqual(
-    gateAnswerResponse(icp, "revised", "  Narrow to multi-site practices.  "),
+    gateAnswerResponse(icp, {
+      kind: "icp_revision",
+      decision: "revised",
+      revisionRequest: "  Narrow to multi-site practices.  ",
+    }),
     {
       gateId: openGate.gateId,
       decision: "revised",
@@ -328,15 +374,38 @@ test("answer payloads preserve the gate digest and enforce typed ICP revision te
       revisionRequest: "Narrow to multi-site practices.",
     },
   );
-  assert.deepEqual(gateAnswerResponse(icp, "rejected"), {
-    gateId: openGate.gateId,
-    decision: "rejected",
-    expectedSubjectSha256: openGate.expectedSubjectSha256,
-    expectedEstimatedCostCents: null,
-  });
-  assert.throws(() => gateAnswerResponse(icp, "revised", "   "), /Describe/);
+  assert.deepEqual(
+    gateAnswerResponse(icp, { kind: "decision", decision: "rejected" }),
+    {
+      gateId: openGate.gateId,
+      decision: "rejected",
+      expectedSubjectSha256: openGate.expectedSubjectSha256,
+      expectedEstimatedCostCents: null,
+    },
+  );
   assert.throws(
-    () => gateAnswerResponse(icp, "approved", "unexpected"),
+    () =>
+      gateAnswerResponse(icp, {
+        kind: "icp_revision",
+        decision: "revised",
+        revisionRequest: "   ",
+      }),
+    /Describe/,
+  );
+  assert.throws(
+    () => gateAnswerResponse(icp, { kind: "decision", decision: "revised" }),
+    /Describe/,
+  );
+  assert.throws(
+    () =>
+      gateAnswerResponse(
+        { ...icp, kind: "directive_confirmation" },
+        {
+          kind: "icp_revision",
+          decision: "revised",
+          revisionRequest: "unexpected",
+        },
+      ),
     /requesting a revision/,
   );
 });
@@ -371,4 +440,127 @@ test("malformed durable digests and gate ids fail at the repository seam", () =>
 
 test("no gate and no part produces no card", () => {
   assert.equal(model({ gate: null, gatePart: null }), null);
+});
+
+test("a product-selection gate exposes only its durable catalog choices", () => {
+  const [gate] = ChatGateListResponseSchema.parse({
+    data: [
+      {
+        ...fixtureGates[0],
+        kind: "product_selection",
+        max_spend_cents: "0",
+        subject_snapshot: {
+          products: [
+            {
+              product_id: "prd_phone",
+              name: "AI Phone Agents",
+              short_description: "Healthcare call and scheduling automation",
+              aliases: ["Insight Voice"],
+              status: "active",
+            },
+            {
+              product_id: "prd_intake",
+              name: "Patient Intake",
+              short_description: "Digital patient intake workflows",
+              aliases: [],
+              status: "active",
+            },
+            { product_id: "invalid-without-description", name: "Invalid" },
+          ],
+        },
+      },
+    ],
+  });
+  const card = model({ gate });
+  assert.ok(card);
+  assert.equal(card.kind, "product_selection");
+  assert.deepEqual(
+    card.productOptions.map((item) => item.productId),
+    ["prd_phone", "prd_intake"],
+  );
+  assert.equal(card.productOptions[0]?.aliases[0], "Insight Voice");
+});
+
+test("an answered product gate retains the exact selected option", () => {
+  const [gate] = ChatGateListResponseSchema.parse({
+    data: [
+      {
+        ...fixtureGates[0],
+        kind: "product_selection",
+        subject_snapshot: {
+          products: [
+            {
+              product_id: "prd_phone",
+              name: "AI Phone Agents",
+              short_description: "Healthcare call automation",
+              aliases: [],
+              status: "active",
+            },
+          ],
+        },
+        answer: {
+          turn_id: "turn-selection",
+          action_ref: "turn-action:turn-selection",
+          decision: "approved",
+          expected_subject_sha256: fixtureGates[0]?.expected_subject_sha256,
+          decision_payload: {},
+          selected_option_ref: "prd_phone",
+          answered_by_user_id: "usr_demo",
+          answered_at: "2026-08-15T12:00:00Z",
+        },
+      },
+    ],
+  });
+  const card = model({ gate });
+  assert.ok(card);
+  assert.equal(card.state, "responded");
+  assert.equal(card.selectedProductId, "prd_phone");
+  assert.equal(card.selectedProductName, "AI Phone Agents");
+  assert.deepEqual(gateAnswerDisplay(gate), {
+    detail: "AI Phone Agents",
+    label: "Product selected",
+  });
+});
+
+test("a product decision carries the dedicated selected product field", () => {
+  const [gate] = ChatGateListResponseSchema.parse({
+    data: [
+      {
+        ...fixtureGates[0],
+        kind: "product_selection",
+        permitted_decisions: ["approved", "rejected"],
+        subject_snapshot: {
+          products: [
+            {
+              product_id: "prd_phone",
+              name: "AI Phone Agents",
+              short_description: "Healthcare call automation",
+              aliases: [],
+              status: "active",
+            },
+          ],
+        },
+      },
+    ],
+  });
+  const card = model({ gate });
+  assert.ok(card);
+  assert.deepEqual(
+    gateAnswerResponse(card, {
+      kind: "product_selection",
+      decision: "approved",
+      selectedProductId: "prd_phone",
+    }),
+    {
+      gateId: gate.gateId,
+      decision: "approved",
+      expectedSubjectSha256: gate.expectedSubjectSha256,
+      expectedEstimatedCostCents: null,
+      selectedProductId: "prd_phone",
+    },
+  );
+  assert.throws(
+    () => gateAnswerResponse(card, { kind: "decision", decision: "approved" }),
+    /Choose one/,
+  );
 });

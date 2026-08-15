@@ -6,17 +6,29 @@ from typing import cast
 
 from pydantic import JsonValue
 
-from clue_core import ProjectRunId
+from clue_core import ProjectRunId, ReconRunId
 from clue_db import ConnFactory, transaction
 from clue_obs import get_logger
 from clue_research.durable import RunEventTopic, emit_run_event
-from clue_research.official_site import CrawlProgressEvent, record_crawl_event_metric
+from clue_research.official_site import (
+    CrawlProgressEvent,
+    CrawlProgressEventKind,
+    record_crawl_event_metric,
+)
+from clue_research.stage0 import ReconLaneStatus, transition_recon_lane
 
 log = get_logger("clue_api.official_site_progress")
 
 
 class DbOfficialSiteProgressEmitter:
-    """Append body-free events on autonomous transactions; state rows remain authoritative."""
+    """Append body-free events and project background activation into durable recon truth.
+
+    The crawl run remains authoritative for phase activation. Its idempotent
+    ``BACKGROUND_STARTED`` event is the first composition-root boundary that also owns the
+    user-facing recon row, so that event advances the recon background lane in the same
+    transaction as its durable progress record. Completion remains owned by the authoritative
+    Client-KB committer after extraction and materialization succeed.
+    """
 
     def __init__(self, *, conn_factory: ConnFactory = transaction) -> None:
         self._conn_factory = conn_factory
@@ -24,6 +36,14 @@ class DbOfficialSiteProgressEmitter:
     async def emit(self, event: CrawlProgressEvent) -> None:
         payload = cast(dict[str, JsonValue], event.model_dump(mode="json"))
         async with self._conn_factory() as conn:
+            if event.kind is CrawlProgressEventKind.BACKGROUND_STARTED:
+                await transition_recon_lane(
+                    conn,
+                    recon_run_id=ReconRunId(event.recon_run_id),
+                    workspace_id=event.workspace_id,
+                    lane="background",
+                    status=ReconLaneStatus.RUNNING,
+                )
             row = await emit_run_event(
                 conn,
                 workspace_id=event.workspace_id,

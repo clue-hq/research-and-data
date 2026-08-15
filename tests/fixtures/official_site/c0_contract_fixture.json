@@ -11,6 +11,7 @@
     "official_site_link_edge",
     "official_site_fetch_attempt",
     "official_site_page_snapshot",
+    "official_site_link_expansion",
     "official_site_alias_observation",
     "official_site_corpus_checkpoint"
   ],
@@ -52,6 +53,7 @@
       "reconciled_succeeded",
       "quarantined"
     ],
+    "LinkExpansionState": ["queued", "leased", "retry_wait", "completed", "failed"],
     "DiscoveredVia": ["root", "link", "sitemap", "redirect", "canonical"],
     "LinkRelation": ["anchor", "redirect", "canonical_hint"],
     "CrawlEligibility": ["fast", "background", "both", "refused"],
@@ -111,6 +113,13 @@
       "reconciled_no_spend": [],
       "reconciled_succeeded": ["persisted", "quarantined"],
       "quarantined": []
+    },
+    "link_expansion": {
+      "queued": ["leased"],
+      "leased": ["completed", "failed", "retry_wait"],
+      "retry_wait": ["queued"],
+      "completed": [],
+      "failed": []
     }
   },
   "config": {

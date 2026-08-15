@@ -53,8 +53,9 @@ The eight table names are:
 4. `official_site_link_edge`
 5. `official_site_fetch_attempt`
 6. `official_site_page_snapshot`
-7. `official_site_alias_observation`
-8. `official_site_corpus_checkpoint`
+7. `official_site_link_expansion`
+8. `official_site_alias_observation`
+9. `official_site_corpus_checkpoint`
 
 The executable enums and transition graphs are pinned in the fixture. Adding, removing, or
 renaming a state requires a contract-version change, fixture review, and a parent-plan delta.
@@ -340,7 +341,36 @@ After creation, C1 adds the page-owned circular FK
 `(latest_snapshot_id, id, crawl_run_id, workspace_id) ->
 official_site_page_snapshot(id, page_id, crawl_run_id, workspace_id)` to the page table.
 
-### 3.7 `official_site_alias_observation`
+### 3.7 `official_site_link_expansion`
+
+Additive state-machine amendment ratified 2026-08-15. One row is atomically created when its exact
+snapshot becomes the page's published result:
+
+```text
+id uuid PRIMARY KEY                 -- deterministic: snapshot_id
+workspace_id text NOT NULL
+crawl_run_id uuid NOT NULL
+page_id uuid NOT NULL
+snapshot_id uuid NOT NULL UNIQUE
+state text NOT NULL                 -- queued|leased|retry_wait|completed|failed
+outgoing_links_json jsonb NOT NULL  -- bounded LinkObservation array
+lease_owner text
+lease_generation bigint NOT NULL
+lease_acquired_at timestamptz
+lease_expires_at timestamptz
+attempt_count integer NOT NULL
+next_attempt_at timestamptz
+failure_stage text
+failure_code text
+failure_class text
+created_at/updated_at/completed_at timestamptz
+```
+
+Composite run/page/snapshot FKs preserve workspace lineage. The lease/state CHECKs are total, all
+worker writes are generation-fenced, and terminal failure represents partial link coverage rather
+than page-acquisition failure. The row is included in reference-only DSAR reach.
+
+### 3.8 `official_site_alias_observation`
 
 Columns:
 
@@ -365,7 +395,7 @@ Constraints:
 
 Indexes: `(crawl_run_id, target_page_id)` and `(crawl_run_id, verification_status)`.
 
-### 3.8 `official_site_corpus_checkpoint`
+### 3.9 `official_site_corpus_checkpoint`
 
 Columns:
 

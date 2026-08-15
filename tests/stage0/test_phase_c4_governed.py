@@ -62,7 +62,7 @@ from clue_research.stage0 import (
     start_recon,
     submit_onboarding_input,
 )
-from clue_research.stage0.fields import CLIENT_VALUE_PROP
+from clue_research.stage0.fields import CLIENT_PRODUCT_OVERVIEW, CLIENT_VALUE_PROP
 from clue_spine import create_brand, create_product, create_project
 from clue_storage import artifact_key as make_artifact_key
 from clue_storage import record_artifact
@@ -356,7 +356,7 @@ def test_c4_lineage_readiness_and_confirmed_run_entry() -> None:
                 research_mode=ResearchMode.ACCOUNT_PROFILING,
                 reuse_scope=ReuseScope.TENANT_PRIVATE,
                 workspace_id=_WORKSPACE,
-                product_id=product.product_id,
+                product_id=None,
             )
             claim_id = await insert_claim(conn, claim)
             spec = await create_icp_spec(
@@ -384,6 +384,22 @@ def test_c4_lineage_readiness_and_confirmed_run_entry() -> None:
                 brand_id=brand.brand_id,
                 name="Other product",
             )
+            product_claim = Claim(
+                entity_id=client,
+                entity_type=EntityType.ACCOUNT,
+                field_key=CLIENT_PRODUCT_OVERVIEW,
+                value_json="Product-specific context",
+                source_tier=1,
+                extraction_method=ExtractionMethod.HUMAN,
+                evidence_span="Product-specific context",
+                confidence=1.0,
+                run_id=new_run_id(),
+                research_mode=ResearchMode.ACCOUNT_PROFILING,
+                reuse_scope=ReuseScope.TENANT_PRIVATE,
+                workspace_id=_WORKSPACE,
+                product_id=product.product_id,
+            )
+            product_claim_id = await insert_claim(conn, product_claim)
             with pytest.raises(ValueError, match="foreign, or unscoped claim"):
                 await compile_product_context(
                     conn,
@@ -392,7 +408,7 @@ def test_c4_lineage_readiness_and_confirmed_run_entry() -> None:
                     product_id=other_product.product_id,
                     client_entity_id=client,
                     client_kb_version=1,
-                    claim_refs=(str(claim_id),),
+                    claim_refs=(str(product_claim_id),),
                 )
             readiness = await evaluate_readiness(
                 conn,

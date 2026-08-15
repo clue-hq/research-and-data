@@ -42,7 +42,7 @@ The extraction contract pins:
 
 | Dimension | C7 value |
 |---|---|
-| Prompt | `official-site-extraction-prompt-v1` |
+| Prompt/inference policy | `official-site-extraction-prompt-v2` (bounded 4,096 output tokens; reasoning effort `none`) |
 | Schema | `official-site-extraction-schema-v1` |
 | Corpus normalization/selection | `official-site-corpus-v1` |
 | Default model | `openai/gpt-5.6-luna` |

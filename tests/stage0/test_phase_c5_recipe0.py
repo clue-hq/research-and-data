@@ -915,6 +915,8 @@ def test_recipe0_slot_runs_the_c8_inspection_tools_under_the_pinned_revision() -
             )
             assert "inspect_readiness_history@1" in slot.tool_allowlist
             assert "inspect_statement_history@1" in slot.tool_allowlist
+            assert "list_client_knowledge@2" in slot.tool_allowlist
+            assert "inspect_client_claim@2" in slot.tool_allowlist
 
             result = await runner.run_step(
                 RecipeStep(

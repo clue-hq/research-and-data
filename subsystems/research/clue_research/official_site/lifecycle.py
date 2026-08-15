@@ -315,10 +315,12 @@ class OfficialSiteCrawlLifecycle:
                         worker_id_prefix=f"official-site:{run.crawl_run_id}:fast-recovery",
                     )
                 )
-            await self._ensure_phase_ready(
+            # Once the immutable fast checkpoint exists, durable acquisition work is no longer
+            # a fast-publication blocker. It remains on this run's frontier for background. Only
+            # an actual coordinator/fencing fault may prevent the authoritative fast commit.
+            await self._ensure_fast_execution_safe(
                 workspace_id=request.workspace_id,
                 crawl_run_id=run.crawl_run_id,
-                phase=CrawlPhase.FAST,
                 result=fast_phase,
             )
             if (
@@ -497,19 +499,31 @@ class OfficialSiteCrawlLifecycle:
                 phase_result = await phase_task
             else:
                 phase_result = phase_task.result()
-                deadline_task.cancel()
-                await asyncio.gather(deadline_task, return_exceptions=True)
-                await self._ensure_phase_ready(
+                await self._ensure_fast_execution_safe(
+                    workspace_id=request.workspace_id,
+                    crawl_run_id=crawl_run_id,
+                    result=phase_result,
+                )
+                blockers = await self._repository.read_phase_blockers(
                     workspace_id=request.workspace_id,
                     crawl_run_id=crawl_run_id,
                     phase=CrawlPhase.FAST,
-                    result=phase_result,
                 )
-                checkpoint = await self._repository.close_fast_and_freeze_checkpoint(
-                    workspace_id=request.workspace_id,
-                    crawl_run_id=crawl_run_id,
-                )
-                stop.set()
+                if blockers.count:
+                    # A coordinator can run out of locally claimable work while another process
+                    # still owns a live lease. Keep the DB deadline armed instead of cancelling
+                    # it and waiting for that lease's recovery boundary. At cutoff the immutable
+                    # corpus excludes the unresolved page; background resumes the same frontier.
+                    checkpoint = await deadline_task
+                else:
+                    # All fast work settled before the deadline, so publish early.
+                    deadline_task.cancel()
+                    await asyncio.gather(deadline_task, return_exceptions=True)
+                    checkpoint = await self._repository.close_fast_and_freeze_checkpoint(
+                        workspace_id=request.workspace_id,
+                        crawl_run_id=crawl_run_id,
+                    )
+                    stop.set()
                 await self._emit(
                     request,
                     crawl_run_id,
@@ -536,6 +550,26 @@ class OfficialSiteCrawlLifecycle:
             if not deadline_task.done():
                 deadline_task.cancel()
             await asyncio.gather(deadline_task, return_exceptions=True)
+
+    async def _ensure_fast_execution_safe(
+        self,
+        *,
+        workspace_id: str,
+        crawl_run_id: UUID,
+        result: CoordinatorPhaseResult,
+    ) -> None:
+        """Reject real coordinator faults without making active leases fast release blockers."""
+
+        if result.worker_errors or result.fenced_workers:
+            # Preserve the existing recovery contract for faults: a matching durable blocker
+            # produces CrawlPhasePendingError with its DB-clock retry hint; an unaccounted fault
+            # is a hard state conflict.
+            await self._ensure_phase_ready(
+                workspace_id=workspace_id,
+                crawl_run_id=crawl_run_id,
+                phase=CrawlPhase.FAST,
+                result=result,
+            )
 
     async def _ensure_phase_ready(
         self,

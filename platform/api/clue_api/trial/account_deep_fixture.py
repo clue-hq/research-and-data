@@ -148,6 +148,7 @@ from clue_research.icp import (
 from clue_research.identity import get_account, insert_account_entity, resolve_alias
 from clue_research.profiling.committee import CommitteePersonCandidate
 from clue_research.stage0 import (
+    CLIENT_BASELINE_FIELDS,
     client_kb_readiness_metrics,
     evaluate_readiness,
     read_client_kb_claims,
@@ -890,9 +891,12 @@ async def _ensure_deep_project_run(
         client_entity_id,
         workspace_id=WORKSPACE_ID,
         version=discovery.client_kb_version,
-        product_id=PRODUCT_ID,
+        product_id=None,
     )
-    metrics = client_kb_readiness_metrics(claims)
+    metrics = client_kb_readiness_metrics(
+        claims,
+        baseline_field_keys=CLIENT_BASELINE_FIELDS,
+    )
     metrics["open_policy_blocks"] = 0
     readiness = await evaluate_readiness(
         conn,

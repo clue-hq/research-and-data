@@ -10,7 +10,7 @@ import {
 } from "./setup";
 import {
   FIXTURE_SETUP_PROGRESS_SCRIPT,
-  FIXTURE_SETUP_BASELINE_FIELDS,
+  FIXTURE_SETUP_ONBOARDING_FIELDS,
 } from "./setup-progress.fixture";
 import {
   createFixtureSetupProgressSource,
@@ -194,10 +194,10 @@ test("the default script's final frame is complete with all eleven field termina
   assert.equal(last?.fast_status, "completed");
   assert.notEqual(last?.fact_count, null);
   assert.equal(last?.fields.length, 11);
-  assert.equal(FIXTURE_SETUP_BASELINE_FIELDS.length, 11);
+  assert.equal(FIXTURE_SETUP_ONBOARDING_FIELDS.length, 11);
   assert.deepEqual(
     last?.fields.map((field) => field.field_key),
-    [...FIXTURE_SETUP_BASELINE_FIELDS],
+    [...FIXTURE_SETUP_ONBOARDING_FIELDS],
   );
   for (const field of last?.fields ?? []) {
     assert.notEqual(field.status, "started");
@@ -216,7 +216,7 @@ test("the default script's final frame is complete with all eleven field termina
 
 test("the default script covers every checklist group's fields exactly once", () => {
   const grouped = SETUP_GROUPS.flatMap((group) => group.fieldKeys);
-  assert.deepEqual([...grouped].sort(), [...FIXTURE_SETUP_BASELINE_FIELDS].sort());
+  assert.deepEqual([...grouped].sort(), [...FIXTURE_SETUP_ONBOARDING_FIELDS].sort());
 });
 
 test("the default script moves: each frame differs from the one before it", () => {
@@ -229,7 +229,7 @@ test("the default script moves: each frame differs from the one before it", () =
   }
 });
 
-test("the default script announces a field start before its terminal, in baseline order", () => {
+test("the default script announces a field start before its terminal, in onboarding order", () => {
   const started: string[] = [];
   const terminated = new Set<string>();
   for (const frame of FIXTURE_SETUP_PROGRESS_SCRIPT) {
@@ -242,15 +242,15 @@ test("the default script announces a field start before its terminal, in baselin
       }
       if (field.status !== "started") terminated.add(field.field_key);
     }
-    // The backend serves the reduced field list in baseline order; a frame must not pretend
+    // The backend serves the reduced field list in onboarding order; a frame must not pretend
     // otherwise (the client never re-sorts).
     const keys = frame.fields.map((field) => field.field_key);
     assert.deepEqual(
       keys,
-      FIXTURE_SETUP_BASELINE_FIELDS.filter((key) => keys.includes(key)),
+      FIXTURE_SETUP_ONBOARDING_FIELDS.filter((key) => keys.includes(key)),
     );
   }
-  assert.deepEqual(started, [...FIXTURE_SETUP_BASELINE_FIELDS]);
+  assert.deepEqual(started, [...FIXTURE_SETUP_ONBOARDING_FIELDS]);
 });
 
 test("the derived checklist advances monotonically across the whole default script", async () => {

@@ -366,7 +366,9 @@ def test_stale_generation_rejects_every_worker_publication() -> None:
                 assert (
                     await repository.persist_snapshot(stale, attempt, artifact, result, ()) is None
                 )
-                assert not await repository.complete_page(stale, snapshot_id=uuid4())
+                assert not await repository.complete_page(
+                    stale, snapshot_id=uuid4(), outgoing_links=()
+                )
                 assert not await repository.disposition_attempt(
                     stale,
                     attempt,
@@ -605,13 +607,15 @@ def test_missing_categories_commit_empty_without_gateway_calls(tmp_path: Path) -
             "client.value_prop",
             "client.product",
             "client.differentiator",
+            "client.product_catalog",
         }
-        # Eleven category/field operations run, but the result reports unique fields and a field
-        # filled by product evidence does not remain globally empty merely because the separate
-        # company-context operation had no eligible page. Six of nine unique fields are empty.
+        # Twelve category/field operations run, including S5's company-wide catalog. The result
+        # reports unique fields and a field filled by product evidence does not remain globally
+        # empty merely because its separate company-context operation had no eligible page.
+        # Six of ten unique fields are empty.
         assert len(result.empty_fields) == 6
         assert result.failed_fields == ()
-        assert len(gateway.calls) == 3
+        assert len(gateway.calls) == 4
         async with transaction() as conn:
             states = dict(
                 (
@@ -624,7 +628,7 @@ def test_missing_categories_commit_empty_without_gateway_calls(tmp_path: Path) -
                     )
                 ).all()
             )
-        assert states == {"empty": 8, "materialized": 3}
+        assert states == {"empty": 8, "materialized": 4}
 
     async def wrapped() -> None:
         async with db_lifespan():
@@ -728,7 +732,7 @@ def test_complete_retention_reach_covers_every_table_blob_and_claim(tmp_path: Pa
             storage=storage,
             extraction_concurrency=4,
         ).materialize(_c7_request(scope))
-        assert len(result.claim_ids) == 11
+        assert len(result.claim_ids) == 12
         # Model the crash boundary after a deterministic claim insert but before the operation's
         # terminal claim-id publication. Retention reach must follow the claim's durable operation
         # reference as well as the eventually consistent summary array.
@@ -765,7 +769,7 @@ def test_complete_retention_reach_covers_every_table_blob_and_claim(tmp_path: Pa
         assert reach.alias_observation_ids == (alias_id,)
         assert reach.checkpoint_ids == (scope.checkpoint_id,)
         assert len(reach.attempt_ids) == len(reach.snapshot_ids) == 4
-        assert len(reach.extraction_operation_ids) == 11
+        assert len(reach.extraction_operation_ids) == 12
         assert set(reach.claim_ids) == set(result.claim_ids)
 
         async with transaction() as conn:

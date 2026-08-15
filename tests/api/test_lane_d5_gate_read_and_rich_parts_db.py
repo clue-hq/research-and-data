@@ -545,6 +545,7 @@ def test_the_gates_route_reports_the_answer_and_the_run_that_answer_launched(
                 "decision": "approved",
                 "expected_subject_sha256": gate.expected_subject_sha256,
                 "decision_payload": {},
+                "selected_option_ref": None,
                 "answered_by_user_id": USER_ID,
                 "answered_at": served["answer"]["answered_at"],
             }

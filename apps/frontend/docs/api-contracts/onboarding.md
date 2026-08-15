@@ -134,6 +134,12 @@ unconfigured deployment refuses `start_recon` everywhere, exactly as before slic
     "provider_active": 1,
     "reconciliation_pending": 0,
     "persistence_pending": 0,
+    "retry_wait": 0,
+    "expansion_queued": 1,
+    "expansion_leased": 0,
+    "expansion_retry_wait": 0,
+    "expansion_completed": 2,
+    "expansion_failed": 0,
     "fetched": 3,
     "total_pages": 8,
     "snapshots": 3,
@@ -160,15 +166,17 @@ unconfigured deployment refuses `start_recon` everywhere, exactly as before slic
   `running` is therefore *not* part of a healthy fast lane's vocabulary. Slice 3's `starting`
   branch serves per-field truth for the not-yet-visible run (keyed on the deterministic
   attempt id), which is the only motion there is to show during the fast lane.
-- `fields[]` — one entry per Client-KB baseline field the lanes have reached, **already
+- `fields[]` — one entry per field in the explicit eleven-field onboarding checklist the lanes
+  have reached, **already
   reduced server-side**: the events are an at-least-once outbox, so the server takes
   last-writer-wins by event `seq` per `field_key`. The client must NOT re-reduce (it never
-  sees `seq`). Ordered by Client-KB **baseline order** (`CLIENT_BASELINE_FIELDS`, the outer
-  budget order the lane walks); any non-baseline field sorts after it, alphabetically. Empty
-  until the running lane emits its first field event (and on any pre-slice-3 payload).
+  sees `seq`). Ordered and filtered by `CLIENT_ONBOARDING_FIELDS`; company navigation or future
+  pack fields are not silently added to the checklist. Empty until the running lane emits its
+  first checklist-field event (and on any pre-slice-3 payload).
 - **Cross-lane last-writer-wins is deliberate, and it regresses honestly.** The reduction is
   per `field_key`, not per `(lane, field_key)` — the background lane re-runs
-  `reverse_profile` over *every* baseline field, so after the release a field can go
+  `reverse_profile` over broader company knowledge, while this endpoint filters the result back
+  to the eleven onboarding fields. After release a checklist field can still go
   `{lane: "fast", status: "resolved"}` → `{lane: "background", status: "started"}`. The later
   answer is the truer one; the frontend annotates that state rather than hiding it (see the
   detail lines below). There is no separate "re-research" marker on the wire.
@@ -184,6 +192,10 @@ unconfigured deployment refuses `start_recon` everywhere, exactly as before slic
   `provider-active`, `spend-unknown`, `persisted`, `extracted`, `partial`, `completed`. The frontend
   accepts future state/status strings but validates all known counts/booleans. C8 does not change
   the setup release condition: C10 owns the live browser/cutover gate.
+- A locally surfaced setup stall is not a backend terminal. The screen keeps polling after showing
+  “Try again / Continue anyway”; later committed progress clears the fallback, and a later
+  `status=complete` still releases automatically. `expansion_*` counts expose the independently
+  fenced link-discovery state without exposing URLs or bodies.
 
 ### Progress event vocabulary (D-5 Path B)
 
@@ -207,7 +219,7 @@ the transport, so SSE can replace it later without component changes.
 
 ### The four D-6 checklist groups
 
-D-6 ratified four groups over the eleven `client.*` baseline fields (each field appears in
+D-6 ratified four groups over the eleven `client.*` onboarding fields (each field appears in
 exactly one group). **The mapping is frontend-owned data, not backend labels** —
 `src/features/onboarding/data/setup-groups.ts`; the reduction (`model/setup-items.ts`) takes
 the table as a parameter and knows nothing about these particular rows:
@@ -293,9 +305,9 @@ built for every other model consumer in that process, and that builder **deliber
 without a credential — a worker that cannot call a model cannot do its job, so failing at boot
 is its designed contract, not a regression.
 
-Two new baseline fields ship with it — `client.competitor` and `client.buyer_profile`
-(object-typed, appended at the END of `CLIENT_BASELINE_FIELDS` so no existing field's budget
-position moves; the baseline denominator is now **11**). Their only source is the tier-3
+Two new onboarding fields ship with it — `client.competitor` and `client.buyer_profile`
+(object-typed, appended at the END of `CLIENT_ONBOARDING_FIELDS` so no existing field's budget
+position moves; the onboarding checklist is now **11**). Their only source is the tier-3
 `exa_search` resolver (Exa's *search* API — never Exa *deep*, which is tier-4 and would breach
 the pre-confirmation tier ceiling). The fast lane's `max_source_tier=2` walks past them at zero
 spend, so they are background-lane fields for free. The resolver is bound only when
@@ -305,10 +317,19 @@ and the two fields end honestly empty — a keyless deployment must not lose onb
 optional enrichment. A hard provider refusal (revoked key, 402, 400) is likewise an honest
 empty miss, not a dead recon lane.
 
-The eleven-field tuple is the onboarding recon/progress baseline. It does not implicitly redefine
-the project-level ICP-synthesis gate: after integration with Stage-0 hardening, that gate retains
-the nine core fields and its seven-of-nine Insight Health acceptance contract. Competitor/buyer
-fields can still be made mandatory by an explicit workspace required-field policy.
+The field policy now names three independent company sets rather than overloading one baseline:
+
+- `CLIENT_ICP_SYNTHESIS_FIELDS` is the stable nine-field ICP-readiness denominator and retains the
+  seven-of-nine Insight Health acceptance contract. A workspace may explicitly add requirements.
+- `CLIENT_ONBOARDING_FIELDS` is the original eleven-field recon/progress checklist above.
+- `CLIENT_COMPANY_KNOWLEDGE_FIELDS` (the compatibility `CLIENT_BASELINE_FIELDS`) additionally
+  contains `client.product_catalog`, making the broader account-wide knowledge set 12 fields.
+
+`client.product_catalog` is bounded portfolio-navigation knowledge. It is not an onboarding row,
+does not enter the ICP denominator, and cannot delay the legacy fast onboarding release: the fast
+recon call is constrained to `CLIENT_ONBOARDING_FIELDS`. It may publish through later/background
+company knowledge and the durable official-site path. Detailed product facts are a separate
+product-scoped set and require an exact `product_id`.
 
 **Evidence-serving posture differs by field, and the difference is deferred work.** The scrape
 lane is snapshot-wrapped: its claims cite a durable, sha-256'd artifact captured through the

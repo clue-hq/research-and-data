@@ -307,7 +307,13 @@ class _RepositoryDouble:
     async def claim_persistence(self, request: ClaimPersistenceRequest) -> PersistenceClaim | None:
         raise NotImplementedError(request)
 
+    async def claim_link_expansion(self, request: Any) -> Any:
+        raise NotImplementedError(request)
+
     async def renew_lease(self, lease: CrawlLease, *, lease_ttl_seconds: int) -> bool:
+        raise NotImplementedError(lease, lease_ttl_seconds)
+
+    async def renew_link_expansion(self, lease: Any, *, lease_ttl_seconds: int) -> bool:
         raise NotImplementedError(lease, lease_ttl_seconds)
 
     async def begin_attempt(self, lease: CrawlLease, **kwargs: Any) -> FetchAttemptRef:
@@ -331,11 +337,22 @@ class _RepositoryDouble:
     ) -> Any:
         raise NotImplementedError(lease, attempt, artifact, result, outgoing_links)
 
-    async def complete_page(self, lease: CrawlLease, *, snapshot_id: Any) -> bool:
-        raise NotImplementedError(lease, snapshot_id)
+    async def complete_page(
+        self, lease: CrawlLease, *, snapshot_id: Any, outgoing_links: tuple[Any, ...]
+    ) -> bool:
+        raise NotImplementedError(lease, snapshot_id, outgoing_links)
+
+    async def complete_link_expansion(self, lease: Any) -> bool:
+        raise NotImplementedError(lease)
+
+    async def fail_link_expansion(self, lease: Any, **kwargs: Any) -> Any:
+        raise NotImplementedError(lease, kwargs)
 
     async def disposition_attempt(self, lease: Any, attempt: Any, outcome: AttemptOutcome) -> bool:
         raise NotImplementedError(lease, attempt, outcome)
+
+    async def recover_worker_failure(self, lease: CrawlLease) -> str | None:
+        raise NotImplementedError(lease)
 
     async def reclaim_expired_leases(
         self, *, workspace_id: str, crawl_run_id: UUID

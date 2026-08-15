@@ -137,6 +137,11 @@ def test_metrics_are_derived_from_row_counts_without_workspace_cardinality() -> 
         reconciliation_pending=1,
         persistence_pending=0,
         retry_wait=0,
+        expansion_queued=1,
+        expansion_leased=2,
+        expansion_retry_wait=1,
+        expansion_completed=4,
+        expansion_failed=1,
         fetched=7,
         refused=0,
         failed=0,
@@ -174,6 +179,9 @@ def test_metrics_are_derived_from_row_counts_without_workspace_cardinality() -> 
     assert sink.gauge_value("stage0.official_site.claim.latency_seconds", **attrs) == 1.5
     assert sink.gauge_value("stage0.official_site.lease.contention_pages", **attrs) == 2
     assert sink.gauge_value("stage0.official_site.spend_unknown.age_seconds", **attrs) == 30
+    assert sink.gauge_value("stage0.official_site.link_expansion.ready", **attrs) == 2
+    assert sink.gauge_value("stage0.official_site.link_expansion.leased", **attrs) == 2
+    assert sink.gauge_value("stage0.official_site.link_expansion.failed", **attrs) == 1
     assert (
         sink.gauge_value(
             "stage0.official_site.extraction.outcomes", **attrs, outcome="materialized"

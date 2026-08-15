@@ -37,6 +37,7 @@ const GateAnswerWireSchema = z.object({
   decision: z.string(),
   expected_subject_sha256: z.string().regex(SHA256_PATTERN),
   decision_payload: z.record(z.string(), z.unknown()).default({}),
+  selected_option_ref: z.string().nullable().default(null),
   answered_by_user_id: z.string(),
   answered_at: z.string(),
 });
@@ -71,6 +72,8 @@ const GateWireSchema = z.object({
   currency: z.string().nullable(),
   addressee_user_id: z.string().min(1),
   created_at: z.string(),
+  snapshot_erased_at: z.string().nullable().default(null),
+  snapshot_erasure_reason: z.string().nullable().default(null),
   answer: GateAnswerWireSchema.nullable().default(null),
   launches: z.array(GateLaunchWireSchema).default([]),
 });
@@ -81,6 +84,7 @@ export interface ChatGateAnswer {
   decision: string;
   expectedSubjectSha256: string;
   decisionPayload: Record<string, unknown>;
+  selectedOptionRef: string | null;
   answeredByUserId: string;
   answeredAt: string;
 }
@@ -110,6 +114,8 @@ export interface ChatGate {
   permittedDecisions: readonly GateDecision[];
   addresseeUserId: string;
   createdAt: string;
+  snapshotErasedAt: string | null;
+  snapshotErasureReason: string | null;
   answer: ChatGateAnswer | null;
   launches: readonly ChatGateLaunch[];
 }
@@ -118,6 +124,24 @@ export interface GateAnswerDisplay {
   detail: string | null;
   label: string;
 }
+
+/**
+ * The UI intent for one gate answer. Auxiliary text and product identity live
+ * in distinct variants, so neither can be mistaken for the other at a call
+ * site or serialized onto the wrong gate kind.
+ */
+export type GateDecisionInput =
+  | { kind: "decision"; decision: GateDecision }
+  | {
+      kind: "icp_revision";
+      decision: "revised";
+      revisionRequest: string;
+    }
+  | {
+      kind: "product_selection";
+      decision: "approved";
+      selectedProductId: string;
+    };
 
 function toGate(wire: z.infer<typeof GateWireSchema>): ChatGate {
   return {
@@ -136,6 +160,8 @@ function toGate(wire: z.infer<typeof GateWireSchema>): ChatGate {
     permittedDecisions: wire.permitted_decisions,
     addresseeUserId: wire.addressee_user_id,
     createdAt: wire.created_at,
+    snapshotErasedAt: wire.snapshot_erased_at,
+    snapshotErasureReason: wire.snapshot_erasure_reason,
     answer:
       wire.answer === null
         ? null
@@ -145,6 +171,7 @@ function toGate(wire: z.infer<typeof GateWireSchema>): ChatGate {
             decision: wire.answer.decision,
             expectedSubjectSha256: wire.answer.expected_subject_sha256,
             decisionPayload: wire.answer.decision_payload,
+            selectedOptionRef: wire.answer.selected_option_ref,
             answeredByUserId: wire.answer.answered_by_user_id,
             answeredAt: wire.answer.answered_at,
           },
@@ -166,7 +193,7 @@ export const ChatGateListResponseSchema = z
 
 /** "Open" is the absence of an answer record (ratified §6-D3), never a column. */
 export function isGateOpen(gate: ChatGate): boolean {
-  return gate.answer === null;
+  return gate.answer === null && gate.snapshotErasedAt === null;
 }
 
 // --- the card state machine ---------------------------------------------
@@ -218,6 +245,17 @@ export interface GateCardModel {
   revisionRequest: string | null;
   /** The research run an approved gate's authority actually launched. */
   launches: readonly ChatGateLaunch[];
+  productOptions: readonly ProductSelectionOption[];
+  selectedProductId: string | null;
+  selectedProductName: string | null;
+}
+
+export interface ProductSelectionOption {
+  productId: string;
+  name: string;
+  shortDescription: string;
+  aliases: readonly string[];
+  status: string;
 }
 
 function decisionOf(value: string | null): GateDecision | null {
@@ -228,6 +266,7 @@ function decisionOf(value: string | null): GateDecision | null {
 const GATE_TITLES: Record<string, string> = {
   directive_confirmation: "Review the research plan",
   icp_confirmation: "Review your ideal customer profile",
+  product_selection: "Choose this project's product",
   plan_approval: "Review the plan",
   budget_approval: "Review the budget",
 };
@@ -235,6 +274,7 @@ const GATE_TITLES: Record<string, string> = {
 const SUPPORTED_GATE_KINDS: ReadonlySet<string> = new Set([
   "directive_confirmation",
   "icp_confirmation",
+  "product_selection",
 ]);
 
 const RETRY_GATE_READ: GateRecoveryAction = {
@@ -280,6 +320,13 @@ function durableGateSummary(gate: ChatGate): string {
       ? `Research plan for ${scope}`
       : `Research plan for ${scope} · Version ${gate.subjectRevision}`;
   }
+  if (gate.kind === "product_selection") {
+    const count = productSelectionOptions(gate.subjectSnapshot).length;
+    const scope = `${count} ${count === 1 ? "product" : "products"} available`;
+    return gate.subjectRevision === null
+      ? scope
+      : `${scope} · Catalog version ${gate.subjectRevision}`;
+  }
   return "A decision is needed before work can continue.";
 }
 
@@ -313,6 +360,9 @@ function notice({
     recovery,
     revisionRequest: null,
     launches: [],
+    productOptions: [],
+    selectedProductId: null,
+    selectedProductName: null,
   };
 }
 
@@ -412,6 +462,14 @@ export function gateCardModel({
       recovery: REQUEST_NEW_GATE,
     });
   }
+  if (gate.snapshotErasedAt !== null) {
+    return notice({
+      gate,
+      part,
+      reason: "This review is unavailable because its reviewed subject was erased.",
+      recovery: null,
+    });
+  }
   if (new Set(gate.permittedDecisions).size !== gate.permittedDecisions.length) {
     return notice({
       gate,
@@ -422,6 +480,15 @@ export function gateCardModel({
   }
 
   const decision = decisionOf(gate.answer?.decision ?? null);
+  const productOptions = productSelectionOptions(gate.subjectSnapshot);
+  if (gate.kind === "product_selection" && productOptions.length === 0) {
+    return notice({
+      gate,
+      part,
+      reason: "This product proposal has no available choices. Create a new one to continue.",
+      recovery: REQUEST_NEW_GATE,
+    });
+  }
   if (gate.answer !== null && decision === null) {
     return notice({
       gate,
@@ -444,6 +511,24 @@ export function gateCardModel({
       });
     }
     const revisionRequest = gate.answer?.decisionPayload.revision_request;
+    const selectedProduct =
+      gate.answer?.selectedOptionRef === null
+        ? null
+        : productOptions.find(
+            (product) => product.productId === gate.answer?.selectedOptionRef,
+          ) ?? null;
+    if (
+      gate.kind === "product_selection" &&
+      ((decision === "approved" && selectedProduct === null) ||
+        (decision !== "approved" && gate.answer?.selectedOptionRef !== null))
+    ) {
+      return notice({
+        gate,
+        part,
+        reason: "We couldn't confirm the saved product selection.",
+        recovery: null,
+      });
+    }
     return {
       gateId: gate.gateId,
       state: decision === "approved" ? "responded" : "denied",
@@ -464,6 +549,9 @@ export function gateCardModel({
       revisionRequest:
         typeof revisionRequest === "string" ? revisionRequest : null,
       launches: gate.launches,
+      productOptions,
+      selectedProductId: gate.answer?.selectedOptionRef ?? null,
+      selectedProductName: selectedProduct?.name ?? null,
     };
   }
   if (authorityFailure !== null) {
@@ -513,6 +601,9 @@ export function gateCardModel({
     recovery: null,
     revisionRequest: null,
     launches: gate.launches,
+    productOptions,
+    selectedProductId: null,
+    selectedProductName: null,
   };
 }
 
@@ -585,6 +676,18 @@ const RESEARCH_DECISION_RECORDED: Readonly<Record<GateDecision, string>> = {
   revised: "Changes requested",
 };
 
+const PRODUCT_DECISION_COPY: Readonly<Record<GateDecision, string>> = {
+  approved: "Use this product",
+  rejected: "Not now",
+  revised: "Request changes",
+};
+
+const PRODUCT_DECISION_RECORDED: Readonly<Record<GateDecision, string>> = {
+  approved: "Product selected",
+  rejected: "Product selection declined",
+  revised: "Changes requested",
+};
+
 export function gateDecisionCopy(
   kind: string,
   decision: GateDecision,
@@ -592,6 +695,11 @@ export function gateDecisionCopy(
 ): string {
   if (kind === "icp_confirmation") {
     return recorded ? ICP_DECISION_RECORDED[decision] : ICP_DECISION_COPY[decision];
+  }
+  if (kind === "product_selection") {
+    return recorded
+      ? PRODUCT_DECISION_RECORDED[decision]
+      : PRODUCT_DECISION_COPY[decision];
   }
   return recorded
     ? RESEARCH_DECISION_RECORDED[decision]
@@ -606,45 +714,95 @@ export function gateAnswerDisplay(gate: ChatGate): GateAnswerDisplay | null {
     return { detail: null, label: "Decision recorded" };
   }
   const revisionRequest = gate.answer.decisionPayload.revision_request;
+  const selectedProduct = productSelectionOptions(gate.subjectSnapshot).find(
+    (product) => product.productId === gate.answer?.selectedOptionRef,
+  );
   return {
     detail:
       decision === "revised" && typeof revisionRequest === "string"
         ? revisionRequest.trim() || null
-        : null,
+        : decision === "approved" && gate.kind === "product_selection"
+          ? selectedProduct?.name ?? null
+          : null,
     label: gateDecisionCopy(gate.kind, decision, true),
   };
 }
 
 export function gateAnswerResponse(
   card: GateCardModel,
-  decision: GateDecision,
-  revisionRequest?: string,
+  input: GateDecisionInput,
 ): GateResponse {
   if (card.state !== "requested" || card.expectedSubjectSha256 === null) {
     throw new Error("This proposal is no longer ready for a decision.");
   }
-  if (!card.permittedDecisions.includes(decision)) {
+  if (!card.permittedDecisions.includes(input.decision)) {
     throw new Error("That option is no longer available for this proposal.");
   }
-  const trimmedRevision = revisionRequest?.trim();
+  const trimmedRevision =
+    input.kind === "icp_revision" ? input.revisionRequest.trim() : undefined;
   if (trimmedRevision && trimmedRevision.length > 4_000) {
     throw new Error("Please keep the requested changes under 4,000 characters.");
   }
-  if (card.kind === "icp_confirmation" && decision === "revised") {
+  if (card.kind === "icp_confirmation" && input.decision === "revised") {
     if (!trimmedRevision) {
       throw new Error("Describe what you would like changed before continuing.");
     }
-  } else if (trimmedRevision) {
+    if (input.kind !== "icp_revision") {
+      throw new Error("Describe what you would like changed before continuing.");
+    }
+  } else if (input.kind === "icp_revision") {
     throw new Error("Changes can only be added when requesting a revision.");
+  }
+  if (card.kind === "product_selection" && input.decision === "approved") {
+    if (input.kind !== "product_selection") {
+      throw new Error("Choose one of the products shown before continuing.");
+    }
+    if (!card.productOptions.some((product) => product.productId === input.selectedProductId)) {
+      throw new Error("That product is no longer available for this proposal.");
+    }
+  } else if (input.kind === "product_selection") {
+    throw new Error("A product can only be selected when approving this choice.");
   }
   return {
     gateId: card.gateId,
-    decision,
+    decision: input.decision,
     expectedSubjectSha256: card.expectedSubjectSha256,
     expectedEstimatedCostCents:
       card.kind === "directive_confirmation" ? card.amountCents : null,
     ...(trimmedRevision ? { revisionRequest: trimmedRevision } : {}),
+    ...(input.kind === "product_selection"
+      ? { selectedProductId: input.selectedProductId }
+      : {}),
   };
+}
+
+function productSelectionOptions(
+  snapshot: Record<string, unknown> | undefined,
+): readonly ProductSelectionOption[] {
+  if (!snapshot || !Array.isArray(snapshot.products)) return [];
+  return snapshot.products.flatMap((candidate) => {
+    if (
+      !candidate ||
+      typeof candidate !== "object" ||
+      typeof (candidate as Record<string, unknown>).product_id !== "string" ||
+      typeof (candidate as Record<string, unknown>).name !== "string" ||
+      typeof (candidate as Record<string, unknown>).short_description !== "string"
+    ) {
+      return [];
+    }
+    const item = candidate as Record<string, unknown>;
+    return [
+      {
+        productId: item.product_id as string,
+        name: item.name as string,
+        shortDescription: item.short_description as string,
+        aliases: Array.isArray(item.aliases)
+          ? item.aliases.filter((alias): alias is string => typeof alias === "string")
+          : [],
+        status: typeof item.status === "string" ? item.status : "active",
+      },
+    ];
+  });
 }
 
 /** Money is formatted by the client (D-5); the backend never sends a string. */

@@ -63,10 +63,9 @@ export function ConversationPane({
       gateFor: chat.gateFor,
       onGateDecision: (
         card: Parameters<ProjectChatController["answerGate"]>[0],
-        decision: Parameters<ProjectChatController["answerGate"]>[1],
-        revisionRequest?: Parameters<ProjectChatController["answerGate"]>[2],
+        input: Parameters<ProjectChatController["answerGate"]>[1],
       ) => {
-        void chat.answerGate(card, decision, revisionRequest);
+        void chat.answerGate(card, input);
       },
       onGateRecovery: (card: Parameters<ProjectChatController["recoverGate"]>[0]) => {
         void chat.recoverGate(card);

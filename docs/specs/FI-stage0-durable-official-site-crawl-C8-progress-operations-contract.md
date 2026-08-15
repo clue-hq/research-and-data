@@ -65,6 +65,8 @@ event failure cannot fail, cancel, or repeat acquisition/materialization.
   persistence, retry, fetched, refused, failed, and quarantined counts;
 - `official_site_fetch_attempt` for active `spend_unknown` and recorded cost;
 - `official_site_page_snapshot` for URL-level snapshots and distinct content blobs;
+- `official_site_link_expansion` for queued, leased, retry-wait, completed, and failed recursive
+  discovery work after page publication;
 - `official_site_extraction_operation` for prepared, active, materialized, empty, failed, and
   extraction-spend-unknown counts;
 - `official_site_corpus_checkpoint` for committed corpus checkpoints;

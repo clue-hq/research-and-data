@@ -15,8 +15,8 @@ import {
   SourcesTrigger,
 } from "@/components/ai-elements/sources";
 import { MessageResponse } from "@/components/ai-elements/message-response";
-import type { ChatGatePart, ChatPart, GateDecision } from "../model/chat-parts";
-import type { GateCardModel } from "../model/chat-gate";
+import type { ChatGatePart, ChatPart } from "../model/chat-parts";
+import type { GateCardModel, GateDecisionInput } from "../model/chat-gate";
 import type { TranscriptTurnState } from "../model/chat-transcript";
 import { ChatAgentActivity, ChatReasoning } from "./chat-agent-activity";
 import { ChatGateCard } from "./chat-gate-card";
@@ -37,8 +37,7 @@ export interface ChatPartActions {
   gateFor(part: ChatGatePart): GateCardModel | null;
   onGateDecision(
     card: GateCardModel,
-    decision: GateDecision,
-    revisionRequest?: string,
+    input: GateDecisionInput,
   ): void;
   onGateRecovery(card: GateCardModel): void;
 }

@@ -84,7 +84,11 @@ export function createFixtureChatGatesRepository(
                 actionRef: `turn-action:${answered.turnId}`,
                 decision: answered.decision,
                 expectedSubjectSha256: gate.expectedSubjectSha256,
-                decisionPayload: {},
+                decisionPayload:
+                  answered.revisionRequest === undefined
+                    ? {}
+                    : { revision_request: answered.revisionRequest },
+                selectedOptionRef: answered.selectedProductId ?? null,
                 answeredByUserId: gate.addresseeUserId,
                 answeredAt: new Date().toISOString(),
               },

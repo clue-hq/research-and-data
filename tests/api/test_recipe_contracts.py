@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import hashlib
+import json
+from pathlib import Path
 from typing import cast
 
 import pytest
@@ -14,6 +17,7 @@ from clue_api.recipe_contracts import (
     build_replay_safety_audit,
     standing_recipe_addresses,
 )
+from clue_api.recipe_wiring import SYSTEM_RECIPE_FILENAMES
 from clue_api.stage0_recipe import RecipeStep
 from clue_api.toolbelt_wiring import build_toolbelt
 from clue_toolbelt import ReplayPolicy, ToolRegistry
@@ -41,10 +45,10 @@ def test_every_registered_tool_has_a_typed_output_contract() -> None:
     assert missing == []
 
 
-def test_conversation_runtime_pins_the_promoted_slice2_recipe() -> None:
-    """A new recipe asset is inert if the detached turn runner still asks for its predecessor."""
+def test_conversation_runtime_pins_the_promoted_integration_recipe() -> None:
+    """The combined recipe is inert if the detached turn runner still asks for a predecessor."""
 
-    assert CONVERSATION_RECIPE_VERSION == 8
+    assert CONVERSATION_RECIPE_VERSION == 10
 
 
 def test_every_standing_recipe_tool_is_exact_typed_pinned_and_replay_certified() -> None:
@@ -60,6 +64,96 @@ def test_every_standing_recipe_tool_is_exact_typed_pinned_and_replay_certified()
     assert all(item.pin_requirements for item in audit)
     assert all(len(item.input_schema_sha256) == 64 for item in audit)
     assert all(len(item.output_schema_sha256) == 64 for item in audit)
+    by_address = {item.address: item for item in audit}
+    for address in ("list_client_knowledge@2", "inspect_client_claim@2"):
+        assert by_address[address].replay_policy is ReplayPolicy.EFFECT_FREE
+        assert by_address[address].pin_requirements == ("client_kb",)
+    for address in ("list_product_knowledge@1", "inspect_product_claim@1"):
+        assert by_address[address].replay_policy is ReplayPolicy.EFFECT_FREE
+        assert by_address[address].pin_requirements == ("product_kb",)
+
+
+def test_integration_preserves_pilot_recipe_v7_and_v8_bytes() -> None:
+    root = Path(__file__).resolve().parents[2] / "platform" / "execution" / "recipes"
+
+    v7_index = SYSTEM_RECIPE_FILENAMES.index("recipe0-stage0-v7.json")
+    assert SYSTEM_RECIPE_FILENAMES[v7_index : v7_index + 2] == (
+        "recipe0-stage0-v7.json",
+        "recipe0-stage0-v8.json",
+    )
+    assert hashlib.sha256((root / "recipe0-stage0-v7.json").read_bytes()).hexdigest() == (
+        "67d86848497a9f6e884961eb31f127d70a32578c10e5c07cc80272fb7a539c7a"
+    )
+    assert hashlib.sha256((root / "recipe0-stage0-v8.json").read_bytes()).hexdigest() == (
+        "cbe23f9a48caa5e7672c0ddbbad9f7f5604b4c84d6b2030da0661784e771fe8e"
+    )
+
+
+def test_s5d_mints_recipe_v9_and_preserves_v8_for_exact_replay() -> None:
+    root = Path(__file__).resolve().parents[2] / "platform" / "execution" / "recipes"
+    v8 = json.loads((root / "recipe0-stage0-v8.json").read_text())
+    v9 = json.loads((root / "recipe0-stage0-v9.json").read_text())
+    product_addresses = {
+        "list_product_knowledge@1",
+        "inspect_product_claim@1",
+        "open_product_selection_gate@1",
+    }
+
+    v8_index = SYSTEM_RECIPE_FILENAMES.index("recipe0-stage0-v8.json")
+    assert SYSTEM_RECIPE_FILENAMES[v8_index : v8_index + 2] == (
+        "recipe0-stage0-v8.json",
+        "recipe0-stage0-v9.json",
+    )
+    assert v8["version"] == 8
+    assert v9["version"] == 9
+    assert product_addresses.isdisjoint(v8["graph"]["tool_allowlist"])
+    assert product_addresses <= set(v9["graph"]["tool_allowlist"])
+    slot = next(node for node in v9["graph"]["nodes"] if node["node_key"] == "stage0_interactions")
+    assert product_addresses <= set(slot["dynamic_tool_allowlist"])
+    assert "product_kb" in slot["dynamic_pin_kinds"]
+    assert {
+        (item["key"], item["version"])
+        for item in v9["compatibility"]["nodes"]["stage0_interactions"]
+        if item["kind"] == "tool"
+        and item["key"]
+        in {
+            "list_product_knowledge",
+            "inspect_product_claim",
+            "open_product_selection_gate",
+        }
+    } == {
+        ("list_product_knowledge", "1"),
+        ("inspect_product_claim", "1"),
+        ("open_product_selection_gate", "1"),
+    }
+
+
+def test_integration_recipe_v10_composes_both_resource_lineages() -> None:
+    root = Path(__file__).resolve().parents[2] / "platform" / "execution" / "recipes"
+    v9 = json.loads((root / "recipe0-stage0-v9.json").read_text())
+    v10 = json.loads((root / "recipe0-stage0-v10.json").read_text())
+    expected = {
+        "evaluate_stage0_readiness@2",
+        "synthesize_icps@2",
+        "open_icp_confirmation_gate@1",
+        "launch_selected_account_research@1",
+        "list_client_knowledge@2",
+        "inspect_client_claim@2",
+        "list_product_knowledge@1",
+        "inspect_product_claim@1",
+        "open_product_selection_gate@1",
+    }
+
+    v9_index = SYSTEM_RECIPE_FILENAMES.index("recipe0-stage0-v9.json")
+    assert SYSTEM_RECIPE_FILENAMES[v9_index : v9_index + 2] == (
+        "recipe0-stage0-v9.json",
+        "recipe0-stage0-v10.json",
+    )
+    assert v9["version"] == 9
+    assert v10["version"] == 10
+    assert expected <= set(v10["graph"]["tool_allowlist"])
+    slot = next(node for node in v10["graph"]["nodes"] if node["node_key"] == "stage0_interactions")
+    assert expected <= set(slot["dynamic_tool_allowlist"])
 
 
 def test_operation_id_requirements_are_explicit() -> None:

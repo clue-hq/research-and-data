@@ -24,6 +24,7 @@ from clue_agents.contracts import (
     FinalizeStatus,
     ModelPolicy,
     PlanToolStep,
+    ProjectContextArtifact,
     ResourceKind,
     SkillBundle,
     SpecialistTaskEnvelope,
@@ -184,6 +185,53 @@ def test_constitution_and_turn_reject_cross_workspace_refs_and_extra_fields() ->
 
     with pytest.raises(ValidationError, match="Extra inputs"):
         constitution(unknown_authority="forbidden")
+
+
+def _production_project_context(
+    *,
+    client_entity_id: str = "client-1",
+    client_version: int = 7,
+    project_id: str = "project-1",
+) -> tuple[ProjectContextArtifact, ProjectContextArtifact]:
+    return (
+        ProjectContextArtifact(
+            name="client_knowledge",
+            artifact_ref=artifact("client-knowledge.json"),
+            domain_ref=domain_ref("unused").model_copy(
+                update={
+                    "object_type": "client_knowledge",
+                    "object_id": client_entity_id,
+                    "version": client_version,
+                }
+            ),
+        ),
+        ProjectContextArtifact(
+            name="stage0_project_state",
+            artifact_ref=artifact("stage0-project-state.json"),
+            domain_ref=domain_ref("unused").model_copy(
+                update={
+                    "object_type": "stage0_project_state",
+                    "object_id": project_id,
+                    "version": None,
+                }
+            ),
+        ),
+    )
+
+
+def test_production_project_context_is_paired_and_exactly_scoped() -> None:
+    bundle = _production_project_context()
+    value = constitution(project_context_artifacts=bundle)
+    assert value.project_context_artifacts == bundle
+
+    with pytest.raises(ValidationError, match="constituted together"):
+        constitution(project_context_artifacts=bundle[:1])
+    with pytest.raises(ValidationError, match="constitution client"):
+        constitution(
+            project_context_artifacts=_production_project_context(client_entity_id="foreign")
+        )
+    with pytest.raises(ValidationError, match="constitution project"):
+        constitution(project_context_artifacts=_production_project_context(project_id="project-2"))
 
 
 def test_agent_plan_rejects_unknown_dependency_and_cycle() -> None:
@@ -361,8 +409,11 @@ def test_frozen_contract_json_schema_digests() -> None:
     assert actual == {
         "AgentProfile": "cb23c46fe9a2fa643ddfc816b95be2f09353e92c680bd634e929c5ab4b15580c",
         "SkillBundle": "ddbffd59d074ffd70880fd0398b7bc0a9aab2163e55aa8527c930f5866b24521",
-        "AgentConstitution": ("dcd6fe06da39a8c7ad9fdc99ea62f45ce2eae646cf9a59e83739e37756c41d2a"),
-        "AgentTurnRequest": ("b474a9dbed4b44bd1d2feb38e9132b5f84f744406d66f24f4b982a7313d234de"),
+        # S3 composes the frozen snake_case Client-KB/Stage-0 artifact names. Project-context
+        # identifiers therefore accept both that vocabulary and the older kebab-case directive
+        # names without widening folder-backed ``ResourceName`` contracts.
+        "AgentConstitution": ("00a028ea6c3e00774203cf3308c2287f916fe18f81d3ce6f8879b3e65bb7879b"),
+        "AgentTurnRequest": ("b7187f92ebd38715ade2888ce834e89f576e7189ee2cf6fdb641eeceeb1725d6"),
         "AgentPlan": "a954471a676c23101629f3babe2e523a6de96d21f7cc96de7983c8f265073c4e",
         "ValidatedPlan": ("4708b42a3a98619f52056ed93dad842852955bd82551a974b788969274de2026"),
         "DelegationRequest": ("421ad5b96a036115f492c687bab8d8fc46dafd57991b80ce0718a8bfa3f65be3"),

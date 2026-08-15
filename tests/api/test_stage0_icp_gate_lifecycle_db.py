@@ -739,7 +739,7 @@ def test_tampered_unauthorized_and_stale_answers_fail_before_any_receipt(
         ("approved", "e" * 64, None, {}, "digest does not match"),
         ("approved", None, "usr_not_the_addressee", {}, "only the gate addressee"),
         ("nonsense", None, None, {}, "decision is not permitted"),
-        ("revised", None, None, {}, "requires one non-blank"),
+        ("revised", None, None, {}, "requires one trimmed"),
         ("approved", None, None, {}, "answering turn does not exist"),
     ],
 )

@@ -14,7 +14,7 @@ import {
   useChatViewerIdentity,
 } from "../data/projects-transport";
 import type { ChatMessage } from "../model/chat-message";
-import type { ChatGatePart, GateDecision } from "../model/chat-parts";
+import type { ChatGatePart } from "../model/chat-parts";
 import {
   agentGateIdFromPart,
   gateAnswerDisplay,
@@ -25,6 +25,7 @@ import {
   type GateAnswerDisplay,
   type GateAuthorityFailure,
   type GateCardModel,
+  type GateDecisionInput,
 } from "../model/chat-gate";
 import {
   applyChatStreamEvent,
@@ -112,8 +113,7 @@ export interface ProjectChatController {
   ): Promise<ChatSubmissionResult>;
   answerGate(
     card: GateCardModel,
-    decision: GateDecision,
-    revisionRequest?: string,
+    input: GateDecisionInput,
   ): Promise<void>;
   recoverGate(card: GateCardModel): Promise<void>;
   stopActiveTurn(): Promise<void>;
@@ -561,15 +561,11 @@ export function useProjectChatController({
   );
 
   const answerGate = useCallback(
-    async (
-      card: GateCardModel,
-      decision: GateDecision,
-      revisionRequest?: string,
-    ) => {
+    async (card: GateCardModel, input: GateDecisionInput) => {
       if (!activeThreadId) return;
       let response;
       try {
-        response = gateAnswerResponse(card, decision, revisionRequest);
+        response = gateAnswerResponse(card, input);
       } catch (failure) {
         setError(failure instanceof Error ? failure.message : String(failure));
         return;
@@ -584,7 +580,9 @@ export function useProjectChatController({
             kind: "gate_response",
             response,
           },
-          idempotencyKey: newIdempotencyKey(`gate:${card.gateId}:${decision}`),
+          idempotencyKey: newIdempotencyKey(
+            `gate:${card.gateId}:${input.decision}`,
+          ),
         });
         if (!mounted.current) return;
         setGateFailures((current) => {

@@ -168,7 +168,7 @@ class _Stage0ProjectTool(Tool):
 
 
 class EvaluateStage0ReadinessV2Tool(_Stage0ProjectTool):
-    """Compute readiness from the current product-scoped Client KB, never model measurements."""
+    """Compute readiness from the current company Client KB in trusted product context."""
 
     name = "evaluate_stage0_readiness"
     version = "2"
@@ -221,7 +221,7 @@ class EvaluateStage0ReadinessV2Tool(_Stage0ProjectTool):
                     scope.client_entity_id,
                     workspace_id=scope.workspace_id,
                     version=scope.client_kb_version,
-                    product_id=scope.product_id,
+                    product_id=None,
                 )
             )
             workspace_policy = await get_workspace_client_kb_readiness_policy(
@@ -456,7 +456,9 @@ class SynthesizeIcpsV2Tool(_Stage0ProjectTool):
                 ClientKnowledgeBaseRef(
                     client_entity_id=scope.client_entity_id,
                     client_kb_version=scope.client_kb_version,
-                    product_id=scope.product_id,
+                    # ICP synthesis reads the company KB; the separately trusted selected product
+                    # is persisted on the resulting ICP lineage below.
+                    product_id=None,
                 ),
                 workspace_id=scope.workspace_id,
                 project_statements=tuple(project_statements),

@@ -36,9 +36,11 @@ __all__ = [
 ]
 
 C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
-    # v25 combines Stage-0's durable exact-subject ICP gate with account-deep-steering v4's exact
-    # current-message Account launch path for deployments with pilot budget controls disabled.
-    AgentRole.HEAD_OF_ABM: "v25",
+    # Integration v29 composes the pilot's trusted Stage-0 readiness/synthesis, exact-subject ICP
+    # gate, selected-Account launch and account-deep-steering v4 with the onboarding lineage's
+    # company/product knowledge reads and human product-selection gate. v1-v28 remain immutable
+    # historical replay inputs.
+    AgentRole.HEAD_OF_ABM: "v29",
     AgentRole.RESEARCH: "v7",
     AgentRole.CONTENT_DRAFTER: "v5",
     AgentRole.REVIEWER: "v5",
@@ -91,7 +93,11 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
     # omission kind no installed tool can resolve is the contract
     # `test_c8_omission_resolution_contract.py` now refuses to let ship.
     "inspect_readiness_history": (AgentRole.HEAD_OF_ABM,),
+    "inspect_client_claim": (AgentRole.HEAD_OF_ABM,),
+    "inspect_product_claim": (AgentRole.HEAD_OF_ABM,),
     "inspect_statement_history": (AgentRole.HEAD_OF_ABM,),
+    "list_client_knowledge": (AgentRole.HEAD_OF_ABM,),
+    "list_product_knowledge": (AgentRole.HEAD_OF_ABM,),
     "launch_account_deep": (),
     "launch_account_research": (AgentRole.HEAD_OF_ABM,),
     "launch_selected_account_research": (AgentRole.HEAD_OF_ABM,),
@@ -102,6 +108,7 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
     # turn it is answering (the addressee is derived from the durable submission, not proposed).
     "open_directive_confirmation_gate": (AgentRole.HEAD_OF_ABM,),
     "open_icp_confirmation_gate": (AgentRole.HEAD_OF_ABM,),
+    "open_product_selection_gate": (AgentRole.HEAD_OF_ABM,),
     "override_stage0_readiness": (),
     "pause_run": (),
     "profile_contact": (),
@@ -209,6 +216,7 @@ C6_SURFACE_POLICIES: tuple[AgentSurfacePolicy, ...] = (
                 # confirmation gate — but never act on the answer — would be inviting a human to
                 # approve spend that no surface here can perform.
                 "open_directive_confirmation_gate",
+                "open_product_selection_gate",
                 "start_recon",
                 "submit_onboarding_input",
                 "synthesize_icps",
@@ -292,6 +300,14 @@ _RESERVED_REASON: dict[str, str] = {
 def _roles_for(address: str, name: str) -> tuple[AgentRole, ...]:
     """Resolve authority by exact address where versions have different safety proofs."""
 
+    if name == "list_client_knowledge":
+        return (AgentRole.HEAD_OF_ABM,) if address == "list_client_knowledge@2" else ()
+    if name == "inspect_client_claim":
+        return (AgentRole.HEAD_OF_ABM,) if address == "inspect_client_claim@2" else ()
+    if name == "list_product_knowledge":
+        return (AgentRole.HEAD_OF_ABM,) if address == "list_product_knowledge@1" else ()
+    if name == "inspect_product_claim":
+        return (AgentRole.HEAD_OF_ABM,) if address == "inspect_product_claim@1" else ()
     if name == "propose_field":
         return (AgentRole.HEAD_OF_ABM,) if address == "propose_field@2" else ()
     if name == "draft_account_research_directive":

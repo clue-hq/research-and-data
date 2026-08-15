@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
 from collections.abc import AsyncIterator, Mapping, Sequence
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
@@ -55,6 +56,19 @@ class _Models:
         return ScriptedAgentChatModel(responses=self._responses)
 
 
+class _NeverRespondingModel(ScriptedAgentChatModel):
+    async def _agenerate(self, *args: Any, **kwargs: Any):
+        del args, kwargs
+        await asyncio.Event().wait()
+        raise AssertionError("unreachable")
+
+
+class _NeverRespondingModels:
+    def build(self, **kwargs: Any) -> _NeverRespondingModel:
+        del kwargs
+        return _NeverRespondingModel(responses=(AIMessage(content="unreachable"),))
+
+
 class _CaptureModelInput(BaseCallbackHandler):
     def __init__(self) -> None:
         self.messages: list[list[object]] = []
@@ -73,6 +87,7 @@ class _Execution(AgentExecutionAdapter):
     def __init__(self) -> None:
         self.recovered: dict[str, object] = {}
         self.validated_plans: list[AgentPlan] = []
+        self.recover_calls = 0
 
     async def validate_plan(
         self,
@@ -147,6 +162,7 @@ class _Execution(AgentExecutionAdapter):
 
     async def recover(self, *, execution_id: ExecutionId) -> Mapping[str, object]:
         assert execution_id == EXECUTION_ID
+        self.recover_calls += 1
         return self.recovered
 
 
@@ -378,6 +394,41 @@ def test_real_deepagent_normal_stop_is_failed_without_finalize_authority() -> No
     assert str(system.content).endswith("## End resolved resource and capability map")
 
 
+def test_real_deepagent_timeout_recovers_and_never_manufactures_finalization() -> None:
+    request, resolved = _request()
+    execution = _Execution()
+    runtime = DeepAgentTurnRuntime(
+        models=cast(Any, _NeverRespondingModels()),
+        execution=execution,
+        max_runtime_s=0.01,
+    )
+    factory = GovernedAgentToolFactory(
+        request=request,
+        resolved_profile=resolved,  # type: ignore[arg-type]
+        registry=build_toolbelt(storage=None, gateway=None),
+        execution=cast(Any, execution),
+        lease=cast(Any, object()),
+        artifacts=cast(Any, object()),
+    )
+    outcome = run_async(
+        runtime.run(
+            request=request,
+            resolved_profile=resolved,  # type: ignore[arg-type]
+            context=AssembledAgentContext(
+                manifest=context_manifest(),
+                messages=(HumanMessage(content="Wait indefinitely."),),
+            ),
+            backend=None,
+            governed_tools=factory.build(),
+        )
+    )
+
+    assert outcome.status is AgentExecutionStatus.FAILED
+    assert outcome.failure_code == "agent_timeout"
+    assert outcome.finalization_ref is None
+    assert execution.recover_calls == 1
+
+
 def test_exact_tool_surface_requires_a_tool_call_until_governed_finalize() -> None:
     request, resolved = _request()
     execution = _Execution()
@@ -393,11 +444,15 @@ def test_exact_tool_surface_requires_a_tool_call_until_governed_finalize() -> No
         {"name": name}
         for name in ("edit_file", "glob", "grep", "ls", "read_file", "write_file", "write_todos")
     ]
+    governed_tools = factory.build()
+    effective_names = {tool.name for tool in governed_tools}
+    assert "finalize_turn" in effective_names
+    assert {"list_product_knowledge", "inspect_product_claim"}.isdisjoint(effective_names)
     model_request = ModelRequest(
         model=ScriptedAgentChatModel(responses=(AIMessage(content="unused"),)),
         messages=[HumanMessage(content="Ask the next useful question.")],
         system_message=SystemMessage(content="Base prompt."),
-        tools=[*factory.build(), *framework_tools],
+        tools=[*governed_tools, *framework_tools],
     )
     observed: dict[str, object] = {}
 
@@ -438,10 +493,10 @@ def test_exact_tool_surface_requires_a_tool_call_until_governed_finalize() -> No
         )
 
     run_async(
-        ExactAgentToolSurfaceMiddleware(profile=resolved).awrap_model_call(
-            model_request,
-            handler,
-        )
+        ExactAgentToolSurfaceMiddleware(
+            profile=resolved,
+            effective_governed_tool_names=effective_names,
+        ).awrap_model_call(model_request, handler)
     )
 
     calls = observed["calls"]

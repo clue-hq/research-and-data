@@ -150,6 +150,8 @@ def test_production_app_construction_requires_authenticated_principal_service() 
                 auth_environment="production",
                 auth_mode="clerk",
                 projections_auth_mode="authenticated_principal",
+                metrics_exporter="otlp",
+                metrics_otlp_endpoint="https://otel.example/v1/metrics",
             )
             with pytest.raises(
                 RuntimeError,

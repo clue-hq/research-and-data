@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import shutil
 from pathlib import Path
 
@@ -68,6 +69,10 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         "skill:stage0-interview@v10",
         "skill:stage0-interview@v11",
         "skill:stage0-interview@v12",
+        "skill:stage0-interview@v13",
+        "skill:stage0-interview@v14",
+        "skill:stage0-interview@v15",
+        "skill:stage0-interview@v16",
         "skill:stage0-interview@v2",
         "skill:stage0-interview@v3",
         "skill:stage0-interview@v4",
@@ -107,6 +112,10 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         "profile:head-of-abm@v23",
         "profile:head-of-abm@v24",
         "profile:head-of-abm@v25",
+        "profile:head-of-abm@v26",
+        "profile:head-of-abm@v27",
+        "profile:head-of-abm@v28",
+        "profile:head-of-abm@v29",
         "profile:head-of-abm@v3",
         "profile:head-of-abm@v4",
         "profile:head-of-abm@v5",
@@ -153,6 +162,61 @@ def test_stage0_v2_is_additive_and_does_not_mutate_the_used_v1_resource() -> Non
     assert stage0_v3.ref.sha256 == (
         "f9d069be847cfd972316a76c57f234c70c57157d13947efd55a38014abc447b7"
     )
+
+
+def test_integration_preserves_pilot_history_and_mints_combined_resources() -> None:
+    historical_hashes = {
+        "profiles/head-of-abm/v24/profile.yaml": (
+            "709e1d88715aed50220111a1e9025d78f53c97ae61096f869ac3cb1b8eb441de"
+        ),
+        "profiles/head-of-abm/v25/profile.yaml": (
+            "ad088f21c29c1d4399ef75c17963a43d6d6051f36540864ef162dab580cae5f2"
+        ),
+        "skills/stage0-interview/v11/SKILL.md": (
+            "aa9ad3f354bcc40b6b8ff85a2ed1cb7b4c7d7c9e1501b86fa9c68766ec1012bd"
+        ),
+        "skills/stage0-interview/v12/SKILL.md": (
+            "2209ba1daac992285d608fbf287f82604355bf876c700d2e15b46df945fc6ea1"
+        ),
+    }
+    for relative_path, expected_sha256 in historical_hashes.items():
+        assert hashlib.sha256((CATALOG_ROOT / relative_path).read_bytes()).hexdigest() == (
+            expected_sha256
+        )
+
+    recipe_root = CATALOG_ROOT.parents[1] / "execution" / "recipes"
+    for filename, expected_sha256 in {
+        "recipe0-stage0-v7.json": (
+            "67d86848497a9f6e884961eb31f127d70a32578c10e5c07cc80272fb7a539c7a"
+        ),
+        "recipe0-stage0-v8.json": (
+            "cbe23f9a48caa5e7672c0ddbbad9f7f5604b4c84d6b2030da0661784e771fe8e"
+        ),
+    }.items():
+        assert hashlib.sha256((recipe_root / filename).read_bytes()).hexdigest() == expected_sha256
+
+    profiles = FolderProfileCatalog((CATALOG_ROOT / "profiles").resolve(strict=True))
+    profile = profiles.get("head-of-abm", "v29").definition
+    assert [(item.name, item.version) for item in profile.skills] == [
+        ("stage0-interview", "v16"),
+        ("account-deep-steering", "v4"),
+    ]
+    required_tools = {
+        "evaluate_stage0_readiness@2",
+        "synthesize_icps@2",
+        "open_icp_confirmation_gate@1",
+        "launch_selected_account_research@1",
+        "list_client_knowledge@2",
+        "inspect_client_claim@2",
+        "list_product_knowledge@1",
+        "inspect_product_claim@1",
+        "open_product_selection_gate@1",
+    }
+    assert required_tools <= {f"{item.name}@{item.version}" for item in profile.tools}
+
+    recipe = json.loads((recipe_root / "recipe0-stage0-v10.json").read_text())
+    assert recipe["version"] == 10
+    assert required_tools <= set(recipe["graph"]["tool_allowlist"])
 
 
 def test_catalog_rejects_unknown_metadata_and_mutable_aliases(tmp_path: Path) -> None:

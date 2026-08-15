@@ -1,6 +1,6 @@
 import { cookies } from "next/headers";
 import { ClueAuthenticationError } from "@/auth/errors";
-import { isAuthenticationEnabled } from "@/auth/config";
+import { clueAppOrigin, isAuthenticationEnabled } from "@/auth/config";
 import {
   backendPath,
   browserResponseHeaders,

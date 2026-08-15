@@ -69,6 +69,7 @@ from clue_research.sources import (
     unbind_resolver,
 )
 from clue_research.stage0 import (
+    CLIENT_BASELINE_FIELDS,
     ClientInput,
     client_kb_readiness_metrics,
     compile_product_context,
@@ -770,7 +771,6 @@ async def seed_insight_health_discovery_fixture(
             workspace_id=WORKSPACE_ID,
             run_id=STAGE0_RUN_ID,
             budget_cap_cents=Decimal("20"),
-            product_id=PRODUCT_ID,
             max_source_tier=2,
         )
     finally:
@@ -818,7 +818,7 @@ async def seed_insight_health_discovery_fixture(
         client_entity_id,
         workspace_id=WORKSPACE_ID,
         version=client_kb_version,
-        product_id=PRODUCT_ID,
+        product_id=None,
     )
     expected_fields = set(claim_sources)
     if set(kb_claims) != expected_fields:
@@ -856,7 +856,10 @@ async def seed_insight_health_discovery_fixture(
         },
         compiler_version=FIXTURE_COMPILER_VERSION,
     )
-    readiness_metrics = client_kb_readiness_metrics(kb_claims)
+    readiness_metrics = client_kb_readiness_metrics(
+        kb_claims,
+        baseline_field_keys=CLIENT_BASELINE_FIELDS,
+    )
     readiness_metrics["open_policy_blocks"] = 0
     readiness = await evaluate_readiness(
         conn,
@@ -996,7 +999,7 @@ async def load_insight_health_discovery_fixture(
         project_run.client_entity_id,
         workspace_id=WORKSPACE_ID,
         version=project_run.client_kb_version,
-        product_id=PRODUCT_ID,
+        product_id=None,
     )
     if not kb_claims:
         raise FixtureStateConflict("persisted Stage-0 Client KB is empty")

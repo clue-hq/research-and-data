@@ -825,8 +825,13 @@ class TurnStreamEmitter:
             object_id=view.gate_id,
         )
         answer = view.answer
+        unavailable = view.snapshot_erased_at is not None
         await self._part(
-            TurnEventType.PART_COMPLETED if answer is not None else TurnEventType.PART_CREATED,
+            (
+                TurnEventType.PART_COMPLETED
+                if answer is not None or unavailable
+                else TurnEventType.PART_CREATED
+            ),
             GatePart(
                 part_id=part_id,
                 revision=self._revision(part_id),
@@ -835,8 +840,14 @@ class TurnStreamEmitter:
                 # told its kind is "agent_gate" knows only that a gate exists, which is the very
                 # gap this method closes.
                 gate_kind=view.kind,
-                state="responded" if answer is not None else "requested",
-                subject_refs=(_gate_subject_ref(view),),
+                state=(
+                    "unavailable"
+                    if unavailable
+                    else "responded"
+                    if answer is not None
+                    else "requested"
+                ),
+                subject_refs=() if unavailable else (_gate_subject_ref(view),),
                 expected_subject_sha256=view.expected_subject_sha256,
                 amount_cents=(
                     _cent_ceiling(view.max_spend_cents)
@@ -849,7 +860,7 @@ class TurnStreamEmitter:
                     else None
                 ),
                 addressee_user_id=view.addressee_user_id,
-                permitted_decisions=view.permitted_decisions,
+                permitted_decisions=() if unavailable else view.permitted_decisions,
                 decision=None if answer is None else answer.decision,
                 answered_by_user_id=None if answer is None else answer.answered_by_user_id,
                 answered_at=None if answer is None else answer.answered_at.isoformat(),

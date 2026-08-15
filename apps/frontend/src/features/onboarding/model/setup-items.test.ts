@@ -37,10 +37,11 @@ test("laneItemStatus covers every real recon lane status explicitly", () => {
   assert.equal(laneItemStatus(null), "queued");
 });
 
-test("the ratified table partitions all eleven Client-KB baseline fields, once each", () => {
+test("the ratified table partitions the eleven onboarding fields, once each", () => {
   const keys = SETUP_GROUPS.flatMap((group) => [...group.fieldKeys]);
   assert.equal(keys.length, 11);
   assert.equal(new Set(keys).size, 11);
+  assert.equal(keys.includes("client.product_catalog"), false);
   assert.equal(SETUP_GROUPS.length, 4);
 });
 

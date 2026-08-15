@@ -17,6 +17,7 @@ from pydantic import JsonValue
 from sqlalchemy import text
 
 from clue_api.official_site_progress import DbOfficialSiteProgressEmitter
+from clue_api.product_catalog_sync import ProductCatalogSynchronizer
 from clue_config import Secrets, Settings
 from clue_core import EntityId, ReconRunId, RunId
 from clue_core.gateway import LLMGateway
@@ -72,6 +73,7 @@ from clue_research.official_site import (
 from clue_research.official_site.url_policy import ConservativeUrlPolicy
 from clue_research.stage0 import (
     ReconLaneStatus,
+    current_kb_version,
     finalize_client_kb_version,
     transition_recon_lane,
 )
@@ -143,8 +145,23 @@ class _AuthoritativeClientKbCommitter(OfficialSiteClientKbCommitter):
         filled_fields: set[str],
         attempted_fields: set[str],
     ) -> int:
-        row = await self._scope(request)
+        await self._scope(request)
         async with self._conn_factory() as conn:
+            # Fast and background are phases of one recon. The background marker is an overlay on
+            # the exact company version current at its commit boundary (normally the fast marker,
+            # but possibly a governed interview-derived successor published concurrently). This
+            # preserves successful fast facts when one background extractor is empty or
+            # spend-unknown while keeping the earlier turn receipt immutable.
+            base_version = (
+                await current_kb_version(
+                    conn,
+                    EntityId(request.client_entity_id),
+                    workspace_id=request.workspace_id,
+                    product_id=None,
+                )
+                if request.phase is CrawlPhase.BACKGROUND
+                else None
+            )
             version = await finalize_client_kb_version(
                 conn,
                 client_entity_id=EntityId(request.client_entity_id),
@@ -152,8 +169,64 @@ class _AuthoritativeClientKbCommitter(OfficialSiteClientKbCommitter):
                 run_id=RunId(request.claim_run_id),
                 filled_fields=filled_fields,
                 attempted_fields=attempted_fields,
-                product_id=cast(str | None, row["product_id"]),
+                # S5 freezes company knowledge as account-wide even when an older/project-scoped
+                # recon row already carries a product. Exact product claims are committed only by
+                # ``commit_product`` after catalog-to-spine synchronization.
+                product_id=None,
+                base_version=base_version,
             )
+        return version
+
+    async def commit_product(
+        self,
+        request: OfficialSiteMaterializationRequest,
+        *,
+        product_id: str,
+        filled_fields: set[str],
+        attempted_fields: set[str],
+    ) -> int:
+        row = await self._scope(request)
+        async with self._conn_factory() as conn:
+            product_allowed = (
+                await conn.execute(
+                    text(
+                        "SELECT EXISTS (SELECT 1 FROM product WHERE product_id=:product_id "
+                        "AND workspace_id=:workspace_id AND brand_id=:brand_id)"
+                    ),
+                    {
+                        "product_id": product_id,
+                        "workspace_id": request.workspace_id,
+                        "brand_id": row["brand_id"],
+                    },
+                )
+            ).scalar_one()
+            if not product_allowed:
+                raise ValueError("official-site product extraction crossed recon brand scope")
+            base_version = await current_kb_version(
+                conn,
+                EntityId(request.client_entity_id),
+                workspace_id=request.workspace_id,
+                product_id=product_id,
+            )
+            return await finalize_client_kb_version(
+                conn,
+                client_entity_id=EntityId(request.client_entity_id),
+                workspace_id=request.workspace_id,
+                run_id=RunId(request.claim_run_id),
+                filled_fields=filled_fields,
+                attempted_fields=attempted_fields,
+                product_id=product_id,
+                base_version=base_version,
+            )
+
+    async def complete(
+        self,
+        request: OfficialSiteMaterializationRequest,
+        *,
+        company_client_kb_version: int,
+    ) -> None:
+        await self._scope(request)
+        async with self._conn_factory() as conn:
             lane = "fast" if request.phase is CrawlPhase.FAST else "background"
             if lane == "background":
                 await transition_recon_lane(
@@ -170,10 +243,9 @@ class _AuthoritativeClientKbCommitter(OfficialSiteClientKbCommitter):
                 workspace_id=request.workspace_id,
                 lane=lane,
                 status=ReconLaneStatus.COMPLETED,
-                client_kb_version=version,
+                client_kb_version=company_client_kb_version,
                 client_entity_id=EntityId(request.client_entity_id),
             )
-        return version
 
     async def _scope(self, request: OfficialSiteMaterializationRequest) -> dict[str, Any]:
         async with self._conn_factory() as conn:
@@ -182,7 +254,8 @@ class _AuthoritativeClientKbCommitter(OfficialSiteClientKbCommitter):
                     await conn.execute(
                         text(
                             """
-                            SELECT product_id, fast_run_id, background_run_id, client_entity_id
+                            SELECT brand_id, product_id, fast_run_id, background_run_id,
+                                   client_entity_id
                             FROM recon_run
                             WHERE id = :recon_run_id AND workspace_id = :workspace_id
                             """
@@ -749,6 +822,7 @@ def build_official_site_crawl_fleet(
                 conn_factory=conn_factory,
                 extraction_concurrency=settings.stage0_extraction_concurrency,
                 client_kb_committer=_AuthoritativeClientKbCommitter(conn_factory),
+                product_catalog_synchronizer=ProductCatalogSynchronizer(conn_factory),
             )
             if settings.stage0_official_site_crawl_mode == "authoritative" and gateway is not None
             else None

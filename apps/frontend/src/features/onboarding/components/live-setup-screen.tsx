@@ -41,7 +41,7 @@ export function LiveSetupScreen({
               </button>
             ) : (
               <>
-                {terminal === "failed" ? (
+                {terminal === "failed" || terminal === "stalled" ? (
                   <button onClick={() => window.location.reload()} type="button">
                     Try again
                   </button>

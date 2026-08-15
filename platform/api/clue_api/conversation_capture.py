@@ -18,13 +18,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 from uuid import UUID, uuid5
 
-from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_agents import ArtifactRef
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
+from clue_api.client_context_binding import workspace_client_entity_id
 from clue_core import EntityId, OnboardingInputId, OnboardingInputKind
 from clue_research.stage0 import submit_onboarding_input
+from clue_spine import get_project_for_workspace
 
 __all__ = [
     "CONVERSATION_CONTEXT_BINDING_KIND",
@@ -112,41 +113,24 @@ async def persist_user_turn(
     )
 
 
-_PROJECT_CLIENT_ENTITY_SQL = text(
-    """
-    SELECT client_entity_id
-    FROM onboarding_input
-    WHERE workspace_id = :workspace_id
-      AND project_id = :project_id
-      AND client_entity_id IS NOT NULL
-    ORDER BY created_at DESC, id DESC
-    LIMIT 1
-    """
-)
-
-
 async def project_client_entity_id(
     conn: AsyncConnection,
     *,
     workspace_id: str,
     project_id: str,
 ) -> EntityId | None:
-    """The client entity this project's captures are bound to, if it has one yet.
+    """The workspace's canonical client inherited by this project, if onboarding established it.
 
-    *Discovered, never assumed.* A project whose Stage-0 recon has run has captured a client entity
-    on its own onboarding inputs; a project that has not simply has no client knowledge base yet,
-    and ``None`` is the honest answer. Guessing would bind a human's words — and every Stage-0 tool
-    call the turn could make — to the wrong subject, which is worse than binding them to none.
-
-    One reader, called from both sides of the seam (the route, for the DSAR subject binding; the
-    worker, for the constitution and the L3 card), so the two can never disagree about who the
-    client is.
+    The client lookup itself is workspace-wide, not inferred from whichever project's input
+    history happens to contain a client id. The project is still checked at this boundary so a
+    foreign or unknown project cannot be used to obtain another workspace's client pin.
     """
 
-    value = (
-        await conn.execute(
-            _PROJECT_CLIENT_ENTITY_SQL,
-            {"workspace_id": workspace_id, "project_id": project_id},
-        )
-    ).scalar_one_or_none()
-    return None if value is None else EntityId(UUID(str(value)))
+    project = await get_project_for_workspace(
+        conn,
+        workspace_id=workspace_id,
+        project_id=project_id,
+    )
+    if project is None:
+        return None
+    return await workspace_client_entity_id(conn, workspace_id=workspace_id)

@@ -83,7 +83,14 @@ def _replay_or_conflict(
 
 
 def validate_tool_result(tool: Tool, result: ToolResult) -> ToolResult:
-    """Validate identity and typed references against the exact registered descriptor."""
+    """Validate identity and typed references against the exact registered descriptor.
+
+    ``ToolResult.references`` is a durable JSON envelope, including on idempotent replay. Validate
+    it in Pydantic's JSON mode so strict UUID/datetime/Decimal and tuple contracts accept their
+    canonical JSON representations without weakening the declared output model. Python-strict
+    validation here made a fresh rich result pass only until ``model_dump(mode='json')`` and made
+    every replay of that same valid result fail.
+    """
     descriptor = tool.descriptor
     if result.tool != descriptor.name or result.version != descriptor.version:
         raise ToolContractViolation(
@@ -95,7 +102,7 @@ def validate_tool_result(tool: Tool, result: ToolResult) -> ToolResult:
             descriptor.output_model,
             result.references,
         )
-    except (ValidationError, PydanticSerializationError) as exc:
+    except (PydanticSerializationError, TypeError, ValueError, ValidationError) as exc:
         raise ToolContractViolation(descriptor.address, str(exc)) from exc
     return result.model_copy(update={"references": references})
 

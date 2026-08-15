@@ -51,10 +51,16 @@ from clue_agents import (
     ContextLayer,
     DomainObjectRef,
     LayerBudget,
+    ProjectContextArtifact,
 )
 from clue_api.agent_execution_wiring import FreshWakeChildRunner
 from clue_api.agent_platform_wiring import AgentPlatformComponents
 from clue_api.agent_registry_wiring import PROJECT_CONVERSATION_SURFACE
+from clue_api.agent_turn_scope_pin import (
+    AgentTurnScopePinRow,
+    get_agent_turn_scope_pin,
+    load_or_create_agent_turn_scope_pin,
+)
 from clue_api.agent_turn_submission import (
     AGENT_TURN_DEDUP_PREFIX,
     AgentTurnSubmissionRow,
@@ -67,6 +73,7 @@ from clue_api.chat.composer_context import PROJECT_CONVERSATION_AGENT_PROFILE_ID
 from clue_api.chat.turn_controls import stop_requested
 from clue_api.chat.turn_events import prune_turn_events
 from clue_api.chat.turn_stream import TurnStreamEmitter, TurnStreamPolicy
+from clue_api.context_observability import record_context_card
 from clue_api.conversation_capture import (
     CONVERSATION_CONTEXT_BINDING_KIND,
     project_client_entity_id,
@@ -78,6 +85,14 @@ from clue_api.conversation_turns import (
     ConversationTurnResult,
     build_conversation_turn_engine,
 )
+from clue_api.product_context_compiler import (
+    compile_client_knowledge_card_v2,
+    compile_product_knowledge_card,
+    compile_product_profile_card,
+)
+from clue_api.product_knowledge_privacy import product_context_subject_bindings
+from clue_api.stage0_card_dsar import stage0_card_subject_bindings
+from clue_api.statement_evidence import ArtifactStatementEvidenceReader
 from clue_core import ContextAssembly, EntityId, ExecutionId, MemoryType, operation_id_from_key
 from clue_db import ConnFactory, transaction
 from clue_execution import (
@@ -101,6 +116,15 @@ from clue_fleet import (
     release_work_lease,
 )
 from clue_obs import get_logger
+from clue_projections import (
+    CLIENT_KNOWLEDGE_CARD_V2_MEDIA_TYPE,
+    PRODUCT_KNOWLEDGE_CARD_MEDIA_TYPE,
+    PRODUCT_PROFILE_CARD_MEDIA_TYPE,
+    PROJECT_CONVERSATION_CARD_MEDIA_TYPE,
+    STAGE0_PROJECT_STATE_CARD_MEDIA_TYPE,
+    compile_project_conversation_card,
+    compile_stage0_project_state_card,
+)
 from clue_research.stage0 import current_kb_version
 from clue_spine import get_project
 from clue_storage import ArtifactNotFound
@@ -121,11 +145,6 @@ __all__ = [
     "project_conversation_context_policy",
     "sweep_thread_dispatch",
 ]
-
-#: This surface's L3 card — one card per surface (PC-C8 §10). Deliberately not the Stage-0 project
-#: card: that one is compiled around a client entity and an interview, and a production project
-#: conversation must be describable before either exists.
-PROJECT_CONVERSATION_CARD_MEDIA_TYPE = "application/vnd.clue.project-conversation-card+json"
 
 #: The conversation's own budget envelope. A conversation turn is model time, not research spend:
 #: every externally-spending path this surface can reach is either withheld (the launch tools) or
@@ -196,39 +215,28 @@ def project_conversation_card_payload(
     brand_id: str,
     product_id: str | None,
     thread_id: str,
-    client_entity_id: str | None,
-    client_kb_version: int | None,
+    client_knowledge_available: bool = False,
+    stage0_project_state_available: bool = False,
 ) -> dict[str, JsonValue]:
-    """The whole L3 card this surface puts in front of the model.
+    """The always-present v2 conversation envelope this surface puts in L3.
 
-    Pure and separately callable so its shape is testable without standing up a project. It names
-    what the model is scoped to and *admits what is absent*: a project whose Stage-0 recon has not
-    run has no client knowledge base, and saying so is better than a card that quietly omits it and
-    leaves the model to assume one exists.
+    The account-wide Client-KB and active-project Stage-0 state are independently owned artifacts,
+    never nested here. Availability describes what the worker actually composed for this turn;
+    S1 therefore defaults both to unavailable until S3 attaches those production artifacts.
     """
 
-    return {
-        "schema_version": "1",
-        "card_kind": "project_conversation",
-        "surface": PROJECT_CONVERSATION_SURFACE,
-        "project": {
-            "project_id": project_id,
-            "name": project_name,
-            "status": project_status,
-            "workspace_id": workspace_id,
-            "brand_id": brand_id,
-            "product_id": product_id,
-        },
-        "thread": {"thread_id": thread_id},
-        "client_knowledge_base": (
-            None
-            if client_entity_id is None
-            else {
-                "client_entity_id": client_entity_id,
-                "client_kb_version": client_kb_version,
-            }
-        ),
-    }
+    card = compile_project_conversation_card(
+        workspace_id=workspace_id,
+        project_id=project_id,
+        project_name=project_name,
+        project_status=project_status,
+        brand_id=brand_id,
+        confirmed_product_id=product_id,
+        thread_id=thread_id,
+        client_knowledge_available=client_knowledge_available,
+        stage0_project_state_available=stage0_project_state_available,
+    )
+    return card.model_dump(mode="json", exclude_none=False)
 
 
 def _canonical_json(value: object) -> bytes:
@@ -250,6 +258,53 @@ class _ProjectScope:
     product_id: str | None
     client_entity_id: EntityId | None
     client_kb_version: int | None
+    product_kb_version: int | None
+
+    @classmethod
+    def from_pin(cls, pin: AgentTurnScopePinRow) -> _ProjectScope:
+        return cls(
+            project_id=pin.project_id,
+            name=pin.project_name,
+            status=pin.project_status,
+            brand_id=pin.brand_id,
+            product_id=pin.product_id,
+            client_entity_id=pin.client_entity_id,
+            client_kb_version=pin.client_kb_version,
+            product_kb_version=pin.product_kb_version,
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class _ContextCardObservation:
+    card_kind: str
+    schema_version: str
+    content_sha256: str
+    omitted_count: int
+
+
+@dataclass(frozen=True, slots=True)
+class _ProjectContextBundle:
+    """The conditional half of one atomically constituted production L3 bundle.
+
+    The v2 conversation envelope is deliberately compiled only *after* this bundle succeeds, so
+    its availability flags can never advertise an artifact that failed to compile or persist. A
+    bound client with no published Client-KB is the one valid empty bundle (pre-recon); every
+    post-recon bundle contains both the account-wide index and exactly the active project's state.
+    """
+
+    artifacts: tuple[ProjectContextArtifact, ...] = ()
+    observations: tuple[_ContextCardObservation, ...] = ()
+
+    @property
+    def available(self) -> bool:
+        return bool(self.artifacts)
+
+    def artifact(self, name: str) -> ProjectContextArtifact | None:
+        return next((item for item in self.artifacts if item.name == name), None)
+
+
+def _bounded_omission_count(value: object) -> int:
+    return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else 0
 
 
 class ProjectConversationTurnRunner:
@@ -287,9 +342,17 @@ class ProjectConversationTurnRunner:
                 raise UnknownTurnSubmission(
                     "no durable submission exists for this turn in this workspace"
                 )
-            scope = await self._load_scope(conn, submission)
             user_message_ref = await message_artifact_ref(conn, submission)
             submission_focus_refs = await submission_context_refs(
+                conn,
+                workspace_id=workspace_id,
+                turn_id=turn_id,
+            )
+            # Existing pins are read before replay so a committed retry can prove which scope the
+            # original attempt used without consulting mutable project/recon state. A legacy
+            # committed turn can predate S3.1 and legitimately have no receipt; never invent one
+            # from today's state and mislabel it as the original.
+            scope_pin = await get_agent_turn_scope_pin(
                 conn,
                 workspace_id=workspace_id,
                 turn_id=turn_id,
@@ -302,7 +365,7 @@ class ProjectConversationTurnRunner:
             if not self._streaming
             else await TurnStreamEmitter.open(
                 workspace_id=workspace_id,
-                project_id=scope.project_id,
+                project_id=submission.project_id,
                 thread_id=submission.thread_id,
                 turn_id=turn_id,
                 conn_factory=self._conn_factory,
@@ -311,6 +374,57 @@ class ProjectConversationTurnRunner:
         )
 
         execution_id = ExecutionId(operation_id_from_key(str(turn_id), _EXECUTION_NAMESPACE_KEY))
+        committed = await self._engine.replay_committed(
+            turn_id=turn_id,
+            workspace_id=workspace_id,
+            project_id=submission.project_id,
+            thread_id=submission.thread_id,
+            actor_id=submission.submitted_by_user_id,
+            user_message_artifact_ref=user_message_ref,
+            stream=stream,
+        )
+        if committed is not None:
+            if committed.outcome.status is AgentExecutionStatus.COMPLETED:
+                await self._complete_recipe(execution_id)
+            log.info(
+                "agent_turn.context_replayed",
+                turn_id=str(turn_id),
+                workspace_id=workspace_id,
+                project_id=submission.project_id,
+                scope_pin_available=scope_pin is not None,
+                client_entity_id=(
+                    None
+                    if scope_pin is None or scope_pin.client_entity_id is None
+                    else str(scope_pin.client_entity_id)
+                ),
+                client_kb_version=(None if scope_pin is None else scope_pin.client_kb_version),
+                product_kb_version=(None if scope_pin is None else scope_pin.product_kb_version),
+                knowledge_scope_policy_version=(
+                    None if scope_pin is None else scope_pin.knowledge_scope_policy_version
+                ),
+            )
+            return committed
+
+        if scope_pin is None:
+            async with self._conn_factory() as conn:
+                scope_pin, created = await load_or_create_agent_turn_scope_pin(
+                    conn,
+                    submission=submission,
+                )
+            log.info(
+                "agent_turn.scope_pinned",
+                turn_id=str(turn_id),
+                workspace_id=workspace_id,
+                project_id=scope_pin.project_id,
+                client_entity_id=(
+                    None if scope_pin.client_entity_id is None else str(scope_pin.client_entity_id)
+                ),
+                client_kb_version=scope_pin.client_kb_version,
+                product_kb_version=scope_pin.product_kb_version,
+                knowledge_scope_policy_version=scope_pin.knowledge_scope_policy_version,
+                created=created,
+            )
+        scope = _ProjectScope.from_pin(scope_pin)
         revision = await self._recipes.get_by_identity(
             scope_type=RecipeScopeType.SYSTEM,
             workspace_id=None,
@@ -366,6 +480,10 @@ class ProjectConversationTurnRunner:
             object_id=scope.project_id,
             version=None,
         )
+        context_bundle = await self._compose_project_context(
+            submission=submission,
+            scope=scope,
+        )
         card_ref = await self._artifact(
             submission,
             scope,
@@ -378,10 +496,8 @@ class ProjectConversationTurnRunner:
                 brand_id=scope.brand_id,
                 product_id=scope.product_id,
                 thread_id=submission.thread_id,
-                client_entity_id=(
-                    None if scope.client_entity_id is None else str(scope.client_entity_id)
-                ),
-                client_kb_version=scope.client_kb_version,
+                client_knowledge_available=context_bundle.available,
+                stage0_project_state_available=context_bundle.available,
             ),
         )
         budget_ref = await self._artifact(
@@ -423,11 +539,75 @@ class ProjectConversationTurnRunner:
                 resource_manifest_ref=manifest_ref,
                 resource_manifest_sha256=resolved.resource_manifest.aggregate_sha256,
                 focus_refs=(focus_ref,),
+                project_context_artifacts=context_bundle.artifacts,
             ),
             user_message_artifact_ref=user_message_ref,
             focus_refs=submission_focus_refs,
             requested_at=submission.requested_at,
         )
+        client_knowledge = context_bundle.artifact("client_knowledge")
+        stage0_project_state = context_bundle.artifact("stage0_project_state")
+        product_profile = context_bundle.artifact("product_profile")
+        product_knowledge = context_bundle.artifact("product_knowledge")
+        log.info(
+            "agent_turn.context_composed",
+            turn_id=str(turn_id),
+            workspace_id=workspace_id,
+            project_id=scope.project_id,
+            brand_id=scope.brand_id,
+            product_id=scope.product_id,
+            client_entity_id=(
+                None if scope.client_entity_id is None else str(scope.client_entity_id)
+            ),
+            client_kb_version=scope.client_kb_version,
+            product_kb_version=scope.product_kb_version,
+            project_card_sha256=card_ref.sha256,
+            client_knowledge_sha256=(
+                None if client_knowledge is None else client_knowledge.artifact_ref.sha256
+            ),
+            stage0_project_state_sha256=(
+                None if stage0_project_state is None else stage0_project_state.artifact_ref.sha256
+            ),
+            product_profile_sha256=(
+                None if product_profile is None else product_profile.artifact_ref.sha256
+            ),
+            product_knowledge_sha256=(
+                None if product_knowledge is None else product_knowledge.artifact_ref.sha256
+            ),
+            client_knowledge_available=context_bundle.available,
+            stage0_project_state_available=context_bundle.available,
+        )
+        observations = {item.card_kind: item for item in context_bundle.observations}
+        self._observe_context_card(
+            submission=submission,
+            scope=scope,
+            observation=_ContextCardObservation(
+                card_kind="project_conversation",
+                schema_version="2",
+                content_sha256=card_ref.sha256,
+                omitted_count=0,
+            ),
+        )
+        for card_kind, schema_version in (
+            ("client_knowledge", "2"),
+            ("stage0_project_state", "1"),
+        ):
+            self._observe_context_card(
+                submission=submission,
+                scope=scope,
+                observation=observations.get(card_kind),
+                card_kind=card_kind,
+                schema_version=schema_version,
+            )
+        if scope.product_id is not None:
+            for card_kind in ("product_profile", "product_knowledge"):
+                self._observe_context_card(
+                    submission=submission,
+                    scope=scope,
+                    observation=observations.get(card_kind),
+                    card_kind=card_kind,
+                    schema_version="1",
+                )
         result = await self._execute_watched(
             request=request,
             lease=lease,
@@ -437,6 +617,234 @@ class ProjectConversationTurnRunner:
         if result.outcome.status is AgentExecutionStatus.COMPLETED:
             await self._complete_recipe(execution_id)
         return result
+
+    async def _compose_project_context(
+        self,
+        *,
+        submission: AgentTurnSubmissionRow,
+        scope: _ProjectScope,
+    ) -> _ProjectContextBundle:
+        """Compile and persist one exact Client-KB pin plus this project's Stage-0 state.
+
+        ``scope.client_kb_version`` comes from the durable turn scope pin. Both compilers use that
+        immutable value even if background recon publishes a newer marker while this method is
+        running or before a reclaimed worker retries it. Compilation is fail-closed: a
+        missing/foreign version, project, statement, or evidence artifact raises before an
+        ``AgentTurnRequest`` exists and therefore before the context assembler or model can run.
+        """
+
+        if scope.client_entity_id is None or scope.client_kb_version is None:
+            return _ProjectContextBundle()
+
+        client_card = await compile_client_knowledge_card_v2(
+            workspace_id=submission.workspace_id,
+            client_entity_id=scope.client_entity_id,
+            company_client_kb_version=scope.client_kb_version,
+            conn_factory=self._conn_factory,
+        )
+        client_ref = await self._artifact(
+            submission,
+            scope,
+            CLIENT_KNOWLEDGE_CARD_V2_MEDIA_TYPE,
+            client_card.model_dump(mode="json", exclude_none=True),
+            bind_project=False,
+        )
+        if client_ref.sha256 != client_card.content_sha256().removeprefix("sha256:"):
+            raise RuntimeError("persisted Client-KB card differs from its compiled content hash")
+
+        stage0_card = await compile_stage0_project_state_card(
+            project_id=scope.project_id,
+            workspace_id=submission.workspace_id,
+            client_entity_id=scope.client_entity_id,
+            client_kb_version=scope.client_kb_version,
+            client_knowledge_sha256=client_card.content_sha256(),
+            evidence=ArtifactStatementEvidenceReader(
+                artifacts=self._engine.artifacts,
+                conn_factory=self._conn_factory,
+            ),
+            conn_factory=self._conn_factory,
+        )
+        stage0_ref = await self._artifact(
+            submission,
+            scope,
+            STAGE0_PROJECT_STATE_CARD_MEDIA_TYPE,
+            stage0_card.model_dump(mode="json", exclude_none=True),
+            subject_bindings=stage0_card_subject_bindings(
+                card=stage0_card,
+                base=self._client_subject_bindings(scope),
+            ),
+        )
+        if stage0_ref.sha256 != stage0_card.content_sha256().removeprefix("sha256:"):
+            raise RuntimeError(
+                "persisted Stage-0 project-state card differs from its compiled content hash"
+            )
+
+        artifacts = [
+            ProjectContextArtifact(
+                name="client_knowledge",
+                artifact_ref=client_ref,
+                domain_ref=DomainObjectRef(
+                    workspace_id=submission.workspace_id,
+                    object_type="client_knowledge",
+                    object_id=str(scope.client_entity_id),
+                    version=scope.client_kb_version,
+                ),
+            ),
+            ProjectContextArtifact(
+                name="stage0_project_state",
+                artifact_ref=stage0_ref,
+                domain_ref=DomainObjectRef(
+                    workspace_id=submission.workspace_id,
+                    object_type="stage0_project_state",
+                    object_id=scope.project_id,
+                    version=None,
+                ),
+            ),
+        ]
+        observations = [
+            _ContextCardObservation(
+                card_kind=client_card.card_kind,
+                schema_version=client_card.schema_version,
+                content_sha256=client_ref.sha256,
+                omitted_count=(
+                    sum(
+                        _bounded_omission_count(item.get("count"))
+                        for item in client_card.knowledge_omissions
+                    )
+                    + sum(item.count for item in client_card.product_catalog.omissions)
+                ),
+            ),
+            _ContextCardObservation(
+                card_kind=stage0_card.card_kind,
+                schema_version=stage0_card.schema_version,
+                content_sha256=stage0_ref.sha256,
+                omitted_count=sum(item.count for item in stage0_card.omissions),
+            ),
+        ]
+        if scope.product_id is not None:
+            product_profile = await compile_product_profile_card(
+                workspace_id=submission.workspace_id,
+                brand_id=scope.brand_id,
+                product_id=scope.product_id,
+                conn_factory=self._conn_factory,
+            )
+            profile_ref = await self._artifact(
+                submission,
+                scope,
+                PRODUCT_PROFILE_CARD_MEDIA_TYPE,
+                product_profile.model_dump(mode="json", exclude_none=True),
+                subject_bindings=product_context_subject_bindings(
+                    client_entity_id=UUID(str(scope.client_entity_id)),
+                    product_id=scope.product_id,
+                ),
+            )
+            if profile_ref.sha256 != product_profile.content_sha256().removeprefix("sha256:"):
+                raise RuntimeError(
+                    "persisted product profile differs from its compiled content hash"
+                )
+            artifacts.append(
+                ProjectContextArtifact(
+                    name="product_profile",
+                    artifact_ref=profile_ref,
+                    domain_ref=DomainObjectRef(
+                        workspace_id=submission.workspace_id,
+                        object_type="product",
+                        object_id=scope.product_id,
+                        version=None,
+                    ),
+                )
+            )
+            observations.append(
+                _ContextCardObservation(
+                    card_kind=product_profile.card_kind,
+                    schema_version=product_profile.schema_version,
+                    content_sha256=profile_ref.sha256,
+                    omitted_count=0,
+                )
+            )
+            if scope.product_kb_version is not None:
+                product_card = await compile_product_knowledge_card(
+                    workspace_id=submission.workspace_id,
+                    client_entity_id=scope.client_entity_id,
+                    product_id=scope.product_id,
+                    product_kb_version=scope.product_kb_version,
+                    conn_factory=self._conn_factory,
+                )
+                product_ref = await self._artifact(
+                    submission,
+                    scope,
+                    PRODUCT_KNOWLEDGE_CARD_MEDIA_TYPE,
+                    product_card.model_dump(mode="json", exclude_none=True),
+                    subject_bindings=product_context_subject_bindings(
+                        client_entity_id=UUID(str(scope.client_entity_id)),
+                        product_id=scope.product_id,
+                        card=product_card,
+                    ),
+                )
+                if product_ref.sha256 != product_card.content_sha256().removeprefix("sha256:"):
+                    raise RuntimeError(
+                        "persisted Product-KB card differs from its compiled content hash"
+                    )
+                artifacts.append(
+                    ProjectContextArtifact(
+                        name="product_knowledge",
+                        artifact_ref=product_ref,
+                        domain_ref=DomainObjectRef(
+                            workspace_id=submission.workspace_id,
+                            object_type="product_knowledge",
+                            object_id=scope.product_id,
+                            version=scope.product_kb_version,
+                        ),
+                    )
+                )
+                observations.append(
+                    _ContextCardObservation(
+                        card_kind=product_card.card_kind,
+                        schema_version=product_card.schema_version,
+                        content_sha256=product_ref.sha256,
+                        omitted_count=sum(item.count for item in product_card.omissions),
+                    )
+                )
+
+        return _ProjectContextBundle(
+            artifacts=tuple(artifacts),
+            observations=tuple(observations),
+        )
+
+    @staticmethod
+    def _observe_context_card(
+        *,
+        submission: AgentTurnSubmissionRow,
+        scope: _ProjectScope,
+        observation: _ContextCardObservation | None,
+        card_kind: str | None = None,
+        schema_version: str | None = None,
+    ) -> None:
+        kind = observation.card_kind if observation is not None else card_kind
+        version = observation.schema_version if observation is not None else schema_version
+        assert kind is not None and version is not None
+        available = observation is not None
+        omitted_count = 0 if observation is None else observation.omitted_count
+        content_sha256 = None if observation is None else observation.content_sha256
+        log.info(
+            "agent_turn.context_card",
+            turn_id=str(submission.turn_id),
+            workspace_id=submission.workspace_id,
+            project_id=scope.project_id,
+            card_kind=kind,
+            schema_version=version,
+            content_sha256=content_sha256,
+            available=available,
+            omitted_count=omitted_count,
+            client_kb_version=scope.client_kb_version,
+            product_kb_version=scope.product_kb_version,
+        )
+        record_context_card(
+            card_kind=kind,
+            schema_version=version,
+            available=available,
+            omitted_count=omitted_count,
+        )
 
     async def _execute_watched(
         self,
@@ -606,24 +1014,42 @@ class ProjectConversationTurnRunner:
         scope: _ProjectScope,
         media_type: str,
         payload: object,
+        bind_project: bool = True,
+        subject_bindings: tuple[tuple[UUID, str], ...] | None = None,
     ) -> ArtifactRef:
         return await self._engine.artifacts.persist_body(
             workspace_id=submission.workspace_id,
             data=_canonical_json(payload),
             media_type=media_type,
             subject_bindings=(
-                ()
-                if scope.client_entity_id is None
-                else ((UUID(str(scope.client_entity_id)), CONVERSATION_CONTEXT_BINDING_KIND),)
+                self._client_subject_bindings(scope)
+                if subject_bindings is None
+                else subject_bindings
             ),
-            project_bindings=((scope.project_id, "project_conversation_context"),),
+            project_bindings=(
+                ((scope.project_id, "project_conversation_context"),) if bind_project else ()
+            ),
         )
 
-    async def _load_scope(
+    @staticmethod
+    def _client_subject_bindings(scope: _ProjectScope) -> tuple[tuple[UUID, str], ...]:
+        return (
+            ()
+            if scope.client_entity_id is None
+            else ((UUID(str(scope.client_entity_id)), CONVERSATION_CONTEXT_BINDING_KIND),)
+        )
+
+    async def _resolve_current_scope(
         self,
         conn: AsyncConnection,
         submission: AgentTurnSubmissionRow,
     ) -> _ProjectScope:
+        """Resolve mutable current scope for diagnostic/compiler fixtures only.
+
+        Production :meth:`run` never calls this helper. It uses
+        :func:`load_or_create_agent_turn_scope_pin`, whose immutable row is the retry authority.
+        """
+
         project = await get_project(conn, submission.project_id)
         if project is None or project.workspace_id != submission.workspace_id:
             raise ProjectConversationScopeError("the submission names no project in its workspace")
@@ -639,6 +1065,16 @@ class ProjectConversationTurnRunner:
                 conn,
                 entity_id,
                 workspace_id=submission.workspace_id,
+                product_id=None,
+            )
+        )
+        product_kb_version = (
+            None
+            if entity_id is None or project.product_id is None or kb_version is None
+            else await current_kb_version(
+                conn,
+                entity_id,
+                workspace_id=submission.workspace_id,
                 product_id=project.product_id,
             )
         )
@@ -650,6 +1086,7 @@ class ProjectConversationTurnRunner:
             product_id=project.product_id,
             client_entity_id=entity_id,
             client_kb_version=kb_version,
+            product_kb_version=product_kb_version,
         )
 
 

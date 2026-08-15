@@ -27,6 +27,18 @@ This repository is the data and research subsystem for the larger AI-native ABM 
 The central architecture bet is that verification must be modeled at the claim/data layer. LLM research is a last-resort tier-4 source, not the foundation. The product should prefer empty, flagged fields over fabricated fields.
 
 ## Topic notes
+- `2026-08-16-integration-runtime-frontend-conflict-resolution.md` — completes the dependency-order
+  runtime/frontend merge: unified gate authority, exact company/product Stage-0 scope, strict tool
+  output validation, discriminated frontend decisions, and green backend/frontend verification.
+- `2026-08-16-integration-migration-reconciliation.md` — joins the pilot and onboarding Alembic
+  heads, installs the unified human-gate database authority, and records clean isolated migration
+  and direct-SQL adversarial evidence.
+- `2026-08-16-integration-immutable-resource-history.md` — preserves both resource lineages and
+  promotes the combined Head-of-ABM v29, Stage-0 skill v16, and Recipe #0 v10.
+- `2026-08-15-integration-field-policy.md` — freezes the distinct 9-field ICP, 11-field onboarding,
+  12-field company-knowledge, and product-scoped field policies.
+- `2026-08-15-integration-unified-human-gate-contract.md` — freezes the shared directive/ICP/product
+  gate and answer contract before runtime and frontend conflict resolution.
 - `2026-08-13-fi2-slice9b-selected-records-chat.md` — FI-2 Slice 9B adds capability-gated
   Account/Contact selection-to-chat handoff, opaque next-message-only composer state, accepted-only
   clearing, and a server-enforced exact selected-Account launch path under the budget-controls-off
@@ -62,6 +74,55 @@ The central architecture bet is that verification must be modeled at the claim/d
   Accounts/Contacts runtime fixture and legacy workspace-header path, shares one authenticated
   server/BFF transport, renders the durable zero-account state, records focused/frontend/build/DB
   evidence, and closes signed-in desktop/mobile browser acceptance on the exact allowed origin.
+- `2026-08-15-stage0-link-expansion-state-machine.md` — decouples durable page publication from
+  recursive link expansion: fetched snapshots publish immediately, independently fenced expansion
+  jobs retry/background-resume without provider refetch, fast wakes respect the DB deadline, the
+  browser keeps polling after its timeout fallback, and a retained isolated 210-test DB gate plus
+  frontend/static/migration verification is green. The later real browser/Scrapling/Luna canary
+  auto-released at roughly 48 seconds and completed 52 snapshots with zero refetch, while exposing
+  an unresolved crawl-run/page lock-order deadlock that inflated background completion to about ten
+  minutes.
+- `2026-08-15-stage0-fast-page-deferral.md` — fixes the 103.759-second eager-recon lease wait:
+  clean unresolved fast pages now freeze out at the DB deadline and continue on the same
+  background frontier, with authoritative v1/v2/replay regressions and a fresh 61-test DB gate;
+  the no-override live Scrapling/browser rerun remains the release proof.
+- `2026-08-15-production-context-s6.md` — S6 composition complete: governed interview/recon
+  publication, OTLP-safe observability, body-free operator refs, real catalog/product selection and
+  exact product-claim use, immutable v1-to-v2 turn pins, stream-race fencing, and an executable
+  32-node broad quarantine; production release remains blocked by the 103.759-second fast phase.
+- `2026-08-15-production-context-s5.md` — S5-A–F complete: separated company/product extraction,
+  conservative catalog lineage, V2/product cards, trusted product reads, immutable company/product
+  turn pins, real-fleet composition, and durable human-only product selection through the frontend.
+- `2026-08-15-production-context-s50.md` — S5.0 decision gate complete: separate company/product
+  knowledge scopes, paired selected-product card/tools, trusted-only product authority,
+  `ClientKnowledgeCard@2` bounded catalog, coherent durable version-pair policy, executable state
+  manifest, and S5-A–F runtime ownership without a premature cutover.
+- `2026-08-15-production-context-s31.md` — S3.1 complete: immutable database-backed per-turn
+  workspace/project/client/company-KB scope receipts, retry-stable vN semantics, frozen
+  company-wide versus product-specific policy, production Stage-0 statement bindings, real
+  AGENT_TURN/S4/checkpoint/finalization/replay/DSAR acceptance, and retained clean evidence.
+- `2026-08-14-production-context-s4e.md` — S4-E and amended S4 complete: exact Client-KB result
+  subject indexing, body-free stream projection, bounded turn/delegation/checkpoint DSAR closure,
+  immutable injection-hardened profile v26/skill v13, no-resurrection replay, and retained clean
+  119-test PostgreSQL acceptance evidence.
+- `2026-08-14-production-context-s4c.md` — S4-C complete: unregistered frozen `@2` Client-KB
+  discovery/inspection tools, paired production-artifact-only authority injection, typed durable
+  JSON output/replay support, exact-version PostgreSQL/adversarial acceptance, and the S4-D
+  production-registration handoff.
+- `2026-08-14-production-context-s4a-s4b.md` — amended S4-A/B complete: marker/run-based exact
+  version readers, retention-safe historical access, deterministic classification/pagination,
+  and immutable provider/DB-free `@2` contract fixtures. S4-C through S4-E remain required.
+- `2026-08-14-production-context-s4.md` — historical preliminary `@1` S4 implementation and
+  production composition record. Reclassified by the amended S4-A–E roadmap; it is compatibility
+  evidence and no longer means S4 as a whole is complete.
+- `2026-08-14-production-context-s3.md` — S3 complete: production AGENT_TURN composition of the
+  real L2 brand/confirmed product, paired account-wide Client-KB and active-project Stage-0 cards,
+  exact per-turn version/receipt pins, pre-composition committed replay, product/account KB scope
+  isolation, privacy-safe logs, and exhaustive isolated-DB/static verification.
+- `2026-08-14-production-context-s2.md` — S2 complete: insert-once canonical workspace-client
+  binding, conservative historical adoption, authoritative/transitional fleet composition,
+  project inheritance, target-substitution refusal, migration/concurrency/tenancy evidence, and
+  the exact S3 production-card composition handoff.
 - `2026-08-14-stage0-crawl-recovery-backoff.md` — closes the C10 Scrapling recovery-wake follow-up:
   DB-clock delayed fleet requeue, earliest-lease/retry scheduling, bounded exponential fallback,
   ready-work non-starvation, migration/replay tests, and privacy-safe cadence logs.

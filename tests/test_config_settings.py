@@ -170,6 +170,8 @@ def test_auth_clerk_authorized_parties_accept_shell_safe_list() -> None:
         auth_mode="clerk",
         projections_auth_mode="authenticated_principal",
         auth_clerk_authorized_parties="https://app.example, http://localhost:3000",
+        metrics_exporter="otlp",
+        metrics_otlp_endpoint="https://otel.example/v1/metrics",
     )
     assert settings.auth_clerk_authorized_parties == (
         "https://app.example",
@@ -180,6 +182,18 @@ def test_auth_clerk_authorized_parties_accept_shell_safe_list() -> None:
 def test_enabled_auth_requires_explicit_environment() -> None:
     with pytest.raises(ValidationError, match="CLUE_AUTH_ENVIRONMENT must be set explicitly"):
         load_settings(_env_file=None, auth_enabled=True)
+
+
+def test_production_requires_a_real_metrics_exporter_and_otlp_requires_endpoint() -> None:
+    with pytest.raises(ValidationError, match="production requires CLUE_METRICS_EXPORTER=otlp"):
+        load_settings(
+            _env_file=None,
+            auth_environment="production",
+            auth_mode="clerk",
+            projections_auth_mode="authenticated_principal",
+        )
+    with pytest.raises(ValidationError, match="CLUE_METRICS_OTLP_ENDPOINT"):
+        load_settings(_env_file=None, metrics_exporter="otlp")
 
 
 def test_production_auth_refuses_local_header_workspace_authority() -> None:

@@ -14,11 +14,14 @@ from collections.abc import Awaitable, Callable
 from contextlib import suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Protocol, TypeVar, cast, runtime_checkable
+from typing import Protocol, TypeVar, runtime_checkable
+from urllib.parse import urlsplit
 from uuid import UUID
 
-from clue_research.official_site.artifacts import OfficialSiteArtifactStore, RetainedPageSuccess
+from clue_obs import get_logger
+from clue_research.official_site.artifacts import OfficialSiteArtifactStore
 from clue_research.official_site.contracts import (
+    ClaimLinkExpansionRequest,
     ClaimNextRequest,
     ClaimPersistenceRequest,
     ClaimReconciliationRequest,
@@ -27,16 +30,18 @@ from clue_research.official_site.contracts import (
     CrawlMode,
     CrawlPhase,
     DiscoveryBatch,
+    LinkExpansionLease,
+    LinkExpansionState,
     LinkObservation,
     LinkRelation,
     OfficialSiteCrawlContractConfig,
     PageFetcherCapabilities,
     PageFetchRequest,
     PageFetchResult,
-    PageSnapshotRef,
     RetryClass,
     SpendStatus,
 )
+from clue_research.official_site.db_retry import database_sqlstate
 from clue_research.official_site.discovery import OfficialSiteDiscoveryPolicy
 from clue_research.official_site.progress import (
     CrawlProgressEvent,
@@ -52,7 +57,6 @@ from clue_research.official_site.reconciliation import (
     DurableAcquisitionResult,
     DurablePageAcquirer,
     ProviderOperationLookup,
-    SnapshotBeforeCompleteHook,
 )
 from clue_research.official_site.safety import (
     AddressResolver,
@@ -72,6 +76,7 @@ from clue_research.official_site.seams import (
 from clue_research.official_site.url_policy import ConservativeUrlPolicy
 
 _ResultT = TypeVar("_ResultT")
+log = get_logger("clue_research.official_site.coordinator")
 
 
 class CoordinatorLeaseLostError(RuntimeError):
@@ -153,6 +158,10 @@ class CoordinatorPhaseResult:
     fenced_workers: int
     worker_errors: int
     stopped: bool
+    link_expansion_claims: int = 0
+    link_expansions_completed: int = 0
+    link_expansions_retried: int = 0
+    link_expansions_failed: int = 0
 
 
 @dataclass(slots=True)
@@ -160,6 +169,10 @@ class _Counters:
     ordinary_claims: int = 0
     persistence_claims: int = 0
     reconciliation_claims: int = 0
+    link_expansion_claims: int = 0
+    link_expansions_completed: int = 0
+    link_expansions_retried: int = 0
+    link_expansions_failed: int = 0
     pages_completed: int = 0
     observations_recorded: int = 0
     links_dropped: int = 0
@@ -394,6 +407,10 @@ class ConcurrentCrawlCoordinator:
             ordinary_claims=counters.ordinary_claims,
             persistence_claims=counters.persistence_claims,
             reconciliation_claims=counters.reconciliation_claims,
+            link_expansion_claims=counters.link_expansion_claims,
+            link_expansions_completed=counters.link_expansions_completed,
+            link_expansions_retried=counters.link_expansions_retried,
+            link_expansions_failed=counters.link_expansions_failed,
             pages_completed=counters.pages_completed,
             observations_recorded=counters.observations_recorded,
             links_dropped=counters.links_dropped,
@@ -441,10 +458,20 @@ class ConcurrentCrawlCoordinator:
                     provider_key=self._fetcher.capabilities.provider_key,
                 )
                 return
-            except Exception:
+            except Exception as exc:
                 # The durable page/attempt state owns recovery. Exiting this logical worker avoids
                 # an error loop or a new external call under suspect local state.
                 counters.worker_errors += 1
+                log.warning(
+                    "stage0_official_site.worker_failed",
+                    workspace_id=request.workspace_id,
+                    crawl_run_id=str(request.crawl_run_id),
+                    phase=request.phase.value,
+                    worker_id=worker_id,
+                    failure_stage="worker_loop",
+                    failure_class=type(exc).__name__[:200],
+                    sqlstate=database_sqlstate(exc),
+                )
                 return
             if handled:
                 idle_polls = 0
@@ -476,15 +503,23 @@ class ConcurrentCrawlCoordinator:
             counters.persistence_claims += 1
             acquirer = self._acquirer(counters=counters)
             operation_started = time.monotonic()
-            result = await self._while_active(
-                counters,
-                action=lambda: self._with_heartbeat(
+            try:
+                result = await self._while_active(
+                    counters,
+                    action=lambda: self._with_heartbeat(
+                        persistence.lease,
+                        request=request,
+                        counters=counters,
+                        action=lambda: acquirer.resume_persistence(persistence),
+                    ),
+                )
+            except Exception as exc:
+                await self._recover_page_worker_failure(
                     persistence.lease,
-                    request=request,
-                    counters=counters,
-                    action=lambda: acquirer.resume_persistence(persistence),
-                ),
-            )
+                    failure_stage="persistence_recovery",
+                    exc=exc,
+                )
+                raise
             if result is not None and result.page_completed:
                 counters.pages_completed += 1
                 assert result.snapshot is not None
@@ -512,6 +547,38 @@ class ConcurrentCrawlCoordinator:
                 )
             return True
 
+        expansion = await self._repository.claim_link_expansion(
+            ClaimLinkExpansionRequest(
+                workspace_id=request.workspace_id,
+                crawl_run_id=request.crawl_run_id,
+                worker_id=worker_id,
+                eligible_phase=request.phase,
+                lease_ttl_seconds=request.config.lease_ttl_seconds,
+            )
+        )
+        if expansion is not None:
+            counters.link_expansion_claims += 1
+            await self._emit_expansion_event(
+                request,
+                expansion,
+                kind=CrawlProgressEventKind.LINK_EXPANSION_STARTED,
+                outcome="claimed",
+            )
+            await self._while_active(
+                counters,
+                action=lambda: self._with_link_expansion_heartbeat(
+                    expansion,
+                    request=request,
+                    counters=counters,
+                    action=lambda: self._handle_link_expansion(
+                        expansion,
+                        request=request,
+                        counters=counters,
+                    ),
+                ),
+            )
+            return True
+
         reconciliation = await self._repository.claim_reconciliation(
             ClaimReconciliationRequest(
                 workspace_id=request.workspace_id,
@@ -532,20 +599,28 @@ class ConcurrentCrawlCoordinator:
                     f"reconciliation:{request.config.robots_policy_version}:original-operation"
                 ),
             )
-            result = await self._while_active(
-                counters,
-                action=lambda: self._with_heartbeat(
-                    reconciliation.lease,
-                    request=request,
-                    counters=counters,
-                    action=lambda: acquirer.reconcile(
-                        reconciliation,
-                        fetch_request,
-                        lookup=self._operation_lookup,
-                        provider_request_id=reconciliation.attempt.provider_request_id,
+            try:
+                result = await self._while_active(
+                    counters,
+                    action=lambda: self._with_heartbeat(
+                        reconciliation.lease,
+                        request=request,
+                        counters=counters,
+                        action=lambda: acquirer.reconcile(
+                            reconciliation,
+                            fetch_request,
+                            lookup=self._operation_lookup,
+                            provider_request_id=reconciliation.attempt.provider_request_id,
+                        ),
                     ),
-                ),
-            )
+                )
+            except Exception as exc:
+                await self._recover_page_worker_failure(
+                    reconciliation.lease,
+                    failure_stage="provider_reconciliation",
+                    exc=exc,
+                )
+                raise
             if result is not None and result.page_completed:
                 counters.pages_completed += 1
                 assert result.snapshot is not None
@@ -594,15 +669,35 @@ class ConcurrentCrawlCoordinator:
             subject=f"{lease.page_id}:g{lease.lease_generation}",
         )
         operation_started = time.monotonic()
-        result = await self._while_active(
-            counters,
-            action=lambda: self._with_heartbeat(
+        try:
+            result = await self._while_active(
+                counters,
+                action=lambda: self._with_heartbeat(
+                    lease,
+                    request=request,
+                    counters=counters,
+                    action=lambda: self._acquire_ordinary(
+                        lease, request=request, counters=counters
+                    ),
+                ),
+            )
+        except Exception as exc:
+            recovery_disposition = await self._recover_page_worker_failure(
                 lease,
-                request=request,
-                counters=counters,
-                action=lambda: self._acquire_ordinary(lease, request=request, counters=counters),
-            ),
-        )
+                failure_stage="ordinary_acquisition",
+                exc=exc,
+            )
+            # These two transitions make durable forward progress: a no-spend operation can be
+            # claimed afresh, while an ambiguous dispatched operation moves to reconciliation and
+            # can never trigger a blind provider retry.  Keeping the worker alive prevents a
+            # safely-contained page failure from making the whole crawl phase fail.  Other
+            # dispositions can repeat without progress and therefore remain fatal to this worker.
+            if recovery_disposition in {
+                "requeued_pre_dispatch",
+                "moved_to_reconciliation_pending",
+            }:
+                return True
+            raise
         if result.page_completed:
             counters.pages_completed += 1
             assert result.snapshot is not None
@@ -692,43 +787,141 @@ class ConcurrentCrawlCoordinator:
         counters: _Counters,
         fetcher: PageFetcher | None = None,
     ) -> DurablePageAcquirer:
-        async def before_complete(
-            current_lease: CrawlLease,
-            snapshot: PageSnapshotRef,
-            retained: RetainedPageSuccess,
-        ) -> None:
-            del snapshot
-            links = (
-                tuple(
-                    LinkObservation(discovered_url=hop.to_url, relation=LinkRelation.REDIRECT)
-                    for hop in retained.metadata.redirect_chain
-                )
-                + retained.outgoing_links
-            )
-            observations, dropped = self._discovery_policy.plan_links(
-                links,
-                source_page_id=current_lease.page_id,
-                source_url=retained.metadata.final_url or current_lease.requested_url,
-                source_graph_depth=current_lease.graph_depth,
-            )
-            counters.links_dropped += dropped
-            if not observations:
-                return
-            recorded = await self._repository.record_discoveries(
-                DiscoveryBatch(
-                    workspace_id=current_lease.workspace_id,
-                    crawl_run_id=current_lease.crawl_run_id,
-                    observations=observations,
-                )
-            )
-            counters.observations_recorded += recorded.observations_recorded
-
+        del counters
         return DurablePageAcquirer(
             repository=self._repository,
             artifacts=self._artifacts,
             fetcher=fetcher or self._fetcher,
-            before_complete=cast(SnapshotBeforeCompleteHook, before_complete),
         )
+
+    async def _handle_link_expansion(
+        self,
+        lease: LinkExpansionLease,
+        *,
+        request: CoordinatorPhaseRequest,
+        counters: _Counters,
+    ) -> None:
+        """Expand one saved snapshot; never alter its already-fetched page outcome."""
+
+        try:
+            links = (
+                tuple(
+                    LinkObservation(discovered_url=hop.to_url, relation=LinkRelation.REDIRECT)
+                    for hop in lease.redirect_chain
+                )
+                + lease.outgoing_links
+            )
+            observations, dropped = self._discovery_policy.plan_links(
+                links,
+                source_page_id=lease.page_id,
+                source_url=lease.source_url,
+                source_graph_depth=lease.source_graph_depth,
+            )
+            counters.links_dropped += dropped
+            if observations:
+                recorded = await self._repository.record_discoveries(
+                    DiscoveryBatch(
+                        workspace_id=lease.workspace_id,
+                        crawl_run_id=lease.crawl_run_id,
+                        observations=observations,
+                    )
+                )
+                counters.observations_recorded += recorded.observations_recorded
+            if not await self._repository.complete_link_expansion(lease):
+                raise CoordinatorLeaseLostError(
+                    "link expansion completion lost its generation fence"
+                )
+        except (asyncio.CancelledError, CoordinatorLeaseLostError):
+            raise
+        except Exception as exc:
+            retry_after = min(30.0, float(2 ** max(lease.attempt_number - 1, 0)))
+            state = await self._repository.fail_link_expansion(
+                lease,
+                failure_code="discovery_write_failed",
+                failure_class=type(exc).__name__[:200],
+                retry_after_seconds=retry_after,
+            )
+            if state is None:
+                raise CoordinatorLeaseLostError(
+                    "link expansion failure disposition lost its generation fence"
+                ) from exc
+            if state is LinkExpansionState.FAILED:
+                counters.link_expansions_failed += 1
+                kind = CrawlProgressEventKind.LINK_EXPANSION_FAILED
+            else:
+                counters.link_expansions_retried += 1
+                kind = CrawlProgressEventKind.LINK_EXPANSION_RETRYING
+            log.warning(
+                "stage0_official_site.link_expansion_failed",
+                workspace_id=lease.workspace_id,
+                crawl_run_id=str(lease.crawl_run_id),
+                page_id=str(lease.page_id),
+                snapshot_id=str(lease.snapshot_id),
+                lease_generation=lease.lease_generation,
+                attempt_number=lease.attempt_number,
+                failure_stage="link_expansion",
+                failure_code="discovery_write_failed",
+                failure_class=type(exc).__name__[:200],
+                sqlstate=database_sqlstate(exc),
+                disposition=state.value,
+                retry_after_seconds=(
+                    retry_after if state is LinkExpansionState.RETRY_WAIT else None
+                ),
+            )
+            await self._emit_expansion_event(
+                request,
+                lease,
+                kind=kind,
+                outcome=state.value,
+                failure_code="discovery_write_failed",
+            )
+            return
+
+        counters.link_expansions_completed += 1
+        await self._emit_expansion_event(
+            request,
+            lease,
+            kind=CrawlProgressEventKind.LINK_EXPANSION_COMPLETED,
+            outcome="completed",
+        )
+
+    async def _recover_page_worker_failure(
+        self,
+        lease: CrawlLease,
+        *,
+        failure_stage: str,
+        exc: Exception,
+    ) -> str | None:
+        """Hand a failed worker's exact lease to durable recovery without waiting for TTL."""
+
+        try:
+            disposition = await self._repository.recover_worker_failure(lease)
+        except Exception as recovery_exc:
+            log.error(
+                "stage0_official_site.worker_failure_recovery_failed",
+                workspace_id=lease.workspace_id,
+                crawl_run_id=str(lease.crawl_run_id),
+                page_id=str(lease.page_id),
+                lease_generation=lease.lease_generation,
+                failure_stage=failure_stage,
+                failure_class=type(exc).__name__[:200],
+                sqlstate=database_sqlstate(exc),
+                recovery_failure_class=type(recovery_exc).__name__[:200],
+                recovery_sqlstate=database_sqlstate(recovery_exc),
+            )
+            return None
+        log.warning(
+            "stage0_official_site.worker_failure_recovered",
+            workspace_id=lease.workspace_id,
+            crawl_run_id=str(lease.crawl_run_id),
+            page_id=str(lease.page_id),
+            lease_generation=lease.lease_generation,
+            failure_stage=failure_stage,
+            failure_class=type(exc).__name__[:200],
+            sqlstate=database_sqlstate(exc),
+            recovery_disposition=disposition or "fence_already_released",
+        )
+        return disposition
 
     @staticmethod
     async def _while_active(
@@ -770,6 +963,34 @@ class ConcurrentCrawlCoordinator:
             raise CoordinatorLeaseLostError("lease heartbeat lost its generation fence")
         return result
 
+    async def _with_link_expansion_heartbeat(
+        self,
+        lease: LinkExpansionLease,
+        *,
+        request: CoordinatorPhaseRequest,
+        counters: _Counters,
+        action: Callable[[], Awaitable[_ResultT]],
+    ) -> _ResultT:
+        finished = asyncio.Event()
+        fence_lost = asyncio.Event()
+        heartbeat = asyncio.create_task(
+            self._heartbeat_link_expansion(
+                lease,
+                request=request,
+                counters=counters,
+                finished=finished,
+                fence_lost=fence_lost,
+            )
+        )
+        try:
+            result = await action()
+        finally:
+            finished.set()
+            await heartbeat
+        if fence_lost.is_set():
+            raise CoordinatorLeaseLostError("link expansion heartbeat lost its generation fence")
+        return result
+
     async def _heartbeat(
         self,
         lease: CrawlLease,
@@ -785,6 +1006,28 @@ class ConcurrentCrawlCoordinator:
                 return
             except TimeoutError:
                 renewed = await self._repository.renew_lease(
+                    lease, lease_ttl_seconds=request.config.lease_ttl_seconds
+                )
+                if not renewed:
+                    fence_lost.set()
+                    return
+                counters.heartbeat_renewals += 1
+
+    async def _heartbeat_link_expansion(
+        self,
+        lease: LinkExpansionLease,
+        *,
+        request: CoordinatorPhaseRequest,
+        counters: _Counters,
+        finished: asyncio.Event,
+        fence_lost: asyncio.Event,
+    ) -> None:
+        while not finished.is_set():
+            try:
+                await asyncio.wait_for(finished.wait(), timeout=request.config.heartbeat_seconds)
+                return
+            except TimeoutError:
+                renewed = await self._repository.renew_link_expansion(
                     lease, lease_ttl_seconds=request.config.lease_ttl_seconds
                 )
                 if not renewed:
@@ -827,6 +1070,45 @@ class ConcurrentCrawlCoordinator:
         """Stable for one generation and distinct for a proven-no-spend retry generation."""
 
         return f"official-site:{lease.crawl_run_id}:{lease.page_id}:g{lease.lease_generation}"
+
+    async def _emit_expansion_event(
+        self,
+        request: CoordinatorPhaseRequest,
+        lease: LinkExpansionLease,
+        *,
+        kind: CrawlProgressEventKind,
+        outcome: str,
+        failure_code: str | None = None,
+    ) -> None:
+        if request.recon_run_id is None:
+            return
+        try:
+            await self._progress_sink.emit(
+                CrawlProgressEvent(
+                    event_id=progress_event_id(
+                        kind,
+                        lease.crawl_run_id,
+                        subject=f"{lease.expansion_id}:g{lease.lease_generation}",
+                    ),
+                    kind=kind,
+                    workspace_id=lease.workspace_id,
+                    crawl_run_id=lease.crawl_run_id,
+                    recon_run_id=request.recon_run_id,
+                    phase=request.phase,
+                    page_id=lease.page_id,
+                    snapshot_id=lease.snapshot_id,
+                    lease_generation=lease.lease_generation,
+                    url_hash=hashlib.sha256(lease.source_url.encode("utf-8")).hexdigest(),
+                    host=urlsplit(lease.source_url).hostname,
+                    graph_depth=lease.source_graph_depth,
+                    discovered_count=len(lease.outgoing_links),
+                    outcome=outcome,
+                    failure_code=failure_code,
+                )
+            )
+        except Exception:
+            # Visibility never changes expansion disposition or retries discovery work.
+            return
 
     async def _emit_page_event(
         self,

@@ -47,12 +47,15 @@ from tests.api.test_agent_registry_wiring import CATALOG_ROOT
 # to withhold) and put the promoted separately confirmed launches behind the same trial withhold.
 # FI Lane D D4 added `open_directive_confirmation_gate` to the same set, for the same sentence: a
 # dev harness that could present a real, addressed, durable confirmation gate — but could never act
-# on the answer — would be inviting a human to approve spend no surface here can perform.
+# on the answer — would be inviting a human to approve spend no surface here can perform. S5-F
+# applies the same fail-closed rule to the product-selection gate: the shared skill may explain the
+# procedure, but this trial cannot present a control whose answer it cannot compose.
 _WITHHELD = {
     "launch_account_research",
     "launch_selected_account_research",
     "launch_contact_research",
     "open_directive_confirmation_gate",
+    "open_product_selection_gate",
     "start_recon",
     "submit_onboarding_input",
     "synthesize_icps",
@@ -244,10 +247,10 @@ def test_the_stage0_skill_survives_the_narrowed_surface(
     trial = registry.resolve(AgentRole.HEAD_OF_ABM, surface=STAGE0_CONVERSATION_TRIAL_SURFACE)
     disclosures = trial.skill_disclosures()
 
-    assert [item.resource.address for item in disclosures] == ["skill:stage0-interview@v12"]
+    assert [item.resource.address for item in disclosures] == ["skill:stage0-interview@v16"]
     required = {address.partition("@")[0] for address in disclosures[0].required_tool_addresses}
     assert required & _WITHHELD == set()
-    body = trial.open_skill("skill:stage0-interview@v12")
+    body = trial.open_skill("skill:stage0-interview@v16")
     assert "Ask one compact question" in body
     # The trial's framing lives on the surface policy, never in the shared skill.
     assert "manual-conversation-only" not in body

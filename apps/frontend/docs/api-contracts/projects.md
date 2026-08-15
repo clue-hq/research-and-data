@@ -1,6 +1,6 @@
 # Projects, threads, generations, and artifacts API contract
 
-Status: **R0 ratified; repair slices R1-R9 implemented; Stage-0/project hardening contract ratified and Slices 0-4 implemented. Slice 5 is explicitly deferred. Slice 6 automated/adversarial acceptance is complete, but authenticated browser acceptance remains pending. Later slices remain pending where noted.**
+Status: **R0 ratified; repair slices R1-R9 implemented; Stage-0/project hardening contract ratified and Slices 0-4 implemented. Slice 5 is explicitly deferred. Slice 6 automated/adversarial acceptance is complete, but authenticated browser acceptance remains pending. The combined human-gate contract is ratified; its merge implementation and acceptance remain pending. Later slices remain pending where noted.**
 
 Owner for backend integration: Aaryan.
 
@@ -12,16 +12,100 @@ project deliberately returns and renders an empty Gallery.
 
 Authority order inside this document is:
 
-1. **Stage-0/project hardening amendment (2026-08-11)** below.
-2. **Executable integration contract (2026-08-10)** where the amendment does not supersede it.
-3. **As-built thread-shell contract (2026-08-08)** for endpoints the executable
+1. **Combined human-gate amendment (2026-08-15)** below.
+2. **Stage-0/project hardening amendment (2026-08-11)** where the combined amendment does not supersede it.
+3. **Executable integration contract (2026-08-10)** where neither amendment supersedes it.
+4. **As-built thread-shell contract (2026-08-08)** for endpoints the executable
    section does not amend.
-4. Earlier read/write/preview proposals, retained only as design history.
+5. Earlier read/write/preview proposals, retained only as design history.
 
 When `CLUE_PROJECTS_API_BASE_URL` is configured, every projects repository must
 use the same-origin authenticated BFF and validate the corresponding wire
 schema. HTTP mode never falls back to fixtures after a refusal, parse error, or
 network failure. Presentation components do not call the API directly.
+
+### Combined human-gate amendment (2026-08-15)
+
+This amendment freezes the merge contract shared by directive confirmation,
+ICP confirmation, and product selection. It defines the target shape before the
+schema, backend, resource, frontend, and test conflicts are resolved; it is not
+an assertion that the combined implementation has already passed acceptance.
+
+#### One durable gate substrate
+
+- The current interactive gate kinds are `directive_confirmation`,
+  `icp_confirmation`, and `product_selection`. `plan_approval` and
+  `budget_approval` remain reserved gate vocabulary, but do not become
+  interactive merely because their strings are recognized by storage.
+- Every immutable gate retains its exact workspace, project, thread, opening
+  turn, kind, subject reference, nullable subject revision, canonical subject
+  snapshot, matching SHA-256 digest, permitted decisions, human addressee, and
+  privacy/erasure bindings. The model may ask to open a gate; it cannot author
+  any of that authority.
+- `max_spend_cents` and `currency` are a paired nullable value. Non-spend gates
+  store both as null. When an amount is withheld by deployment policy, every
+  human-visible projection also returns null/absent rather than manufacturing
+  `0`, an empty string, or an empty currency.
+- Erased snapshots, stale subjects, foreign workspace/project/thread gates,
+  wrong addressees, malformed references or digests, unsupported kinds, and
+  already-answered gates are non-interactive. The frontend renders recovery,
+  never decision controls, for those states.
+
+Every immutable answer receipt retains the answering turn and action reference,
+decision, reviewed subject digest, `decision_payload`, nullable
+`selected_option_ref`, human actor, and answer time. The route derives actor,
+action, scope, and durable option reference; none is accepted as browser or
+model authority.
+
+#### Kind-specific answer invariants
+
+| Gate kind and decision | Required auxiliary value | Forbidden value |
+|---|---|---|
+| `icp_confirmation + revised` | one bounded, trimmed, non-blank `decision_payload.revision_request` | `selected_option_ref` |
+| `icp_confirmation + approved/rejected` | empty `decision_payload` | `selected_option_ref` |
+| `product_selection + approved` | one `selected_option_ref` proved to be a candidate in the immutable snapshot | any `decision_payload` member |
+| `product_selection + rejected/revised` | none | `selected_option_ref` and every `decision_payload` member |
+| `directive_confirmation` | none under the current contract | `selected_option_ref` and every `decision_payload` member |
+
+`decision_payload` is reserved for bounded auxiliary decision input; its only
+current member is the ICP `revision_request`. `selected_option_ref` is the
+dedicated durable product-selection field. A request or receipt can therefore
+never carry both revision text and a product choice. Every decision must also
+belong to the exact gate's `permitted_decisions` tuple.
+
+#### Frontend request and presentation contract
+
+The turn endpoint retains one structured `gate_response` alternative to a
+normal message:
+
+```jsonc
+{
+  "gate_id": "<durable-gate-uuid>",
+  "decision": "approved|rejected|revised",
+  "expected_subject_sha256": "<64-lowercase-hex>",
+  "expected_estimated_cost_cents": null,
+  "revision_request": "<ICP revision text; only when required>",
+  "selected_product_id": "<catalog product id; only when required>"
+}
+```
+
+The last two members are mutually exclusive and are omitted unless their gate
+kind and decision require them. `selected_product_id` is a browser transport
+name, not durable authority: after validating membership in the gated snapshot,
+the server persists the corresponding value as `selected_option_ref` and
+invokes the existing human-only product confirmation operation.
+
+Frontend decision state is a discriminated union keyed by gate kind and action:
+an ordinary decision, an ICP revision with required text, or a product approval
+with one required candidate. It must not overload a generic third string as
+either revision text or product ID. The card dispatches by fetched durable
+`gate.kind`; unsupported or invalid shapes fail closed.
+
+Canonical answer history renders semantic receipts. Product approval shows the
+chosen product's retained display name from the immutable gate snapshot, never
+raw transport JSON or a technical product ID. ICP answers retain the existing
+Profile approved/declined/Changes requested presentation. Optional members that
+were absent from a historical canonical message remain absent during replay.
 
 ### Ratified Stage-0/project hardening amendment (2026-08-11)
 
@@ -352,7 +436,7 @@ are never accepted from the browser or model.
   reload.
 - The composer keeps one visible model selector, as explicitly ruled for R8.
   Its only option is the server-advertised promoted profile
-  `head-of-abm@v25`, labelled **GPT-5.6 Terra** and backed by
+  `head-of-abm@v29`, labelled **GPT-5.6 Terra** and backed by
   `openai/gpt-5.6-terra`. The chosen profile id is accepted, persisted, and
   checked by the detached worker before the promoted profile is executed.
 - Attachments remain unavailable because this deployment has no durable upload
@@ -382,21 +466,33 @@ are never accepted from the browser or model.
   can pin the preview. Enter and Space invoke the same pin/collapse transition;
   Escape still dismisses an unpinned preview.
 
-### Stage-0 hardening x FI-2 integration ruling (2026-08-13)
+### Immutable resource integration ruling (2026-08-16)
 
-The active conversation profile is `head-of-abm@v25`. Profile `v24` remains an
-immutable FI-2 historical replay contract; it is not rewritten to acquire the
-later Stage-0 tools. Profile `v25` deliberately combines both branch contracts:
+The active conversation profile is `head-of-abm@v29`. The pilot bytes remain
+authoritative and immutable at profiles `v24`/`v25`, skills `v11`/`v12`, and
+recipes `v7`/`v8`; the onboarding lineage remains immutable at profiles
+`v26`–`v28`, skills `v13`–`v15`, and recipe `v9`. None of those historical
+addresses is rewritten. The combined active lineage is profile `v29`, skill
+`v16`, and recipe `v10`:
 
-- Stage-0 owns `stage0-interview@v12`, trusted readiness and synthesis `@2`, and
+- Stage-0 owns `stage0-interview@v16`, trusted readiness and synthesis `@2`, and
   the durable exact-subject `open_icp_confirmation_gate@1` lifecycle;
 - FI-2 owns `account-deep-steering@v4` and
   `launch_selected_account_research@1` for exact current-message Account refs;
+- production context owns the bounded Client-KB/Product-KB readers and the
+  human-addressed `open_product_selection_gate@1` lifecycle;
 - the project composer keeps FI-2's typed accepted/failed/not-submitted result
   and clears transferred context only after durable acceptance, while applying
   Stage-0's exact-draft clearing rule so a newer in-flight draft survives;
 - project initialization composes the FI-2 handoff/thread destination with the
   Stage-0 conversation-first focus rule for an empty Gallery.
+
+Before this ruling was applied, the configured Singapore target database and
+the retained FI-2 final database were audited read-only for queued/running work
+carrying Denver's colliding profile or canonical recipe hashes. None existed,
+so no hash-keyed compatibility lookup is required. If a future deployment does
+contain such a pin, startup must fail closed until those exact bytes can be
+resolved; a version-only fallback may not reinterpret it.
 
 This is a union of independent authorities, not a choice of one branch's entire
 file. Account selection does not bypass the Stage-0 ICP gate, and the Stage-0
@@ -444,7 +540,7 @@ It performs no project-membership mutation, provider call or spend. The user
 must still write the instruction that explains what the agent should do.
 
 For the explicit same-message instruction to launch deep Account research,
-the active `head-of-abm@v25` profile may call
+the active `head-of-abm@v29` profile may call
 `launch_selected_account_research@1`. This is a narrow FI pilot path, not a
 relaxation of `launch_account_research@1`:
 
@@ -503,6 +599,22 @@ launch receipt means queued or replayed, never completed research.
   must echo the exact displayed amount; with controls off the amount check is
   skipped. The `expected_subject_sha256` digest check remains armed in every
   posture and is the load-bearing stale-approval guard.
+
+### Production context-reference read (S6, 2026-08-15)
+
+- `GET /api/v1/projects/{project_id}/threads/{thread_id}/turns/{turn_id}/context-refs`
+  is an authenticated, `thread.read`, workspace-scoped read of the exact durable
+  context receipt used by that production turn.
+- Before assembly commits it returns `data.state: "pending"`. Afterwards it
+  returns the bundle schema/policy/counter versions, aggregate hash, assembly
+  time, per-layer budgets/counts, and every included/excluded artifact or domain
+  reference with its reason code.
+- This is not the dev inspector and has no hydration mode. Its schema contains
+  no body, text, claim value, evidence span, source URL, email, credential, or
+  token field. Exact content remains accessible only through the separately
+  governed artifact/knowledge surfaces.
+- A foreign project, thread, turn, or workspace is the existing scoped `404`,
+  never a response that confirms the object exists.
 
 ## Ownership model
 
@@ -622,14 +734,14 @@ nothing. It requires `project.read`.
     ],
     "agent_profiles": [
       {
-        "id": "head-of-abm@v25",
+        "id": "head-of-abm@v29",
         "label": "GPT-5.6 Terra",
         "short_label": "GPT-5.6 Terra",
         "description": "Clue's governed GPT-5.6 Terra conversation profile",
         "model_id": "openai/gpt-5.6-terra"
       }
     ],
-    "default_agent_profile_id": "head-of-abm@v25",
+    "default_agent_profile_id": "head-of-abm@v29",
     "composer_capabilities": {
       "context_refs": true,
       "attachments": false,
@@ -683,7 +795,7 @@ accepts:
     }
   ],
   "attachment_refs": [],
-  "agent_profile_id": "head-of-abm@v25"
+  "agent_profile_id": "head-of-abm@v29"
 }
 ```
 
@@ -820,14 +932,14 @@ project shell:
     ],
     "agent_profiles": [
       {
-        "id": "head-of-abm@v25",
+        "id": "head-of-abm@v29",
         "label": "GPT-5.6 Terra",
         "short_label": "GPT-5.6 Terra",
         "description": "Clue's governed GPT-5.6 Terra conversation profile",
         "model_id": "openai/gpt-5.6-terra"
       }
     ],
-    "default_agent_profile_id": "head-of-abm@v25",
+    "default_agent_profile_id": "head-of-abm@v29",
     "composer_capabilities": {
       "context_refs": true,
       "attachments": false,

@@ -48,11 +48,14 @@ SYSTEM_RECIPE_FILENAMES: tuple[str, ...] = (
     # A promoted recipe revision is immutable, so widening the interaction slot's ceiling is a new
     # revision rather than an edit, exactly like the profile mint the same slice needed.
     "recipe0-stage0-v6.json",
-    # Stage-0 hardening Slice 1: v7 replaces the model-authored readiness/synthesis contracts with
-    # trusted @2 tools while retaining v1-v6 for exact historical replay.
+    # The pilot bytes remain authoritative for colliding v7/v8: trusted @2 readiness/synthesis and
+    # the durable exact-subject ICP confirmation gate.
     "recipe0-stage0-v7.json",
-    # Slice 2: v8 adds the durable exact-subject ICP confirmation gate; v7 remains replayable.
     "recipe0-stage0-v8.json",
+    # Onboarding's non-conflicting v9 retains the selected-product read lineage.
+    "recipe0-stage0-v9.json",
+    # Integration v10 composes both lineages without rewriting any historical revision.
+    "recipe0-stage0-v10.json",
     "recipe1-classic-v1.json",
     "recipe1-classic-v2.json",
 )
@@ -535,6 +538,10 @@ def build_recipe_pin_registry(
         return _observation(version=str(version), payload=pinned)
 
     registry.register(CallablePinResolver(kind="client_kb", loader=client_kb))
+    # Product-KB uses the same claim/version substrate but a distinct pin kind. Keeping the kinds
+    # separate prevents a company-scoped tool requirement from satisfying product authority (or
+    # vice versa) while reusing the one exact-version resolver implementation.
+    registry.register(CallablePinResolver(kind="product_kb", loader=client_kb))
 
     async def readiness_decision(
         request: PinRequest,

@@ -341,6 +341,31 @@ class ReadinessHistoryOutput(ToolOutput):
     next_cursor: str | None
 
 
+class ClientKnowledgeListOutput(ToolOutput):
+    """One bounded page of the exact production Client-KB checkpoint."""
+
+    project_id: str
+    client_entity_id: str
+    client_kb_version: int
+    topic: str | None
+    field_key: str | None
+    knowledge: list[dict[str, object]]
+    page_size: int
+    returned: int
+    total_matching: int
+    has_more: bool
+    next_cursor: str | None
+
+
+class ClientClaimInspectionOutput(ToolOutput):
+    """One exact claim with bounded value/evidence/provenance fields."""
+
+    project_id: str
+    client_entity_id: str
+    client_kb_version: int
+    claim: dict[str, object]
+
+
 class Stage0OverrideOutput(ToolOutput):
     readiness_override_id: str
     readiness_decision_id: str
@@ -396,6 +421,8 @@ class RunControlOutput(ToolOutput):
 
 __all__ = [
     "CommitteeOutput",
+    "ClientClaimInspectionOutput",
+    "ClientKnowledgeListOutput",
     "ConfirmedProjectRunOutput",
     "ConfirmIcpOutput",
     "ContactProfileOutput",

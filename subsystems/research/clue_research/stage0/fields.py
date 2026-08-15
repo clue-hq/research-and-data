@@ -35,7 +35,7 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_core import FieldDef, PassKind, ReuseScope
+from clue_core import FieldDef, PassKind, ProductScopePolicy, ReuseScope
 from clue_research.claimstore import SeedField, load_pack
 
 # --- the client-knowledge namespace + field keys ---------------------------
@@ -52,35 +52,26 @@ CLIENT_MARKET_REPUTATION = "client.market_reputation"
 CLIENT_DELIVERED_VALUE = "client.delivered_value"
 CLIENT_COMPETITOR = "client.competitor"
 CLIENT_BUYER_PROFILE = "client.buyer_profile"
+CLIENT_PRODUCT_CATALOG = "client.product_catalog"
+
+# Detailed product knowledge remains in the shared ``client.*`` claim substrate, but every claim
+# is scoped by one exact spine ``product_id`` and therefore participates in that product's own KB
+# version sequence.  These keys must never be written with ``product_id IS NULL`` by S5 writers.
+CLIENT_PRODUCT_OVERVIEW = "client.product_overview"
+CLIENT_PRODUCT_CAPABILITY = "client.product_capability"
+CLIENT_PRODUCT_USE_CASE = "client.product_use_case"
+CLIENT_PRODUCT_DIFFERENTIATOR = "client.product_differentiator"
+CLIENT_PRODUCT_PRICING = "client.product_pricing"
+CLIENT_PRODUCT_INTEGRATION = "client.product_integration"
+CLIENT_PRODUCT_COMPETITOR = "client.product_competitor"
+CLIENT_PRODUCT_CUSTOMER_EVIDENCE = "client.product_customer_evidence"
+CLIENT_PRODUCT_POSITIONING = "client.product_positioning"
 # Internal marker field: the Client-KB version ledger, modelled as a claim (no new table). Its
 # value carries {version, run_id, ...}; see clue_research.stage0.client_kb.
 CLIENT_KB_VERSION = "client.kb_version"
 
-# The substantive client-knowledge fields reverse-profiling fills (excludes the version marker).
-# M5.2 ICP synthesis and M12 positioning read these via current_value over the client entity.
-CLIENT_BASELINE_FIELDS: tuple[str, ...] = (
-    CLIENT_VALUE_PROP,
-    CLIENT_PRODUCT,
-    CLIENT_DIFFERENTIATOR,
-    CLIENT_PRICING_POSTURE,
-    CLIENT_PROOF_POINT,
-    CLIENT_CUSTOMER,
-    CLIENT_ICP_EVIDENCE,
-    CLIENT_MARKET_REPUTATION,
-    CLIENT_DELIVERED_VALUE,
-    # Appended at the END on purpose: this tuple is the outer *budget order* the recon lane walks,
-    # so a new field must never displace an existing one's position (the outer-budget pre-check
-    # test pins field[0]). These two are open-web/tier-3 only — the fast lane's max_source_tier=2
-    # gate walks past them at zero spend, so they are background-lane fields for free.
-    CLIENT_COMPETITOR,
-    CLIENT_BUYER_PROFILE,
-)
-
-# Project-level ICP synthesis has a deliberately narrower readiness denominator than the full
-# onboarding recon walk. Competitor and likely-buyer discovery are tier-3, background-only
-# enrichment: adding them to onboarding progress must not silently move the already-ratified
-# Stage-0 ICP gate from seven-of-nine ready to seven-of-eleven blocked. A workspace may still add
-# either key explicitly through its required-field policy.
+# Project-level ICP synthesis has a deliberately narrow, stable readiness denominator. Neither
+# onboarding-only enrichment nor later company-navigation fields may silently move this gate.
 CLIENT_ICP_SYNTHESIS_FIELDS: tuple[str, ...] = (
     CLIENT_VALUE_PROP,
     CLIENT_PRODUCT,
@@ -93,9 +84,44 @@ CLIENT_ICP_SYNTHESIS_FIELDS: tuple[str, ...] = (
     CLIENT_DELIVERED_VALUE,
 )
 
-# Backward-compatible import name for callers that have not yet migrated. It is the baseline set
-# only; Client-KB *content* reads no longer use it as an allowlist.
-CLIENT_KNOWLEDGE_FIELDS = CLIENT_BASELINE_FIELDS
+# The founder-ratified onboarding checklist/recon order. Competitor and likely-buyer evidence are
+# tier-3 background enrichment, but they remain honest checklist members. Keeping this tuple
+# separate prevents later company knowledge from changing the UI or its fast-release boundary.
+CLIENT_ONBOARDING_FIELDS: tuple[str, ...] = (
+    *CLIENT_ICP_SYNTHESIS_FIELDS,
+    CLIENT_COMPETITOR,
+    CLIENT_BUYER_PROFILE,
+)
+
+# The complete account-wide company-knowledge set. The catalog is navigation knowledge: it may be
+# materialized during/after onboarding, but it is not an onboarding checklist item and is not an
+# ICP-readiness or fast-release prerequisite. Appending it preserves every original onboarding
+# field's budget/progress position.
+CLIENT_COMPANY_KNOWLEDGE_FIELDS: tuple[str, ...] = (
+    *CLIENT_ONBOARDING_FIELDS,
+    CLIENT_PRODUCT_CATALOG,
+)
+
+# Backward-compatible name for company-wide Client-KB readers and writers. New gate/UI consumers
+# must choose the narrower explicit tuple that owns their policy.
+CLIENT_BASELINE_FIELDS: tuple[str, ...] = CLIENT_COMPANY_KNOWLEDGE_FIELDS
+
+# Detailed product knowledge is a fourth, distinct set. Every claim requires one exact product_id.
+PRODUCT_KNOWLEDGE_FIELDS: tuple[str, ...] = (
+    CLIENT_PRODUCT_OVERVIEW,
+    CLIENT_PRODUCT_CAPABILITY,
+    CLIENT_PRODUCT_USE_CASE,
+    CLIENT_PRODUCT_DIFFERENTIATOR,
+    CLIENT_PRODUCT_PRICING,
+    CLIENT_PRODUCT_INTEGRATION,
+    CLIENT_PRODUCT_COMPETITOR,
+    CLIENT_PRODUCT_CUSTOMER_EVIDENCE,
+    CLIENT_PRODUCT_POSITIONING,
+)
+
+# Backward-compatible import name for callers that have not yet migrated. It is the complete
+# company set only; Client-KB *content* reads no longer use it as an allowlist.
+CLIENT_KNOWLEDGE_FIELDS = CLIENT_COMPANY_KNOWLEDGE_FIELDS
 
 
 def _seed(
@@ -122,6 +148,11 @@ def _seed(
             freshness_ttl=freshness_ttl,
             pass_kind=PassKind.SCORING,
             reuse_scope=ReuseScope.TENANT_PRIVATE,
+            product_scope=(
+                ProductScopePolicy.REQUIRED
+                if field_key in PRODUCT_KNOWLEDGE_FIELDS
+                else ProductScopePolicy.FORBIDDEN
+            ),
         ),
         value_schema=value_schema,
         description=description,
@@ -132,6 +163,24 @@ def _seed(
 _STR = {"type": "string"}
 _OBJ = {"type": "object"}
 _OBJ_LIST = {"type": "array", "items": {"type": "object"}}
+_PRODUCT_CATALOG = {
+    "type": "array",
+    "items": {
+        "type": "object",
+        "required": ["name", "short_description"],
+        "properties": {
+            "name": {"type": "string", "minLength": 1, "maxLength": 240},
+            "short_description": {"type": "string", "minLength": 1, "maxLength": 600},
+            "aliases": {
+                "type": "array",
+                "maxItems": 20,
+                "items": {"type": "string", "minLength": 1, "maxLength": 240},
+            },
+        },
+        "additionalProperties": False,
+    },
+    "maxItems": 100,
+}
 
 # The registered client-knowledge field set. Loaded with ``pack="client"`` (the namespace IS the
 # pack key, as register_field requires for a non-canonical namespace).
@@ -240,6 +289,80 @@ CLIENT_KNOWLEDGE_PACK: tuple[SeedField, ...] = (
             "invented account entities (discovery doctrine)."
         ),
     ),
+    _seed(
+        CLIENT_PRODUCT_CATALOG,
+        "list",
+        tier_plan=("firecrawl_site", "scrapling_site"),
+        value_schema=_PRODUCT_CATALOG,
+        description=(
+            "Bounded official portfolio catalog: product name, short description, and aliases. "
+            "Detailed capabilities, pricing, integrations, competitors, and customer evidence "
+            "belong to product-scoped knowledge."
+        ),
+    ),
+    _seed(
+        CLIENT_PRODUCT_OVERVIEW,
+        "str",
+        tier_plan=("firecrawl_site", "scrapling_site"),
+        value_schema=_STR,
+        description="Selected product overview grounded in its official product surfaces.",
+    ),
+    _seed(
+        CLIENT_PRODUCT_CAPABILITY,
+        "object",
+        tier_plan=("firecrawl_site", "scrapling_site"),
+        value_schema=_OBJ,
+        description="One explicitly stated capability of the selected product.",
+    ),
+    _seed(
+        CLIENT_PRODUCT_USE_CASE,
+        "object",
+        tier_plan=("firecrawl_site", "scrapling_site"),
+        value_schema=_OBJ,
+        description="One grounded use case or workflow for the selected product.",
+    ),
+    _seed(
+        CLIENT_PRODUCT_DIFFERENTIATOR,
+        "str",
+        tier_plan=("firecrawl_site", "scrapling_site", "g2"),
+        value_schema=_STR,
+        description="An explicitly stated differentiator for the selected product.",
+    ),
+    _seed(
+        CLIENT_PRODUCT_PRICING,
+        "object",
+        tier_plan=("firecrawl_site", "scrapling_site"),
+        value_schema=_OBJ,
+        description="Product-specific pricing posture, plan, or quote-led buying model.",
+    ),
+    _seed(
+        CLIENT_PRODUCT_INTEGRATION,
+        "object",
+        tier_plan=("firecrawl_site", "scrapling_site"),
+        value_schema=_OBJ,
+        description="One explicitly supported integration or ecosystem connection.",
+    ),
+    _seed(
+        CLIENT_PRODUCT_COMPETITOR,
+        "object",
+        tier_plan=("exa_search",),
+        value_schema=_OBJ,
+        description="One grounded competitor or alternative for the selected product.",
+    ),
+    _seed(
+        CLIENT_PRODUCT_CUSTOMER_EVIDENCE,
+        "object",
+        tier_plan=("firecrawl_site", "scrapling_site"),
+        value_schema=_OBJ,
+        description="One customer, testimonial, case study, or outcome for the selected product.",
+    ),
+    _seed(
+        CLIENT_PRODUCT_POSITIONING,
+        "str",
+        tier_plan=("firecrawl_site", "scrapling_site"),
+        value_schema=_STR,
+        description="Product-specific audience, category, and positioning statement.",
+    ),
     # The version marker. tier_plan is empty: it is never resolved through the waterfall — it is
     # written directly by the reverse-profiling orchestration to label each KB version.
     SeedField(
@@ -249,6 +372,9 @@ CLIENT_KNOWLEDGE_PACK: tuple[SeedField, ...] = (
             tier_plan=(),
             pass_kind=PassKind.SCORING,
             reuse_scope=ReuseScope.TENANT_PRIVATE,
+            # One marker vocabulary versions both the account-wide Client-KB and each product's
+            # independent KB sequence, so both NULL and non-NULL product bindings are legitimate.
+            product_scope=ProductScopePolicy.OPTIONAL,
         ),
         value_schema={
             "type": "object",
@@ -280,6 +406,7 @@ SURFACE_CLASS_FIELDS: dict[SurfaceClass, tuple[str, ...]] = {
         CLIENT_PRODUCT,
         CLIENT_DIFFERENTIATOR,
         CLIENT_PRICING_POSTURE,
+        CLIENT_PRODUCT_CATALOG,
     ),
     SurfaceClass.POSITIONING_PROOF: (
         CLIENT_PROOF_POINT,

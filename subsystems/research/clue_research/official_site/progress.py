@@ -63,6 +63,10 @@ METRIC_BACKGROUND_COMPLETION_LATENCY_SECONDS = (
     "stage0.official_site.background_completion.latency_seconds"
 )
 METRIC_STALE_COMPLETION_REJECTIONS = "stage0.official_site.stale_completion_rejections"
+METRIC_LINK_EXPANSION_READY = "stage0.official_site.link_expansion.ready"
+METRIC_LINK_EXPANSION_LEASED = "stage0.official_site.link_expansion.leased"
+METRIC_LINK_EXPANSION_COMPLETED = "stage0.official_site.link_expansion.completed"
+METRIC_LINK_EXPANSION_FAILED = "stage0.official_site.link_expansion.failed"
 
 
 class CrawlProgressEventKind(StrEnum):
@@ -71,6 +75,10 @@ class CrawlProgressEventKind(StrEnum):
     PAGE_STARTED = "stage0.crawl.page_started"
     PAGE_FETCHED = "stage0.crawl.page_fetched"
     PAGE_REFUSED = "stage0.crawl.page_refused"
+    LINK_EXPANSION_STARTED = "stage0.crawl.link_expansion_started"
+    LINK_EXPANSION_RETRYING = "stage0.crawl.link_expansion_retrying"
+    LINK_EXPANSION_COMPLETED = "stage0.crawl.link_expansion_completed"
+    LINK_EXPANSION_FAILED = "stage0.crawl.link_expansion_failed"
     FAST_CHECKPOINT_FROZEN = "stage0.crawl.fast_checkpoint_frozen"
     EXTRACTION_STARTED = "stage0.crawl.extraction_started"
     EXTRACTION_COMPLETED = "stage0.crawl.extraction_completed"
@@ -162,6 +170,11 @@ class OfficialSiteProgressView(FrozenContractModel):
     reconciliation_pending: int = Field(ge=0)
     persistence_pending: int = Field(ge=0)
     retry_wait: int = Field(ge=0)
+    expansion_queued: int = Field(default=0, ge=0)
+    expansion_leased: int = Field(default=0, ge=0)
+    expansion_retry_wait: int = Field(default=0, ge=0)
+    expansion_completed: int = Field(default=0, ge=0)
+    expansion_failed: int = Field(default=0, ge=0)
     fetched: int = Field(ge=0)
     refused: int = Field(ge=0)
     failed: int = Field(ge=0)
@@ -331,6 +344,14 @@ def record_official_site_metrics(
     target.gauge(METRIC_FRONTIER_READY, view.queued + view.retry_wait, attributes)
     target.gauge(METRIC_FRONTIER_LEASED, view.leased, attributes)
     target.gauge(METRIC_FRONTIER_QUARANTINED, view.quarantined, attributes)
+    target.gauge(
+        METRIC_LINK_EXPANSION_READY,
+        view.expansion_queued + view.expansion_retry_wait,
+        attributes,
+    )
+    target.gauge(METRIC_LINK_EXPANSION_LEASED, view.expansion_leased, attributes)
+    target.gauge(METRIC_LINK_EXPANSION_COMPLETED, view.expansion_completed, attributes)
+    target.gauge(METRIC_LINK_EXPANSION_FAILED, view.expansion_failed, attributes)
     target.gauge(METRIC_PROVIDER_ACTIVE, view.provider_active, attributes)
     target.gauge(
         METRIC_SPEND_UNKNOWN,
@@ -768,6 +789,7 @@ class PostgresOfficialSiteOperations:
             requeued_pre_dispatch=result.requeued_pre_dispatch,
             moved_to_reconciliation_pending=result.moved_to_reconciliation_pending,
             released_persistence_pending=result.released_persistence_pending,
+            released_link_expansions=result.released_link_expansions,
         )
         return result
 
@@ -884,6 +906,22 @@ class PostgresOfficialSiteOperations:
             .all()
         )
         pages = Counter({row["state"]: row["count"] for row in page_rows})
+        expansion_rows = (
+            (
+                await execute(
+                    text(
+                        "SELECT state, count(*)::int AS count "
+                        "FROM official_site_link_expansion "
+                        "WHERE workspace_id = :workspace_id AND crawl_run_id = :crawl_run_id "
+                        "GROUP BY state"
+                    ),
+                    params,
+                )
+            )
+            .mappings()
+            .all()
+        )
+        expansions = Counter({row["state"]: row["count"] for row in expansion_rows})
         page_timing = (
             (
                 await execute(
@@ -1060,6 +1098,7 @@ class PostgresOfficialSiteOperations:
         return _build_progress(
             run=run,
             pages=pages,
+            expansions=expansions,
             fetch_spend_unknown=int(attempt["spend_unknown"]),
             provider_cost_cents=float(attempt["cost_cents"]),
             snapshots=int(snapshot["snapshots"]),
@@ -1081,6 +1120,7 @@ def _build_progress(
     *,
     run: dict[str, object],
     pages: Counter[str],
+    expansions: Counter[str] | None = None,
     fetch_spend_unknown: int,
     provider_cost_cents: float,
     snapshots: int,
@@ -1094,6 +1134,7 @@ def _build_progress(
     oldest_spend_unknown_age_seconds: int = 0,
     fast_checkpoint_created_at: UtcDatetime | None = None,
 ) -> OfficialSiteProgressView:
+    expansions = expansions or Counter()
     run_status = CrawlRunStatus(str(run["status"]))
     queued = pages["discovered"] + pages["queued"]
     leased = pages["leased"]
@@ -1101,6 +1142,11 @@ def _build_progress(
     reconciliation = pages["reconciliation_pending"]
     persistence = pages["persistence_pending"]
     retry_wait = pages["retry_wait"]
+    expansion_queued = expansions["queued"]
+    expansion_leased = expansions["leased"]
+    expansion_retry_wait = expansions["retry_wait"]
+    expansion_completed = expansions["completed"]
+    expansion_failed = expansions["failed"]
     fetched = pages["fetched"]
     refused = pages["refused"]
     failed = pages["failed"]
@@ -1119,6 +1165,7 @@ def _build_progress(
         or fetch_spend_unknown
         or extractions["failed"]
         or extraction_spend_unknown
+        or expansion_failed
     )
     partial = has_success and has_gap
     completed = run_status is CrawlRunStatus.COMPLETED
@@ -1133,9 +1180,9 @@ def _build_progress(
         max(0.0, (completed_at - created_at).total_seconds()) if completed_at is not None else None
     )
     states: list[OperatorState] = []
-    if queued or retry_wait:
+    if queued or retry_wait or expansion_queued or expansion_retry_wait:
         states.append(OperatorState.QUEUED)
-    if leased:
+    if leased or expansion_leased:
         states.append(OperatorState.LEASED)
     if provider_active:
         states.append(OperatorState.PROVIDER_ACTIVE)
@@ -1167,7 +1214,7 @@ def _build_progress(
         message = "Validating sourced company facts."
     elif provider_active or leased:
         message = f"Scraping selected company pages ({fetched}/{total_pages})."
-    elif queued or retry_wait:
+    elif queued or retry_wait or expansion_queued or expansion_retry_wait or expansion_leased:
         message = "Discovering company pages."
     elif run_status in {CrawlRunStatus.FAST_COMPLETE, CrawlRunStatus.BACKGROUND_ACTIVE}:
         message = "Fast research complete; deeper research is continuing."
@@ -1194,6 +1241,11 @@ def _build_progress(
         reconciliation_pending=reconciliation,
         persistence_pending=persistence,
         retry_wait=retry_wait,
+        expansion_queued=expansion_queued,
+        expansion_leased=expansion_leased,
+        expansion_retry_wait=expansion_retry_wait,
+        expansion_completed=expansion_completed,
+        expansion_failed=expansion_failed,
         fetched=fetched,
         refused=refused,
         failed=failed,

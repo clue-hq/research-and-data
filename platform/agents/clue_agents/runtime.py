@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import re
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from typing import Any, cast
 
 from deepagents import create_deep_agent
@@ -91,16 +91,31 @@ class ExactAgentToolSurfaceMiddleware(AgentMiddleware[Any, Any, Any]):
     undeclared tool.
     """
 
-    def __init__(self, *, profile: ResolvedAgentProfile) -> None:
+    def __init__(
+        self,
+        *,
+        profile: ResolvedAgentProfile,
+        effective_governed_tool_names: Collection[str] | None = None,
+    ) -> None:
         self._profile = profile
-        self._allowed = frozenset(
+        declared = frozenset(
             {
                 *(pin.name for pin in profile.profile.tools),
-                *_FRAMEWORK_TOOL_NAMES,
                 _FINALIZE_TOOL_NAME,
                 *(("delegate_specialist",) if profile.profile.delegation_roles else ()),
             }
         )
+        effective = (
+            declared
+            if effective_governed_tool_names is None
+            else frozenset(effective_governed_tool_names)
+        )
+        undeclared = sorted(effective - declared)
+        if undeclared:
+            raise ValueError(f"effective governed tools are absent from the profile: {undeclared}")
+        if _FINALIZE_TOOL_NAME not in effective:
+            raise ValueError("the effective governed surface must include finalize_turn")
+        self._allowed = effective | _FRAMEWORK_TOOL_NAMES
         # Per-turn state: one middleware instance is constructed per ``DeepAgentTurnRuntime.run``.
         self._finalize_rejections = 0
 
@@ -295,7 +310,18 @@ class DeepAgentTurnRuntime:
                 model=model,
                 tools=list(governed_tools),
                 system_prompt=resolved_profile.prompt_body,
-                middleware=(ExactAgentToolSurfaceMiddleware(profile=resolved_profile),),
+                middleware=(
+                    ExactAgentToolSurfaceMiddleware(
+                        profile=resolved_profile,
+                        # Some reviewed profile capabilities are constitution-dependent.  For
+                        # example, selected-product readers are intentionally omitted unless the
+                        # turn carries an exact Product-KB pin.  The factory has already applied
+                        # that trusted narrowing; the runtime must enforce the resulting surface,
+                        # not incorrectly require every capability listed by the reusable role
+                        # profile.
+                        effective_governed_tool_names={_tool_name(tool) for tool in governed_tools},
+                    ),
+                ),
                 backend=backend,  # type: ignore[arg-type]
                 checkpointer=checkpointer,
                 state_schema=ClueDeepAgentState,

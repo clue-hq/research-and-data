@@ -8,6 +8,7 @@ from uuid import UUID
 from clue_research.official_site.contracts import (
     ArtifactRef,
     AttemptOutcome,
+    ClaimLinkExpansionRequest,
     ClaimNextRequest,
     ClaimPersistenceRequest,
     ClaimReconciliationRequest,
@@ -21,6 +22,8 @@ from clue_research.official_site.contracts import (
     DiscoveryBatch,
     DiscoveryBatchResult,
     FetchAttemptRef,
+    LinkExpansionLease,
+    LinkExpansionState,
     LinkObservation,
     OfficialSiteMaterializationRequest,
     OfficialSiteMaterializationResult,
@@ -63,7 +66,15 @@ class CrawlRepository(Protocol):
         self, request: ClaimPersistenceRequest
     ) -> PersistenceClaim | None: ...
 
+    async def claim_link_expansion(
+        self, request: ClaimLinkExpansionRequest
+    ) -> LinkExpansionLease | None: ...
+
     async def renew_lease(self, lease: CrawlLease, *, lease_ttl_seconds: int) -> bool: ...
+
+    async def renew_link_expansion(
+        self, lease: LinkExpansionLease, *, lease_ttl_seconds: int
+    ) -> bool: ...
 
     async def begin_attempt(
         self, lease: CrawlLease, *, provider_key: str, operation_key: str
@@ -89,7 +100,24 @@ class CrawlRepository(Protocol):
         outgoing_links: tuple[LinkObservation, ...],
     ) -> PageSnapshotRef | None: ...
 
-    async def complete_page(self, lease: CrawlLease, *, snapshot_id: UUID) -> bool: ...
+    async def complete_page(
+        self,
+        lease: CrawlLease,
+        *,
+        snapshot_id: UUID,
+        outgoing_links: tuple[LinkObservation, ...],
+    ) -> bool: ...
+
+    async def complete_link_expansion(self, lease: LinkExpansionLease) -> bool: ...
+
+    async def fail_link_expansion(
+        self,
+        lease: LinkExpansionLease,
+        *,
+        failure_code: str,
+        failure_class: str,
+        retry_after_seconds: float,
+    ) -> LinkExpansionState | None: ...
 
     async def disposition_attempt(
         self,
@@ -97,6 +125,10 @@ class CrawlRepository(Protocol):
         attempt: FetchAttemptRef,
         outcome: AttemptOutcome,
     ) -> bool: ...
+
+    async def recover_worker_failure(self, lease: CrawlLease) -> str | None:
+        """Release a failed worker's exact fence into the safest durable recovery state."""
+        ...
 
     async def reclaim_expired_leases(
         self, *, workspace_id: str, crawl_run_id: UUID

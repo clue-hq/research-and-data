@@ -44,10 +44,10 @@ def default_readiness_spec() -> ReadinessSpec:
     return ReadinessSpec(
         floors={
             ReadinessGate.ICP_SYNTHESIS: ReadinessFloor(
-                # Seven of the nine substantive Client-KB baseline fields is the minimum useful
-                # synthesis floor.  The denominator is compiled from CLIENT_BASELINE_FIELDS by
-                # the backend, so an empty workspace extension policy can no longer turn 0/0
-                # model-authored metrics into a misleading success.
+                # Seven of the nine ICP-synthesis fields is the minimum useful floor. The backend
+                # compiles that explicit gate denominator plus workspace-required extensions, so
+                # onboarding/company-knowledge growth cannot silently move it and an empty
+                # extension policy cannot turn 0/0 model-authored metrics into a success.
                 min_coverage_ratio=0.75,
                 require_product_id=True,
                 max_open_policy_blocks=0,

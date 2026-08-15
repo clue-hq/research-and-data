@@ -55,6 +55,7 @@ from clue_research.durable import (
 )
 from clue_research.icp import get_icp_version
 from clue_research.stage0 import (
+    CLIENT_ONBOARDING_FIELDS,
     ClaimEntailmentJudge,
     ClientInput,
     InterviewClaimEntityRefused,
@@ -827,7 +828,10 @@ class StartReconTool(_Stage0Tool):
                                 run_id=recon.fast_run_id,
                                 budget_cap_cents=self._policy.fast_budget_cents,
                                 pre_spend_gate=self._gate_for_connection(conn),
-                                product_id=inputs.product_id,
+                                # The fast release boundary is the original eleven-field
+                                # onboarding contract. Company catalog navigation is allowed to
+                                # arrive later and must never delay entry into the application.
+                                company_field_keys=CLIENT_ONBOARDING_FIELDS,
                                 max_source_tier=2,
                                 on_client_resolved=self._scrape_binder,
                                 on_field_progress=self._field_progress(recon.id, ctx, "fast"),
@@ -901,7 +905,6 @@ class StartReconTool(_Stage0Tool):
                                 run_id=recon.background_run_id,
                                 budget_cap_cents=self._policy.background_budget_cents,
                                 pre_spend_gate=self._gate_for_connection(conn),
-                                product_id=inputs.product_id,
                                 max_source_tier=3,
                                 on_client_resolved=self._scrape_binder,
                                 on_field_progress=self._field_progress(recon.id, ctx, "background"),
@@ -1127,6 +1130,11 @@ class ConfirmProjectProductTool(_Stage0Tool):
             return _failure(
                 "project_product_not_found",
                 "project and product do not form a same-workspace brand pair",
+            )
+        if project.product_id is not None and project.product_id != product.product_id:
+            return _failure(
+                "project_product_conflict",
+                "this project already has a different immutable product selection",
             )
         return ()
 

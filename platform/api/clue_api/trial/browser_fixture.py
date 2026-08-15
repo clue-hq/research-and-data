@@ -17,6 +17,7 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_api.client_context_binding import bind_workspace_client
 from clue_api.trial.discovery_fixture import (
     HOME_URL,
     SOURCE_KEY,
@@ -265,9 +266,9 @@ async def bind_insight_health_client_to_project(
 ) -> InsightHealthProjectBindingResult:
     """Attach onboarding's client identity result to one signed-in user's project.
 
-    ``onboarding_input`` is append-only, so this does not rewrite the original captured user turn.
-    It appends a second, content-identical human capture with the trusted client/product binding.
-    The production ``project_client_entity_id`` and turn-binding readers then discover that row.
+    The fixture establishes the same account-wide binding as production onboarding. It also
+    appends a content-identical project input with the trusted client/product pins as immutable
+    statement/evidence provenance; production identity resolution never infers from that row.
     """
 
     fixture = await seed_insight_health_browser_fixture(
@@ -312,6 +313,11 @@ async def bind_insight_health_client_to_project(
             status=AccountStatus.ACTIVE,
             workspace_id=fixture.workspace_id,
         )
+    await bind_workspace_client(
+        conn,
+        workspace_id=fixture.workspace_id,
+        client_entity_id=client_entity_id,
+    )
 
     binding_id = OnboardingInputId(
         uuid5(
@@ -454,7 +460,6 @@ async def seed_insight_health_browser_onboarding_result(
             workspace_id=binding.workspace_id,
             run_id=BROWSER_STAGE0_RUN_ID,
             budget_cap_cents=Decimal("20"),
-            product_id=binding.product_id,
             max_source_tier=2,
         )
     finally:
@@ -517,7 +522,7 @@ async def seed_insight_health_browser_onboarding_result(
         profile.ref.client_entity_id,
         workspace_id=binding.workspace_id,
         version=profile.ref.client_kb_version,
-        product_id=binding.product_id,
+        product_id=None,
     )
     _require(
         set(claims) == set(claim_sources),

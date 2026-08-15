@@ -69,6 +69,15 @@ ResourceName = Annotated[
     str,
     StringConstraints(strip_whitespace=True, min_length=1, max_length=128, pattern=r"^[a-z0-9-]+$"),
 ]
+ProjectContextName = Annotated[
+    str,
+    StringConstraints(
+        strip_whitespace=True,
+        min_length=1,
+        max_length=128,
+        pattern=r"^[a-z0-9_-]+$",
+    ),
+]
 ResourceVersion = Annotated[
     str,
     StringConstraints(
@@ -432,7 +441,11 @@ class AgentResourceManifest(FrozenContract):
 class ProjectContextArtifact(FrozenContract):
     """One additional immutable L3 project input materialized at a canonical path."""
 
-    name: ResourceName
+    # The frozen production context vocabulary uses snake_case
+    # (``client_knowledge``/``stage0_project_state``), while older directive artifacts use
+    # kebab-case. This field is not a folder-backed resource name and therefore has its own narrow
+    # identifier type rather than widening ``ResourceName`` platform-wide.
+    name: ProjectContextName
     artifact_ref: ArtifactRef
     domain_ref: DomainObjectRef
 
@@ -493,6 +506,48 @@ class AgentConstitution(FrozenContract):
         if any(item.name in reserved_names for item in self.project_context_artifacts):
             raise ValueError(
                 "project context artifact names cannot shadow the project card or budget"
+            )
+        by_name = {item.name: item for item in self.project_context_artifacts}
+        client_knowledge = by_name.get("client_knowledge")
+        stage0_project_state = by_name.get("stage0_project_state")
+        product_profile = by_name.get("product_profile")
+        product_knowledge = by_name.get("product_knowledge")
+        if (client_knowledge is None) != (stage0_project_state is None):
+            raise ValueError(
+                "production Client-KB and Stage-0 project context must be constituted together"
+            )
+        if client_knowledge is not None and (
+            self.client_entity_id is None
+            or client_knowledge.domain_ref.object_type != "client_knowledge"
+            or client_knowledge.domain_ref.object_id != self.client_entity_id
+            or client_knowledge.domain_ref.version is None
+        ):
+            raise ValueError(
+                "Client-KB context must match the constitution client and exact version"
+            )
+        if stage0_project_state is not None and (
+            stage0_project_state.domain_ref.object_type != "stage0_project_state"
+            or stage0_project_state.domain_ref.object_id != self.project_id
+            or stage0_project_state.domain_ref.version is not None
+        ):
+            raise ValueError("Stage-0 context must belong to the constitution project")
+        if product_profile is not None and (
+            self.product_id is None
+            or product_profile.domain_ref.object_type != "product"
+            or product_profile.domain_ref.object_id != self.product_id
+            or product_profile.domain_ref.version is not None
+        ):
+            raise ValueError("product profile context must match the confirmed project product")
+        if product_knowledge is not None and (
+            product_profile is None
+            or self.product_id is None
+            or product_knowledge.domain_ref.object_type != "product_knowledge"
+            or product_knowledge.domain_ref.object_id != self.product_id
+            or product_knowledge.domain_ref.version is None
+            or product_knowledge.domain_ref.version < 1
+        ):
+            raise ValueError(
+                "Product-KB context requires the matching product profile and exact version"
             )
         if self.profile_ref.kind is not ResourceKind.PROFILE:
             raise ValueError("constitution profile_ref must have kind='profile'")

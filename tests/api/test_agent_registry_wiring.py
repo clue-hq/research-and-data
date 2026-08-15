@@ -22,6 +22,7 @@ from clue_agents import (
 from clue_api.agent_registry_wiring import (
     C6_ACTIVE_PROFILE_VERSIONS,
     C6_AGENT_TOOL_AUTHORITY,
+    PROJECT_CONVERSATION_SURFACE,
     ToolRegistryAgentCatalog,
     build_agent_profile_registry,
 )
@@ -66,9 +67,9 @@ def test_registry_resolves_exact_reviewed_profiles_and_stable_manifests(
         # FI Lane D D4 minted head-of-abm@v23: it pins `open_directive_confirmation_gate@1` and
         # re-pins account-deep-steering at v3, whose procedure is gate-first — draft, present the
         # gate, end the turn, and launch only after the human's own confirming turn.
-        # Stage-0 hardening v25 replaces ambiguous v1 readiness/synthesis with trusted v2 tools,
-        # adds the exact-subject ICP confirmation gate, and retains FI-2's selected-Account path.
-        AgentRole.HEAD_OF_ABM: ("eebc6e233dc66d8eef4893d53ebc289e623ae4a55a29403b188777d8627fd8d6"),
+        # Integration v29/v16 composes trusted @2 readiness/synthesis, both exact human gates,
+        # selected-Account launch, and company/product knowledge reads. v1-v28 remain replayable.
+        AgentRole.HEAD_OF_ABM: ("737557760bdd0d6972aea1415f54725e98c4fb81f42cb6251dfec49dc2a5ff98"),
         AgentRole.RESEARCH: "23cff2335bb82e0549ee0c830316968971146e8b90c8d2090447ee0ed92eed6f",
         AgentRole.CONTENT_DRAFTER: (
             "8985c13ead086350d952f76e6d3c0ed3f4162cc92de290f8dd7edd7fcab44cbf"
@@ -140,9 +141,9 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     # Lane E E1's `synthesize_entity_prose@1` likewise adds an inventory entry with no role grant
     # (machine-invoked only), so it is disclosed as unavailable to every surface; E3's
     # `synthesize_value_narrative@1` is the same shape for the same reason. Merged count: the
-    # 55-address base + Lane D's 5 (four thread tools + the confirmation gate) + Lane E's 2,
-    # plus FI-2's selected-Account launch and historical v1/current v2 readiness and synthesis.
-    assert len(by_address) == 66
+    # The inventory retains both versions of readiness/synthesis and company reads, the separate
+    # product readers, both gate tools, and FI-2's selected-Account launch.
+    assert len(by_address) == 73
     for address in (
         "create_thread@1",
         "rename_thread@1",
@@ -154,17 +155,28 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     assert by_address["synthesize_value_narrative@1"].status is not AgentCapabilityStatus.AVAILABLE
     assert by_address["inspect_statement_history@1"].status is AgentCapabilityStatus.AVAILABLE
     assert by_address["inspect_readiness_history@1"].status is AgentCapabilityStatus.AVAILABLE
+    assert by_address["inspect_client_claim@1"].status is AgentCapabilityStatus.ROLE_UNAVAILABLE
+    assert by_address["list_client_knowledge@1"].status is AgentCapabilityStatus.ROLE_UNAVAILABLE
+    assert by_address["inspect_client_claim@2"].status is AgentCapabilityStatus.AVAILABLE
+    assert by_address["list_client_knowledge@2"].status is AgentCapabilityStatus.AVAILABLE
+    assert by_address["inspect_product_claim@1"].status is AgentCapabilityStatus.AVAILABLE
+    assert by_address["list_product_knowledge@1"].status is AgentCapabilityStatus.AVAILABLE
     assert available == {
         "draft_account_research_directive@2",
         "evaluate_stage0_readiness@2",
         "get_research_view@1",
         "inspect_readiness_history@1",
+        "inspect_client_claim@2",
+        "inspect_product_claim@1",
         "inspect_statement_history@1",
+        "list_client_knowledge@2",
+        "list_product_knowledge@1",
         "launch_account_research@1",
         "launch_selected_account_research@1",
         "launch_contact_research@1",
         "open_directive_confirmation_gate@1",
         "open_icp_confirmation_gate@1",
+        "open_product_selection_gate@1",
         "propose_field@2",
         "propose_source@1",
         "read_account_research_run@1",
@@ -210,6 +222,48 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     assert head.system_prompt.endswith("## End resolved resource and capability map")
 
 
+def test_s4e_production_project_surface_resolves_strict_client_kb_v2_and_hardening() -> None:
+    """The cutover must be on the real fleet surface, not only a base profile or test builder."""
+
+    with hermetic_flag_env():
+        toolbelt = build_toolbelt(storage=None, gateway=None)
+        registry = build_agent_profile_registry(toolbelt)
+    production = registry.resolve(
+        AgentRole.HEAD_OF_ABM,
+        surface=PROJECT_CONVERSATION_SURFACE,
+    )
+
+    addresses = {pin.address for pin in production.profile.tools}
+    assert production.profile_ref.address == "profile:head-of-abm@v29"
+    assert [item.resource.address for item in production.skill_disclosures()][0] == (
+        "skill:stage0-interview@v16"
+    )
+    assert {"list_client_knowledge@2", "inspect_client_claim@2"} <= addresses
+    assert {"list_product_knowledge@1", "inspect_product_claim@1"} <= addresses
+    assert "open_product_selection_gate@1" in addresses
+    assert {"list_client_knowledge@1", "inspect_client_claim@1"}.isdisjoint(addresses)
+    assert toolbelt.descriptor("list_client_knowledge").address == "list_client_knowledge@2"
+    assert toolbelt.descriptor("inspect_client_claim").address == "inspect_client_claim@2"
+
+
+def test_stage0_skill_routes_first_selected_product_fact_without_a_product_kb() -> None:
+    """No published Product-KB blocks reads, not the first governed human-authored write."""
+
+    with hermetic_flag_env():
+        registry = build_agent_profile_registry(build_toolbelt(storage=None, gateway=None))
+    production = registry.resolve(
+        AgentRole.HEAD_OF_ABM,
+        surface=PROJECT_CONVERSATION_SURFACE,
+    )
+    body = production.open_skill("skill:stage0-interview@v16")
+
+    assert "A missing Product-KB card blocks historical product-knowledge reads" in body
+    assert "not block a human from supplying the first fact" in body
+    assert "Never leave a clearly matching fact unmapped" in body
+    assert "`client.product_use_case`" in body
+    assert "publishes Product-KB v1" in body
+
+
 def test_account_research_role_and_surface_are_not_active(
     registry: AgentProfileRegistry,
 ) -> None:
@@ -227,7 +281,7 @@ def test_progressive_skill_disclosure_exposes_metadata_before_body(
     disclosures = head.skill_disclosures()
 
     assert len(disclosures) == 2
-    assert disclosures[0].resource.address == "skill:stage0-interview@v12"
+    assert disclosures[0].resource.address == "skill:stage0-interview@v16"
     assert disclosures[1].resource.address == "skill:account-deep-steering@v4"
     assert "Ask one compact question" not in disclosures[0].model_dump_json()
     body = head.open_skill(disclosures[0].resource.address)
@@ -312,7 +366,7 @@ def test_stage0_quality_fixture_has_explicit_governed_behavior(
 ) -> None:
     del fixture
     head = registry.resolve(AgentRole.HEAD_OF_ABM)
-    body = head.open_skill("skill:stage0-interview@v12")
+    body = head.open_skill("skill:stage0-interview@v16")
 
     assert required_guidance in body
 

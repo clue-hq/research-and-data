@@ -30,6 +30,12 @@ export interface SetupStallSnapshot {
     provider_active?: number;
     reconciliation_pending?: number;
     persistence_pending?: number;
+    retry_wait?: number;
+    expansion_queued?: number;
+    expansion_leased?: number;
+    expansion_retry_wait?: number;
+    expansion_completed?: number;
+    expansion_failed?: number;
     fetched?: number;
     total_pages?: number;
     snapshots?: number;
@@ -79,6 +85,12 @@ export function progressSignature(snapshot: SetupStallSnapshot): string {
           crawl.provider_active ?? null,
           crawl.reconciliation_pending ?? null,
           crawl.persistence_pending ?? null,
+          crawl.retry_wait ?? null,
+          crawl.expansion_queued ?? null,
+          crawl.expansion_leased ?? null,
+          crawl.expansion_retry_wait ?? null,
+          crawl.expansion_completed ?? null,
+          crawl.expansion_failed ?? null,
           crawl.fetched ?? null,
           crawl.total_pages ?? null,
           crawl.snapshots ?? null,
@@ -114,4 +126,11 @@ export function stallAdvance(
 /** Has an in-flight run gone quiet for the whole budget? */
 export function isStalled(count: number): boolean {
   return count >= MAX_STALL_POLLS;
+}
+
+/** A surfaced stall is a presentation fallback, not a terminal backend verdict. */
+export function shouldStopSetupPolling(
+  kind: "failed" | "unavailable" | "session" | "stalled" | null,
+): boolean {
+  return kind !== null && kind !== "session" && kind !== "stalled";
 }

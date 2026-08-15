@@ -43,6 +43,7 @@ from clue_agents import DomainObjectRef
 from clue_api.agent_gate import (
     KIND_DIRECTIVE_CONFIRMATION,
     KIND_ICP_CONFIRMATION,
+    KIND_PRODUCT_SELECTION,
     AgentGateRow,
     GateAlreadyAnswered,
     get_gate,
@@ -68,6 +69,7 @@ from clue_api.chat.composer_context import (
     prepare_composer_context_entities,
     validated_context_refs,
 )
+from clue_api.chat.context_refs import TurnContextRefsResponse, context_refs_response
 from clue_api.chat.inspector import (
     INSPECTOR_TABS,
     InspectorCapabilityResponse,
@@ -848,7 +850,11 @@ def build_chat_router(
                         project_id=project_id,
                         turn_id=turn_id,
                         message=body.message,
-                        client_entity_id=None,
+                        client_entity_id=await project_client_entity_id(
+                            conn,
+                            workspace_id=who.workspace_id,
+                            project_id=project_id,
+                        ),
                     )
                     try:
                         submission, _created = await insert_submission(
@@ -1367,6 +1373,36 @@ def build_chat_router(
                 message="no such turn in this thread",
             )
 
+    @router.get("/projects/{project_id}/threads/{thread_id}/turns/{turn_id}/context-refs")
+    async def turn_context_refs_route(
+        project_id: str,
+        thread_id: str,
+        turn_id: UUID,
+        who: PrincipalDep,
+    ) -> TurnContextRefsResponse:
+        """Exact persisted context pointers for operators and acceptance, never artifact bodies.
+
+        Unlike the optional dev inspector, this is safe to register in production: its response
+        type has no body/text/value/evidence/URL field and the route has no hydration switch.
+        Before context assembly commits it returns a typed ``pending`` receipt rather than an
+        invented empty bundle.
+        """
+
+        await _inspected_turn(
+            who=who,
+            project_id=project_id,
+            thread_id=thread_id,
+            turn_id=turn_id,
+        )
+        return context_refs_response(
+            turn_id=str(turn_id),
+            receipt=await turn_context_receipt(
+                workspace_id=who.workspace_id,
+                turn_id=turn_id,
+                conn_factory=conn_factory,
+            ),
+        )
+
     if settings.chat_dev_inspector_enabled:
         budget_bytes = settings.chat_dev_inspector_budget_bytes
 
@@ -1536,11 +1572,21 @@ def build_chat_router(
                 code="GATE_NOT_FOUND",
                 message="no such gate in this thread",
             )
-        if view.gate.kind not in {KIND_DIRECTIVE_CONFIRMATION, KIND_ICP_CONFIRMATION}:
+        if view.gate.kind not in {
+            KIND_DIRECTIVE_CONFIRMATION,
+            KIND_ICP_CONFIRMATION,
+            KIND_PRODUCT_SELECTION,
+        }:
             raise _refuse(
                 status_code=422,
                 code="GATE_KIND_UNSUPPORTED",
                 message=f"this surface cannot answer a {view.gate.kind} gate",
+            )
+        if not view.gate.snapshot_available:
+            raise _refuse(
+                status_code=410,
+                code="GATE_SNAPSHOT_ERASED",
+                message="this gate is unavailable because its reviewed subject was erased",
             )
         if response.decision not in view.gate.permitted_decisions:
             raise _refuse(
@@ -1589,10 +1635,16 @@ def build_chat_router(
             raise _refuse(
                 status_code=422,
                 code="GATE_AMOUNT_UNEXPECTED",
-                message="an ICP confirmation gate carries no spend amount",
+                message="this gate carries no spend amount",
             )
 
         if view.gate.kind == KIND_ICP_CONFIRMATION:
+            if response.selected_product_id is not None:
+                raise _refuse(
+                    status_code=422,
+                    code="GATE_PRODUCT_UNEXPECTED",
+                    message="an ICP confirmation does not accept a product choice",
+                )
             if response.decision == "revised":
                 if response.revision_request is None or not response.revision_request.strip():
                     raise _refuse(
@@ -1653,6 +1705,57 @@ def build_chat_router(
                         code="GATE_SUBJECT_STALE",
                         message="the persisted ICP draft differs from the reviewed snapshot",
                     )
+        elif view.gate.kind == KIND_PRODUCT_SELECTION:
+            if response.revision_request is not None:
+                raise _refuse(
+                    status_code=422,
+                    code="GATE_REVISION_REQUEST_UNEXPECTED",
+                    message="a product selection does not accept an ICP revision request",
+                )
+            products = view.gate.subject_snapshot.get("products")
+            allowed = (
+                {
+                    str(item.get("product_id"))
+                    for item in products
+                    if isinstance(item, dict) and isinstance(item.get("product_id"), str)
+                }
+                if isinstance(products, list)
+                else set()
+            )
+            if response.decision == "approved" and response.selected_product_id is None:
+                raise _refuse(
+                    status_code=422,
+                    code="GATE_PRODUCT_REQUIRED",
+                    message="select one product from the presented catalog",
+                )
+            if response.decision != "approved" and response.selected_product_id is not None:
+                raise _refuse(
+                    status_code=422,
+                    code="GATE_PRODUCT_UNEXPECTED",
+                    message="a rejected or revised product question does not accept a choice",
+                )
+            if (
+                response.selected_product_id is not None
+                and response.selected_product_id not in allowed
+            ):
+                raise _refuse(
+                    status_code=409,
+                    code="GATE_PRODUCT_STALE",
+                    message="the selected product was not in the presented catalog",
+                )
+        else:
+            if response.revision_request is not None:
+                raise _refuse(
+                    status_code=422,
+                    code="GATE_REVISION_REQUEST_UNEXPECTED",
+                    message="a directive confirmation does not accept an ICP revision request",
+                )
+            if response.selected_product_id is not None:
+                raise _refuse(
+                    status_code=422,
+                    code="GATE_PRODUCT_UNEXPECTED",
+                    message="a directive confirmation does not accept a product choice",
+                )
         return view.gate
 
     if artifacts is not None:
@@ -1871,6 +1974,7 @@ def build_chat_router(
                                 if response.revision_request is not None
                                 else {}
                             ),
+                            selected_option_ref=response.selected_product_id,
                             answered_by_user_id=who.user_id,
                         )
                     except GateAlreadyAnswered as exc:
@@ -1881,16 +1985,32 @@ def build_chat_router(
                             code="GATE_ALREADY_ANSWERED",
                             message="this gate has already been answered",
                         ) from exc
-                    if gate.kind == KIND_DIRECTIVE_CONFIRMATION and response.decision == "approved":
+                    if response.decision == "approved" and gate.kind in {
+                        KIND_DIRECTIVE_CONFIRMATION,
+                        KIND_PRODUCT_SELECTION,
+                    }:
                         # Human-only, invoked outside the model surface with server-derived
                         # authority. Rejection and revision deliberately confirm nothing: they are
                         # durable records of a decision, and the agent answers them in its turn.
-                        await _invoke(
-                            "confirm_account_research_directive",
+                        tool_name = (
+                            "confirm_account_research_directive"
+                            if gate.kind == KIND_DIRECTIVE_CONFIRMATION
+                            else "confirm_project_product"
+                        )
+                        tool_body = (
                             {
                                 "directive_id": str(gate.subject_snapshot["research_directive_id"]),
                                 "expected_sha256": gate.expected_subject_sha256,
-                            },
+                            }
+                            if gate.kind == KIND_DIRECTIVE_CONFIRMATION
+                            else {
+                                "project_id": project_id,
+                                "product_id": response.selected_product_id,
+                            }
+                        )
+                        await _invoke(
+                            tool_name,
+                            tool_body,
                             who=who,
                             idempotency_key=None,
                             action_ref=action_ref,

@@ -168,6 +168,10 @@ _MATRIX: dict[str, tuple[str, object]] = {
     # and refuses on scope, which is the guard that actually matters for it.
     "inspect_statement_history": ("precondition", ("statement_evidence_not_configured",)),
     "inspect_readiness_history": ("precondition", ("stage0_project_not_found",)),
+    "list_client_knowledge": ("precondition", ("client_knowledge_unavailable",)),
+    "inspect_client_claim": ("precondition", ("client_knowledge_unavailable",)),
+    "list_product_knowledge": ("precondition", ("product_knowledge_unavailable",)),
+    "inspect_product_claim": ("precondition", ("product_knowledge_unavailable",)),
     "estimate_project": ("success", "estimated_cost_cents"),
     "start_project_run": ("success", "project_run_id"),
     "pause_run": ("precondition", ("run_not_found",)),
@@ -198,6 +202,10 @@ _MATRIX: dict[str, tuple[str, object]] = {
     # draft or a presenting turn. This matrix has no governed execution, so trusted scope is the
     # first fail-closed boundary.
     "open_icp_confirmation_gate": ("precondition", ("stage0_scope_not_found",)),
+    "open_product_selection_gate": (
+        "precondition",
+        ("product_selection_scope_unavailable",),
+    ),
     "submit_onboarding_input": ("precondition", ("artifact_not_found",)),
     "start_recon": ("precondition", ("onboarding_input_not_found",)),
     "record_interview_answer": ("precondition", ("onboarding_input_not_found",)),
@@ -341,6 +349,27 @@ def _bodies() -> dict[str, dict[str, object]]:
         },
         "inspect_statement_history": {"project_id": "project_missing"},
         "inspect_readiness_history": {"project_id": "project_missing"},
+        "list_client_knowledge": {
+            "client_entity_id": _UUID(),
+            "client_kb_version": 1,
+        },
+        "inspect_client_claim": {
+            "client_entity_id": _UUID(),
+            "client_kb_version": 1,
+            "claim_id": _UUID(),
+        },
+        "list_product_knowledge": {
+            "client_entity_id": _UUID(),
+            "product_id": "product_missing",
+            "product_kb_version": 1,
+            "limit": 1,
+        },
+        "inspect_product_claim": {
+            "client_entity_id": _UUID(),
+            "product_id": "product_missing",
+            "product_kb_version": 1,
+            "claim_id": _UUID(),
+        },
         "estimate_project": {},
         "start_project_run": {
             "project_id": "prj_replaced_by_test",
@@ -413,6 +442,9 @@ def _bodies() -> dict[str, dict[str, object]]:
         "open_icp_confirmation_gate": {
             "icp_key": "matrix",
             "icp_version": 1,
+            "source_turn_ref": f"turn-action:{_UUID()}",
+        },
+        "open_product_selection_gate": {
             "source_turn_ref": f"turn-action:{_UUID()}",
         },
         "submit_onboarding_input": {
@@ -888,14 +920,16 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # FI Lane D D0 adds REQ-21's four thread-shell tools (48 → 52), each with exactly one version,
     # and D4 adds the one gate-presenting tool (52 → 53); Lane E E1 adds the governed
     # on-completion prose synthesis surface, and E3 the governed value-narrative positioning
-    # surface beside it (53 → 55 in the merged tree); Stage-0 hardening adds the durable ICP
-    # confirmation gate and FI-2 adds the selected-Account launch (55 → 57).
-    assert len(registry.names()) == 57
+    # surface beside it (53 → 55 in the merged tree). The combined tree retains the Stage-0 ICP
+    # gate and selected-Account launch and adds S4's two Client-KB readers plus S5's two Product-KB
+    # readers and human-selection gate (55 → 62).
+    assert len(registry.names()) == 62
     # C6 keeps profile_contact@1 for immutable historical pins and elects the governed,
     # project-run-scoped profile_contact@2 as the name-only default.
-    # The two corrected @2 Stage-0 contracts coexist with their immutable @1 replay contracts, and
-    # ICP confirmation plus selected-Account launch are new: four descriptors beyond prior 62.
-    assert len(registry) == 66
+    # S4-D likewise retains both historical @1 Client-KB readers and registers strict @2 as
+    # defaults. Corrected @2 contracts retain their immutable @1 versions, so the combined address
+    # inventory is larger than the name inventory without rewriting any historical contract.
+    assert len(registry) == 73
     assert registry.descriptor("profile_contact").version == "2"
     assert registry.descriptor("profile_contact", "1").version == "1"
     assert {

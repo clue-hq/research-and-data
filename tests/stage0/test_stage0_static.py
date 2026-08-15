@@ -6,21 +6,37 @@ reverse-profiling tests rely on.
 
 from __future__ import annotations
 
-from clue_core import ExtractionMethod, ReuseScope, can_be_promoted, new_project_run_id
+from pathlib import Path
+
+import pytest
+
+from clue_core import (
+    ExtractionMethod,
+    ProductScopePolicy,
+    ReuseScope,
+    can_be_promoted,
+    new_project_run_id,
+)
 from clue_core.field import classify_field_key, is_valid_field_key
 from clue_research.identity import DEFAULT_REUSE_POLICY, classify_reuse_scope
 from clue_research.stage0 import (
     CLIENT_BASELINE_FIELDS,
+    CLIENT_COMPANY_KNOWLEDGE_FIELDS,
+    CLIENT_ICP_SYNTHESIS_FIELDS,
     CLIENT_KB_VERSION,
     CLIENT_KNOWLEDGE_FIELDS,
     CLIENT_KNOWLEDGE_PACK,
     CLIENT_KNOWLEDGE_REUSE_POLICY,
+    CLIENT_ONBOARDING_FIELDS,
+    CLIENT_PRODUCT_CATALOG,
+    PRODUCT_KNOWLEDGE_FIELDS,
     SURFACE_CLASS_FIELDS,
     ClientInput,
     SurfaceClass,
     VolunteeredMaterial,
     reverse_profiling_run_id,
 )
+from clue_research.stage0.client_kb import _knowledge_fields_for_run
 from clue_research.stage0.fields import CLIENT_BUYER_PROFILE, CLIENT_COMPETITOR
 from clue_research.stage0.reverse_profiling_handler import _client_input_from_params
 from tests.stage0._fakes import make_tier4_claim
@@ -37,7 +53,10 @@ def test_client_field_keys_are_wellformed_and_packed() -> None:
     # the marker is registered but excluded from the substantive knowledge field set
     assert CLIENT_KB_VERSION in pack_keys
     assert CLIENT_KB_VERSION not in CLIENT_KNOWLEDGE_FIELDS
-    assert set(CLIENT_KNOWLEDGE_FIELDS) | {CLIENT_KB_VERSION} == pack_keys
+    assert (
+        set(CLIENT_KNOWLEDGE_FIELDS) | set(PRODUCT_KNOWLEDGE_FIELDS) | {CLIENT_KB_VERSION}
+        == pack_keys
+    )
 
 
 def test_client_field_class_is_pack() -> None:
@@ -81,8 +100,81 @@ def test_surface_taxonomy_covers_all_four_surfaces_and_all_fields() -> None:
     assert len(counts) == len(set(counts)), "a field is double-mapped across surfaces"
 
 
-def test_competitor_and_buyer_fields_are_baseline_tier3_only() -> None:
-    assert CLIENT_BASELINE_FIELDS[-2:] == (CLIENT_COMPETITOR, CLIENT_BUYER_PROFILE)
+def test_gate_onboarding_company_and_product_field_sets_are_distinct() -> None:
+    assert len(CLIENT_ICP_SYNTHESIS_FIELDS) == 9
+    assert (
+        *CLIENT_ICP_SYNTHESIS_FIELDS,
+        CLIENT_COMPETITOR,
+        CLIENT_BUYER_PROFILE,
+    ) == CLIENT_ONBOARDING_FIELDS
+    assert len(CLIENT_ONBOARDING_FIELDS) == 11
+    assert (
+        *CLIENT_ONBOARDING_FIELDS,
+        CLIENT_PRODUCT_CATALOG,
+    ) == CLIENT_COMPANY_KNOWLEDGE_FIELDS
+    assert CLIENT_BASELINE_FIELDS == CLIENT_COMPANY_KNOWLEDGE_FIELDS
+    assert CLIENT_PRODUCT_CATALOG not in CLIENT_ICP_SYNTHESIS_FIELDS
+    assert CLIENT_PRODUCT_CATALOG not in CLIENT_ONBOARDING_FIELDS
+    assert set(PRODUCT_KNOWLEDGE_FIELDS).isdisjoint(CLIENT_COMPANY_KNOWLEDGE_FIELDS)
+    scope_by_field = {
+        seed.field_def.field_key: seed.field_def.product_scope for seed in CLIENT_KNOWLEDGE_PACK
+    }
+    assert scope_by_field[CLIENT_PRODUCT_CATALOG] is ProductScopePolicy.FORBIDDEN
+    assert all(
+        scope_by_field[field_key] is ProductScopePolicy.REQUIRED
+        for field_key in PRODUCT_KNOWLEDGE_FIELDS
+    )
+
+
+def test_reverse_profile_resolves_only_the_field_set_owned_by_its_scope() -> None:
+    assert (
+        _knowledge_fields_for_run(
+            knowledge_scope="company",
+            product_id=None,
+            company_field_keys=CLIENT_ONBOARDING_FIELDS,
+        )
+        == CLIENT_ONBOARDING_FIELDS
+    )
+    assert (
+        _knowledge_fields_for_run(
+            knowledge_scope="company",
+            product_id=None,
+            company_field_keys=None,
+        )
+        == CLIENT_COMPANY_KNOWLEDGE_FIELDS
+    )
+    assert (
+        _knowledge_fields_for_run(
+            knowledge_scope="product",
+            product_id="prd_exact",
+            company_field_keys=None,
+        )
+        == PRODUCT_KNOWLEDGE_FIELDS
+    )
+    with pytest.raises(ValueError, match="requires product_id"):
+        _knowledge_fields_for_run(
+            knowledge_scope="product",
+            product_id=None,
+            company_field_keys=None,
+        )
+    with pytest.raises(ValueError, match="non-company fields"):
+        _knowledge_fields_for_run(
+            knowledge_scope="company",
+            product_id=None,
+            company_field_keys=(PRODUCT_KNOWLEDGE_FIELDS[0],),
+        )
+
+
+def test_fast_onboarding_composition_and_projection_pin_the_eleven_field_policy() -> None:
+    root = Path(__file__).resolve().parents[2]
+    tool_source = (root / "platform/api/clue_api/stage0_tools.py").read_text()
+    setup_source = (root / "platform/api/clue_api/stage0_setup.py").read_text()
+    assert "company_field_keys=CLIENT_ONBOARDING_FIELDS" in tool_source
+    assert "if field_key not in CLIENT_ONBOARDING_FIELDS:" in setup_source
+
+
+def test_competitor_and_buyer_fields_are_onboarding_tier3_only() -> None:
+    assert CLIENT_ONBOARDING_FIELDS[-2:] == (CLIENT_COMPETITOR, CLIENT_BUYER_PROFILE)
     for key in (CLIENT_COMPETITOR, CLIENT_BUYER_PROFILE):
         seed = next(s for s in CLIENT_KNOWLEDGE_PACK if s.field_def.field_key == key)
         assert seed.field_def.tier_plan == ("exa_search",)
