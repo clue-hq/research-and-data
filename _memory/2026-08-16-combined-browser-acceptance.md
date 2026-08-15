@@ -49,6 +49,11 @@ Status: in progress; browser handoff required before the first UI action
   and profile responses—but the control operation itself remained pending for 45 seconds. This is
   evidence of a browser-control/extension-side hang after a healthy server response; it is not a
   completed visual Chrome acceptance.
+- The first real profile submission was correctly rejected by the frontend CSRF boundary with
+  `origin_forbidden`: the disposable frontend listened on `localhost:3077` while `clueAppOrigin()`
+  retained its development default `http://localhost:3000`. The backend and provisioning route were
+  never reached. Restarted the webpack frontend with exact `CLUE_APP_ORIGIN=http://localhost:3077`
+  and matching Clerk authorized parties; source files were not changed.
 
 ## Acceptance still outstanding
 
