@@ -197,3 +197,28 @@ without repairing the product-scoped Client-KB resource pin described below.
 - Focused unit/catalog/registry/trial/privacy tests passed (56 cases); the Recipe #1 PostgreSQL
   replay regression passed; Ruff, formatting and mypy passed on the changed runtime surfaces.
 - Live browser -> Exa -> database acceptance remains pending the corrected stack restart.
+- Fresh corrected processes then started successfully: frontend on `localhost:3000`, projections
+  API on `127.0.0.1:8000`, and a new fleet worker, all against the preserved database/artifact
+  pair. API and fleet logged the same filesystem root; Exa acquisition/lifecycle are enabled while
+  budget controls and verification remain disabled.
+- The initial `/accounts` support screen was deployment configuration, not an Account payload
+  incompatibility: the API returned 404 for both frontend-read endpoints while
+  `CLUE_FRONTEND_READ_ENABLED` was false. Restarting only the API with that flag enabled made
+  `/frontend/v1/accounts` and `/frontend/v1/accounts/bulk-capabilities` return 200 and restored the
+  truthful empty table.
+- The corrected browser journey reused the existing Stage-0 cards and opened only discovery-scope
+  gate `6657b89d-cbec-52d6-b19f-8345a6cf657b`; no budget or verification gate appeared. The human
+  confirmation created project run `40b37240-4adf-524c-973d-8b6985adcac9` with the exact five-
+  account Washington/Oregon configuration and reused product-context receipt
+  `1c4e3ab9-4ee1-4ea8-a8a9-2187262d9106`.
+- Real provider proof: fleet logged `POST https://api.exa.ai/websets/v0/websets` -> `201 Created` at
+  2026-08-16 10:54:24 IST, persisted provider operation
+  `webset_01m04gee1e0mhqv8d32fs5w87c`, and received 200 responses while polling it. Exa completed
+  five results; the platform reconciled 70 provider units / 31.430 cents, persisted five item
+  snapshots, five candidate links and five `project_account` rows. The real browser then rendered
+  `Showing 1-5 of 5` with those five accounts on `/accounts`.
+- Downstream completion is not yet correct: D4 materialization reached `seal_pending`, but Recipe #1
+  had already terminally blocked its scoring node with `unexpected_project_phase` while discovery
+  was waiting on Exa. The external wake reoffered the graph, but that immutable blocked node cannot
+  retry, so the batch remains unsealed even though account discovery and UI materialization
+  succeeded. Treat this as the next workflow-handoff defect, not an Exa/authentication failure.
