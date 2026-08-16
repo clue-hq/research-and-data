@@ -77,6 +77,7 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         "skill:stage0-interview@v18",
         "skill:stage0-interview@v19",
         "skill:stage0-interview@v2",
+        "skill:stage0-interview@v20",
         "skill:stage0-interview@v3",
         "skill:stage0-interview@v4",
         "skill:stage0-interview@v5",
@@ -123,6 +124,7 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         "profile:head-of-abm@v30",
         "profile:head-of-abm@v31",
         "profile:head-of-abm@v32",
+        "profile:head-of-abm@v33",
         "profile:head-of-abm@v4",
         "profile:head-of-abm@v5",
         "profile:head-of-abm@v6",
@@ -202,9 +204,9 @@ def test_integration_preserves_pilot_history_and_mints_combined_resources() -> N
         assert hashlib.sha256((recipe_root / filename).read_bytes()).hexdigest() == expected_sha256
 
     profiles = FolderProfileCatalog((CATALOG_ROOT / "profiles").resolve(strict=True))
-    profile = profiles.get("head-of-abm", "v32").definition
+    profile = profiles.get("head-of-abm", "v33").definition
     assert [(item.name, item.version) for item in profile.skills] == [
-        ("stage0-interview", "v19"),
+        ("stage0-interview", "v20"),
         ("account-deep-steering", "v4"),
     ]
     required_tools = {
@@ -227,11 +229,13 @@ def test_integration_preserves_pilot_history_and_mints_combined_resources() -> N
     assert required_tools <= set(recipe["graph"]["tool_allowlist"])
 
     skill = FolderSkillCatalog((CATALOG_ROOT / "skills").resolve(strict=True)).get(
-        "stage0-interview", "v19"
+        "stage0-interview", "v20"
     )
     assert "`finalize_turn.user_message`" in skill.body
     assert "normal assistant response" in skill.body
     assert "Do not place that synthesis inside the approval" in skill.body
+    assert "explicitly requests a different bounded account count" in skill.body
+    assert "newest approved exact scope overrides" in skill.body
 
 
 def test_catalog_rejects_unknown_metadata_and_mutable_aliases(tmp_path: Path) -> None:

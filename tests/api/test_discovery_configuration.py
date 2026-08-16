@@ -2,9 +2,16 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from typing import cast
+from uuid import uuid4
+
 import pytest
 from pydantic import ValidationError
+from sqlalchemy.ext.asyncio import AsyncConnection
 
+import clue_api.stage0_project_tools as stage0_project_tools
 from clue_api.discovery_configuration import (
     DEFAULT_DISCOVERY_PLANNING_POLICY,
     DiscoveryPlanningPolicy,
@@ -17,14 +24,26 @@ from clue_api.stage0_project_contracts import (
     DISCOVERY_CONFIGURATION_SCHEMA_V1,
     DiscoveryConfigurationContract,
 )
+from clue_api.stage0_project_scope import Stage0ProjectScope
+from clue_api.stage0_project_tools import (
+    OpenDiscoveryConfigurationGateInput,
+    OpenDiscoveryConfigurationGateTool,
+    StartConfirmedProjectRunV3Tool,
+)
+from clue_api.turn_action import TurnIdentity, derive_turn_action_ref
 from clue_core import (
+    EntityId,
+    ExecutionId,
     ICPCreatedFrom,
     ICPSpec,
     ICPStatus,
+    OperationId,
     PhaseContext,
     ProjectPhase,
     new_project_run_id,
 )
+from clue_toolbelt import ToolContext
+from tests.db.conftest import run_async
 
 
 def _spec(strategy: dict[str, object]) -> ICPSpec:
@@ -71,6 +90,122 @@ def test_firmographic_icp_derives_complete_default_ten_without_human_gate() -> N
     assert result.configuration.search_intent.startswith(
         "Find companies matching the approved ICP:"
     )
+
+
+def test_explicit_human_scope_can_override_a_complete_derived_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def scenario() -> None:
+        turn_id = uuid4()
+        execution_id = ExecutionId(uuid4())
+        scope = Stage0ProjectScope(
+            workspace_id="ws-discovery-contract",
+            execution_id=execution_id,
+            project_id="prj-discovery-contract",
+            brand_id="brand-discovery-contract",
+            product_id="product-discovery-contract",
+            client_entity_id=EntityId(uuid4()),
+            client_kb_version=2,
+            turn_id=turn_id,
+            product_kb_version=1,
+        )
+        approved_icp = stage0_project_tools._ApprovedIcp(
+            icp_key="health-practices",
+            version=1,
+            subject_ref=_icp_ref(),
+            expected_subject_sha256="0" * 64,
+        )
+        spec = _spec(
+            {
+                "mode": "discovery",
+                "firmographic": {
+                    "industry": "specialty healthcare",
+                    "geo": ["United States"],
+                },
+            }
+        )
+        turn = TurnIdentity(
+            turn_id=turn_id,
+            workspace_id=scope.workspace_id,
+            project_id=scope.project_id,
+            thread_id="thr-discovery-contract",
+            submitted_by_user_id="usr-discovery-contract",
+            submitted_via_membership_id="wsm-discovery-contract",
+        )
+
+        async def resolved_scope(_conn: object, _ctx: object) -> Stage0ProjectScope:
+            return scope
+
+        async def resolved_icp(
+            _conn: object,
+            *,
+            scope: Stage0ProjectScope,
+        ) -> stage0_project_tools._ApprovedIcp:
+            del scope
+            return approved_icp
+
+        async def resolved_spec(*_args: object, **_kwargs: object) -> object:
+            return spec
+
+        async def resolved_turn(*_args: object, **_kwargs: object) -> TurnIdentity:
+            return turn
+
+        @asynccontextmanager
+        async def conn_factory() -> AsyncIterator[AsyncConnection]:
+            yield cast(AsyncConnection, object())
+
+        monkeypatch.setattr(stage0_project_tools, "_scope", resolved_scope)
+        monkeypatch.setattr(stage0_project_tools, "_approved_icp", resolved_icp)
+        monkeypatch.setattr(stage0_project_tools, "get_icp_version", resolved_spec)
+        monkeypatch.setattr(stage0_project_tools, "load_turn_identity", resolved_turn)
+
+        proposal = OpenDiscoveryConfigurationGateInput(
+            requested_account_count=5,
+            search_intent="Find independent neurosurgery and spine practices in WA and OR.",
+            must_have_criteria=(
+                "Independent multi-provider neurosurgery or spine practice",
+                "Washington or Oregon",
+            ),
+            exclusion_criteria=(
+                "Insight Health",
+                "Academic, hospital-owned, or large health systems",
+            ),
+            source_turn_ref=derive_turn_action_ref(turn_id),
+        )
+        ctx = ToolContext(
+            workspace_id=scope.workspace_id,
+            actor="agent",
+            conn_factory=conn_factory,
+            operation_id=OperationId(uuid4()),
+            execution_id=execution_id,
+        )
+        gate_tool = OpenDiscoveryConfigurationGateTool(conn_factory=conn_factory)
+        _, _, configuration, missing_fields, _ = await gate_tool._resolve(
+            cast(AsyncConnection, object()),
+            proposal,
+            ctx,
+        )
+        assert missing_fields == ()
+        assert configuration.requested_account_count == 5
+
+        gate_id = uuid4()
+
+        async def approved_override(*_args: object, **_kwargs: object) -> object:
+            return configuration, gate_id
+
+        monkeypatch.setattr(
+            stage0_project_tools,
+            "_approved_discovery_configuration_gate",
+            approved_override,
+        )
+        selected = await StartConfirmedProjectRunV3Tool(conn_factory=conn_factory)._configuration(
+            cast(AsyncConnection, object()),
+            scope=scope,
+            approved_icp=approved_icp,
+        )
+        assert selected == (configuration, gate_id)
+
+    run_async(scenario())
 
 
 def test_vague_icp_names_exact_missing_scope_and_uses_versioned_safe_default() -> None:
@@ -124,9 +259,7 @@ def test_configuration_round_trips_from_durable_json_without_loosening_scalars()
         "Specialty healthcare",
     )
     with pytest.raises(ValidationError):
-        parse_discovery_configuration_json(
-            {**payload, "requested_account_count": "10"}
-        )
+        parse_discovery_configuration_json({**payload, "requested_account_count": "10"})
 
 
 def test_confirmed_fifty_account_scope_compiles_to_exa_without_provider_fields_in_icp() -> None:

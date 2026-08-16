@@ -67,9 +67,9 @@ def test_registry_resolves_exact_reviewed_profiles_and_stable_manifests(
         # FI Lane D D4 minted head-of-abm@v23: it pins `open_directive_confirmation_gate@1` and
         # re-pins account-deep-steering at v3, whose procedure is gate-first — draft, present the
         # gate, end the turn, and launch only after the human's own confirming turn.
-        # Integration v32/v19 adds the bounded ICP presentation contract while preserving
+        # Integration v33/v20 retains bounded ICP presentation and adds explicit scope override
         # v31/v18 and every earlier replay input.
-        AgentRole.HEAD_OF_ABM: ("2f08a1d409189c414b0d9d55e18e6060258cb7bd0a7d3bb718f3466f55455170"),
+        AgentRole.HEAD_OF_ABM: ("45ff865d704dde65bc0f2ce39ae77edafbb70285f3cc5bb10f413709634a6b27"),
         AgentRole.RESEARCH: "23cff2335bb82e0549ee0c830316968971146e8b90c8d2090447ee0ed92eed6f",
         AgentRole.CONTENT_DRAFTER: (
             "8985c13ead086350d952f76e6d3c0ed3f4162cc92de290f8dd7edd7fcab44cbf"
@@ -242,9 +242,9 @@ def test_s4e_production_project_surface_resolves_strict_client_kb_v2_and_hardeni
     )
 
     addresses = {pin.address for pin in production.profile.tools}
-    assert production.profile_ref.address == "profile:head-of-abm@v32"
+    assert production.profile_ref.address == "profile:head-of-abm@v33"
     assert [item.resource.address for item in production.skill_disclosures()][0] == (
-        "skill:stage0-interview@v19"
+        "skill:stage0-interview@v20"
     )
     assert {"list_client_knowledge@2", "inspect_client_claim@2"} <= addresses
     assert {"list_product_knowledge@1", "inspect_product_claim@1"} <= addresses
@@ -263,7 +263,7 @@ def test_stage0_skill_routes_first_selected_product_fact_without_a_product_kb() 
         AgentRole.HEAD_OF_ABM,
         surface=PROJECT_CONVERSATION_SURFACE,
     )
-    body = production.open_skill("skill:stage0-interview@v19")
+    body = production.open_skill("skill:stage0-interview@v20")
 
     assert "A missing Product-KB card blocks historical product-knowledge reads" in body
     assert "not block a human from supplying the first fact" in body
@@ -289,7 +289,7 @@ def test_progressive_skill_disclosure_exposes_metadata_before_body(
     disclosures = head.skill_disclosures()
 
     assert len(disclosures) == 2
-    assert disclosures[0].resource.address == "skill:stage0-interview@v19"
+    assert disclosures[0].resource.address == "skill:stage0-interview@v20"
     assert disclosures[1].resource.address == "skill:account-deep-steering@v4"
     assert "Ask one compact question" not in disclosures[0].model_dump_json()
     body = head.open_skill(disclosures[0].resource.address)
@@ -374,7 +374,7 @@ def test_stage0_quality_fixture_has_explicit_governed_behavior(
 ) -> None:
     del fixture
     head = registry.resolve(AgentRole.HEAD_OF_ABM)
-    body = head.open_skill("skill:stage0-interview@v19")
+    body = head.open_skill("skill:stage0-interview@v20")
 
     assert required_guidance in body
 

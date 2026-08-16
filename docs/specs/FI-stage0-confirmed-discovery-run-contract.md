@@ -104,13 +104,17 @@ requested account count, search intent, must-have criteria, and exclusions. It c
 product-context receipt id, readiness id, cost field, or budget authority.
 
 The active `stage0-discovery-planning-policy@1` defaults to 10 accounts and admits at most 50.
-When the values follow deterministically from the approved ICP plus that policy, the run proceeds
-without another user interruption. If search intent or must-have criteria is genuinely absent,
+When the values follow deterministically from the approved ICP plus that policy and the human has
+not requested a narrower or otherwise different scope, the run proceeds without another user
+interruption. If search intent or must-have criteria is genuinely absent,
 `start_confirmed_project_run@3` returns the exact missing fields. The Deep Agent explains a
-bounded proposal and calls `open_discovery_configuration_gate@1`. The gate reuses kind
+bounded proposal and calls `open_discovery_configuration_gate@1`. The same scope-only gate is also
+used when the human explicitly requests a different bounded account count, search intent,
+criterion, or exclusion than the deterministic default. The gate reuses kind
 `directive_confirmation` but carries `subject_kind=discovery_configuration`, no spend amount and
 no product-context authority. The user may approve, reject, or request a revision such as changing
-10 accounts to 50.
+10 accounts to 50. The newest exact approved gate takes precedence over the derived default; in
+the absence of such a gate, the deterministic default remains automatic.
 
 The final configuration is stored once in append-only
 `project_run_discovery_configuration`, keyed by the project run and bound to its workspace,
@@ -153,7 +157,7 @@ rationale, target criteria, buying signals, discovery motion, and an honest trun
 Stage-0 skill requires the agent to write that content in the normal assistant message paired with
 the separate ICP approval gate; the gate remains only the decision control. Active
 immutable resources are
-`head-of-abm@v32`, `stage0-interview@v19`, and `recipe0-stage0@13`; the v31/v18/v12 lineage stays
+`head-of-abm@v33`, `stage0-interview@v20`, and `recipe0-stage0@13`; the v32/v19 lineage stays
 available for exact historical replay.
 
 `start_confirmed_project_run@2` performs the receipt reuse, internal readiness transition and

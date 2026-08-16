@@ -360,11 +360,41 @@ def test_recipe1_phase_spine_waits_and_resumes_without_reexecuting_gate(
                 parent_execution_id=None,
             )
 
+            original_parent_execution_id = ExecutionId(uuid4())
+            retry_parent_execution_id = ExecutionId(uuid4())
+            for parent_id in (original_parent_execution_id, retry_parent_execution_id):
+                await conn.execute(
+                    text(
+                        "INSERT INTO execution "
+                        "(id, workspace_id, project_id, started_by, parameter_manifest_hash, "
+                        "pin_manifest_hash) VALUES "
+                        "(:id, :workspace_id, :project_id, 'agent', :hash, :hash)"
+                    ),
+                    {
+                        "id": parent_id,
+                        "workspace_id": workspace_id,
+                        "project_id": project.project_id,
+                        "hash": "0" * 64,
+                    },
+                )
             execution_id = await router.attach_if_eligible(
                 run_id,
                 actor="human",
+                parent_execution_id=original_parent_execution_id,
             )
             assert execution_id is not None
+            replayed_execution_id = await router.attach_if_eligible(
+                run_id,
+                actor="human",
+                parent_execution_id=retry_parent_execution_id,
+            )
+            assert replayed_execution_id == execution_id
+            assert (
+                await conn.execute(
+                    text("SELECT parent_execution_id FROM execution WHERE id = :execution_id"),
+                    {"execution_id": execution_id},
+                )
+            ).scalar_one() == original_parent_execution_id
             lease = await acquire_work_lease(
                 conn,
                 work_id=WorkId(execution_id),

@@ -350,6 +350,28 @@ class Recipe1ProjectExecutionRouter:
             ProjectPhase.ICP_CONFIRMED.value: dict(lineage),
         }
 
+    async def _existing_execution_parent(
+        self,
+        execution_id: ExecutionId,
+    ) -> tuple[bool, ExecutionId | None]:
+        """Return the immutable parent already recorded for an exact execution replay."""
+
+        async with self._conn_factory() as conn:
+            row = (
+                (
+                    await conn.execute(
+                        text("SELECT parent_execution_id FROM execution WHERE id = :execution_id"),
+                        {"execution_id": execution_id},
+                    )
+                )
+                .mappings()
+                .one_or_none()
+            )
+        if row is None:
+            return False, None
+        parent = row["parent_execution_id"]
+        return True, None if parent is None else ExecutionId(parent)
+
     async def _attach(
         self,
         run: ProjectRunRow,
@@ -374,6 +396,7 @@ class Recipe1ProjectExecutionRouter:
         execution_id = ExecutionId(
             operation_id_from_key(str(run.id), f"{RECIPE1_KEY}@{RECIPE1_VERSION}")
         )
+        replaying, immutable_parent = await self._existing_execution_parent(execution_id)
         start = await self._starter.start(
             workspace_id=run.workspace_id,
             recipe_revision_id=revision.recipe_revision_id,
@@ -384,7 +407,10 @@ class Recipe1ProjectExecutionRouter:
             execution_id=execution_id,
             project_id=run.project_id,
             project_run_id=run.id,
-            parent_execution_id=parent_execution_id,
+            # A later chat turn may request the same exact run attach. The Recipe #1 execution's
+            # parent is initial lineage, not mutable caller state, so an exact replay must retain
+            # the parent already stored on the deterministic execution id.
+            parent_execution_id=immutable_parent if replaying else parent_execution_id,
             additional_requirements=requirements,
             pre_satisfied_nodes=self._pre_satisfied(run),
         )

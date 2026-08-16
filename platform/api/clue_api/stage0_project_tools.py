@@ -1043,15 +1043,16 @@ class SynthesizeIcpsV3Tool(SynthesizeIcpsV2Tool):
 
 
 class OpenDiscoveryConfigurationGateTool(_Stage0ProjectTool):
-    """Present a scope-only proposal when the approved ICP cannot determine one itself."""
+    """Present an ambiguous or explicitly human-requested discovery-scope proposal."""
 
     name = "open_discovery_configuration_gate"
     version = "1"
     model_description = (
-        "Use only when start_confirmed_project_run reports that discovery scope is genuinely "
-        "ambiguous. Propose a provider-neutral company search, normally starting with 10 "
-        "accounts, explain the criteria to the user, and present this scope-only confirmation. "
-        "This is not product-context compilation or spend approval."
+        "Propose a provider-neutral company search when start_confirmed_project_run reports an "
+        "ambiguous scope or when the human explicitly requests a different bounded count, search "
+        "intent, criterion, or exclusion than the derived default. Explain the exact scope and "
+        "present this scope-only confirmation. This is not product-context compilation or spend "
+        "approval."
     )
     input_model: ClassVar[type[ToolInput]] = OpenDiscoveryConfigurationGateInput
     output_model: ClassVar[type[ToolOutput]] = OpenDiscoveryConfigurationGateOutput
@@ -1111,11 +1112,6 @@ class OpenDiscoveryConfigurationGateTool(_Stage0ProjectTool):
             approved_icp_ref=approved_icp.subject_ref,
             policy=DEFAULT_DISCOVERY_PLANNING_POLICY,
         )
-        if derived.configuration is not None:
-            raise _DiscoveryConfigurationGateRefused(
-                "discovery_configuration_gate_unnecessary",
-                "the approved ICP already determines a complete discovery scope",
-            )
         try:
             turn_id = parse_turn_action_ref(inputs.source_turn_ref)
         except TurnActionUnresolvable as exc:
@@ -1583,21 +1579,21 @@ class StartConfirmedProjectRunV3Tool(StartConfirmedProjectRunV2Tool):
         )
         if spec is None:
             return None
-        derived = derive_discovery_configuration(
-            spec=spec,
-            approved_icp_ref=approved_icp.subject_ref,
-            policy=DEFAULT_DISCOVERY_PLANNING_POLICY,
-        )
-        if derived.configuration is not None:
-            return derived.configuration, None
         approved_gate = await _approved_discovery_configuration_gate(
             conn,
             scope=scope,
             approved_icp=approved_icp,
         )
-        if approved_gate is None:
+        if approved_gate is not None:
+            return approved_gate
+        derived = derive_discovery_configuration(
+            spec=spec,
+            approved_icp_ref=approved_icp.subject_ref,
+            policy=DEFAULT_DISCOVERY_PLANNING_POLICY,
+        )
+        if derived.configuration is None:
             return None
-        return approved_gate
+        return derived.configuration, None
 
     async def preconditions(
         self, inputs: ToolInput, ctx: ToolContext

@@ -178,3 +178,22 @@ without repairing the product-scoped Client-KB resource pin described below.
   accounts with no exclusions, despite the assistant describing a five-account Washington/Oregon
   scope. Account-discovery browser acceptance must remain failed until replay retains the original
   Recipe #1 parent and an explicit confirmed discovery-scope override reaches the run receipt.
+
+## Confirmed-discovery retry repair
+
+- Replaced the stale acceptance frontend, API and fleet processes while preserving the named
+  database, project, approved ICP, failed 401 run and provider receipts.
+- Recipe #1 exact replay now retains the immutable parent already stored on its deterministic
+  execution id, so a later chat turn cannot redefine execution ownership. A real PostgreSQL
+  regression proves a retry from a different parent returns the same execution and preserves the
+  original parent.
+- An explicit bounded human discovery scope may now be confirmed even when the approved ICP also
+  admits a complete policy default. `start_confirmed_project_run@3` prefers the newest exact
+  approved scope for the active ICP and falls back to deterministic derivation only when no such
+  gate exists.
+- Minted `stage0-interview@v20` and `head-of-abm@v33` so new turns instruct the agent to honor an
+  explicit human count/criteria/exclusion request before starting. Historical v19/v32 bytes remain
+  unchanged.
+- Focused unit/catalog/registry/trial/privacy tests passed (56 cases); the Recipe #1 PostgreSQL
+  replay regression passed; Ruff, formatting and mypy passed on the changed runtime surfaces.
+- Live browser -> Exa -> database acceptance remains pending the corrected stack restart.

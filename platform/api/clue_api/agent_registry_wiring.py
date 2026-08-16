@@ -36,9 +36,9 @@ __all__ = [
 ]
 
 C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
-    # Slice 5 v32 keeps v31 immutable, presents exact synthesized ICP business content in the
-    # normal assistant message, and retains backend-owned @3 discovery scope/run authority.
-    AgentRole.HEAD_OF_ABM: "v32",
+    # v33 keeps v32 immutable and lets an explicit human discovery scope override the automatic
+    # ICP-derived default without changing product context or spend authority.
+    AgentRole.HEAD_OF_ABM: "v33",
     AgentRole.RESEARCH: "v7",
     AgentRole.CONTENT_DRAFTER: "v5",
     AgentRole.REVIEWER: "v5",
