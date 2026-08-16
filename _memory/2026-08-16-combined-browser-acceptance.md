@@ -158,3 +158,23 @@ without repairing the product-scoped Client-KB resource pin described below.
   `cmsasct2d00ncl104qjqw0jo9` returned HTTP 200 and listed an existing completed Clue Webset. The
   acceptance fleet was restarted with the refreshed environment. Exa's public Websets contract
   binds access to the API key; the production client continues to authenticate with `x-api-key`.
+
+## Browser retry with repaired Exa access
+
+- A fresh authenticated browser turn retried the existing five-account discovery after the fleet
+  loaded the working Exa key. The turn again received the exact project card, Client-KB v2,
+  selected product/profile, Product-KB v1, and approved ICP context. Budget and verification gates
+  remained absent.
+- `start_confirmed_project_run@3` failed before provider I/O with `ExecutionConflict: execution id
+  was replayed with a different recipe, scope, or parameters`. The durable run still owns Recipe #1
+  execution `44ef6fe3-b2bf-52a5-8ae8-6bad3eb367c1`, whose immutable parent execution is the older
+  chat turn `75d39ff1-884e-590a-bb76-b855418848f5`; the browser retry originates from a different
+  chat execution. `DbExecutionStarter` includes `parent_execution_id` in exact replay identity,
+  while `Recipe1ProjectExecutionRouter` passes the current chat execution on every attach.
+- The failed retry created no new discovery batch or provider operation. The old 401 batch remains
+  the only batch, candidate links remain zero, and the project has zero project accounts. Browser
+  `/accounts` truthfully rendered `No accounts exist in this workspace yet` and `0-0 of 0`.
+- The previously recorded scope defect also remains: the durable run asks for 10 generic ICP-derived
+  accounts with no exclusions, despite the assistant describing a five-account Washington/Oregon
+  scope. Account-discovery browser acceptance must remain failed until replay retains the original
+  Recipe #1 parent and an explicit confirmed discovery-scope override reaches the run receipt.
