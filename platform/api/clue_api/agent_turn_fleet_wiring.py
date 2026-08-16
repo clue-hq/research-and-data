@@ -53,6 +53,7 @@ from clue_agents import (
     LayerBudget,
     ProjectContextArtifact,
 )
+from clue_api.account_deep_steering_context import prepare_account_deep_steering_context
 from clue_api.agent_execution_wiring import FreshWakeChildRunner
 from clue_api.agent_platform_wiring import AgentPlatformComponents
 from clue_api.agent_registry_wiring import PROJECT_CONVERSATION_SURFACE
@@ -85,6 +86,7 @@ from clue_api.conversation_turns import (
     ConversationTurnResult,
     build_conversation_turn_engine,
 )
+from clue_api.frontend_read import latest_project_run_context
 from clue_api.product_context_compiler import (
     compile_client_knowledge_card_v2,
     compile_product_knowledge_card,
@@ -483,6 +485,7 @@ class ProjectConversationTurnRunner:
         context_bundle = await self._compose_project_context(
             submission=submission,
             scope=scope,
+            focus_refs=submission_focus_refs,
         )
         card_ref = await self._artifact(
             submission,
@@ -623,6 +626,7 @@ class ProjectConversationTurnRunner:
         *,
         submission: AgentTurnSubmissionRow,
         scope: _ProjectScope,
+        focus_refs: tuple[DomainObjectRef, ...] = (),
     ) -> _ProjectContextBundle:
         """Compile and persist one exact Client-KB pin plus this project's Stage-0 state.
 
@@ -803,6 +807,23 @@ class ProjectConversationTurnRunner:
                         schema_version=product_card.schema_version,
                         content_sha256=product_ref.sha256,
                         omitted_count=sum(item.count for item in product_card.omissions),
+                    )
+                )
+
+        if any(ref.object_type == "account" for ref in focus_refs):
+            async with self._conn_factory() as conn:
+                run_context = await latest_project_run_context(
+                    conn,
+                    workspace_id=submission.workspace_id,
+                    project_id=scope.project_id,
+                )
+            if run_context is not None:
+                artifacts.extend(
+                    await prepare_account_deep_steering_context(
+                        artifacts=self._engine.components.artifacts,
+                        workspace_id=submission.workspace_id,
+                        project_run_id=run_context.project_run_id,
+                        conn_factory=self._conn_factory,
                     )
                 )
 

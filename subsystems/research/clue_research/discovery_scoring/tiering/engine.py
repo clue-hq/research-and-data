@@ -228,6 +228,7 @@ async def persist_tier(
     icp_key: str,
     icp_version: int,
     project_id: str | None = None,
+    project_run_id: ProjectRunId | None = None,
 ) -> tuple[ClaimId, bool]:
     """Write one account's approved tier decision idempotently, returning ``(claim_id, written)``.
 
@@ -242,10 +243,11 @@ async def persist_tier(
     ``project_id`` (FI-2 §6.4) is the project whose checkpoint approved this tier. Stamped into
     ``value_json`` — the claim row has no project column (FI-2 §1.3) — it becomes the *project* leg
     of the supersede key, so a second project tiering the same account under the same ICP now
-    **coexists** with the first's tier instead of destroying it (the discovery-selection tier path
-    below already pinned; this aligns the M6.4 path). Within one project, successive cutoffs
-    supersede exactly as before. ``None`` is the legacy shape — such a tier is absorbed by the first
-    project that re-tiers the account (see
+    **coexists** with the first's tier instead of destroying it. ``project_run_id`` identifies the
+    exact approved run and stamps the same ``disposition=selected`` authority consumed by account
+    profiling. The discovery-selection path already carries both values; this aligns the numeric
+    scoring path. Within one project, successive cutoffs supersede exactly as before. ``None`` is
+    the legacy shape — such a tier is absorbed by the first project that re-tiers the account (see
     :func:`~clue_research.claimstore.project_supersedable`).
 
     The read/replay/supersede-by-ICP sequence is the shared :func:`write_icp_scoped_claim` protocol
@@ -266,6 +268,9 @@ async def persist_tier(
     }
     if project_id is not None:
         value_json["project_id"] = project_id
+    if project_run_id is not None:
+        value_json["project_run_id"] = str(project_run_id)
+        value_json["disposition"] = "selected"
     tier_claim = stamp_reuse(
         account_claim(
             entity_id=view.account_id,

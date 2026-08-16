@@ -1405,6 +1405,7 @@ class EntityResearchResultStore:
         inline_max_bytes: int = 24_000,
         message_max_bytes: int = 256_000,
         lineage_readers: Mapping[str, ProviderResultLineageReader] | None = None,
+        enforce_budget: bool = True,
     ) -> None:
         if inline_max_bytes < 1:
             raise ValueError("inline result byte cap must be positive")
@@ -1414,6 +1415,7 @@ class EntityResearchResultStore:
         self._conn_factory = conn_factory
         self._inline_max_bytes = inline_max_bytes
         self._message_max_bytes = message_max_bytes
+        self._enforce_budget = enforce_budget
         if lineage_readers is None:
             lineage_readers = {
                 ExternalResearchResultLineageReader.provider_kind: (
@@ -1669,8 +1671,8 @@ class EntityResearchResultStore:
             )
         return result
 
-    @staticmethod
     async def _fold_settled_spend(
+        self,
         conn: AsyncConnection,
         *,
         request: GovernedResearchToolRequest,
@@ -1721,13 +1723,16 @@ class EntityResearchResultStore:
                 )
             return
 
+        job_budget_guard = (
+            "AND spent_cents+:cost <= budget_cap_cents " if self._enforce_budget else ""
+        )
         updated = (
             await conn.execute(
                 text(
                     "UPDATE entity_research_job "
                     "SET spent_cents=spent_cents+:cost, updated_at=now() "
                     "WHERE job_id=:job_id AND research_run_id=:run_id "
-                    "AND spent_cents+:cost <= budget_cap_cents RETURNING job_id"
+                    f"{job_budget_guard}RETURNING job_id"
                 ),
                 {
                     "cost": settled_cost_cents,
@@ -1740,13 +1745,16 @@ class EntityResearchResultStore:
             raise EntityResearchResultIntegrityError(
                 "settled provider cost exceeds the exact entity-research job budget"
             )
+        run_budget_guard = (
+            "AND spent_cents+:cost <= budget_cap_cents " if self._enforce_budget else ""
+        )
         updated_run = (
             await conn.execute(
                 text(
                     "UPDATE entity_research_run "
                     "SET spent_cents=spent_cents+:cost, updated_at=now() "
                     "WHERE research_run_id=:run_id "
-                    "AND spent_cents+:cost <= budget_cap_cents "
+                    f"{run_budget_guard}"
                     "RETURNING research_run_id"
                 ),
                 {"cost": settled_cost_cents, "run_id": request.research_run_id},

@@ -56,6 +56,8 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         "skill:account-deep-steering@v2",
         "skill:account-deep-steering@v3",
         "skill:account-deep-steering@v4",
+        "skill:account-deep-steering@v5",
+        "skill:account-deep-steering@v6",
         "skill:account-gap-research@v1",
         "skill:account-gap-research@v2",
         "skill:account-gap-research@v3",
@@ -125,6 +127,8 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         "profile:head-of-abm@v31",
         "profile:head-of-abm@v32",
         "profile:head-of-abm@v33",
+        "profile:head-of-abm@v34",
+        "profile:head-of-abm@v35",
         "profile:head-of-abm@v4",
         "profile:head-of-abm@v5",
         "profile:head-of-abm@v6",
@@ -204,10 +208,10 @@ def test_integration_preserves_pilot_history_and_mints_combined_resources() -> N
         assert hashlib.sha256((recipe_root / filename).read_bytes()).hexdigest() == expected_sha256
 
     profiles = FolderProfileCatalog((CATALOG_ROOT / "profiles").resolve(strict=True))
-    profile = profiles.get("head-of-abm", "v33").definition
+    profile = profiles.get("head-of-abm", "v35").definition
     assert [(item.name, item.version) for item in profile.skills] == [
         ("stage0-interview", "v20"),
-        ("account-deep-steering", "v4"),
+        ("account-deep-steering", "v6"),
     ]
     required_tools = {
         "evaluate_stage0_readiness@2",
@@ -224,8 +228,8 @@ def test_integration_preserves_pilot_history_and_mints_combined_resources() -> N
     }
     assert required_tools <= {f"{item.name}@{item.version}" for item in profile.tools}
 
-    recipe = json.loads((recipe_root / "recipe0-stage0-v13.json").read_text())
-    assert recipe["version"] == 13
+    recipe = json.loads((recipe_root / "recipe0-stage0-v15.json").read_text())
+    assert recipe["version"] == 15
     assert required_tools <= set(recipe["graph"]["tool_allowlist"])
 
     skill = FolderSkillCatalog((CATALOG_ROOT / "skills").resolve(strict=True)).get(

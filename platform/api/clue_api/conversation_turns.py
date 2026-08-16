@@ -78,15 +78,16 @@ __all__ = [
 #:
 #: **v8** is the current hardening revision: v7 added trusted readiness/synthesis @2 and v8 adds
 #: ``open_icp_confirmation_gate@1``. As with the earlier **v6** Option-B kickoff widening —
-#: ``draft_account_research_directive@2``, ``open_directive_confirmation_gate@1``,
+#: ``draft_account_research_directive@3``, ``open_directive_confirmation_gate@1``,
 #: ``launch_account_research@1`` — because a surface grant alone is not enough: the C5 slot is a
 #: second, independent ceiling, and until this revision the widened conversation surface would have
 #: shown the model three tools that plan validation then refused. The trial surface still withholds
 #: all three, so raising the shared ceiling grants the trial nothing.
 CONVERSATION_RECIPE_KEY = "recipe0-stage0"
-# Slice 5 revision 13 pins synthesis @3's bounded human presentation and preserves revision 12's
-# provider-neutral discovery configuration/run entry. Earlier revisions remain exact replay inputs.
-CONVERSATION_RECIPE_VERSION = 13
+# Revision 14 keeps the current-message Account launch path usable after discovery by admitting
+# the two read-only account-research tools already exposed by the promoted profile/skill. Revision
+# 13 remains the exact replay input for turns that were already pinned to it.
+CONVERSATION_RECIPE_VERSION = 15
 
 #: Finalization ``domain_refs`` object types that render as a §3.4 ``plan`` part. Deliberately a
 #: closed set: an unknown object type is *not* projected, because a card whose contents the surface

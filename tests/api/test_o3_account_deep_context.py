@@ -8,6 +8,7 @@ import pytest
 from sqlalchemy import text
 
 from clue_api.account_deep_steering_context import (
+    _approved_tiers,
     compile_account_deep_steering_context,
     prepare_account_deep_steering_context,
 )
@@ -27,6 +28,28 @@ from tests.profiling.conftest import conn_session_factory
 from tests.stage0.conftest import rollback_conn
 
 pytestmark = pytest.mark.usefixtures("require_profiling_db")
+
+
+def test_numeric_checkpoint_accounts_retain_their_exact_approved_tiers() -> None:
+    first = "10000000-0000-0000-0000-000000000001"
+    second = "10000000-0000-0000-0000-000000000002"
+
+    approved = _approved_tiers(
+        {
+            "checkpoint_status": "resumed",
+            "review": {
+                "accounts": [
+                    {"account_id": first, "tier": "high"},
+                    {"account_id": second, "tier": "low"},
+                ]
+            },
+        }
+    )
+
+    assert {str(account_id): tier for account_id, tier in approved.items()} == {
+        first: "high",
+        second: "low",
+    }
 
 
 def test_current_card_and_materialized_directive_remain_non_authoritative(tmp_path) -> None:

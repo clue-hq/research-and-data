@@ -48,7 +48,7 @@ def test_every_registered_tool_has_a_typed_output_contract() -> None:
 def test_conversation_runtime_pins_the_promoted_integration_recipe() -> None:
     """The combined recipe is inert if the detached turn runner still asks for a predecessor."""
 
-    assert CONVERSATION_RECIPE_VERSION == 13
+    assert CONVERSATION_RECIPE_VERSION == 15
 
 
 def test_every_standing_recipe_tool_is_exact_typed_pinned_and_replay_certified() -> None:
@@ -205,6 +205,41 @@ def test_icp_presentation_mints_recipe_v13_without_rewriting_v12() -> None:
     assert v13["version"] == 13
 
 
+def test_selected_account_reads_mint_recipe_v14_without_rewriting_v13() -> None:
+    root = Path(__file__).resolve().parents[2] / "platform" / "execution" / "recipes"
+    v13 = json.loads((root / "recipe0-stage0-v13.json").read_text())
+    v14 = json.loads((root / "recipe0-stage0-v14.json").read_text())
+    added = {"get_research_view@1", "read_account_research_run@1"}
+
+    v13_index = SYSTEM_RECIPE_FILENAMES.index("recipe0-stage0-v13.json")
+    assert SYSTEM_RECIPE_FILENAMES[v13_index : v13_index + 2] == (
+        "recipe0-stage0-v13.json",
+        "recipe0-stage0-v14.json",
+    )
+    assert added.isdisjoint(v13["graph"]["tool_allowlist"])
+    assert added <= set(v14["graph"]["tool_allowlist"])
+    slot = next(node for node in v14["graph"]["nodes"] if node["node_key"] == "stage0_interactions")
+    assert added <= set(slot["dynamic_tool_allowlist"])
+    assert {"account_research_run", "verification_policy"} <= set(slot["dynamic_pin_kinds"])
+    assert v14["version"] == 14
+
+
+def test_plan_safe_directive_mints_recipe_v15_without_rewriting_v14() -> None:
+    root = Path(__file__).resolve().parents[2] / "platform" / "execution" / "recipes"
+    v14 = json.loads((root / "recipe0-stage0-v14.json").read_text())
+    v15 = json.loads((root / "recipe0-stage0-v15.json").read_text())
+
+    v14_index = SYSTEM_RECIPE_FILENAMES.index("recipe0-stage0-v14.json")
+    assert SYSTEM_RECIPE_FILENAMES[v14_index : v14_index + 2] == (
+        "recipe0-stage0-v14.json",
+        "recipe0-stage0-v15.json",
+    )
+    assert "draft_account_research_directive@2" in v14["graph"]["tool_allowlist"]
+    assert "draft_account_research_directive@3" in v15["graph"]["tool_allowlist"]
+    assert "draft_account_research_directive@2" not in v15["graph"]["tool_allowlist"]
+    assert v15["version"] == 15
+
+
 def test_operation_id_requirements_are_explicit() -> None:
     audit = build_replay_safety_audit(_standing_recipe_registry())
     operation_bound = {item.address for item in audit if item.operation_id_required}
@@ -215,7 +250,7 @@ def test_operation_id_requirements_are_explicit() -> None:
         # a gate is identified by the turn plus the exact revision it presents, and a launch by
         # the confirmed directive plus its account set and budget. Slice 1's trusted readiness
         # decision and synthesis ledger are also operation-bound.
-        "draft_account_research_directive@2",
+        "draft_account_research_directive@3",
         "evaluate_stage0_readiness@2",
         "import_accounts@1",
         "profile_contact@1",

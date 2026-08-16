@@ -67,9 +67,9 @@ def test_registry_resolves_exact_reviewed_profiles_and_stable_manifests(
         # FI Lane D D4 minted head-of-abm@v23: it pins `open_directive_confirmation_gate@1` and
         # re-pins account-deep-steering at v3, whose procedure is gate-first — draft, present the
         # gate, end the turn, and launch only after the human's own confirming turn.
-        # Integration v33/v20 retains bounded ICP presentation and adds explicit scope override
-        # v31/v18 and every earlier replay input.
-        AgentRole.HEAD_OF_ABM: ("45ff865d704dde65bc0f2ce39ae77edafbb70285f3cc5bb10f413709634a6b27"),
+        # Integration v35/v20 retains bounded ICP presentation and exact scope override, keeps
+        # plan-safe directive @3, and pins the registered account-research field/source vocabulary.
+        AgentRole.HEAD_OF_ABM: ("0396250264bd9c4890e080abf34c44687eccc06704c1ce0be220892e1e1bbeb0"),
         AgentRole.RESEARCH: "23cff2335bb82e0549ee0c830316968971146e8b90c8d2090447ee0ed92eed6f",
         AgentRole.CONTENT_DRAFTER: (
             "8985c13ead086350d952f76e6d3c0ed3f4162cc92de290f8dd7edd7fcab44cbf"
@@ -143,7 +143,7 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     # `synthesize_value_narrative@1` is the same shape for the same reason. Merged count: the
     # The inventory retains both versions of readiness/synthesis and company reads, the separate
     # product readers, both gate tools, and FI-2's selected-Account launch.
-    assert len(by_address) == 77
+    assert len(by_address) == 78
     for address in (
         "create_thread@1",
         "rename_thread@1",
@@ -162,7 +162,7 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     assert by_address["inspect_product_claim@1"].status is AgentCapabilityStatus.AVAILABLE
     assert by_address["list_product_knowledge@1"].status is AgentCapabilityStatus.AVAILABLE
     assert available == {
-        "draft_account_research_directive@2",
+        "draft_account_research_directive@3",
         "evaluate_stage0_readiness@2",
         "get_research_view@1",
         "inspect_readiness_history@1",
@@ -242,7 +242,7 @@ def test_s4e_production_project_surface_resolves_strict_client_kb_v2_and_hardeni
     )
 
     addresses = {pin.address for pin in production.profile.tools}
-    assert production.profile_ref.address == "profile:head-of-abm@v33"
+    assert production.profile_ref.address == "profile:head-of-abm@v35"
     assert [item.resource.address for item in production.skill_disclosures()][0] == (
         "skill:stage0-interview@v20"
     )
@@ -290,7 +290,7 @@ def test_progressive_skill_disclosure_exposes_metadata_before_body(
 
     assert len(disclosures) == 2
     assert disclosures[0].resource.address == "skill:stage0-interview@v20"
-    assert disclosures[1].resource.address == "skill:account-deep-steering@v4"
+    assert disclosures[1].resource.address == "skill:account-deep-steering@v6"
     assert "Ask one compact question" not in disclosures[0].model_dump_json()
     body = head.open_skill(disclosures[0].resource.address)
     assert "Ask one compact question" in body
@@ -419,7 +419,7 @@ def test_engine_ceiling_removes_tools_and_skills_that_depend_on_them() -> None:
     head = narrowed.resolve(AgentRole.HEAD_OF_ABM)
     assert "evaluate_stage0_readiness@2" not in {pin.address for pin in head.profile.tools}
     assert [item.resource.address for item in head.skill_disclosures()] == [
-        "skill:account-deep-steering@v4"
+        "skill:account-deep-steering@v6"
     ]
 
 

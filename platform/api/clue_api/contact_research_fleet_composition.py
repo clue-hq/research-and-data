@@ -181,6 +181,7 @@ def build_contact_research_fleet_composition(
     results = EntityResearchResultStore(
         storage=storage,
         conn_factory=conn_factory,
+        enforce_budget=enforce_budget,
         lineage_readers={
             ExternalResearchResultLineageReader.provider_kind: (
                 ExternalResearchResultLineageReader(conn_factory=conn_factory)
@@ -224,6 +225,7 @@ def build_contact_research_fleet_composition(
         model_policy=model_policy,
         conn_factory=conn_factory,
         require_atomic_admission=True,
+        enforce_budget=enforce_budget,
     )
     inner = EntityResearchJobWorkHandler(
         store=R9EntityResearchJobStore(conn_factory=conn_factory),

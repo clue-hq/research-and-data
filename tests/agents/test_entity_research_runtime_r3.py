@@ -389,6 +389,26 @@ def _definition(
     )
 
 
+def test_record_only_budget_context_does_not_turn_overspend_into_agent_refusal() -> None:
+    context = _context(ResearchSubjectType.ACCOUNT, EntityAgentRole.ACCOUNT)
+    payload = context.model_dump(mode="python")
+    payload.update(
+        {
+            "budget_controls_enabled": False,
+            "job_budget_cap_cents": Decimal("0"),
+            "job_spent_cents": Decimal("5"),
+            "run_budget_remaining_cents": Decimal("0"),
+        }
+    )
+
+    record_only = EntityResearchRuntimeContext.model_validate(payload)
+
+    assert record_only.model_context()["budget_controls_enabled"] is False
+    payload["budget_controls_enabled"] = True
+    with pytest.raises(ValueError, match="spend exceeds the exact job cap"):
+        EntityResearchRuntimeContext.model_validate(payload)
+
+
 @pytest.mark.parametrize(
     ("subject_type", "role"),
     (

@@ -62,6 +62,10 @@ SYSTEM_RECIPE_FILENAMES: tuple[str, ...] = (
     "recipe0-stage0-v12.json",
     # Bounded ICP presentation accompanies the normal assistant message; Exa preflights pre-run.
     "recipe0-stage0-v13.json",
+    # Exact current-message Account refs can inspect the governed view and detached fleet state.
+    "recipe0-stage0-v14.json",
+    # Plan-safe research directives retain the frozen v2 contract while new turns use @3.
+    "recipe0-stage0-v15.json",
     "recipe1-classic-v1.json",
     "recipe1-classic-v2.json",
 )

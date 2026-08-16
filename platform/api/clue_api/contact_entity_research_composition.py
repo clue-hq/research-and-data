@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import Mapping
+from decimal import Decimal
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 from uuid import NAMESPACE_URL, UUID, uuid5
@@ -127,6 +128,7 @@ class ContactResearchDefinitionResolver(EntityResearchDefinitionResolver):
         conn_factory: ConnFactory = transaction,
         catalog_root: Path | None = None,
         require_atomic_admission: bool = False,
+        enforce_budget: bool = True,
     ) -> None:
         self._tools = tools
         self._state = state
@@ -139,6 +141,7 @@ class ContactResearchDefinitionResolver(EntityResearchDefinitionResolver):
             Path(__file__).parents[2] / "agents" / "catalog" / "entity-research" / "contact" / "v1"
         )
         self._require_atomic_admission = require_atomic_admission
+        self._enforce_budget = enforce_budget
 
     async def resolve(
         self,
@@ -300,7 +303,8 @@ class ContactResearchDefinitionResolver(EntityResearchDefinitionResolver):
             current_state_sha256=job.current_state_sha256,
             job_budget_cap_cents=job.budget_cap_cents,
             job_spent_cents=job.spent_cents,
-            run_budget_remaining_cents=row["remaining"],
+            run_budget_remaining_cents=max(Decimal(0), Decimal(str(row["remaining"]))),
+            budget_controls_enabled=self._enforce_budget,
         )
         await self._state.lock_identity(context)
         questions = "\n".join(
@@ -312,7 +316,14 @@ class ContactResearchDefinitionResolver(EntityResearchDefinitionResolver):
             tools=tuple(by_name[name] for name in _CONTACT_TOOL_NAMES),
             task_instruction=(
                 "Research only the exact selected contact under the exact locked employer. "
-                "The confirmed directional questions are:\n"
+                + (
+                    "Budget controls are disabled: budget values are record-only accounting "
+                    "estimates and must never be used to skip an otherwise authorized provider "
+                    "call. "
+                    if not self._enforce_budget
+                    else ""
+                )
+                + "The confirmed directional questions are:\n"
                 f"{questions}"
             ),
         )

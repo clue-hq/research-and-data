@@ -337,6 +337,40 @@ def test_turn_layer_reads_message_but_never_raw_attachment_bytes() -> None:
     assert values[-1].origin == "current_user_instruction"
 
 
+def test_turn_layer_marks_exact_current_message_context_refs_without_widening() -> None:
+    message = artifact("user-message.txt")
+    selected = (
+        domain_ref("account-2"),
+        domain_ref("account-1"),
+    )
+    reader = _ArtifactReader({message.artifact_key: b"Research the selected accounts."})
+    source = TurnLayerSource(reader)
+
+    values = asyncio.run(
+        source.load(
+            request=request(
+                user_message_artifact_ref=message,
+                focus_refs=selected,
+            ),
+            profile=profile(),
+            history=(),
+        )
+    )
+
+    current_refs = values[:-1]
+    assert [item.ref for item in current_refs] == list(selected)
+    assert [item.stable_key for item in current_refs] == [
+        "150-current-context-ref:000000",
+        "150-current-context-ref:000001",
+    ]
+    assert all(item.role == "system" for item in current_refs)
+    assert "exact ordered subject on the user's current message" in current_refs[0].body
+    assert "ordinal=0 object_type=account object_id=account-2 version=1" in current_refs[0].body
+    assert "ordinal=1 object_type=account object_id=account-1 version=1" in current_refs[1].body
+    assert values[-1].body == "Research the selected accounts."
+    assert values[-1].origin == "current_user_instruction"
+
+
 @dataclass(frozen=True)
 class _CapturedTurn:
     onboarding_input_id: str

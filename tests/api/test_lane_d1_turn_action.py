@@ -30,6 +30,7 @@ from typing import Any
 from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 import pytest
+from langchain.tools import ToolRuntime
 from pydantic import ValidationError
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
@@ -181,6 +182,24 @@ def test_a_plan_cannot_author_the_users_instruction_or_the_receipt() -> None:
         name="DraftAccountResearchDirectiveInputAgentRuntime",
     )
     assert set(trusted_turn_fields(args_schema)) == set()
+    visible = args_schema.model_validate(
+        {
+            "product_id": PRODUCT_ID,
+            "icp_key": "icp-browser-canary",
+            "icp_version": 1,
+            "body": _body(UUID("d7b13798-ceda-427d-b9c7-76227aa7b90a")).model_dump(mode="json"),
+            "runtime": ToolRuntime(
+                state=None,
+                context=None,
+                config={},
+                stream_writer=lambda _value: None,
+                tool_call_id="browser-canary",
+                store=None,
+            ),
+        }
+    )
+    assert "user_instruction" not in visible.model_fields_set
+    assert "source_turn_ref" not in visible.model_fields_set
     for smuggled in ("user_instruction", "source_turn_ref", "project_id"):
         with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
             args_schema.model_validate({smuggled: "forged", "runtime": None})

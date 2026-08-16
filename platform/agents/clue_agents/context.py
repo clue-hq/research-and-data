@@ -564,6 +564,33 @@ class TurnLayerSource:
                     role="system",
                 )
             )
+        # ``request.focus_refs`` are the exact Account/Contact references durably captured on
+        # this human submission. L5 hydrates those objects, but hydration alone does not tell the
+        # model whether an Account came from the *current message* or from ambient project focus.
+        # Keep that authority distinction explicit in L7 so phrases such as "the selected
+        # account" resolve to the submitted ordered set and never widen to the project catalog.
+        # One candidate per ref preserves both its domain receipt and its submission order.
+        for index, current_ref in enumerate(request.focus_refs):
+            result.append(
+                ContextCandidate(
+                    stable_key=f"150-current-context-ref:{index:06d}",
+                    ref=current_ref,
+                    body=(
+                        "Current human-message context reference: the platform durably captured "
+                        "this exact ordered subject on the user's current message. Treat words "
+                        "such as selected, this, these, or them as naming exactly these current "
+                        "message references; never widen, replace, or ask the user to retype "
+                        "them. The platform supplies authoritative values to governed tools. "
+                        f"ordinal={index} object_type={current_ref.object_type} "
+                        f"object_id={current_ref.object_id} version={current_ref.version}"
+                    ),
+                    role="system",
+                    materialized_path=(
+                        "inputs/current-context/"
+                        f"{index:06d}-{current_ref.object_type}-{current_ref.object_id}.txt"
+                    ),
+                )
+            )
         # The only user-authored message in L7 is deliberately last. Attachment and capture
         # descriptions are platform-authored trusted context, not words the user typed, and may
         # never become the model's most-recent human instruction.

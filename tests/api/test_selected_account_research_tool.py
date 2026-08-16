@@ -193,3 +193,28 @@ def test_selected_launch_confirms_as_the_human_then_launches_the_exact_set(
     assert authority["actor"] == "user-1"
     assert authority["source_action_ref"] == _ACTION
     assert result.references["selected_accounts"] == 2
+
+
+def test_selected_launch_can_retry_an_already_confirmed_exact_directive(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    launcher = _Launcher()
+    directive = _wire_resolution(monkeypatch)
+    directive.status = ResearchDirectiveStatus.CONFIRMED
+
+    async def unexpected_confirmation(*_args: object, **_kwargs: object):
+        raise AssertionError("a confirmed directive must not be confirmed again")
+
+    monkeypatch.setattr(subject, "confirm_research_directive", unexpected_confirmation)
+    result = asyncio.run(
+        LaunchSelectedAccountResearchTool(
+            launcher,
+            budget_controls_enabled=False,
+            conn_factory=_connection,
+        ).invoke(_inputs(_ACCOUNT_A, _ACCOUNT_B), _context())
+    )
+
+    request, authority = launcher.calls[0]
+    assert request.research_directive_id == _DIRECTIVE
+    assert authority["source_action_ref"] == _ACTION
+    assert result.references["selected_accounts"] == 2

@@ -38,7 +38,6 @@ from clue_research.directives import (
     get_latest_research_directive,
     get_research_directive,
     research_directive_account_ids,
-    research_directive_confirmation_replay_matches,
 )
 from clue_research.durable import get_project_run
 from clue_toolbelt import (
@@ -295,31 +294,25 @@ class LaunchSelectedAccountResearchTool(Tool):
                     "the directive's Account scope differs from the current message",
                 )
             if directive.status is ResearchDirectiveStatus.CONFIRMED:
-                replay = await research_directive_confirmation_replay_matches(
-                    conn,
-                    workspace_id=ctx.workspace_id,
-                    directive_id=directive.directive_id,
-                    operation_id=ctx.operation_id,
-                    confirmed_by=turn.submitted_by_user_id,
-                    confirming_turn_ref=inputs.source_turn_ref,
-                )
-                if not replay:
-                    raise _SelectedAccountLaunchRefused(
-                        "selected_launch_directive_already_confirmed",
-                        "the directive was confirmed by a different human action",
-                    )
+                # The directive confirmation and the launch command are distinct durable acts.
+                # A prior launch attempt may fail after confirmation but before fleet state is
+                # written. A later attributable human turn may retry that same latest directive
+                # and exact Account set; the frozen selection records both approval references.
+                allow_draft = False
             elif directive.status is not ResearchDirectiveStatus.DRAFT:
                 raise _SelectedAccountLaunchRefused(
                     "selected_launch_directive_not_draft",
                     "only the current draft can be directly confirmed and launched",
                 )
+            else:
+                allow_draft = True
             estimate = await compute_account_research_estimate(
                 conn,
                 workspace_id=ctx.workspace_id,
                 project_run_id=project_run_id,
                 directive_id=directive.directive_id,
                 account_ids=captured_ids,
-                allow_draft=directive.status is ResearchDirectiveStatus.DRAFT,
+                allow_draft=allow_draft,
             )
         return _SelectedAccountLaunch(
             project_run_id=project_run_id,

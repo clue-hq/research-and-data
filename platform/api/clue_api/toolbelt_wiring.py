@@ -2915,7 +2915,13 @@ def build_toolbelt(
         ),
         conn_factory=conn_factory,
     ):
-        registry.register(tool, make_default=tool.version == "2")
+        registry.register(
+            tool,
+            make_default=(
+                (tool.name != "draft_account_research_directive" or tool.version == "3")
+                and (tool.name != "confirm_account_research_directive" or tool.version == "2")
+            ),
+        )
     # PC-C8 §7: the two bounded, read-only Stage-0 history tools the card's `omissions` cursors
     # resolve. Both are granted to `AgentRole.HEAD_OF_ABM` in `C6_AGENT_TOOL_AUTHORITY` (the
     # deferred grant landed against profile v10) and are *not* withheld by the trial's

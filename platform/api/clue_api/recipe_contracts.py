@@ -48,11 +48,13 @@ RECIPE_0_TOOL_ADDRESSES: tuple[str, ...] = (
     # the Stage-0 interaction slot is replay-certified here first, and these three are the whole
     # point of the widened conversation surface — draft the direction, present its confirmation
     # gate, and launch what the human's confirming turn approved.
-    "draft_account_research_directive@2",
+    "draft_account_research_directive@3",
     "open_directive_confirmation_gate@1",
+    "get_research_view@1",
     "launch_account_research@1",
     # FI-2 exact current-message Account launch, retained in integration recipe0-stage0@11.
     "launch_selected_account_research@1",
+    "read_account_research_run@1",
 )
 
 RECIPE_1_TOOL_ADDRESSES: tuple[str, ...] = (

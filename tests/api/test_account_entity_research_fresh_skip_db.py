@@ -820,6 +820,20 @@ def test_fi2_61_a_job_that_calls_no_provider_at_all_finalizes_cleanly(
     run_async(scenario())
 
 
+def test_account_only_scope_does_not_create_a_false_committee_review_flag() -> None:
+    status, flags = AccountResearchStateStore._committee_coverage_status(
+        committee_requested=False,
+        result_count=0,
+        member_count=0,
+        scope_count=0,
+        ambiguous_count=0,
+        confirmed_empty_count=0,
+    )
+
+    assert status == "complete"
+    assert flags == ()
+
+
 def test_fi2_61_an_empty_close_is_refused_over_a_field_that_was_not_borrowed(
     monkeypatch: pytest.MonkeyPatch,
     require_profiling_db: None,

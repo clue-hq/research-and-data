@@ -850,6 +850,9 @@ class TierCheckpointPhaseHandler:
                             # FI-2 §6.4: pin the tier to the approving project so a second
                             # project's checkpoint never supersedes this one's tier.
                             project_id=ctx.project_id,
+                            # The account-research launch boundary consumes the exact run-local
+                            # selection authority, not a mutable project-wide tier.
+                            project_run_id=ctx.project_run_id,
                         )
                     except Exception:  # noqa: BLE001 — isolate one account; continue the approve.
                         # Commit is outside the try so a commit failure is never double-rolled-back.

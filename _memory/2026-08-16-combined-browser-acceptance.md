@@ -222,3 +222,51 @@ without repairing the product-scoped Client-KB resource pin described below.
   was waiting on Exa. The external wake reoffered the graph, but that immutable blocked node cannot
   retry, so the batch remains unsealed even though account discovery and UI materialization
   succeeded. Treat this as the next workflow-handoff defect, not an Exa/authentication failure.
+
+## Discovered-account profiling browser acceptance
+
+- Continued from the real five-account Exa Websets result in the same workspace/project. The
+  browser `/accounts` table rendered all five project accounts with truthful per-account research
+  status; Rebound Orthopedics & Neurosurgery changed to `Completed` while the other four remained
+  `Not started`.
+- The selected-account composer must retain its structured Slate mention. Browser automation that
+  used `fill()` after selection replaced the mention with plain text and the agent correctly
+  refused to infer an account id. The accepted path was: open the `@` picker, use keyboard
+  navigation to select Rebound, retain the visible `Account context: Rebound Orthopedics &
+  Neurosurgery` chip, then append the instruction with `type()`.
+- The accepted v5 turn composed the unchanged Stage-0 cards: project conversation, Client-KB v2,
+  Stage-0 project state, selected product profile and Product-KB v1. It minted directive
+  `research-directive:982be2dc-daee-5336-b7e7-b186263c5b51:v5`, run
+  `b513fbab-f7cc-545b-a2cb-0752dabb792e`, and job
+  `35d863a5-70bb-5c20-85ae-90e9e3ea3ba0`. The durable authorization admits exactly Rebound, the
+  three requested account fields, and `exa_deep`; committee sources, contact work, verification and
+  interactive budget authority are empty/disabled.
+- The first real provider attempt for this account proved external I/O: the fleet logged
+  `POST https://api.exa.ai/search` -> `200 OK`. External operation
+  `4481add9-c760-4337-929e-a4901d9f7863` is `ready`, provider request
+  `80f80d420d14bf06761553f793484fd0`, snapshot
+  `7c68b584-d3db-4a68-971c-816be9c125c5`, with 2.600 cents provider-reported and settled cost.
+  All three resulting claims carry that exact operation/snapshot lineage.
+- That first result transaction exposed two genuine off-mode defects: a database CHECK still
+  required `spent_cents <= budget_cap_cents` even when budget enforcement was disabled, and an
+  account-only run was later classified `needs_review` solely because no committee had been
+  requested. The fixes make budget-off spend record-only while retaining writer-side enforcement
+  in ON mode, and derive committee coverage from whether committee sources were selected.
+  Migration `44dc4ba7ca63` updates the run/job nonnegative checks and is reversible.
+- The v5 retry correctly reused the three already-fresh Exa claims instead of paying twice. Its
+  coverage receipt marks `account.strategic_moves`, `account.operational_pain`, and
+  `account.resonance.public_frustrations` completed with `existing_claim_fresh`, no unresolved
+  fields, no review flags and committee `complete` because committee work was out of scope. Run and
+  job are terminal; job outcome is `completed`.
+- Browser detail proof passed: the Rebound preview renders the three Exa-deep researched fields,
+  the generated account summary, source/date labels, and `16 fields hold a value for this account`.
+  The Accounts table marks the row `Completed`.
+- One UI gap remains: the task part embedded in the original chat message is intentionally a
+  turn-close snapshot and still renders `Queued 0 of 1 account settled` after reload even though
+  the database and Accounts read model say `Completed`. The project Gallery is currently
+  artifact-only and renders `No artifacts yet`; discovered accounts live on `/accounts`, not in a
+  project Gallery tab.
+- Verification: focused regression suites passed (all selected unit cases plus 43 database
+  integration cases); repo Ruff format/check, mypy across 691 source files, and all 25 dependency
+  contracts passed. `alembic heads` reports only `44dc4ba7ca63`. A separate named database completed
+  clean upgrade -> downgrade base -> upgrade head.

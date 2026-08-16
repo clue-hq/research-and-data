@@ -23,6 +23,8 @@ from clue_api.account_research_fleet import (
     AccountResearchFleetService,
 )
 from clue_core import (
+    EffectiveFieldSourcePlan,
+    EffectiveSourceAuthorization,
     EntityId,
     EntityScope,
     ProjectRunId,
@@ -30,6 +32,7 @@ from clue_core import (
     ResearchDirectiveStatus,
     ResearchMode,
     RunId,
+    SourceTier,
 )
 from clue_core.entity_research import (
     EntityResearchJobAuthorization,
@@ -64,8 +67,10 @@ from clue_research.resolvers.sumble import (
 from clue_research.resolvers.sumble.people import PEOPLE_SOURCE_KEY
 from clue_research.sources import (
     freeze_effective_source_plan,
+    get_source,
     load_effective_source_plan,
     plan_sources,
+    sources_for,
 )
 
 log = get_logger("clue_api.account_research_fleet_launch")
@@ -362,9 +367,46 @@ class AccountResearchFleetLauncher:
                         raise AccountResearchFleetLaunchError(
                             f"source planning produced no durable authority for {field_key}"
                         )
+                    compiled = planned.effective_source_plan
+                    if not compiled.sources:
+                        # Some Stage-0 ICPs intentionally have no authored source-profile slot.
+                        # The confirmed directive has already validated its exact source keys
+                        # against the active registry and this field. Preserve that bounded
+                        # authority instead of turning the absent override into a research ban.
+                        capable = set(
+                            await sources_for(
+                                conn,
+                                field_key,
+                                entity_scope=EntityScope.ACCOUNT,
+                                active=True,
+                            )
+                        )
+                        explicit_sources: list[EffectiveSourceAuthorization] = []
+                        for source_key in first.source_policy.allowed_source_keys:
+                            if (
+                                source_key not in capable
+                                or source_key not in _SUPPORTED_FIELD_SOURCES
+                            ):
+                                continue
+                            source = await get_source(conn, source_key)
+                            if source is not None:
+                                explicit_sources.append(
+                                    EffectiveSourceAuthorization(
+                                        source_key=source_key,
+                                        source_tier=SourceTier(source.tier),
+                                    )
+                                )
+                        if explicit_sources:
+                            compiled = EffectiveFieldSourcePlan.compile(
+                                workspace_id=request.workspace_id,
+                                icp_key=first.icp_key,
+                                icp_version=first.icp_version,
+                                field_key=field_key,
+                                sources=tuple(explicit_sources),
+                            )
                     plan = await freeze_effective_source_plan(
                         conn,
-                        planned.effective_source_plan,
+                        compiled,
                         source_profile_ref=icp.source_profile_ref,
                     )
                 source_keys = tuple(
@@ -387,20 +429,18 @@ class AccountResearchFleetLauncher:
                         "source_keys": list(source_keys),
                     }
                 )
-            if (
-                PEOPLE_SOURCE_KEY not in allowed_sources
-                or not first.privacy_policy.committee_discovery_allowed
-            ):
-                raise AccountResearchFleetLaunchError(
-                    "account fleet requires authorized no-reveal committee discovery"
-                )
-
             source_keys = tuple(
                 dict.fromkeys(
                     source for authority in authorities for source in authority.source_keys
                 )
             )
-            admitted_sources = (*source_keys, PEOPLE_SOURCE_KEY)
+            committee_source_keys = (
+                (PEOPLE_SOURCE_KEY,)
+                if PEOPLE_SOURCE_KEY in allowed_sources
+                and first.privacy_policy.committee_discovery_allowed
+                else ()
+            )
+            admitted_sources = (*source_keys, *committee_source_keys)
             field_plan_sha = _sha({"field_keys": field_keys})
             source_plan_sha = _sha(source_plan_values)
             request_sha = _sha(
@@ -421,7 +461,7 @@ class AccountResearchFleetLauncher:
                     "field_source_authority": [
                         value.model_dump(mode="json") for value in authorities
                     ],
-                    "committee_source_keys": [PEOPLE_SOURCE_KEY],
+                    "committee_source_keys": list(committee_source_keys),
                     "approved_budget_cap_cents": request.approved_budget_cap_cents,
                     "expected_estimated_cost_cents": request.expected_estimated_cost_cents,
                     "concurrency_limit": request.concurrency_limit,
@@ -453,7 +493,7 @@ class AccountResearchFleetLauncher:
                 admitted_field_keys=field_keys,
                 admitted_source_keys=admitted_sources,
                 field_source_authority=tuple(authorities),
-                committee_source_keys=(PEOPLE_SOURCE_KEY,),
+                committee_source_keys=committee_source_keys,
                 research_questions=questions,
                 policy_refs=(
                     f"account-research-launch:{request_sha}",
@@ -507,10 +547,8 @@ class AccountResearchFleetLauncher:
                 run_kind=ResearchRunKind.ACCOUNT_RESEARCH,
                 selection=selection,
                 user_confirmed_launch=True,
-                operations=(
-                    ResearchOperationKind.ACCOUNT_PROFILE,
-                    ResearchOperationKind.COMMITTEE_DISCOVERY,
-                ),
+                operations=(ResearchOperationKind.ACCOUNT_PROFILE,)
+                + ((ResearchOperationKind.COMMITTEE_DISCOVERY,) if committee_source_keys else ()),
                 automatic_successor_run=False,
             )
             profile_sha = account_research_profile_sha256()
