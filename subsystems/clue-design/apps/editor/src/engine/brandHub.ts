@@ -3,10 +3,13 @@
  *
  * Same contract shape as documentStore.ts: every call takes an explicit
  * `{ apiBaseUrl }` options object (read at call time from `editorApiBaseUrl()`),
- * wraps `fetch` so it is never stored bare, and throws on any non-2xx so the
- * page's error branch owns the message. The brand section is read-only in v1 —
- * the only mutation here is approval (setBrandKitApproval).
+ * defaults `fetchImpl = lumenFetch` (the O4 workspace seam 401s headerless
+ * requests; guarded by `__tests__/workspaceHeaderDefaults.test.ts`), and throws
+ * on any non-2xx so the page's error branch owns the message. The brand section
+ * is read-only in v1 — the only mutation here is approval (setBrandKitApproval).
  */
+
+import { lumenFetch } from "./editorConfig";
 
 export interface BrandHubOptions {
   apiBaseUrl: string;
@@ -72,7 +75,7 @@ function toDiagnostics(raw: unknown): any[] {
 
 /** All stored kits (latest version each) for the /brand list. */
 export async function fetchBrandKitList(
-  { apiBaseUrl, fetchImpl = fetch }: BrandHubOptions
+  { apiBaseUrl, fetchImpl = lumenFetch }: BrandHubOptions
 ): Promise<BrandKitListEntry[]> {
   const response = await fetchImpl(new URL("/brand-kits", apiBaseUrl));
   if (!response.ok) {
@@ -84,7 +87,7 @@ export async function fetchBrandKitList(
 
 /** One kit's full review payload (`GET /brand-kits/{id}`). */
 export async function fetchBrandKitDetailFull(
-  { apiBaseUrl, fetchImpl = fetch }: BrandHubOptions,
+  { apiBaseUrl, fetchImpl = lumenFetch }: BrandHubOptions,
   brandKitId: string
 ): Promise<BrandKitDetail> {
   const response = await fetchImpl(
@@ -115,7 +118,7 @@ export async function fetchBrandKitDetailFull(
  * refreshed detail. The pill flip is optimistic in the page; this call is the
  * confirmation the page reconciles against. */
 export async function setBrandKitApproval(
-  { apiBaseUrl, fetchImpl = fetch }: BrandHubOptions,
+  { apiBaseUrl, fetchImpl = lumenFetch }: BrandHubOptions,
   brandKitId: string,
   approvalStatus: "approved" | "draft"
 ): Promise<BrandKitDetail> {
@@ -148,7 +151,7 @@ export async function setBrandKitApproval(
  * API publishes a NEW kit version (manual provenance) — the scraper's guess
  * stays in version history, the human's choice becomes current. */
 export async function setBrandKitLogo(
-  { apiBaseUrl, fetchImpl = fetch }: BrandHubOptions,
+  { apiBaseUrl, fetchImpl = lumenFetch }: BrandHubOptions,
   brandKitId: string,
   selection: { assetId: string; slot?: "primary" | "mark" | "wordmark" }
 ): Promise<void> {
@@ -168,8 +171,3 @@ export async function setBrandKitLogo(
   }
 }
 
-/** The raw-bytes URL for an asset (`{base}/assets/{id}/bytes`) — the src for
- * logo/image thumbnails on the review page. */
-export function assetBytesUrl(apiBaseUrl: string, assetId: string): string {
-  return new URL(`/assets/${encodeURIComponent(assetId)}/bytes`, apiBaseUrl).toString();
-}

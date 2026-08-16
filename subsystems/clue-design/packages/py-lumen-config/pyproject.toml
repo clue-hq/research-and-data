@@ -1,0 +1,32 @@
+# Minimal packaging for the design tree's settings shim (design-integration Part II, slice D5
+# Round B — ruling R-D5-B1). Twin of `packages/py-lumen-obs`; see that file's header for the
+# full rationale (fleet workers import from an installed environment, not from a PYTHONPATH the
+# API process happens to have arranged) and for why the package MOVED into its own project
+# directory rather than being force-included from outside one.
+#
+# `py_lumen_config` is imported directly by `lumen_api` and by `lumen_agent.config`, so it must
+# be installed for the same reason `py_lumen_obs` must.
+#
+# Packaging only: the Part-I Step-2 fold into the platform's `clue_config` remains future work.
+
+[project]
+name = "py-lumen-config"
+version = "0.0.0"
+description = "Design subsystem settings shim (merged havana tree) — minimal D5 packaging."
+requires-python = ">=3.12"
+license = { text = "Proprietary" }
+# Grepped, not guessed: `pydantic` (field_validator) + `pydantic-settings` (BaseSettings,
+# SettingsConfigDict) are the only non-stdlib imports. Bounds are the loosest ranges that admit
+# the versions the root `uv.lock` has already resolved, so entering the workspace re-resolves
+# nothing.
+dependencies = [
+    "pydantic>=2.7",
+    "pydantic-settings>=2.3",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["py_lumen_config"]

@@ -28,6 +28,7 @@ from clue_api.tool_outputs import (
 from clue_api.turn_binding import TRUSTED_TURN_FIELD
 from clue_config import DEFAULT_STAGE0_POLICY, Stage0Policy
 from clue_core import (
+    RECON_TRANSITION_KIND,
     AccountEntity,
     EntityId,
     ICPStatus,
@@ -42,15 +43,14 @@ from clue_core import (
     ReadinessGate,
     ReadinessVerdict,
     ReconRunId,
+    RunEventTopic,
     RunId,
 )
 from clue_db import ConnFactory, transaction
+from clue_execution.run_events import emit_run_event
 from clue_obs import get_logger
 from clue_research.durable import (
-    RECON_TRANSITION_KIND,
     ProjectRunStatus,
-    RunEventTopic,
-    emit_run_event,
     ensure_project_run,
     get_project_run,
 )

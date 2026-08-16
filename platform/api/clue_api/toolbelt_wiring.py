@@ -78,6 +78,8 @@ from clue_api.coverage_tools import (
     build_research_account_gaps_tool,
     build_research_account_gaps_v2_tool,
 )
+from clue_api.design_leg_tools import build_design_leg_tools
+from clue_api.design_tools import build_design_tools
 from clue_api.discovery_configuration import ConfirmedDiscoveryPreflight
 from clue_api.discovery_seal import DbSealedDiscoveryAccountManifestReader
 from clue_api.dynamic_client_kb import DynamicClientKbMaterializer
@@ -164,6 +166,7 @@ from clue_config import (
     stage0_policy_from_settings,
 )
 from clue_core import (
+    NARRATIVE_EMIT_SKIPPED_KEY,
     AccountEntity,
     ContactContentHandoff,
     ContactResearchSelection,
@@ -191,7 +194,6 @@ from clue_research.discovery_scoring.phases import discovery_run_id
 from clue_research.discovery_scoring.scoring import admitted_account_ids
 from clue_research.discovery_scoring.tiering import DEFAULT_TIERING_CONFIG
 from clue_research.durable import (
-    NARRATIVE_EMIT_SKIPPED_KEY,
     AccountDeepLaunchConflict,
     AccountDeepLaunchInvalid,
     BudgetEngine,
@@ -2976,6 +2978,29 @@ def build_toolbelt(
         value_narrative,
         gateway=gateway,
         conn_factory=conn_factory,
+    ):
+        registry.register(tool, make_default=True)
+    # Part II D6: the design subsystem's governed write path. Registered UNCONDITIONALLY (the C6
+    # authority audit is a strict set equality — a registry whose shape depends on
+    # `design_runtime_enabled` would make flipping that switch an AgentCatalogError), but LIVE
+    # only where a design runtime is composed; elsewhere every design tool refuses
+    # `design_runtime_not_configured` before any write. P3.3 granted the set to
+    # `AgentRole.DESIGN` — see `C6_AGENT_TOOL_AUTHORITY`.
+    for tool in build_design_tools(
+        enabled=resolved_settings.design_runtime_enabled,
+        storage=storage,
+    ):
+        registry.register(tool, make_default=True)
+    # P3.4 (PD-part3 §1-D1/§2.3): the head-of-abm's delegation entry onto the design leg.
+    # Registered unconditionally for the same audit reason, and gated on the SAME runtime
+    # switch as the design_* set (the thread-wedge guard, adversarial-review fix): a leg
+    # opened where no design runtime is composed is a thread nothing can serve, so on such a
+    # deployment both tools refuse `design_leg_runtime_not_configured` before any write;
+    # without a storage backend they refuse `design_leg_storage_not_configured`.
+    for tool in build_design_leg_tools(
+        conn_factory=conn_factory,
+        storage=storage,
+        enabled=resolved_settings.design_runtime_enabled,
     ):
         registry.register(tool, make_default=True)
     return registry

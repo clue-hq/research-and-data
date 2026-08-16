@@ -369,6 +369,9 @@ export interface AssetThumbnail {
   mime_type: string;
   pixel_width?: number | null;
   pixel_height?: number | null;
+  /** Stamped by the API at the DTO boundary (public_asset_record) so the
+   * editor can build /asset-store/{digest} URLs without parsing refs. */
+  digest?: AssetDigest | null;
 }
 
 export interface AssetDigest {

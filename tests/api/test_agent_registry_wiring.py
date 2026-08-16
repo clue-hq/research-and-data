@@ -69,7 +69,9 @@ def test_registry_resolves_exact_reviewed_profiles_and_stable_manifests(
         # gate, end the turn, and launch only after the human's own confirming turn.
         # Integration v35/v20 retains bounded ICP presentation and exact scope override, keeps
         # plan-safe directive @3, and pins the registered account-research field/source vocabulary.
-        AgentRole.HEAD_OF_ABM: ("0396250264bd9c4890e080abf34c44687eccc06704c1ce0be220892e1e1bbeb0"),
+        # v36 (part-iii merge) is v35 plus `open_design_leg@1` — P3.4's design delegation entry,
+        # with P3.5's in-train schema revision (reopen_leg_id + reopened) in the pinned digests.
+        AgentRole.HEAD_OF_ABM: ("a2a1a950ce87b4f7f92eb92c674c21478d28a554efae7ac5146570d92b3986ef"),
         AgentRole.RESEARCH: "23cff2335bb82e0549ee0c830316968971146e8b90c8d2090447ee0ed92eed6f",
         AgentRole.CONTENT_DRAFTER: (
             "8985c13ead086350d952f76e6d3c0ed3f4162cc92de290f8dd7edd7fcab44cbf"
@@ -130,6 +132,82 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     # The two proposal v1 addresses remain installed only for historical recipe replay. They add
     # inventory entries but cannot enter the current model surface; only propose_field@2 carries
     # the dynamic Client-KB authority.
+    # Part II D6 Round A registers the design subsystem's eight governed write tools; they are
+    # RESERVED on every model surface until Part III wires the design deepagent (55 -> 63).
+    # Round B adds twenty more (documents/history/diagnostics, website documents, turn
+    # enqueues), reserved identically (63 -> 83); Round C adds the final twenty-one
+    # (83 -> 104), completing the design write surface. The frontend×design integration merge
+    # unions FI Lane D's five (four REQ-21 thread tools + the D4 directive-confirmation gate),
+    # so the merged inventory is 104 + 5 = 109. PD-part3 P3.4 adds `open_design_leg@1` — the
+    # head-of-abm's delegation entry onto the design leg (109 + 1 = 110) — and P3.5 adds
+    # `finish_design_leg@1`, the DESIGN-granted leg exit, role-unavailable from this view
+    # (110 + 1 = 111). The part-iii integration merge unions this branch's own additions since
+    # the common base (readiness/synthesis @2s, company/product readers, the exact-subject
+    # gates, FI-2's selected-Account launch and reads: 111 + 18 = 129).
+    assert len(by_address) == 129
+    assert by_address["finish_design_leg@1"].status is AgentCapabilityStatus.ROLE_UNAVAILABLE
+    # P3.3 retired the Part II reservation: the 49 design tools are GRANTED to
+    # AgentRole.DESIGN now. From head-of-abm's view they are role-unavailable with
+    # NO reason code — the same honest shape as any tool granted to another role —
+    # and the retired reason must never resurface.
+    assert not any(
+        item.reason_code == "design_agent_not_wired_until_part_iii" for item in by_address.values()
+    )
+    design_addresses = {
+        "design_advance_instance_batch@1",
+        "design_advance_web_batch@1",
+        "design_apply_edits@1",
+        "design_apply_operations@1",
+        "design_apply_web_operations@1",
+        "design_attach_brand_kit@1",
+        "design_compile_component@1",
+        "design_create_brand_compatibility_report@1",
+        "design_create_brand_kit@1",
+        "design_create_document@1",
+        "design_create_instance_batch@1",
+        "design_create_snapshot@1",
+        "design_create_web_account@1",
+        "design_create_web_batch@1",
+        "design_create_web_template@1",
+        "design_delete_asset@1",
+        "design_delete_binding_set@1",
+        "design_delete_web_account@1",
+        "design_derive_instance@1",
+        "design_derive_web_document@1",
+        "design_finalize_document@1",
+        "design_ingest_assets@1",
+        "design_ingest_pdf@1",
+        "design_ingest_website@1",
+        "design_persist_preflight@1",
+        "design_publish_brand_kit_version@1",
+        "design_publish_web@1",
+        "design_record_diagnostics@1",
+        "design_redo_document@1",
+        "design_redo_web_document@1",
+        "design_register_asset_record@1",
+        "design_register_captured_assets@1",
+        "design_register_generated_asset@1",
+        "design_register_qr_asset@1",
+        "design_replace_scene@1",
+        "design_rollback_web_publish@1",
+        "design_set_agent_instructions@1",
+        "design_set_asset_description@1",
+        "design_set_asset_status@1",
+        "design_set_brand_kit_approval@1",
+        "design_set_layout_managed_editing@1",
+        "design_start_agent_turn@1",
+        "design_start_web_turn@1",
+        "design_undo_document@1",
+        "design_undo_web_document@1",
+        "design_unpublish_web@1",
+        "design_update_web_account@1",
+        "design_upsert_binding_set@1",
+        "design_write_component_source@1",
+    }
+    for address in design_addresses:
+        item = by_address[address]
+        assert item.status is AgentCapabilityStatus.ROLE_UNAVAILABLE
+        assert item.reason_code == "not_admitted_for_role"
     #
     # FI Lane D D0 added four more inventory-only entries — the REQ-21 thread tools. They are
     # disclosed and refused for exactly the reason every other ungranted tool is: the inventory is
@@ -142,8 +220,10 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     # (machine-invoked only), so it is disclosed as unavailable to every surface; E3's
     # `synthesize_value_narrative@1` is the same shape for the same reason. Merged count: the
     # The inventory retains both versions of readiness/synthesis and company reads, the separate
-    # product readers, both gate tools, and FI-2's selected-Account launch.
-    assert len(by_address) == 78
+    # product readers, both gate tools, and FI-2's selected-Account launch. The part-iii merge
+    # adds the 49 design_* write tools and the two design-leg tools to the disclosed inventory
+    # (78 + 51 = 129); all but `open_design_leg` are role-unavailable to the Head of ABM.
+    assert len(by_address) == 129
     for address in (
         "create_thread@1",
         "rename_thread@1",
@@ -174,6 +254,7 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
         "launch_account_research@1",
         "launch_selected_account_research@1",
         "launch_contact_research@1",
+        "open_design_leg@1",
         "open_directive_confirmation_gate@1",
         "open_icp_confirmation_gate@1",
         "open_product_selection_gate@1",
@@ -242,7 +323,7 @@ def test_s4e_production_project_surface_resolves_strict_client_kb_v2_and_hardeni
     )
 
     addresses = {pin.address for pin in production.profile.tools}
-    assert production.profile_ref.address == "profile:head-of-abm@v35"
+    assert production.profile_ref.address == "profile:head-of-abm@v36"
     assert [item.resource.address for item in production.skill_disclosures()][0] == (
         "skill:stage0-interview@v20"
     )
@@ -484,3 +565,34 @@ def test_changed_resource_or_tool_schema_fails_before_profile_use(tmp_path: Path
             engine_tool_ceiling=admitted,
             selected_profile_versions=C6_ACTIVE_PROFILE_VERSIONS,
         )
+
+
+def test_design_profile_resolves_with_the_full_granted_write_surface(
+    registry: AgentProfileRegistry,
+) -> None:
+    """P3.3 (PD-part3): the composite design deepagent's platform-facing profile.
+
+    One role, a doorway, not a container (ruling D2): design@v1 resolves with ALL 49
+    governed design tools pinned and AVAILABLE from its own view — exactly the
+    authority the C6 audit grants and nothing else — no delegation, and the
+    P3.2-gate-ratified model policy on its face. P3.5 adds the fiftieth pin:
+    `finish_design_leg@1`, the leg-level exit (§2.2) — the composite's one doorway
+    back to head-of-abm.
+    """
+    resolved = registry.resolve(AgentRole.DESIGN)
+    assert resolved.profile.version == "v1"
+    assert len(resolved.profile.tools) == 50
+    assert sum(1 for pin in resolved.profile.tools if pin.name.startswith("design_")) == 49
+    assert any(pin.address == "finish_design_leg@1" for pin in resolved.profile.tools)
+
+    by_address = {item.address: item for item in resolved.capabilities}
+    available = {
+        address
+        for address, item in by_address.items()
+        if item.status is AgentCapabilityStatus.AVAILABLE
+    }
+    assert available == {pin.address for pin in resolved.profile.tools}
+
+    assert resolved.profile.delegation_roles == ()
+    assert resolved.profile.model.model_id == "openai/gpt-5.6-terra"
+    assert resolved.profile.max_delegation_depth == 0

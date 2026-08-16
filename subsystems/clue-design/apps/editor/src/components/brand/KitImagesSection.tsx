@@ -1,19 +1,24 @@
 import React, { useState } from "react";
 
-import { assetBytesUrl } from "@/engine/brandHub";
+import { useAssetPreviewUrl } from "@/hooks/useAssetPreviewUrl";
 import { readImages } from "./kitJson";
 
 const VISIBLE_DEFAULT = 8;
+
+function KitImageThumb({ assetId, alt }: { assetId: string; alt: string }): React.ReactElement {
+  // Kit JSON carries only the asset id; the hook resolves it to a public
+  // /asset-store/{digest} URL — the only shape an <img> can fetch.
+  const url = useAssetPreviewUrl(assetId, "bytes");
+  return url ? <img src={url} alt={alt} /> : <span className="caption">no asset</span>;
+}
 
 /** Section 5 — image assets as thumbnails. Captions render only when the kit
  * carries a real title/description; a wall of cells each captioned "photo" is
  * noise. Long sets collapse behind "Show all". */
 export function KitImagesSection({
-  kitJson,
-  apiBaseUrl
+  kitJson
 }: {
   kitJson: any;
-  apiBaseUrl: string;
 }): React.ReactElement | null {
   const images = readImages(kitJson);
   const [expanded, setExpanded] = useState(false);
@@ -32,10 +37,7 @@ export function KitImagesSection({
           <div className="kit-image-cell" key={image.key} data-testid={`image-${image.key}`}>
             <div className="asset-thumb">
               {image.assetId ? (
-                <img
-                  src={assetBytesUrl(apiBaseUrl, image.assetId)}
-                  alt={image.title ?? image.role ?? image.key}
-                />
+                <KitImageThumb assetId={image.assetId} alt={image.title ?? image.role ?? image.key} />
               ) : (
                 <span className="caption">no asset</span>
               )}

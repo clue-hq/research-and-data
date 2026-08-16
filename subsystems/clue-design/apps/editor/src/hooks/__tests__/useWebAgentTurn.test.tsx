@@ -76,30 +76,35 @@ describe("useWebAgentTurn", () => {
     expect(source.closed).toBe(true);
   });
 
-  it("keeps streaming through a transient blip while the run is alive", async () => {
-    const { hook, source, fetchRunSnapshot } = setup(() =>
-      Promise.resolve({ status: "running", result: null })
-    );
-    await startTurn(hook);
+  // `queued` (D5) is a run no fleet worker has claimed yet — alive, not
+  // terminal, so it must behave exactly like `running` on the recovery probe.
+  it.each(["running", "queued"] as const)(
+    "keeps streaming through a transient blip while the run is %s",
+    async (aliveStatus) => {
+      const { hook, source, fetchRunSnapshot } = setup(() =>
+        Promise.resolve({ status: aliveStatus, result: null })
+      );
+      await startTurn(hook);
 
-    await act(async () => {
-      source.error();
-    });
+      await act(async () => {
+        source.error();
+      });
 
-    // Run is alive server-side: no settle, EventSource is left open to
-    // auto-reconnect and replay from Last-Event-ID.
-    expect(fetchRunSnapshot).toHaveBeenCalledWith(
-      { apiBaseUrl: "http://api.test" },
-      "run_1"
-    );
-    expect(hook.result.current.phase).toBe("running");
-    expect(source.closed).toBe(false);
+      // Run is alive server-side: no settle, EventSource is left open to
+      // auto-reconnect and replay from Last-Event-ID.
+      expect(fetchRunSnapshot).toHaveBeenCalledWith(
+        { apiBaseUrl: "http://api.test" },
+        "run_1"
+      );
+      expect(hook.result.current.phase).toBe("running");
+      expect(source.closed).toBe(false);
 
-    await act(async () => {
-      source.emit("done", { status: "applied", summary: "Recovered." });
-    });
-    expect(hook.result.current.phase).toBe("done");
-  });
+      await act(async () => {
+        source.emit("done", { status: "applied", summary: "Recovered." });
+      });
+      expect(hook.result.current.phase).toBe("done");
+    }
+  );
 
   it("settles from the durable row when a restart orphaned the run", async () => {
     // The API's startup sweep marks orphans failed; the stream died before a

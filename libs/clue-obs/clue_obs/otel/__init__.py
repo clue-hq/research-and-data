@@ -15,6 +15,7 @@ ENG-125 (docs/specs/M00-foundations-and-shared-contracts.md §M0.5).
 from __future__ import annotations
 
 from clue_obs.otel.attributes import (
+    ATTR_AGENT_ROLE,
     ATTR_CACHE_HIT,
     ATTR_COMPLETION_TOKENS,
     ATTR_COST_CENTS,
@@ -137,6 +138,7 @@ __all__ = [
     "ATTR_WORKSPACE_ID",
     "ATTR_ICP_ID",
     "ATTR_PROJECT_RUN_ID",
+    "ATTR_AGENT_ROLE",
     "ATTR_MODEL",
     "ATTR_PROMPT_TOKENS",
     "ATTR_COMPLETION_TOKENS",

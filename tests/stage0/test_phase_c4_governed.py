@@ -38,15 +38,17 @@ from clue_core import (
     ReadinessGate,
     ReadinessVerdict,
     ReuseScope,
+    RunEventTopic,
     TargetLock,
     new_entity_id,
     new_operation_id,
     new_project_run_id,
     new_run_id,
 )
+from clue_execution.run_events import list_run_events
 from clue_research.adapters import CallableClaimExtractor
 from clue_research.claimstore import WorkspaceScope, claims_by_ids, insert_claim
-from clue_research.durable import ProjectRunStatus, RunEventTopic, list_run_events
+from clue_research.durable import ProjectRunStatus
 from clue_research.durable.project_run import set_phase
 from clue_research.icp import create_icp_spec
 from clue_research.identity import insert_account_entity

@@ -330,11 +330,13 @@ def build_multi_work_worker(
     agent_turn_handler: WorkHandler | None = None,
     stage0_recon_handler: WorkHandler | None = None,
     official_site_crawl_handler: WorkHandler | None = None,
+    design_handler: WorkHandler | None = None,
     queue: WorkQueue | None = None,
     leases: WorkLeaseStore | None = None,
     worker_id: str | None = None,
 ) -> LeasedWorkWorker:
-    """One leased drain for project runs, recipe graphs, and optional governed work kinds.
+    """One leased drain for project runs, recipe graphs, design jobs, and optional governed
+    work kinds.
 
     R2 adds only the composition seam.  Production deliberately omits the optional handler until
     R3 supplies the governed ``create_agent()`` driver, preserving R1's fail-loud quarantine.
@@ -343,6 +345,12 @@ def build_multi_work_worker(
     disabled composes no conversation engine and nothing enqueues ``agent_turn`` tasks, so the
     worker simply never offers that kind. Each kind gets its own keyword and its own guard rather
     than a registry, so a handler wired to the wrong queue is a composition-time error.
+
+    ``design_handler`` (Part II D5 Round B) joins on exactly the same terms: optional, kind-checked
+    here so a wiring mistake fails at construction rather than at claim time, and off unless
+    ``design_runtime_enabled`` is set.  ONE fleet worker drains every kind — design work does not
+    get a private drain (the round-robin in :class:`~clue_fleet.LeasedWorkWorker` already keeps
+    one kind from starving another).
     """
     if (
         entity_research_handler is not None
@@ -361,6 +369,8 @@ def build_multi_work_worker(
         and official_site_crawl_handler.kind is not FleetTaskKind.OFFICIAL_SITE_CRAWL
     ):
         raise ValueError("official_site_crawl_handler must own official_site_crawl tasks")
+    if design_handler is not None and design_handler.kind is not FleetTaskKind.DESIGN_JOB:
+        raise ValueError("design_handler must own design_job tasks")
     handlers = [
         _OwnedRunGuardHandler(ProjectRunWorkHandler(driver)),
         graph_handler,
@@ -373,6 +383,8 @@ def build_multi_work_worker(
         handlers.append(stage0_recon_handler)
     if official_site_crawl_handler is not None:
         handlers.append(official_site_crawl_handler)
+    if design_handler is not None:
+        handlers.append(design_handler)
     return LeasedWorkWorker(
         handlers=tuple(handlers),
         queue=queue if queue is not None else DbWorkQueue(),

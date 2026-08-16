@@ -14,10 +14,10 @@ from uuid import UUID
 from pydantic import JsonValue
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_core import ProjectRunId
+from clue_core import RECON_FIELD_PROGRESS_KIND, ProjectRunId, RunEventTopic
 from clue_db import ConnFactory
+from clue_execution.run_events import emit_run_event
 from clue_obs import get_logger
-from clue_research.durable import RECON_FIELD_PROGRESS_KIND, RunEventTopic, emit_run_event
 from clue_research.stage0 import FieldProgressStatus
 
 log = get_logger("clue_api.stage0_field_events")

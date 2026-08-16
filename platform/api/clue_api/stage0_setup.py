@@ -69,19 +69,17 @@ from clue_api.stage0_setup_fleet import (
     website_digest,
 )
 from clue_core import (
+    RECON_FIELD_PROGRESS_KIND,
+    RECON_TRANSITION_KIND,
     OnboardingInputId,
     OnboardingInputKind,
     ProjectRunId,
     ReconRunId,
 )
 from clue_db import ConnFactory
+from clue_execution.run_events import list_run_events
 from clue_obs import get_logger
 from clue_projections import PROJECTIONS_SCHEMA_VERSION, recon_brief, stage0_progress
-from clue_research.durable import (
-    RECON_FIELD_PROGRESS_KIND,
-    RECON_TRANSITION_KIND,
-    list_run_events,
-)
 from clue_research.official_site import (
     OfficialSiteProgressView,
     PostgresOfficialSiteOperations,

@@ -51,6 +51,7 @@ from clue_api.agent_platform_wiring import (
 from clue_api.agent_runtime_wiring import CompletionGuard
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
 from clue_api.chat.turn_stream import TurnStreamEmitter
+from clue_api.design_leg_wiring import load_head_of_abm_history
 from clue_api.head_of_abm_wiring import (
     HeadOfAbmStage0Runtime,
     build_head_of_abm_stage0_execution,
@@ -83,11 +84,17 @@ __all__ = [
 #: second, independent ceiling, and until this revision the widened conversation surface would have
 #: shown the model three tools that plan validation then refused. The trial surface still withholds
 #: all three, so raising the shared ceiling grants the trial nothing.
+#:
+#: **v7** (PD-part3 P3.4) adds ``open_design_leg@1`` — the design delegation entry — under the
+#: same rule. The trial surface withholds it too, so the shared ceiling again grants the trial
+#: nothing.
 CONVERSATION_RECIPE_KEY = "recipe0-stage0"
+# Revision 16 (part-iii merge) is revision 15 plus the ``open_design_leg@1`` delegation entry
+# (PD-part3 P3.4's colliding v7, re-versioned onto the v15 lineage at the integration merge).
 # Revision 14 keeps the current-message Account launch path usable after discovery by admitting
 # the two read-only account-research tools already exposed by the promoted profile/skill. Revision
 # 13 remains the exact replay input for turns that were already pinned to it.
-CONVERSATION_RECIPE_VERSION = 15
+CONVERSATION_RECIPE_VERSION = 16
 
 #: Finalization ``domain_refs`` object types that render as a §3.4 ``plan`` part. Deliberately a
 #: closed set: an unknown object type is *not* projected, because a card whose contents the surface
@@ -261,7 +268,12 @@ class ConversationTurnEngine:
 
         constitution = request.constitution
         workspace_id = constitution.workspace_id
-        prior_history = await self.components.history.load(
+        # P3.4 (PD-part3 §2.4): the conversation surface's history is role-scoped — head-of-abm
+        # assembles its own turns and never ingests a design leg's transcript. While a leg is
+        # open this engine does not run at all (the routing rule sends the message to Design);
+        # this load is what keeps the exclusion true after the leg closes.
+        prior_history = await load_head_of_abm_history(
+            self._conn_factory,
             workspace_id=workspace_id,
             thread_id=request.thread_id,
         )

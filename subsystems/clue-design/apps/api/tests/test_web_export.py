@@ -16,9 +16,13 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+
+from clue_design.storage import SOURCE_KEY_ASSET
+
+from conftest import make_blob_store, make_client
 from PIL import Image
 
-from lumen_api.database import Repository, connect
+from lumen_api.design_store import HybridRepository
 from lumen_api.main import create_app
 
 
@@ -50,9 +54,9 @@ SAMPLE_HTML = """
 
 
 @pytest.fixture()
-def client(tmp_path: Path) -> TestClient:
-    app = create_app(tmp_path / "api.sqlite3")
-    return TestClient(app)
+def client(tmp_path: Path, design_storage) -> TestClient:
+    app = create_app(tmp_path / "engine-cache", storage=design_storage)
+    return make_client(app)
 
 
 def create_web_document(client: TestClient, **extra) -> dict:
@@ -83,19 +87,16 @@ def ingest_content(client: TestClient, document_id: str) -> dict:
 
 
 def seed_content(client: TestClient, document_id: str, web_doc: dict) -> None:
-    store = Repository(connect(client.app.state.database_path))
-    try:
-        store.update_web_document(
-            document_id,
-            web_doc,
-            intent="seed",
-            checkpoint_label="seed",
-            operations=[{"kind": "replace_web_doc"}],
-            inverse_operations=None,
-            push_undo=False,
-        )
-    finally:
-        store.connection.close()
+    store = HybridRepository()
+    store.update_web_document(
+        document_id,
+        web_doc,
+        intent="seed",
+        checkpoint_label="seed",
+        operations=[{"kind": "replace_web_doc"}],
+        inverse_operations=None,
+        push_undo=False,
+    )
 
 
 def get_document(client: TestClient, document_id: str) -> dict:
@@ -250,11 +251,10 @@ def test_export_copies_and_rewrites_image_assets(client: TestClient) -> None:
 
 
 def seed_font_asset(client: TestClient, asset_id: str, data: bytes) -> str:
-    digest = hashlib.sha256(data).hexdigest()
-    root = Path(client.app.state.asset_store_root)
-    blob = root / "sha256" / digest[:2] / digest
-    blob.parent.mkdir(parents=True, exist_ok=True)
-    blob.write_bytes(data)
+    # D4: the export reads face bytes from DURABLE storage, so seed them through the seam.
+    digest = make_blob_store(client.app).register(
+        data, media_type="font/woff2", source_key=SOURCE_KEY_ASSET
+    ) and hashlib.sha256(data).hexdigest()
     record = {
         "id": asset_id,
         "label": asset_id,
@@ -269,11 +269,8 @@ def seed_font_asset(client: TestClient, asset_id: str, data: bytes) -> str:
             "location": None,
         },
     }
-    store = Repository(connect(client.app.state.database_path))
-    try:
-        store.create_asset_record(record)
-    finally:
-        store.connection.close()
+    store = HybridRepository()
+    store.create_asset_record(record)
     return digest
 
 
@@ -308,11 +305,8 @@ def create_font_kit(client: TestClient, ofl_asset: str, locked_asset: str) -> No
         {"weight": 400, "style": "normal", "asset_id": locked_asset, "source_url": None}
     ]
     kit["assets"]["fonts"] = {"brand": included, "locked": excluded}
-    store = Repository(connect(client.app.state.database_path))
-    try:
-        store.create_brand_kit(kit, {}, [], "manual")
-    finally:
-        store.connection.close()
+    store = HybridRepository()
+    store.create_brand_kit(kit, {}, [], "manual")
 
 
 def test_export_font_license_gate(client: TestClient) -> None:
@@ -371,19 +365,19 @@ def test_export_node_failure_is_502(client: TestClient) -> None:
 # --- (f) publish / serve / rollback -----------------------------------------
 
 
-def test_publish_serve_republish_rollback(client: TestClient) -> None:
+def test_publish_serve_republish_rollback(client: TestClient, workspace_id: str) -> None:
     document = seed_document(client)
 
     published = client.post(f"/documents/{document['id']}/web/publish", json={})
     assert published.status_code == 200, published.text
     body = published.json()
     slug = body["slug"]
-    assert body["url"] == f"/p/{slug}"
+    assert body["url"] == f"/w/{workspace_id}/p/{slug}"
     assert body["doc_version"] == 1
     assert body["previous_available"] is False
 
     # Served page: inlined style + canonical, no external stylesheet link.
-    served = client.get(f"/p/{slug}")
+    served = client.get(f"/w/{workspace_id}/p/{slug}")
     assert served.status_code == 200, served.text
     assert 'id="lumen-static-css"' in served.text
     assert '<link rel="canonical"' in served.text
@@ -411,14 +405,14 @@ def test_publish_serve_republish_rollback(client: TestClient) -> None:
     assert republished.status_code == 200, republished.text
     assert republished.json()["doc_version"] == 2
     assert republished.json()["previous_available"] is True
-    assert "MARKER_TWO" in client.get(f"/p/{slug}").text
+    assert "MARKER_TWO" in client.get(f"/w/{workspace_id}/p/{slug}").text
 
     # Rollback → serves the previous publish, doc_version back to 1.
     rolled = client.post(f"/web/publishes/{slug}/rollback")
     assert rolled.status_code == 200, rolled.text
     assert rolled.json()["doc_version"] == 1
     assert rolled.json()["status"] == "active"
-    assert "MARKER_TWO" not in client.get(f"/p/{slug}").text
+    assert "MARKER_TWO" not in client.get(f"/w/{workspace_id}/p/{slug}").text
 
     # GET publish state reflects the document.
     state = client.get(f"/documents/{document['id']}/web/publish").json()
@@ -429,7 +423,7 @@ def test_publish_serve_republish_rollback(client: TestClient) -> None:
     unpub = client.delete(f"/web/publishes/{slug}")
     assert unpub.status_code == 200, unpub.text
     assert unpub.json()["status"] == "unpublished"
-    assert client.get(f"/p/{slug}").status_code == 404
+    assert client.get(f"/w/{workspace_id}/p/{slug}").status_code == 404
 
 
 def test_publish_slug_validation(client: TestClient) -> None:

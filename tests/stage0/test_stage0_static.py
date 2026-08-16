@@ -221,7 +221,7 @@ def test_tier4_promotion_predicate() -> None:
 
 
 def test_recon_event_kinds_are_named_constants() -> None:
-    from clue_research.durable.run_events import RECON_FIELD_PROGRESS_KIND, RECON_TRANSITION_KIND
+    from clue_core import RECON_FIELD_PROGRESS_KIND, RECON_TRANSITION_KIND
     from clue_research.stage0.types import FieldProgressStatus
 
     assert RECON_TRANSITION_KIND == "stage0.recon.transition"

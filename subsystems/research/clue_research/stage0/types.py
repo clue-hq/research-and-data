@@ -124,7 +124,7 @@ class FieldProgressStatus(StrEnum):
     """The closed status vocabulary of a per-field recon progress event.
 
     Carried as ``payload.status`` on a ``run.step.progress`` event whose ``payload.kind`` is
-    :data:`~clue_research.durable.run_events.RECON_FIELD_PROGRESS_KIND` — one event per baseline
+    :data:`~clue_core.run_event.RECON_FIELD_PROGRESS_KIND` — one event per baseline
     field the reverse-profiling loop touches, so a client sees work *while it happens* rather than
     only at the lane's terminal transition.
 

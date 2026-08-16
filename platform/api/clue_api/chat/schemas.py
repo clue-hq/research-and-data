@@ -149,9 +149,14 @@ class GateResponseRequest(_Request):
 
 
 class ContextRefRequest(_Request):
-    """An ordered, workspace-scoped account/contact reference."""
+    """An ordered, workspace-scoped domain-object reference.
 
-    object_type: Literal["account", "contact"]
+    ``design_document`` (P3.1) is how canvas context rides the platform turn API
+    (master plan §2.4): the target document ref arrives as a focus ref, so the design
+    leg's turns know what the user is pointing at with no extra round trip.
+    """
+
+    object_type: Literal["account", "contact", "design_document"]
     object_id: str = Field(min_length=1, max_length=200)
     version: int | None = Field(default=None, gt=0)
 
@@ -204,6 +209,12 @@ class SubmitTurnRequest(_Request):
     )
     attachment_refs: tuple[AttachmentRefRequest, ...] = ()
     agent_profile_id: str | None = Field(default=None, min_length=1, max_length=200)
+    # P3.1 (PD-part3 delta 5): the design turn contract's one-clarification-round echo —
+    # the PREVIOUS design turn's outcome on this thread's open leg, echoed back by the
+    # client. 'clarification_requested' is the only value with routing meaning (the
+    # design runtime withholds request_clarification for that turn). Ignored on
+    # non-design turns; senders arrive with Part IV's surface.
+    previous_turn_outcome: Literal["clarification_requested"] | None = None
 
     @model_validator(mode="after")
     def exactly_one_body(self) -> SubmitTurnRequest:
@@ -336,6 +347,19 @@ def thread_status(
     return "idle"
 
 
+class ThreadSpeakerWire(_Wire):
+    """Who owns the thread right now (P3.4's speaker-state projection, PD-part3 §1-D1).
+
+    ``design`` while the thread holds an open design leg — every message goes straight to the
+    design deepagent until the leg closes; ``head_of_abm`` otherwise. Part IV renders the chip;
+    this is the data it reads.
+    """
+
+    role: Literal["head_of_abm", "design"]
+    design_leg_id: str | None = None
+    design_leg_state: Literal["open_awaiting_user", "running"] | None = None
+
+
 class ThreadWire(_Wire):
     """One thread, in the sidebar conversation shape plus the fields the shell genuinely owns."""
 
@@ -347,6 +371,9 @@ class ThreadWire(_Wire):
     project_id: str
     created_at: str
     updated_at: str
+    #: ``None`` on reads that did not derive it (the tool-reference projections after a
+    #: create/rename); the listing always derives it. Absent knowledge is never a guess.
+    speaker: ThreadSpeakerWire | None = None
 
 
 class ThreadMessageWire(_Wire):
@@ -406,6 +433,10 @@ class TurnAcceptedWire(_Wire):
     thread_id: str
     requested_at: str
     replayed: bool
+    #: Accept-time visibility (P3.4): which agent this message will reach — ``design`` when the
+    #: thread holds an open design leg, else ``head_of_abm``. Derived in the accept transaction,
+    #: so the composer can label the pending turn without a second read.
+    routed_to: Literal["head_of_abm", "design"] = "head_of_abm"
 
 
 class TurnAcceptedResponse(_Wire):
@@ -671,18 +702,36 @@ def gate_wire(view: GateView, *, budget_controls_enabled: bool = True) -> GateWi
     )
 
 
+def thread_speaker_wire(design_leg: dict[str, Any] | None) -> ThreadSpeakerWire:
+    """The speaker from one thread's open-leg row (or its absence)."""
+
+    if design_leg is None:
+        return ThreadSpeakerWire(role="head_of_abm")
+    state = str(design_leg["state"])
+    if state not in ("open_awaiting_user", "running"):  # pragma: no cover - closed is filtered
+        return ThreadSpeakerWire(role="head_of_abm")
+    return ThreadSpeakerWire(
+        role="design",
+        design_leg_id=str(design_leg["id"]),
+        design_leg_state=state,  # type: ignore[arg-type]
+    )
+
+
 def thread_wire(
     view: ThreadView,
     *,
     open_gate_kinds: tuple[str, ...] = (),
     running: bool = False,
+    speaker: ThreadSpeakerWire | None = None,
 ) -> ThreadWire:
     """One thread on the wire.
 
-    Both derivation inputs default to "nothing known" so a caller that has read neither the gates
+    The derivation inputs default to "nothing known" so a caller that has read neither the gates
     nor the submissions-union gets the honest ``idle``/``archived`` answer rather than a guess:
-    ``open_gate_kinds`` from :func:`~clue_projections.open_gate_kinds_for_threads` (D4) and
-    ``running`` from :func:`~clue_projections.threads_running` (D3).
+    ``open_gate_kinds`` from :func:`~clue_projections.open_gate_kinds_for_threads` (D4),
+    ``running`` from :func:`~clue_projections.threads_running` (D3), and ``speaker`` (P3.4) from
+    :func:`~clue_api.design_leg_wiring.design_legs_for_threads` through
+    :func:`thread_speaker_wire` — ``None`` means "not derived", never "head-of-abm".
     """
 
     return ThreadWire(
@@ -698,6 +747,7 @@ def thread_wire(
         project_id=view.project_id,
         created_at=view.created_at.isoformat(),
         updated_at=view.updated_at.isoformat(),
+        speaker=speaker,
     )
 
 

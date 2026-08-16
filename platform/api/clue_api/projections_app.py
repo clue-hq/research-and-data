@@ -78,7 +78,8 @@ from clue_core import (
 from clue_core.ingestion import IngestionJobId
 from clue_core.proposals import ProposalStatus
 from clue_db import ConnFactory, db_lifespan, transaction
-from clue_execution import OperationConflict, ToolAuthorityStateChanged
+from clue_execution import DbRunEventReader, OperationConflict, ToolAuthorityStateChanged
+from clue_execution.run_events import list_run_events
 from clue_projections import (
     DEFAULT_TURN_PAGE_SIZE,
     MANIFEST_OP_TOOLS,
@@ -105,7 +106,6 @@ from clue_projections import (
     stage0_readiness,
     validate_manifest_op,
 )
-from clue_research.durable import list_run_events
 from clue_research.durable.project_run import get_project_run
 from clue_research.narrative import ResearchViewSnapshotService
 from clue_research.review import ObservabilitySurface
@@ -708,9 +708,9 @@ def create_projections_router(
             yield _sse_frame(event="stream.hello", data={"run_id": str(run_id)})
             async with conn_factory() as conn:
                 plan = await plan_replay(
-                    conn,
-                    workspace_id=workspace_id,
-                    run_id=run_id,
+                    # The concrete reader is built HERE and injected (D8): the planner lives in
+                    # clue_core and clue_projections may not import the clue_execution DAL.
+                    DbRunEventReader(conn, workspace_id=workspace_id, run_id=run_id),
                     last_event_id=cursor,
                     horizon_s=settings.sse_replay_horizon_s,
                     limit=settings.sse_replay_page_limit,

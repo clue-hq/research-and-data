@@ -55,6 +55,10 @@ RECIPE_0_TOOL_ADDRESSES: tuple[str, ...] = (
     # FI-2 exact current-message Account launch, retained in integration recipe0-stage0@11.
     "launch_selected_account_research@1",
     "read_account_research_run@1",
+    # PD-part3 P3.4 (added in recipe0-stage0@16 on this lineage): the design delegation entry.
+    # Opening a leg is a durable write with no spend and no dispatch; it is certified here because
+    # it runs in the Stage-0 interaction slot, which admits nothing uncertified.
+    "open_design_leg@1",
 )
 
 RECIPE_1_TOOL_ADDRESSES: tuple[str, ...] = (

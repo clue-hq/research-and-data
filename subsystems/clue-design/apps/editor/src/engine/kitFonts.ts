@@ -2,6 +2,7 @@ import type { BrandKitDetailPayload } from "./tokenColors";
 import type { Diagnostic } from "./contracts";
 import { fontFaceDescriptors, registerKitFontFaces } from "./canvaskit/loadCanvasKit";
 import { effectiveFaceMeta } from "./canvaskit/fontFaces";
+import { lumenFetch } from "./editorConfig";
 
 /**
  * K3 (canvas leg): fetch the attached kit's font-face bytes from the asset
@@ -100,7 +101,7 @@ export async function loadKitFontFaces(
     return false;
   }
   const doFetch: typeof fetch | undefined =
-    fetchImpl ?? (typeof fetch !== "undefined" ? (input, init) => fetch(input, init) : undefined);
+    fetchImpl ?? (typeof fetch !== "undefined" ? lumenFetch : undefined);
   if (!doFetch) {
     return false;
   }

@@ -39,12 +39,41 @@ def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
     # Every addition must have a reviewed role decision here. O2 added the account-deep launch
     # boundary; M8D R10 retires it from every active role (exact historical replay only) and
     # promotes the separately confirmed account/contact entity-research launch and read tools.
+    # Part II D6 Round A: the design subsystem's eight governed write tools join the audit with
+    # NO role — registered so the platform's write-authority surface is complete, granted to
+    # nobody until Part III wires the design deepagent (48 -> 56). Round B adds the documents /
+    # history / diagnostics plane, the website-mode documents and the two turn enqueues on the
+    # same terms (56 -> 76). Round C adds the last twenty-one — brand kits x4, ingestion
+    # enqueues x3, the asset registry x7 and personalization + both batch families x7
+    # (76 -> 97), which empties UNCONVERTED_MUTATIONS on the design side.
     # FI Lane D D0 added the four REQ-21 thread tools, all ungranted: they are invocable by the
     # authenticated chat surface but sit on no model surface, and they are not human-only either.
     # FI Lane D D4 added `open_directive_confirmation_gate`, and Stage-0 hardening added the exact-
     # subject ICP confirmation counterpart. Both are granted to the Head of ABM: asking the human
     # for authority is that role's own act, and neither tool can address a gate to anybody but the
     # human whose turn it is answering.
+    # P3.3 (PD-part3, 2026-08-14): the moment Part II staged — all 49 design tools flip from
+    # `()` to `(AgentRole.DESIGN,)`. One role, the composite design deepagent (ruling D2),
+    # gains the design write surface it always described; every other role still sees the
+    # design plane as role-unavailable. The count is unchanged: this is a grant, not a tool.
+    # P3.4 (PD-part3 §1-D1/§2.3): `open_design_leg` joins, granted to the Head of ABM — the
+    # delegation entry that validates the D5 pins, freezes the §2.3 bundle, and opens the
+    # durable design leg whose existence IS the routing rule. It spends nothing and dispatches
+    # nothing; the trial surface withholds it.
+    # P3.5 (PD-part3 §2.2): `finish_design_leg` joins, granted to the DESIGN role — the
+    # engine-validated leg-level exit and the only path to a closed leg. Turn-level
+    # finalization (the design harness's final.json) is a different authority and remains
+    # design-runtime-internal.
+    # The part-iii integration merge unions that design lineage (49 design grants + the two leg
+    # tools) with this branch's own additions since the common base: 63 + 49 + 2 = 114.
+    assert len(C6_AGENT_TOOL_AUTHORITY) == 114
+    assert C6_AGENT_TOOL_AUTHORITY["open_design_leg"] == (AgentRole.HEAD_OF_ABM,)
+    assert C6_AGENT_TOOL_AUTHORITY["finish_design_leg"] == (AgentRole.DESIGN,)
+    design_grants = {
+        name: roles for name, roles in C6_AGENT_TOOL_AUTHORITY.items() if name.startswith("design_")
+    }
+    assert len(design_grants) == 49
+    assert all(roles == (AgentRole.DESIGN,) for roles in design_grants.values())
     assert C6_AGENT_TOOL_AUTHORITY["create_thread"] == ()
     assert C6_AGENT_TOOL_AUTHORITY["rename_thread"] == ()
     assert C6_AGENT_TOOL_AUTHORITY["set_thread_pinned"] == ()
@@ -57,7 +86,7 @@ def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
     assert C6_AGENT_TOOL_AUTHORITY["synthesize_value_narrative"] == ()
     # The combined inventory retains both exact-subject human gates, FI-2's selected-Account
     # launch, and S4/S5's company/product readers. Machine-only confirmation remains withheld.
-    assert len(C6_AGENT_TOOL_AUTHORITY) == 63
+    # (The total is asserted once above — 114 after the part-iii merge.)
     assert C6_AGENT_TOOL_AUTHORITY["open_icp_confirmation_gate"] == (AgentRole.HEAD_OF_ABM,)
     assert C6_AGENT_TOOL_AUTHORITY["list_client_knowledge"] == (AgentRole.HEAD_OF_ABM,)
     assert C6_AGENT_TOOL_AUTHORITY["inspect_client_claim"] == (AgentRole.HEAD_OF_ABM,)

@@ -66,7 +66,7 @@ import {
   type RevertOutcome
 } from "@/engine/documentStore";
 import { editorApiBaseUrl } from "@/engine/editorConfig";
-import { assetThumbnailUrl, uploadAsset } from "@/engine/assetLibrary";
+import { publicAssetThumbnailUrl, uploadAsset } from "@/engine/assetLibrary";
 import {
   buildKitTokenMaps,
   PLATFORM_DEFAULT_BRAND_KIT_ID,
@@ -249,7 +249,7 @@ const defaultReferenceUploader = async (file: File) => {
   return {
     assetId: result.asset.id,
     label: result.asset.label || file.name,
-    thumbnailUrl: assetThumbnailUrl(editorApiBaseUrl(), result.asset.id)
+    thumbnailUrl: publicAssetThumbnailUrl(editorApiBaseUrl(), result.asset)
   };
 };
 

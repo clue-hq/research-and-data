@@ -6,10 +6,10 @@ from typing import cast
 
 from pydantic import JsonValue
 
-from clue_core import ProjectRunId, ReconRunId
+from clue_core import ProjectRunId, ReconRunId, RunEventTopic
 from clue_db import ConnFactory, transaction
+from clue_execution.run_events import emit_run_event
 from clue_obs import get_logger
-from clue_research.durable import RunEventTopic, emit_run_event
 from clue_research.official_site import (
     CrawlProgressEvent,
     CrawlProgressEventKind,

@@ -32,7 +32,7 @@ export interface CanvasKitStageProps {
    * same source of truth server exports resolve from. Required: resolution
    * policy (including its registry fallback) lives in ONE place,
    * `sceneAssetBytesUrl`, not split across layers. */
-  resolveAssetUrl: (assetId: string) => string;
+  resolveAssetUrl: (assetId: string) => string | null;
 }
 
 export interface CanvasKitArtboard {

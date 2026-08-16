@@ -38,6 +38,9 @@ ATTR_PROJECT_RUN_ID = "project_run_id"
 # LLM gateway (M0.4) — the llm.gateway_call span tags these. `model` is the id that answered;
 # token counts feed the cost surface (Doc C §6). None are secrets (a model id is public).
 ATTR_MODEL = "model"
+# P3.2 (PD-part3 delta 6): the agent-role attribution dimension on llm.gateway_call spans
+# — the ONE per-role usage authority once the design trio runs on the governed gateway.
+ATTR_AGENT_ROLE = "agent_role"
 ATTR_PROMPT_TOKENS = "prompt_tokens"
 ATTR_COMPLETION_TOKENS = "completion_tokens"
 ATTR_TOTAL_TOKENS = "total_tokens"
@@ -69,6 +72,7 @@ STANDARD_ATTRIBUTES: frozenset[str] = frozenset(
         ATTR_ICP_ID,
         ATTR_PROJECT_RUN_ID,
         ATTR_MODEL,
+        ATTR_AGENT_ROLE,
         ATTR_PROMPT_TOKENS,
         ATTR_COMPLETION_TOKENS,
         ATTR_TOTAL_TOKENS,

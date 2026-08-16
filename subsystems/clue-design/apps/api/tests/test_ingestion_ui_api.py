@@ -12,7 +12,7 @@ consume:
   literal ``descriptions`` segment must not resolve as an unknown asset id),
 * ``GET /brand-kits/ingest`` most-recent-50 job list.
 
-Kits are seeded directly through ``Repository`` against the app's own sqlite DB
+Kits are seeded directly through ``HybridRepository`` against the shared Postgres store
 (the ingestion pipeline is exercised elsewhere); assets are uploaded through the
 real ``POST /assets`` route so a genuine record exists for the description path.
 """
@@ -24,7 +24,9 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from lumen_api.database import Repository, connect
+from conftest import make_client, wait_for_ingestion_job
+
+from lumen_api.design_store import HybridRepository
 from lumen_api.main import create_app
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -33,8 +35,8 @@ LOGO_PNG_PATH = REPO_ROOT / "crates/lumen-export/fixtures/assets/acme-logo-8x8-r
 
 @pytest.fixture()
 def client(tmp_path: Path) -> TestClient:
-    app = create_app(tmp_path / "api.sqlite3")
-    return TestClient(app)
+    app = create_app(tmp_path / "engine-cache")
+    return make_client(app)
 
 
 def _seed_kit(
@@ -55,21 +57,13 @@ def _seed_kit(
         "description": "Calm, clinical, trustworthy.",
     }
     summary = brand_summary if brand_summary is not None else {"product_ready": False}
-    connection = connect(client.app.state.database_path)
-    try:
-        return Repository(connection).create_brand_kit(
-            brand_kit, summary, [], source
-        )
-    finally:
-        connection.close()
+    return HybridRepository().create_brand_kit(
+        brand_kit, summary, [], source
+    )
 
 
 def _read_kit_row(client: TestClient, brand_kit_id: str, version: int | None = None) -> dict:
-    connection = connect(client.app.state.database_path)
-    try:
-        return Repository(connection).require_brand_kit(brand_kit_id, version)
-    finally:
-        connection.close()
+    return HybridRepository().require_brand_kit(brand_kit_id, version)
 
 
 def _upload_logo(client: TestClient) -> str:
@@ -272,11 +266,7 @@ def test_description_put_unknown_asset_is_404(client: TestClient) -> None:
 def _seed_job(client: TestClient, kind: str) -> dict:
     from lumen_ingestion.jobs import IngestionJobStore
 
-    connection = connect(client.app.state.database_path)
-    try:
-        return IngestionJobStore(connection).create(kind, {"url": "https://x.example"})
-    finally:
-        connection.close()
+    return IngestionJobStore().create(kind, {"url": "https://x.example"})
 
 
 def test_job_list_shape_and_recency_ordering(client: TestClient) -> None:
@@ -360,8 +350,16 @@ def test_pipeline_ingested_assets_get_db_records(
     monkeypatch.setattr(
         main_module,
         "run_website_ingestion",
-        lambda db, store, job_id: run_website_ingestion(
-            db, store, job_id, capture=fake_capture, build_evidence=fake_build_evidence
+        lambda cache_dir, job_id, *, workspace_id, storage=None, expected_generation=None: (
+            run_website_ingestion(
+                cache_dir,
+                job_id,
+                capture=fake_capture,
+                build_evidence=fake_build_evidence,
+                workspace_id=workspace_id,
+                storage=storage,
+                expected_generation=expected_generation,
+            )
         ),
     )
 
@@ -370,6 +368,7 @@ def test_pipeline_ingested_assets_get_db_records(
     )
     assert post.status_code == 200, post.text
     job_id = post.json()["job"]["job_id"]
+    wait_for_ingestion_job(client, job_id)
     job = client.get(f"/brand-kits/ingest/{job_id}").json()["job"]
     assert job["status"] == "succeeded", job
 

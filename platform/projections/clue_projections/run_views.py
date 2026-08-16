@@ -21,7 +21,7 @@ slice-3 amendment / slice-1 review #10.
 
 from __future__ import annotations
 
-from clue_core import EntityId, ProjectPhase, ProjectRunId
+from clue_core import NARRATIVE_EMIT_SKIPPED_KEY, EntityId, ProjectPhase, ProjectRunId
 from clue_db import ConnFactory
 from clue_projections.dtos import (
     AccountProgress,
@@ -30,7 +30,6 @@ from clue_projections.dtos import (
     RunOverview,
 )
 from clue_research.durable import (
-    NARRATIVE_EMIT_SKIPPED_KEY,
     AccountRunRow,
     get_checkpoint,
     get_project_run,

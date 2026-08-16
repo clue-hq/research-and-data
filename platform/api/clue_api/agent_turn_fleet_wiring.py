@@ -34,7 +34,9 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
+from typing import TypeVar
 from uuid import UUID
 
 from pydantic import JsonValue
@@ -44,6 +46,8 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from clue_agents import (
     AgentConstitution,
     AgentExecutionStatus,
+    AgentModelProvider,
+    AgentProfileRegistry,
     AgentRole,
     AgentTurnRequest,
     ArtifactRef,
@@ -55,6 +59,7 @@ from clue_agents import (
 )
 from clue_api.account_deep_steering_context import prepare_account_deep_steering_context
 from clue_api.agent_execution_wiring import FreshWakeChildRunner
+from clue_api.agent_gate import gate_answer_for_turn
 from clue_api.agent_platform_wiring import AgentPlatformComponents
 from clue_api.agent_registry_wiring import PROJECT_CONVERSATION_SURFACE
 from clue_api.agent_turn_scope_pin import (
@@ -86,6 +91,12 @@ from clue_api.conversation_turns import (
     ConversationTurnResult,
     build_conversation_turn_engine,
 )
+from clue_api.design_leg_wiring import (
+    DesignLegExitJudge,
+    DesignLegFinisher,
+    DesignLegLaneDriver,
+    DesignLegTurnRunner,
+)
 from clue_api.frontend_read import latest_project_run_context
 from clue_api.product_context_compiler import (
     compile_client_knowledge_card_v2,
@@ -97,6 +108,12 @@ from clue_api.stage0_card_dsar import stage0_card_subject_bindings
 from clue_api.statement_evidence import ArtifactStatementEvidenceReader
 from clue_core import ContextAssembly, EntityId, ExecutionId, MemoryType, operation_id_from_key
 from clue_db import ConnFactory, transaction
+from clue_design import legs as design_leg_dal
+from clue_design.exit_judgment import (
+    ExitJudgment,
+    parse_exit_judgment,
+    render_exit_judgment_prompt,
+)
 from clue_execution import (
     CompatibilityLoader,
     DbExecutionStarter,
@@ -158,6 +175,10 @@ PROJECT_CONVERSATION_BUDGET_LIMIT_MILLICENTS = 1_000_000
 _EXECUTION_NAMESPACE_KEY = "project-conversation@1"
 _DRIVER_WORKER_ID = "agent-turn-recipe-driver"
 REQUIRED_CONTEXT_ARTIFACT_MISSING = "required_context_artifact_missing"
+
+#: What one watched turn body returns — ``ConversationTurnResult`` on the head-of-abm path,
+#: ``DesignLegTurnResult`` on the design path (P3.4's routing rule selects the body).
+_ResultT = TypeVar("_ResultT")
 
 
 class UnknownTurnSubmission(LookupError):
@@ -320,6 +341,7 @@ class ProjectConversationTurnRunner:
         recipes: DbRecipeReader,
         starter: DbExecutionStarter,
         parameters: ExecutionParameterStore,
+        design_legs: DesignLegTurnRunner | None = None,
         conn_factory: ConnFactory = transaction,
         streaming: bool = True,
         stream_policy: TurnStreamPolicy | None = None,
@@ -330,6 +352,7 @@ class ProjectConversationTurnRunner:
         self._recipes = recipes
         self._starter = starter
         self._parameters = parameters
+        self._design_legs = design_legs
         self._conn_factory = conn_factory
         # D3 streaming is on for the production conversation and switchable off in one place, so a
         # deployment that must fall back to non-streaming turns changes a flag, not a code path.
@@ -359,6 +382,34 @@ class ProjectConversationTurnRunner:
                 workspace_id=workspace_id,
                 turn_id=turn_id,
             )
+            # P3.4 (PD-part3 §1-D1) — THE routing rule, one indexed read: an open design leg on
+            # the thread receives this message; otherwise head-of-abm does. No other routing
+            # input exists, and no LLM is in the loop.
+            open_leg = await design_leg_dal.get_open_leg_for_thread(
+                conn,
+                workspace_id=workspace_id,
+                thread_id=submission.thread_id,
+            )
+            # The finding-C amendment's worker half (PD-part3 §1-D1 amendment): a gate answer
+            # belongs to head-of-abm regardless of leg state. The route already refuses a fresh
+            # answer while a leg is open, but it cannot see the future — an answer accepted
+            # first and QUEUED BEHIND a turn that then opened a leg would otherwise reach the
+            # design agent as canonical gate-answer JSON. The answer row is the durable proof.
+            if open_leg is not None and (
+                await gate_answer_for_turn(conn, workspace_id=workspace_id, turn_id=turn_id)
+                is not None
+            ):
+                open_leg = None
+            elif open_leg is None:
+                # P3.7 crash-window re-entry: a design turn that CLOSED its leg via the §2.2
+                # exit bridge and died before finalizing finds no open leg on retry — but it
+                # is still a design turn, and re-running it as head-of-abm would collide with
+                # its own durable rows. The exit journal names its closer; deliver it back.
+                open_leg = await design_leg_dal.get_leg_closed_by_turn(
+                    conn,
+                    workspace_id=workspace_id,
+                    turn_id=turn_id,
+                )
         # FI Lane D D3: open this attempt's stream *before* anything runs. The outbox itself decides
         # the attempt ordinal, so a re-claimed task after a crash opens a distinct attempt and
         # resets whatever the dead one left open — never splicing two generations (§3.3(6)).
@@ -374,6 +425,52 @@ class ProjectConversationTurnRunner:
                 policy=self._stream_policy,
             )
         )
+        if open_leg is not None:
+            # The design deepagent owns the thread while its leg is open. None of the
+            # head-of-abm machinery below — profile resolution, the C5 recipe, the
+            # conversation engine — runs for this turn.
+            if self._design_legs is None:
+                raise RuntimeError(
+                    "this thread has an open design leg but the worker composed no design "
+                    "leg runner; set CLUE_DESIGN_RUNTIME_ENABLED on the fleet deployment"
+                )
+            # A design turn is still a production turn: it pins (or replays) the same immutable
+            # S3.1 scope receipt as the head-of-abm path, so its card describes the scope the
+            # turn actually ran under — replay-stable across retries.
+            if scope_pin is None:
+                async with self._conn_factory() as conn:
+                    scope_pin, _ = await load_or_create_agent_turn_scope_pin(
+                        conn,
+                        submission=submission,
+                    )
+            scope = _ProjectScope.from_pin(scope_pin)
+            design_legs_runner = self._design_legs
+            leg_result = await self._execute_watched(
+                run=lambda: design_legs_runner.run_leg_turn(
+                    submission=submission,
+                    leg=open_leg,
+                    user_message_ref=user_message_ref,
+                    focus_refs=submission_focus_refs,
+                    card_payload=project_conversation_card_payload(
+                        workspace_id=workspace_id,
+                        project_id=scope.project_id,
+                        project_name=scope.name,
+                        project_status=scope.status,
+                        brand_id=scope.brand_id,
+                        product_id=scope.product_id,
+                        thread_id=submission.thread_id,
+                    ),
+                    stream=stream,
+                ),
+                submission=submission,
+                turn_id=turn_id,
+                stream=stream,
+            )
+            return ConversationTurnResult(
+                outcome=leg_result.outcome,
+                assistant_message=leg_result.assistant_message,
+                replayed=leg_result.replayed,
+            )
 
         execution_id = ExecutionId(operation_id_from_key(str(turn_id), _EXECUTION_NAMESPACE_KEY))
         committed = await self._engine.replay_committed(
@@ -612,9 +709,16 @@ class ProjectConversationTurnRunner:
                     schema_version="1",
                 )
         result = await self._execute_watched(
-            request=request,
-            lease=lease,
+            run=lambda: self._engine.execute(
+                request=request,
+                lease=lease,
+                budget_limit_millicents=PROJECT_CONVERSATION_BUDGET_LIMIT_MILLICENTS,
+                submitted_by_user_id=submission.submitted_by_user_id,
+                submitted_via_membership_id=submission.submitted_via_membership_id,
+                stream=stream,
+            ),
             submission=submission,
+            turn_id=request.turn_id,
             stream=stream,
         )
         if result.outcome.status is AgentExecutionStatus.COMPLETED:
@@ -870,12 +974,17 @@ class ProjectConversationTurnRunner:
     async def _execute_watched(
         self,
         *,
-        request: AgentTurnRequest,
-        lease: object,
+        run: Callable[[], Awaitable[_ResultT]],
         submission: AgentTurnSubmissionRow,
+        turn_id: UUID,
         stream: TurnStreamEmitter | None,
-    ) -> ConversationTurnResult:
-        """Run the turn, racing it against a durable **stop** request (charter §3.5).
+    ) -> _ResultT:
+        """Run the turn body, racing it against a durable **stop** request (charter §3.5).
+
+        ``run`` is whichever turn body the routing rule selected — the head-of-abm conversation
+        engine, or a design-leg turn (P3.4). The stop semantics, the exact-artifact boundary and
+        the cancellation journaling are identical for both, which is why this wrapper takes a
+        callable rather than knowing either body.
 
         Stop cannot be an interrupt from the web process — by ratified §6-D1 that process does not
         even compose the model plane — so it is a durable row plus a bounded observation here. The
@@ -890,26 +999,16 @@ class ProjectConversationTurnRunner:
           it, so a stopped attempt can never be mistaken for a finished answer (§3.3(8)).
         """
 
-        async def _execute() -> ConversationTurnResult:
-            return await self._engine.execute(
-                request=request,
-                lease=lease,  # type: ignore[arg-type]
-                budget_limit_millicents=PROJECT_CONVERSATION_BUDGET_LIMIT_MILLICENTS,
-                submitted_by_user_id=submission.submitted_by_user_id,
-                submitted_via_membership_id=submission.submitted_via_membership_id,
-                stream=stream,
-            )
-
-        async def _execute_with_artifact_boundary() -> ConversationTurnResult:
+        async def _execute_with_artifact_boundary() -> _ResultT:
             try:
-                return await _execute()
+                return await run()
             except ArtifactNotFound as error:
                 # Context and finalization artifacts are exact authority. Never invoke/continue
                 # the model with a guessed replacement, and never leave an attached browser on a
                 # non-terminal ``turn.started`` frame. The surrounding work handler will mark the
                 # fleet task failed and dispatch the next queued submission.
                 await self._engine.components.turns.mark_unfinalized(
-                    turn_id=request.turn_id,
+                    turn_id=turn_id,
                     workspace_id=submission.workspace_id,
                     reason_code=REQUIRED_CONTEXT_ARTIFACT_MISSING,
                     abandoned=False,
@@ -921,7 +1020,7 @@ class ProjectConversationTurnRunner:
                     )
                 log.warning(
                     "agent_turn.required_artifact_missing",
-                    turn_id=str(request.turn_id),
+                    turn_id=str(turn_id),
                     workspace_id=submission.workspace_id,
                 )
                 raise RequiredTurnArtifactMissing(
@@ -935,7 +1034,7 @@ class ProjectConversationTurnRunner:
         watcher = asyncio.create_task(
             self._await_stop(
                 workspace_id=submission.workspace_id,
-                turn_id=request.turn_id,
+                turn_id=turn_id,
                 generation_attempt_id=stream.generation_attempt_id,
             )
         )
@@ -953,13 +1052,13 @@ class ProjectConversationTurnRunner:
         # distinction, so its later terminal journal event deliberately supersedes the generic
         # abandoned marker with the durable truth.
         await self._engine.components.turns.mark_cancelled(
-            turn_id=request.turn_id,
+            turn_id=turn_id,
             workspace_id=submission.workspace_id,
         )
         await stream.turn_cancelled()
         log.info(
             "agent_turn.stopped",
-            turn_id=str(request.turn_id),
+            turn_id=str(turn_id),
             workspace_id=submission.workspace_id,
             generation_attempt_id=str(stream.generation_attempt_id),
         )
@@ -1276,6 +1375,87 @@ async def sweep_turn_stream_retention(
         return await prune_turn_events(conn, retention_s=retention_s)
 
 
+def _completion_text(completion: object) -> str | dict[str, object]:
+    """A LangChain completion's text, whatever content shape the provider produced.
+
+    The gateway's models run the Responses API (``output_version="responses/v1"``), whose
+    ``AIMessage.content`` is a LIST of typed blocks — never a plain string — so the naive
+    ``str(content)`` was a Python repr that could never parse and silently disabled the
+    exit bridge (adversarial-review fix; the block-walk mirrors the shipped
+    ``entity_research_runtime`` precedent). Strings and dicts pass through; anything else
+    unrecognized returns ``""``, which parses to ``None`` → the fail-safe CONTINUE.
+    """
+
+    content = getattr(completion, "content", completion)
+    if isinstance(content, (str, dict)):
+        return content
+    if isinstance(content, Sequence):
+        return "".join(
+            str(block.get("text", ""))
+            for block in content
+            if isinstance(block, Mapping) and block.get("type") in ("text", "output_text")
+        )
+    return ""
+
+
+def build_design_leg_exit_judge(
+    *,
+    models: AgentModelProvider,
+    profiles: AgentProfileRegistry,
+) -> DesignLegExitJudge:
+    """The live §2.2 exit judge: the design role's own catalog model over the P3.6 prompt.
+
+    Lives HERE — the worker composition — and not in ``design_leg_wiring``, because that
+    module is reachable from the HTTP turn route and the lane-D2 isolation guard forbids it
+    any model-plane name. Built lazily on first use and fail-safe throughout: a build
+    failure, a call failure, or unparseable output all yield ``None``, which the runner's
+    ``decide_exit`` envelope turns into CONTINUE.
+    """
+
+    model_holder: list[object] = []
+
+    async def judge(
+        *, brief: str, history: tuple[tuple[str, str], ...], message: str
+    ) -> ExitJudgment | None:
+        try:
+            if not model_holder:
+                policy = profiles.resolve(AgentRole.DESIGN).profile.model
+                model_holder.append(
+                    models.build(
+                        model_id=policy.model_id,
+                        timeout_s=policy.timeout_s,
+                        max_retries=policy.max_retries,
+                        # The judgment is one small JSON object; the role's generation
+                        # budget would be waste here.
+                        max_output_tokens=min(policy.max_output_tokens, 200),
+                        temperature=0.0,
+                    )
+                )
+            prompt = render_exit_judgment_prompt(brief=brief, history=history, message=message)
+            completion = await model_holder[0].ainvoke(prompt)  # type: ignore[attr-defined]
+            return parse_exit_judgment(_completion_text(completion))
+        except Exception:
+            log.warning("design_leg.exit_judge_failed", exc_info=True)
+            return None
+
+    return judge
+
+
+class _DesignLaneUnavailable:
+    """The fail-loud lane for a deployment that drains chat turns but no design work.
+
+    A thread can only hold an open leg if some deployment opened one; a worker that then claims
+    its turns without the design runtime must say so rather than silently wedge the leg.
+    """
+
+    async def drive(self, *, envelope: object) -> None:
+        del envelope
+        raise RuntimeError(
+            "this thread's design leg needs the design lane, but the worker composed none; "
+            "set CLUE_DESIGN_RUNTIME_ENABLED on the fleet deployment"
+        )
+
+
 def build_agent_turn_work_handler(
     *,
     components: AgentPlatformComponents,
@@ -1289,6 +1469,9 @@ def build_agent_turn_work_handler(
     memory: ContextAssembly,
     queue: WorkQueue,
     child_runner: FreshWakeChildRunner | None = None,
+    design_lane: DesignLegLaneDriver | None = None,
+    design_exit_judge: DesignLegExitJudge | None = None,
+    design_leg_finisher: DesignLegFinisher | None = None,
     conn_factory: ConnFactory = transaction,
     streaming: bool = True,
     stream_policy: TurnStreamPolicy | None = None,
@@ -1300,6 +1483,11 @@ def build_agent_turn_work_handler(
     profile and its manifest, the context assembler, the deepagent runtime. A turn then costs a
     submission read, a recipe start, three content-addressed artifacts and the model rounds — not a
     second composition of the whole platform.
+
+    ``design_lane`` (P3.4) is the design-leg execution seam. The leg *runner* is always composed
+    — the routing rule is unconditional, so a thread with an open leg must reach a deliberate
+    answer either way — but without a lane the answer is a loud refusal at drive time, the same
+    stance ``clue_api.design_fleet`` takes for the fleet handler.
     """
 
     engine = build_conversation_turn_engine(
@@ -1315,6 +1503,16 @@ def build_agent_turn_work_handler(
         child_runner=child_runner,
         conn_factory=conn_factory,
     )
+    design_legs_runner = DesignLegTurnRunner(
+        profiles=components.profiles,
+        artifacts=components.artifacts,
+        turns=components.turns,
+        history=components.history,
+        lane=design_lane if design_lane is not None else _DesignLaneUnavailable(),
+        exit_judge=design_exit_judge,
+        finisher=design_leg_finisher,
+        conn_factory=conn_factory,
+    )
     return AgentTurnWorkHandler(
         runner=ProjectConversationTurnRunner(
             engine=engine,
@@ -1322,6 +1520,7 @@ def build_agent_turn_work_handler(
             recipes=recipes,
             starter=starter,
             parameters=parameters,
+            design_legs=design_legs_runner,
             conn_factory=conn_factory,
             streaming=streaming,
             stream_policy=stream_policy,

@@ -175,7 +175,6 @@ export function AssetLightbox({
       >
         <div className="lib-lightbox-preview">
           <AssetPreviewImage
-            apiBaseUrl={apiBaseUrl}
             assetId={record.id}
             alt={item.title}
             full

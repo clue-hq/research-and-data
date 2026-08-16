@@ -1,0 +1,94 @@
+"""Design tool registration for the platform toolbelt (Part II slice D6, ruling R-D6-1).
+
+A thin composition seam, the sibling of :mod:`clue_api.design_fleet`. The design tool classes and
+their operation cores live in ``lumen_api.toolbelt`` — next to the design store, the web-export
+pipeline and the component compiler they drive, and where ``clue_design`` may be imported without
+``clue_toolbelt`` importing design (contract T1) or ``clue_design`` importing the toolbelt (S4).
+This module knows their *names* and their host, never their internals.
+
+**Why the envelopes are registered unconditionally.** ``build_agent_profile_registry`` requires
+``set(tool_registry.names()) == set(C6_AGENT_TOOL_AUTHORITY)`` exactly: a registry whose shape
+depends on ``design_runtime_enabled`` would make the C6 authority audit environment-dependent and
+would turn flipping that switch into an ``AgentCatalogError`` at composition. So the envelopes are
+always present and always audited (granted to ``AgentRole.DESIGN`` since P3.3 — see
+``agent_registry_wiring``), and the
+switch controls whether they are **live** instead of whether they **exist**:
+
+* ``enabled=False`` (the default) or no storage backend ⇒ the tools are constructed with **no
+  design host** and every invocation refuses ``design_runtime_not_configured`` before any write.
+  That is the ``research_view_tools`` shape — present-but-refusing — chosen over absent precisely
+  because absence is what breaks the audit.
+* ``enabled=True`` with a storage backend ⇒ the tools are constructed with a real host, so a
+  platform process that already drains design fleet work can also serve governed design writes.
+
+The import is deliberately narrow: ``lumen_api.toolbelt`` pulls ``clue_toolbelt`` + pydantic and
+nothing else (its heavy design collaborators are imported inside function bodies). An unimportable
+design app is a hard, loud failure rather than a silently smaller registry — see the docstring of
+:class:`clue_api.design_fleet.DesignRuntimeUnavailable` for the same stance on the fleet handler.
+"""
+
+from __future__ import annotations
+
+from functools import lru_cache
+from typing import Any, cast
+
+from clue_api.design_fleet import DesignRuntimeUnavailable
+from clue_obs import get_logger
+from clue_storage import StorageBackend
+from clue_toolbelt import Tool
+
+log = get_logger("clue_api.design_tools")
+
+__all__ = ["build_design_tools"]
+
+
+@lru_cache(maxsize=1)
+def _core_client() -> Any:
+    """One Rust core client per process (it is stateless and holds a helper-binary path)."""
+    from lumen_api.core import CoreClient
+
+    return CoreClient()
+
+
+def _live_host(storage: StorageBackend) -> Any:
+    from lumen_api.custom_component_compiler import (
+        DEFAULT_COMPILER_TIMEOUT_SECONDS,
+        compile_custom_component,
+        default_compiler_worker_path,
+    )
+    from lumen_api.toolbelt.wiring import design_tool_host
+
+    return design_tool_host(
+        storage=storage,
+        core=_core_client,
+        web_export_node_bin=lambda: "node",
+        compiler_node_bin=lambda: "node",
+        compiler_worker_path=default_compiler_worker_path,
+        compiler_timeout_seconds=lambda: DEFAULT_COMPILER_TIMEOUT_SECONDS,
+        compile_fn=lambda: compile_custom_component,
+    )
+
+
+def build_design_tools(
+    *,
+    enabled: bool,
+    storage: StorageBackend | None = None,
+) -> tuple[Tool, ...]:
+    """Return the design subsystem's governed write tools (live iff ``enabled`` + storage)."""
+    try:
+        from lumen_api.toolbelt import DESIGN_TOOL_NAMES
+        from lumen_api.toolbelt import build_design_tools as _build
+    except Exception as error:  # pragma: no cover - deployment shape, not logic
+        raise DesignRuntimeUnavailable(
+            "the design toolbelt envelopes are part of the platform's write-authority surface "
+            "but lumen_api.toolbelt cannot be imported; install the design app "
+            "(subsystems/clue-design/apps/api)"
+        ) from error
+    # `lumen_api` is an external boundary to the platform's type check (pyproject's
+    # follow_imports="skip" override — the design tree is out of the root mypy graph until
+    # Part-I Step-2), so the factory's return is `Any` here. The cast is the seam, and the
+    # registry's own `register()` re-checks the descriptor at construction.
+    if not enabled or storage is None:
+        return cast(tuple[Tool, ...], _build(None))
+    log.info("design_tools.live", tools=list(DESIGN_TOOL_NAMES))
+    return cast(tuple[Tool, ...], _build(_live_host(storage)))

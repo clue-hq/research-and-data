@@ -2,21 +2,20 @@
 
 from __future__ import annotations
 
-import sqlite3
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 
+from conftest import make_blob_store, make_client
+from sqlalchemy import text as sa_text
+from sqlalchemy.exc import DBAPIError
+
 import lumen_api.main as main_module
 from lumen_api.custom_components import persist_custom_component_source_revision
-from lumen_api.database import (
-    CustomComponentSourceVersionConflict,
-    Repository,
-    connect,
-    run_migrations,
-)
+from lumen_api.design_store import HybridRepository
+from lumen_api.database import CustomComponentSourceVersionConflict
 from lumen_api.main import create_app
 
 
@@ -95,8 +94,8 @@ export default function CuratedChart() {
 
 
 @pytest.fixture()
-def client(tmp_path: Path) -> TestClient:
-    return TestClient(create_app(tmp_path / "api.sqlite3"))
+def client(tmp_path: Path, design_storage) -> TestClient:
+    return make_client(create_app(tmp_path / "engine-cache", storage=design_storage))
 
 
 def create_account(client: TestClient, account_id: str) -> None:
@@ -276,41 +275,37 @@ def test_valid_source_versions_compile_into_immutable_complete_artifacts(
         assert response.status_code == 200, response.text
         assert expected in response.content
 
-    repository = Repository(connect(client.app.state.database_path))
-    try:
-        with pytest.raises(sqlite3.IntegrityError):
-            repository.connection.execute(
-                """
-                UPDATE custom_component_artifacts
-                SET manifest_json = '{}'
-                WHERE artifact_id = ?
-                """,
-                (first["artifact_id"],),
+    # D2.4B: the three content tables live on Postgres and stay immutable — enforced by the
+    # design_custom_component_reject_update TRIGGER on each, instead of the old SQLite ones.
+    # Reaching into `_bridge` is deliberate: the mutation must be attempted straight at the
+    # table, below the API boundary. Each `_run` is its own transaction, so a refusal rolls
+    # itself back.
+    repository = HybridRepository()
+    compilation_id = compiled.json()["compilation"]["compilation_id"]
+    for statement, key in (
+        (
+            "UPDATE design_custom_component_artifact SET manifest_json = '{}'::jsonb"
+            " WHERE artifact_id = :k AND workspace_id = :w",
+            first["artifact_id"],
+        ),
+        (
+            "UPDATE design_custom_component_source_revision"
+            " SET entry_path = 'changed.tsx'"
+            " WHERE revision_id = :k AND workspace_id = :w",
+            first_source["revision_id"],
+        ),
+        (
+            "UPDATE design_custom_component_compilation SET status = 'failed'"
+            " WHERE compilation_id = :k AND workspace_id = :w",
+            compilation_id,
+        ),
+    ):
+        with pytest.raises(DBAPIError, match="immutable"):
+            repository._bridge._run(
+                lambda conn, sql=statement, k=key: conn.execute(
+                    sa_text(sql), {"k": k, "w": repository.workspace_id}
+                )
             )
-        repository.connection.rollback()
-        with pytest.raises(sqlite3.IntegrityError):
-            repository.connection.execute(
-                """
-                UPDATE custom_component_source_revisions
-                SET entry_path = 'changed.tsx'
-                WHERE revision_id = ?
-                """,
-                (first_source["revision_id"],),
-            )
-        repository.connection.rollback()
-        compilation_id = compiled.json()["compilation"]["compilation_id"]
-        with pytest.raises(sqlite3.IntegrityError):
-            repository.connection.execute(
-                """
-                UPDATE custom_component_compilations
-                SET status = 'failed'
-                WHERE compilation_id = ?
-                """,
-                (compilation_id,),
-            )
-        repository.connection.rollback()
-    finally:
-        repository.connection.close()
 
 
 def test_curated_libraries_compile_inside_the_constrained_worker(
@@ -596,15 +591,14 @@ def test_concurrent_source_compare_and_swap_has_exactly_one_winner(
     client: TestClient,
 ) -> None:
     create_account(client, "acc_alpha")
-    database_path = client.app.state.database_path
-    store_root = client.app.state.custom_component_store_root
+    blobs = make_blob_store(client.app)
 
     def write(label: str) -> str:
-        repository = Repository(connect(database_path))
+        repository = HybridRepository()
         try:
             persist_custom_component_source_revision(
                 repository,
-                store_root,
+                blobs,
                 account_id="acc_alpha",
                 slug="race-card",
                 expected_version=0,
@@ -619,8 +613,6 @@ def test_concurrent_source_compare_and_swap_has_exactly_one_winner(
             return "won"
         except CustomComponentSourceVersionConflict:
             return "conflict"
-        finally:
-            repository.connection.close()
 
     with ThreadPoolExecutor(max_workers=2) as executor:
         outcomes = list(executor.map(write, ["alpha", "beta"]))
@@ -652,23 +644,20 @@ def test_compile_overtaken_by_source_write_cannot_publish_stale_artifact(
 
     def compile_then_advance_source(**kwargs):
         result = original_compile(**kwargs)
-        repository = Repository(connect(client.app.state.database_path))
-        try:
-            persist_custom_component_source_revision(
-                repository,
-                client.app.state.custom_component_store_root,
-                account_id="acc_alpha",
-                slug="race-card",
-                expected_version=1,
-                files={
-                    "race-card.tsx": VALID_SOURCE.replace(
-                        "PricingCard", "RaceCard"
-                    ).replace("Pricing", "New source")
-                },
-                provenance={"kind": "compile_race_test"},
-            )
-        finally:
-            repository.connection.close()
+        repository = HybridRepository()
+        persist_custom_component_source_revision(
+            repository,
+            make_blob_store(client.app),
+            account_id="acc_alpha",
+            slug="race-card",
+            expected_version=1,
+            files={
+                "race-card.tsx": VALID_SOURCE.replace(
+                    "PricingCard", "RaceCard"
+                ).replace("Pricing", "New source")
+            },
+            provenance={"kind": "compile_race_test"},
+        )
         return result
 
     monkeypatch.setattr(
@@ -696,36 +685,6 @@ def test_compile_overtaken_by_source_write_cannot_publish_stale_artifact(
     )
 
 
-def test_compiler_migration_replay_does_not_invent_source_or_artifacts(
-    client: TestClient,
-) -> None:
-    create_account(client, "acc_alpha")
-    assert (
-        put_source(
-            client,
-            account_id="acc_alpha",
-            slug="source-only",
-            expected_version=0,
-            source=VALID_SOURCE.replace("PricingCard", "SourceOnly"),
-        ).status_code
-        == 200
-    )
-    before = client.get(
-        "/web/accounts/acc_alpha/custom-components/source-only/source"
-    ).json()
-    run_migrations(client.app.state.database_path)
-    after = client.get(
-        "/web/accounts/acc_alpha/custom-components/source-only/source"
-    ).json()
-    assert after == before
-    component = client.get(
-        "/web/accounts/acc_alpha/custom-components/source-only"
-    ).json()["component"]
-    assert component["source_version"] == 1
-    assert component["artifacts"] == []
-    assert (
-        client.get(
-            "/web/accounts/acc_alpha/custom-components/source-only/compilations"
-        ).json()["compilations"]
-        == []
-    )
+# D2.5B DELETED `test_compiler_migration_replay_does_not_invent_source_or_artifacts`: it
+# re-ran `run_migrations` mid-test to prove the SQLite migration replay invented no source or
+# artifact rows. `run_migrations` and `apps/api/migrations/*.sql` no longer exist.

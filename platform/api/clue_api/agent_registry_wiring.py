@@ -36,12 +36,17 @@ __all__ = [
 ]
 
 C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
-    # v35 preserves the frozen v34 surface and gives Account-focused turns the exact pinned
+    # v36 (part-iii merge): v35 plus ``open_design_leg@1`` — the delegation entry that opens the
+    # design leg (§1-D1's "attach as subagent" wrapper, materialized as a durable act; introduced
+    # as PD-part3 P3.4's v24, re-versioned onto the v35 chain at the integration merge). v35
+    # preserves the frozen v34 surface and gives Account-focused turns the exact pinned
     # field/source vocabulary needed to launch profiling without model-invented field keys.
-    AgentRole.HEAD_OF_ABM: "v35",
+    AgentRole.HEAD_OF_ABM: "v36",
     AgentRole.RESEARCH: "v7",
     AgentRole.CONTENT_DRAFTER: "v5",
     AgentRole.REVIEWER: "v5",
+    # P3.3 (PD-part3): the composite design deepagent's platform-facing profile.
+    AgentRole.DESIGN: "v1",
 }
 
 
@@ -70,7 +75,65 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
     "confirm_project_product": (),
     "decide_field_proposal": (),
     "decide_source_proposal": (),
+    # Part II D6 (Rounds A + B) registered these ungranted; P3.3 (PD-part3) grants them to
+    # the DESIGN role — the composite design deepagent's platform-facing authority. The audit
+    # question "which durable writes can the platform name?" stays complete and static; what
+    # changed is that exactly one role may now name the design write path.
+    "design_apply_edits": (AgentRole.DESIGN,),
+    "design_apply_operations": (AgentRole.DESIGN,),
+    "design_apply_web_operations": (AgentRole.DESIGN,),
+    "design_attach_brand_kit": (AgentRole.DESIGN,),
+    "design_compile_component": (AgentRole.DESIGN,),
+    "design_create_document": (AgentRole.DESIGN,),
+    "design_create_snapshot": (AgentRole.DESIGN,),
+    "design_create_web_account": (AgentRole.DESIGN,),
+    "design_create_web_template": (AgentRole.DESIGN,),
+    "design_delete_web_account": (AgentRole.DESIGN,),
+    "design_derive_web_document": (AgentRole.DESIGN,),
+    "design_finalize_document": (AgentRole.DESIGN,),
+    "design_persist_preflight": (AgentRole.DESIGN,),
+    "design_publish_web": (AgentRole.DESIGN,),
+    "design_record_diagnostics": (AgentRole.DESIGN,),
+    "design_redo_document": (AgentRole.DESIGN,),
+    "design_redo_web_document": (AgentRole.DESIGN,),
+    "design_replace_scene": (AgentRole.DESIGN,),
+    "design_rollback_web_publish": (AgentRole.DESIGN,),
+    "design_set_agent_instructions": (AgentRole.DESIGN,),
+    "design_set_layout_managed_editing": (AgentRole.DESIGN,),
+    "design_start_agent_turn": (AgentRole.DESIGN,),
+    "design_start_web_turn": (AgentRole.DESIGN,),
+    "design_undo_document": (AgentRole.DESIGN,),
+    "design_undo_web_document": (AgentRole.DESIGN,),
+    "design_unpublish_web": (AgentRole.DESIGN,),
+    "design_update_web_account": (AgentRole.DESIGN,),
+    "design_write_component_source": (AgentRole.DESIGN,),
+    "design_advance_instance_batch": (AgentRole.DESIGN,),
+    "design_advance_web_batch": (AgentRole.DESIGN,),
+    "design_create_brand_compatibility_report": (AgentRole.DESIGN,),
+    "design_create_brand_kit": (AgentRole.DESIGN,),
+    "design_create_instance_batch": (AgentRole.DESIGN,),
+    "design_create_web_batch": (AgentRole.DESIGN,),
+    "design_delete_asset": (AgentRole.DESIGN,),
+    "design_delete_binding_set": (AgentRole.DESIGN,),
+    "design_derive_instance": (AgentRole.DESIGN,),
+    "design_ingest_assets": (AgentRole.DESIGN,),
+    "design_ingest_pdf": (AgentRole.DESIGN,),
+    "design_ingest_website": (AgentRole.DESIGN,),
+    "design_publish_brand_kit_version": (AgentRole.DESIGN,),
+    "design_register_asset_record": (AgentRole.DESIGN,),
+    "design_register_captured_assets": (AgentRole.DESIGN,),
+    "design_register_generated_asset": (AgentRole.DESIGN,),
+    "design_register_qr_asset": (AgentRole.DESIGN,),
+    "design_set_asset_description": (AgentRole.DESIGN,),
+    "design_set_asset_status": (AgentRole.DESIGN,),
+    "design_set_brand_kit_approval": (AgentRole.DESIGN,),
+    "design_upsert_binding_set": (AgentRole.DESIGN,),
     "draft_account_research_directive": (AgentRole.HEAD_OF_ABM,),
+    # P3.5 (PD-part3 §2.2): the leg-level exit, granted to the composite design deepagent — the
+    # only path to a closed leg. Turn-level finalization (the design harness's final.json) is a
+    # different authority and stays design-runtime-internal; this is the engine-validated
+    # doorway back to head-of-abm (lock-in summary, out_of_scope re-delivery, journaled).
+    "finish_design_leg": (AgentRole.DESIGN,),
     "confirm_account_research_directive": (),
     "discover_accounts": (),
     "estimate_project": (),
@@ -100,6 +163,11 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
     "launch_account_research": (AgentRole.HEAD_OF_ABM,),
     "launch_selected_account_research": (AgentRole.HEAD_OF_ABM,),
     "launch_contact_research": (AgentRole.HEAD_OF_ABM,),
+    # P3.4 (PD-part3 §1-D1/§2.3): delegating to Design is the Head of ABM's own act — the tool
+    # validates the D5 pins, freezes the delegation bundle, and opens the durable leg whose
+    # existence IS the routing rule. It spends nothing and dispatches nothing; the user's next
+    # message on the thread is what becomes the first design turn.
+    "open_design_leg": (AgentRole.HEAD_OF_ABM,),
     # FI Lane D D4 / §3-P5(a): asking the human for authority is the Head of ABM's own act, so the
     # gate-opening tool is granted to that role. It writes an immutable gate row and nothing else —
     # it confirms nothing, spends nothing, and cannot address a gate to anybody but the human whose
@@ -217,6 +285,11 @@ C6_SURFACE_POLICIES: tuple[AgentSurfacePolicy, ...] = (
                 "open_directive_confirmation_gate",
                 "open_discovery_configuration_gate",
                 "open_product_selection_gate",
+                # P3.4 added the design delegation entry to the role. The trial withholds it for
+                # the same sentence as delegation itself: this surface is a manual conversation,
+                # and a leg opened from a dev CLI would durably reroute a thread no design
+                # runtime here can serve.
+                "open_design_leg",
                 "start_recon",
                 "submit_onboarding_input",
                 "synthesize_icps",
@@ -287,6 +360,8 @@ _HUMAN_ONLY_TOOLS = frozenset(
     }
 )
 _RESERVED_REASON: dict[str, str] = {
+    # (P3.3 retired the Part II D6 `design_agent_not_wired_until_part_iii` block: the design
+    # tools are granted to AgentRole.DESIGN now, so they are no longer reserved.)
     "discover_accounts": "post_stage0_not_admitted",
     "estimate_project": "post_stage0_not_admitted",
     "import_accounts": "post_stage0_not_admitted",
@@ -432,12 +507,7 @@ def build_agent_profile_registry(
         ),
         surface_policies=C6_SURFACE_POLICIES,
     )
-    for role in (
-        AgentRole.HEAD_OF_ABM,
-        AgentRole.RESEARCH,
-        AgentRole.CONTENT_DRAFTER,
-        AgentRole.REVIEWER,
-    ):
+    for role in C6_ACTIVE_PROFILE_VERSIONS:
         expected = {
             descriptor.address
             for descriptor in tool_registry.all_descriptors()

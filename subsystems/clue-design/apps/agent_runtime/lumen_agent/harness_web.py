@@ -20,6 +20,7 @@ from typing import Any, Optional
 from langchain.agents.structured_output import ToolStrategy
 from py_lumen_obs import configure, get_logger
 
+from .checkpoint import invoke_turn_graph
 from .config import AgentRuntimeConfig
 from .harness import _filesystem_permissions, _instrument
 from .materialize import materialize_agent_workspace
@@ -68,9 +69,11 @@ def create_web_deepagent(
     config: AgentRuntimeConfig | None,
     initial_web_doc: dict,
     event_sink=None,
+    *,
+    checkpointer: Any = None,
 ) -> tuple[Any, LumenWebTools]:
     """Build the website-mode deepagent + substrate. Mirrors
-    create_design_deepagent's shape."""
+    create_design_deepagent's shape, `checkpointer` included (D5 Round B)."""
     try:
         from deepagents import create_deep_agent
 
@@ -203,6 +206,7 @@ def create_web_deepagent(
         ),
         subagents=subagents,
         name="lumen-web-deepagent",
+        checkpointer=checkpointer,
     )
     return agent, tools
 
@@ -212,15 +216,27 @@ def run_deepagent_web_turn(
     config: AgentRuntimeConfig | None = None,
     initial_web_doc: dict | None = None,
     event_sink=None,
+    *,
+    checkpointer: Any = None,
+    thread_id: str | None = None,
 ) -> dict:
     """Create + invoke + guarantee an honest finalize.
 
     Returns {status: "applied"|"failed", summary, web_doc (final), operations,
     grounding, preview_paths, outcome}. `applied` iff the orchestrator finalized
     accepted/completed_with_warnings; a crash/recursion-limit/no-finalize turn
-    is finalized "failed" here — never a fabricated success."""
+    is finalized "failed" here — never a fabricated success.
+
+    `checkpointer` / `thread_id` (D5 Round B): the durable-execution seam, supplied together by
+    the fleet handler. `thread_id` is the DESIGN RUN ID (the D5 ruling); absent it, the turn
+    threads on `tools.run_id` exactly as before. See checkpoint.py for the honest resume
+    semantics that shipped (resume-as-restart, and why)."""
     agent, tools = create_web_deepagent(
-        prompt, config=config, initial_web_doc=initial_web_doc or {}, event_sink=event_sink
+        prompt,
+        config=config,
+        initial_web_doc=initial_web_doc or {},
+        event_sink=event_sink,
+        checkpointer=checkpointer,
     )
 
     run_log_path = tools.trace_dir / "logs" / "run.jsonl"
@@ -235,11 +251,20 @@ def run_deepagent_web_turn(
     )
 
     initial_state = {"messages": [{"role": "user", "content": prompt}]}
-    invoke_config = {"recursion_limit": 200, "configurable": {"thread_id": tools.run_id}}
+    invoke_config = {
+        "recursion_limit": 200,
+        "configurable": {"thread_id": thread_id or tools.run_id},
+    }
 
     exception_text: Optional[str] = None
     try:
-        agent.invoke(initial_state, config=invoke_config)
+        invoke_turn_graph(
+            agent,
+            initial_state,
+            invoke_config=invoke_config,
+            checkpointer=checkpointer,
+            thread_id=thread_id,
+        )
     except Exception as error:  # noqa: BLE001 - honest failure, recorded verbatim
         exception_text = f"{type(error).__name__}: {error}"
         tools.record(

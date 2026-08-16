@@ -12,6 +12,7 @@ Acceptance criteria (wave plan, Track D):
 from __future__ import annotations
 
 import json
+import os
 import random
 import shutil
 import subprocess
@@ -20,6 +21,8 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+
+from conftest import make_client
 
 from lumen_api.main import create_app
 
@@ -74,8 +77,8 @@ SHRINK_EVERY = 7
 
 @pytest.fixture()
 def client(tmp_path: Path) -> TestClient:
-    app = create_app(tmp_path / "api.sqlite3")
-    return TestClient(app)
+    app = create_app(tmp_path / "engine-cache")
+    return make_client(app)
 
 
 def seeded_binding_sets(count: int, logo_asset_id: str) -> list[dict]:
@@ -170,7 +173,15 @@ def setup_revision_and_logo(client: TestClient) -> str:
 
 
 def store_path(client: TestClient, relative: str) -> Path:
-    return Path(str(client.app.state.asset_store_root)) / relative
+    """A derive artifact's path inside this workspace's ENGINE MATERIALIZATION CACHE (D4).
+
+    Artifacts are written there by the engine and given durable custody in the same request;
+    this reads the cache copy because the engine's `relative_path` is a cache-relative path."""
+    return (
+        Path(client.app.state.engine_cache_root)
+        / os.environ["LUMEN_DEV_WORKSPACE_ID"]
+        / relative
+    )
 
 
 def test_g10_conformance_100_instance_batch(client: TestClient) -> None:

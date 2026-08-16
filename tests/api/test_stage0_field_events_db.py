@@ -21,9 +21,9 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_api import stage0_field_events
 from clue_api.stage0_field_events import ReconFieldProgressEmitter
-from clue_core import ProjectRunId
+from clue_core import RECON_FIELD_PROGRESS_KIND, ProjectRunId
 from clue_db import db_lifespan, transaction
-from clue_research.durable import RECON_FIELD_PROGRESS_KIND, list_run_events
+from clue_execution.run_events import list_run_events
 from clue_research.stage0 import FieldProgressStatus
 from tests.db.conftest import run_async
 

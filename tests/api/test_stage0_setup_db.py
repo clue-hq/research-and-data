@@ -24,14 +24,17 @@ from clue_api.tool_outputs import ReconOutput
 from clue_auth import RequestPrincipal, permissions_for_role, provision_self_serve_workspace
 from clue_auth.errors import PermissionDenied
 from clue_config import Settings
-from clue_core import AccountStatus, OnboardingInputId, ProjectRunId, ReconRunId
-from clue_fleet import LeaseGeneration, WorkContext, WorkId
-from clue_research.durable import (
+from clue_core import (
     RECON_FIELD_PROGRESS_KIND,
     RECON_TRANSITION_KIND,
+    AccountStatus,
+    OnboardingInputId,
+    ProjectRunId,
+    ReconRunId,
     RunEventTopic,
-    emit_run_event,
 )
+from clue_execution.run_events import emit_run_event
+from clue_fleet import LeaseGeneration, WorkContext, WorkId
 from clue_research.identity import insert_account_entity
 from clue_research.stage0 import (
     CLIENT_PRODUCT_CATALOG,

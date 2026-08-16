@@ -49,7 +49,8 @@ SYSTEM_RECIPE_FILENAMES: tuple[str, ...] = (
     # revision rather than an edit, exactly like the profile mint the same slice needed.
     "recipe0-stage0-v6.json",
     # The pilot bytes remain authoritative for colliding v7/v8: trusted @2 readiness/synthesis and
-    # the durable exact-subject ICP confirmation gate.
+    # the durable exact-subject ICP confirmation gate. (PD-part3 P3.4's colliding v7 — v6 plus
+    # ``open_design_leg@1`` — was re-versioned to v16 at the integration merge.)
     "recipe0-stage0-v7.json",
     "recipe0-stage0-v8.json",
     # Onboarding's non-conflicting v9 retains the selected-product read lineage.
@@ -66,6 +67,11 @@ SYSTEM_RECIPE_FILENAMES: tuple[str, ...] = (
     "recipe0-stage0-v14.json",
     # Plan-safe research directives retain the frozen v2 contract while new turns use @3.
     "recipe0-stage0-v15.json",
+    # PD-part3 P3.4's design delegation entry (``open_design_leg@1``), re-versioned onto the v15
+    # lineage at the part-iii integration merge. Same rule as v6: the C5 slot is a second,
+    # independent ceiling, so a profile grant alone would show the model a tool that plan
+    # validation then refuses.
+    "recipe0-stage0-v16.json",
     "recipe1-classic-v1.json",
     "recipe1-classic-v2.json",
 )

@@ -264,6 +264,20 @@ class Settings(BaseSettings):
     # not authorize a provider. Exa/Sumble/channel switches above remain independent hard gates.
     # Env: ``CLUE_ENTITY_RESEARCH_RUNTIME_ENABLED``.
     entity_research_runtime_enabled: bool = False
+    # Part II D5 Round B production cutover for design agent turns (scene + website). This switch
+    # owns only whether the detached fleet worker registers the ``design_job`` handler; the design
+    # API always offers the work, and its own embedded worker (LUMEN_EMBEDDED_FLEET_WORKER) is
+    # what drains it in development. Off by default because a platform worker without the design
+    # app installed cannot execute a design turn — registering the handler there would claim work
+    # it must then fail. Env: ``CLUE_DESIGN_RUNTIME_ENABLED``.
+    design_runtime_enabled: bool = False
+    # Part II D5 Round C: how often the stranded-design-work reaper sweeps, in seconds. Gated by
+    # ``design_runtime_enabled`` (a deployment that does not drain design work must not re-offer
+    # it); ``<= 0`` disables the sweep entirely, the ``storage_orphan_sweep_interval_s``
+    # convention. Sized well above the fleet lease TTL and task-staleness window so a pass never
+    # races a worker that is merely between heartbeats.
+    # Env: ``CLUE_DESIGN_REAPER_INTERVAL_S``.
+    design_reaper_interval_s: float = 300.0
     # R9 requires a positive worst-case monetary reservation even when a subscription provider
     # reports credits while ``sumble_cents_per_credit`` is intentionally zero. This admission
     # floor is released after settlement and is never recorded as spend. It is policy, not an
@@ -597,6 +611,26 @@ class Settings(BaseSettings):
     # are bounded separately from acquisition workers and never share an open DB connection.
     stage0_extraction_model: str = "openai/gpt-5.6-luna"
     stage0_extraction_concurrency: int = Field(default=4, ge=1, le=16)
+
+    # --- retention (design-integration Part II D8, ruling R-D8-4) ---------------------------
+    # How often the fleet worker deletes spent ``stream_token`` rows (used or expired). ``<= 0``
+    # disables the loop, the ``storage_orphan_sweep_interval_s`` convention. Default ON: both
+    # consume statements require ``used_at IS NULL AND expires_at > now()``, so a swept row was
+    # already unreadable by every code path and its deletion is unobservable — there is nothing to
+    # canary. Env: ``CLUE_STREAM_TOKEN_SWEEP_INTERVAL_S``.
+    stream_token_sweep_interval_s: float = 3600.0  # 1h
+    # How often the fleet worker prunes a TERMINAL design run's PROGRESS ``run_event`` rows.
+    # ``<= 0`` disables it, and it is the founder-facing switch: this sweep is the only one in the
+    # platform that destroys durable run-visibility history, so it is **off until deliberately
+    # turned on**. Its safety floors (never a terminal row, never a non-design subject, never a
+    # non-terminal run, never inside the retention floor) are baked into the pruner's code, not
+    # into this knob. Env: ``CLUE_DESIGN_RUN_EVENT_PRUNE_INTERVAL_S``.
+    design_run_event_prune_interval_s: float = 0.0
+    # How long a design run must have been terminal before its progress events may be pruned.
+    # Clamped UP in code to a hard 7-day floor that strictly exceeds the design stream's 24h replay
+    # horizon, so a within-horizon reconnect can never observe a hole; configuring less is logged
+    # and ignored, never honoured. Env: ``CLUE_DESIGN_RUN_EVENT_RETENTION_S``.
+    design_run_event_retention_s: float = 2_592_000.0  # 30d
 
     @field_validator("agent_workspace_allowlist", mode="before")
     @classmethod

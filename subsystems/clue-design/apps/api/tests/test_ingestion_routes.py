@@ -22,7 +22,10 @@ from typing import Any, Callable, Optional
 import pytest
 from fastapi.testclient import TestClient
 
+from conftest import make_client, wait_for_ingestion_job
+
 from lumen_api import main as main_module
+from lumen_api.design_store import HybridRepository
 from lumen_api.main import create_app
 from lumen_ingestion.evidence import BrandEvidence
 from lumen_ingestion.pipeline import run_website_ingestion
@@ -70,13 +73,22 @@ def _install_stub_pipeline(
         seen.append(("Capturing your colors…", 0.65))
         return _load_evidence()
 
-    def _runner(database_path, asset_store_root, job_id):
+    def _runner(
+        engine_cache_dir, job_id, *, workspace_id, storage=None, expected_generation=None
+    ):
         run_website_ingestion(
-            database_path,
-            asset_store_root,
+            engine_cache_dir,
             job_id,
             capture=capture,
             build_evidence=build_evidence or _build_evidence,
+            # D2.3: the dispatcher hands the worker the job's workspace so the kit it
+            # publishes satisfies the job's composite result FK. D5 Round C: it arrives from
+            # the job's frozen envelope and is required, not defaulted.
+            workspace_id=workspace_id,
+            # D4: and its byte backend, so custody lands where the app can read it.
+            storage=storage,
+            # D5 Round C: the claiming worker's lease generation (fences a taken-over attempt).
+            expected_generation=expected_generation,
         )
 
     monkeypatch.setattr(main_module, "run_website_ingestion", _runner)
@@ -98,19 +110,14 @@ def _read_brand_kit_row(client: TestClient, brand_kit_id: str) -> dict:
     """Read the persisted brand_kits row (incl. raw brand_summary_json) directly
     from the app's sqlite DB — the kit-detail dto does not surface the full
     brand_summary."""
-    from lumen_api.database import Repository, connect
 
-    connection = connect(client.app.state.database_path)
-    try:
-        return Repository(connection).require_brand_kit(brand_kit_id)
-    finally:
-        connection.close()
+    return HybridRepository().require_brand_kit(brand_kit_id)
 
 
 @pytest.fixture()
 def client(tmp_path: Path) -> TestClient:
-    app = create_app(tmp_path / "api.sqlite3")
-    return TestClient(app)
+    app = create_app(tmp_path / "engine-cache")
+    return make_client(app)
 
 
 def test_ingest_website_happy_path_persists_kit_and_report(
@@ -132,11 +139,13 @@ def test_ingest_website_happy_path_persists_kit_and_report(
     assert body["schema_version"] == 1
     job = body["job"]
     assert job["kind"] == "website"
-    # POST returns the queued job; the background task runs after the response
-    # is serialized (TestClient runs it synchronously before unblocking).
-    assert job["status"] == "queued", job
+    # `queued` OR `running`: the POST re-reads the job after create-and-offer, and the
+    # embedded fleet worker (0.1s poll) may already have claimed it — a pure scheduling race,
+    # and both are snapshots of a successfully-created job (D5: `queued` is alive, not idle).
+    assert job["status"] in {"queued", "running"}, job
     job_id = job["job_id"]
 
+    wait_for_ingestion_job(client, job_id)
     got = client.get(f"/brand-kits/ingest/{job_id}")
     assert got.status_code == 200, got.text
     got_job = got.json()["job"]
@@ -182,6 +191,7 @@ def test_ingested_kit_attaches_to_document(
     )
     assert post.status_code == 200, post.text
     job_id = post.json()["job"]["job_id"]
+    wait_for_ingestion_job(client, job_id)
     got_job = client.get(f"/brand-kits/ingest/{job_id}").json()["job"]
     assert got_job["status"] == "succeeded", got_job
     brand_kit_id = got_job["brand_kit_id"]
@@ -219,9 +229,13 @@ def test_capture_failure_marks_job_failed_no_kit(
     )
     assert post.status_code == 200, post.text
     job = post.json()["job"]
-    assert job["status"] == "queued", job
+    # `queued` OR `running`: the POST re-reads the job after create-and-offer, and the
+    # embedded fleet worker (0.1s poll) may already have claimed it — a pure scheduling race,
+    # and both are snapshots of a successfully-created job (D5: `queued` is alive, not idle).
+    assert job["status"] in {"queued", "running"}, job
     job_id = job["job_id"]
 
+    wait_for_ingestion_job(client, job_id)
     got = client.get(f"/brand-kits/ingest/{job_id}").json()["job"]
     assert got["status"] == "failed", got
     assert got["brand_kit_id"] is None
@@ -250,6 +264,7 @@ def test_stage_progression_reaches_preparing_before_success(
     assert post.status_code == 200, post.text
     job_id = post.json()["job"]["job_id"]
 
+    wait_for_ingestion_job(client, job_id)
     got = client.get(f"/brand-kits/ingest/{job_id}").json()["job"]
     assert got["status"] == "succeeded"
     # The pipeline's final reporter stage before persist is the "Preparing…"
@@ -300,6 +315,7 @@ def test_live_e2e_ingests_real_site(client: TestClient) -> None:
     deadline = time.time() + 120
     status = None
     while time.time() < deadline:
+        wait_for_ingestion_job(client, job_id)
         job = client.get(f"/brand-kits/ingest/{job_id}").json()["job"]
         status = job["status"]
         if status in ("succeeded", "failed"):

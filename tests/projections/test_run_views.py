@@ -20,10 +20,14 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_core import ProjectPhase, new_entity_id, new_project_run_id
+from clue_core import (
+    NARRATIVE_EMIT_SKIPPED_KEY,
+    ProjectPhase,
+    new_entity_id,
+    new_project_run_id,
+)
 from clue_projections import account_progress, run_overview, run_readiness
 from clue_research.durable import (
-    NARRATIVE_EMIT_SKIPPED_KEY,
     AccountRunStatus,
     PhaseCheckpointStatus,
     save_plan,

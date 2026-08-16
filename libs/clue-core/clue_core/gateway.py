@@ -59,6 +59,11 @@ class TokenUsage(BaseModel):
 
     prompt_tokens: int = Field(default=0, ge=0)
     completion_tokens: int = Field(default=0, ge=0)
+    # Contract-delta P3.2 (PD-part3 delta 6): the provider-reported cached-prefill share of
+    # ``prompt_tokens`` (0 when the provider reports none) — the measurable economics the
+    # OpenRouter ``usage.include`` passthrough exists for. Additive with a default, so every
+    # existing constructor and stored shape parses unchanged.
+    cached_prompt_tokens: int = Field(default=0, ge=0)
 
     @property
     def total_tokens(self) -> int:

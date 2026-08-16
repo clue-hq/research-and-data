@@ -55,6 +55,10 @@ _WITHHELD = {
     "launch_selected_account_research",
     "launch_contact_research",
     "open_discovery_configuration_gate",
+    # P3.4: the design delegation entry is withheld on the trial for the same sentence as
+    # delegation itself — a leg opened from a dev CLI would durably reroute a thread no
+    # design runtime here can serve.
+    "open_design_leg",
     "open_directive_confirmation_gate",
     "open_product_selection_gate",
     "start_recon",

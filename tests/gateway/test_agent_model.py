@@ -537,3 +537,160 @@ def test_decimal_tool_schema_loses_lookahead_while_local_validation_still_reject
     )
     with pytest.raises(ValidationError):
         SourceManifestDraft.model_validate({**payload, "cost_cents": "-1"})
+
+
+# --- P3.2 (PD-part3 delta 6): extra_body passthrough, role attribution, cache economics ---
+
+
+def _responses_envelope(*, model: str, cached_tokens: int = 0) -> dict[str, Any]:
+    return {
+        "id": "resp-p32",
+        "object": "response",
+        "created_at": 1_775_000_000,
+        "model": model,
+        "output": [
+            {
+                "id": "msg-p32",
+                "type": "message",
+                "status": "completed",
+                "role": "assistant",
+                "content": [{"type": "output_text", "text": "ok", "annotations": []}],
+            }
+        ],
+        "parallel_tool_calls": True,
+        "tool_choice": "auto",
+        "tools": [],
+        "usage": {
+            "input_tokens": 40,
+            "input_tokens_details": {"cached_tokens": cached_tokens, "cache_write_tokens": 0},
+            "output_tokens": 2,
+            "output_tokens_details": {"reasoning_tokens": 0},
+            "total_tokens": 42,
+        },
+        "status": "completed",
+    }
+
+
+def _p32_provider(config: GatewayConfig, respond: Any) -> OpenRouterAgentModelProvider:
+    return OpenRouterAgentModelProvider(
+        config,
+        SecretStr("test-key"),
+        http_client=httpx.Client(transport=httpx.MockTransport(respond)),
+        http_async_client=httpx.AsyncClient(transport=httpx.MockTransport(respond)),
+    )
+
+
+def test_openrouter_extra_body_carries_provider_sort_and_usage_accounting() -> None:
+    """The OpenRouter economics knobs are config, not code: `provider.sort` pins one
+    replica (the design runtime's ~95% cached-prefill invariant) and `usage.include`
+    asks for the accounting block. Default config sends NEITHER — existing call sites
+    keep their exact wire shape."""
+    seen_payloads: list[dict[str, Any]] = []
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        seen_payloads.append(payload)
+        return httpx.Response(
+            200, json=_responses_envelope(model=payload["model"]), request=request
+        )
+
+    tuned = _p32_provider(
+        GatewayConfig(
+            openrouter_provider_sort="throughput",
+            openrouter_usage_include=True,
+        ),
+        respond,
+    ).build(
+        model_id="probe/model", timeout_s=10, max_retries=0, max_output_tokens=64, temperature=0
+    )
+    tuned.invoke("hi")
+    assert seen_payloads[-1]["provider"] == {"sort": "throughput"}
+    assert seen_payloads[-1]["usage"] == {"include": True}
+
+    plain = _p32_provider(GatewayConfig(), respond).build(
+        model_id="probe/model", timeout_s=10, max_retries=0, max_output_tokens=64, temperature=0
+    )
+    plain.invoke("hi")
+    assert "provider" not in seen_payloads[-1]
+    assert "usage" not in seen_payloads[-1] or seen_payloads[-1]["usage"] is None
+
+
+def test_role_attribution_stamps_metadata_and_usage_record() -> None:
+    """One model instance per role is the design runtime's attribution mechanism; the
+    governed wrapper carries the role so the usage record and response metadata name it
+    — ONE authority, no design-local double count (PD-part3 delta 6)."""
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json=_responses_envelope(model=json.loads(request.content)["model"]),
+            request=request,
+        )
+
+    model = _p32_provider(GatewayConfig(), respond).build(
+        model_id="probe/model",
+        timeout_s=10,
+        max_retries=0,
+        max_output_tokens=64,
+        temperature=0,
+        role="design_author",
+    )
+    with collect_spans() as exporter:
+        response = model.invoke("hi")
+    assert response.response_metadata["clue_role"] == "design_author"
+    gateway_spans = [
+        span for span in exporter.get_finished_spans() if span.name == SPAN_LLM_GATEWAY_CALL
+    ]
+    assert gateway_spans and gateway_spans[0].attributes.get("agent_role") == "design_author"
+
+
+def test_cached_prompt_tokens_survive_into_usage() -> None:
+    """The cached-prefill share is the economics the passthrough exists for; it must be
+    measurable, not folded away (retires the 'deliberately absent' note in tracing)."""
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json=_responses_envelope(model=json.loads(request.content)["model"], cached_tokens=33),
+            request=request,
+        )
+
+    model = _p32_provider(GatewayConfig(openrouter_usage_include=True), respond).build(
+        model_id="probe/model", timeout_s=10, max_retries=0, max_output_tokens=64, temperature=0
+    )
+    response = model.invoke("hi")
+    usage, _served, _cost = model._usage_and_cost(response)
+    assert usage.prompt_tokens == 40
+    assert usage.cached_prompt_tokens == 33
+
+
+def test_supports_image_input_reads_the_models_catalog() -> None:
+    """The pre-spend vision guard (replaces the design runtime's raw-key probe): True /
+    False from the catalog's input modalities, None when the catalog is unreachable —
+    the caller decides how hard to fail."""
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        assert request.url.path.endswith("/models")
+        return httpx.Response(
+            200,
+            json={
+                "data": [
+                    {
+                        "id": "vision/model",
+                        "architecture": {"input_modalities": ["text", "image"]},
+                    },
+                    {"id": "text/only", "architecture": {"input_modalities": ["text"]}},
+                ]
+            },
+            request=request,
+        )
+
+    provider = _p32_provider(GatewayConfig(), respond)
+    assert provider.supports_image_input("vision/model") is True
+    assert provider.supports_image_input("text/only") is False
+    assert provider.supports_image_input("unknown/model") is None
+
+    def unreachable(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(500, json={"error": "down"}, request=request)
+
+    assert _p32_provider(GatewayConfig(), unreachable).supports_image_input("vision/model") is None
