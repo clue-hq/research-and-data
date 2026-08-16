@@ -609,7 +609,13 @@ async def _seed_confirmed_run_turn(
                     if product_scoped
                     else ((UUID(str(client_entity_id)), "context"),)
                 ),
-                project_bindings=((scenario.project_id, "project_conversation_context"),),
+                # Client-KB is company-wide and production intentionally persists it without a
+                # project binding. The remaining cards are project conversation materializations.
+                project_bindings=(
+                    ()
+                    if media_type == CLIENT_KNOWLEDGE_CARD_V2_MEDIA_TYPE
+                    else ((scenario.project_id, "project_conversation_context"),)
+                ),
             )
         )
 
@@ -823,7 +829,7 @@ def test_confirmed_run_v2_reuses_existing_context_and_creates_one_run_across_ret
             )
             freshness = decode_jsonb(context["freshness_snapshot"])
             assert context["compiler_version"] == "product-context@2-existing-stage0-receipt"
-            assert len(decode_jsonb(context["artifact_refs"])) == 4
+            assert len(decode_jsonb(context["artifact_refs"])) == 3
             assert [item["kind"] for item in freshness["inputs"]] == [
                 "client_kb",
                 "selected_product",

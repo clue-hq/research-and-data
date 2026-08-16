@@ -172,6 +172,7 @@ class InteractionSlotView:
 @dataclass(frozen=True, slots=True)
 class _Runtime:
     execution_id: ExecutionId
+    parent_execution_id: ExecutionId | None
     workspace_id: str
     project_id: str | None
     project_run_id: ProjectRunId | None
@@ -1713,6 +1714,7 @@ class RecipeExecutor:
                         actor_id="svc_execution_worker" if node.actor != "human" else actor_id,
                         action_ref=action_ref,
                         execution_id=runtime.execution_id,
+                        parent_execution_id=runtime.parent_execution_id,
                         execution_node_id=node.node_id,
                         execution_node_key=node.spec.node_key,
                         execution_worker_id=worker_id,
@@ -1769,6 +1771,7 @@ class RecipeExecutor:
                         actor_id="svc_execution_worker" if node.actor != "human" else actor_id,
                         action_ref=action_ref,
                         execution_id=runtime.execution_id,
+                        parent_execution_id=runtime.parent_execution_id,
                         execution_node_id=node.node_id,
                         execution_node_key=node.spec.node_key,
                         execution_worker_id=worker_id,
@@ -2171,7 +2174,7 @@ class RecipeExecutor:
                     await conn.execute(
                         text(
                             """
-                            SELECT workspace_id, project_id, project_run_id,
+                            SELECT workspace_id, project_id, project_run_id, parent_execution_id,
                                    recipe_revision_id, parameter_artifact_key,
                                    parameter_manifest_hash
                             FROM execution WHERE id = :execution_id
@@ -2199,6 +2202,11 @@ class RecipeExecutor:
             raise PlaceholderRecipe("placeholder recipes are not executable")
         return _Runtime(
             execution_id=execution_id,
+            parent_execution_id=(
+                ExecutionId(row["parent_execution_id"])
+                if row["parent_execution_id"] is not None
+                else None
+            ),
             workspace_id=workspace_id,
             project_id=str(row["project_id"]) if row["project_id"] is not None else None,
             project_run_id=(

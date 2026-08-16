@@ -216,7 +216,7 @@ async def _turn_context_artifacts(
                     JOIN artifact a
                       ON a.storage_key = r.artifact_key
                      AND a.workspace_id = r.workspace_id
-                    JOIN agent_artifact_project p
+                    LEFT JOIN agent_artifact_project p
                       ON p.workspace_id = r.workspace_id
                      AND p.project_id = :project_id
                      AND p.artifact_key = r.artifact_key
@@ -228,6 +228,10 @@ async def _turn_context_artifacts(
                       AND r.ref_role = 'context_materialization'
                       AND a.erased_at IS NULL
                       AND a.purged_at IS NULL
+                      AND (
+                          a.media_type = :client_knowledge_media
+                          OR p.artifact_key IS NOT NULL
+                      )
                       AND EXISTS (
                           SELECT 1 FROM agent_artifact_subject client_subject
                           WHERE client_subject.workspace_id = r.workspace_id
@@ -246,7 +250,7 @@ async def _turn_context_artifacts(
                           )
                       )
                     ORDER BY r.ordinal
-                    FOR SHARE OF a, r, p
+                    FOR SHARE OF a, r
                     """
                 ),
                 {
@@ -255,6 +259,7 @@ async def _turn_context_artifacts(
                     "project_id": scope.project_id,
                     "client_entity_id": scope.client_entity_id,
                     "product_subject_id": product_subject_id(scope.product_id),
+                    "client_knowledge_media": CLIENT_KNOWLEDGE_CARD_V2_MEDIA_TYPE,
                     "product_profile_media": PRODUCT_PROFILE_CARD_MEDIA_TYPE,
                     "product_kb_media": PRODUCT_KNOWLEDGE_CARD_MEDIA_TYPE,
                 },
@@ -1343,8 +1348,11 @@ class StartConfirmedProjectRunV2Tool(_Stage0ProjectTool):
             ordered_artifact_refs = tuple(
                 artifacts[media_type].artifact_key
                 for media_type in (
+                    # Project conversation/state stays in the turn's project scope. It is
+                    # intentionally not part of this narrower immutable product-context receipt;
+                    # otherwise every later interview statement would mint a different paid-run
+                    # lineage from the same approved Stage-0 knowledge.
                     CLIENT_KNOWLEDGE_CARD_V2_MEDIA_TYPE,
-                    STAGE0_PROJECT_STATE_CARD_MEDIA_TYPE,
                     PRODUCT_PROFILE_CARD_MEDIA_TYPE,
                     PRODUCT_KNOWLEDGE_CARD_MEDIA_TYPE,
                 )

@@ -127,3 +127,34 @@ without repairing the product-scoped Client-KB resource pin described below.
 - Stop downstream browser acceptance here. Do not treat Insight Health as its own target, seed a
   fixture, or claim discovery/FI-2 evidence until ICP synthesis is repaired and a genuine target
   account is produced by the platform.
+
+## Confirmed-discovery retry and live Exa boundary
+
+- Repaired the Stage-0 handoff without compiling any new knowledge: company-wide Client-KB cards
+  may be present without a project binding, Recipe #1 now pins the receipt's exact company
+  Client-KB v2 and selected-product Product-KB v1, and the recipe worker preserves the parent turn
+  execution id in tool contexts.
+- The narrower content-addressed `product_context_version` receipt now identifies Client-KB,
+  selected product/product profile, Product-KB, and approved ICP only. Mutable project conversation
+  state remains in every turn's L3 project context but no longer creates a different paid-run
+  receipt after each message.
+- Browser run `3093fcfb-921e-5668-aa18-be8024aeec72` reached the real Exa Websets submit path. The
+  durable batch and provider operation both ended `failed_terminal` with `exa_http_401`, zero
+  provider units charged, zero cost charged, and no candidate materialization. A separate
+  read-only request with that credential returned HTTP 401 because its Exa team lacked API-plan
+  entitlement, confirming a provider-auth/entitlement blocker rather than a browser, spend-gate,
+  or verification-gate bug.
+- The live browser correctly showed `0-0 of 0` Accounts, and the project Gallery opened with `No
+  artifacts yet`. Neither downstream surface passes acceptance until a valid Exa credential is
+  installed and the exact run is retried.
+- The same run exposed an additional contract failure: the assistant told the user that five
+  accounts were starting, but `project_run_discovery_configuration` persisted the policy default
+  `requested_account_count=10`, generic approved-ICP firmographics, and no exclusions. The existing
+  Stage-0 discovery-start tool cannot consume the already-recorded five-account criteria override.
+  Do not describe this run as honoring the requested discovery scope.
+- Focused verification passed: Recipe #1 cutover/resume tests, Stage-0 confirmed-run v2/v3 tests,
+  an executor regression proving parent-execution propagation, Ruff, formatting, and mypy.
+- The user then replaced `CLUE_EXA_API_KEY`. A direct Websets GET sent with team id
+  `cmsasct2d00ncl104qjqw0jo9` returned HTTP 200 and listed an existing completed Clue Webset. The
+  acceptance fleet was restarted with the refreshed environment. Exa's public Websets contract
+  binds access to the API key; the production client continues to authenticate with `x-api-key`.

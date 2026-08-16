@@ -14,6 +14,7 @@ from clue_core import (
     ExecutionId,
     ProjectPhase,
     ProjectRunId,
+    decode_jsonb,
     operation_id_from_key,
 )
 from clue_db import ConnFactory, transaction
@@ -180,7 +181,22 @@ class Recipe1ProjectExecutionRouter:
         kind: str,
         key: str,
         context: CompatibilityContext,
+        version: str | None = None,
     ) -> PinRequest:
+        if version is not None:
+            report = await self._compatibility.resolve_requirements(
+                (PinRequest(kind=kind, key=key, version=version),),
+                context=context,
+            )
+            if not report.compatible or len(report.pins) != 1:
+                raise ValueError(f"required Recipe #1 pin {kind}:{key}@{version} is unavailable")
+            pin = report.pins[0]
+            return PinRequest(
+                kind=kind,
+                key=key,
+                version=pin.version,
+                digest=pin.digest,
+            )
         observed = await self._compatibility.observe_current(
             kind=kind,
             key=key,
@@ -227,12 +243,53 @@ class Recipe1ProjectExecutionRouter:
         # Lineage, rather than the mutable current phase, identifies the confirmed Stage-0 entry.
         # This keeps the pin manifest stable if the start tool replays after the run has advanced.
         if complete_lineage:
+            async with self._conn_factory() as conn:
+                receipt_row = (
+                    (
+                        await conn.execute(
+                            text(
+                                "SELECT freshness_snapshot FROM product_context_version "
+                                "WHERE id = :id AND workspace_id = :workspace_id"
+                            ),
+                            {
+                                "id": run.product_context_version_id,
+                                "workspace_id": run.workspace_id,
+                            },
+                        )
+                    )
+                    .mappings()
+                    .one_or_none()
+                )
+            if receipt_row is None:
+                raise ValueError("Recipe #1 cannot load the pinned Stage-0 context receipt")
+            receipt = decode_jsonb(receipt_row["freshness_snapshot"])
+            inputs = receipt.get("inputs") if isinstance(receipt, dict) else None
+            if not isinstance(inputs, list):
+                raise ValueError("Recipe #1 Stage-0 context receipt is malformed")
+            inputs_by_kind = {
+                item.get("kind"): item
+                for item in inputs
+                if isinstance(item, dict) and isinstance(item.get("kind"), str)
+            }
+            client_kb = inputs_by_kind.get("client_kb")
+            product_kb = inputs_by_kind.get("product_kb")
+            expected_client_key = f"{run.client_entity_id}|-"
+            expected_product_key = f"{run.client_entity_id}|{run.product_id}"
+            client_kb_revision = client_kb.get("revision") if isinstance(client_kb, dict) else None
+            product_kb_revision = (
+                product_kb.get("revision") if isinstance(product_kb, dict) else None
+            )
+            if (
+                not isinstance(client_kb, dict)
+                or client_kb.get("subject_ref") != f"client_kb:{expected_client_key}"
+                or client_kb_revision != str(run.client_kb_version)
+                or not isinstance(product_kb, dict)
+                or product_kb.get("subject_ref") != f"product_kb:{expected_product_key}"
+                or not isinstance(product_kb_revision, str)
+            ):
+                raise ValueError("Recipe #1 Stage-0 knowledge pins do not match the confirmed run")
             identities.extend(
                 (
-                    (
-                        "client_kb",
-                        f"{run.client_entity_id}|{run.product_id or '-'}",
-                    ),
                     ("product_context", str(run.product_context_version_id)),
                     ("readiness_decision", str(run.readiness_decision_id)),
                 )
@@ -240,6 +297,23 @@ class Recipe1ProjectExecutionRouter:
         pins = [
             await self._exact_pin(kind=kind, key=key, context=context) for kind, key in identities
         ]
+        if complete_lineage:
+            pins.extend(
+                (
+                    await self._exact_pin(
+                        kind="client_kb",
+                        key=expected_client_key,
+                        version=str(client_kb_revision),
+                        context=context,
+                    ),
+                    await self._exact_pin(
+                        kind="product_kb",
+                        key=expected_product_key,
+                        version=str(product_kb_revision),
+                        context=context,
+                    ),
+                )
+            )
         supervisor = next(item for item in pins if item.kind == "supervisor_policy")
         if supervisor.version != self._settings.recipe1_supervisor_policy_version:
             raise ValueError(
@@ -314,6 +388,10 @@ class Recipe1ProjectExecutionRouter:
             additional_requirements=requirements,
             pre_satisfied_nodes=self._pre_satisfied(run),
         )
+        if not start.created:
+            owner = await self._owner(run.id)
+            if owner == (start.execution_id, ExecutionStatus.PAUSED):
+                await self._executor.resume(execution_id=start.execution_id, actor=actor)
         await enqueue_recipe_execution(self._queue, start.execution_id)
         return start.execution_id
 
