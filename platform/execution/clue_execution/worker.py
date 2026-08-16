@@ -9,6 +9,8 @@ from clue_fleet.lease import WorkId
 from clue_fleet.queue import WorkQueue
 from clue_fleet.work_worker import WorkContext, WorkResult, enqueue_work
 
+PROJECT_PHASE_EXTERNAL_WAIT_REASON = "project_phase_waiting_external"
+
 
 class RecipeExecutionHandler:
     kind = FleetTaskKind.EXECUTE_GRAPH
@@ -17,8 +19,14 @@ class RecipeExecutionHandler:
         self._executor = executor
 
     async def handle(self, context: WorkContext) -> WorkResult:
+        execution_id = ExecutionId(context.work_id)
+        await self._executor.resume_if_paused_for(
+            execution_id=execution_id,
+            actor="system",
+            reason_code=PROJECT_PHASE_EXTERNAL_WAIT_REASON,
+        )
         result = await self._executor.execute(
-            ExecutionId(context.work_id),
+            execution_id,
             worker_id=context.worker_id,
             lease_generation=context.lease_generation,
             stop_requested=context.stop_requested,
@@ -47,4 +55,8 @@ async def enqueue_recipe_execution(
     )
 
 
-__all__ = ["RecipeExecutionHandler", "enqueue_recipe_execution"]
+__all__ = [
+    "PROJECT_PHASE_EXTERNAL_WAIT_REASON",
+    "RecipeExecutionHandler",
+    "enqueue_recipe_execution",
+]

@@ -1487,13 +1487,67 @@ class RecipeExecutor:
             )
 
     async def resume(self, *, execution_id: ExecutionId, actor: str) -> None:
+        resumed = await self._resume(
+            execution_id=execution_id,
+            actor=actor,
+            required_reason_code=None,
+        )
+        if not resumed:
+            raise ExecutionConflict(
+                "only explicitly paused executions can resume; gates require a gate decision"
+            )
+
+    async def resume_if_paused_for(
+        self,
+        *,
+        execution_id: ExecutionId,
+        actor: str,
+        reason_code: str,
+    ) -> bool:
+        """Resume only the exact system pause named by ``reason_code``.
+
+        External provider waits use this on a fresh fleet offer. Human pauses and gates retain
+        their existing explicit authority because a different or absent reason is a no-op.
+        """
+
+        return await self._resume(
+            execution_id=execution_id,
+            actor=actor,
+            required_reason_code=reason_code,
+        )
+
+    async def _resume(
+        self,
+        *,
+        execution_id: ExecutionId,
+        actor: str,
+        required_reason_code: str | None,
+    ) -> bool:
         await self._load_runtime(execution_id)
         async with self._conn_factory() as conn:
             cursor = await get_cursor(conn, execution_id, for_update=True)
             if cursor.status is not ExecutionStatus.PAUSED:
-                raise ExecutionConflict(
-                    "only explicitly paused executions can resume; gates require a gate decision"
-                )
+                return False
+            if required_reason_code is not None:
+                raw_payload = (
+                    await conn.execute(
+                        text(
+                            """
+                            SELECT payload_json
+                            FROM execution_event
+                            WHERE execution_id = :execution_id
+                              AND node_id IS NULL
+                              AND event_type = 'execution.paused'
+                            ORDER BY seq DESC
+                            LIMIT 1
+                            """
+                        ),
+                        {"execution_id": execution_id},
+                    )
+                ).scalar_one_or_none()
+                payload = decode_jsonb(raw_payload) if raw_payload is not None else {}
+                if payload.get("reason_code") != required_reason_code:
+                    return False
             await self._journal.append_event(
                 conn,
                 execution_id=execution_id,
@@ -1501,6 +1555,7 @@ class RecipeExecutor:
                 actor=actor,
                 expected_state_version=cursor.state_version,
             )
+        return True
 
     async def decide_gate(
         self,

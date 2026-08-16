@@ -133,7 +133,11 @@ from clue_execution.views import (
     SupervisorDiagnosisView,
     SupervisorObservationView,
 )
-from clue_execution.worker import RecipeExecutionHandler, enqueue_recipe_execution
+from clue_execution.worker import (
+    PROJECT_PHASE_EXTERNAL_WAIT_REASON,
+    RecipeExecutionHandler,
+    enqueue_recipe_execution,
+)
 
 __all__ = [
     "AggregateRequest",
@@ -250,5 +254,6 @@ __all__ = [
     "SupervisorDiagnosisView",
     "SupervisorObservationView",
     "RecipeExecutionHandler",
+    "PROJECT_PHASE_EXTERNAL_WAIT_REASON",
     "enqueue_recipe_execution",
 ]

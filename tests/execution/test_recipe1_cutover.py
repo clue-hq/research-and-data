@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 from unittest.mock import AsyncMock
 from uuid import uuid4
@@ -33,6 +33,11 @@ from clue_api.recipe_wiring import (
 from clue_api.toolbelt_wiring import build_toolbelt
 from clue_config import Settings
 from clue_core import (
+    DiscoveryBatchId,
+    DiscoveryExternalWait,
+    DiscoveryOperationId,
+    DiscoverySealBlocker,
+    DiscoveryWakeReason,
     EntityId,
     ExecutionId,
     ICPCreatedFrom,
@@ -45,6 +50,7 @@ from clue_core import (
 )
 from clue_db import ConnFactory
 from clue_execution import (
+    PROJECT_PHASE_EXTERNAL_WAIT_REASON,
     CompatibilityLoader,
     DbExecutionJournal,
     DbExecutionRunViewReader,
@@ -123,6 +129,32 @@ class _Phase:
                 else ({"gate": self.phase.value} if self.pause else {})
             ),
         )
+
+
+class _ExternalWaitPhase:
+    phase = ProjectPhase.DISCOVERY
+
+    def __init__(self) -> None:
+        self.calls = 0
+        self.batch_id = DiscoveryBatchId(uuid4())
+        self.operation_id = DiscoveryOperationId(uuid4())
+
+    async def run(self, ctx: PhaseContext) -> PhaseResult:
+        del ctx
+        self.calls += 1
+        if self.calls == 1:
+            wait = DiscoveryExternalWait(
+                discovery_batch_id=self.batch_id,
+                pending_operation_ids=(self.operation_id,),
+                next_poll_at=datetime.now(UTC) + timedelta(minutes=5),
+                wake_reason=DiscoveryWakeReason.SCHEDULED_POLL,
+                blockers=(DiscoverySealBlocker.OPERATION_TERMINALITY,),
+            )
+            return PhaseResult(
+                status=PhaseStatus.WAITING_EXTERNAL,
+                payload=wait.model_dump(mode="json"),
+            )
+        return PhaseResult(status=PhaseStatus.COMPLETED, payload={})
 
 
 class _Queue:
@@ -205,7 +237,11 @@ def test_recipe1_phase_spine_waits_and_resumes_without_reexecuting_gate(
             factory = _factory(conn)
             phases = PhaseHandlerRegistry()
             handlers = {
-                phase: _Phase(phase, pause=phase is ProjectPhase.TIER_CHECKPOINT)
+                phase: (
+                    _ExternalWaitPhase()
+                    if phase is ProjectPhase.DISCOVERY
+                    else _Phase(phase, pause=phase is ProjectPhase.TIER_CHECKPOINT)
+                )
                 for phase in PHASE_SEQUENCE
             }
             for handler in handlers.values():
@@ -409,23 +445,40 @@ def test_recipe1_phase_spine_waits_and_resumes_without_reexecuting_gate(
                 lease_generation=lease.generation,
             )
             assert first.status is ExecutionStatus.PAUSED
-            paused = await machine.status(run_id)
-            assert paused.phase is ProjectPhase.TIER_CHECKPOINT
-            assert paused.status is ProjectRunStatus.PAUSED
-            assert handlers[ProjectPhase.TIER_CHECKPOINT].calls == 1
-
-            await machine.submit_checkpoint(run_id, decision={"action": "approve"})
-            assert await router.resume_owned(run_id, actor="human")
+            waiting = await machine.status(run_id)
+            assert waiting.phase is ProjectPhase.DISCOVERY
+            assert waiting.status is ProjectRunStatus.ACTIVE
+            assert handlers[ProjectPhase.DISCOVERY].calls == 1
+            assert handlers[ProjectPhase.TIER_CHECKPOINT].calls == 0
+            assert await executor.resume_if_paused_for(
+                execution_id=execution_id,
+                actor="system",
+                reason_code=PROJECT_PHASE_EXTERNAL_WAIT_REASON,
+            )
             second = await executor.execute(
                 execution_id,
                 worker_id="worker",
                 lease_generation=lease.generation,
             )
-            assert second.status is ExecutionStatus.COMPLETED
+            assert second.status is ExecutionStatus.PAUSED
+            paused = await machine.status(run_id)
+            assert paused.phase is ProjectPhase.TIER_CHECKPOINT
+            assert paused.status is ProjectRunStatus.PAUSED
+            assert handlers[ProjectPhase.DISCOVERY].calls == 2
+            assert handlers[ProjectPhase.TIER_CHECKPOINT].calls == 1
+
+            await machine.submit_checkpoint(run_id, decision={"action": "approve"})
+            assert await router.resume_owned(run_id, actor="human")
+            third = await executor.execute(
+                execution_id,
+                worker_id="worker",
+                lease_generation=lease.generation,
+            )
+            assert third.status is ExecutionStatus.COMPLETED
             completed = await machine.status(run_id)
             assert completed.status is ProjectRunStatus.COMPLETED
             assert handlers[ProjectPhase.TIER_CHECKPOINT].calls == 2
-            assert second.completed_node_keys == tuple(
+            assert third.completed_node_keys == tuple(
                 sorted(phase.value for phase in PHASE_SEQUENCE)
             )
 
@@ -453,6 +506,14 @@ def test_recipe1_phase_spine_waits_and_resumes_without_reexecuting_gate(
             ]
             assert tier_events.count("node.abandoned") == 1
             assert tier_events.count("node.completed") == 1
+            discovery_events = [
+                event.event_type.value
+                for event in view.events
+                if event.node_id
+                == next(node.node_id for node in view.nodes if node.node_key == "discovery")
+            ]
+            assert discovery_events.count("node.abandoned") == 1
+            assert discovery_events.count("node.completed") == 1
 
             owner_count = int(
                 (
