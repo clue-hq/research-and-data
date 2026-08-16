@@ -5,13 +5,15 @@ Slices 2 and 3 persist and serve the ICP-confirmation gate.  Keeping the models 
 lets the contract battery reject the defective authority shapes before any runtime behavior moves.
 
 The existing ``@1`` tools remain replayable historical contracts.  Their schemas are not mutated:
-the corrected authority split is expressed by ``evaluate_stage0_readiness@2`` and
-``synthesize_icps@2``.
+the corrected authority split is expressed by ``evaluate_stage0_readiness@2`` and the immutable
+``synthesize_icps@2`` contract. The active ``synthesize_icps@3`` successor adds only a bounded
+human-readable projection of those same persisted drafts.
 
 The 2026-08-16 discovery-run amendment follows the same rule. It introduced
 ``start_confirmed_project_run@2`` with no model-authored lineage, an immutable receipt over the
 substantive Stage-0 inputs that already exist, and the budget-controls-off boundary. The
-historical ``@1`` tool remains unchanged for replay while ``@2`` is the active registered version.
+historical ``@1`` tool remains unchanged for replay. The provider-neutral ``@3`` successor is the
+current active run-entry contract; ``@2`` remains an immutable replay input.
 """
 
 from __future__ import annotations
@@ -19,9 +21,17 @@ from __future__ import annotations
 import hashlib
 import json
 from decimal import Decimal
-from typing import ClassVar, Literal
+from typing import Annotated, ClassVar, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    JsonValue,
+    StringConstraints,
+    field_validator,
+    model_validator,
+)
 
 from clue_toolbelt import ToolInput, ToolOutput
 
@@ -35,11 +45,13 @@ __all__ = [
     "START_CONFIRMED_PROJECT_RUN_V2",
     "START_CONFIRMED_PROJECT_RUN_V3",
     "SYNTHESIZE_ICPS_V2",
+    "SYNTHESIZE_ICPS_V3",
     "DiscoveryConfigurationContract",
     "DiscoverySpendBoundaryContract",
     "DraftIcpSpecRef",
     "EvaluateStage0ReadinessV2Input",
     "IcpConfirmationGateContract",
+    "IcpSynthesisPresentation",
     "ProductContextReceiptContract",
     "ProductContextReceiptInputRef",
     "StartConfirmedProjectRunV2Input",
@@ -50,6 +62,8 @@ __all__ = [
     "Stage0ReadinessV2Output",
     "SynthesizeIcpsV2Input",
     "SynthesizeIcpsV2Output",
+    "SynthesizeIcpsV3Input",
+    "SynthesizeIcpsV3Output",
     "TrustedStage0ProjectScopeInput",
     "canonical_subject_sha256",
     "product_context_receipt_manifest_sha256",
@@ -57,6 +71,7 @@ __all__ = [
 
 EVALUATE_STAGE0_READINESS_V2 = "evaluate_stage0_readiness@2"
 SYNTHESIZE_ICPS_V2 = "synthesize_icps@2"
+SYNTHESIZE_ICPS_V3 = "synthesize_icps@3"
 START_CONFIRMED_PROJECT_RUN_V2 = "start_confirmed_project_run@2"
 START_CONFIRMED_PROJECT_RUN_V3 = "start_confirmed_project_run@3"
 ICP_CONFIRMATION_GATE_KIND = "icp_confirmation"
@@ -335,6 +350,49 @@ class SynthesizeIcpsV2Output(ToolOutput):
 
     readiness_decision_id: str = Field(pattern=_UUID_PATTERN)
     icp_specs: tuple[DraftIcpSpecRef, ...] = Field(min_length=1)
+
+
+class IcpSynthesisPresentation(_FrozenContract):
+    """Bounded, model-readable projection of one exact persisted draft ICP.
+
+    This is not confirmation authority and deliberately omits internal lineage, claim ids, source
+    ids, rubric JSON and provider configuration. It gives the conversational agent enough exact
+    business content to explain the synthesis in its ordinary assistant message while the
+    separately persisted gate remains the only approval surface.
+    """
+
+    icp_key: str = Field(min_length=1)
+    icp_version: int = Field(gt=0)
+    name: str = Field(min_length=1, max_length=200)
+    rationale: str | None = Field(default=None, max_length=4_000)
+    target_criteria: tuple[
+        Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=500)],
+        ...,
+    ] = Field(max_length=20)
+    buying_signals: tuple[
+        Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=500)],
+        ...,
+    ] = Field(max_length=20)
+    discovery_motion: Literal["discovery", "lookalike"]
+    content_truncated: bool = False
+
+
+class SynthesizeIcpsV3Input(SynthesizeIcpsV2Input):
+    """The same trusted no-argument synthesis request as v2."""
+
+
+class SynthesizeIcpsV3Output(SynthesizeIcpsV2Output):
+    """Draft references plus bounded content for the normal assistant message."""
+
+    presentations: tuple[IcpSynthesisPresentation, ...] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def presentations_match_exact_draft_refs(self) -> SynthesizeIcpsV3Output:
+        ref_keys = tuple((item.icp_key, item.icp_version) for item in self.icp_specs)
+        presentation_keys = tuple((item.icp_key, item.icp_version) for item in self.presentations)
+        if presentation_keys != ref_keys:
+            raise ValueError("ICP presentations must match the exact ordered draft references")
+        return self
 
 
 class IcpConfirmationGateContract(_FrozenContract):

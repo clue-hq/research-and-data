@@ -48,7 +48,7 @@ def test_every_registered_tool_has_a_typed_output_contract() -> None:
 def test_conversation_runtime_pins_the_promoted_integration_recipe() -> None:
     """The combined recipe is inert if the detached turn runner still asks for a predecessor."""
 
-    assert CONVERSATION_RECIPE_VERSION == 11
+    assert CONVERSATION_RECIPE_VERSION == 13
 
 
 def test_every_standing_recipe_tool_is_exact_typed_pinned_and_replay_certified() -> None:
@@ -189,6 +189,22 @@ def test_provider_neutral_discovery_mints_recipe_v12_without_rewriting_v11() -> 
     assert v12["version"] == 12
 
 
+def test_icp_presentation_mints_recipe_v13_without_rewriting_v12() -> None:
+    root = Path(__file__).resolve().parents[2] / "platform" / "execution" / "recipes"
+    v12 = json.loads((root / "recipe0-stage0-v12.json").read_text())
+    v13 = json.loads((root / "recipe0-stage0-v13.json").read_text())
+
+    v12_index = SYSTEM_RECIPE_FILENAMES.index("recipe0-stage0-v12.json")
+    assert SYSTEM_RECIPE_FILENAMES[v12_index : v12_index + 2] == (
+        "recipe0-stage0-v12.json",
+        "recipe0-stage0-v13.json",
+    )
+    assert "synthesize_icps@2" in v12["graph"]["tool_allowlist"]
+    assert "synthesize_icps@3" in v13["graph"]["tool_allowlist"]
+    assert "synthesize_icps@2" not in v13["graph"]["tool_allowlist"]
+    assert v13["version"] == 13
+
+
 def test_operation_id_requirements_are_explicit() -> None:
     audit = build_replay_safety_audit(_standing_recipe_registry())
     operation_bound = {item.address for item in audit if item.operation_id_required}
@@ -212,7 +228,7 @@ def test_operation_id_requirements_are_explicit() -> None:
         "start_project_run@1",
         "start_recon@1",
         "submit_onboarding_input@1",
-        "synthesize_icps@2",
+        "synthesize_icps@3",
     }
 
     exactly_operation_idempotent = {

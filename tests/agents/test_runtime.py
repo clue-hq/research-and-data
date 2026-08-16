@@ -756,7 +756,7 @@ def test_real_deepagent_tool_call_uses_exact_governed_descriptor_wrapper() -> No
     assert outcome.failure_code == "missing_finalize"
     assert len(execution.validated_plans) == 1
     proposed = execution.validated_plans[0].steps[0]
-    assert proposed.tool.address == "synthesize_icps@2"  # type: ignore[union-attr]
+    assert proposed.tool.address == "synthesize_icps@3"  # type: ignore[union-attr]
     assert proposed.arguments == {}  # type: ignore[union-attr]
 
 

@@ -78,6 +78,7 @@ from clue_api.coverage_tools import (
     build_research_account_gaps_tool,
     build_research_account_gaps_v2_tool,
 )
+from clue_api.discovery_configuration import ConfirmedDiscoveryPreflight
 from clue_api.discovery_seal import DbSealedDiscoveryAccountManifestReader
 from clue_api.dynamic_client_kb import DynamicClientKbMaterializer
 from clue_api.entity_research_launch_tools import (
@@ -2621,6 +2622,7 @@ def build_toolbelt(
     ) = None,
     stage0_scrape_binder: Callable[[AccountEntity], None] | None = None,
     project_execution_router: ProjectExecutionRouter | None = None,
+    confirmed_discovery_preflight: ConfirmedDiscoveryPreflight | None = None,
     research_view_composer: ResearchViewComposer | None = None,
     research_view_snapshots: ResearchViewSnapshotService | None = None,
     research_view_recheck: ResearchViewRecheckService | None = None,
@@ -2897,12 +2899,14 @@ def build_toolbelt(
         synthesis_model=resolved_settings.synthesis_model,
         statement_evidence=statement_evidence,
         project_execution_router=project_execution_router,
+        confirmed_discovery_preflight=confirmed_discovery_preflight,
         budget_controls_enabled=resolved_settings.budget_controls_enabled,
     ):
         registry.register(
             tool,
             make_default=(
-                tool.name != "start_confirmed_project_run" or tool.version == "3"
+                (tool.name != "start_confirmed_project_run" or tool.version == "3")
+                and (tool.name != "synthesize_icps" or tool.version == "3")
             ),
         )
     for tool in build_research_directive_tools(

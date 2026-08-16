@@ -11,10 +11,13 @@ from clue_api.stage0_project_contracts import (
     PRODUCT_CONTEXT_RECEIPT_SCHEMA_V1,
     DiscoveryConfigurationContract,
     DiscoverySpendBoundaryContract,
+    DraftIcpSpecRef,
+    IcpSynthesisPresentation,
     ProductContextReceiptContract,
     ProductContextReceiptInputRef,
     StartConfirmedProjectRunV2Input,
     StartConfirmedProjectRunV2Output,
+    SynthesizeIcpsV3Output,
     product_context_receipt_manifest_sha256,
 )
 
@@ -130,6 +133,56 @@ def test_confirmed_run_v2_has_no_model_or_frontend_authored_authority_fields() -
 
 def test_confirmed_run_v2_does_not_expose_internal_receipt_or_readiness_ids() -> None:
     assert set(StartConfirmedProjectRunV2Output.model_fields) == {"project_run_id", "phase"}
+
+
+def test_icp_presentation_is_bounded_business_copy_and_matches_its_exact_draft() -> None:
+    ref = DraftIcpSpecRef(
+        workspace_id=_WORKSPACE_ID,
+        icp_key="independent-neurosurgery-practices",
+        icp_version=2,
+        status="draft",
+    )
+    presentation = IcpSynthesisPresentation(
+        icp_key=ref.icp_key,
+        icp_version=ref.icp_version,
+        name="Independent neurosurgery practices",
+        rationale="Prioritize practices where call handling constrains patient access.",
+        target_criteria=("Industry: Neurosurgery", "Geography: United States"),
+        buying_signals=("Call Volume Growth",),
+        discovery_motion="discovery",
+        content_truncated=False,
+    )
+    output = SynthesizeIcpsV3Output(
+        readiness_decision_id=_DECISION_ID,
+        icp_specs=(ref,),
+        presentations=(presentation,),
+    )
+
+    assert output.presentations == (presentation,)
+    assert set(IcpSynthesisPresentation.model_fields) == {
+        "icp_key",
+        "icp_version",
+        "name",
+        "rationale",
+        "target_criteria",
+        "buying_signals",
+        "discovery_motion",
+        "content_truncated",
+    }
+    with pytest.raises(ValidationError, match="match the exact ordered draft"):
+        SynthesizeIcpsV3Output(
+            readiness_decision_id=_DECISION_ID,
+            icp_specs=(ref,),
+            presentations=(presentation.model_copy(update={"icp_version": 3}),),
+        )
+    with pytest.raises(ValidationError, match="at most 500 characters"):
+        IcpSynthesisPresentation.model_validate(
+            {
+                **presentation.model_dump(),
+                "target_criteria": ("x" * 501,),
+                "content_truncated": True,
+            }
+        )
 
 
 def test_budget_controls_off_is_internal_record_only_allow_without_a_human_gate() -> None:

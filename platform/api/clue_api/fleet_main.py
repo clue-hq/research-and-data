@@ -588,6 +588,11 @@ async def _serve() -> None:
             if settings.value_narrative_synthesis_enabled
             else None
         )
+        discovery_batch_starter = _build_exa_discovery_starter(
+            settings,
+            secrets=secrets,
+            storage=storage,
+        )
         registry = build_toolbelt(
             storage=storage,
             settings=settings,
@@ -603,6 +608,7 @@ async def _serve() -> None:
             research_directive_memory_write_factory=memory_write_factory_builder(settings, gateway),
             queue=task_queue,
             project_execution_router=project_execution_router,
+            confirmed_discovery_preflight=discovery_batch_starter,
             research_view_composer=(
                 research_views.composer if research_views is not None else None
             ),
@@ -666,11 +672,7 @@ async def _serve() -> None:
             settings=settings,
             gateway=gateway,
             storage=storage,
-            discovery_batch_starter=_build_exa_discovery_starter(
-                settings,
-                secrets=secrets,
-                storage=storage,
-            ),
+            discovery_batch_starter=discovery_batch_starter,
             discovery_required_field_resolver=build_production_sumble_discovery_gap_resolver(
                 settings,
                 secrets=secrets,

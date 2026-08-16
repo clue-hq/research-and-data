@@ -57,7 +57,7 @@ def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
     assert C6_AGENT_TOOL_AUTHORITY["synthesize_value_narrative"] == ()
     # The combined inventory retains both exact-subject human gates, FI-2's selected-Account
     # launch, and S4/S5's company/product readers. Machine-only confirmation remains withheld.
-    assert len(C6_AGENT_TOOL_AUTHORITY) == 62
+    assert len(C6_AGENT_TOOL_AUTHORITY) == 63
     assert C6_AGENT_TOOL_AUTHORITY["open_icp_confirmation_gate"] == (AgentRole.HEAD_OF_ABM,)
     assert C6_AGENT_TOOL_AUTHORITY["list_client_knowledge"] == (AgentRole.HEAD_OF_ABM,)
     assert C6_AGENT_TOOL_AUTHORITY["inspect_client_claim"] == (AgentRole.HEAD_OF_ABM,)

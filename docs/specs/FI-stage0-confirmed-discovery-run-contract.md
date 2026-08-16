@@ -1,6 +1,6 @@
 # FI — Stage-0 confirmed discovery-run contract
 
-**Status:** RATIFIED 2026-08-16 (founder); confirmed-run and provider-neutral discovery boundary implemented
+**Status:** RATIFIED 2026-08-16 (founder); confirmed-run, bounded ICP presentation, and provider-neutral discovery boundary implemented
 
 **Supersedes for the active flow:** the model-authored run-entry input in
 [`PC-C0-step4-contract-freeze.md`](./PC-C0-step4-contract-freeze.md) and the corresponding
@@ -123,6 +123,15 @@ exclusion rules into Exa's bounded criterion slots, and enforces the 50-account 
 Historical runs without a receipt retain only their already-explicit legacy Exa strategy path.
 Exa-specific requirements do not leak into the ICP, product-context receipt, or run-entry tool.
 
+Before `start_confirmed_project_run@3` creates a product-context receipt or `project_run`, the
+active provider adapter must compile the confirmed provider-neutral configuration through its
+pure preflight boundary. An unsupported entity type, empty provider query, unrepresentable
+criteria, count outside provider/policy limits, or malformed exclusion therefore fails before a
+paid run exists. Preflight performs no provider request. Once the exact content-addressed run id
+is known, the same validation is repeated against that exact phase context immediately before the
+run insert; transaction rollback preserves the no-partial-run invariant if the active provider
+configuration changes between checks.
+
 ## 5. Executable contract
 
 `clue_api.stage0_project_contracts` freezes:
@@ -136,6 +145,16 @@ Exa-specific requirements do not leak into the ICP, product-context receipt, or 
 
 Slice 4 adds the schema-identical empty `StartConfirmedProjectRunV3Input`, the versioned planning
 policy, the scope-only gate tool, the append-only run receipt, and the Exa compiler boundary.
+
+Slice 5 adds `synthesize_icps@3`. It preserves the durable synthesis behavior of `@2` and returns
+a bounded `presentations` tuple whose ordered `(icp_key, icp_version)` pairs must exactly equal the
+persisted draft references. Each presentation contains only the draft's human-readable name,
+rationale, target criteria, buying signals, discovery motion, and an honest truncation marker. The
+Stage-0 skill requires the agent to write that content in the normal assistant message paired with
+the separate ICP approval gate; the gate remains only the decision control. Active
+immutable resources are
+`head-of-abm@v32`, `stage0-interview@v19`, and `recipe0-stage0@13`; the v31/v18/v12 lineage stays
+available for exact historical replay.
 
 `start_confirmed_project_run@2` performs the receipt reuse, internal readiness transition and
 idempotent run start. A replay after Recipe #1 has advanced the run validates the same immutable

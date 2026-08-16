@@ -30,7 +30,10 @@ from clue_api.agent_gate import get_gate
 from clue_api.agent_turn_submission import thread_work_id
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
 from clue_api.chat import CHAT_PERMISSIONS, RequestPrincipal
-from clue_api.discovery_configuration import get_discovery_configuration_receipt
+from clue_api.discovery_configuration import (
+    ConfirmedDiscoveryPreflightError,
+    get_discovery_configuration_receipt,
+)
 from clue_api.execution_wiring import build_tool_invoker
 from clue_api.product_knowledge_privacy import product_context_subject_bindings
 from clue_api.projections_app import create_projections_app
@@ -41,6 +44,7 @@ from clue_api.stage0_icp_gate_tools import (
 )
 from clue_api.stage0_project_contracts import (
     EvaluateStage0ReadinessV2Input,
+    IcpSynthesisPresentation,
     Stage0ReadinessV2Output,
     StartConfirmedProjectRunV2Input,
     StartConfirmedProjectRunV2Output,
@@ -48,6 +52,8 @@ from clue_api.stage0_project_contracts import (
     StartConfirmedProjectRunV3Output,
     SynthesizeIcpsV2Input,
     SynthesizeIcpsV2Output,
+    SynthesizeIcpsV3Input,
+    SynthesizeIcpsV3Output,
 )
 from clue_api.stage0_project_tools import (
     EvaluateStage0ReadinessV2Tool,
@@ -57,6 +63,7 @@ from clue_api.stage0_project_tools import (
     StartConfirmedProjectRunV2Tool,
     StartConfirmedProjectRunV3Tool,
     SynthesizeIcpsV2Tool,
+    SynthesizeIcpsV3Tool,
 )
 from clue_api.thread_wiring import register_thread_tools
 from clue_api.trial.browser_fixture import (
@@ -187,6 +194,19 @@ class _RecordingProjectExecutionRouter:
     ) -> bool:
         del project_run_id, actor
         return False
+
+
+class _RecordingConfirmedDiscoveryPreflight:
+    def __init__(self, *, reject: bool = False) -> None:
+        self.reject = reject
+        self.calls: list[object] = []
+
+    async def validate_confirmed_discovery(self, **kwargs: object) -> None:
+        self.calls.append(kwargs)
+        if self.reject:
+            raise ConfirmedDiscoveryPreflightError(
+                "the confirmed criteria exceed the active provider envelope"
+            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -981,6 +1001,50 @@ def test_confirmed_run_v2_refuses_a_context_card_bound_to_another_product(
     run_async(scenario())
 
 
+def test_synthesize_icps_v3_returns_exact_bounded_content_for_the_assistant_message(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            seeded = await _seed_scenario(conn, tmp_path, label="synthesis-presentation-v3")
+
+            @asynccontextmanager
+            async def conn_factory() -> AsyncIterator[AsyncConnection]:
+                yield conn
+
+            ctx = ToolContext(
+                workspace_id=seeded.workspace_id,
+                actor="agent",
+                conn_factory=conn_factory,
+                operation_id=OperationId(uuid4()),
+                execution_id=seeded.execution_id,
+            )
+            tool = SynthesizeIcpsV3Tool(conn_factory=conn_factory)
+            inputs = SynthesizeIcpsV3Input()
+            assert not await tool.preconditions(inputs, ctx)
+            first_result = await tool.invoke(inputs, ctx)
+            replay_result = await tool.invoke(inputs, ctx)
+            first = SynthesizeIcpsV3Output.model_validate(first_result.references)
+            replay = SynthesizeIcpsV3Output.model_validate(replay_result.references)
+
+            assert replay == first
+            assert replay_result.replayed is True
+            assert len(first.icp_specs) == len(first.presentations) == 1
+            ref = first.icp_specs[0]
+            presentation = first.presentations[0]
+            assert (presentation.icp_key, presentation.icp_version) == (
+                ref.icp_key,
+                ref.icp_version,
+            )
+            assert presentation.name
+            assert presentation.discovery_motion in {"discovery", "lookalike"}
+            assert "workspace_id" not in IcpSynthesisPresentation.model_fields
+            assert "client_entity_id" not in IcpSynthesisPresentation.model_fields
+            assert "product_id" not in IcpSynthesisPresentation.model_fields
+
+    run_async(scenario())
+
+
 def test_confirmed_run_v3_pins_one_human_confirmed_provider_neutral_scope(
     tmp_path: Path,
 ) -> None:
@@ -1011,9 +1075,11 @@ def test_confirmed_run_v3_pins_one_human_confirmed_provider_neutral_scope(
                 yield conn
 
             router = _RecordingProjectExecutionRouter()
+            preflight = _RecordingConfirmedDiscoveryPreflight()
             tool = StartConfirmedProjectRunV3Tool(
                 conn_factory=conn_factory,
                 project_execution_router=router,
+                confirmed_discovery_preflight=preflight,
                 budget_controls_enabled=False,
             )
 
@@ -1053,8 +1119,7 @@ def test_confirmed_run_v3_pins_one_human_confirmed_provider_neutral_scope(
             )
             async with _client(app) as client:
                 scope_approved = await client.post(
-                    f"/api/v1/projects/{seeded.project_id}/threads/"
-                    f"{seeded.thread_id}/turns",
+                    f"/api/v1/projects/{seeded.project_id}/threads/{seeded.thread_id}/turns",
                     json={
                         "gate_response": {
                             "gate_id": scope_gate.gate_id,
@@ -1068,6 +1133,52 @@ def test_confirmed_run_v3_pins_one_human_confirmed_provider_neutral_scope(
                     },
                 )
             assert scope_approved.status_code == 202, scope_approved.text
+
+            rejecting_tool = StartConfirmedProjectRunV3Tool(
+                conn_factory=conn_factory,
+                project_execution_router=router,
+                confirmed_discovery_preflight=_RecordingConfirmedDiscoveryPreflight(reject=True),
+                budget_controls_enabled=False,
+            )
+            rejected_ctx = ToolContext(
+                workspace_id=seeded.workspace_id,
+                actor="agent",
+                conn_factory=conn_factory,
+                operation_id=OperationId(uuid4()),
+                execution_id=execution_id,
+            )
+            rejected = await rejecting_tool.preconditions(
+                StartConfirmedProjectRunV3Input(), rejected_ctx
+            )
+            assert [failure.reason_code for failure in rejected] == [
+                "discovery_provider_preflight_failed"
+            ]
+            with pytest.raises(
+                ConfirmedDiscoveryPreflightError,
+                match="confirmed criteria exceed",
+            ):
+                await rejecting_tool.invoke(StartConfirmedProjectRunV3Input(), rejected_ctx)
+            assert (
+                await conn.execute(
+                    text(
+                        "SELECT count(*) FROM project_run "
+                        "WHERE workspace_id=:workspace_id AND project_id=:project_id"
+                    ),
+                    {
+                        "workspace_id": seeded.workspace_id,
+                        "project_id": seeded.project_id,
+                    },
+                )
+            ).scalar_one() == 0
+            assert (
+                await conn.execute(
+                    text(
+                        "SELECT count(*) FROM product_context_version "
+                        "WHERE workspace_id=:workspace_id"
+                    ),
+                    {"workspace_id": seeded.workspace_id},
+                )
+            ).scalar_one() == 0
 
             async def invoke() -> StartConfirmedProjectRunV3Output:
                 ctx = ToolContext(
@@ -1087,6 +1198,7 @@ def test_confirmed_run_v3_pins_one_human_confirmed_provider_neutral_scope(
             replay = await invoke()
             assert replay == first
             assert len(router.attached) == 2
+            assert len(preflight.calls) == 6
 
             run_id = ProjectRunId(UUID(first.project_run_id))
             receipt = await get_discovery_configuration_receipt(

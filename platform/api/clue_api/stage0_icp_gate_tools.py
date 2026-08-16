@@ -104,7 +104,8 @@ class OpenIcpConfirmationGateTool(Tool):
     version = "1"
     model_description = (
         "Present one durable draft ICP spec to the current human for confirmation. Supply only "
-        "the icp_key and icp_version returned by synthesize_icps@2; the platform derives and "
+        "the icp_key and icp_version returned by the active synthesize_icps tool; the platform "
+        "derives and "
         "persists the exact snapshot, digest, permitted decisions, project scope and addressee. "
         "Then end awaiting input with the returned durable agent_gate id."
     )

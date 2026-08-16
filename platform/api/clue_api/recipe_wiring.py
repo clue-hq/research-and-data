@@ -60,6 +60,8 @@ SYSTEM_RECIPE_FILENAMES: tuple[str, ...] = (
     "recipe0-stage0-v11.json",
     # Provider-neutral discovery scope is derived/confirmed and pinned by start @3.
     "recipe0-stage0-v12.json",
+    # Bounded ICP presentation accompanies the normal assistant message; Exa preflights pre-run.
+    "recipe0-stage0-v13.json",
     "recipe1-classic-v1.json",
     "recipe1-classic-v2.json",
 )

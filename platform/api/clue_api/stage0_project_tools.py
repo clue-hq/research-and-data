@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Annotated, ClassVar, cast
+from typing import Annotated, ClassVar, Literal, cast
 from uuid import UUID
 
 from pydantic import Field, JsonValue, StringConstraints
@@ -20,9 +20,12 @@ from clue_api.agent_gate import (
 from clue_api.agent_gate_tools import gate_ref
 from clue_api.discovery_configuration import (
     DEFAULT_DISCOVERY_PLANNING_POLICY,
+    ConfirmedDiscoveryPreflight,
+    ConfirmedDiscoveryPreflightError,
     DiscoveryConfigurationReceipt,
     derive_discovery_configuration,
     discovery_configuration_sha256,
+    firmographic_criteria,
     parse_discovery_configuration_json,
     put_discovery_configuration_receipt,
 )
@@ -34,6 +37,7 @@ from clue_api.stage0_project_contracts import (
     DiscoveryConfigurationContract,
     DraftIcpSpecRef,
     EvaluateStage0ReadinessV2Input,
+    IcpSynthesisPresentation,
     ProductContextReceiptContract,
     ProductContextReceiptInputRef,
     Stage0ReadinessV2Output,
@@ -43,6 +47,8 @@ from clue_api.stage0_project_contracts import (
     StartConfirmedProjectRunV3Output,
     SynthesizeIcpsV2Input,
     SynthesizeIcpsV2Output,
+    SynthesizeIcpsV3Input,
+    SynthesizeIcpsV3Output,
     TrustedStage0ProjectScopeInput,
     canonical_subject_sha256,
     product_context_receipt_manifest_sha256,
@@ -59,9 +65,12 @@ from clue_api.turn_action import (
 from clue_api.turn_binding import TRUSTED_TURN_FIELD
 from clue_config import DEFAULT_STAGE0_POLICY, Stage0Policy
 from clue_core import (
+    ICPSpec,
     ICPStatus,
     LLMGateway,
+    PhaseContext,
     ProductContextVersionId,
+    ProjectPhase,
     ProjectRunId,
     ReadinessDecisionId,
     ReadinessGate,
@@ -119,6 +128,7 @@ __all__ = [
     "StartConfirmedProjectRunV2Tool",
     "StartConfirmedProjectRunV3Tool",
     "SynthesizeIcpsV2Tool",
+    "SynthesizeIcpsV3Tool",
     "stage0_project_tools",
 ]
 
@@ -553,6 +563,7 @@ class _Stage0ProjectTool(Tool):
         synthesis_model: str | None = None,
         statement_evidence: ArtifactStatementEvidenceReader | None = None,
         project_execution_router: ProjectExecutionRouter | None = None,
+        confirmed_discovery_preflight: ConfirmedDiscoveryPreflight | None = None,
         budget_controls_enabled: bool = True,
     ) -> None:
         self._conn_factory = conn_factory
@@ -561,6 +572,7 @@ class _Stage0ProjectTool(Tool):
         self._synthesis_model = synthesis_model
         self._statement_evidence = statement_evidence
         self._project_execution_router = project_execution_router
+        self._confirmed_discovery_preflight = confirmed_discovery_preflight
         self._budget_controls_enabled = budget_controls_enabled
 
 
@@ -711,8 +723,8 @@ class SynthesizeIcpsV2Tool(_Stage0ProjectTool):
         "Synthesize ICP proposals for the current trusted Stage-0 scope after backend readiness "
         "passes. Takes no arguments and returns only durable draft icp_spec references."
     )
-    input_model = SynthesizeIcpsV2Input
-    output_model = SynthesizeIcpsV2Output
+    input_model: ClassVar[type[ToolInput]] = SynthesizeIcpsV2Input
+    output_model: ClassVar[type[ToolOutput]] = SynthesizeIcpsV2Output
     replay = ReplaySafety(
         policy=ReplayPolicy.OPERATION_IDEMPOTENT,
         durable_identity="stage0_icp_synthesis.operation_id",
@@ -926,6 +938,102 @@ class SynthesizeIcpsV2Tool(_Stage0ProjectTool):
             tool=self.name,
             version=self.version,
             references=output.model_dump(),
+        )
+
+
+def _humanize_identifier(value: str) -> str:
+    normalized = value.replace(".", "-").replace("_", "-")
+    return " ".join(part for part in normalized.split("-") if part).title()
+
+
+def _bounded_text(value: str | None, *, maximum: int) -> tuple[str | None, bool]:
+    if value is None:
+        return None, False
+    cleaned = " ".join(value.split())
+    if not cleaned:
+        return None, False
+    return cleaned[:maximum], len(cleaned) > maximum
+
+
+def _icp_presentation(spec: ICPSpec) -> IcpSynthesisPresentation:
+    strategy = spec.discovery_strategy
+    name, name_truncated = _bounded_text(spec.label, maximum=200)
+    if name is None:
+        name = _humanize_identifier(spec.icp_key)[:200]
+    rationale, rationale_truncated = _bounded_text(spec.description, maximum=4_000)
+    all_criteria = firmographic_criteria(strategy)
+    criteria = tuple(item[:500] for item in all_criteria[:20])
+    criteria_truncated = len(all_criteria) > 20 or any(
+        len(item) > 500 for item in all_criteria[:20]
+    )
+    raw_signals = strategy.get("candidate_signal_classes")
+    all_signals = (
+        tuple(
+            _humanize_identifier(value)
+            for value in raw_signals
+            if isinstance(value, str) and value.strip()
+        )
+        if isinstance(raw_signals, list)
+        else ()
+    )
+    signals = tuple(item[:500] for item in all_signals[:20])
+    signals_truncated = len(all_signals) > 20 or any(len(item) > 500 for item in all_signals[:20])
+    raw_motion = strategy.get("mode")
+    motion: Literal["discovery", "lookalike"] = (
+        "lookalike" if raw_motion == "lookalike" else "discovery"
+    )
+    return IcpSynthesisPresentation(
+        icp_key=spec.icp_key,
+        icp_version=spec.version,
+        name=name,
+        rationale=rationale,
+        target_criteria=criteria,
+        buying_signals=signals,
+        discovery_motion=motion,
+        content_truncated=(
+            name_truncated or rationale_truncated or criteria_truncated or signals_truncated
+        ),
+    )
+
+
+class SynthesizeIcpsV3Tool(SynthesizeIcpsV2Tool):
+    """Synthesize exact drafts and expose bounded content for the assistant's prose."""
+
+    version = "3"
+    model_description = (
+        "Synthesize draft ICPs for the current trusted Stage-0 scope. Takes no arguments. Returns "
+        "durable draft references plus a bounded presentation of each exact persisted draft. "
+        "Use that presentation in the normal assistant message paired with its approval gate."
+    )
+    input_model = SynthesizeIcpsV3Input
+    output_model = SynthesizeIcpsV3Output
+
+    async def invoke(self, inputs: ToolInput, ctx: ToolContext) -> ToolResult:
+        assert isinstance(inputs, SynthesizeIcpsV3Input)
+        base = await super().invoke(inputs, ctx)
+        output = SynthesizeIcpsV2Output.model_validate(base.references)
+        presentations: list[IcpSynthesisPresentation] = []
+        async with self._conn_factory() as conn:
+            for ref in output.icp_specs:
+                spec = await get_icp_version(
+                    conn,
+                    ref.workspace_id,
+                    ref.icp_key,
+                    ref.icp_version,
+                )
+                if spec is None:
+                    raise ValueError("synthesized ICP version vanished before presentation")
+                presentations.append(_icp_presentation(spec))
+        result = SynthesizeIcpsV3Output(
+            readiness_decision_id=output.readiness_decision_id,
+            icp_specs=output.icp_specs,
+            presentations=tuple(presentations),
+        )
+        return ToolResult(
+            tool=self.name,
+            version=self.version,
+            references=result.model_dump(),
+            replayed=base.replayed,
         )
 
 
@@ -1206,6 +1314,27 @@ class StartConfirmedProjectRunV2Tool(_Stage0ProjectTool):
             approved_icp = await _approved_icp(conn, scope=scope)
             if approved_icp is None:
                 raise ValueError("no human-approved active ICP exists in this exact turn lineage")
+            if discovery_configuration is not None:
+                preview_run_id = ProjectRunId(
+                    UUID(
+                        str(
+                            operation_id_from_key(
+                                scope.workspace_id,
+                                "confirmed-discovery-provider-preflight:"
+                                f"{scope.project_id}:{approved_icp.icp_key}:"
+                                f"{approved_icp.version}:"
+                                f"{discovery_configuration_sha256(discovery_configuration)}",
+                            )
+                        )
+                    )
+                )
+                await self._validate_provider_preflight(
+                    conn,
+                    scope=scope,
+                    approved_icp=approved_icp,
+                    discovery_configuration=discovery_configuration,
+                    project_run_id=preview_run_id,
+                )
             receipt = _receipt_from_existing_inputs(
                 scope=scope,
                 approved_icp=approved_icp,
@@ -1314,6 +1443,14 @@ class StartConfirmedProjectRunV2Tool(_Stage0ProjectTool):
                 ),
             )
             run_id = ProjectRunId(UUID(str(run_operation)))
+            if discovery_configuration is not None:
+                await self._validate_provider_preflight(
+                    conn,
+                    scope=scope,
+                    approved_icp=approved_icp,
+                    discovery_configuration=discovery_configuration,
+                    project_run_id=run_id,
+                )
             await start_confirmed_project_run(
                 conn,
                 project_run_id=run_id,
@@ -1345,6 +1482,43 @@ class StartConfirmedProjectRunV2Tool(_Stage0ProjectTool):
                     ),
                 )
         return run_id
+
+    async def _validate_provider_preflight(
+        self,
+        conn: AsyncConnection,
+        *,
+        scope: Stage0ProjectScope,
+        approved_icp: _ApprovedIcp,
+        discovery_configuration: DiscoveryConfigurationContract,
+        project_run_id: ProjectRunId,
+    ) -> None:
+        validator = self._confirmed_discovery_preflight
+        if validator is None:
+            raise ConfirmedDiscoveryPreflightError(
+                "the active discovery provider has no pre-run validator"
+            )
+        spec = await get_icp_version(
+            conn,
+            scope.workspace_id,
+            approved_icp.icp_key,
+            approved_icp.version,
+        )
+        if spec is None:
+            raise ConfirmedDiscoveryPreflightError("the approved ICP is unavailable")
+        await validator.validate_confirmed_discovery(
+            ctx=PhaseContext(
+                project_run_id=project_run_id,
+                project_id=scope.project_id,
+                brand_id=scope.brand_id,
+                phase=ProjectPhase.DISCOVERY,
+                workspace_id=scope.workspace_id,
+                icp_key=approved_icp.icp_key,
+                icp_version=approved_icp.version,
+                budget_cap_cents=None,
+            ),
+            spec=spec,
+            configuration=discovery_configuration,
+        )
 
     async def invoke(self, inputs: ToolInput, ctx: ToolContext) -> ToolResult:
         assert isinstance(inputs, StartConfirmedProjectRunV2Input)
@@ -1477,6 +1651,29 @@ class StartConfirmedProjectRunV3Tool(StartConfirmedProjectRunV2Tool):
                     + "; propose a scope (the safe starting count is 10 accounts) and ask the "
                     "human to confirm it with open_discovery_configuration_gate",
                 )
+            preview_run_id = ProjectRunId(
+                UUID(
+                    str(
+                        operation_id_from_key(
+                            scope.workspace_id,
+                            "confirmed-discovery-provider-preflight:"
+                            f"{scope.project_id}:{approved_icp.icp_key}:"
+                            f"{approved_icp.version}:"
+                            f"{discovery_configuration_sha256(configuration[0])}",
+                        )
+                    )
+                )
+            )
+            try:
+                await self._validate_provider_preflight(
+                    conn,
+                    scope=scope,
+                    approved_icp=approved_icp,
+                    discovery_configuration=configuration[0],
+                    project_run_id=preview_run_id,
+                )
+            except ConfirmedDiscoveryPreflightError as exc:
+                return _failure("discovery_provider_preflight_failed", str(exc))
         return ()
 
     async def invoke(self, inputs: ToolInput, ctx: ToolContext) -> ToolResult:
@@ -1526,6 +1723,7 @@ def stage0_project_tools(
     synthesis_model: str | None,
     statement_evidence: ArtifactStatementEvidenceReader | None,
     project_execution_router: ProjectExecutionRouter | None = None,
+    confirmed_discovery_preflight: ConfirmedDiscoveryPreflight | None = None,
     budget_controls_enabled: bool = True,
 ) -> tuple[Tool, ...]:
     return (
@@ -1537,6 +1735,13 @@ def stage0_project_tools(
             statement_evidence=statement_evidence,
         ),
         SynthesizeIcpsV2Tool(
+            conn_factory=conn_factory,
+            policy=policy,
+            gateway=gateway,
+            synthesis_model=synthesis_model,
+            statement_evidence=statement_evidence,
+        ),
+        SynthesizeIcpsV3Tool(
             conn_factory=conn_factory,
             policy=policy,
             gateway=gateway,
@@ -1557,6 +1762,7 @@ def stage0_project_tools(
             conn_factory=conn_factory,
             policy=policy,
             project_execution_router=project_execution_router,
+            confirmed_discovery_preflight=confirmed_discovery_preflight,
             budget_controls_enabled=budget_controls_enabled,
         ),
     )

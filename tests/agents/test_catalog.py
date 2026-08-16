@@ -75,6 +75,7 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         "skill:stage0-interview@v16",
         "skill:stage0-interview@v17",
         "skill:stage0-interview@v18",
+        "skill:stage0-interview@v19",
         "skill:stage0-interview@v2",
         "skill:stage0-interview@v3",
         "skill:stage0-interview@v4",
@@ -121,6 +122,7 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         "profile:head-of-abm@v3",
         "profile:head-of-abm@v30",
         "profile:head-of-abm@v31",
+        "profile:head-of-abm@v32",
         "profile:head-of-abm@v4",
         "profile:head-of-abm@v5",
         "profile:head-of-abm@v6",
@@ -200,14 +202,14 @@ def test_integration_preserves_pilot_history_and_mints_combined_resources() -> N
         assert hashlib.sha256((recipe_root / filename).read_bytes()).hexdigest() == expected_sha256
 
     profiles = FolderProfileCatalog((CATALOG_ROOT / "profiles").resolve(strict=True))
-    profile = profiles.get("head-of-abm", "v31").definition
+    profile = profiles.get("head-of-abm", "v32").definition
     assert [(item.name, item.version) for item in profile.skills] == [
-        ("stage0-interview", "v18"),
+        ("stage0-interview", "v19"),
         ("account-deep-steering", "v4"),
     ]
     required_tools = {
         "evaluate_stage0_readiness@2",
-        "synthesize_icps@2",
+        "synthesize_icps@3",
         "open_icp_confirmation_gate@1",
         "launch_selected_account_research@1",
         "list_client_knowledge@2",
@@ -220,9 +222,16 @@ def test_integration_preserves_pilot_history_and_mints_combined_resources() -> N
     }
     assert required_tools <= {f"{item.name}@{item.version}" for item in profile.tools}
 
-    recipe = json.loads((recipe_root / "recipe0-stage0-v12.json").read_text())
-    assert recipe["version"] == 12
+    recipe = json.loads((recipe_root / "recipe0-stage0-v13.json").read_text())
+    assert recipe["version"] == 13
     assert required_tools <= set(recipe["graph"]["tool_allowlist"])
+
+    skill = FolderSkillCatalog((CATALOG_ROOT / "skills").resolve(strict=True)).get(
+        "stage0-interview", "v19"
+    )
+    assert "`finalize_turn.user_message`" in skill.body
+    assert "normal assistant response" in skill.body
+    assert "Do not place that synthesis inside the approval" in skill.body
 
 
 def test_catalog_rejects_unknown_metadata_and_mutable_aliases(tmp_path: Path) -> None:

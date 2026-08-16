@@ -27,6 +27,10 @@ This repository is the data and research subsystem for the larger AI-native ABM 
 The central architecture bet is that verification must be modeled at the claim/data layer. LLM research is a last-resort tier-4 source, not the foundation. The product should prefer empty, flagged fields over fabricated fields.
 
 ## Topic notes
+- `2026-08-16-stage0-icp-presentation-exa-preflight.md` — Slice 5 promotes bounded
+  human-readable ICP synthesis in the normal assistant message alongside the approval gate,
+  preflights confirmed Exa scope before any receipt/run write, repairs the active Recipe #0
+  promotion to v13, and records focused backend/frontend/database verification and scope exclusions.
 - `2026-08-16-stage0-discovery-configuration-v3.md` — implements Slice 4's provider-neutral
   discovery plan, optional scope-only human confirmation, immutable run receipt, Exa compilation,
   active v31/v18/v12 resources, and GPT-5.6 Terra high-reasoning baseline; records the live

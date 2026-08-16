@@ -15,7 +15,7 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Any, Literal, Protocol
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -26,19 +26,38 @@ from clue_api.stage0_project_contracts import (
     DISCOVERY_CONFIGURATION_SCHEMA_V1,
     DiscoveryConfigurationContract,
 )
-from clue_core import ICPSpec, ProjectRunId, decode_jsonb, serialize_value_json
+from clue_core import ICPSpec, PhaseContext, ProjectRunId, decode_jsonb, serialize_value_json
 
 __all__ = [
     "DEFAULT_DISCOVERY_PLANNING_POLICY",
     "DiscoveryConfigurationReceipt",
+    "ConfirmedDiscoveryPreflight",
+    "ConfirmedDiscoveryPreflightError",
     "DiscoveryPlanningPolicy",
     "DiscoveryPlanningResult",
     "discovery_configuration_sha256",
     "derive_discovery_configuration",
+    "firmographic_criteria",
     "get_discovery_configuration_receipt",
     "parse_discovery_configuration_json",
     "put_discovery_configuration_receipt",
 ]
+
+
+class ConfirmedDiscoveryPreflightError(RuntimeError):
+    """The active discovery adapter cannot execute a proposed immutable configuration."""
+
+
+class ConfirmedDiscoveryPreflight(Protocol):
+    """Provider-neutral seam for validating a run before its durable start boundary."""
+
+    async def validate_confirmed_discovery(
+        self,
+        *,
+        ctx: PhaseContext,
+        spec: ICPSpec,
+        configuration: DiscoveryConfigurationContract,
+    ) -> None: ...
 
 
 class DiscoveryPlanningPolicy(BaseModel):
@@ -119,7 +138,9 @@ def _clean_texts(value: object) -> tuple[str, ...]:
     return tuple(dict.fromkeys(values))
 
 
-def _firmographic_criteria(strategy: dict[str, Any]) -> tuple[str, ...]:
+def firmographic_criteria(strategy: dict[str, Any]) -> tuple[str, ...]:
+    """Render provider-neutral ICP firmographics for presentation and execution."""
+
     firmographic = strategy.get("firmographic")
     if not isinstance(firmographic, dict):
         return ()
@@ -162,7 +183,7 @@ def derive_discovery_configuration(
     strategy = dict(spec.discovery_strategy)
     explicit_query = _clean_text(strategy.get("query"))
     explicit_criteria = _clean_texts(strategy.get("must_have_criteria"))
-    criteria = explicit_criteria or _firmographic_criteria(strategy)
+    criteria = explicit_criteria or firmographic_criteria(strategy)
     exclusions = _clean_texts(strategy.get("exclusion_criteria"))
 
     requested_raw = strategy.get("requested_count", strategy.get("requested_account_count"))

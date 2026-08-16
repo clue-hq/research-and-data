@@ -925,14 +925,18 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # on-completion prose synthesis surface, and E3 the governed value-narrative positioning
     # surface beside it (53 → 55 in the merged tree). The combined tree retains the Stage-0 ICP
     # gate and selected-Account launch and adds S4's two Client-KB readers plus S5's two Product-KB
-    # readers and human-selection gate (55 → 62).
+    # readers and human-selection gate (55 → 62). Slice 5 retains synthesis @2 for replay and
+    # promotes presentation-bearing @3, so the address inventory grows by one without adding a
+    # new tool name.
     assert len(registry.names()) == 63
     # C6 keeps profile_contact@1 for immutable historical pins and elects the governed,
     # project-run-scoped profile_contact@2 as the name-only default.
     # S4-D likewise retains both historical @1 Client-KB readers and registers strict @2 as
     # defaults. Corrected @2 contracts retain their immutable @1 versions, so the combined address
     # inventory is larger than the name inventory without rewriting any historical contract.
-    assert len(registry) == 76
+    assert len(registry) == 77
+    assert registry.descriptor("synthesize_icps").version == "3"
+    assert registry.descriptor("synthesize_icps", "2").version == "2"
     assert registry.descriptor("start_confirmed_project_run").version == "3"
     assert registry.descriptor("start_confirmed_project_run", "1").version == "1"
     assert registry.descriptor("start_confirmed_project_run", "2").version == "2"

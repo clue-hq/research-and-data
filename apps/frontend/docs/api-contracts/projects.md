@@ -250,9 +250,10 @@ nine, but those official-site claims are not independently verified; its
 authoritative metrics are therefore `coverage_ratio=7/9`,
 `available_field_keys` containing seven entries, and `verified_claims=0`.
 
-`synthesize_icps@2` has no model-authored input fields. The runtime supplies the
+`synthesize_icps@3` has no model-authored input fields. The runtime supplies the
 exact ready Stage-0 scope and links the write to the readiness decision. It
-returns one or more persisted draft references, never transient proposal bodies:
+returns one or more persisted draft references plus bounded, exact presentation
+projections of those same drafts:
 
 ```json
 {
@@ -264,9 +265,27 @@ returns one or more persisted draft references, never transient proposal bodies:
       "icp_version": 1,
       "status": "draft"
     }
+  ],
+  "presentations": [
+    {
+      "icp_key": "independent-neurosurgery-practices",
+      "icp_version": 1,
+      "name": "Independent neurosurgery practices",
+      "rationale": "Practices where missed calls and manual routing constrain growth.",
+      "target_criteria": ["Independent neurosurgery practice", "US-based"],
+      "buying_signals": ["High inbound call volume", "Manual scheduling workflow"],
+      "discovery_motion": "discovery",
+      "content_truncated": false
+    }
   ]
 }
 ```
+
+The agent writes this synthesis as the normal assistant message in the same
+awaiting-input turn that opens the separate ICP approval card. The card is only
+the decision control; it does not
+replace, contain, or hide the explanatory ICP message. Opaque lineage fields are
+not a substitute for the presentation.
 
 An interactive ICP gate has kind `icp_confirmation` and stores the durable
 `icp_spec` composite reference, the same ICP version as `subject_revision`, the
@@ -449,7 +468,7 @@ are never accepted from the browser or model.
   reload.
 - The composer keeps one visible model selector, as explicitly ruled for R8.
   Its only option is the server-advertised promoted profile
-  `head-of-abm@v31`, labelled **GPT-5.6 Terra** and backed by
+  `head-of-abm@v32`, labelled **GPT-5.6 Terra** and backed by
   `openai/gpt-5.6-terra`. Its governed gateway baseline requests reasoning
   effort `high`; an explicit environment policy may still override that baseline. The chosen
   profile id is accepted, persisted, and
@@ -483,16 +502,18 @@ are never accepted from the browser or model.
 
 ### Immutable resource integration ruling (2026-08-16)
 
-The active conversation profile is `head-of-abm@v31`. The pilot bytes remain
+The active conversation profile is `head-of-abm@v32`. The pilot bytes remain
 authoritative and immutable at profiles `v24`/`v25`, skills `v11`/`v12`, and
 recipes `v7`/`v8`; the onboarding lineage remains immutable at profiles
 `v26`–`v28`, skills `v13`–`v15`, and recipe `v9`. None of those historical
 addresses is rewritten. The former combined lineage at profile `v29`, skill `v16`, and recipe
 `v10` also remains immutable. The confirmed-run-v2 lineage at profile `v30`, skill `v17`, and
-recipe `v11` remains immutable. The active provider-neutral discovery lineage is profile `v31`,
-skill `v18`, and recipe `v12`:
+recipe `v11` remains immutable. The provider-neutral discovery lineage at profile `v31`, skill
+`v18`, and recipe `v12` also remains immutable. The active Slice-5 lineage is profile `v32`, skill
+`v19`, and recipe `v13`:
 
-- Stage-0 owns `stage0-interview@v18`, trusted readiness/synthesis `@2`, provider-neutral
+- Stage-0 owns `stage0-interview@v19`, trusted readiness `@2`, bounded presentation-bearing
+  synthesis `@3`, provider-neutral
   run-start `@3`, the scope-only `open_discovery_configuration_gate@1`, and the durable
   exact-subject `open_icp_confirmation_gate@1` lifecycle;
 - FI-2 owns `account-deep-steering@v4` and
@@ -558,7 +579,7 @@ It performs no project-membership mutation, provider call or spend. The user
 must still write the instruction that explains what the agent should do.
 
 For the explicit same-message instruction to launch deep Account research,
-the active `head-of-abm@v31` profile may call
+the active `head-of-abm@v32` profile may call
 `launch_selected_account_research@1`. This is a narrow FI pilot path, not a
 relaxation of `launch_account_research@1`:
 
@@ -752,14 +773,14 @@ nothing. It requires `project.read`.
     ],
     "agent_profiles": [
       {
-        "id": "head-of-abm@v31",
+        "id": "head-of-abm@v32",
         "label": "GPT-5.6 Terra",
         "short_label": "GPT-5.6 Terra",
         "description": "Clue's governed GPT-5.6 Terra conversation profile",
         "model_id": "openai/gpt-5.6-terra"
       }
     ],
-    "default_agent_profile_id": "head-of-abm@v31",
+    "default_agent_profile_id": "head-of-abm@v32",
     "composer_capabilities": {
       "context_refs": true,
       "attachments": false,
@@ -813,7 +834,7 @@ accepts:
     }
   ],
   "attachment_refs": [],
-  "agent_profile_id": "head-of-abm@v31"
+  "agent_profile_id": "head-of-abm@v32"
 }
 ```
 
@@ -950,14 +971,14 @@ project shell:
     ],
     "agent_profiles": [
       {
-        "id": "head-of-abm@v31",
+        "id": "head-of-abm@v32",
         "label": "GPT-5.6 Terra",
         "short_label": "GPT-5.6 Terra",
         "description": "Clue's governed GPT-5.6 Terra conversation profile",
         "model_id": "openai/gpt-5.6-terra"
       }
     ],
-    "default_agent_profile_id": "head-of-abm@v31",
+    "default_agent_profile_id": "head-of-abm@v32",
     "composer_capabilities": {
       "context_refs": true,
       "attachments": false,

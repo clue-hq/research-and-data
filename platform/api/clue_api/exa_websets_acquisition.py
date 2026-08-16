@@ -20,7 +20,10 @@ from uuid import NAMESPACE_URL, UUID, uuid5
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from clue_api.discovery_configuration import get_discovery_configuration_receipt
+from clue_api.discovery_configuration import (
+    ConfirmedDiscoveryPreflightError,
+    get_discovery_configuration_receipt,
+)
 from clue_api.exa_websets_submit import (
     DEFAULT_EXA_WEBSETS_PRICING,
     DurableExaWebsetSubmitter,
@@ -67,7 +70,7 @@ from clue_storage import StorageBackend
 TransportFactory = Callable[[], AbstractAsyncContextManager[ExaWebsetsTransport]]
 
 
-class ExaDiscoveryAcquisitionError(RuntimeError):
+class ExaDiscoveryAcquisitionError(ConfirmedDiscoveryPreflightError):
     """The pinned run/ICP cannot safely produce the bounded D6 paid workload."""
 
 
@@ -321,6 +324,23 @@ class ExaWebsetsDiscoveryStarter:
         # composition root. False means this path never refuses on budget grounds; every
         # durable row it writes is unchanged.
         self._enforce_budget = enforce_budget
+
+    async def validate_confirmed_discovery(
+        self,
+        *,
+        ctx: PhaseContext,
+        spec: ICPSpec,
+        configuration: DiscoveryConfigurationContract,
+    ) -> None:
+        """Compile the exact proposed run without a database write or provider call."""
+
+        compile_exa_discovery_preflight(
+            ctx=ctx,
+            spec=spec,
+            configuration=configuration,
+            policy=self._policy,
+            pricing=self._pricing,
+        )
 
     async def preflight(self, ctx: PhaseContext) -> ExaDiscoveryPreflight:
         async with self._conn_factory() as conn:

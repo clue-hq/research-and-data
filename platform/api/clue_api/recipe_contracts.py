@@ -17,7 +17,7 @@ RECIPE_0_TOOL_ADDRESSES: tuple[str, ...] = (
     "record_interview_answer@1",
     "confirm_project_product@1",
     "evaluate_stage0_readiness@2",
-    "synthesize_icps@2",
+    "synthesize_icps@3",
     "open_icp_confirmation_gate@1",
     "confirm_icp@1",
     "override_stage0_readiness@1",

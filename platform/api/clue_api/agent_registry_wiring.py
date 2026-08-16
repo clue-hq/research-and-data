@@ -36,9 +36,9 @@ __all__ = [
 ]
 
 C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
-    # Integration v31 keeps v30 immutable and advances only the discovery-scope contract: the
-    # agent may propose a scope-only gate, while backend-owned @3 pins the approved/derived scope.
-    AgentRole.HEAD_OF_ABM: "v31",
+    # Slice 5 v32 keeps v31 immutable, presents exact synthesized ICP business content in the
+    # normal assistant message, and retains backend-owned @3 discovery scope/run authority.
+    AgentRole.HEAD_OF_ABM: "v32",
     AgentRole.RESEARCH: "v7",
     AgentRole.CONTENT_DRAFTER: "v5",
     AgentRole.REVIEWER: "v5",
@@ -312,8 +312,10 @@ def _roles_for(address: str, name: str) -> tuple[AgentRole, ...]:
         return (AgentRole.HEAD_OF_ABM,) if address == "propose_field@2" else ()
     if name == "draft_account_research_directive":
         return (AgentRole.HEAD_OF_ABM,) if address == "draft_account_research_directive@2" else ()
-    if name in {"evaluate_stage0_readiness", "synthesize_icps"}:
+    if name == "evaluate_stage0_readiness":
         return (AgentRole.HEAD_OF_ABM,) if address.endswith("@2") else ()
+    if name == "synthesize_icps":
+        return (AgentRole.HEAD_OF_ABM,) if address.endswith("@3") else ()
     if name == "start_confirmed_project_run":
         return (AgentRole.HEAD_OF_ABM,) if address.endswith("@3") else ()
     if name == "research_account_gaps":
@@ -345,6 +347,8 @@ def _unavailable_reason(address: str, name: str) -> str | None:
         return "replaced_by_trusted_stage0_v2"
     if address == "start_confirmed_project_run@2":
         return "replaced_by_provider_neutral_discovery_v3"
+    if address == "synthesize_icps@2":
+        return "replaced_by_bounded_icp_presentation_v3"
     return _RESERVED_REASON.get(name)
 
 
