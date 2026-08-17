@@ -20,9 +20,12 @@ import styles from "./chat-shell.module.css";
 // lands (founder Decision 2).
 //
 // Split view is deferred to the chat-flow integration: the ratified route
-// shape also mounts this surface beside a chat via `?artifact=` on
-// /projects/{id}/chats/{chatId}, where the inspector dock replaces the
-// conversation column (composer stays docked). Until that lands, this surface
+// shape also mounts this surface beside a chat on
+// /projects/{id}/chats/{chatId} via `?surface=web|ad` (+ `?edit=`,
+// `?selection=`) — ruling R2, 2026-08-17, superseding the earlier
+// `?artifact=` param, which was never built and must not be introduced —
+// where the inspector dock replaces the conversation column (composer stays
+// docked). Until that lands, this surface
 // renders the artifact rail (tabs + header + stage) full-width only, matching
 // the dummy's maximized presentation (no inspector at full width). The
 // "Close artifact panel" tab action is a no-op here for the same reason —

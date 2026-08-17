@@ -76,6 +76,39 @@ URL→thread mechanism and MUST STAY; navigation becomes the single switch mecha
 (selectThread=push, canonicalization=replace, no internal setActiveThreadId double-path)]**; dead gallery CSS in project-flow.module.css invites wrong reuse;
 route files dropped outside (protected) silently bypass auth.
 
+## PHASE R COMPLETE — close-out 2026-08-17
+
+All seven tasks landed on `integration/frontend-design-part-iv-v2` (faf3383d R-1 helpers,
+2866dac9 R-2 chats route, 1302ccd3 R-3 single-mechanism writers, f104ff02 R-4 absorber+gallery
+compat, 3135cc9f R-5 frontend emitters, 53251541 R-6 backend+contract docs, R-7 supersessions+
+verification). **The chats path is canonical end to end**: every entry point (sidebar links,
+home bootstrap href, add-to-chat push, legacy ?thread= deep links, threadless project/gallery
+entries) lands on /projects/{id}/chats/{chatId} rendering the unchanged production chat;
+?thread= survives only as the absorber redirect; ?surface=gallery carries the Gallery intent
+through the whole chain.
+
+Two founder review-catches shaped the implementation (both recorded in the plan):
+(1) the remount key is the ONLY URL→thread mechanism (App Router preserves client state on
+dynamic-param navigation) — kept, with navigation as the single switch mechanism and
+activeThreadId's setter deleted so a second mechanism is a compile error; (2) threadless
+gallery links carry ?surface=gallery through the absorber so the Gallery intent survives.
+
+R-7 browser verification (fixture mode, worktree-local server, zero console errors): legacy
+deep link redirects w/ right thread; sidebar click → chats path; **handoff restore validates
+threadId against the PATH param** (seeded sessionStorage handoff restored its entity chip);
+send-time ?handoff= cleanup fired with path preserved (cleanup is gated on accepted
+submission — its firing proves acceptance; failed-restore keeping ?handoff= in the URL is
+pre-existing designed semantics, restore-until-sent); canonicalization leaves no residue,
+back-button returns to prior thread; surface=gallery → artifacts pane; transcript + gate card
+(+ actions) render on the chats route. Gates: frontend 330/330 + lint + build; make check
+2816 passed / 5 failed — all five the documented pre-existing set (o3, pilot-budget ×3,
+unified-gate head pin), zero new.
+
+**Next:** Phase C (chat chrome) is unblocked — see its plan doc. The R2 supersession
+(?artifact= → ?surface=) is annotated in the W-plan, editor-surface.tsx, and the contract doc.
+Backend flip note for other branches: thread_href in chat/schemas.py is the single emitter;
+merging branches must not reintroduce inline href builds.
+
 ## Plan (agreed shape, pending founder go)
 Phase R (me, ~2d): route slice — helper lift, /chats/[chatId] route rendering OUR
 ProjectWorkspaceShell, /projects/{id} absorber redirect, emitter/reader flips, backend href flip,
