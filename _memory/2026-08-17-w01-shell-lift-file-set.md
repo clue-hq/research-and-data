@@ -310,6 +310,34 @@ affordance; bridge `resize-node` seam + width/height facets ready; needs a found
 capability AND affordance to enter scope). **Moving** unchanged: ruling 29 keyboard-only +
 W4.10 audit.
 
+## W2.3 done — commit `7a36d68f` (real layer tree; editing docks the inspector). **Phase W2 code-complete; founder demo pending.**
+
+- `adapter/layers.ts` (+7 TDD tests on the harvested fixture): hierarchy rows, names→labels
+  (fallback id), kind→dummy-icon-vocab (section/container→div, text→type, button→rectangle,
+  image→image, icon→apple, else div), **depth cap 1 per ruling 41** (depth-1 nodes never
+  expandable — subtree has no rows). `WebLayerIcon` mirrors InspectorLayerRow's icon union.
+- WebInspector: real-layers via context (`DocumentLayersContext` + `SchemaLayers` fallback at
+  the 7 Layers sites — schema views otherwise untouched; fixture trees remain when no rows
+  supplied, so the chats-route Phase-C mount is unchanged). W2.2 `hydrated` now reaches all
+  seven controllers. New props: `hydrated`, `layers`, `onSelectLayer`.
+- Canvas publishes `WebArtifactCanvasControls.selectNode` via a `controlsRef` prop (threaded
+  through ArtifactStage as `canvasControlsRef`) — layer-row click → postMessage into the
+  iframe → frame echoes `select` → ordinary selection path.
+- **Composition decision (flag for founder at the W2 demo):** while editing a real web doc,
+  editor-surface docks WebInspector beside the canvas using the dummy's own editing
+  arrangement (ruling R6 — inspector takes the conversation column; this chat-less route has
+  only the dock) and the dummy's split grid template verbatim (`minmax(400px,480px)
+  minmax(0,1fr)`). Not-editing stays full-width per W0.4. Inspector remounts per selected
+  node (key) so hydration re-applies.
+- **Browser-verified round-trip both directions** (live 3030 stack): canvas click → button
+  schema + CTA row active; Headline row click → canvas outline moves + text schema;
+  Subheadline shows REAL values (Size 18 from text-lg; center alignment pressed); rows =
+  Hero/Headline/Subheadline/CTA/Features/Feature-grid only (depth-2 capped). Screenshot
+  /tmp/w23-editing-dock.png. Gates 487/487, lint clean, build ✓. Servers stopped after.
+- **W2 exit-gate status:** click→schema→real-values proven; the §2/§3 partition polish
+  (padding 4→2, hidden sections, icon layout-only rendering) is W4's per the plan (each
+  schema task applies its own §2 deltas). Founder demo/sign-off still to be given.
+
 ## Next
 
 - **W2** (read path): W2.1 real render in the artifact stage (sandboxed srcdoc iframe,
