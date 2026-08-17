@@ -1,12 +1,13 @@
 "use client";
 
-import { useRef } from "react";
+import { useCallback, useRef, useState } from "react";
 import {
   useEditorShellController,
   type EditorShellInitialState,
 } from "../hooks/use-editor-shell-controller";
 import { buildWebLayerRows } from "@/features/design-editor/adapter/layers";
 import type { WebArtifactCanvasControls } from "@/features/design-editor/components/web-artifact-canvas";
+import { useInspectorWrites } from "@/features/design-editor/hooks/use-inspector-writes";
 import { useWebArtifactSelection } from "@/features/design-editor/hooks/use-web-artifact-selection";
 import { ArtifactStage } from "./artifact-stage";
 import { WebInspector } from "./web-inspector";
@@ -63,8 +64,21 @@ export function EditorSurface({
   // W2.2: the canvas bridge's nonce-validated selections joined with the
   // loaded document → {node, nodeInfo} + schema + hydrated inspector state,
   // also surfaced on data attributes below for verification.
-  const webSelection = useWebArtifactSelection(activeDocumentId);
+  // W3.2: after a committed write the reload nonce bumps — the document
+  // refetches (fresh currentVersion → next base_version) and the canvas
+  // remounts its render (rotating the bridge nonce with the rebuilt DOM).
+  const [reloadNonce, setReloadNonce] = useState(0);
+  const webSelection = useWebArtifactSelection(activeDocumentId, reloadNonce);
   const canvasControls = useRef<WebArtifactCanvasControls | null>(null);
+  const onWriteReload = useCallback(() => {
+    setReloadNonce((nonce) => nonce + 1);
+  }, []);
+  const writes = useInspectorWrites({
+    document: webSelection.document,
+    documentId: activeDocumentId,
+    onReload: onWriteReload,
+    selection: webSelection.selection,
+  });
 
   // W2.3 (completing the W2 exit gate): while EDITING a real web document,
   // the inspector docks beside the canvas — the dummy's own editing
@@ -112,7 +126,9 @@ export function EditorSurface({
         <div className={styles.chatBody}>
           <div className={styles.inspectorDock}>
             <WebInspector
-              key={webSelection.selection?.node.id ?? "canvas"}
+              key={`${webSelection.selection?.node.id ?? "canvas"}:${webSelection.document?.currentVersion ?? 0}`}
+              error={writes.error}
+              note={writes.note}
               addressing={{
                 // W3.1: what this surface holds — the write adapter (W3.2)
                 // resolves events against exactly these three values.
@@ -136,6 +152,7 @@ export function EditorSurface({
         activeDocumentId={activeDocumentId}
         artifacts={[]}
         canvasControlsRef={canvasControls}
+        canvasReloadToken={reloadNonce}
         artifactKind={controller.artifactKind}
         artifactMaximized={controller.artifactMaximized}
         artifactTitle={controller.artifactTitle}

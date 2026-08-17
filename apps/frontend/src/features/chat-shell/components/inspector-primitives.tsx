@@ -456,6 +456,7 @@ export function ColorControl({
   none = false,
   onColorChange,
   onOpacityChange,
+  onTokenChange,
   opacity = "100%",
   showOpacity = true,
 }: {
@@ -463,6 +464,9 @@ export function ColorControl({
   none?: boolean;
   onColorChange?: (color: string) => void;
   onOpacityChange?: (opacity: string) => void;
+  /** W3.2 (R2): fired with the token LABEL on a theme-tab pick — the live
+   * write path; hex (custom tab) stays visual-only per §3. */
+  onTokenChange?: (label: string) => void;
   opacity?: string;
   showOpacity?: boolean;
 }) {
@@ -563,7 +567,13 @@ export function ColorControl({
                         aria-pressed={color.toUpperCase() === option.value}
                         className={styles.inspectorThemeColor}
                         key={option.label}
-                        onClick={() => commitColor(option.value)}
+                        onClick={() => {
+                          commitColor(option.value);
+                          // W3.2 (R2): a theme-tab pick also reports the
+                          // TOKEN label — the live write path; the hex
+                          // continues to drive the visual state only.
+                          onTokenChange?.(option.label);
+                        }}
                         type="button"
                       >
                         <span className={styles.inspectorThemeSwatch} style={{ background: option.value }} />

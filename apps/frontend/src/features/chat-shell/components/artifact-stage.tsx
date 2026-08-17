@@ -28,6 +28,7 @@ export function ArtifactStage({
   artifacts,
   artifactKind,
   canvasControlsRef,
+  canvasReloadToken,
   artifactMaximized,
   artifactTitle,
   editing,
@@ -54,6 +55,8 @@ export function ArtifactStage({
   /** W2.3: receives the mounted web canvas's imperative controls
    * (`selectNode` for layer-row clicks). */
   canvasControlsRef?: RefObject<WebArtifactCanvasControls | null>;
+  /** W3.2: bumped after a committed write to refetch the render. */
+  canvasReloadToken?: number;
   artifactKind: ChatShellArtifactKind | null;
   artifactMaximized: boolean;
   artifactTitle: string;
@@ -112,6 +115,7 @@ export function ArtifactStage({
                     controlsRef={canvasControlsRef}
                     documentId={activeDocumentId}
                     onSelect={onCanvasSelect}
+                    reloadToken={canvasReloadToken}
                   />
                 ) : null}
               </div>

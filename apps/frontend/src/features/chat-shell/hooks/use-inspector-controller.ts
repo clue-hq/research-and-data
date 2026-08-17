@@ -226,6 +226,31 @@ export function useInspectorController(
     [addressing, selectionType],
   );
 
+  // W3.2 (R3): the two-axis padding path — one committed axis value updates
+  // both sides and dispatches a single `padding.x`/`padding.y` event (the
+  // write adapter's vocabulary). Used by the axis-collapsed padding boxes.
+  const setPaddingAxis = useCallback(
+    (axis: "x" | "y", value: string) => {
+      setState((current) => ({
+        ...current,
+        padding:
+          axis === "x"
+            ? { ...current.padding, left: value, right: value }
+            : { ...current.padding, bottom: value, top: value },
+      }));
+      dispatchInspectorEvent(
+        "clue:inspector-property-change",
+        {
+          property: `padding.${axis}`,
+          selectionType,
+          value,
+        },
+        addressing,
+      );
+    },
+    [addressing, selectionType],
+  );
+
   const toggleSection = useCallback((section: InspectorSectionId) => {
     setState((current) => {
       const open = !current.openSections[section];
@@ -259,7 +284,7 @@ export function useInspectorController(
     );
   }, [addressing, selectionType]);
 
-  return { requestAction, setNestedValue, setValue, state, toggleSection };
+  return { requestAction, setNestedValue, setPaddingAxis, setValue, state, toggleSection };
 }
 
 export function useInspectorLayerTree(

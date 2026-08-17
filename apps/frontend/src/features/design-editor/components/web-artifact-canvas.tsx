@@ -35,6 +35,7 @@ export function WebArtifactCanvas({
   controlsRef,
   documentId,
   onSelect,
+  reloadToken = 0,
 }: {
   /** W2.3: receives the canvas's imperative controls while mounted. */
   controlsRef?: RefObject<WebArtifactCanvasControls | null>;
@@ -42,13 +43,16 @@ export function WebArtifactCanvas({
   /** W2.2: canvas selection events from the injected bridge, nonce-validated
    * by the ported listener. */
   onSelect?: (selection: WebSelection | null) => void;
+  /** W3.2: bump to quietly refetch the render after a committed write
+   * (rotates the bridge nonce with the rebuilt DOM, per source semantics). */
+  reloadToken?: number;
 }) {
-  // Keyed remount: switching documents resets render state to born-loading
-  // without a synchronous setState inside an effect (react-hooks/
-  // set-state-in-effect). A future reload affordance (W2.2+) extends the key.
+  // Keyed remount: switching documents (or reloading after a write) resets
+  // render state to born-loading without a synchronous setState inside an
+  // effect (react-hooks/set-state-in-effect).
   return (
     <DocumentRender
-      key={documentId}
+      key={`${documentId}:${reloadToken}`}
       controlsRef={controlsRef}
       documentId={documentId}
       onSelect={onSelect}

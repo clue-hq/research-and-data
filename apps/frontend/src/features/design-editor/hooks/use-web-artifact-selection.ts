@@ -69,7 +69,12 @@ function joinSelection(
   return null;
 }
 
-export function useWebArtifactSelection(documentId: string | null): {
+export function useWebArtifactSelection(
+  documentId: string | null,
+  /** W3.2: bump to quietly refetch the document after a committed write
+   * (the manual-edits controller's `onReload`). */
+  reloadToken = 0,
+): {
   /** Feed to WebArtifactCanvas's `onSelect`. */
   onSelect: (selection: WebSelection | null) => void;
   /** The joined selection, or null (nothing selected / doc not loaded /
@@ -95,7 +100,7 @@ export function useWebArtifactSelection(documentId: string | null): {
     return () => {
       cancelled = true;
     };
-  }, [documentId]);
+  }, [documentId, reloadToken]);
 
   const onSelect = useCallback(
     (selection: WebSelection | null) => {

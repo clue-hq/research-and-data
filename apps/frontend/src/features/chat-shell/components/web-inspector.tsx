@@ -27,7 +27,12 @@ import {
 import styles from "./chat-shell.module.css";
 
 const FONT_OPTIONS = ["Inter", "Satoshi Variable", "Season Serif", "DM Mono"] as const;
-const FONT_SIZE_OPTIONS = ["12", "13", "14", "16", "18", "20", "24", "32"] as const;
+// §6(5): 13 dropped from the size options; 32 maps to 3xl.
+const FONT_SIZE_OPTIONS = ["12", "14", "16", "18", "20", "24", "32"] as const;
+// W3.2 §2 additions: the text style select (ruling 25) and the line-spacing
+// select (ruling 26) — the two founder-ordered typography additions.
+const TEXT_STYLE_OPTIONS = ["Display", "H1", "H2", "H3", "H4", "Body", "Small", "Overline"] as const;
+const LINE_SPACING_OPTIONS = ["none", "tight", "snug", "normal", "relaxed", "loose"] as const;
 const FONT_WEIGHT_OPTIONS = ["Regular", "Medium", "Semi Bold", "Bold"] as const;
 const FILL_MODE_OPTIONS = ["Fit", "Fill", "Stretch", "Tile"] as const;
 const BUTTON_STYLE_OPTIONS = ["Primary", "Secondary", "Transparent", "Critical"] as const;
@@ -113,11 +118,14 @@ function TextAlignment({
   onHorizontalChange,
   onVerticalChange,
   vertical,
+  verticalHidden = false,
 }: {
   horizontal: "center" | "left" | "right";
   onHorizontalChange: (value: "center" | "left" | "right") => void;
   onVerticalChange: (value: "bottom" | "middle" | "top") => void;
   vertical: "bottom" | "middle" | "top";
+  /** W3.2 (ruling 8): the text schema hides vertical alignment. */
+  verticalHidden?: boolean;
 }) {
   const horizontalOptions = [
     ["left", "align-left"],
@@ -146,6 +154,7 @@ function TextAlignment({
           </button>
         ))}
       </div>
+      {verticalHidden ? null : (
       <div
         aria-label="Vertical alignment"
         className={`${styles.alignmentControl} ${styles.verticalAlignment}`}
@@ -164,6 +173,60 @@ function TextAlignment({
           </button>
         ))}
       </div>
+      )}
+    </div>
+  );
+}
+
+/** W3.2 (R3, founder-ordered delta): the four per-side boxes collapse to two
+ * axis boxes (X/Y). Typed values draft locally and COMMIT on blur/Enter — the
+ * dummy's own commit model — so the write path never sees per-keystroke
+ * events. */
+function PaddingXYControls({
+  onCommit,
+  values,
+}: {
+  onCommit: (axis: "x" | "y", value: string) => void;
+  values: Record<"bottom" | "left" | "right" | "top", string>;
+}) {
+  const [draftX, setDraftX] = useState(values.left);
+  const [draftY, setDraftY] = useState(values.top);
+  const commit = (axis: "x" | "y") => {
+    const draft = axis === "x" ? draftX : draftY;
+    if (draft !== (axis === "x" ? values.left : values.top)) {
+      onCommit(axis, draft);
+    }
+  };
+  return (
+    <div className={styles.paddingGrid}>
+      <span
+        className={`${styles.inspectorControl} ${styles.inspectorInputControl}`}
+        onBlur={() => commit("x")}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") commit("x");
+        }}
+      >
+        <span className={styles.fieldPrefix}>X</span>
+        <input
+          aria-label="Horizontal padding"
+          onChange={(event) => setDraftX(event.target.value)}
+          value={draftX}
+        />
+      </span>
+      <span
+        className={`${styles.inspectorControl} ${styles.inspectorInputControl}`}
+        onBlur={() => commit("y")}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") commit("y");
+        }}
+      >
+        <span className={styles.fieldPrefix}>Y</span>
+        <input
+          aria-label="Vertical padding"
+          onChange={(event) => setDraftY(event.target.value)}
+          value={draftY}
+        />
+      </span>
     </div>
   );
 }
@@ -475,12 +538,28 @@ function TokenField({
   );
 }
 
-function LayoutSection({ controller }: { controller: InspectorController }) {
-  const { setNestedValue, state, toggleSection } = controller;
+function LayoutSection({
+  controller,
+  paddingAxes = "four",
+}: {
+  controller: InspectorController;
+  /** W3.2 (R3): "two" collapses the padding boxes to X/Y with blur/Enter
+   * commit; "four" keeps the dummy's per-side boxes (until each schema's W4
+   * task applies its own delta). */
+  paddingAxes?: "four" | "two";
+}) {
+  const { setNestedValue, setPaddingAxis, state, toggleSection } = controller;
   return (
     <Section id="layout" label="Layout" state={state} toggle={toggleSection}>
       <InspectorField label="Padding">
-        <PaddingControls onChange={(side, value) => setNestedValue("padding", side, value)} values={state.padding} />
+        {paddingAxes === "two" ? (
+          <PaddingXYControls
+            onCommit={(axis, value) => setPaddingAxis(axis, value)}
+            values={state.padding}
+          />
+        ) : (
+          <PaddingControls onChange={(side, value) => setNestedValue("padding", side, value)} values={state.padding} />
+        )}
       </InspectorField>
     </Section>
   );
@@ -502,15 +581,23 @@ function TextControls({
     <>
       <LinkSection ariaLabel="Link URL" controller={controller} />
       <Section id="typography" label="Typography" state={state} toggle={toggleSection}>
-        <InspectorField label="Color"><ColorControl color={state.textColor} onColorChange={(value) => setValue("textColor", value)} /></InspectorField>
+        {/* R2: the theme tab's token pick is the live write path
+            (tokenTextColor); the hex path stays visual-only (§3 inert). */}
+        <InspectorField label="Color"><ColorControl color={state.textColor} onColorChange={(value) => setValue("textColor", value)} onTokenChange={(label) => setValue("tokenTextColor", label)} /></InspectorField>
         <InspectorField label="Font"><InspectorSelect label="Font" onChange={(value) => setValue("fontFamily", value)} options={FONT_OPTIONS} value={state.fontFamily} /></InspectorField>
+        {/* W3.2 §2 addition (ruling 25): the text style/variant select. */}
+        <InspectorField label="Style"><InspectorSelect label="Text style" onChange={(value) => setValue("textStyle", value)} options={TEXT_STYLE_OPTIONS} value={state.textStyle} /></InspectorField>
         <div className={styles.fieldGrid}>
           <InspectorField label="Size"><InspectorSelect label="Font size" onChange={(value) => setValue("fontSize", value)} options={FONT_SIZE_OPTIONS} value={state.fontSize} /></InspectorField>
           <InspectorField label="Weight"><InspectorSelect label="Font weight" onChange={(value) => setValue("fontWeight", value)} options={FONT_WEIGHT_OPTIONS} value={state.fontWeight} /></InspectorField>
         </div>
-        <InspectorField label="Alignment"><TextAlignment horizontal={state.horizontalAlignment} onHorizontalChange={(value) => setValue("horizontalAlignment", value)} onVerticalChange={(value) => setValue("verticalAlignment", value)} vertical={state.verticalAlignment} /></InspectorField>
+        {/* W3.2 §2 addition (ruling 26): the line-spacing select. */}
+        <InspectorField label="Line spacing"><InspectorSelect label="Line spacing" onChange={(value) => setValue("lineSpacing", value)} options={LINE_SPACING_OPTIONS} value={state.lineSpacing} /></InspectorField>
+        {/* Ruling 8: vertical alignment hidden on the text schema. */}
+        <InspectorField label="Alignment"><TextAlignment horizontal={state.horizontalAlignment} onHorizontalChange={(value) => setValue("horizontalAlignment", value)} onVerticalChange={(value) => setValue("verticalAlignment", value)} vertical={state.verticalAlignment} verticalHidden /></InspectorField>
       </Section>
-      <LayoutSection controller={controller} />
+      {/* R3: text's padding boxes collapse to the two-axis form. */}
+      <LayoutSection controller={controller} paddingAxes="two" />
       <Section id="stroke" label="Stroke" state={state} toggle={toggleSection}>
         <InspectorField label="Color"><ColorControl none={state.strokeColor === "none"} /></InspectorField>
         <InspectorField label="Width"><InspectorInput ariaLabel="Stroke width" onChange={(value) => setValue("strokeWidth", value)} value={state.strokeWidth} /></InspectorField>
@@ -729,14 +816,23 @@ function SectionControls({
 
 export function WebInspector({
   addressing,
+  error = null,
   hydrated,
   layers,
+  note = null,
   onSelectionChange,
   onSelectLayer,
   reviewMenuEnabled = false,
   selection,
   showLayers = true,
 }: {
+  /** W3.2: an inline write error (422 first diagnostic / transport). The
+   * minimal pre-W3.3 floor — the save-failure surface is the W3.3 founder
+   * gate; do not grow this beyond one line without that ruling. */
+  error?: string | null;
+  /** W3.2: a transient informational note (409 quiet reload). Same W3.3
+   * floor as `error`. */
+  note?: string | null;
   /** W3.1: write addressing stamped onto every inspector event this panel
    * dispatches — passed through to the controllers verbatim. */
   addressing?: InspectorEventAddressing;
@@ -844,6 +940,18 @@ export function WebInspector({
           title={INSPECTOR_TITLES[selection]}
           visible={activeController.state.visible}
         />
+        {/* W3.2 floor pending the W3.3 founder gate: one inline line for the
+            write path's note (409 quiet reload) / error (422 diagnostic). */}
+        {note ? (
+          <p className={styles.inspectorStatusNote} role="status">
+            {note}
+          </p>
+        ) : null}
+        {error ? (
+          <p className={styles.inspectorStatusError} role="alert">
+            {error}
+          </p>
+        ) : null}
         <DocumentLayersContext.Provider value={documentLayers}>
           {selection === "canvas" ? <CanvasControls controller={canvasController} layerTree={canvasLayerTree} onSelectionChange={onSelectionChange} showLayers={showLayers} /> : null}
           {selection === "text" ? <TextControls controller={textController} layerTree={textLayerTree} onSelectionChange={onSelectionChange} showLayers={showLayers} /> : null}

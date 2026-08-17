@@ -2877,3 +2877,20 @@
     animation: none;
   }
 }
+
+/* W3.2 floor (pending the W3.3 founder save-failure ruling): the write
+ * path's single inline status line under the inspector header — note (409
+ * quiet reload) and error (422 first diagnostic). Deliberately minimal; do
+ * not grow without the W3.3 ruling. */
+.inspectorStatusNote,
+.inspectorStatusError {
+  margin: 0;
+  padding: 6px 16px 0;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--chat-shell-subtle);
+}
+
+.inspectorStatusError {
+  color: var(--clue-ds-color-primitives-critical-700);
+}
