@@ -1,0 +1,115 @@
+# Website-editor inspector — frozen mapping contract (v1)
+
+Status: RATIFIED by founder 2026-08-17, except the three items marked OPEN in §6.
+Decision record: `docs/specs/website-editor-integration/decisions-recorded.md` (founder-annotated,
+authored in the `singapore` workspace; the annotations there are the authority — this document is
+the frozen, implementable restatement). Source inventories: the five Part-IV deep-reads
+(dummy-UI control inventory; web-stack inventory; scene-stack inventory; services inventory;
+custom-component pipeline inventory), session 2026-08-17.
+
+Scope: the **website (web) editor inspector only** — the dummy chat-shell inspector
+(`clue-frontend@codex/chat-shell`, `src/features/chat-shell/components/web-inspector.tsx` et al.)
+bound to the real web editor stack (`subsystems/clue-design/apps/editor`, `WebInspectorPanel` /
+`webClassFacets` / `webDocuments`). The ad/scene editor, chrome (tabs/versions/export/share), and
+streaming are separate flows with their own contracts.
+
+**Standing rule (founder, absolute): visual parity with the dummy UI.** The dummy is the ceiling
+and the baseline. The ONLY deviations are the founder-ordered deltas in §2. Nothing else may be
+added, moved, or restyled.
+
+---
+
+## 1. Wired and functional in v1
+
+| # | Control (dummy) | Real backing | Mapping notes |
+|---|---|---|---|
+| 1 | Canvas → Background color | `bgColor` facet on page root | theme tokens only (R2) |
+| 4 | Text → Typography color | `textColor` facet | tokens only |
+| 5 | Text → Size select | `textSize` facet (Tailwind ramp) | 12→xs 14→sm 16→base 18→lg 20→xl 24→2xl; orphans 13/32: OPEN (§6) |
+| 6 | Text → Weight select | `fontWeight` facet | Regular→normal, Medium→medium, Semi Bold→semibold, Bold→bold |
+| 7 | Text → Horizontal alignment | `textAlign` facet | left/center/right (justify unexposed) |
+| 11 | Image → Link to (URL + new tab) | image props `href`/`new_tab` | shown for image selections; optional per image |
+| 12 | Image → Replace image | asset-store upload + `replace_asset` op (+`upsert_asset` when new) | dummy's direct-file-upload UX preserved |
+| 13 | Image → Mode select | `objectFit` facet | Fit→contain, Fill→cover, Stretch→fill; **Tile dropped from options** |
+| 14 | Image → Shape/Radius (all + 4 corners) | **NEW radius facet** in `webClassFacets.ts` | founder-approved engine addition; corner classes `rounded-*` family |
+| 15 | Button → Link to | button props `href`/`new_tab` | note §4: action stays link-mode only |
+| 16 | Button → Style select | button `variant` prop | Primary→primary, Secondary→secondary, Transparent→ghost; **Critical dropped** |
+| 17 | Button → Bg/Text color token buttons | `bgColor`/`textColor` facets | token-list popover using the dummy's existing Theme-tab pattern |
+| 19 | Container → Style tokens | `textColor`/`bgColor` facets | tokens only |
+| 20 | Container → Flex/Grid/Hide segmented | `display` facet | Flex→flex, Grid→grid, Hide→hidden (block/inline-flex unexposed) |
+| 22 | Section → Direction / Gap / Wrap | `direction`/`gap`/`flexWrap` facets | typed gap coerced to nearest step (0,1,2,3,4,6,8,10,12,16,20,24) |
+| 34 | Custom component → props form | manifest `props_schema` → `set_custom_component_props` | the existing schema-driven form, shown when a custom component is selected |
+| 40 | Header visibility eye | `display` facet `hidden` value | wired as a real hide/show toggle |
+| 41 | Layers tree | real document node hierarchy | names/kinds/selection from the doc; **nesting display capped at depth 1** |
+| R3 | Padding | `paddingX`/`paddingY` facets | **UI collapses 4 boxes → 2 (X/Y)** (founder-ordered delta) |
+
+Conditional-display rule (item 3, founder-specified): the **Text → "Link to" section is hidden by
+default** and appears — functional — **only while a rich-text range is selected** (i.e. during a
+canvas rich-text editing session with a live range). It binds to the rich-text range link
+(`set_class_facet`-adjacent range link op via the rich-text commit path), never to a whole-node
+href (which does not exist for text).
+
+## 2. Founder-ordered UI deltas (the only permitted deviations from the dummy)
+
+- Padding: 4 per-side boxes → 2 axis boxes (R3).
+- Typography gains a **text style/variant select** (display/h1/h2/h3/h4/body/small/overline →
+  `set_node_props` text `variant`; heading options disabled for structured rich text, engine rule) (25).
+- Typography gains a **line-spacing select** (none/tight/snug/normal/relaxed/loose → `lineHeight`
+  facet) (26).
+- Text "Link to" becomes conditional per §1's rule (3).
+- Image Mode loses "Tile" (13); Button Style loses "Critical" (16); size-select orphan handling per §6.
+- Icon selections show **only Layout/padding** — icon-specific sections (icon select, token colors,
+  size, stroke) are hidden (18b).
+- Section "Link to" hidden (23). Text vertical alignment hidden (8).
+
+## 3. Visible but deliberately INERT (dummy stays dummy)
+
+- Font family select (R1 — no font-family facet; theme owns fonts).
+- Custom/hex tab of the color popover (R2 sub-ruling — Theme tokens tab is the live one).
+- Canvas background color-opacity input (2).
+- Text Stroke section, exactly as the dummy ships it (9).
+
+## 4. Invisible-but-alive (agent-only; no UI; data round-trips guaranteed)
+
+- Slot keys / personalization / per-account batch (27).
+- Raw CSS-classes escape hatch (28).
+- Margin X/Y (30).
+- Background-image + scrim system on section/container (35).
+- Button dialog actions (`show_modal`/`close` + target) — inspector edits link mode only (36).
+- Image alt text (37).
+- `tag`/`anchor_id` on sections: **hard data-integrity guarantee** — every write path we introduce
+  must round-trip these props unchanged (38).
+- Node move/duplicate/delete: **keyboard-only** for now (29).
+
+## 5. Hidden/dropped surfaces + fallback rule
+
+- Computed-layout read-only card: dropped from UI (31).
+- **Unknown/unmapped selection kinds → show Layout(-padding) only**: applies to embeds (32) and
+  the interactive components dialog/accordion/marquee/carousel/tabs/nav-menu (33). The components
+  keep working on the page; their prop tuning is agent-only for now.
+
+## 6. OPEN — awaiting founder word (do not implement past these)
+
+- **(5)** Size-select orphans: interpretation of "drop for now" — (a) drop 13 only and map 32→3xl
+  [Fable's rec], or (b) drop both 13 and 32 from the options.
+- **(24)** Rich-text toolbar on double-click: treated as KEEP-as-is (item 3's conditional Link-to
+  is only implementable if range selection exists, which the toolbar session provides) — awaiting
+  explicit confirm / restyle-later note.
+- **(39)** Header lock toggle (no web backing): inert or hidden.
+
+## 7. Future-work register (founder: "make a special note — we will work on this")
+
+Tracked, never silently dropped; each needs a UI slot decision when its turn comes:
+
+1. Container-level direction / h-v alignment / wrap / grid-columns / gap / click-action link (21).
+2. Embed inspector proper (URL/snippet modes, provider handling) (32).
+3. Interactive-component prop cards in the UI (33).
+4. Item-16 adjunct: a `critical`/destructive button variant engine-side, if a campaign ever needs it.
+5. Failure-feedback surfaces (save-failure, version-refused, 409/422, publish-failure) — the four
+   one-question founder decisions deferred to their implementation flows (42).
+
+## 8. Engine-side work authorized by this contract
+
+Exactly one item: the **radius facet** family in `webClassFacets.ts` (+ its parse/set tests),
+covering `rounded` all-corners and the four per-corner variants used by the dummy's Shape section.
+No other engine change is authorized for the web-inspector flow.
