@@ -4,6 +4,31 @@ Status: **R0 ratified; repair slices R1-R9 implemented; Stage-0/project hardenin
 
 Owner for backend integration: Aaryan.
 
+## Canonical frontend routes — founder-ratified 2026-08-17 (Phase R, rulings R1–R3)
+
+Adopted from the design repo's canonical-routes contract
+(`clue-hq/clue-frontend` `docs/api-contracts/projects.md`), as built by the
+Phase R route migration (`docs/superpowers/plans/2026-08-17-phase-r-chat-route-migration.md`):
+
+| Destination | Route | Ownership |
+| --- | --- | --- |
+| Projects list | `/projects` | Workspace |
+| Project root | `/projects/:projectId` | Legacy absorber: `?thread=` server-redirects to the chats path; threadless renders and canonicalizes to the default thread's chats path |
+| Project Gallery | `/projects/:projectId/chats/:chatId?surface=gallery` | One Gallery per Project |
+| Legacy Gallery entry | `/projects/:projectId/gallery` | Compatibility redirect only; threadless carries `?surface=gallery` through the absorber so the Gallery intent survives |
+| Project chat | `/projects/:projectId/chats/:chatId` | Many chats per Project; the canonical thread `href` shape every backend emitter produces (`thread_href` in `platform/api/clue_api/chat/schemas.py`) |
+| Project artifact | `/projects/:projectId/artifacts/:artifactId` | Artifact remains in the Project Gallery |
+
+**The legacy `/projects/:projectId?thread=:chatId` form redirects to these
+canonical destinations and must not be emitted by new UI or by the backend.**
+Pane state on the chats route is `?surface=` (`chat|gallery|web|ad`) plus
+`?edit=1` and `?selection=` — **this supersedes the earlier-ratified
+`?artifact=` split-view param (ruling R2, 2026-08-17), which was never built
+and must not be introduced.** The historical-proposal sections later in this
+document retain the legacy `?thread=` form as unedited history and are
+non-authoritative. The R6 protected-shell paragraph ("R6 implementation
+status") is unchanged by the route migration.
+
 The durable thread/turn/gate/stream surface, atomic Home bootstrap, complete
 project workspace read, and tenant-scoped sidebar catalog are implemented.
 In HTTP mode those repositories all use authenticated backend data and never
@@ -174,7 +199,9 @@ answer lifecycle; rendering and remaining UI changes stay owned by Slices 3-6.
   headers rather than under them.
 - A project with no artifacts opens conversation-first and exposes an obvious
   **Open Gallery** control. The explicit `/gallery` route still honors the
-  user's request to open the Gallery, including its empty state.
+  user's request to open the Gallery, including its empty state — since
+  Phase R it does so as a compatibility redirect carrying `?surface=gallery`
+  through the absorber (see "Canonical frontend routes" above).
 
 The amendment supersedes the earlier `Untitled project` and initially-open empty
 Gallery rules retained later in this document as implementation history.
@@ -897,7 +924,7 @@ the same ids and `replayed=true`:
     "thread": {
       "id": "thr_01J...",
       "title": "Start an ABM project for Northstar Labs",
-      "href": "/projects/prj_01J...?thread=thr_01J...",
+      "href": "/projects/prj_01J.../chats/thr_01J...",
       "status": "running",
       "pinned": false,
       "project_id": "prj_01J...",
@@ -910,7 +937,7 @@ the same ids and `replayed=true`:
       "requested_at": "2026-08-10T12:00:00Z",
       "replayed": false
     },
-    "href": "/projects/prj_01J...?thread=thr_01J..."
+    "href": "/projects/prj_01J.../chats/thr_01J..."
   }
 }
 ```
@@ -1014,7 +1041,7 @@ defaults to 50 and is constrained to 1–100:
         {
           "id": "thr_01J...",
           "title": "Start an ABM project for Northstar Labs",
-          "href": "/projects/prj_01J...?thread=thr_01J...",
+          "href": "/projects/prj_01J.../chats/thr_01J...",
           "status": "running",
           "pinned": false,
           "updated_at": "2026-08-10T12:00:00Z"

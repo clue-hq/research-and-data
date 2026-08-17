@@ -130,6 +130,7 @@ from clue_api.chat.schemas import (
     gate_response_message,
     gate_wire,
     message_list_response,
+    thread_href,
     thread_speaker_wire,
     thread_wire,
     thread_wire_from_references,
@@ -900,7 +901,7 @@ def build_chat_router(
                         thread_id=thread_id,
                     )
 
-            href = f"/projects/{project_id}?thread={thread_id}"
+            href = thread_href(project_id=project_id, thread_id=thread_id)
             if replayed:
                 response.status_code = 200
             return ProjectBootstrapResponse(
@@ -974,7 +975,10 @@ def build_chat_router(
                         SidebarConversationWire(
                             id=thread.thread_id,
                             title=thread.title,
-                            href=f"/projects/{project.project_id}?thread={thread.thread_id}",
+                            href=thread_href(
+                                project_id=project.project_id,
+                                thread_id=thread.thread_id,
+                            ),
                             status=thread_wire(
                                 thread,
                                 open_gate_kinds=open_gates.get(thread.thread_id, ()),

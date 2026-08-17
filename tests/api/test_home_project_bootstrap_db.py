@@ -278,7 +278,7 @@ def test_home_bootstrap_is_atomic_and_exact_replay_is_one_project_turn(
             assert second["thread"]["id"] == first["thread"]["id"]
             assert second["turn"]["turn_id"] == first["turn"]["turn_id"]
             assert first["href"] == (
-                f"/projects/{first['project']['id']}?thread={first['thread']['id']}"
+                f"/projects/{first['project']['id']}/chats/{first['thread']['id']}"
             )
 
             turns_path = (

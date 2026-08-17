@@ -294,9 +294,14 @@ def gate_response_message(response: GateResponseRequest) -> str:
 
 
 def thread_href(*, project_id: str, thread_id: str) -> str:
-    """The frontend route this thread lives at — the authored contract's ``href`` field."""
+    """The frontend route this thread lives at — the authored contract's ``href`` field.
 
-    return f"/projects/{project_id}?thread={thread_id}"
+    Phase R (founder rulings R1/R2, 2026-08-17): the canonical shape is the
+    explicit chats path; the legacy ``?thread=`` query form survives only as a
+    frontend redirect absorber and must not be emitted.
+    """
+
+    return f"/projects/{project_id}/chats/{thread_id}"
 
 
 #: The derived conversation-status vocabulary, single-sourced: :func:`thread_status` is the one
