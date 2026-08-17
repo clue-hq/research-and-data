@@ -134,7 +134,7 @@ export function createFixtureChatThreadsRepository(): ChatThreadsRepository {
       return put({
         id,
         title: title?.trim() ? title.trim() : null,
-        href: `/projects/${projectId}?thread=${id}`,
+        href: `/projects/${projectId}/chats/${id}`,
         status: "idle",
         pinned: false,
         projectId,

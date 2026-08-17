@@ -230,7 +230,7 @@ export function AccountActivityScreen({
                       {" · "}
                       <Link
                         className="hover:text-[var(--clue-content-default)] hover:underline"
-                        href={`/projects/${item.project.id}`}
+                        href={`/projects/${encodeURIComponent(item.project.id)}`}
                       >
                         {item.project.name}
                       </Link>

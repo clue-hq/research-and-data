@@ -101,7 +101,7 @@ test("new chat creation carries the transfer act's idempotency key", async () =>
       data: {
         id: "thread-1",
         title: null,
-        href: "/projects/project-1?thread=thread-1",
+        href: "/projects/project-1/chats/thread-1",
         status: "idle",
         pinned: false,
         project_id: "project-1",

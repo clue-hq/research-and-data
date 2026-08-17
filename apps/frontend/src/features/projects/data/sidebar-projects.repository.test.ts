@@ -33,7 +33,7 @@ test("HTTP sidebar is one real batch read with nullable-title fallback", async (
         conversations: [{
           id: "thr_real",
           title: null,
-          href: "/projects/prj_real?thread=thr_real",
+          href: "/projects/prj_real/chats/thr_real",
           status: "running",
           pinned: true,
           updated_at: "2026-08-10T12:00:00Z",

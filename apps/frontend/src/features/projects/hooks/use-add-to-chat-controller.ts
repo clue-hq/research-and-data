@@ -2,6 +2,7 @@
 
 import { useCallback, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { projectChatHref } from "@/features/chat-shell/model/chat-shell-routes";
 import { ClueChatApiError, newIdempotencyKey } from "../data/chat-api";
 import { useChatRepositories } from "../data/projects-transport";
 import {
@@ -147,8 +148,11 @@ export function useAddToChatController({
       // originating table, is the visible source of truth.
       onTransferred();
       setOpen(false);
-      const search = new URLSearchParams({ thread: threadId, handoff: handoff.handoffId });
-      router.push(`/projects/${encodeURIComponent(selectedProjectId)}?${search.toString()}`);
+      router.push(
+        projectChatHref(selectedProjectId, threadId, {
+          handoff: handoff.handoffId,
+        }),
+      );
     } catch (failure) {
       setError(safeError(failure));
     } finally {

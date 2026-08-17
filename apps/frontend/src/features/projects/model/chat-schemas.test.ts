@@ -89,7 +89,7 @@ test("a project route never selects a thread outside its scoped thread page", ()
       {
         id: "thr_allowed",
         title: "Allowed thread",
-        href: "/projects/prj_a?thread=thr_allowed",
+        href: "/projects/prj_a/chats/thr_allowed",
         status: "idle",
         pinned: false,
         project_id: "prj_a",

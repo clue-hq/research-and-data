@@ -77,7 +77,7 @@ test("Home create sends one atomic request and trusts only the returned href", a
           thread: {
             id: "thr_real",
             title: "Start Northstar research",
-            href: "/projects/prj_real?thread=thr_real",
+            href: "/projects/prj_real/chats/thr_real",
             status: "running",
             pinned: false,
             project_id: "prj_real",
@@ -90,7 +90,7 @@ test("Home create sends one atomic request and trusts only the returned href", a
             requested_at: "2026-08-10T12:00:00Z",
             replayed: false,
           },
-          href: "/projects/prj_real?thread=thr_real",
+          href: "/projects/prj_real/chats/thr_real",
         },
       },
       { status: 201 },
@@ -125,7 +125,7 @@ test("Home create sends one atomic request and trusts only the returned href", a
       attachment_refs: [],
       agent_profile_id: "head-of-abm@v30",
     });
-    assert.equal(created.href, "/projects/prj_real?thread=thr_real");
+    assert.equal(created.href, "/projects/prj_real/chats/thr_real");
     assert.equal(created.project.title, "Untitled project");
     assert.equal(created.thread.title, "Start Northstar research");
   } finally {

@@ -26,7 +26,7 @@ export const fixtureThreads = [
   {
     id: FIXTURE_THREAD_ID,
     title: "Landing page concepts",
-    href: `/projects/${FIXTURE_PROJECT_ID}?thread=${FIXTURE_THREAD_ID}`,
+    href: `/projects/${FIXTURE_PROJECT_ID}/chats/${FIXTURE_THREAD_ID}`,
     status: "idle",
     pinned: true,
     project_id: FIXTURE_PROJECT_ID,
@@ -36,7 +36,7 @@ export const fixtureThreads = [
   {
     id: FIXTURE_SECOND_THREAD_ID,
     title: null,
-    href: `/projects/${FIXTURE_PROJECT_ID}?thread=${FIXTURE_SECOND_THREAD_ID}`,
+    href: `/projects/${FIXTURE_PROJECT_ID}/chats/${FIXTURE_SECOND_THREAD_ID}`,
     status: "approval",
     pinned: false,
     project_id: FIXTURE_PROJECT_ID,
