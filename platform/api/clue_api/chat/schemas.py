@@ -552,6 +552,31 @@ class ProjectShellResponse(_Wire):
     data: ProjectShellWire
 
 
+class DesignArtifactWire(_Wire):
+    """W1.3 artifact→design-document read seam (v1: ``document_id == id``).
+
+    Design documents are not yet registered as platform artifacts (the Gallery
+    integration is future work), so the v1 seam resolves the artifact id AS the
+    design-document id behind this typed shape — the URL contract survives the
+    later linkage unchanged. Cross-PROJECT containment is not yet provable
+    (the document row carries a workspace, not a project); workspace scoping is
+    enforced, and the project/document linkage (leg-derived or an artifact
+    registry) is the recorded follow-up.
+    """
+
+    id: str
+    project_id: str
+    document_id: str
+    kind: Literal["web", "ad"]
+    title: str
+    status: str
+    current_version_id: str
+
+
+class DesignArtifactResponse(_Wire):
+    data: DesignArtifactWire
+
+
 class SidebarConversationWire(_Wire):
     id: str
     title: str | None

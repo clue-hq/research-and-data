@@ -99,6 +99,8 @@ from clue_api.chat.schemas import (
     AgentProfileOptionWire,
     ComposerContextEntityWire,
     CreateThreadRequest,
+    DesignArtifactResponse,
+    DesignArtifactWire,
     GateListResponse,
     GateResponseRequest,
     HomeBrandWire,
@@ -147,6 +149,8 @@ from clue_config import Settings
 from clue_core import OperationId, operation_id_from_key
 from clue_db import ConnFactory
 from clue_design import legs as design_leg_dal
+from clue_design.documents import get_document as get_design_document
+from clue_design.errors import DesignNotFoundError
 from clue_obs import get_logger
 from clue_projections import (
     DEFAULT_PROJECT_SIDEBAR_PAGE_SIZE,
@@ -993,6 +997,58 @@ def build_chat_router(
                 for project in page.items
             ),
             meta=SidebarPageMeta(next_cursor=page.next_cursor),
+        )
+
+    @router.get("/projects/{project_id}/design-artifacts/{artifact_id}")
+    async def design_artifact_route(
+        project_id: str,
+        artifact_id: str,
+        who: PrincipalDep,
+    ) -> DesignArtifactResponse:
+        """W1.3 v1 read seam: resolve a platform artifact id to its design document.
+
+        Design documents are not yet registered as platform artifacts, so the
+        artifact id IS the design-document id (the founder-sanctioned v1
+        fallback); both the project and the document are workspace-scoped
+        fail-closed reads. See ``DesignArtifactWire`` for the recorded
+        containment gap and follow-up.
+        """
+
+        _require(who, PERMISSION_PROJECT_READ)
+        async with conn_factory() as conn:
+            project = await get_project_for_workspace(
+                conn,
+                workspace_id=who.workspace_id,
+                project_id=project_id,
+            )
+            if project is None:
+                raise _refuse(
+                    status_code=404,
+                    code="PROJECT_NOT_FOUND",
+                    message="no such project in this workspace",
+                )
+            try:
+                document = await get_design_document(
+                    conn,
+                    workspace_id=who.workspace_id,
+                    document_id=artifact_id,
+                )
+            except DesignNotFoundError:
+                raise _refuse(
+                    status_code=404,
+                    code="ARTIFACT_NOT_FOUND",
+                    message="no such design artifact in this workspace",
+                ) from None
+        return DesignArtifactResponse(
+            data=DesignArtifactWire(
+                id=artifact_id,
+                project_id=project_id,
+                document_id=artifact_id,
+                kind="web" if document["doc_kind"] == "web" else "ad",
+                title=str(document["title"]),
+                status=str(document["status"]),
+                current_version_id=str(document["current_version"]),
+            )
         )
 
     @router.get("/projects/{project_id}")
