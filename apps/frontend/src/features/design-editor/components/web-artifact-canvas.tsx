@@ -1,10 +1,17 @@
 "use client";
 
-import { useRef } from "react";
+import { useEffect, useRef, type RefObject } from "react";
 import type { WebSelection } from "../engine/webBridge";
 import { useWebBridgeSelection } from "../hooks/use-web-bridge-selection";
 import { useWebRender } from "../hooks/use-web-render";
 import styles from "./web-artifact-canvas.module.css";
+
+/** W2.3: imperative controls the canvas publishes for its owner — layer-row
+ * clicks send `selectNode` INTO the iframe (the frame echoes the normal
+ * `select` message back, driving the ordinary selection path). */
+export interface WebArtifactCanvasControls {
+  selectNode: (nodeId: string) => void;
+}
 
 /**
  * W2.1: the sandboxed srcdoc render of a real web document, mounted inside
@@ -25,9 +32,12 @@ import styles from "./web-artifact-canvas.module.css";
  * with the document lives in `useWebArtifactSelection`.
  */
 export function WebArtifactCanvas({
+  controlsRef,
   documentId,
   onSelect,
 }: {
+  /** W2.3: receives the canvas's imperative controls while mounted. */
+  controlsRef?: RefObject<WebArtifactCanvasControls | null>;
   documentId: string;
   /** W2.2: canvas selection events from the injected bridge, nonce-validated
    * by the ported listener. */
@@ -37,14 +47,21 @@ export function WebArtifactCanvas({
   // without a synchronous setState inside an effect (react-hooks/
   // set-state-in-effect). A future reload affordance (W2.2+) extends the key.
   return (
-    <DocumentRender key={documentId} documentId={documentId} onSelect={onSelect} />
+    <DocumentRender
+      key={documentId}
+      controlsRef={controlsRef}
+      documentId={documentId}
+      onSelect={onSelect}
+    />
   );
 }
 
 function DocumentRender({
+  controlsRef,
   documentId,
   onSelect,
 }: {
+  controlsRef?: RefObject<WebArtifactCanvasControls | null>;
   documentId: string;
   onSelect?: (selection: WebSelection | null) => void;
 }) {
@@ -53,7 +70,16 @@ function DocumentRender({
   // The ported bridge listener (source-window + nonce validation). Selection
   // state itself lives with the join owner (useWebArtifactSelection); this
   // canvas only forwards validated events upward.
-  useWebBridgeSelection({ iframeRef, nonceRef, onSelect });
+  const bridge = useWebBridgeSelection({ iframeRef, nonceRef, onSelect });
+
+  const { selectNode } = bridge;
+  useEffect(() => {
+    if (!controlsRef) return;
+    controlsRef.current = { selectNode };
+    return () => {
+      controlsRef.current = null;
+    };
+  }, [controlsRef, selectNode]);
 
   if (state.kind === "ready") {
     return (

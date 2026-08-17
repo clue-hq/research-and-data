@@ -2,8 +2,12 @@ import type {
   ChatShellArtifactKind,
   ChatShellOpenArtifact,
 } from "../model/chat-shell";
-import { WebArtifactCanvas } from "@/features/design-editor/components/web-artifact-canvas";
+import {
+  WebArtifactCanvas,
+  type WebArtifactCanvasControls,
+} from "@/features/design-editor/components/web-artifact-canvas";
 import type { WebSelection } from "@/features/design-editor/engine/webBridge";
+import type { RefObject } from "react";
 import { ProjectGallery } from "@/features/gallery/components/project-gallery";
 import type { GalleryArtifact } from "@/features/gallery/model/project-gallery";
 import type { ProjectArtifact } from "@/features/projects/model/project-workspace";
@@ -23,6 +27,7 @@ export function ArtifactStage({
   activeDocumentId,
   artifacts,
   artifactKind,
+  canvasControlsRef,
   artifactMaximized,
   artifactTitle,
   editing,
@@ -46,6 +51,9 @@ export function ArtifactStage({
    * dummy's empty canvas (geometry stable). */
   activeDocumentId?: string | null;
   artifacts: ProjectArtifact[];
+  /** W2.3: receives the mounted web canvas's imperative controls
+   * (`selectNode` for layer-row clicks). */
+  canvasControlsRef?: RefObject<WebArtifactCanvasControls | null>;
   artifactKind: ChatShellArtifactKind | null;
   artifactMaximized: boolean;
   artifactTitle: string;
@@ -101,6 +109,7 @@ export function ArtifactStage({
               >
                 {activeDocumentId ? (
                   <WebArtifactCanvas
+                    controlsRef={canvasControlsRef}
                     documentId={activeDocumentId}
                     onSelect={onCanvasSelect}
                   />

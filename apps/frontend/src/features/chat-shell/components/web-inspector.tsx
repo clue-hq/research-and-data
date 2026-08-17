@@ -1,12 +1,14 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { createContext, useContext, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
+import type { WebLayerRow } from "@/features/design-editor/adapter/layers";
 import type { ChatShellInspectorSelection } from "../model/chat-shell";
 import { CHAT_SHELL_INSPECTOR_SELECTIONS } from "../model/chat-shell";
 import {
   useInspectorController,
   useInspectorLayerTree,
+  type InspectorPresentationState,
 } from "../hooks/use-inspector-controller";
 import {
   ColorControl,
@@ -51,6 +53,59 @@ const INSPECTOR_REVIEW_LABELS: Record<ChatShellInspectorSelection, string> = {
 };
 type InspectorController = ReturnType<typeof useInspectorController>;
 type InspectorLayerTreeController = ReturnType<typeof useInspectorLayerTree>;
+
+// W2.3: when the caller supplies real document layer rows, every schema's
+// Layers section renders them instead of its fixture tree. The context keeps
+// the seven schema views untouched except for the one fallback expression at
+// each Layers site.
+const DocumentLayersContext = createContext<ReactNode>(null);
+
+function SchemaLayers({ fallback }: { fallback: ReactNode }) {
+  const real = useContext(DocumentLayersContext);
+  return <>{real ?? fallback}</>;
+}
+
+/** W2.3: the real layer tree — rows built from the document hierarchy
+ * (design-editor `buildWebLayerRows`, nesting capped at depth 1 per ruling
+ * 41), rendered with the dummy's own `InspectorLayerRow` primitive. Depth-0
+ * rows expand/collapse locally (born expanded); clicking any row selects its
+ * canvas node through the bridge. */
+function DocumentLayers({
+  onSelectLayer,
+  rows,
+}: {
+  onSelectLayer?: (nodeId: string) => void;
+  rows: WebLayerRow[];
+}) {
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  return (
+    <div className={styles.layerList}>
+      {rows.map((row) => {
+        if (row.parentId && collapsed[row.parentId]) return null;
+        return (
+          <InspectorLayerRow
+            active={row.active}
+            depth={row.depth}
+            expandable={row.expandable}
+            expanded={row.expandable ? !collapsed[row.nodeId] : undefined}
+            icon={row.icon}
+            key={row.nodeId}
+            label={row.label}
+            onClick={() => {
+              if (row.expandable) {
+                setCollapsed((current) => ({
+                  ...current,
+                  [row.nodeId]: !current[row.nodeId],
+                }));
+              }
+              onSelectLayer?.(row.nodeId);
+            }}
+          />
+        );
+      })}
+    </div>
+  );
+}
 
 function TextAlignment({
   horizontal,
@@ -459,7 +514,7 @@ function TextControls({
         <InspectorField label="Color"><ColorControl none={state.strokeColor === "none"} /></InspectorField>
         <InspectorField label="Width"><InspectorInput ariaLabel="Stroke width" onChange={(value) => setValue("strokeWidth", value)} value={state.strokeWidth} /></InspectorField>
       </Section>
-      {showLayers ? <Section id="layers" label="Layers" state={state} toggle={toggleSection}><TextLayers onSelectionChange={onSelectionChange} tree={layerTree} /></Section> : null}
+      {showLayers ? <Section id="layers" label="Layers" state={state} toggle={toggleSection}><SchemaLayers fallback={<TextLayers onSelectionChange={onSelectionChange} tree={layerTree} />} /></Section> : null}
     </>
   );
 }
@@ -479,7 +534,7 @@ function CanvasControls({
   return (
     <>
       <Section id="background" label="Background" state={state} toggle={toggleSection}><InspectorField label="Color"><ColorControl color={state.backgroundColor} onColorChange={(value) => setValue("backgroundColor", value)} /></InspectorField></Section>
-      {showLayers ? <Section id="layers" label="Layers" state={state} toggle={toggleSection}><CanvasLayers onSelectionChange={onSelectionChange} tree={layerTree} /></Section> : null}
+      {showLayers ? <Section id="layers" label="Layers" state={state} toggle={toggleSection}><SchemaLayers fallback={<CanvasLayers onSelectionChange={onSelectionChange} tree={layerTree} />} /></Section> : null}
     </>
   );
 }
@@ -509,7 +564,7 @@ function ImageControls({
         <InspectorField label="Mode"><InspectorSelect label="Image fill mode" onChange={(value) => setValue("fillMode", value)} options={FILL_MODE_OPTIONS} value={state.fillMode} /></InspectorField>
       </Section>
       <Section id="shape" label="Shape" state={state} toggle={toggleSection}><InspectorField label="Radius"><RadiusControls onChange={(corner, value) => setNestedValue("radius", corner, value)} values={state.radius} /></InspectorField></Section>
-      {showLayers ? <Section id="layers" label="Layers" state={state} toggle={toggleSection}><ImageLayers onSelectionChange={onSelectionChange} tree={layerTree} /></Section> : null}
+      {showLayers ? <Section id="layers" label="Layers" state={state} toggle={toggleSection}><SchemaLayers fallback={<ImageLayers onSelectionChange={onSelectionChange} tree={layerTree} />} /></Section> : null}
     </>
   );
 }
@@ -538,7 +593,7 @@ function ButtonControls({
       </Section>
       <LayoutSection controller={controller} />
       {showLayers ? <Section id="layers" label="Layers" state={state} toggle={toggleSection}>
-        <ButtonLayers onSelectionChange={onSelectionChange} tree={layerTree} />
+        <SchemaLayers fallback={<ButtonLayers onSelectionChange={onSelectionChange} tree={layerTree} />} />
       </Section> : null}
     </>
   );
@@ -572,7 +627,7 @@ function IconControls({
       </Section>
       <LayoutSection controller={controller} />
       {showLayers ? <Section id="layers" label="Layers" state={state} toggle={toggleSection}>
-        <StructuralLayers onSelectionChange={onSelectionChange} selection="icon" tree={layerTree} />
+        <SchemaLayers fallback={<StructuralLayers onSelectionChange={onSelectionChange} selection="icon" tree={layerTree} />} />
       </Section> : null}
     </>
   );
@@ -611,7 +666,7 @@ function ContainerControls({
       </Section>
       <LayoutSection controller={controller} />
       {showLayers ? <Section id="layers" label="Layers" state={state} toggle={toggleSection}>
-        <StructuralLayers onSelectionChange={onSelectionChange} selection="container" tree={layerTree} />
+        <SchemaLayers fallback={<StructuralLayers onSelectionChange={onSelectionChange} selection="container" tree={layerTree} />} />
       </Section> : null}
     </>
   );
@@ -665,32 +720,47 @@ function SectionControls({
       </Section>
       <LayoutSection controller={controller} />
       {showLayers ? <Section id="layers" label="Layers" state={state} toggle={toggleSection}>
-        <StructuralLayers onSelectionChange={onSelectionChange} selection="section" tree={layerTree} />
+        <SchemaLayers fallback={<StructuralLayers onSelectionChange={onSelectionChange} selection="section" tree={layerTree} />} />
       </Section> : null}
     </>
   );
 }
 
 export function WebInspector({
+  hydrated,
+  layers,
   onSelectionChange,
+  onSelectLayer,
   reviewMenuEnabled = false,
   selection,
   showLayers = true,
 }: {
+  /** W2.2: real values for the selected node (design-editor hydrate adapter),
+   * merged over the dummy defaults at mount. Callers remount per selection. */
+  hydrated?: Partial<InspectorPresentationState>;
+  /** W2.3: real document layer rows (design-editor `buildWebLayerRows`).
+   * When present, every schema's Layers section renders them instead of its
+   * fixture tree; absent keeps the dummy fixtures untouched. */
+  layers?: WebLayerRow[];
   onSelectionChange: (selection: ChatShellInspectorSelection) => void;
+  /** W2.3: a layer-row click — callers send bridge `selectNode`. */
+  onSelectLayer?: (nodeId: string) => void;
   reviewMenuEnabled?: boolean;
   selection: ChatShellInspectorSelection;
   showLayers?: boolean;
 }) {
   const inspectorRef = useRef<HTMLElement>(null);
   const [reviewMenuOpen, setReviewMenuOpen] = useState(false);
-  const canvasController = useInspectorController([], "canvas");
-  const textController = useInspectorController(["link"], "text");
-  const imageController = useInspectorController(["link"], "image");
-  const buttonController = useInspectorController(["link"], "button");
-  const iconController = useInspectorController(["link"], "icon");
-  const containerController = useInspectorController(["link"], "container");
-  const sectionController = useInspectorController(["link"], "section");
+  const canvasController = useInspectorController([], "canvas", hydrated);
+  const textController = useInspectorController(["link"], "text", hydrated);
+  const imageController = useInspectorController(["link"], "image", hydrated);
+  const buttonController = useInspectorController(["link"], "button", hydrated);
+  const iconController = useInspectorController(["link"], "icon", hydrated);
+  const containerController = useInspectorController(["link"], "container", hydrated);
+  const sectionController = useInspectorController(["link"], "section", hydrated);
+  const documentLayers = layers ? (
+    <DocumentLayers onSelectLayer={onSelectLayer} rows={layers} />
+  ) : null;
   const canvasLayerTree = useInspectorLayerTree("canvas-text", ["group"], "canvas");
   const textLayerTree = useInspectorLayerTree("text", ["div1", "div2"], "text");
   const imageLayerTree = useInspectorLayerTree("image", ["div1", "div2"], "image");
@@ -769,13 +839,15 @@ export function WebInspector({
           title={INSPECTOR_TITLES[selection]}
           visible={activeController.state.visible}
         />
-        {selection === "canvas" ? <CanvasControls controller={canvasController} layerTree={canvasLayerTree} onSelectionChange={onSelectionChange} showLayers={showLayers} /> : null}
-        {selection === "text" ? <TextControls controller={textController} layerTree={textLayerTree} onSelectionChange={onSelectionChange} showLayers={showLayers} /> : null}
-        {selection === "image" ? <ImageControls controller={imageController} layerTree={imageLayerTree} onSelectionChange={onSelectionChange} showLayers={showLayers} /> : null}
-        {selection === "button" ? <ButtonControls controller={buttonController} layerTree={buttonLayerTree} onSelectionChange={onSelectionChange} showLayers={showLayers} /> : null}
-        {selection === "icon" ? <IconControls controller={iconController} layerTree={iconLayerTree} onSelectionChange={onSelectionChange} showLayers={showLayers} /> : null}
-        {selection === "container" ? <ContainerControls controller={containerController} layerTree={containerLayerTree} onSelectionChange={onSelectionChange} showLayers={showLayers} /> : null}
-        {selection === "section" ? <SectionControls controller={sectionController} layerTree={sectionLayerTree} onSelectionChange={onSelectionChange} showLayers={showLayers} /> : null}
+        <DocumentLayersContext.Provider value={documentLayers}>
+          {selection === "canvas" ? <CanvasControls controller={canvasController} layerTree={canvasLayerTree} onSelectionChange={onSelectionChange} showLayers={showLayers} /> : null}
+          {selection === "text" ? <TextControls controller={textController} layerTree={textLayerTree} onSelectionChange={onSelectionChange} showLayers={showLayers} /> : null}
+          {selection === "image" ? <ImageControls controller={imageController} layerTree={imageLayerTree} onSelectionChange={onSelectionChange} showLayers={showLayers} /> : null}
+          {selection === "button" ? <ButtonControls controller={buttonController} layerTree={buttonLayerTree} onSelectionChange={onSelectionChange} showLayers={showLayers} /> : null}
+          {selection === "icon" ? <IconControls controller={iconController} layerTree={iconLayerTree} onSelectionChange={onSelectionChange} showLayers={showLayers} /> : null}
+          {selection === "container" ? <ContainerControls controller={containerController} layerTree={containerLayerTree} onSelectionChange={onSelectionChange} showLayers={showLayers} /> : null}
+          {selection === "section" ? <SectionControls controller={sectionController} layerTree={sectionLayerTree} onSelectionChange={onSelectionChange} showLayers={showLayers} /> : null}
+        </DocumentLayersContext.Provider>
       </div>
     </aside>
   );

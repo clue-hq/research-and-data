@@ -1,11 +1,15 @@
 "use client";
 
+import { useRef } from "react";
 import {
   useEditorShellController,
   type EditorShellInitialState,
 } from "../hooks/use-editor-shell-controller";
+import { buildWebLayerRows } from "@/features/design-editor/adapter/layers";
+import type { WebArtifactCanvasControls } from "@/features/design-editor/components/web-artifact-canvas";
 import { useWebArtifactSelection } from "@/features/design-editor/hooks/use-web-artifact-selection";
 import { ArtifactStage } from "./artifact-stage";
+import { WebInspector } from "./web-inspector";
 import styles from "./chat-shell.module.css";
 
 // Full-width editor surface at the canonical artifact route
@@ -57,16 +61,41 @@ export function EditorSurface({
     ? (documentIds?.[controller.activeArtifactId] ?? null)
     : null;
   // W2.2: the canvas bridge's nonce-validated selections joined with the
-  // loaded document → {node, nodeInfo} + schema + hydrated inspector state.
-  // The inspector itself mounts at the split view / W2 exit demo; until then
-  // the joined selection is surfaced on data attributes below (no invented
-  // UI), which is also what browser verification asserts.
+  // loaded document → {node, nodeInfo} + schema + hydrated inspector state,
+  // also surfaced on data attributes below for verification.
   const webSelection = useWebArtifactSelection(activeDocumentId);
+  const canvasControls = useRef<WebArtifactCanvasControls | null>(null);
+
+  // W2.3 (completing the W2 exit gate): while EDITING a real web document,
+  // the inspector docks beside the canvas — the dummy's own editing
+  // arrangement (ruling R6: the inspector replaces the conversation column;
+  // at this chat-less route that column is simply the dock) using the
+  // dummy's split grid template verbatim. Not editing → full-width stage,
+  // exactly as W0.4 shipped. Remounted per selected node so W2.2's hydrated
+  // values re-apply (the dummy's own schema-swap behavior).
+  const inspectorVisible =
+    controller.editing &&
+    controller.artifactKind === "web" &&
+    activeDocumentId !== null;
+  const page = webSelection.document?.webDoc?.pages?.[0];
+  const layerRows =
+    page?.root && page.nodes
+      ? buildWebLayerRows(
+          { nodes: page.nodes, page_root: page.root },
+          webSelection.selection?.node.id ?? null,
+        )
+      : undefined;
+  const inspectorSelection =
+    webSelection.selection?.schema.selection ?? controller.inspectorSelection;
 
   return (
     <main
       className={`${styles.shellPanelOpen} grid h-full min-h-0 w-full grid-cols-1`}
-      style={{ gridTemplateColumns: "minmax(0, 1fr)" }}
+      style={{
+        gridTemplateColumns: inspectorVisible
+          ? "minmax(400px, 480px) minmax(0, 1fr)" // the dummy's .shellPanelOpen split template
+          : "minmax(0, 1fr)",
+      }}
       data-artifact-id={controller.activeArtifactId ?? undefined}
       data-artifact-kind={controller.artifactKind ?? "none"}
       data-editing={controller.editing}
@@ -79,10 +108,27 @@ export function EditorSurface({
       }
       data-surface={controller.surface}
     >
+      {inspectorVisible ? (
+        <div className={styles.chatBody}>
+          <div className={styles.inspectorDock}>
+            <WebInspector
+              key={webSelection.selection?.node.id ?? "canvas"}
+              hydrated={webSelection.selection?.hydrated}
+              layers={layerRows}
+              onSelectLayer={(nodeId) =>
+                canvasControls.current?.selectNode(nodeId)
+              }
+              onSelectionChange={controller.selectInspectorElement}
+              selection={inspectorSelection}
+            />
+          </div>
+        </div>
+      ) : null}
       <ArtifactStage
         activeArtifactId={controller.activeArtifactId}
         activeDocumentId={activeDocumentId}
         artifacts={[]}
+        canvasControlsRef={canvasControls}
         artifactKind={controller.artifactKind}
         artifactMaximized={controller.artifactMaximized}
         artifactTitle={controller.artifactTitle}
