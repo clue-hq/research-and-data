@@ -299,6 +299,17 @@ Browse-daemon note: session state does not survive daemon restarts — re-run th
   Browse tip: `$B frame 'iframe[title="Website preview"]'` enters the srcdoc frame;
   `$B frame main` returns. Gates: 480/480, lint clean, build ✓. Servers stopped after.
 
+## Plan amendment 2026-08-18 — W3.4 added; resize registered (commit `ea4e7b6d`)
+
+Founder-ordered after the W2.2 move/resize/undo scope review: **W3.4** wires the dummy's
+action-menu Undo ⌘Z / Redo ⇧⌘Z (+ shortcuts) to the engine's existing web undo/redo
+(`webDocuments.ts:1673` → `POST /documents/{id}/web/undo|redo`; `undoDepth`/`redoDepth`
+drive disabled states) — now part of the W3 exit gate, so writes never ship beside inert
+undo chrome. **Resize** is contract §7 item 6 (never in the 42-item inventory — no dummy
+affordance; bridge `resize-node` seam + width/height facets ready; needs a founder ruling on
+capability AND affordance to enter scope). **Moving** unchanged: ruling 29 keyboard-only +
+W4.10 audit.
+
 ## Next
 
 - **W2** (read path): W2.1 real render in the artifact stage (sandboxed srcdoc iframe,
