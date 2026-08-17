@@ -378,6 +378,26 @@ dispatcher against a captured window (no renderer needed). Gates 490/490, lint c
   real web theme tokens; Tertiary/Subtle/Secondary are not (a pick writes an unstyled class,
   honest no-op visually). Real theme-token options need theme data — W4 color flow decision.
 
+## W3.3 ruling + W3.4 done — commit `be3e45f1`. **Phase W3 code-complete; founder sign-off pending.**
+
+- **W3.3 FOUNDER RULING (2026-08-18): inline only.** Save failures = the single note/error
+  line under the inspector header; NO additional UI. Trade-off accepted on the record (can be
+  missed / invisible when inspector closes). Plan task marked decided; contract §7 item 5
+  updated (version-refused + publish-failure remain open). Do not grow the surface without a
+  new ruling.
+- **W3.4:** action-menu Undo ⌘Z / Redo ⇧⌘Z + window keydown shortcuts → the ported
+  manual-edits controller's undo/redo (`clue:artifact-action-request` events, kind-guarded
+  "web"; focused inputs keep native text undo; NOTE the hook's `document` prop shadows the
+  global — listeners attach to window). `undoDepth`/`redoDepth` → native `disabled` threaded
+  editor-surface→stage→header→menu (+ one `.artifactMenuItem:disabled` CSS rule — the dummy
+  shipped none). History success → reload (fresh base_version) + canvas re-render.
+- **Live-proven:** Redo born disabled; menu Undo reverted px-6 (v5→v6 in the engine, canvas
+  re-rendered); ⇧⌘Z reapplied (v7); Redo re-disabled at empty stack. Gates 506/506, lint
+  clean, build ✓. Servers stopped after.
+- **W3 exit gate:** rows 4–7 + §2 additions live (row 4 via theme-tab token picks — real
+  token option list still W4's color-flow decision), undo/redo live — FOUNDER BROWSER
+  SIGN-OFF PENDING (relaunch recipe above).
+
 ## Next
 
 - **W2** (read path): W2.1 real render in the artifact stage (sandboxed srcdoc iframe,
