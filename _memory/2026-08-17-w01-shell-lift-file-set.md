@@ -338,6 +338,16 @@ W4.10 audit.
   (padding 4→2, hidden sections, icon layout-only rendering) is W4's per the plan (each
   schema task applies its own §2 deltas). Founder demo/sign-off still to be given.
 
+## W3.1 done — commit `da918933` (event seam grows write addressing)
+
+`dispatchInspectorEvent(name, detail, addressing?)` — every inspector event detail now
+carries `{selectionId, artifactId, documentVersion}` additively (legacy shape preserved when
+absent; nulls = not-addressable, the W3.2 write adapter must IGNORE such events). All four
+controller dispatch sites thread it; WebInspector passes an `addressing` prop to its seven
+controllers; editor-surface supplies `{activeArtifactId, selection.node.id,
+document.currentVersion}` (the W3.2 `base_version` source). 3 unit tests drive the exported
+dispatcher against a captured window (no renderer needed). Gates 490/490, lint clean, build ✓.
+
 ## Next
 
 - **W2** (read path): W2.1 real render in the artifact stage (sandboxed srcdoc iframe,
