@@ -1,0 +1,2667 @@
+/*
+ * Editor-only stylesheet, bisected from the chat-shell branch's
+ * chat-shell.module.css (clue-hq/clue-frontend@codex/chat-shell, 2,941 lines).
+ * Contains the editor-shell slice only (tabs, artifact header, share/export,
+ * action menus, device/zoom/stage, inspector, keyframes); chat chrome,
+ * composer, session menu, and dead editor-toolbar blocks are not lifted.
+ * Shared rules that grouped chat + editor selectors are duplicated here
+ * narrowed to their editor selectors only (button reset, icon-button
+ * base/hover/active). The --chat-shell-* aliases are the source's lines 2-8,
+ * re-carried on the editor roots (the source defined them on the chat-level
+ * .shell grid, which is not lifted).
+ */
+
+.artifactWorkspace,
+.chatBody,
+.inspectorDock {
+  --chat-shell-border: var(--clue-ds-color-border-neutral);
+  --chat-shell-subtle-border: var(--clue-ds-color-border-subtle);
+  --chat-shell-page: var(--clue-ds-color-bg-page);
+  --chat-shell-neutral: var(--clue-ds-color-bg-neutral);
+  --chat-shell-canvas: var(--clue-ds-color-primitives-gray-100);
+  --chat-shell-content: var(--clue-ds-color-content-neutral);
+  --chat-shell-subtle: var(--clue-ds-color-content-subtle);
+}
+
+.iconButton,
+.galleryTab,
+.artifactTabMain,
+.artifactTabClose,
+.artifactActionButton,
+.artifactHeadingMenuButton,
+.artifactMenuItem,
+.artifactVersionItem,
+.deviceButton,
+.zoomButton,
+.toolbarMenuItem,
+.inspectorSectionTitle,
+.layerRow,
+.alignmentControl button,
+.imageReplaceField,
+.colorValue {
+  appearance: none;
+  border: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+:where(.shareMenu button) {
+  appearance: none;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+}
+
+.iconButton:hover,
+.deviceButton:hover,
+.zoomButton:hover {
+  background: var(--clue-ds-color-bg-neutral-hover);
+}
+
+.iconButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  padding: 4px;
+  border-radius: 6px;
+  background: transparent;
+  transition: background var(--clue-ds-product-motion-duration-fast) ease,
+    transform var(--clue-ds-product-motion-duration-fast) ease;
+}
+
+
+.iconButton:active {
+  transform: scale(0.96);
+}
+
+.iconButtonPressed {
+  background: var(--clue-ds-color-bg-neutral-pressed);
+}
+
+.chatBody {
+  display: flex;
+  align-items: stretch;
+  justify-content: flex-start;
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+}
+
+.inspectorDock {
+  flex: 1 1 auto;
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: var(--chat-shell-neutral);
+  scrollbar-width: none;
+}
+
+.inspectorDock::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+
+.artifactWorkspace {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border-left: 0.5px solid var(--chat-shell-border);
+  background: var(--chat-shell-page);
+  opacity: 0;
+  transform: translateX(10px);
+  transition: opacity var(--clue-ds-product-motion-duration-view) ease,
+    transform var(--clue-ds-product-motion-duration-view)
+      var(--clue-ds-product-motion-easing-entry);
+}
+
+.shellPanelOpen .artifactWorkspace {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+.artifactTabs {
+  display: flex;
+  flex: 0 0 50px;
+  align-items: center;
+  justify-content: space-between;
+  height: 50px;
+  padding: 8px 24px 8px 12px;
+  background: var(--chat-shell-page);
+  border-bottom: 0.5px solid var(--chat-shell-border);
+}
+
+.artifactTabList {
+  display: flex;
+  align-items: center;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 34px;
+  overflow: hidden;
+}
+
+.galleryTabSegment {
+  display: flex;
+  align-items: center;
+  align-self: stretch;
+  flex: 0 0 auto;
+  padding-right: 8px;
+  margin-right: 8px;
+  border-right: 0.5px solid var(--chat-shell-border);
+}
+
+.artifactTabScroller {
+  display: flex;
+  align-items: center;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 34px;
+  gap: 4px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-inline: contain;
+  scroll-behavior: smooth;
+  scroll-padding-inline: 4px;
+  scrollbar-width: none;
+}
+
+.artifactTabScroller::-webkit-scrollbar {
+  display: none;
+}
+
+.galleryTab,
+.artifactTabMain {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+}
+
+.galleryTab {
+  flex: 0 0 auto;
+  max-width: 160px;
+  height: 34px;
+  gap: 4px;
+  padding: 7px 10px;
+  overflow: hidden;
+  border: 0.5px solid transparent;
+  border-radius: 4px;
+  color: var(--chat-shell-subtle);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 18px;
+  white-space: nowrap;
+  transition: background var(--clue-ds-product-motion-duration-fast) ease,
+    border-color var(--clue-ds-product-motion-duration-fast) ease,
+    color var(--clue-ds-product-motion-duration-fast) ease;
+}
+
+.galleryTab:hover {
+  background: var(--clue-ds-color-bg-neutral-hover);
+}
+
+.galleryTabActive {
+  border-color: var(--chat-shell-border);
+  background: var(--chat-shell-neutral);
+  color: var(--chat-shell-content);
+  box-shadow: 0 1px 1px rgb(0 0 0 / 7%);
+}
+
+.galleryTabActive:hover {
+  background: var(--chat-shell-neutral);
+}
+
+.artifactTabUnit {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  width: max-content;
+  min-width: 88px;
+  max-width: 184px;
+  height: 34px;
+  padding: 4px 24px 4px 4px;
+  border: 0.5px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--chat-shell-subtle);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 18px;
+  transition: background var(--clue-ds-product-motion-duration-fast) ease,
+    border-color var(--clue-ds-product-motion-duration-fast) ease,
+    box-shadow var(--clue-ds-product-motion-duration-fast) ease,
+    color var(--clue-ds-product-motion-duration-fast) ease;
+}
+
+.artifactTabUnit:hover {
+  background: var(--clue-ds-color-bg-neutral-hover);
+}
+
+.artifactTabUnitActive {
+  border-color: var(--chat-shell-border);
+  background: var(--chat-shell-neutral);
+  color: var(--chat-shell-content);
+  box-shadow: 0 1px 1px rgb(0 0 0 / 7%);
+}
+
+.artifactTabUnitActive:hover {
+  background: var(--chat-shell-neutral);
+}
+
+.artifactTabMain {
+  flex: 1 1 auto;
+  height: 24px;
+  gap: 4px;
+  padding: 4px;
+  overflow: hidden;
+  border-radius: 2px;
+  white-space: nowrap;
+}
+
+.artifactTabMain > span:last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.artifactTabMain > :first-child {
+  flex: 0 0 auto;
+}
+
+.artifactTabClose {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 2px;
+  border: 0;
+  border-radius: 2px;
+  background: transparent;
+  color: var(--chat-shell-subtle);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-50%) scale(0.92);
+  transition: opacity var(--clue-ds-product-motion-duration-fast) ease,
+    color var(--clue-ds-product-motion-duration-fast) ease,
+    transform var(--clue-ds-product-motion-duration-fast) ease;
+}
+
+.artifactTabUnit:hover .artifactTabClose,
+.artifactTabClose:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
+  color: var(--chat-shell-content);
+  transform: translateY(-50%) scale(1);
+}
+
+.galleryTab:focus-visible,
+.artifactTabMain:focus-visible,
+.artifactTabClose:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px rgb(92 113 147 / 22%);
+}
+
+.artifactTabRenameInput {
+  width: 100px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  line-height: inherit;
+}
+
+.artifactTabActions {
+  display: inline-flex;
+  align-items: center;
+  align-self: center;
+  gap: 4px;
+}
+
+.artifactHeader {
+  position: relative;
+  container-type: inline-size;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 58px;
+  flex: 0 0 58px;
+  padding: 16px 24px 12px;
+  background: var(--chat-shell-neutral);
+  border-bottom: 0.5px solid var(--chat-shell-border);
+  z-index: 3;
+}
+
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+
+.toolbarMenuAnchor {
+  position: relative;
+  display: inline-flex;
+}
+
+.toolbarMenu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  min-width: 144px;
+  padding: 4px;
+  border: 0.5px solid var(--chat-shell-border);
+  border-radius: 6px;
+  background: var(--chat-shell-neutral);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 12%), 0 1px 2px rgb(0 0 0 / 8%);
+  animation: toolbar-menu-enter var(--clue-ds-product-motion-duration-fast)
+    var(--clue-ds-product-motion-easing-entry) both;
+}
+
+.shareMenu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  width: 424px;
+  max-width: calc(100vw - 32px);
+  max-height: min(680px, calc(100vh - 96px));
+  overflow-x: hidden;
+  overflow-y: auto;
+  border: 0.5px solid var(--chat-shell-border);
+  border-radius: 6px;
+  background: var(--chat-shell-neutral);
+  box-shadow: var(--clue-ds-shadow-card-subtle);
+  color: var(--chat-shell-content);
+  font-size: 13px;
+  line-height: 18px;
+  animation: toolbar-menu-enter var(--clue-ds-product-motion-duration-fast)
+    var(--clue-ds-product-motion-easing-entry) both;
+}
+
+.imageExportMenu {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 8px);
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  width: 360px;
+  max-height: min(560px, calc(100vh - 96px));
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 16px;
+  border: 0.5px solid var(--chat-shell-border);
+  border-radius: 6px;
+  background: var(--chat-shell-page);
+  box-shadow: 0 12px 32px rgb(0 24 62 / 12%);
+  color: var(--chat-shell-content);
+  animation: toolbar-menu-enter 140ms ease-out both;
+}
+
+.imageExportHeading {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-bottom: 14px;
+}
+
+.imageExportHeading strong,
+.imageExportField > span,
+.imageExportToggleRow strong {
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 18px;
+}
+
+.imageExportToggleRow small {
+  color: var(--chat-shell-disabled);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 16px;
+}
+
+.imageExportField {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 0;
+  border-top: 0.5px solid var(--chat-shell-border);
+}
+
+.imageExportChoiceGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.imageExportChoiceGrid button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  height: 34px;
+  gap: 4px;
+  padding: 0 8px;
+  border: 0.5px solid var(--chat-shell-border);
+  border-radius: 4px;
+  background: var(--clue-ds-color-components-button-bg-neutral-default);
+  color: var(--chat-shell-subtle);
+  font: inherit;
+  font-size: 12px;
+  line-height: 16px;
+  cursor: pointer;
+  transition:
+    border-color var(--clue-ds-product-motion-duration-fast) ease,
+    background var(--clue-ds-product-motion-duration-fast) ease,
+    color var(--clue-ds-product-motion-duration-fast) ease,
+    box-shadow var(--clue-ds-product-motion-duration-fast) ease;
+}
+
+.imageExportChoiceGrid button:hover {
+  border-color: var(--clue-ds-color-components-button-border-neutral-default);
+  background: var(--clue-ds-color-bg-neutral-hover);
+  color: var(--chat-shell-content);
+}
+
+.imageExportChoiceGrid .imageExportChoiceActive {
+  border-color: var(--clue-ds-color-primitives-brand-500);
+  background: var(--clue-ds-color-primitives-brand-100);
+  color: var(--clue-ds-color-content-utility-brand);
+  box-shadow: inset 0 0 0 0.5px rgb(89 100 79 / 8%);
+}
+
+.imageExportChoiceGrid .imageExportChoiceActive:hover {
+  border-color: var(--clue-ds-color-primitives-brand-500);
+  background: var(--clue-ds-color-primitives-brand-200);
+  color: var(--clue-ds-color-content-utility-brand);
+}
+
+.imageExportChoiceGrid button:focus-visible {
+  outline: 2px solid rgb(68 72 63 / 18%);
+  outline-offset: 1px;
+}
+
+.imageExportToggleRow {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  width: 100%;
+  padding: 12px 0;
+  border-top: 0.5px solid var(--chat-shell-border);
+  background: transparent;
+  color: var(--chat-shell-content);
+  cursor: pointer;
+  text-align: left;
+}
+
+.imageExportCheckbox {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 16px;
+  width: 16px;
+  height: 16px;
+  border: 0.5px solid var(--chat-shell-border);
+  border-radius: 2px;
+  background: var(--chat-shell-page);
+  color: var(--clue-ds-color-content-knockout);
+  transition:
+    border-color var(--clue-ds-product-motion-duration-fast) ease,
+    background var(--clue-ds-product-motion-duration-fast) ease;
+}
+
+.imageExportCheckboxActive {
+  border-color: var(--clue-ds-color-components-button-border-brand-default);
+  background: var(--clue-ds-color-components-button-bg-brand-default);
+}
+
+.imageExportToggleRow:hover .imageExportCheckbox {
+  border-color: var(--clue-ds-color-components-button-border-brand-default);
+}
+
+.imageExportToggleRow:focus-visible {
+  outline: 2px solid rgb(68 72 63 / 18%);
+  outline-offset: -2px;
+}
+
+.imageExportDownloadButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 34px;
+  gap: 6px;
+  margin-top: 4px;
+  border-radius: 4px;
+  background: var(--clue-ds-color-components-button-bg-brand-default);
+  color: var(--clue-ds-color-content-knockout);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 18px;
+}
+
+.imageExportDownloadButton:hover {
+  background: var(--clue-ds-color-components-button-bg-brand-hover);
+}
+
+.imageExportDownloadIcon {
+  flex: 0 0 auto;
+}
+
+.imageExportPreviewSection {
+  display: flex;
+  flex-direction: column;
+  border-top: 0.5px solid var(--chat-shell-border);
+}
+
+.imageExportPreviewTrigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-height: 40px;
+  padding: 0;
+  background: transparent;
+  color: var(--chat-shell-content);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 18px;
+}
+
+.imageExportPreviewTrigger svg {
+  transition: transform var(--clue-ds-product-motion-duration-fast) ease;
+}
+
+.imageExportPreviewChevronOpen {
+  transform: rotate(180deg);
+}
+
+.imageExportPreview {
+  position: relative;
+  display: grid;
+  min-height: 152px;
+  margin-bottom: 12px;
+  overflow: hidden;
+  place-items: center;
+  border: 0.5px solid var(--chat-shell-border);
+  border-radius: 4px;
+  background: var(--chat-shell-neutral);
+  color: var(--chat-shell-disabled);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.imageExportPreviewTransparent {
+  background-color: var(--chat-shell-neutral);
+  background-image:
+    linear-gradient(45deg, var(--clue-ds-color-bg-neutral-hover) 25%, transparent 25%),
+    linear-gradient(-45deg, var(--clue-ds-color-bg-neutral-hover) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, var(--clue-ds-color-bg-neutral-hover) 75%),
+    linear-gradient(-45deg, transparent 75%, var(--clue-ds-color-bg-neutral-hover) 75%);
+  background-position: 0 0, 0 6px, 6px -6px, -6px 0;
+  background-size: 12px 12px;
+}
+
+.imageExportPreview > div {
+  position: absolute;
+  inset: 12px;
+  border: 0.5px solid rgb(92 113 147 / 14%);
+  background: rgb(255 255 255 / 72%);
+}
+
+.imageExportPreview > span {
+  position: relative;
+  z-index: 1;
+  padding: 3px 7px;
+  border-radius: 4px;
+  background: rgb(255 255 255 / 88%);
+}
+
+.shareMenu svg {
+  flex: 0 0 auto;
+}
+
+.shareMenuSection {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+}
+
+.sharePublishHeading {
+  display: flex;
+  min-height: 18px;
+  align-items: center;
+  gap: 7px;
+}
+
+.sharePublishHeading strong,
+.shareExportSection > strong,
+.shareMenuSubheader strong {
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 18px;
+}
+
+.sharePublishedDot {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 8px;
+  border-radius: 50%;
+  background: var(--clue-ds-color-content-utility-positive, #59774d);
+  box-shadow: 0 0 0 2px rgb(89 119 77 / 12%);
+}
+
+.shareLinkField {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+  height: 40px;
+  gap: 4px;
+  padding: 0 8px;
+  border: 0.5px solid var(--clue-ds-color-components-input-border, #e6e9ed);
+  border-radius: 4px;
+  background: var(--clue-ds-color-components-input-bg, rgb(0 37 110 / 3%));
+  box-shadow: 0 1px 1px rgb(0 0 0 / 4%);
+}
+
+.shareLinkField > svg {
+  flex: 0 0 14px;
+  color: var(--chat-shell-subtle);
+}
+
+.shareLinkHost {
+  flex: 0 0 auto;
+  color: var(--chat-shell-subtle);
+  white-space: nowrap;
+}
+
+.shareLinkSlug {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  color: var(--chat-shell-content);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.shareLinkField input {
+  min-width: 0;
+  height: 28px;
+  flex: 1;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--chat-shell-content);
+  font: inherit;
+}
+
+.shareLinkEditButton,
+.shareMenuIconButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  border-radius: 4px;
+  background: transparent;
+}
+
+.shareLinkEditButton {
+  min-width: 26px;
+  height: 26px;
+  padding: 4px 6px;
+  color: var(--chat-shell-content);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.shareLinkEditButton:hover,
+.shareMenuIconButton:hover {
+  background: var(--clue-ds-color-bg-neutral-hover);
+}
+
+.sharePrimaryButton,
+.sharePrimaryButtonWide,
+.shareSecondaryButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 34px;
+  gap: 6px;
+  padding: 7px 12px;
+  border: 0.5px solid transparent;
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 18px;
+}
+
+.sharePrimaryButton,
+.sharePrimaryButtonWide {
+  border-color: var(--clue-ds-color-components-button-border-brand-default, rgb(39 74 1 / 23%));
+  background: var(--clue-ds-color-components-button-bg-brand-default, rgb(6 11 0 / 82%));
+  color: var(--clue-ds-color-content-knockout, #fff);
+}
+
+.sharePrimaryButton:hover,
+.sharePrimaryButtonWide:hover {
+  background: var(--clue-ds-color-components-button-bg-brand-hover, #44483f);
+}
+
+.sharePrimaryButtonWide {
+  width: 100%;
+}
+
+.sharePrimaryButtonWide:disabled {
+  border-color: var(--clue-ds-color-components-button-border-neutral-default);
+  background: var(--clue-ds-color-bg-neutral-disabled);
+  color: var(--clue-ds-color-content-disabled);
+  cursor: wait;
+}
+
+.shareSecondaryButton {
+  border-color: var(--clue-ds-color-components-button-border-neutral-default, #e1e4e8);
+  background: var(--clue-ds-color-components-button-bg-neutral-default, #fff);
+  color: var(--chat-shell-content);
+}
+
+.shareSecondaryButton:hover {
+  background: var(--clue-ds-color-components-button-bg-neutral-hover, #f5f6f7);
+}
+
+.sharePublishedActions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.shareSettingsList {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.shareSettingRow {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) 12px;
+  width: 100%;
+  min-height: 34px;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 4px;
+  border-radius: 4px;
+  background: transparent;
+  text-align: left;
+}
+
+.shareSettingRow:hover {
+  background: var(--clue-ds-color-bg-neutral-hover);
+}
+
+.shareSettingRow > span {
+  min-width: 0;
+}
+
+.shareSettingRow > svg,
+.shareExportCard > svg {
+  color: var(--chat-shell-subtle);
+}
+
+.shareExportSection {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px 16px;
+  border-top: 0.5px solid var(--chat-shell-subtle-border);
+}
+
+.shareExportGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.shareExportCard {
+  display: flex;
+  height: 58px;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 9px;
+  padding: 10px 12px;
+  border: 0.5px solid var(--chat-shell-border);
+  border-radius: 4px;
+  background: var(--chat-shell-neutral);
+  color: var(--chat-shell-content);
+  font-size: 13px;
+  line-height: 18px;
+  text-align: left;
+}
+
+.shareExportCard:hover {
+  border-color: var(--clue-ds-color-border-brand-default);
+  background: var(--clue-ds-color-bg-neutral-hover);
+}
+
+.shareMenuSubheader {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) 28px;
+  height: 48px;
+  align-items: center;
+  padding: 0 10px;
+  border-bottom: 0.5px solid var(--chat-shell-subtle-border);
+  text-align: center;
+}
+
+.shareMenuSubheader strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.shareMenuIconButton {
+  width: 28px;
+  height: 28px;
+  padding: 6px;
+}
+
+.shareMenuHeaderSpacer {
+  width: 28px;
+}
+
+.shareSegmentedControl {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  height: 36px;
+  gap: 2px;
+  padding: 2px;
+  border: 0.5px solid var(--chat-shell-border);
+  border-radius: 5px;
+  background: var(--chat-shell-page);
+}
+
+.shareSegmentedControl button {
+  border-radius: 4px;
+  background: transparent;
+  color: var(--chat-shell-subtle);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.shareSegmentedControl button[aria-pressed="true"] {
+  border: 0.5px solid var(--chat-shell-border);
+  background: var(--chat-shell-neutral);
+  color: var(--chat-shell-content);
+  box-shadow: 0 1px 1px rgb(0 0 0 / 5%);
+}
+
+.shareAdvancedFields,
+.shareField,
+.shareCustomHtmlField {
+  display: flex;
+  flex-direction: column;
+}
+
+.shareAdvancedFields {
+  gap: 12px;
+}
+
+.shareAdvancedFields > p,
+.shareCustomHtmlField > p {
+  margin: 0;
+  color: var(--chat-shell-subtle);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.shareField {
+  gap: 5px;
+}
+
+.shareField > span,
+.shareFieldHeading {
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 18px;
+}
+
+.shareField input,
+.shareField textarea {
+  width: 100%;
+  padding: 8px;
+  border: 0.5px solid var(--clue-ds-color-components-input-border, #e6e9ed);
+  border-radius: 4px;
+  outline: 0;
+  background: var(--clue-ds-color-components-input-bg, rgb(0 37 110 / 3%));
+  color: var(--chat-shell-content);
+  font: inherit;
+  resize: vertical;
+}
+
+.shareField input {
+  height: 34px;
+}
+
+.shareField textarea {
+  min-height: 84px;
+  line-height: 18px;
+}
+
+.shareField input:focus,
+.shareField textarea:focus,
+.shareLinkField:focus-within {
+  border-color: var(--clue-ds-color-border-brand-default);
+  box-shadow: 0 0 0 1px var(--clue-ds-color-border-brand-default);
+}
+
+.shareField > small {
+  color: var(--chat-shell-subtle);
+  font-size: 11px;
+  line-height: 14px;
+}
+
+.shareFieldHeading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.shareFieldHeading button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 4px;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--chat-shell-subtle);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 16px;
+}
+
+.shareFieldHeading button:hover {
+  background: var(--clue-ds-color-bg-neutral-hover);
+  color: var(--chat-shell-content);
+}
+
+.shareCheckboxRow {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  align-items: flex-start;
+  gap: 8px;
+  padding: 2px 0;
+  background: transparent;
+  text-align: left;
+}
+
+.shareCheckboxBox {
+  display: inline-flex;
+  width: 16px;
+  height: 16px;
+  align-items: center;
+  justify-content: center;
+  margin-top: 1px;
+  border: 0.5px solid var(--chat-shell-border);
+  border-radius: 3px;
+  background: var(--chat-shell-neutral);
+}
+
+.shareCheckboxRow[aria-checked="true"] .shareCheckboxBox {
+  border-color: var(--clue-ds-color-border-brand-default);
+  background: var(--clue-ds-color-bg-brand);
+  color: var(--clue-ds-color-content-knockout);
+}
+
+.shareCheckboxMark {
+  font-size: 10px;
+  line-height: 10px;
+}
+
+.shareCheckboxRow strong,
+.shareCheckboxRow small {
+  display: block;
+}
+
+.shareCheckboxRow strong {
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 18px;
+}
+
+.shareCheckboxRow small {
+  margin-top: 2px;
+  color: var(--chat-shell-subtle);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.shareCustomHtmlField {
+  gap: 5px;
+}
+
+.toolbarMenuItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  height: 32px;
+  gap: 12px;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--chat-shell-content);
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 18px;
+  text-align: left;
+}
+
+.toolbarMenuItem:hover,
+.toolbarMenuItemActive {
+  background: var(--clue-ds-color-bg-neutral-hover);
+}
+
+.artifactHeading,
+.artifactHeaderActions,
+.deviceButton,
+.zoomButton,
+.artifactActionButton {
+  display: inline-flex;
+  align-items: center;
+}
+
+.artifactHeading {
+  position: relative;
+  gap: 4px;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 18px;
+}
+
+.artifactHeadingRenameInput {
+  width: 124px;
+  height: 26px;
+  min-width: 0;
+  padding: 3px 6px;
+  border: 0.5px solid var(--chat-shell-border);
+  border-radius: 4px;
+  outline: 0;
+  background: var(--chat-shell-page);
+  color: var(--chat-shell-content);
+  font: inherit;
+  line-height: inherit;
+}
+
+.artifactHeadingRenameInput:focus {
+  border-color: var(--clue-ds-color-border-brand-default);
+  box-shadow: 0 0 0 1px var(--clue-ds-color-border-brand-default);
+}
+
+.artifactActionMenuAnchor {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  align-self: center;
+  height: 18px;
+}
+
+.artifactHeadingMenuButton {
+  display: inline-flex;
+  width: 18px;
+  height: 18px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--chat-shell-subtle);
+  line-height: 0;
+  vertical-align: middle;
+  transition: background var(--clue-ds-product-motion-duration-fast) ease;
+}
+
+.artifactHeadingMenuButton svg {
+  display: block;
+  flex: 0 0 auto;
+}
+
+.artifactHeadingMenuButton:hover,
+.artifactHeadingMenuButtonActive,
+.artifactHeadingMenuButton:focus-visible {
+  background: var(--clue-ds-color-bg-neutral-hover);
+  outline: none;
+}
+
+.artifactActionMenu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 30;
+  display: flex;
+  width: 192px;
+  flex-direction: column;
+  padding: 4px;
+  border: 0.5px solid var(--chat-shell-border);
+  border-radius: 4px;
+  background: var(--chat-shell-neutral);
+  box-shadow: var(--clue-ds-shadow-card-subtle);
+  animation: toolbar-menu-enter var(--clue-ds-product-motion-duration-fast)
+    var(--clue-ds-product-motion-easing-entry) both;
+}
+
+.artifactMenuItem,
+.artifactVersionItem {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  border: 0;
+  background: transparent;
+  color: var(--chat-shell-content);
+  text-align: left;
+}
+
+.artifactMenuItem {
+  height: 32px;
+  gap: 8px;
+  padding: 7px 8px;
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 18px;
+}
+
+.artifactMenuIcon {
+  display: block;
+  flex: 0 0 16px;
+}
+
+.artifactMenuChevron {
+  display: block;
+  flex: 0 0 12px;
+}
+
+.artifactMenuItem > span:nth-child(2) {
+  min-width: 0;
+  flex: 1;
+}
+
+.artifactMenuItem:hover,
+.artifactMenuItem:focus-visible,
+.artifactMenuItemActive {
+  background: var(--clue-ds-color-bg-neutral-hover);
+  outline: none;
+}
+
+.artifactMenuItemDestructive {
+  color: var(--clue-ds-color-content-utility-critical);
+}
+
+.artifactMenuItemDestructive:hover,
+.artifactMenuItemDestructive:focus-visible {
+  background: var(--clue-ds-color-components-button-bg-critical-default);
+}
+
+.artifactMenuShortcut {
+  flex: 0 0 auto !important;
+  color: var(--chat-shell-subtle);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.artifactMenuSeparator {
+  height: 0.5px;
+  margin: 2px -4px;
+  background: var(--chat-shell-subtle-border);
+}
+
+.artifactVersionsRow {
+  position: relative;
+}
+
+.artifactVersionsMenu {
+  position: absolute;
+  top: -4px;
+  left: calc(100% + 2px);
+  z-index: 1;
+  display: flex;
+  width: 192px;
+  flex-direction: column;
+  padding: 4px;
+  border: 0.5px solid var(--chat-shell-border);
+  border-radius: 4px;
+  background: var(--chat-shell-neutral);
+  box-shadow: var(--clue-ds-shadow-card-subtle);
+  animation: toolbar-menu-enter var(--clue-ds-product-motion-duration-fast)
+    var(--clue-ds-product-motion-easing-entry) both;
+}
+
+.artifactVersionsLabel {
+  padding: 6px 8px 4px;
+  color: var(--chat-shell-subtle);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 16px;
+}
+
+.artifactVersionItem {
+  min-height: 32px;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 8px;
+  border-radius: 4px;
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.artifactVersionItem:hover,
+.artifactVersionItem:focus-visible,
+.artifactVersionItemActive {
+  background: var(--clue-ds-color-bg-neutral-hover);
+  outline: none;
+}
+
+.artifactVersionMeta {
+  color: var(--chat-shell-subtle);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.artifactHeaderActions {
+  gap: 10px;
+}
+
+.deviceButton,
+.zoomButton {
+  justify-content: center;
+  gap: 4px;
+  min-height: 34px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: transparent;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 20px;
+}
+
+.deviceButton[aria-expanded="true"],
+.zoomButton[aria-expanded="true"] {
+  background: var(--clue-ds-color-bg-neutral-pressed);
+}
+
+.zoomButton > svg {
+  flex: 0 0 auto;
+  transition: transform var(--clue-ds-product-motion-duration-fast) ease;
+}
+
+.zoomButton > .zoomChevronOpen {
+  transform: rotate(180deg);
+}
+
+.deviceButton:focus,
+.zoomButton:focus,
+.artifactActionButton:focus,
+.toolbarMenuItem:focus {
+  outline: none;
+}
+
+.deviceButton:focus-visible,
+.zoomButton:focus-visible,
+.artifactActionButton:focus-visible,
+.toolbarMenuItem:focus-visible {
+  box-shadow: 0 0 0 2px rgb(92 113 147 / 22%);
+}
+
+.artifactActionButton {
+  justify-content: center;
+  min-height: 30px;
+  gap: 4px;
+  padding: 4px 12px;
+  border: 0.5px solid var(--clue-ds-color-components-button-border-neutral-default);
+  border-radius: 4px;
+  background: var(--clue-ds-color-components-button-bg-neutral-default);
+  box-shadow: inset 0 1.5px 0 white, 0 1px 0 rgb(0 0 0 / 5%);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 20px;
+  transition: background var(--clue-ds-product-motion-duration-fast) ease,
+    border-color var(--clue-ds-product-motion-duration-fast) ease,
+    transform var(--clue-ds-product-motion-duration-fast) ease;
+}
+
+.artifactActionButton:hover {
+  background: var(--clue-ds-color-components-button-bg-neutral-hover);
+}
+
+.artifactActionButton:active {
+  transform: translateY(1px);
+}
+
+.artifactActionButtonActive {
+  border-color: var(--clue-ds-color-components-button-border-brand-default);
+  background: var(--clue-ds-color-components-button-bg-brand-default);
+  color: var(--clue-ds-color-content-knockout);
+  box-shadow: 0 2px 0 rgb(0 0 0 / 5%);
+}
+
+.artifactActionButtonActive:hover {
+  background: var(--clue-ds-color-components-button-bg-brand-hover);
+}
+
+.artifactShareButton {
+  border-color: var(--clue-ds-color-components-button-border-brand-default);
+  background: var(--clue-ds-color-components-button-bg-brand-default);
+  color: var(--clue-ds-color-content-knockout);
+  box-shadow: 0 1px 0 rgb(0 0 0 / 8%);
+}
+
+.artifactShareButton:hover {
+  background: var(--clue-ds-color-components-button-bg-brand-hover);
+}
+
+.outputStage {
+  flex: 1 1 auto;
+  height: auto;
+  min-height: 0;
+  overflow: auto;
+}
+
+.imageOutputStage {
+  display: grid;
+  place-items: center;
+  padding: 40px;
+  background: var(--chat-shell-page);
+}
+
+.webOutputStage {
+  display: block;
+  padding: 0;
+  background: var(--chat-shell-canvas);
+}
+
+.webCanvas {
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  aspect-ratio: 1448 / 1086;
+  border: 0;
+  border-radius: 0;
+  background: var(--chat-shell-neutral);
+  box-shadow: none;
+}
+
+.imageCanvas {
+  width: min(76%, 640px);
+  aspect-ratio: 1;
+  border: 0.5px solid var(--chat-shell-subtle-border);
+  border-radius: 2px;
+  background: var(--chat-shell-neutral);
+  box-shadow: var(--clue-ds-shadow-card-subtle);
+}
+
+.inspector {
+  width: 100%;
+  max-width: 100%;
+  min-height: 100%;
+  height: auto;
+  overflow: visible;
+  background: var(--chat-shell-neutral);
+  color: var(--chat-shell-content);
+  font-size: 13px;
+  line-height: 18px;
+  animation: inspector-enter var(--clue-ds-product-motion-duration-standard)
+    var(--clue-ds-product-motion-easing-entry) both;
+}
+
+.inspectorRail {
+  width: calc(100% - 16px);
+  max-width: none;
+  min-height: 100%;
+  margin: 0 8px;
+}
+
+.inspectorHeader {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 16px;
+  width: 280px;
+  height: 48px;
+  padding: 8px 16px;
+  color: var(--chat-shell-content);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 18px;
+}
+
+.inspectorHeaderActions {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.inspectorVariantMenu {
+  position: absolute;
+  z-index: 24;
+  top: calc(100% + 4px);
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  width: 176px;
+  padding: 4px;
+  border: 0.5px solid var(--chat-shell-border);
+  border-radius: 4px;
+  background: var(--chat-shell-neutral);
+  box-shadow: var(--chat-shell-card-shadow);
+}
+
+.inspectorVariantMenuLabel {
+  padding: 6px 8px 4px;
+  color: var(--chat-shell-disabled);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 16px;
+}
+
+.inspectorVariantMenu button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 30px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  color: var(--chat-shell-subtle);
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 18px;
+  text-align: left;
+}
+
+.inspectorVariantMenu button:hover,
+.inspectorVariantMenu button:focus-visible,
+.inspectorVariantMenuItemActive {
+  background: var(--clue-ds-color-bg-neutral-hover);
+  color: var(--chat-shell-content);
+}
+
+.inspectorVariantMenu button:focus-visible {
+  outline: 2px solid rgb(27 102 255 / 45%);
+  outline-offset: -2px;
+}
+
+.inspectorIconButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.inspectorIconButton:hover {
+  background: var(--clue-ds-color-bg-neutral-hover);
+}
+
+.inspectorIconButtonActive {
+  background: rgb(0 30 75 / 7%);
+}
+
+.inspectorIcon {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+}
+
+.inspectorSection {
+  width: 100%;
+  max-width: 100%;
+  padding: 16px;
+  border-bottom: 0.5px solid var(--chat-shell-border);
+}
+
+.inspectorSectionTitle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: max-content;
+  max-width: 100%;
+  padding: 0;
+  background: transparent;
+  color: var(--chat-shell-subtle);
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 18px;
+  text-align: left;
+  border-radius: 4px;
+  transition: color var(--clue-ds-product-motion-duration-fast) ease;
+}
+
+.inspectorSectionChevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 8px;
+  width: 8px;
+  height: 8px;
+  transform: rotate(0deg);
+  transform-origin: center;
+  transition: transform 200ms ease-out;
+}
+
+.inspectorSectionChevron img {
+  display: block;
+  width: 4px;
+  height: 7px;
+}
+
+.inspectorSectionChevronOpen {
+  transform: rotate(90deg);
+}
+
+.inspectorSectionTitle:hover,
+.inspectorSectionTitle:focus-visible {
+  color: var(--chat-shell-content);
+}
+
+.inspectorSectionTitle:focus-visible,
+.inspectorSegmentedControl button:focus-visible,
+.alignmentControl button:focus-visible,
+.layerRow:focus-visible,
+.scanButton:focus-visible,
+.imageReplaceField:focus-visible,
+.inspectorIconButton:focus-visible {
+  outline: 2px solid rgb(27 102 255 / 45%);
+  outline-offset: 2px;
+}
+
+.inspectorControl:focus-within,
+.inspectorControl:focus-visible,
+.inspectorTokenControl:focus-visible {
+  border-color: var(--clue-ds-color-content-subtle, #5d6470);
+  outline: 0;
+  box-shadow: inset 0 0 0 1px rgb(68 72 63 / 10%);
+}
+
+.inspectorSectionRegion {
+  height: 0;
+  overflow: hidden;
+  opacity: 0;
+  transition:
+    height 200ms ease-out,
+    opacity 160ms ease-out;
+}
+
+.inspectorSectionRegionOpen {
+  opacity: 1;
+}
+
+.inspectorSectionRegionInner {
+  min-height: 0;
+}
+
+.inspectorSectionContent {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 16px;
+}
+
+.inspectorField {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.inspectorFieldLabel {
+  color: var(--chat-shell-subtle);
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 18px;
+}
+
+.inspectorSelectControl[aria-label="Font weight"] {
+  font-family: Inter, Arial, sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.inspectorControl,
+.colorValue,
+.opacityValue {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  height: 34px;
+  gap: 8px;
+  padding: 8px;
+  overflow: hidden;
+  border: 0.5px solid #e6e9ed;
+  border-radius: 8px;
+  background: rgb(0 37 110 / 3%);
+  color: var(--chat-shell-content);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.inspectorControl:focus-within {
+  background: white;
+}
+
+.inspectorInputControl input,
+.opacityValue input {
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+}
+
+.inspectorSelectControl {
+  position: relative;
+  justify-content: space-between;
+  width: 100%;
+  border-radius: 4px;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 7%);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.inspectorSelectValue {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inspectorSelectControl .inputChevron {
+  pointer-events: none;
+}
+
+.inspectorSelectPositioner {
+  z-index: 1000;
+  outline: none;
+}
+
+.inspectorSelectPopup {
+  width: var(--anchor-width);
+  min-width: min(var(--anchor-width), 140px);
+  max-height: min(264px, var(--available-height));
+  overflow: hidden;
+  border: 0.5px solid var(--clue-ds-color-components-input-border, #e6e9ed);
+  border-radius: 6px;
+  background: var(--chat-shell-page, #fff);
+  box-shadow: 0 8px 24px rgb(0 24 62 / 12%);
+  color: var(--chat-shell-content);
+  isolation: isolate;
+  transform-origin: var(--transform-origin);
+  transition: opacity 120ms ease-out, transform 120ms ease-out;
+}
+
+.inspectorSelectPopup[data-starting-style],
+.inspectorSelectPopup[data-ending-style] {
+  opacity: 0;
+  transform: translateY(-2px) scale(0.985);
+}
+
+.inspectorSelectList {
+  max-height: min(264px, var(--available-height));
+  padding: 4px;
+  overflow-y: auto;
+  scroll-padding: 4px;
+}
+
+.inspectorSelectItem {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  height: 32px;
+  padding: 0 8px;
+  border-radius: 4px;
+  outline: none;
+  cursor: pointer;
+  color: var(--chat-shell-content);
+  font-family: var(--clue-ds-product-typography-ui-regular-font-family);
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 18px;
+}
+
+.inspectorSelectItem[data-highlighted] {
+  background: var(--clue-ds-color-bg-neutral-hover);
+}
+
+.inspectorSelectItem[data-selected] {
+  background: var(--clue-ds-color-bg-neutral-pressed);
+  font-weight: 500;
+}
+
+.inspectorSelectItemText {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inspectorSelectIndicator {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 16px;
+  width: 16px;
+  height: 16px;
+}
+
+.inspectorDecoratedSelect {
+  position: relative;
+  justify-content: flex-start;
+  width: 100%;
+  border-radius: 4px;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 7%);
+  cursor: pointer;
+  font: inherit;
+}
+
+.inspectorDecoratedSelectValue {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--chat-shell-content);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inspectorTokenControl {
+  width: 100%;
+  justify-content: flex-start;
+  border-radius: 8px;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 7%);
+  text-align: left;
+  cursor: pointer;
+}
+
+.inspectorTokenControl:hover {
+  border-color: var(--chat-shell-border);
+  background: var(--clue-ds-color-bg-neutral-hover);
+}
+
+.inspectorTokenSwatch {
+  flex: 0 0 16px;
+  width: 16px;
+  height: 16px;
+  border: 0.5px solid rgb(0 24 62 / 8%);
+  border-radius: 1px;
+}
+
+.inspectorInputControl input::selection {
+  background: rgb(0 245 155 / 24%);
+}
+
+.inspectorControl > span:not(.inspectorIcon),
+.colorValue > span:not(.colorSwatch) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inputChevron {
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+
+.colorControl {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  width: 100%;
+}
+
+.colorValue {
+  border-radius: 8px 0 0 8px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.colorValueSingle {
+  border-radius: 8px;
+}
+
+.colorValue:disabled {
+  cursor: default;
+  opacity: 1;
+}
+
+.opacityValue {
+  justify-content: center;
+  min-width: 58px;
+  border-left: 0;
+  border-radius: 0 8px 8px 0;
+}
+
+.colorSwatch {
+  flex: 0 0 16px;
+  width: 16px;
+  height: 16px;
+  border: 0.5px solid rgb(0 24 62 / 13%);
+  border-radius: 1px;
+}
+
+.backgroundFillControl {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+}
+
+.backgroundGradientPreview {
+  width: 100%;
+  height: 36px;
+  border: 0.5px solid var(--clue-ds-color-components-input-border, #e6e9ed);
+  border-radius: 8px;
+  box-shadow: inset 0 0 0 0.5px rgb(0 24 62 / 3%);
+}
+
+.backgroundGradientAngle {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 82px;
+  align-items: center;
+  gap: 8px;
+  color: var(--chat-shell-subtle);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.backgroundGradientStops {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.backgroundGradientStop {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 82px 28px;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.backgroundGradientPosition {
+  gap: 4px;
+  padding-right: 8px;
+  padding-left: 10px;
+}
+
+.backgroundGradientPosition .fieldPrefix {
+  flex: 0 0 auto;
+}
+
+.backgroundGradientStop > * {
+  min-width: 0;
+}
+
+.backgroundGradientRemove,
+.backgroundGradientAdd {
+  border: 0.5px solid var(--clue-ds-color-components-input-border, #e6e9ed);
+  background: var(--chat-shell-page, #fff);
+  color: var(--chat-shell-subtle);
+  font: inherit;
+  cursor: pointer;
+}
+
+.backgroundGradientRemove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 34px;
+  padding: 0;
+  border-radius: 6px;
+}
+
+.backgroundGradientAdd {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  align-self: flex-start;
+  min-height: 30px;
+  padding: 0 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.backgroundGradientRemove:hover,
+.backgroundGradientRemove:focus-visible,
+.backgroundGradientAdd:hover,
+.backgroundGradientAdd:focus-visible {
+  border-color: var(--chat-shell-border);
+  background: var(--clue-ds-color-bg-neutral-hover);
+  color: var(--chat-shell-content);
+}
+
+.backgroundGradientRemove:focus-visible,
+.backgroundGradientAdd:focus-visible {
+  outline: 2px solid rgb(68 72 63 / 18%);
+  outline-offset: 1px;
+}
+
+.backgroundGradientRemove:disabled,
+.backgroundGradientAdd:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.backgroundGradientRemove:disabled:hover {
+  border-color: var(--clue-ds-color-components-input-border, #e6e9ed);
+  background: var(--chat-shell-page, #fff);
+  color: var(--chat-shell-subtle);
+}
+
+.colorSwatchNone {
+  position: relative;
+  border: 0;
+  background: white;
+}
+
+.colorSwatchNone::after {
+  position: absolute;
+  top: 7.5px;
+  left: -1px;
+  width: 18px;
+  height: 1px;
+  background: #ff4d57;
+  content: "";
+  transform: rotate(-45deg);
+}
+
+.inspectorColorPositioner {
+  z-index: 1000;
+  outline: none;
+}
+
+.inspectorColorPopup {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 248px;
+  max-width: calc(100vw - 24px);
+  padding: 12px;
+  border: 0.5px solid var(--clue-ds-color-components-input-border, #e6e9ed);
+  border-radius: 6px;
+  background: var(--chat-shell-page, #fff);
+  box-shadow: 0 8px 24px rgb(0 24 62 / 12%);
+  color: var(--chat-shell-content);
+  isolation: isolate;
+  transform-origin: var(--transform-origin);
+  transition: opacity 120ms ease-out, transform 120ms ease-out;
+}
+
+.inspectorColorPopup[data-starting-style],
+.inspectorColorPopup[data-ending-style] {
+  opacity: 0;
+  transform: translateY(-2px) scale(0.985);
+}
+
+.inspectorColorTabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 2px;
+  padding: 2px;
+  border: 0.5px solid var(--clue-ds-color-components-input-border, #e6e9ed);
+  border-radius: 6px;
+  background: var(--clue-ds-color-components-input-bg, rgb(0 37 110 / 3%));
+}
+
+.inspectorColorTabs button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 30px;
+  padding: 0 12px;
+  border: 0.5px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--chat-shell-subtle);
+  font: inherit;
+  font-size: 13px;
+  line-height: 18px;
+  cursor: pointer;
+}
+
+.inspectorColorTabs button:hover,
+.inspectorColorTabs button:focus-visible {
+  color: var(--chat-shell-content);
+}
+
+.inspectorColorTabs button:focus-visible {
+  outline: 2px solid rgb(68 72 63 / 18%);
+  outline-offset: -2px;
+}
+
+.inspectorColorTabs .inspectorColorTabActive {
+  border-color: rgb(0 24 62 / 8%);
+  background: var(--chat-shell-page, #fff);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 7%);
+  color: var(--chat-shell-content);
+}
+
+.inspectorThemeColors {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.inspectorThemeColor {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 34px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--chat-shell-content);
+  font: inherit;
+  font-size: 13px;
+  line-height: 18px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.inspectorThemeColor:hover,
+.inspectorThemeColor:focus-visible,
+.inspectorThemeColor[aria-pressed="true"] {
+  background: var(--clue-ds-color-bg-neutral-hover);
+}
+
+.inspectorThemeColor:focus-visible {
+  outline: 2px solid rgb(68 72 63 / 18%);
+  outline-offset: -2px;
+}
+
+.inspectorThemeSwatch {
+  width: 16px;
+  height: 16px;
+  border: 0.5px solid rgb(0 24 62 / 13%);
+  border-radius: 2px;
+}
+
+.inspectorThemeValue {
+  color: var(--chat-shell-disabled);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.inspectorCustomColor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.inspectorColorPlane {
+  position: relative;
+  width: 100%;
+  height: 144px;
+  padding: 0;
+  overflow: hidden;
+  border: 0.5px solid rgb(0 24 62 / 13%);
+  border-radius: 4px;
+  background:
+    linear-gradient(to top, #000, transparent),
+    linear-gradient(to right, #fff, transparent),
+    hsl(var(--inspector-picker-hue) 100% 50%);
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.inspectorColorPlane:focus-visible {
+  outline: 2px solid rgb(68 72 63 / 22%);
+  outline-offset: 2px;
+}
+
+.inspectorColorPlaneThumb {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  border: 2px solid white;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px rgb(0 24 62 / 55%);
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+}
+
+.inspectorHueField {
+  display: block;
+  height: 12px;
+}
+
+.inspectorHueField input {
+  appearance: none;
+  width: 100%;
+  height: 12px;
+  margin: 0;
+  border: 0.5px solid rgb(0 24 62 / 13%);
+  border-radius: 999px;
+  outline: 0;
+  background: linear-gradient(to right, #f00, #ff0, #0f0, #0ff, #00f, #f0f, #f00);
+  cursor: pointer;
+}
+
+.inspectorHueField input:focus-visible {
+  outline: 2px solid rgb(68 72 63 / 22%);
+  outline-offset: 2px;
+}
+
+.inspectorHueField input::-webkit-slider-thumb {
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border: 2px solid white;
+  border-radius: 50%;
+  background: hsl(var(--inspector-picker-hue) 100% 50%);
+  box-shadow: 0 0 0 1px rgb(0 24 62 / 45%);
+}
+
+.inspectorHueField input::-moz-range-thumb {
+  width: 10px;
+  height: 10px;
+  border: 2px solid white;
+  border-radius: 50%;
+  background: hsl(var(--inspector-picker-hue) 100% 50%);
+  box-shadow: 0 0 0 1px rgb(0 24 62 / 45%);
+}
+
+.inspectorColorSwatches {
+  display: grid;
+  grid-template-columns: repeat(4, 23px);
+  gap: 8px;
+}
+
+.inspectorColorSwatchButton {
+  position: relative;
+  width: 23px;
+  height: 23px;
+  padding: 0;
+  border: 0.5px solid rgb(0 24 62 / 13%);
+  border-radius: 4px;
+  background: var(--inspector-swatch);
+  cursor: pointer;
+}
+
+.inspectorColorSwatchButton[aria-pressed="true"]::after {
+  position: absolute;
+  inset: -3px;
+  border: 1px solid var(--clue-ds-color-border-brand-default, #9aa593);
+  border-radius: 6px;
+  content: "";
+}
+
+.inspectorColorSwatchButton:focus-visible {
+  outline: 2px solid rgb(154 165 147 / 35%);
+  outline-offset: 2px;
+}
+
+.inspectorHexField {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  color: var(--chat-shell-subtle);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.inspectorHexField input {
+  min-width: 0;
+  height: 34px;
+  padding: 8px;
+  border: 0.5px solid var(--clue-ds-color-components-input-border, #e6e9ed);
+  border-radius: 4px;
+  outline: 0;
+  background: var(--clue-ds-color-components-input-bg, rgb(0 37 110 / 3%));
+  color: var(--chat-shell-content);
+  font: inherit;
+  text-transform: uppercase;
+}
+
+.inspectorHexField input:focus {
+  border-color: var(--clue-ds-color-content-subtle, #5d6470);
+  box-shadow: inset 0 0 0 1px rgb(68 72 63 / 10%);
+}
+
+.fieldGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.fieldGrid > *,
+.paddingGrid > *,
+.cornerRadiusGrid > * {
+  min-width: 0;
+}
+
+.alignmentGroups {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 92px;
+  gap: 16px;
+}
+
+.alignmentControl {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 2px;
+  padding: 2px;
+  border: 0.5px solid #e6e9ed;
+  border-radius: 10px;
+  background: rgb(0 37 110 / 3%);
+}
+
+.alignmentControl button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 28px;
+  padding: 0;
+  border: 0.5px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+}
+
+.alignmentControl .alignmentActive,
+.alignmentControl button:hover {
+  border-color: rgb(0 24 62 / 13%);
+  background: white;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 7%);
+}
+
+.inspectorActionGrid {
+  display: grid;
+  gap: 2px;
+  height: 32px;
+  padding: 2px;
+  border: 0.5px solid #e6e9ed;
+  border-radius: 8px;
+  background: rgb(0 37 110 / 3%);
+}
+
+.inspectorActionGridFour {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.inspectorActionGridSix {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+
+.inspectorActionGrid button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  height: 27px;
+  padding: 0;
+  border: 0.5px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+}
+
+.inspectorActionGrid button:hover,
+.inspectorActionGrid button:focus-visible {
+  border-color: rgb(0 24 62 / 13%);
+  background: white;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 7%);
+}
+
+.verticalAlignment {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.paddingGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.visuallyHiddenInput {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  border: 0;
+  white-space: nowrap;
+}
+
+.inspectorSegmentedControl {
+  display: grid;
+  grid-auto-columns: minmax(0, 1fr);
+  grid-auto-flow: column;
+  gap: 2px;
+  width: 100%;
+  height: 32px;
+  padding: 2px;
+  border: 0.5px solid #e6e9ed;
+  border-radius: 10px;
+  background: rgb(0 37 110 / 3%);
+}
+
+.inspectorSegmentedControl button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  height: 27px;
+  padding: 0 12px;
+  border: 0.5px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--chat-shell-content);
+  font-size: 13px;
+  line-height: 18px;
+  cursor: pointer;
+}
+
+.inspectorSegmentedControl .inspectorSegmentActive,
+.inspectorSegmentedControl button:hover {
+  border-color: rgb(0 24 62 / 13%);
+  background: white;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 7%);
+}
+
+.fieldPrefix {
+  color: var(--chat-shell-subtle);
+}
+
+.checkboxRow {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--chat-shell-subtle);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.checkboxRow input {
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  border: 0.5px solid #d6d9e0;
+  border-radius: 2px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.checkboxRow input:checked {
+  border-color: var(--clue-ds-color-bg-brand);
+  background:
+    var(--clue-ds-color-bg-brand)
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='m3 6 2 2 4-4' fill='none' stroke='white' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")
+    center / 12px 12px no-repeat;
+}
+
+.imageReplaceField {
+  position: relative;
+  display: grid;
+  width: 100%;
+  height: 136px;
+  place-items: center;
+  overflow: hidden;
+  border: 0.5px solid var(--chat-shell-subtle-border);
+  border-radius: 6px;
+  background: var(--chat-shell-page);
+}
+
+.imageReplaceField span {
+  position: relative;
+  z-index: 2;
+  padding: 4px 10px;
+  border-radius: 2px;
+  background: white;
+  box-shadow: var(--clue-ds-shadow-card-subtle);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.imageReplaceField img {
+  object-fit: cover;
+}
+
+.imageReplaceField::after {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background: rgb(28 32 40 / 20%);
+  content: "";
+}
+
+.radiusMainRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 40px;
+  gap: 10px;
+}
+
+.scanButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 34px;
+  padding: 0;
+  border: 0.5px solid #e6e9ed;
+  border-radius: 8px;
+  background: rgb(0 37 110 / 3%);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 7%);
+  cursor: pointer;
+}
+
+.radiusValue {
+  gap: 8px;
+}
+
+.cornerRadiusGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.cornerRadiusField {
+  justify-content: flex-start;
+  gap: 8px;
+  padding: 8px;
+}
+
+.layerList {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-width: 0;
+  max-height: 352px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+
+.layerRow {
+  --layer-depth: 0;
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: 32px;
+  padding: 0;
+  overflow: hidden;
+  border-radius: 8px;
+  background: transparent;
+  font-size: 13px;
+  line-height: 18px;
+  text-align: left;
+  transition: background var(--clue-ds-product-motion-duration-fast) ease;
+}
+
+.layerRow:hover {
+  background: var(--clue-ds-color-bg-neutral-hover);
+}
+
+.layerRowActive {
+  background: rgb(0 30 75 / 7%);
+}
+
+.layerRow[aria-expanded="false"] .inspectorIcon {
+  opacity: 0.82;
+}
+
+.layerRowContent {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex: 1 1 auto;
+  height: 32px;
+  min-width: 0;
+  gap: 10px;
+  padding: 8px;
+}
+
+.layerRowNested {
+  padding-left: 16px;
+}
+
+.layerRowNested .layerRowContent {
+  padding-left: 16px;
+}
+
+.layerTreeRule {
+  align-self: stretch;
+  flex: 0 0 1px;
+  width: 1px;
+  border-right: 0.5px solid var(--chat-shell-border);
+}
+
+.layerRowLabel {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  gap: 8px;
+}
+
+@keyframes inspector-enter {
+  from {
+    opacity: 0;
+    transform: translateX(-6px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes toolbar-menu-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+
+@media (prefers-reduced-motion: reduce) {
+  .inspector,
+  .inspectorSectionRegion,
+  .inspectorSectionChevron {
+    animation: none;
+    transition: none;
+  }
+
+  .toolbarMenu {
+    animation: none;
+  }
+}
+
+@media (max-width: 1180px) {
+  .artifactHeader {
+    padding-right: 12px;
+    padding-left: 12px;
+  }
+
+  .artifactHeaderActions {
+    gap: 4px;
+  }
+}
+
+@media (max-width: 760px) {
+  .artifactWorkspace {
+    grid-column: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .artifactWorkspace,
+  .inspector {
+    transition: none;
+    animation: none;
+  }
+}
