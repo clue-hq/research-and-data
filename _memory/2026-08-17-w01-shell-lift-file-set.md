@@ -269,6 +269,36 @@ Browse-daemon note: session state does not survive daemon restarts — re-run th
   frontend-side) and `lumen-web-bridge` + nonce. Error state proven live too (the pre-fix
   Invalid-base-URL render showed "Preview failed" + message). Screenshot /tmp/w21-real-render.png.
 
+## W2.2 done — commit `c77b743f` (selection bridge + inspector hydration, 2026-08-18)
+
+- `hooks/use-web-bridge-selection.ts`: verbatim port of the editor's `useWebBridgeSelection`
+  (full surface incl. rich-text/move/resize seams W3+ consumes). ONE mechanical adaptation:
+  callback refs update in a passive effect — this repo's react-hooks lint makes render-time
+  `ref.current =` writes and sync-setState-in-effect ERRORS (they also forced W2.1's keyed
+  remount and W2.2's stamped-derivation patterns; remember for future ports).
+- `hooks/use-web-render.ts`: render fetch + per-render nonce moved OUT of the canvas — the
+  repo's no-restricted-imports rule (rightly) forbids `components/` importing `data/`; W2.1's
+  canvas import of design-bff was a violation hidden by a `tail -1` misread. Canvas is now
+  pure presentation; ALWAYS run `npm run lint 2>&1 | tail -2` (the summary line), not tail -1.
+- `hooks/use-web-artifact-selection.ts`: the plan's `{node, nodeInfo}` join — doc loaded via
+  BFF (its `currentVersion` is W3's `base_version` source), bridge selections stamped by
+  document id and derived (stale never served).
+- `adapter/hydrate.ts` = the contract §1 table (kind→schema incl. 18b icon layout-only, §5
+  fallback→container+layoutOnly, root→canvas; facet maps; §6(5) out-of-ramp sizes omitted;
+  R3 two-axis padding with truthful zeros; tokens hydrate as NAMES — token→hex needs the
+  server-compiled web theme, W4's color flow; radius awaits the W4.1 facet). 14 TDD tests
+  against REAL harvested fixtures (`adapter/__fixtures__/web-nodes.ts`, doc
+  `doc_31126…` v2 — harvested via a throwaway lumen API on :8011; the doc now carries one
+  node of every kind incl. icon/embed/image + `asset_fixture_logo`).
+- `use-inspector-controller.ts` (chat-shell): optional `hydrated` partial merged over the
+  dummy defaults at mount; callers remount per selection.
+- Editor-surface exposes `data-selected-node`/`data-selected-schema` (no invented UI — the
+  inspector itself mounts at the split view / W2 exit demo).
+- **Browser-verified live**: iframe click → cta→`button`, headline→`text`, ficon→
+  `icon:layout-only` on the data attributes; bridge outline drawn; link navigation blocked.
+  Browse tip: `$B frame 'iframe[title="Website preview"]'` enters the srcdoc frame;
+  `$B frame main` returns. Gates: 480/480, lint clean, build ✓. Servers stopped after.
+
 ## Next
 
 - **W2** (read path): W2.1 real render in the artifact stage (sandboxed srcdoc iframe,
