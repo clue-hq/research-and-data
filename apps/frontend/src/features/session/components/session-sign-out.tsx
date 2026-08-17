@@ -29,6 +29,12 @@ export function SessionSignOut({
             await onClearWorkspace();
           } finally {
             await signOut({ redirectUrl });
+            // Clerk only navigates when a session existed to destroy. Reaching
+            // this line means there was nothing to sign out of (e.g. landing on
+            // the expired-session card already signed out — shared localhost
+            // dev cookies make this common), so navigate explicitly; when Clerk
+            // did navigate, this assigns the same URL and is a no-op.
+            window.location.assign(redirectUrl);
           }
         });
       }}
