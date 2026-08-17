@@ -103,11 +103,19 @@ export function useOnboardingController({
       setError(result.message);
       return;
     }
-    if (auth.mode === "clerk") {
+    if (auth.mode !== "clerk") {
+      navigate("profile");
+      return;
+    }
+    if (result.status === "complete") {
       establishSession();
       return;
     }
-    navigate("profile");
+    // needs-verification: email MFA / device trust routes through the same
+    // in-house verification screen as sign-up. Establishing the session here
+    // with an incomplete sign-in used to bounce the user straight back to
+    // /sign-in?reason=session_expired (founder-reported, 2026-08-17).
+    navigate("verify-email");
   }
 
   async function submitSignUp() {
@@ -128,6 +136,12 @@ export function useOnboardingController({
     const result = await auth.verifyEmailCode(draft.verificationCode.trim());
     if (result.status === "error") {
       setError(result.message);
+      return;
+    }
+    if (result.status === "complete" && result.flow === "sign-in") {
+      // A verified sign-IN is an existing identity: establish the session.
+      // Only a sign-UP continues into profile/provisioning.
+      establishSession();
       return;
     }
     navigate("profile");

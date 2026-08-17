@@ -127,11 +127,12 @@ function supportsEmailCode(signIn: ClerkSignInDriver): boolean {
 
 async function finalize(
   resource: { finalize(): Promise<ClerkCallResult> },
+  flow: "sign-in" | "sign-up",
 ): Promise<OnboardingAuthResult> {
   // A successful preceding Clerk call proves clerk-js loaded. Do not put an unabortable session
   // activation behind the CDN-load timeout; catch and surface its own failure instead.
   const finalized = await runClerkStep(() => resource.finalize(), null);
-  return finalized.ok ? { status: "complete" } : finalized.result;
+  return finalized.ok ? { status: "complete", flow } : finalized.result;
 }
 
 export async function startPasswordSignIn(
@@ -146,7 +147,7 @@ export async function startPasswordSignIn(
   );
   if (!attempted.ok) return attempted.result;
 
-  if (signIn.status === "complete") return finalize(signIn);
+  if (signIn.status === "complete") return finalize(signIn, "sign-in");
 
   const purpose = signInVerificationPurpose(signIn.status);
   if (purpose) {
@@ -170,7 +171,7 @@ export async function startPasswordSignUp(
     timeoutMs,
   );
   if (!attempted.ok) return attempted.result;
-  if (signUp.status === "complete") return finalize(signUp);
+  if (signUp.status === "complete") return finalize(signUp, "sign-up");
 
   const sent = await runClerkStep(
     () => signUp.verifications.sendEmailCode(),
@@ -193,9 +194,9 @@ export async function verifyPendingEmailCode(
       timeoutMs,
     );
     if (!verified.ok) return verified.result;
-    return signIn.status === "complete" ? finalize(signIn) : INCOMPLETE_RESULT;
+    return signIn.status === "complete" ? finalize(signIn, "sign-in") : INCOMPLETE_RESULT;
   }
-  if (signIn.status === "complete") return finalize(signIn);
+  if (signIn.status === "complete") return finalize(signIn, "sign-in");
 
   if (!signUp.status) {
     return {
@@ -204,14 +205,14 @@ export async function verifyPendingEmailCode(
         "We couldn't find a verification in progress. Please start again from the sign-up or sign-in screen.",
     };
   }
-  if (signUp.status === "complete") return finalize(signUp);
+  if (signUp.status === "complete") return finalize(signUp, "sign-up");
 
   const verified = await runClerkStep(
     () => signUp.verifications.verifyEmailCode({ code }),
     timeoutMs,
   );
   if (!verified.ok) return verified.result;
-  return signUp.status === "complete" ? finalize(signUp) : INCOMPLETE_RESULT;
+  return signUp.status === "complete" ? finalize(signUp, "sign-up") : INCOMPLETE_RESULT;
 }
 
 export async function resendPendingEmailCode(

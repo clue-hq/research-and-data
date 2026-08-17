@@ -87,7 +87,7 @@ test("complete password sign-in finalizes the created session", async () => {
 
   assert.deepEqual(
     await startPasswordSignIn(signIn, "person@example.com", "secret"),
-    { status: "complete" },
+    { flow: "sign-in", status: "complete" },
   );
   assert.deepEqual(signIn.calls, ["password", "finalize"]);
 });
@@ -104,6 +104,7 @@ test("Device Trust sends and verifies email code before finalization", async () 
   assert.equal(pendingVerificationEmail(signIn, signUp), "person@example.com");
 
   assert.deepEqual(await verifyPendingEmailCode(signIn, signUp, "424242"), {
+    flow: "sign-in",
     status: "complete",
   });
   assert.deepEqual(signIn.calls, [
@@ -188,6 +189,7 @@ test("sign-up verification still dispatches through the sign-up resource", async
   );
   assert.equal(pendingVerificationEmail(signIn, signUp), "new@example.com");
   assert.deepEqual(await verifyPendingEmailCode(signIn, signUp, "424242"), {
+    flow: "sign-up",
     status: "complete",
   });
   assert.deepEqual(signUp.calls, [

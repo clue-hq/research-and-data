@@ -81,7 +81,16 @@ export function isOnboardingStep(value: string): value is OnboardingStep {
  * fixture adapter preserves the design-review navigation theatre when authentication is off.
  */
 export type OnboardingAuthResult =
-  | { status: "complete" }
+  | {
+      status: "complete";
+      /**
+       * Which credential flow just completed. The controller routes on it: a
+       * completed sign-IN establishes the session; a completed sign-UP
+       * continues to profile/provisioning. Optional because the fixture
+       * adapter's theatre has no real flow to report.
+       */
+      flow?: "sign-in" | "sign-up";
+    }
   | {
       status: "needs-verification";
       purpose: "sign-up" | "device-trust" | "second-factor";
