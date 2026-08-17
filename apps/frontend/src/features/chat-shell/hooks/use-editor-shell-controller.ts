@@ -8,11 +8,14 @@ import type {
 } from "../model/chat-shell";
 
 // The editor half of the branch's use-chat-shell-controller: tabs, maximize,
-// editing, and inspector selection. The chat/gallery surface machine is not
-// carried over — the artifact route is always the artifact surface, so closing
-// the last tab leaves the empty artifact state (activeArtifactId null), never
-// a gallery fallback. There is deliberately no default-tab fabrication: the
-// artifact list is the source of tab truth.
+// editing, inspector selection, and the artifact/gallery surface pair. The
+// chat surface is not carried over (platform chat owns it). Per the founder
+// amendment of 2026-08-17 (W0.5), the gallery rides along as presentation-only
+// chrome with the original semantics: closing the last tab falls back to the
+// gallery surface, and an empty shell starts there. There is deliberately no
+// default-tab fabrication: the artifact list is the source of tab truth.
+
+export type EditorShellSurface = "artifact" | "gallery";
 
 export interface EditorShellInitialState {
   artifactId?: string;
@@ -28,11 +31,13 @@ export interface EditorShellState {
   editing: boolean;
   inspectorSelection: ChatShellInspectorSelection;
   openArtifacts: ChatShellOpenArtifact[];
+  surface: EditorShellSurface;
 }
 
 export type EditorShellAction =
   | { type: "activate-artifact"; artifactId: string }
   | { type: "open-artifact"; artifact: ChatShellOpenArtifact }
+  | { type: "open-gallery" }
   | { type: "close-artifact"; artifactId: string }
   | { type: "rename-artifact"; artifactId: string; title: string }
   | { type: "toggle-maximized" }
@@ -44,12 +49,14 @@ export function createInitialEditorShellState(
   initial: EditorShellInitialState,
 ): EditorShellState {
   const openArtifacts = initial.openArtifacts ?? [];
+  const activeArtifactId = initial.artifactId ?? openArtifacts[0]?.id ?? null;
   return {
-    activeArtifactId: initial.artifactId ?? openArtifacts[0]?.id ?? null,
+    activeArtifactId,
     artifactMaximized: false,
     editing: Boolean(initial.editing),
     inspectorSelection: initial.inspectorSelection ?? "canvas",
     openArtifacts,
+    surface: activeArtifactId ? "artifact" : "gallery",
   };
 }
 
@@ -63,6 +70,7 @@ export function editorShellReducer(
         ...state,
         activeArtifactId: action.artifactId,
         inspectorSelection: "canvas",
+        surface: "artifact",
       };
     case "open-artifact":
       return {
@@ -75,7 +83,10 @@ export function editorShellReducer(
         )
           ? state.openArtifacts
           : [...state.openArtifacts, action.artifact],
+        surface: "artifact",
       };
+    case "open-gallery":
+      return { ...state, editing: false, surface: "gallery" };
     case "close-artifact": {
       const closedIndex = state.openArtifacts.findIndex(
         (artifact) => artifact.id === action.artifactId,
@@ -93,6 +104,7 @@ export function editorShellReducer(
         editing: false,
         inspectorSelection: "canvas",
         openArtifacts: remaining,
+        surface: nextArtifact ? "artifact" : "gallery",
       };
     }
     case "rename-artifact": {
@@ -134,8 +146,10 @@ export interface EditorShellController {
   inspectorSelection: ChatShellInspectorSelection;
   openArtifact: (artifact: ChatShellOpenArtifact) => void;
   openArtifacts: ChatShellOpenArtifact[];
+  openGallery: () => void;
   projectId?: string;
   selectInspectorElement: (selection: ChatShellInspectorSelection) => void;
+  surface: EditorShellSurface;
   setArtifactTitleFor: (artifactId: string, title: string) => void;
   setEditing: (editing: boolean) => void;
   toggleArtifactMaximized: () => void;
@@ -163,6 +177,9 @@ export function useEditorShellController(
   }, []);
   const closeArtifact = useCallback((artifactId: string) => {
     dispatch({ artifactId, type: "close-artifact" });
+  }, []);
+  const openGallery = useCallback(() => {
+    dispatch({ type: "open-gallery" });
   }, []);
   const setArtifactTitleFor = useCallback((artifactId: string, title: string) => {
     dispatch({ artifactId, title, type: "rename-artifact" });
@@ -206,10 +223,12 @@ export function useEditorShellController(
       inspectorSelection: state.inspectorSelection,
       openArtifact,
       openArtifacts: state.openArtifacts,
+      openGallery,
       projectId: initial.projectId,
       selectInspectorElement,
       setArtifactTitleFor,
       setEditing,
+      surface: state.surface,
       toggleArtifactMaximized,
     }),
     [
@@ -218,6 +237,7 @@ export function useEditorShellController(
       closeArtifact,
       initial.projectId,
       openArtifact,
+      openGallery,
       selectInspectorElement,
       setArtifactTitleFor,
       setEditing,

@@ -75,7 +75,52 @@ Per the bifurcation inventory's line map: keep 302–2890 editor ranges (tabs 30
 - [ ] `npm run build`; manually verify in the browser (`/projects/<any>/artifacts/<any>` renders the shell empty state pixel-matching the dummy; use the reference PNGs under the branch's `public/figma/chat-shell/reference/`).
 - [ ] Commit: `feat(part4): editor shell mounted at the project artifact route`.
 
-**Phase W0 exit gate:** the dummy editor shell renders inside our authenticated app, visually identical to the co-founder's build (reference-PNG comparison), no data wired, `npm` gate green.
+### Task W0.5: Lift the gallery module as presentation-only chrome (founder amendment, 2026-08-17)
+
+Founder amendment after W0.4: the gallery module IS lifted after all — as **dummy chrome, zero
+functionality** — because severing the Gallery tab put the shell below the visual-parity
+baseline (the tab and gallery view are part of the final design). Ratified decisions:
+- **Decision 1:** closing the last artifact tab falls back to the **gallery** surface
+  (restores the original semantics; supersedes the W0.3 stay-on-empty-state ruling).
+- **Decision 2:** the lifted gallery is the intended future gallery and will REPLACE the
+  existing `/projects/{id}/gallery` screen — but the route swap is **deferred** until the
+  gallery gets real data (post-W1.3); swapping now would regress a data-wired screen to an
+  empty dummy. Recorded as follow-on work.
+- **Dummy means empty, not fake:** the gallery renders with an empty artifact list (its
+  designed `galleryEmptyStage` state). No fixture artifacts appear in the authenticated app.
+
+**Files:**
+- Modify: `apps/frontend/src/features/projects/model/project-workspace.ts` — additive,
+  backward-compatible extension: `GalleryCollateralTypeSchema`, `GallerySizeCategorySchema`,
+  `ProjectArtifactSizeSchema`, and the branch's seven optional `ProjectArtifact` fields
+  (`accountId`, `accountName`, `collateralType`, `createdAt`, `lastViewedAt`, `size`,
+  `updatedAt`). All optional — existing parsers/fixtures unaffected.
+- Create (verbatim): `apps/frontend/src/features/gallery/` — components
+  (`project-gallery`, `project-gallery-view`, `gallery-toolbar`, `gallery-artifact-card`,
+  `project-gallery.module.css`), `hooks/use-project-gallery-controller.ts`,
+  `model/project-gallery.ts` + test.
+- Create: `apps/frontend/src/features/gallery/model/project-gallery.test.fixture.ts` — the
+  branch fixture's 7 artifact entries, extracted verbatim; the test's fixture import repoints
+  here (one-line documented deviation: our `project-workspace.fixture.ts` has
+  `artifacts: []` and stays untouched).
+- Modify: `chat-shell.module.css` — restore the two `galleryEmptyStage` blocks excised in
+  W0.2 (un-narrow the grouped `.outputStage, .galleryEmptyStage` rule; restore the
+  standalone block).
+- Modify: `use-editor-shell-controller.ts` — minimal `surface: "artifact" | "gallery"`
+  state returns: `open-gallery` action; activate/open → artifact; close-last-tab → gallery
+  (Decision 1). Tests updated first (TDD).
+- Modify: `artifact-stage.tsx` — gallery else-branch restored (renders `ProjectGallery`
+  with the passed artifact list — empty for now), `galleryTabVisible` flipped on,
+  `surface` threaded from the controller again.
+- Modify: `editor-surface.tsx` — passes `artifacts={[]}` (honest empty) and the gallery
+  callbacks.
+
+- [ ] Model extension + gallery lift + fixture; gallery model tests green.
+- [ ] Controller surface TDD (close-last-tab → gallery; open-gallery; activate returns to artifact).
+- [ ] Browser-verify: Gallery tab present (matches `artifact-tabs.png` reference exactly now), click → gallery empty state, close last tab → gallery, activate tab → artifact surface.
+- [ ] Commit: `feat(part4): gallery module lifted as presentation-only chrome per founder amendment`.
+
+**Phase W0 exit gate:** the dummy editor shell renders inside our authenticated app, visually identical to the co-founder's build (reference-PNG comparison), no data wired, `npm` gate green. *(Amended by W0.5: "visually identical" now includes the Gallery tab and empty gallery surface.)*
 
 ---
 

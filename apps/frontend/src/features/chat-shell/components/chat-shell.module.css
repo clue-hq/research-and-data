@@ -1395,11 +1395,20 @@
   background: var(--clue-ds-color-components-button-bg-brand-hover);
 }
 
-.outputStage {
+.outputStage,
+.galleryEmptyStage {
   flex: 1 1 auto;
   height: auto;
   min-height: 0;
   overflow: auto;
+}
+
+.galleryEmptyStage {
+  display: grid;
+  flex: 1 1 auto;
+  height: auto;
+  place-items: center;
+  background: var(--chat-shell-page);
 }
 
 .imageOutputStage {

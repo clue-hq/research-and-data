@@ -11,6 +11,14 @@ import styles from "./chat-shell.module.css";
 // (/projects/{projectId}/artifacts/{artifactId}); the composition the branch's
 // chat-shell-view.tsx provided, re-authored without the chat pane.
 //
+// The gallery rides along as presentation-only chrome (W0.5 founder amendment,
+// 2026-08-17): the Gallery tab and gallery surface render with an EMPTY
+// artifact list — never fixture data — until the W1.3 artifact read seam feeds
+// them; closing the last tab falls back to the gallery (founder Decision 1).
+// This lifted gallery is the intended replacement for the existing
+// /projects/{id}/gallery screen; the route swap is deferred until real data
+// lands (founder Decision 2).
+//
 // Split view is deferred to the chat-flow integration: the ratified route
 // shape also mounts this surface beside a chat via `?artifact=` on
 // /projects/{id}/chats/{chatId}, where the inspector dock replaces the
@@ -39,15 +47,25 @@ export function EditorSurface({
       data-artifact-kind={controller.artifactKind ?? "none"}
       data-editing={controller.editing}
       data-project-id={controller.projectId}
+      data-surface={controller.surface}
     >
       <ArtifactStage
         activeArtifactId={controller.activeArtifactId}
+        artifacts={[]}
         artifactKind={controller.artifactKind}
         artifactMaximized={controller.artifactMaximized}
         artifactTitle={controller.artifactTitle}
         editing={controller.editing}
         onActivateArtifact={controller.activateArtifact}
         onCloseArtifact={controller.closeArtifact}
+        onOpenGallery={controller.openGallery}
+        onOpenGalleryArtifact={(artifact) =>
+          controller.openArtifact({
+            id: artifact.id,
+            kind: artifact.source.type === "website" ? "web" : "ad",
+            title: artifact.title,
+          })
+        }
         onRenameArtifact={(title) => {
           if (controller.activeArtifactId) {
             controller.setArtifactTitleFor(controller.activeArtifactId, title);
@@ -58,6 +76,7 @@ export function EditorSurface({
         onTogglePanel={() => undefined}
         onToggleEditing={() => controller.setEditing(!controller.editing)}
         openArtifacts={controller.openArtifacts}
+        surface={controller.surface}
       />
     </main>
   );

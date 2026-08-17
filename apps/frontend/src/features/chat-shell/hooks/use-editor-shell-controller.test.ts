@@ -20,18 +20,21 @@ function stateWith(overrides: Partial<EditorShellState>): EditorShellState {
     editing: false,
     inspectorSelection: "canvas",
     openArtifacts: artifacts,
+    surface: "artifact",
     ...overrides,
   };
 }
 
-test("initial state has no default-tab fabrication", () => {
+test("initial state has no default-tab fabrication and lands empty starts on gallery", () => {
   const empty = createInitialEditorShellState({});
   assert.deepEqual(empty.openArtifacts, []);
   assert.equal(empty.activeArtifactId, null);
+  assert.equal(empty.surface, "gallery");
 
   const seeded = createInitialEditorShellState({ openArtifacts: artifacts });
   assert.deepEqual(seeded.openArtifacts, artifacts);
   assert.equal(seeded.activeArtifactId, "a");
+  assert.equal(seeded.surface, "artifact");
 
   const pinned = createInitialEditorShellState({
     artifactId: "c",
@@ -40,13 +43,23 @@ test("initial state has no default-tab fabrication", () => {
   assert.equal(pinned.activeArtifactId, "c");
 });
 
-test("activating a tab resets the inspector selection to canvas", () => {
+test("activating a tab returns to the artifact surface and resets the selection", () => {
   const state = editorShellReducer(
-    stateWith({ activeArtifactId: "a", inspectorSelection: "text" }),
+    stateWith({ activeArtifactId: "a", inspectorSelection: "text", surface: "gallery" }),
     { artifactId: "c", type: "activate-artifact" },
   );
   assert.equal(state.activeArtifactId, "c");
   assert.equal(state.inspectorSelection, "canvas");
+  assert.equal(state.surface, "artifact");
+});
+
+test("opening the gallery switches surface and leaves edit mode", () => {
+  const state = editorShellReducer(stateWith({ editing: true }), {
+    type: "open-gallery",
+  });
+  assert.equal(state.surface, "gallery");
+  assert.equal(state.editing, false);
+  assert.equal(state.activeArtifactId, "b");
 });
 
 test("opening an artifact appends once and activates it", () => {
@@ -94,7 +107,7 @@ test("closing the active last tab activates the previous tab", () => {
   assert.equal(state.activeArtifactId, "b");
 });
 
-test("closing the only tab leaves the empty artifact state, never a gallery surface", () => {
+test("closing the only tab falls back to the gallery surface (founder Decision 1, 2026-08-17)", () => {
   const state = editorShellReducer(
     stateWith({
       activeArtifactId: "a",
@@ -106,7 +119,15 @@ test("closing the only tab leaves the empty artifact state, never a gallery surf
   assert.deepEqual(state.openArtifacts, []);
   assert.equal(state.activeArtifactId, null);
   assert.equal(state.editing, false);
-  assert.equal("surface" in state, false);
+  assert.equal(state.surface, "gallery");
+});
+
+test("closing the active tab with siblings stays on the artifact surface", () => {
+  const state = editorShellReducer(stateWith({ activeArtifactId: "b" }), {
+    artifactId: "b",
+    type: "close-artifact",
+  });
+  assert.equal(state.surface, "artifact");
 });
 
 test("closing an inactive tab keeps the active tab", () => {
