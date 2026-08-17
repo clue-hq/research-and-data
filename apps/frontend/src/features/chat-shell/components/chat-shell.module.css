@@ -1,19 +1,30 @@
 /*
- * Editor-only stylesheet, bisected from the chat-shell branch's
+ * Chat-shell stylesheet, lifted from the chat-shell branch's
  * chat-shell.module.css (clue-hq/clue-frontend@codex/chat-shell, 2,941 lines).
- * Contains the editor-shell slice only (tabs, artifact header, share/export,
- * action menus, device/zoom/stage, inspector, keyframes); chat chrome,
- * composer, session menu, and dead editor-toolbar blocks are not lifted.
- * Shared rules that grouped chat + editor selectors are duplicated here
- * narrowed to their editor selectors only (button reset, icon-button
- * base/hover/active). The --chat-shell-* aliases are the source's lines 2-8,
- * re-carried on the editor roots (the source defined them on the chat-level
- * .shell grid, which is not lifted).
+ * W0.2 bisected it down to the editor-shell slice (tabs, artifact header,
+ * share/export, action menus, device/zoom/stage, inspector, keyframes);
+ * Phase C task C-1 restored the chat-chrome block byte-verbatim and in source
+ * order (shell grid, chat pane/header/title/rename, session menu button + menu,
+ * conversation stage, composer dock/frame, and their responsive and
+ * reduced-motion selectors).
+ *
+ * Still NOT lifted, because they are dead in both trees: the editor-toolbar
+ * blocks (.imageEditorToolbar, .editorToolButton, .editorToolButtonActive,
+ * .editorToolGroup and their @container query), .smallIconButton, and the
+ * single .artifactTab rule. Shared rules whose source selector list mixed
+ * those dead selectors with live ones stay narrowed to the live selectors
+ * (button reset, icon-button base/hover/active); no rule is duplicated.
+ *
+ * The --chat-shell-* aliases are the source's lines 2-8. The source carried
+ * them on .shell alone; W0.2 re-carried them onto the editor roots because
+ * .shell was not lifted, so the carrier rule now lists both .shell and the
+ * editor roots (values verbatim).
  */
 
 .artifactWorkspace,
 .chatBody,
-.inspectorDock {
+.inspectorDock,
+.shell {
   --chat-shell-border: var(--clue-ds-color-border-neutral);
   --chat-shell-subtle-border: var(--clue-ds-color-border-subtle);
   --chat-shell-page: var(--clue-ds-color-bg-page);
@@ -23,6 +34,85 @@
   --chat-shell-subtle: var(--clue-ds-color-content-subtle);
 }
 
+.shell {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 0;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--chat-shell-neutral);
+  color: var(--chat-shell-content);
+  transition: grid-template-columns var(--clue-ds-product-motion-duration-view)
+    var(--clue-ds-product-motion-easing-standard);
+}
+
+.shellPanelOpen {
+  grid-template-columns: minmax(400px, 480px) minmax(0, 1fr);
+}
+
+.shell.shellArtifactMaximized {
+  grid-template-columns: 0 minmax(0, 1fr);
+}
+
+.shellArtifactMaximized .chatPane {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(-12px);
+}
+
+.chatPane {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--chat-shell-neutral);
+  border-right: 0 solid transparent;
+  transition: border-color var(--clue-ds-product-motion-duration-fast) ease,
+    opacity var(--clue-ds-product-motion-duration-view) ease,
+    transform var(--clue-ds-product-motion-duration-view)
+      var(--clue-ds-product-motion-easing-standard);
+}
+
+.shellPanelOpen .chatPane {
+  border-right: 0 solid transparent;
+  box-shadow: none;
+}
+
+.chatHeader {
+  position: relative;
+  z-index: 50;
+  display: flex;
+  flex: 0 0 50px;
+  align-items: center;
+  justify-content: space-between;
+  min-width: 0;
+  height: 50px;
+  padding: 12px 24px 12px 10px;
+  overflow: visible;
+  border-bottom: 0.5px solid var(--chat-shell-border);
+}
+
+.chatTitleCluster {
+  display: inline-flex;
+  max-width: calc(100% - 48px);
+  min-width: 0;
+  align-items: center;
+  gap: 2px;
+}
+
+.chatTitleMenuAnchor {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+}
+
+.chatTitleButton,
+.chatSessionMenuButton,
 .iconButton,
 .galleryTab,
 .artifactTabMain,
@@ -54,10 +144,97 @@
   font: inherit;
 }
 
+.chatTitleButton {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  max-width: 100%;
+  gap: 4px;
+  padding: 4px 12px;
+  overflow: hidden;
+  border-radius: 4px;
+  background: transparent;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 20px;
+  transition: background var(--clue-ds-product-motion-duration-fast) ease;
+}
+
+.chatTitleButton:hover,
 .iconButton:hover,
 .deviceButton:hover,
 .zoomButton:hover {
   background: var(--clue-ds-color-bg-neutral-hover);
+}
+
+.chatTitleButtonActive,
+.chatTitleButton:focus-visible {
+  background: var(--clue-ds-color-bg-neutral-hover);
+  outline: none;
+}
+
+.chatTitleButton span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chatTitleLabel {
+  min-width: 0;
+  padding-left: 12px;
+  overflow: hidden;
+  color: var(--chat-shell-content);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 20px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chatSessionMenuButton {
+  display: inline-flex;
+  width: 24px;
+  height: 24px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--chat-shell-subtle);
+  line-height: 0;
+  transition: background var(--clue-ds-product-motion-duration-fast) ease,
+    color var(--clue-ds-product-motion-duration-fast) ease;
+}
+
+.chatSessionMenuButton:hover,
+.chatSessionMenuButton:focus-visible,
+.chatSessionMenuButtonActive {
+  background: var(--clue-ds-color-bg-neutral-hover);
+  color: var(--chat-shell-content);
+  outline: none;
+}
+
+.chatTitleRenameInput {
+  width: clamp(120px, 24vw, 220px);
+  max-width: 100%;
+  min-width: 120px;
+  height: 28px;
+  padding: 4px 8px;
+  border: 0.5px solid var(--chat-shell-border);
+  border-radius: 4px;
+  outline: none;
+  background: var(--clue-ds-color-bg-input);
+  color: var(--chat-shell-content);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 20px;
+}
+
+.chatTitleRenameInput:focus {
+  border-color: var(--clue-ds-color-border-brand-default);
+  box-shadow: 0 0 0 1px var(--clue-ds-color-border-brand-default);
 }
 
 .iconButton {
@@ -109,6 +286,38 @@
   height: 0;
 }
 
+.conversationStage {
+  width: min(720px, 100%);
+  height: 100%;
+  margin: 0 auto;
+  background: var(--chat-shell-neutral);
+}
+
+.composerDock {
+  display: flex;
+  flex: 0 0 174px;
+  align-items: flex-start;
+  justify-content: center;
+  min-height: 0;
+  padding: 24px 16px;
+  background: linear-gradient(to bottom, rgb(255 255 255 / 0%), var(--chat-shell-neutral) 18px);
+}
+
+.shellPanelOpen .composerDock {
+  flex-basis: 174px;
+  padding: 24px 16px;
+}
+
+.composerFrame {
+  width: min(688px, 100%);
+  transition: width var(--clue-ds-product-motion-duration-view)
+      var(--clue-ds-product-motion-easing-standard);
+}
+
+.shellPanelOpen .composerFrame {
+  width: 448px;
+  max-width: 100%;
+}
 
 .artifactWorkspace {
   display: flex;
@@ -1184,6 +1393,18 @@
   box-shadow: var(--clue-ds-shadow-card-subtle);
   animation: toolbar-menu-enter var(--clue-ds-product-motion-duration-fast)
     var(--clue-ds-product-motion-easing-entry) both;
+}
+
+.chatSessionMenu {
+  top: calc(100% + 4px);
+  z-index: 60;
+  width: 224px;
+}
+
+.chatSessionMenuIcon {
+  width: 14px;
+  height: 14px;
+  flex-basis: 14px;
 }
 
 .artifactMenuItem,
@@ -2636,7 +2857,6 @@
   }
 }
 
-
 @media (prefers-reduced-motion: reduce) {
   .inspector,
   .inspectorSectionRegion,
@@ -2651,6 +2871,10 @@
 }
 
 @media (max-width: 1180px) {
+  .shellPanelOpen {
+    grid-template-columns: minmax(360px, 44%) minmax(0, 1fr);
+  }
+
   .artifactHeader {
     padding-right: 12px;
     padding-left: 12px;
@@ -2662,14 +2886,24 @@
 }
 
 @media (max-width: 760px) {
+  .shellPanelOpen {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .shellPanelOpen .chatPane {
+    display: none;
+  }
+
   .artifactWorkspace {
     grid-column: 1;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .shell,
   .artifactWorkspace,
-  .inspector {
+  .inspector,
+  .composerFrame {
     transition: none;
     animation: none;
   }
