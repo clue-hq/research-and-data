@@ -35,6 +35,11 @@ import styles from "./chat-shell.module.css";
 // The wrapper carries styles.shellPanelOpen: the lifted stylesheet's
 // `.shellPanelOpen .artifactWorkspace` rule is what makes the stage visible
 // (the stage is born opacity-0 for the dummy's slide-in entry transition).
+// Since C-1 restored the chat-chrome CSS, `.shellPanelOpen` also carries the
+// split-view grid-template-columns (chat column + artifact column), and the
+// CSS module is emitted unlayered so it beats Tailwind's layered
+// `grid-cols-1`. The inline gridTemplateColumns pins this full-width surface
+// back to a single column — the class stays purely an opacity lever here.
 
 export function EditorSurface({
   initial,
@@ -46,6 +51,7 @@ export function EditorSurface({
   return (
     <main
       className={`${styles.shellPanelOpen} grid h-full min-h-0 w-full grid-cols-1`}
+      style={{ gridTemplateColumns: "minmax(0, 1fr)" }}
       data-artifact-id={controller.activeArtifactId ?? undefined}
       data-artifact-kind={controller.artifactKind ?? "none"}
       data-editing={controller.editing}
