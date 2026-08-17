@@ -1,0 +1,46 @@
+export type ChatShellArtifactKind = "ad" | "web";
+
+export interface ChatShellOpenArtifact {
+  id: string;
+  kind: ChatShellArtifactKind;
+  title: string;
+}
+
+export type ChatShellSurface = "artifact" | "chat" | "gallery";
+
+export const CHAT_SHELL_INSPECTOR_SELECTIONS = [
+  "canvas",
+  "text",
+  "image",
+  "button",
+  "icon",
+  "container",
+  "section",
+] as const;
+
+export type ChatShellInspectorSelection =
+  (typeof CHAT_SHELL_INSPECTOR_SELECTIONS)[number];
+
+export function parseChatShellInspectorSelection(
+  value: string | undefined,
+): ChatShellInspectorSelection {
+  return CHAT_SHELL_INSPECTOR_SELECTIONS.includes(
+    value as ChatShellInspectorSelection,
+  )
+    ? (value as ChatShellInspectorSelection)
+    : "canvas";
+}
+
+export interface ChatShellInitialState {
+  artifactId?: string;
+  artifactKind?: ChatShellArtifactKind;
+  artifactTitle?: string;
+  chatId?: string;
+  chatTitle?: string;
+  editing?: boolean;
+  inspectorReview?: boolean;
+  inspectorSelection?: ChatShellInspectorSelection;
+  openArtifacts?: ChatShellOpenArtifact[];
+  projectId?: string;
+  surface?: ChatShellSurface;
+}

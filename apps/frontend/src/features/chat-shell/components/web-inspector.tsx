@@ -1,0 +1,782 @@
+"use client";
+
+import { useEffect, useRef, useState } from "react";
+import type { ReactNode } from "react";
+import type { ChatShellInspectorSelection } from "../model/chat-shell";
+import { CHAT_SHELL_INSPECTOR_SELECTIONS } from "../model/chat-shell";
+import {
+  useInspectorController,
+  useInspectorLayerTree,
+} from "../hooks/use-inspector-controller";
+import {
+  ColorControl,
+  InspectorDecoratedSelect,
+  InspectorField,
+  InspectorHeader,
+  InspectorIcon,
+  InspectorImageUpload,
+  InspectorInput,
+  InspectorLayerRow,
+  InspectorSection,
+  InspectorSelect,
+  InspectorTokenControl,
+} from "./inspector-primitives";
+import styles from "./chat-shell.module.css";
+
+const FONT_OPTIONS = ["Inter", "Satoshi Variable", "Season Serif", "DM Mono"] as const;
+const FONT_SIZE_OPTIONS = ["12", "13", "14", "16", "18", "20", "24", "32"] as const;
+const FONT_WEIGHT_OPTIONS = ["Regular", "Medium", "Semi Bold", "Bold"] as const;
+const FILL_MODE_OPTIONS = ["Fit", "Fill", "Stretch", "Tile"] as const;
+const BUTTON_STYLE_OPTIONS = ["Primary", "Secondary", "Transparent", "Critical"] as const;
+const ICON_OPTIONS = ["Apple"] as const;
+const ICON_SIZE_OPTIONS = ["Small", "Medium", "Large"] as const;
+const ICON_STROKE_OPTIONS = ["Default", "Thin", "Bold"] as const;
+const INSPECTOR_TITLES: Record<ChatShellInspectorSelection, string> = {
+  button: "Button",
+  canvas: "Canvas",
+  container: "Container",
+  icon: "Icon",
+  image: "Image1",
+  section: "Section",
+  text: "Text34",
+};
+const INSPECTOR_REVIEW_LABELS: Record<ChatShellInspectorSelection, string> = {
+  button: "Button",
+  canvas: "Canvas",
+  container: "Container",
+  icon: "Icon",
+  image: "Image",
+  section: "Section",
+  text: "Text",
+};
+type InspectorController = ReturnType<typeof useInspectorController>;
+type InspectorLayerTreeController = ReturnType<typeof useInspectorLayerTree>;
+
+function TextAlignment({
+  horizontal,
+  onHorizontalChange,
+  onVerticalChange,
+  vertical,
+}: {
+  horizontal: "center" | "left" | "right";
+  onHorizontalChange: (value: "center" | "left" | "right") => void;
+  onVerticalChange: (value: "bottom" | "middle" | "top") => void;
+  vertical: "bottom" | "middle" | "top";
+}) {
+  const horizontalOptions = [
+    ["left", "align-left"],
+    ["center", "align-center"],
+    ["right", "align-right"],
+  ] as const;
+  const verticalOptions = [
+    ["top", "align-top"],
+    ["middle", "align-middle"],
+    ["bottom", "align-bottom"],
+  ] as const;
+
+  return (
+    <div className={styles.alignmentGroups}>
+      <div aria-label="Horizontal alignment" className={styles.alignmentControl} role="group">
+        {horizontalOptions.map(([value, icon]) => (
+          <button
+            aria-label={`Align ${value}`}
+            aria-pressed={horizontal === value}
+            className={horizontal === value ? styles.alignmentActive : ""}
+            key={value}
+            onClick={() => onHorizontalChange(value)}
+            type="button"
+          >
+            <InspectorIcon name={icon} size={12} />
+          </button>
+        ))}
+      </div>
+      <div
+        aria-label="Vertical alignment"
+        className={`${styles.alignmentControl} ${styles.verticalAlignment}`}
+        role="group"
+      >
+        {verticalOptions.map(([value, icon]) => (
+          <button
+            aria-label={`Align ${value}`}
+            aria-pressed={vertical === value}
+            className={vertical === value ? styles.alignmentActive : ""}
+            key={value}
+            onClick={() => onVerticalChange(value)}
+            type="button"
+          >
+            <InspectorIcon name={icon} size={12} />
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function PaddingControls({
+  onChange,
+  values,
+}: {
+  onChange: (side: "bottom" | "left" | "right" | "top", value: string) => void;
+  values: Record<"bottom" | "left" | "right" | "top", string>;
+}) {
+  return (
+    <div className={styles.paddingGrid}>
+      <InspectorInput ariaLabel="Left padding" onChange={(value) => onChange("left", value)} prefix="L" value={values.left} />
+      <InspectorInput ariaLabel="Top padding" onChange={(value) => onChange("top", value)} prefix="T" value={values.top} />
+      <InspectorInput ariaLabel="Right padding" onChange={(value) => onChange("right", value)} prefix="R" value={values.right} />
+      <InspectorInput ariaLabel="Bottom padding" onChange={(value) => onChange("bottom", value)} prefix="B" value={values.bottom} />
+    </div>
+  );
+}
+
+export function RadiusControls({
+  onChange,
+  values,
+}: {
+  onChange: (
+    corner: "all" | "bottomLeft" | "bottomRight" | "topLeft" | "topRight",
+    value: string,
+  ) => void;
+  values: Record<"all" | "bottomLeft" | "bottomRight" | "topLeft" | "topRight", string>;
+}) {
+  const applyAll = () => {
+    (["topLeft", "topRight", "bottomLeft", "bottomRight"] as const).forEach((corner) =>
+      onChange(corner, values.all),
+    );
+  };
+
+  return (
+    <>
+      <div className={styles.radiusMainRow}>
+        <InspectorInput
+          ariaLabel="All corner radius"
+          className={styles.radiusValue}
+          leading={<InspectorIcon name="radius-all" size={16} />}
+          onChange={(value) => onChange("all", value)}
+          value={values.all}
+        />
+        <button aria-label="Apply radius to all corners" className={styles.scanButton} onClick={applyAll} type="button">
+          <InspectorIcon name="radius-scan" size={12} />
+        </button>
+      </div>
+      <div className={styles.cornerRadiusGrid}>
+        {([
+          ["topLeft", "radius-top-left"],
+          ["topRight", "radius-top-right"],
+          ["bottomLeft", "radius-bottom-left"],
+          ["bottomRight", "radius-bottom-right"],
+        ] as const).map(([corner, icon]) => (
+          <span className={`${styles.inspectorControl} ${styles.inspectorInputControl} ${styles.cornerRadiusField}`} key={corner}>
+            <InspectorIcon name={icon} size={16} />
+            <input
+              aria-label={`${corner} radius`}
+              onChange={(event) => onChange(corner, event.target.value)}
+              value={values[corner]}
+            />
+          </span>
+        ))}
+      </div>
+    </>
+  );
+}
+
+function TextLayers({
+  onSelectionChange,
+  tree,
+}: {
+  onSelectionChange: (selection: ChatShellInspectorSelection) => void;
+  tree: InspectorLayerTreeController;
+}) {
+  return (
+    <div className={styles.layerList}>
+      <InspectorLayerRow
+        active={tree.activeLayer === "div1"}
+        expanded={tree.expandedLayers.div1}
+        expandable
+        icon="div"
+        label="Div1"
+        onClick={() => { tree.selectLayer("div1"); tree.toggleLayer("div1"); }}
+      />
+      {tree.expandedLayers.div1 ? (
+        <InspectorLayerRow
+          active={tree.activeLayer === "text"}
+          depth={1}
+          icon="type"
+          label="Text"
+          onClick={() => { tree.selectLayer("text"); onSelectionChange("text"); }}
+          trailing
+        />
+      ) : null}
+      <InspectorLayerRow
+        active={tree.activeLayer === "div2"}
+        expanded={tree.expandedLayers.div2}
+        expandable
+        icon="div"
+        label="Div2"
+        onClick={() => { tree.selectLayer("div2"); tree.toggleLayer("div2"); }}
+      />
+      {tree.expandedLayers.div2 ? (
+        <>
+          <InspectorLayerRow active={tree.activeLayer === "rectangle"} depth={1} icon="rectangle" label="Rectangle" onClick={() => tree.selectLayer("rectangle")} />
+          <InspectorLayerRow active={tree.activeLayer === "ellipse"} depth={1} icon="ellipse" label="Ellipse" onClick={() => tree.selectLayer("ellipse")} />
+        </>
+      ) : null}
+    </div>
+  );
+}
+
+function ImageLayers({
+  onSelectionChange,
+  tree,
+}: {
+  onSelectionChange: (selection: ChatShellInspectorSelection) => void;
+  tree: InspectorLayerTreeController;
+}) {
+  return (
+    <div className={styles.layerList}>
+      <InspectorLayerRow expanded={tree.expandedLayers.div1} expandable icon="div" label="Div1" onClick={() => tree.toggleLayer("div1")} />
+      {tree.expandedLayers.div1 ? (
+        <>
+          <InspectorLayerRow active={tree.activeLayer === "text"} depth={1} icon="type" label="Text" onClick={() => { tree.selectLayer("text"); onSelectionChange("text"); }} />
+          <InspectorLayerRow active={tree.activeLayer === "image"} depth={1} icon="image" label="Image" onClick={() => { tree.selectLayer("image"); onSelectionChange("image"); }} trailing />
+        </>
+      ) : null}
+      <InspectorLayerRow expanded={tree.expandedLayers.div2} expandable icon="div" label="Div2" onClick={() => tree.toggleLayer("div2")} />
+      {tree.expandedLayers.div2 ? <InspectorLayerRow depth={1} icon="rectangle" label="Rectangle" /> : null}
+    </div>
+  );
+}
+
+function ButtonLayers({
+  onSelectionChange,
+  tree,
+}: {
+  onSelectionChange: (selection: ChatShellInspectorSelection) => void;
+  tree: InspectorLayerTreeController;
+}) {
+  return (
+    <div className={styles.layerList}>
+      <InspectorLayerRow expanded={tree.expandedLayers.div1} expandable icon="div" label="Div1" onClick={() => tree.toggleLayer("div1")} />
+      {tree.expandedLayers.div1 ? (
+        <InspectorLayerRow
+          active={tree.activeLayer === "button"}
+          depth={1}
+          icon="rectangle"
+          label="Button"
+          onClick={() => { tree.selectLayer("button"); onSelectionChange("button"); }}
+          trailing
+        />
+      ) : null}
+      <InspectorLayerRow expanded={tree.expandedLayers.div2} expandable icon="div" label="Div2" onClick={() => tree.toggleLayer("div2")} />
+      {tree.expandedLayers.div2 ? (
+        <>
+          <InspectorLayerRow depth={1} icon="rectangle" label="Rectangle" onClick={() => tree.selectLayer("rectangle")} />
+          <InspectorLayerRow depth={1} icon="ellipse" label="Ellipse" onClick={() => tree.selectLayer("ellipse")} />
+        </>
+      ) : null}
+    </div>
+  );
+}
+
+function StructuralLayers({
+  onSelectionChange,
+  selection,
+  tree,
+}: {
+  onSelectionChange: (selection: ChatShellInspectorSelection) => void;
+  selection: Extract<ChatShellInspectorSelection, "container" | "icon" | "section">;
+  tree: InspectorLayerTreeController;
+}) {
+  const icon = selection === "icon" ? "apple" : "div";
+  const label = selection[0].toUpperCase() + selection.slice(1);
+  return (
+    <div className={styles.layerList}>
+      <InspectorLayerRow expanded={tree.expandedLayers.div1} expandable icon="div" label="Div1" onClick={() => tree.toggleLayer("div1")} />
+      {tree.expandedLayers.div1 ? (
+        <InspectorLayerRow
+          active={tree.activeLayer === selection}
+          depth={1}
+          icon={icon}
+          label={label}
+          onClick={() => { tree.selectLayer(selection); onSelectionChange(selection); }}
+          trailing
+        />
+      ) : null}
+      <InspectorLayerRow expanded={tree.expandedLayers.div2} expandable icon="div" label="Div2" onClick={() => tree.toggleLayer("div2")} />
+      {tree.expandedLayers.div2 ? <InspectorLayerRow depth={1} icon="rectangle" label="Rectangle" onClick={() => tree.selectLayer("rectangle")} /> : null}
+    </div>
+  );
+}
+
+function CanvasLayers({
+  onSelectionChange,
+  tree,
+}: {
+  onSelectionChange: (selection: ChatShellInspectorSelection) => void;
+  tree: InspectorLayerTreeController;
+}) {
+  return (
+    <div className={styles.layerList}>
+      <InspectorLayerRow active={tree.activeLayer === "text-1"} icon="type" label="Text" onClick={() => { tree.selectLayer("text-1"); onSelectionChange("text"); }} />
+      <InspectorLayerRow active={tree.activeLayer === "canvas-text"} icon="type" label="Text" onClick={() => { tree.selectLayer("canvas-text"); onSelectionChange("text"); }} trailing />
+      <InspectorLayerRow expanded={tree.expandedLayers.group} expandable icon="div" label="Group" onClick={() => tree.toggleLayer("group")} />
+      {tree.expandedLayers.group ? (
+        <>
+          <InspectorLayerRow depth={1} icon="type" label="Text" />
+          <InspectorLayerRow depth={1} icon="rectangle" label="Rectangle" />
+        </>
+      ) : null}
+    </div>
+  );
+}
+
+function Section({
+  children,
+  id,
+  label,
+  state,
+  toggle,
+}: {
+  children?: ReactNode;
+  id: Parameters<ReturnType<typeof useInspectorController>["toggleSection"]>[0];
+  label: string;
+  state: ReturnType<typeof useInspectorController>["state"];
+  toggle: ReturnType<typeof useInspectorController>["toggleSection"];
+}) {
+  return <InspectorSection compact={id === "link"} label={label} onOpenChange={() => toggle(id)} open={state.openSections[id]}>{children}</InspectorSection>;
+}
+
+function SegmentedControl<Value extends string>({
+  ariaLabel,
+  onChange,
+  options,
+  value,
+}: {
+  ariaLabel: string;
+  onChange: (value: Value) => void;
+  options: readonly { label: ReactNode; value: Value }[];
+  value: Value;
+}) {
+  return (
+    <div aria-label={ariaLabel} className={styles.inspectorSegmentedControl} role="group">
+      {options.map((option) => (
+        <button
+          aria-pressed={option.value === value}
+          className={option.value === value ? styles.inspectorSegmentActive : ""}
+          key={option.value}
+          onClick={() => onChange(option.value)}
+          type="button"
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function LinkSection({
+  ariaLabel,
+  controller,
+}: {
+  ariaLabel: string;
+  controller: InspectorController;
+}) {
+  const { setValue, state, toggleSection } = controller;
+  return (
+    <Section id="link" label="Link to" state={state} toggle={toggleSection}>
+      <InspectorField label="URL">
+        <InspectorInput ariaLabel={ariaLabel} onChange={(value) => setValue("url", value)} value={state.url} />
+      </InspectorField>
+      <label className={styles.checkboxRow}>
+        <input checked={state.openInNewTab} onChange={(event) => setValue("openInNewTab", event.target.checked)} type="checkbox" />
+        <span>Open in a new tab</span>
+      </label>
+    </Section>
+  );
+}
+
+function TokenField({
+  controller,
+  label,
+  property,
+  swatch,
+  value,
+}: {
+  controller: InspectorController;
+  label: string;
+  property: string;
+  swatch: string;
+  value: string;
+}) {
+  return (
+    <InspectorField label={label}>
+      <InspectorTokenControl
+        label={value}
+        onClick={() => controller.requestAction(`token-picker:${property}`)}
+        swatch={swatch}
+      />
+    </InspectorField>
+  );
+}
+
+function LayoutSection({ controller }: { controller: InspectorController }) {
+  const { setNestedValue, state, toggleSection } = controller;
+  return (
+    <Section id="layout" label="Layout" state={state} toggle={toggleSection}>
+      <InspectorField label="Padding">
+        <PaddingControls onChange={(side, value) => setNestedValue("padding", side, value)} values={state.padding} />
+      </InspectorField>
+    </Section>
+  );
+}
+
+function TextControls({
+  controller,
+  layerTree,
+  onSelectionChange,
+  showLayers,
+}: {
+  controller: InspectorController;
+  layerTree: InspectorLayerTreeController;
+  onSelectionChange: (selection: ChatShellInspectorSelection) => void;
+  showLayers: boolean;
+}) {
+  const { setValue, state, toggleSection } = controller;
+  return (
+    <>
+      <LinkSection ariaLabel="Link URL" controller={controller} />
+      <Section id="typography" label="Typography" state={state} toggle={toggleSection}>
+        <InspectorField label="Color"><ColorControl color={state.textColor} onColorChange={(value) => setValue("textColor", value)} /></InspectorField>
+        <InspectorField label="Font"><InspectorSelect label="Font" onChange={(value) => setValue("fontFamily", value)} options={FONT_OPTIONS} value={state.fontFamily} /></InspectorField>
+        <div className={styles.fieldGrid}>
+          <InspectorField label="Size"><InspectorSelect label="Font size" onChange={(value) => setValue("fontSize", value)} options={FONT_SIZE_OPTIONS} value={state.fontSize} /></InspectorField>
+          <InspectorField label="Weight"><InspectorSelect label="Font weight" onChange={(value) => setValue("fontWeight", value)} options={FONT_WEIGHT_OPTIONS} value={state.fontWeight} /></InspectorField>
+        </div>
+        <InspectorField label="Alignment"><TextAlignment horizontal={state.horizontalAlignment} onHorizontalChange={(value) => setValue("horizontalAlignment", value)} onVerticalChange={(value) => setValue("verticalAlignment", value)} vertical={state.verticalAlignment} /></InspectorField>
+      </Section>
+      <LayoutSection controller={controller} />
+      <Section id="stroke" label="Stroke" state={state} toggle={toggleSection}>
+        <InspectorField label="Color"><ColorControl none={state.strokeColor === "none"} /></InspectorField>
+        <InspectorField label="Width"><InspectorInput ariaLabel="Stroke width" onChange={(value) => setValue("strokeWidth", value)} value={state.strokeWidth} /></InspectorField>
+      </Section>
+      {showLayers ? <Section id="layers" label="Layers" state={state} toggle={toggleSection}><TextLayers onSelectionChange={onSelectionChange} tree={layerTree} /></Section> : null}
+    </>
+  );
+}
+
+function CanvasControls({
+  controller,
+  layerTree,
+  onSelectionChange,
+  showLayers,
+}: {
+  controller: InspectorController;
+  layerTree: InspectorLayerTreeController;
+  onSelectionChange: (selection: ChatShellInspectorSelection) => void;
+  showLayers: boolean;
+}) {
+  const { setValue, state, toggleSection } = controller;
+  return (
+    <>
+      <Section id="background" label="Background" state={state} toggle={toggleSection}><InspectorField label="Color"><ColorControl color={state.backgroundColor} onColorChange={(value) => setValue("backgroundColor", value)} /></InspectorField></Section>
+      {showLayers ? <Section id="layers" label="Layers" state={state} toggle={toggleSection}><CanvasLayers onSelectionChange={onSelectionChange} tree={layerTree} /></Section> : null}
+    </>
+  );
+}
+
+function ImageControls({
+  controller,
+  layerTree,
+  onSelectionChange,
+  showLayers,
+}: {
+  controller: InspectorController;
+  layerTree: InspectorLayerTreeController;
+  onSelectionChange: (selection: ChatShellInspectorSelection) => void;
+  showLayers: boolean;
+}) {
+  const { setNestedValue, setValue, state, toggleSection } = controller;
+  return (
+    <>
+      <LinkSection ariaLabel="Image link URL" controller={controller} />
+      <Section id="fill" label="Fill" state={state} toggle={toggleSection}>
+        <InspectorField label="Image">
+          <InspectorImageUpload
+            onFileSelect={(file) => controller.requestAction(`replace-image:${file.name}`)}
+            src="/icons/chat-shell/inspector/web/image-preview.png"
+          />
+        </InspectorField>
+        <InspectorField label="Mode"><InspectorSelect label="Image fill mode" onChange={(value) => setValue("fillMode", value)} options={FILL_MODE_OPTIONS} value={state.fillMode} /></InspectorField>
+      </Section>
+      <Section id="shape" label="Shape" state={state} toggle={toggleSection}><InspectorField label="Radius"><RadiusControls onChange={(corner, value) => setNestedValue("radius", corner, value)} values={state.radius} /></InspectorField></Section>
+      {showLayers ? <Section id="layers" label="Layers" state={state} toggle={toggleSection}><ImageLayers onSelectionChange={onSelectionChange} tree={layerTree} /></Section> : null}
+    </>
+  );
+}
+
+function ButtonControls({
+  controller,
+  layerTree,
+  onSelectionChange,
+  showLayers,
+}: {
+  controller: InspectorController;
+  layerTree: InspectorLayerTreeController;
+  onSelectionChange: (selection: ChatShellInspectorSelection) => void;
+  showLayers: boolean;
+}) {
+  const { setValue, state, toggleSection } = controller;
+  return (
+    <>
+      <LinkSection ariaLabel="Button link URL" controller={controller} />
+      <Section id="style" label="Style" state={state} toggle={toggleSection}>
+        <InspectorField label="Label">
+          <InspectorSelect label="Button style" onChange={(value) => setValue("buttonLabel", value)} options={BUTTON_STYLE_OPTIONS} value={state.buttonLabel} />
+        </InspectorField>
+        <TokenField controller={controller} label="Background color" property="backgroundColor" swatch="#00F59B" value="Primary" />
+        <TokenField controller={controller} label="Text color" property="textColor" swatch="#FFFFFF" value="White" />
+      </Section>
+      <LayoutSection controller={controller} />
+      {showLayers ? <Section id="layers" label="Layers" state={state} toggle={toggleSection}>
+        <ButtonLayers onSelectionChange={onSelectionChange} tree={layerTree} />
+      </Section> : null}
+    </>
+  );
+}
+
+function IconControls({
+  controller,
+  layerTree,
+  onSelectionChange,
+  showLayers,
+}: {
+  controller: InspectorController;
+  layerTree: InspectorLayerTreeController;
+  onSelectionChange: (selection: ChatShellInspectorSelection) => void;
+  showLayers: boolean;
+}) {
+  const { setValue, state, toggleSection } = controller;
+  return (
+    <>
+      <LinkSection ariaLabel="Icon link URL" controller={controller} />
+      <Section id="icon" label="Icon" state={state} toggle={toggleSection}>
+        <InspectorField label="Icon">
+          <InspectorDecoratedSelect icon="apple" label="Icon" onChange={(value) => setValue("iconName", value)} options={ICON_OPTIONS} value={state.iconName} />
+        </InspectorField>
+        <TokenField controller={controller} label="Icon color" property="iconColor" swatch="#1C2028" value="Content" />
+        <TokenField controller={controller} label="Background color" property="backgroundColor" swatch="#FFFFFF" value="White" />
+        <div className={styles.fieldGrid}>
+          <InspectorField label="Size"><InspectorSelect label="Icon size" onChange={(value) => setValue("iconSize", value)} options={ICON_SIZE_OPTIONS} value={state.iconSize} /></InspectorField>
+          <InspectorField label="Stroke"><InspectorSelect label="Icon stroke" onChange={(value) => setValue("iconStroke", value)} options={ICON_STROKE_OPTIONS} value={state.iconStroke} /></InspectorField>
+        </div>
+      </Section>
+      <LayoutSection controller={controller} />
+      {showLayers ? <Section id="layers" label="Layers" state={state} toggle={toggleSection}>
+        <StructuralLayers onSelectionChange={onSelectionChange} selection="icon" tree={layerTree} />
+      </Section> : null}
+    </>
+  );
+}
+
+function ContainerControls({
+  controller,
+  layerTree,
+  onSelectionChange,
+  showLayers,
+}: {
+  controller: InspectorController;
+  layerTree: InspectorLayerTreeController;
+  onSelectionChange: (selection: ChatShellInspectorSelection) => void;
+  showLayers: boolean;
+}) {
+  const { setValue, state, toggleSection } = controller;
+  return (
+    <>
+      <LinkSection ariaLabel="Container link URL" controller={controller} />
+      <Section id="style" label="Style" state={state} toggle={toggleSection}>
+        <TokenField controller={controller} label="Text color" property="textColor" swatch="#1C2028" value="Content" />
+        <TokenField controller={controller} label="Background color" property="backgroundColor" swatch="#FFFFFF" value="White" />
+      </Section>
+      <Section id="alignment" label="Alignment" state={state} toggle={toggleSection}>
+        <SegmentedControl
+          ariaLabel="Container layout mode"
+          onChange={(value) => setValue("layoutMode", value)}
+          options={([
+            { label: "Flex", value: "Flex" },
+            { label: "Grid", value: "Grid" },
+            { label: "Hide", value: "Hide" },
+          ] as const)}
+          value={state.layoutMode}
+        />
+      </Section>
+      <LayoutSection controller={controller} />
+      {showLayers ? <Section id="layers" label="Layers" state={state} toggle={toggleSection}>
+        <StructuralLayers onSelectionChange={onSelectionChange} selection="container" tree={layerTree} />
+      </Section> : null}
+    </>
+  );
+}
+
+function SectionControls({
+  controller,
+  layerTree,
+  onSelectionChange,
+  showLayers,
+}: {
+  controller: InspectorController;
+  layerTree: InspectorLayerTreeController;
+  onSelectionChange: (selection: ChatShellInspectorSelection) => void;
+  showLayers: boolean;
+}) {
+  const { setValue, state, toggleSection } = controller;
+  return (
+    <>
+      <LinkSection ariaLabel="Section link URL" controller={controller} />
+      <Section id="style" label="Style" state={state} toggle={toggleSection}>
+        <TokenField controller={controller} label="Text color" property="textColor" swatch="#1C2028" value="Content" />
+        <TokenField controller={controller} label="Background color" property="backgroundColor" swatch="#FFFFFF" value="White" />
+      </Section>
+      <Section id="alignment" label="Alignment" state={state} toggle={toggleSection}>
+        <InspectorField label="Direction">
+          <SegmentedControl
+            ariaLabel="Section direction"
+            onChange={(value) => setValue("direction", value)}
+            options={([
+              { label: <InspectorIcon name="move-horizontal" size={12} />, value: "horizontal" },
+              { label: <InspectorIcon name="move-vertical" size={12} />, value: "vertical" },
+            ] as const)}
+            value={state.direction}
+          />
+        </InspectorField>
+        <InspectorField label="Gap">
+          <InspectorInput ariaLabel="Section gap" leading={<InspectorIcon name="gap" size={16} />} onChange={(value) => setValue("gap", value)} value={state.gap} />
+        </InspectorField>
+        <InspectorField label="Wrap">
+          <SegmentedControl
+            ariaLabel="Section wrapping"
+            onChange={(value) => setValue("wrap", value === "yes")}
+            options={([
+              { label: "Yes", value: "yes" },
+              { label: "No", value: "no" },
+            ] as const)}
+            value={state.wrap ? "yes" : "no"}
+          />
+        </InspectorField>
+      </Section>
+      <LayoutSection controller={controller} />
+      {showLayers ? <Section id="layers" label="Layers" state={state} toggle={toggleSection}>
+        <StructuralLayers onSelectionChange={onSelectionChange} selection="section" tree={layerTree} />
+      </Section> : null}
+    </>
+  );
+}
+
+export function WebInspector({
+  onSelectionChange,
+  reviewMenuEnabled = false,
+  selection,
+  showLayers = true,
+}: {
+  onSelectionChange: (selection: ChatShellInspectorSelection) => void;
+  reviewMenuEnabled?: boolean;
+  selection: ChatShellInspectorSelection;
+  showLayers?: boolean;
+}) {
+  const inspectorRef = useRef<HTMLElement>(null);
+  const [reviewMenuOpen, setReviewMenuOpen] = useState(false);
+  const canvasController = useInspectorController([], "canvas");
+  const textController = useInspectorController(["link"], "text");
+  const imageController = useInspectorController(["link"], "image");
+  const buttonController = useInspectorController(["link"], "button");
+  const iconController = useInspectorController(["link"], "icon");
+  const containerController = useInspectorController(["link"], "container");
+  const sectionController = useInspectorController(["link"], "section");
+  const canvasLayerTree = useInspectorLayerTree("canvas-text", ["group"], "canvas");
+  const textLayerTree = useInspectorLayerTree("text", ["div1", "div2"], "text");
+  const imageLayerTree = useInspectorLayerTree("image", ["div1", "div2"], "image");
+  const buttonLayerTree = useInspectorLayerTree("button", ["div1", "div2"], "button");
+  const iconLayerTree = useInspectorLayerTree("icon", ["div1", "div2"], "icon");
+  const containerLayerTree = useInspectorLayerTree("container", ["div1", "div2"], "container");
+  const sectionLayerTree = useInspectorLayerTree("section", ["div1", "div2"], "section");
+  const controllers: Record<ChatShellInspectorSelection, InspectorController> = {
+    button: buttonController,
+    canvas: canvasController,
+    container: containerController,
+    icon: iconController,
+    image: imageController,
+    section: sectionController,
+    text: textController,
+  };
+  const activeController = controllers[selection];
+
+  useEffect(() => {
+    if (!reviewMenuOpen) return;
+
+    const dismiss = (event: PointerEvent) => {
+      if (!inspectorRef.current?.contains(event.target as Node)) {
+        setReviewMenuOpen(false);
+      }
+    };
+    const dismissOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setReviewMenuOpen(false);
+    };
+
+    document.addEventListener("pointerdown", dismiss);
+    document.addEventListener("keydown", dismissOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", dismiss);
+      document.removeEventListener("keydown", dismissOnEscape);
+    };
+  }, [reviewMenuOpen]);
+
+  const reviewMenu = reviewMenuEnabled && reviewMenuOpen ? (
+    <div aria-label="Preview inspector element types" className={styles.inspectorVariantMenu} role="menu">
+      <span className={styles.inspectorVariantMenuLabel}>Element controls</span>
+      {CHAT_SHELL_INSPECTOR_SELECTIONS.map((variant) => (
+        <button
+          aria-checked={selection === variant}
+          className={selection === variant ? styles.inspectorVariantMenuItemActive : ""}
+          key={variant}
+          onClick={() => {
+            onSelectionChange(variant);
+            setReviewMenuOpen(false);
+          }}
+          role="menuitemradio"
+          type="button"
+        >
+          <span>{INSPECTOR_REVIEW_LABELS[variant]}</span>
+          <span aria-hidden="true">{selection === variant ? "✓" : ""}</span>
+        </button>
+      ))}
+    </div>
+  ) : null;
+
+  return (
+    <aside aria-label="Web inspector" className={styles.inspector} ref={inspectorRef}>
+      <div className={styles.inspectorRail}>
+        <InspectorHeader
+          actionMenu={reviewMenu}
+          elementActions={selection !== "canvas"}
+          locked={activeController.state.locked}
+          moreActionsExpanded={reviewMenuEnabled ? reviewMenuOpen : undefined}
+          moreActionsHasPopup={reviewMenuEnabled}
+          onLockToggle={() => activeController.setValue("locked", !activeController.state.locked)}
+          onMoreActions={() => {
+            activeController.requestAction("more-actions");
+            if (reviewMenuEnabled) setReviewMenuOpen((open) => !open);
+          }}
+          onVisibilityToggle={() => activeController.setValue("visible", !activeController.state.visible)}
+          title={INSPECTOR_TITLES[selection]}
+          visible={activeController.state.visible}
+        />
+        {selection === "canvas" ? <CanvasControls controller={canvasController} layerTree={canvasLayerTree} onSelectionChange={onSelectionChange} showLayers={showLayers} /> : null}
+        {selection === "text" ? <TextControls controller={textController} layerTree={textLayerTree} onSelectionChange={onSelectionChange} showLayers={showLayers} /> : null}
+        {selection === "image" ? <ImageControls controller={imageController} layerTree={imageLayerTree} onSelectionChange={onSelectionChange} showLayers={showLayers} /> : null}
+        {selection === "button" ? <ButtonControls controller={buttonController} layerTree={buttonLayerTree} onSelectionChange={onSelectionChange} showLayers={showLayers} /> : null}
+        {selection === "icon" ? <IconControls controller={iconController} layerTree={iconLayerTree} onSelectionChange={onSelectionChange} showLayers={showLayers} /> : null}
+        {selection === "container" ? <ContainerControls controller={containerController} layerTree={containerLayerTree} onSelectionChange={onSelectionChange} showLayers={showLayers} /> : null}
+        {selection === "section" ? <SectionControls controller={sectionController} layerTree={sectionLayerTree} onSelectionChange={onSelectionChange} showLayers={showLayers} /> : null}
+      </div>
+    </aside>
+  );
+}

@@ -1,0 +1,901 @@
+"use client";
+
+import Image from "next/image";
+import { Popover } from "@base-ui/react/popover";
+import { Select } from "@base-ui/react/select";
+import { MinusIcon, PlusIcon } from "lucide-react";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactNode } from "react";
+import type { InspectorBackgroundFill, InspectorFillType } from "../hooks/use-inspector-controller";
+import styles from "./chat-shell.module.css";
+
+const INSPECTOR_ICON_ROOT = "/icons/chat-shell/inspector";
+
+export type InspectorIconName =
+  | "apple"
+  | "align-bottom"
+  | "align-center"
+  | "align-left"
+  | "align-middle"
+  | "align-right"
+  | "align-top"
+  | "chevron-down"
+  | "chevron-right"
+  | "div"
+  | "ellipse"
+  | "ellipsis"
+  | "eye"
+  | "gap"
+  | "image"
+  | "layer-ellipsis"
+  | "lock-open"
+  | "move-horizontal"
+  | "move-vertical"
+  | "radius-all"
+  | "radius-bottom-left"
+  | "radius-bottom-right"
+  | "radius-scan"
+  | "radius-top-left"
+  | "radius-top-right"
+  | "rectangle"
+  | "scan"
+  | "select-chevron"
+  | "type";
+
+export function InspectorIcon({
+  className,
+  name,
+  size = 16,
+}: {
+  className?: string;
+  name: InspectorIconName;
+  size?: number;
+}) {
+  return (
+    <span
+      aria-hidden="true"
+      className={`${styles.inspectorIcon} ${className ?? ""}`}
+      style={{ height: size, width: size }}
+    >
+      <Image
+        alt=""
+        fill
+        sizes={`${size}px`}
+        src={`${INSPECTOR_ICON_ROOT}/shared/${name}.svg`}
+        style={{ objectFit: "contain" }}
+      />
+    </span>
+  );
+}
+
+export function InspectorHeader({
+  actionMenu,
+  elementActions = true,
+  locked = false,
+  moreActionsExpanded,
+  moreActionsHasPopup = false,
+  onLockToggle,
+  onMoreActions,
+  onVisibilityToggle,
+  title,
+  visible = true,
+}: {
+  actionMenu?: ReactNode;
+  elementActions?: boolean;
+  locked?: boolean;
+  moreActionsExpanded?: boolean;
+  moreActionsHasPopup?: boolean;
+  onLockToggle?: () => void;
+  onMoreActions?: () => void;
+  onVisibilityToggle?: () => void;
+  title: string;
+  visible?: boolean;
+}) {
+  return (
+    <div className={styles.inspectorHeader}>
+      <span>{title}</span>
+      <div className={styles.inspectorHeaderActions}>
+        {elementActions ? (
+          <>
+            <button
+              aria-label={locked ? "Unlock element" : "Lock element"}
+              aria-pressed={locked}
+              className={`${styles.inspectorIconButton} ${locked ? styles.inspectorIconButtonActive : ""}`}
+              onClick={onLockToggle}
+              type="button"
+            >
+              <InspectorIcon name="lock-open" size={12} />
+            </button>
+            <button
+              aria-label={visible ? "Hide element" : "Show element"}
+              aria-pressed={!visible}
+              className={`${styles.inspectorIconButton} ${!visible ? styles.inspectorIconButtonActive : ""}`}
+              onClick={onVisibilityToggle}
+              type="button"
+            >
+              <InspectorIcon name="eye" size={12} />
+            </button>
+          </>
+        ) : null}
+        <button
+          aria-expanded={moreActionsExpanded}
+          aria-haspopup={moreActionsHasPopup ? "menu" : undefined}
+          aria-label={moreActionsHasPopup ? "Preview inspector element types" : "More inspector actions"}
+          className={styles.inspectorIconButton}
+          onClick={onMoreActions}
+          type="button"
+        >
+          <InspectorIcon name="ellipsis" size={12} />
+        </button>
+        {actionMenu}
+      </div>
+    </div>
+  );
+}
+
+export function InspectorSection({
+  children,
+  compact = false,
+  label,
+  onOpenChange,
+  open,
+}: {
+  children?: ReactNode;
+  compact?: boolean;
+  label: string;
+  onOpenChange: (open: boolean) => void;
+  open: boolean;
+}) {
+  const regionId = useId();
+  const regionRef = useRef<HTMLDivElement>(null);
+  const regionInnerRef = useRef<HTMLDivElement>(null);
+
+  useLayoutEffect(() => {
+    const region = regionRef.current;
+    const inner = regionInnerRef.current;
+
+    if (!region || !inner) return;
+
+    const syncHeight = () => {
+      region.style.height = open ? `${inner.scrollHeight}px` : "0px";
+    };
+
+    syncHeight();
+    const observer = new ResizeObserver(syncHeight);
+    observer.observe(inner);
+
+    return () => observer.disconnect();
+  }, [open]);
+
+  return (
+    <section className={`${styles.inspectorSection} ${compact ? styles.inspectorSectionCompact : ""}`}>
+      <button
+        aria-controls={regionId}
+        aria-expanded={open}
+        className={styles.inspectorSectionTitle}
+        onClick={() => onOpenChange(!open)}
+        type="button"
+      >
+        <span>{label}</span>
+        <span
+          aria-hidden="true"
+          className={`${styles.inspectorSectionChevron} ${open ? styles.inspectorSectionChevronOpen : ""}`}
+        >
+          <Image
+            alt=""
+            height={7}
+            src={`${INSPECTOR_ICON_ROOT}/shared/chevron-right.svg`}
+            width={4}
+          />
+        </span>
+      </button>
+      <div
+        aria-hidden={!open}
+        className={`${styles.inspectorSectionRegion} ${open ? styles.inspectorSectionRegionOpen : ""}`}
+        id={regionId}
+        inert={!open}
+        ref={regionRef}
+      >
+        <div className={styles.inspectorSectionRegionInner} ref={regionInnerRef}>
+          <div className={styles.inspectorSectionContent}>{children}</div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+export function InspectorField({
+  children,
+  label,
+}: {
+  children: ReactNode;
+  label: string;
+}) {
+  return (
+    <div className={styles.inspectorField}>
+      <span className={styles.inspectorFieldLabel}>{label}</span>
+      {children}
+    </div>
+  );
+}
+
+export function InspectorControl({
+  children,
+  className,
+}: {
+  children?: ReactNode;
+  className?: string;
+}) {
+  return <span className={`${styles.inspectorControl} ${className ?? ""}`}>{children}</span>;
+}
+
+export function InspectorSelect({
+  label,
+  onChange,
+  options,
+  value,
+}: {
+  label: string;
+  onChange: (value: string) => void;
+  options: readonly string[];
+  value: string;
+}) {
+  const items = options.map((option) => ({ label: option, value: option }));
+
+  return (
+    <Select.Root
+      items={items}
+      onValueChange={(nextValue) => {
+        if (typeof nextValue === "string") onChange(nextValue);
+      }}
+      value={value}
+    >
+      <Select.Trigger
+        aria-label={label}
+        className={`${styles.inspectorControl} ${styles.inspectorSelectControl}`}
+      >
+        <Select.Value className={styles.inspectorSelectValue} />
+        <Select.Icon className={styles.inputChevron}>
+          <InspectorIcon name="select-chevron" size={12} />
+        </Select.Icon>
+      </Select.Trigger>
+      <Select.Portal>
+        <Select.Positioner className={styles.inspectorSelectPositioner} sideOffset={4}>
+          <Select.Popup className={styles.inspectorSelectPopup}>
+            <Select.List className={styles.inspectorSelectList}>
+              {items.map((option) => (
+                <Select.Item
+                  className={styles.inspectorSelectItem}
+                  key={option.value}
+                  label={option.label}
+                  value={option.value}
+                >
+                  <Select.ItemText className={styles.inspectorSelectItemText}>
+                    {option.label}
+                  </Select.ItemText>
+                  <Select.ItemIndicator className={styles.inspectorSelectIndicator}>
+                    <Image alt="" height={7} src="/icons/check.svg" width={9} />
+                  </Select.ItemIndicator>
+                </Select.Item>
+              ))}
+            </Select.List>
+          </Select.Popup>
+        </Select.Positioner>
+      </Select.Portal>
+    </Select.Root>
+  );
+}
+
+export function InspectorDecoratedSelect({
+  icon,
+  label,
+  onChange,
+  options,
+  value,
+}: {
+  icon: InspectorIconName;
+  label: string;
+  onChange: (value: string) => void;
+  options: readonly string[];
+  value: string;
+}) {
+  const items = options.map((option) => ({ label: option, value: option }));
+
+  return (
+    <Select.Root
+      items={items}
+      onValueChange={(nextValue) => {
+        if (typeof nextValue === "string") onChange(nextValue);
+      }}
+      value={value}
+    >
+      <Select.Trigger
+        aria-label={label}
+        className={`${styles.inspectorControl} ${styles.inspectorDecoratedSelect}`}
+      >
+        <InspectorIcon name={icon} size={12} />
+        <Select.Value className={styles.inspectorDecoratedSelectValue} />
+        <Select.Icon className={styles.inputChevron}>
+          <InspectorIcon name="select-chevron" size={12} />
+        </Select.Icon>
+      </Select.Trigger>
+      <Select.Portal>
+        <Select.Positioner className={styles.inspectorSelectPositioner} sideOffset={4}>
+          <Select.Popup className={styles.inspectorSelectPopup}>
+            <Select.List className={styles.inspectorSelectList}>
+              {items.map((option) => (
+                <Select.Item
+                  className={styles.inspectorSelectItem}
+                  key={option.value}
+                  label={option.label}
+                  value={option.value}
+                >
+                  <Select.ItemText className={styles.inspectorSelectItemText}>
+                    {option.label}
+                  </Select.ItemText>
+                  <Select.ItemIndicator className={styles.inspectorSelectIndicator}>
+                    <Image alt="" height={7} src="/icons/check.svg" width={9} />
+                  </Select.ItemIndicator>
+                </Select.Item>
+              ))}
+            </Select.List>
+          </Select.Popup>
+        </Select.Positioner>
+      </Select.Portal>
+    </Select.Root>
+  );
+}
+
+export function InspectorTokenControl({
+  label,
+  onClick,
+  swatch,
+}: {
+  label: string;
+  onClick?: () => void;
+  swatch: string;
+}) {
+  return (
+    <button className={`${styles.inspectorControl} ${styles.inspectorTokenControl}`} onClick={onClick} type="button">
+      <span className={styles.inspectorTokenSwatch} style={{ background: swatch }} />
+      <span>{label}</span>
+    </button>
+  );
+}
+
+export function InspectorInput({
+  ariaLabel,
+  className,
+  leading,
+  onChange,
+  prefix,
+  suffix,
+  value,
+}: {
+  ariaLabel: string;
+  className?: string;
+  leading?: ReactNode;
+  onChange: (value: string) => void;
+  prefix?: string;
+  suffix?: string;
+  value: string;
+}) {
+  return (
+    <span className={`${styles.inspectorControl} ${styles.inspectorInputControl} ${className ?? ""}`}>
+      {leading}
+      {prefix ? <span className={styles.fieldPrefix}>{prefix}</span> : null}
+      <input
+        aria-label={ariaLabel}
+        inputMode="text"
+        onChange={(event) => onChange(event.target.value)}
+        value={value}
+      />
+      {suffix ? <span className={styles.fieldPrefix}>{suffix}</span> : null}
+    </span>
+  );
+}
+
+type HsvColor = { h: number; s: number; v: number };
+
+const INSPECTOR_THEME_COLORS = [
+  { label: "Primary", value: "#44483F" },
+  { label: "Secondary", value: "#D85A00" },
+  { label: "Tertiary", value: "#00F59B" },
+  { label: "Dark", value: "#1C2028" },
+  { label: "Light", value: "#FFFFFF" },
+  { label: "Subtle", value: "#EEF1F5" },
+] as const;
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function hexToHsv(hex: string): HsvColor {
+  const normalized = hex.replace("#", "").padEnd(6, "0").slice(0, 6);
+  const red = Number.parseInt(normalized.slice(0, 2), 16) / 255;
+  const green = Number.parseInt(normalized.slice(2, 4), 16) / 255;
+  const blue = Number.parseInt(normalized.slice(4, 6), 16) / 255;
+  const max = Math.max(red, green, blue);
+  const min = Math.min(red, green, blue);
+  const delta = max - min;
+  let hue = 0;
+
+  if (delta !== 0) {
+    if (max === red) hue = 60 * (((green - blue) / delta) % 6);
+    else if (max === green) hue = 60 * ((blue - red) / delta + 2);
+    else hue = 60 * ((red - green) / delta + 4);
+  }
+
+  return {
+    h: hue < 0 ? hue + 360 : hue,
+    s: max === 0 ? 0 : (delta / max) * 100,
+    v: max * 100,
+  };
+}
+
+function hsvToHex({ h, s, v }: HsvColor) {
+  const saturation = clamp(s, 0, 100) / 100;
+  const value = clamp(v, 0, 100) / 100;
+  const chroma = value * saturation;
+  const hueSegment = ((h % 360) + 360) % 360 / 60;
+  const x = chroma * (1 - Math.abs((hueSegment % 2) - 1));
+  const match = value - chroma;
+  const [red, green, blue] =
+    hueSegment < 1 ? [chroma, x, 0]
+      : hueSegment < 2 ? [x, chroma, 0]
+        : hueSegment < 3 ? [0, chroma, x]
+          : hueSegment < 4 ? [0, x, chroma]
+            : hueSegment < 5 ? [x, 0, chroma]
+              : [chroma, 0, x];
+  const channel = (value: number) => Math.round((value + match) * 255).toString(16).padStart(2, "0");
+  return `#${channel(red)}${channel(green)}${channel(blue)}`.toUpperCase();
+}
+
+export function ColorControl({
+  color = "#00F59B",
+  none = false,
+  onColorChange,
+  onOpacityChange,
+  opacity = "100%",
+  showOpacity = true,
+}: {
+  color?: string;
+  none?: boolean;
+  onColorChange?: (color: string) => void;
+  onOpacityChange?: (opacity: string) => void;
+  opacity?: string;
+  showOpacity?: boolean;
+}) {
+  const [draftColor, setDraftColor] = useState(color.toUpperCase());
+  const [pickerMode, setPickerMode] = useState<"custom" | "theme">("theme");
+  const [customColor, setCustomColor] = useState<HsvColor>(() => hexToHsv(color));
+  const colorControlRef = useRef<HTMLSpanElement>(null);
+
+  const commitColor = (nextColor: string) => {
+    const normalized = nextColor.startsWith("#") ? nextColor : `#${nextColor}`;
+    if (/^#[0-9A-F]{6}$/i.test(normalized)) {
+      const upper = normalized.toUpperCase();
+      setDraftColor(upper);
+      setCustomColor(hexToHsv(upper));
+      onColorChange?.(upper);
+    }
+  };
+
+  const commitCustomColor = (nextColor: HsvColor) => {
+    const nextHex = hsvToHex(nextColor);
+    setCustomColor(nextColor);
+    setDraftColor(nextHex);
+    onColorChange?.(nextHex);
+  };
+
+  const updateSaturationAndValue = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    const bounds = event.currentTarget.getBoundingClientRect();
+    commitCustomColor({
+      ...customColor,
+      s: clamp(((event.clientX - bounds.left) / bounds.width) * 100, 0, 100),
+      v: 100 - clamp(((event.clientY - bounds.top) / bounds.height) * 100, 0, 100),
+    });
+  };
+
+  return (
+    <span className={styles.colorControl} ref={colorControlRef}>
+      {none ? (
+        <button
+          aria-label="Stroke color is none"
+          className={`${styles.colorValue} ${styles.colorValueSingle}`}
+          disabled
+          type="button"
+        >
+          <span className={`${styles.colorSwatch} ${styles.colorSwatchNone}`} />
+          <span>None</span>
+        </button>
+      ) : (
+        <Popover.Root
+          onOpenChange={(open) => {
+            if (open) {
+              setDraftColor(color.toUpperCase());
+              setCustomColor(hexToHsv(color));
+            }
+          }}
+        >
+          <Popover.Trigger
+            aria-label={`Choose color ${color}`}
+            className={`${styles.colorValue} ${!showOpacity ? styles.colorValueSingle : ""}`}
+          >
+            <span className={styles.colorSwatch} style={{ background: color }} />
+            <span>{color.toUpperCase()}</span>
+          </Popover.Trigger>
+          <Popover.Portal>
+            <Popover.Positioner
+              align="start"
+              anchor={colorControlRef}
+              className={styles.inspectorColorPositioner}
+              side="right"
+              sideOffset={8}
+            >
+              <Popover.Popup className={styles.inspectorColorPopup}>
+                <div aria-label="Color picker mode" className={styles.inspectorColorTabs} role="tablist">
+                  <button
+                    aria-selected={pickerMode === "theme"}
+                    className={pickerMode === "theme" ? styles.inspectorColorTabActive : ""}
+                    onClick={() => setPickerMode("theme")}
+                    role="tab"
+                    type="button"
+                  >
+                    Theme
+                  </button>
+                  <button
+                    aria-selected={pickerMode === "custom"}
+                    className={pickerMode === "custom" ? styles.inspectorColorTabActive : ""}
+                    onClick={() => setPickerMode("custom")}
+                    role="tab"
+                    type="button"
+                  >
+                    Custom
+                  </button>
+                </div>
+
+                {pickerMode === "theme" ? (
+                  <div aria-label="Theme colors" className={styles.inspectorThemeColors} role="tabpanel">
+                    {INSPECTOR_THEME_COLORS.map((option) => (
+                      <button
+                        aria-label={`Use ${option.label} color ${option.value}`}
+                        aria-pressed={color.toUpperCase() === option.value}
+                        className={styles.inspectorThemeColor}
+                        key={option.label}
+                        onClick={() => commitColor(option.value)}
+                        type="button"
+                      >
+                        <span className={styles.inspectorThemeSwatch} style={{ background: option.value }} />
+                        <span>{option.label}</span>
+                        <span className={styles.inspectorThemeValue}>{option.value}</span>
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <div
+                    className={styles.inspectorCustomColor}
+                    role="tabpanel"
+                    style={{ "--inspector-picker-hue": `${customColor.h}` } as CSSProperties}
+                  >
+                    <button
+                      aria-label="Color saturation and brightness"
+                      className={styles.inspectorColorPlane}
+                      onPointerDown={(event) => {
+                        event.currentTarget.setPointerCapture(event.pointerId);
+                        updateSaturationAndValue(event);
+                      }}
+                      onPointerMove={(event) => {
+                        if (event.currentTarget.hasPointerCapture(event.pointerId)) updateSaturationAndValue(event);
+                      }}
+                      onPointerUp={(event) => {
+                        if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+                          event.currentTarget.releasePointerCapture(event.pointerId);
+                        }
+                      }}
+                      type="button"
+                    >
+                      <span
+                        className={styles.inspectorColorPlaneThumb}
+                        style={{ left: `${customColor.s}%`, top: `${100 - customColor.v}%` }}
+                      />
+                    </button>
+                    <label className={styles.inspectorHueField}>
+                      <span className={styles.srOnly}>Hue</span>
+                      <input
+                        aria-label="Color hue"
+                        max="360"
+                        min="0"
+                        onChange={(event) => commitCustomColor({ ...customColor, h: Number(event.target.value) })}
+                        type="range"
+                        value={Math.round(customColor.h)}
+                      />
+                    </label>
+                  </div>
+                )}
+
+                <label className={styles.inspectorHexField}>
+                  <span>Hex</span>
+                  <input
+                    aria-label="Hex color"
+                    maxLength={7}
+                    onBlur={() => commitColor(draftColor)}
+                    onChange={(event) => setDraftColor(event.target.value.toUpperCase())}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") commitColor(draftColor);
+                    }}
+                    value={draftColor}
+                  />
+                </label>
+                <div aria-label="Recent colors" className={styles.inspectorColorSwatches} role="group">
+                  {INSPECTOR_THEME_COLORS.slice(0, 4).map((option) => (
+                    <button
+                      aria-label={`Use color ${option.value}`}
+                      aria-pressed={color.toUpperCase() === option.value}
+                      className={styles.inspectorColorSwatchButton}
+                      key={option.label}
+                      onClick={() => commitColor(option.value)}
+                      style={{ "--inspector-swatch": option.value } as CSSProperties}
+                      type="button"
+                    />
+                  ))}
+                </div>
+              </Popover.Popup>
+            </Popover.Positioner>
+          </Popover.Portal>
+        </Popover.Root>
+      )}
+      {!none && showOpacity ? (
+        <span className={`${styles.opacityValue} ${styles.inspectorInputControl}`}>
+          <input
+            aria-label="Color opacity"
+            onChange={(event) => onOpacityChange?.(event.target.value)}
+            value={opacity}
+          />
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
+const BACKGROUND_FILL_LABELS = ["Solid", "Linear gradient", "Radial gradient"] as const;
+
+const BACKGROUND_FILL_TYPES: Record<(typeof BACKGROUND_FILL_LABELS)[number], InspectorFillType> = {
+  "Linear gradient": "linear-gradient",
+  "Radial gradient": "radial-gradient",
+  Solid: "solid",
+};
+
+const BACKGROUND_FILL_TYPE_LABELS: Record<InspectorFillType, (typeof BACKGROUND_FILL_LABELS)[number]> = {
+  "linear-gradient": "Linear gradient",
+  "radial-gradient": "Radial gradient",
+  solid: "Solid",
+};
+
+function backgroundFillCss(fill: InspectorBackgroundFill, solidColor: string) {
+  if (fill.type === "solid") return solidColor;
+
+  const stops = [...fill.stops]
+    .sort((left, right) => left.position - right.position)
+    .map((stop) => `${stop.color} ${stop.position}%`)
+    .join(", ");
+
+  return fill.type === "radial-gradient"
+    ? `radial-gradient(circle at center, ${stops})`
+    : `linear-gradient(${fill.angle}deg, ${stops})`;
+}
+
+export function BackgroundFillControl({
+  fill,
+  onFillChange,
+  onSolidColorChange,
+  solidColor,
+}: {
+  fill: InspectorBackgroundFill;
+  onFillChange: (fill: InspectorBackgroundFill) => void;
+  onSolidColorChange: (color: string) => void;
+  solidColor: string;
+}) {
+  const updateStop = (index: number, update: Partial<InspectorBackgroundFill["stops"][number]>) => {
+    onFillChange({
+      ...fill,
+      stops: fill.stops.map((stop, stopIndex) => stopIndex === index ? { ...stop, ...update } : stop),
+    });
+  };
+
+  const addStop = () => {
+    if (fill.stops.length >= 6) return;
+    const sorted = [...fill.stops].sort((left, right) => left.position - right.position);
+    let largestGapIndex = 0;
+    let largestGap = -1;
+    for (let index = 0; index < sorted.length - 1; index += 1) {
+      const gap = sorted[index + 1].position - sorted[index].position;
+      if (gap > largestGap) {
+        largestGap = gap;
+        largestGapIndex = index;
+      }
+    }
+    const before = sorted[largestGapIndex];
+    const after = sorted[largestGapIndex + 1] ?? before;
+    const nextStop = {
+      color: before.color,
+      position: Math.round((before.position + after.position) / 2),
+    };
+    onFillChange({
+      ...fill,
+      stops: [...fill.stops, nextStop].sort((left, right) => left.position - right.position),
+    });
+  };
+
+  return (
+    <div className={styles.backgroundFillControl}>
+      <InspectorSelect
+        label="Background fill type"
+        onChange={(label) => onFillChange({ ...fill, type: BACKGROUND_FILL_TYPES[label as keyof typeof BACKGROUND_FILL_TYPES] })}
+        options={BACKGROUND_FILL_LABELS}
+        value={BACKGROUND_FILL_TYPE_LABELS[fill.type]}
+      />
+
+      {fill.type === "solid" ? (
+        <ColorControl color={solidColor} onColorChange={onSolidColorChange} />
+      ) : (
+        <>
+          <div
+            aria-label={`${BACKGROUND_FILL_TYPE_LABELS[fill.type]} preview`}
+            className={styles.backgroundGradientPreview}
+            style={{ background: backgroundFillCss(fill, solidColor) }}
+          />
+
+          {fill.type === "linear-gradient" ? (
+            <label className={styles.backgroundGradientAngle}>
+              <span>Angle</span>
+              <InspectorInput
+                ariaLabel="Gradient angle"
+                onChange={(value) => onFillChange({ ...fill, angle: clamp(Number(value) || 0, 0, 360) })}
+                suffix="°"
+                value={String(fill.angle)}
+              />
+            </label>
+          ) : null}
+
+          <div className={styles.backgroundGradientStops}>
+            {fill.stops.map((stop, index) => (
+              <div className={styles.backgroundGradientStop} key={`${index}-${stop.color}`}>
+                <ColorControl
+                  color={stop.color}
+                  onColorChange={(color) => updateStop(index, { color })}
+                  showOpacity={false}
+                />
+                <InspectorInput
+                  ariaLabel={`Gradient stop ${index + 1} position`}
+                  className={styles.backgroundGradientPosition}
+                  onChange={(value) => updateStop(index, { position: clamp(Number(value) || 0, 0, 100) })}
+                  suffix="%"
+                  value={String(stop.position)}
+                />
+                <button
+                  aria-label={`Remove gradient stop ${index + 1}`}
+                  className={styles.backgroundGradientRemove}
+                  disabled={fill.stops.length <= 2}
+                  onClick={() => onFillChange({ ...fill, stops: fill.stops.filter((_, stopIndex) => stopIndex !== index) })}
+                  type="button"
+                >
+                  <MinusIcon aria-hidden="true" absoluteStrokeWidth size={14} strokeWidth={1.5} />
+                </button>
+              </div>
+            ))}
+          </div>
+
+          <button
+            className={styles.backgroundGradientAdd}
+            disabled={fill.stops.length >= 6}
+            onClick={addStop}
+            type="button"
+          >
+            <PlusIcon aria-hidden="true" absoluteStrokeWidth size={13} strokeWidth={1.5} />
+            <span>Add color stop</span>
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
+
+export function InspectorImageUpload({
+  onFileSelect,
+  src,
+}: {
+  onFileSelect?: (file: File) => void;
+  src: string;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [previewSrc, setPreviewSrc] = useState(src);
+
+  const selectFile = (file: File) => {
+    const reader = new FileReader();
+    reader.addEventListener("load", () => {
+      if (typeof reader.result === "string") setPreviewSrc(reader.result);
+    });
+    reader.readAsDataURL(file);
+    onFileSelect?.(file);
+  };
+
+  return (
+    <>
+      <button
+        aria-label="Replace image"
+        className={styles.imageReplaceField}
+        onClick={() => inputRef.current?.click()}
+        type="button"
+      >
+        <Image
+          alt=""
+          fill
+          sizes="248px"
+          src={previewSrc}
+          unoptimized={previewSrc.startsWith("data:")}
+        />
+        <span>Replace image</span>
+      </button>
+      <input
+        accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml"
+        className={styles.visuallyHiddenInput}
+        onChange={(event) => {
+          const file = event.target.files?.[0];
+          if (file) selectFile(file);
+          event.target.value = "";
+        }}
+        ref={inputRef}
+        type="file"
+      />
+    </>
+  );
+}
+
+export function InspectorLayerRow({
+  active,
+  depth = 0,
+  expanded,
+  expandable = false,
+  icon,
+  label,
+  onClick,
+  trailing = false,
+}: {
+  active?: boolean;
+  depth?: number;
+  expanded?: boolean;
+  expandable?: boolean;
+  icon: Extract<InspectorIconName, "apple" | "div" | "ellipse" | "image" | "rectangle" | "type">;
+  label: string;
+  onClick?: () => void;
+  trailing?: boolean;
+}) {
+  const rowRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (active) {
+      rowRef.current?.scrollIntoView({ block: "nearest" });
+    }
+  }, [active]);
+
+  return (
+    <button
+      className={`${styles.layerRow} ${depth ? styles.layerRowNested : ""} ${active ? styles.layerRowActive : ""}`}
+      aria-expanded={expandable ? expanded : undefined}
+      onClick={onClick}
+      ref={rowRef}
+      style={{ "--layer-depth": depth } as CSSProperties}
+      type="button"
+    >
+      {depth ? <span className={styles.layerTreeRule} /> : null}
+      <span className={styles.layerRowContent}>
+        <span className={styles.layerRowLabel}>
+          <InspectorIcon name={icon} size={16} />
+          <span>{label}</span>
+        </span>
+        {trailing ? <InspectorIcon name="layer-ellipsis" size={16} /> : null}
+      </span>
+    </button>
+  );
+}
