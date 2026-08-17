@@ -34,3 +34,4 @@ htmlcov/
 
 # Browser-tool artifacts (Playwright MCP console/page logs)
 .playwright-mcp/
+.gstack/
