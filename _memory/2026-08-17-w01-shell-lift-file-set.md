@@ -239,6 +239,36 @@ artifact route unchanged (rail visible, workspace opacity 1, Gallery+artifact ta
 Browse-daemon note: session state does not survive daemon restarts — re-run the sign-in replay
 (email/password → 424242 → workspace click) when `goto` lands on /sign-in.
 
+## W2.1 done — commit `a747df65` (real web render in the artifact stage, 2026-08-18)
+
+- `design-editor/components/web-artifact-canvas.tsx` (+ module css): keyed-remount client
+  component; `sandbox="allow-scripts"` srcdoc iframe, per-render bridge nonce in a ref (the
+  W2.2 listener seam), WebEditorApp state set. Empty/error copy verbatim from source; loading
+  line is neutral ("Loading preview…") — deliberate single copy deviation (source's
+  "Generating…" describes agent-turn loads). Keyed remount avoids the react-hooks
+  set-state-in-effect lint (sync setState in effects is now an ERROR in this repo).
+- **W1.1 contract correction (live-found):** engine URLs are `new URL(path, apiBaseUrl)` —
+  a path-prefix apiBaseUrl ("/api/clue/design") THROWS, and even an absolute base would drop
+  the prefix. Working form: `data/design-bff.ts::designBffConfig()` — apiBaseUrl = page
+  origin + fetchImpl re-mounting every engine URL under the same-origin BFF prefix. Engine
+  verbatim; engine/config.ts doc corrected. All engine callers (W2.2+, W3 writes) must use
+  `designBffConfig()`, never a raw prefix.
+- Stage: `.webCanvas` drops the `aspect-ratio: 1448/1086` letterbox, `.webOutputStage` →
+  flex column, canvas `flex: 1 1 auto` (ratified rendering-correctness deviation; comment at
+  the CSS site). ArtifactStage takes optional `activeDocumentId`; chat-surface (Phase C rail)
+  unchanged — no canvas on the chats route until split-view wiring.
+- Page: server-side artifact fetch via `httpDesignArtifactRepository({baseUrl: "",
+  fetchImpl: fetchAuthenticatedClueBackend})`; ANY refusal → null → W0.4 dummy empty mount
+  (verified: unknown id keeps "Web output" tab + empty canvas, zero iframes). Real artifact →
+  real title/kind + `documentIds` map into EditorSurface.
+- **Browser-verified on the live 3030 stack:** seeded content into
+  `doc_31126145a0aa4753920629ae323a301b` via `POST :8010/documents/{id}/web/operations`
+  (base_version 0 → 1; hero section/text/button with Tailwind classes) — renders in-shell
+  (dark hero, styled CTA ⇒ vendored tailwind runtime executed in the srcdoc). Srcdoc carries
+  `web-rich-text` (API-injected — the W1.4 verify-in-W2 assumption CONFIRMED, nothing to host
+  frontend-side) and `lumen-web-bridge` + nonce. Error state proven live too (the pre-fix
+  Invalid-base-URL render showed "Preview failed" + message). Screenshot /tmp/w21-real-render.png.
+
 ## Next
 
 - **W2** (read path): W2.1 real render in the artifact stage (sandboxed srcdoc iframe,
