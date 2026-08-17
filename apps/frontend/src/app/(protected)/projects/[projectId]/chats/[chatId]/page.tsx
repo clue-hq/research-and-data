@@ -24,16 +24,19 @@ export default async function ProjectChatPage({
     params,
     searchParams,
   ]);
-  // R2: surface/edit/selection are the ratified pane-state vocabulary. Only
-  // surface=gallery is wired here; web|ad, edit, and selection are reserved
-  // for the design-editor split view and intentionally unused in Phase R.
+  // R2: surface/edit/selection are the ratified pane-state vocabulary,
+  // wired into the chat surface's artifact rail since Phase C (C-3):
+  // surface=gallery opens the rail on the gallery, web|ad on the artifact
+  // surface (?edit=1 → editing, ?selection= → inspector selection).
   const workspace = await getProjectWorkspace(projectId);
 
   return (
     <ProjectWorkspaceShell
       initial={{
-        focusPane: query.surface === "gallery" ? "artifacts" : undefined,
+        edit: query.edit,
         handoffId: query.handoff,
+        selection: query.selection,
+        surface: query.surface,
         threadId: chatId,
       }}
       projectId={projectId}

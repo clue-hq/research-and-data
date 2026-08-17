@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback } from "react";
+import { ChatSurface } from "@/features/chat-shell/components/chat-surface";
 import { useProjectChatController } from "../hooks/use-project-chat-controller";
 import {
   useProjectWorkspaceController,
@@ -10,7 +10,6 @@ import {
 import { useProjectWorkspaceLoader } from "../hooks/use-project-workspace-loader";
 import type { ProjectWorkspace } from "../model/project-workspace";
 import styles from "./project-flow.module.css";
-import { ProjectWorkspaceView } from "./project-workspace-view";
 
 export function ProjectWorkspaceShell({
   initial,
@@ -65,14 +64,18 @@ function LoadedProjectWorkspace({
     projectId: workspace.id,
     initialThreadId: initial.threadId,
   });
-  const copyLink = useCallback(() => {
-    void navigator.clipboard?.writeText(window.location.href);
-  }, []);
+  // Phase C (C-3): the designed chat shell is the workspace's view layer —
+  // ChatSurface renders the chat pane + artifact rail around production chat.
   return (
-    <ProjectWorkspaceView
+    <ChatSurface
       chat={chat}
       controller={controller}
-      onCopyLink={copyLink}
+      paneState={{
+        edit: initial.edit,
+        selection: initial.selection,
+        surface: initial.surface,
+      }}
+      projectId={workspace.id}
       workspace={workspace}
     />
   );

@@ -42,7 +42,11 @@ export function ProjectApplicationShell({
   // screens — matching the design build's persistent sidebar. This supersedes
   // the earlier collapsed-overlay default for project workspaces (the
   // 2026-08-10 state table remains for user-initiated collapse; only the
-  // default changed).
+  // default changed). It also satisfies Phase C's (C-3) constraint: with the
+  // in-pane thread switcher removed (ruling R4) the sidebar is the ONLY
+  // thread switcher, so it must stay reachable on the chats route. (The
+  // Phase C lane, merged 2026-08-18, carried a pre-ruling overlay/collapsed
+  // carve-out for the artifact route; the dated founder ruling wins here.)
   return (
     <ApplicationShell
       activeHref={pathname === "/" ? "/" : "/projects"}
