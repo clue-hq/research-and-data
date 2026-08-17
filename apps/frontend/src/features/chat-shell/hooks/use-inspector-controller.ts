@@ -139,12 +139,20 @@ function dispatchInspectorEvent(
 export function useInspectorController(
   collapsedSections: InspectorSectionId[] = [],
   selectionType: ChatShellInspectorSelection = "canvas",
+  // W2.2: the hydration seam — real values from the selected node (the
+  // design-editor hydrate adapter) merge over the dummy defaults at mount.
+  // Initial state only, by design: callers remount the inspector per
+  // selection (keyed on the selected node), exactly how the dummy swaps
+  // schema views, so a new selection re-hydrates naturally.
+  hydrated?: Partial<InspectorPresentationState>,
 ) {
   const [state, setState] = useState<InspectorPresentationState>(() => ({
       ...DEFAULT_STATE,
+      ...hydrated,
       openSections: {
       ...DEFAULT_OPEN_SECTIONS,
       ...Object.fromEntries(collapsedSections.map((section) => [section, false])),
+      ...hydrated?.openSections,
     },
   }));
 

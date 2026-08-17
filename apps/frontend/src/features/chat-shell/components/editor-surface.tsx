@@ -4,6 +4,7 @@ import {
   useEditorShellController,
   type EditorShellInitialState,
 } from "../hooks/use-editor-shell-controller";
+import { useWebArtifactSelection } from "@/features/design-editor/hooks/use-web-artifact-selection";
 import { ArtifactStage } from "./artifact-stage";
 import styles from "./chat-shell.module.css";
 
@@ -55,6 +56,12 @@ export function EditorSurface({
   const activeDocumentId = controller.activeArtifactId
     ? (documentIds?.[controller.activeArtifactId] ?? null)
     : null;
+  // W2.2: the canvas bridge's nonce-validated selections joined with the
+  // loaded document → {node, nodeInfo} + schema + hydrated inspector state.
+  // The inspector itself mounts at the split view / W2 exit demo; until then
+  // the joined selection is surfaced on data attributes below (no invented
+  // UI), which is also what browser verification asserts.
+  const webSelection = useWebArtifactSelection(activeDocumentId);
 
   return (
     <main
@@ -64,6 +71,12 @@ export function EditorSurface({
       data-artifact-kind={controller.artifactKind ?? "none"}
       data-editing={controller.editing}
       data-project-id={controller.projectId}
+      data-selected-node={webSelection.selection?.node.id}
+      data-selected-schema={
+        webSelection.selection
+          ? `${webSelection.selection.schema.selection}${webSelection.selection.schema.layoutOnly ? ":layout-only" : ""}`
+          : undefined
+      }
       data-surface={controller.surface}
     >
       <ArtifactStage
@@ -75,6 +88,7 @@ export function EditorSurface({
         artifactTitle={controller.artifactTitle}
         editing={controller.editing}
         onActivateArtifact={controller.activateArtifact}
+        onCanvasSelect={webSelection.onSelect}
         onCloseArtifact={controller.closeArtifact}
         onOpenGallery={controller.openGallery}
         onOpenGalleryArtifact={(artifact) =>

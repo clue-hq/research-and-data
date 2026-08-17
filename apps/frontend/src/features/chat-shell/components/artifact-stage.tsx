@@ -3,6 +3,7 @@ import type {
   ChatShellOpenArtifact,
 } from "../model/chat-shell";
 import { WebArtifactCanvas } from "@/features/design-editor/components/web-artifact-canvas";
+import type { WebSelection } from "@/features/design-editor/engine/webBridge";
 import { ProjectGallery } from "@/features/gallery/components/project-gallery";
 import type { GalleryArtifact } from "@/features/gallery/model/project-gallery";
 import type { ProjectArtifact } from "@/features/projects/model/project-workspace";
@@ -26,6 +27,7 @@ export function ArtifactStage({
   artifactTitle,
   editing,
   onActivateArtifact,
+  onCanvasSelect,
   onCloseArtifact,
   onOpenGallery,
   onOpenGalleryArtifact,
@@ -49,6 +51,8 @@ export function ArtifactStage({
   artifactTitle: string;
   editing: boolean;
   onActivateArtifact: (artifactId: string) => void;
+  /** W2.2: nonce-validated selection events from the web canvas bridge. */
+  onCanvasSelect?: (selection: WebSelection | null) => void;
   onCloseArtifact: (artifactId: string) => void;
   onOpenGallery: () => void;
   onOpenGalleryArtifact: (artifact: GalleryArtifact) => void;
@@ -96,7 +100,10 @@ export function ArtifactStage({
                 className={styles.webCanvas}
               >
                 {activeDocumentId ? (
-                  <WebArtifactCanvas documentId={activeDocumentId} />
+                  <WebArtifactCanvas
+                    documentId={activeDocumentId}
+                    onSelect={onCanvasSelect}
+                  />
                 ) : null}
               </div>
             ) : (
