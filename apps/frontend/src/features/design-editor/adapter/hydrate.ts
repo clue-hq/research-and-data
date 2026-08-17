@@ -99,6 +99,30 @@ function tokenLabel(token: string): string {
   return token.charAt(0).toUpperCase() + token.slice(1);
 }
 
+/** Ruling 25 (W3.2 §2 addition): engine `TextVariant` → the style select's
+ * labels (inverse of apply.ts's map). */
+const VARIANT_TO_TEXT_STYLE: Record<string, string> = {
+  body: "Body",
+  display: "Display",
+  h1: "H1",
+  h2: "H2",
+  h3: "H3",
+  h4: "H4",
+  overline: "Overline",
+  small: "Small",
+};
+
+/** Ruling 26 (W3.2 §2 addition): the line-spacing select IS the facet
+ * vocabulary. */
+const LINE_SPACING_VALUES = new Set([
+  "loose",
+  "none",
+  "normal",
+  "relaxed",
+  "snug",
+  "tight",
+]);
+
 export interface InspectorSchemaSelection {
   selection: ChatShellInspectorSelection;
   /** True → only the layout/padding sections are live (18b icons, §5
@@ -202,6 +226,17 @@ export function hydrateInspectorState(
   const objectFit = webClassFacets.objectFit.parse(classes);
   if (objectFit !== null && objectFit in OBJECT_FIT_TO_FILL_MODE) {
     state.fillMode = OBJECT_FIT_TO_FILL_MODE[objectFit];
+  }
+
+  // W3.2 §2 additions: line spacing (ruling 26) and, below with the node
+  // props, the text style select (ruling 25).
+  const lineHeight = webClassFacets.lineHeight.parse(classes);
+  if (lineHeight !== null && LINE_SPACING_VALUES.has(lineHeight)) {
+    state.lineSpacing = lineHeight;
+  }
+  if (node.kind === "text" && typeof node.variant === "string") {
+    const label = VARIANT_TO_TEXT_STYLE[node.variant];
+    if (label) state.textStyle = label;
   }
 
   // Node props: the button style select (row 16) and the link fields

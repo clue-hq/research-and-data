@@ -195,3 +195,28 @@ test("no facets, no props → an empty partial (defaults stand)", () => {
   const state = hydrateInspectorState(node("root"), "");
   assert.deepEqual(state, {});
 });
+
+// ── W3.2 §2 additions: text style (ruling 25) and line spacing (ruling 26) ──
+
+test("text: the variant hydrates the style select; line spacing from leading-", () => {
+  const withLeading = hydrateInspectorState(
+    node("sub"),
+    "text-lg leading-relaxed",
+  );
+  assert.equal(withLeading.lineSpacing, "relaxed");
+  // Harvested text nodes carry variant "body" (the engine default).
+  const state = hydrate("sub");
+  assert.equal(state.textStyle, "Body");
+});
+
+test("text: a non-default variant maps to its select label", () => {
+  const h2 = { ...node("headline"), variant: "h2" };
+  const state = hydrateInspectorState(h2, h2.classes);
+  assert.equal(state.textStyle, "H2");
+});
+
+test("non-text nodes hydrate no style; absent leading omits line spacing", () => {
+  const state = hydrate("cta");
+  assert.ok(!("textStyle" in state));
+  assert.ok(!("lineSpacing" in state));
+});

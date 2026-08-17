@@ -60,6 +60,10 @@ export interface InspectorPresentationState {
   strokeColor: string;
   strokeWidth: string;
   textColor: string;
+  /** W3.2 §2 addition (ruling 25): the text style/variant select. */
+  textStyle: string;
+  /** W3.2 §2 addition (ruling 26): the line-spacing select. */
+  lineSpacing: string;
   tokenBackgroundColor: string;
   tokenTextColor: string;
   url: string;
@@ -119,6 +123,8 @@ const DEFAULT_STATE: InspectorPresentationState = {
   strokeColor: "none",
   strokeWidth: "1",
   textColor: "#00F59B",
+  textStyle: "Body",
+  lineSpacing: "normal",
   tokenBackgroundColor: "White",
   tokenTextColor: "Content",
   url: "",
