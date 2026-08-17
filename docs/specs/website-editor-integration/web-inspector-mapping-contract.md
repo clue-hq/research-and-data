@@ -1,6 +1,7 @@
 # Website-editor inspector — frozen mapping contract (v1)
 
-Status: RATIFIED by founder 2026-08-17, except the three items marked OPEN in §6.
+Status: FULLY RATIFIED by founder 2026-08-17 — all 42 items resolved (§6 records the closing
+rulings on the final three).
 Decision record: `docs/specs/website-editor-integration/decisions-recorded.md` (founder-annotated,
 authored in the `singapore` workspace; the annotations there are the authority — this document is
 the frozen, implementable restatement). Source inventories: the five Part-IV deep-reads
@@ -25,7 +26,7 @@ added, moved, or restyled.
 |---|---|---|---|
 | 1 | Canvas → Background color | `bgColor` facet on page root | theme tokens only (R2) |
 | 4 | Text → Typography color | `textColor` facet | tokens only |
-| 5 | Text → Size select | `textSize` facet (Tailwind ramp) | 12→xs 14→sm 16→base 18→lg 20→xl 24→2xl; orphans 13/32: OPEN (§6) |
+| 5 | Text → Size select | `textSize` facet (Tailwind ramp) | 12→xs 14→sm 16→base 18→lg 20→xl 24→2xl 32→3xl; **13 dropped from options** |
 | 6 | Text → Weight select | `fontWeight` facet | Regular→normal, Medium→medium, Semi Bold→semibold, Bold→bold |
 | 7 | Text → Horizontal alignment | `textAlign` facet | left/center/right (justify unexposed) |
 | 11 | Image → Link to (URL + new tab) | image props `href`/`new_tab` | shown for image selections; optional per image |
@@ -68,6 +69,7 @@ href (which does not exist for text).
 - Custom/hex tab of the color popover (R2 sub-ruling — Theme tokens tab is the live one).
 - Canvas background color-opacity input (2).
 - Text Stroke section, exactly as the dummy ships it (9).
+- Header lock toggle (39 — no web `locked` field; scene-only concept).
 
 ## 4. Invisible-but-alive (agent-only; no UI; data round-trips guaranteed)
 
@@ -88,14 +90,14 @@ href (which does not exist for text).
   the interactive components dialog/accordion/marquee/carousel/tabs/nav-menu (33). The components
   keep working on the page; their prop tuning is agent-only for now.
 
-## 6. OPEN — awaiting founder word (do not implement past these)
+## 6. Closing rulings (founder, 2026-08-17 — resolving the final three)
 
-- **(5)** Size-select orphans: interpretation of "drop for now" — (a) drop 13 only and map 32→3xl
-  [Fable's rec], or (b) drop both 13 and 32 from the options.
-- **(24)** Rich-text toolbar on double-click: treated as KEEP-as-is (item 3's conditional Link-to
-  is only implementable if range selection exists, which the toolbar session provides) — awaiting
-  explicit confirm / restyle-later note.
-- **(39)** Header lock toggle (no web backing): inert or hidden.
+- **(5)** Size select: **drop 13 only**; 32 maps to 3xl. (Reflected in §1.)
+- **(24)** Rich-text toolbar on double-click: **KEEP as-is, confirmed** — it is also the
+  mechanism that makes item 3's conditional Link-to implementable (range selection exists only
+  inside the toolbar's editing session).
+- **(39)** Header lock toggle: **inert for now** (visible, non-functional — no web `locked`
+  backing). Added to §3.
 
 ## 7. Future-work register (founder: "make a special note — we will work on this")
 
