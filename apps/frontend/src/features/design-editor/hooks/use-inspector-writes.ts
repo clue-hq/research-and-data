@@ -88,5 +88,55 @@ export function useInspectorWrites({
       window.removeEventListener("clue:inspector-property-change", onChange);
   }, [documentId]);
 
+  // W3.4: the action menu's Undo/Redo (the dummy's own items, dispatching
+  // `clue:artifact-action-request`) and their ⌘Z/⇧⌘Z shortcuts bind to the
+  // engine's web undo/redo — the ported manual-edits controller already
+  // carries both (same discipline: one in-flight, quiet resync on an
+  // empty-stack 409). Scope: the engine-owned document stack only, never a
+  // general chrome undo.
+  const undoRef = useRef(edits.undo);
+  const redoRef = useRef(edits.redo);
+  useEffect(() => {
+    redoRef.current = edits.redo;
+    undoRef.current = edits.undo;
+  });
+
+  useEffect(() => {
+    if (!documentId) return;
+    const onAction = (event: Event) => {
+      const detail = (event as CustomEvent).detail as {
+        action?: unknown;
+        kind?: unknown;
+      } | null;
+      if (detail?.kind !== "web") return;
+      if (detail.action === "undo") undoRef.current();
+      if (detail.action === "redo") redoRef.current();
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "z")
+        return;
+      // Native text-editing undo owns focused inputs/contenteditables.
+      const target = event.target as HTMLElement | null;
+      if (
+        target &&
+        (target.isContentEditable ||
+          target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA")
+      )
+        return;
+      event.preventDefault();
+      if (event.shiftKey) redoRef.current();
+      else undoRef.current();
+    };
+    // window, not document: the hook's `document` prop (the loaded web
+    // document) shadows the global here; keydown bubbles to window anyway.
+    window.addEventListener("clue:artifact-action-request", onAction);
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("clue:artifact-action-request", onAction);
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [documentId]);
+
   return edits;
 }

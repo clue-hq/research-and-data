@@ -178,7 +178,9 @@ export function EditorSurface({
         onTogglePanel={() => undefined}
         onToggleEditing={() => controller.setEditing(!controller.editing)}
         openArtifacts={controller.openArtifacts}
+        redoDisabled={(webSelection.document?.redoDepth ?? 0) === 0}
         surface={controller.surface}
+        undoDisabled={(webSelection.document?.undoDepth ?? 0) === 0}
       />
     </main>
   );

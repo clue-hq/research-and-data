@@ -36,13 +36,19 @@ export function ArtifactHeader({
   kind,
   onEdit,
   onRename,
+  redoDisabled,
   title,
+  undoDisabled,
 }: {
   editing: boolean;
   kind: ChatShellArtifactKind;
   onEdit: () => void;
   onRename: (title: string) => void;
+  /** W3.4: empty-stack disable for the action menu's Redo. */
+  redoDisabled?: boolean;
   title: string;
+  /** W3.4: empty-stack disable for the action menu's Undo. */
+  undoDisabled?: boolean;
 }) {
   const {
     closeMenu: closeArtifactActionMenu,
@@ -142,7 +148,9 @@ export function ArtifactHeader({
               onRequestAction={requestArtifactAction}
               onSelectVersion={selectVersion}
               onVersionsOpenChange={setVersionsOpen}
+              redoDisabled={redoDisabled}
               selectedVersionId={selectedVersionId}
+              undoDisabled={undoDisabled}
               versionsOpen={versionsOpen}
             />
           ) : null}

@@ -239,9 +239,14 @@ Port `useWebManualEdits` semantics exactly: one in-flight mutation (`busy`), `ba
 
 - [ ] TDD the adapter per control; browser-verify: edit typography on a real page, reload → persisted. Commit per control group.
 
-### Task W3.3: Save-failure micro-decision ⚠️ FOUNDER GATE
+### Task W3.3: Save-failure micro-decision ⚠️ FOUNDER GATE — **DECIDED 2026-08-18**
 
-Present the one-question options (per standing rule) before wiring any failure surface beyond the existing inline note. **STOP and ask; do not invent UI.**
+**Founder ruling: inline only.** The save-failure surface is the existing red line under the
+inspector header (the W3.2 floor) — no additional UI. Accepted trade-off, stated with the
+ruling: strict visual minimalism is preserved, at the cost that a failure can be missed or
+become invisible when the inspector closes. Revisiting that trade-off is a new ruling (the
+contract's §7 item 5 keeps the other failure surfaces — version-refused, publish-failure —
+open for their own flows).
 
 ### Task W3.4: Undo/redo wired to the engine (founder addition, 2026-08-18)
 

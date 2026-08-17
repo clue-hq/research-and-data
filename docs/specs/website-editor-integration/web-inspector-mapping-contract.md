@@ -108,7 +108,11 @@ Tracked, never silently dropped; each needs a UI slot decision when its turn com
 3. Interactive-component prop cards in the UI (33).
 4. Item-16 adjunct: a `critical`/destructive button variant engine-side, if a campaign ever needs it.
 5. Failure-feedback surfaces (save-failure, version-refused, 409/422, publish-failure) — the four
-   one-question founder decisions deferred to their implementation flows (42).
+   one-question founder decisions deferred to their implementation flows (42). **Save-failure +
+   409/422 DECIDED 2026-08-18 (W3.3): inline only — the single note/error line under the
+   inspector header; no additional UI. Trade-off accepted: a failure can be missed or become
+   invisible when the inspector closes. Version-refused and publish-failure remain open for
+   their flows.**
 6. **In-canvas node resizing** (added 2026-08-18, founder-ordered registration). Absent from the
    42-item inventory because the dummy inspector has no resize control (the computed-layout card
    was dropped by 31; drag handles exist only in the retired dev shell, which is not the parity

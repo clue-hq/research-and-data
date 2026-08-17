@@ -2894,3 +2894,11 @@
 .inspectorStatusError {
   color: var(--clue-ds-color-primitives-critical-700);
 }
+
+/* W3.4: the action menu's Undo/Redo disable at empty engine stacks (native
+ * button disabled; the dummy shipped no disabled treatment for menu items). */
+.artifactMenuItem:disabled {
+  opacity: 0.4;
+  cursor: default;
+  pointer-events: none;
+}

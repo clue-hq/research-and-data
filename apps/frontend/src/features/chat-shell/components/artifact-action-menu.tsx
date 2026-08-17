@@ -41,12 +41,15 @@ function ArtifactActionIcon({ name }: { name: ArtifactActionIconName }) {
 function MenuAction({
   action,
   destructive = false,
+  disabled = false,
   label,
   onSelect,
   shortcut,
 }: {
   action: ArtifactActionRequest;
   destructive?: boolean;
+  /** W3.4: empty-stack undo/redo disable (native button semantics). */
+  disabled?: boolean;
   label: string;
   onSelect: (action: ArtifactActionRequest) => void;
   shortcut?: string;
@@ -54,6 +57,7 @@ function MenuAction({
   return (
     <button
       className={`${styles.artifactMenuItem} ${destructive ? styles.artifactMenuItemDestructive : ""}`}
+      disabled={disabled}
       onClick={() => onSelect(action)}
       role="menuitem"
       type="button"
@@ -70,14 +74,20 @@ export function ArtifactActionMenu({
   onRequestAction,
   onSelectVersion,
   onVersionsOpenChange,
+  redoDisabled = false,
   selectedVersionId,
+  undoDisabled = false,
   versionsOpen,
 }: {
   onRename: () => void;
   onRequestAction: (action: ArtifactActionRequest) => void;
   onSelectVersion: (versionId: string) => void;
   onVersionsOpenChange: (open: boolean) => void;
+  /** W3.4: driven by the loaded document's redoDepth (empty stack → true). */
+  redoDisabled?: boolean;
   selectedVersionId: string;
+  /** W3.4: driven by the loaded document's undoDepth (empty stack → true). */
+  undoDisabled?: boolean;
   versionsOpen: boolean;
 }) {
   const versionOptions = [
@@ -97,8 +107,8 @@ export function ArtifactActionMenu({
 
       <div aria-hidden="true" className={styles.artifactMenuSeparator} />
 
-      <MenuAction action="undo" label="Undo" onSelect={onRequestAction} shortcut="⌘Z" />
-      <MenuAction action="redo" label="Redo" onSelect={onRequestAction} shortcut="⇧⌘Z" />
+      <MenuAction action="undo" disabled={undoDisabled} label="Undo" onSelect={onRequestAction} shortcut="⌘Z" />
+      <MenuAction action="redo" disabled={redoDisabled} label="Redo" onSelect={onRequestAction} shortcut="⇧⌘Z" />
       <div
         className={styles.artifactVersionsRow}
         onMouseEnter={() => onVersionsOpenChange(true)}

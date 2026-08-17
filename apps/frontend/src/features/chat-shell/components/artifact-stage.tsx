@@ -44,7 +44,9 @@ export function ArtifactStage({
   onToggleEditing,
   openArtifacts,
   projectTitle,
+  redoDisabled,
   surface,
+  undoDisabled,
 }: {
   activeArtifactId: string | null;
   /** W2.1: the active artifact's design-document id (the W1.3 read seam).
@@ -74,7 +76,10 @@ export function ArtifactStage({
   onToggleEditing: () => void;
   openArtifacts: ChatShellOpenArtifact[];
   projectTitle?: string;
+  /** W3.4: empty-stack disables for the action menu's Undo/Redo. */
+  redoDisabled?: boolean;
   surface: EditorShellSurface;
+  undoDisabled?: boolean;
 }) {
   const showingArtifact = surface === "artifact" && artifactKind !== null;
 
@@ -100,7 +105,9 @@ export function ArtifactStage({
             kind={artifactKind}
             onEdit={onToggleEditing}
             onRename={onRenameArtifact}
+            redoDisabled={redoDisabled}
             title={artifactTitle}
+            undoDisabled={undoDisabled}
           />
           <div className={`${styles.outputStage} ${artifactKind === "ad" ? styles.imageOutputStage : styles.webOutputStage}`}>
             {artifactKind === "web" ? (
