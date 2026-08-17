@@ -128,12 +128,32 @@ const DEFAULT_STATE: InspectorPresentationState = {
   wrap: true,
 };
 
-function dispatchInspectorEvent(
+/**
+ * W3.1 (the contract-doc amendment, additive): every inspector event detail
+ * carries write addressing — WHICH node (`selectionId`), WHICH artifact
+ * (`artifactId`), and the document version the values were hydrated from
+ * (`documentVersion`, the optimistic-concurrency `base_version` W3.2's write
+ * adapter sends). Presentation components pass through what the controller
+ * holds; nulls mean "not addressable" (no real selection/document) and the
+ * write adapter must ignore such events.
+ */
+export interface InspectorEventAddressing {
+  artifactId: string | null;
+  documentVersion: number | null;
+  selectionId: string | null;
+}
+
+/** Exported for the addressing unit test; production callers go through the
+ * controller hooks. */
+export function dispatchInspectorEvent(
   name: string,
   detail: Record<string, unknown>,
+  addressing?: InspectorEventAddressing,
 ) {
   if (typeof window === "undefined") return;
-  window.dispatchEvent(new CustomEvent(name, { detail }));
+  window.dispatchEvent(
+    new CustomEvent(name, { detail: { ...detail, ...addressing } }),
+  );
 }
 
 export function useInspectorController(
@@ -145,6 +165,8 @@ export function useInspectorController(
   // selection (keyed on the selected node), exactly how the dummy swaps
   // schema views, so a new selection re-hydrates naturally.
   hydrated?: Partial<InspectorPresentationState>,
+  // W3.1: write addressing stamped onto every dispatched event detail.
+  addressing?: InspectorEventAddressing,
 ) {
   const [state, setState] = useState<InspectorPresentationState>(() => ({
       ...DEFAULT_STATE,
@@ -162,13 +184,17 @@ export function useInspectorController(
       value: InspectorPresentationState[Key],
     ) => {
       setState((current) => ({ ...current, [key]: value }));
-      dispatchInspectorEvent("clue:inspector-property-change", {
-        property: key,
-        selectionType,
-        value,
-      });
+      dispatchInspectorEvent(
+        "clue:inspector-property-change",
+        {
+          property: key,
+          selectionType,
+          value,
+        },
+        addressing,
+      );
     },
-    [selectionType],
+    [addressing, selectionType],
   );
 
   const setNestedValue = useCallback(
@@ -181,23 +207,31 @@ export function useInspectorController(
         ...current,
         [key]: { ...current[key], [nestedKey]: value },
       }));
-      dispatchInspectorEvent("clue:inspector-property-change", {
-        property: `${key}.${String(nestedKey)}`,
-        selectionType,
-        value,
-      });
+      dispatchInspectorEvent(
+        "clue:inspector-property-change",
+        {
+          property: `${key}.${String(nestedKey)}`,
+          selectionType,
+          value,
+        },
+        addressing,
+      );
     },
-    [selectionType],
+    [addressing, selectionType],
   );
 
   const toggleSection = useCallback((section: InspectorSectionId) => {
     setState((current) => {
       const open = !current.openSections[section];
-      dispatchInspectorEvent("clue:inspector-section-toggle", {
-        open,
-        section,
-        selectionType,
-      });
+      dispatchInspectorEvent(
+        "clue:inspector-section-toggle",
+        {
+          open,
+          section,
+          selectionType,
+        },
+        addressing,
+      );
       return {
         ...current,
         openSections: {
@@ -206,14 +240,18 @@ export function useInspectorController(
         },
       };
     });
-  }, [selectionType]);
+  }, [addressing, selectionType]);
 
   const requestAction = useCallback((action: string) => {
-    dispatchInspectorEvent("clue:inspector-action", {
-      action,
-      selectionType,
-    });
-  }, [selectionType]);
+    dispatchInspectorEvent(
+      "clue:inspector-action",
+      {
+        action,
+        selectionType,
+      },
+      addressing,
+    );
+  }, [addressing, selectionType]);
 
   return { requestAction, setNestedValue, setValue, state, toggleSection };
 }

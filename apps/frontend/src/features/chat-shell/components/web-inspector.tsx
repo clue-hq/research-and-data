@@ -8,6 +8,7 @@ import { CHAT_SHELL_INSPECTOR_SELECTIONS } from "../model/chat-shell";
 import {
   useInspectorController,
   useInspectorLayerTree,
+  type InspectorEventAddressing,
   type InspectorPresentationState,
 } from "../hooks/use-inspector-controller";
 import {
@@ -727,6 +728,7 @@ function SectionControls({
 }
 
 export function WebInspector({
+  addressing,
   hydrated,
   layers,
   onSelectionChange,
@@ -735,6 +737,9 @@ export function WebInspector({
   selection,
   showLayers = true,
 }: {
+  /** W3.1: write addressing stamped onto every inspector event this panel
+   * dispatches — passed through to the controllers verbatim. */
+  addressing?: InspectorEventAddressing;
   /** W2.2: real values for the selected node (design-editor hydrate adapter),
    * merged over the dummy defaults at mount. Callers remount per selection. */
   hydrated?: Partial<InspectorPresentationState>;
@@ -751,13 +756,13 @@ export function WebInspector({
 }) {
   const inspectorRef = useRef<HTMLElement>(null);
   const [reviewMenuOpen, setReviewMenuOpen] = useState(false);
-  const canvasController = useInspectorController([], "canvas", hydrated);
-  const textController = useInspectorController(["link"], "text", hydrated);
-  const imageController = useInspectorController(["link"], "image", hydrated);
-  const buttonController = useInspectorController(["link"], "button", hydrated);
-  const iconController = useInspectorController(["link"], "icon", hydrated);
-  const containerController = useInspectorController(["link"], "container", hydrated);
-  const sectionController = useInspectorController(["link"], "section", hydrated);
+  const canvasController = useInspectorController([], "canvas", hydrated, addressing);
+  const textController = useInspectorController(["link"], "text", hydrated, addressing);
+  const imageController = useInspectorController(["link"], "image", hydrated, addressing);
+  const buttonController = useInspectorController(["link"], "button", hydrated, addressing);
+  const iconController = useInspectorController(["link"], "icon", hydrated, addressing);
+  const containerController = useInspectorController(["link"], "container", hydrated, addressing);
+  const sectionController = useInspectorController(["link"], "section", hydrated, addressing);
   const documentLayers = layers ? (
     <DocumentLayers onSelectLayer={onSelectLayer} rows={layers} />
   ) : null;

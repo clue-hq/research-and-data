@@ -113,6 +113,13 @@ export function EditorSurface({
           <div className={styles.inspectorDock}>
             <WebInspector
               key={webSelection.selection?.node.id ?? "canvas"}
+              addressing={{
+                // W3.1: what this surface holds — the write adapter (W3.2)
+                // resolves events against exactly these three values.
+                artifactId: controller.activeArtifactId,
+                documentVersion: webSelection.document?.currentVersion ?? null,
+                selectionId: webSelection.selection?.node.id ?? null,
+              }}
               hydrated={webSelection.selection?.hydrated}
               layers={layerRows}
               onSelectLayer={(nodeId) =>
