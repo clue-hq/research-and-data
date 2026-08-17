@@ -118,8 +118,8 @@ export default async function ProjectChatPage({ params, searchParams }: ProjectC
 - Modify: `apps/frontend/src/app/(protected)/projects/[projectId]/page.tsx`
 - Modify: `apps/frontend/src/app/(protected)/projects/[projectId]/gallery/page.tsx`
 
-- [ ] **Step 1:** `[projectId]/page.tsx`: with `?thread=` → immediate server `redirect(projectChatHref(projectId, query.thread, { edit: query.edit, handoff: query.handoff, selection: query.selection, surface: query.surface }))` **before any fetch** (a redirect stub must not fetch). Threadless → keep today's body (fetch workspace, render `ProjectWorkspaceShell`); the Task R-3 canonicalization then rewrites the URL to `/chats/{resolved}` client-side (R1's threadless semantics).
-- [ ] **Step 2:** `gallery/page.tsx` becomes compat-only:
+- [ ] **Step 1 (AMENDED — surface rides the absorber):** `[projectId]/page.tsx`: with `?thread=` → immediate server `redirect(projectChatHref(projectId, query.thread, { edit: query.edit, handoff: query.handoff, selection: query.selection, surface: query.surface }))` **before any fetch** (a redirect stub must not fetch). Threadless → keep today's body (fetch workspace, render `ProjectWorkspaceShell`) **and additionally map `query.surface === "gallery"` → `focusPane: "artifacts"`** so the pre-canonicalization render is already gallery-focused; the Task R-3 canonicalization then rewrites the URL to `/chats/{resolved}` client-side **carrying the full query — including `surface=gallery` — through `threadRouteHref`** (R1's threadless semantics; verified: `replaceThreadInRoute` builds from `routeQuery`).
+- [ ] **Step 2 (AMENDED 2026-08-17, founder gap-catch — threadless gallery keeps its Gallery intent):** The original threadless redirect (`→ /projects/{id}` bare) LOST the gallery intent: canonicalization would land the user in chat, not the gallery — the unresolved half of ruling R3. Resolution (founder-proposed): carry the intent as pane state through the absorber chain — `/projects/{id}/gallery` → `/projects/{id}?surface=gallery` → (canonicalization) → `/chats/{default}?surface=gallery`. Only the URL changes; the user still lands in the Gallery.
 
 ```tsx
 import { redirect } from "next/navigation";
@@ -133,7 +133,7 @@ interface ProjectGalleryPageProps {
 export default async function ProjectGalleryPage({ params, searchParams }: ProjectGalleryPageProps) {
   const [{ projectId }, query] = await Promise.all([params, searchParams]);
   if (query.thread) redirect(projectChatHref(projectId, query.thread, { surface: "gallery" }));
-  redirect(`/projects/${encodeURIComponent(projectId)}`);
+  redirect(`/projects/${encodeURIComponent(projectId)}?surface=gallery`);
 }
 ```
 
