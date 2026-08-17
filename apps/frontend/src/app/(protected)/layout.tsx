@@ -1,10 +1,5 @@
 import { getProtectedSessionResult } from "@/features/session/data/session-dal";
-import { SessionControls } from "@/features/session/components/session-controls";
 import { ProtectedSessionRecoveryScreen } from "@/features/session/components/protected-session-recovery";
-import {
-  clearWorkspaceSelection,
-  selectWorkspace,
-} from "@/features/session/data/session-actions";
 import { resolveChatTransport } from "@/features/projects/data/chat-api";
 import { ProjectsTransportProvider } from "@/features/projects/data/projects-transport";
 import { ProjectApplicationShell } from "@/components/shell/application-shell";
@@ -29,13 +24,10 @@ export default async function ProtectedLayout({
       currentWorkspaceId={session?.principal.workspace_id ?? null}
       transport={transport}
     >
-      {session ? (
-        <SessionControls
-          onWorkspaceChange={selectWorkspace}
-          onClearWorkspace={clearWorkspaceSelection}
-          session={session}
-        />
-      ) : null}
+      {/* The dev-era SessionControls overlay (workspace UUID switcher + Sign out,
+          top-right) is permanently removed — founder order 2026-08-18, superseding
+          the R8 leave-as-is ruling. Workspace switching lives at /select-workspace;
+          sign-out at /sign-out. */}
       <ProjectApplicationShell>{children}</ProjectApplicationShell>
     </ProjectsTransportProvider>
   );
