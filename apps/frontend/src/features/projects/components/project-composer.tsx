@@ -37,6 +37,7 @@ export function ProjectComposer({
   selectedEntities = [],
   selectedEntityIds = [],
   selectedModel,
+  variant = "default",
 }: {
   attachments?: ProjectComposerAttachmentData[];
   disabled?: boolean;
@@ -56,6 +57,9 @@ export function ProjectComposer({
   selectedEntities?: ProjectEntity[];
   selectedEntityIds?: string[];
   selectedModel?: ProjectModelOption;
+  // Presentation-only (C-4, from the design's chat-composer): "home" widens
+  // and repositions the pickers for the Home composer card.
+  variant?: "default" | "home";
 }) {
   const editorRef = useRef<ProjectComposerEditorHandle>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -95,6 +99,7 @@ export function ProjectComposer({
       className={[
         styles.composer,
         attachments.length ? styles.composerWithAttachments : "",
+        variant === "home" ? styles.composerHome : "",
       ]
         .filter(Boolean)
         .join(" ")}

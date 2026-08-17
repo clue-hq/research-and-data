@@ -3621,3 +3621,50 @@
 .generationStep[data-tone="partial"] strong {
   color: var(--clue-text-warning, #b54708);
 }
+
+/* Home composer variant (C-4) — the .composerHome scope class, copied
+   verbatim from the design's chat-composer.module.css: repositions and
+   widens the model/entity pickers for the Home composer card. */
+.composerHome .modelPicker {
+  top: 22px;
+  bottom: auto;
+  width: 191px;
+  border-radius: 4px;
+  padding: 0;
+  box-shadow: var(--clue-ds-shadow-card-subtle);
+}
+
+.composerHome .entityPicker {
+  top: auto;
+  bottom: calc(100% + 10px);
+  left: 0;
+  width: 320px;
+  max-height: 330px;
+  border-radius: 4px;
+  padding: 6px;
+  box-shadow: 0 1px 3px rgb(15 23 42 / 10%);
+}
+
+.composerHome .entityPicker .pickerSearch {
+  display: none;
+}
+
+.composerHome .entityLogo {
+  width: 12px;
+  height: 12px;
+}
+
+.composerHome .pickerLabel {
+  display: flex;
+  height: 32px;
+  align-items: center;
+  margin: 0;
+  padding: 8px 6px;
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.composerHome .entityOption {
+  min-height: 48px;
+  padding: 6px;
+}
