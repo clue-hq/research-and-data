@@ -24,6 +24,17 @@ export function clueApiBaseUrl(): string {
   return configured.replace(/\/+$/, "");
 }
 
+/** The design (lumen) API origin — server-side only, reached via /api/clue/design. */
+export function lumenApiBaseUrl(): string {
+  const configured = process.env.LUMEN_API_BASE_URL?.trim();
+  if (!configured) {
+    throw new ClueConfigurationError(
+      "LUMEN_API_BASE_URL is required to proxy the design API",
+    );
+  }
+  return configured.replace(/\/+$/, "");
+}
+
 /** The canonical browser origin allowed to perform authenticated BFF mutations. */
 export function clueAppOrigin(): string {
   const configured = process.env.CLUE_APP_ORIGIN?.trim();
