@@ -4,6 +4,10 @@
   width: 100%;
   min-width: 0;
   min-height: 0;
+  /* Founder order 2026-08-18 (deviation from the lifted source, which sizes
+     to content): stretch to fill the artifact stage so the empty state
+     occupies and centers in the whole preview pane. */
+  flex: 1 1 auto;
   grid-template-rows: 36px 54px minmax(0, 1fr);
   overflow: auto;
   background: var(--clue-ds-color-bg-subtle, #fff);
@@ -165,7 +169,12 @@
   position: absolute;
   z-index: 50;
   top: calc(100% + 6px);
-  right: 0;
+  /* Founder order 2026-08-18 (deviation from the lifted source's right: 0):
+     these menus anchor to buttons on the toolbar's LEFT cluster; right-aligned
+     they grow leftward past the artifact rail's edge and are clipped by the
+     workspace's overflow in the split view. Left-anchored they open into the
+     pane, which always has the room. */
+  left: 0;
   border: 0.5px solid var(--clue-ds-color-border-neutral, #c8cdd6);
   border-radius: 6px;
   background: #fff;
