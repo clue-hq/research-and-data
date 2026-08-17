@@ -42,11 +42,19 @@ import styles from "./chat-shell.module.css";
 // back to a single column — the class stays purely an opacity lever here.
 
 export function EditorSurface({
+  documentIds,
   initial,
 }: {
+  /** W2.1: artifact id → design-document id, from the page's W1.3 read-seam
+   * fetch. The active artifact's entry mounts the real web render; artifacts
+   * without one keep the dummy's empty canvas. */
+  documentIds?: Record<string, string>;
   initial?: EditorShellInitialState;
 }) {
   const controller = useEditorShellController(initial);
+  const activeDocumentId = controller.activeArtifactId
+    ? (documentIds?.[controller.activeArtifactId] ?? null)
+    : null;
 
   return (
     <main
@@ -60,6 +68,7 @@ export function EditorSurface({
     >
       <ArtifactStage
         activeArtifactId={controller.activeArtifactId}
+        activeDocumentId={activeDocumentId}
         artifacts={[]}
         artifactKind={controller.artifactKind}
         artifactMaximized={controller.artifactMaximized}

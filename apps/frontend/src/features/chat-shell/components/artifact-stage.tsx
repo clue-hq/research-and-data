@@ -2,6 +2,7 @@ import type {
   ChatShellArtifactKind,
   ChatShellOpenArtifact,
 } from "../model/chat-shell";
+import { WebArtifactCanvas } from "@/features/design-editor/components/web-artifact-canvas";
 import { ProjectGallery } from "@/features/gallery/components/project-gallery";
 import type { GalleryArtifact } from "@/features/gallery/model/project-gallery";
 import type { ProjectArtifact } from "@/features/projects/model/project-workspace";
@@ -18,6 +19,7 @@ import styles from "./chat-shell.module.css";
 
 export function ArtifactStage({
   activeArtifactId,
+  activeDocumentId,
   artifacts,
   artifactKind,
   artifactMaximized,
@@ -37,6 +39,10 @@ export function ArtifactStage({
   surface,
 }: {
   activeArtifactId: string | null;
+  /** W2.1: the active artifact's design-document id (the W1.3 read seam).
+   * Present → the web canvas mounts the real sandboxed render; absent → the
+   * dummy's empty canvas (geometry stable). */
+  activeDocumentId?: string | null;
   artifacts: ProjectArtifact[];
   artifactKind: ChatShellArtifactKind | null;
   artifactMaximized: boolean;
@@ -82,10 +88,23 @@ export function ArtifactStage({
             title={artifactTitle}
           />
           <div className={`${styles.outputStage} ${artifactKind === "ad" ? styles.imageOutputStage : styles.webOutputStage}`}>
-            <div
-              aria-label={artifactKind === "web" ? "Empty web output canvas" : "Empty ad output canvas"}
-              className={artifactKind === "web" ? styles.webCanvas : styles.imageCanvas}
-            />
+            {artifactKind === "web" ? (
+              <div
+                aria-label={
+                  activeDocumentId ? "Web output canvas" : "Empty web output canvas"
+                }
+                className={styles.webCanvas}
+              >
+                {activeDocumentId ? (
+                  <WebArtifactCanvas documentId={activeDocumentId} />
+                ) : null}
+              </div>
+            ) : (
+              <div
+                aria-label="Empty ad output canvas"
+                className={styles.imageCanvas}
+              />
+            )}
           </div>
         </>
       ) : (

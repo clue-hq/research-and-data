@@ -9,11 +9,15 @@
  * source modules except the added leading config").
  *
  * Platform contract:
- * - `apiBaseUrl` is the authenticated BFF prefix (`"/api/clue/design"`),
- *   NEVER a FastAPI origin. The design API is workspace-header-auth only and
- *   must not be reachable from browsers; the BFF (W1.2) stamps
- *   `X-Workspace-Id` server-side from the session. Browser requests are
- *   same-origin, so session cookies ride along automatically.
+ * - Browser callers reach the design API ONLY through the authenticated BFF
+ *   (`/api/clue/design`, W1.2), which stamps `X-Workspace-Id` server-side
+ *   from the session — never a FastAPI origin. W2.1 correction to the
+ *   original sketch here: the engine builds URLs with `new URL(path,
+ *   apiBaseUrl)`, so `apiBaseUrl` must be an ORIGIN (a path-prefix base
+ *   throws, and URL resolution would drop the prefix anyway). The working
+ *   form is `data/design-bff.ts`'s `designBffConfig()`: `apiBaseUrl` = the
+ *   page origin plus a `fetchImpl` that re-mounts every engine URL under the
+ *   same-origin BFF prefix (session cookies ride along automatically).
  * - `fetchImpl` exists for tests and server-side callers. In the browser the
  *   default wrapper below is used; it adds NO headers (the workspace header
  *   in the browser was the dev-harness pattern this extraction retires).

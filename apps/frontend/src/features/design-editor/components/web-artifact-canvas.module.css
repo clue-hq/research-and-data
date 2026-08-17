@@ -1,0 +1,41 @@
+/*
+ * W2.1: the real render inside the dummy's flush .webCanvas viewport.
+ *
+ * The iframe fills the canvas; the rendered page document scrolls inside it
+ * (the backend owns the page document inside the stable viewport). The
+ * chat-shell custom properties (--chat-shell-*) cascade in by DOM inheritance
+ * from .artifactWorkspace, so they resolve here despite the separate module.
+ *
+ * WebEditorApp's own loading/error/empty pills belong to the retired dev
+ * shell's global stylesheet (not lifted); these state frames keep its
+ * semantics with token-driven neutral text.
+ */
+
+.frame {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+
+.stateFrame {
+  display: grid;
+  place-content: center;
+  gap: 4px;
+  width: 100%;
+  height: 100%;
+  text-align: center;
+}
+
+.stateTitle {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--chat-shell-content);
+}
+
+.stateHint {
+  margin: 0;
+  font-size: 13px;
+  color: var(--chat-shell-subtle);
+}
