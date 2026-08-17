@@ -12,7 +12,9 @@
   "scripts": {
     "assets:sync": "node scripts/sync-brand-assets.mjs",
     "design-system:build": "npm run build --workspace @clue/design-system",
+    "predev": "node scripts/copy-design-vendor.mjs",
     "dev": "next dev --hostname localhost",
+    "prebuild": "node scripts/copy-design-vendor.mjs",
     "build": "next build --webpack",
     "start": "next start",
     "test": "find src -name '*.test.ts' -print0 | xargs -0 tsx --test",
@@ -27,6 +29,7 @@
     "@iconify-json/simple-icons": "^1.2.92",
     "@lobehub/icons-static-svg": "^1.94.0",
     "@radix-ui/react-use-controllable-state": "^1.2.6",
+    "@tailwindcss/browser": "^4.3.3",
     "ai": "^7.0.48",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
