@@ -10,8 +10,10 @@
  *
  * Still NOT lifted, because they are dead in both trees: the editor-toolbar
  * blocks (.imageEditorToolbar, .editorToolButton, .editorToolButtonActive,
- * .editorToolGroup and their @container query), .smallIconButton, and the
- * single .artifactTab rule. Shared rules whose source selector list mixed
+ * .editorToolGroup and their @container query), .smallIconButton, the
+ * single .artifactTab rule, and .chatTitleButton* (defined-but-unreferenced
+ * upstream too; dropped by the C-5 audit — the header title is the
+ * .chatTitleLabel span + .chatTitleRenameInput pair). Shared rules whose source selector list mixed
  * those dead selectors with live ones stay narrowed to the live selectors
  * (button reset, icon-button base/hover/active); no rule is duplicated.
  *
@@ -111,7 +113,6 @@
   align-items: center;
 }
 
-.chatTitleButton,
 .chatSessionMenuButton,
 .iconButton,
 .galleryTab,
@@ -144,40 +145,10 @@
   font: inherit;
 }
 
-.chatTitleButton {
-  display: flex;
-  align-items: center;
-  min-width: 0;
-  max-width: 100%;
-  gap: 4px;
-  padding: 4px 12px;
-  overflow: hidden;
-  border-radius: 4px;
-  background: transparent;
-  font-size: 14px;
-  font-weight: 500;
-  line-height: 20px;
-  transition: background var(--clue-ds-product-motion-duration-fast) ease;
-}
-
-.chatTitleButton:hover,
 .iconButton:hover,
 .deviceButton:hover,
 .zoomButton:hover {
   background: var(--clue-ds-color-bg-neutral-hover);
-}
-
-.chatTitleButtonActive,
-.chatTitleButton:focus-visible {
-  background: var(--clue-ds-color-bg-neutral-hover);
-  outline: none;
-}
-
-.chatTitleButton span {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .chatTitleLabel {
@@ -1616,20 +1587,11 @@
   background: var(--clue-ds-color-components-button-bg-brand-hover);
 }
 
-.outputStage,
-.galleryEmptyStage {
+.outputStage {
   flex: 1 1 auto;
   height: auto;
   min-height: 0;
   overflow: auto;
-}
-
-.galleryEmptyStage {
-  display: grid;
-  flex: 1 1 auto;
-  height: auto;
-  place-items: center;
-  background: var(--chat-shell-page);
 }
 
 .imageOutputStage {

@@ -109,6 +109,63 @@ unified-gate head pin), zero new.
 Backend flip note for other branches: thread_href in chat/schemas.py is the single emitter;
 merging branches must not reintroduce inline href builds.
 
+## PHASE C COMPLETE — close-out 2026-08-17
+
+All five tasks landed on this branch (02bd485c C-1 CSS restore + de668a88 editor-surface
+grid pin, 499a6028 C-2 header/session-menu, 9d6702b1 C-3 chat surface, 1233d1b1 C-4 home
+variant, C-5 audit+close-out). **The chats route renders the co-founder's chat shell around
+production chat**: main.shell geometry (chat pane: ChatShellHeader + conversationStage +
+composerDock; artifact rail: ArtifactStage), our transcript/gates/queue-Stop/refusal
+alerts/composer slotted in with wiring untouched, rename/archive wired to the real
+controller, Delete rendered-but-inert (R5, no aria-live), no in-shell thread switcher (R4),
+no embedded ApplicationShell (R7), R6 inspector-replaces-conversation implemented as
+designed. ?surface=/edit=/selection= read once at mount (no URL write-back — known
+deferral matching the dummy).
+
+Load-bearing implementation rulings (full trail in .superpowers/sdd ledger, distilled here):
+(1) **ProjectApplicationShell now mounts /projects/* rail+pinned-expanded** except
+/projects/{id}/artifacts/* (overlay/collapsed, W0.4-verified) — the dummy's as-built chat
+mount, and required: R4 makes the sidebar the ONLY thread switcher and the old in-page
+trigger died with ProjectWorkspaceView. (2) ConversationPane, ProjectWorkspaceView,
+ArtifactWorkspace **deleted** (orphaned by the view-layer swap; old ArtifactWorkspace was a
+hardcoded empty state, so surface=gallery → the lifted gallery loses nothing). (3) The
+editor-shell reducer gained the panelOpen pair (default true → artifact route untouched);
+editorVisible additionally requires a non-null artifactKind so ?surface=web&edit=1 with no
+artifacts collapses to conversation, never an empty chatBody. (4) ChatShellHeader carries a
+required onArchive (the produces-line omitted it; R5 requires Archive wired). (5) C-5 audit
+removed the dead lifts C-1 Step-2 deferred: .chatTitleButton* family (unreferenced in BOTH
+trees; title = chatTitleLabel span + rename input) and the two W0.5-restored
+.galleryEmptyStage blocks (the lifted gallery renders its own empty state). Coverage now:
+every styles.* ref resolves except inspectorSectionCompact (documented upstream defect);
+zero unreferenced classes.
+
+Verification: parity pairs in /tmp/phase-c-parity/ (chat empty + transcript, session menu,
+rename-in-place, gallery surface, maximized, vs 3080); reduced-motion emulated live
+(transition-duration 0s on .shell/.composerFrame); production behaviors all proven on the
+new surface (send, gate card + actions, rename round-trip, archive path, Delete no-op,
+handoff chip restore from seeded sessionStorage, legacy-redirect chains). Gates 353/353 +
+lint + design-system:build + build. **Upstream re-sync: zero drift** — codex/chat-shell tip
+still c7f2bc5, the exact commit every lift came from.
+
+Known-open (deliberate):
+- **R6 deferral**: while editing, the inspector replaces the conversation (running turn's
+  gate/Stop invisible mid-edit) — founder personally revisits during design-editor
+  integration. Implemented as designed; do not soften without that ruling.
+- **Artifact tabs legitimately empty until W1.3**: workspace.artifacts is z.tuple([]) — the
+  rail shows only the Gallery tab and the gallery its designed empty state. No fabrication.
+- **Sidebar label after rename**: the header title updates via loadThreads; the sidebar's
+  conversation label is the separate sidebar-projects source and stays stale in fixture
+  mode (production invalidation is its own seam). Pre-existing shape, not Phase-C.
+- **Sidebar "New chat" doesn't navigate in fixture mode** (observed during C-5): the
+  untouched use-sidebar-projects-controller createConversation path clicks, creates, but no
+  route change and no console error; not a Phase-C surface (zero Phase-C files in the
+  path). Needs its own triage — likely a fixture project-id mismatch between
+  sidebar-projects and chat-threads fixtures.
+
+**Next:** the W-lane hydrates the ?surface=web|ad split view (W1.3 read seam feeds the tabs
+and gallery); Lane 3 accounts parity runs independently; the R2/R4-R7 rulings and the
+supersession notes stay binding for both.
+
 ## Plan (agreed shape, pending founder go)
 Phase R (me, ~2d): route slice — helper lift, /chats/[chatId] route rendering OUR
 ProjectWorkspaceShell, /projects/{id} absorber redirect, emitter/reader flips, backend href flip,
