@@ -348,6 +348,36 @@ controllers; editor-surface supplies `{activeArtifactId, selection.node.id,
 document.currentVersion}` (the W3.2 `base_version` source). 3 unit tests drive the exported
 dispatcher against a captured window (no renderer needed). Gates 490/490, lint clean, build ✓.
 
+## W3.2 done — commits `e19b8427` (adapter) + `4fc9f414` (wiring). **The platform writes through the engine.**
+
+- `adapter/apply.ts` (13 TDD tests, harvested fixtures): §1 inverse maps — fontSize→ramp
+  (out-of-ramp null), fontWeight, tokenTextColor (R2 tokens only; hex null), textAlign,
+  padding.x/y→nearest SPACING_STEP (R3), textStyle→set_node_props text variant WITH content
+  resent (props replace wholesale!), lineSpacing→leading. Unmapped → null.
+- `use-web-manual-edits.ts` = verbatim port (designBffConfig; passive-effect refs). 409 →
+  "Document moved on — reloaded." + quiet reload; 422 → first diagnostic inline; one
+  in-flight (busyRef). **Undo/redo already in the port — W3.4 just binds the menu.**
+- `use-inspector-writes.ts`: window listener on clue:inspector-property-change; W3.1 null
+  contract enforced; page resolved by node membership; intent "inspector: <property>".
+- Reload: write success → reloadNonce++ → doc refetch (fresh base_version) + canvas keyed
+  remount (bridge nonce rotates); inspector key = node.id + currentVersion (re-hydration).
+- Text schema §2 deltas (cited in place): Style (25) + Line spacing (26) selects; vertical
+  alignment hidden (8); padding 2-axis with LOCAL DRAFT + blur/Enter commit (R3 — write path
+  never sees keystrokes); size 13 dropped (§6(5)); ColorControl `onTokenChange` label
+  emission (R2; hex stays visual-only). Note/error = one inline line under the header
+  (`.inspectorStatusNote/Error` in chat-shell CSS) — the pre-W3.3 FLOOR, founder gate owns more.
+- **Live-proven, persisted (doc v2→v5 in Postgres):** size 18→24 (text-2xl), theme Dark →
+  text-dark (slate-300 replaced), padding 7→px-6 (snap) via Enter. Full-reload persistence
+  verified. Gates 506/506, lint clean, build ✓. Servers stopped after.
+- **Verification gotchas recorded:** browse `$B fill` does NOT trigger React controlled-input
+  onChange in these custom inputs — use the native value setter + input event + keydown in one
+  `$B js`. srcdoc grep checks must anchor to the NODE (cta's px-6 false-positived a sub check).
+  The fixture embed 404s (`example.com/widget`) are benign external fetches.
+- **Known W4.3-adjacent gap (recorded):** the theme tab's option list is the dummy's fixture
+  palette (Primary/Secondary/Tertiary/Dark/Light/Subtle) — Dark/Light/Primary happen to be
+  real web theme tokens; Tertiary/Subtle/Secondary are not (a pick writes an unstyled class,
+  honest no-op visually). Real theme-token options need theme data — W4 color flow decision.
+
 ## Next
 
 - **W2** (read path): W2.1 real render in the artifact stage (sandboxed srcdoc iframe,
