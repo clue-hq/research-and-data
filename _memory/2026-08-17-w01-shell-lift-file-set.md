@@ -215,6 +215,30 @@ Quirk: browse `click @ref` on the tab-close button timed out under the share pop
 `aria-label` click works. Complex multi-statement `$B js` exprs return empty — use
 window-state two-step or simple exprs.
 
+## Phase R+C lane merged in — 2026-08-18, merge commit `92de3c14`
+
+Founder-ordered merge of `platform/comprehensive-account-contact-research` (missoula worktree)
+into this branch. That lane forked at `83e30893` (so it already carried all of W0 incl. the
+gallery) and added: Phase C chat chrome complete (`91c80755` — chats route renders the designed
+chat shell around production chat; old workspace artifacts pane DELETED), home composer C-4,
+chat header/session menu R5, artifact-route full-width fix under restored `.shellPanelOpen`
+grid (`de668a88`), dev session-controls overlay removal (`416ba297`), gallery rail CSS fix
+(`f093a22f`). Two conflicts resolved:
+1. `_memory/…w01-shell-lift-file-set.md` add/add → ours (superset; theirs was W0-era).
+2. `application-shell.tsx` — **their lane carried a pre-ruling overlay/collapsed carve-out for
+   the artifact route** (they never got `c1c413cd`); resolved to the dated founder ruling
+   2026-08-17 (rail pinned-expanded on ALL project routes) with Phase C's C-3 rationale folded
+   into the comment. If the founder ever wants the collapsed-editor presentation back, that is
+   a new ruling, not a resurrection.
+Post-merge fix `bcdd3827`: eslint now ignores `public/vendor/**` (the W1.4 vendored bundle was
+scanned → 355 warnings; lint is clean again). Gates: 466/466 tests, lint 0/0, build ✓.
+**Live-verified on the 3030 stack:** `/projects/{id}/gallery` → `/chats/{thread}?surface=gallery`
+(intent carried); threadless absorber canonicalizes to `/chats/{default}`; chats route shows
+designed chat chrome + the NEW gallery in the artifact rail (old "No artifacts yet" pane gone);
+artifact route unchanged (rail visible, workspace opacity 1, Gallery+artifact tabs).
+Browse-daemon note: session state does not survive daemon restarts — re-run the sign-in replay
+(email/password → 424242 → workspace click) when `goto` lands on /sign-in.
+
 ## Next
 
 - **W2** (read path): W2.1 real render in the artifact stage (sandboxed srcdoc iframe,
