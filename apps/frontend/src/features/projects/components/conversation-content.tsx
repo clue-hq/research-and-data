@@ -1,0 +1,129 @@
+"use client";
+
+import { useMemo } from "react";
+import type { ProjectChatController } from "../hooks/use-project-chat-controller";
+import type { ProjectWorkspace } from "../model/project-workspace";
+import { useTranscriptAutoScroll } from "../hooks/use-transcript-auto-scroll";
+import { useTurnInspector } from "../hooks/use-turn-inspector";
+import { ChatTranscript } from "./chat-transcript";
+import { ChatTurnInspector } from "./chat-turn-inspector";
+import styles from "./project-flow.module.css";
+
+/**
+ * The conversation content, extracted from the retired ConversationPane so
+ * the Phase C chat surface can slot it into the designed `.conversationStage`
+ * (C-3). Everything the pane rendered survives except two deliberate
+ * removals: the in-pane thread `<select>` + new-thread button (founder ruling
+ * R4, 2026-08-17 — the sidebar owns thread switching) and the composer,
+ * which moves to the design's composer dock.
+ *
+ * Three behaviours the fixture era did not have, and all three are
+ * contractual:
+ *
+ * - **the composer stays usable during detached work** (§3.5). Research runs
+ *   do not lock the thread, so the user keeps asking questions; a turn
+ *   submitted while another is executing is *visibly queued* rather than
+ *   silently dropped or raced.
+ * - **Stop acts on the active generation attempt only** (§3.5). It does not
+ *   roll back committed tool effects and does not suspend a detached run, and
+ *   the control says so by appearing only for the exactly-running turn.
+ * - **access refusals are a state** (Lane B contract §6), never an empty
+ *   transcript: a session that expired or a membership that changed says so.
+ */
+export function ConversationContent({
+  chat,
+  contextHandoffError,
+  projectId,
+  workspace,
+}: {
+  chat: ProjectChatController;
+  contextHandoffError: string | null;
+  projectId: string;
+  workspace: ProjectWorkspace;
+}) {
+  // The dev-lens turn inspector. Its own controller, not part of `chat`: it
+  // reads nothing the conversation needs and the conversation needs nothing
+  // from it, so a debugging affordance never joins the state machine that
+  // drives real turns. `available` is false in every deployment that did not
+  // register the routes, which is every production deployment.
+  const turnInspector = useTurnInspector({ projectId, threadId: chat.activeThreadId });
+  const activeUserMessageId = chat.transcript.reduce<string | null>(
+    (latest, message) => (message.role === "user" ? message.id : latest),
+    null,
+  );
+  const { transcriptScrollRef } = useTranscriptAutoScroll({
+    activeMessageRevision: activeUserMessageId,
+    revision: chat.transcript.reduce(
+      (total, message) => total + message.parts.length + (message.body ? 1 : 0),
+      chat.transcript.length,
+    ),
+  });
+
+  const partActions = useMemo(
+    () => ({
+      busy: chat.submitting,
+      gateFor: chat.gateFor,
+      onGateDecision: (
+        card: Parameters<ProjectChatController["answerGate"]>[0],
+        input: Parameters<ProjectChatController["answerGate"]>[1],
+      ) => {
+        void chat.answerGate(card, input);
+      },
+      onGateRecovery: (card: Parameters<ProjectChatController["recoverGate"]>[0]) => {
+        void chat.recoverGate(card);
+      },
+    }),
+    [chat],
+  );
+
+  return (
+    <>
+      {chat.access ? (
+        <p className={styles.messageText} role="alert">
+          {chat.access.message}
+        </p>
+      ) : null}
+      {chat.route ? (
+        <p className={styles.messageText} role="alert">
+          {chat.route.message}
+        </p>
+      ) : null}
+      {chat.error ? (
+        <p className={styles.messageText} role="alert">
+          {chat.error}
+        </p>
+      ) : null}
+      {contextHandoffError ? (
+        <p className={styles.messageText} role="alert">
+          {contextHandoffError}
+        </p>
+      ) : null}
+      <div className={styles.transcriptScroll} ref={transcriptScrollRef}>
+        <ChatTranscript
+          activeUserMessageId={activeUserMessageId}
+          actions={partActions}
+          contextEntities={workspace.entities}
+          gateAnswerForTurn={chat.gateAnswerForTurn}
+          messages={chat.transcript}
+          onInspectTurn={turnInspector.available ? turnInspector.open : undefined}
+        />
+      </div>
+      <ChatTurnInspector inspector={turnInspector} />
+
+      {chat.threadBusy ? (
+        <div className={styles.planApprovalActions}>
+          <span role="status">
+            {chat.runningTurn
+              ? "Working — new messages will queue behind this turn."
+              : "Queued — waiting for the current turn to start."}
+          </span>
+          {chat.runningTurn ? (
+            <button onClick={() => void chat.stopActiveTurn()} type="button">
+              Stop
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+    </>
+  );
+}

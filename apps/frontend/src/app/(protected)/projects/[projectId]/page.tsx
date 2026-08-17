@@ -47,8 +47,10 @@ export default async function ProjectPage({
   return (
     <ProjectWorkspaceShell
       initial={{
-        focusPane: query.surface === "gallery" ? "artifacts" : undefined,
+        edit: query.edit,
         handoffId: query.handoff,
+        selection: query.selection,
+        surface: query.surface,
       }}
       projectId={projectId}
       workspace={workspace}

@@ -22,7 +22,13 @@ export interface EditorShellInitialState {
   editing?: boolean;
   inspectorSelection?: ChatShellInspectorSelection;
   openArtifacts?: ChatShellOpenArtifact[];
+  // Phase C (C-3): the chats route mounts the rail closed by default and
+  // opens it from ?surface= pane state; the artifact route keeps the
+  // default-open panel (full-width editor). `surface` lets a surface=web|ad
+  // URL land on the artifact surface even before any artifact exists.
+  panelOpen?: boolean;
   projectId?: string;
+  surface?: EditorShellSurface;
 }
 
 export interface EditorShellState {
@@ -31,6 +37,7 @@ export interface EditorShellState {
   editing: boolean;
   inspectorSelection: ChatShellInspectorSelection;
   openArtifacts: ChatShellOpenArtifact[];
+  panelOpen: boolean;
   surface: EditorShellSurface;
 }
 
@@ -40,6 +47,7 @@ export type EditorShellAction =
   | { type: "open-gallery" }
   | { type: "close-artifact"; artifactId: string }
   | { type: "rename-artifact"; artifactId: string; title: string }
+  | { type: "toggle-panel" }
   | { type: "toggle-maximized" }
   | { type: "restore-maximized" }
   | { type: "set-editing"; editing: boolean }
@@ -56,7 +64,8 @@ export function createInitialEditorShellState(
     editing: Boolean(initial.editing),
     inspectorSelection: initial.inspectorSelection ?? "canvas",
     openArtifacts,
-    surface: activeArtifactId ? "artifact" : "gallery",
+    panelOpen: initial.panelOpen ?? true,
+    surface: initial.surface ?? (activeArtifactId ? "artifact" : "gallery"),
   };
 }
 
@@ -70,6 +79,7 @@ export function editorShellReducer(
         ...state,
         activeArtifactId: action.artifactId,
         inspectorSelection: "canvas",
+        panelOpen: true,
         surface: "artifact",
       };
     case "open-artifact":
@@ -83,10 +93,11 @@ export function editorShellReducer(
         )
           ? state.openArtifacts
           : [...state.openArtifacts, action.artifact],
+        panelOpen: true,
         surface: "artifact",
       };
     case "open-gallery":
-      return { ...state, editing: false, surface: "gallery" };
+      return { ...state, editing: false, panelOpen: true, surface: "gallery" };
     case "close-artifact": {
       const closedIndex = state.openArtifacts.findIndex(
         (artifact) => artifact.id === action.artifactId,
@@ -119,6 +130,17 @@ export function editorShellReducer(
         ),
       };
     }
+    case "toggle-panel":
+      // Mirrors the source controller: opening from the conversation lands on
+      // the gallery; closing resets edit mode and the maximized stage.
+      return state.panelOpen
+        ? {
+            ...state,
+            artifactMaximized: false,
+            editing: false,
+            panelOpen: false,
+          }
+        : { ...state, editing: false, panelOpen: true, surface: "gallery" };
     case "toggle-maximized":
       return { ...state, artifactMaximized: !state.artifactMaximized };
     case "restore-maximized":
@@ -147,7 +169,9 @@ export interface EditorShellController {
   openArtifact: (artifact: ChatShellOpenArtifact) => void;
   openArtifacts: ChatShellOpenArtifact[];
   openGallery: () => void;
+  panelOpen: boolean;
   projectId?: string;
+  toggleArtifactPanel: () => void;
   selectInspectorElement: (selection: ChatShellInspectorSelection) => void;
   surface: EditorShellSurface;
   setArtifactTitleFor: (artifactId: string, title: string) => void;
@@ -187,6 +211,9 @@ export function useEditorShellController(
   const toggleArtifactMaximized = useCallback(() => {
     dispatch({ type: "toggle-maximized" });
   }, []);
+  const toggleArtifactPanel = useCallback(() => {
+    dispatch({ type: "toggle-panel" });
+  }, []);
   const setEditing = useCallback((editing: boolean) => {
     dispatch({ editing, type: "set-editing" });
   }, []);
@@ -224,12 +251,14 @@ export function useEditorShellController(
       openArtifact,
       openArtifacts: state.openArtifacts,
       openGallery,
+      panelOpen: state.panelOpen,
       projectId: initial.projectId,
       selectInspectorElement,
       setArtifactTitleFor,
       setEditing,
       surface: state.surface,
       toggleArtifactMaximized,
+      toggleArtifactPanel,
     }),
     [
       activateArtifact,
@@ -243,6 +272,7 @@ export function useEditorShellController(
       setEditing,
       state,
       toggleArtifactMaximized,
+      toggleArtifactPanel,
     ],
   );
 }

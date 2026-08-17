@@ -20,6 +20,7 @@ function stateWith(overrides: Partial<EditorShellState>): EditorShellState {
     editing: false,
     inspectorSelection: "canvas",
     openArtifacts: artifacts,
+    panelOpen: true,
     surface: "artifact",
     ...overrides,
   };
@@ -185,4 +186,60 @@ test("entering edit mode resets the inspector selection to canvas", () => {
   const done = editorShellReducer(selected, { editing: false, type: "set-editing" });
   assert.equal(done.editing, false);
   assert.equal(done.inspectorSelection, "section");
+});
+
+// --- Phase C (C-3): the panel pair the chats route needs -------------------
+
+test("panel state: initial defaults open; explicit panelOpen/surface respected", () => {
+  const dflt = createInitialEditorShellState({});
+  assert.equal(dflt.panelOpen, true);
+
+  const closed = createInitialEditorShellState({ panelOpen: false });
+  assert.equal(closed.panelOpen, false);
+
+  const forcedArtifact = createInitialEditorShellState({
+    panelOpen: true,
+    surface: "artifact",
+  });
+  assert.equal(forcedArtifact.surface, "artifact");
+  assert.equal(forcedArtifact.activeArtifactId, null);
+});
+
+test("toggle-panel from closed opens onto the gallery and leaves edit mode", () => {
+  const state = editorShellReducer(
+    stateWith({ editing: true, panelOpen: false, surface: "artifact" }),
+    { type: "toggle-panel" },
+  );
+  assert.equal(state.panelOpen, true);
+  assert.equal(state.surface, "gallery");
+  assert.equal(state.editing, false);
+});
+
+test("toggle-panel from open closes the rail and resets edit + maximize", () => {
+  const state = editorShellReducer(
+    stateWith({ artifactMaximized: true, editing: true, panelOpen: true }),
+    { type: "toggle-panel" },
+  );
+  assert.equal(state.panelOpen, false);
+  assert.equal(state.editing, false);
+  assert.equal(state.artifactMaximized, false);
+});
+
+test("opening an artifact, activating a tab, or opening the gallery reopens a closed panel", () => {
+  const viaOpen = editorShellReducer(stateWith({ panelOpen: false }), {
+    artifact: { id: "d", kind: "web", title: "New page" },
+    type: "open-artifact",
+  });
+  assert.equal(viaOpen.panelOpen, true);
+
+  const viaActivate = editorShellReducer(stateWith({ panelOpen: false }), {
+    artifactId: "a",
+    type: "activate-artifact",
+  });
+  assert.equal(viaActivate.panelOpen, true);
+
+  const viaGallery = editorShellReducer(stateWith({ panelOpen: false }), {
+    type: "open-gallery",
+  });
+  assert.equal(viaGallery.panelOpen, true);
 });

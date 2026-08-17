@@ -37,12 +37,20 @@ export function ProjectApplicationShell({
   const pathname = usePathname();
   const projectRoute = pathname === "/" || pathname.startsWith("/projects");
   if (!projectRoute) return children;
-  const projectWorkspace = pathname.startsWith("/projects/");
+  // Phase C (C-3): the chats route renders the designed chat shell, whose
+  // as-built mount in the dummy is the rail-mode, pinned-expanded sidebar —
+  // and with the in-pane thread switcher removed (ruling R4) the sidebar is
+  // the ONLY thread switcher, so it must stay reachable. Only the artifact
+  // editor route keeps the overlay/collapsed presentation (full-width
+  // editor, W0.4-verified).
+  const artifactEditorRoute = /^\/projects\/[^/]+\/artifacts(\/|$)/.test(
+    pathname,
+  );
   return (
     <ApplicationShell
       activeHref={pathname === "/" ? "/" : "/projects"}
-      desktopMode={projectWorkspace ? "overlay" : "rail"}
-      initialDesktopState={projectWorkspace ? "collapsed" : "pinned-expanded"}
+      desktopMode={artifactEditorRoute ? "overlay" : "rail"}
+      initialDesktopState={artifactEditorRoute ? "collapsed" : "pinned-expanded"}
     >
       {children}
     </ApplicationShell>

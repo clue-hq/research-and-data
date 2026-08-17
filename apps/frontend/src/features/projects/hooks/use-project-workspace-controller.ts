@@ -15,6 +15,13 @@ export interface ProjectWorkspaceInitialState {
   handoffId?: string;
   focusPane?: ProjectWorkspaceFocusPane;
   threadId?: string;
+  // Phase C (C-3): the ?surface=/edit=/selection= pane-state vocabulary
+  // (ruling R2), carried raw from the route and parsed by the chat surface.
+  // Read once at mount; deliberately NOT part of the remount key — pane
+  // state changes never tear down a live conversation.
+  edit?: string;
+  selection?: string;
+  surface?: string;
 }
 
 export type ProjectWorkspaceFocusPane =
