@@ -37,12 +37,17 @@ export function ProjectApplicationShell({
   const pathname = usePathname();
   const projectRoute = pathname === "/" || pathname.startsWith("/projects");
   if (!projectRoute) return children;
-  const projectWorkspace = pathname.startsWith("/projects/");
+  // Founder ruling 2026-08-17: the navigation rail stays visible on every
+  // project route — including the workspace, chats, and artifact/editor
+  // screens — matching the design build's persistent sidebar. This supersedes
+  // the earlier collapsed-overlay default for project workspaces (the
+  // 2026-08-10 state table remains for user-initiated collapse; only the
+  // default changed).
   return (
     <ApplicationShell
       activeHref={pathname === "/" ? "/" : "/projects"}
-      desktopMode={projectWorkspace ? "overlay" : "rail"}
-      initialDesktopState={projectWorkspace ? "collapsed" : "pinned-expanded"}
+      desktopMode="rail"
+      initialDesktopState="pinned-expanded"
     >
       {children}
     </ApplicationShell>
