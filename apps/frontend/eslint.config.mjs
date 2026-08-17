@@ -53,6 +53,9 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Generated vendor assets (scripts/copy-design-vendor.mjs) — third-party
+    // minified bundles, not lintable source.
+    "public/vendor/**",
   ]),
 ]);
 
