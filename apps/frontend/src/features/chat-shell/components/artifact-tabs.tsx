@@ -102,6 +102,7 @@ export function ArtifactTabs({
   activeArtifactId,
   artifactMaximized,
   artifacts,
+  galleryTabVisible = false,
   onActivateArtifact,
   onCloseArtifact,
   onOpenGallery,
@@ -113,9 +114,10 @@ export function ArtifactTabs({
   activeArtifactId: string | null;
   artifactMaximized: boolean;
   artifacts: ChatShellOpenArtifact[];
+  galleryTabVisible?: boolean;
   onActivateArtifact: (artifactId: string) => void;
   onCloseArtifact: (artifactId: string) => void;
-  onOpenGallery: () => void;
+  onOpenGallery?: () => void;
   onRenameArtifact: (artifactId: string, title: string) => void;
   onToggleMaximized: () => void;
   onTogglePanel: () => void;
@@ -150,19 +152,21 @@ export function ArtifactTabs({
         onKeyDown={handleTabListKeyDown}
         role="tablist"
       >
-        <div className={styles.galleryTabSegment}>
-          <button
-            aria-selected={surface === "gallery"}
-            className={`${styles.galleryTab} ${surface === "gallery" ? styles.galleryTabActive : ""}`}
-            onClick={onOpenGallery}
-            role="tab"
-            tabIndex={surface === "gallery" ? 0 : -1}
-            type="button"
-          >
-            <ChatShellIcon name="layout-grid" size={12} />
-            <span>Gallery</span>
-          </button>
-        </div>
+        {galleryTabVisible ? (
+          <div className={styles.galleryTabSegment}>
+            <button
+              aria-selected={surface === "gallery"}
+              className={`${styles.galleryTab} ${surface === "gallery" ? styles.galleryTabActive : ""}`}
+              onClick={onOpenGallery}
+              role="tab"
+              tabIndex={surface === "gallery" ? 0 : -1}
+              type="button"
+            >
+              <ChatShellIcon name="layout-grid" size={12} />
+              <span>Gallery</span>
+            </button>
+          </div>
+        ) : null}
         <div className={styles.artifactTabScroller}>
           {artifacts.map((artifact) => (
             <ArtifactTab
