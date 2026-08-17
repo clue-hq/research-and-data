@@ -243,7 +243,29 @@ Port `useWebManualEdits` semantics exactly: one in-flight mutation (`busy`), `ba
 
 Present the one-question options (per standing rule) before wiring any failure surface beyond the existing inline note. **STOP and ask; do not invent UI.**
 
-**Phase W3 exit gate:** text schema fully live per contract §1 rows 4–7 + §2 additions (variant, line-spacing); founder browser sign-off.
+### Task W3.4: Undo/redo wired to the engine (founder addition, 2026-08-18)
+
+Added by founder order once W3's writes were sequenced: live writes with a visibly inert
+Undo/Redo in the action menu reads as broken, not unbuilt — so the wiring ships with the first
+write flow. Everything below the UI already exists; this is wiring, not construction:
+
+- The dummy's artifact action menu ships **Undo ⌘Z / Redo ⇧⌘Z** (lifted W0.1, inert since).
+  Bind those two items — and their keyboard shortcuts — to the extracted engine's web
+  undo/redo call (`engine/webDocuments.ts` `path: "undo" | "redo"` →
+  `POST /documents/{id}/web/undo|redo` via the BFF).
+- `LoadedWebDocument.undoDepth`/`redoDepth` drive the two items' disabled states (the same
+  contract the source topbar used); refresh the document + re-render after a completed
+  undo/redo (the returned version is the new `base_version`).
+- Same edit discipline as W3.2: one in-flight mutation, quiet reload on 409.
+- No new UI anywhere — the menu items and shortcuts are the dummy's own.
+- Scope note: this is the *web editor document* undo stack (engine-owned, server-side). It is
+  NOT a general chrome/undo system; the chrome flows (versions, export, share) keep their own
+  future contracts.
+
+- [ ] Wire + disabled states; browser-verify: edit typography (W3.2), undo → change reverts and
+  persists reverted on reload, redo → reapplies; menu items disable at empty stacks. Commit.
+
+**Phase W3 exit gate:** text schema fully live per contract §1 rows 4–7 + §2 additions (variant, line-spacing); undo/redo live against real edits (W3.4); founder browser sign-off.
 
 ---
 

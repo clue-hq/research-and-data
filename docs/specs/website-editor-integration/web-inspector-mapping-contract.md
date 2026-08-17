@@ -109,6 +109,16 @@ Tracked, never silently dropped; each needs a UI slot decision when its turn com
 4. Item-16 adjunct: a `critical`/destructive button variant engine-side, if a campaign ever needs it.
 5. Failure-feedback surfaces (save-failure, version-refused, 409/422, publish-failure) — the four
    one-question founder decisions deferred to their implementation flows (42).
+6. **In-canvas node resizing** (added 2026-08-18, founder-ordered registration). Absent from the
+   42-item inventory because the dummy inspector has no resize control (the computed-layout card
+   was dropped by 31; drag handles exist only in the retired dev shell, which is not the parity
+   baseline) — so nothing here was silently dropped; it was never in scope. The substrate is
+   ready when its turn comes: the ported bridge listener already carries the `resize-node`
+   callback (in-frame handle resize → width/height px per axis), and the engine's width/height
+   facets exist. Entering scope requires a founder ruling on BOTH the capability and its
+   affordance (in-canvas handles vs an inspector field — the dummy offers neither today).
+   Companion note: node *moving* is NOT this item — it stays governed by ruling 29
+   (keyboard-only for now, §4) and the W4.10 audit.
 
 ## 8. Engine-side work authorized by this contract
 
