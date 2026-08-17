@@ -4,6 +4,7 @@ import { useCallback } from "react";
 import { useProjectChatController } from "../hooks/use-project-chat-controller";
 import {
   useProjectWorkspaceController,
+  workspaceRemountKey,
   type ProjectWorkspaceInitialState,
 } from "../hooks/use-project-workspace-controller";
 import { useProjectWorkspaceLoader } from "../hooks/use-project-workspace-loader";
@@ -43,7 +44,7 @@ export function ProjectWorkspaceShell({
   return (
     <LoadedProjectWorkspace
       initial={initial}
-      key={`${loaded.workspace.id}:${initial.threadId ?? ""}:${initial.handoffId ?? ""}`}
+      key={workspaceRemountKey(loaded.workspace.id, initial)}
       workspace={loaded.workspace}
     />
   );

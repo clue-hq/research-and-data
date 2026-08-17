@@ -22,6 +22,22 @@ export type ProjectWorkspaceFocusPane =
   | "conversation"
   | "split";
 
+/**
+ * The workspace remount key (Phase R, R-2/R-3 amendment).
+ *
+ * App Router preserves client-component state across dynamic-param navigation
+ * of the same route, and the chat controller seeds `activeThreadId` once —
+ * this key is therefore the ONLY mechanism that makes a URL-driven thread
+ * change take effect. It must include the thread identity; do not "simplify"
+ * it away (founder review, 2026-08-17).
+ */
+export function workspaceRemountKey(
+  workspaceId: string,
+  initial: ProjectWorkspaceInitialState,
+): string {
+  return `${workspaceId}:${initial.threadId ?? ""}:${initial.handoffId ?? ""}`;
+}
+
 export function initialWorkspaceFocusPane(
   artifactCount: number,
   requested?: ProjectWorkspaceFocusPane,

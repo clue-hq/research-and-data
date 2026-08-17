@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   ClueChatApiError,
   isAccessError,
@@ -38,6 +38,7 @@ import {
 import {
   deriveThreadStatus,
   threadLabel,
+  threadRouteHref,
   resolveProjectThreadRoute,
   type ChatThread,
   type ThreadStatus,
@@ -138,7 +139,6 @@ export function useProjectChatController({
   projectId: string;
   initialThreadId?: string;
 }): ProjectChatController {
-  const pathname = usePathname();
   const router = useRouter();
   const routeQuery = useSearchParams().toString();
   const repositories = useChatRepositories();
@@ -146,9 +146,10 @@ export function useProjectChatController({
   const { invalidate: invalidateProjectCatalog } =
     useProjectCatalogInvalidation();
   const [threads, setThreads] = useState<ChatThread[]>([]);
-  const [activeThreadId, setActiveThreadId] = useState<string | null>(
-    initialThreadId ?? null,
-  );
+  // Seeded once from the route and never mutated: every thread change is a
+  // navigation, and the workspace remount key reseeds a fresh controller
+  // (single-mechanism rule, Phase R).
+  const [activeThreadId] = useState<string | null>(initialThreadId ?? null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [turns, setTurns] = useState<ChatTurn[]>([]);
   const [turnStateOverrides, setTurnStateOverrides] = useState<
@@ -220,11 +221,13 @@ export function useProjectChatController({
 
   const replaceThreadInRoute = useCallback(
     (threadId: string) => {
-      const query = new URLSearchParams(routeQuery);
-      query.set("thread", threadId);
-      router.replace(`${pathname}?${query.toString()}`);
+      // Phase R (R10): canonicalization is a `replace`, never a `push` — a
+      // `push` would trap the back button on the pre-canonical URL. The path
+      // change flips the workspace remount key, which is the one and only
+      // URL→thread mechanism (see workspaceRemountKey).
+      router.replace(threadRouteHref(projectId, threadId, routeQuery));
     },
-    [pathname, routeQuery, router],
+    [projectId, routeQuery, router],
   );
 
   // --- reads ------------------------------------------------------------
@@ -331,8 +334,12 @@ export function useProjectChatController({
         }
         setRoute(null);
         if (resolution.canonicalize) {
-          setActiveThreadId(resolution.thread.id);
+          // Single-mechanism rule (Phase R): the path replace flips the
+          // workspace remount key; the fresh mount reseeds this controller
+          // and loads the conversation. Loading here too would do the work
+          // twice on an instance that is about to be torn down.
           replaceThreadInRoute(resolution.thread.id);
+          return;
         }
         await loadConversation(resolution.thread.id);
       } catch (failure) {
@@ -694,17 +701,17 @@ export function useProjectChatController({
     async (title?: string) => {
       try {
         const thread = await repositories.threads.create({ projectId, title });
-        await loadThreads();
-        setRoute(null);
-        setActiveThreadId(thread.id);
-        replaceThreadInRoute(thread.id);
+        // Single-mechanism rule (Phase R): navigating to the new thread's
+        // path flips the remount key; the fresh mount reloads the thread
+        // list and the (empty) conversation.
+        router.push(threadRouteHref(projectId, thread.id, routeQuery));
         return thread;
       } catch (failure) {
         report(failure);
         return null;
       }
     },
-    [loadThreads, projectId, replaceThreadInRoute, repositories, report],
+    [projectId, repositories, report, routeQuery, router],
   );
 
   const renameThread = useCallback(
@@ -833,26 +840,12 @@ export function useProjectChatController({
         });
         return;
       }
-      for (const handle of attachments.current.values()) handle.close();
-      attachments.current.clear();
-      attached.current.clear();
-      resetReattach.current.clear();
-      // Switching threads is a real switch: the previous conversation's
-      // projections do not belong to the next one.
-      setStream(emptyTranscriptState());
-      setMessages([]);
-      turnsRef.current = [];
-      setTurns([]);
-      setTurnStateOverrides(new Map());
-      setOptimistic([]);
-      setGateRead({ available: false, gates: [], reason: null });
-      setGateReadLoading(true);
-      setGateFailures(new Map());
-      setError(null);
-      setRoute(null);
-      setLoading(true);
-      setActiveThreadId(threadId);
-      replaceThreadInRoute(threadId);
+      // Single-mechanism rule (Phase R): a user-initiated switch is a
+      // navigation with history. The path push flips the workspace remount
+      // key, which tears this controller down (the unmount cleanup closes
+      // every stream attachment) and reseeds it from the new route. No
+      // internal teardown here — doing both would reload the thread twice.
+      router.push(threadRouteHref(projectId, threadId, routeQuery));
     },
     createThread,
     renameThread,
