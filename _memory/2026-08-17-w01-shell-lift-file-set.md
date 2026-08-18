@@ -539,6 +539,30 @@ FIRST) and `feature/w4-lane-c-richtext-components` (W4.8→W4.7; ports 3050/8050
 rebases after B, merges last). Lane A runs on the trunk workspace: W4.4→W4.5→W4.9→W4.6,
 then W4.10 audit after both merges, then W5. Lane A owns the trunk doc `doc_31126…`.
 
+## LANE A COMPLETE (2026-08-18): W4.4 → W4.5 → W4.9 → W4.6, all reviewed inline + browser-proven
+
+- **W4.4** container/section (`84d11eda`,`a7f1c9a6`,`a9b7e0ac` + fix `edef426b`): style
+  tokens via the theme popover (InspectorTokenControl grew the Theme-tab popover), display
+  segmented (20), section direction/gap/wrap with nearest-step gap (22, R3), Link-to hidden
+  (23), padding 4→2; §4 tag/anchor_id proven adapter-level + live API. Controller ruling:
+  absent flex-wrap hydrates truthful No (R3 pattern, section-scoped).
+- **W4.5** canvas background (`e81ad06d` + register `43bd049e`): page root IS a Container
+  (canvas schema selected by node id) so no adapter change; wiring live BUT **contract row 1
+  is unreachable end to end — render_page drops root.classes and renders only children (no
+  root selection path). PARKED as contract §7 item 7; needs a founder §8 amendment (small
+  lumen-web change) to enter scope.** Control stays visible-and-inert (dummy's own state).
+- **W4.9** visibility eye (`820f5d33`): pure `nextVisibilityMemory` (hide captures real
+  display; un-hide restores captured-else-clears, never guesses), session-ref scope, six
+  schema kinds sanctioned/§5 refused, lock inert (39); eye↔segmented interplay proven both
+  directions. Zero view diff (eye already emitted events).
+- **W4.6** icon layout-only (`3fab073b`): 18b trim — Icon panel = Layout(+padding 2-box)
+  + Layers ONLY; padding deliberately kind-unguarded (§5 serves unmapped kinds the same
+  Layout section — an icon allowlist would break §5); screenshot proof.
+Suite 593/593, lint clean throughout. Parked minors live in the SDD ledger
+(.superpowers/sdd/2026-08-17-website-editor-integration/progress.md). Trunk doc at ~v58.
+**Trunk next:** merge lane B first, rebase+merge lane C (founder runs both in their own
+worktrees), W4.10 keyboard audit on the union, W4 exit gate, W5.
+
 ## Next on THIS branch — W4 fan-out (awaiting founder lane ruling)
 
 W4.1 done (above). W4.2–W4.9 fan out per the W-plan (each schema task applies its own §2
