@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { VIEW_MODE_BASE_TAG, canvasSandbox, viewModeHtml } from "./view-mode-html";
+import {
+  VIEW_MODE_BASE_TAG,
+  VIEW_MODE_LINK_SCRIPT,
+  canvasSandbox,
+  viewModeHtml,
+  viewModeLinkAction,
+} from "./view-mode-html";
 
 // W4 addendum (founder rulings, 2026-08-19): the two pure decisions behind the
 // view-mode canvas — what the view document's html needs before it is mounted,
@@ -41,12 +47,16 @@ test("the base tag lands BEFORE the head's own content, so nothing in the head c
 
 test("everything else in the render is preserved byte for byte", () => {
   const html = viewModeHtml(RENDER);
-  assert.equal(html.replace(VIEW_MODE_BASE_TAG, ""), RENDER);
+  assert.equal(
+    html.replace(VIEW_MODE_BASE_TAG, "").replace(VIEW_MODE_LINK_SCRIPT, ""),
+    RENDER,
+  );
 });
 
-test("exactly one base tag is injected, however many heads the document mentions", () => {
+test("exactly one base tag and one link script are injected, however many heads the document mentions", () => {
   const html = viewModeHtml(RENDER);
   assert.equal(html.split(VIEW_MODE_BASE_TAG).length - 1, 1);
+  assert.equal(html.split(VIEW_MODE_LINK_SCRIPT).length - 1, 1);
 });
 
 // --- defensive: no head at all -----------------------------------------------
@@ -87,8 +97,98 @@ test("a nested custom-component srcdoc keeps its own escaped `<head>` untouched"
 
   const html = viewModeHtml(nested);
   assert.equal(html.split(VIEW_MODE_BASE_TAG).length - 1, 1);
+  assert.equal(html.split(VIEW_MODE_LINK_SCRIPT).length - 1, 1);
   assert.ok(html.includes("&lt;head&gt;&lt;script&gt;runtime()"));
   assert.ok(html.indexOf(VIEW_MODE_BASE_TAG) < html.indexOf("lumen-custom-component-frame"));
+});
+
+// --- the link classifier (founder ruling (a), 2026-08-19) ---------------------
+
+test("a `#fragment` href scrolls the preview in place", () => {
+  assert.equal(viewModeLinkAction("#pricing"), "scroll");
+});
+
+test("a bare `#` href scrolls too — it is the top-of-page link", () => {
+  assert.equal(viewModeLinkAction("#"), "scroll");
+});
+
+test("http and https hrefs open a new tab, the Figma-preview convention", () => {
+  assert.equal(viewModeLinkAction("https://example.com/pricing"), "new-tab");
+  assert.equal(viewModeLinkAction("http://example.com"), "new-tab");
+});
+
+test("`mailto:` and `tel:` hrefs open a new tab — they are real destinations", () => {
+  assert.equal(viewModeLinkAction("mailto:a@b.com"), "new-tab");
+  assert.equal(viewModeLinkAction("tel:+15551234567"), "new-tab");
+});
+
+test("a protocol-relative `//host/path` href opens a new tab", () => {
+  assert.equal(viewModeLinkAction("//cdn.example.com/x"), "new-tab");
+});
+
+test("a relative href is inert, because in the preview it would open an app-origin tab", () => {
+  assert.equal(viewModeLinkAction("/story"), "inert");
+  assert.equal(viewModeLinkAction("./page"), "inert");
+  assert.equal(viewModeLinkAction("page.html"), "inert");
+});
+
+test("an empty href is inert", () => {
+  assert.equal(viewModeLinkAction(""), "inert");
+});
+
+test("a `javascript:` href is inert whatever its casing", () => {
+  assert.equal(viewModeLinkAction("javascript:alert(1)"), "inert");
+  assert.equal(viewModeLinkAction("JavaScript:alert(1)"), "inert");
+});
+
+test("any scheme outside the allow-list is inert — the list is closed, not filtered", () => {
+  // Defence in depth: our own href grammar refuses these on the write path, but
+  // view mode renders whatever document the server hands back.
+  assert.equal(viewModeLinkAction("data:text/html,<b>x</b>"), "inert");
+  assert.equal(viewModeLinkAction("file:///etc/passwd"), "inert");
+  assert.equal(viewModeLinkAction("vbscript:msgbox(1)"), "inert");
+});
+
+test("surrounding whitespace does not change the verdict", () => {
+  assert.equal(viewModeLinkAction("  https://example.com  "), "new-tab");
+  assert.equal(viewModeLinkAction("\n#pricing\t"), "scroll");
+  assert.equal(viewModeLinkAction("   "), "inert");
+});
+
+// --- the link script injection -------------------------------------------------
+
+test("the link script lands immediately after the base tag, which stays first", () => {
+  const html = viewModeHtml(RENDER);
+  const base = html.indexOf(VIEW_MODE_BASE_TAG);
+  assert.equal(base + VIEW_MODE_BASE_TAG.length, html.indexOf(VIEW_MODE_LINK_SCRIPT));
+  assert.equal(html.indexOf("<head>") + "<head>".length, base);
+});
+
+test("the injected script embeds the classifier itself, so tested and shipped behaviour cannot drift", () => {
+  // The script is built from `viewModeLinkAction.toString()` — one
+  // implementation, and the tests above are tests OF the shipped code.
+  assert.ok(VIEW_MODE_LINK_SCRIPT.includes(viewModeLinkAction.toString()));
+  assert.ok(VIEW_MODE_LINK_SCRIPT.includes('"new-tab"'));
+  assert.ok(VIEW_MODE_LINK_SCRIPT.includes('closest("a[href]")'));
+});
+
+test("the script listens in the capture phase and is a single self-invoking `<script>`", () => {
+  assert.ok(VIEW_MODE_LINK_SCRIPT.startsWith("<script>"));
+  assert.ok(VIEW_MODE_LINK_SCRIPT.endsWith("</script>"));
+  assert.ok(VIEW_MODE_LINK_SCRIPT.includes('addEventListener("click"'));
+  // The `true` argument: capture, so a document that stops propagation on its
+  // own handlers cannot take the preview's link behaviour down with it.
+  assert.ok(/\}\s*,\s*true\s*\)/.test(VIEW_MODE_LINK_SCRIPT));
+  assert.equal(VIEW_MODE_LINK_SCRIPT.split("<script").length - 1, 1);
+});
+
+test("the script scrolls a fragment target and does nothing for a new-tab link", () => {
+  // The three actions, as the handler spends them: `scroll` prevents the
+  // default and calls scrollIntoView; `inert` prevents the default and stops;
+  // `new-tab` is deliberately absent from the handler — the base tag owns it.
+  assert.ok(VIEW_MODE_LINK_SCRIPT.includes("scrollIntoView"));
+  assert.ok(VIEW_MODE_LINK_SCRIPT.includes("getElementById"));
+  assert.ok(VIEW_MODE_LINK_SCRIPT.includes("preventDefault"));
 });
 
 // --- the sandbox decision -----------------------------------------------------
