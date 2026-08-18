@@ -27,6 +27,10 @@ This repository is the data and research subsystem for the larger AI-native ABM 
 The central architecture bet is that verification must be modeled at the claim/data layer. LLM research is a last-resort tier-4 source, not the foundation. The product should prefer empty, flagged fields over fabricated fields.
 
 ## Topic notes
+- `2026-08-19-slice-d-make-check-baseline.md` — the Slice-D exit-gate full `make check` failure
+  baseline: 68 failures A/B-proven byte-identical at the pre-lane-D base, decomposed into
+  ambient-env / dirty-shared-DB / test-ordering / pilot-posture / 14 genuine inherited debts with
+  exact signatures; lane D causes zero.
 - `2026-08-19-slice-d-d3-agent-role-inference.md` — D3 adds the governed account-agent committee
   role write-back, exact member/evidence authority, honest roleless coverage, immutable account
   catalog v2 promotion, verification, review corrections, and the Fable/browser limitations;
