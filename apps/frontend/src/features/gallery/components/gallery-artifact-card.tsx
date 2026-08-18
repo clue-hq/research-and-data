@@ -32,13 +32,17 @@ export function GalleryArtifactCard({
       type="button"
     >
       <span className={styles.artifactPreview}>
-        <Image
-          alt=""
-          fill
-          loading={preload ? "eager" : "lazy"}
-          sizes="(max-width: 780px) 50vw, 200px"
-          src={artifact.imagePath}
-        />
+        {/* A real design document has no thumbnail (ruling 2): the preview
+            frame renders empty rather than showing placeholder artwork. */}
+        {artifact.imagePath ? (
+          <Image
+            alt=""
+            fill
+            loading={preload ? "eager" : "lazy"}
+            sizes="(max-width: 780px) 50vw, 200px"
+            src={artifact.imagePath}
+          />
+        ) : null}
       </span>
       <span className={styles.artifactMeta}>
         <span className={styles.artifactType} data-type={artifact.collateralType}>
@@ -71,13 +75,15 @@ export function GalleryArtifactListRow({
     <button className={styles.listRow} onClick={() => onOpen(artifact)} type="button">
       <span className={styles.listNameCell}>
         <span className={styles.listThumbnail}>
-          <Image
-            alt=""
-            fill
-            loading={preload ? "eager" : "lazy"}
-            sizes="44px"
-            src={artifact.imagePath}
-          />
+          {artifact.imagePath ? (
+            <Image
+              alt=""
+              fill
+              loading={preload ? "eager" : "lazy"}
+              sizes="44px"
+              src={artifact.imagePath}
+            />
+          ) : null}
         </span>
         <span>
           <strong>{artifact.title}</strong>

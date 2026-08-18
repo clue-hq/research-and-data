@@ -35,9 +35,11 @@ export interface GalleryArtifact {
   createdAt: string;
   editedLabel: string;
   id: string;
-  imagePath: string;
+  /** Absent for a real design document — it has no thumbnail (ruling 2). */
+  imagePath?: string;
   lastViewedAt: string;
-  originRunId: string;
+  /** Absent for a leg-derived document — no generation run produced it. */
+  originRunId?: string;
   originThreadId: string;
   size: {
     category: GallerySizeCategory;

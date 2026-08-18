@@ -18,7 +18,9 @@ function ArtifactCard({
   return (
     <button className={styles.artifactCard} onClick={() => onOpen(artifact.id)} type="button">
       <span className={styles.artifactPreview}>
-        <Image alt="" fill loading="eager" sizes="360px" src={artifact.imagePath} />
+        {artifact.imagePath ? (
+          <Image alt="" fill loading="eager" sizes="360px" src={artifact.imagePath} />
+        ) : null}
       </span>
       <span className={styles.artifactCardMeta}>
         <span className={styles.artifactType} data-type={artifact.type}>
