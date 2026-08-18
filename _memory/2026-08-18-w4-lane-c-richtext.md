@@ -48,6 +48,20 @@ every launch (the trunk's twice-proven rule). Browse daemon: sign-in replay
 `424242` → workspace) — synthetic `dblclick` via `$B js` starts sessions; `$B press "Meta+z"`
 did NOT reach the W3.4 window shortcut (menu path works; recheck by hand).
 
+## W4.8a-retheme DONE — ruling 24 amended (founder, 2026-08-18 evening)
+
+Founder challenged the toolbar's out-of-theme look; chose **retheme, don't relocate** (the
+relocate-into-inspector option is noted in the ledger as the W4.8b-predicate pattern, not
+chosen for now). Contract §6 (24) carries the dated amendment: behavioral parity baseline
+stays the source editor; visual baseline is now the platform inspector. The CSS module was
+re-skinned onto `--clue-ds-*` tokens (:root-scoped — required, since the toolbar portals to
+body where the `--chat-shell-*` aliases don't reach) + the chat-shell inspector idioms;
+no tsx/logic change. Executed inline by the orchestrator (Opus pool session-limited until
+22:00 IST; one-CSS-module scope). Gates + live browser verification recorded in the ledger.
+Found & noted: `--chat-shell-card-shadow` / `--chat-shell-disabled` are referenced in
+chat-shell.module.css but defined nowhere — avoided here; a dummy-frontend quirk to flag
+at a doc/UX pass.
+
 ## Open / next
 
 - **Task 3 (W4.8b):** conditional Link-to in the text schema (contract item 3) — HELD at the
