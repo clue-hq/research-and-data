@@ -191,6 +191,84 @@ test("a hex background (the §3-inert custom tab) produces no operation", () => 
   assert.equal(v33Change("backgroundColor", "#00F59B", "fgrid"), null);
 });
 
+// ── container display segmented (row 20) ───────────────────────────────────
+
+test("layoutMode maps the segmented labels onto the display facet", () => {
+  const grid = v33Change("layoutMode", "Grid", "fgrid");
+  assert.ok(grid && grid.kind === "set_node_classes");
+  assert.ok(grid.classes.split(/\s+/).includes("grid"));
+  const flex = v33Change("layoutMode", "Flex", "fgrid");
+  assert.ok(flex && flex.kind === "set_node_classes");
+  assert.ok(flex.classes.split(/\s+/).includes("flex"));
+  assert.ok(!flex.classes.split(/\s+/).includes("grid"));
+  // The column count and every other family survive the display rewrite.
+  assert.ok(flex.classes.includes("grid-cols-3"));
+});
+
+test("layoutMode Hide writes the display facet's hidden value (row 40 shares it)", () => {
+  const op = v33Change("layoutMode", "Hide", "fgrid");
+  assert.ok(op && op.kind === "set_node_classes");
+  assert.ok(op.classes.split(/\s+/).includes("hidden"));
+});
+
+test("layoutMode outside the segmented vocabulary, or on a section, is refused", () => {
+  // block/inline-flex have no dummy slot (§6(5) omission, row 20).
+  assert.equal(v33Change("layoutMode", "block", "fgrid"), null);
+  // The section schema ships no Flex/Grid/Hide segmented control.
+  assert.equal(v33Change("layoutMode", "Grid", "hero"), null);
+});
+
+// ── section direction / gap / wrap (row 22) ────────────────────────────────
+
+test("direction maps the segmented value onto the flex-direction facet", () => {
+  // hero: "flex flex-col items-center gap-6 py-24 px-8 …"
+  const horizontal = v33Change("direction", "horizontal", "hero");
+  assert.ok(horizontal && horizontal.kind === "set_node_classes");
+  assert.ok(horizontal.classes.split(/\s+/).includes("flex-row"));
+  assert.ok(!horizontal.classes.split(/\s+/).includes("flex-col"));
+  // The `flex` display utility is a different family and survives.
+  assert.ok(horizontal.classes.split(/\s+/).includes("flex"));
+  const vertical = v33Change("direction", "vertical", "hero");
+  assert.ok(vertical && vertical.kind === "set_node_classes");
+  assert.ok(vertical.classes.split(/\s+/).includes("flex-col"));
+});
+
+test("gap snaps a typed value to the nearest enumerated step", () => {
+  const op = v33Change("gap", "7", "hero");
+  assert.ok(op && op.kind === "set_node_classes");
+  assert.ok(op.classes.split(/\s+/).includes("gap-6")); // 7 → nearest step 6
+  const exact = v33Change("gap", "12", "hero");
+  assert.ok(exact && exact.kind === "set_node_classes");
+  assert.ok(exact.classes.split(/\s+/).includes("gap-12"));
+  const above = v33Change("gap", "99", "hero");
+  assert.ok(above && above.kind === "set_node_classes");
+  assert.ok(above.classes.split(/\s+/).includes("gap-24")); // clamped to the top step
+});
+
+test("a non-numeric gap produces no operation", () => {
+  assert.equal(v33Change("gap", "wide", "hero"), null);
+});
+
+test("wrap maps the boolean onto the flex-wrap facet", () => {
+  const on = v33Change("wrap", true, "hero");
+  assert.ok(on && on.kind === "set_node_classes");
+  assert.ok(on.classes.split(/\s+/).includes("flex-wrap"));
+  const off = v33Change("wrap", false, "hero");
+  assert.ok(off && off.kind === "set_node_classes");
+  assert.ok(off.classes.split(/\s+/).includes("flex-nowrap"));
+  assert.ok(!off.classes.split(/\s+/).includes("flex-wrap"));
+  // flex-direction is its own family (`flex-col` survives a wrap write).
+  assert.ok(off.classes.split(/\s+/).includes("flex-col"));
+});
+
+test("direction/gap/wrap on a container are refused (row 21 is future work)", () => {
+  // The dummy gives these three to the SECTION schema only; container-level
+  // direction/gap/wrap is §7 item 1, with no UI slot decided.
+  assert.equal(v33Change("direction", "horizontal", "fgrid"), null);
+  assert.equal(v33Change("gap", "4", "fgrid"), null);
+  assert.equal(v33Change("wrap", true, "fgrid"), null);
+});
+
 // ── §4: the props-preservation guarantee (item 38) ─────────────────────────
 
 /** Every container/section style control this task wires. The §4 test runs the
@@ -199,6 +277,10 @@ test("a hex background (the §3-inert custom tab) produces no operation", () => 
 const SECTION_STYLE_EDITS: ReadonlyArray<[string, unknown]> = [
   ["tokenTextColor", "Primary"],
   ["tokenBackgroundColor", "Light"],
+  ["direction", "horizontal"],
+  ["gap", "8"],
+  ["wrap", true],
+  ["wrap", false],
   ["padding.x", "6"],
   ["padding.y", "10"],
 ];

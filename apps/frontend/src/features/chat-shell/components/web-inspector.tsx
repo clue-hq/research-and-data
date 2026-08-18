@@ -249,6 +249,39 @@ function PaddingXYControls({
   );
 }
 
+/** W4.4 (row 22 + R3): the section's Gap box. Same control the dummy ships —
+ * the gap icon and the input — but a typed value drafts locally and COMMITS on
+ * blur/Enter, so the write path sees one change, not one per keystroke (and
+ * the engine's nearest-step snap happens once). */
+function GapControl({
+  onCommit,
+  value,
+}: {
+  onCommit: (value: string) => void;
+  value: string;
+}) {
+  const [draft, setDraft] = useState(value);
+  const commit = () => {
+    if (draft !== value) onCommit(draft);
+  };
+  return (
+    <span
+      className={`${styles.inspectorControl} ${styles.inspectorInputControl}`}
+      onBlur={commit}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") commit();
+      }}
+    >
+      <InspectorIcon name="gap" size={16} />
+      <input
+        aria-label="Section gap"
+        onChange={(event) => setDraft(event.target.value)}
+        value={draft}
+      />
+    </span>
+  );
+}
+
 function PaddingControls({
   onChange,
   values,
@@ -863,7 +896,8 @@ function SectionControls({
           />
         </InspectorField>
         <InspectorField label="Gap">
-          <InspectorInput ariaLabel="Section gap" leading={<InspectorIcon name="gap" size={16} />} onChange={(value) => setValue("gap", value)} value={state.gap} />
+          {/* W4.4 (R3): free-text drafts locally, commits on blur/Enter. */}
+          <GapControl onCommit={(value) => setValue("gap", value)} value={state.gap} />
         </InspectorField>
         <InspectorField label="Wrap">
           <SegmentedControl
