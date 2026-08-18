@@ -344,6 +344,90 @@ test("radius writes apply to any node kind carrying the classes", () => {
   assert.equal(op.classes, "bg-accent text-dark px-4 py-2 rounded-md rounded-bl-[2px]");
 });
 
+// ── button style (row 16) ──────────────────────────────────────────────────
+
+test("buttonLabel maps each kept label onto the engine variant", () => {
+  // cta: link-form secondary "See the offer" @ https://example.com/offer —
+  // the label/href/new_tab ride along byte-exact (set_node_props replaces the
+  // props wholesale).
+  assert.deepEqual(changeImage("buttonLabel", "Primary", "cta"), {
+    id: "cta",
+    kind: "set_node_props",
+    page_id: PAGE_ID,
+    props: {
+      href: "https://example.com/offer",
+      kind: "button",
+      label: "See the offer",
+      new_tab: false,
+      variant: "primary",
+    },
+  });
+  const secondary = changeImage("buttonLabel", "Secondary", "cta");
+  assert.ok(secondary && secondary.kind === "set_node_props");
+  assert.deepEqual(secondary.props, {
+    href: "https://example.com/offer",
+    kind: "button",
+    label: "See the offer",
+    new_tab: false,
+    variant: "secondary",
+  });
+  const ghost = changeImage("buttonLabel", "Transparent", "cta");
+  assert.ok(ghost && ghost.kind === "set_node_props");
+  assert.deepEqual(ghost.props, {
+    href: "https://example.com/offer",
+    kind: "button",
+    label: "See the offer",
+    new_tab: false,
+    variant: "ghost",
+  });
+});
+
+test("Critical produces no operation (row 16: dropped from the options)", () => {
+  // §2 delta: no engine `critical` variant, so the label — like any other
+  // unmapped one — writes nothing rather than inventing a variant.
+  assert.equal(changeImage("buttonLabel", "Critical", "cta"), null);
+  assert.equal(changeImage("buttonLabel", "Outline", "cta"), null);
+  assert.equal(changeImage("buttonLabel", "", "cta"), null);
+});
+
+test("a variant change on a COMMAND button preserves its command form", () => {
+  const invoker: WebNode = {
+    ...imageNode("cta"),
+    command: "show_modal",
+    command_target: "dlg_pricing",
+    href: undefined,
+  };
+  const op = changeOn(invoker, "buttonLabel", "Primary");
+  assert.ok(op && op.kind === "set_node_props");
+  assert.deepEqual(op.props, {
+    command: "show_modal",
+    command_target: "dlg_pricing",
+    kind: "button",
+    label: "See the offer",
+    variant: "primary",
+  });
+});
+
+test("buttonLabel on a non-button node produces no operation", () => {
+  assert.equal(changeImage("buttonLabel", "Primary", "img_plain"), null);
+  assert.equal(change("buttonLabel", "Primary", "sub"), null);
+});
+
+// ── background color token (row 17, tokens only per R2) ────────────────────
+
+test("tokenBackgroundColor writes the lowercased token through bgColor", () => {
+  // cta: "bg-accent text-dark px-4 py-2 rounded-md" — only the bg- family is
+  // rewritten; every unrelated token survives byte-exact and in order.
+  const op = changeImage("tokenBackgroundColor", "Light", "cta");
+  assert.ok(op && op.kind === "set_node_classes");
+  assert.equal(op.classes, "text-dark px-4 py-2 rounded-md bg-light");
+});
+
+test("a hex background color produces no operation (tokens only, R2)", () => {
+  assert.equal(changeImage("tokenBackgroundColor", "#00F59B", "cta"), null);
+  assert.equal(changeImage("tokenBackgroundColor", "   ", "cta"), null);
+});
+
 // ── refusals ────────────────────────────────────────────────────────────────
 
 test("an unmapped property produces no operation", () => {

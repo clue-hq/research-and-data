@@ -24,6 +24,11 @@ import {
  * ruling R-B4), and the five radius fields (row 14, ruling R-B1 + founder
  * ruling F2). A props write always resends the node's FULL props, because
  * `set_node_props` replaces them wholesale.
+ *
+ * W4.3 (lane B) adds the button schema's writes: the Style select (row 16 —
+ * the `variant` prop, rebuilt through the engine's button-props builder so a
+ * command button stays a command button) and the background color token
+ * (row 17 — the `bgColor` facet, mirror of `tokenTextColor`).
  */
 
 /** §1 row 5 + §6(5): the select label → ramp value (inverse of hydrate's). */
@@ -77,6 +82,16 @@ const FILL_MODE_TO_OBJECT_FIT: Record<string, string> = {
   Fit: "contain",
   Fill: "cover",
   Stretch: "fill",
+};
+
+/** §1 row 16 (W4.3): the button style select's labels → the engine `variant`
+ * prop (inverse of hydrate's map). "Critical" is dropped from the options (§2
+ * delta) and has no engine value, so it — like the engine's own `outline`/
+ * `link` variants, which have no dummy slot — writes nothing. */
+const BUTTON_STYLE_TO_VARIANT: Record<string, string> = {
+  Primary: "primary",
+  Secondary: "secondary",
+  Transparent: "ghost",
 };
 
 /** §1 row 14 (W4.2): the five radius properties → their engine facet. Each
@@ -279,6 +294,42 @@ export function inspectorChangeToOperation(
         pageId,
         node.id,
         webClassFacets.textColor.set(classes, token),
+      );
+    }
+    case "tokenBackgroundColor": {
+      // Row 17 (R2: tokens only) — the mirror of `tokenTextColor`. No node-kind
+      // guard: a background-token write is a pure class rewrite valid on any
+      // node carrying classes (the button schema renders the chip today; the
+      // canvas/container schemas reuse the same property).
+      const token = value.trim().toLowerCase();
+      if (!token || token.startsWith("#")) return null;
+      return setNodeClassesOp(
+        pageId,
+        node.id,
+        webClassFacets.bgColor.set(classes, token),
+      );
+    }
+    case "buttonLabel": {
+      // Row 16: button only. `set_node_props` replaces the props wholesale, so
+      // the whole payload is rebuilt from the node through the engine builder —
+      // which keeps a COMMAND button in command form (command/command_target)
+      // and a link button in link form (href/new_tab), byte-identical apart
+      // from the variant. A button missing its label is refused rather than
+      // written with an invented one.
+      if (node.kind !== "button") return null;
+      const variant = BUTTON_STYLE_TO_VARIANT[value];
+      if (!variant || typeof node.label !== "string") return null;
+      return setNodePropsOp(
+        pageId,
+        node.id,
+        buildWebButtonProps({
+          action: webNodeButtonAction(node),
+          command_target: node.command_target ?? "",
+          href: node.href ?? "",
+          label: node.label,
+          new_tab: node.new_tab === true,
+          variant,
+        }),
       );
     }
     case "horizontalAlignment": {

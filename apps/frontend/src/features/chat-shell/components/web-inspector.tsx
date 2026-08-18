@@ -1,5 +1,6 @@
 "use client";
 
+import { Popover } from "@base-ui/react/popover";
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import type { WebLayerRow } from "@/features/design-editor/adapter/layers";
@@ -9,6 +10,7 @@ import {
 } from "@/features/design-editor/adapter/theme-options";
 import type { ChatShellInspectorSelection } from "../model/chat-shell";
 import { CHAT_SHELL_INSPECTOR_SELECTIONS } from "../model/chat-shell";
+import { resolveInspectorThemeColors } from "../model/inspector-theme-colors";
 import {
   useInspectorController,
   useInspectorLayerTree,
@@ -40,7 +42,10 @@ const LINE_SPACING_OPTIONS = ["none", "tight", "snug", "normal", "relaxed", "loo
 const FONT_WEIGHT_OPTIONS = ["Regular", "Medium", "Semi Bold", "Bold"] as const;
 // §2 delta (contract row 13): Tile is dropped — no engine object-fit value.
 const FILL_MODE_OPTIONS = ["Fit", "Fill", "Stretch"] as const;
-const BUTTON_STYLE_OPTIONS = ["Primary", "Secondary", "Transparent", "Critical"] as const;
+// §2 delta (contract row 16): Critical is dropped — no engine `critical`
+// variant. The engine's `outline`/`link` variants have no dummy slot, so a
+// node carrying one hydrates nothing and the select shows its default (§6(5)).
+const BUTTON_STYLE_OPTIONS = ["Primary", "Secondary", "Transparent"] as const;
 const ICON_OPTIONS = ["Apple"] as const;
 const ICON_SIZE_OPTIONS = ["Small", "Medium", "Large"] as const;
 const ICON_STROKE_OPTIONS = ["Default", "Thin", "Bold"] as const;
@@ -630,6 +635,80 @@ function TokenField({
   );
 }
 
+/** W4.3 (§1 row 17, ruling R-B6): the LIVE token color chip — the dummy's
+ * `TokenField` with its dead `token-picker:` action replaced by a real picker.
+ *
+ * The trigger is byte-visual with `InspectorTokenControl` (same classes, same
+ * two spans) but is the Popover's own trigger element; label and swatch now
+ * come from hydrated state (`tokenBackgroundColor`/`tokenTextColor`) resolved
+ * through the document theme, falling back to the dummy's hardcoded chip
+ * values when this theme has no such token.
+ *
+ * The popup is the SAME machinery as `ColorControl`'s Theme tabpanel (same
+ * @base-ui Popover, same positioner/popup/grid classes) minus the Theme/Custom
+ * tab strip and the custom picker: row 17 asks for a token list, and hex has
+ * no write path here (R2 — tokens only). Options are the F3-filtered document
+ * theme, or the dummy's fixture palette when no theme is mounted.
+ */
+function TokenColorField({
+  controller,
+  fallbackSwatch,
+  label,
+  property,
+}: {
+  controller: InspectorController;
+  /** The dummy's hardcoded chip swatch — shown when the theme lacks the
+   * hydrated token (the same posture as `themeColorForToken`'s callers). */
+  fallbackSwatch: string;
+  label: string;
+  property: "tokenBackgroundColor" | "tokenTextColor";
+}) {
+  const { setValue, state } = controller;
+  const options = resolveInspectorThemeColors(useThemeColors());
+  const token = state[property];
+  const swatch = themeColorForToken(options, token) ?? fallbackSwatch;
+  return (
+    <InspectorField label={label}>
+      <Popover.Root>
+        <Popover.Trigger
+          aria-label={`${label} ${token}`}
+          className={`${styles.inspectorControl} ${styles.inspectorTokenControl}`}
+        >
+          <span className={styles.inspectorTokenSwatch} style={{ background: swatch }} />
+          <span>{token}</span>
+        </Popover.Trigger>
+        <Popover.Portal>
+          <Popover.Positioner
+            align="start"
+            className={styles.inspectorColorPositioner}
+            side="right"
+            sideOffset={8}
+          >
+            <Popover.Popup className={styles.inspectorColorPopup}>
+              <div aria-label="Theme colors" className={styles.inspectorThemeColors} role="group">
+                {options.map((option) => (
+                  <button
+                    aria-label={`Use ${option.label} color ${option.value}`}
+                    aria-pressed={option.label.toLowerCase() === token.trim().toLowerCase()}
+                    className={styles.inspectorThemeColor}
+                    key={option.label}
+                    onClick={() => setValue(property, option.label)}
+                    type="button"
+                  >
+                    <span className={styles.inspectorThemeSwatch} style={{ background: option.value }} />
+                    <span>{option.label}</span>
+                    <span className={styles.inspectorThemeValue}>{option.value}</span>
+                  </button>
+                ))}
+              </div>
+            </Popover.Popup>
+          </Popover.Positioner>
+        </Popover.Portal>
+      </Popover.Root>
+    </InspectorField>
+  );
+}
+
 function LayoutSection({
   controller,
   paddingAxes = "four",
@@ -782,10 +861,14 @@ function ButtonControls({
         <InspectorField label="Label">
           <InspectorSelect label="Button style" onChange={(value) => setValue("buttonLabel", value)} options={BUTTON_STYLE_OPTIONS} value={state.buttonLabel} />
         </InspectorField>
-        <TokenField controller={controller} label="Background color" property="backgroundColor" swatch="#00F59B" value="Primary" />
-        <TokenField controller={controller} label="Text color" property="textColor" swatch="#FFFFFF" value="White" />
+        {/* Row 17 (ruling R-B6): the two chips are live token pickers now —
+            label + swatch from hydrated state, a pick writes the bg-/text-
+            facet through the apply adapter. */}
+        <TokenColorField controller={controller} fallbackSwatch="#00F59B" label="Background color" property="tokenBackgroundColor" />
+        <TokenColorField controller={controller} fallbackSwatch="#FFFFFF" label="Text color" property="tokenTextColor" />
       </Section>
-      <LayoutSection controller={controller} />
+      {/* R3: the button's padding boxes collapse to the two-axis form. */}
+      <LayoutSection controller={controller} paddingAxes="two" />
       {showLayers ? <Section id="layers" label="Layers" state={state} toggle={toggleSection}>
         <SchemaLayers fallback={<ButtonLayers onSelectionChange={onSelectionChange} tree={layerTree} />} />
       </Section> : null}
