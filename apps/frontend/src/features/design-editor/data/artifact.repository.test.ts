@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { ZodError } from "zod";
 import { DesignArtifactListItemSchema } from "../model/artifact";
 import {
   DesignArtifactError,
@@ -152,6 +153,36 @@ test("the http adapter serves an empty feed as an empty list", async () => {
     fetchImpl: async () => Response.json({ data: [] }),
   });
   assert.deepEqual(await repository.list("prj-1"), []);
+});
+
+test("a wire item missing a feed field is rejected, not silently admitted", async () => {
+  // The seam validates shape (the mapper later validates timestamp *content*).
+  // A payload without the leg-derived fields is a contract break the schema
+  // must refuse loudly — never a list item with holes.
+  const wireItem = {
+    id: "doc-1",
+    project_id: "prj-1",
+    document_id: "doc-1",
+    kind: "web",
+    title: "Landing page",
+    status: "draft",
+    current_version_id: "3",
+    created_at: "2026-08-14T09:15:00+00:00",
+    updated_at: "2026-08-18T09:15:00+00:00",
+    origin_thread_id: "thread-9",
+  };
+  for (const missing of ["origin_thread_id", "created_at", "updated_at"]) {
+    const broken = { ...wireItem } as Record<string, unknown>;
+    delete broken[missing];
+    const repository = httpDesignArtifactRepository({
+      fetchImpl: async () => Response.json({ data: [broken] }),
+    });
+    await assert.rejects(
+      repository.list("prj-1"),
+      (error: unknown) => error instanceof ZodError,
+      `expected the list wire to reject a payload missing ${missing}`,
+    );
+  }
 });
 
 test("the http adapter surfaces the backend's typed error envelope", async () => {

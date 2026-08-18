@@ -103,6 +103,24 @@ test("a future updated_at still reads as today rather than a negative age", () =
   );
 });
 
+test("an unparseable timestamp is refused, not mapped", () => {
+  // The seam schema deliberately admits any non-empty string (normalizing is
+  // the mapper's job), so the mapper is the boundary that must refuse. The
+  // page's feed loader catches this throw and degrades to an empty feed.
+  assert.throws(
+    () => toProjectArtifact(listItem({ createdAt: "not-a-date" }), { now: NOW }),
+    TypeError,
+  );
+  assert.throws(
+    () => toProjectArtifact(listItem({ updatedAt: "yesterday-ish" }), { now: NOW }),
+    TypeError,
+  );
+});
+
+test("editedLabelFor refuses bad input the same way (never a NaN label)", () => {
+  assert.throws(() => editedLabelFor("not-a-date", NOW), TypeError);
+});
+
 test("the mapped artifact survives the gallery's normalizer", () => {
   const normalized = normalizeGalleryArtifact(
     toProjectArtifact(listItem(), { now: NOW }),

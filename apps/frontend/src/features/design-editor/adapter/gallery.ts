@@ -61,7 +61,13 @@ const DAY_MS = 24 * 60 * 60 * 1000;
  * negative age.
  */
 export function editedLabelFor(updatedAt: string, now: Date): string {
-  const days = calendarDaysBetween(new Date(updatedAt), now);
+  const updated = new Date(updatedAt);
+  if (Number.isNaN(updated.getTime())) {
+    // Same refusal as `utcInstant`, so the two entry points agree on bad
+    // input (a silent NaN here once rendered "Last edited NaN years ago").
+    throw new TypeError(`design artifact timestamp is not a date: ${updatedAt}`);
+  }
+  const days = calendarDaysBetween(updated, now);
   if (days <= 0) return "Last edited today";
   if (days === 1) return "Last edited yesterday";
   if (days < 7) return `Last edited ${days} days ago`;

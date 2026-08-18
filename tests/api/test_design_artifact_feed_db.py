@@ -15,7 +15,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
 from typing import Any
-from uuid import NAMESPACE_URL, uuid5
+from uuid import NAMESPACE_URL, UUID, uuid5
 
 import httpx
 import pytest
@@ -131,7 +131,11 @@ async def _seed_design_document(
     document_id: str,
     doc_kind: str = "web",
     title: str = "Landing page",
+    updated_at: datetime | None = None,
 ) -> None:
+    """``updated_at`` is set explicitly where a test cares about feed order: every
+    row born in one transaction shares ``now()``, so ordering would otherwise tie."""
+
     await conn.execute(
         text(
             "INSERT INTO design_document"
@@ -140,6 +144,11 @@ async def _seed_design_document(
         ),
         {"id": document_id, "w": workspace_id, "title": title, "kind": doc_kind, "scene": "{}"},
     )
+    if updated_at is not None:
+        await conn.execute(
+            text("UPDATE design_document SET updated_at = :touched WHERE id = :id"),
+            {"touched": updated_at, "id": document_id},
+        )
 
 
 async def _seed_thread(conn: Any, *, workspace_id: str, project_id: str, thread_id: str) -> str:
@@ -461,5 +470,136 @@ def test_a_scene_document_is_excluded(require_chat_db: None) -> None:
 
             feed = await _feed(conn, workspace_id=workspace_id, project_id=project.project_id)
             assert [item["id"] for item in feed] == ["doc_gallery_web"]
+
+    run_async(scenario())
+
+
+def test_the_feed_orders_documents_newest_updated_first(require_chat_db: None) -> None:
+    """The card order is user-visible: ``updated_at DESC``, whatever the leg order was."""
+
+    del require_chat_db
+
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            project = await _seed_project_row(conn, "ws-gallery-order", name="Gallery order")
+            workspace_id = project.workspace_id
+            await seed_principal(conn, workspace_id=workspace_id, user_id=USER_ID)
+            touched = datetime(2026, 8, 18, 9, 0, tzinfo=UTC)
+            # Seed in an order that a leg-insertion or id sort would NOT produce.
+            for document_id, thread_id, age_hours in (
+                ("doc_gallery_middle", "thr_gallery_middle", 1),
+                ("doc_gallery_newest", "thr_gallery_newest", 0),
+                ("doc_gallery_oldest", "thr_gallery_oldest", 2),
+            ):
+                await _seed_design_document(
+                    conn,
+                    workspace_id=workspace_id,
+                    document_id=document_id,
+                    updated_at=touched - timedelta(hours=age_hours),
+                )
+                await _seed_thread(
+                    conn,
+                    workspace_id=workspace_id,
+                    project_id=project.project_id,
+                    thread_id=thread_id,
+                )
+                await _seed_leg(
+                    conn,
+                    workspace_id=workspace_id,
+                    project_id=project.project_id,
+                    thread_id=thread_id,
+                    document_id=document_id,
+                )
+
+            feed = await _feed(conn, workspace_id=workspace_id, project_id=project.project_id)
+            assert [item["id"] for item in feed] == [
+                "doc_gallery_newest",
+                "doc_gallery_middle",
+                "doc_gallery_oldest",
+            ]
+
+    run_async(scenario())
+
+
+def test_legs_born_at_the_same_instant_tie_break_on_leg_id(require_chat_db: None) -> None:
+    """Two legs with equal ``created_at`` (one transaction shares ``now()``) must still
+    pick a deterministic ``origin_thread_id``: the higher leg id wins (``leg.id DESC``,
+    Postgres uuids compare bytewise, matching Python's ``UUID`` ordering)."""
+
+    del require_chat_db
+
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            project = await _seed_project_row(conn, "ws-gallery-tie", name="Gallery tie")
+            workspace_id = project.workspace_id
+            await seed_principal(conn, workspace_id=workspace_id, user_id=USER_ID)
+            await _seed_design_document(
+                conn, workspace_id=workspace_id, document_id="doc_gallery_tied"
+            )
+            born = datetime(2026, 8, 18, 12, 0, tzinfo=UTC)
+            legs: dict[str, str] = {}
+            for thread_id in ("thr_gallery_tie_a", "thr_gallery_tie_b"):
+                await _seed_thread(
+                    conn,
+                    workspace_id=workspace_id,
+                    project_id=project.project_id,
+                    thread_id=thread_id,
+                )
+                legs[thread_id] = await _seed_leg(
+                    conn,
+                    workspace_id=workspace_id,
+                    project_id=project.project_id,
+                    thread_id=thread_id,
+                    document_id="doc_gallery_tied",
+                    created_at=born,
+                )
+
+            expected_thread = max(legs, key=lambda thread_id: UUID(legs[thread_id]))
+            feed = await _feed(conn, workspace_id=workspace_id, project_id=project.project_id)
+            assert [item["id"] for item in feed] == ["doc_gallery_tied"]
+            assert feed[0]["origin_thread_id"] == expected_thread
+
+    run_async(scenario())
+
+
+def test_a_forty_document_project_serves_its_whole_feed_in_order(
+    require_chat_db: None,
+) -> None:
+    """The read has no LIMIT — a many-document project must serve every card, still
+    newest-updated first (pins no-silent-truncation while pagination is future work)."""
+
+    del require_chat_db
+
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            project = await _seed_project_row(conn, "ws-gallery-volume", name="Gallery volume")
+            workspace_id = project.workspace_id
+            await seed_principal(conn, workspace_id=workspace_id, user_id=USER_ID)
+            newest = datetime(2026, 8, 18, 12, 0, tzinfo=UTC)
+            for index in range(40):
+                await _seed_design_document(
+                    conn,
+                    workspace_id=workspace_id,
+                    document_id=f"doc_gallery_bulk_{index:02d}",
+                    updated_at=newest - timedelta(minutes=index),
+                )
+                await _seed_thread(
+                    conn,
+                    workspace_id=workspace_id,
+                    project_id=project.project_id,
+                    thread_id=f"thr_gallery_bulk_{index:02d}",
+                )
+                await _seed_leg(
+                    conn,
+                    workspace_id=workspace_id,
+                    project_id=project.project_id,
+                    thread_id=f"thr_gallery_bulk_{index:02d}",
+                    document_id=f"doc_gallery_bulk_{index:02d}",
+                )
+
+            feed = await _feed(conn, workspace_id=workspace_id, project_id=project.project_id)
+            assert [item["id"] for item in feed] == [
+                f"doc_gallery_bulk_{index:02d}" for index in range(40)
+            ]
 
     run_async(scenario())
