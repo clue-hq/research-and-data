@@ -577,6 +577,25 @@ class DesignArtifactResponse(_Wire):
     data: DesignArtifactWire
 
 
+class DesignArtifactListItemWire(DesignArtifactWire):
+    """One gallery row: the W1.3 item shape plus what a *listed* artifact needs.
+
+    The list is **leg-derived** (v1 ruling 1): a document belongs to the project whose
+    threads hold the design legs that name it, so every listed document carries the
+    thread it came from. ``origin_thread_id`` is the thread of the document's latest
+    leg — a document worked on from two threads reports the most recent one, not all
+    of them; the gallery uses it to link a card back to its conversation.
+    """
+
+    created_at: str
+    updated_at: str
+    origin_thread_id: str
+
+
+class DesignArtifactListResponse(_Wire):
+    data: tuple[DesignArtifactListItemWire, ...]
+
+
 class SidebarConversationWire(_Wire):
     id: str
     title: str | None

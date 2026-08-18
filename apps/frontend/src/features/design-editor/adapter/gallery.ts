@@ -1,0 +1,93 @@
+import {
+  ProjectArtifactSchema,
+  type ProjectArtifact,
+} from "@/features/projects/model/project-workspace";
+import type { DesignArtifactListItem } from "../model/artifact";
+
+/**
+ * Slice 2: the pure mapper from one listed design artifact (the project's
+ * leg-derived design-artifact feed) to the gallery's `ProjectArtifact`.
+ *
+ * Everything it writes is real: the artifact id, the document's title, its
+ * backend timestamps, and the origin thread the design leg came from. The
+ * fields a real document cannot answer are left ABSENT rather than invented —
+ * `imagePath` (ratified ruling 2: real documents have no thumbnails; the
+ * gallery card renders its frame without artwork) and `originRunId` (a
+ * leg-derived document has no generation run). Both are optional in the model
+ * for exactly this reason.
+ *
+ * Size, account and last-viewed are likewise unanswerable here; the gallery's
+ * own `normalizeGalleryArtifact` supplies its defaults for them.
+ */
+export function toProjectArtifact(
+  item: DesignArtifactListItem,
+  { now = new Date() }: { now?: Date } = {},
+): ProjectArtifact {
+  return ProjectArtifactSchema.parse({
+    collateralType: "microsite",
+    createdAt: utcInstant(item.createdAt),
+    editedLabel: editedLabelFor(item.updatedAt, now),
+    id: item.id,
+    originThreadId: item.originThreadId,
+    title: item.title,
+    type: "website",
+    updatedAt: utcInstant(item.updatedAt),
+  });
+}
+
+/**
+ * The backend serializes Postgres timestamptz with an offset
+ * (`…T09:15:00+00:00`); the gallery model guards its timestamps with
+ * `z.string().datetime()`, which accepts only the Z form. Same instant,
+ * canonical spelling.
+ */
+function utcInstant(timestamp: string): string {
+  const parsed = new Date(timestamp);
+  if (Number.isNaN(parsed.getTime())) {
+    throw new TypeError(`design artifact timestamp is not a date: ${timestamp}`);
+  }
+  return parsed.toISOString();
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * The gallery's edited label ("Last edited today" — the dummy's style) derived
+ * from a real `updated_at`.
+ *
+ * Today/yesterday are calendar days in the viewer's own zone (a 1am edit reads
+ * as today, not as "5 hours ago"); coarser ages fall back to elapsed days. An
+ * `updatedAt` ahead of `now` (clock skew) reads as today rather than as a
+ * negative age.
+ */
+export function editedLabelFor(updatedAt: string, now: Date): string {
+  const updated = new Date(updatedAt);
+  if (Number.isNaN(updated.getTime())) {
+    // Same refusal as `utcInstant`, so the two entry points agree on bad
+    // input (a silent NaN here once rendered "Last edited NaN years ago").
+    throw new TypeError(`design artifact timestamp is not a date: ${updatedAt}`);
+  }
+  const days = calendarDaysBetween(updated, now);
+  if (days <= 0) return "Last edited today";
+  if (days === 1) return "Last edited yesterday";
+  if (days < 7) return `Last edited ${days} days ago`;
+  if (days < 30) return relativeLabel(Math.floor(days / 7), "week");
+  if (days < 365) return relativeLabel(Math.floor(days / 30), "month");
+  return relativeLabel(Math.floor(days / 365), "year");
+}
+
+function relativeLabel(count: number, unit: string): string {
+  return `Last edited ${count} ${unit}${count === 1 ? "" : "s"} ago`;
+}
+
+function calendarDaysBetween(earlier: Date, later: Date): number {
+  return Math.round((startOfDay(later) - startOfDay(earlier)) / DAY_MS);
+}
+
+function startOfDay(moment: Date): number {
+  return new Date(
+    moment.getFullYear(),
+    moment.getMonth(),
+    moment.getDate(),
+  ).getTime();
+}

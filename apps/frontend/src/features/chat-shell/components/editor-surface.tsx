@@ -11,6 +11,7 @@ import type { WebArtifactCanvasControls } from "@/features/design-editor/compone
 import { useInspectorWrites } from "@/features/design-editor/hooks/use-inspector-writes";
 import { useWebArtifactSelection } from "@/features/design-editor/hooks/use-web-artifact-selection";
 import { useWebTheme } from "@/features/design-editor/hooks/use-web-theme";
+import type { ProjectArtifact } from "@/features/projects/model/project-workspace";
 import { ArtifactStage } from "./artifact-stage";
 import { WebInspector } from "./web-inspector";
 import styles from "./chat-shell.module.css";
@@ -20,12 +21,13 @@ import styles from "./chat-shell.module.css";
 // chat-shell-view.tsx provided, re-authored without the chat pane.
 //
 // The gallery rides along as presentation-only chrome (W0.5 founder amendment,
-// 2026-08-17): the Gallery tab and gallery surface render with an EMPTY
-// artifact list — never fixture data — until the W1.3 artifact read seam feeds
-// them; closing the last tab falls back to the gallery (founder Decision 1).
-// This lifted gallery is the intended replacement for the existing
-// /projects/{id}/gallery screen; the route swap is deferred until real data
-// lands (founder Decision 2).
+// 2026-08-17): the Gallery tab and gallery surface render real cards only —
+// never fixture data. The leg-derived feed (ratified 2026-08-18) supplies them
+// through the `artifacts` prop; with no feed the gallery keeps its honest
+// empty state. Closing the last tab falls back to the gallery (founder
+// Decision 1). This lifted gallery is the intended replacement for the
+// existing /projects/{id}/gallery screen (founder Decision 2 — the route swap
+// is a separate follow-up now that real data lands).
 //
 // Split view is deferred to the chat-flow integration: the ratified route
 // shape also mounts this surface beside a chat on
@@ -50,9 +52,14 @@ import styles from "./chat-shell.module.css";
 // back to a single column — the class stays purely an opacity lever here.
 
 export function EditorSurface({
+  artifacts,
   documentIds,
   initial,
 }: {
+  /** Slice 3 (gallery leg-derived feed): the project's real gallery cards,
+   * mapped server-side from the design-artifact list read. Absent → the
+   * gallery keeps its honest empty state. */
+  artifacts?: ProjectArtifact[];
   /** W2.1: artifact id → design-document id, from the page's W1.3 read-seam
    * fetch. The active artifact's entry mounts the real web render; artifacts
    * without one keep the dummy's empty canvas. */
@@ -166,7 +173,7 @@ export function EditorSurface({
       <ArtifactStage
         activeArtifactId={controller.activeArtifactId}
         activeDocumentId={activeDocumentId}
-        artifacts={[]}
+        artifacts={artifacts ?? []}
         canvasControlsRef={canvasControls}
         canvasReloadToken={reloadNonce}
         artifactKind={controller.artifactKind}

@@ -1542,3 +1542,37 @@ read surfaces union submissions with turn events (founder-acked two-phase turn i
 2026-08-08). Streaming/live transcript arrives via the D3 SSE contract
 (charter §§3.1–3.6); `GET …/runs/:runId` polling in the proposal is superseded by that stream
 for chat-visible progress.
+
+### Gallery leg-derived design-artifact feed (2026-08-18, ratified)
+
+**Endpoint:** `GET /api/v1/projects/{project_id}/design-artifacts` — the per-project gallery's
+list read, sibling of the W1.3 single-artifact resolver and sharing its exact auth/scoping
+posture (workspace fail-closed on both the leg and document sides; unknown or foreign-workspace
+project → 404 `PROJECT_NOT_FOUND`).
+
+**Semantics (leg-derived v1, founder-ratified 2026-08-18):** the project's documents are the
+DISTINCT non-null `document_id`s of `design_leg` rows whose thread belongs to the project
+(`design_leg JOIN agent_thread`), restricted to the caller's workspace and `doc_kind = 'web'`
+(scene/ad documents stay out until the ad-editor plan). Order: `updated_at DESC`. A document
+with no leg belongs to no project and appears in no gallery — the ratified, accepted gap.
+A workspace-wide listing was considered and REJECTED (it would show every project's documents
+in every gallery).
+
+**Wire:** `{data: [{id, project_id, document_id, kind, title, status, current_version_id,
+created_at, updated_at, origin_thread_id}]}` — the W1.3 item shape plus three fields;
+`origin_thread_id` is the document's latest leg's thread. In the v1 seam `id == document_id`.
+
+This supersedes the R3/R7-era `artifacts: []` posture for the project gallery: the artifact
+route now feeds the gallery real cards through `DesignArtifactRepository.list(projectId)`
+(fixture + HTTP adapters) and the pure `toProjectArtifact` mapper. Cards carry no thumbnail
+(`imagePath` optional — ruling 2: the frame renders without artwork; no placeholder imagery)
+and no fabricated account attribution (unattributed artifacts show no account badge).
+
+**Two durable contract rules (recorded by founder order):**
+1. **Every future artifact-creation surface MUST write project linkage at creation time** —
+   the gallery's "create a new artifact" affordance, Duplicate, and any non-agent path must
+   open/write a `design_leg` (or the registry linkage that replaces it) binding the document
+   to the project, or the artifact will appear in no gallery.
+2. **This read is replaced WHOLESALE when the real platform-artifact registry lands**
+   (documents registered as platform artifacts with first-class project linkage). No
+   incremental migration of the leg-derived query.

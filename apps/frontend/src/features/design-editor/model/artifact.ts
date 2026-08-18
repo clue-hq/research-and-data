@@ -23,19 +23,20 @@ export const ChatShellArtifactSchema = z.object({
 
 export type ChatShellArtifact = z.infer<typeof ChatShellArtifactSchema>;
 
+/** The backend's snake_case artifact item, shared by the read and the feed. */
+const DesignArtifactItemWireSchema = z.object({
+  id: z.string().min(1),
+  project_id: z.string().min(1),
+  document_id: z.string().min(1),
+  kind: z.enum(["web", "ad"]),
+  title: z.string().min(1),
+  status: z.string().min(1),
+  current_version_id: z.string().min(1),
+});
+
 /** The backend wire (snake_case envelope) → `ChatShellArtifact`. */
 export const DesignArtifactWireSchema = z
-  .object({
-    data: z.object({
-      id: z.string().min(1),
-      project_id: z.string().min(1),
-      document_id: z.string().min(1),
-      kind: z.enum(["web", "ad"]),
-      title: z.string().min(1),
-      status: z.string().min(1),
-      current_version_id: z.string().min(1),
-    }),
-  })
+  .object({ data: DesignArtifactItemWireSchema })
   .transform(({ data }) =>
     ChatShellArtifactSchema.parse({
       id: data.id,
@@ -46,4 +47,52 @@ export const DesignArtifactWireSchema = z
       currentVersionId: data.current_version_id,
       status: data.status,
     }),
+  );
+
+/**
+ * One row of the project's design-artifact feed: the read seam's artifact plus
+ * what a *listed* artifact needs — its real timestamps and the thread it came
+ * from.
+ *
+ * The feed is leg-derived: a design document belongs to the project whose
+ * threads hold the design legs naming it, so `originThreadId` is the thread of
+ * the document's latest leg (one thread per document, not all of them).
+ * Timestamps arrive as the backend serialized them (Postgres timestamptz, ISO
+ * 8601 *with an offset*) — normalizing them is the gallery mapper's job, not
+ * the seam's.
+ */
+export const DesignArtifactListItemSchema = ChatShellArtifactSchema.extend({
+  createdAt: z.string().min(1),
+  updatedAt: z.string().min(1),
+  originThreadId: z.string().min(1),
+});
+
+export type DesignArtifactListItem = z.infer<typeof DesignArtifactListItemSchema>;
+
+/** The backend feed wire (snake_case envelope) → `DesignArtifactListItem[]`. */
+export const DesignArtifactListWireSchema = z
+  .object({
+    data: z.array(
+      DesignArtifactItemWireSchema.extend({
+        created_at: z.string().min(1),
+        updated_at: z.string().min(1),
+        origin_thread_id: z.string().min(1),
+      }),
+    ),
+  })
+  .transform(({ data }) =>
+    data.map((item) =>
+      DesignArtifactListItemSchema.parse({
+        id: item.id,
+        projectId: item.project_id,
+        documentId: item.document_id,
+        kind: item.kind,
+        title: item.title,
+        currentVersionId: item.current_version_id,
+        status: item.status,
+        createdAt: item.created_at,
+        updatedAt: item.updated_at,
+        originThreadId: item.origin_thread_id,
+      }),
+    ),
   );

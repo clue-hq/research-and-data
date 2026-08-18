@@ -90,9 +90,13 @@ export const ProjectArtifactSchema = z.object({
   createdAt: z.string().datetime().optional(),
   editedLabel: z.string().min(1),
   id: z.string().min(1),
-  imagePath: z.string().startsWith("/"),
+  // Optional since the gallery feed serves real design documents (ratified
+  // ruling 2): they have no thumbnail, and a leg-derived document has no
+  // generation run. Absent means absent — consumers render without artwork
+  // rather than substituting placeholder imagery.
+  imagePath: z.string().startsWith("/").optional(),
   lastViewedAt: z.string().datetime().optional(),
-  originRunId: z.string().min(1),
+  originRunId: z.string().min(1).optional(),
   originThreadId: z.string().min(1),
   size: ProjectArtifactSizeSchema.optional(),
   title: z.string().min(1),

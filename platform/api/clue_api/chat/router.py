@@ -99,6 +99,8 @@ from clue_api.chat.schemas import (
     AgentProfileOptionWire,
     ComposerContextEntityWire,
     CreateThreadRequest,
+    DesignArtifactListItemWire,
+    DesignArtifactListResponse,
     DesignArtifactResponse,
     DesignArtifactWire,
     GateListResponse,
@@ -139,7 +141,7 @@ from clue_api.chat.schemas import (
 )
 from clue_api.chat.turn_events import TurnEventType, emit_turn_event
 from clue_api.conversation_capture import persist_user_turn, project_client_entity_id
-from clue_api.design_leg_wiring import design_legs_for_threads
+from clue_api.design_leg_wiring import design_legs_for_threads, project_design_documents
 from clue_api.stage0_icp_gate import IcpGateSubjectError, exact_icp_gate_subject
 from clue_api.stage0_project_scope import resolve_stage0_project_scope_for_project
 from clue_api.thread_store import create_thread, get_thread, thread_id_for_operation
@@ -997,6 +999,58 @@ def build_chat_router(
                 for project in page.items
             ),
             meta=SidebarPageMeta(next_cursor=page.next_cursor),
+        )
+
+    @router.get("/projects/{project_id}/design-artifacts")
+    async def design_artifact_list_route(
+        project_id: str,
+        who: PrincipalDep,
+    ) -> DesignArtifactListResponse:
+        """The project's design-artifact feed — the gallery's list read (leg-derived v1).
+
+        The document row carries a workspace, not a project, so the project binding is the
+        design **leg**: the documents named by the legs of this project's threads, web
+        documents only. A document no leg names belongs to no project and is not listed
+        (the ratified v1 gap). Like the single-artifact sibling below, the project and the
+        documents are workspace-scoped fail-closed reads, and the artifact id IS the
+        design-document id.
+        """
+
+        _require(who, PERMISSION_PROJECT_READ)
+        async with conn_factory() as conn:
+            project = await get_project_for_workspace(
+                conn,
+                workspace_id=who.workspace_id,
+                project_id=project_id,
+            )
+            if project is None:
+                raise _refuse(
+                    status_code=404,
+                    code="PROJECT_NOT_FOUND",
+                    message="no such project in this workspace",
+                )
+            documents = await project_design_documents(
+                conn,
+                workspace_id=who.workspace_id,
+                project_id=project_id,
+            )
+        return DesignArtifactListResponse(
+            data=tuple(
+                DesignArtifactListItemWire(
+                    id=str(document["id"]),
+                    project_id=project_id,
+                    document_id=str(document["id"]),
+                    # Ruling 3: the query admits ``doc_kind = 'web'`` only.
+                    kind="web",
+                    title=str(document["title"]),
+                    status=str(document["status"]),
+                    current_version_id=str(document["current_version"]),
+                    created_at=document["created_at"].isoformat(),
+                    updated_at=document["updated_at"].isoformat(),
+                    origin_thread_id=str(document["origin_thread_id"]),
+                )
+                for document in documents
+            )
         )
 
     @router.get("/projects/{project_id}/design-artifacts/{artifact_id}")
