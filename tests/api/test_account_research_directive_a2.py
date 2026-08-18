@@ -832,3 +832,114 @@ def test_a2_draft_confirm_memory_override_pin_and_supersession(tmp_path: Path) -
             assert event_types.count("superseded") == 1
 
     run_async(scenario())
+
+
+def test_a_fresh_draft_supersedes_an_unconfirmed_latest_draft(tmp_path: Path) -> None:
+    """A draft is a proposal, not an authority — redrafting must never deadlock the lineage.
+
+    Found live at the Slice B browser gate: a draft whose effort tier could never price its
+    confirmation gate blocked every successor forever ("cannot append behind an unconfirmed
+    directive"), because confirmation is the only lifecycle exit and no reject path exists. A
+    fresh draft now supersedes an unconfirmed latest draft with an append-only ``superseded``
+    event naming its successor; confirmed history keeps the strict predecessor rule.
+    """
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            storage = FsStorage(tmp_path / "artifacts")
+            fixture = await seed_insight_health_account_deep_fixture(
+                conn,
+                pages=_pages(),
+                storage=storage,
+            )
+            cf = conn_session_factory(conn)
+
+            def memory_factory(write_conn: AsyncConnection) -> WriteSeam:
+                return WriteSeam(
+                    write_conn,
+                    add_judge(),
+                    settings=make_settings(),
+                    caps=MemoryCaps(),
+                )
+
+            registry = ToolRegistry()
+            for tool in build_research_directive_tools(
+                memory_write_factory=memory_factory,
+                conn_factory=cf,
+            ):
+                registry.register(tool, make_default=tool.version == "2")
+
+            def draft_request() -> dict[str, object]:
+                return {
+                    "project_id": PROJECT_ID,
+                    "product_id": PRODUCT_ID,
+                    "icp_key": fixture.deep_icp_key,
+                    "icp_version": fixture.deep_icp_version,
+                    "body": _body(fixture.selected_account_id).model_dump(mode="json"),
+                    "account_overrides": [],
+                    "user_instruction": USER_DIRECTION,
+                    "source_turn_ref": "agent-turn:deep-direction-1",
+                }
+
+            first_operation = new_operation_id()
+            first = await invoke_tool(
+                registry,
+                "draft_account_research_directive",
+                draft_request(),
+                ToolContext(
+                    workspace_id=WORKSPACE_ID,
+                    actor="agent",
+                    conn_factory=cf,
+                    operation_id=first_operation,
+                ),
+                idempotency_ttl_s=TTL,
+            )
+            assert first.references["status"] == "draft"
+
+            second_operation = new_operation_id()
+            second = await invoke_tool(
+                registry,
+                "draft_account_research_directive",
+                draft_request(),
+                ToolContext(
+                    workspace_id=WORKSPACE_ID,
+                    actor="agent",
+                    conn_factory=cf,
+                    operation_id=second_operation,
+                ),
+                idempotency_ttl_s=TTL,
+            )
+            assert second.references["status"] == "draft"
+            assert int(second.references["version"]) == int(first.references["version"]) + 1
+
+            rows = {
+                str(row.directive_id): row
+                for row in (
+                    await conn.execute(
+                        text(
+                            "SELECT directive_id, status::text AS status, predecessor_id "
+                            "FROM account_research_directive WHERE workspace_id=:w "
+                            "AND project_id=:p ORDER BY version"
+                        ),
+                        {"w": WORKSPACE_ID, "p": PROJECT_ID},
+                    )
+                ).all()
+            }
+            first_row = rows[str(first_operation)]
+            second_row = rows[str(second_operation)]
+            assert first_row.status == "superseded"
+            assert second_row.status == "draft"
+            # The superseded draft is not a confirmed authority link: lineage rides the event.
+            assert second_row.predecessor_id is None
+            superseded_event = (
+                await conn.execute(
+                    text(
+                        "SELECT successor_id FROM account_research_directive_event "
+                        "WHERE directive_id=:d AND event_type='superseded'"
+                    ),
+                    {"d": first_operation},
+                )
+            ).one()
+            assert str(superseded_event.successor_id) == str(second_operation)
+
+    run_async(scenario())

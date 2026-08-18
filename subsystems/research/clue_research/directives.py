@@ -761,12 +761,30 @@ async def draft_research_directive(
         if predecessor_id is not None:
             raise ResearchDirectiveConflict("initial directive cannot name a predecessor")
         version = 1
+        superseded_draft_id: ResearchDirectiveId | None = None
     else:
         latest_id = ResearchDirectiveId(latest_row["directive_id"])
-        if predecessor_id != latest_id:
-            raise ResearchDirectiveConflict("successor must name the latest directive version")
-        if str(latest_row["status"]) != "confirmed":
-            raise ResearchDirectiveConflict("cannot append behind an unconfirmed directive")
+        latest_status = str(latest_row["status"])
+        if latest_status == "draft":
+            # A draft is a proposal, not an authority: a fresh draft replaces it instead of
+            # deadlocking the lineage. Found live at the Slice B browser gate: a draft whose
+            # effort tier could never price its confirmation gate blocked every successor
+            # forever, because confirmation is the only lifecycle exit and no reject path
+            # exists. Confirmed history stays immutable — only the unconfirmed latest is
+            # superseded, with its own append-only event naming the replacing directive.
+            if predecessor_id is not None and predecessor_id != latest_id:
+                raise ResearchDirectiveConflict("successor must name the latest directive version")
+            superseded_draft_id = latest_id
+            # The superseded draft is not a confirmed authority link: the durable row keeps
+            # ``predecessor_id`` NULL (confirmation would otherwise demand a confirmed
+            # predecessor) and the lineage is carried by the superseded event below.
+            predecessor_id = None
+        else:
+            if predecessor_id != latest_id:
+                raise ResearchDirectiveConflict("successor must name the latest directive version")
+            if latest_status != "confirmed":
+                raise ResearchDirectiveConflict("cannot append behind an unconfirmed directive")
+            superseded_draft_id = None
         version = int(latest_row["version"]) + 1
 
     memory_outcome = await memory_write.submit(
@@ -864,6 +882,33 @@ async def draft_research_directive(
             project_id=project_id,
             account_entity_id=account_id,
             added_via="directive",
+        )
+    if superseded_draft_id is not None:
+        await conn.execute(
+            text(
+                "UPDATE account_research_directive SET status='superseded' "
+                "WHERE directive_id=:directive_id AND status='draft'"
+            ),
+            {"directive_id": superseded_draft_id},
+        )
+        await conn.execute(
+            text(
+                "INSERT INTO account_research_directive_event "
+                "(event_id, directive_id, workspace_id, event_type, actor_type, actor_ref, "
+                "turn_ref, successor_id, operation_id) VALUES (:event_id, :directive_id, "
+                ":workspace_id, 'superseded', :actor_type, :actor_ref, :turn_ref, "
+                ":successor_id, :operation_id)"
+            ),
+            {
+                "event_id": _event_id(operation_id, superseded_draft_id, "superseded"),
+                "directive_id": superseded_draft_id,
+                "workspace_id": workspace_id,
+                "actor_type": actor_type,
+                "actor_ref": created_by,
+                "turn_ref": source_turn_ref,
+                "successor_id": directive_id,
+                "operation_id": operation_id,
+            },
         )
     await conn.execute(
         text(
