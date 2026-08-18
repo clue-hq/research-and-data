@@ -228,6 +228,9 @@ def test_the_route_counts_a_three_account_fleet_off_its_own_job_rows(tmp_path: P
             # No coverage published yet: an honest null, never a zeroed progress bar.
             assert served["field_progress"] is None
             assert served["revision"] >= 1
+            # C3's poller places a re-materialized card in its turn's message: the durable
+            # ``turn-action:`` receipt already names the turn, so the wire says so too.
+            assert served["source_turn_id"] == str(seeded.turn_id)
 
     run_async(scenario())
 

@@ -33,6 +33,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from clue_api.agent_gate import money_text
 from clue_api.chat.message_bodies import HydratedBody
 from clue_api.chat.turn_parts import TaskCounts, TaskState, task_part_from_run
+from clue_api.turn_action import TurnActionUnresolvable, parse_turn_action_ref
 from clue_projections import (
     GateView,
     ThreadMessagePage,
@@ -734,9 +735,12 @@ class ResearchTaskWire(_Wire):
     turn-close emitter uses, so a polled task and a streamed one merge as the same card in the
     transcript reducer rather than as two cards that happen to look alike.
 
-    Two members the stream frame has no use for: ``revision``, the job-event high-water mark the
-    reducer merges on, and ``field_progress``, which is ``None`` until a job has published coverage
-    and for a contact run (Slice F's surface) — never a fabricated zero.
+    Three members the stream frame has no use for: ``revision``, the job-event high-water mark the
+    reducer merges on; ``field_progress``, which is ``None`` until a job has published coverage
+    and for a contact run (Slice F's surface) — never a fabricated zero; and ``source_turn_id``,
+    the turn whose durable ``turn-action:`` receipt launched the run — a streamed part rides its
+    own turn's frames, but a polled one must say which message re-materializes its card after a
+    reload (C3's cold-load fix). ``None`` only for a launch receipt that is not a turn action.
     """
 
     part_id: str
@@ -748,6 +752,7 @@ class ResearchTaskWire(_Wire):
     counts: TaskCounts
     exception_refs: tuple[dict[str, Any], ...] = ()
     field_progress: ResearchTaskFieldProgressWire | None = None
+    source_turn_id: str | None = None
 
 
 class ResearchTaskListResponse(_Wire):
@@ -790,7 +795,21 @@ def research_task_wire(view: ThreadResearchTaskView, *, workspace_id: str) -> Re
                 unresolved=view.field_progress.unresolved,
             )
         ),
+        source_turn_id=_source_turn_id(view.task.source_action_ref),
     )
+
+
+def _source_turn_id(source_action_ref: str) -> str | None:
+    """The turn a launch receipt names, or ``None`` for a receipt that is not a turn action.
+
+    The canonical parser is the authority (:func:`clue_api.turn_action.parse_turn_action_ref`);
+    a ref it refuses yields an honest ``None`` rather than a hand-parsed guess.
+    """
+
+    try:
+        return str(parse_turn_action_ref(source_action_ref))
+    except TurnActionUnresolvable:
+        return None
 
 
 def thread_speaker_wire(design_leg: dict[str, Any] | None) -> ThreadSpeakerWire:

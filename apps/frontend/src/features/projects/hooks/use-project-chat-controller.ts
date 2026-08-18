@@ -44,6 +44,11 @@ import {
   type ThreadStatus,
 } from "../model/chat-thread";
 import { useProjectCatalogInvalidation } from "../model/project-catalog-invalidation";
+import { withPolledResearchTasks } from "../model/research-task";
+import {
+  streamTaskWakeSignature,
+  useResearchTaskPoller,
+} from "./use-research-task-poller";
 import {
   applyTurnStateOverrides,
   isTerminalTurnState,
@@ -750,11 +755,30 @@ export function useProjectChatController({
     [loadThreads, projectId, repositories, report],
   );
 
+  // --- the durable research-task poll -------------------------------------
+
+  // Polls while any launched run is unsettled: on thread load (which also
+  // restores cards for turns past the stream-rehydration window) and whenever
+  // the stream projects a task part it has not seen. Polled snapshots merge
+  // into the same transcript the stream parts feed, so the card component is
+  // untouched.
+  const taskWake = useMemo(() => streamTaskWakeSignature(stream), [stream]);
+  const polledTasks = useResearchTaskPoller({
+    projectId,
+    threadId: activeThreadId,
+    enabled: !loading && access === null && route === null,
+    wake: taskWake,
+  });
+
   // --- derived -----------------------------------------------------------
 
   const transcript = useMemo(
-    () => composeTranscript({ messages, turns: effectiveTurns, stream, optimistic }),
-    [effectiveTurns, messages, optimistic, stream],
+    () =>
+      withPolledResearchTasks(
+        composeTranscript({ messages, turns: effectiveTurns, stream, optimistic }),
+        polledTasks,
+      ),
+    [effectiveTurns, messages, optimistic, polledTasks, stream],
   );
 
   const gatesById = useMemo(() => {
