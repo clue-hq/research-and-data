@@ -1,5 +1,7 @@
 "use client";
 
+import { useEffect } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { ConversationContent } from "@/features/projects/components/conversation-content";
 import { ProjectComposer } from "@/features/projects/components/project-composer";
 import type { ProjectChatController } from "@/features/projects/hooks/use-project-chat-controller";
@@ -15,7 +17,10 @@ import {
   chatDockDismissedBySubmission,
   chatDockOpen,
 } from "../model/chat-dock";
-import { chatSurfaceUrlState } from "../model/chat-surface-params";
+import {
+  chatSurfacePaneParams,
+  chatSurfaceUrlState,
+} from "../model/chat-surface-params";
 import { ArtifactStage } from "./artifact-stage";
 import { ChatShellHeader } from "./chat-shell-header";
 import { ImageInspector } from "./image-inspector";
@@ -43,9 +48,10 @@ import { WebInspector } from "./web-inspector";
 //   controller).
 //
 // URL pane state (?surface=/edit=/selection=, ruling R2) is read once at
-// mount as initial state; pane toggles deliberately do not write back to the
-// URL in this phase (known deferral — the dummy behaves the same way). The
-// W-lane's split view hydrates this same mount with a real canvas later.
+// mount as initial state, and — since chat-flow slice 5 — written back on
+// every pane change, so every editing state the user reaches is a shareable
+// deep link. Hydration stays one-directional: the effect below only calls
+// router.replace; it never feeds the URL back into the shell state.
 
 export function ChatSurface({
   artifacts,
@@ -122,6 +128,51 @@ export function ChatSurface({
   // falls back to this mount's shell state (the ?selection= pane param).
   const inspectorSelection =
     session.webSelection.selection?.schema.selection ?? shell.inspectorSelection;
+
+  // Chat-flow slice 5: the pane state writes back to the URL, so every state
+  // the user reaches (rail open, surface, Edit, inspector schema) is a
+  // shareable deep link — the closing half of the R2 vocabulary. The
+  // serializer is pure (../model/chat-surface-params); this effect only
+  // transports its output.
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const {
+    edit: editParam,
+    selection: selectionParam,
+    surface: surfaceParam,
+  } = chatSurfacePaneParams({
+    artifactKind: shell.artifactKind,
+    editing: shell.editing,
+    // The SAME schema the inspector is rendering — a live canvas selection
+    // names its schema, else the shell's own. That is exactly what ?selection=
+    // hydrates; the canvas NODE id is deliberately never serialized (it is
+    // document-local and would not survive a share, and the shared vocabulary
+    // has no artifact identity at all — a deep link restores the pane state,
+    // not the open tab).
+    inspectorSelection,
+    panelOpen: shell.panelOpen,
+    rawSurface: paneState.surface,
+    surface: shell.surface,
+  });
+  useEffect(() => {
+    // Compose over the LIVE query so params we do not own (?handoff=, anything
+    // future) survive; only the three pane keys are ours to rewrite.
+    const query = new URLSearchParams(searchParams.toString());
+    query.delete("surface");
+    query.delete("edit");
+    query.delete("selection");
+    if (surfaceParam) query.set("surface", surfaceParam);
+    if (editParam) query.set("edit", editParam);
+    if (selectionParam) query.set("selection", selectionParam);
+    const next = query.toString();
+    // Loop guard: replace only on a real difference. This is also what makes
+    // the write-back converge WITH the workspace controller's handoff cleanup
+    // (same pathname, preserved params) instead of fighting it.
+    if (next === searchParams.toString()) return;
+    // replace, never push: pane toggles must not grow browser history.
+    router.replace(`${pathname}${next ? `?${next}` : ""}`, { scroll: false });
+  }, [editParam, pathname, router, searchParams, selectionParam, surfaceParam]);
 
   return (
     <main
