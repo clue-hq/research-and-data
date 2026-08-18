@@ -53,3 +53,51 @@ test("gallery supports stable ascending dates and project groupings", () => {
   assert.ok(typeGroups.some((group) => group.label === "Websites"));
   assert.ok(typeGroups.some((group) => group.label === "Ads"));
 });
+
+// A real, leg-derived artifact carries no account data. The gallery must show
+// honest absence — never the fixture "OpenAI" fallback painted onto a real
+// document (ruling 2's no-invented-imagery, extended to account attribution).
+const unattributed = normalizeGalleryArtifact({
+  collateralType: "microsite",
+  createdAt: "2026-08-18T09:00:00.000Z",
+  editedLabel: "Last edited today",
+  id: "doc_real_web",
+  originThreadId: "thr_real",
+  title: "Insight Health homepage",
+  type: "website",
+  updatedAt: "2026-08-18T09:00:00.000Z",
+});
+
+test("an artifact without account hints normalizes to no account at all", () => {
+  assert.equal(unattributed.account, undefined);
+  assert.equal(unattributed.imagePath, undefined);
+  assert.equal(unattributed.originRunId, undefined);
+});
+
+test("an active account filter excludes unattributed artifacts", () => {
+  const results = filterGalleryArtifacts({
+    artifacts: [...artifacts, unattributed],
+    filters: { ...DEFAULT_GALLERY_FILTERS, accountIds: ["openai"] },
+    query: "",
+  });
+  assert.ok(results.length > 0);
+  assert.ok(results.every((artifact) => artifact.account?.id === "openai"));
+});
+
+test("unattributed artifacts share one unlabeled account group", () => {
+  const groups = groupGalleryArtifacts([...artifacts, unattributed], "account");
+  const group = groups.find((candidate) => candidate.id === "unattributed");
+  assert.ok(group);
+  assert.equal(group.label, "");
+  assert.equal(group.account, undefined);
+  assert.deepEqual(group.artifacts.map((artifact) => artifact.id), ["doc_real_web"]);
+});
+
+test("search tolerates a missing account name", () => {
+  const results = filterGalleryArtifacts({
+    artifacts: [unattributed],
+    filters: DEFAULT_GALLERY_FILTERS,
+    query: "insight health",
+  });
+  assert.deepEqual(results.map((artifact) => artifact.id), ["doc_real_web"]);
+});

@@ -29,7 +29,10 @@ export interface GalleryAccount {
 }
 
 export interface GalleryArtifact {
-  account: GalleryAccount;
+  /** Absent for a real, unattributed artifact — the card shows no account
+   * badge rather than a fabricated one (ruling 2's no-invented-imagery,
+   * extended to account attribution). */
+  account?: GalleryAccount;
   collateralType: GalleryCollateralType;
   collateralTypeLabel: string;
   createdAt: string;
@@ -90,7 +93,7 @@ function defaultCollateralType(artifact: ProjectArtifact): GalleryCollateralType
   return "linkedin-ad";
 }
 
-function defaultAccount(artifact: ProjectArtifact): GalleryAccount {
+function defaultAccount(artifact: ProjectArtifact): GalleryAccount | undefined {
   const logo = artifact.accountLogoPath;
   if (artifact.accountId && artifact.accountName) {
     return { id: artifact.accountId, logoPath: logo, name: artifact.accountName };
@@ -101,7 +104,13 @@ function defaultAccount(artifact: ProjectArtifact): GalleryAccount {
   if (logo?.includes("cursor")) {
     return { id: "cursor", logoPath: logo, name: "Cursor" };
   }
-  return { id: "openai", logoPath: logo ?? "/logos/openai.svg", name: "OpenAI" };
+  if (logo) {
+    return { id: "openai", logoPath: logo, name: "OpenAI" };
+  }
+  // No account hints at all — a real, unattributed artifact. Honest absence:
+  // fabricating the fixture "OpenAI" here would paint fake attribution onto
+  // real documents (the leg-derived feed's cards carry no account data).
+  return undefined;
 }
 
 function defaultSize(artifact: ProjectArtifact): GalleryArtifact["size"] {
@@ -169,7 +178,10 @@ export function filterGalleryArtifacts({
 }) {
   const normalizedQuery = query.trim().toLocaleLowerCase();
   return artifacts.filter((artifact) => {
-    if (filters.accountIds.length > 0 && !filters.accountIds.includes(artifact.account.id)) {
+    if (
+      filters.accountIds.length > 0 &&
+      (!artifact.account || !filters.accountIds.includes(artifact.account.id))
+    ) {
       return false;
     }
     if (
@@ -188,7 +200,7 @@ export function filterGalleryArtifacts({
     if (!normalizedQuery) return true;
     return [
       artifact.title,
-      artifact.account.name,
+      artifact.account?.name ?? "",
       artifact.collateralTypeLabel,
       artifact.size.label,
     ].some((value) => value.toLocaleLowerCase().includes(normalizedQuery));
@@ -218,9 +230,13 @@ export function groupGalleryArtifacts(
 
   const groups = new Map<string, GalleryGroup>();
   artifacts.forEach((artifact) => {
-    const id = groupBy === "account" ? artifact.account.id : artifact.collateralType;
+    // Unattributed artifacts share one honest group; its label stays empty
+    // rather than inventing vocabulary (pending a founder ruling on wording).
+    const id = groupBy === "account"
+      ? (artifact.account?.id ?? "unattributed")
+      : artifact.collateralType;
     const label = groupBy === "account"
-      ? artifact.account.name
+      ? (artifact.account?.name ?? "")
       : artifact.collateralType === "microsite"
         ? "Websites"
         : artifact.collateralType.includes("ad")

@@ -30,7 +30,13 @@ export function useProjectGalleryController(artifacts: ProjectArtifact[]) {
     [artifacts],
   );
   const accounts = useMemo(() => {
-    const index = new Map(normalizedArtifacts.map((artifact) => [artifact.account.id, artifact.account]));
+    // Unattributed artifacts contribute no filter option — only real accounts
+    // appear in the account filter menu.
+    const index = new Map(
+      normalizedArtifacts.flatMap((artifact) =>
+        artifact.account ? [[artifact.account.id, artifact.account] as const] : [],
+      ),
+    );
     return [...index.values()];
   }, [normalizedArtifacts]);
   const visibleArtifacts = useMemo(

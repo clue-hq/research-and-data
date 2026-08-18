@@ -21,7 +21,15 @@ export function GalleryArtifactCard({
   onOpen: (artifact: GalleryArtifact) => void;
   preload?: boolean;
 }) {
-  const accessibleDetails = `${artifact.title}, ${artifact.account.name}, ${artifact.collateralTypeLabel}, ${artifact.size.label}, ${artifact.editedLabel}`;
+  const accessibleDetails = [
+    artifact.title,
+    artifact.account?.name,
+    artifact.collateralTypeLabel,
+    artifact.size.label,
+    artifact.editedLabel,
+  ]
+    .filter(Boolean)
+    .join(", ");
   return (
     <button
       aria-label={`Open ${accessibleDetails}`}
@@ -52,7 +60,7 @@ export function GalleryArtifactCard({
           <strong>{artifact.title}</strong>
           <small>{artifact.editedLabel}</small>
         </span>
-        {artifact.account.logoPath ? (
+        {artifact.account?.logoPath ? (
           <span className={styles.accountBadge} title={artifact.account.name}>
             <Image alt="" height={15} src={artifact.account.logoPath} width={15} />
           </span>
@@ -91,10 +99,10 @@ export function GalleryArtifactListRow({
         </span>
       </span>
       <span className={styles.listAccountCell}>
-        {artifact.account.logoPath ? (
+        {artifact.account?.logoPath ? (
           <Image alt="" height={16} src={artifact.account.logoPath} width={16} />
         ) : null}
-        {artifact.account.name}
+        {artifact.account?.name}
       </span>
       <span>{artifact.collateralTypeLabel}</span>
       <span>{artifact.size.label}</span>
