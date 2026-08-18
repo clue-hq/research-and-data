@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { WebNode } from "../engine/webDocuments";
 import {
+  HARVESTED_HIDDEN_CONTAINER_V52,
   HARVESTED_PAGE,
   HARVESTED_PAGE_ROOT_V47,
 } from "./__fixtures__/web-nodes";
@@ -266,4 +267,22 @@ test("row 1: a page root with no background token leaves the dummy default", () 
   assert.ok(root);
   const bare = hydrateInspectorState({ ...root, classes: "" }, "");
   assert.ok(!("tokenBackgroundColor" in bare));
+});
+
+// ══ W4.9 — the eye and the segmented are ONE facet (rows 40 × 20) ═══════════
+
+test("row 40 × 20: the container the eye hid hydrates BOTH invisible and Hide", () => {
+  // Real bytes, written by the eye itself on the live editor (v51 → v52).
+  const fgrid = HARVESTED_HIDDEN_CONTAINER_V52.nodes.fgrid;
+  assert.ok(fgrid, "harvested hidden container missing");
+  assert.equal(fgrid.kind, "container");
+  const state = hydrateInspectorState(fgrid, fgrid.classes);
+  // One display parse feeds both controls, so they cannot disagree.
+  assert.equal(state.visible, false);
+  assert.equal(state.layoutMode, "Hide");
+  // And the eye's write displaced ONLY the display family.
+  assert.deepEqual(state.padding, { bottom: "8", left: "4", right: "4", top: "8" });
+  assert.equal(state.gap, "6");
+  assert.equal(state.tokenBackgroundColor, "Card");
+  assert.equal(state.tokenTextColor, "Dark");
 });

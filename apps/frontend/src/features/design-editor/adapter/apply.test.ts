@@ -5,7 +5,7 @@ import {
   HARVESTED_PAGE_ROOT_V47,
   HARVESTED_PAGE_V33,
 } from "./__fixtures__/web-nodes";
-import { inspectorChangeToOperation } from "./apply";
+import { inspectorChangeToOperation, nextVisibilityMemory } from "./apply";
 
 // W3.2: inspector change events → engine operations, one test per control.
 // Fixtures are the real harvested nodes; `sub` is the canonical text node
@@ -383,4 +383,128 @@ test("row 1: kinds with no background control are still refused (embed/icon)", (
   // the canvas keeps its refusal.
   assert.equal(v33Change("tokenBackgroundColor", "Surface-card", "fembed"), null);
   assert.equal(v33Change("tokenBackgroundColor", "Surface-card", "ficon"), null);
+});
+
+// ══ W4.9 — the header visibility eye (row 40) ═══════════════════════════════
+// The eye writes the SAME display facet W4.4's container segmented writes, so
+// the two controls compose. Un-hiding restores only a display value the
+// session actually observed at hide time; with nothing captured it clears the
+// token and lets the page's natural display stand — it never guesses.
+
+function visibilityChange(
+  nodeId: string,
+  visible: boolean,
+  restoreDisplay?: string | null,
+  classesOverride?: string,
+): ReturnType<typeof inspectorChangeToOperation> {
+  const node = HARVESTED_PAGE_V33.nodes[nodeId];
+  assert.ok(node, `fixture node ${nodeId} missing`);
+  return inspectorChangeToOperation(
+    { property: "visible", restoreDisplay, selectionId: nodeId, value: visible },
+    classesOverride === undefined ? node : { ...node, classes: classesOverride },
+    V33_PAGE_ID,
+  );
+}
+
+test("row 40: hiding writes the display facet's hidden, preserving every other token", () => {
+  // fgrid: "grid grid-cols-3 gap-6 px-4 py-2 bg-card text-dark"
+  const op = visibilityChange("fgrid", false);
+  assert.ok(op && op.kind === "set_node_classes");
+  assert.equal(op.id, "fgrid");
+  assert.equal(op.page_id, V33_PAGE_ID);
+  const tokens = op.classes.split(/\s+/);
+  assert.ok(tokens.includes("hidden"));
+  assert.ok(!tokens.includes("grid"));
+  assert.deepEqual(tokens.filter((token) => token !== "hidden"), [
+    "grid-cols-3",
+    "gap-6",
+    "px-4",
+    "py-2",
+    "bg-card",
+    "text-dark",
+  ]);
+});
+
+test("row 40: the eye serves every schema kind, not just the layout ones", () => {
+  for (const nodeId of ["headline", "fimg", "cta", "ficon", "fgrid", "hero"]) {
+    const op = visibilityChange(nodeId, false);
+    assert.ok(op && op.kind === "set_node_classes", `${nodeId} produced no operation`);
+    assert.ok(op.classes.split(/\s+/).includes("hidden"), nodeId);
+  }
+});
+
+test("row 40: un-hiding restores exactly the display the session captured", () => {
+  const op = visibilityChange("fgrid", true, "grid", "hidden grid-cols-3 gap-6 bg-card");
+  assert.ok(op && op.kind === "set_node_classes");
+  const tokens = op.classes.split(/\s+/);
+  assert.ok(tokens.includes("grid"));
+  assert.ok(!tokens.includes("hidden"));
+  assert.deepEqual(tokens, ["grid-cols-3", "gap-6", "bg-card", "grid"]);
+});
+
+test("row 40: un-hiding with nothing captured clears the display token rather than guessing", () => {
+  const op = visibilityChange("fgrid", true, null, "hidden grid-cols-3 gap-6 bg-card");
+  assert.ok(op && op.kind === "set_node_classes");
+  assert.deepEqual(op.classes.split(/\s+/), ["grid-cols-3", "gap-6", "bg-card"]);
+  // The absent-capture case (no `restoreDisplay` key at all) is the same.
+  const undefinedCapture = visibilityChange("fgrid", true, undefined, "hidden gap-6");
+  assert.ok(undefinedCapture && undefinedCapture.kind === "set_node_classes");
+  assert.deepEqual(undefinedCapture.classes.split(/\s+/), ["gap-6"]);
+});
+
+test("row 40: a non-boolean visible value is refused", () => {
+  assert.equal(visibilityChange("fgrid", "true" as unknown as boolean), null);
+  assert.equal(visibilityChange("fgrid", null as unknown as boolean), null);
+});
+
+test("row 40: the eye never rewrites props (the §4 guarantee holds for it too)", () => {
+  const hero = HARVESTED_PAGE_V33.nodes.hero;
+  assert.ok(hero);
+  const before = JSON.stringify(hero);
+  const hide = visibilityChange("hero", false);
+  const show = visibilityChange("hero", true, "flex");
+  assert.ok(hide && hide.kind === "set_node_classes");
+  assert.ok(show && show.kind === "set_node_classes");
+  assert.equal(JSON.stringify(HARVESTED_PAGE_V33.nodes.hero), before);
+});
+
+// ── the pre-hide capture (the eye's per-selection memory) ───────────────────
+
+test("row 40: hiding captures the node's real display value for the un-hide", () => {
+  const fgrid = HARVESTED_PAGE_V33.nodes.fgrid;
+  assert.ok(fgrid);
+  const next = nextVisibilityMemory(null, fgrid, false);
+  assert.deepEqual(next.memory, { display: "grid", nodeId: "fgrid" });
+  assert.equal(next.restoreDisplay, null);
+});
+
+test("row 40: a node with no display utility captures nothing (un-hide clears)", () => {
+  const cta = HARVESTED_PAGE_V33.nodes.cta;
+  assert.ok(cta);
+  // cta carries no display token at all.
+  const next = nextVisibilityMemory(null, cta, false);
+  assert.equal(next.memory, null);
+  assert.equal(nextVisibilityMemory(next.memory, cta, true).restoreDisplay, null);
+});
+
+test("row 40: a node already hidden at selection time captures nothing", () => {
+  const fgrid = HARVESTED_PAGE_V33.nodes.fgrid;
+  assert.ok(fgrid);
+  const next = nextVisibilityMemory(null, { ...fgrid, classes: "hidden gap-6" }, false);
+  assert.equal(next.memory, null);
+});
+
+test("row 40: the capture is consumed once and never crosses to another node", () => {
+  const fgrid = HARVESTED_PAGE_V33.nodes.fgrid;
+  const hero = HARVESTED_PAGE_V33.nodes.hero;
+  assert.ok(fgrid && hero);
+  const captured = nextVisibilityMemory(null, fgrid, false).memory;
+  assert.deepEqual(captured, { display: "grid", nodeId: "fgrid" });
+  // Another node's un-hide must not inherit fgrid's display.
+  assert.equal(nextVisibilityMemory(captured, hero, true).restoreDisplay, null);
+  // The owner's un-hide restores it, and clears the memory behind it.
+  const restored = nextVisibilityMemory(captured, fgrid, true);
+  assert.equal(restored.restoreDisplay, "grid");
+  assert.equal(restored.memory, null);
+  assert.equal(nextVisibilityMemory(restored.memory, fgrid, true).restoreDisplay, null);
 });

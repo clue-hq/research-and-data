@@ -172,6 +172,37 @@ export const HARVESTED_PAGE_ROOT_V47: { page_root: string; nodes: Record<string,
 } as never;
 
 /**
+ * W4.9 fixture: the feature-grid **container as the visibility eye left it** —
+ * harvested from the same document (`doc_31126145a0aa4753920629ae323a301b`) at
+ * **version 52**, `GET /documents/{id}` → `scene.pages[0]`, never hand-written.
+ *
+ * Provenance is the point: version 52 was produced by clicking the inspector
+ * header's eye on the live editor (51 → 52), so these are the exact bytes row
+ * 40's write puts on disk — `grid` gone, `hidden` appended, every other token
+ * in place. It is the one fixture that proves the eye and W4.4's Flex/Grid/Hide
+ * segmented share a facet rather than agreeing by coincidence: hydrating it
+ * yields `visible: false` AND `layoutMode: "Hide"` from the same parse.
+ */
+export const HARVESTED_HIDDEN_CONTAINER_V52: { page_root: string; nodes: Record<string, WebNode> } =
+{
+  "page_root": "root",
+  "nodes": {
+    "fgrid": {
+      "id": "fgrid",
+      "kind": "container",
+      "name": "Feature grid",
+      "classes": "grid-cols-3 gap-6 px-4 bg-card text-dark py-8 hidden",
+      "new_tab": false,
+      "children": [
+        "fimg",
+        "ficon",
+        "fembed"
+      ]
+    }
+  }
+} as never;
+
+/**
  * W4.4 fixtures: a SECOND wire-true harvest of the same document
  * (`doc_31126145a0aa4753920629ae323a301b`, workspace "Insight Health" dev DB)
  * at **version 33**, captured 2026-08-18 via the design API — again as

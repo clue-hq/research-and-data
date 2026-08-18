@@ -113,10 +113,81 @@ const DIRECTION_TO_FACET: Record<string, string> = {
   vertical: "col",
 };
 
+// ══ W4.9 — the header visibility eye ════════════════════════════════════════
+
+/** Row 40: the kinds the inspector schemas serve. The eye sits in the header
+ * of every one of them, so unlike the per-control guards above it names the
+ * whole set rather than a single schema. Deliberately NOT included: the §5
+ * layout-only fallback kinds (embed / component / custom_component / anything
+ * unmapped), which borrow the container schema without being a schema — the
+ * eye refuses them the way row 19's background refuses them, rather than
+ * inventing a sanction. The page root needs no mention: the canvas header
+ * renders no element actions at all (`elementActions={selection !== "canvas"}`
+ * in `web-inspector.tsx`), and W4.5 established the root is unreachable as a
+ * selection anyway. */
+const VISIBILITY_KINDS = new Set([
+  "button",
+  "container",
+  "icon",
+  "image",
+  "section",
+  "text",
+]);
+
+/** Row 40: what the eye remembers between a hide and its un-hide — the
+ * display value it displaced, and the node it belongs to. */
+export interface VisibilityMemory {
+  display: string;
+  nodeId: string;
+}
+
+/**
+ * Row 40: the eye's pre-hide capture, folded into one pure step so the
+ * "never guess a display value" rule is unit-testable rather than buried in a
+ * hook. Given the memory carried so far and the node the eye just toggled:
+ *
+ *   • hide → capture the node's REAL current display (nothing to capture when
+ *     the node carries no display utility, or is already hidden — the value
+ *     would be `hidden` itself);
+ *   • un-hide → hand back the captured value ONLY when it belongs to this
+ *     node, and clear the memory behind it. A `null` restore means "clear the
+ *     display token" so the page's natural/stylesheet display stands; the
+ *     adapter never substitutes a plausible-looking `flex`.
+ *
+ * The memory is a per-session, per-node fact: `useInspectorWrites` holds it in
+ * a ref, so it lasts exactly as long as the editor is mounted and dies with a
+ * reload — which is precisely the "captured in this session" scope.
+ */
+export function nextVisibilityMemory(
+  memory: VisibilityMemory | null,
+  node: WebNode,
+  visible: boolean,
+): { memory: VisibilityMemory | null; restoreDisplay: string | null } {
+  if (!visible) {
+    const display = webClassFacets.display.parse(node.classes ?? "");
+    return {
+      memory:
+        display === null || display === "hidden"
+          ? null
+          : { display, nodeId: node.id },
+      restoreDisplay: null,
+    };
+  }
+  return {
+    memory: null,
+    restoreDisplay:
+      memory !== null && memory.nodeId === node.id ? memory.display : null,
+  };
+}
+
 export interface InspectorChangeDetail {
   property: string;
   selectionId: string;
   value: unknown;
+  /** W4.9 (row 40): the display value the eye captured when it hid THIS node
+   * in this session (`nextVisibilityMemory`). Absent or null → the un-hide
+   * clears the display token instead of restoring an unobserved value. */
+  restoreDisplay?: string | null;
 }
 
 export function inspectorChangeToOperation(
@@ -136,6 +207,24 @@ export function inspectorChangeToOperation(
       pageId,
       node.id,
       webClassFacets.flexWrap.set(classes, detail.value ? "wrap" : "nowrap"),
+    );
+  }
+
+  // W4.9 (row 40): the header eye also reports a BOOLEAN, and writes the very
+  // facet W4.4's container segmented writes — going through the facet (never a
+  // raw class string) is what makes the two controls compose: a node hidden by
+  // the eye hydrates the segmented as "Hide", and un-hiding from either side
+  // agrees.
+  if (property === "visible") {
+    if (!VISIBILITY_KINDS.has(node.kind)) return null;
+    if (typeof detail.value !== "boolean") return null;
+    return setNodeClassesOp(
+      pageId,
+      node.id,
+      webClassFacets.display.set(
+        classes,
+        detail.value ? (detail.restoreDisplay ?? null) : "hidden",
+      ),
     );
   }
 
