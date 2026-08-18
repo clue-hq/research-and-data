@@ -2,7 +2,11 @@
 
 import { useEffect, useRef, type RefObject } from "react";
 import { createPortal } from "react-dom";
-import type { RichTextSelectionState, WebSelection } from "../engine/webBridge";
+import type {
+  RichTextCommand,
+  RichTextSelectionState,
+  WebSelection,
+} from "../engine/webBridge";
 import type { RichTextDocument, WebTheme } from "../engine/webDocuments";
 import { useWebBridgeSelection } from "../hooks/use-web-bridge-selection";
 import { useWebRender } from "../hooks/use-web-render";
@@ -11,9 +15,26 @@ import { WebRichTextToolbar } from "./web-rich-text-toolbar";
 
 /** W2.3: imperative controls the canvas publishes for its owner — layer-row
  * clicks send `selectNode` INTO the iframe (the frame echoes the normal
- * `select` message back, driving the ordinary selection path). */
+ * `select` message back, driving the ordinary selection path).
+ *
+ * W4.8b adds the two rich-text senders the inspector's range-bound Link-to
+ * needs. They stay HERE (the bridge hook is not moved, per the task contract):
+ * the hook owns the iframe window and the render nonce, so a sender that left
+ * this component would have to carry both. */
 export interface WebArtifactCanvasControls {
   selectNode: (nodeId: string) => void;
+  /** W4.8b: one range-link command (`set_link` / `remove_link`) into the live
+   * session. The whole write path for a text link — a range link is never a
+   * node prop (contract item 3). */
+  commandRichText: (nodeId: string, command: RichTextCommand) => void;
+  /** W4.8b: focus is moving into (true) or out of (false) a PARENT surface
+   * that is part of the session. Load-bearing, not politeness: the injected
+   * bridge schedules a commit 180ms after the frame's contenteditable loses
+   * focus (`web_bridge.py:415-422,548-555`) unless `editingToolbarActive` is
+   * set — so without this, clicking into the inspector's URL field would
+   * settle the very session the field is editing. The frame clears the flag
+   * itself once a command arrives (`web_bridge.py:577-591`). */
+  setRichTextInteractionActive: (nodeId: string, active: boolean) => void;
 }
 
 /** W4.8a: the in-iframe rich-text session's state, mirrored up for surfaces
@@ -153,11 +174,15 @@ function DocumentRender({
   } = bridge;
   useEffect(() => {
     if (!controlsRef) return;
-    controlsRef.current = { selectNode };
+    controlsRef.current = {
+      commandRichText,
+      selectNode,
+      setRichTextInteractionActive: setRichTextToolbarActive,
+    };
     return () => {
       controlsRef.current = null;
     };
-  }, [controlsRef, selectNode]);
+  }, [commandRichText, controlsRef, selectNode, setRichTextToolbarActive]);
 
   // The source's render-rebuild sequence: a post-write reload rebuilds the
   // frame DOM, so drop the LOCAL bridge state (resetSelection never calls

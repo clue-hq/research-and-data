@@ -7,6 +7,12 @@ import {
 } from "../hooks/use-editor-shell-controller";
 import { buildWebLayerRows } from "@/features/design-editor/adapter/layers";
 import { richTextCommitToOperation } from "@/features/design-editor/adapter/rich-text-commit";
+import {
+  richTextLinkCommit,
+  richTextLinkSectionVisible,
+  type RichTextLinkBinding,
+  type RichTextLinkTrigger,
+} from "@/features/design-editor/adapter/rich-text-link-section";
 import { buildThemeColorOptions } from "@/features/design-editor/adapter/theme-options";
 import type {
   WebArtifactCanvasControls,
@@ -103,6 +109,15 @@ export function EditorSurface({
     richTextError: null,
   });
 
+  // W4.8b: the inspector's range-bound Link-to reports an invalid href, and
+  // the one inline error line under the inspector header shows it (no new UI —
+  // the ledgered failure ruling). Stamped with the node whose session raised
+  // it, so a stale error can never reappear over a LATER session's section.
+  const [richTextLinkError, setRichTextLinkError] = useState<{
+    message: string;
+    nodeId: string;
+  } | null>(null);
+
   // The commit path: ONE `set_rich_text` op through the SAME manual-edits
   // controller every inspector write uses (one in-flight mutation,
   // `base_version` per apply, 409 → quiet reload + note, 422 → first
@@ -123,6 +138,59 @@ export function EditorSurface({
     },
     [applyOps, loadedDocument],
   );
+
+  // W4.8b (contract item 3): the TEXT schema's "Link to" section binds to the
+  // LIVE rich-text range — so it exists only while there is one, and its
+  // writes are range-link COMMANDS, never the node-prop write path (a text
+  // node has no href to write). Absent ⇒ the inspector renders no Link-to
+  // section for text at all (mapping contract §2: hidden = absent).
+  const richTextEditingNodeId = richTextSession.editingNodeId;
+  const richTextRangeSelection = richTextSession.richTextSelection;
+  const onRichTextLinkInteraction = useCallback(
+    (active: boolean) => {
+      if (!richTextEditingNodeId) return;
+      canvasControls.current?.setRichTextInteractionActive(
+        richTextEditingNodeId,
+        active,
+      );
+    },
+    [richTextEditingNodeId],
+  );
+  const onRichTextSubmitLink = useCallback(
+    (href: string, newTab: boolean, trigger: RichTextLinkTrigger) => {
+      if (!richTextEditingNodeId || !richTextRangeSelection) return;
+      const decision = richTextLinkCommit({
+        href,
+        linkState: richTextRangeSelection.link.state,
+        newTab,
+        trigger,
+      });
+      if (decision.kind === "invalid") {
+        setRichTextLinkError({
+          message: decision.error,
+          nodeId: richTextEditingNodeId,
+        });
+        return;
+      }
+      setRichTextLinkError(null);
+      if (decision.kind === "none") return;
+      canvasControls.current?.commandRichText(
+        richTextEditingNodeId,
+        decision.command,
+      );
+    },
+    [richTextEditingNodeId, richTextRangeSelection],
+  );
+  const richTextLinkVisible = richTextLinkSectionVisible(richTextSession);
+  const richTextRange: RichTextLinkBinding | null =
+    richTextLinkVisible && richTextEditingNodeId && richTextRangeSelection
+      ? {
+          nodeId: richTextEditingNodeId,
+          onInteractionChange: onRichTextLinkInteraction,
+          onSubmitLink: onRichTextSubmitLink,
+          selection: richTextRangeSelection,
+        }
+      : null;
 
   // W2.3 (completing the W2 exit gate): while EDITING a real web document,
   // the inspector docks beside the canvas — the dummy's own editing
@@ -187,7 +255,18 @@ export function EditorSurface({
               // W4.8a: one inline error slot, rich-text first — a failed
               // runtime load or session error is what the user just did, so it
               // outranks a stale write error (source: WebEditorApp.tsx:1297).
-              error={richTextSession.richTextError ?? writes.error}
+              // W4.8b extends the same precedence by one rung: a rejected
+              // link href is the most recent thing of all, and it shows only
+              // while ITS section is on screen for ITS node — no new UI, per
+              // the ledgered failure ruling.
+              error={
+                (richTextLinkVisible &&
+                richTextLinkError?.nodeId === richTextEditingNodeId
+                  ? richTextLinkError.message
+                  : null) ??
+                richTextSession.richTextError ??
+                writes.error
+              }
               note={writes.note}
               addressing={{
                 // W3.1: what this surface holds — the write adapter (W3.2)
@@ -202,6 +281,7 @@ export function EditorSurface({
                 canvasControls.current?.selectNode(nodeId)
               }
               onSelectionChange={controller.selectInspectorElement}
+              richTextRange={richTextRange}
               selection={inspectorSelection}
               themeColors={themeColors}
             />
