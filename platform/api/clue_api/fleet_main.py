@@ -103,6 +103,7 @@ from clue_api.memory_wiring import memory_assembly_factory, memory_write_factory
 from clue_api.narrative_wiring import build_client_knowledge_retriever, register_narrative_wiring
 from clue_api.official_site_crawl_wiring import build_official_site_crawl_fleet
 from clue_api.phase_c_wiring import Stage0ScrapeBinder, build_stage0_scrape_binder
+from clue_api.product_path_preflight import assert_product_path_composition
 from clue_api.production_metrics import production_metrics_lifespan
 from clue_api.project_execution_router import (
     DeferredProjectExecutionRouter,
@@ -528,6 +529,9 @@ async def _serve() -> None:
     (with the orphan sweep alongside) until a graceful stop."""
     settings = load_settings()
     secrets = Secrets()
+    # Startup gate: a declared product path that is missing a provider credential refuses here,
+    # before any lifecycle is opened or handler composed (see ``product_path_preflight``).
+    assert_product_path_composition(settings, secrets)
     storage = build_storage_backend(settings)
     async with (
         production_metrics_lifespan(

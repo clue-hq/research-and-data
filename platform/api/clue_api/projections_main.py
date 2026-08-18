@@ -17,6 +17,7 @@ from clue_api.frontend_read.contact_email_lookup import build_contact_email_look
 from clue_api.narrative_wiring import register_narrative_wiring
 from clue_api.observability_wiring import build_observability_surface
 from clue_api.phase_c_wiring import Stage0ScrapeBinder, build_stage0_scrape_binder
+from clue_api.product_path_preflight import assert_product_path_composition
 from clue_api.projections_app import create_projections_app
 from clue_api.research_view_runtime import (
     ProductionResearchViewRuntime,
@@ -61,6 +62,9 @@ def build_application(
 
     resolved = settings if settings is not None else load_settings()
     resolved_secrets = secrets if secrets is not None else Secrets()
+    # Startup gate: a declared product path that is missing a provider credential refuses here,
+    # before any collaborator is composed, rather than serving silently-degraded provider slots.
+    assert_product_path_composition(resolved, resolved_secrets)
     storage = build_storage_backend(resolved)
     research_views: ProductionResearchViewRuntime | None = (
         build_production_research_view_runtime(storage=storage) if _c7_enabled(resolved) else None
