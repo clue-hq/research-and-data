@@ -63,9 +63,23 @@
 - No separate reviewer pass was run this session (the implementing agent is Fable); flag for the
   Slice C exit gate's founder browser test.
 
+## C4 addendum (same session, commit `902d4342`)
+
+The settle-advance acceptance proof landed as one appended test:
+`test_the_task_read_advances_truthfully_at_every_job_transition`. A `_transition` helper moves one
+job one lifecycle step the way the fleet does — row update honoring the lease/terminal CHECK
+shapes, the matching ledger event, then the fleet's own (private, deliberately borrowed)
+`_refresh_run_state`. Nine steps across three jobs ending completed / needs_review / failed; after
+each, the C2 route is polled and the test asserts exact counts + task state, the monotone laws,
+`sum(counts) == 3`, a strictly rising revision, and the pinned defect verbatim (never
+"Queued — 0 of N" once any job left queued; final state is `partial` per `_terminal_task_state`).
+Mutation-proofed: removing the ledger append fails the revision assertion (`379 > 379`).
+Suite 9/9 on `clue_slicec_bujumbura`; full `make lint` + `make typecheck` green (one `cast` needed
+for the poll helper's json destructure).
+
 ## Handoff
 
-C4 (settle-advance acceptance proof, backend test only) and C5 (chat pagination) remain. The Slice
+C5 (chat pagination) remains. The Slice
 C exit gate's founder browser test should confirm: card advances to settled with no interaction;
 reload mid-run shows the same live card; a card older than the rehydration window reappears on its
 own message.
