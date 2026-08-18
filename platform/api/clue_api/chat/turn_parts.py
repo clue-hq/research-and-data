@@ -215,6 +215,9 @@ class TaskCounts(BaseModel):
     running: int = Field(default=0, ge=0)
     completed: int = Field(default=0, ge=0)
     partial: int = Field(default=0, ge=0)
+    #: Finished and routed to a human — counted apart from ``partial`` (a shortfall) because it is
+    #: the one terminal outcome that names a queue somebody can work.
+    needs_review: int = Field(default=0, ge=0)
     blocked: int = Field(default=0, ge=0)
     failed: int = Field(default=0, ge=0)
 
@@ -432,10 +435,16 @@ _TASK_STATES: dict[str, TaskState] = {
 
 
 def _terminal_task_state(counts: TaskCounts) -> TaskState:
-    """What an ended run actually achieved, read off its subjects' finalization outcomes."""
+    """What an ended run actually achieved, read off its subjects' finalization outcomes.
 
-    if counts.completed == 0 and counts.partial == 0 and counts.failed > 0:
+    ``needs_review`` is counted apart from ``partial`` but reads the same here: a subject routed to
+    review is a subject the run did not finish everything on, so the *state* is unchanged by the
+    split — only the counts got more honest.
+    """
+
+    unfinished = counts.partial + counts.needs_review
+    if counts.completed == 0 and unfinished == 0 and counts.failed > 0:
         return TaskState.FAILED
-    if counts.partial > 0 or counts.failed > 0:
+    if unfinished > 0 or counts.failed > 0:
         return TaskState.PARTIAL
     return TaskState.COMPLETED

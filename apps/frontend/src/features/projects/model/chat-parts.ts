@@ -244,6 +244,8 @@ const TaskCountsWireSchema = z.object({
   running: z.number().int().min(0).default(0),
   completed: z.number().int().min(0).default(0),
   partial: z.number().int().min(0).default(0),
+  /** Defaulted like its siblings, so a snapshot persisted before the split still parses. */
+  needs_review: z.number().int().min(0).default(0),
   blocked: z.number().int().min(0).default(0),
   failed: z.number().int().min(0).default(0),
 });
@@ -264,6 +266,8 @@ export interface ChatTaskCounts {
   running: number;
   completed: number;
   partial: number;
+  /** Finished and routed to a human — a queue, not the shortfall `partial` names. */
+  needsReview: number;
   blocked: number;
   failed: number;
 }
@@ -509,7 +513,16 @@ export const ChatPartSnapshotSchema = z
           state: wire.state,
           title: wire.title,
           runRef: toObjectRef(wire.run_ref),
-          counts: wire.counts,
+          counts: {
+            total: wire.counts.total,
+            queued: wire.counts.queued,
+            running: wire.counts.running,
+            completed: wire.counts.completed,
+            partial: wire.counts.partial,
+            needsReview: wire.counts.needs_review,
+            blocked: wire.counts.blocked,
+            failed: wire.counts.failed,
+          },
           exceptionRefs: wire.exception_refs.map(toObjectRef),
         };
       case "plan":
