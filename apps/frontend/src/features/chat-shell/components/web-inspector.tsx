@@ -1003,6 +1003,23 @@ function SectionControls({
   );
 }
 
+/** W4.3 (§1 row 17): the web dummy's BUTTON chips are designed "Primary"
+ * (#00F59B) and "White" (#FFFFFF), but the controller's shared `DEFAULT_STATE`
+ * carries "White"/"Content" for these two fields — those are the AD-side
+ * image-inspector's designed chip values, and it reads the SAME state fields,
+ * so `DEFAULT_STATE` cannot move without breaking that dummy's visual parity
+ * instead. The web button schema therefore carries its own dummy initial
+ * values here.
+ *
+ * Merged UNDER the hydrated partial, so hydration and every later pick still
+ * win; a real button with no bg-/text- token falls back to the dummy default,
+ * which is the established absent-value contract (same posture as
+ * `themeColorForToken`'s fallback swatch). */
+const WEB_BUTTON_DUMMY_TOKENS: Partial<InspectorPresentationState> = {
+  tokenBackgroundColor: "Primary",
+  tokenTextColor: "White",
+};
+
 export function WebInspector({
   addressing,
   error = null,
@@ -1055,7 +1072,10 @@ export function WebInspector({
   const canvasController = useInspectorController([], "canvas", hydrated, addressing);
   const textController = useInspectorController(["link"], "text", hydrated, addressing);
   const imageController = useInspectorController(["link"], "image", hydrated, addressing);
-  const buttonController = useInspectorController(["link"], "button", hydrated, addressing);
+  // Row 17: the button schema's two token chips start from the WEB dummy's
+  // designed values (see WEB_BUTTON_DUMMY_TOKENS); everything else is the
+  // shared default, and the hydrated partial still overrides both.
+  const buttonController = useInspectorController(["link"], "button", { ...WEB_BUTTON_DUMMY_TOKENS, ...hydrated }, addressing);
   const iconController = useInspectorController(["link"], "icon", hydrated, addressing);
   const containerController = useInspectorController(["link"], "container", hydrated, addressing);
   const sectionController = useInspectorController(["link"], "section", hydrated, addressing);
