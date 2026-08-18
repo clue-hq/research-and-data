@@ -22,6 +22,7 @@ from clue_core import (
     ResearchDirectiveId,
     ResearchDirectiveStatus,
 )
+from clue_core.research_directive import StableKey
 from clue_db import ConnFactory, transaction
 from clue_projections import ResearchDirectivePreview, project_research_directive_preview
 from clue_research.directives import (
@@ -189,6 +190,42 @@ class DraftAccountResearchDirectiveInputV4(DraftAccountResearchDirectiveInputV3)
             )
         body["field_keys"] = list(COMPREHENSIVE_ACCOUNT_FIELDS)
         return {**data, "directive": body}
+
+
+class ResearchDirectiveBodyDraftInput(ResearchDirectiveBody):
+    """The v5 draft-input directive body: ``field_keys`` is omittable at the schema level.
+
+    ``ResearchDirectiveBody.field_keys`` carries no default, so every input model embedding the
+    body advertised the key as *required* in its JSON schema — which made v4's comprehensive
+    contract structurally unsatisfiable for a schema-honouring model: the skill says "no field
+    list", the schema says the list is mandatory, and any non-empty value is refused as ambiguous
+    breadth (found live in the Slice B browser gate; the agent looped plan-rejected and gave up).
+    Only the *advertised input schema* relaxes here: the durable body type is unchanged, and the
+    v4 expansion always fills the final 21-field shape before ``ResearchDirectiveBody``'s
+    at-least-one-field validation runs, so no draft is ever persisted with an empty field set.
+    """
+
+    field_keys: tuple[StableKey, ...] = Field(
+        default=(),
+        max_length=128,
+        description=(
+            "Omit for the normal comprehensive request — the tool itself expands the fixed "
+            "21-field account profile. List fields only together with profile='custom' when the "
+            "user explicitly asked for a narrower subset."
+        ),
+    )
+
+
+class DraftAccountResearchDirectiveInputV5(DraftAccountResearchDirectiveInputV4):
+    """v4's breadth contract with a satisfiable schema: ``directive.field_keys`` is optional.
+
+    Behaviour is byte-identical to v4 — ``comprehensive`` expands mechanically, ``comprehensive``
+    plus a non-empty explicit list is still refused as two conflicting statements of breadth, and
+    ``custom`` passes through untouched. The only change is that the advertised schema finally
+    agrees with the steering skill: the model may (and should) omit ``field_keys`` entirely.
+    """
+
+    directive: ResearchDirectiveBodyDraftInput
 
 
 class DraftAccountResearchDirectiveOutput(ToolOutput):
@@ -504,6 +541,37 @@ class DraftAccountResearchDirectiveToolV4(DraftAccountResearchDirectiveToolV3):
         )
 
 
+class DraftAccountResearchDirectiveToolV5(DraftAccountResearchDirectiveToolV4):
+    """v4's comprehensive breadth contract behind a schema the model can actually satisfy.
+
+    The only difference from v4 is the advertised input schema: ``directive.field_keys`` is
+    optional (see :class:`ResearchDirectiveBodyDraftInput`), so the steering skill's "profile=
+    'comprehensive' and no field list" instruction is expressible instead of contradicting a
+    required-key schema. Expansion, validation, spend, persistence, and replay identity are all
+    v4's — a v4 draft replays as a v4 draft.
+    """
+
+    version = "5"
+    input_model: ClassVar[type[DraftAccountResearchDirectiveInputV4]] = (
+        DraftAccountResearchDirectiveInputV5
+    )
+
+    @staticmethod
+    def _v2_input(inputs: ToolInput) -> DraftAccountResearchDirectiveInput:
+        assert isinstance(inputs, DraftAccountResearchDirectiveInputV5)
+        return DraftAccountResearchDirectiveInput(
+            project_id=inputs.project_id,
+            product_id=inputs.product_id,
+            icp_key=inputs.icp_key,
+            icp_version=inputs.icp_version,
+            body=inputs.directive,
+            account_overrides=inputs.account_overrides,
+            predecessor_id=inputs.predecessor_id,
+            user_instruction=inputs.user_instruction,
+            source_turn_ref=inputs.source_turn_ref,
+        )
+
+
 class ConfirmAccountResearchDirectiveTool(Tool):
     name = "confirm_account_research_directive"
     version = "1"
@@ -771,6 +839,10 @@ def build_research_directive_tools(
             memory_write_factory=memory_write_factory,
             conn_factory=conn_factory,
         ),
+        DraftAccountResearchDirectiveToolV5(
+            memory_write_factory=memory_write_factory,
+            conn_factory=conn_factory,
+        ),
         ConfirmAccountResearchDirectiveToolV2(conn_factory=conn_factory),
     )
 
@@ -785,12 +857,15 @@ __all__ = [
     "DraftAccountResearchDirectiveInput",
     "DraftAccountResearchDirectiveInputV3",
     "DraftAccountResearchDirectiveInputV4",
+    "DraftAccountResearchDirectiveInputV5",
     "DraftAccountResearchDirectiveOutput",
     "DraftAccountResearchDirectiveOutputV2",
     "DraftAccountResearchDirectiveTool",
     "DraftAccountResearchDirectiveToolV2",
     "DraftAccountResearchDirectiveToolV3",
     "DraftAccountResearchDirectiveToolV4",
+    "DraftAccountResearchDirectiveToolV5",
+    "ResearchDirectiveBodyDraftInput",
     "ResearchDirectiveOverrideInput",
     "build_research_directive_tools",
 ]

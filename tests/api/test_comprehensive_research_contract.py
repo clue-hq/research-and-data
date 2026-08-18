@@ -17,7 +17,10 @@ from clue_api.comprehensive_research_contract import (
     CONTACT_DEEP_FIELDS,
     CONTACT_STRUCTURED_FIELDS,
 )
-from clue_api.research_directive_tools import DraftAccountResearchDirectiveInputV4
+from clue_api.research_directive_tools import (
+    DraftAccountResearchDirectiveInputV4,
+    DraftAccountResearchDirectiveInputV5,
+)
 from clue_core import (
     Entity,
     EntityId,
@@ -362,6 +365,56 @@ def test_a_comprehensive_request_with_explicit_fields_is_refused_as_ambiguous() 
         _draft_input(profile="comprehensive", field_keys=("account.operational_pain",))
 
 
+def test_the_v5_schema_lets_the_model_omit_field_keys_entirely() -> None:
+    """The Slice B browser gate found @4 structurally unsatisfiable: its advertised schema marked
+    ``directive.field_keys`` *required* while the steering skill (correctly) instructed "no field
+    list" — so a schema-honouring model always supplied a list and was always refused as ambiguous
+    breadth. @5's contract is the same, but the schema finally agrees with the skill: the key is
+    optional, and a raw payload whose directive carries no ``field_keys`` at all — the exact shape
+    the model should send — validates and expands to the full fixed profile.
+    """
+
+    schema = DraftAccountResearchDirectiveInputV5.model_json_schema()
+    body_schema = schema["$defs"]["ResearchDirectiveBodyDraftInput"]
+    assert "field_keys" not in body_schema["required"]
+    # @4's advertised body really did demand the key — the deadlock this test exists to pin.
+    v4_body = DraftAccountResearchDirectiveInputV4.model_json_schema()["$defs"][
+        "ResearchDirectiveBody"
+    ]
+    assert "field_keys" in v4_body["required"]
+
+    body = _directive_body(()).model_dump(mode="json")
+    del body["field_keys"]
+    drafted = DraftAccountResearchDirectiveInputV5.model_validate(
+        {
+            "project_id": "project-comprehensive",
+            "product_id": "product-comprehensive",
+            "icp_key": "deep",
+            "icp_version": 1,
+            "directive": body,
+            "user_instruction": "Research these accounts comprehensively.",
+            "source_turn_ref": "turn:comprehensive-1",
+        }
+    )
+    assert tuple(str(key) for key in drafted.directive.field_keys) == COMPREHENSIVE_ACCOUNT_FIELDS
+
+
+def test_the_v5_ambiguity_refusal_is_unchanged() -> None:
+    """@5 relaxes only the schema; comprehensive plus a non-empty explicit list is still refused."""
+
+    with pytest.raises(ValidationError, match="comprehensive"):
+        DraftAccountResearchDirectiveInputV5(
+            project_id="project-comprehensive",
+            product_id="product-comprehensive",
+            icp_key="deep",
+            icp_version=1,
+            profile="comprehensive",
+            directive=_directive_body(("account.operational_pain",)),  # type: ignore[arg-type]
+            user_instruction="Research these accounts comprehensively.",
+            source_turn_ref="turn:comprehensive-1",
+        )
+
+
 def test_the_comprehensive_directive_tool_is_the_granted_head_of_abm_version() -> None:
     """The expansion only reaches production if the *granted* address is the new version."""
 
@@ -369,7 +422,8 @@ def test_the_comprehensive_directive_tool_is_the_granted_head_of_abm_version() -
     from clue_api.agent_registry_wiring import C6_ACTIVE_PROFILE_VERSIONS, c6_roles_for_tool
     from clue_api.chat.composer_context import PROJECT_CONVERSATION_AGENT_PROFILE_ID
 
-    assert c6_roles_for_tool("draft_account_research_directive@4") == (AgentRole.HEAD_OF_ABM,)
+    assert c6_roles_for_tool("draft_account_research_directive@5") == (AgentRole.HEAD_OF_ABM,)
     assert c6_roles_for_tool("draft_account_research_directive@3") == ()
-    assert C6_ACTIVE_PROFILE_VERSIONS[AgentRole.HEAD_OF_ABM] == "v37"
-    assert PROJECT_CONVERSATION_AGENT_PROFILE_ID == "head-of-abm@v37"
+    assert c6_roles_for_tool("draft_account_research_directive@4") == ()
+    assert C6_ACTIVE_PROFILE_VERSIONS[AgentRole.HEAD_OF_ABM] == "v38"
+    assert PROJECT_CONVERSATION_AGENT_PROFILE_ID == "head-of-abm@v38"

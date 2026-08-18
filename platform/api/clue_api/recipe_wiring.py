@@ -77,6 +77,10 @@ SYSTEM_RECIPE_FILENAMES: tuple[str, ...] = (
     # so ``draft_account_research_directive@4`` would be refused at plan validation
     # (``c5_tool_not_allowed``) until this revision is the promoted one.
     "recipe0-stage0-v17.json",
+    # Slice B browser-gate repair: ``draft_account_research_directive@5`` (omittable
+    # ``directive.field_keys``) replaces @4 in the C5 interaction slot's allowlist. Same
+    # new-revision-never-an-edit rule as v17.
+    "recipe0-stage0-v18.json",
     "recipe1-classic-v1.json",
     "recipe1-classic-v2.json",
 )
