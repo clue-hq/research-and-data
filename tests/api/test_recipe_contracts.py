@@ -48,7 +48,7 @@ def test_every_registered_tool_has_a_typed_output_contract() -> None:
 def test_conversation_runtime_pins_the_promoted_integration_recipe() -> None:
     """The combined recipe is inert if the detached turn runner still asks for a predecessor."""
 
-    assert CONVERSATION_RECIPE_VERSION == 17
+    assert CONVERSATION_RECIPE_VERSION == 18
 
 
 def test_every_standing_recipe_tool_is_exact_typed_pinned_and_replay_certified() -> None:
@@ -250,7 +250,9 @@ def test_operation_id_requirements_are_explicit() -> None:
         # a gate is identified by the turn plus the exact revision it presents, and a launch by
         # the confirmed directive plus its account set and budget. Slice 1's trusted readiness
         # decision and synthesis ledger are also operation-bound.
-        "draft_account_research_directive@4",
+        # The Slice B browser-gate repair replaced @4 with @5 in the promoted revision; @5
+        # inherits @4's operation-bound identity unchanged.
+        "draft_account_research_directive@5",
         "evaluate_stage0_readiness@2",
         "import_accounts@1",
         "profile_contact@1",
