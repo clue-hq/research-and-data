@@ -179,6 +179,11 @@ from clue_projections.thread_refs import (
     MessageRefFlavor,
     flavors_for_message_role,
 )
+from clue_projections.thread_research_tasks import (
+    ResearchFieldProgress,
+    ThreadResearchTaskView,
+    thread_research_tasks,
+)
 from clue_projections.threads import (
     AGENT_TURN_TASK_DEDUP_PREFIX,
     DEFAULT_PROJECT_SIDEBAR_PAGE_SIZE,
@@ -313,6 +318,10 @@ __all__ = [
     "ResearchTaskCounts",
     "ResearchTaskView",
     "research_tasks_for_action_refs",
+    # Slice C: the durable per-thread task read a live progress card polls
+    "ResearchFieldProgress",
+    "ThreadResearchTaskView",
+    "thread_research_tasks",
     # FI Lane D dev-lens turn-context inspector (dev-only read surface; zero new storage)
     "TurnContextLayerView",
     "TurnContextReceiptView",
