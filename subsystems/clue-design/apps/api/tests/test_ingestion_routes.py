@@ -176,6 +176,60 @@ def test_ingest_website_happy_path_persists_kit_and_report(
     assert report["dark_colorway"] == "synthesized"
 
 
+def test_reingest_existing_website_kit_publishes_a_new_draft_version(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Slice 4: a client-supplied existing kit id means NEXT version, not a doomed
+    create-at-version-1 collision. The human gate resets on the newly extracted draft."""
+
+    async def fake_capture(url, *, reporter, force_render=False):
+        return FakeCaptureOutcome()
+
+    _bypass_ssrf_guard(monkeypatch)
+    _install_stub_pipeline(monkeypatch, capture=fake_capture)
+
+    first = client.post(
+        "/brand-kits/ingest/website",
+        json={"url": "https://www.insighthealth.example"},
+    )
+    assert first.status_code == 200, first.text
+    first_job_id = first.json()["job"]["job_id"]
+    first_job = wait_for_ingestion_job(client, first_job_id)
+    assert first_job["status"] == "succeeded", first_job
+    brand_kit_id = first_job["brand_kit_id"]
+    assert first_job["brand_kit_version"] == 1
+
+    approved = client.post(
+        f"/brand-kits/{brand_kit_id}/approval",
+        json={"approval_status": "approved"},
+    )
+    assert approved.status_code == 200, approved.text
+
+    second = client.post(
+        "/brand-kits/ingest/website",
+        json={
+            "url": "https://www.insighthealth.example",
+            "brand_kit_id": brand_kit_id,
+        },
+    )
+    assert second.status_code == 200, second.text
+    second_job = wait_for_ingestion_job(client, second.json()["job"]["job_id"])
+    assert second_job["status"] == "succeeded", second_job
+    assert second_job["brand_kit_id"] == brand_kit_id
+    assert second_job["brand_kit_version"] == 2
+
+    latest = client.get(f"/brand-kits/{brand_kit_id}")
+    assert latest.status_code == 200, latest.text
+    assert latest.json()["brand_kit"]["version"] == 2
+    assert latest.json()["brand_kit"]["approval_status"] == "draft"
+    versions = [
+        row["version"]
+        for row in HybridRepository().list_brand_kits(all_versions=True)
+        if row["brand_kit_id"] == brand_kit_id
+    ]
+    assert versions == [2, 1]
+
+
 def test_ingested_kit_attaches_to_document(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:

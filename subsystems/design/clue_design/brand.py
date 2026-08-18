@@ -182,6 +182,16 @@ async def publish_next_brand_kit_version(
 
     The allocated number is stamped into ``brand_kit["version"]`` before the insert, so the row
     and the persisted kit JSON can never disagree about which version this is.
+
+    **The brand join is INHERITED, not re-resolved (brand-kit slice 4, 2026-08-18).** Without an
+    explicit ``brand_id`` this used to fall through to :func:`clue_design.joins.resolve_brand_id`
+    like a fresh kit, so publishing a new version of an ALREADY-LINKED kit into a workspace that
+    had since grown a second brand stamped NULL — silently unlinking a kit whose brand was never
+    in doubt. The heuristic answers "which brand does this NEW kit belong to?"; a later version
+    of an existing lineage has already been answered, at birth. So the current version's
+    ``brand_id`` is read under the same lock and passed as the explicit id. An explicit caller id
+    still wins, and a lineage that is genuinely unlinked (born NULL in a multi-brand workspace)
+    inherits nothing and resolves exactly as before.
     """
     brand_kit_id = str(brand_kit["id"])
     anchor = (
@@ -196,17 +206,21 @@ async def publish_next_brand_kit_version(
     ).first()
     if anchor is None:
         raise DesignNotFoundError("brand_kit", brand_kit_id)
-    current = int(
-        (
-            await conn.execute(
-                text(
-                    "SELECT MAX(version) FROM design_brand_kit"
-                    " WHERE brand_kit_id = :b AND workspace_id = :w"
-                ),
-                {"b": brand_kit_id, "w": workspace_id},
-            )
-        ).scalar_one()
-    )
+    # The lineage's current head: its number (the CAS base and the allocation seed) and its brand
+    # (the stamp the new version inherits). Safe as one ``ORDER BY … LIMIT 1`` — unlike the
+    # allocation lock above, this runs with the anchor row already held, so no phantom can land
+    # between it and the insert.
+    head = (
+        await conn.execute(
+            text(
+                "SELECT version, brand_id FROM design_brand_kit"
+                " WHERE brand_kit_id = :b AND workspace_id = :w"
+                " ORDER BY version DESC LIMIT 1"
+            ),
+            {"b": brand_kit_id, "w": workspace_id},
+        )
+    ).one()
+    current = int(head.version)
     if current != expected_base_version:
         raise DesignVersionConflictError("brand_kit", brand_kit_id, expected_base_version, current)
     published = dict(brand_kit)
@@ -218,7 +232,7 @@ async def publish_next_brand_kit_version(
         brand_summary=brand_summary,
         diagnostics=diagnostics,
         source=source,
-        brand_id=brand_id,
+        brand_id=brand_id if brand_id is not None else head.brand_id,
     )
 
 
