@@ -145,6 +145,7 @@ export function ArtifactStage({
                   <WebArtifactCanvas
                     controlsRef={canvasControlsRef}
                     documentId={activeDocumentId}
+                    editing={editing}
                     onRichTextCommit={onRichTextCommit}
                     onRichTextSessionChange={onRichTextSessionChange}
                     onSelect={onCanvasSelect}

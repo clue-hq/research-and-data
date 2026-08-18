@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, type RefObject } from "react";
 import { createPortal } from "react-dom";
+import { canvasSandbox } from "../adapter/view-mode-html";
 import type {
   RichTextCommand,
   RichTextSelectionState,
@@ -63,10 +64,28 @@ export interface WebRichTextSessionState {
  * nonce-tagged postMessage selection events). W2.2 attaches the ported
  * listener here and forwards validated selections via `onSelect`; the join
  * with the document lives in `useWebArtifactSelection`.
+ *
+ * W4 addendum (founder rulings, 2026-08-19) — the canvas now has TWO modes,
+ * and `editing` is the whole switch:
+ *
+ * - **Edit ON** — everything described above, unchanged: the bridged render,
+ *   the selection outlines, the re-select-after-write sequence, the rich-text
+ *   session, `sandbox="allow-scripts"`.
+ * - **Edit OFF** — an actual website. The bridge is opt-in server-side, so the
+ *   view fetch simply omits it and the render arrives with no editor chrome of
+ *   any kind (no hover rectangles, no outlines). Every link opens a new tab via
+ *   the injected `<base target="_blank">` (`adapter/view-mode-html.ts`), which
+ *   is why the sandbox gains `allow-popups` and
+ *   `allow-popups-to-escape-sandbox` — see {@link canvasSandbox} for why both
+ *   are load-bearing and why `allow-scripts` stays in both modes.
+ *
+ * Toggling refetches into the SAME iframe (the reloadToken quiet-swap
+ * discipline): no keyed remount, no loading flash.
  */
 export function WebArtifactCanvas({
   controlsRef,
   documentId,
+  editing = false,
   onRichTextCommit,
   onRichTextSessionChange,
   onSelect,
@@ -79,6 +98,9 @@ export function WebArtifactCanvas({
   /** W2.3: receives the canvas's imperative controls while mounted. */
   controlsRef?: RefObject<WebArtifactCanvasControls | null>;
   documentId: string;
+  /** W4 addendum: the mode switch. False (the default) mounts the bridge-free
+   * view render — an actual website, links opening in new tabs. */
+  editing?: boolean;
   /** W4.8a: a text node's in-iframe session committed — the owner persists ONE
    * `set_rich_text` op through the manual-edits controller. */
   onRichTextCommit?: (nodeId: string, content: RichTextDocument) => void;
@@ -114,6 +136,7 @@ export function WebArtifactCanvas({
       key={documentId}
       controlsRef={controlsRef}
       documentId={documentId}
+      editing={editing}
       onRichTextCommit={onRichTextCommit}
       onRichTextSessionChange={onRichTextSessionChange}
       onSelect={onSelect}
@@ -129,6 +152,7 @@ export function WebArtifactCanvas({
 function DocumentRender({
   controlsRef,
   documentId,
+  editing,
   onRichTextCommit,
   onRichTextSessionChange,
   onSelect,
@@ -140,6 +164,7 @@ function DocumentRender({
 }: {
   controlsRef?: RefObject<WebArtifactCanvasControls | null>;
   documentId: string;
+  editing: boolean;
   onRichTextCommit?: (nodeId: string, content: RichTextDocument) => void;
   onRichTextSessionChange?: (state: WebRichTextSessionState) => void;
   onSelect?: (selection: WebSelection | null) => void;
@@ -150,7 +175,7 @@ function DocumentRender({
   selectedNodeId: string | null;
 }) {
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
-  const { nonceRef, state } = useWebRender(documentId, reloadToken);
+  const { nonceRef, state } = useWebRender(documentId, reloadToken, editing);
   // The ported bridge listener (source-window + nonce validation). Selection
   // state itself lives with the join owner (useWebArtifactSelection); this
   // canvas only forwards validated events upward.
@@ -195,9 +220,14 @@ function DocumentRender({
     previousReload.current = reloadToken;
     resetSelection();
   }, [reloadToken, resetSelection]);
+  //
+  // W4 addendum: editor-only, and explicitly so. A view render carries no
+  // bridge, so it never posts `ready` and its nonce is empty — the re-select
+  // would already be a double no-op — but the gate states the intent rather
+  // than relying on two accidents of the bridgeless path.
   useEffect(() => {
-    if (ready && selectedNodeId) selectNode(selectedNodeId);
-  }, [ready, selectedNodeId, selectNode]);
+    if (editing && ready && selectedNodeId) selectNode(selectedNodeId);
+  }, [editing, ready, selectedNodeId, selectNode]);
 
   // W4.8a editing gate (lane ruling, 2026-08-18): the injected bridge starts a
   // rich-text session on ANY double-click of a text node — it has no notion of
@@ -232,7 +262,7 @@ function DocumentRender({
         <iframe
           ref={iframeRef}
           className={styles.frame}
-          sandbox="allow-scripts"
+          sandbox={canvasSandbox(editing)}
           srcDoc={state.html}
           title="Website preview"
         />
