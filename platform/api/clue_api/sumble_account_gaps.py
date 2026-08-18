@@ -334,7 +334,12 @@ async def compile_sumble_account_gap_preflight(
     if cents_per_credit < 0:
         raise SumbleAccountGapEligibilityError("Sumble cents-per-credit cannot be negative")
     field_keys = tuple(sorted(field_expected_value_credits))
-    if not field_keys or len(field_keys) > policy.maximum_fields:
+    # Only requestable fields consume the per-call cap: an unrequestable §3.1 row costs no
+    # provider call and settles as an honest unresolved plan row, so a comprehensive request
+    # naming all nine Sumble-owned fields (five requestable under the pinned v9 actions) must
+    # not be refused on raw count. An all-unrequestable set is refused separately below.
+    requestable_count = sum(1 for key in field_keys if _requestable(key))
+    if not field_keys or requestable_count > policy.maximum_fields:
         raise SumbleAccountGapEligibilityError("invalid Sumble account-gap field count")
     unknown = sorted(set(field_keys) - set(_SOURCE_BY_FIELD))
     if unknown:

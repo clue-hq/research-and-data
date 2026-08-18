@@ -21,6 +21,7 @@ from clue_api.sumble_account_gaps import (
     SumbleAccountGapCoordinator,
     SumbleAccountGapEligibilityError,
     SumbleAccountGapFieldsUnrequestable,
+    SumbleAccountGapNotEligible,
     SumbleAccountGapOutcome,
     SumbleAccountGapStarter,
 )
@@ -901,5 +902,81 @@ def test_s1_provider_response_fault_without_a_status_stays_spend_outcome_unknown
             org = next(row for row in snapshots if row.source_key == ORGANIZATIONS_SOURCE_KEY)
             assert org.state is AccountGapSnapshotState.SPEND_OUTCOME_UNKNOWN
             assert org.response_artifact_key is None
+
+    run_async(scenario())
+
+
+def test_s1_the_nine_field_comprehensive_sumble_set_passes_the_count_gate(
+    tmp_path: Path,
+) -> None:
+    """All nine §3.1 Sumble-owned rows in one call clear the per-call cap.
+
+    Only requestable fields consume ``maximum_fields`` (default 6): the four rows the pinned v9
+    actions cannot request cost no provider call and settle as honest unresolved plan rows, so a
+    comprehensive request naming all nine must not be refused on raw count — that refusal was a
+    suspending trap for the account agent, which sees nine Sumble-authorized fields in its state.
+    """
+
+    async def scenario() -> None:
+        workspace_id = "ws-s1-nine-field-count"
+        storage = FsStorage(tmp_path / "artifacts")
+        async with rollback_conn(seed_pack=True) as conn:
+            started, ready = await _seed_selected_high_tier_account(
+                conn, storage, workspace_id=workspace_id
+            )
+
+            @asynccontextmanager
+            async def same_connection() -> AsyncIterator[AsyncConnection]:
+                yield conn
+
+            http = _AttributeSumbleHttp("insighthealth.ai")
+
+            def client_factory(maximum: int, cents: Decimal) -> SumbleClient:
+                return SumbleClient(
+                    api_key=SecretStr("fixture"),
+                    budget=SumbleCreditBudget(maximum=maximum),
+                    http=http,
+                    cents_per_credit=cents,
+                )
+
+            starter = SumbleAccountGapStarter(
+                coordinator=SumbleAccountGapCoordinator(
+                    api_key=SecretStr("fixture"),
+                    storage=storage,
+                    cents_per_credit=Decimal("0.5"),
+                    conn_factory=same_connection,
+                    client_factory=client_factory,
+                ),
+                storage=storage,
+                cents_per_credit=Decimal("0.5"),
+                conn_factory=same_connection,
+            )
+            nine = {
+                "core.employee_count": Decimal(5),
+                "core.industry": Decimal(5),
+                "core.hq_location": Decimal(5),
+                "core.company_about": Decimal(5),
+                "core.company_linkedin_url": Decimal(5),
+                "account.total_funding": Decimal(5),
+                "account.recent_funding": Decimal(5),
+                "account.hiring_velocity_eng": Decimal(5),
+                "core.primary_tech_stack": Decimal(5),
+            }
+            # Tech requires its explicit unbounded approval and rides its own action; the count
+            # gate is what this test pins, so request the eight organization/jobs-shaped rows.
+            del nine["core.primary_tech_stack"]
+            # The request must travel PAST the count gate: the fixture account already holds a
+            # fresh governed core.industry claim, so the next gate in line — the freshness
+            # ladder's honest reuse refusal — is the expected outcome. Before the fix this raised
+            # "invalid Sumble account-gap field count" without ever reaching it.
+            with pytest.raises(SumbleAccountGapNotEligible, match="already confidently resolved"):
+                await starter.start(
+                    workspace_id=workspace_id,
+                    project_run_id=ProjectRunId(started.project_run_id),
+                    account_id=EntityId(ready.account_id),
+                    field_expected_value_credits=nine,
+                    provider_credit_cap=8,
+                    allow_unbounded_tech=False,
+                )
 
     run_async(scenario())
