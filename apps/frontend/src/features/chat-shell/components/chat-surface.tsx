@@ -4,7 +4,10 @@ import { ConversationContent } from "@/features/projects/components/conversation
 import { ProjectComposer } from "@/features/projects/components/project-composer";
 import type { ProjectChatController } from "@/features/projects/hooks/use-project-chat-controller";
 import type { useProjectWorkspaceController } from "@/features/projects/hooks/use-project-workspace-controller";
-import type { ProjectWorkspace } from "@/features/projects/model/project-workspace";
+import type {
+  ProjectArtifact,
+  ProjectWorkspace,
+} from "@/features/projects/model/project-workspace";
 import { useEditorShellController } from "../hooks/use-editor-shell-controller";
 import { chatSurfaceUrlState } from "../model/chat-surface-params";
 import { ArtifactStage } from "./artifact-stage";
@@ -39,14 +42,25 @@ import { WebInspector } from "./web-inspector";
 // W-lane's split view hydrates this same mount with a real canvas later.
 
 export function ChatSurface({
+  artifacts,
   chat,
   controller,
   paneState,
   projectId,
   workspace,
 }: {
+  /** Chat-flow slice 1: the chats page's server-fetched gallery feed — the
+   * rail's real cards (the artifact route's exact `loadGalleryFeed` shape).
+   * Absent → the gallery keeps its honest empty state; the feed rides these
+   * props, never the workspace schema (`workspace.artifacts` stays the
+   * schema-hard empty tuple). */
+  artifacts?: ProjectArtifact[];
   chat: ProjectChatController;
   controller: ReturnType<typeof useProjectWorkspaceController>;
+  /** Artifact id → design-document id over the whole feed. Declared (and
+   * threaded by the shell) for the canvas mount, which resolves the active
+   * tab's document through it next slice; unused until then. */
+  documentIds?: Record<string, string>;
   paneState: { edit?: string; selection?: string; surface?: string };
   projectId: string;
   workspace: ProjectWorkspace;
@@ -183,7 +197,7 @@ export function ChatSurface({
       </section>
       <ArtifactStage
         activeArtifactId={shell.activeArtifactId}
-        artifacts={workspace.artifacts}
+        artifacts={artifacts ?? []}
         artifactKind={shell.artifactKind}
         artifactMaximized={shell.artifactMaximized}
         artifactTitle={shell.artifactTitle}

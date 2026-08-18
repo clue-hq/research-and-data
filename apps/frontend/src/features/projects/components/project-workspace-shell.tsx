@@ -8,14 +8,26 @@ import {
   type ProjectWorkspaceInitialState,
 } from "../hooks/use-project-workspace-controller";
 import { useProjectWorkspaceLoader } from "../hooks/use-project-workspace-loader";
-import type { ProjectWorkspace } from "../model/project-workspace";
+import type {
+  ProjectArtifact,
+  ProjectWorkspace,
+} from "../model/project-workspace";
 import styles from "./project-flow.module.css";
 
 export function ProjectWorkspaceShell({
+  artifacts,
+  documentIds,
   initial,
   projectId,
   workspace,
 }: {
+  /** Chat-flow slice 1: the page's server-fetched gallery feed — real cards
+   * for the artifact rail. Absent (the legacy /projects/{id} absorber) → the
+   * gallery keeps its honest empty state. */
+  artifacts?: ProjectArtifact[];
+  /** Artifact id → design-document id over the whole feed; the canvas mount
+   * (next slice) resolves the active tab's document through it. */
+  documentIds?: Record<string, string>;
   initial: ProjectWorkspaceInitialState;
   projectId: string;
   workspace: ProjectWorkspace | null;
@@ -42,6 +54,8 @@ export function ProjectWorkspaceShell({
   }
   return (
     <LoadedProjectWorkspace
+      artifacts={artifacts}
+      documentIds={documentIds}
       initial={initial}
       key={workspaceRemountKey(loaded.workspace.id, initial)}
       workspace={loaded.workspace}
@@ -50,9 +64,13 @@ export function ProjectWorkspaceShell({
 }
 
 function LoadedProjectWorkspace({
+  artifacts,
+  documentIds,
   initial,
   workspace,
 }: {
+  artifacts?: ProjectArtifact[];
+  documentIds?: Record<string, string>;
   initial: ProjectWorkspaceInitialState;
   workspace: ProjectWorkspace;
 }) {
@@ -68,8 +86,10 @@ function LoadedProjectWorkspace({
   // ChatSurface renders the chat pane + artifact rail around production chat.
   return (
     <ChatSurface
+      artifacts={artifacts}
       chat={chat}
       controller={controller}
+      documentIds={documentIds}
       paneState={{
         edit: initial.edit,
         selection: initial.selection,
