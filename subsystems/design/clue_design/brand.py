@@ -255,6 +255,49 @@ async def list_brand_kits(
     return [_brand_kit_from_row(row) for row in rows]
 
 
+async def latest_approved_brand_kit_ref(
+    conn: AsyncConnection, *, workspace_id: str
+) -> JsonObject | None:
+    """Return the newest approved kit ref for the workspace's unambiguous brand.
+
+    A document-create request currently carries a workspace but no platform ``brand_id``. In a
+    one-brand workspace that is sufficient context; in a multi-brand workspace it is not, and
+    guessing would stamp the wrong client's identity onto a durable document. The query therefore
+    fails closed unless the workspace owns exactly one brand. An explicit ref on the WebDoc is
+    handled by the document DAL and always wins over this default.
+
+    Approval is version-specific. A newer draft does not shadow an older approved version: the
+    newest *approved* row is selected by its store recency, with deterministic tie-breakers.
+    """
+    row = (
+        await conn.execute(
+            text(
+                """
+                WITH workspace_brand AS (
+                  SELECT min(brand_id) AS brand_id, count(*) AS brand_count
+                  FROM brand
+                  WHERE workspace_id = :w
+                )
+                SELECT kit.brand_kit_id, kit.version
+                FROM design_brand_kit AS kit
+                JOIN workspace_brand AS workspace_brand
+                  ON workspace_brand.brand_count = 1
+                 AND kit.brand_id = workspace_brand.brand_id
+                WHERE kit.workspace_id = :w
+                  AND kit.approval_status = 'approved'
+                ORDER BY kit.updated_at DESC, kit.created_at DESC,
+                         kit.version DESC, kit.brand_kit_id ASC
+                LIMIT 1
+                """
+            ),
+            {"w": workspace_id},
+        )
+    ).first()
+    if row is None:
+        return None
+    return {"id": str(row.brand_kit_id), "version": int(row.version)}
+
+
 async def update_brand_kit_approval(
     conn: AsyncConnection, *, workspace_id: str, brand_kit_id: str, approval_status: str
 ) -> JsonObject:

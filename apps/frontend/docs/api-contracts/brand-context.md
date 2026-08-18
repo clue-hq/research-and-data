@@ -407,3 +407,38 @@ publish one additional identical **draft** version. This is accepted for Slice
 4: nothing auto-approves, the page selects the latest version, and the human
 gate remains authoritative. Closing it later requires a durable job-to-version
 receipt (not inference from payload equality).
+
+---
+
+## Resolution (2026-08-19, Slice 5) — approved kits theme new web documents
+
+Brand approval affects document **birth only**. In the transaction that inserts a new WebDoc,
+the design DAL stamps:
+
+```json
+{"theme":{"brand_kit":{"id":"brand_kit_ing_...","version":2}}}
+```
+
+when all of the following are true:
+
+- the incoming WebDoc has no explicit `theme.brand_kit` reference;
+- the workspace has exactly one platform brand, so its identity is unambiguous; and
+- that brand has an approved kit version.
+
+The chosen row is the latest **approved** version by store recency. A newer draft does not
+shadow an older approved version. An explicit request reference always wins. A workspace with
+multiple brands and no explicit reference remains unthemed rather than guessing; the future
+multi-brand create contract must carry a `brand_id` or an explicit kit reference.
+
+The inventory found three document-creation surfaces. Direct `POST /documents` and account
+derivation converge on `clue_design.documents.create_document`; “save as template” uses
+`clue_design.documents.create_web_template`. Both durable insert seams apply the same rule in
+their write transaction, so the HTTP routes, design tools, and Gallery do not reimplement kit
+selection.
+
+This is intentionally **not** a `/web/theme` render fallback. Existing documents are never
+rewritten when approval changes. A document created before approval keeps the platform-default
+theme, and a document pinned to an older approved version stays pinned. Re-stamping an existing
+document is future work and must be an explicit manual action with its own history/undo contract.
+`GET /documents/{id}/web/theme` simply resolves the exact reference already stored on that
+document and exposes those compiled tokens to the W4.0 color picker.

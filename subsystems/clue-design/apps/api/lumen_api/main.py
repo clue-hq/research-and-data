@@ -2003,7 +2003,10 @@ def create_app(
                     title=document["title"],
                     version=document["current_version"],
                     doc_kind="web",
-                    has_brand_kit=payload.brand_kit_ref is not None,
+                    has_brand_kit=(
+                        (document["scene"].get("theme") or {}).get("brand_kit")
+                        is not None
+                    ),
                 )
                 return document_created_dto(document)
             if payload.scene is None:

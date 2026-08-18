@@ -21,6 +21,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_db import db_lifespan
+from clue_design import brand as design_brand
 from clue_design import diagnostics as design_diagnostics
 from clue_design import documents as design_documents
 from clue_design import history as design_history
@@ -45,6 +46,28 @@ async def _seed_ws(conn: AsyncConnection) -> str:
     return ws
 
 
+async def _seed_brand_kit(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    version: int,
+    approval_status: str,
+) -> dict[str, object]:
+    return await design_brand.create_brand_kit(
+        conn,
+        workspace_id=workspace_id,
+        brand_kit={
+            "id": "kit_workspace_brand",
+            "version": version,
+            "name": "Workspace brand",
+            "approval_status": approval_status,
+        },
+        brand_summary={"product_ready": False},
+        diagnostics=[],
+        source="website",
+    )
+
+
 def test_create_and_get_document_round_trip(require_design_db: None) -> None:
     async def _check() -> None:
         async with db_lifespan() as engine, engine.connect() as conn, conn.begin() as txn:
@@ -59,6 +82,107 @@ def test_create_and_get_document_round_trip(require_design_db: None) -> None:
             assert created["status"] == "draft"
             assert isinstance(created["created_at"], str)  # ISO parity with the SQLite API
             assert created["undo_stack"] is None and created["redo_stack"] is None
+            await txn.rollback()
+
+    run_async(_check())
+
+
+def test_web_documents_stamp_only_the_latest_approved_kit_at_birth(
+    require_design_db: None,
+) -> None:
+    async def _check() -> None:
+        async with db_lifespan() as engine, engine.connect() as conn, conn.begin() as txn:
+            ws = await _seed_ws(conn)
+            await _seed_brand_kit(conn, workspace_id=ws, version=1, approval_status="draft")
+
+            before_id = f"web_before_{uuid4().hex}"
+            before = await design_documents.create_document(
+                conn, workspace_id=ws, scene=_web_doc(before_id), doc_kind="web"
+            )
+            assert before["scene"]["theme"].get("brand_kit") is None
+
+            await design_brand.update_brand_kit_approval(
+                conn,
+                workspace_id=ws,
+                brand_kit_id="kit_workspace_brand",
+                approval_status="approved",
+            )
+
+            # Approval never re-stamps a document that already exists.
+            unchanged = await design_documents.get_document(
+                conn, workspace_id=ws, document_id=before_id
+            )
+            assert unchanged["scene"]["theme"].get("brand_kit") is None
+
+            after = await design_documents.create_document(
+                conn,
+                workspace_id=ws,
+                scene=_web_doc(f"web_after_{uuid4().hex}"),
+                doc_kind="web",
+            )
+            assert after["scene"]["theme"]["brand_kit"] == {
+                "id": "kit_workspace_brand",
+                "version": 1,
+            }
+
+            # Saving an old unthemed document as a new template is another document birth and
+            # passes through the second durable insert seam.
+            template_doc = _web_doc(f"web_template_{uuid4().hex}")
+            template = await design_documents.create_web_template(
+                conn, workspace_id=ws, web_doc=template_doc
+            )
+            assert template["scene"]["theme"]["brand_kit"] == {
+                "id": "kit_workspace_brand",
+                "version": 1,
+            }
+
+            # A newer draft does not shadow the newest approved version.
+            await _seed_brand_kit(conn, workspace_id=ws, version=2, approval_status="draft")
+            latest_approved = await design_documents.create_document(
+                conn,
+                workspace_id=ws,
+                scene=_web_doc(f"web_latest_approved_{uuid4().hex}"),
+                doc_kind="web",
+            )
+            assert latest_approved["scene"]["theme"]["brand_kit"] == {
+                "id": "kit_workspace_brand",
+                "version": 1,
+            }
+
+            explicit_ref = {"id": "kit_explicit", "version": 7}
+            explicit_doc = _web_doc(f"web_explicit_{uuid4().hex}")
+            explicit_doc["theme"] = {"brand_kit": explicit_ref}
+            explicit = await design_documents.create_document(
+                conn, workspace_id=ws, scene=explicit_doc, doc_kind="web"
+            )
+            assert explicit["scene"]["theme"]["brand_kit"] == explicit_ref
+            await txn.rollback()
+
+    run_async(_check())
+
+
+def test_web_document_default_fails_closed_for_a_multi_brand_workspace(
+    require_design_db: None,
+) -> None:
+    async def _check() -> None:
+        async with db_lifespan() as engine, engine.connect() as conn, conn.begin() as txn:
+            ws = await _seed_ws(conn)
+            await _seed_brand_kit(conn, workspace_id=ws, version=1, approval_status="approved")
+            await conn.execute(
+                text(
+                    "INSERT INTO brand (brand_id, workspace_id, name) "
+                    "VALUES (:brand_id, :workspace_id, 'Second brand')"
+                ),
+                {"brand_id": f"brd_{uuid4().hex}", "workspace_id": ws},
+            )
+
+            created = await design_documents.create_document(
+                conn,
+                workspace_id=ws,
+                scene=_web_doc(f"web_ambiguous_{uuid4().hex}"),
+                doc_kind="web",
+            )
+            assert created["scene"]["theme"].get("brand_kit") is None
             await txn.rollback()
 
     run_async(_check())
