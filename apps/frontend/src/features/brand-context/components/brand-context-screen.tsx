@@ -2,7 +2,9 @@
 
 import { ApplicationShell } from "@/components/shell/application-shell";
 import { useBrandContextController } from "../hooks/use-brand-context-controller";
+import { useBrandKitActions } from "../hooks/use-brand-kit-actions";
 import type { BrandContextInitialState, BrandContextWorkspace } from "../model/brand-context";
+import type { BrandKitMeta } from "../model/brand-kit-actions";
 import { AssetDetailDialog, AssetsHeader, AssetsPanel } from "./assets-panel";
 import { BrandContextHeader } from "./brand-context-header";
 import { BrandContextSidebar } from "./brand-context-sidebar";
@@ -13,12 +15,15 @@ import { NewStyleDialog, NewTypefaceDialog, TypographyPanel } from "./typography
 
 export function BrandContextScreen({
   initial,
+  kit,
   workspace,
 }: {
   initial: BrandContextInitialState;
+  kit: BrandKitMeta | null;
   workspace: BrandContextWorkspace;
 }) {
   const controller = useBrandContextController({ initial, workspace });
+  const brandKitActions = useBrandKitActions(kit);
 
   return (
     <ApplicationShell activeHref="/brand-context">
@@ -26,11 +31,11 @@ export function BrandContextScreen({
         <BrandContextSidebar controller={controller} workspace={workspace} />
         <main className={styles.main}>
           {controller.section === "assets"
-            ? <AssetsHeader controller={controller} />
-            : <BrandContextHeader controller={controller} />}
+            ? <AssetsHeader brandKitActions={brandKitActions} controller={controller} />
+            : <BrandContextHeader brandKitActions={brandKitActions} controller={controller} />}
           <div className={`${styles.panelScroll} clue-view-enter`} key={controller.section}>
-            {controller.section === "colors" ? <ColorsPanel controller={controller} workspace={workspace} /> : null}
-            {controller.section === "typography" ? <TypographyPanel controller={controller} /> : null}
+            {controller.section === "colors" ? <ColorsPanel controller={controller} emptyMessage={brandKitActions.colorsEmptyMessage} workspace={workspace} /> : null}
+            {controller.section === "typography" ? <TypographyPanel controller={controller} emptyMessage={brandKitActions.typographyEmptyMessage} /> : null}
             {controller.section === "assets" ? <AssetsPanel controller={controller} /> : null}
             {controller.section === "knowledge" ? <KnowledgePanel controller={controller} /> : null}
           </div>

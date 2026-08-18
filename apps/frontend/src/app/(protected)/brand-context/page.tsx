@@ -16,6 +16,12 @@ export const metadata: Metadata = {
   title: "Brand context",
 };
 
+// This page proves the current session and reads workspace-scoped design state on every render.
+// Without an explicit dynamic boundary, the repository's intentional fail-soft catch can swallow
+// Next's build-time dynamic-usage signal and pre-render an empty workspace. It also makes
+// `router.refresh()` after approval/re-extraction a real store read rather than a cached shell.
+export const dynamic = "force-dynamic";
+
 interface BrandContextPageProps {
   searchParams: Promise<{
     asset?: string;
@@ -42,7 +48,7 @@ async function designFetch(): Promise<typeof fetch> {
 }
 
 export default async function BrandContextPage({ searchParams }: BrandContextPageProps) {
-  const [workspace, query] = await Promise.all([
+  const [view, query] = await Promise.all([
     getBrandContextWorkspace(designFetch),
     searchParams,
   ]);
@@ -62,7 +68,8 @@ export default async function BrandContextPage({ searchParams }: BrandContextPag
         filePath: query.file,
         section: section.success ? section.data : "colors",
       }}
-      workspace={workspace}
+      kit={view.kit}
+      workspace={view.workspace}
     />
   );
 }

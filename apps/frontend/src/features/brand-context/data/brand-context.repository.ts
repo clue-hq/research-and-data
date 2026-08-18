@@ -14,10 +14,28 @@ import {
   type BrandKitSummary,
   type DesignAssetRecord,
 } from "../model/brand-kit";
+import {
+  toBrandKitMeta,
+  type BrandKitMeta,
+} from "../model/brand-kit-actions";
 import { brandContextFixture } from "./brand-context.fixture";
 
+/**
+ * What one render of the Brand-context page reads.
+ *
+ * `workspace` is the DESIGNED page's shape (frozen — `BrandContextWorkspaceSchema`); `kit` is
+ * the store's facts about the kit behind it (identity, version, approval state, ingested
+ * source), which slice 4's header actions need and the design has no slot for. `kit` is `null`
+ * whenever `workspace` is an honest empty — no kit, a refusal, an unprovable session, or the
+ * unconfigured fixture path.
+ */
+export interface BrandContextView {
+  workspace: BrandContextWorkspace;
+  kit: BrandKitMeta | null;
+}
+
 export interface BrandContextRepository {
-  getWorkspace(): Promise<BrandContextWorkspace>;
+  getWorkspace(): Promise<BrandContextView>;
 }
 
 /**
@@ -50,15 +68,13 @@ export function httpBrandContextRepository({
           "[brand-context] serving the empty workspace; the brand-kit read failed:",
           error,
         );
-        return emptyBrandContextWorkspace();
+        return { kit: null, workspace: emptyBrandContextWorkspace() };
       }
     },
   };
 }
 
-async function readWorkspace(
-  designFetch: typeof fetch,
-): Promise<BrandContextWorkspace> {
+async function readWorkspace(designFetch: typeof fetch): Promise<BrandContextView> {
   const read = async (path: string): Promise<unknown> => {
     const response = await designFetch(path, { cache: "no-store" });
     if (!response.ok) {
@@ -69,7 +85,7 @@ async function readWorkspace(
 
   const kits = BrandKitSummaryListSchema.parse(await read("/brand-kits"));
   const selected = selectBrandKit(kits);
-  if (!selected) return emptyBrandContextWorkspace();
+  if (!selected) return { kit: null, workspace: emptyBrandContextWorkspace() };
 
   const kit = BrandKitDetailSchema.parse(
     await read(`/brand-kits/${encodeURIComponent(selected.id)}`),
@@ -92,9 +108,12 @@ async function readWorkspace(
     }),
   );
 
-  return BrandContextWorkspaceSchema.parse(
-    toBrandContextWorkspace(kit, { assetRecords }),
-  );
+  return {
+    kit: toBrandKitMeta(kit),
+    workspace: BrandContextWorkspaceSchema.parse(
+      toBrandContextWorkspace(kit, { assetRecords }),
+    ),
+  };
 }
 
 /**
@@ -121,7 +140,9 @@ function selectBrandKit(
 
 const fixtureBrandContextRepository: BrandContextRepository = {
   async getWorkspace() {
-    return BrandContextWorkspaceSchema.parse(brandContextFixture);
+    // No kit meta: the dummy is a DESIGN, not a stored kit — there is nothing to approve or
+    // re-extract, and inventing a status chip for it would be the first lie on this page.
+    return { kit: null, workspace: BrandContextWorkspaceSchema.parse(brandContextFixture) };
   },
 };
 

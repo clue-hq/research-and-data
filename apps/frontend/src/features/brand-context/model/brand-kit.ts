@@ -95,11 +95,21 @@ export const BrandImageAssetSchema = z.object({
 const tolerant = <T extends z.ZodTypeAny>(entry: T) =>
   z.record(z.string(), entry.nullable().catch(null)).optional();
 
+/**
+ * One recorded provenance of the kit (`BrandSource`). Slice 4 reads the website a kit was
+ * ingested from so Re-extract can re-run the SAME site; entry-tolerant like the token maps.
+ */
+export const BrandSourceSchema = z.object({
+  url: z.string().nullish(),
+  kind: z.string().nullish(),
+});
+
 export const BrandKitJsonSchema = z.object({
   id: z.string().min(1),
   name: z.string(),
   version: z.number(),
   approval_status: z.string().nullish(),
+  sources: z.array(BrandSourceSchema.nullable().catch(null)).nullish(),
   tokens: z
     .object({
       colors: tolerant(BrandColorTokenSchema),

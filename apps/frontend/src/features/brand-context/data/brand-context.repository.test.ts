@@ -61,7 +61,7 @@ test("the newest kit version by updated_at is the one the page reads", async () 
     requested,
   );
 
-  const workspace = await httpBrandContextRepository({
+  const { kit, workspace } = await httpBrandContextRepository({
     designFetch: async () => fetchImpl,
   }).getWorkspace();
 
@@ -70,13 +70,20 @@ test("the newest kit version by updated_at is the one the page reads", async () 
   assert.ok(workspace.colorGroups.length > 0);
   assert.equal(workspace.assets.length, 15);
   assert.deepEqual(requested.slice(0, 2), ["/brand-kits", `/brand-kits/${KIT_ID}`]);
+  // The store's facts about that kit ride along, for the header's actions.
+  assert.deepEqual(kit, {
+    approvalStatus: "draft",
+    id: KIT_ID,
+    sourceUrl: "https://stripe.com",
+    version: 1,
+  });
 });
 
 test("a workspace with no kit gets the designed empty states, never fixture data", async () => {
   const requested: string[] = [];
   const { fetchImpl } = stubDesignApi({ "/brand-kits": { body: [] } }, requested);
 
-  const workspace = await httpBrandContextRepository({
+  const { kit, workspace } = await httpBrandContextRepository({
     designFetch: async () => fetchImpl,
   }).getWorkspace();
 
@@ -84,6 +91,7 @@ test("a workspace with no kit gets the designed empty states, never fixture data
   assert.deepEqual(workspace.assets, []);
   assert.deepEqual(workspace.knowledgeFolders, []);
   assert.notEqual(workspace.id, brandContextFixture.id);
+  assert.equal(kit, null);
   // Nothing beyond the list is fetched when there is nothing to fetch.
   assert.deepEqual(requested, ["/brand-kits"]);
 });
@@ -93,16 +101,18 @@ test("a design-API refusal renders the empty states rather than failing the page
     "/brand-kits": { status: 503, body: { detail: "unavailable" } },
   });
 
-  const workspace = await httpBrandContextRepository({
+  const { kit, workspace } = await httpBrandContextRepository({
     designFetch: async () => fetchImpl,
   }).getWorkspace();
 
   assert.deepEqual(workspace.colorGroups, []);
   assert.notEqual(workspace.id, brandContextFixture.id);
+  // No kit meta from a refusal: the actions must not claim a kit we could not read.
+  assert.equal(kit, null);
 });
 
 test("an unreachable transport renders the empty states too", async () => {
-  const workspace = await httpBrandContextRepository({
+  const { kit, workspace } = await httpBrandContextRepository({
     designFetch: async () => {
       throw new Error("session could not be proven");
     },
@@ -110,6 +120,7 @@ test("an unreachable transport renders the empty states too", async () => {
 
   assert.deepEqual(workspace.colorGroups, []);
   assert.deepEqual(workspace.typefaces, []);
+  assert.equal(kit, null);
 });
 
 test("one unreadable asset record degrades its own row, not the page", async () => {
@@ -119,23 +130,26 @@ test("one unreadable asset record degrades its own row, not the page", async () 
     // No /assets/* routes at all: every registry read 404s.
   });
 
-  const workspace = await httpBrandContextRepository({
+  const { kit, workspace } = await httpBrandContextRepository({
     designFetch: async () => fetchImpl,
   }).getWorkspace();
 
   assert.equal(workspace.assets.length, 15);
   assert.equal(workspace.assets[0].sizeLabel, "—");
   assert.match(workspace.assets[0].visual.kind, /image/);
+  assert.equal(kit?.id, KIT_ID);
 });
 
 test("without a configured transport the page still gets the dummy fixture", async () => {
   const configured = process.env.CLUE_API_BASE_URL;
   delete process.env.CLUE_API_BASE_URL;
   try {
-    const workspace = await getBrandContextRepository(async () => {
+    const { kit, workspace } = await getBrandContextRepository(async () => {
       throw new Error("the fixture path must not open a transport");
     }).getWorkspace();
     assert.equal(workspace.id, brandContextFixture.id);
+    // The dummy is a design, not a stored kit: no identity to approve or re-extract.
+    assert.equal(kit, null);
   } finally {
     if (configured !== undefined) process.env.CLUE_API_BASE_URL = configured;
   }
@@ -146,7 +160,7 @@ test("with a configured transport the page reads the real store", async () => {
   process.env.CLUE_API_BASE_URL = "http://127.0.0.1:8030";
   const { fetchImpl } = stubDesignApi({ "/brand-kits": { body: [] } });
   try {
-    const workspace = await getBrandContextRepository(
+    const { workspace } = await getBrandContextRepository(
       async () => fetchImpl,
     ).getWorkspace();
     assert.notEqual(workspace.id, brandContextFixture.id);

@@ -1,7 +1,9 @@
 import type { CSSProperties, FocusEvent, KeyboardEvent } from "react";
 import type { BrandContextController } from "../hooks/use-brand-context-controller";
+import type { BrandKitActionsController } from "../hooks/use-brand-kit-actions";
 import type { BrandAsset, BrandAssetSortKey } from "../model/brand-context";
 import { BrandContextIcon } from "./brand-context-icon";
+import { BrandKitActionsRow } from "./brand-kit-actions";
 import styles from "./brand-context.module.css";
 
 function AssetVisual({ asset }: { asset: BrandAsset }) {
@@ -141,19 +143,28 @@ function AssetSortHeader({
   );
 }
 
-export function AssetsHeader({ controller }: { controller: BrandContextController }) {
+export function AssetsHeader({
+  brandKitActions,
+  controller,
+}: {
+  brandKitActions: BrandKitActionsController;
+  controller: BrandContextController;
+}) {
   return (
     <header className={styles.assetPageHeader}>
       <div className={styles.assetPageTitleRow}>
         <h1>Assets</h1>
-        <button
-          aria-label={controller.shareCopied ? "Assets link copied" : "Copy assets link"}
-          className={styles.documentLinkButton}
-          onClick={controller.shareCurrentView}
-          type="button"
-        >
-          <BrandContextIcon name="link" size={14} />
-        </button>
+        <div className={styles.headerActions}>
+          <BrandKitActionsRow controller={brandKitActions} />
+          <button
+            aria-label={controller.shareCopied ? "Assets link copied" : "Copy assets link"}
+            className={styles.documentLinkButton}
+            onClick={controller.shareCurrentView}
+            type="button"
+          >
+            <BrandContextIcon name="link" size={14} />
+          </button>
+        </div>
       </div>
       <div className={styles.assetToolbar}>
         <label className={styles.searchField}>

@@ -317,3 +317,93 @@ approval gate is a later slice. The proposed endpoints above remain proposals.
 3. **Asset geometry** — raster width/height are not measured at ingestion, so
    raster assets show `—` for dimensions; only vector assets carry a viewBox.
 4. **Persistence for the lifted edits** — the proposed mutation endpoints.
+
+---
+
+## Resolutions (2026-08-18, Slice 4) — manual extraction and the approval gate
+
+This section supersedes Slice 1's "Mutations — unchanged" paragraph for the two
+mutations named here only. Rename/delete/upload/knowledge edits remain proposed
+and client-local.
+
+### Founder-ratified surface
+
+- **Option A** is binding: the page header shows a status chip, secondary
+  **↻ Re-extract**, and primary **Approve**, immediately left of the existing
+  Light/Dark control. The row remains available in the Colors, Typography,
+  Assets, and Knowledge headers.
+- The chip reports the store without reinterpretation:
+  `draft → Draft`, `generated_unreviewed → Generated — unreviewed`, and
+  `approved → Approved`. With no kit there is no chip. After approval, Approve
+  disappears; Re-extract remains.
+- Empty Colors/Typography panels say **"Extracting your brand from your
+  website…"** while any listed job is `queued` or `running`. Otherwise they say
+  **"No colors yet."** / **"No text styles yet."** Data-bearing panels are
+  unchanged.
+
+### Approval
+
+```text
+POST /api/clue/design/brand-kits/{brand_kit_id}/approval
+{"approval_status":"approved"}
+```
+
+The browser calls the authenticated design BFF only. On success it refreshes
+the Server Component and renders the approval state returned by the store; it
+does not optimistically claim approval. There is no un-approve affordance.
+The design API updates only the lineage's latest version and mirrors the value
+into both the row and `brand_kit_json.approval_status`.
+
+Approval and extraction share one client single-flight guard. Both controls
+remain disabled until the ingestion-job read succeeds, and Approve is disabled
+while a job is active. This is required because the approval endpoint targets
+the latest version: racing a publish could otherwise approve a newly extracted
+draft the person has not reviewed.
+
+### Re-extract
+
+```text
+POST /api/clue/design/brand-kits/ingest/website
+{"url":"https://client.example","brand_kit_id":"brand_kit_ing_..."}
+```
+
+- `url` is the current kit's recorded website source, falling back to the
+  newest website job's URL when the kit lacks one.
+- `brand_kit_id` names the current lineage. If it already exists, the ingestion
+  pipeline uses `design_publish_brand_kit_version` with the latest version as
+  `expected_base_version`; the next number is allocated under the lineage lock
+  and the resulting version is always `draft`.
+- The manual wire does not accept a free-floating browser-authored `brand_id`.
+  The exact join is stronger: the design DAL reads the lineage head under the
+  same locked write and explicitly inherits its stored `brand_id`. A workspace
+  gaining a second brand therefore cannot make a later version fall back to
+  the ambiguous multi-brand heuristic or become unlinked.
+- `queued`/`running` holds the button. The page polls only while state is
+  unknown or active and refreshes when the job becomes terminal, so the newest
+  published version replaces the prior one. A repeated click during the local
+  request shares the same promise and creates no second POST.
+- A failed first-time auto-ingestion may have no kit. In that bounded rescue
+  case, the page enqueues the failed job's recorded website URL without a kit
+  id; this is the original single-brand onboarding path. Failed jobs do **not**
+  auto-refire—manual Re-extract is the only rescue.
+- With neither a kit source nor a recorded website job, Re-extract is disabled
+  with "No website on record". A URL input plus explicit brand picker for a new
+  manual lineage is future work and needs its own founder UI ruling.
+
+### Ingestion-job read addition
+
+`GET /api/clue/design/brand-kits/ingest` (and the single-job endpoint) adds
+nullable `website_url` to the public job DTO for `kind == "website"` only. It is
+the workspace's own submitted URL, served behind workspace authorization.
+The request object remains private; PDF/asset-upload request details are not
+exposed and report `website_url: null`.
+
+### Recovery residual
+
+A client-supplied lineage's published kit currently carries no durable
+producing-ingestion-job identifier. If a leased worker dies after publishing
+the next version but before terminalizing its job, the reaper's re-offer can
+publish one additional identical **draft** version. This is accepted for Slice
+4: nothing auto-approves, the page selects the latest version, and the human
+gate remains authoritative. Closing it later requires a durable job-to-version
+receipt (not inference from payload equality).

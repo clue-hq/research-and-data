@@ -3,78 +3,90 @@ import type { BrandContextController } from "../hooks/use-brand-context-controll
 import { BrandContextIcon } from "./brand-context-icon";
 import styles from "./brand-context.module.css";
 
-export function TypographyPanel({ controller }: { controller: BrandContextController }) {
+export function TypographyPanel({
+  controller,
+  emptyMessage,
+}: {
+  controller: BrandContextController;
+  emptyMessage: string;
+}) {
+  const empty = !controller.typefaces.length && !controller.textStyles.length;
   return (
     <div className={styles.typographyPanel}>
-      <section className={styles.typographySection}>
-        <div className={styles.sectionTitleRow}>
-          <h2>Typefaces</h2>
-          <button className={styles.secondaryButton} onClick={controller.openNewTypefaceDialog} type="button">+ New typeface</button>
-        </div>
-        <div className={styles.typefaceList}>
-          {controller.typefaces.map((typeface) => (
-            <article className={styles.typefaceRow} key={typeface.id}>
-              <div className={styles.typefaceName}>
-                <span>{typeface.family}</span>
-                {typeface.source === "custom" ? <small>Custom</small> : null}
-              </div>
-              <p style={{ fontFamily: typeface.family === "Satoshi Variable" ? "Satoshi" : typeface.family }}>
-                a quick brown fox jumps over a lazy dog
-              </p>
-              <button
-                aria-expanded={controller.typefaceMenuId === typeface.id}
-                aria-label={`${typeface.family} actions`}
-                className={styles.typefaceMenuButton}
-                onClick={() => controller.toggleTypefaceMenu(typeface.id)}
-                type="button"
-              >
-                <BrandContextIcon name="more" size={14} />
-              </button>
-              {controller.typefaceMenuId === typeface.id ? (
-                <div className={styles.typefaceMenu} role="menu">
-                  <button onClick={() => controller.useTypefaceInNewStyle(typeface.id)} role="menuitem" type="button">Use in new style</button>
-                  {typeface.source === "custom" ? (
-                    <button className={styles.typefaceMenuDanger} onClick={() => controller.removeTypeface(typeface.id)} role="menuitem" type="button">Remove typeface</button>
-                  ) : (
-                    <span>Library typeface</span>
-                  )}
-                </div>
-              ) : null}
-            </article>
-          ))}
-        </div>
-      </section>
-
-      <section className={styles.typographySection}>
-        <div className={styles.sectionTitleRow}>
-          <h2>Text styles</h2>
-          <button className={styles.secondaryButton} onClick={controller.openNewStyleDialog} type="button">+ New style</button>
-        </div>
-        <div className={styles.textStyleTable} role="table">
-          <div className={styles.textStyleHeader} role="row">
-            <span role="columnheader">Text style</span>
-            <span role="columnheader">Typeface</span>
-            <span role="columnheader">Size</span>
-            <span role="columnheader">Font-weight</span>
-            <span role="columnheader">Line-height</span>
-            <span role="columnheader">Recommended use</span>
-            <span aria-hidden="true" />
-          </div>
-          {controller.textStyles.map((style) => (
-            <div className={styles.textStyleRow} key={style.id} role="row">
-              <span role="cell"><span className={styles.stylePill}>{style.name.toLocaleLowerCase()}</span></span>
-              <span role="cell">{style.fontFamily}</span>
-              <span role="cell">{style.fontSize}px</span>
-              <span role="cell">{style.fontWeight}</span>
-              <span role="cell">{style.lineHeight}px</span>
-              <span role="cell">{style.recommendedUse}</span>
-              <button aria-label={`${style.name} style actions`} className={styles.textStyleMenuButton} role="cell" type="button">
-                <BrandContextIcon name="more" size={14} />
-              </button>
+      {empty ? <div className={styles.emptyState}>{emptyMessage}</div> : null}
+      {!empty ? (
+        <>
+          <section className={styles.typographySection}>
+            <div className={styles.sectionTitleRow}>
+              <h2>Typefaces</h2>
+              <button className={styles.secondaryButton} onClick={controller.openNewTypefaceDialog} type="button">+ New typeface</button>
             </div>
-          ))}
-        </div>
-      </section>
+            <div className={styles.typefaceList}>
+              {controller.typefaces.map((typeface) => (
+                <article className={styles.typefaceRow} key={typeface.id}>
+                  <div className={styles.typefaceName}>
+                    <span>{typeface.family}</span>
+                    {typeface.source === "custom" ? <small>Custom</small> : null}
+                  </div>
+                  <p style={{ fontFamily: typeface.family === "Satoshi Variable" ? "Satoshi" : typeface.family }}>
+                    a quick brown fox jumps over a lazy dog
+                  </p>
+                  <button
+                    aria-expanded={controller.typefaceMenuId === typeface.id}
+                    aria-label={`${typeface.family} actions`}
+                    className={styles.typefaceMenuButton}
+                    onClick={() => controller.toggleTypefaceMenu(typeface.id)}
+                    type="button"
+                  >
+                    <BrandContextIcon name="more" size={14} />
+                  </button>
+                  {controller.typefaceMenuId === typeface.id ? (
+                    <div className={styles.typefaceMenu} role="menu">
+                      <button onClick={() => controller.useTypefaceInNewStyle(typeface.id)} role="menuitem" type="button">Use in new style</button>
+                      {typeface.source === "custom" ? (
+                        <button className={styles.typefaceMenuDanger} onClick={() => controller.removeTypeface(typeface.id)} role="menuitem" type="button">Remove typeface</button>
+                      ) : (
+                        <span>Library typeface</span>
+                      )}
+                    </div>
+                  ) : null}
+                </article>
+              ))}
+            </div>
+          </section>
+
+          <section className={styles.typographySection}>
+            <div className={styles.sectionTitleRow}>
+              <h2>Text styles</h2>
+              <button className={styles.secondaryButton} onClick={controller.openNewStyleDialog} type="button">+ New style</button>
+            </div>
+            <div className={styles.textStyleTable} role="table">
+              <div className={styles.textStyleHeader} role="row">
+                <span role="columnheader">Text style</span>
+                <span role="columnheader">Typeface</span>
+                <span role="columnheader">Size</span>
+                <span role="columnheader">Font-weight</span>
+                <span role="columnheader">Line-height</span>
+                <span role="columnheader">Recommended use</span>
+                <span aria-hidden="true" />
+              </div>
+              {controller.textStyles.map((style) => (
+                <div className={styles.textStyleRow} key={style.id} role="row">
+                  <span role="cell"><span className={styles.stylePill}>{style.name.toLocaleLowerCase()}</span></span>
+                  <span role="cell">{style.fontFamily}</span>
+                  <span role="cell">{style.fontSize}px</span>
+                  <span role="cell">{style.fontWeight}</span>
+                  <span role="cell">{style.lineHeight}px</span>
+                  <span role="cell">{style.recommendedUse}</span>
+                  <button aria-label={`${style.name} style actions`} className={styles.textStyleMenuButton} role="cell" type="button">
+                    <BrandContextIcon name="more" size={14} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </section>
+        </>
+      ) : null}
     </div>
   );
 }

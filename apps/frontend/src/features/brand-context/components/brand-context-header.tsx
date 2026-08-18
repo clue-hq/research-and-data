@@ -1,5 +1,7 @@
 import type { BrandContextController } from "../hooks/use-brand-context-controller";
+import type { BrandKitActionsController } from "../hooks/use-brand-kit-actions";
 import { BrandContextIcon } from "./brand-context-icon";
+import { BrandKitActionsRow } from "./brand-kit-actions";
 import styles from "./brand-context.module.css";
 
 function Segment({
@@ -23,7 +25,13 @@ function Segment({
   );
 }
 
-export function BrandContextHeader({ controller }: { controller: BrandContextController }) {
+export function BrandContextHeader({
+  brandKitActions,
+  controller,
+}: {
+  brandKitActions: BrandKitActionsController;
+  controller: BrandContextController;
+}) {
   const labels = {
     assets: "Assets",
     colors: "Colors",
@@ -55,15 +63,18 @@ export function BrandContextHeader({ controller }: { controller: BrandContextCon
 
         <header className={styles.documentTitleBar}>
           <h1>{controller.selectedDocument.name}</h1>
-          <div aria-label="Document mode" className={styles.documentModeControl}>
-            <Segment active={controller.documentMode === "preview"} onClick={() => controller.setDocumentMode("preview")}>
-              <BrandContextIcon name="eye" size={12} />
-              Preview
-            </Segment>
-            <Segment active={controller.documentMode === "edit"} onClick={() => controller.setDocumentMode("edit")}>
-              <BrandContextIcon name="code" size={12} />
-              Edit
-            </Segment>
+          <div className={styles.headerActions}>
+            <BrandKitActionsRow controller={brandKitActions} />
+            <div aria-label="Document mode" className={styles.documentModeControl}>
+              <Segment active={controller.documentMode === "preview"} onClick={() => controller.setDocumentMode("preview")}>
+                <BrandContextIcon name="eye" size={12} />
+                Preview
+              </Segment>
+              <Segment active={controller.documentMode === "edit"} onClick={() => controller.setDocumentMode("edit")}>
+                <BrandContextIcon name="code" size={12} />
+                Edit
+              </Segment>
+            </div>
           </div>
         </header>
       </div>
@@ -77,13 +88,13 @@ export function BrandContextHeader({ controller }: { controller: BrandContextCon
       </div>
 
       <div className={styles.headerActions}>
+        <BrandKitActionsRow controller={brandKitActions} />
         {controller.section === "colors" ? (
           <div aria-label="Brand color palette" className={styles.colorModeControl}>
             <Segment active={controller.colorMode === "light"} onClick={() => controller.setColorMode("light")}><BrandContextIcon name="sun" size={12} /> Light</Segment>
             <Segment active={controller.colorMode === "dark"} onClick={() => controller.setColorMode("dark")}><BrandContextIcon name="moon" size={12} /> Dark</Segment>
           </div>
         ) : null}
-
       </div>
     </header>
   );

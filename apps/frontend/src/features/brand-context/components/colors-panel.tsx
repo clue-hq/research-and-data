@@ -4,13 +4,18 @@ import styles from "./brand-context.module.css";
 
 export function ColorsPanel({
   controller,
+  emptyMessage,
   workspace,
 }: {
   controller: BrandContextController;
+  emptyMessage: string;
   workspace: BrandContextWorkspace;
 }) {
   return (
     <div className={styles.colorsPanel}>
+      {!workspace.colorGroups.length ? (
+        <div className={styles.emptyState}>{emptyMessage}</div>
+      ) : null}
       {workspace.colorGroups.map((group) => (
         <section className={styles.colorSection} key={group.id}>
           <h2>{group.label}</h2>

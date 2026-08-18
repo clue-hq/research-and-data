@@ -259,6 +259,48 @@
   gap: 8px;
 }
 
+.brandKitActions {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+}
+
+.approvalChip {
+  display: inline-flex;
+  min-height: 26px;
+  align-items: center;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  padding: 0 9px;
+  font: 600 11px/16px "Satoshi", Arial, sans-serif;
+  white-space: nowrap;
+}
+
+.approvalChipDraft {
+  border-color: var(--clue-ds-color-primitives-warning-alpha-200);
+  background: var(--clue-ds-color-primitives-warning-alpha-100);
+  color: var(--clue-ds-color-content-utility-warning);
+}
+
+.approvalChipUnreviewed {
+  border-color: var(--clue-ds-color-primitives-brand-alpha-300);
+  background: var(--clue-ds-color-primitives-brand-alpha-100);
+  color: var(--clue-ds-color-content-neutral);
+}
+
+.approvalChipApproved {
+  border-color: var(--clue-ds-color-primitives-positive-alpha-200);
+  background: var(--clue-ds-color-primitives-positive-alpha-100);
+  color: var(--clue-ds-color-content-utility-positive);
+}
+
+.approvalChipNeutral {
+  border-color: var(--clue-ds-color-border-subtle);
+  background: var(--clue-ds-color-bg-subtle);
+  color: var(--clue-ds-color-content-subtle);
+}
+
 .documentHeaderStack {
   flex: none;
   background: var(--clue-ds-color-bg-neutral);
@@ -495,6 +537,11 @@
 }
 
 .primaryButton:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.secondaryButton:disabled {
   cursor: default;
   opacity: 0.45;
 }
@@ -1720,11 +1767,29 @@
   }
 
   .pageHeader {
-    padding: 0 16px;
+    min-height: auto;
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 10px;
+    padding: 12px 16px;
+  }
+
+  .headerActions,
+  .brandKitActions {
+    max-width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .assetPageTitleRow,
+  .documentTitleBar {
+    height: auto;
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 10px;
   }
 
   .assetPageHeader {
-    min-height: 132px;
+    min-height: auto;
     padding-right: 16px;
     padding-left: 16px;
   }
