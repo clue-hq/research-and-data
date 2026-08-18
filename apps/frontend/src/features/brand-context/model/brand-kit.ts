@@ -160,6 +160,10 @@ export const DesignAssetRecordSchema = z.object({
 });
 
 export type BrandColorToken = z.infer<typeof BrandColorTokenSchema>;
+export type BrandFontAsset = z.infer<typeof BrandFontAssetSchema>;
+export type BrandImageAsset = z.infer<typeof BrandImageAssetSchema>;
+export type BrandLogoAsset = z.infer<typeof BrandLogoAssetSchema>;
+export type BrandTypographyToken = z.infer<typeof BrandTypographyTokenSchema>;
 export type BrandKitDetail = z.infer<typeof BrandKitDetailSchema>;
 export type BrandKitJson = z.infer<typeof BrandKitJsonSchema>;
 export type BrandKitSummary = z.infer<typeof BrandKitSummarySchema>;

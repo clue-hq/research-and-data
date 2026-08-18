@@ -193,3 +193,82 @@ test("the honest-empty workspace is schema-valid and carries no fixture content"
     },
   );
 });
+
+test("typefaces come from the kit's font assets, sourced honestly", () => {
+  assert.deepEqual(workspace.typefaces, [
+    { family: "SourceCodePro", id: "brand", source: "custom" },
+  ]);
+});
+
+test("a system font family is a library typeface, a brand's own webfont is custom", () => {
+  const mapped = toBrandContextWorkspace(
+    BrandKitDetailSchema.parse({
+      brand_kit: { id: "kit", version: 1, name: "Fonts" },
+      brand_kit_json: {
+        id: "kit",
+        name: "Fonts",
+        version: 1,
+        assets: {
+          fonts: {
+            body: { family: "Georgia", source: { kind: "system" } },
+            brand: { family: "Inter", source: { kind: "uploaded" } },
+            mono: { family: "IBM Plex Mono" },
+          },
+        },
+      },
+    }),
+  );
+
+  assert.deepEqual(mapped.typefaces, [
+    { family: "Georgia", id: "body", source: "library" },
+    { family: "Inter", id: "brand", source: "custom" },
+    { family: "IBM Plex Mono", id: "mono", source: "library" },
+  ]);
+});
+
+test("text styles read the type scale largest-first, in px", () => {
+  assert.deepEqual(
+    workspace.textStyles.map((style) => [style.id, style.fontSize]),
+    [
+      ["type.display", 51],
+      ["type.stat", 40],
+      ["type.headline", 32],
+      ["type.title", 23],
+      ["type.subtitle", 20],
+      ["type.body", 16],
+      ["type.body.small", 14],
+      ["type.label", 13],
+      ["type.caption", 12],
+      ["type.eyebrow", 12],
+      ["type.cta", 11],
+      ["type.legal", 11],
+    ],
+  );
+});
+
+test("the kit's unitless line-height becomes the px the column claims", () => {
+  const display = workspace.textStyles[0];
+  assert.deepEqual(display, {
+    fontFamily: "SourceCodePro",
+    fontSize: 51,
+    fontWeight: 700,
+    id: "type.display",
+    // 51 × 1.05, the engine's own `font_size * line_height`.
+    lineHeight: 54,
+    name: "Display",
+    // The kit carries no usage guidance for its type tokens — honest empty.
+    recommendedUse: "",
+  });
+});
+
+test("a kit with no typography and no fonts renders both empty states", () => {
+  const mapped = toBrandContextWorkspace(
+    BrandKitDetailSchema.parse({
+      brand_kit: { id: "kit", version: 1, name: "Bare" },
+      brand_kit_json: { id: "kit", name: "Bare", version: 1 },
+    }),
+  );
+
+  assert.deepEqual(mapped.typefaces, []);
+  assert.deepEqual(mapped.textStyles, []);
+});
