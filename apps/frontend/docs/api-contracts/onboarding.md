@@ -104,6 +104,45 @@ expired sessions link to sign-in). The 3.2s timer survives only in fixture mode.
 routes AND the scrape-binder composition ride `CLUE_SELF_SERVE_PROVISIONING_ENABLED` — an
 unconfigured deployment refuses `start_recon` everywhere, exactly as before slice 2.
 
+### Brand-kit ingestion auto-trigger (brand-kit slice 2 — 2026-08-18)
+
+The same `POST /stage0/setup` also seeds the client's **draft brand kit**, so the
+Brand-context screen has real brand data to review instead of an empty page. Nothing about the
+setup wire shape changes; this is a backend side effect, recorded here because it is the
+onboarding flow's behaviour.
+
+- **Trigger.** After the capture step and the recon dispatch, the platform makes ONE
+  server-side call to the design API: `POST {CLUE_DESIGN_API_BASE_URL}/brand-kits/ingest/website`,
+  header `X-Workspace-Id: <the PROVISIONED workspace>`, body `{"url": <company_website>}`.
+  Never from the browser, and never a platform-side write of `design_ingestion_job` — the
+  design API owns the SSRF guard and writes the job row plus its `design_job` fleet task in one
+  transaction. The kit is born `draft`: **ingestion never approves anything** (approval is the
+  human gate, brand-kit slice 4).
+- **First-time-only, structurally.** The trigger is reachable only through the self-serve
+  provisioning scope that supplies `brand_id` + `company_website`, so workspaces created any
+  other way never auto-ingest. Re-runs and refreshes are manual from the Brand-context screen.
+  There is no "first time" flag to get out of sync.
+- **Idempotency key = the workspace.** The enqueue is skipped when ANY `design_ingestion_job`
+  row already exists for the workspace, so setup replays (the setting-up screen polls and the
+  submit can be retried) produce exactly one job. The check and the enqueue run under a
+  per-workspace Postgres advisory transaction lock, so two concurrent first-time setups also
+  produce exactly one.
+- **Fail-soft.** A design API that is unreachable, slow, or refuses the URL never fails or
+  delays the setup response, and leaves no job row. Because a failed attempt writes nothing,
+  the next setup replay re-attempts — a transient outage self-heals, and brand-kit slice 4's
+  manual trigger is the final rescue.
+- **`brand_id` is not threaded.** A self-serve-provisioned workspace has exactly one brand, and
+  the kit-birth path's exactly-one-brand heuristic (`clue_design.joins.resolve_brand_id`) stamps
+  it. A multi-brand workspace resolves to `NULL` rather than guessing — which is why the manual
+  re-ingest in slice 4 passes an explicit brand.
+- **Config.** `CLUE_DESIGN_API_BASE_URL` (server-side only, backend-to-backend; distinct from
+  the frontend's own `LUMEN_API_BASE_URL` for its BFF proxy). Unset = the trigger does not fire,
+  which is a deployment posture, not an error. The route itself still rides
+  `CLUE_SELF_SERVE_PROVISIONING_ENABLED`.
+- **Reading the result.** The Brand-context page reads the kit through the design BFF (see
+  `brand-context.md`); the onboarding checklist row for brand-kit status is brand-kit slice 3
+  and extends `GET /stage0/setup/current`.
+
 ### `GET /stage0/setup/current` response
 
 ```json

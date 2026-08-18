@@ -7,7 +7,10 @@ One narrow, flag-gated surface for the onboarding "setting up your workspace" sc
     not be able to trigger it). Captures the provisioned company website as a real B2
     artifact (capture-before-use), records the durable ``onboarding_input`` (kind
     ``website``, actor ``human``), and fires the recon driver. Returns 202; truth lives in
-    durable rows.
+    durable rows. Brand-kit slice 2 hangs one more thing off the same captured website: a
+    single, idempotent, fail-soft brand-kit website ingestion for the workspace
+    (:mod:`clue_api.brand_kit_ingestion`) — first-time-only by construction, because only the
+    self-serve provisioning scope reaches this route.
 
 ``GET /stage0/setup/current``
     Serves lane-level truth resolved through the self-serve provisioning record. The status
@@ -61,6 +64,7 @@ from sqlalchemy import text
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
 from clue_api.auth_tool_context import tool_context_for_principal
 from clue_api.auth_wiring import principal_from_request
+from clue_api.brand_kit_ingestion import BrandKitIngestionTrigger
 from clue_api.stage0_setup_fleet import (
     ProvisioningScope,
     Stage0ReconEnqueuer,
@@ -223,6 +227,7 @@ def create_stage0_setup_router(
     conn_factory: ConnFactory,
     storage: StorageBackend,
     recon_enqueuer: Stage0ReconEnqueuer | None = None,
+    brand_kit_ingestion: BrandKitIngestionTrigger | None = None,
 ) -> APIRouter:
     router = APIRouter(tags=["stage0-setup"])
     artifacts = DurableAgentArtifactStore(storage=storage, conn_factory=conn_factory)
@@ -427,6 +432,20 @@ def create_stage0_setup_router(
             )
             driver_tasks.add(task)
             task.add_done_callback(driver_tasks.discard)
+        if brand_kit_ingestion is not None:
+            # Brand-kit slice 2: the captured website also seeds the client's DRAFT brand kit,
+            # once, for the whole workspace. First-time-only is structural rather than flagged —
+            # this line is only reachable through the self-serve provisioning scope resolved
+            # above, so a workspace born any other way never gets an auto-fired ingestion.
+            #
+            # It runs AFTER the recon dispatch, not before: recon is the onboarding screen's
+            # actual work, and a slow or unreachable design API must not delay it by even the
+            # enqueue's timeout. ``ensure`` never raises (fail-soft), so nothing below the
+            # capture step can be broken by the design service being down — the next setup
+            # replay re-attempts while no job row exists.
+            await brand_kit_ingestion.ensure(
+                workspace_id=workspace_id, website=scope.company_website
+            )
         return SetupStartResponse(schema_version=PROJECTIONS_SCHEMA_VERSION, status="started")
 
     async def _field_truth(
