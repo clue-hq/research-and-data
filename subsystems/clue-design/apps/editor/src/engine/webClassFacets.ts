@@ -33,6 +33,17 @@
  * axis-split gaps into a single `gap-N` — intended for v1 (the inspector
  * exposes one gap control).
  *
+ * ── Radius (v1) ─────────────────────────────────────────────────────────────
+ * Five disjoint families: all-corners `rounded-*` plus the four corners
+ * `rounded-tl/tr/bl/br-*`. Each owns only its own lead, so `rounded-tl-[4px]`
+ * is invisible to the all-corners family and `rounded-full` is invisible to a
+ * corner family. The value is the token suffix, so the named Tailwind scale
+ * (`rounded-lg` → "lg") and an arbitrary pixel radius (`rounded-[8px]` →
+ * "[8px]") both read back verbatim. The bare default (`rounded`,
+ * `rounded-tl`) names no value: it is owned for removal but never reported.
+ * The side utilities this v1 doesn't model (`rounded-t-*`, `rounded-s-*`, …)
+ * belong to no family and survive verbatim.
+ *
  * Pure + framework-free so it is exhaustively unit-testable.
  */
 
@@ -451,6 +462,54 @@ export const objectPositionFacet = makeFacet({
   formatToken: (value) => `object-${value}`
 });
 
+/** The corner/side segments Tailwind can place between `rounded` and its
+ * value (`rounded-t-lg`, `rounded-tl-[4px]`). A radius family never reads one:
+ * that keeps the all-corners family off the corner tokens and leaves the side
+ * utilities v1 doesn't model to the escape hatch. */
+const RADIUS_SEGMENTS = new Set<string>([
+  "t",
+  "r",
+  "b",
+  "l",
+  "s",
+  "e",
+  "tl",
+  "tr",
+  "bl",
+  "br",
+  "ss",
+  "se",
+  "es",
+  "ee"
+]);
+
+/** A `rounded[-<corner>]-<value>` radius family (see file header). `corner`
+ * omitted is the all-corners family. */
+function radiusFamilyFacet(corner?: string): ClassFacet {
+  const lead = corner === undefined ? "rounded" : `rounded-${corner}`;
+  const parseToken = (token: string): string | null => {
+    if (!token.startsWith(`${lead}-`)) {
+      return null;
+    }
+    const rest = token.slice(lead.length + 1);
+    if (!rest || RADIUS_SEGMENTS.has(rest.split("-")[0])) {
+      return null;
+    }
+    return rest;
+  };
+  return makeFacet({
+    parseToken,
+    ownsToken: (token) => token === lead || parseToken(token) !== null,
+    formatToken: (value) => `${lead}-${value}`
+  });
+}
+
+export const radiusFacet = radiusFamilyFacet();
+export const radiusTopLeftFacet = radiusFamilyFacet("tl");
+export const radiusTopRightFacet = radiusFamilyFacet("tr");
+export const radiusBottomLeftFacet = radiusFamilyFacet("bl");
+export const radiusBottomRightFacet = radiusFamilyFacet("br");
+
 type DimensionAxis = "width" | "height";
 
 function sizeValue(token: string): string | null {
@@ -549,7 +608,12 @@ export const webClassFacets = {
   underline: underlineFacet,
   lineThrough: lineThroughFacet,
   objectFit: objectFitFacet,
-  objectPosition: objectPositionFacet
+  objectPosition: objectPositionFacet,
+  radius: radiusFacet,
+  radiusTopLeft: radiusTopLeftFacet,
+  radiusTopRight: radiusTopRightFacet,
+  radiusBottomLeft: radiusBottomLeftFacet,
+  radiusBottomRight: radiusBottomRightFacet
 } as const;
 
 export type WebClassFacetName = keyof typeof webClassFacets;
