@@ -1,8 +1,15 @@
 import type { Metadata } from "next";
 import { fetchAuthenticatedClueBackend } from "@/auth/authenticated-backend";
 import { EditorSurface } from "@/features/chat-shell/components/editor-surface";
-import { httpDesignArtifactRepository } from "@/features/design-editor/data/artifact.repository";
-import type { ChatShellArtifact } from "@/features/design-editor/model/artifact";
+import { toProjectArtifact } from "@/features/design-editor/adapter/gallery";
+import {
+  httpDesignArtifactRepository,
+  type DesignArtifactRepository,
+} from "@/features/design-editor/data/artifact.repository";
+import type {
+  ChatShellArtifact,
+  DesignArtifactListItem,
+} from "@/features/design-editor/model/artifact";
 
 export const metadata: Metadata = {
   title: "Project artifact",
@@ -22,19 +29,40 @@ interface ProjectArtifactPageProps {
  * stable, nothing fabricated beyond the ratified "Web output" placeholder).
  * A RENDER failure, by contrast, is surfaced by the canvas's error state.
  */
+function backendRepository(): DesignArtifactRepository {
+  return httpDesignArtifactRepository({
+    baseUrl: "",
+    fetchImpl: (input, init) =>
+      fetchAuthenticatedClueBackend(String(input), init),
+  });
+}
+
 async function loadArtifact(
+  repository: DesignArtifactRepository,
   projectId: string,
   artifactId: string,
 ): Promise<ChatShellArtifact | null> {
   try {
-    const repository = httpDesignArtifactRepository({
-      baseUrl: "",
-      fetchImpl: (input, init) =>
-        fetchAuthenticatedClueBackend(String(input), init),
-    });
     return await repository.get(projectId, artifactId);
   } catch {
     return null;
+  }
+}
+
+/**
+ * Slice 3 (gallery leg-derived feed): the project's design-artifact list —
+ * the gallery's data. The same refusal posture as the single resolve: any
+ * failure is an empty list, never a crash (a project with no legs is
+ * legitimately empty; ruling 1).
+ */
+async function loadArtifactList(
+  repository: DesignArtifactRepository,
+  projectId: string,
+): Promise<DesignArtifactListItem[]> {
+  try {
+    return await repository.list(projectId);
+  } catch {
+    return [];
   }
 }
 
@@ -42,13 +70,27 @@ export default async function ProjectArtifactPage({
   params,
 }: ProjectArtifactPageProps) {
   const { artifactId, projectId } = await params;
-  const artifact = await loadArtifact(projectId, artifactId);
+  const repository = backendRepository();
+  const [artifact, listed] = await Promise.all([
+    loadArtifact(repository, projectId, artifactId),
+    loadArtifactList(repository, projectId),
+  ]);
+
+  // Every listed document is openable from the gallery, so the id→document
+  // map covers the whole feed, not just the route's artifact. The route
+  // artifact may legitimately be absent from the feed (a legless document —
+  // ruling 1's accepted gap); its own entry rides along regardless.
+  const documentIds: Record<string, string> = Object.fromEntries(
+    listed.map((item) => [item.id, item.documentId]),
+  );
+  if (artifact) {
+    documentIds[artifact.id] = artifact.documentId;
+  }
 
   return (
     <EditorSurface
-      documentIds={
-        artifact ? { [artifact.id]: artifact.documentId } : undefined
-      }
+      artifacts={listed.map((item) => toProjectArtifact(item))}
+      documentIds={documentIds}
       initial={{
         artifactId,
         openArtifacts: [
