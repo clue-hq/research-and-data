@@ -62,12 +62,26 @@ Found & noted: `--chat-shell-card-shadow` / `--chat-shell-disabled` are referenc
 chat-shell.module.css but defined nowhere — avoided here; a dummy-frontend quirk to flag
 at a doc/UX pass.
 
+## W4.8b DONE — conditional Link-to (commits `fd00b58b` + `16255ef5`; reviewed inline; browser-verified)
+
+Contract item 3 live: the TEXT schema's Link-to is ABSENT by default and exists only while
+the session's selection is actionable (the ledgered predicate; structured arm deliberately
+dropped — that arm serves the toolbar's block controls only). Writes are range-link
+COMMANDS (`set_link`/`remove_link` via new imperative canvas controls), validated with the
+shared grammar; invalid href → the W3.3 header error line (node-stamped). Empty-URL commit
+on a linked range = remove_link (lane ruling). The implementer's `setRichTextInteractionActive`
+addition is load-bearing (the bridge's 180ms blur-commit + the runtime's frozen
+lastSelection) — without it the URL field would settle the session it edits. Browser-proven:
+absent/present matrix, prefill, ftp:// refusal, set_link persist (v12), remove_link persist
+(v13), post-session absence. W4.8a founder sign-off came with a founder-executed toolbar
+RETHEME (`40ad951f`, ruling 24 amended in contract §6: behavior = source parity, skin =
+inspector design language). Deferred minors in the ledger: mixed-state removal only via
+toolbar; section born collapsed; chats-route dummy mount now shows no text Link-to
+(sanctioned but visible).
+
 ## Open / next
 
-- **Task 3 (W4.8b):** conditional Link-to in the text schema (contract item 3) — HELD at the
-  session-limit checkpoint (Opus implementer terminated mid-task-2 by the account session
-  limit, resets 22:00 IST 2026-08-18; task 2 was already committed and passed review).
-- Then W4.7 (custom-component props form, item 34) + its seeding (web account → source PUT →
+- **W4.7** (custom-component props form, item 34) + its seeding (web account → source PUT →
   compile → insert op; endpoints mapped in the scout report §7).
 - Then full W4.8+W4.7 browser pass, whole-branch review, close-out. Lane C merges AFTER
   lane B (rebase on the updated trunk first).
