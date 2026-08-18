@@ -29,11 +29,47 @@ document retain the legacy `?thread=` form as unedited history and are
 non-authoritative. The R6 protected-shell paragraph ("R6 implementation
 status") is unchanged by the route migration.
 
+**Chat-flow editor integration — as built, 2026-08-19** (plan
+`docs/superpowers/plans/2026-08-19-chat-flow-editor-integration.md`, slices 1–5,
+commits `f7540b63`/`f6d63cdc`/`3957166a`/`3ba169be`/`95922696`):
+
+- **The chats-route feed props.** `chats/[chatId]/page.tsx` server-fetches the
+  per-project design-artifact feed (`loadGalleryFeed` — the same shared helper
+  the artifact page uses) and threads `{artifacts, documentIds}` as NEW
+  optional props through `ProjectWorkspaceShell` → `ChatSurface`. The feed
+  rides these props only; `workspace.artifacts` remains the schema-hard empty
+  tuple (`z.tuple([])`) and is NOT the artifact transport. Absent props (the
+  legacy `/projects/:projectId` absorber) → the gallery keeps its honest empty
+  state.
+- **Pane-state write-back.** The R2 params now round-trip: the chats route
+  reads them once at mount (unchanged) and writes them back on every pane
+  change via `router.replace` (never `push`; loop-guarded; params it does not
+  own — `?handoff=`, anything future — survive). Serialization rules: resting
+  state (rail closed) = the bare URL with NO pane params; `?surface=chat` is
+  its accepted inbound alias (parsed deliberately, canonicalized back to the
+  bare URL); `surface=web|ad` from the open artifact's kind; `edit=1` only on
+  the artifact surface while editing; `selection=<inspector schema token>` only
+  while editing and only when ≠ `canvas`. `?artifact=` is never emitted
+  (test-pinned).
+- **Known limitation — deep links restore pane state, not the open artifact.**
+  The ratified vocabulary carries no artifact identity (artifact identity on
+  the chats route is a runtime tab selection, not a URL param), so a shared
+  `?surface=web&edit=1&selection=text` URL opened fresh lands rail-open on the
+  Gallery with the conversation showing; the pane params survive un-rewritten.
+  **Open founder decision (surfaced 2026-08-19, undecided):** whether to ratify
+  an artifact-identity param so a shared link reopens the exact artifact in the
+  exact editing state — any such param needs a new ruling since `?artifact=`
+  is superseded and forbidden.
+
 The durable thread/turn/gate/stream surface, atomic Home bootstrap, complete
 project workspace read, and tenant-scoped sidebar catalog are implemented.
 In HTTP mode those repositories all use authenticated backend data and never
-fall back to fixtures. Artifact integration is not yet available, so a real
-project deliberately returns and renders an empty Gallery.
+fall back to fixtures. ~~Artifact integration is not yet available, so a real
+project deliberately returns and renders an empty Gallery.~~ **[Superseded
+2026-08-18/19: the leg-derived per-project design-artifact list read is live
+(`GET /api/v1/projects/{id}/design-artifacts`), and both the artifact route and
+the chats route serve the real gallery feed through it — see the chat-flow
+section above.]**
 
 Authority order inside this document is:
 

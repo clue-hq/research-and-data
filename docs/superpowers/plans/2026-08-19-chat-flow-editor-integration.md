@@ -1,5 +1,16 @@
 # Chat-Flow Editor Integration — Ratified Plan (the R6 mount)
 
+> **STATUS: COMPLETE (2026-08-19).** All six slices executed and browser-proven — commits
+> `f7540b63` (S1 feed), `f6d63cdc` (S2 hook), `3957166a` (S3 canvas), `3ba169be` (S4 R6
+> choreography), `95922696` (S5 URL write-back), plus the S6 close-out commit. Frontend
+> gates 772/772 + lint + design-system:build + build. The "Done means" walkthrough at the
+> bottom is live end to end, with ONE recorded limitation: a shared editing deep link
+> restores the pane state but not the open artifact (the ratified vocabulary carries no
+> artifact identity — open founder decision, see the contract note in
+> `apps/frontend/docs/api-contracts/projects.md`). `make check`'s 5 backend failures at
+> close-out are pre-existing/environmental (zero backend paths in this plan's range;
+> dev-DB field-registry drift + a migration-head assertion owned by other lanes).
+
 > **For agentic workers:** REQUIRED SUB-SKILL: superpowers:subagent-driven-development or
 > superpowers:executing-plans, task-by-task. **Process rule (founder, binding): Opus agents
 > implement; the orchestrating session reviews every diff INLINE itself — never via a

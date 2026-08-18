@@ -35,3 +35,6 @@ htmlcov/
 # Browser-tool artifacts (Playwright MCP console/page logs)
 .playwright-mcp/
 .gstack/
+
+# Design-API runtime byproduct (asset blobs written during live editor browser sessions)
+.artifacts/
