@@ -117,7 +117,17 @@ richTextRange + ImageControls onReplaceImage). Gates on merged tree: 723/723, li
 ds-build, build; props form browser-smoked post-merge. The eventual lane-C → v2 merge is
 now conflict-free (dry-run verified before merging).
 
-## View-mode canvas — DONE (commits `26757ff7` + `77187bce`, 2026-08-19; browser-verified)
+## View-mode canvas — DONE (commits `26757ff7` + `77187bce` + fix `888feeaa`, 2026-08-19;
+browser-verified, founder-tested)
+
+**Founder-caught defect, fixed same day (`888feeaa`):** the first cut omitted
+`runtime_src` from the view fetch — but the server's inline CSS has NO Tailwind utility
+rules; the browser runtime compiles the doc's classes (bg-accent highlights) AND ships
+the preflight that keeps anchors in authored formatting. View mode lost highlights and
+links went UA-blue-underlined. Runtime now rides in both modes; only the bridge differs
+by mode. LOAD-BEARING FACT for any future render consumer: `web/render`'s static CSS =
+tokens + font-faces ONLY; utility styling REQUIRES the runtime script (or a server-side
+compile that doesn't exist yet).
 
 Task 6 shipped per the rulings below: `adapter/view-mode-html.ts` (viewModeHtml base-tag
 injection + canvasSandbox, 9 tests), view branch in `use-web-render.ts` (no bridge/no
