@@ -11,6 +11,27 @@ from clue_api.product_path_preflight import (
 )
 from clue_config import Secrets, Settings
 
+# The package conftest's autouse hermeticity strips *boolean* ``Settings`` flags only, and leaves
+# credentials as the ambient environment supplies them. These tests read exactly the two channels it
+# leaves alone — ``CLUE_PRODUCT_PATH`` (a ``Literal``, not a bool) and the three provider keys — and
+# the repo's documented local workflow is ``set -a; source .env; set +a``, so those variables are
+# normally exported. Without this, an operator shell carrying a real Exa key silently satisfies the
+# Exa requirement (so the "names every missing credential" assertion fails), and an exported
+# ``CLUE_PRODUCT_PATH=integration_pilot`` means the default-path test is not testing the default
+# path at all. Strip them per-test so every assertion here is about the values the test passes in.
+_AMBIENT_VARS: tuple[str, ...] = (
+    "CLUE_PRODUCT_PATH",
+    "CLUE_EXA_API_KEY",
+    "CLUE_SUMBLE_API_KEY",
+    "CLUE_OPENROUTER_API_KEY",
+)
+
+
+@pytest.fixture(autouse=True)
+def _hermetic_product_path_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    for var in _AMBIENT_VARS:
+        monkeypatch.delenv(var, raising=False)
+
 
 def _pilot(**kw: object) -> Settings:
     return Settings(_env_file=None, product_path="integration_pilot", **kw)  # type: ignore[call-arg]
