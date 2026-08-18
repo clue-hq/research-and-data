@@ -373,6 +373,7 @@ export function InspectorInput({
   className,
   leading,
   onChange,
+  onCommit,
   prefix,
   suffix,
   value,
@@ -381,6 +382,11 @@ export function InspectorInput({
   className?: string;
   leading?: ReactNode;
   onChange: (value: string) => void;
+  /** W4.2 (the ratified R3 commit model): when supplied, the caller drafts the
+   * typed value locally and this fires on blur/Enter — the one moment a typed
+   * field becomes a write. Omitted leaves the field exactly as it shipped
+   * (per-keystroke `onChange` only); either way the DOM is unchanged. */
+  onCommit?: () => void;
   prefix?: string;
   suffix?: string;
   value: string;
@@ -392,7 +398,15 @@ export function InspectorInput({
       <input
         aria-label={ariaLabel}
         inputMode="text"
+        onBlur={onCommit ? () => onCommit() : undefined}
         onChange={(event) => onChange(event.target.value)}
+        onKeyDown={
+          onCommit
+            ? (event) => {
+                if (event.key === "Enter") onCommit();
+              }
+            : undefined
+        }
         value={value}
       />
       {suffix ? <span className={styles.fieldPrefix}>{suffix}</span> : null}

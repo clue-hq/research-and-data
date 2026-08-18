@@ -251,6 +251,39 @@ export function useInspectorController(
     [addressing, selectionType],
   );
 
+  // W4.2 (founder ruling F2, 2026-08-18): the all-corners radius commit. ONE
+  // `radius.all` event — the write path's F2 chain clears the four per-corner
+  // overrides inside the same operation, so when it does (`clearCorners`) the
+  // corner fields mirror that here rather than keep showing overrides the
+  // document no longer carries. Dispatching four corner events instead would
+  // also lose three of them to the one-in-flight write discipline.
+  const setRadiusAll = useCallback(
+    (value: string, clearCorners: boolean) => {
+      setState((current) => ({
+        ...current,
+        radius: clearCorners
+          ? {
+              all: value,
+              bottomLeft: "",
+              bottomRight: "",
+              topLeft: "",
+              topRight: "",
+            }
+          : { ...current.radius, all: value },
+      }));
+      dispatchInspectorEvent(
+        "clue:inspector-property-change",
+        {
+          property: "radius.all",
+          selectionType,
+          value,
+        },
+        addressing,
+      );
+    },
+    [addressing, selectionType],
+  );
+
   const toggleSection = useCallback((section: InspectorSectionId) => {
     setState((current) => {
       const open = !current.openSections[section];
@@ -284,7 +317,15 @@ export function useInspectorController(
     );
   }, [addressing, selectionType]);
 
-  return { requestAction, setNestedValue, setPaddingAxis, setValue, state, toggleSection };
+  return {
+    requestAction,
+    setNestedValue,
+    setPaddingAxis,
+    setRadiusAll,
+    setValue,
+    state,
+    toggleSection,
+  };
 }
 
 export function useInspectorLayerTree(

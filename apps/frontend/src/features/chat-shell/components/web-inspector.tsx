@@ -38,7 +38,8 @@ const FONT_SIZE_OPTIONS = ["12", "14", "16", "18", "20", "24", "32"] as const;
 const TEXT_STYLE_OPTIONS = ["Display", "H1", "H2", "H3", "H4", "Body", "Small", "Overline"] as const;
 const LINE_SPACING_OPTIONS = ["none", "tight", "snug", "normal", "relaxed", "loose"] as const;
 const FONT_WEIGHT_OPTIONS = ["Regular", "Medium", "Semi Bold", "Bold"] as const;
-const FILL_MODE_OPTIONS = ["Fit", "Fill", "Stretch", "Tile"] as const;
+// §2 delta (contract row 13): Tile is dropped — no engine object-fit value.
+const FILL_MODE_OPTIONS = ["Fit", "Fill", "Stretch"] as const;
 const BUTTON_STYLE_OPTIONS = ["Primary", "Secondary", "Transparent", "Critical"] as const;
 const ICON_OPTIONS = ["Apple"] as const;
 const ICON_SIZE_OPTIONS = ["Small", "Medium", "Large"] as const;
@@ -266,20 +267,69 @@ function PaddingControls({
   );
 }
 
+type RadiusCorner = "all" | "bottomLeft" | "bottomRight" | "topLeft" | "topRight";
+type RadiusValues = Record<RadiusCorner, string>;
+
+/** W4.2 (ruling R-B1): only a numeric commit writes (`N` → `rounded-[Npx]`) —
+ * and under founder ruling F2 that all-corners write also clears the per-corner
+ * overrides, which is what the corner fields mirror below. An empty commit
+ * clears the all-corners family only; a named scale value the field displays
+ * verbatim (`lg`) is no write at all, so nothing is mirrored for it either. */
+const NUMERIC_RADIUS = /^\d+$/;
+
+/** W4.2 (ruling R-B2): the five radius fields adopt the ratified R3 commit
+ * model — typed values draft locally and COMMIT on blur/Enter, so the write
+ * path never sees a per-keystroke event. Behavioral only: same DOM, classes,
+ * icons and aria-labels as the dummy ships. */
 export function RadiusControls({
+  onApplyAll,
   onChange,
   values,
 }: {
-  onChange: (
-    corner: "all" | "bottomLeft" | "bottomRight" | "topLeft" | "topRight",
-    value: string,
-  ) => void;
-  values: Record<"all" | "bottomLeft" | "bottomRight" | "topLeft" | "topRight", string>;
+  /** W4.2/F2 (the web image schema): the all-corners commit — ONE `radius.all`
+   * change, `clearsCorners` true when that write also clears the four corner
+   * overrides. Absent (the scene/ad image inspector, whose radius is dummy
+   * state and carries no F2 ruling) keeps the dummy's fan-out-to-four
+   * behaviour for the scan button. */
+  onApplyAll?: (value: string, clearsCorners: boolean) => void;
+  onChange: (corner: RadiusCorner, value: string) => void;
+  values: RadiusValues;
 }) {
+  const [drafts, setDrafts] = useState<RadiusValues>(values);
+  const setDraft = (corner: RadiusCorner, value: string) =>
+    setDrafts((current) => ({ ...current, [corner]: value }));
+
+  const commitAll = (value: string) => {
+    if (!onApplyAll) {
+      onChange("all", value);
+      return;
+    }
+    const clearsCorners = NUMERIC_RADIUS.test(value.trim());
+    onApplyAll(value, clearsCorners);
+    if (clearsCorners) {
+      setDrafts((current) => ({
+        ...current,
+        bottomLeft: "",
+        bottomRight: "",
+        topLeft: "",
+        topRight: "",
+      }));
+    }
+  };
+
   const applyAll = () => {
-    (["topLeft", "topRight", "bottomLeft", "bottomRight"] as const).forEach((corner) =>
-      onChange(corner, values.all),
-    );
+    if (!onApplyAll) {
+      // The dummy's own meaning, kept for the scene inspector.
+      (["topLeft", "topRight", "bottomLeft", "bottomRight"] as const).forEach((corner) =>
+        onChange(corner, values.all),
+      );
+      return;
+    }
+    // F2: the scan button's meaning IS the all-corners write, so it commits
+    // the all field's current draft even when unchanged — but an empty draft
+    // would clear the radius rather than apply one, so it is a no-op.
+    if (drafts.all.trim() === "") return;
+    commitAll(drafts.all);
   };
 
   return (
@@ -289,8 +339,11 @@ export function RadiusControls({
           ariaLabel="All corner radius"
           className={styles.radiusValue}
           leading={<InspectorIcon name="radius-all" size={16} />}
-          onChange={(value) => onChange("all", value)}
-          value={values.all}
+          onChange={(value) => setDraft("all", value)}
+          onCommit={() => {
+            if (drafts.all !== values.all) commitAll(drafts.all);
+          }}
+          value={drafts.all}
         />
         <button aria-label="Apply radius to all corners" className={styles.scanButton} onClick={applyAll} type="button">
           <InspectorIcon name="radius-scan" size={12} />
@@ -302,16 +355,25 @@ export function RadiusControls({
           ["topRight", "radius-top-right"],
           ["bottomLeft", "radius-bottom-left"],
           ["bottomRight", "radius-bottom-right"],
-        ] as const).map(([corner, icon]) => (
-          <span className={`${styles.inspectorControl} ${styles.inspectorInputControl} ${styles.cornerRadiusField}`} key={corner}>
-            <InspectorIcon name={icon} size={16} />
-            <input
-              aria-label={`${corner} radius`}
-              onChange={(event) => onChange(corner, event.target.value)}
-              value={values[corner]}
-            />
-          </span>
-        ))}
+        ] as const).map(([corner, icon]) => {
+          const commit = () => {
+            if (drafts[corner] !== values[corner]) onChange(corner, drafts[corner]);
+          };
+          return (
+            <span className={`${styles.inspectorControl} ${styles.inspectorInputControl} ${styles.cornerRadiusField}`} key={corner}>
+              <InspectorIcon name={icon} size={16} />
+              <input
+                aria-label={`${corner} radius`}
+                onBlur={commit}
+                onChange={(event) => setDraft(corner, event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") commit();
+                }}
+                value={drafts[corner]}
+              />
+            </span>
+          );
+        })}
       </div>
     </>
   );
@@ -519,10 +581,22 @@ function LinkSection({
   controller: InspectorController;
 }) {
   const { setValue, state, toggleSection } = controller;
+  // W4.2 (ruling R-B2, the ratified R3 commit model): the URL drafts locally
+  // and commits on blur/Enter — a per-keystroke `setValue("url", …)` would
+  // write one operation per character. The checkbox below is already discrete,
+  // so it commits as it always has.
+  const [draftUrl, setDraftUrl] = useState(state.url);
   return (
     <Section id="link" label="Link to" state={state} toggle={toggleSection}>
       <InspectorField label="URL">
-        <InspectorInput ariaLabel={ariaLabel} onChange={(value) => setValue("url", value)} value={state.url} />
+        <InspectorInput
+          ariaLabel={ariaLabel}
+          onChange={setDraftUrl}
+          onCommit={() => {
+            if (draftUrl !== state.url) setValue("url", draftUrl);
+          }}
+          value={draftUrl}
+        />
       </InspectorField>
       <label className={styles.checkboxRow}>
         <input checked={state.openInNewTab} onChange={(event) => setValue("openInNewTab", event.target.checked)} type="checkbox" />
@@ -660,7 +734,7 @@ function ImageControls({
   onSelectionChange: (selection: ChatShellInspectorSelection) => void;
   showLayers: boolean;
 }) {
-  const { setNestedValue, setValue, state, toggleSection } = controller;
+  const { setNestedValue, setRadiusAll, setValue, state, toggleSection } = controller;
   return (
     <>
       <LinkSection ariaLabel="Image link URL" controller={controller} />
@@ -673,7 +747,10 @@ function ImageControls({
         </InspectorField>
         <InspectorField label="Mode"><InspectorSelect label="Image fill mode" onChange={(value) => setValue("fillMode", value)} options={FILL_MODE_OPTIONS} value={state.fillMode} /></InspectorField>
       </Section>
-      <Section id="shape" label="Shape" state={state} toggle={toggleSection}><InspectorField label="Radius"><RadiusControls onChange={(corner, value) => setNestedValue("radius", corner, value)} values={state.radius} /></InspectorField></Section>
+      {/* Row 14 + founder ruling F2: the all-corners commit (field or scan
+          button) is one `radius.all` change whose write clears the corner
+          overrides; the corner fields mirror it. */}
+      <Section id="shape" label="Shape" state={state} toggle={toggleSection}><InspectorField label="Radius"><RadiusControls onApplyAll={setRadiusAll} onChange={(corner, value) => setNestedValue("radius", corner, value)} values={state.radius} /></InspectorField></Section>
       {showLayers ? <Section id="layers" label="Layers" state={state} toggle={toggleSection}><SchemaLayers fallback={<ImageLayers onSelectionChange={onSelectionChange} tree={layerTree} />} /></Section> : null}
     </>
   );
