@@ -563,6 +563,21 @@ Suite 593/593, lint clean throughout. Parked minors live in the SDD ledger
 **Trunk next:** merge lane B first, rebase+merge lane C (founder runs both in their own
 worktrees), W4.10 keyboard audit on the union, W4 exit gate, W5.
 
+## W4.5b DONE — page-root render fix (founder §8 amendment; commits 81498830+ec679361, 2026-08-18)
+
+Founder authorized §8 item 2 AND ordered Fable to implement directly (one-task override of
+the Opus rule). `lumen-web::render_page` now emits the page root onto `<body>` — classes in
+BOTH modes (published backgrounds paint; the seeded root's dormant `bg-surface-canvas`
+finally renders), node id under editor-only gating — so a background click selects the root
+and opens the Canvas schema (replaces click-clears; ratified in the amendment). Frontend
+needed ZERO change (join already served root → canvas). +2 Rust tests; helper REBUILT
+(remember: ANY lumen-web change requires `cargo build -p lumen-api-helper --release` + design
+API restart or the old renderer keeps serving). Live proof: body click → root/canvas; Muted
+pick → bg-muted painted rgb(75,85,99); reload-persistent; restored. Contract row 1 LIVE —
+lane A now closes with every wired row demonstrably live. Contract §7 item 7 marked
+entered-scope; §8 lists two authorized items, both done. NOTE for lanes B/C merges: this
+touched only `crates/lumen-web/src/render.rs` + docs — zero overlap with their files.
+
 ## Next on THIS branch — W4 fan-out (awaiting founder lane ruling)
 
 W4.1 done (above). W4.2–W4.9 fan out per the W-plan (each schema task applies its own §2
