@@ -4,6 +4,9 @@ import type {
 import type { ChatShellInspectorSelection } from "@/features/chat-shell/model/chat-shell";
 import { webClassFacets } from "../engine/webClassFacets";
 import type { WebNode } from "../engine/webDocuments";
+// W4.0: the capitalize-first token label is one shared rule — the picker's
+// option labels use the same one, so hydrated state and options agree.
+import { tokenLabel } from "./theme-options";
 
 /**
  * W2.2: the pure hydration adapter — this file IS the frozen mapping
@@ -92,12 +95,6 @@ const DIRECTION_TO_INSPECTOR: Record<
   row: "horizontal",
   col: "vertical",
 };
-
-/** The dummy labels tokens capitalized ("White", "Primary"); token names pass
- * through with the same first-letter treatment. */
-function tokenLabel(token: string): string {
-  return token.charAt(0).toUpperCase() + token.slice(1);
-}
 
 /** Ruling 25 (W3.2 §2 addition): engine `TextVariant` → the style select's
  * labels (inverse of apply.ts's map). */

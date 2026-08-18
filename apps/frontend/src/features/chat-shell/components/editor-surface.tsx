@@ -1,14 +1,16 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import {
   useEditorShellController,
   type EditorShellInitialState,
 } from "../hooks/use-editor-shell-controller";
 import { buildWebLayerRows } from "@/features/design-editor/adapter/layers";
+import { buildThemeColorOptions } from "@/features/design-editor/adapter/theme-options";
 import type { WebArtifactCanvasControls } from "@/features/design-editor/components/web-artifact-canvas";
 import { useInspectorWrites } from "@/features/design-editor/hooks/use-inspector-writes";
 import { useWebArtifactSelection } from "@/features/design-editor/hooks/use-web-artifact-selection";
+import { useWebTheme } from "@/features/design-editor/hooks/use-web-theme";
 import { ArtifactStage } from "./artifact-stage";
 import { WebInspector } from "./web-inspector";
 import styles from "./chat-shell.module.css";
@@ -102,6 +104,12 @@ export function EditorSurface({
   const inspectorSelection =
     webSelection.selection?.schema.selection ?? controller.inspectorSelection;
 
+  // W4.0: the document's own theme feeds the inspector's color pickers. A
+  // document without one (or a failed fetch) yields no options and every
+  // picker keeps the dummy's fixture palette.
+  const theme = useWebTheme(activeDocumentId);
+  const themeColors = useMemo(() => buildThemeColorOptions(theme), [theme]);
+
   return (
     <main
       className={`${styles.shellPanelOpen} grid h-full min-h-0 w-full grid-cols-1`}
@@ -150,6 +158,7 @@ export function EditorSurface({
               }
               onSelectionChange={controller.selectInspectorElement}
               selection={inspectorSelection}
+              themeColors={themeColors}
             />
           </div>
         </div>

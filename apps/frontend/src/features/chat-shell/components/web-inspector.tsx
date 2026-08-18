@@ -3,6 +3,10 @@
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import type { WebLayerRow } from "@/features/design-editor/adapter/layers";
+import {
+  themeColorForToken,
+  type ThemeColorOption,
+} from "@/features/design-editor/adapter/theme-options";
 import type { ChatShellInspectorSelection } from "../model/chat-shell";
 import { CHAT_SHELL_INSPECTOR_SELECTIONS } from "../model/chat-shell";
 import {
@@ -69,6 +73,20 @@ const DocumentLayersContext = createContext<ReactNode>(null);
 function SchemaLayers({ fallback }: { fallback: ReactNode }) {
   const real = useContext(DocumentLayersContext);
   return <>{real ?? fallback}</>;
+}
+
+// W4.0: the document's real theme tokens for every ColorControl in this panel,
+// carried as data (the seam rule: presentation never fetches). Undefined — the
+// chats route, any mount without a document theme — leaves every picker on the
+// dummy's fixture palette, unchanged. Only the text schema's Color control
+// consumes it today; the other schemas' color controls join in their own W4
+// tasks.
+const ThemeColorsContext = createContext<readonly ThemeColorOption[] | undefined>(
+  undefined,
+);
+
+function useThemeColors() {
+  return useContext(ThemeColorsContext);
 }
 
 /** W2.3: the real layer tree — rows built from the document hierarchy
@@ -577,13 +595,17 @@ function TextControls({
   showLayers: boolean;
 }) {
   const { setValue, state, toggleSection } = controller;
+  const themeColors = useThemeColors();
   return (
     <>
       <LinkSection ariaLabel="Link URL" controller={controller} />
       <Section id="typography" label="Typography" state={state} toggle={toggleSection}>
         {/* R2: the theme tab's token pick is the live write path
-            (tokenTextColor); the hex path stays visual-only (§3 inert). */}
-        <InspectorField label="Color"><ColorControl color={state.textColor} onColorChange={(value) => setValue("textColor", value)} onTokenChange={(label) => setValue("tokenTextColor", label)} /></InspectorField>
+            (tokenTextColor); the hex path stays visual-only (§3 inert).
+            W4.0: the tab lists the document's real tokens, and the closed
+            trigger shows the hydrated token's actual color when the theme
+            has it (otherwise the dummy default stands). */}
+        <InspectorField label="Color"><ColorControl color={themeColorForToken(themeColors, state.tokenTextColor) ?? state.textColor} onColorChange={(value) => setValue("textColor", value)} onTokenChange={(label) => setValue("tokenTextColor", label)} options={themeColors} /></InspectorField>
         <InspectorField label="Font"><InspectorSelect label="Font" onChange={(value) => setValue("fontFamily", value)} options={FONT_OPTIONS} value={state.fontFamily} /></InspectorField>
         {/* W3.2 §2 addition (ruling 25): the text style/variant select. */}
         <InspectorField label="Style"><InspectorSelect label="Text style" onChange={(value) => setValue("textStyle", value)} options={TEXT_STYLE_OPTIONS} value={state.textStyle} /></InspectorField>
@@ -825,6 +847,7 @@ export function WebInspector({
   reviewMenuEnabled = false,
   selection,
   showLayers = true,
+  themeColors,
 }: {
   /** W3.2: an inline write error (422 first diagnostic / transport). The
    * minimal pre-W3.3 floor — the save-failure surface is the W3.3 founder
@@ -849,6 +872,10 @@ export function WebInspector({
   reviewMenuEnabled?: boolean;
   selection: ChatShellInspectorSelection;
   showLayers?: boolean;
+  /** W4.0: the document's real theme tokens (design-editor
+   * `buildThemeColorOptions`) for the color pickers' Theme tab; absent keeps
+   * the dummy's fixture palette. */
+  themeColors?: readonly ThemeColorOption[];
 }) {
   const inspectorRef = useRef<HTMLElement>(null);
   const [reviewMenuOpen, setReviewMenuOpen] = useState(false);
@@ -952,15 +979,17 @@ export function WebInspector({
             {error}
           </p>
         ) : null}
-        <DocumentLayersContext.Provider value={documentLayers}>
-          {selection === "canvas" ? <CanvasControls controller={canvasController} layerTree={canvasLayerTree} onSelectionChange={onSelectionChange} showLayers={showLayers} /> : null}
-          {selection === "text" ? <TextControls controller={textController} layerTree={textLayerTree} onSelectionChange={onSelectionChange} showLayers={showLayers} /> : null}
-          {selection === "image" ? <ImageControls controller={imageController} layerTree={imageLayerTree} onSelectionChange={onSelectionChange} showLayers={showLayers} /> : null}
-          {selection === "button" ? <ButtonControls controller={buttonController} layerTree={buttonLayerTree} onSelectionChange={onSelectionChange} showLayers={showLayers} /> : null}
-          {selection === "icon" ? <IconControls controller={iconController} layerTree={iconLayerTree} onSelectionChange={onSelectionChange} showLayers={showLayers} /> : null}
-          {selection === "container" ? <ContainerControls controller={containerController} layerTree={containerLayerTree} onSelectionChange={onSelectionChange} showLayers={showLayers} /> : null}
-          {selection === "section" ? <SectionControls controller={sectionController} layerTree={sectionLayerTree} onSelectionChange={onSelectionChange} showLayers={showLayers} /> : null}
-        </DocumentLayersContext.Provider>
+        <ThemeColorsContext.Provider value={themeColors}>
+          <DocumentLayersContext.Provider value={documentLayers}>
+            {selection === "canvas" ? <CanvasControls controller={canvasController} layerTree={canvasLayerTree} onSelectionChange={onSelectionChange} showLayers={showLayers} /> : null}
+            {selection === "text" ? <TextControls controller={textController} layerTree={textLayerTree} onSelectionChange={onSelectionChange} showLayers={showLayers} /> : null}
+            {selection === "image" ? <ImageControls controller={imageController} layerTree={imageLayerTree} onSelectionChange={onSelectionChange} showLayers={showLayers} /> : null}
+            {selection === "button" ? <ButtonControls controller={buttonController} layerTree={buttonLayerTree} onSelectionChange={onSelectionChange} showLayers={showLayers} /> : null}
+            {selection === "icon" ? <IconControls controller={iconController} layerTree={iconLayerTree} onSelectionChange={onSelectionChange} showLayers={showLayers} /> : null}
+            {selection === "container" ? <ContainerControls controller={containerController} layerTree={containerLayerTree} onSelectionChange={onSelectionChange} showLayers={showLayers} /> : null}
+            {selection === "section" ? <SectionControls controller={sectionController} layerTree={sectionLayerTree} onSelectionChange={onSelectionChange} showLayers={showLayers} /> : null}
+          </DocumentLayersContext.Provider>
+        </ThemeColorsContext.Provider>
       </div>
     </aside>
   );

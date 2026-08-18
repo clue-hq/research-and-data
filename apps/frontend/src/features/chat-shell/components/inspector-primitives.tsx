@@ -6,7 +6,12 @@ import { Select } from "@base-ui/react/select";
 import { MinusIcon, PlusIcon } from "lucide-react";
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactNode } from "react";
+import type { ThemeColorOption } from "@/features/design-editor/adapter/theme-options";
 import type { InspectorBackgroundFill, InspectorFillType } from "../hooks/use-inspector-controller";
+import {
+  INSPECTOR_THEME_COLORS,
+  resolveInspectorThemeColors,
+} from "../model/inspector-theme-colors";
 import styles from "./chat-shell.module.css";
 
 const INSPECTOR_ICON_ROOT = "/icons/chat-shell/inspector";
@@ -397,15 +402,6 @@ export function InspectorInput({
 
 type HsvColor = { h: number; s: number; v: number };
 
-const INSPECTOR_THEME_COLORS = [
-  { label: "Primary", value: "#44483F" },
-  { label: "Secondary", value: "#D85A00" },
-  { label: "Tertiary", value: "#00F59B" },
-  { label: "Dark", value: "#1C2028" },
-  { label: "Light", value: "#FFFFFF" },
-  { label: "Subtle", value: "#EEF1F5" },
-] as const;
-
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
 }
@@ -458,6 +454,7 @@ export function ColorControl({
   onOpacityChange,
   onTokenChange,
   opacity = "100%",
+  options,
   showOpacity = true,
 }: {
   color?: string;
@@ -468,8 +465,13 @@ export function ColorControl({
    * write path; hex (custom tab) stays visual-only per §3. */
   onTokenChange?: (label: string) => void;
   opacity?: string;
+  /** W4.0: the document's real theme tokens for the Theme tab. Omitted (or
+   * empty) keeps the dummy's fixture palette — this control's design is
+   * unchanged either way, only the data is real. */
+  options?: readonly ThemeColorOption[];
   showOpacity?: boolean;
 }) {
+  const themeColors = resolveInspectorThemeColors(options);
   const [draftColor, setDraftColor] = useState(color.toUpperCase());
   const [pickerMode, setPickerMode] = useState<"custom" | "theme">("theme");
   const [customColor, setCustomColor] = useState<HsvColor>(() => hexToHsv(color));
@@ -561,10 +563,10 @@ export function ColorControl({
 
                 {pickerMode === "theme" ? (
                   <div aria-label="Theme colors" className={styles.inspectorThemeColors} role="tabpanel">
-                    {INSPECTOR_THEME_COLORS.map((option) => (
+                    {themeColors.map((option) => (
                       <button
                         aria-label={`Use ${option.label} color ${option.value}`}
-                        aria-pressed={color.toUpperCase() === option.value}
+                        aria-pressed={color.toUpperCase() === option.value.toUpperCase()}
                         className={styles.inspectorThemeColor}
                         key={option.label}
                         onClick={() => {
@@ -638,6 +640,9 @@ export function ColorControl({
                   />
                 </label>
                 <div aria-label="Recent colors" className={styles.inspectorColorSwatches} role="group">
+                  {/* The hex footer's recent-colors strip belongs to the §3-inert
+                      custom path (it commits a hex, never a token) and keeps the
+                      dummy's fixture swatches. */}
                   {INSPECTOR_THEME_COLORS.slice(0, 4).map((option) => (
                     <button
                       aria-label={`Use color ${option.value}`}
