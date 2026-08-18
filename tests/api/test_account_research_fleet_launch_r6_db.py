@@ -28,12 +28,20 @@ from clue_api.account_research_fleet_launch import (
     AccountResearchFleetLaunchError,
     AccountResearchFleetLaunchRequest,
 )
-from clue_api.entity_research_provider_wiring import ProductionAccountResearchProviderActions
+from clue_api.entity_research_provider_wiring import (
+    EntityResearchProductionCompositionError,
+    ProductionAccountResearchProviderActions,
+)
+from clue_api.entity_research_tools import EntityResearchGovernedRejection
 from clue_api.sumble_account_gaps import compile_sumble_account_gap_preflight
 from clue_api.trial.account_deep_fixture import seed_insight_health_account_deep_fixture
 from clue_config import GatewayConfig, Secrets, Settings
 from clue_core import LLMGateway, PreSpendGate, ProjectPhase, ProjectRunId, ResearchQuestion
-from clue_core.entity_research import EntityResearchSelection
+from clue_core.entity_research import (
+    EntityResearchJobAuthorization,
+    EntityResearchSelection,
+    GovernedResearchToolRequest,
+)
 from clue_fleet import (
     DbEntityResearchJobStore,
     EntityResearchExecutionFence,
@@ -47,6 +55,7 @@ from clue_research.durable.provider_spend import (
     ProviderSpendRunIneligible,
     require_provider_spend_capacity,
 )
+from clue_research.resolvers.sumble.people import PEOPLE_SOURCE_KEY
 from clue_storage import FsStorage
 from tests._run_lineage import assert_run_registered
 from tests.api.account_deep_test_support import confirmed_account_research_direction
@@ -485,5 +494,158 @@ def test_core_fields_survive_launch_and_are_not_silently_dropped(tmp_path: Path)
                 item.field_key: tuple(item.source_keys) for item in selection.field_source_authority
             }
             assert set(authority) == {_INDUSTRY, _TECH, _HIRING, _PAIN}
+
+    run_async(scenario())
+
+
+def test_account_only_research_composes_without_committee_configuration(tmp_path: Path) -> None:
+    """A directive that selected no committee discovery composes with committee acquisition off.
+
+    The gate used to raise for *every* account job, so an account-only run could not be composed
+    at all unless no-reveal Sumble committee acquisition happened to be configured. The gate is a
+    property of what the confirmed directive selected: no committee sources → the tool is a
+    governed ``provider_not_selected`` refusal; committee sources selected but unconfigured →
+    still a loud composition failure.
+    """
+
+    async def scenario() -> None:
+        storage = FsStorage(tmp_path / "r6-account-only-artifacts")
+        async with rollback_conn() as conn:
+            fixture = await seed_insight_health_account_deep_fixture(
+                conn,
+                pages=_pages(),
+                storage=storage,
+            )
+            _, account_spec = await confirmed_account_research_direction(
+                conn,
+                workspace_id=fixture.discovery_fixture.workspace_id,
+                project_id=fixture.discovery_fixture.project_id,
+                product_id=fixture.discovery_fixture.product_id,
+                account_id=fixture.selected_account_id,
+                icp_key=fixture.deep_icp_key,
+                icp_version=fixture.deep_icp_version,
+                field_keys=(_PAIN, _MOVES),
+                allowed_source_keys=("exa_deep",),
+                questions=(
+                    ResearchQuestion(
+                        question_id="qualitative-burden",
+                        text="Where is administrative work creating avoidable burden?",
+                        target_field_key=_PAIN,
+                    ),
+                    ResearchQuestion(
+                        question_id="strategic-change",
+                        text="What strategic operational changes are visible?",
+                        target_field_key=_MOVES,
+                    ),
+                ),
+            )
+            pin = account_spec.research_directive
+            assert pin is not None
+            await conn.execute(
+                text("UPDATE project_run SET phase='scoring' WHERE id=:project_run_id"),
+                {"project_run_id": fixture.project_run_id},
+            )
+
+            def connection() -> AbstractAsyncContextManager[AsyncConnection]:
+                return _same_connection(conn)
+
+            launcher = AccountResearchFleetLauncher(
+                fleets=AccountResearchFleetService(conn_factory=connection),
+                conn_factory=connection,
+            )
+            projection = await launcher.launch(
+                AccountResearchFleetLaunchRequest(
+                    workspace_id=fixture.discovery_fixture.workspace_id,
+                    project_run_id=UUID(str(fixture.project_run_id)),
+                    research_directive_id=UUID(str(pin.directive_id)),
+                    account_entity_ids=(UUID(str(fixture.selected_account_id)),),
+                    approved_budget_cap_cents=Decimal("300"),
+                    expected_estimated_cost_cents=Decimal("300"),
+                    concurrency_limit=4,
+                    supervisor_policy=AccountResearchFleetPolicy(canary_size=1),
+                ),
+                actor="human:account-owner",
+                source_action_ref="turn:r6-account-only-launch",
+                source_operation_id=uuid4(),
+            )
+            job = projection.jobs[0]
+            task = await claim_next_task(
+                conn,
+                kind=FleetTaskKind.ENTITY_RESEARCH_JOB,
+                worker_id="b5-account-only",
+                project_run_id=ProjectRunId(job.job_id),
+            )
+            assert task is not None
+            lease = await acquire_work_lease(
+                conn,
+                work_id=WorkId(job.job_id),
+                worker_id="b5-account-only",
+                ttl=timedelta(seconds=60),
+            )
+            assert lease is not None
+            jobs = DbEntityResearchJobStore(conn_factory=connection)
+            begun = await jobs.begin(
+                job.job_id,
+                fence=EntityResearchExecutionFence(
+                    task_id=task.task_id,
+                    worker_id="b5-account-only",
+                    lease_generation=lease.generation,
+                ),
+            )
+            assert begun.admitted
+            assert begun.job.authorization.selection.committee_source_keys == ()
+
+            providers = ProductionAccountResearchProviderActions(
+                settings=Settings(
+                    _env_file=None,
+                    exa_account_deep_acquisition_enabled=True,
+                    sumble_account_gap_enrichment_enabled=False,
+                    sumble_committee_acquisition_enabled=False,
+                ),
+                secrets=Secrets(
+                    _env_file=None,
+                    exa_api_key=SecretStr("b5-test-exa"),
+                ),
+                storage=storage,
+                pre_spend_gate=cast(PreSpendGate, object()),
+                gateway=cast(LLMGateway, object()),
+                gateway_config=GatewayConfig(),
+                conn_factory=connection,
+            )
+            bindings = await providers.resolve(begun.job)
+            assert set(bindings) == {
+                "research_account_deep",
+                "enrich_account",
+                "discover_buying_committee",
+            }
+            with pytest.raises(EntityResearchGovernedRejection) as rejection:
+                await bindings["discover_buying_committee"].action.execute(
+                    cast(GovernedResearchToolRequest, object()),
+                    before_dispatch=None,
+                )
+            assert rejection.value.code == "provider_not_selected"
+
+            # A directive that DID select committee discovery must still fail loudly when the
+            # no-reveal committee provider is unconfigured.
+            selection = begun.job.authorization.selection
+            committee_selection = EntityResearchSelection.model_validate(
+                selection.model_copy(
+                    update={
+                        "committee_source_keys": (PEOPLE_SOURCE_KEY,),
+                        "admitted_source_keys": (
+                            *selection.admitted_source_keys,
+                            PEOPLE_SOURCE_KEY,
+                        ),
+                    }
+                ).model_dump(mode="python")
+            )
+            authorization = EntityResearchJobAuthorization.model_validate(
+                begun.job.authorization.model_copy(
+                    update={"selection": committee_selection}
+                ).model_dump(mode="python")
+            )
+            committee_job = begun.job.model_copy(update={"authorization": authorization})
+            with pytest.raises(EntityResearchProductionCompositionError, match="committee"):
+                await providers.resolve(committee_job)
 
     run_async(scenario())

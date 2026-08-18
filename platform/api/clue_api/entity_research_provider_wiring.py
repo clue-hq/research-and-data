@@ -358,34 +358,46 @@ class ProductionAccountResearchProviderActions:
                 "the exact account job selected no Sumble structured field"
             )
 
-        if (
+        # Committee configuration is required only by a job that actually selected committee
+        # discovery. Account-only research (a confirmed directive with no committee source) used
+        # to be uncomposable whenever no-reveal Sumble committee acquisition was off; the tool now
+        # refuses the same way every other unselected provider does — governed, not fatal.
+        committee_requested = bool(authorization.selection.committee_source_keys)
+        committee_action: EntityResearchProviderAction
+        if not committee_requested:
+            committee_action = _UnavailableProviderAction(
+                "this run's confirmed directive selected no committee discovery"
+            )
+        elif (
             not self._settings.sumble_committee_acquisition_enabled
             or self._secrets.sumble_api_key is None
         ):
             raise EntityResearchProductionCompositionError(
-                "R6 account research requires enabled no-reveal Sumble committee acquisition"
+                "committee-selecting account research requires enabled no-reveal "
+                "Sumble committee acquisition"
             )
-        committee_action = SumbleCommitteeSemanticResearchAction(
-            inputs=_CommitteeInputs(
-                resolver=self._committee_inputs,
-                job=job,
-                account_run_id=account_run_id,
-                tier=context.tier,
-            ),
-            eligibility=self._committee_eligibility,
-            coordinator=SumbleCommitteeAcquisitionCoordinator(
-                transport=SumbleV9CommitteeClient(api_key=self._secrets.sumble_api_key),
+        else:
+            committee_action = SumbleCommitteeSemanticResearchAction(
+                inputs=_CommitteeInputs(
+                    resolver=self._committee_inputs,
+                    job=job,
+                    account_run_id=account_run_id,
+                    tier=context.tier,
+                ),
+                eligibility=self._committee_eligibility,
+                coordinator=SumbleCommitteeAcquisitionCoordinator(
+                    transport=SumbleV9CommitteeClient(api_key=self._secrets.sumble_api_key),
+                    storage=self._storage,
+                    cents_per_credit=self._settings.sumble_cents_per_credit,
+                    conn_factory=self._conn_factory,
+                    poll_after_seconds=self._settings.sumble_committee_poll_after_s,
+                    enforce_budget=self._settings.budget_controls_enabled,
+                ),
                 storage=self._storage,
-                cents_per_credit=self._settings.sumble_cents_per_credit,
                 conn_factory=self._conn_factory,
-                poll_after_seconds=self._settings.sumble_committee_poll_after_s,
-                enforce_budget=self._settings.budget_controls_enabled,
-            ),
-            storage=self._storage,
-            conn_factory=self._conn_factory,
-            gateway=self._gateway,
-            role_model=self._gateway_config.synthesis_model,
-        )
+                gateway=self._gateway,
+                role_model=self._gateway_config.synthesis_model,
+            )
         committee_reserve = max(
             floor,
             Decimal(context.directive.committee_plan.candidate_cap * 2)
