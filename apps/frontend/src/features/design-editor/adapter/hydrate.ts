@@ -204,9 +204,20 @@ export function hydrateInspectorState(
   if (gap !== null) {
     state.gap = gap;
   }
+  // Row 22 + W4.4 (controller ruling, 2026-08-18): an ABSENT `flex-wrap`
+  // utility is not an unknown value — CSS's own default is `nowrap`, so the
+  // section's Wrap control states that truthfully as "No". This is R3's
+  // truthful-value pattern (the padding boxes' truthful zeros), NOT §6(5)'s
+  // omission rule (which is for values the dummy has no slot for, e.g. an
+  // off-ramp font size, where the dummy default rightly stands). Leaving the
+  // dummy's `wrap: true` default in place would misstate the page.
+  // Scoped to the section schema because it alone ships a Wrap control —
+  // container-level wrap is §7 item 1 (future work) with no UI slot.
   const flexWrap = webClassFacets.flexWrap.parse(classes);
   if (flexWrap !== null) {
     state.wrap = flexWrap !== "nowrap";
+  } else if (node.kind === "section") {
+    state.wrap = false;
   }
 
   // R3: two axis boxes. A present axis with the other absent means the other

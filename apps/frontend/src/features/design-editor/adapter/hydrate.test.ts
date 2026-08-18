@@ -165,14 +165,35 @@ test("a one-axis padding fills the other axis with the truthful zero", () => {
 
 // ── section schema ──────────────────────────────────────────────────────────
 
-test("section: direction/gap hydrate per §1 row 22; absent wrap is omitted", () => {
+test("section: direction/gap hydrate per §1 row 22; absent wrap is a truthful No", () => {
   // hero: "flex flex-col items-center gap-6 py-24 px-8 bg-slate-900"
   const state = hydrate("hero");
   assert.equal(state.direction, "vertical"); // col
   assert.equal(state.gap, "6");
   assert.equal(state.layoutMode, "Flex");
   assert.equal(state.tokenBackgroundColor, "Slate-900");
-  assert.ok(!("wrap" in state)); // no flex-wrap token → dummy default stands
+  // W4.4 fix (controller ruling 2026-08-18): no flex-wrap utility has a KNOWN
+  // real behavior — CSS defaults to nowrap — so this is R3's truthful-value
+  // pattern (padding's truthful zeros), not §6(5)'s unknown-value omission.
+  assert.equal(state.wrap, false);
+});
+
+test("section: an explicit wrap value hydrates truthfully either way", () => {
+  const wrapping = hydrateInspectorState(node("hero"), "flex flex-wrap gap-6");
+  assert.equal(wrapping.wrap, true);
+  const notWrapping = hydrateInspectorState(node("hero"), "flex flex-nowrap gap-6");
+  assert.equal(notWrapping.wrap, false);
+  // `flex-wrap-reverse` still wraps.
+  const reverse = hydrateInspectorState(node("hero"), "flex flex-wrap-reverse");
+  assert.equal(reverse.wrap, true);
+});
+
+test("the truthful-No default is the section schema's own (it alone shows Wrap)", () => {
+  // A container with no flex-wrap keeps the dummy default: row 21 gives the
+  // container no Wrap control at all (§7 item 1, future work), so there is
+  // nothing to state truthfully.
+  const container = hydrateInspectorState(node("fgrid"), "grid gap-6");
+  assert.ok(!("wrap" in container));
 });
 
 // ── visibility (row 40) and the classes override parameter ─────────────────
