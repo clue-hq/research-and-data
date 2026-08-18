@@ -48,6 +48,10 @@ export interface InspectorPresentationState {
   iconName: string;
   iconSize: string;
   iconStroke: string;
+  /** W4.2 §1 row 12 (ruling R-B5): the Fill section's preview image. Defaults
+   * to the dummy's stock png; a hydrated image node points it at its own
+   * asset's bytes. */
+  imagePreviewSrc: string;
   layoutMode: InspectorLayoutMode;
   locked: boolean;
   openInNewTab: boolean;
@@ -111,6 +115,7 @@ const DEFAULT_STATE: InspectorPresentationState = {
   iconName: "Apple",
   iconSize: "Large",
   iconStroke: "Default",
+  imagePreviewSrc: "/icons/chat-shell/inspector/web/image-preview.png",
   layoutMode: "Flex",
   locked: false,
   openInNewTab: false,

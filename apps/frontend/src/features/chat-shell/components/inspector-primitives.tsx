@@ -862,7 +862,13 @@ export function InspectorImageUpload({
           fill
           sizes="248px"
           src={previewSrc}
-          unoptimized={previewSrc.startsWith("data:")}
+          // W4.2 (§1 row 12): a local FileReader preview is a data: URL the
+          // optimizer cannot fetch, and a `/api/clue/` src is an AUTHENTICATED
+          // BFF route — the optimizer fetches server-side without the session
+          // cookies, so an optimized pass would 401. Both go through unchanged.
+          unoptimized={
+            previewSrc.startsWith("data:") || previewSrc.startsWith("/api/clue/")
+          }
         />
         <span>Replace image</span>
       </button>

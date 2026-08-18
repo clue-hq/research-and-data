@@ -2,6 +2,10 @@ import type {
   InspectorPresentationState,
 } from "@/features/chat-shell/hooks/use-inspector-controller";
 import type { ChatShellInspectorSelection } from "@/features/chat-shell/model/chat-shell";
+// The adapter may import data-layer constants (the presentation-component
+// import ban stops at `features/**/components/**`); `data/design-bff.ts` is the
+// single source of truth for the authenticated design mount.
+import { DESIGN_API_BFF_PREFIX } from "../data/design-bff";
 import { webClassFacets } from "../engine/webClassFacets";
 import type { WebNode } from "../engine/webDocuments";
 // W4.0: the capitalize-first token label is one shared rule — the picker's
@@ -279,6 +283,14 @@ export function hydrateInspectorState(
       state.url = node.href;
       state.openInNewTab = node.new_tab === true;
     }
+  }
+
+  // §1 row 12 (ruling R-B5): the Fill section's preview shows THIS node's
+  // asset, not the dummy's stock png. The bytes route is authenticated, so the
+  // src is the BFF mount (never a design-API origin); an image without an
+  // asset keeps the dummy default rather than pointing at a 404.
+  if (node.kind === "image" && typeof node.asset_id === "string" && node.asset_id) {
+    state.imagePreviewSrc = `${DESIGN_API_BFF_PREFIX}/assets/${encodeURIComponent(node.asset_id)}/bytes`;
   }
 
   return state;

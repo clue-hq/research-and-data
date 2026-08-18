@@ -726,11 +726,13 @@ function CanvasControls({
 function ImageControls({
   controller,
   layerTree,
+  onReplaceImage,
   onSelectionChange,
   showLayers,
 }: {
   controller: InspectorController;
   layerTree: InspectorLayerTreeController;
+  onReplaceImage?: (file: File) => void;
   onSelectionChange: (selection: ChatShellInspectorSelection) => void;
   showLayers: boolean;
 }) {
@@ -740,9 +742,14 @@ function ImageControls({
       <LinkSection ariaLabel="Image link URL" controller={controller} />
       <Section id="fill" label="Fill" state={state} toggle={toggleSection}>
         <InspectorField label="Image">
+          {/* W4.2 §1 row 12: the picked File goes out by PROP to the editor
+              surface's upload+replace path (presentation stays transport-free).
+              With no handler the dummy keeps its local-preview-only behavior —
+              never the old `requestAction` dead end. The preview src is the
+              node's own asset (ruling R-B5), falling back to the stock png. */}
           <InspectorImageUpload
-            onFileSelect={(file) => controller.requestAction(`replace-image:${file.name}`)}
-            src="/icons/chat-shell/inspector/web/image-preview.png"
+            onFileSelect={onReplaceImage}
+            src={state.imagePreviewSrc}
           />
         </InspectorField>
         <InspectorField label="Mode"><InspectorSelect label="Image fill mode" onChange={(value) => setValue("fillMode", value)} options={FILL_MODE_OPTIONS} value={state.fillMode} /></InspectorField>
@@ -919,6 +926,7 @@ export function WebInspector({
   hydrated,
   layers,
   note = null,
+  onReplaceImage,
   onSelectionChange,
   onSelectLayer,
   reviewMenuEnabled = false,
@@ -943,6 +951,11 @@ export function WebInspector({
    * When present, every schema's Layers section renders them instead of its
    * fixture tree; absent keeps the dummy fixtures untouched. */
   layers?: WebLayerRow[];
+  /** W4.2 §1 row 12: the image schema's Replace-image pick. The File travels
+   * by prop to the editor surface, which uploads it and applies the
+   * `upsert_asset`+`replace_asset` batch; absent keeps the dummy's
+   * local-preview-only behavior. */
+  onReplaceImage?: (file: File) => void;
   onSelectionChange: (selection: ChatShellInspectorSelection) => void;
   /** W2.3: a layer-row click — callers send bridge `selectNode`. */
   onSelectLayer?: (nodeId: string) => void;
@@ -1060,7 +1073,7 @@ export function WebInspector({
           <DocumentLayersContext.Provider value={documentLayers}>
             {selection === "canvas" ? <CanvasControls controller={canvasController} layerTree={canvasLayerTree} onSelectionChange={onSelectionChange} showLayers={showLayers} /> : null}
             {selection === "text" ? <TextControls controller={textController} layerTree={textLayerTree} onSelectionChange={onSelectionChange} showLayers={showLayers} /> : null}
-            {selection === "image" ? <ImageControls controller={imageController} layerTree={imageLayerTree} onSelectionChange={onSelectionChange} showLayers={showLayers} /> : null}
+            {selection === "image" ? <ImageControls controller={imageController} layerTree={imageLayerTree} onReplaceImage={onReplaceImage} onSelectionChange={onSelectionChange} showLayers={showLayers} /> : null}
             {selection === "button" ? <ButtonControls controller={buttonController} layerTree={buttonLayerTree} onSelectionChange={onSelectionChange} showLayers={showLayers} /> : null}
             {selection === "icon" ? <IconControls controller={iconController} layerTree={iconLayerTree} onSelectionChange={onSelectionChange} showLayers={showLayers} /> : null}
             {selection === "container" ? <ContainerControls controller={containerController} layerTree={containerLayerTree} onSelectionChange={onSelectionChange} showLayers={showLayers} /> : null}

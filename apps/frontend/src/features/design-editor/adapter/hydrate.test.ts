@@ -325,3 +325,31 @@ test("an unlinked image sets neither url nor openInNewTab", () => {
   assert.ok(!("openInNewTab" in state));
   assert.equal(state.fillMode, "Fit"); // object-contain → Fit
 });
+
+// ── W4.2 (lane B): the Fill preview src (§1 row 12, ruling R-B5) ────────────
+
+test("an image with an asset hydrates the BFF bytes URL as its preview src", () => {
+  const state = hydrateImage("img_linked");
+  assert.equal(
+    state.imagePreviewSrc,
+    "/api/clue/design/assets/asset_c42b6ba24117/bytes",
+  );
+});
+
+test("an image asset id is URL-encoded into the preview src", () => {
+  const base = imageNode("img_plain");
+  const odd: WebNode = { ...base, asset_id: "asset id/weird" };
+  const state = hydrateInspectorState(odd, odd.classes);
+  assert.equal(
+    state.imagePreviewSrc,
+    "/api/clue/design/assets/asset%20id%2Fweird/bytes",
+  );
+});
+
+test("a non-image node, and an image with no asset, leave the preview untouched", () => {
+  assert.ok(!("imagePreviewSrc" in hydrateImage("cta")));
+  const base = imageNode("img_plain");
+  const bare: WebNode = { ...base };
+  delete bare.asset_id;
+  assert.ok(!("imagePreviewSrc" in hydrateInspectorState(bare, bare.classes)));
+});
