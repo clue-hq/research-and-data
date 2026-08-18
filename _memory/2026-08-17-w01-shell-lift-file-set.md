@@ -449,12 +449,30 @@ unblocked; still awaiting founder word on the proposed lane split (A: container/
 canvas/icon/eye here; B: image+button worktree; C: rich-text+custom-component worktree)
 and on pulling the shared theme-token feed forward as trunk substrate before the fan-out.
 
-## Next on THIS branch — W4 (remaining schemas + radius facet)
+## W4.1 DONE — commit `e85c5e36` (radius facet family, contract §8 / ruling 14; 2026-08-18)
 
-W4.1 first (the §8-authorized radius facet in webClassFacets, BOTH trees, tests both
-places), then W4.2–W4.9 fan out per the W-plan (each schema task applies its own §2 deltas,
-citing rulings). W4.10 keyboard audit last. Also pending: founder sign-off on the W2/W3
-gates (checklist delivered 2026-08-18; latency + remount defects found in testing are fixed).
+Executed under SDD (ledger: `.superpowers/sdd/2026-08-17-website-editor-integration/progress.md`).
+Five facets (`radiusFacet` + tl/tr/bl/br) added to BOTH `webClassFacets.ts` copies —
+byte-identical mirror verified independently by the reviewer. Suffix-as-value parse
+(`rounded-lg`→"lg", `rounded-[8px]`→"[8px]"); arbitrary-px set; `RADIUS_SEGMENTS` guard
+makes all-corners vs per-corner prefix-unambiguous both ways; variant tokens opaque via
+makeFacet's central guard; facets also registered in the `webClassFacets` map (behavior-
+neutral — no consumer iterates it). Gates: design-editor 149/149 + tsc clean; frontend
+full suite 515/515 (runner is `tsx --test`, NOT vitest), lint, build green. Review: spec ✅,
+Approved, zero Critical/Important. **Two W4.2 hand-off notes (in the ledger as deferred
+minors):** (a) bare `rounded`/`rounded-tl` parses `null` — Shape hydrate must not render
+null as 0 and then write `rounded-[0px]`; (b) all-corners `set` deliberately leaves
+per-corner/side overrides in place (conservative §4 reading) — W4.2 needs a founder
+micro-ruling: does "Radius (all)" clear per-corner overrides?
+
+## Next on THIS branch — W4 fan-out (awaiting founder lane ruling)
+
+W4.1 done (above). W4.2–W4.9 fan out per the W-plan (each schema task applies its own §2
+deltas, citing rulings); W4.10 keyboard audit last. PENDING founder: (1) the proposed lane
+split — A here = W4.4/W4.5/W4.9/W4.6; B worktree = W4.2+W4.3; C worktree = W4.8+W4.7 —
+and (2) whether the shared theme-token feed (real theme tokens in ColorControl) is pulled
+forward as trunk substrate before the fan-out (it fronts W4.3/W4.4/W4.5 and fixes the W3
+fixture-palette caveat). W2/W3 gates are SIGNED OFF (2026-08-18) — no longer pending.
 
 ## Next
 
