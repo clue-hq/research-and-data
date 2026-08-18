@@ -61,7 +61,10 @@ export function viewModeHtml(html: string): string {
  * component instance renders as a nested `<iframe sandbox="allow-scripts">`
  * carrying its own runtime scripts, and an ancestor sandbox constrains every
  * nested browsing context — dropping the grant from the outer frame would take
- * the component runtime down with it. View mode is not "the scriptless mode".
+ * the component runtime down with it. And the view document itself loads the
+ * Tailwind browser runtime (the server's static CSS has no utility rules, so
+ * the runtime is what styles `bg-accent` and friends — see `use-web-render`).
+ * View mode is not "the scriptless mode".
  *
  * View mode adds exactly two grants, both required for ruling 2 to actually
  * work:

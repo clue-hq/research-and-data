@@ -34,11 +34,17 @@ export type WebRenderState =
  *
  * W4 addendum (founder ruling, 2026-08-19): `editing` picks the render. Edit ON
  * is the path above, verbatim. Edit OFF fetches the CLEAN render — no bridge,
- * no runtime_src, no nonce to rotate — and runs it through `viewModeHtml` so
- * every link opens a new tab. `editing` is an effect dep, so toggling the mode
- * refetches into the SAME iframe under the reloadToken discipline: no keyed
- * remount, no loading flash, and the old render keeps showing until the new
- * html lands.
+ * no nonce to rotate — and runs it through `viewModeHtml` so every link opens
+ * a new tab. The Tailwind BROWSER RUNTIME rides in BOTH modes: the server's
+ * static CSS carries theme tokens and font-faces but NO utility rules, so the
+ * runtime is what compiles the document's classes (`bg-accent` on a rich-text
+ * highlight, every layout utility) AND ships the preflight reset that keeps a
+ * linked phrase in its authored formatting instead of browser-default blue
+ * underline. Omitting it was the original task-6 spec's error — browser-caught
+ * 2026-08-19 (highlights vanished, link CSS changed, both same root cause).
+ * `editing` is an effect dep, so toggling the mode refetches into the SAME
+ * iframe under the reloadToken discipline: no keyed remount, no loading flash,
+ * and the old render keeps showing until the new html lands.
  */
 export function useWebRender(
   documentId: string,
@@ -65,7 +71,7 @@ export function useWebRender(
     fetchWebRenderHtml(
       designBffConfig(),
       documentId,
-      editing ? TAILWIND_RUNTIME_SRC : null,
+      TAILWIND_RUNTIME_SRC,
       nonce ? { nonce } : undefined,
     )
       .then(({ html: fetched }) => {

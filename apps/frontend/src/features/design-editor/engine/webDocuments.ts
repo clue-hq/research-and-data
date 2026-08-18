@@ -477,23 +477,24 @@ export interface WebRenderResult {
  * selection bridge into the document — it draws hover/selection outlines,
  * blocks navigation, and posts nonce-tagged selection events to the parent.
  *
- * W4 addendum (2026-08-19): a NULL `runtimeSrc` with no `bridge` is the VIEW
- * render — the endpoint then returns a complete standalone page (doctype, head
- * with the inline theme/compiled/font styles, and zero top-level scripts) with
- * none of the editor chrome. Both params are simply omitted from the query;
- * `mode` stays `editor`, which is the endpoint's own default and is NOT what
- * injects the bridge — the opt-in `bridge=1&nonce=…` pair is. */
+ * W4 addendum (2026-08-19, corrected same day): omitting `bridge` alone is the
+ * VIEW render — no editor chrome, no selection events. `runtimeSrc` is NOT
+ * optional in either mode: the server's inline CSS carries theme tokens and
+ * font-faces but no utility rules, so the browser runtime is what styles the
+ * document's classes (and its preflight is what keeps anchors in their
+ * authored formatting). The first task-6 cut omitted it from the view fetch
+ * and rich-text highlights/link CSS visibly broke — browser-caught. `mode`
+ * stays `editor`, which is the endpoint's own default and is NOT what injects
+ * the bridge — the opt-in `bridge=1&nonce=…` pair is. */
 export async function fetchWebRenderHtml(
   { apiBaseUrl, fetchImpl = defaultDesignFetch }: WebDocumentOptions,
   documentId: string,
-  runtimeSrc: string | null,
+  runtimeSrc: string,
   bridge?: { nonce?: string }
 ): Promise<WebRenderResult> {
   const url = new URL(`/documents/${encodeURIComponent(documentId)}/web/render`, apiBaseUrl);
   url.searchParams.set("mode", "editor");
-  if (runtimeSrc !== null) {
-    url.searchParams.set("runtime_src", runtimeSrc);
-  }
+  url.searchParams.set("runtime_src", runtimeSrc);
   if (bridge?.nonce) {
     url.searchParams.set("bridge", "1");
     url.searchParams.set("nonce", bridge.nonce);
