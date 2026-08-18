@@ -35,10 +35,7 @@ from uuid import UUID
 from pydantic import Field, JsonValue, StringConstraints
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_api.account_research_estimate import (
-    AccountTierCheckpointMissing,
-    compute_account_research_estimate,
-)
+from clue_api.account_research_estimate import compute_account_research_estimate
 from clue_api.agent_gate import (
     DEFAULT_GATE_CURRENCY,
     KIND_DIRECTIVE_CONFIRMATION,
@@ -350,8 +347,6 @@ class OpenDirectiveConfirmationGateTool(Tool):
                 # directive with the identical computation.
                 allow_draft=True,
             )
-        except AccountTierCheckpointMissing as exc:
-            raise _GateRefused(str(exc), reason_code="account_tier_checkpoint_missing") from exc
         except ResearchDirectiveError as exc:
             raise _GateRefused(str(exc), reason_code="research_directive_invalid") from exc
         first = estimate.effective_by_account[account_ids[0]]

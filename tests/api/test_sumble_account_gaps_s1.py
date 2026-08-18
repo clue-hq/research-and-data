@@ -112,6 +112,8 @@ async def _seed_selected_high_tier_account(
     storage: FsStorage,
     *,
     workspace_id: str,
+    account_tier: str = "high",
+    tier_claim_source_tier: int = 1,
 ) -> tuple[Any, Any]:
     """Seal one discovered account, advance its run to deep, and record the human tier decision."""
 
@@ -129,7 +131,7 @@ async def _seed_selected_high_tier_account(
             entity_id=EntityId(ready.account_id),
             field_key=TIER_FIELD,
             value_json={
-                "tier": "high",
+                "tier": account_tier,
                 "decision_basis": "discovery_criteria",
                 "selection_policy_version": "discovery-selection-v1",
                 "decision_version": "s1-test-decision",
@@ -142,8 +144,20 @@ async def _seed_selected_high_tier_account(
                 "icp_key": "independent-specialty-practices",
                 "icp_version": 1,
             },
-            source_tier=1,
-            extraction_method=ExtractionMethod.HUMAN,
+            source_tier=tier_claim_source_tier,
+            extraction_method=(
+                ExtractionMethod.LLM_SYNTHESIS
+                if tier_claim_source_tier == 4
+                else ExtractionMethod.HUMAN
+            ),
+            source_url=(
+                "https://example.com/tier-decision" if tier_claim_source_tier == 4 else None
+            ),
+            evidence_span=(
+                "Tier-4 source supports this exact selected account tier."
+                if tier_claim_source_tier == 4
+                else None
+            ),
             confidence=1,
             run_id=RunId(started.project_run_id),
             research_mode=ResearchMode.ACCOUNT_PROFILING,
@@ -162,7 +176,11 @@ def test_s1_real_db_three_snapshots_conflict_preservation_and_zero_call_replay(
         storage = FsStorage(tmp_path / "artifacts")
         async with rollback_conn(seed_pack=True) as conn:
             started, ready = await _seed_selected_high_tier_account(
-                conn, storage, workspace_id=workspace_id
+                conn,
+                storage,
+                workspace_id=workspace_id,
+                account_tier="tier4",
+                tier_claim_source_tier=4,
             )
             exa_tech = account_claim(
                 entity_id=EntityId(ready.account_id),

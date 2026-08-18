@@ -27,6 +27,25 @@ This repository is the data and research subsystem for the larger AI-native ABM 
 The central architecture bet is that verification must be modeled at the claim/data layer. LLM research is a last-resort tier-4 source, not the foundation. The product should prefer empty, flagged fields over fabricated fields.
 
 ## Topic notes
+- `2026-08-19-committee-discovery-blocker-inventory.md` — detailed permanent before/after ledger
+  of every Account-research and committee-discovery blocker removed, exact-job-only prerequisite
+  disabled, or historical threshold lowered through Account tier 4/source tier 4; also records the
+  governance, spend, lineage, ambiguity, and no-new-UI controls deliberately retained.
+- `2026-08-19-explicit-account-research-not-tier-gated.md` — founder ruling and implementation:
+  explicit selected-Account research/committee discovery accepts high, low, tier 4, or absent
+  signal tiers; exact R6 jobs bypass legacy scoring/must-have/tier checkpoints; a real paid Sumble
+  browser run returned committee members and one inferred role; the backend now serves the role
+  rationale without adding UI; 89 backend and 353 frontend tests plus all static/release and
+  migration gates are green on the preserved D5 runtime.
+- `2026-08-19-slice-d-make-check-baseline.md` — the Slice-D exit-gate full `make check` failure
+  baseline: 68 failures A/B-proven byte-identical at the pre-lane-D base, decomposed into
+  ambient-env / dirty-shared-DB / test-ordering / pilot-posture / 14 genuine inherited debts with
+  exact signatures; lane D causes zero.
+- `2026-08-19-slice-d-d3-agent-role-inference.md` — D3 adds the governed account-agent committee
+  role write-back, exact member/evidence authority, honest roleless coverage, immutable account
+  catalog v2 promotion, verification, review corrections, and the Fable/browser limitations;
+  addendum: D3 controller-verified this session and D4's display-continuity bridge pins
+  (agent-inferred member serves, roleless member stays discovered, toggle parity).
 - `2026-08-16-part-iii-merge-into-platform-base.md` — merges the design Part-III branch into
   the platform base: profile-v24/recipe-v7 collisions re-versioned as v36/v16, the D8 run-event
   move reconciled with the recon constants, merged authority/registry counts (114/129), the

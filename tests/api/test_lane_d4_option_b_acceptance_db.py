@@ -17,9 +17,10 @@ Charter slice D4's acceptance criterion, end to end in one conversation:
    refused;
 6. and the whole chain is legible afterwards as one join: gate → confirming turn → launched run.
 
-The fixture is the A1 Insight Health account plus a second workspace-local account with its own
-human tier checkpoint, both carried by one drafted directive — the charter's "two accounts with
-approved tier checkpoints".
+The fixture is the A1 Insight Health account plus a second workspace-local, low-signal account,
+both carried by one drafted directive whose execution effort is ``standard``.  The deliberate
+signal-tier / effort-tier mismatch pins the founder ruling that scoring is advisory: explicit,
+attributable Account selection authorizes research regardless of a high/low signal label.
 """
 
 from __future__ import annotations
@@ -178,8 +179,10 @@ async def _seed_two_account_conversation(
     tmp_path: Path,
     *,
     create_turn_row: bool = True,
+    second_signal_tier: str | None = "low",
+    effort_tier: str = "standard",
 ) -> _Scenario:
-    """The canonical fixture: two tier-checkpointed accounts, one thread, one drafted directive.
+    """The canonical fixture: two selected accounts, one thread, one drafted directive.
 
     ``create_turn_row`` writes the worker's half of the opening turn's identity. It defaults on
     because a gate's presenting-turn FK needs it and this module never runs a real C5 execution;
@@ -194,33 +197,34 @@ async def _seed_two_account_conversation(
     product_id = fixture.discovery_fixture.product_id
     conn_factory = conn_session_factory(conn)
 
-    # A second account of the same workspace, with its own *human* tier checkpoint written by the
-    # real writer rather than hand-inserted — the launcher's proof of approval is exactly this row.
+    # A second account of the same workspace.  Its low signal tier is real checkpoint metadata,
+    # not launch authority: the current user turn's exact Account refs are the selection receipt.
     second_account_id = await insert_account_entity(
         conn,
         canonical_name="Northwind Care Group",
         primary_domain="northwindcare.example",
         workspace_id=workspace_id,
     )
-    await persist_discovery_selection_tier(
-        conn,
-        view=DiscoveryCriteriaAccountView(
-            account_id=second_account_id,
-            disposition=DiscoverySelectionDisposition.SELECTED,
-            criteria=(),
-            required_field_states={},
-        ),
-        tier="high",
-        selection_policy_version="d4-acceptance-v1",
-        decision_version="d4-acceptance-v1",
-        discovery_batch_id=str(fixture.discovery_batch_id),
-        discovery_seal_sha256=fixture.discovery_seal_sha256,
-        project_run_id=fixture.project_run_id,
-        run_id=RunId(uuid5(NAMESPACE_URL, "lane-d4:optionb:second-tier-run")),
-        workspace_id=workspace_id,
-        icp_key=fixture.deep_icp_key,
-        icp_version=fixture.deep_icp_version,
-    )
+    if second_signal_tier is not None:
+        await persist_discovery_selection_tier(
+            conn,
+            view=DiscoveryCriteriaAccountView(
+                account_id=second_account_id,
+                disposition=DiscoverySelectionDisposition.SELECTED,
+                criteria=(),
+                required_field_states={},
+            ),
+            tier=second_signal_tier,
+            selection_policy_version="d4-acceptance-v1",
+            decision_version="d4-acceptance-v1",
+            discovery_batch_id=str(fixture.discovery_batch_id),
+            discovery_seal_sha256=fixture.discovery_seal_sha256,
+            project_run_id=fixture.project_run_id,
+            run_id=RunId(uuid5(NAMESPACE_URL, "lane-d4:optionb:second-tier-run")),
+            workspace_id=workspace_id,
+            icp_key=fixture.deep_icp_key,
+            icp_version=fixture.deep_icp_version,
+        )
 
     await seed_principal(
         conn,
@@ -365,7 +369,7 @@ async def _seed_two_account_conversation(
             contact_reveals_allowed=False,
         ),
         effort_policy=ResearchEffortPolicy(
-            tier="high",
+            tier=effort_tier,
             max_depth=2,
             max_fanout=6,
             budget_cap_cents=_PER_ACCOUNT_CAP,
@@ -497,7 +501,7 @@ async def _open_gate(conn: AsyncConnection, scenario: _Scenario) -> Any:
 
 
 def test_the_option_b_kickoff_flow_end_to_end(tmp_path: Path) -> None:
-    """Draft → gate → approve → confirm → launch, with one number and one receipt throughout."""
+    """A mixed high/low-signal set launches at standard effort from one explicit user selection."""
 
     async def scenario_body() -> None:
         async with rollback_conn() as conn:
@@ -751,48 +755,28 @@ def test_the_gate_amount_is_the_number_the_launcher_verifies(tmp_path: Path) -> 
     run_async(scenario_body())
 
 
-def test_a_gate_cannot_be_presented_for_an_account_without_a_human_tier_checkpoint(
+def test_a_selected_account_without_a_numeric_tier_can_still_be_presented_for_research(
     tmp_path: Path,
 ) -> None:
-    """The gate's precondition is the launcher's: an unapproved account earns no gate at all."""
+    """Numeric tiering is optional prioritization metadata, never an Account eligibility check."""
 
     async def scenario_body() -> None:
         async with rollback_conn() as conn:
-            scenario = await _seed_two_account_conversation(conn, tmp_path)
-            stranger_id = await insert_account_entity(
+            scenario = await _seed_two_account_conversation(
                 conn,
-                canonical_name="Unapproved Health Partners",
-                primary_domain="unapproved.example",
-                workspace_id=scenario.workspace_id,
+                tmp_path,
+                second_signal_tier=None,
+                effort_tier="high",
             )
-            with pytest.raises(PreconditionFailed) as caught:
-                await invoke_tool(
-                    _gate_tool_registry(scenario.conn_factory),
-                    "open_directive_confirmation_gate",
-                    {
-                        "project_run_id": str(scenario.fixture.project_run_id),
-                        "research_directive_id": str(scenario.directive_id),
-                        "account_entity_ids": [str(stranger_id)],
-                        "source_turn_ref": derive_turn_action_ref(scenario.presenting_turn_id),
-                    },
-                    ToolContext(
-                        workspace_id=scenario.workspace_id,
-                        actor="agent",
-                        conn_factory=scenario.conn_factory,
-                        operation_id=new_operation_id(),
-                    ),
-                    idempotency_ttl_s=60,
-                )
-            assert caught.value.failures[0].reason_code in {
-                "account_tier_checkpoint_missing",
-                "research_directive_invalid",
-            }
+            opened = await _open_gate(conn, scenario)
+            assert opened.references["account_count"] == 2
+            assert opened.references["max_spend_cents"] == money_text(2 * _PER_ACCOUNT_CAP)
             assert (
                 await conn.execute(
                     text("SELECT count(*) FROM agent_gate WHERE workspace_id = :ws"),
                     {"ws": scenario.workspace_id},
                 )
-            ).scalar_one() == 0
+            ).scalar_one() == 1
 
     run_async(scenario_body())
 

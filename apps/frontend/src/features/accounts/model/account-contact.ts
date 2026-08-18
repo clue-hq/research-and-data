@@ -53,6 +53,9 @@ export function contactPersonaLabel(persona: Persona): string {
 export const RoleOnCommitteeSchema = z.object({
   value: z.string(),
   confidence: z.number().nullable().default(null),
+  // Preserved from the backend contract for frontend-owned display decisions.
+  // The current committee UI intentionally does not render it.
+  reasoning: z.string().nullable().default(null),
 });
 
 /**

@@ -43,15 +43,16 @@ from clue_db import ConnFactory, transaction
 from clue_fleet.entity_research import EntityResearchExecutionFence, EntityResearchJobRow
 
 _TURN_NAMESPACE = uuid5(NAMESPACE_URL, "clue:m8d:r5:account-agent-turn")
-_ACCOUNT_PROFILE_REF = "agent-profile:account-research:v1"
-_ACCOUNT_PROMPT_REF = "agent-prompt:account-research:v1"
-_ACCOUNT_SKILL_REF = "agent-skill:governed-account-research:v1"
+_ACCOUNT_PROFILE_REF = "agent-profile:account-research:v2"
+_ACCOUNT_PROMPT_REF = "agent-prompt:account-research:v2"
+_ACCOUNT_SKILL_REF = "agent-skill:governed-account-research:v2"
 _ACCOUNT_TOOL_NAMES = (
     "read_account_research_state",
     "research_account_deep",
     "enrich_account",
     "inspect_account_evidence",
     "discover_buying_committee",
+    "record_committee_role_inferences",
     "assess_account_coverage",
     "read_research_result",
     "read_evidence",
@@ -129,7 +130,7 @@ class AccountResearchDefinitionResolver(EntityResearchDefinitionResolver):
         self._model_policy = model_policy
         self._conn_factory = conn_factory
         self._catalog_root = catalog_root or (
-            Path(__file__).parents[2] / "agents" / "catalog" / "entity-research" / "account" / "v1"
+            Path(__file__).parents[2] / "agents" / "catalog" / "entity-research" / "account" / "v2"
         )
         self._require_atomic_admission = require_atomic_admission
         self._enforce_budget = enforce_budget
@@ -275,7 +276,7 @@ class AccountResearchDefinitionResolver(EntityResearchDefinitionResolver):
             return EntityResearchResource(
                 kind=kind,  # type: ignore[arg-type]
                 ref=ref,
-                version="v1",
+                version="v2",
                 sha256=hashlib.sha256(body.encode()).hexdigest(),
                 body=body,
             )
@@ -289,7 +290,7 @@ class AccountResearchDefinitionResolver(EntityResearchDefinitionResolver):
 
 def account_research_profile_sha256(catalog_root: Path | None = None) -> str:
     root = catalog_root or (
-        Path(__file__).parents[2] / "agents" / "catalog" / "entity-research" / "account" / "v1"
+        Path(__file__).parents[2] / "agents" / "catalog" / "entity-research" / "account" / "v2"
     )
     return hashlib.sha256((root / "profile.md").read_bytes()).hexdigest()
 

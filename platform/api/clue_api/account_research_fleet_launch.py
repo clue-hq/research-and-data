@@ -12,10 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy import text
 
 from clue_api.account_entity_research_composition import account_research_profile_sha256
-from clue_api.account_research_estimate import (
-    AccountTierCheckpointMissing,
-    compute_account_research_estimate,
-)
+from clue_api.account_research_estimate import compute_account_research_estimate
 from clue_api.account_research_fleet import (
     AccountResearchFleetError,
     AccountResearchFleetPolicy,
@@ -235,16 +232,13 @@ class AccountResearchFleetLauncher:
             # ``clue_api.account_research_estimate`` verbatim so the directive-confirmation gate
             # can write **the same number** this launcher then verifies. One computation, two
             # callers; the exact-match verification below is unchanged and stays the launcher's.
-            try:
-                estimate = await compute_account_research_estimate(
-                    conn,
-                    workspace_id=request.workspace_id,
-                    project_run_id=ProjectRunId(request.project_run_id),
-                    directive_id=directive.directive_id,
-                    account_ids=account_ids,
-                )
-            except AccountTierCheckpointMissing as exc:
-                raise AccountResearchFleetLaunchError(str(exc)) from exc
+            estimate = await compute_account_research_estimate(
+                conn,
+                workspace_id=request.workspace_id,
+                project_run_id=ProjectRunId(request.project_run_id),
+                directive_id=directive.directive_id,
+                account_ids=account_ids,
+            )
             effective_by_account = estimate.effective_by_account
             pins_by_account = {
                 account_id: effective.pin for account_id, effective in effective_by_account.items()
@@ -629,7 +623,7 @@ class AccountResearchFleetLauncher:
                     product_id=project_run.product_id,
                     project_run_id=request.project_run_id,
                     selection=selection,
-                    agent_profile_ref="agent-profile:account-research:v1",
+                    agent_profile_ref="agent-profile:account-research:v2",
                     agent_profile_sha256=profile_sha,
                     checkpoint_thread_id=f"entity-research:{job_id}",
                     attempt_id=uuid5(_ATTEMPT_NAMESPACE, str(job_id)),

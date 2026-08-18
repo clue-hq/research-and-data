@@ -458,8 +458,7 @@ class SumbleAccountSemanticEnrichmentAction(EntityResearchProviderAction):
                 # carry that provider-specific approval; applying it to a simultaneous jobs or
                 # organizations call makes the preflight correctly reject that non-tech call.
                 allow_unbounded_tech=(
-                    self._allow_unbounded_tech
-                    and "core.primary_tech_stack" in request.field_keys
+                    self._allow_unbounded_tech and "core.primary_tech_stack" in request.field_keys
                 ),
                 before_dispatch=bind_sumble_before_dispatch,
                 entity_research_job_id=self._entity_research_job_id,
@@ -966,15 +965,12 @@ class SumbleCommitteeSemanticResearchAction(EntityResearchProviderAction):
                 project_id=durable.project_id,
                 project_run_id=UUID(str(durable.project_run_id)),
             )
-            committee = await discover_committee(
+            committee = await self._discover_committee_members(
                 conn,
                 account_entity_id=EntityId(request.target_entity_id),
                 run_id=run_id,
                 workspace_id=durable.workspace_id,
-                sources=(_PreparedCommitteeSource(selected),),
-                gateway=self._gateway,
-                role_model=self._role_model,
-                source_plan=(PEOPLE_SOURCE_KEY,),
+                selected=selected,
                 budget_cap_cents=durable.money_budget_cap_cents,
             )
         operation = self._committee_descriptor(
@@ -1001,6 +997,38 @@ class SumbleCommitteeSemanticResearchAction(EntityResearchProviderAction):
                 discovered_subjects=subjects,
                 confirmed_empty_discovery=not subjects,
             ),
+        )
+
+    async def _discover_committee_members(
+        self,
+        conn: AsyncConnection,
+        *,
+        account_entity_id: EntityId,
+        run_id: RunId,
+        workspace_id: str,
+        selected: Sequence[CommitteePersonCandidate],
+        budget_cap_cents: Decimal | None,
+    ) -> CommitteeResult:
+        """Discover + identity-resolve the office-admitted buying unit, WITHOUT judging roles.
+
+        Contract §5.2 steps 1-2: this provider action's job is discovery and identity — who is
+        really in the declared buying unit, with provider evidence behind them. The committee *role*
+        is a judgment the responsible account agent makes, on the evidence, and writes back through
+        its own governed tool. So discovery runs in ``agent_deferred`` mode: it makes no gateway
+        call and writes no role/persona claim, and the admitted members come back roleless (visible
+        as discovered subjects with their People facts). Between this and the agent's role write,
+        a committee legitimately has members and no roles — that is honest, not incomplete."""
+        return await discover_committee(
+            conn,
+            account_entity_id=account_entity_id,
+            run_id=run_id,
+            workspace_id=workspace_id,
+            sources=(_PreparedCommitteeSource(selected),),
+            gateway=self._gateway,
+            role_model=self._role_model,
+            source_plan=(PEOPLE_SOURCE_KEY,),
+            budget_cap_cents=budget_cap_cents,
+            role_inference="agent_deferred",
         )
 
     async def _resolve_inputs(

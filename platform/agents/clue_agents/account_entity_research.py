@@ -8,6 +8,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
 from clue_agents.entity_research_tools import EntityResearchSemanticToolInput
+from clue_core import Persona
 from clue_core.entity_research import ResearchFinalizationOutcome
 
 NonEmptyStr = Annotated[str, Field(min_length=1)]
@@ -98,6 +99,22 @@ class DiscoverBuyingCommitteeInput(EntityResearchSemanticToolInput):
 
 class ReadAccountResearchStateInput(_FrozenModel):
     include_result_index: bool = True
+
+
+class CommitteeRoleInference(_FrozenModel):
+    """One evidence-cited committee judgment authored by the responsible account agent."""
+
+    contact_entity_id: UUID
+    role: Persona
+    confidence: float = Field(ge=0.0, le=1.0)
+    reasoning: str = Field(min_length=1, max_length=2_000)
+    evidence_claim_ids: tuple[UUID, ...] = Field(min_length=1, max_length=16)
+
+
+class RecordCommitteeRoleInferencesInput(_FrozenModel):
+    """A bounded batch of role judgments; omitted discovered members remain roleless."""
+
+    inferences: tuple[CommitteeRoleInference, ...] = Field(min_length=1, max_length=64)
 
 
 class InspectAccountEvidenceInput(_FrozenModel):
@@ -220,6 +237,7 @@ class AccountCoverageProjection(_FrozenModel):
     committee_result_refs: tuple[NonEmptyStr, ...]
     committee_member_ids: tuple[UUID, ...]
     committee_status: Literal["complete", "partial", "needs_review"]
+    committee_needs_review: int = Field(default=0, ge=0)
     claim_refs: tuple[NonEmptyStr, ...]
     evidence_refs: tuple[NonEmptyStr, ...]
     review_flags: tuple[NonEmptyStr, ...]
@@ -237,8 +255,10 @@ __all__ = [
     "AccountExistingClaimProjection",
     "AccountResearchStateProjection",
     "AssessAccountCoverageInput",
+    "CommitteeRoleInference",
     "DiscoverBuyingCommitteeInput",
     "FinalizeAccountResearchInput",
     "InspectAccountEvidenceInput",
     "ReadAccountResearchStateInput",
+    "RecordCommitteeRoleInferencesInput",
 ]

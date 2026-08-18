@@ -28,23 +28,48 @@ from clue_api.account_research_fleet_launch import (
     AccountResearchFleetLaunchError,
     AccountResearchFleetLaunchRequest,
 )
+from clue_api.committee_eligibility import (
+    CommitteeEligibilityService,
+    CommitteeEnumerationSource,
+)
 from clue_api.comprehensive_research_contract import COMPREHENSIVE_ACCOUNT_FIELD_SOURCES
 from clue_api.entity_research_provider_wiring import (
     EntityResearchProductionCompositionError,
     ProductionAccountResearchProviderActions,
 )
 from clue_api.entity_research_tools import EntityResearchGovernedRejection
-from clue_api.sumble_account_gaps import compile_sumble_account_gap_preflight
+from clue_api.sumble_account_gaps import (
+    SumbleAccountGapCoordinator,
+    SumbleAccountGapEligibilityError,
+    compile_sumble_account_gap_preflight,
+)
+from clue_api.sumble_committee_acquisition import (
+    SUMBLE_COMMITTEE_CONTRACT_VERSION,
+    SUMBLE_COMMITTEE_POLICY_VERSION,
+    SUMBLE_COMMITTEE_PRICING_VERSION,
+    SumbleCommitteeAcquisitionCoordinator,
+    compile_sumble_committee_preflight,
+)
 from clue_api.trial.account_deep_fixture import seed_insight_health_account_deep_fixture
 from clue_config import GatewayConfig, Secrets, Settings
 from clue_core import (
+    CommitteeAcquisitionRequest,
+    CommitteeEligibilityCondition,
+    CommitteeEligibilityOutcome,
+    CommitteeExecutionAuthorization,
+    EntityId,
     LLMGateway,
+    PreSpendDecision,
     PreSpendGate,
+    PreSpendRequest,
+    PreSpendVerdict,
     ProjectPhase,
     ProjectRunId,
     ResearchAccountScope,
     ResearchDirectiveBody,
     ResearchQuestion,
+    SourceTier,
+    UseClass,
 )
 from clue_core.entity_research import (
     EntityResearchJobAuthorization,
@@ -69,11 +94,14 @@ from clue_research.durable.provider_spend import (
     require_provider_spend_capacity,
 )
 from clue_research.narrative.prose import PROSE_ACCOUNT_FIELDS
+from clue_research.resolvers.sumble import SUMBLE_API_VERSION, SumbleClient, SumbleCreditBudget
 from clue_research.resolvers.sumble.people import PEOPLE_SOURCE_KEY
 from clue_storage import FsStorage
 from tests._run_lineage import assert_run_registered
 from tests.api.account_deep_test_support import confirmed_account_research_direction
 from tests.api.test_account_deep_fixture_a1 import _pages
+from tests.api.test_sumble_account_gaps_s1 import _SumbleHttp
+from tests.api.test_sumble_committee_acquisition_s2b import _CommitteeTransport
 from tests.db.conftest import run_async
 from tests.profiling.conftest import rollback_conn
 
@@ -90,6 +118,12 @@ _TECH = "core.primary_tech_stack"
 async def _same_connection(conn: AsyncConnection) -> AsyncIterator[AsyncConnection]:
     async with conn.begin_nested():
         yield conn
+
+
+class _PassingPreSpendGate:
+    async def check(self, request: PreSpendRequest) -> PreSpendDecision:
+        del request
+        return PreSpendDecision(verdict=PreSpendVerdict.PASS)
 
 
 def test_confirmed_direction_compiles_exact_account_fleet_without_provider_or_contact_work(
@@ -328,6 +362,17 @@ def test_confirmed_direction_compiles_exact_account_fleet_without_provider_or_co
                 fence=fence,
             )
             assert begun.admitted
+            # An explicit R6 account launch is the human authority for this exact job. The
+            # outer discovery flow may still be paused at its legacy tier checkpoint (for
+            # example when every discovered account scored low); that checkpoint must not
+            # prevent the selected job from reaching its providers.
+            await conn.execute(
+                text(
+                    "UPDATE project_run SET phase='tier_checkpoint', status='paused' "
+                    "WHERE id=:project_run_id"
+                ),
+                {"project_run_id": fixture.project_run_id},
+            )
             providers = ProductionAccountResearchProviderActions(
                 settings=Settings(
                     _env_file=None,
@@ -361,7 +406,119 @@ def test_confirmed_direction_compiles_exact_account_fleet_without_provider_or_co
                 allowed_phases=frozenset({ProjectPhase.DEEP}),
                 entity_research_job_id=job.job_id,
             )
-            assert capacity.phase is ProjectPhase.SCORING
+            assert capacity.phase is ProjectPhase.TIER_CHECKPOINT
+
+            # The same explicit job is also the tier authority for committee discovery. A
+            # missing human tier claim and a paused tier checkpoint cannot reintroduce the
+            # low/high-signal gate after account research has already been authorized.
+            committee_request = CommitteeAcquisitionRequest(
+                workspace_id=fixture.discovery_fixture.workspace_id,
+                project_id=fixture.discovery_fixture.project_id,
+                project_run_id=fixture.project_run_id,
+                entity_research_job_id=job.job_id,
+                icp_key=fixture.deep_icp_key,
+                icp_version=fixture.deep_icp_version,
+                discovery_batch_id=fixture.discovery_batch_id,
+                discovery_seal_sha256=fixture.discovery_seal_sha256,
+                account_id=fixture.selected_account_id,
+                tier_claim_id=None,
+                committee_plan_ref=fixture.committee_plan_ref,
+                research_direction_ref=pin.directive_ref,
+                research_directive=pin,
+                organization_identity_ref="account-gap-snapshot:r6-test:sumble_organizations",
+                provider_organization_id="1726684",
+                provider_api_version=SUMBLE_API_VERSION,
+                provider_contract_version=SUMBLE_COMMITTEE_CONTRACT_VERSION,
+                pricing_policy_version=SUMBLE_COMMITTEE_PRICING_VERSION,
+                committee_policy_version=SUMBLE_COMMITTEE_POLICY_VERSION,
+                observation_window=f"r6-test:{job.job_id}",
+                team_limit=1,
+                related_people_per_team=1,
+                jobs_per_team=1,
+                people_limit=1,
+                provider_credit_cap=100,
+                money_budget_cap_cents=Decimal("300"),
+            )
+            committee_authorization = CommitteeExecutionAuthorization(
+                workspace_id=committee_request.workspace_id,
+                project_id=committee_request.project_id,
+                project_run_id=committee_request.project_run_id,
+                account_id=committee_request.account_id,
+                research_direction_ref=committee_request.research_direction_ref,
+                research_directive=committee_request.research_directive,
+                committee_plan_ref=committee_request.committee_plan_ref,
+                confirmation_ref="turn:r6-explicit-account-launch",
+                confirmed_by_human=True,
+                personal_data_allowed=True,
+                jurisdiction_policy_ref="jurisdiction-policy:r6-test",
+                jurisdiction_allowed=True,
+                allowed_use_classes=(UseClass.PROFESSIONAL_PUBLIC,),
+                identity_policy_ref="identity-policy:r6-test",
+                identity_acquisition_allowed=True,
+                budget_authorization_ref=f"entity-research-job:{job.job_id}",
+                contact_reveals_allowed=False,
+            )
+            committee_decision = await CommitteeEligibilityService(
+                storage=storage,
+                pre_spend_gate=_PassingPreSpendGate(),
+                sources=(
+                    CommitteeEnumerationSource(
+                        source_key="sumble_teams", source_tier=SourceTier(1)
+                    ),
+                    CommitteeEnumerationSource(
+                        source_key="sumble_people", source_tier=SourceTier(1)
+                    ),
+                ),
+                conn_factory=connection,
+            ).evaluate(
+                committee_request,
+                authorization=committee_authorization,
+                proposed_cost_cents=Decimal("1"),
+            )
+            assert committee_decision.outcome is CommitteeEligibilityOutcome.ELIGIBLE
+            pass_a_condition = next(
+                item
+                for item in committee_decision.conditions
+                if item.condition is CommitteeEligibilityCondition.PASS_A_COMPLETE
+            )
+            assert pass_a_condition.passed
+            assert pass_a_condition.evidence_refs == (f"entity-research-job:{job.job_id}",)
+            must_have_condition = next(
+                item
+                for item in committee_decision.conditions
+                if item.condition is CommitteeEligibilityCondition.MUST_HAVE_CRITERIA
+            )
+            assert must_have_condition.passed
+            assert must_have_condition.evidence_refs == (f"entity-research-job:{job.job_id}",)
+            tier_condition = next(
+                item
+                for item in committee_decision.conditions
+                if item.condition is CommitteeEligibilityCondition.HUMAN_APPROVED_TIER
+            )
+            assert tier_condition.passed
+            assert tier_condition.evidence_refs == (f"entity-research-job:{job.job_id}",)
+            committee_transport = _CommitteeTransport()
+            committee_acquisition = await SumbleCommitteeAcquisitionCoordinator(
+                transport=committee_transport,
+                storage=storage,
+                cents_per_credit=Decimal(0),
+                conn_factory=connection,
+            ).start(
+                compile_sumble_committee_preflight(
+                    committee_request,
+                    cents_per_credit=Decimal(0),
+                )
+            )
+            assert committee_acquisition.operation.request.tier_claim_id is None
+            assert (
+                await conn.execute(
+                    text(
+                        "SELECT tier_claim_id FROM committee_acquisition_operation "
+                        "WHERE id=:operation_id"
+                    ),
+                    {"operation_id": committee_acquisition.operation.operation_id},
+                )
+            ).scalar_one_or_none() is None
             preflight = await compile_sumble_account_gap_preflight(
                 workspace_id=fixture.discovery_fixture.workspace_id,
                 project_run_id=fixture.project_run_id,
@@ -375,7 +532,43 @@ def test_confirmed_direction_compiles_exact_account_fleet_without_provider_or_co
                 entity_research_job_id=job.job_id,
             )
             assert preflight.request.entity_research_job_id == job.job_id
+            assert preflight.request.tier_claim_id is None
             assert preflight.request.fields[0].field_key == _HIRING
+            with pytest.raises(
+                SumbleAccountGapEligibilityError,
+                match="exact Account research job",
+            ):
+                await compile_sumble_account_gap_preflight(
+                    workspace_id=fixture.discovery_fixture.workspace_id,
+                    project_run_id=fixture.project_run_id,
+                    account_id=EntityId(uuid4()),
+                    field_expected_value_credits={_HIRING: Decimal("25")},
+                    provider_credit_cap=25,
+                    allow_unbounded_tech=False,
+                    observation_window=f"r10-wrong-account:{job.job_id}",
+                    storage=storage,
+                    conn_factory=connection,
+                    entity_research_job_id=job.job_id,
+                )
+            sumble_http = _SumbleHttp("insighthealth.ai")
+            account_gap = await SumbleAccountGapCoordinator(
+                api_key=SecretStr("r10-test-sumble"),
+                storage=storage,
+                conn_factory=connection,
+                client_factory=lambda maximum, cents: SumbleClient(
+                    api_key=SecretStr("r10-test-sumble"),
+                    budget=SumbleCreditBudget(maximum=maximum),
+                    http=sumble_http,
+                    cents_per_credit=cents,
+                ),
+            ).start(preflight)
+            assert account_gap.operation.request.tier_claim_id is None
+            assert (
+                await conn.execute(
+                    text("SELECT tier_claim_id FROM account_gap_operation WHERE id=:operation_id"),
+                    {"operation_id": account_gap.operation.operation_id},
+                )
+            ).scalar_one_or_none() is None
             with pytest.raises(
                 ProviderSpendRunIneligible,
                 match="exact live entity-research job authority",

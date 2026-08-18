@@ -102,7 +102,7 @@ class AccountGapRequest(BaseModel):
     discovery_seal_sha256: Sha256Hex
     account_id: EntityId
     primary_domain: NonEmptyStr
-    tier_claim_id: ClaimId
+    tier_claim_id: ClaimId | None = None
     provider_api_version: NonEmptyStr
     provider_contract_version: NonEmptyStr
     pricing_policy_version: NonEmptyStr
@@ -116,6 +116,8 @@ class AccountGapRequest(BaseModel):
 
     @model_validator(mode="after")
     def _canonical_fields_and_value(self) -> AccountGapRequest:
+        if self.entity_research_job_id is None and self.tier_claim_id is None:
+            raise ValueError("historical account-gap request requires an exact tier claim")
         keys = tuple(str(item.field_key) for item in self.fields)
         if len(keys) != len(set(keys)):
             raise ValueError("account-gap fields must be unique")

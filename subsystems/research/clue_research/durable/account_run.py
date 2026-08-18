@@ -269,9 +269,18 @@ async def find_account_runs_for_entity(
     *,
     project_run_id: ProjectRunId,
     entity_id: EntityId,
+    directive_ref: str | None = None,
     limit: int = 2,
 ) -> tuple[AccountRunRow, ...]:
-    """Return the bounded exact project-run/account scope used by fail-closed readers."""
+    """Return the bounded exact project-run/account scope used by fail-closed readers.
+
+    ``directive_ref`` lets a retry select the account run pinned to its own immutable directive
+    even when earlier research runs for the same account remain in the project-run history.
+    """
+
+    directive_predicate = (
+        " AND research_directive_ref = :directive_ref" if directive_ref is not None else ""
+    )
 
     rows = (
         (
@@ -279,11 +288,13 @@ async def find_account_runs_for_entity(
                 text(
                     f"SELECT {_SELECT_COLUMNS} FROM account_run "
                     "WHERE project_run_id = :project_run_id AND entity_id = :entity_id "
+                    f"{directive_predicate} "
                     "ORDER BY id LIMIT :limit"
                 ),
                 {
                     "project_run_id": project_run_id,
                     "entity_id": entity_id,
+                    "directive_ref": directive_ref,
                     "limit": min(max(limit, 1), 10),
                 },
             )

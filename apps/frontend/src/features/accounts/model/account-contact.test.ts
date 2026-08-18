@@ -8,14 +8,23 @@ const base = {
   title: "VP Finance",
   titleRestricted: false,
   persona: "economic_buyer",
-  roleOnCommittee: { value: "economic_buyer", confidence: 0.8 },
+  roleOnCommittee: {
+    value: "economic_buyer",
+    confidence: 0.8,
+    reasoning: "Owns the financial approval for this workflow.",
+  },
   linkedinUrl: "https://linkedin.example.test/in/dana",
   projectIds: ["project-1"],
   signals: { typeCount: 1 },
 } as const;
 
 test("email lookup is absent before the first durable request", () => {
-  assert.equal(AccountContactSummarySchema.parse(base).emailLookup, null);
+  const parsed = AccountContactSummarySchema.parse(base);
+  assert.equal(parsed.emailLookup, null);
+  assert.equal(
+    parsed.roleOnCommittee.reasoning,
+    "Owns the financial approval for this workflow.",
+  );
 });
 
 test("matching providers remain one email with both sources", () => {

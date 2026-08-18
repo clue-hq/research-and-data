@@ -22,9 +22,11 @@ from clue_agents.account_entity_research import (
     AccountExistingClaimProjection,
     AccountResearchStateProjection,
     AssessAccountCoverageInput,
+    CommitteeRoleInference,
     FinalizeAccountResearchInput,
     InspectAccountEvidenceInput,
     ReadAccountResearchStateInput,
+    RecordCommitteeRoleInferencesInput,
 )
 from clue_agents.entity_research_contracts import (
     EntityResearchRuntimeContext,
@@ -49,7 +51,18 @@ from clue_api.entity_research_tools import (
     convert_engine_authority_rejections,
     semantic_validation_error,
 )
-from clue_core import EntityId, ProjectRunId, ResearchScope, serialize_value_json
+from clue_core import (
+    Claim,
+    ClaimId,
+    EntityId,
+    ExtractionMethod,
+    IdentityBinding,
+    ProjectRunId,
+    ResearchScope,
+    RunId,
+    SourceTier,
+    serialize_value_json,
+)
 from clue_core.entity_research import (
     EntityResearchJobAuthorization,
     FinalizationVerification,
@@ -63,9 +76,21 @@ from clue_core.entity_research import (
 # the lens that renders the resulting claims, so the species read is imported rather than restated
 # (it resolves through `core.resolve_research_scope` over the *effective* registry, retired
 # declarations included — see its docstring).
-from clue_research.claimstore import WorkspaceScope, current_values, field_species
+from clue_research.claimstore import (
+    WorkspaceScope,
+    claims_by_ids,
+    claims_for_entities,
+    current_values,
+    field_species,
+)
 from clue_research.directives import effective_account_research_directive
 from clue_research.durable import find_account_runs_for_entity
+from clue_research.profiling.committee import (
+    CURRENT_TITLE,
+    PERSONA,
+    ROLE_ON_COMMITTEE,
+    write_committee_claim,
+)
 
 ConnFactory = Callable[[], AbstractAsyncContextManager[AsyncConnection]]
 NonEmptyStr = Annotated[str, Field(min_length=1)]
@@ -171,10 +196,15 @@ async def pinned_account_research_directive(
         conn,
         project_run_id=ProjectRunId(authorization.project_run_id),
         entity_id=EntityId(authorization.subject_entity_id),
+        directive_ref=authorization.selection.directive_ref,
     )
     pinned = tuple(run for run in runs if run.research_directive is not None)
-    if len(pinned) != 1:
+    if not pinned:
         return None
+    if len(pinned) != 1:
+        raise AccountResearchAuthorityError(
+            "multiple account runs pin the job's exact authorized directive"
+        )
     pin = pinned[0].research_directive
     assert pin is not None
     if pin.directive_ref != authorization.selection.directive_ref:
@@ -433,6 +463,163 @@ class AccountResearchStateStore:
             "current_state_sha256": state.current_state_sha256,
         }
 
+    async def record_committee_role_inferences(
+        self, inputs: RecordCommitteeRoleInferencesInput
+    ) -> dict[str, JsonValue]:
+        """Persist job-local, evidence-cited agent judgments for discovered committee members.
+
+        Membership and admissible evidence are reconstructed from this account job's persisted
+        committee result fields. All inputs are validated before either half of a role/persona pair
+        is written, so an outsider or cross-contact citation cannot partially mutate the batch.
+        Omitted discovered members remain honestly roleless.
+        """
+
+        active = self._active_account()
+        authorization = active.context.authorization
+        contact_ids = [item.contact_entity_id for item in inputs.inferences]
+        if len(contact_ids) != len(set(contact_ids)):
+            raise AccountResearchAuthorityError("committee role inference batch repeats a contact")
+
+        scope = WorkspaceScope.for_workspace(authorization.workspace_id)
+        async with self._conn_factory() as conn:
+            member_claim_ids = await self._committee_member_claim_ids(
+                conn,
+                job_id=authorization.job_id,
+                account_entity_id=authorization.subject_entity_id,
+            )
+            outsiders = [value for value in contact_ids if value not in member_claim_ids]
+            if outsiders:
+                raise AccountResearchAuthorityError(
+                    "committee role inference contact is outside this account job's discovered "
+                    "members"
+                )
+
+            all_member_claim_ids = {
+                claim_id for values in member_claim_ids.values() for claim_id in values
+            }
+            member_claims = await claims_by_ids(
+                conn,
+                all_member_claim_ids,
+                scope=scope,
+            )
+
+            prepared: list[tuple[CommitteeRoleInference, str, str, RunId]] = []
+            for inference in inputs.inferences:
+                allowed = member_claim_ids[inference.contact_entity_id]
+                cited_ids = {ClaimId(value) for value in inference.evidence_claim_ids}
+                if not cited_ids <= allowed:
+                    raise AccountResearchAuthorityError(
+                        "committee role inference evidence is not one of this contact's own "
+                        "claims from this account research job"
+                    )
+                if not cited_ids <= set(member_claims):
+                    raise AccountResearchAuthorityError(
+                        "committee role inference evidence is absent, superseded, expired, or "
+                        "out of scope"
+                    )
+                cited = [member_claims[ClaimId(value)] for value in inference.evidence_claim_ids]
+                if any(claim.entity_id != EntityId(inference.contact_entity_id) for claim in cited):
+                    raise AccountResearchAuthorityError(
+                        "committee role inference evidence belongs to another contact"
+                    )
+                run_ids = {claim.run_id for claim in cited}
+                if len(run_ids) != 1:
+                    raise AccountResearchAuthorityError(
+                        "committee role inference evidence crosses committee runs"
+                    )
+
+                primary = cited[0]
+                title_claim = next(
+                    (
+                        claim
+                        for claim_id in sorted(allowed, key=str)
+                        if claim_id in member_claims
+                        if (claim := member_claims[claim_id]).field_key
+                        in {CURRENT_TITLE, "contact.profile.title"}
+                        and isinstance(claim.value_json, str)
+                        and claim.value_json.strip()
+                    ),
+                    None,
+                )
+                source_url: str | None
+                evidence_span: str | None
+                if primary.source_url and primary.evidence_span:
+                    source_url = primary.source_url
+                    evidence_span = primary.evidence_span
+                else:
+                    source_url = title_claim.source_url if title_claim is not None else None
+                    evidence_span = (
+                        f"title: {title_claim.value_json}" if title_claim is not None else None
+                    )
+                if not source_url or not evidence_span:
+                    raise AccountResearchAuthorityError(
+                        "committee role inference requires a cited source URL and evidence span "
+                        "(or the discovered member's grounded title span)"
+                    )
+                prepared.append((inference, source_url, evidence_span, next(iter(run_ids))))
+
+            recorded: list[dict[str, JsonValue]] = []
+            for inference, source_url, evidence_span, run_id in prepared:
+                role_claim_id = await write_committee_claim(
+                    conn,
+                    EntityId(inference.contact_entity_id),
+                    ROLE_ON_COMMITTEE,
+                    {
+                        "role": inference.role.value,
+                        "confidence": inference.confidence,
+                        "plausible": True,
+                        "rationale": inference.reasoning,
+                    },
+                    confidence=inference.confidence,
+                    method=ExtractionMethod.LLM_SYNTHESIS,
+                    tier=SourceTier(4),
+                    source_url=source_url,
+                    evidence_span=evidence_span,
+                    run_id=run_id,
+                    workspace_id=authorization.workspace_id,
+                    identity_binding=IdentityBinding.STRONG,
+                    product_id=authorization.product_id,
+                )
+                persona_claim_id = await write_committee_claim(
+                    conn,
+                    EntityId(inference.contact_entity_id),
+                    PERSONA,
+                    inference.role.value,
+                    confidence=inference.confidence,
+                    method=ExtractionMethod.LLM_SYNTHESIS,
+                    tier=SourceTier(4),
+                    source_url=source_url,
+                    evidence_span=evidence_span,
+                    run_id=run_id,
+                    workspace_id=authorization.workspace_id,
+                    identity_binding=IdentityBinding.STRONG,
+                    product_id=authorization.product_id,
+                )
+                recorded.append(
+                    {
+                        "contact_entity_id": str(inference.contact_entity_id),
+                        "role_claim_ref": f"claim:{role_claim_id}",
+                        "persona_claim_ref": f"claim:{persona_claim_id}",
+                    }
+                )
+
+            role_claims = await self._committee_role_claims(
+                conn,
+                member_claim_ids=member_claim_ids,
+                scope=scope,
+            )
+
+        inferred_member_count = len(self._inferred_committee_member_ids(role_claims))
+        member_count = len(member_claim_ids)
+        needs_review = member_count - inferred_member_count
+        return {
+            "recorded_inferences": cast(Any, recorded),
+            "committee_member_count": member_count,
+            "inferred_member_count": inferred_member_count,
+            "needs_review": needs_review,
+            "committee_status": "complete" if needs_review == 0 else "needs_review",
+        }
+
     async def assess(
         self,
         inputs: AssessAccountCoverageInput,
@@ -586,7 +773,25 @@ class AccountResearchStateStore:
                 ambiguous_count=ambiguous_count,
                 confirmed_empty_count=confirmed_empty_count,
             )
+            member_claim_ids = await self._committee_member_claim_ids(
+                conn,
+                job_id=authorization.job_id,
+                account_entity_id=authorization.subject_entity_id,
+            )
+            committee_role_claims = await self._committee_role_claims(
+                conn,
+                member_claim_ids=member_claim_ids,
+                scope=WorkspaceScope.for_workspace(authorization.workspace_id),
+            )
+            committee_needs_review = max(
+                0,
+                len(state.committee_member_ids)
+                - len(self._inferred_committee_member_ids(committee_role_claims)),
+            )
             review_flags = list(committee_flags)
+            if committee_needs_review:
+                committee_status = "needs_review"
+                review_flags.append("committee_roles_uninferred")
             if unresolved_field_keys:
                 review_flags.append("account_fields_unresolved")
 
@@ -635,7 +840,17 @@ class AccountResearchStateStore:
             derived_claim_ids = tuple(
                 str(item.claim_id) for item in derivation if item.claim_id is not None
             )
-            claim_ids = tuple(dict.fromkeys((*claim_ids, *existing_claim_ids, *derived_claim_ids)))
+            committee_role_claim_ids = tuple(str(claim.id) for claim in committee_role_claims)
+            claim_ids = tuple(
+                dict.fromkeys(
+                    (
+                        *claim_ids,
+                        *existing_claim_ids,
+                        *derived_claim_ids,
+                        *committee_role_claim_ids,
+                    )
+                )
+            )
             projection = AccountCoverageProjection(
                 coverage_id=coverage_id,
                 coverage_ledger_ref=f"account-coverage:{coverage_id}",
@@ -647,6 +862,7 @@ class AccountResearchStateStore:
                 committee_result_refs=state.committee_result_refs,
                 committee_member_ids=state.committee_member_ids,
                 committee_status=cast(Any, committee_status),
+                committee_needs_review=committee_needs_review,
                 claim_refs=tuple(f"claim:{value}" for value in claim_ids),
                 evidence_refs=tuple(f"research-evidence:{value}" for value in evidence_ids),
                 review_flags=tuple(dict.fromkeys(review_flags)),
@@ -942,6 +1158,91 @@ class AccountResearchStateStore:
             {"digest": digest, "job_id": job_id},
         )
         return digest
+
+    @staticmethod
+    async def _committee_member_claim_ids(
+        conn: AsyncConnection,
+        *,
+        job_id: UUID,
+        account_entity_id: UUID,
+    ) -> dict[UUID, frozenset[ClaimId]]:
+        """Exact discovered-member -> own professional-claim authority for one account job."""
+
+        rows = (
+            (
+                await conn.execute(
+                    text(
+                        """
+                        SELECT field.target_entity_id, field.claim_refs
+                        FROM entity_research_result_field field
+                        JOIN entity_research_result result ON result.result_id=field.result_id
+                        JOIN entity_research_tool_request request_row
+                          ON request_row.tool_request_id=result.tool_request_id
+                        WHERE request_row.job_id=:job_id
+                          AND request_row.tool_name='discover_buying_committee'
+                          AND field.subject_type='contact'
+                          AND field.parent_account_id=:account_id
+                        ORDER BY result.created_at, result.result_id, field.ordinal
+                        """
+                    ),
+                    {"job_id": job_id, "account_id": account_entity_id},
+                )
+            )
+            .mappings()
+            .all()
+        )
+        grouped: dict[UUID, set[ClaimId]] = {}
+        for row in rows:
+            grouped.setdefault(UUID(str(row["target_entity_id"])), set()).update(
+                ClaimId(UUID(str(value))) for value in row["claim_refs"]
+            )
+        return {contact_id: frozenset(values) for contact_id, values in grouped.items()}
+
+    @staticmethod
+    async def _committee_role_claims(
+        conn: AsyncConnection,
+        *,
+        member_claim_ids: Mapping[UUID, frozenset[ClaimId]],
+        scope: WorkspaceScope,
+    ) -> tuple[Claim, ...]:
+        """Current role/persona claims in the same run as this job's discovered-member evidence."""
+
+        if not member_claim_ids:
+            return ()
+        evidence = await claims_by_ids(
+            conn,
+            {claim_id for values in member_claim_ids.values() for claim_id in values},
+            scope=scope,
+        )
+        allowed_runs = {
+            EntityId(contact_id): {
+                evidence[claim_id].run_id for claim_id in claim_ids if claim_id in evidence
+            }
+            for contact_id, claim_ids in member_claim_ids.items()
+        }
+        claims = await claims_for_entities(
+            conn,
+            [EntityId(value) for value in member_claim_ids],
+            (ROLE_ON_COMMITTEE, PERSONA),
+            scope=scope,
+        )
+        return tuple(
+            claim for claim in claims if claim.run_id in allowed_runs.get(claim.entity_id, set())
+        )
+
+    @staticmethod
+    def _inferred_committee_member_ids(claims: Sequence[Claim]) -> frozenset[UUID]:
+        """Members carrying the complete role/persona pair; either half stays reviewable."""
+
+        role_members = {
+            UUID(str(claim.entity_id))
+            for claim in claims
+            if str(claim.field_key) == ROLE_ON_COMMITTEE
+        }
+        persona_members = {
+            UUID(str(claim.entity_id)) for claim in claims if str(claim.field_key) == PERSONA
+        }
+        return frozenset(role_members & persona_members)
 
     @staticmethod
     async def _result_rows(conn: AsyncConnection, job_id: UUID) -> Sequence[RowMapping]:
@@ -1258,9 +1559,10 @@ class AccountResearchExecutionGuard(EntityResearchExecutionGuard):
             "research_account_deep",
             "enrich_account",
             "discover_buying_committee",
+            "record_committee_role_inferences",
         }:
             raise AccountResearchAuthorityError(
-                "provider research cannot resume after coverage close"
+                "account research cannot resume after coverage close"
             )
 
     async def observe_tool_result(
@@ -1561,6 +1863,11 @@ def account_engine_tool_bindings(
         coverage = await store.assess(AssessAccountCoverageInput.model_validate(values))
         return cast(dict[str, JsonValue], coverage.model_dump(mode="json"))
 
+    async def record_inferences(**values: object) -> dict[str, JsonValue]:
+        return await store.record_committee_role_inferences(
+            RecordCommitteeRoleInferencesInput.model_validate(values)
+        )
+
     async def finalize(**values: object) -> dict[str, JsonValue]:
         proposal = await store.propose(FinalizeAccountResearchInput.model_validate(values))
         return cast(dict[str, JsonValue], proposal.model_dump(mode="json"))
@@ -1581,6 +1888,17 @@ def account_engine_tool_bindings(
             name="inspect_account_evidence",
             description="Inspect the complete evidence index for exact persisted account results.",
             args_schema=InspectAccountEvidenceInput,
+            handle_validation_error=semantic_validation_error,
+            handle_tool_error=True,
+        ),
+        "record_committee_role_inferences": StructuredTool.from_function(
+            coroutine=repairable(record_inferences),
+            name="record_committee_role_inferences",
+            description=(
+                "Record evidence-cited role judgments for exact members discovered by this "
+                "account job; omit any member whose role cannot be supported."
+            ),
+            args_schema=RecordCommitteeRoleInferencesInput,
             handle_validation_error=semantic_validation_error,
             handle_tool_error=True,
         ),

@@ -117,6 +117,20 @@ This is mechanical contract expansion and batching. It is **not** a new adaptive
 | Exa Deep supports bounded field bundles. | A large field request can exceed one action's supported shape. | Deterministically chunk the Exa-owned fields behind one user-visible research task. |
 | The chat task card is a turn-close snapshot. | The card may remain `Queued — 0 of N` after the fleet has finished. | Project durable detached-fleet state into a live task read and stream updates to the existing card. |
 
+### 3.4 Explicit Account selection is not tier-gated
+
+**Founder ruling, 2026-08-19:** fit/intent scores and their numeric `high` / `low` tier are
+prioritization metadata, not research eligibility. When an attributable user turn explicitly
+selects an Account and the confirmed research directive includes that Account, account research
+and buying-committee discovery may launch whether the signal tier is high, low, or absent. The
+directive's execution-effort vocabulary (for example `standard`) is also independent of the signal
+tier and must not be required to equal it.
+
+This ruling removes only the tier eligibility check. Exact user-selected scope, directive lineage,
+privacy policy, provider availability, durable authority receipts, provider spend accounting, and
+configured budget ceilings remain enforced. Automatic broad-run tiering may still order work or
+suggest depth, but it cannot invalidate an explicit Account research request.
+
 ## 4. Truthful live progress without extra diagnostics UI
 
 The existing research task card must stop behaving as a frozen acknowledgement. It must reflect durable backend state after the initiating chat turn finishes.

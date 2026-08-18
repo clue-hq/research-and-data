@@ -181,6 +181,8 @@ async def _setup(
     workspace_id: str,
     strict_s2d: bool = False,
     s2d_criterion_state: str = "yes",
+    account_tier: str = "high",
+    tier_claim_source_tier: int = 1,
 ) -> CommitteeAcquisitionRequest:
     # Production composition seeds the shared source registry before any provider path is
     # reachable. S2D's real pre-spend gate now validates the exact Teams/People keys, so this
@@ -192,7 +194,7 @@ async def _setup(
             "scoring_mode": "disabled",
             "selection_mode": "discovery_criteria",
             "must_have_criteria": ["is an independent practice"],
-            "approved_tier": "high",
+            "approved_tier": account_tier,
         }
         if strict_s2d
         else None
@@ -246,7 +248,7 @@ async def _setup(
             entity_id=EntityId(ready.account_id),
             field_key=TIER_FIELD,
             value_json={
-                "tier": "high",
+                "tier": account_tier,
                 "decision_basis": "discovery_criteria",
                 "selection_policy_version": (
                     DiscoverySelectionPolicy.from_slot(strategy).policy_version
@@ -263,8 +265,20 @@ async def _setup(
                 "icp_key": "independent-specialty-practices",
                 "icp_version": 1,
             },
-            source_tier=1,
-            extraction_method=ExtractionMethod.HUMAN,
+            source_tier=tier_claim_source_tier,
+            extraction_method=(
+                ExtractionMethod.LLM_SYNTHESIS
+                if tier_claim_source_tier == 4
+                else ExtractionMethod.HUMAN
+            ),
+            source_url=(
+                "https://example.com/tier-decision" if tier_claim_source_tier == 4 else None
+            ),
+            evidence_span=(
+                "Tier-4 source supports this exact selected account tier."
+                if tier_claim_source_tier == 4
+                else None
+            ),
             confidence=1,
             run_id=RunId(started.project_run_id),
             research_mode=ResearchMode.ACCOUNT_PROFILING,

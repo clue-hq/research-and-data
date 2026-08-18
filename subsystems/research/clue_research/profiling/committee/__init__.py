@@ -1,7 +1,8 @@
 """`clue_research.profiling.committee` — Committee Discovery (mode M3 / M8.3).
 
-Within a known high-tier account, find the relevant people and hypothesize each one's committee role
-— producing the buying committee (Output 3) and the V1 contact graph (substrate §7). The trunk is
+Within a known explicitly selected account, find the relevant people and hypothesize each one's
+committee role — producing the buying committee (Output 3) and the V1 contact graph (substrate §7).
+The trunk is
 :func:`discover_committee` (+ :class:`CommitteeAspectWorker` for the M7 graph); it existence-gates
 candidates through M2, infers + plausibility-gates roles via the shared LLM gateway, and reports
 committee coverage confidence. See ``docs/specs/M08-deep-profiling.md`` §M8.3.
@@ -65,6 +66,7 @@ from clue_research.profiling.committee.worker import (
     CommitteeAspectWorker,
     ProfessionalFactReplayConflict,
     discover_committee,
+    write_committee_claim,
 )
 
 __all__ = [
@@ -72,6 +74,7 @@ __all__ = [
     "discover_committee",
     "CommitteeAspectWorker",
     "ProfessionalFactReplayConflict",
+    "write_committee_claim",
     # result / config
     "CommitteeResult",
     "CommitteeMemberRef",

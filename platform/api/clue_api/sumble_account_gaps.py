@@ -20,6 +20,7 @@ from typing import Any, Final
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, SecretStr
+from sqlalchemy import text
 
 from clue_api.comprehensive_research_contract import COMPREHENSIVE_ACCOUNT_FIELD_SOURCES
 from clue_api.discovery_seal import DbSealedDiscoveryAccountManifestReader
@@ -61,7 +62,11 @@ from clue_research.claimstore import (
     field_species,
     get_effective_field,
 )
-from clue_research.discovery_scoring.tiering import TIER_FIELD
+from clue_research.discovery_scoring.tiering import (
+    ACCOUNT_RESEARCH_ELIGIBLE_TIERS,
+    TIER_CLAIM_MAX_SOURCE_TIER,
+    TIER_FIELD,
+)
 from clue_research.durable import (
     AccountGapNotFound,
     AccountGapReplayConflict,
@@ -210,7 +215,7 @@ class SumbleAccountGapPolicy(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     version: str = SUMBLE_ACCOUNT_GAP_FIELD_POLICY_VERSION
-    eligible_tiers: frozenset[str] = frozenset({"high"})
+    eligible_tiers: frozenset[str] = ACCOUNT_RESEARCH_ELIGIBLE_TIERS
     low_confidence_threshold: float = Field(default=0.8, ge=0, le=1)
     maximum_fields: int = Field(default=6, ge=1)
     jobs_limit: int = Field(default=1, ge=1, le=200)
@@ -288,8 +293,7 @@ async def _exact_selected_tier_claim(
         if not isinstance(value, dict):
             continue
         if (
-            claim.extraction_method.value == "human"
-            and claim.source_tier == 1
+            claim.source_tier <= TIER_CLAIM_MAX_SOURCE_TIER
             and value.get("decision_basis") == "discovery_criteria"
             and value.get("project_run_id") == str(project_run_id)
             and value.get("discovery_batch_id") == str(batch_id)
@@ -302,7 +306,7 @@ async def _exact_selected_tier_claim(
             matching.append(claim)
     if len(matching) != 1:
         raise SumbleAccountGapEligibilityError(
-            "account gap enrichment requires one exact live human-selected tier decision"
+            "account gap enrichment requires one exact live selected tier decision"
         )
     return matching[0]
 
@@ -366,14 +370,37 @@ async def compile_sumble_account_gap_preflight(
         run = await get_project_run(conn, project_run_id)
         if run is None or run.workspace_id != workspace_id:
             raise SumbleAccountGapEligibilityError("Sumble account-gap project run does not exist")
-        if run.status is not ProjectRunStatus.ACTIVE:
-            raise SumbleAccountGapEligibilityError(
-                "Sumble account-gap enrichment requires an active project run"
-            )
-        if entity_research_job_id is None and run.phase is not ProjectPhase.DEEP:
-            raise SumbleAccountGapEligibilityError(
-                "historical Sumble account-gap enrichment requires an active deep-phase run"
-            )
+        if entity_research_job_id is not None:
+            exact_job = (
+                await conn.execute(
+                    text(
+                        "SELECT 1 FROM entity_research_job WHERE job_id=:job_id "
+                        "AND subject_type='account' AND subject_entity_id=:account_id "
+                        "AND workspace_id=:workspace_id AND project_id=:project_id "
+                        "AND project_run_id=:project_run_id"
+                    ),
+                    {
+                        "job_id": entity_research_job_id,
+                        "account_id": account_id,
+                        "workspace_id": workspace_id,
+                        "project_id": run.project_id,
+                        "project_run_id": project_run_id,
+                    },
+                )
+            ).scalar_one_or_none()
+            if exact_job is None:
+                raise SumbleAccountGapEligibilityError(
+                    "Sumble account-gap enrichment requires the exact Account research job"
+                )
+        if entity_research_job_id is None:
+            if run.status is not ProjectRunStatus.ACTIVE:
+                raise SumbleAccountGapEligibilityError(
+                    "Sumble account-gap enrichment requires an active project run"
+                )
+            if run.phase is not ProjectPhase.DEEP:
+                raise SumbleAccountGapEligibilityError(
+                    "historical Sumble account-gap enrichment requires an active deep-phase run"
+                )
     if entity_research_job_id is not None:
         # M8D account research is an independently confirmed action, not a projection of the
         # outer project phase.  Prove the exact running R6 job before compiling any provider
@@ -416,17 +443,19 @@ async def compile_sumble_account_gap_preflight(
             raise SumbleAccountGapEligibilityError(
                 "account lacks a workspace-local canonical primary domain"
             )
-        tier_claim = await _exact_selected_tier_claim(
-            conn=conn,
-            workspace_id=workspace_id,
-            account_id=account_id,
-            project_run_id=project_run_id,
-            batch_id=sealed.discovery_batch_id,
-            seal_sha256=sealed.seal_sha256,
-            icp_key=run.icp_key,
-            icp_version=run.icp_version,
-            policy=policy,
-        )
+        tier_claim = None
+        if entity_research_job_id is None:
+            tier_claim = await _exact_selected_tier_claim(
+                conn=conn,
+                workspace_id=workspace_id,
+                account_id=account_id,
+                project_run_id=project_run_id,
+                batch_id=sealed.discovery_batch_id,
+                seal_sha256=sealed.seal_sha256,
+                icp_key=run.icp_key,
+                icp_version=run.icp_version,
+                policy=policy,
+            )
         # FI-2 §6.3 species check.  The freshness ladder below reads the *workspace-merged*
         # current value, so "already answered, don't re-buy" is only a correct thing to say about
         # a **project_neutral** field: a project-relative value is one project's answer, and
@@ -555,7 +584,7 @@ async def compile_sumble_account_gap_preflight(
         discovery_seal_sha256=sealed.seal_sha256,
         account_id=account_id,
         primary_domain=account.primary_domain,
-        tier_claim_id=tier_claim.id,
+        tier_claim_id=tier_claim.id if tier_claim is not None else None,
         provider_api_version=SUMBLE_API_VERSION,
         provider_contract_version=SUMBLE_V9_CONTRACT_VERSION,
         pricing_policy_version=SUMBLE_ACCOUNT_GAP_PRICING_VERSION,

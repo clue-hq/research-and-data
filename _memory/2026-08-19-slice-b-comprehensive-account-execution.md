@@ -397,3 +397,37 @@ target branch until the founder chooses to merge/publish them.
 - **Provider breadth:** no fallback waterfall was enabled. This slice remains Exa Deep + Sumble.
 - **Browser progress card:** the stale “0 of 1 settled” card was not changed here; the founder
   identified it as likely owned by an unmerged Lane-E/other-slice worktree.
+
+## Merge close-out — comprehensive account/contact research v2
+
+Merged local branch `platform/comprehensive-account-contact-research-v2` at
+`33c7bb39835af1ad1102415fe72237df18c6c999` into this branch from current parent
+`eaed76096804ff12add45893210306d35a86b2af`. The source worktree in Tunis was inspected only to
+confirm its clean branch tip; no Tunis process, database, migration state, or session was changed.
+
+Five content conflicts were composed rather than resolved wholesale. The resulting policy is the
+co-founders' v2 ruling: an exact confirmed Account research job is durable explicit selection, so
+signal tiers, the legacy scoring/deep-phase checkpoint, and must-have selection do not gate its
+account or committee provider work. Historical discovery-driven entry points retain their sealed
+batch, criteria, tier-claim, and checkpoint lineage; their accepted tier/source thresholds remain
+the deliberately relaxed tier-4 values from v2. Account research may have zero bespoke questions,
+while contact research still requires directional questions. The merge simultaneously preserves
+this branch's comprehensive account axis, derived-profile fields, zero-acquisition partition,
+policy-reference de-duplication, retained-response recovery, replay repairs, and budget-disabled
+atomic confirmation/launch behavior. Committee provider work discovers and identity-resolves
+members; the responsible account agent now writes evidence-cited role/persona judgments through
+the governed `record_committee_role_inferences` tool, and roleless members remain an honest
+reviewable intermediate state.
+
+Alembic revision `f5f8c50f70f3` joins current head `7ca91ddefee6` and v2 head
+`fc3e5477e872`, restoring exactly one head. On the existing isolated
+`clue_missoula_slice_b_checks` database, migration verification passed
+`7ca91ddefee6 -> f5f8c50f70f3 -> a1c5b9842f0e -> f5f8c50f70f3`. The live
+`clue_missoula_slice_b` database was not migrated or otherwise changed.
+
+Focused verification passed: 52 backend tests across R6 launch, R5 coverage and agent role
+inference, comprehensive execution, Lane-D acceptance, Sumble account gaps, and committee worker
+behavior; three frontend account/contact model tests; targeted frontend ESLint; Ruff across all
+changed Python; mypy across all changed production Python; `git diff --check`; and a one-head
+Alembic check. No full-suite replay was started because the preceding Slice-B and v2 work had
+already completed their broader verification.

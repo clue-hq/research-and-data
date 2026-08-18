@@ -912,6 +912,8 @@ The four interpretation calls this plan flagged were put to the founder and rule
 
 6. **Chat pagination defect — RATIFIED into scope (founder, 2026-08-18).** The audit's chat-loading defect (oldest-50 initial page, cursor never consumed) is fixed alongside Slice C as **Task C5**: newest-first initial load landing at the bottom, upward keyset-cursor scrollback prepending older pages, durable/optimistic/streamed dedupe by message/turn identity. No new UI components — behavior only, under the visual-parity rule.
 
+7. **Explicit Account research is not tier-gated — RATIFIED (founder, 2026-08-19).** Fit/intent and numeric `high` / `low` tiers remain prioritization metadata. An attributable user turn that explicitly selects an Account, together with the directive's exact Account scope, authorizes account research and buying-committee discovery whether the signal tier is high, low, or absent. A directive execution tier such as `standard` is a separate effort vocabulary and never has to equal the signal tier. Budget accounting, privacy policy, provider availability, exact scope, and durable authority receipts remain enforced.
+
 # Slice-completion protocol (applies to every slice)
 
 1. All slice tasks committed; `make check` green; `make db-smoke` green when a migration landed; frontend gate green when `apps/frontend` changed.

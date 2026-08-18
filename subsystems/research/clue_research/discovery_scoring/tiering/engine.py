@@ -60,6 +60,16 @@ from clue_research.identity import stamp_reuse, surviving_id
 # the same ``account.scoring.*`` family as the M6.3 fit/intent score object (so the reuse policy
 # classifies it tenant-private and the fail-closed write boundary holds).
 TIER_FIELD = "account.scoring.tier"
+# The explicit-account research threshold includes the least account tier. Current score policies
+# emit ``high``/``low`` while imported or client-authored policies may use a four-tier label. Keep
+# this as shared policy data so every claim-id-backed provider seam admits tier 4 consistently.
+ACCOUNT_RESEARCH_ELIGIBLE_TIERS = frozenset(
+    {"top", "high", "standard", "low", "tier1", "tier2", "tier3", "tier4", "4"}
+)
+# Tier-decision consumers may be given an exact claim id whose provenance comes from any registered
+# trust tier. Source tier 4 is the least-trusted supported tier, so this inclusive ceiling keeps it
+# admissible while the claim model continues to enforce tier/method/source coherence.
+TIER_CLAIM_MAX_SOURCE_TIER = 4
 
 
 # --- pure: tiering + cost estimate ------------------------------------------

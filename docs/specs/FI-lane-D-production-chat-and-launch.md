@@ -60,7 +60,7 @@ No LangGraph `interrupt()` anywhere. `finalize_turn` is `return_direct=True` wit
 | Step | State |
 |---|---|
 | Project run (`start_confirmed_project_run@1`) | exists, agent-callable |
-| Tier checkpoint per account | exists; human-only tool; **only** `persist_discovery_selection_tier` writes the claim shape the launcher demands (`project_run_id` + `disposition='selected'`, HUMAN/tier-1) — the scoring-mode writer never satisfies it |
+| Tier checkpoint per account | **Superseded by the 2026-08-19 founder ruling:** signal tier is prioritization metadata, not explicit Account-launch authority. The attributable user turn + exact directive Account scope authorizes research; `high`, `low`, absent, or effort-tier vocabulary mismatch cannot refuse it. |
 | Agent drafts directive (`draft_…@2`) | tool exists, agent authority — **un-callable through the agent seam (§1.4 blocker)** |
 | Estimate presented | partial: directive preview carries counts; the estimate is Σ per-account `effort_policy.budget_cap_cents` computed *inside the launcher*; **no first-class agent-callable estimate tool** (`estimate_project` is reserved `post_stage0_not_admitted`) |
 | User confirms directive (`confirm_…@2`) | tool exists, human-only, requires ambient `actor_id`+`action_ref` → **uninvocable in production** |
