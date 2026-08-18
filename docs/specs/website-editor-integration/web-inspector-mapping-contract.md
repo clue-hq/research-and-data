@@ -96,6 +96,12 @@ href (which does not exist for text).
 - **(24)** Rich-text toolbar on double-click: **KEEP as-is, confirmed** — it is also the
   mechanism that makes item 3's conditional Link-to implementable (range selection exists only
   inside the toolbar's editing session).
+  **Amended 2026-08-18 (founder): retheme, don't relocate.** The toolbar stays floating at the
+  selection with its mechanics, control set, and commit path untouched, but its *visual* parity
+  baseline moves from the source editor's token literals to the platform inspector's design
+  language (`--clue-ds-*` tokens, inspector control shapes/radii/states), so canvas editing
+  reads as one system with the inspector. Behavior parity with the source remains binding;
+  only the skin changed.
 - **(39)** Header lock toggle: **inert for now** (visible, non-functional — no web `locked`
   backing). Added to §3.
 

@@ -1,30 +1,32 @@
 /*
- * W4.8a: the selected-range rich-text toolbar's styling, re-authored as a CSS
- * module from the source editor's GLOBAL rules
- * (`subsystems/clue-design/apps/editor/src/app/web/web.css:184-371`).
+ * W4.8a: the selected-range rich-text toolbar's styling. First shipped as a
+ * faithful re-authoring of the source editor's global rules
+ * (`subsystems/clue-design/apps/editor/src/app/web/web.css:184-371`) with the
+ * source's token literals, per ruling 24's original "keep as-is".
  *
- * Ruling 24 keeps this toolbar as the source editor shipped it — it is NOT
- * part of the dummy UI, so the parity baseline is the SOURCE editor, not the
- * inspector. The translation is faithful: same box model, same gaps, same
- * states. Two mechanical differences, both forced by the module boundary:
+ * Ruling 24 AMENDED 2026-08-18 (founder): retheme, don't relocate. The
+ * toolbar keeps the source's floating mechanics, control set, states, and
+ * positioning math untouched, but its visual baseline is now the platform
+ * inspector's design language so canvas editing reads as one system with the
+ * inspector. Concretely:
  *
- *  1. The source scopes several rules under `.brand-app` purely to out-specify
- *     shadcn's element resets in its own shell. A CSS module needs no such
- *     scope, so those rules are flattened onto the module class.
- *  2. The source design tokens do not exist in this app, so each is resolved
- *     to the LITERAL value it has in the source token layer
- *     (`apps/editor/src/app/tokens.css`) and named in a comment beside it.
- *     Literals, not `--clue-ds-*` equivalents: the target is source parity,
- *     and mapping onto a different palette would silently restyle it.
+ *  - Colors come from the `@clue/design-system` tokens (`--clue-ds-*`,
+ *    :root-scoped in `packages/design-system/generated/tokens.css`, so they
+ *    reach this portal-to-body subtree). The `--chat-shell-*` aliases do NOT
+ *    reach here — they are carried on `.shell`/`.inspectorDock`, not :root.
+ *  - Control shapes mirror the inspector idioms in `chat-shell.module.css`:
+ *    8px surfaces / 6px icon buttons / 4px list rows, 0.5px neutral borders,
+ *    hover = bg-neutral-hover, selected = bg-neutral-pressed, the floating
+ *    popup shadow, the `rgb(27 102 255 / 45%)` focus ring, 16px square
+ *    swatches, the `.inspectorControl` input treatment, and the
+ *    `.inspectorStatusError` critical-700 error line.
+ *  - Literal values that the inspector itself keeps literal (the popup
+ *    shadow, focus ring, input bg/border) stay literal here for the same
+ *    reason, each named beside its inspector source rule.
  *
- * ONE deliberate deviation, recorded rather than reproduced: in the source
- * shell this toolbar renders inside `.brand-app`, whose shadcn bridge
- * (tokens.css:167) rebinds `--accent` to `var(--bg-chip)` (#ebeae5) while
- * `--accent-wash` keeps the orange :root value. The selected state therefore
- * renders near-white text (#ebeae5) on a pale orange wash — unreadable, and
- * plainly not what `background: var(--accent-wash); color: var(--accent)` was
- * written to mean. The accent signal here is the :root orange (#f54e00) the
- * wash belongs to. Revert to #ebeae5 if bug-for-bug parity is ever wanted.
+ * The source's `.brand-app` accent-rebind bug noted in the previous header is
+ * moot under this skin: selected states now use the inspector's neutral
+ * pressed treatment, not the source's accent wash.
  */
 
 .toolbar {
@@ -34,9 +36,12 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px; /* --space-xs */
+  gap: 8px;
   max-width: min(620px, calc(100vw - 24px));
-  color: #26251e; /* --text-primary (--ink) */
+  color: var(--clue-ds-color-content-neutral);
+  font-family: var(--clue-ds-product-typography-ui-regular-font-family);
+  font-size: 13px;
+  line-height: 18px;
 }
 
 .positioned {
@@ -48,9 +53,11 @@
   align-items: center;
   gap: 2px;
   padding: 4px;
-  border: 1px solid rgba(38, 37, 30, 0.2); /* --border-strong (--ink-20) */
-  border-radius: 8px; /* --radius-md */
-  background: #f2f1ed; /* --bg-card */
+  border: 0.5px solid var(--clue-ds-color-border-neutral);
+  border-radius: 8px;
+  background: var(--clue-ds-color-bg-neutral);
+  /* .inspectorSelectPopup's floating shadow */
+  box-shadow: 0 8px 24px rgb(0 24 62 / 12%);
 }
 
 .tool {
@@ -58,35 +65,40 @@
   height: 32px;
   padding: 0;
   border: 1px solid transparent;
-  border-radius: 6px; /* --radius-sm */
+  border-radius: 6px; /* .inspectorIconButton */
   background: transparent;
-  color: rgba(38, 37, 30, 0.92); /* --text-body (--ink-92) */
+  color: var(--clue-ds-color-content-neutral);
   font: inherit;
-  font-size: 12px; /* --text-body-sm */
+  /* the B/I/U/S letter glyphs; same 12px/600 as the inspector's
+   * Font-weight select value */
+  font-size: 12px;
   font-weight: 600;
   cursor: pointer;
 }
 
-.tool:hover:not(:disabled),
+.tool:hover:not(:disabled) {
+  background: var(--clue-ds-color-bg-neutral-hover);
+}
+
 .tool:focus-visible {
-  border-color: rgba(38, 37, 30, 0.1); /* --border-default (--ink-10) */
-  background: #e1e0db; /* --bg-card-04 */
-  color: #26251e; /* --text-primary */
+  /* .inspectorIconButton:focus-visible */
+  outline: 2px solid rgb(27 102 255 / 45%);
+  outline-offset: 2px;
 }
 
 .tool.selected {
-  background: rgba(245, 78, 0, 0.1); /* --accent-wash */
-  color: #f54e00; /* --accent (:root orange — see header note) */
+  /* .inspectorSelectItem[data-selected] / .inspectorIconButtonActive */
+  background: var(--clue-ds-color-bg-neutral-pressed);
 }
 
 .tool.mixed {
   border-style: dashed;
-  border-color: #f54e00; /* --accent */
+  border-color: var(--clue-ds-color-border-neutral);
 }
 
 .tool:disabled {
   cursor: not-allowed;
-  opacity: 0.45;
+  opacity: 0.4; /* .artifactMenuItem:disabled */
 }
 
 .glyphItalic {
@@ -105,7 +117,7 @@
   width: 1px;
   height: 22px;
   margin: 0 3px;
-  background: rgba(38, 37, 30, 0.1); /* --border-default */
+  background: var(--clue-ds-color-border-subtle);
 }
 
 .colorGlyph {
@@ -120,22 +132,23 @@
   width: 14px;
   height: 3px;
   margin-top: 2px;
-  border-radius: 9999px; /* --radius-pill */
+  border-radius: 1px; /* the inspector's square-swatch corner */
   background: currentColor;
 }
 
 .highlightGlyph {
   padding: 2px 4px;
   border-radius: 2px;
-  background: rgba(245, 78, 0, 0.1); /* --accent-wash */
+  background: var(--clue-ds-color-bg-neutral-pressed);
 }
 
 .popover {
   width: min(360px, calc(100vw - 24px));
-  padding: 12px; /* --space-sm */
-  border: 1px solid rgba(38, 37, 30, 0.2); /* --border-strong */
-  border-radius: 8px; /* --radius-md */
-  background: #f2f1ed; /* --bg-card */
+  padding: 12px;
+  border: 0.5px solid var(--clue-ds-color-border-neutral);
+  border-radius: 8px;
+  background: var(--clue-ds-color-bg-neutral);
+  box-shadow: 0 8px 24px rgb(0 24 62 / 12%);
 }
 
 /* A toolbar sitting ABOVE its range opens its panel above the button row, so
@@ -145,85 +158,113 @@
 }
 
 .popoverHead {
-  margin-bottom: 8px; /* --space-xs */
-  color: rgba(38, 37, 30, 0.6); /* --text-muted (--ink-60) */
-  font-size: 11px; /* --text-caption */
-  font-weight: 600;
+  margin-bottom: 8px;
+  /* .inspectorVariantMenuLabel (its --chat-shell-disabled is undefined at
+   * runtime; content-subtle is the defined equivalent) */
+  color: var(--clue-ds-color-content-subtle);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 16px;
 }
 
 .popoverHint {
   margin: 0;
-  color: rgba(38, 37, 30, 0.6); /* --text-muted */
-  font-size: 12px; /* --text-body-sm */
+  color: var(--clue-ds-color-content-subtle);
+  font-size: 12px;
+  line-height: 16px;
 }
 
 .swatches {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px; /* --space-xs */
+  gap: 4px;
   max-height: 220px;
   overflow-y: auto;
 }
 
+/* .inspectorSelectItem idiom */
 .swatch {
   min-width: 0;
   display: flex;
   align-items: center;
-  gap: 8px; /* --space-xs */
-  padding: 5px 7px;
-  border: 1px solid rgba(38, 37, 30, 0.1); /* --border-default */
-  border-radius: 6px; /* --radius-sm */
+  gap: 8px;
+  height: 32px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: 4px;
   background: transparent;
-  color: rgba(38, 37, 30, 0.92); /* --text-body */
+  color: var(--clue-ds-color-content-neutral);
   font: inherit;
-  font-size: 12px; /* --text-body-sm */
   text-align: left;
   cursor: pointer;
 }
 
+.swatch:hover {
+  background: var(--clue-ds-color-bg-neutral-hover);
+}
+
+.swatch:focus-visible {
+  outline: 2px solid rgb(27 102 255 / 45%);
+  outline-offset: -2px; /* list rows ring inside, like select items */
+}
+
 .swatch.swatchSelected {
-  border-color: #f54e00; /* --accent */
-  color: #26251e; /* --text-primary */
+  background: var(--clue-ds-color-bg-neutral-pressed);
+  font-weight: 500;
 }
 
 .swatchColor {
   flex: none;
-  width: 18px;
-  height: 18px;
-  border: 1px solid rgba(38, 37, 30, 0.1); /* --border-default */
-  border-radius: 9999px; /* --radius-pill */
+  width: 16px;
+  height: 16px;
+  /* .inspectorTokenSwatch */
+  border: 0.5px solid rgb(0 24 62 / 8%);
+  border-radius: 1px;
 }
 
 .swatch.swatchClear {
   justify-content: center;
-  color: rgba(38, 37, 30, 0.6); /* --text-muted */
+  color: var(--clue-ds-color-content-subtle);
 }
 
 .form {
   display: flex;
   flex-direction: column;
-  gap: 12px; /* --space-sm */
+  gap: 12px;
 }
 
 .form label {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  color: rgba(38, 37, 30, 0.6); /* --text-muted */
-  font-size: 11px; /* --text-caption */
+  /* .inspectorFieldLabel */
+  color: var(--clue-ds-color-content-subtle);
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 18px;
 }
 
+/* .inspectorControl idiom */
 .form input,
 .form select {
   width: 100%;
   min-width: 0;
-  padding: 7px 9px;
-  border: 1px solid rgba(38, 37, 30, 0.1); /* --border-default */
-  border-radius: 6px; /* --radius-sm */
-  background: #f0efeb; /* --bg-card-01 */
-  color: #26251e; /* --text-primary */
+  height: 34px;
+  padding: 8px;
+  border: 0.5px solid var(--clue-ds-color-components-input-border, #e6e9ed);
+  border-radius: 8px;
+  background: rgb(0 37 110 / 3%); /* .inspectorControl bg */
+  color: var(--clue-ds-color-content-neutral);
   font: inherit;
-  font-size: 12px; /* --text-body-sm */
+}
+
+/* .inspectorControl:focus-within */
+.form input:focus,
+.form select:focus {
+  background: white;
+  border-color: var(--clue-ds-color-content-subtle, #5d6470);
+  outline: 0;
+  box-shadow: inset 0 0 0 1px rgb(68 72 63 / 10%);
 }
 
 .form .check {
@@ -233,27 +274,39 @@
 
 .form .check input {
   width: auto;
+  height: auto;
 }
 
 .error {
   margin: 0;
-  color: #cf2d56; /* --status-error */
-  font-size: 11px; /* --text-caption */
+  /* .inspectorStatusError */
+  color: var(--clue-ds-color-primitives-critical-700);
+  font-size: 12px;
+  line-height: 16px;
 }
 
 .formActions {
   display: flex;
   justify-content: flex-end;
-  gap: 8px; /* --space-xs */
+  gap: 8px;
 }
 
 .form button {
-  padding: 6px 9px;
-  border: 1px solid rgba(38, 37, 30, 0.1); /* --border-default */
-  border-radius: 6px; /* --radius-sm */
-  background: #e1e0db; /* --bg-card-04 */
-  color: #26251e; /* --text-primary */
+  height: 28px;
+  padding: 0 10px;
+  border: 0.5px solid var(--clue-ds-color-border-neutral);
+  border-radius: 6px;
+  background: var(--clue-ds-color-bg-neutral);
+  color: var(--clue-ds-color-content-neutral);
   font: inherit;
-  font-size: 12px; /* --text-body-sm */
   cursor: pointer;
+}
+
+.form button:hover {
+  background: var(--clue-ds-color-components-button-bg-neutral-hover);
+}
+
+.form button:focus-visible {
+  outline: 2px solid rgb(27 102 255 / 45%);
+  outline-offset: -2px;
 }
