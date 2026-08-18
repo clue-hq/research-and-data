@@ -8,6 +8,7 @@ import type {
   ProjectArtifact,
   ProjectWorkspace,
 } from "@/features/projects/model/project-workspace";
+import { useWebEditingSession } from "@/features/design-editor/hooks/use-web-editing-session";
 import { useEditorShellController } from "../hooks/use-editor-shell-controller";
 import { chatSurfaceUrlState } from "../model/chat-surface-params";
 import { ArtifactStage } from "./artifact-stage";
@@ -45,6 +46,7 @@ export function ChatSurface({
   artifacts,
   chat,
   controller,
+  documentIds,
   paneState,
   projectId,
   workspace,
@@ -57,9 +59,10 @@ export function ChatSurface({
   artifacts?: ProjectArtifact[];
   chat: ProjectChatController;
   controller: ReturnType<typeof useProjectWorkspaceController>;
-  /** Artifact id → design-document id over the whole feed. Declared (and
-   * threaded by the shell) for the canvas mount, which resolves the active
-   * tab's document through it next slice; unused until then. */
+  /** Artifact id → design-document id over the whole feed. Consumed by the
+   * shared editing session (slice 3): the active tab's entry mounts the real
+   * web render in the rail's canvas; a tab without one keeps the empty
+   * canvas. */
   documentIds?: Record<string, string>;
   paneState: { edit?: string; selection?: string; surface?: string };
   projectId: string;
@@ -72,6 +75,14 @@ export function ChatSurface({
     panelOpen: urlState.panelOpen,
     projectId,
     surface: urlState.surface,
+  });
+  // Chat-flow slice 3: the SAME editing session the artifact route mounts
+  // (documents/selection/writes/rich-text/theme), keyed only on this mount's
+  // own active tab and the page's id map — the hook never sees a shell
+  // controller, so the two routes stay independent mounts of one machine.
+  const session = useWebEditingSession({
+    activeArtifactId: shell.activeArtifactId,
+    documentIds,
   });
 
   const activeThread =
@@ -89,6 +100,15 @@ export function ChatSurface({
     shell.editing &&
     shell.artifactKind !== null;
 
+  // W4.8a law, per mount: rich-text is enabled under the SAME condition that
+  // mounts THIS route's editing dock (the .chatBody web-inspector branch) over
+  // a real web document. Outside it the canvas cancels any session the bridge
+  // starts, so a double-click on the read-only render changes nothing.
+  const webEditingActive =
+    editorVisible &&
+    shell.artifactKind === "web" &&
+    session.activeDocumentId !== null;
+
   return (
     <main
       className={`${styles.shell} ${shell.panelOpen ? styles.shellPanelOpen : ""} ${shell.artifactMaximized ? styles.shellArtifactMaximized : ""}`}
@@ -96,6 +116,12 @@ export function ChatSurface({
       data-artifact-kind={shell.artifactKind ?? "none"}
       data-editing={editorVisible}
       data-project-id={projectId}
+      data-selected-node={session.webSelection.selection?.node.id}
+      data-selected-schema={
+        session.webSelection.selection
+          ? `${session.webSelection.selection.schema.selection}${session.webSelection.selection.schema.layoutOnly ? ":layout-only" : ""}`
+          : undefined
+      }
     >
       <section className={styles.chatPane}>
         <ChatShellHeader
@@ -197,14 +223,23 @@ export function ChatSurface({
       </section>
       <ArtifactStage
         activeArtifactId={shell.activeArtifactId}
+        activeDocumentId={session.activeDocumentId}
         artifacts={artifacts ?? []}
         artifactKind={shell.artifactKind}
         artifactMaximized={shell.artifactMaximized}
         artifactTitle={shell.artifactTitle}
+        canvasControlsRef={session.canvasControls}
+        canvasReloadToken={session.reloadNonce}
         editing={shell.editing}
         onActivateArtifact={shell.activateArtifact}
+        onCanvasSelect={session.webSelection.onSelect}
         onCloseArtifact={shell.closeArtifact}
         onOpenGallery={shell.openGallery}
+        onRichTextCommit={session.onRichTextCommit}
+        onRichTextSessionChange={session.onRichTextSessionChange}
+        richTextBusy={session.writes.busy}
+        richTextEnabled={webEditingActive}
+        richTextTheme={session.theme}
         onOpenGalleryArtifact={(artifact) =>
           shell.openArtifact({
             id: artifact.id,
@@ -223,7 +258,10 @@ export function ChatSurface({
         onToggleEditing={() => shell.setEditing(!shell.editing)}
         openArtifacts={shell.openArtifacts}
         projectTitle={workspace.title}
+        redoDisabled={session.redoDisabled}
+        selectedCanvasNodeId={session.webSelection.selection?.node.id ?? null}
         surface={shell.surface}
+        undoDisabled={session.undoDisabled}
       />
     </main>
   );
