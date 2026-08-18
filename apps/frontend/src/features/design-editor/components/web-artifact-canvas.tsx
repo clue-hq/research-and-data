@@ -36,6 +36,7 @@ export function WebArtifactCanvas({
   documentId,
   onSelect,
   reloadToken = 0,
+  selectedNodeId = null,
 }: {
   /** W2.3: receives the canvas's imperative controls while mounted. */
   controlsRef?: RefObject<WebArtifactCanvasControls | null>;
@@ -43,19 +44,28 @@ export function WebArtifactCanvas({
   /** W2.2: canvas selection events from the injected bridge, nonce-validated
    * by the ported listener. */
   onSelect?: (selection: WebSelection | null) => void;
-  /** W3.2: bump to quietly refetch the render after a committed write
-   * (rotates the bridge nonce with the rebuilt DOM, per source semantics). */
+  /** W3.2: bump to quietly refetch the render after a committed write. The
+   * new HTML swaps into the SAME mounted iframe (no keyed remount, no
+   * loading flash) — the source shell's post-edit behavior. */
   reloadToken?: number;
+  /** The owner's persisted selection: re-sent to the frame after each
+   * render rebuild so the selection outline survives a write (the source's
+   * ready → re-select pattern; a render rebuild keeps the inspector on the
+   * same stable node id). */
+  selectedNodeId?: string | null;
 }) {
-  // Keyed remount: switching documents (or reloading after a write) resets
-  // render state to born-loading without a synchronous setState inside an
-  // effect (react-hooks/set-state-in-effect).
+  // Keyed remount per DOCUMENT only: switching documents resets render state
+  // to born-loading without a synchronous setState inside an effect
+  // (react-hooks/set-state-in-effect). Post-write reloads deliberately do
+  // NOT remount — see reloadToken above.
   return (
     <DocumentRender
-      key={`${documentId}:${reloadToken}`}
+      key={documentId}
       controlsRef={controlsRef}
       documentId={documentId}
       onSelect={onSelect}
+      reloadToken={reloadToken}
+      selectedNodeId={selectedNodeId}
     />
   );
 }
@@ -64,19 +74,23 @@ function DocumentRender({
   controlsRef,
   documentId,
   onSelect,
+  reloadToken,
+  selectedNodeId,
 }: {
   controlsRef?: RefObject<WebArtifactCanvasControls | null>;
   documentId: string;
   onSelect?: (selection: WebSelection | null) => void;
+  reloadToken: number;
+  selectedNodeId: string | null;
 }) {
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
-  const { nonceRef, state } = useWebRender(documentId);
+  const { nonceRef, state } = useWebRender(documentId, reloadToken);
   // The ported bridge listener (source-window + nonce validation). Selection
   // state itself lives with the join owner (useWebArtifactSelection); this
   // canvas only forwards validated events upward.
   const bridge = useWebBridgeSelection({ iframeRef, nonceRef, onSelect });
 
-  const { selectNode } = bridge;
+  const { ready, resetSelection, selectNode } = bridge;
   useEffect(() => {
     if (!controlsRef) return;
     controlsRef.current = { selectNode };
@@ -84,6 +98,21 @@ function DocumentRender({
       controlsRef.current = null;
     };
   }, [controlsRef, selectNode]);
+
+  // The source's render-rebuild sequence: a post-write reload rebuilds the
+  // frame DOM, so drop the LOCAL bridge state (resetSelection never calls
+  // onSelect — the owner's persisted selection survives) and, once the new
+  // frame posts ready, re-send selectNode so the outline and geometry
+  // snapshot come back for the same stable node id.
+  const previousReload = useRef(reloadToken);
+  useEffect(() => {
+    if (previousReload.current === reloadToken) return;
+    previousReload.current = reloadToken;
+    resetSelection();
+  }, [reloadToken, resetSelection]);
+  useEffect(() => {
+    if (ready && selectedNodeId) selectNode(selectedNodeId);
+  }, [ready, selectedNodeId, selectNode]);
 
   if (state.kind === "ready") {
     return (

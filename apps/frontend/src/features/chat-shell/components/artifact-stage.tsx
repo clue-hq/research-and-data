@@ -45,6 +45,7 @@ export function ArtifactStage({
   openArtifacts,
   projectTitle,
   redoDisabled,
+  selectedCanvasNodeId,
   surface,
   undoDisabled,
 }: {
@@ -59,6 +60,9 @@ export function ArtifactStage({
   canvasControlsRef?: RefObject<WebArtifactCanvasControls | null>;
   /** W3.2: bumped after a committed write to refetch the render. */
   canvasReloadToken?: number;
+  /** The persisted canvas selection, re-sent to the frame after a render
+   * rebuild (outline survival across writes). */
+  selectedCanvasNodeId?: string | null;
   artifactKind: ChatShellArtifactKind | null;
   artifactMaximized: boolean;
   artifactTitle: string;
@@ -123,6 +127,7 @@ export function ArtifactStage({
                     documentId={activeDocumentId}
                     onSelect={onCanvasSelect}
                     reloadToken={canvasReloadToken}
+                    selectedNodeId={selectedCanvasNodeId}
                   />
                 ) : null}
               </div>

@@ -21,10 +21,20 @@ export type WebRenderState =
  * Callers mount one instance per document (keyed remount), so the born state
  * is `loading` and no state is reset inside the effect.
  *
+ * A `reloadToken` bump (post-write quiet refresh, W3.2) refetches WITHOUT
+ * resetting state: the current render keeps showing until the new HTML lands
+ * and swaps into the SAME iframe — the source shell's behavior. The loading
+ * interstitial exists only for the initial per-document mount; a keyed
+ * remount per write was the defect the founder observed (full canvas
+ * teardown + flash on every edit) and must not come back.
+ *
  * Lives in hooks/ (not the presentation component) per the repo seam rule:
  * presentation receives typed props/hook state and never imports data/.
  */
-export function useWebRender(documentId: string): {
+export function useWebRender(
+  documentId: string,
+  reloadToken = 0,
+): {
   state: WebRenderState;
   /** The current render's bridge nonce — the ported selection listener
    * validates inbound messages against it. */
@@ -55,7 +65,7 @@ export function useWebRender(documentId: string): {
     return () => {
       cancelled = true;
     };
-  }, [documentId]);
+  }, [documentId, reloadToken]);
 
   return { nonceRef, state };
 }

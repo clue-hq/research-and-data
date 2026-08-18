@@ -126,7 +126,14 @@ export function EditorSurface({
         <div className={styles.chatBody}>
           <div className={styles.inspectorDock}>
             <WebInspector
-              key={`${webSelection.selection?.node.id ?? "canvas"}:${webSelection.document?.currentVersion ?? 0}`}
+              // Keyed on the SELECTED NODE only — never the document version.
+              // A per-write version key remounted the whole inspector on
+              // every edit (the founder-observed defect); the controller's
+              // own state already reflects the user's edit, so re-hydration
+              // belongs to selection changes alone. (Known, accepted drift:
+              // an engine-snapped value — padding 7→6 — displays as typed
+              // until the node is reselected.)
+              key={webSelection.selection?.node.id ?? "canvas"}
               error={writes.error}
               note={writes.note}
               addressing={{
@@ -179,6 +186,7 @@ export function EditorSurface({
         onToggleEditing={() => controller.setEditing(!controller.editing)}
         openArtifacts={controller.openArtifacts}
         redoDisabled={(webSelection.document?.redoDepth ?? 0) === 0}
+        selectedCanvasNodeId={webSelection.selection?.node.id ?? null}
         surface={controller.surface}
         undoDisabled={(webSelection.document?.undoDepth ?? 0) === 0}
       />
