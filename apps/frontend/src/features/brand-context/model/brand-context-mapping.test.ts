@@ -407,3 +407,31 @@ test("every asset the kit references is collected for the registry read", () => 
   assert.equal(brandKitAssetIds(kit).length, 15);
   assert.ok(brandKitAssetIds(kit).includes("asset_ing_61a219a05909b652"));
 });
+
+test("an alias naming a prototype key resolves to nothing, not to Object.prototype", () => {
+  const mapped = toBrandContextWorkspace(
+    BrandKitDetailSchema.parse({
+      brand_kit: { id: "kit", version: 1, name: "Hostile" },
+      brand_kit_json: {
+        id: "kit",
+        name: "Hostile",
+        version: 1,
+        tokens: {
+          colors: {
+            "surface.page": {
+              value: { default: { kind: "hex", value: "#FFF" } },
+            },
+            "surface.card": {
+              value: { default: { kind: "alias", token: "constructor" } },
+            },
+          },
+        },
+      },
+    }),
+  );
+
+  assert.deepEqual(
+    mapped.colorGroups[0].swatches.map((swatch) => swatch.id),
+    ["surface.page"],
+  );
+});

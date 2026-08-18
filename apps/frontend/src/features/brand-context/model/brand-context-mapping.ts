@@ -147,7 +147,7 @@ function resolveColor(
   depth: number,
 ): string | null {
   if (depth > MAX_ALIAS_DEPTH) return null;
-  const token = colors[path];
+  const token = ownEntry(colors, path);
   if (!token) return null;
   const value =
     (mode === "dark" ? token.value.modes?.[DARK_MODE_SELECTOR] : undefined) ??
@@ -239,7 +239,7 @@ function resolveTypography(
   { kind: "style" }
 > | null {
   if (depth > MAX_ALIAS_DEPTH) return null;
-  const token = typography[path];
+  const token = ownEntry(typography, path);
   if (!token) return null;
   const value = token.value.default;
   if (value.kind === "style") return value;
@@ -420,6 +420,18 @@ function comparePaths(left: string, right: string): number {
     return leftStop - rightStop;
   }
   return left.localeCompare(right);
+}
+
+/**
+ * An OWN entry only. Alias targets are token names out of the payload, so a
+ * kit naming `constructor` (or `__proto__`) must resolve to "no such token",
+ * not to something off `Object.prototype`.
+ */
+function ownEntry<T>(
+  entries: Readonly<Record<string, T | null>>,
+  key: string,
+): T | null {
+  return Object.hasOwn(entries, key) ? entries[key] : null;
 }
 
 function lastSegment(path: string): string | undefined {
