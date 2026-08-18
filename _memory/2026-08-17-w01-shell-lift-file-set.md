@@ -187,7 +187,15 @@ Founder-requested real-browser verification of W0+W1 on a fresh port pair (3030/
   `http://localhost:3030` (shell env overrides .env for pydantic-settings).
 - Design API 8010: `.venv/bin/python -m uvicorn lumen_api.main:app --host 127.0.0.1 --port 8010`
   with `CLUE_STORAGE_FS_ROOT=/tmp/lumen-dev-storage` (lumen_api IS importable from the root
-  venv post-Part-II; same shared Postgres 55040/clue).
+  venv post-Part-II; same shared Postgres 55040/clue). **MANDATORY (latency, found 2026-08-18):
+  also set `LUMEN_CORE_HELPER=<repo>/subsystems/clue-design/target/release/lumen-api-helper`
+  (build once: `cargo build -p lumen-api-helper --release` in subsystems/clue-design, ~73s).
+  Without it the API falls back to `cargo run` PER ENGINE CALL (~1.1s spawn each) — founder
+  observed every edit taking ~2.5s (op POST 1512ms + render 965ms; engine work itself is
+  ~8ms). With the helper: op POST ~366ms (engine 21ms + toolbelt durable journal 119ms +
+  Postgres persist ~150ms), render ~147ms, total ~0.5s/edit. BFF overhead is only ~30-60ms/req
+  (Next dev log: next.js 3-8ms, proxy.ts 5-11ms); the platform API (8030) is not on the design
+  write path at all.**
 - Frontend 3030: from apps/frontend, `npm run dev -- --port 3030` with shell overrides
   `CLUE_API_BASE_URL=http://127.0.0.1:8030 CLUE_APP_ORIGIN=http://localhost:3030
   LUMEN_API_BASE_URL=http://127.0.0.1:8010` (`.env.local` stays pinned to the 3020/8020 pair;
