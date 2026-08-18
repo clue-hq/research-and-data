@@ -19,6 +19,7 @@ from langchain_core.outputs import ChatGeneration, ChatResult
 from langchain_core.runnables import Runnable
 from pydantic import ConfigDict, PrivateAttr, ValidationError
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 import clue_agents.entity_research_runtime as runtime_module
@@ -1613,3 +1614,136 @@ def test_r5_office_gate_admits_the_live_paramus_candidate_vetoed_by_region_spell
     )
     assert selected == (paramus_cmo, bloomingdale_ceo)
     assert ambiguous == 1
+
+
+def test_account_coverage_field_axis_admits_core_launch_fields(tmp_path: Path) -> None:
+    """A settled ``core.*`` account field is storable on the R5 coverage row.
+
+    The launch path now admits the account axis (CORE | ACCOUNT | ACCOUNT_RESONANCE | PACK), so a
+    job that settles ``core.industry`` writes it into ``completed_field_keys`` /
+    ``unresolved_field_keys``.  The original field-axis CHECK accepted only ``account.%`` keys and
+    would have failed that write at finalization.
+    """
+
+    async def scenario() -> None:
+        storage = FsStorage(tmp_path / "r5-core-axis-coverage")
+        async with rollback_conn() as conn:
+            await load_committee_pack(conn)
+            await load_client_knowledge_pack(conn)
+            await seed_source_manifests(conn)
+            fixture = await seed_insight_health_account_deep_fixture(
+                conn,
+                pages=_pages(),
+                storage=storage,
+            )
+            workspace_id = fixture.discovery_fixture.workspace_id
+            account_id = UUID(str(fixture.selected_account_id))
+            _, account_spec = await confirmed_account_research_direction(
+                conn,
+                workspace_id=workspace_id,
+                project_id=fixture.discovery_fixture.project_id,
+                product_id=fixture.discovery_fixture.product_id,
+                account_id=fixture.selected_account_id,
+                icp_key=fixture.deep_icp_key,
+                icp_version=fixture.deep_icp_version,
+                field_keys=(_PAIN, _MOVES, _HIRING),
+                allowed_source_keys=("exa_deep", "sumble_jobs", "sumble_people"),
+            )
+            directive = account_spec.research_directive
+            assert directive is not None
+            await insert_account_run(
+                conn,
+                account_run_id=fixture.expected_account_run_id,
+                project_run_id=fixture.project_run_id,
+                entity_id=fixture.selected_account_id,
+                tier="high",
+            )
+            await pin_account_run_research_directive(
+                conn,
+                account_run_id=fixture.expected_account_run_id,
+                pin=directive,
+            )
+            connection = _NestedConnFactory(conn)
+            envelope = _account_envelope(
+                account_id=account_id,
+                workspace_id=workspace_id,
+                project_id=fixture.discovery_fixture.project_id,
+                product_id=fixture.discovery_fixture.product_id,
+                project_run_id=UUID(str(fixture.project_run_id)),
+                profile_sha256=account_research_profile_sha256(),
+                directive_ref=directive.directive_ref,
+                directive_sha256=directive.canonical_json_sha256,
+            )
+            await DbEntityResearchJobStore(conn_factory=connection).launch(envelope)
+            coverage_id = uuid4()
+            await conn.execute(
+                text(
+                    """
+                    INSERT INTO entity_research_account_coverage
+                        (coverage_id, research_run_id, job_id, workspace_id, account_entity_id,
+                         result_refs, completed_field_keys, unresolved_field_keys,
+                         unresolved_reasons, committee_result_refs, committee_member_ids,
+                         committee_status, review_flags, claim_refs, evidence_refs,
+                         coverage_json, coverage_sha256)
+                    VALUES
+                        (:coverage_id, :run_id, :job_id, :workspace_id, :account_id,
+                         '{}', :completed, :unresolved, :reasons,
+                         '{}', '{}', 'complete', '{}', '{}', '{}',
+                         CAST('{}' AS jsonb), :sha)
+                    """
+                ),
+                {
+                    "coverage_id": coverage_id,
+                    "run_id": envelope.lifecycle.run_id,
+                    "job_id": envelope.jobs[0].authorization.job_id,
+                    "workspace_id": workspace_id,
+                    "account_id": account_id,
+                    "completed": ["core.industry", _PAIN],
+                    "unresolved": ["core.primary_tech_stack"],
+                    "reasons": ["no_supported_source"],
+                    "sha": "0" * 64,
+                },
+            )
+            stored = (
+                (
+                    await conn.execute(
+                        text(
+                            "SELECT completed_field_keys, unresolved_field_keys "
+                            "FROM entity_research_account_coverage WHERE coverage_id=:id"
+                        ),
+                        {"id": coverage_id},
+                    )
+                )
+                .mappings()
+                .one()
+            )
+            assert stored["completed_field_keys"] == ["core.industry", _PAIN]
+            assert stored["unresolved_field_keys"] == ["core.primary_tech_stack"]
+
+            # The axis itself still holds: a contact field is not account coverage.
+            with pytest.raises(IntegrityError):
+                async with conn.begin_nested():
+                    await conn.execute(
+                        text(
+                            "INSERT INTO entity_research_account_coverage "
+                            "(coverage_id, research_run_id, job_id, workspace_id, "
+                            " account_entity_id, result_refs, completed_field_keys, "
+                            " unresolved_field_keys, unresolved_reasons, committee_result_refs, "
+                            " committee_member_ids, committee_status, review_flags, claim_refs, "
+                            " evidence_refs, coverage_json, coverage_sha256) "
+                            "VALUES (:coverage_id, :run_id, :job_id, :workspace_id, :account_id, "
+                            " '{}', :completed, '{}', '{}', '{}', '{}', 'complete', '{}', '{}', "
+                            " '{}', CAST('{}' AS jsonb), :sha)"
+                        ),
+                        {
+                            "coverage_id": uuid4(),
+                            "run_id": envelope.lifecycle.run_id,
+                            "job_id": envelope.jobs[0].authorization.job_id,
+                            "workspace_id": workspace_id,
+                            "account_id": account_id,
+                            "completed": ["contact.current_title"],
+                            "sha": "0" * 64,
+                        },
+                    )
+
+    run_async(scenario())
