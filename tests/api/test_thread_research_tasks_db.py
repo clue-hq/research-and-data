@@ -31,7 +31,7 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from uuid import UUID, uuid4
 
 import pytest
@@ -46,6 +46,12 @@ from clue_fleet import (
     EntityResearchRunEnvelope,
     append_entity_research_job_event,
 )
+
+# The fleet's own run-state derivation. Private, borrowed the way the projection's
+# ``_turn_action_ref`` is below: the C4 test drives job rows by hand, and duplicating the fleet's
+# queued/running/terminal mapping here would let the two drift apart — the point is to advance the
+# run exactly as the fleet does after every real transition.
+from clue_fleet.entity_research import _refresh_run_state
 from clue_projections.thread_research_tasks import _turn_action_ref
 from tests.api.test_lane_d5_gate_read_and_rich_parts_db import (
     _answering_turn,
@@ -395,5 +401,223 @@ def test_the_route_requires_thread_read_on_the_active_membership(tmp_path: Path)
                 )
             assert response.status_code == 403
             assert response.json()["error"]["code"] == "PERMISSION_DENIED"
+
+    run_async(scenario())
+
+
+# --- the C4 settle-advance acceptance proof (contract §11-C exit) ----------------------------
+
+
+async def _transition(
+    conn: Any,
+    envelope: EntityResearchRunEnvelope,
+    *,
+    job_index: int,
+    to_state: ResearchJobState,
+    outcome: ResearchFinalizationOutcome | None = None,
+) -> None:
+    """Move one job exactly one lifecycle step, the way the fleet moves it.
+
+    Each step is the row update, the matching ledger event (where ``revision`` comes from), and
+    the fleet's own run-state refresh — so the run row, the job rows and the event ledger stay
+    mutually truthful at every poll, which is the whole thing under test.
+    """
+
+    job_id = envelope.jobs[job_index].authorization.job_id
+    worker = f"worker-{job_index}"
+    if to_state is ResearchJobState.LEASED:
+        await conn.execute(
+            text(
+                "UPDATE entity_research_job SET state='leased', active_worker_id=:worker, "
+                " lease_generation=1, updated_at=now() WHERE job_id = :job_id"
+            ),
+            {"worker": worker, "job_id": job_id},
+        )
+        kind, from_state = EntityResearchJobEventKind.LEASED, ResearchJobState.QUEUED
+        references: dict[str, Any] = {"lease_generation": 1}
+    elif to_state is ResearchJobState.RUNNING:
+        await conn.execute(
+            text(
+                "UPDATE entity_research_job SET state='running', updated_at=now() "
+                "WHERE job_id = :job_id"
+            ),
+            {"job_id": job_id},
+        )
+        kind, from_state = EntityResearchJobEventKind.STARTED, ResearchJobState.LEASED
+        references = {"lease_generation": 1}
+    else:
+        assert to_state is ResearchJobState.TERMINAL and outcome is not None
+        await conn.execute(
+            text(
+                "UPDATE entity_research_job SET state='terminal', finalization_outcome=:outcome, "
+                " finalization_receipt_ref=:receipt, terminal_at=now(), active_worker_id=NULL, "
+                " updated_at=now() WHERE job_id = :job_id"
+            ),
+            {
+                "outcome": outcome.value,
+                "receipt": f"finalization-receipt:{job_id}",
+                "job_id": job_id,
+            },
+        )
+        kind, from_state = EntityResearchJobEventKind.FINALIZED, ResearchJobState.RUNNING
+        references = {"finalization_receipt_ref": f"finalization-receipt:{job_id}"}
+    await append_entity_research_job_event(
+        conn,
+        run_id=envelope.lifecycle.run_id,
+        job_id=job_id,
+        kind=kind,
+        from_state=from_state,
+        to_state=to_state,
+        actor=worker,
+        references=references,
+    )
+    await _refresh_run_state(conn, envelope.lifecycle.run_id)
+
+
+def test_the_task_read_advances_truthfully_at_every_job_transition(tmp_path: Path) -> None:
+    """Three jobs walked through queued → leased → running → terminal, polled at every step.
+
+    The defect this pins against: the turn-close snapshot freezes at ``Queued — 0 of N`` while
+    the fleet works on. The durable read must instead be truthful at *every* transition — the
+    counts always sum to the fleet, queued only falls, settled only rises, the task state leaves
+    ``queued`` the moment any job does, and the ledger revision strictly rises so the C3 merge
+    can order every poll against the last.
+    """
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            seeded = await _seed(conn, tmp_path, workspace_id="ws-c4-advance", label="c4_advance")
+            action_ref = derive_turn_action_ref(seeded.turn_id)
+            envelope = await _launch_run(conn, seeded, action_ref=action_ref, accounts=3)
+
+            async def poll() -> dict[str, Any]:
+                response = await _read(conn, seeded)
+                assert response.status_code == 200
+                (task,) = response.json()["tasks"]
+                return cast("dict[str, Any]", task)
+
+            def counts(**expected: int) -> dict[str, int]:
+                base = {
+                    "total": 3,
+                    "queued": 0,
+                    "running": 0,
+                    "completed": 0,
+                    "partial": 0,
+                    "needs_review": 0,
+                    "blocked": 0,
+                    "failed": 0,
+                }
+                base.update(expected)
+                return base
+
+            # (transition, expected task state, expected counts) — the whole lifecycle of a
+            # three-account fleet whose subjects end completed / needs_review / failed.
+            steps: list[
+                tuple[
+                    tuple[int, ResearchJobState, ResearchFinalizationOutcome | None],
+                    str,
+                    dict[str, int],
+                ]
+            ] = [
+                (
+                    (0, ResearchJobState.LEASED, None),
+                    "deep_research",
+                    counts(queued=2, running=1),
+                ),
+                (
+                    (0, ResearchJobState.RUNNING, None),
+                    "deep_research",
+                    counts(queued=2, running=1),
+                ),
+                (
+                    (0, ResearchJobState.TERMINAL, ResearchFinalizationOutcome.COMPLETED),
+                    "queued",
+                    counts(queued=2, completed=1),
+                ),
+                (
+                    (1, ResearchJobState.LEASED, None),
+                    "deep_research",
+                    counts(queued=1, running=1, completed=1),
+                ),
+                (
+                    (1, ResearchJobState.RUNNING, None),
+                    "deep_research",
+                    counts(queued=1, running=1, completed=1),
+                ),
+                (
+                    (1, ResearchJobState.TERMINAL, ResearchFinalizationOutcome.NEEDS_REVIEW),
+                    "queued",
+                    counts(queued=1, completed=1, needs_review=1),
+                ),
+                (
+                    (2, ResearchJobState.LEASED, None),
+                    "deep_research",
+                    counts(running=1, completed=1, needs_review=1),
+                ),
+                (
+                    (2, ResearchJobState.RUNNING, None),
+                    "deep_research",
+                    counts(running=1, completed=1, needs_review=1),
+                ),
+                (
+                    (2, ResearchJobState.TERMINAL, ResearchFinalizationOutcome.FAILED),
+                    "partial",
+                    counts(completed=1, needs_review=1, failed=1),
+                ),
+            ]
+
+            first = await poll()
+            assert first["state"] == "queued"
+            assert first["counts"] == counts(queued=3)
+            previous_revision = first["revision"]
+            previous_queued = 3
+            previous_settled = 0
+
+            for index, (transition, expected_state, expected_counts) in enumerate(steps):
+                job_index, to_state, outcome = transition
+                await _transition(
+                    conn, envelope, job_index=job_index, to_state=to_state, outcome=outcome
+                )
+                served = await poll()
+                label = f"step {index}: job {job_index} -> {to_state.value}"
+
+                # Truthful: the exact fleet, never a guess and never a frozen snapshot.
+                assert served["counts"] == expected_counts, label
+                assert served["state"] == expected_state, label
+
+                # Monotone: queued only falls, settled only rises, the fleet never shrinks.
+                queued = served["counts"]["queued"]
+                settled = sum(
+                    served["counts"][key]
+                    for key in ("completed", "partial", "needs_review", "failed")
+                )
+                assert queued <= previous_queued, label
+                assert settled >= previous_settled, label
+                assert (
+                    sum(
+                        served["counts"][key]
+                        for key in (
+                            "queued",
+                            "running",
+                            "blocked",
+                            "completed",
+                            "partial",
+                            "needs_review",
+                            "failed",
+                        )
+                    )
+                    == 3
+                ), label
+
+                # Ordered: every transition appended to the ledger, so every poll outranks the
+                # last — the C3 merge can never show this step's card below the previous one.
+                assert served["revision"] > previous_revision, label
+
+                # The pinned defect, verbatim: never "Queued — 0 of N" once any job left queued.
+                assert not (served["state"] == "queued" and queued < 3 and settled == 0), label
+
+                previous_revision = served["revision"]
+                previous_queued = queued
+                previous_settled = settled
 
     run_async(scenario())
