@@ -10,6 +10,11 @@ import type {
 } from "@/features/projects/model/project-workspace";
 import { useWebEditingSession } from "@/features/design-editor/hooks/use-web-editing-session";
 import { useEditorShellController } from "../hooks/use-editor-shell-controller";
+import {
+  chatDockContent,
+  chatDockDismissedBySubmission,
+  chatDockOpen,
+} from "../model/chat-dock";
 import { chatSurfaceUrlState } from "../model/chat-surface-params";
 import { ArtifactStage } from "./artifact-stage";
 import { ChatShellHeader } from "./chat-shell-header";
@@ -89,25 +94,34 @@ export function ChatSurface({
     chat.threads.find((thread) => thread.id === chat.activeThreadId) ?? null;
   const chatTitle = activeThread ? chat.threadLabelFor(activeThread) : "Untitled";
 
-  // One guard beyond the source view: editorVisible additionally requires an
-  // actual artifact kind, so a ?surface=web&edit=1 URL with no artifact yet
-  // (workspace.artifacts is empty until W1.3) collapses to the conversation
+  // The R6 dock decisions live in ../model/chat-dock as pure functions (the
+  // repo's test runner has no DOM harness, so the rule is tested there and
+  // consumed — never restated — here). One guard beyond the source view:
+  // editorVisible additionally requires an actual artifact kind, so a
+  // ?surface=web&edit=1 URL with no artifact yet collapses to the conversation
   // instead of an empty chat body. The source never hit this because it
   // fabricated default tabs — which we deliberately do not.
-  const editorVisible =
-    shell.panelOpen &&
-    shell.surface === "artifact" &&
-    shell.editing &&
-    shell.artifactKind !== null;
+  const dockState = {
+    artifactKind: shell.artifactKind,
+    editing: shell.editing,
+    panelOpen: shell.panelOpen,
+    surface: shell.surface,
+  };
+  const editorVisible = chatDockOpen(dockState);
+  const dockContent = chatDockContent(dockState);
 
   // W4.8a law, per mount: rich-text is enabled under the SAME condition that
   // mounts THIS route's editing dock (the .chatBody web-inspector branch) over
   // a real web document. Outside it the canvas cancels any session the bridge
   // starts, so a double-click on the read-only render changes nothing.
   const webEditingActive =
-    editorVisible &&
-    shell.artifactKind === "web" &&
-    session.activeDocumentId !== null;
+    dockContent === "web-inspector" && session.activeDocumentId !== null;
+
+  // The artifact route's own fallback (editor-surface.tsx): a live canvas
+  // selection names the schema to render; with nothing selected the inspector
+  // falls back to this mount's shell state (the ?selection= pane param).
+  const inspectorSelection =
+    session.webSelection.selection?.schema.selection ?? shell.inspectorSelection;
 
   return (
     <main
@@ -138,15 +152,31 @@ export function ChatSurface({
           title={chatTitle}
         />
         <div className={styles.chatBody}>
-          {editorVisible && shell.artifactKind === "web" ? (
+          {dockContent === "web-inspector" ? (
             <div className={styles.inspectorDock}>
               <WebInspector
+                // Keyed on the SELECTED NODE only — never the document version.
+                // A per-write version key remounted the whole inspector on
+                // every edit (the founder-observed defect); the controller's
+                // own state already reflects the user's edit, so re-hydration
+                // belongs to selection changes alone.
+                key={session.webSelection.selection?.node.id ?? "canvas"}
+                customComponentForm={session.customComponentForm}
+                error={session.inspectorError}
+                note={session.writes.note}
+                addressing={session.addressing}
+                hydrated={session.webSelection.selection?.hydrated}
+                layers={session.layerRows}
+                onReplaceImage={session.onReplaceImage}
+                onSelectLayer={session.onSelectLayer}
                 onSelectionChange={shell.selectInspectorElement}
-                selection={shell.inspectorSelection}
+                richTextRange={session.richTextRange}
+                selection={inspectorSelection}
+                themeColors={session.themeColors}
               />
             </div>
           ) : null}
-          {editorVisible && shell.artifactKind === "ad" ? (
+          {dockContent === "ad-inspector" ? (
             <div className={styles.inspectorDock}>
               <ImageInspector
                 onSelectionChange={shell.selectInspectorElement}
@@ -154,7 +184,7 @@ export function ChatSurface({
               />
             </div>
           ) : null}
-          {!editorVisible ? (
+          {dockContent === "conversation" ? (
             <div
               aria-label="Conversation"
               className={`${styles.conversationStage} flex min-h-0 flex-col`}
@@ -207,6 +237,16 @@ export function ChatSurface({
                       ? (controller.selectedModel?.id ?? null)
                       : null,
                 });
+                // R6 dismiss-on-send: a message the agent ACCEPTED closes the
+                // editing dock and restores the conversation the user is now
+                // talking in. A refused (`failed`) or empty/threadless
+                // (`not_submitted`) submit leaves them mid-edit. The rule is
+                // evaluated over the whole status union — before the early
+                // return — so the pure decision in ../model/chat-dock is the
+                // one that actually runs.
+                if (chatDockDismissedBySubmission(accepted.status)) {
+                  shell.setEditing(false);
+                }
                 if (accepted.status !== "accepted") return false;
                 controller.completeSubmissionContext(
                   contextRefs.map((reference) => reference.objectId),
