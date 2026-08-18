@@ -511,6 +511,21 @@ Executes on worktree branch `feature/brandkit-onboarding-integration`; merged ba
 Slice 4 has a deliberate founder UI gate (no dummy slot for ingest/approve affordances).
 CLAUDE.md's stale "no versioned brand-kit payload" line fixed (`b9189131`).
 
+## Gallery-feed lane MERGED — `5a532397` (2026-08-18)
+
+`feature/gallery-leg-derived-feed` merged into this branch (founder-ordered). The gallery
+now serves REAL per-project cards (leg-derived list read `GET /api/v1/projects/{id}/
+design-artifacts` + mapper + artifact-page feed; artwork-free card frames). One conflict
+(editor-surface.tsx imports — W4.0 theme hook vs the lane's ProjectArtifact type; kept
+both). Union gates: frontend 546/546, lint, build; backend feed suite 9/9. Live-verified:
+real card in the Gallery tab, click-through → canvas render. NOTE for W0.5 Decision 2:
+the new gallery now HAS real data — but the standalone `/projects/{id}/gallery` route was
+already retired to a compat redirect by Phase R, so that follow-on is moot; the chats-rail
+gallery feed is the remaining consumer (recorded in the lane's contract notes). SECOND
+stale-server incident during verify: a zombie design API held 8010 (earlier launch died
+EADDRINUSE unnoticed) and began 500ing renders — the pre-launch port check is now proven
+twice; treat it as mandatory for 3030/8030/8010 alike.
+
 ## Next on THIS branch — W4 fan-out (awaiting founder lane ruling)
 
 W4.1 done (above). W4.2–W4.9 fan out per the W-plan (each schema task applies its own §2
