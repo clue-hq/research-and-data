@@ -117,7 +117,20 @@ richTextRange + ImageControls onReplaceImage). Gates on merged tree: 723/723, li
 ds-build, build; props form browser-smoked post-merge. The eventual lane-C → v2 merge is
 now conflict-free (dry-run verified before merging).
 
-## View-mode canvas — founder rulings (2026-08-19, NOT yet implemented)
+## View-mode canvas — DONE (commits `26757ff7` + `77187bce`, 2026-08-19; browser-verified)
+
+Task 6 shipped per the rulings below: `adapter/view-mode-html.ts` (viewModeHtml base-tag
+injection + canvasSandbox, 9 tests), view branch in `use-web-render.ts` (no bridge/no
+runtime_src/nonce ref emptied), `canvasSandbox(editing)` on the iframe, `editing` threaded
+through artifact-stage. KEY FACT vs the original plan: allow-scripts STAYS in view mode —
+custom components are nested script-bearing iframes and ancestor sandbox constrains them.
+Verified live: view = real website (no chrome, real anchors, defaultPrevented false,
+popup grants proven via window.open probe — the browse daemon can't LIST popup tabs, so
+the actual new-tab open needs one headed-browser hand-check); pricing card renders in
+view; edit mode byte-identical posture (sandbox allow-scripts, bridge round-trip, props
+form). Gates 732/732. Founder rulings recorded below for the record.
+
+## View-mode canvas — founder rulings (2026-08-19, implemented above)
 
 Investigation (this session): view mode reuses the editor-bridged render, so the bridge's
 capture-phase handler preventDefaults ALL anchor clicks (web_bridge.py:378-382, by
