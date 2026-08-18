@@ -61,6 +61,18 @@ export const SetupOfficialSiteProgressSchema = z.object({
   last_event_kind: z.string().nullable().optional().default(null),
 });
 
+/**
+ * The workspace's most recent design brand-kit ingestion job (brand-kit slice 3). The backend
+ * serves job truth and nothing else — the checklist row's mapping is the frontend's
+ * (`model/setup-items.ts`). `.catch`: a future job status must degrade to the in-flight state
+ * rather than kill the poll loop (the FE-N2 ruling, applied per job), and never to a state that
+ * would claim a published kit.
+ */
+export const SetupBrandKitIngestionSchema = z.object({
+  job_id: z.string().min(1),
+  status: z.enum(["queued", "running", "succeeded", "failed"]).catch("running"),
+});
+
 export const SetupStatusSchema = z.object({
   // `.catch`: an additive backend status must never silently kill the poll loop (review
   // FE-N2); an unknown value degrades to the surfaced-terminal `unavailable` state.
@@ -82,8 +94,12 @@ export const SetupStatusSchema = z.object({
   background_budget_exhausted: z.boolean().nullable().optional().default(null),
   // No durable crawl row yet (or a pre-C8 backend) is honest null.
   official_site: SetupOfficialSiteProgressSchema.nullable().optional().default(null),
+  // No ingestion job for the workspace (or a pre-brand-kit-slice-3 backend) is honest null —
+  // the checklist row then claims nothing.
+  brand_kit_ingestion: SetupBrandKitIngestionSchema.nullable().optional().default(null),
 });
 
+export type SetupBrandKitIngestion = z.infer<typeof SetupBrandKitIngestionSchema>;
 export type SetupFieldState = z.infer<typeof SetupFieldStateSchema>;
 export type SetupOfficialSiteProgress = z.infer<
   typeof SetupOfficialSiteProgressSchema

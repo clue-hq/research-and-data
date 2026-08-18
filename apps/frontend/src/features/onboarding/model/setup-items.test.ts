@@ -330,11 +330,91 @@ test("row ids are stable across ticks so the live region never re-keys its rows"
   assert.equal(new Set(ids).size, 1);
 });
 
-test("the brand-kit dummy is forced queued even when the fixture claims running", () => {
-  const fixtureBrandKit = SETUP.items.find((item) => item.id === BRAND_KIT_ITEM_ID);
-  assert.equal(fixtureBrandKit?.status, "running");
-  const items = deriveSetupItems(SETUP, { status: "complete" });
-  assert.equal(items.find((item) => item.id === BRAND_KIT_ITEM_ID)?.status, "queued");
+/** The brand-kit row after a derivation, or `undefined` when the fixture dropped it. */
+function brandKitRow(progress: Parameters<typeof deriveSetupItems>[1]) {
+  return deriveSetupItems(SETUP, progress).find((item) => item.id === BRAND_KIT_ITEM_ID);
+}
+
+/** The fixture's own brand-kit detail line — the base every mapping keeps. */
+const BRAND_KIT_DETAIL = SETUP.items.find((item) => item.id === BRAND_KIT_ITEM_ID)?.detail;
+
+test("no ingestion job leaves the brand-kit row queued, and the fixture status never leaks", () => {
+  // The fixture claims `running` for the design-review theatre; live truth is the only input.
+  assert.equal(SETUP.items.find((item) => item.id === BRAND_KIT_ITEM_ID)?.status, "running");
+  assert.equal(brandKitRow(null)?.status, "queued");
+  assert.equal(brandKitRow({ status: "complete" })?.status, "queued");
+  // A pre-slice payload carries no field at all; an explicit null says the same thing.
+  assert.equal(brandKitRow({ status: "running", brand_kit_ingestion: null })?.status, "queued");
+  assert.equal(brandKitRow({ status: "running" })?.detail, BRAND_KIT_DETAIL);
+});
+
+test("a queued or running ingestion job runs the brand-kit row", () => {
+  for (const status of ["queued", "running"]) {
+    const row = brandKitRow({
+      status: "running",
+      brand_kit_ingestion: { job_id: "ingest_1", status },
+    });
+    assert.equal(row?.status, "running", `job ${status} must read as running`);
+    assert.equal(row?.detail, BRAND_KIT_DETAIL);
+  }
+});
+
+test("a succeeded ingestion job completes the brand-kit row", () => {
+  const row = brandKitRow({
+    status: "running",
+    brand_kit_ingestion: { job_id: "ingest_1", status: "succeeded" },
+  });
+  assert.equal(row?.status, "complete");
+  assert.equal(row?.detail, BRAND_KIT_DETAIL);
+});
+
+test("a failed ingestion job annotates instead of claiming a kit exists", () => {
+  // The row vocabulary has no failed state: `complete` would claim a kit nothing produced, so
+  // the failure rides the detail line — the same idiom a failed recon field uses.
+  const row = brandKitRow({
+    status: "complete",
+    brand_kit_ingestion: { job_id: "ingest_1", status: "failed" },
+  });
+  assert.equal(row?.status, "queued");
+  assert.equal(row?.detail, `${BRAND_KIT_DETAIL}${FAILED_MEMBER_ANNOTATION}`);
+});
+
+test("an unrecognized job status reads as in-flight, never as a kit that exists", () => {
+  const row = brandKitRow({
+    status: "running",
+    brand_kit_ingestion: { job_id: "ingest_1", status: "some-future-status" },
+  });
+  assert.equal(row?.status, "running");
+  assert.equal(row?.detail, BRAND_KIT_DETAIL);
+});
+
+test("the brand-kit row is independent of the recon groups it sits under", () => {
+  // The warm-up rule is index-0-only and the group reduction never sees the job: a released,
+  // fully-complete recon run with a still-running ingestion keeps the two truths separate.
+  const items = deriveSetupItems(SETUP, {
+    status: "complete",
+    brand_kit_ingestion: { job_id: "ingest_1", status: "running" },
+  });
+  assert.deepEqual(
+    items.map((item) => item.status),
+    ["complete", "complete", "complete", "complete", "running"],
+  );
+  // …and a halted recon run does not demote a kit that genuinely published.
+  const halted = deriveSetupItems(SETUP, {
+    status: "failed",
+    brand_kit_ingestion: { job_id: "ingest_1", status: "succeeded" },
+  });
+  assert.deepEqual(
+    halted.map((item) => item.status),
+    ["queued", "queued", "queued", "queued", "complete"],
+  );
+  // The warm-up row stays the first GROUP even when the brand kit is the only thing moving.
+  const warming = deriveSetupItems(SETUP, {
+    status: "starting",
+    brand_kit_ingestion: { job_id: "ingest_1", status: "queued" },
+  });
+  assert.equal(warming[0]?.id, SETUP_GROUPS[0]?.id);
+  assert.equal(warming[0]?.status, "running");
 });
 
 test("a fixture without the brand-kit row drops it cleanly", () => {

@@ -108,6 +108,31 @@ test("the http source's read parses the status endpoint through the schema", asy
   }
 });
 
+test("the http source passes the brand-kit ingestion job through to the derivation", async () => {
+  const stub = stubFetch(
+    jsonResponse({
+      status: "starting",
+      brand_kit_ingestion: { job_id: "ingest_abc", status: "succeeded" },
+    }),
+  );
+  try {
+    const status = await httpSetupProgressSource.read();
+    assert.equal(status.brand_kit_ingestion?.job_id, "ingest_abc");
+    // End to end through the seam: the parsed wire value is what the pure model reduces, so a
+    // published kit reaches the checklist row without any component knowing about transport.
+    const brandKit = deriveSetupItems(
+      {
+        ...FIXTURE_SETUP,
+        items: [{ id: "brand-kit", label: "Creating brand kit", detail: "d", status: "queued" }],
+      },
+      status,
+    ).find((item) => item.id === "brand-kit");
+    assert.equal(brandKit?.status, "complete");
+  } finally {
+    stub.restore();
+  }
+});
+
 test("the fixture source replays its script frame per read and sticks at the last frame", async () => {
   const script: SetupStatus[] = [
     SetupStatusSchema.parse({ status: "starting" }),

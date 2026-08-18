@@ -21,6 +21,31 @@ test("a minimal status payload parses with null defaults", () => {
   assert.equal(parsed.recon_run_id, null);
   assert.equal(parsed.fast_status, null);
   assert.equal(parsed.fact_count, null);
+  assert.equal(parsed.brand_kit_ingestion, null);
+});
+
+test("a pre-brand-kit-slice-3 payload parses: no ingestion field is honest null", () => {
+  const parsed = SetupStatusSchema.parse({ status: "running", fast_status: "running" });
+  // An older backend simply does not serve the key; that must not fail the poll loop, and the
+  // checklist row then reports no job rather than a fabricated one.
+  assert.equal(parsed.brand_kit_ingestion, null);
+  assert.equal(SetupStatusSchema.parse({ status: "none", brand_kit_ingestion: null }).brand_kit_ingestion, null);
+});
+
+test("a live ingestion job parses, and an unknown job status degrades to in-flight", () => {
+  const parsed = SetupStatusSchema.parse({
+    status: "starting",
+    brand_kit_ingestion: { job_id: "ingest_abc", status: "succeeded" },
+  });
+  assert.equal(parsed.brand_kit_ingestion?.job_id, "ingest_abc");
+  assert.equal(parsed.brand_kit_ingestion?.status, "succeeded");
+
+  const future = SetupStatusSchema.parse({
+    status: "starting",
+    brand_kit_ingestion: { job_id: "ingest_abc", status: "some-future-status" },
+  });
+  // Never `succeeded` by accident: an unrecognized status may not claim a published kit.
+  assert.equal(future.brand_kit_ingestion?.status, "running");
 });
 
 test("a pre-slice-3 payload still parses: no fields, no fabricated budget verdict", () => {
@@ -146,6 +171,7 @@ test("a healthy status read parses end to end", async () => {
         fields: [{ field_key: "client.product", lane: "fast", status: "resolved" }],
         fast_budget_exhausted: false,
         official_site: FIXTURE_OFFICIAL_SITE_PROGRESS,
+        brand_kit_ingestion: { job_id: "ingest_1", status: "running" },
       }),
       { status: 200, headers: { "content-type": "application/json" } },
     ),
@@ -158,6 +184,7 @@ test("a healthy status read parses end to end", async () => {
     assert.equal(status.fast_budget_exhausted, false);
     assert.equal(status.background_budget_exhausted, null);
     assert.equal(status.official_site?.states.includes("persisted"), true);
+    assert.equal(status.brand_kit_ingestion?.status, "running");
   } finally {
     restore();
   }

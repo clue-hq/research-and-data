@@ -505,3 +505,128 @@ def test_the_http_root_composes_the_trigger_exactly_when_configured(
         assert isinstance(trigger, BrandKitWebsiteIngestion)
     else:
         assert trigger is None
+
+
+# --- 8. slice 3: GET /stage0/setup/current reports the job's live status ----------------------
+#
+# The onboarding checklist's "Creating brand kit" row stops being a dummy: the setup poll carries
+# the workspace's newest ingestion job, honest job truth and nothing derived (the row mapping is
+# the frontend's). These pin the wire half.
+
+
+async def _current(conn_factory: Any, workspace_id: str) -> dict[str, Any]:
+    app = _setup_app(conn_factory=conn_factory, design=_DesignApiDouble(), recon=_CaptureEnqueuer())
+    async with httpx.AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        response = await client.get(
+            "/stage0/setup/current", headers={"X-Workspace-Id": workspace_id}
+        )
+    assert response.status_code == 200
+    body: dict[str, Any] = response.json()
+    return body
+
+
+def test_setup_current_reports_no_ingestion_job_as_null() -> None:
+    """No job row is honest null — never a fabricated "queued" the row would spin on."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            conn_factory = _shared_conn_factory(conn)
+            provisioned = await _provision(conn, "brandkit-current-none")
+            body = await _current(conn_factory, provisioned.workspace.workspace_id)
+            assert body["status"] == "none"
+            # Present in the branch, and explicitly null.
+            assert "brand_kit_ingestion" in body
+            assert body["brand_kit_ingestion"] is None
+
+    run_async(scenario())
+
+
+def test_setup_current_reports_the_workspaces_job_and_its_live_status() -> None:
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            conn_factory = _shared_conn_factory(conn)
+            provisioned = await _provision(conn, "brandkit-current-live")
+            workspace_id = provisioned.workspace.workspace_id
+            job = await design_ingestion.create_job(
+                conn,
+                workspace_id=workspace_id,
+                kind="website",
+                request={"url": PROFILE["company_website"]},
+            )
+            job_id = str(job["job_id"])
+
+            queued = await _current(conn_factory, workspace_id)
+            assert queued["brand_kit_ingestion"] == {"job_id": job_id, "status": "queued"}
+
+            # The read is live truth, not a snapshot taken at enqueue time.
+            await design_ingestion.set_running(conn, workspace_id=workspace_id, job_id=job_id)
+            running = await _current(conn_factory, workspace_id)
+            assert running["brand_kit_ingestion"] == {"job_id": job_id, "status": "running"}
+
+            await design_ingestion.fail(
+                conn,
+                workspace_id=workspace_id,
+                job_id=job_id,
+                error={"code": "ingest.failed", "message": "no usable brand signal"},
+            )
+            failed = await _current(conn_factory, workspace_id)
+            assert failed["brand_kit_ingestion"] == {"job_id": job_id, "status": "failed"}
+
+    run_async(scenario())
+
+
+def test_setup_current_serves_only_the_newest_job_and_never_another_workspaces() -> None:
+    """Tenancy is the DAL's (`list_recent` is workspace-scoped); newest-first is its order."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            conn_factory = _shared_conn_factory(conn)
+            mine = await _provision(conn, "brandkit-current-mine")
+            theirs = await _provision(conn, "brandkit-current-theirs")
+            await design_ingestion.create_job(
+                conn,
+                workspace_id=theirs.workspace.workspace_id,
+                kind="website",
+                request={"url": "https://not-mine.example"},
+            )
+            body = await _current(conn_factory, mine.workspace.workspace_id)
+            assert body["brand_kit_ingestion"] is None
+
+            older = await design_ingestion.create_job(
+                conn,
+                workspace_id=mine.workspace.workspace_id,
+                kind="website",
+                request={"url": PROFILE["company_website"]},
+            )
+            newest = await design_ingestion.create_job(
+                conn,
+                workspace_id=mine.workspace.workspace_id,
+                kind="asset_upload",
+                request={"url": PROFILE["company_website"]},
+            )
+            served = await _current(conn_factory, mine.workspace.workspace_id)
+            assert served["brand_kit_ingestion"]["job_id"] in {
+                str(newest["job_id"]),
+                str(older["job_id"]),
+            }
+            # Same created_at (one transaction, one now()); the ported tiebreak is job_id DESC.
+            expected = max(str(older["job_id"]), str(newest["job_id"]))
+            assert served["brand_kit_ingestion"]["job_id"] == expected
+
+    run_async(scenario())
+
+
+def test_setup_current_carries_the_field_in_the_unavailable_branch_too() -> None:
+    """Every response branch answers the same question, so the client never sees the key vanish."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            conn_factory = _shared_conn_factory(conn)
+            body = await _current(conn_factory, f"ws_never_provisioned_{uuid4().hex[:10]}")
+            assert body["status"] == "unavailable"
+            assert "brand_kit_ingestion" in body
+            assert body["brand_kit_ingestion"] is None
+
+    run_async(scenario())

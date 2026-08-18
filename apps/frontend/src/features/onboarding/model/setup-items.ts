@@ -4,8 +4,10 @@
 import { SETUP_GROUPS, type SetupGroup } from "../data/setup-groups";
 import type { OnboardingFlow, SetupItem } from "./onboarding";
 
-/** The fixture id of the founder-ratified explicit-dummy brand-kit row (fails loudly in
- * tests if the fixture renames it — review FE-N9). */
+/** The fixture id of the brand-kit row, whose status is derived from the workspace's real
+ * design brand-kit ingestion job since brand-kit slice 3 (fails loudly in tests if the fixture
+ * renames it — review FE-N9). The fixture still owns the row's identity (id, label, detail);
+ * only its status/detail derivation is live. */
 export const BRAND_KIT_ITEM_ID = "brand-kit";
 
 /** The lane name whose field work is, by construction, a second pass: the background lane only
@@ -20,6 +22,13 @@ export interface SetupFieldSnapshot {
   status: "started" | "resolved" | "empty" | "failed";
 }
 
+/** The workspace's brand-kit ingestion job as the backend serves it (brand-kit slice 3): honest
+ * job truth, never a pre-derived row status. `data/setup.ts`'s parsed value satisfies it. */
+export interface SetupBrandKitJobSnapshot {
+  job_id: string;
+  status: string;
+}
+
 /** What the derivation needs from a poll tick. Structural: the full `SetupStatus` satisfies it. */
 export interface SetupProgressSnapshot {
   status: string;
@@ -30,6 +39,10 @@ export interface SetupProgressSnapshot {
   fields?: readonly SetupFieldSnapshot[];
   fast_budget_exhausted?: boolean | null;
   background_budget_exhausted?: boolean | null;
+  // Absent (a pre-brand-kit-slice-3 backend) and null (no job row) mean the same thing: there is
+  // no ingestion to report. The recon reduction above never reads it — the two are unrelated
+  // work, and the brand-kit row is not one of the D-6 groups.
+  brand_kit_ingestion?: SetupBrandKitJobSnapshot | null;
 }
 
 /** A field is finished when it has an answer, has no answer anyone could find (`empty` is a
@@ -174,16 +187,44 @@ function annotationFor(
 }
 
 /**
+ * Map the workspace's brand-kit ingestion job onto the frozen three-state row vocabulary
+ * (brand-kit slice 3). Pure; the fixture keeps the row's identity, this decides only its state.
+ *
+ * | job | row | why |
+ * | --- | --- | --- |
+ * | absent / null | `queued` | no ingestion exists (or a backend that predates the field) |
+ * | `queued` / `running` | `running` | the fleet holds real work for this workspace |
+ * | `succeeded` | `complete` | a draft kit was published |
+ * | `failed` | `queued` + failure annotation | see below |
+ *
+ * A failed job is NOT `complete`: that would claim a kit exists when nothing was produced. The
+ * row vocabulary has no failed state, so the failure rides the detail line exactly as a failed
+ * recon field annotates its group, and brand-kit slice 4's manual trigger is the rescue path.
+ * An unrecognized (future) status reads as in-flight — the same degradation the per-field
+ * status takes (review FE-N2) — never as a kit that exists.
+ */
+function brandKitItem(row: SetupItem, job: SetupBrandKitJobSnapshot | null): SetupItem {
+  if (job === null) return { ...row, status: "queued" };
+  if (job.status === "succeeded") return { ...row, status: "complete" };
+  if (job.status === "failed") {
+    return { ...row, status: "queued", detail: `${row.detail}${FAILED_MEMBER_ANNOTATION}` };
+  }
+  return { ...row, status: "running" };
+}
+
+/**
  * Derive the honest checklist rows from durable recon truth (pure; unit-tested).
  *
- * Rows are the D-6 groups (passed in, defaulting to the ratified table) plus the brand-kit
- * dummy. Row ids are constants, so the `aria-live` list keeps stable keys across every tick.
+ * Rows are the D-6 groups (passed in, defaulting to the ratified table) plus the brand-kit row.
+ * Row ids are constants, so the `aria-live` list keeps stable keys across every tick.
  *
  * - `starting` with no field event yet renders the FIRST group as running: the submission is
  *   durably captured and the drive is in flight (review FE-M1/BE-M6). It is a real durable
  *   signal, not a timer — and the first real event supersedes it.
- * - The brand-kit row stays the ratified explicit dummy (forced `queued`), and is dropped
- *   cleanly if the fixture no longer carries it.
+ * - The brand-kit row reports the workspace's real ingestion job (`brandKitItem`), and is
+ *   dropped cleanly if the fixture no longer carries it. It is deliberately outside the group
+ *   reduction: the ingestion is separate work from recon, so neither lane truth nor the
+ *   index-0 warm-up rule touches it.
  */
 export function deriveSetupItems(
   fixtureSetup: OnboardingFlow["setup"],
@@ -211,8 +252,7 @@ export function deriveSetupItems(
 
   const brandKit = fixtureSetup.items.find((item) => item.id === BRAND_KIT_ITEM_ID);
   if (brandKit) {
-    // Founder ruling (FI-4 §9): explicit dummy until the design branch merges.
-    items.push({ ...brandKit, status: "queued" });
+    items.push(brandKitItem(brandKit, progress?.brand_kit_ingestion ?? null));
   }
   return items;
 }

@@ -141,7 +141,53 @@ onboarding flow's behaviour.
   `CLUE_SELF_SERVE_PROVISIONING_ENABLED`.
 - **Reading the result.** The Brand-context page reads the kit through the design BFF (see
   `brand-context.md`); the onboarding checklist row for brand-kit status is brand-kit slice 3
-  and extends `GET /stage0/setup/current`.
+  below.
+
+### Brand-kit checklist row goes live (brand-kit slice 3 — 2026-08-18)
+
+The setting-up checklist's **"Creating brand kit — Colors, typography, tone & voice"** row stops
+being the founder-ratified explicit dummy (forced `queued` since FI-4 slice 3) and reports the
+slice-2 job's real status. Nothing visual changes: the row, its copy, and the three designed
+states are the frozen dummy design; only *which* state it shows is now derived from truth.
+
+`GET /stage0/setup/current` gains one additive, nullable field, served in **every** branch
+(`unavailable` / `none` / `starting` / `running` / `complete` / `failed`):
+
+```json
+"brand_kit_ingestion": { "job_id": "ingest_b91eb1c4…", "status": "queued" }
+```
+
+- `null` = the workspace has no `design_ingestion_job` row at all (or a backend that predates
+  this slice) — never a fabricated `queued`.
+- `status` is the `design_ingestion_status` enum **as stored**: `queued | running | succeeded |
+  failed`. The backend derives nothing; putting the row mapping on the server would move
+  presentation policy into the API.
+- Source: the workspace's newest job, via the sanctioned `clue_design.ingestion.list_recent`
+  DAL port (`limit=1`, workspace-scoped, newest-first) — the same read slice 2's trigger uses
+  for its idempotency check. One cheap read per poll tick; no join, no derivation.
+
+**Row mapping (frontend-owned, `model/setup-items.ts`, pure + unit-tested):**
+
+| wire | row status | detail |
+|---|---|---|
+| field absent / `null` | `queued` | fixture detail unchanged |
+| `queued` or `running` | `running` | fixture detail unchanged |
+| `succeeded` | `complete` | fixture detail unchanged |
+| `failed` | `queued` + `" — part of this hit a problem"` | the existing failure annotation |
+| unrecognized (future) status | `running` | fixture detail unchanged |
+
+**Why `failed` maps to `queued` + an annotation** (controller ruling, binding): the frozen
+`SetupItemSchema.status` vocabulary has no failed state; `complete` would claim a kit exists
+when nothing was produced; and the detail-line annotation is the design's failure surface —
+exactly how a failed recon field annotates its group. No new copy was invented: the row reuses
+the existing `FAILED_MEMBER_ANNOTATION` string verbatim. Brand-kit slice 4's manual trigger is
+the rescue path.
+
+The brand-kit row sits **outside** the D-6 group reduction: the ingestion is separate work from
+recon, so neither lane truth, nor the halt rule, nor the index-0 warm-up rule touches it — a
+published kit stays `complete` under a failed recon run, and a running ingestion stays `running`
+under a released one. The row keeps its fixture identity (id/label/base detail) and its
+drop-if-absent behaviour.
 
 ### `GET /stage0/setup/current` response
 
@@ -193,7 +239,8 @@ onboarding flow's behaviour.
     "completed": false,
     "last_event_seq": 42,
     "last_event_kind": "stage0.crawl.page_fetched"
-  }
+  },
+  "brand_kit_ingestion": { "job_id": "ingest_b91eb1c4…", "status": "running" }
 }
 ```
 
@@ -231,6 +278,8 @@ onboarding flow's behaviour.
   `provider-active`, `spend-unknown`, `persisted`, `extracted`, `partial`, `completed`. The frontend
   accepts future state/status strings but validates all known counts/booleans. C8 does not change
   the setup release condition: C10 owns the live browser/cutover gate.
+- `brand_kit_ingestion` — brand-kit slice 3's additive, nullable job truth (`{job_id, status}`),
+  present in every branch; `null` means no ingestion job exists. See the row mapping above.
 - A locally surfaced setup stall is not a backend terminal. The screen keeps polling after showing
   “Try again / Continue anyway”; later committed progress clears the fallback, and a later
   `status=complete` still releases automatically. `expansion_*` counts expose the independently
@@ -270,8 +319,10 @@ the table as a parameter and knows nothing about these particular rows:
 | `customers-market` | Customers & market | `client.customer`, `client.icp_evidence`, `client.market_reputation`, `client.delivered_value` |
 | `competitors-buyers` | Competitors & likely buyers | `client.competitor`, `client.buyer_profile` |
 
-Plus the brand-kit row, still the founder-ratified **explicit dummy** (forced `queued`) until
-the design-integration branch merges. Row ids are stable across every poll tick.
+Plus the brand-kit row, which since **brand-kit slice 3 (2026-08-18)** reports the workspace's
+real ingestion job (mapping above); it was the founder-ratified explicit dummy until then. It is
+not a D-6 group and is not part of the reduction below. Row ids are stable across every poll
+tick.
 
 Group reduction (pure, unit-tested): no member reached → `queued`; every reached member
 terminal and none missing → `complete`; anything between → `running`; overall `complete`
@@ -414,7 +465,9 @@ current setup screen and browser release continue to derive from the committed l
 Client-KB version. C9 owns the full offline adversarial gate and C10 owns live browser acceptance
 and authoritative cutover.
 
-Still ahead: brand-kit flips real per `brand-kit.md` when the design-integration branch merges.
+**Done (2026-08-18):** the design subsystem is merged, so the brand kit is real — slice 2
+auto-triggers the ingestion at first-time setup and slice 3 binds the checklist row to that
+job's live status (both sections above).
 
 ## Freeze-record notes (round-2 review)
 
