@@ -28,9 +28,11 @@ The central architecture bet is that verification must be modeled at the claim/d
 
 ## Topic notes
 - `2026-08-19-explicit-account-research-not-tier-gated.md` — founder ruling and implementation:
-  explicit selected-Account research/committee discovery accepts high, low, or absent signal tiers;
-  signal and effort vocabularies are decoupled; 194 relevant tests plus static gates are green; the
-  exact D5 live DB/frontend/API/storage continuation is preserved pending Python process reload.
+  explicit selected-Account research/committee discovery accepts high, low, tier 4, or absent
+  signal tiers; exact R6 jobs bypass legacy scoring/must-have/tier checkpoints; a real paid Sumble
+  browser run returned committee members and one inferred role; the backend now serves the role
+  rationale without adding UI; 89 backend and 353 frontend tests plus all static/release and
+  migration gates are green on the preserved D5 runtime.
 - `2026-08-19-slice-d-make-check-baseline.md` — the Slice-D exit-gate full `make check` failure
   baseline: 68 failures A/B-proven byte-identical at the pre-lane-D base, decomposed into
   ambient-env / dirty-shared-DB / test-ordering / pilot-posture / 14 genuine inherited debts with
