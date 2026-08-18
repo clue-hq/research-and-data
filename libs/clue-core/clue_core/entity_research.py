@@ -185,6 +185,7 @@ _ACCOUNT_REQUIRED_TOOLS = frozenset(
         "enrich_account",
         "inspect_account_evidence",
         "discover_buying_committee",
+        "record_committee_role_inferences",
         "assess_account_coverage",
         "read_research_result",
         "read_evidence",

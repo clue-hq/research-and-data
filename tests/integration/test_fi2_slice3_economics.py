@@ -637,7 +637,7 @@ def _p2_envelope(
                 "product_id": selection.product_id,
                 "project_run_id": selection.project_run_id,
                 "selection": selection,
-                "agent_profile_ref": "agent-profile:account-research:v1",
+                "agent_profile_ref": "agent-profile:account-research:v2",
                 "agent_profile_sha256": account_research_profile_sha256(),
             }
         ).model_dump(mode="python")

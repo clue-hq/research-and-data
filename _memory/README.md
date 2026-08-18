@@ -27,6 +27,9 @@ This repository is the data and research subsystem for the larger AI-native ABM 
 The central architecture bet is that verification must be modeled at the claim/data layer. LLM research is a last-resort tier-4 source, not the foundation. The product should prefer empty, flagged fields over fabricated fields.
 
 ## Topic notes
+- `2026-08-19-slice-d-d3-agent-role-inference.md` — D3 adds the governed account-agent committee
+  role write-back, exact member/evidence authority, honest roleless coverage, immutable account
+  catalog v2 promotion, verification, review corrections, and the Fable/browser limitations.
 - `2026-08-16-part-iii-merge-into-platform-base.md` — merges the design Part-III branch into
   the platform base: profile-v24/recipe-v7 collisions re-versioned as v36/v16, the D8 run-event
   move reconciled with the recon constants, merged authority/registry counts (114/129), the

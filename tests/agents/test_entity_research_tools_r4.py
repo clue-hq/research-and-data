@@ -14,7 +14,11 @@ import pytest
 from langchain_core.messages import AIMessage
 from pydantic import ValidationError
 
-from clue_agents.account_entity_research import DiscoverBuyingCommitteeInput
+from clue_agents.account_entity_research import (
+    CommitteeRoleInference,
+    DiscoverBuyingCommitteeInput,
+    RecordCommitteeRoleInferencesInput,
+)
 from clue_agents.entity_research_contracts import (
     EntityAgentRole,
     EntityResearchToolBinding,
@@ -103,6 +107,27 @@ def test_model_facing_research_schema_contains_intent_and_no_engine_authority() 
         "idempotency_key",
     }
     assert forbidden.isdisjoint(properties)
+
+
+def test_committee_role_inference_schema_is_closed_and_contains_no_engine_authority() -> None:
+    inference = CommitteeRoleInference.model_json_schema()["properties"]
+    assert set(inference) == {
+        "contact_entity_id",
+        "role",
+        "confidence",
+        "reasoning",
+        "evidence_claim_ids",
+    }
+    assert set(RecordCommitteeRoleInferencesInput.model_json_schema()["properties"]) == {
+        "inferences"
+    }
+    assert inference["role"]["$ref"].endswith("/$defs/Persona")
+    assert inference["confidence"]["minimum"] == 0.0
+    assert inference["confidence"]["maximum"] == 1.0
+    assert inference["reasoning"]["minLength"] == 1
+    assert inference["reasoning"]["maxLength"] == 2_000
+    assert inference["evidence_claim_ids"]["minItems"] == 1
+    assert inference["evidence_claim_ids"]["maxItems"] == 16
 
 
 def test_governed_provider_tool_returns_actionable_bounded_schema_feedback(

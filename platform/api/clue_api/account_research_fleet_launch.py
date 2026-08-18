@@ -587,7 +587,7 @@ class AccountResearchFleetLauncher:
                     product_id=project_run.product_id,
                     project_run_id=request.project_run_id,
                     selection=selection,
-                    agent_profile_ref="agent-profile:account-research:v1",
+                    agent_profile_ref="agent-profile:account-research:v2",
                     agent_profile_sha256=profile_sha,
                     checkpoint_thread_id=f"entity-research:{job_id}",
                     attempt_id=uuid5(_ATTEMPT_NAMESPACE, str(job_id)),

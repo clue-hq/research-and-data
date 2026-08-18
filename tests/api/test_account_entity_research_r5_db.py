@@ -81,11 +81,13 @@ from clue_api.sumble_entity_research_tools import SumbleCommitteeSemanticResearc
 from clue_api.trial.account_deep_fixture import seed_insight_health_account_deep_fixture
 from clue_core import (
     Claim,
+    ClaimProvenanceKind,
     CommitteeAcquisitionRequest,
     EntityId,
     EntityType,
     ExtractionMethod,
     IdentityBinding,
+    Persona,
     ProjectRunId,
     ResearchCommitteePlan,
     ResearchMode,
@@ -203,6 +205,9 @@ class _DecisionModel(BaseChatModel):
     _observed_first_result: bool = PrivateAttr(default=False)
     _justification: str | None = PrivateAttr(default=None)
     _bound_tools: tuple[str, ...] = PrivateAttr(default=())
+    _committee_subjects: tuple[tuple[UUID, UUID], ...] = PrivateAttr(default=())
+    _inference_attempt: int = PrivateAttr(default=0)
+    _inference_claim_refs: tuple[str, str] | None = PrivateAttr(default=None)
 
     @property
     def _llm_type(self) -> str:
@@ -343,24 +348,109 @@ class _DecisionModel(BaseChatModel):
                 results = payload["results"]
                 assert len(results[0]["discovered_subjects"]) == 2
                 self._result_refs.extend(item["result_ref"] for item in results)
+                self._committee_subjects = tuple(
+                    (
+                        UUID(item["target_entity_id"]),
+                        UUID(item["fields"][0]["claim_refs"][0].removeprefix("claim:")),
+                    )
+                    for item in results[0]["discovered_subjects"]
+                )
+                first_contact, first_evidence = self._committee_subjects[0]
                 response = AIMessage(
                     content="",
                     tool_calls=[
                         {
-                            "name": "assess_account_coverage",
+                            "name": "record_committee_role_inferences",
                             "args": {
-                                "result_refs": self._result_refs,
-                                "assessment_note": (
-                                    "All selected account fields are grounded and the committee "
-                                    "members share the declared Boston office."
-                                ),
+                                "inferences": [
+                                    {
+                                        "contact_entity_id": str(uuid4()),
+                                        "role": "champion",
+                                        "confidence": 0.87,
+                                        "reasoning": "The operations leader owns the workflow.",
+                                        "evidence_claim_ids": [str(first_evidence)],
+                                    }
+                                ]
                             },
-                            "id": "r5-coverage",
+                            "id": "r5-role-outsider",
+                        }
+                    ],
+                )
+            elif last.name == "record_committee_role_inferences":
+                first_contact, first_evidence = self._committee_subjects[0]
+                _, second_evidence = self._committee_subjects[1]
+                if self._inference_attempt == 0:
+                    assert payload["error"] == "governed_research_rejection"
+                    assert "outside" in payload["detail"]
+                    next_evidence = second_evidence
+                    call_id = "r5-role-cross-contact"
+                elif self._inference_attempt == 1:
+                    assert payload["error"] == "governed_research_rejection"
+                    assert "evidence" in payload["detail"]
+                    next_evidence = first_evidence
+                    call_id = "r5-role-valid"
+                elif self._inference_attempt == 2:
+                    assert payload["committee_member_count"] == 2
+                    assert payload["inferred_member_count"] == 1
+                    assert payload["needs_review"] == 1
+                    assert payload["committee_status"] == "needs_review"
+                    recorded = payload["recorded_inferences"]
+                    assert len(recorded) == 1
+                    self._inference_claim_refs = (
+                        recorded[0]["role_claim_ref"],
+                        recorded[0]["persona_claim_ref"],
+                    )
+                    next_evidence = first_evidence
+                    call_id = "r5-role-replay"
+                else:
+                    recorded = payload["recorded_inferences"]
+                    assert self._inference_claim_refs == (
+                        recorded[0]["role_claim_ref"],
+                        recorded[0]["persona_claim_ref"],
+                    )
+                    response = AIMessage(
+                        content="",
+                        tool_calls=[
+                            {
+                                "name": "assess_account_coverage",
+                                "args": {
+                                    "result_refs": self._result_refs,
+                                    "assessment_note": (
+                                        "All selected account fields are grounded and one "
+                                        "committee member has a cited role inference."
+                                    ),
+                                },
+                                "id": "r5-coverage",
+                            }
+                        ],
+                    )
+                    self._inference_attempt += 1
+                    return ChatResult(generations=[ChatGeneration(message=response)])
+                self._inference_attempt += 1
+                response = AIMessage(
+                    content="",
+                    tool_calls=[
+                        {
+                            "name": "record_committee_role_inferences",
+                            "args": {
+                                "inferences": [
+                                    {
+                                        "contact_entity_id": str(first_contact),
+                                        "role": "champion",
+                                        "confidence": 0.87,
+                                        "reasoning": "The operations leader owns the workflow.",
+                                        "evidence_claim_ids": [str(next_evidence)],
+                                    }
+                                ]
+                            },
+                            "id": call_id,
                         }
                     ],
                 )
             elif last.name == "assess_account_coverage":
-                assert payload["committee_status"] == "complete"
+                assert payload["committee_status"] == "needs_review"
+                assert payload["committee_needs_review"] == 1
+                assert "committee_roles_uninferred" in payload["review_flags"]
                 assert payload["unresolved_field_keys"] == []
                 response = AIMessage(
                     content="",
@@ -369,7 +459,7 @@ class _DecisionModel(BaseChatModel):
                             "name": "finalize_account_research",
                             "args": {
                                 "coverage_ledger_ref": payload["coverage_ledger_ref"],
-                                "requested_outcome": "completed",
+                                "requested_outcome": "needs_review",
                             },
                             "id": "r5-finalize-tool",
                         }
@@ -826,7 +916,7 @@ def _account_envelope(
                 "product_id": product_id,
                 "project_run_id": project_run_id,
                 "selection": selection,
-                "agent_profile_ref": "agent-profile:account-research:v1",
+                "agent_profile_ref": "agent-profile:account-research:v2",
                 "agent_profile_sha256": profile_sha256,
             }
         ).model_dump(mode="python")
@@ -1092,7 +1182,7 @@ def test_r5_account_agent_observes_results_decides_and_finalizes_without_contact
             assert outcome.finalization_receipt is not None
             assert (
                 outcome.finalization_receipt.proposal.outcome
-                is ResearchFinalizationOutcome.COMPLETED
+                is ResearchFinalizationOutcome.NEEDS_REVIEW
             )
             assert outcome.finalization_receipt.verification.all_passed()
             assert create_agent_calls == ["clue-entity-account"]
@@ -1111,7 +1201,85 @@ def test_r5_account_agent_observes_results_decides_and_finalizes_without_contact
             assert providers.calls == ["enrich_account", "discover_buying_committee"]
             assert "research_account_deep" in model.bound_tools
             assert "discover_buying_committee" in model.bound_tools
+            assert "record_committee_role_inferences" in model.bound_tools
             assert not any(name.startswith("research_contact") for name in model.bound_tools)
+
+            scope = WorkspaceScope.for_workspace(workspace_id)
+            inferred = await claims_for(
+                conn,
+                EntityId(contacts[0]),
+                ROLE_ON_COMMITTEE,
+                scope=scope,
+            )
+            personas = await claims_for(conn, EntityId(contacts[0]), PERSONA, scope=scope)
+            assert len(inferred) == len(personas) == 1
+            role_claim = inferred[0]
+            persona_claim = personas[0]
+            assert role_claim.extraction_method is ExtractionMethod.LLM_SYNTHESIS
+            assert int(role_claim.source_tier) == 4
+            assert role_claim.provenance_kind is ClaimProvenanceKind.PLATFORM_INFERRED
+            assert role_claim.identity_binding is IdentityBinding.STRONG
+            assert role_claim.value_json == {
+                "role": Persona.CHAMPION.value,
+                "confidence": 0.87,
+                "plausible": True,
+                "rationale": "The operations leader owns the workflow.",
+            }
+            assert persona_claim.value_json == Persona.CHAMPION.value
+            assert role_claim.evidence_span == "Jordan Lee is VP Operations in the Boston office."
+            assert role_claim.source_url == "https://example.test/organization-map"
+            assert role_claim.run_id == RunId(authorization.research_run_id)
+            coverage_claim_refs = set(
+                (
+                    await conn.execute(
+                        text(
+                            "SELECT claim_refs FROM entity_research_account_coverage "
+                            "WHERE job_id=:job_id ORDER BY created_at DESC LIMIT 1"
+                        ),
+                        {"job_id": authorization.job_id},
+                    )
+                ).scalar_one()
+            )
+            assert {
+                f"claim:{role_claim.id}",
+                f"claim:{persona_claim.id}",
+            } <= coverage_claim_refs
+            persisted_coverage = (
+                (
+                    await conn.execute(
+                        text(
+                            "SELECT committee_status, review_flags, coverage_json "
+                            "FROM entity_research_account_coverage WHERE job_id=:job_id "
+                            "ORDER BY created_at DESC LIMIT 1"
+                        ),
+                        {"job_id": authorization.job_id},
+                    )
+                )
+                .mappings()
+                .one()
+            )
+            assert persisted_coverage["committee_status"] == "needs_review"
+            assert "committee_roles_uninferred" in persisted_coverage["review_flags"]
+            assert persisted_coverage["coverage_json"]["committee_needs_review"] == 1
+            assert (
+                await claims_for(
+                    conn,
+                    EntityId(contacts[1]),
+                    ROLE_ON_COMMITTEE,
+                    scope=scope,
+                )
+                == []
+            )
+            human_count = (
+                await conn.execute(
+                    text(
+                        "SELECT count(*) FROM claim WHERE run_id=:run_id "
+                        "AND extraction_method='human'"
+                    ),
+                    {"run_id": authorization.research_run_id},
+                )
+            ).scalar_one()
+            assert human_count == 0
 
             counts = (
                 (

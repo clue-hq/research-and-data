@@ -132,7 +132,7 @@ def _provenance_params(
     return None
 
 
-async def _write_committee_claim(
+async def write_committee_claim(
     conn: AsyncConnection,
     contact_entity_id: EntityId,
     field_key: str,
@@ -202,7 +202,7 @@ async def _write_role_and_persona(
     if provenance is None:
         return None
     method, tier, source_url, evidence_span = provenance
-    role_claim_id = await _write_committee_claim(
+    role_claim_id = await write_committee_claim(
         conn,
         contact_entity_id,
         ROLE_ON_COMMITTEE,
@@ -222,7 +222,7 @@ async def _write_role_and_persona(
         identity_binding=identity_binding,
         product_id=product_id,
     )
-    persona_claim_id = await _write_committee_claim(
+    persona_claim_id = await write_committee_claim(
         conn,
         contact_entity_id,
         PERSONA,

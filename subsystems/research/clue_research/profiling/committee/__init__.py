@@ -65,6 +65,7 @@ from clue_research.profiling.committee.worker import (
     CommitteeAspectWorker,
     ProfessionalFactReplayConflict,
     discover_committee,
+    write_committee_claim,
 )
 
 __all__ = [
@@ -72,6 +73,7 @@ __all__ = [
     "discover_committee",
     "CommitteeAspectWorker",
     "ProfessionalFactReplayConflict",
+    "write_committee_claim",
     # result / config
     "CommitteeResult",
     "CommitteeMemberRef",
