@@ -47,6 +47,7 @@ async def confirmed_account_research_direction(
     questions: Sequence[ResearchQuestion] = (),
     contact_profiling_allowed: bool = False,
     contact_reveals_allowed: bool = False,
+    predecessor_id: ResearchDirectiveId | None = None,
 ) -> tuple[ResearchDirectiveBody, Any]:
     """Create one real human-confirmed A2 directive on a borrowed test transaction."""
 
@@ -95,6 +96,7 @@ async def confirmed_account_research_direction(
             "icp_key": icp_key,
             "icp_version": icp_version,
             "body": body.model_dump(mode="json"),
+            "predecessor_id": str(predecessor_id) if predecessor_id is not None else None,
             "user_instruction": (
                 "Investigate account-locked referral, fax, phone, and administrative workflow "
                 "friction; leave unsupported hypotheses empty."

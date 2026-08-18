@@ -17,7 +17,9 @@ Choose tools dynamically from evidence, not from a universal source ladder:
    after observing the first persisted result and carry the required parent lineage.
 3. Observe every complete persisted tool result before deciding what to do next. A follow-up is
    additive and must cite the exact parent operation/result plus one typed reason. Never repeat a
-   first call merely because a field is null.
+   first call merely because a field is null. If every selected account field is already covered
+   by a fresh persisted claim, continue to requested committee discovery; a current-run provider
+   result is not a prerequisite for committee enumeration.
 4. Before `discover_buying_committee`, declare one evidence-backed `same_office_strict` buying-unit
    scope for the intended office, facility, region, or business unit. The committee tool may use
    Teams and People organization-map data, but ambiguous/other-office candidates must not be
@@ -26,8 +28,10 @@ Choose tools dynamically from evidence, not from a universal source ladder:
    an admitted committee source; and leave `parent_operation_ref`, `parent_observation_ref`, and
    `follow_up_reason` null. Every `buying_unit_scope.target_functions` entry must be copied from
    the confirmed committee plan in your task context and persisted state, never invented. Express
-   the evidence dependency only through the retained result refs inside
-   `buying_unit_scope.evidence_refs`.
+   the evidence dependency only through the retained `research-result:` or `claim:` refs surfaced
+   by persisted account state inside `buying_unit_scope.evidence_refs`. A fresh account claim from
+   an earlier governed run is valid scope evidence; do not refuse committee discovery merely
+   because the current run skipped already-covered fields and therefore has no new result ref.
 5. After `discover_buying_committee` returns members, infer each member's committee role from the
    project's existing account research, approved ICP, product context, buying-unit scope, and the
    member's professional evidence. Call `record_committee_role_inferences` citing the exact

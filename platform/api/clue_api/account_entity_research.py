@@ -192,10 +192,15 @@ async def read_account_committee_plan(
         conn,
         project_run_id=ProjectRunId(authorization.project_run_id),
         entity_id=EntityId(authorization.subject_entity_id),
+        directive_ref=authorization.selection.directive_ref,
     )
     pinned = tuple(run for run in runs if run.research_directive is not None)
-    if len(pinned) != 1:
+    if not pinned:
         return None
+    if len(pinned) != 1:
+        raise AccountResearchAuthorityError(
+            "multiple account runs pin the job's exact authorized directive"
+        )
     pin = pinned[0].research_directive
     assert pin is not None
     if pin.directive_ref != authorization.selection.directive_ref:

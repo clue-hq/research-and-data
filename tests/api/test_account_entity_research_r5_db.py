@@ -959,6 +959,32 @@ def test_r5_account_agent_observes_results_decides_and_finalizes_without_contact
             project_id = fixture.discovery_fixture.project_id
             product_id = fixture.discovery_fixture.product_id
             account_id = UUID(str(fixture.selected_account_id))
+            _, prior_account_spec = await confirmed_account_research_direction(
+                conn,
+                workspace_id=workspace_id,
+                project_id=project_id,
+                product_id=product_id,
+                account_id=fixture.selected_account_id,
+                icp_key=fixture.deep_icp_key,
+                icp_version=fixture.deep_icp_version,
+                field_keys=(_PAIN, _MOVES, _HIRING),
+                allowed_source_keys=("exa_deep", "sumble_jobs", "sumble_people"),
+            )
+            prior_directive = prior_account_spec.research_directive
+            assert prior_directive is not None
+            prior_account_run_id = RunId(uuid4())
+            await insert_account_run(
+                conn,
+                account_run_id=prior_account_run_id,
+                project_run_id=fixture.project_run_id,
+                entity_id=fixture.selected_account_id,
+                tier="high",
+            )
+            await pin_account_run_research_directive(
+                conn,
+                account_run_id=prior_account_run_id,
+                pin=prior_directive,
+            )
             _, account_spec = await confirmed_account_research_direction(
                 conn,
                 workspace_id=workspace_id,
@@ -969,6 +995,7 @@ def test_r5_account_agent_observes_results_decides_and_finalizes_without_contact
                 icp_version=fixture.deep_icp_version,
                 field_keys=(_PAIN, _MOVES, _HIRING),
                 allowed_source_keys=("exa_deep", "sumble_jobs", "sumble_people"),
+                predecessor_id=prior_directive.directive_id,
             )
             directive = account_spec.research_directive
             assert directive is not None

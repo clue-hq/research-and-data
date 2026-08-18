@@ -770,13 +770,12 @@ def test_fi2_61_a_job_that_calls_no_provider_at_all_finalizes_cleanly(
 ) -> None:
     """The prompt-obedient all-known job: **zero** provider calls, zero results, a real receipt.
 
-    This is the shape a governed agent actually reaches when every admitted field is already
-    answered and it has no retained result to cite as committee-office evidence: it reads state,
-    sees nothing left to research, and closes. Coverage therefore carries an *empty* result set —
-    admissible only because every completed field is borrowed (the engine re-derives that, and
-    ``assess`` refuses an empty close over work that did complete a field). The committee is
-    honestly unresearched, so the outcome is ``NEEDS_REVIEW`` with the existing
-    ``committee_not_researched`` flag — a clean finalization, not a failed one.
+    This scripted scenario deliberately omits the requested committee call after every admitted
+    field is found fresh. Coverage carries an *empty* result set — admissible only because every
+    completed field is borrowed (the engine re-derives that, and ``assess`` refuses an empty close
+    over work that did complete a field). The committee is honestly unresearched, so the outcome
+    is ``NEEDS_REVIEW`` with the existing ``committee_not_researched`` flag — a clean
+    finalization, not a failed one.
     """
 
     async def scenario() -> None:
@@ -921,10 +920,9 @@ def test_fi2_61_an_all_born_complete_job_spends_nothing_and_finalizes_completed(
     """The same economics with a committee call: no account-axis spend, ``COMPLETED`` receipt.
 
     The committee scope cites the account's own claim as its office evidence — production's Sumble
-    scope validation admits that (`sumble_entity_research_tools._persist_scope`), though the
-    governed prompt currently tells the agent to cite retained result refs only; sanctioning the
-    claim reference rides the next governed prompt bump. The zero-call test above covers the
-    prompt-obedient path; this one keeps the ``COMPLETED`` outcome under test.
+    scope validation admits that (`sumble_entity_research_tools._persist_scope`), and the governed
+    prompt explicitly permits that durable claim reference when the current run skips fresh
+    fields. This test keeps the ``COMPLETED`` outcome under test.
     """
 
     async def scenario() -> None:

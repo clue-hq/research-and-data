@@ -24,8 +24,8 @@ from clue_config import Settings
 from clue_core import (
     CommitteeAcquisitionRequest,
     CommitteeExecutionAuthorization,
+    DiscoveryGapOperationState,
     EntityId,
-    ExtractionMethod,
     ProjectRunId,
     RunId,
     UseClass,
@@ -37,13 +37,14 @@ from clue_research.directives import (
     effective_account_research_directive,
     get_research_directive,
 )
-from clue_research.discovery_scoring.tiering import TIER_FIELD
+from clue_research.discovery_scoring.tiering import TIER_CLAIM_MAX_SOURCE_TIER, TIER_FIELD
 from clue_research.durable import (
     account_deep_launch_account_pins,
     get_account_deep_launch,
     get_account_run,
     get_project_run,
     latest_succeeded_account_gap_snapshot,
+    list_discovery_gap_operations,
 )
 from clue_research.resolvers.sumble import (
     ORGANIZATIONS_SOURCE_KEY,
@@ -207,29 +208,29 @@ class DurableSumbleCommitteeInputResolver:
                 )
 
             tier_claim = None
-            for claim in await claims_for(
-                conn,
-                account_entity_id,
-                TIER_FIELD,
-                scope=WorkspaceScope.for_workspace(workspace_id),
-            ):
-                value = claim.value_json
-                if (
-                    isinstance(value, dict)
-                    and claim.extraction_method is ExtractionMethod.HUMAN
-                    and claim.source_tier == 1
-                    and value.get("project_run_id") == str(project_run_id)
-                    and value.get("discovery_batch_id") == str(sealed.discovery_batch_id)
-                    and value.get("discovery_seal_sha256") == sealed.seal_sha256
-                    and value.get("tier") == tier
-                    and value.get("disposition") == "selected"
+            if entity_research_job_id is None:
+                for claim in await claims_for(
+                    conn,
+                    account_entity_id,
+                    TIER_FIELD,
+                    scope=WorkspaceScope.for_workspace(workspace_id),
                 ):
-                    tier_claim = claim
-                    break
-            if tier_claim is None:
-                raise SumbleCommitteePreparationError(
-                    "exact human-approved tier claim is absent for committee acquisition"
-                )
+                    value = claim.value_json
+                    if (
+                        isinstance(value, dict)
+                        and claim.source_tier <= TIER_CLAIM_MAX_SOURCE_TIER
+                        and value.get("project_run_id") == str(project_run_id)
+                        and value.get("discovery_batch_id") == str(sealed.discovery_batch_id)
+                        and value.get("discovery_seal_sha256") == sealed.seal_sha256
+                        and value.get("tier") == tier
+                        and value.get("disposition") == "selected"
+                    ):
+                        tier_claim = claim
+                        break
+                if tier_claim is None:
+                    raise SumbleCommitteePreparationError(
+                        "exact approved tier claim is absent for committee acquisition"
+                    )
 
             organization_snapshot = await latest_succeeded_account_gap_snapshot(
                 conn,
@@ -238,14 +239,62 @@ class DurableSumbleCommitteeInputResolver:
                 account_id=account_entity_id,
                 source_key=ORGANIZATIONS_SOURCE_KEY,
             )
-            if organization_snapshot is None or organization_snapshot.response_artifact_key is None:
-                raise SumbleCommitteePreparationError(
-                    "ready Sumble organization identity snapshot is absent"
+            if (
+                organization_snapshot is not None
+                and organization_snapshot.response_artifact_key is not None
+            ):
+                organization_response_artifact_key = organization_snapshot.response_artifact_key
+                organization_identity_ref = (
+                    f"account-gap-snapshot:{organization_snapshot.operation_id}:"
+                    f"{ORGANIZATIONS_SOURCE_KEY}"
+                )
+            else:
+                # Organization identity is first acquired during required-field discovery for
+                # many accounts.  That paid, exact-batch Sumble response is every bit as durable
+                # as the later account-gap snapshot and is already part of the sealed discovery
+                # truth.  Requiring the account agent to re-buy an unrelated structured deep
+                # field made committee acquisition unreachable for ICPs whose deep plan is
+                # qualitative only.
+                discovery_operations = await list_discovery_gap_operations(
+                    conn,
+                    workspace_id=workspace_id,
+                    batch_id=sealed.discovery_batch_id,
+                )
+                organization_candidates = tuple(
+                    operation
+                    for operation in discovery_operations
+                    if operation.request.project_run_id == project_run_id
+                    and operation.request.account_id == account_entity_id
+                    and operation.request.source_key == ORGANIZATIONS_SOURCE_KEY
+                    and operation.state is DiscoveryGapOperationState.SUCCEEDED
+                    and operation.response_artifact_key is not None
+                )
+                if not organization_candidates:
+                    raise SumbleCommitteePreparationError(
+                        "ready Sumble organization identity is absent from account and "
+                        "sealed-discovery enrichment"
+                    )
+                discovery_operation = max(
+                    organization_candidates,
+                    key=lambda operation: (
+                        (
+                            operation.updated_at.isoformat()
+                            if operation.updated_at is not None
+                            else ""
+                        ),
+                        str(operation.operation_id),
+                    ),
+                )
+                assert discovery_operation.response_artifact_key is not None
+                organization_response_artifact_key = discovery_operation.response_artifact_key
+                organization_identity_ref = (
+                    f"discovery-gap-operation:{discovery_operation.operation_id}:"
+                    f"{ORGANIZATIONS_SOURCE_KEY}"
                 )
             _, response_bytes = await read_verified_artifact(
                 conn,
                 self._storage,
-                storage_key=organization_snapshot.response_artifact_key,
+                storage_key=organization_response_artifact_key,
                 workspace_id=workspace_id,
             )
 
@@ -292,14 +341,11 @@ class DurableSumbleCommitteeInputResolver:
             discovery_batch_id=sealed.discovery_batch_id,
             discovery_seal_sha256=sealed.seal_sha256,
             account_id=account_entity_id,
-            tier_claim_id=tier_claim.id,
+            tier_claim_id=tier_claim.id if tier_claim is not None else None,
             committee_plan_ref=committee_plan_ref,
             research_direction_ref=pin.directive_ref,
             research_directive=pin,
-            organization_identity_ref=(
-                f"account-gap-snapshot:{organization_snapshot.operation_id}:"
-                f"{ORGANIZATIONS_SOURCE_KEY}"
-            ),
+            organization_identity_ref=organization_identity_ref,
             provider_organization_id=str(organization_id),
             provider_api_version=SUMBLE_API_VERSION,
             provider_contract_version=SUMBLE_COMMITTEE_CONTRACT_VERSION,
