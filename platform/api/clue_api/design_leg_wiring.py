@@ -39,13 +39,14 @@ exit; a turn ending keeps the leg ``open_awaiting_user``).
 from __future__ import annotations
 
 import json
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 from pydantic import JsonValue
 from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_agents import (
     AgentConstitution,
@@ -100,6 +101,7 @@ __all__ = [
     "design_legs_for_threads",
     "load_design_leg_history",
     "load_head_of_abm_history",
+    "project_design_documents",
 ]
 
 #: The leg turn's platform-side spend envelope. Model spend happens inside the design runtime and
@@ -396,6 +398,59 @@ async def design_legs_for_threads(
     return {
         str(row["thread_id"]): {"id": str(row["id"]), "state": str(row["state"])} for row in rows
     }
+
+
+async def project_design_documents(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    project_id: str,
+) -> tuple[Mapping[str, Any], ...]:
+    """The project's design documents, derived from its threads' legs (gallery feed v1).
+
+    A design document carries a workspace, not a project, so the leg is what binds it to
+    one: a document belongs to the project whose threads hold the legs that name it. One
+    statement, driven from the selective side — the legs of *this project's* threads →
+    their non-null ``document_id``s, one row per document (``DISTINCT ON``, the document's
+    **latest** leg winning, leg id breaking a tie, so each document reports one origin
+    thread) → the documents behind them.
+
+    Fail-closed tenancy like every other design read: ``workspace_id`` is pinned on both
+    the leg and the document (``design_leg.document_id`` carries no foreign key, so a leg
+    naming another tenant's document resolves to nothing), and ``scene`` documents are
+    excluded — the gallery serves web documents only. A document no leg names belongs to
+    no project and is listed nowhere.
+    """
+
+    rows = (
+        (
+            await conn.execute(
+                text(
+                    "SELECT d.id, d.title, d.status, d.current_version, d.created_at,"
+                    " d.updated_at, origin.thread_id AS origin_thread_id"
+                    " FROM ("
+                    "   SELECT DISTINCT ON (leg.document_id)"
+                    "          leg.document_id, leg.thread_id"
+                    "   FROM design_leg leg"
+                    "   JOIN agent_thread t"
+                    "     ON t.id = leg.thread_id AND t.workspace_id = leg.workspace_id"
+                    "   WHERE leg.workspace_id = :ws"
+                    "     AND t.project_id = :project"
+                    "     AND leg.document_id IS NOT NULL"
+                    "   ORDER BY leg.document_id, leg.created_at DESC, leg.id DESC"
+                    " ) origin"
+                    " JOIN design_document d"
+                    "   ON d.id = origin.document_id AND d.workspace_id = :ws"
+                    " WHERE d.doc_kind = 'web'"
+                    " ORDER BY d.updated_at DESC, d.id"
+                ),
+                {"ws": workspace_id, "project": project_id},
+            )
+        )
+        .mappings()
+        .all()
+    )
+    return tuple(dict(row) for row in rows)
 
 
 def _canonical_json(value: object) -> bytes:
