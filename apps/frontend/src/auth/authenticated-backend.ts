@@ -1,7 +1,7 @@
 import "server-only";
 
 import { cookies } from "next/headers";
-import { clueApiBaseUrl } from "./config";
+import { clueApiBaseUrl, lumenApiBaseUrl } from "./config";
 import { backendRequestHeaders } from "./bff";
 import { ClueAuthenticationError } from "./errors";
 import { providerSessionToken } from "./server";
@@ -50,6 +50,39 @@ function backendUrl(path: string): URL {
     throw new Error("Clue backend paths must be origin-relative");
   }
   return new URL(path, clueApiBaseUrl());
+}
+
+/**
+ * Send one authenticated request from the Next server to the DESIGN API.
+ *
+ * The design sibling of `fetchAuthenticatedClueBackend`, and the server-side
+ * half of the same seam the browser-facing proxy owns
+ * (`app/api/clue/design/[...path]`): the provider session is proven here and
+ * the workspace re-authorized through Clue Postgres, and only that resolved
+ * workspace id is stamped — the design API trusts `X-Workspace-Id` blindly by
+ * contract, so it must never face a browser and must never be handed a
+ * browser-supplied workspace.
+ *
+ * Pass a resolved `context` when several calls share one page render;
+ * otherwise every call re-proves the session against the platform API.
+ */
+export async function fetchAuthenticatedDesignBackend(
+  path: string,
+  init: RequestInit = {},
+  context?: AuthenticatedBackendContext,
+): Promise<Response> {
+  if (!path.startsWith("/") || path.startsWith("//")) {
+    throw new Error("Design backend paths must be origin-relative");
+  }
+  const resolved = context ?? (await authenticatedBackendContext());
+  const headers = new Headers(init.headers);
+  headers.set("X-Workspace-Id", resolved.workspaceId);
+  return fetch(new URL(path, lumenApiBaseUrl()), {
+    ...init,
+    cache: "no-store",
+    headers,
+    redirect: "manual",
+  });
 }
 
 /**

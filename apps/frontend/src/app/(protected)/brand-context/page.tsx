@@ -1,4 +1,8 @@
 import type { Metadata } from "next";
+import {
+  authenticatedBackendContext,
+  fetchAuthenticatedDesignBackend,
+} from "@/auth/authenticated-backend";
 import { BrandContextScreen } from "@/features/brand-context/components/brand-context-screen";
 import { getBrandContextWorkspace } from "@/features/brand-context/data/brand-context.repository";
 import {
@@ -23,9 +27,23 @@ interface BrandContextPageProps {
   }>;
 }
 
+/**
+ * Slice 1: the read seam's server-side transport. A Server Component cannot
+ * call its own origin-relative BFF, so it uses the same provider-proof and
+ * workspace-stamping primitive the BFF uses (the W2.1 artifact-route pattern).
+ * The session is resolved ONCE and shared by every call of this render — a
+ * kit's assets are a read apiece, and re-proving the session for each would
+ * multiply the platform round trips.
+ */
+async function designFetch(): Promise<typeof fetch> {
+  const context = await authenticatedBackendContext();
+  return (input, init) =>
+    fetchAuthenticatedDesignBackend(String(input), init, context);
+}
+
 export default async function BrandContextPage({ searchParams }: BrandContextPageProps) {
   const [workspace, query] = await Promise.all([
-    getBrandContextWorkspace(),
+    getBrandContextWorkspace(designFetch),
     searchParams,
   ]);
 
