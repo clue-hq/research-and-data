@@ -419,6 +419,27 @@ verified: same inspector root + iframe element across a write; open sections per
 restored. LESSON for future W-work: never key-remount on write-cycle tokens — reserve keyed
 remounts for identity changes (document id, node id).
 
+## Gallery leg-derived feed — RATIFIED plan, parallel worktree (2026-08-18)
+
+Founder ratified the gallery data feed as **leg-derived v1** (per-project via
+design_leg→agent_thread join; workspace-wide REJECTED — cross-pollinates projects) with two
+more rulings: card renders WITHOUT artwork (`imagePath`/`originRunId` go optional; no
+placeholder imagery; thumbnails = future capture-pipeline work) and web docs only. Full plan:
+`docs/superpowers/plans/2026-08-18-gallery-leg-derived-artifact-feed.md` — executes on a
+SEPARATE worktree (`feature/gallery-leg-derived-feed`), merged back locally, while THIS
+branch continues W4. Shared-file watch: `editor-surface.tsx` (gallery lane touches only the
+artifacts feed + documentIds map). Unlocks (separate follow-up, not the worktree's scope):
+the W0.5 Decision-2 route swap of `/projects/{id}/gallery`. Contract rules to be recorded in
+apps/frontend/docs/api-contracts/projects.md by the worktree: creation surfaces must write
+project linkage; the read is replaced wholesale by the future artifact registry.
+
+## Next on THIS branch — W4 (remaining schemas + radius facet)
+
+W4.1 first (the §8-authorized radius facet in webClassFacets, BOTH trees, tests both
+places), then W4.2–W4.9 fan out per the W-plan (each schema task applies its own §2 deltas,
+citing rulings). W4.10 keyboard audit last. Also pending: founder sign-off on the W2/W3
+gates (checklist delivered 2026-08-18; latency + remount defects found in testing are fixed).
+
 ## Next
 
 - **W2** (read path): W2.1 real render in the artifact stage (sandboxed srcdoc iframe,
