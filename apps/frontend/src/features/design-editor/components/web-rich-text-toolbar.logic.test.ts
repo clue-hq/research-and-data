@@ -6,6 +6,7 @@ import {
   computeToolbarPosition,
   richTextLinkSubmission,
   richTextToolbarValidContext,
+  toolbarKnownTokenNames,
   toolbarThemeTokens,
 } from "./web-rich-text-toolbar.logic";
 
@@ -154,6 +155,22 @@ test("ruling F3: palette-* ramp tokens are hidden from the color panels", () => 
     }),
     [["accent", "#f54e00"]],
   );
+});
+
+test("F3 hides ramps from the SWATCHES but never from knownTokens", () => {
+  // `knownTokens` is not a display list: the runtime uses it as the set of
+  // classes to STRIP before applying the new one
+  // (webRichTextRuntime.ts:1131-1147). Filtering ramps out of it would leave a
+  // node's existing `text-palette-*` class in place alongside the new
+  // `text-accent`, i.e. two conflicting color classes on one text run.
+  const theme = {
+    bodyFamily: null,
+    displayFamily: null,
+    tokens: { "palette-primary-500": "#123456", accent: "#f54e00" },
+  };
+  assert.deepEqual(toolbarThemeTokens(theme).map(([name]) => name), ["accent"]);
+  assert.deepEqual(toolbarKnownTokenNames(theme), ["accent", "palette-primary-500"]);
+  assert.deepEqual(toolbarKnownTokenNames(null), []);
 });
 
 // --- positioning (source: fixed-position math, EDGE_GAP 12 / RANGE_GAP 10) --

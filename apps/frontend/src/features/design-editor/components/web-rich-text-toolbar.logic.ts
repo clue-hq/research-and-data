@@ -94,7 +94,10 @@ export function classFacetValue(
  * tokens are hidden, exactly as the W4.0 inspector mapper
  * (`adapter/theme-options.ts::buildThemeColorOptions`) hides them. F3 says
  * every color-consuming surface inherits it, and two color surfaces over the
- * same theme must not disagree about which tokens exist.
+ * same theme must not disagree about which tokens are offered.
+ *
+ * Display only — see {@link toolbarKnownTokenNames} for why the command's
+ * token list is a different, unfiltered one.
  */
 export function toolbarThemeTokens(
   theme: WebTheme | null | undefined,
@@ -102,6 +105,27 @@ export function toolbarThemeTokens(
   return Object.entries(theme?.tokens ?? {})
     .filter(([name]) => !name.toLowerCase().startsWith("palette-"))
     .sort(([left], [right]) => left.localeCompare(right));
+}
+
+/**
+ * Every token name the theme defines, ramps INCLUDED — the `knownTokens` a
+ * `set_class_facet` command carries.
+ *
+ * This deliberately does NOT inherit F3's filter, because `knownTokens` is not
+ * a display list: the runtime uses it both as the allowlist for the token
+ * being applied and as the set of `${prefix}${token}` classes to STRIP from
+ * the run first (`iframe/webRichTextRuntime.ts:1131-1147`). Hiding the ramps
+ * here would leave an agent-authored `text-palette-primary-500` in place
+ * beside the newly applied `text-accent` — two conflicting color classes on
+ * one text run, resolved by whatever the stylesheet order happens to be. F3
+ * governs what the user is OFFERED, not what a write is allowed to clean up.
+ */
+export function toolbarKnownTokenNames(
+  theme: WebTheme | null | undefined,
+): string[] {
+  return Object.keys(theme?.tokens ?? {}).sort((left, right) =>
+    left.localeCompare(right),
+  );
 }
 
 /**

@@ -24,6 +24,7 @@ import {
   computeToolbarPosition,
   richTextLinkSubmission,
   richTextToolbarValidContext,
+  toolbarKnownTokenNames,
   toolbarThemeTokens,
   type ToolbarPosition,
 } from "./web-rich-text-toolbar.logic";
@@ -185,8 +186,13 @@ export function WebRichTextToolbar({
   const [variableFallback, setVariableFallback] = useState("");
   const [variableError, setVariableError] = useState<string | null>(null);
 
+  // Two token lists, deliberately: the OFFERED swatches (F3-filtered, and what
+  // the facet state is read against, so an off-list ramp shows as no
+  // selection — the inspector's documented F3 behaviour) and the full set the
+  // command carries so the runtime can strip the classes it replaces.
   const tokens = toolbarThemeTokens(theme);
   const tokenNames = tokens.map(([name]) => name);
+  const knownTokens = toolbarKnownTokenNames(theme);
   const textColor = classFacetValue(selection, "text-", tokenNames);
   const highlight = classFacetValue(selection, "bg-", tokenNames);
   const validContext = richTextToolbarValidContext(selection);
@@ -295,7 +301,7 @@ export function WebRichTextToolbar({
       type: "set_class_facet",
       facet,
       token,
-      knownTokens: tokenNames,
+      knownTokens,
     });
     setOpenPanel(null);
   };
