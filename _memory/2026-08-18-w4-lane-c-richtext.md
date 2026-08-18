@@ -107,10 +107,36 @@ lint, ds-build, build. Implementer report: `.superpowers/sdd/…/task-5-report.m
 shows beneath the form — pre-existing lane A/B state; footer hint unconditional, source
 parity; post-commit remount flicker, same as rich-text).
 
+## Trunk merged in (2026-08-19, `84d8a79e`)
+
+`integration/frontend-design-part-iv-v2` (23 commits, incl. the lane-B merge — so the
+"lane C after lane B" ordering is satisfied) merged INTO lane C ahead of the view-mode
+canvas work. Two conflicts, both additive unions: editor-surface.tsx (lane C rich-text
+session + W4.7 bindings AND lane B's useReplaceImage), web-inspector.tsx (TextControls
+richTextRange + ImageControls onReplaceImage). Gates on merged tree: 723/723, lint,
+ds-build, build; props form browser-smoked post-merge. The eventual lane-C → v2 merge is
+now conflict-free (dry-run verified before merging).
+
+## View-mode canvas — founder rulings (2026-08-19, NOT yet implemented)
+
+Investigation (this session): view mode reuses the editor-bridged render, so the bridge's
+capture-phase handler preventDefaults ALL anchor clicks (web_bridge.py:378-382, by
+design) AND the iframe sandbox (`allow-scripts`, web-artifact-canvas.tsx:235) lacks
+allow-popups — two independent blockers; links in artifacts have never been clickable in
+the shell. Link WRITES are fine (W4.8b verified durable + correct markup). RULINGS:
+(1) Edit OFF = actual website — clean bridge-free render (same endpoint, omit `bridge`
+param; verified script-free with correct anchors), no hover/selection chrome;
+(2) ALL view-mode canvas links open a NEW TAB (Figma-preview convention; `<base
+target="_blank">` + sandbox `allow-popups allow-popups-to-escape-sandbox`). Scope:
+use-web-render.ts (mode-aware fetch), web-artifact-canvas.tsx (view mount), a pure
+srcdoc helper + test, `editing` prop through artifact-stage.tsx. Founder-directed
+addendum to lane C (outside the ported-features contract).
+
 ## Open / next
 
-- Full W4.8+W4.7 combined browser pass, whole-branch review, close-out. Lane C merges
-  AFTER lane B (rebase on the updated trunk first).
+- Implement the view-mode canvas addendum (rulings above).
+- Full W4.8+W4.7 combined browser pass (now incl. view-mode), whole-branch review,
+  close-out, merge lane C → v2 (in the istanbul workspace; user pushes/decides).
 - Carried caveat (source semantics): a rich-text commit landing while another write is in
   flight is silently dropped after the Lexical session destroyed itself — unrecoverable;
   same upstream.
