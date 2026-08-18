@@ -16,6 +16,8 @@ import {
   customComponentControlKind,
   customComponentDraft,
   customComponentDraftCommit,
+  customComponentDraftKeyAction,
+  customComponentDraftKeySuppressesBlur,
   customComponentFields,
   customComponentPropInputId,
   customComponentPropLabel,
@@ -318,6 +320,31 @@ test("an emptied TEXT field commits the empty string — only numbers revert", (
     }),
     { kind: "commit", value: "" },
   );
+});
+
+// --- what a key press means to a draft field --------------------------------
+//
+// Browser-verified defect (2026-08-18): Escape COMMITTED the abandoned draft.
+// Both keys end the field's focus, and the wrapping span's `onBlur` settle then
+// ran with the pre-Escape closure, writing the garbage to the wire. The rule
+// below is the binding one — Escape restores and sends NOTHING (brief; source
+// intent :146-149) — and it names the blur that must be suppressed, which is
+// the half the event wiring gets wrong.
+
+test("Enter settles the draft; Escape abandons it; anything else does nothing", () => {
+  assert.equal(customComponentDraftKeyAction("Enter"), "settle");
+  assert.equal(customComponentDraftKeyAction("Escape"), "abandon");
+  assert.equal(customComponentDraftKeyAction("a"), "none");
+  assert.equal(customComponentDraftKeyAction("Tab"), "none");
+});
+
+test("both handled keys end focus, so the blur they cause must NOT settle again", () => {
+  // Enter has already settled and Escape must never settle at all — either way
+  // the follow-on blur is a duplicate, and for Escape a corrupting one.
+  assert.equal(customComponentDraftKeySuppressesBlur("settle"), true);
+  assert.equal(customComponentDraftKeySuppressesBlur("abandon"), true);
+  // An ordinary keystroke leaves focus alone; a later real blur still settles.
+  assert.equal(customComponentDraftKeySuppressesBlur("none"), false);
 });
 
 // --- the whole-props payload (source :286-291; the W3.2 wholesale lesson) ----

@@ -191,6 +191,49 @@ export function customComponentDraftCommit({
   return draft === value ? { kind: "none" } : { kind: "commit", value: draft };
 }
 
+/** What a key press does to a text/number draft. */
+export type CustomComponentDraftKeyAction =
+  /** Enter — settle the draft through {@link customComponentDraftCommit}. */
+  | "settle"
+  /** Escape — restore the live value and send NOTHING. */
+  | "abandon"
+  /** An ordinary keystroke; the draft just keeps typing. */
+  | "none";
+
+export function customComponentDraftKeyAction(
+  key: string,
+): CustomComponentDraftKeyAction {
+  if (key === "Enter") return "settle";
+  if (key === "Escape") return "abandon";
+  return "none";
+}
+
+/**
+ * Whether the blur that a handled key causes must skip its settle.
+ *
+ * Browser-verified defect (2026-08-18): Escape COMMITTED the very draft it was
+ * supposed to abandon. Both handled keys end the field's focus, and the
+ * wrapping element's blur-settle then ran in the same browser task holding the
+ * PRE-key draft — so Escape wrote the abandoned garbage to the wire, and Enter
+ * settled a second time (harmless today only because the manual-edits
+ * controller drops an apply while one is in flight).
+ *
+ * So the follow-on blur is always a duplicate: after `settle` it has already
+ * happened, and after `abandon` it must never happen at all. An ordinary
+ * keystroke suppresses nothing — a later, real blur still settles the field.
+ *
+ * This is a deliberate deviation from the source's event WIRING, which carries
+ * the same structural hazard (`WebCustomComponentInspector.tsx:141-150`: both
+ * branches call `.blur()` under an `onBlur={commitDraft}` input). The binding
+ * semantics are the brief's and the source's INTENT — Escape restores and sends
+ * nothing — not its handler arrangement.
+ */
+export function customComponentDraftKeySuppressesBlur(
+  action: CustomComponentDraftKeyAction,
+): boolean {
+  return action !== "none";
+}
+
 /** One row of the form: the schema decisions above, resolved against the live
  * node props, in the order `props_schema.properties` declares them. */
 export interface CustomComponentField {

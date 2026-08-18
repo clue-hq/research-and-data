@@ -7,6 +7,8 @@ import type { WebLayerRow } from "@/features/design-editor/adapter/layers";
 import {
   customComponentDraft,
   customComponentDraftCommit,
+  customComponentDraftKeyAction,
+  customComponentDraftKeySuppressesBlur,
   customComponentFields,
   customComponentSelectCommit,
   customComponentSelectLabel,
@@ -895,6 +897,17 @@ function CustomComponentPropDraftControl({
   // replaced by the call site's remount key — this repo's lint forbids a
   // setState inside an effect (same discipline as W4.8a/b).
   const [draft, setDraft] = useState(field.draft);
+  // Browser-verified defect (2026-08-18) and its fix. Enter and Escape both end
+  // the field's focus, and the blur they cause fires in the SAME browser task —
+  // holding the pre-key `draft` closure. So the blur-settle used to run with the
+  // stale draft: Escape wrote the very garbage it was abandoning, and Enter
+  // settled twice (survivable only because the manual-edits controller drops an
+  // apply while one is in flight). This ref makes the key own the outcome and
+  // the follow-on blur a no-op. Deliberate deviation from the source's event
+  // wiring, which has the same hazard (:141-150) — the binding semantics are the
+  // brief's and the source's INTENT (Escape restores and sends NOTHING), not its
+  // handler arrangement.
+  const skipBlurSettle = useRef(false);
   const settle = () => {
     const decision = customComponentDraftCommit({
       draft,
@@ -908,17 +921,26 @@ function CustomComponentPropDraftControl({
     <InspectorField label={field.displayLabel}>
       <span
         className={`${styles.inspectorControl} ${styles.inspectorInputControl}`}
-        onBlur={settle}
+        onBlur={() => {
+          if (skipBlurSettle.current) {
+            skipBlurSettle.current = false;
+            return;
+          }
+          settle();
+        }}
         onKeyDown={(event) => {
-          if (event.key === "Enter") {
+          const action = customComponentDraftKeyAction(event.key);
+          if (action === "none") return;
+          skipBlurSettle.current = customComponentDraftKeySuppressesBlur(action);
+          if (action === "settle") {
             event.preventDefault();
             settle();
-            (event.target as HTMLInputElement).blur();
-          } else if (event.key === "Escape") {
-            // Escape abandons the draft and sends nothing (source :146-149).
+          } else {
+            // Escape abandons the draft and sends nothing (source intent
+            // :146-149) — the write above is deliberately not reached.
             setDraft(field.draft);
-            (event.target as HTMLInputElement).blur();
           }
+          (event.target as HTMLInputElement).blur();
         }}
       >
         <input
