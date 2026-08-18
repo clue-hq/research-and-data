@@ -96,15 +96,22 @@ def _strong_key(candidate: CommitteePersonCandidate) -> str | None:
 
 def _provenance_params(
     candidate: CommitteePersonCandidate,
-) -> tuple[ExtractionMethod, SourceTier, str | None, str | None]:
-    """The provenance flavor for a role/persona claim derived from the LLM role inference.
+) -> tuple[ExtractionMethod, SourceTier, str, str] | None:
+    """The provenance flavor for a role/persona claim derived from the LLM role inference, or
+    ``None`` when the candidate cannot ground one.
 
     The role is an LLM judgment — the least-trusted layer (tier 4), grounded in the person's title
     (the ``evidence_span``) found at a public URL (substrate §4). The tier-4 path requires BOTH a
-    grounding URL *and* a non-empty title: a tier-4 claim with a null ``evidence_span`` can never be
-    promoted (``core.can_be_promoted``), so when either is missing we fall back to an internal
-    classification (``HUMAN``/tier 1, no URL) — mirroring M6.3's derived-claim convention — so the
-    role claim is always writable *and* promotable."""
+    grounding URL *and* a non-empty title: the frozen ``core.Claim`` validator requires a
+    ``source_url`` for any ``llm_synthesis`` claim, and a tier-4 claim with a null
+    ``evidence_span`` can never be promoted (``core.can_be_promoted``).
+
+    When either is missing this returns ``None`` and the caller writes **no** role/persona claim.
+    M6.3's ``HUMAN``/tier-1 derived-claim convention is **retired here** (contract §5.2: "must not
+    create new false human provenance; agent-derived role writes must remain identified as
+    agent-derived") — stamping an LLM guess as a human-asserted fact is the defect, not the fix.
+    An ungrounded candidate keeps an honestly empty role; the member itself still survives via its
+    discovery-provenance and professional-fact claims."""
     grounding_url = candidate.source_url or candidate.linkedin_url
     if grounding_url is not None and candidate.title and candidate.title.strip():
         return (
@@ -113,7 +120,7 @@ def _provenance_params(
             grounding_url,
             f"title: {candidate.title}",
         )
-    return ExtractionMethod.HUMAN, SourceTier(1), None, None
+    return None
 
 
 async def _write_committee_claim(
@@ -175,10 +182,17 @@ async def _write_role_and_persona(
     workspace_id: str,
     identity_binding: IdentityBinding,
     product_id: str | None,
-) -> tuple[ClaimId, ClaimId]:
+) -> tuple[ClaimId, ClaimId] | None:
     """Write the ``contact.role_on_committee`` (with the plausibility verdict) + ``contact.persona``
-    claims for one admitted member; returns their claim ids."""
-    method, tier, source_url, evidence_span = _provenance_params(candidate)
+    claims for one admitted member; returns their claim ids.
+
+    Returns ``None`` — writing **neither** claim — when the candidate cannot ground a tier-4
+    agent-derived role (:func:`_provenance_params`). The pair is written together or not at all:
+    never a half-written role without its persona, and never a fallback provenance."""
+    provenance = _provenance_params(candidate)
+    if provenance is None:
+        return None
+    method, tier, source_url, evidence_span = provenance
     role_claim_id = await _write_committee_claim(
         conn,
         contact_entity_id,
@@ -452,7 +466,7 @@ async def discover_committee(
             total_cost += verdict.cost_cents
             source_cost += verdict.cost_cents
 
-            role_claim_id, persona_claim_id = await _write_role_and_persona(
+            role_ids = await _write_role_and_persona(
                 conn,
                 contact_entity_id,
                 candidate,
@@ -471,6 +485,18 @@ async def discover_committee(
                 identity_binding=outcome.identity_binding,
                 product_id=spec.product_id if spec is not None else None,
             )
+            admitted += 1
+            new_admits += 1
+            if role_ids is None:
+                # The candidate could not ground an agent-derived role (no URL and/or no title), so
+                # no role/persona claim was written — an honestly empty role, never a HUMAN-stamped
+                # guess (contract §5.2). The person is genuinely admitted (counted above; the
+                # discovery-provenance + professional-fact claims are durable), but
+                # ``CommitteeMemberRef`` requires both claim ids, so it cannot be represented in
+                # ``members`` yet — restoring that display continuity is Task D4's, which owns the
+                # result shape. Until then this member's claim ids are absent from ``claim_refs``.
+                continue
+            role_claim_id, persona_claim_id = role_ids
             members.append(
                 CommitteeMemberRef(
                     contact_entity_id=contact_entity_id,
@@ -484,8 +510,6 @@ async def discover_committee(
                     professional_claim_ids=professional_claim_ids,
                 )
             )
-            admitted += 1
-            new_admits += 1
 
         rule.record(new_admits=new_admits, candidates_seen=seen_this_source, cost_cents=source_cost)
         reason = rule.reason()

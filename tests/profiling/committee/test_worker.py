@@ -11,28 +11,36 @@ from contextlib import asynccontextmanager
 from decimal import Decimal
 from uuid import UUID
 
+from pydantic import JsonValue
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_core import (
     AspectContext,
     AspectWorker,
+    ExtractionMethod,
     IdentityBinding,
     Persona,
     ResearchMode,
+    SourceTier,
     UseClass,
     WorkerStatus,
 )
 from clue_research.claimstore import WorkspaceScope, claims_for, entities_with_field_claim
 from clue_research.profiling.committee import (
+    CURRENT_TITLE,
     PERSONA,
     ROLE_ON_COMMITTEE,
+    CandidateFactProvenance,
+    CandidateProfessionalFact,
     CommitteeAspectWorker,
     CommitteeConfig,
     CommitteeStoppingConfig,
     discover_committee,
 )
+from clue_research.profiling.committee.admission import DISCOVERY_PROVENANCE_FIELD
 from clue_research.profiling.committee.coverage import CommitteeStopReason
 from clue_spine import create_brand, create_product
+from clue_storage import artifact_key, content_address, record_artifact
 
 from ..conftest import (
     FakeCommitteeSource,
@@ -408,6 +416,249 @@ def test_all_candidates_without_strong_keys_stop_gracefully(require_profiling_db
             from clue_research.profiling.committee.coverage import CommitteeCoverageConfidence
 
             assert result.coverage.confidence is CommitteeCoverageConfidence.NONE
+
+    run_async(scenario())
+
+
+_ARTIFACT_BODY = b"d1 ungrounded-candidate people response"
+
+
+async def _seed_professional_artifact(conn: AsyncConnection) -> str:
+    """Seed the snapshot artifact a professional fact must cite, returning its storage key."""
+    digest = content_address(_ARTIFACT_BODY)
+    key = artifact_key(_TENANT, digest)
+    await record_artifact(
+        conn,
+        storage_key=key,
+        workspace_id=_TENANT,
+        content_sha256=digest,
+        media_type="application/json",
+        size_bytes=len(_ARTIFACT_BODY),
+        source_key="fixture_people",
+        source_url="https://sumble.example/fixture_people",
+    )
+    return key
+
+
+def _professional_fact(value: JsonValue, *, key: str) -> CandidateProfessionalFact:
+    return CandidateProfessionalFact(
+        field_key=CURRENT_TITLE,
+        value_json=value,
+        provenance_kind=CandidateFactProvenance.PROVIDER_RETURNED,
+        source_key="fixture_people",
+        source_tier=1,
+        source_url="https://sumble.example/fixture_people/person-1",
+        evidence_span=f"provider_returned {CURRENT_TITLE}: {value}",
+        artifact_key=key,
+        source_operation_ref="d1-operation:operation-1",
+        source_snapshot_ref="d1-snapshot:operation-1:fixture_people:fingerprint-1",
+        source_request_ref="d1-request:fixture_people:fingerprint-1",
+        confidence=0.9,
+    )
+
+
+async def _committee_claims(
+    conn: AsyncConnection, contact_entity_id: UUID, field_key: str
+) -> list[object]:
+    return list(
+        await claims_for(
+            conn,
+            contact_entity_id,
+            field_key,
+            scope=WorkspaceScope.for_workspace(_TENANT),
+        )
+    )
+
+
+def test_ungrounded_candidate_gets_no_role_or_persona_claim(require_profiling_db: None) -> None:
+    """A candidate with a title but no grounding URL writes NO role/persona claim.
+
+    The role is an LLM judgment; without a grounding URL a tier-4 claim is unconstructible (the
+    frozen ``core.Claim`` validator requires a ``source_url`` for ``llm_synthesis``). The old code
+    fell back to ``HUMAN``/tier-1 — stamping an agent guess as a human-asserted fact. Contract §5.2:
+    that false human provenance is forbidden, so the role/persona pair is honestly absent while the
+    member itself survives via its discovery + professional-fact claims."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            await seed_packs(conn)
+            account = await insert_test_account(conn)
+            key = await _seed_professional_artifact(conn)
+            # verified_email is a strong key (admitted), but there is NO grounding URL:
+            # no source_url and no linkedin_url.
+            emailed = make_candidate(
+                source_key="apollo_people",
+                verified_email="jane.cfo@acme.example",
+                full_name="Jane CFO",
+                title="Chief Financial Officer",
+                professional_facts=(_professional_fact("Chief Financial Officer", key=key),),
+            )
+            source = FakeCommitteeSource(source_key="apollo_people", tier=2, candidates=[emailed])
+            result = await discover_committee(
+                conn,
+                account_entity_id=account.id,
+                run_id=_RUN,
+                workspace_id=_TENANT,
+                sources=[source],
+                gateway=FakeGateway(),
+                role_model="model-x",
+            )
+
+            assert result.admitted == 1  # the existence gate admitted a real person
+            assert result.dropped == 0
+
+            scope = WorkspaceScope.for_workspace(_TENANT)
+            contacts = await entities_with_field_claim(
+                conn, DISCOVERY_PROVENANCE_FIELD, run_id=_RUN, scope=scope
+            )
+            assert len(contacts) == 1  # the member survives — its discovery claim exists
+            contact_id = contacts[0]
+
+            assert await _committee_claims(conn, contact_id, ROLE_ON_COMMITTEE) == []
+            assert await _committee_claims(conn, contact_id, PERSONA) == []
+            # ...but the professional facts are materialized exactly as before.
+            titles = await _committee_claims(conn, contact_id, CURRENT_TITLE)
+            assert len(titles) == 1
+
+    run_async(scenario())
+
+
+def test_titleless_candidate_gets_no_role_or_persona_claim(require_profiling_db: None) -> None:
+    """A candidate with a grounding URL but no title also writes NO role/persona claim.
+
+    A tier-4 claim with a null ``evidence_span`` can never be promoted (``core.can_be_promoted``),
+    and the title IS the evidence span for a role judgment — so a title-less candidate has nothing
+    to ground the inference on. Honestly empty beats a HUMAN-stamped guess."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            await seed_packs(conn)
+            account = await insert_test_account(conn)
+            for title in (None, "   "):
+                blank = make_candidate(
+                    source_key="apollo_people",
+                    linkedin_url=f"https://linkedin.com/in/no-title-{title!r}",
+                    full_name="Nameless Role",
+                    title=title,
+                    source_url="https://acme.example/team",
+                )
+                source = FakeCommitteeSource(source_key="apollo_people", tier=2, candidates=[blank])
+                result = await discover_committee(
+                    conn,
+                    account_entity_id=account.id,
+                    run_id=_RUN,
+                    workspace_id=_TENANT,
+                    sources=[source],
+                    gateway=FakeGateway(),
+                    role_model="model-x",
+                )
+                assert result.admitted == 1
+                assert result.dropped == 0
+
+            scope = WorkspaceScope.for_workspace(_TENANT)
+            contacts = await entities_with_field_claim(
+                conn, DISCOVERY_PROVENANCE_FIELD, run_id=_RUN, scope=scope
+            )
+            assert len(contacts) == 2  # both members survive via their discovery claims
+            for contact_id in contacts:
+                assert await _committee_claims(conn, contact_id, ROLE_ON_COMMITTEE) == []
+                assert await _committee_claims(conn, contact_id, PERSONA) == []
+
+    run_async(scenario())
+
+
+def test_no_committee_claim_is_ever_stamped_human(require_profiling_db: None) -> None:
+    """Across a mixed run (grounded + ungrounded members), ``ExtractionMethod.HUMAN`` never
+    appears — no code path in the committee worker may manufacture human provenance."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            await seed_packs(conn)
+            account = await insert_test_account(conn)
+            key = await _seed_professional_artifact(conn)
+            candidates = [
+                _cfo(),  # grounded: url + title
+                make_candidate(  # ungrounded: no url
+                    source_key="apollo_people",
+                    verified_email="pat.ops@acme.example",
+                    full_name="Pat Ops",
+                    title="VP of Operations",
+                    professional_facts=(_professional_fact("VP of Operations", key=key),),
+                ),
+                make_candidate(  # grounded url, no title
+                    source_key="apollo_people",
+                    linkedin_url="https://linkedin.com/in/untitled",
+                    full_name="Untitled Person",
+                    source_url="https://acme.example/team",
+                ),
+                _ghost(),  # dropped at the gate
+            ]
+            source = FakeCommitteeSource(source_key="apollo_people", tier=2, candidates=candidates)
+            await discover_committee(
+                conn,
+                account_entity_id=account.id,
+                run_id=_RUN,
+                workspace_id=_TENANT,
+                sources=[source],
+                gateway=FakeGateway(),
+                role_model="model-x",
+            )
+
+            scope = WorkspaceScope.for_workspace(_TENANT)
+            contacts = await entities_with_field_claim(
+                conn, DISCOVERY_PROVENANCE_FIELD, run_id=_RUN, scope=scope
+            )
+            assert len(contacts) == 3
+            seen = 0
+            for contact_id in contacts:
+                for field_key in (
+                    DISCOVERY_PROVENANCE_FIELD,
+                    ROLE_ON_COMMITTEE,
+                    PERSONA,
+                    CURRENT_TITLE,
+                ):
+                    for claim in await claims_for(conn, contact_id, field_key, scope=scope):
+                        seen += 1
+                        assert claim.extraction_method is not ExtractionMethod.HUMAN
+            assert seen > 0  # the assertion above actually ran over real claims
+
+    run_async(scenario())
+
+
+def test_grounded_candidate_keeps_tier4_llm_synthesis_provenance(
+    require_profiling_db: None,
+) -> None:
+    """The kept path is unchanged: a candidate with BOTH a grounding URL and a title still gets
+    tier-4 ``llm_synthesis`` role/persona claims spanned on its title.
+
+    (``test_professional_materialization_c1.py`` asserts the extraction method too; this pins the
+    full tuple — method, tier, span and url — so the surviving branch cannot silently drift.)"""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            await seed_packs(conn)
+            account = await insert_test_account(conn)
+            source = FakeCommitteeSource(source_key="apollo_people", tier=2, candidates=[_cfo()])
+            result = await discover_committee(
+                conn,
+                account_entity_id=account.id,
+                run_id=_RUN,
+                workspace_id=_TENANT,
+                sources=[source],
+                gateway=FakeGateway(),
+                role_model="model-x",
+            )
+            assert len(result.members) == 1
+            member = result.members[0]
+            scope = WorkspaceScope.for_workspace(_TENANT)
+            for field_key in (ROLE_ON_COMMITTEE, PERSONA):
+                claims = await claims_for(conn, member.contact_entity_id, field_key, scope=scope)
+                assert len(claims) == 1
+                claim = claims[0]
+                assert claim.extraction_method is ExtractionMethod.LLM_SYNTHESIS
+                assert claim.source_tier == SourceTier(4)
+                assert claim.source_url == "https://acme.example/team"
+                assert claim.evidence_span == "title: Chief Financial Officer"
 
     run_async(scenario())
 
