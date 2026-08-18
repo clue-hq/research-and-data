@@ -22,7 +22,21 @@ founder pushes. Plan: `docs/superpowers/plans/2026-08-18-gallery-leg-derived-art
   - Decision: `collateralType: "microsite"` (enum has no "website"; gallery's own
     `defaultCollateralType` maps website→microsite; plan pre-authorized the enum check).
 
-## Explicit NOT-YET-TESTED register (founder asked for this list to be kept)
+## Explicit NOT-YET-TESTED register — CLOSED 2026-08-18 (`acd0aa75`, founder-ordered pass)
+
+Dispositions: 1 ordering → DB test (3 docs out of order); 2 tie-break → DB test (uuid-order
+agreement PG↔Python); 3 utcInstant TypeError → tested via toProjectArtifact (both fields);
+4 wire rejection → 3 loud-rejection cases (missing origin_thread_id/created_at/updated_at);
+5 editedLabelFor NaN → FIXED (now throws the same TypeError as utcInstant; the page's feed
+loader degrades to an empty feed) + tested; 6 wording ladder → already pinned by tests —
+founder attestation of the WORDING remains open (unchanged); 7 volume → 40-doc
+whole-feed-in-order DB test + EXPLAIN ANALYZE at dev scale (0.77ms execution, 3.4ms plan) —
+pagination/index stay future work by design; 8 artifact-viewer anchor → left as recorded:
+unreachable (HTTP artifacts are the empty tuple; every fixture has imagePath), degrades to a
+non-navigating <a>, components aren't rendered in this repo's test idiom, and hiding the
+Export tile would alter dummy presentation without a ruling.
+
+Original register (as recorded):
 
 1. [S1] `ORDER BY d.updated_at DESC` has no test — no test returns two documents in one feed.
 2. [S1] Latest-leg-wins tie-break on `leg.id` at equal `created_at` untested.
