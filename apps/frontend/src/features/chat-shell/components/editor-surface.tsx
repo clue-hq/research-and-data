@@ -9,6 +9,7 @@ import { buildWebLayerRows } from "@/features/design-editor/adapter/layers";
 import { buildThemeColorOptions } from "@/features/design-editor/adapter/theme-options";
 import type { WebArtifactCanvasControls } from "@/features/design-editor/components/web-artifact-canvas";
 import { useInspectorWrites } from "@/features/design-editor/hooks/use-inspector-writes";
+import { useReplaceImage } from "@/features/design-editor/hooks/use-replace-image";
 import { useWebArtifactSelection } from "@/features/design-editor/hooks/use-web-artifact-selection";
 import { useWebTheme } from "@/features/design-editor/hooks/use-web-theme";
 import type { ProjectArtifact } from "@/features/projects/model/project-workspace";
@@ -89,6 +90,18 @@ export function EditorSurface({
     selection: webSelection.selection,
   });
 
+  // W4.2 (§1 row 12): the Replace-image pick — upload the file to the asset
+  // store, then apply `upsert_asset` (new records only) + `replace_asset` as
+  // one batch through the SAME manual-edits controller, so the edit carries
+  // `base_version`, reloads on success, and reports failure in the one inline
+  // slot the inspector already renders.
+  const onReplaceImage = useReplaceImage({
+    applyOps: writes.applyOps,
+    document: webSelection.document,
+    onError: writes.reportError,
+    selection: webSelection.selection,
+  });
+
   // W2.3 (completing the W2 exit gate): while EDITING a real web document,
   // the inspector docks beside the canvas — the dummy's own editing
   // arrangement (ruling R6: the inspector replaces the conversation column;
@@ -160,6 +173,7 @@ export function EditorSurface({
               }}
               hydrated={webSelection.selection?.hydrated}
               layers={layerRows}
+              onReplaceImage={onReplaceImage}
               onSelectLayer={(nodeId) =>
                 canvasControls.current?.selectNode(nodeId)
               }

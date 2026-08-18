@@ -378,3 +378,100 @@ export const HARVESTED_PAGE_V33: { page_root: string; nodes: Record<string, WebN
     }
   }
 } as never;
+/**
+ * W4.2 (lane B) fixtures: a second REAL harvest, seeded for the image/button
+ * radius work — document `doc_298a0c3a512640fbb6823b68b8016733` version 1,
+ * page `home`, captured 2026-08-18 via the design API and copied byte-faithful
+ * from `.superpowers/sdd/2026-08-18-w4-lane-b-brief/harvested-nodes.json`.
+ * The three images cover the radius cases the first harvest lacks:
+ * `img_plain` an arbitrary pixel radius (`rounded-[8px]`), `img_linked` a
+ * named all-corners radius plus one corner override (`rounded-lg
+ * rounded-tl-[4px]`) and the linked/new-tab pair, `img_bare` the bare
+ * `rounded` default (which the engine parses as null, §1 row 14).
+ */
+export const HARVESTED_IMAGE_PAGE: {
+  page_root: string;
+  nodes: Record<string, WebNode>;
+} = {
+  "page_root": "root",
+  "nodes": {
+    "cta": {
+      "id": "cta",
+      "href": "https://example.com/offer",
+      "kind": "button",
+      "name": "CTA",
+      "label": "See the offer",
+      "classes": "bg-accent text-dark px-4 py-2 rounded-md",
+      "new_tab": false,
+      "variant": "secondary"
+    },
+    "hero": {
+      "id": "hero",
+      "tag": "section",
+      "kind": "section",
+      "name": "Hero",
+      "classes": "flex flex-col gap-6 px-8 py-12 bg-light",
+      "children": [
+        "img_linked",
+        "img_plain",
+        "img_bare",
+        "cta"
+      ],
+      "anchor_id": "laneb-hero"
+    },
+    "root": {
+      "id": "root",
+      "kind": "container",
+      "classes": "",
+      "new_tab": false,
+      "children": [
+        "hero"
+      ]
+    },
+    "img_bare": {
+      "id": "img_bare",
+      "alt": "Bare rounded",
+      "kind": "image",
+      "name": "Bare rounded",
+      "classes": "rounded w-80",
+      "new_tab": false,
+      "asset_id": "asset_c42b6ba24117"
+    },
+    "img_plain": {
+      "id": "img_plain",
+      "alt": "Teal banner plain",
+      "kind": "image",
+      "name": "Plain banner",
+      "classes": "object-contain rounded-[8px] w-80",
+      "new_tab": false,
+      "asset_id": "asset_c42b6ba24117"
+    },
+    "img_linked": {
+      "id": "img_linked",
+      "alt": "Teal banner",
+      "href": "https://example.com/teal",
+      "kind": "image",
+      "name": "Linked banner",
+      "classes": "object-cover rounded-lg rounded-tl-[4px] w-80",
+      "new_tab": true,
+      "asset_id": "asset_c42b6ba24117"
+    }
+  }
+} as never;
+
+/**
+ * Documented classes-variants for the radius cases the harvest does not carry:
+ * the SAME harvested node (`img_plain`), only its `classes` string altered —
+ * no hand-invented node shape. Keyed by the case each one proves.
+ */
+export const IMAGE_RADIUS_CLASS_VARIANTS = {
+  /** No radius utility at all → the designed empty, not "0". */
+  none: "object-contain w-80",
+  /** A variant-prefixed token is opaque to the facets (engine header). */
+  variantOnly: "hover:rounded-xl w-80",
+  /** An arbitrary value that is not the `[<digits>px]` shape displays
+   * verbatim. */
+  arbitraryNonPixel: "rounded-[50%] w-80",
+  /** A named scale value displays verbatim. */
+  named: "rounded-full w-80"
+} as const;

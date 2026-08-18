@@ -37,8 +37,12 @@ const FONT_SIZE_OPTIONS = ["12", "14", "16", "18", "20", "24", "32"] as const;
 const TEXT_STYLE_OPTIONS = ["Display", "H1", "H2", "H3", "H4", "Body", "Small", "Overline"] as const;
 const LINE_SPACING_OPTIONS = ["none", "tight", "snug", "normal", "relaxed", "loose"] as const;
 const FONT_WEIGHT_OPTIONS = ["Regular", "Medium", "Semi Bold", "Bold"] as const;
-const FILL_MODE_OPTIONS = ["Fit", "Fill", "Stretch", "Tile"] as const;
-const BUTTON_STYLE_OPTIONS = ["Primary", "Secondary", "Transparent", "Critical"] as const;
+// §2 delta (contract row 13): Tile is dropped — no engine object-fit value.
+const FILL_MODE_OPTIONS = ["Fit", "Fill", "Stretch"] as const;
+// §2 delta (contract row 16): Critical is dropped — no engine `critical`
+// variant. The engine's `outline`/`link` variants have no dummy slot, so a
+// node carrying one hydrates nothing and the select shows its default (§6(5)).
+const BUTTON_STYLE_OPTIONS = ["Primary", "Secondary", "Transparent"] as const;
 // Ruling 18b: the dummy's icon option lists (name / size / stroke) are gone
 // with the sections they fed — the engine backs none of them, and the ruling
 // hides rather than disables. The dummy's `InspectorDecoratedSelect` primitive
@@ -300,20 +304,69 @@ function PaddingControls({
   );
 }
 
+type RadiusCorner = "all" | "bottomLeft" | "bottomRight" | "topLeft" | "topRight";
+type RadiusValues = Record<RadiusCorner, string>;
+
+/** W4.2 (ruling R-B1): only a numeric commit writes (`N` → `rounded-[Npx]`) —
+ * and under founder ruling F2 that all-corners write also clears the per-corner
+ * overrides, which is what the corner fields mirror below. An empty commit
+ * clears the all-corners family only; a named scale value the field displays
+ * verbatim (`lg`) is no write at all, so nothing is mirrored for it either. */
+const NUMERIC_RADIUS = /^\d+$/;
+
+/** W4.2 (ruling R-B2): the five radius fields adopt the ratified R3 commit
+ * model — typed values draft locally and COMMIT on blur/Enter, so the write
+ * path never sees a per-keystroke event. Behavioral only: same DOM, classes,
+ * icons and aria-labels as the dummy ships. */
 export function RadiusControls({
+  onApplyAll,
   onChange,
   values,
 }: {
-  onChange: (
-    corner: "all" | "bottomLeft" | "bottomRight" | "topLeft" | "topRight",
-    value: string,
-  ) => void;
-  values: Record<"all" | "bottomLeft" | "bottomRight" | "topLeft" | "topRight", string>;
+  /** W4.2/F2 (the web image schema): the all-corners commit — ONE `radius.all`
+   * change, `clearsCorners` true when that write also clears the four corner
+   * overrides. Absent (the scene/ad image inspector, whose radius is dummy
+   * state and carries no F2 ruling) keeps the dummy's fan-out-to-four
+   * behaviour for the scan button. */
+  onApplyAll?: (value: string, clearsCorners: boolean) => void;
+  onChange: (corner: RadiusCorner, value: string) => void;
+  values: RadiusValues;
 }) {
+  const [drafts, setDrafts] = useState<RadiusValues>(values);
+  const setDraft = (corner: RadiusCorner, value: string) =>
+    setDrafts((current) => ({ ...current, [corner]: value }));
+
+  const commitAll = (value: string) => {
+    if (!onApplyAll) {
+      onChange("all", value);
+      return;
+    }
+    const clearsCorners = NUMERIC_RADIUS.test(value.trim());
+    onApplyAll(value, clearsCorners);
+    if (clearsCorners) {
+      setDrafts((current) => ({
+        ...current,
+        bottomLeft: "",
+        bottomRight: "",
+        topLeft: "",
+        topRight: "",
+      }));
+    }
+  };
+
   const applyAll = () => {
-    (["topLeft", "topRight", "bottomLeft", "bottomRight"] as const).forEach((corner) =>
-      onChange(corner, values.all),
-    );
+    if (!onApplyAll) {
+      // The dummy's own meaning, kept for the scene inspector.
+      (["topLeft", "topRight", "bottomLeft", "bottomRight"] as const).forEach((corner) =>
+        onChange(corner, values.all),
+      );
+      return;
+    }
+    // F2: the scan button's meaning IS the all-corners write, so it commits
+    // the all field's current draft even when unchanged — but an empty draft
+    // would clear the radius rather than apply one, so it is a no-op.
+    if (drafts.all.trim() === "") return;
+    commitAll(drafts.all);
   };
 
   return (
@@ -323,8 +376,11 @@ export function RadiusControls({
           ariaLabel="All corner radius"
           className={styles.radiusValue}
           leading={<InspectorIcon name="radius-all" size={16} />}
-          onChange={(value) => onChange("all", value)}
-          value={values.all}
+          onChange={(value) => setDraft("all", value)}
+          onCommit={() => {
+            if (drafts.all !== values.all) commitAll(drafts.all);
+          }}
+          value={drafts.all}
         />
         <button aria-label="Apply radius to all corners" className={styles.scanButton} onClick={applyAll} type="button">
           <InspectorIcon name="radius-scan" size={12} />
@@ -336,16 +392,25 @@ export function RadiusControls({
           ["topRight", "radius-top-right"],
           ["bottomLeft", "radius-bottom-left"],
           ["bottomRight", "radius-bottom-right"],
-        ] as const).map(([corner, icon]) => (
-          <span className={`${styles.inspectorControl} ${styles.inspectorInputControl} ${styles.cornerRadiusField}`} key={corner}>
-            <InspectorIcon name={icon} size={16} />
-            <input
-              aria-label={`${corner} radius`}
-              onChange={(event) => onChange(corner, event.target.value)}
-              value={values[corner]}
-            />
-          </span>
-        ))}
+        ] as const).map(([corner, icon]) => {
+          const commit = () => {
+            if (drafts[corner] !== values[corner]) onChange(corner, drafts[corner]);
+          };
+          return (
+            <span className={`${styles.inspectorControl} ${styles.inspectorInputControl} ${styles.cornerRadiusField}`} key={corner}>
+              <InspectorIcon name={icon} size={16} />
+              <input
+                aria-label={`${corner} radius`}
+                onBlur={commit}
+                onChange={(event) => setDraft(corner, event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") commit();
+                }}
+                value={drafts[corner]}
+              />
+            </span>
+          );
+        })}
       </div>
     </>
   );
@@ -553,10 +618,22 @@ function LinkSection({
   controller: InspectorController;
 }) {
   const { setValue, state, toggleSection } = controller;
+  // W4.2 (ruling R-B2, the ratified R3 commit model): the URL drafts locally
+  // and commits on blur/Enter — a per-keystroke `setValue("url", …)` would
+  // write one operation per character. The checkbox below is already discrete,
+  // so it commits as it always has.
+  const [draftUrl, setDraftUrl] = useState(state.url);
   return (
     <Section id="link" label="Link to" state={state} toggle={toggleSection}>
       <InspectorField label="URL">
-        <InspectorInput ariaLabel={ariaLabel} onChange={(value) => setValue("url", value)} value={state.url} />
+        <InspectorInput
+          ariaLabel={ariaLabel}
+          onChange={setDraftUrl}
+          onCommit={() => {
+            if (draftUrl !== state.url) setValue("url", draftUrl);
+          }}
+          value={draftUrl}
+        />
       </InspectorField>
       <label className={styles.checkboxRow}>
         <input checked={state.openInNewTab} onChange={(event) => setValue("openInNewTab", event.target.checked)} type="checkbox" />
@@ -759,28 +836,38 @@ function CanvasControls({
 function ImageControls({
   controller,
   layerTree,
+  onReplaceImage,
   onSelectionChange,
   showLayers,
 }: {
   controller: InspectorController;
   layerTree: InspectorLayerTreeController;
+  onReplaceImage?: (file: File) => void;
   onSelectionChange: (selection: ChatShellInspectorSelection) => void;
   showLayers: boolean;
 }) {
-  const { setNestedValue, setValue, state, toggleSection } = controller;
+  const { setNestedValue, setRadiusAll, setValue, state, toggleSection } = controller;
   return (
     <>
       <LinkSection ariaLabel="Image link URL" controller={controller} />
       <Section id="fill" label="Fill" state={state} toggle={toggleSection}>
         <InspectorField label="Image">
+          {/* W4.2 §1 row 12: the picked File goes out by PROP to the editor
+              surface's upload+replace path (presentation stays transport-free).
+              With no handler the dummy keeps its local-preview-only behavior —
+              never the old `requestAction` dead end. The preview src is the
+              node's own asset (ruling R-B5), falling back to the stock png. */}
           <InspectorImageUpload
-            onFileSelect={(file) => controller.requestAction(`replace-image:${file.name}`)}
-            src="/icons/chat-shell/inspector/web/image-preview.png"
+            onFileSelect={onReplaceImage}
+            src={state.imagePreviewSrc}
           />
         </InspectorField>
         <InspectorField label="Mode"><InspectorSelect label="Image fill mode" onChange={(value) => setValue("fillMode", value)} options={FILL_MODE_OPTIONS} value={state.fillMode} /></InspectorField>
       </Section>
-      <Section id="shape" label="Shape" state={state} toggle={toggleSection}><InspectorField label="Radius"><RadiusControls onChange={(corner, value) => setNestedValue("radius", corner, value)} values={state.radius} /></InspectorField></Section>
+      {/* Row 14 + founder ruling F2: the all-corners commit (field or scan
+          button) is one `radius.all` change whose write clears the corner
+          overrides; the corner fields mirror it. */}
+      <Section id="shape" label="Shape" state={state} toggle={toggleSection}><InspectorField label="Radius"><RadiusControls onApplyAll={setRadiusAll} onChange={(corner, value) => setNestedValue("radius", corner, value)} values={state.radius} /></InspectorField></Section>
       {showLayers ? <Section id="layers" label="Layers" state={state} toggle={toggleSection}><SchemaLayers fallback={<ImageLayers onSelectionChange={onSelectionChange} tree={layerTree} />} /></Section> : null}
     </>
   );
@@ -798,6 +885,7 @@ function ButtonControls({
   showLayers: boolean;
 }) {
   const { setValue, state, toggleSection } = controller;
+  const themeColors = useThemeColors();
   return (
     <>
       <LinkSection ariaLabel="Button link URL" controller={controller} />
@@ -805,10 +893,35 @@ function ButtonControls({
         <InspectorField label="Label">
           <InspectorSelect label="Button style" onChange={(value) => setValue("buttonLabel", value)} options={BUTTON_STYLE_OPTIONS} value={state.buttonLabel} />
         </InspectorField>
-        <TokenField controller={controller} label="Background color" property="backgroundColor" swatch="#00F59B" value="Primary" />
-        <TokenField controller={controller} label="Text color" property="textColor" swatch="#FFFFFF" value="White" />
+        {/* Row 17 (ruling R-B6, re-based onto lane A's shared chip at the
+            lane-B merge, 2026-08-19): the two chips are live token pickers —
+            label + swatch from hydrated state, a pick writes the bg-/text-
+            facet through the apply adapter. Same TokenField/InspectorTokenControl
+            machinery as W4.4's container/section Style fields (one popover
+            implementation, not two); with no theme mounted the chip stays the
+            dummy's dead chip — never a fixture-palette popover that would
+            write phantom tokens. */}
+        <TokenField
+          controller={controller}
+          label="Background color"
+          options={themeColors}
+          property="backgroundColor"
+          swatch={themeColorForToken(themeColors, state.tokenBackgroundColor) ?? "#00F59B"}
+          tokenProperty="tokenBackgroundColor"
+          value={state.tokenBackgroundColor}
+        />
+        <TokenField
+          controller={controller}
+          label="Text color"
+          options={themeColors}
+          property="textColor"
+          swatch={themeColorForToken(themeColors, state.tokenTextColor) ?? "#FFFFFF"}
+          tokenProperty="tokenTextColor"
+          value={state.tokenTextColor}
+        />
       </Section>
-      <LayoutSection controller={controller} />
+      {/* R3: the button's padding boxes collapse to the two-axis form. */}
+      <LayoutSection controller={controller} paddingAxes="two" />
       {showLayers ? <Section id="layers" label="Layers" state={state} toggle={toggleSection}>
         <SchemaLayers fallback={<ButtonLayers onSelectionChange={onSelectionChange} tree={layerTree} />} />
       </Section> : null}
@@ -951,12 +1064,30 @@ function SectionControls({
   );
 }
 
+/** W4.3 (§1 row 17): the web dummy's BUTTON chips are designed "Primary"
+ * (#00F59B) and "White" (#FFFFFF), but the controller's shared `DEFAULT_STATE`
+ * carries "White"/"Content" for these two fields — those are the AD-side
+ * image-inspector's designed chip values, and it reads the SAME state fields,
+ * so `DEFAULT_STATE` cannot move without breaking that dummy's visual parity
+ * instead. The web button schema therefore carries its own dummy initial
+ * values here.
+ *
+ * Merged UNDER the hydrated partial, so hydration and every later pick still
+ * win; a real button with no bg-/text- token falls back to the dummy default,
+ * which is the established absent-value contract (same posture as
+ * `themeColorForToken`'s fallback swatch). */
+const WEB_BUTTON_DUMMY_TOKENS: Partial<InspectorPresentationState> = {
+  tokenBackgroundColor: "Primary",
+  tokenTextColor: "White",
+};
+
 export function WebInspector({
   addressing,
   error = null,
   hydrated,
   layers,
   note = null,
+  onReplaceImage,
   onSelectionChange,
   onSelectLayer,
   reviewMenuEnabled = false,
@@ -981,6 +1112,11 @@ export function WebInspector({
    * When present, every schema's Layers section renders them instead of its
    * fixture tree; absent keeps the dummy fixtures untouched. */
   layers?: WebLayerRow[];
+  /** W4.2 §1 row 12: the image schema's Replace-image pick. The File travels
+   * by prop to the editor surface, which uploads it and applies the
+   * `upsert_asset`+`replace_asset` batch; absent keeps the dummy's
+   * local-preview-only behavior. */
+  onReplaceImage?: (file: File) => void;
   onSelectionChange: (selection: ChatShellInspectorSelection) => void;
   /** W2.3: a layer-row click — callers send bridge `selectNode`. */
   onSelectLayer?: (nodeId: string) => void;
@@ -997,7 +1133,10 @@ export function WebInspector({
   const canvasController = useInspectorController([], "canvas", hydrated, addressing);
   const textController = useInspectorController(["link"], "text", hydrated, addressing);
   const imageController = useInspectorController(["link"], "image", hydrated, addressing);
-  const buttonController = useInspectorController(["link"], "button", hydrated, addressing);
+  // Row 17: the button schema's two token chips start from the WEB dummy's
+  // designed values (see WEB_BUTTON_DUMMY_TOKENS); everything else is the
+  // shared default, and the hydrated partial still overrides both.
+  const buttonController = useInspectorController(["link"], "button", { ...WEB_BUTTON_DUMMY_TOKENS, ...hydrated }, addressing);
   const iconController = useInspectorController(["link"], "icon", hydrated, addressing);
   const containerController = useInspectorController(["link"], "container", hydrated, addressing);
   const sectionController = useInspectorController(["link"], "section", hydrated, addressing);
@@ -1098,7 +1237,7 @@ export function WebInspector({
           <DocumentLayersContext.Provider value={documentLayers}>
             {selection === "canvas" ? <CanvasControls controller={canvasController} layerTree={canvasLayerTree} onSelectionChange={onSelectionChange} showLayers={showLayers} /> : null}
             {selection === "text" ? <TextControls controller={textController} layerTree={textLayerTree} onSelectionChange={onSelectionChange} showLayers={showLayers} /> : null}
-            {selection === "image" ? <ImageControls controller={imageController} layerTree={imageLayerTree} onSelectionChange={onSelectionChange} showLayers={showLayers} /> : null}
+            {selection === "image" ? <ImageControls controller={imageController} layerTree={imageLayerTree} onReplaceImage={onReplaceImage} onSelectionChange={onSelectionChange} showLayers={showLayers} /> : null}
             {selection === "button" ? <ButtonControls controller={buttonController} layerTree={buttonLayerTree} onSelectionChange={onSelectionChange} showLayers={showLayers} /> : null}
             {selection === "icon" ? <IconControls controller={iconController} layerTree={iconLayerTree} onSelectionChange={onSelectionChange} showLayers={showLayers} /> : null}
             {selection === "container" ? <ContainerControls controller={containerController} layerTree={containerLayerTree} onSelectionChange={onSelectionChange} showLayers={showLayers} /> : null}
