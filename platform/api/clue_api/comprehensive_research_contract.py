@@ -22,11 +22,16 @@ the field — every §3.1 row's "reuse discovery truth" clause is the compiler's
 (§3.2 step 2), not a source. An empty tuple means the field owns no acquisition source at all:
 ``core.employee_range`` and ``core.revenue_band`` are derived from governed employee-count /
 revenue evidence (§3.1 rows 5 and 8), and ``core.account_name`` is canonical identity truth
-reused from discovery (row 1). A permitted source that cannot in fact produce a field is the
-consumer's business: the mapping states ownership, and the launch path routes to the first
-listed source whose action supports the field.
+reused from discovery (row 1).
+
+**Consumer obligation.** This mapping states ownership only. A consumer MUST intersect this
+preference list with the supported field set of the action it is about to dispatch before
+dispatching it — ``organization_request()`` raises ``ValueError`` on unsupported field keys, so an
+un-intersected dispatch is a crash, not a graceful skip.
 """
 
+from collections.abc import Mapping
+from types import MappingProxyType
 from typing import Final
 
 from clue_research.narrative.prose import PROSE_ACCOUNT_FIELDS
@@ -42,53 +47,57 @@ __all__ = [
 #: the two can never drift.
 COMPREHENSIVE_ACCOUNT_FIELDS: Final[tuple[str, ...]] = PROSE_ACCOUNT_FIELDS
 
-#: §3.1 — static provider ownership, one row per field, in the table's order.
-COMPREHENSIVE_ACCOUNT_FIELD_SOURCES: Final[dict[str, tuple[str, ...]]] = {
-    # 1 — reuse canonical identity/discovery truth; no acquisition source.
-    "core.account_name": (),
-    # 2 — reuse discovery truth; otherwise a supported Sumble organization action or Exa Deep.
-    "core.industry": ("sumble_organizations", "exa_deep"),
-    # 3 — reuse discovery truth; otherwise Exa Deep (qualitative) or Sumble Organizations.
-    "core.company_about": ("exa_deep", "sumble_organizations"),
-    # 4 — reuse discovery truth; otherwise Sumble Organizations when available.
-    "core.employee_count": ("sumble_organizations",),
-    # 5 — reuse or derive from governed employee-count evidence; no acquisition source.
-    "core.employee_range": (),
-    # 6 — reuse discovery truth; otherwise Sumble Organizations.
-    "core.hq_location": ("sumble_organizations",),
-    # 7 — reuse discovery truth; otherwise the supported existing provider mapping, which among
-    #     the permitted four is Exa Deep (Sumble's pinned organization attributes carry no
-    #     revenue figure).
-    "core.annual_revenue": ("exa_deep",),
-    # 8 — reuse or derive from governed revenue evidence; no acquisition source.
-    "core.revenue_band": (),
-    # 9 — acquire through Sumble Tech Stack.
-    "core.primary_tech_stack": ("sumble_tech_stack",),
-    # 10 — reuse discovery truth or Sumble organization identity data.
-    "core.company_linkedin_url": ("sumble_organizations",),
-    # 11 — Sumble Organizations or Exa Deep where the existing manifest supports it.
-    "account.total_funding": ("sumble_organizations", "exa_deep"),
-    # 12 — Sumble Organizations or grounded Exa Deep research.
-    "account.recent_funding": ("sumble_organizations", "exa_deep"),
-    # 13 — Sumble Jobs.
-    "account.hiring_velocity_eng": ("sumble_jobs",),
-    # 14 — Exa Deep.
-    "account.operational_pain": ("exa_deep",),
-    # 15 — Exa Deep.
-    "account.strategic_moves": ("exa_deep",),
-    # 16 — Exa Deep.
-    "account.resonance.culture": ("exa_deep",),
-    # 17 — Exa Deep.
-    "account.resonance.employee_sentiment": ("exa_deep",),
-    # 18 — Exa Deep.
-    "account.resonance.attrition_signal": ("exa_deep",),
-    # 19 — Exa Deep.
-    "account.resonance.eng_blog_tone": ("exa_deep",),
-    # 20 — Exa Deep.
-    "account.resonance.public_frustrations": ("exa_deep",),
-    # 21 — Exa Deep.
-    "account.resonance.buying_culture": ("exa_deep",),
-}
+#: §3.1 — static provider ownership, one row per field, in the table's order. Frozen at runtime
+#: (a mapping proxy), not merely by annotation: the rows are founder-adjudicated purchase
+#: decisions, so a consumer must never mutate them in place.
+COMPREHENSIVE_ACCOUNT_FIELD_SOURCES: Final[Mapping[str, tuple[str, ...]]] = MappingProxyType(
+    {
+        # 1 — reuse canonical identity/discovery truth; no acquisition source.
+        "core.account_name": (),
+        # 2 — reuse discovery truth; otherwise a supported Sumble organization action or Exa Deep.
+        "core.industry": ("sumble_organizations", "exa_deep"),
+        # 3 — reuse discovery truth; otherwise Exa Deep (qualitative) or Sumble Organizations.
+        "core.company_about": ("exa_deep", "sumble_organizations"),
+        # 4 — reuse discovery truth; otherwise Sumble Organizations when available.
+        "core.employee_count": ("sumble_organizations",),
+        # 5 — reuse or derive from governed employee-count evidence; no acquisition source.
+        "core.employee_range": (),
+        # 6 — reuse discovery truth; otherwise Sumble Organizations.
+        "core.hq_location": ("sumble_organizations",),
+        # 7 — reuse discovery truth; otherwise the supported existing provider mapping, which among
+        #     the permitted four is Exa Deep (Sumble's pinned organization attributes carry no
+        #     revenue figure).
+        "core.annual_revenue": ("exa_deep",),
+        # 8 — reuse or derive from governed revenue evidence; no acquisition source.
+        "core.revenue_band": (),
+        # 9 — acquire through Sumble Tech Stack.
+        "core.primary_tech_stack": ("sumble_tech_stack",),
+        # 10 — reuse discovery truth or Sumble organization identity data.
+        "core.company_linkedin_url": ("sumble_organizations",),
+        # 11 — Sumble Organizations or Exa Deep where the existing manifest supports it.
+        "account.total_funding": ("sumble_organizations", "exa_deep"),
+        # 12 — Sumble Organizations or grounded Exa Deep research.
+        "account.recent_funding": ("sumble_organizations", "exa_deep"),
+        # 13 — Sumble Jobs.
+        "account.hiring_velocity_eng": ("sumble_jobs",),
+        # 14 — Exa Deep.
+        "account.operational_pain": ("exa_deep",),
+        # 15 — Exa Deep.
+        "account.strategic_moves": ("exa_deep",),
+        # 16 — Exa Deep.
+        "account.resonance.culture": ("exa_deep",),
+        # 17 — Exa Deep.
+        "account.resonance.employee_sentiment": ("exa_deep",),
+        # 18 — Exa Deep.
+        "account.resonance.attrition_signal": ("exa_deep",),
+        # 19 — Exa Deep.
+        "account.resonance.eng_blog_tone": ("exa_deep",),
+        # 20 — Exa Deep.
+        "account.resonance.public_frustrations": ("exa_deep",),
+        # 21 — Exa Deep.
+        "account.resonance.buying_culture": ("exa_deep",),
+    }
+)
 
 #: §7.1 — the six fields Sumble Teams/People owns as structured professional enrichment.
 CONTACT_STRUCTURED_FIELDS: Final[tuple[str, ...]] = (

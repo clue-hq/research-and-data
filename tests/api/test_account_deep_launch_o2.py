@@ -469,10 +469,13 @@ def test_production_exa_preparation_acquires_once_then_replays_from_the_snapshot
 
             payload = json.loads(_EXA_RESPONSE.read_text(encoding="utf-8"))
             payload["costDollars"]["total"] = 0.07
-            # The confirmed field boundary has two additional admitted fallbacks beyond the
-            # recorded two-field E1 response. Explicit nulls preserve the closed output contract
-            # and prove that unsupported output remains empty rather than being invented.
-            payload["output"]["content"][exa_field_alias(DEEP_FIELD_KEYS[0])] = None
+            # The confirmed field boundary has one additional admitted fallback beyond the
+            # recorded two-field E1 response. The explicit null preserves the closed output
+            # contract and proves that unsupported output remains empty rather than being invented.
+            # ``DEEP_FIELD_KEYS[0]`` (``account.hiring_velocity_eng``) is deliberately no longer
+            # among them: comprehensive-research contract §3.1 gives that row to Sumble Jobs alone,
+            # and the ``exa_deep`` source manifest stopped claiming the whole ``account`` class, so
+            # Exa is no longer asked — and no longer paid — for a field it does not own.
             payload["output"]["content"][exa_field_alias(DEEP_FIELD_KEYS[4])] = None
             transport = _ExaTransport(payload)
             conn_factory = _TaskReentrantConnectionFactory(conn)
@@ -505,9 +508,10 @@ def test_production_exa_preparation_acquires_once_then_replays_from_the_snapshot
             request = transport.calls[0]
             assert isinstance(request, ExaDeepSearchRequest)
             properties = request.output_schema["properties"]
+            # §3.1 ownership decides the bundle: the Sumble-owned hiring row stays out even though
+            # the human confirmed it as a directive field (its question still rides along below).
             assert set(properties) == {
-                exa_field_alias(DEEP_FIELD_KEYS[0]),
-                *(exa_field_alias(field_key) for field_key in DEEP_FIELD_KEYS[2:]),
+                exa_field_alias(field_key) for field_key in DEEP_FIELD_KEYS[2:]
             }
             assert all(exa_field_alias(field_key) not in properties for field_key in contact_fields)
             assert request.additional_queries == (
