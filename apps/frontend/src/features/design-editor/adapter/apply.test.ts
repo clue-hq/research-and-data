@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { HARVESTED_PAGE } from "./__fixtures__/web-nodes";
+import { HARVESTED_PAGE, HARVESTED_PAGE_V33 } from "./__fixtures__/web-nodes";
 import { inspectorChangeToOperation } from "./apply";
 
 // W3.2: inspector change events → engine operations, one test per control.
@@ -123,4 +123,111 @@ test("lineSpacing writes the lineHeight facet", () => {
 test("an unmapped property produces no operation", () => {
   assert.equal(change("strokeWidth", "2"), null);
   assert.equal(change("fontFamily", "Inter"), null); // R1: theme owns fonts
+});
+
+// ══ W4.4 — container & section schemas (rows 19/20/22, §4) ══════════════════
+// Fixtures are the v33 harvest, whose hero section carries BOTH section props
+// (`tag` + `anchor_id`) — the real bytes the §4 guarantee is proven against.
+
+const V33_PAGE_ID = "home";
+
+function v33Change(
+  property: string,
+  value: unknown,
+  nodeId: string,
+): ReturnType<typeof inspectorChangeToOperation> {
+  const node = HARVESTED_PAGE_V33.nodes[nodeId];
+  assert.ok(node, `fixture node ${nodeId} missing`);
+  return inspectorChangeToOperation(
+    { property, selectionId: nodeId, value },
+    node,
+    V33_PAGE_ID,
+  );
+}
+
+// ── style tokens (row 19; the row-17 popover pattern) ──────────────────────
+
+test("container tokenBackgroundColor writes the lowercased token through bgColor", () => {
+  // fgrid: "grid grid-cols-3 gap-6 px-4 py-2 bg-card text-dark"
+  const op = v33Change("tokenBackgroundColor", "Dark", "fgrid");
+  assert.ok(op && op.kind === "set_node_classes");
+  assert.ok(op.classes.includes("bg-dark"));
+  assert.ok(!op.classes.includes("bg-card"));
+  // Every other family survives verbatim.
+  assert.ok(op.classes.includes("grid-cols-3"));
+  assert.ok(op.classes.includes("gap-6"));
+  assert.ok(op.classes.includes("text-dark"));
+});
+
+test("container tokenTextColor writes textColor and leaves the background", () => {
+  const op = v33Change("tokenTextColor", "Muted", "fgrid");
+  assert.ok(op && op.kind === "set_node_classes");
+  assert.ok(op.classes.includes("text-muted"));
+  assert.ok(!op.classes.includes("text-dark"));
+  assert.ok(op.classes.includes("bg-card"));
+});
+
+test("section style tokens write both color facets", () => {
+  // hero: "flex flex-col items-center gap-6 py-24 px-8 bg-slate-900"
+  const background = v33Change("tokenBackgroundColor", "Light", "hero");
+  assert.ok(background && background.kind === "set_node_classes");
+  assert.ok(background.classes.includes("bg-light"));
+  assert.ok(!background.classes.includes("bg-slate-900"));
+  const text = v33Change("tokenTextColor", "Primary", "hero");
+  assert.ok(text && text.kind === "set_node_classes");
+  assert.ok(text.classes.includes("text-primary"));
+});
+
+test("a background token on a kind with no sanctioned background control is refused", () => {
+  // Row 19 sanctions container/section (row 1 the page root, itself a
+  // container); a text/icon/embed node has no background control in v1.
+  assert.equal(v33Change("tokenBackgroundColor", "Dark", "sub"), null);
+  assert.equal(v33Change("tokenBackgroundColor", "Dark", "ficon"), null);
+  assert.equal(v33Change("tokenBackgroundColor", "Dark", "fembed"), null);
+});
+
+test("a hex background (the §3-inert custom tab) produces no operation", () => {
+  assert.equal(v33Change("tokenBackgroundColor", "#00F59B", "fgrid"), null);
+  assert.equal(v33Change("backgroundColor", "#00F59B", "fgrid"), null);
+});
+
+// ── §4: the props-preservation guarantee (item 38) ─────────────────────────
+
+/** Every container/section style control this task wires. The §4 test runs the
+ * whole battery, so a future style control added here without a
+ * `set_node_classes` mapping fails loudly. */
+const SECTION_STYLE_EDITS: ReadonlyArray<[string, unknown]> = [
+  ["tokenTextColor", "Primary"],
+  ["tokenBackgroundColor", "Light"],
+  ["padding.x", "6"],
+  ["padding.y", "10"],
+];
+
+test("§4: a style edit on a section is a set_node_classes operation, never set_node_props", () => {
+  for (const [property, value] of SECTION_STYLE_EDITS) {
+    const op = v33Change(property, value, "hero");
+    assert.ok(op, `${property} produced no operation`);
+    assert.equal(
+      op.kind,
+      "set_node_classes",
+      `${property} must not rewrite the section's props`,
+    );
+  }
+});
+
+test("§4: the section's tag/anchor_id round-trip byte-identically through every style edit", () => {
+  const hero = HARVESTED_PAGE_V33.nodes.hero;
+  assert.ok(hero);
+  // The harvested bytes, before anything runs.
+  assert.equal(hero.tag, "section");
+  assert.equal(hero.anchor_id, "hero-anchor");
+  const before = JSON.stringify(hero);
+  for (const [property, value] of SECTION_STYLE_EDITS) {
+    v33Change(property, value, "hero");
+  }
+  // The adapter is pure: it never mutates the node it is handed, and no
+  // operation it emits carries props at all.
+  assert.equal(JSON.stringify(HARVESTED_PAGE_V33.nodes.hero), before);
+  assert.equal(HARVESTED_PAGE_V33.nodes.hero.tag, "section");
+  assert.equal(HARVESTED_PAGE_V33.nodes.hero.anchor_id, "hero-anchor");
 });

@@ -78,6 +78,17 @@ function nearestSpacingStep(raw: string): string | null {
   return best;
 }
 
+// ══ W4.4 — container & section schemas ══════════════════════════════════════
+// (Lanes B/C append their own schema blocks to this file; keeping each task's
+// additions in one labeled block keeps those merges mechanical.)
+
+/** Row 19 (+ row 1 for the page root, itself a container): the kinds whose
+ * schema has a sanctioned background-token control in v1. A kind outside this
+ * set has no background slot — §5 layout-only fallbacks (embed, unknown kinds)
+ * and the 18b icon partition included — so its event is refused rather than
+ * written. Row 17's button joins this set with lane B's W4.3. */
+const TOKEN_BACKGROUND_KINDS = new Set(["container", "section"]);
+
 export interface InspectorChangeDetail {
   property: string;
   selectionId: string;
@@ -122,6 +133,19 @@ export function inspectorChangeToOperation(
         pageId,
         node.id,
         webClassFacets.textColor.set(classes, token),
+      );
+    }
+    // W4.4 (row 19, the row-17 popover pattern): the background token — the
+    // `tokenTextColor` case above is its text-color twin and already serves
+    // every schema whose Style section exposes one.
+    case "tokenBackgroundColor": {
+      if (!TOKEN_BACKGROUND_KINDS.has(node.kind)) return null;
+      const token = value.trim().toLowerCase();
+      if (!token || token.startsWith("#")) return null;
+      return setNodeClassesOp(
+        pageId,
+        node.id,
+        webClassFacets.bgColor.set(classes, token),
       );
     }
     case "horizontalAlignment": {

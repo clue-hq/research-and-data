@@ -535,14 +535,23 @@ function LinkSection({
 function TokenField({
   controller,
   label,
+  options,
   property,
   swatch,
+  tokenProperty,
   value,
 }: {
   controller: InspectorController;
   label: string;
+  /** W4.4: the document's real theme tokens; with `tokenProperty` they make
+   * this button a live token picker (rows 19/17). Absent → the dummy button. */
+  options?: readonly ThemeColorOption[];
   property: string;
   swatch: string;
+  /** W4.4: which inspector token field a pick writes
+   * (`tokenTextColor`/`tokenBackgroundColor`) — the W3.1-addressed event seam,
+   * so `adapter/apply.ts` turns the label into the facet write. */
+  tokenProperty?: "tokenBackgroundColor" | "tokenTextColor";
   value: string;
 }) {
   return (
@@ -550,9 +559,49 @@ function TokenField({
       <InspectorTokenControl
         label={value}
         onClick={() => controller.requestAction(`token-picker:${property}`)}
+        onTokenSelect={
+          tokenProperty
+            ? (token) => controller.setValue(tokenProperty, token)
+            : undefined
+        }
+        options={options}
         swatch={swatch}
       />
     </InspectorField>
+  );
+}
+
+/** W4.4: the Style section shared by the container and section schemas — the
+ * dummy's two token buttons, now showing the node's hydrated tokens (with the
+ * theme's real swatch when the document defines it) and writing through the
+ * theme-token popover (rows 19; the popover is row 17's pattern). Both schemas
+ * render exactly the two fields the dummy ships. */
+function StyleTokenFields({ controller }: { controller: InspectorController }) {
+  const { state } = controller;
+  const themeColors = useThemeColors();
+  return (
+    <>
+      <TokenField
+        controller={controller}
+        label="Text color"
+        options={themeColors}
+        property="textColor"
+        swatch={themeColorForToken(themeColors, state.tokenTextColor) ?? "#1C2028"}
+        tokenProperty="tokenTextColor"
+        value={state.tokenTextColor}
+      />
+      <TokenField
+        controller={controller}
+        label="Background color"
+        options={themeColors}
+        property="backgroundColor"
+        swatch={
+          themeColorForToken(themeColors, state.tokenBackgroundColor) ?? "#FFFFFF"
+        }
+        tokenProperty="tokenBackgroundColor"
+        value={state.tokenBackgroundColor}
+      />
+    </>
   );
 }
 
@@ -759,8 +808,8 @@ function ContainerControls({
     <>
       <LinkSection ariaLabel="Container link URL" controller={controller} />
       <Section id="style" label="Style" state={state} toggle={toggleSection}>
-        <TokenField controller={controller} label="Text color" property="textColor" swatch="#1C2028" value="Content" />
-        <TokenField controller={controller} label="Background color" property="backgroundColor" swatch="#FFFFFF" value="White" />
+        {/* W4.4 (row 19): the two token buttons, hydrated + live. */}
+        <StyleTokenFields controller={controller} />
       </Section>
       <Section id="alignment" label="Alignment" state={state} toggle={toggleSection}>
         <SegmentedControl
@@ -798,8 +847,8 @@ function SectionControls({
     <>
       <LinkSection ariaLabel="Section link URL" controller={controller} />
       <Section id="style" label="Style" state={state} toggle={toggleSection}>
-        <TokenField controller={controller} label="Text color" property="textColor" swatch="#1C2028" value="Content" />
-        <TokenField controller={controller} label="Background color" property="backgroundColor" swatch="#FFFFFF" value="White" />
+        {/* W4.4 (row 19): the two token buttons, hydrated + live. */}
+        <StyleTokenFields controller={controller} />
       </Section>
       <Section id="alignment" label="Alignment" state={state} toggle={toggleSection}>
         <InspectorField label="Direction">

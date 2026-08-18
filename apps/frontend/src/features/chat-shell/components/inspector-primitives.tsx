@@ -354,17 +354,81 @@ export function InspectorDecoratedSelect({
 export function InspectorTokenControl({
   label,
   onClick,
+  onTokenSelect,
+  options,
   swatch,
 }: {
   label: string;
   onClick?: () => void;
+  /** W4.4 (rows 19/17): a token pick from the theme list — reports the token
+   * LABEL, exactly like `ColorControl`'s Theme tab, which is the live write
+   * path. Omitted (or no `options`) keeps the dummy's plain button. */
+  onTokenSelect?: (label: string) => void;
+  /** W4.4: the document's real theme tokens (already `palette-*`-filtered per
+   * ruling F3). */
+  options?: readonly ThemeColorOption[];
   swatch: string;
 }) {
-  return (
-    <button className={`${styles.inspectorControl} ${styles.inspectorTokenControl}`} onClick={onClick} type="button">
+  const anchorRef = useRef<HTMLSpanElement>(null);
+  const [open, setOpen] = useState(false);
+  const trigger = (
+    <>
       <span className={styles.inspectorTokenSwatch} style={{ background: swatch }} />
       <span>{label}</span>
-    </button>
+    </>
+  );
+  const triggerClassName = `${styles.inspectorControl} ${styles.inspectorTokenControl}`;
+
+  if (!onTokenSelect || !options || options.length === 0) {
+    return (
+      <button className={triggerClassName} onClick={onClick} type="button">
+        {trigger}
+      </button>
+    );
+  }
+
+  // Ruling 17 (and 19, "same pattern as 17"): the dummy's token button gets a
+  // real token list — the ColorControl Theme tab's own markup and classes, so
+  // the popover is the picker the marketer already knows.
+  return (
+    <span className={styles.colorControl} ref={anchorRef}>
+      <Popover.Root onOpenChange={setOpen} open={open}>
+        <Popover.Trigger className={triggerClassName} onClick={onClick}>
+          {trigger}
+        </Popover.Trigger>
+        <Popover.Portal>
+          <Popover.Positioner
+            align="start"
+            anchor={anchorRef}
+            className={styles.inspectorColorPositioner}
+            side="right"
+            sideOffset={8}
+          >
+            <Popover.Popup className={styles.inspectorColorPopup}>
+              <div aria-label="Theme colors" className={styles.inspectorThemeColors} role="group">
+                {options.map((option) => (
+                  <button
+                    aria-label={`Use ${option.label} color ${option.value}`}
+                    aria-pressed={option.label.toLowerCase() === label.toLowerCase()}
+                    className={styles.inspectorThemeColor}
+                    key={option.label}
+                    onClick={() => {
+                      onTokenSelect(option.label);
+                      setOpen(false);
+                    }}
+                    type="button"
+                  >
+                    <span className={styles.inspectorThemeSwatch} style={{ background: option.value }} />
+                    <span>{option.label}</span>
+                    <span className={styles.inspectorThemeValue}>{option.value}</span>
+                  </button>
+                ))}
+              </div>
+            </Popover.Popup>
+          </Popover.Positioner>
+        </Popover.Portal>
+      </Popover.Root>
+    </span>
   );
 }
 
