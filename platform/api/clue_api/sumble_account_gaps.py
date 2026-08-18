@@ -15,11 +15,13 @@ from collections.abc import Awaitable, Callable, Mapping, Sequence
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from enum import StrEnum
+from types import MappingProxyType
 from typing import Any, Final
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, SecretStr
 
+from clue_api.comprehensive_research_contract import COMPREHENSIVE_ACCOUNT_FIELD_SOURCES
 from clue_api.discovery_seal import DbSealedDiscoveryAccountManifestReader
 from clue_api.sumble_claim_materialization import (
     SumbleClaimMaterializer,
@@ -95,6 +97,7 @@ from clue_research.resolvers.sumble import (
     ORGANIZATIONS_SOURCE_KEY,
     SUMBLE_API_BASE,
     SUMBLE_API_VERSION,
+    SUMBLE_SOURCE_KEYS,
     TECH_STACK_SOURCE_KEY,
     SumbleClient,
     SumbleCreditBudget,
@@ -106,6 +109,7 @@ from clue_research.resolvers.sumble import (
     engineering_jobs_request,
     matched_organization_id,
     organization_request,
+    sumble_action_supports_field,
 )
 from clue_storage import StorageBackend, content_address
 
@@ -122,15 +126,43 @@ _HQ = "core.hq_location"
 _HIRING = "account.hiring_velocity_eng"
 _TECH = "core.primary_tech_stack"
 
-_SOURCE_BY_FIELD: Final[dict[str, str]] = {
-    _EMPLOYEE: ORGANIZATIONS_SOURCE_KEY,
-    _DOMAIN: ORGANIZATIONS_SOURCE_KEY,
-    _INDUSTRY: ORGANIZATIONS_SOURCE_KEY,
-    _HQ: ORGANIZATIONS_SOURCE_KEY,
-    _HIRING: JOBS_SOURCE_KEY,
-    _TECH: TECH_STACK_SOURCE_KEY,
-}
-_ORG_FIELDS: Final[frozenset[str]] = frozenset({_EMPLOYEE, _DOMAIN, _INDUSTRY, _HQ})
+#: Which Sumble source owns which field — derived from the frozen §3.1 ownership table so this
+#: compiler and the contract can never disagree (Slice-A carry-forward). ``core.primary_domain``
+#: is the one deliberate addition: it is canonical identity truth outside the 21-field profile
+#: that the organization action has always answered.
+_SOURCE_BY_FIELD: Final[Mapping[str, str]] = MappingProxyType(
+    {
+        **{
+            field_key: next(source for source in sources if source in SUMBLE_SOURCE_KEYS)
+            for field_key, sources in COMPREHENSIVE_ACCOUNT_FIELD_SOURCES.items()
+            if any(source in SUMBLE_SOURCE_KEYS for source in sources)
+        },
+        _DOMAIN: ORGANIZATIONS_SOURCE_KEY,
+    }
+)
+
+
+def _requestable(field_key: str) -> bool:
+    """Whether the pinned v9 action that owns ``field_key`` can actually ask for it.
+
+    §3.1 grants ``sumble_organizations`` seven account rows; its pinned v9 organization action
+    supports three of them (plus ``core.primary_domain``). A row it owns but cannot request is
+    never faked and never crashes ``organization_request`` — it settles as an honest
+    ``confirmed_missing`` so the field's next authorized source, or an honest empty, takes over.
+    """
+
+    source_key = _SOURCE_BY_FIELD.get(field_key)
+    return source_key is not None and sumble_action_supports_field(field_key, source_key)
+
+
+def _organization_request_fields(field_keys: Sequence[str]) -> tuple[str, ...]:
+    """The subset of ``field_keys`` the v9 organization action may put on the wire."""
+
+    return tuple(
+        key
+        for key in field_keys
+        if _SOURCE_BY_FIELD.get(key) == ORGANIZATIONS_SOURCE_KEY and _requestable(key)
+    )
 
 
 class SumbleAccountGapError(RuntimeError):
@@ -152,6 +184,17 @@ class SumbleAccountGapNotEligible(SumbleAccountGapEligibilityError):
     statement about the *world* — job authority lost, discovery seal conflicted, account not the
     canonical survivor, a field mis-declared — which no choice of the agent's can repair, and
     which therefore keeps propagating and suspending the job.
+    """
+
+
+class SumbleAccountGapFieldsUnrequestable(SumbleAccountGapNotEligible):
+    """No requested field can be put on any pinned v9 Sumble wire.
+
+    A statement about the *request*, so it is deliberately the model-repairable species: the agent
+    drops those fields, chooses another admitted source, or finalizes with an honest gap. Paying
+    an organization credit for a call whose whole field set the action cannot even ask about would
+    buy nothing. A request that mixes requestable and unrequestable fields is **not** refused: it
+    proceeds for what it can buy and settles the rest as ``confirmed_missing``.
     """
 
 
@@ -298,6 +341,11 @@ async def compile_sumble_account_gap_preflight(
         raise SumbleAccountGapEligibilityError(
             f"field(s) are not approved for Sumble S1: {', '.join(unknown)}"
         )
+    if not any(_requestable(key) for key in field_keys):
+        raise SumbleAccountGapFieldsUnrequestable(
+            "the pinned Sumble v9 actions cannot request any selected field: "
+            f"{', '.join(field_keys)}"
+        )
     values = {key: Decimal(field_expected_value_credits[key]) for key in field_keys}
     if any(value <= 0 for value in values.values()):
         raise SumbleAccountGapEligibilityError(
@@ -405,6 +453,24 @@ async def compile_sumble_account_gap_preflight(
             )
         for field_key in field_keys:
             source_key = _SOURCE_BY_FIELD[field_key]
+            if not _requestable(field_key):
+                # Consumer obligation (contract §3.1 docstring): intersect ownership with what the
+                # pinned action can request *before* dispatch. The plan keeps the field so the
+                # durable ledger explains it and the R4 projection has a row for every requested
+                # key; ``_materialize`` settles it ``confirmed_missing``. No provider attribute is
+                # requested for it, so it costs nothing, and the registry's ``tier_plan`` is not
+                # consulted: that check gates *buying* a field from a source, and this field is
+                # not being bought from anyone.
+                field_plans.append(
+                    AccountGapFieldPlan(
+                        field_key=field_key,
+                        source_key=source_key,
+                        reason=AccountGapReason.MISSING,
+                        expected_value_credits=values[field_key],
+                        basis_claim_ids=(),
+                    )
+                )
+                continue
             definition = await get_effective_field(
                 conn,
                 scope=FieldRegistryScope.for_workspace(workspace_id),
@@ -460,9 +526,8 @@ async def compile_sumble_account_gap_preflight(
                 )
             )
 
-    org_fields = tuple(key for key in field_keys if key in _ORG_FIELDS)
     organization_body, organization_max = organization_request(
-        account.primary_domain, field_keys=org_fields
+        account.primary_domain, field_keys=_organization_request_fields(field_keys)
     )
     bounded = organization_max + (policy.jobs_limit if _HIRING in field_keys else 0)
     if provider_credit_cap < bounded:
@@ -593,10 +658,8 @@ class SumbleAccountGapCoordinator:
             self._cents_per_credit,
         )
         provider_calls = 0
-        org_fields = tuple(
-            str(item.field_key)
-            for item in operation.request.fields
-            if item.source_key == ORGANIZATIONS_SOURCE_KEY
+        org_fields = _organization_request_fields(
+            [str(item.field_key) for item in operation.request.fields]
         )
         try:
             org, called = await self._drive_snapshot(
@@ -827,10 +890,8 @@ class SumbleAccountGapCoordinator:
                     Decimal(
                         organization_request(
                             request.primary_domain,
-                            field_keys=tuple(
-                                str(item.field_key)
-                                for item in request.fields
-                                if item.source_key == ORGANIZATIONS_SOURCE_KEY
+                            field_keys=_organization_request_fields(
+                                [str(item.field_key) for item in request.fields]
                             ),
                         )[1]
                     )
@@ -1105,6 +1166,17 @@ class SumbleAccountGapCoordinator:
                     claim_ids.append(str(prior_result.sumble_claim_id))
                 continue
             source_key = plan.source_key
+            if not _requestable(str(plan.field_key)):
+                # Owned by this source under §3.1, unrequestable by its pinned v9 action: an
+                # honest terminal gap for the field's next authorized source, not a fabricated
+                # value and not a failure of this operation.
+                await self._put_field(
+                    operation,
+                    plan,
+                    state=AccountGapFieldState.CONFIRMED_MISSING,
+                    reason="source_cannot_request_field",
+                )
+                continue
             snapshot = snapshots.get(source_key)
             if snapshot is None:
                 await self._put_field(
@@ -1466,10 +1538,8 @@ class SumbleAccountGapStarter:
                 return terminal
             organization_body, organization_max = organization_request(
                 existing.request.primary_domain,
-                field_keys=tuple(
-                    str(item.field_key)
-                    for item in existing.request.fields
-                    if item.source_key == ORGANIZATIONS_SOURCE_KEY
+                field_keys=_organization_request_fields(
+                    [str(item.field_key) for item in existing.request.fields]
                 ),
             )
             return await self._coordinator.start(
@@ -1536,6 +1606,7 @@ __all__ = [
     "SumbleAccountGapCoordinator",
     "SumbleAccountGapEligibilityError",
     "SumbleAccountGapError",
+    "SumbleAccountGapFieldsUnrequestable",
     "SumbleAccountGapNotEligible",
     "SumbleAccountGapOutcome",
     "SumbleAccountGapPolicy",
