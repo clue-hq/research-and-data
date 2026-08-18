@@ -256,3 +256,144 @@ changed Python file, mypy passed for every changed production Python file, `git 
 clean, and both new migrations passed a focused down-to-`509e5d0e623a` then up-to-head cycle;
 Alembic reports the single head `7ca91ddefee6`. The scratch checks DB was left in place; all
 preserved Missoula runtime processes were left running.
+
+## Permanent blocker / relaxed-threshold ledger for this Slice B session
+
+“Permanent” here means the change is represented in source, tests, and (where applicable) an
+Alembic migration on `platform/comprehensive-account-contact-research`; none of these is a one-off
+SQL patch to the live database. The branch is local and unpushed, so the changes do not reach the
+target branch until the founder chooses to merge/publish them.
+
+### Intentional constraint relaxations
+
+1. **Account research may own `core.*` account-profile fields.** The old generic axis check only
+   admitted keys prefixed `account.*`, silently dropping or rejecting the ten `core.*` rows in the
+   fixed profile. The launcher, coverage ledger, governed tool-request trigger, provider-operation
+   trigger, and Python request/parallel guards now use the shared account axis (`core.*` plus the
+   account namespaces). Contact fields remain excluded. Commits: `adff2f3e`, `4e805fa0`,
+   `47eda230`; migrations: `99923d6527c3`, `9184f54adc26`.
+
+2. **Account-only research no longer requires committee configuration.** Composition now succeeds
+   when the directive selects no committee discovery sources. This removes a configuration
+   prerequisite from pure account profiling; it does not make committee/contact research run
+   without its own authorization. Commit: `47ca6ead`.
+
+3. **The comprehensive directive does not require the model to supply a field list.** Tool @5
+   makes `directive.field_keys` omittable for `profile="comprehensive"`; the server supplies the
+   canonical 21-field profile. The old @4 remains frozen/replayable. Commit: `ed7ad2db`.
+
+4. **Verbatim full-profile retyping is accepted.** If the model copies the exact canonical 21
+   fields from the confirmation card, @5 treats it as the same comprehensive request instead of
+   rejecting it as an illicit custom subset. A different or partial list is still refused under
+   the comprehensive profile. Commit: `0fce7a84`.
+
+5. **A fresh draft may supersede an unconfirmed draft.** Previously an ungateable latest draft
+   deadlocked the directive lineage because only confirmation could move it. A new draft now
+   appends a durable `superseded` transition and points back to the currently confirmed lineage
+   predecessor. Confirmed directives remain immutable. Commits: `9d669522`, `bfc7fd9c`; migration:
+   `509e5d0e623a`.
+
+6. **Directional questions are optional for account research.** The fixed comprehensive
+   field/source plan is sufficient authority, so empty question tuples are accepted by the core
+   selection/request contracts, agent semantic tool input, launcher, account agent instruction,
+   and database CHECK. Exa receives a fixed internal target-lock sentence when no bespoke intent
+   exists. This is account-only: contact selections and contact tool requests still require
+   non-empty questions. Commit: `254df301`; migration: `486ee7b24ae8`.
+
+7. **Repeated policy references are de-duplicated.** Freshness and recursion may legitimately
+   reference the same shared policy (`default`). The flattened selection now retains the reference
+   once instead of failing the unique-reference validator. No policy slot is removed or ignored.
+   Commit: `254df301`.
+
+8. **Parallel `enrich_account` calls are allowed when independently partitioned.** The old guard
+   rejected any duplicate tool name in one model round, which blocked concurrent Sumble
+   organizations/jobs/tech calls. Duplicate enrichment calls now pass only when every call has a
+   non-empty, pairwise-disjoint source set. Overlapping sources, duplicate Exa work, assessment,
+   and finalization remain refused. Commit: `254df301`.
+
+9. **An Exa explicit null no longer requires a claim.** The old action required one durable claim
+   per requested field, making “not found” structurally impossible. A requested property whose
+   value is explicit JSON `null` now settles as `null:explicit_null` with no claim. A non-null
+   synthesized value without a durable claim still fails closed. Commit: `254df301`.
+
+10. **A quarantined retained Exa response may make one audited transition to ready.** The durable
+    state machine previously treated every `spend_outcome_unknown` operation as permanently
+    terminal even when the exact provider response bytes were safely retained and a parser repair
+    later made them valid. It now permits only the exact retained response to transition to
+    `ready/provider_reported`, with an immutable recovery row naming response, request id, parser,
+    actor, and time. Billing-reconciled rows cannot use this path, stop/cancel authority still
+    wins, and recovery makes zero provider calls. Commit: `254df301`; migration: `7ca91ddefee6`.
+
+11. **Same-turn semantic retries no longer require the same `tool_event_id`.** The original
+    journal event remains the immutable causal pointer for the governed request, while a
+    checkpoint retry may append a new `TOOL_STARTED` event with the same turn, raw call id, and
+    semantic authority. Every actual authority field still has to match. Commit: `254df301`.
+
+12. **A repeated failure of one admitted parallel member no longer has to reproduce identical
+    error text.** The first batch failure marker stays immutable; later retry failures remain in
+    the append-only agent journal, and a later completion may supersede the member's failed state.
+    This removes the false `tool batch event replay changed` blocker without allowing the admitted
+    call identity or authority to change. Commit: `254df301`.
+
+### Threshold/counting corrections (caps were not broadly raised)
+
+13. **The Sumble per-call field cap counts only requestable fields.** Reused/derived/non-requested
+    profile rows no longer consume the provider call's field-count budget. The numerical cap
+    itself was not increased. Commit: `3943c626`.
+
+14. **Unbounded-tech approval applies only to the tech partition.** A directive-level tech
+    approval used to leak into simultaneous organizations/jobs calls and make their preflight fail.
+    The approval now rides only a request containing `core.primary_tech_stack`. This narrows an
+    exception rather than widening it. Commit: `254df301`.
+
+15. **The three zero-acquisition profile rows do not consume provider authority.** Canonical
+    account name is reused, while employee range and revenue band are reused or deterministically
+    derived. The launcher therefore buys the 18 acquisition rows instead of trying to manufacture
+    source authority for all 21. The result still accounts for all 21 fields. Commits:
+    `2d8948a6`, `be9a99e9`.
+
+### Blocker repairs that did not weaken a policy boundary
+
+16. **The comprehensive source plan now actually covers the fixed profile.** Registered source
+    yields and effective tier plans now include the Sumble-owned and Exa-Deep-owned rows needed by
+    §3.1. This repaired missing composition data; it did not add providers beyond Exa Deep and
+    Sumble. Commits: `b90024dd`, `80844bbc`, `c0595dbf`.
+
+17. **`get_research_view@1` now receives its declared pins.** The conversation slot had the tool
+    grant but the recipe never requested `project_run`, `field_registry`, or
+    `verification_policy`, causing `missing_tool_requirement`. Project-run and field-registry pins
+    are now requested; verification policy is requested-but-optional only when verification is
+    disabled and no policy resource exists. Commit: `254df301`.
+
+18. **Budget-disabled approval now confirms and launches as one transaction.** In the pilot
+    posture, the human approval previously confirmed the directive but stranded launch because
+    the following agent turn lacked the gate's server-derived estimate/budget receipt. The approval
+    turn now captures the gate-frozen accounts and invokes the narrow launch tool in the same SQL
+    transaction. Budget-enabled deployments retain the separate confirm-only behavior. Commit:
+    `254df301`.
+
+19. **Uniquely identifiable Exa alias corruption is repaired request-aware.** Exa occasionally
+    partially rewrote a long canonical field alias. The parser now repairs it only when an intact,
+    byte-aligned prefix identifies exactly one requested schema member, and the same request-aware
+    parser is used during account/contact materialization and replay. Ambiguous, colliding,
+    unrelated, or malformed aliases still fail closed. Commit: `254df301`.
+
+20. **Effort-tier errors now identify the real mismatch.** `comprehensive` is a profile, not an
+    allowed effort tier; the accepted tiers were not widened. The agent skill now says to use the
+    confirmed account tier, and the server names the directive-tier mismatch instead of emitting
+    the misleading `account_tier_checkpoint_missing`. Commit: `3fde62a9`.
+
+### Settings that were not globally disabled
+
+- **Budget controls:** the preserved Missoula pilot runtime already had budget enforcement off.
+  The code did not globally remove budget caps; it added correct behavior for the explicit
+  disabled setting. Enabled deployments remain capped and use the confirm-only gate path.
+- **Verification:** the live pilot runtime had verification off. Verification was not removed from
+  the product; only its resource pin is optional when no policy exists because the feature is off.
+- **Contact safeguards:** non-empty directional questions, exact person/employer target lock,
+  identity/use controls, and contact selection authority remain mandatory.
+- **Evidence/provenance:** target lock, exact field/source authority, response artifacts, evidence
+  spans for promoted non-null claims, and honest-empty semantics remain enforced.
+- **Provider breadth:** no fallback waterfall was enabled. This slice remains Exa Deep + Sumble.
+- **Browser progress card:** the stale “0 of 1 settled” card was not changed here; the founder
+  identified it as likely owned by an unmerged Lane-E/other-slice worktree.
