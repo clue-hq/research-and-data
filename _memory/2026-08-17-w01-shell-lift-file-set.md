@@ -184,10 +184,13 @@ Founder-requested real-browser verification of W0+W1 on a fresh port pair (3030/
 **Launch recipe that works (all from repo root; `set -a; source .env; set +a` first):**
 - Platform API 8030: `.venv/bin/python -m uvicorn clue_api.projections_main:app --host 127.0.0.1
   --port 8030` with `CLUE_AUTH_CLERK_AUTHORIZED_PARTIES` extended to include
-  `http://localhost:3030` (shell env overrides .env for pydantic-settings).
+  `http://localhost:3030` and `CLUE_DESIGN_API_BASE_URL=http://127.0.0.1:8010`
+  (shell env overrides .env for pydantic-settings).
 - Design API 8010: `.venv/bin/python -m uvicorn lumen_api.main:app --host 127.0.0.1 --port 8010`
   with `CLUE_STORAGE_FS_ROOT=/tmp/lumen-dev-storage` (lumen_api IS importable from the root
-  venv post-Part-II; same shared Postgres 55040/clue). **MANDATORY (latency, found 2026-08-18):
+  venv post-Part-II; same shared Postgres 55040/clue), `LUMEN_INGESTION_VISION=1`, and
+  `LUMEN_INGESTION_DESCRIBE=1`. Live assistance also needs `OPENROUTER_API_KEY`; without that
+  secret both flags fail soft to deterministic extraction. **MANDATORY (latency, found 2026-08-18):
   also set `LUMEN_CORE_HELPER=<repo>/subsystems/clue-design/target/release/lumen-api-helper`
   (build once: `cargo build -p lumen-api-helper --release` in subsystems/clue-design, ~73s).
   Without it the API falls back to `cargo run` PER ENGINE CALL (~1.1s spawn each) — founder

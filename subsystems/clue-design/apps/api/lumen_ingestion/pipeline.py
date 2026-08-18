@@ -841,6 +841,20 @@ class _ExtractPdfCallable(Protocol):
     ) -> Any: ...
 
 
+def resolve_pdf_vision() -> Any:
+    """Return the configured PDF vision assist without changing library defaults.
+
+    Deployments opt in with ``LUMEN_INGESTION_VISION=1``. A missing OpenRouter key resolves
+    directly to :class:`NullPdfVision`, preserving deterministic extraction without paying the
+    PDF page-rasterization cost of an assist that cannot call its gateway.
+    """
+    from .capture.pdf_vision import NullPdfVision, OpenRouterPdfVision
+
+    if settings.lumen_ingestion_vision and settings.openrouter_api_key:
+        return OpenRouterPdfVision()
+    return NullPdfVision()
+
+
 def _default_extract_pdf(
     pdf_bytes: bytes,
     filename: str,
@@ -857,6 +871,7 @@ def _default_extract_pdf(
         core=core,
         store_root=store_root,
         reporter=reporter,
+        vision=resolve_pdf_vision(),
     )
 
 
