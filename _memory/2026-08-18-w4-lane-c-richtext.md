@@ -79,12 +79,38 @@ inspector design language). Deferred minors in the ledger: mixed-state removal o
 toolbar; section born collapsed; chats-route dummy mount now shows no text Link-to
 (sanctioned but visible).
 
+## W4.7 DONE — custom-component props form (commits `826301b7` + `ee8b4eb2` + fix
+`a4e0c03e`; reviewed inline; browser-verified 2026-08-18/19)
+
+Contract item 34 live. Seeding (all via live 8013 API): web account
+`acc_403fa12213464a9cbb2a9a1dab3663db`, slug `lane-c-pricing-card`, artifact
+`ccart_765fe726…c210925c` (schema: headline string / accent enum blue|green / planCount
+number / showBadge boolean; defaults blue/Pricing/3/true). Verification doc = the DERIVED
+account-bound `doc_b778a805381c4831844c490e30701719` (instance `cclanec1` in `secc`;
+a doc gets account_id ONLY via derive; insert must target a section — LUMW0011). Compiler
+recipe note: `npm ci` in `subsystems/clue-design/apps/custom-component-compiler` first
+(503 CCI0002 "Cannot find package 'typescript'" is the symptom).
+
+Port: pure decision module mirrors the source `CustomPropControl` branch-for-branch;
+`pageIdForNode` extracted to `page-address.ts` (rich-text commit refactored onto it);
+banner-delimited "Component properties" inspector section, ContainerControls only,
+inspector-native, chrome excluded; whole-props `set_custom_component_props` through the
+manual-edits controller. Ledgered ruling: loading/failed artifact → form ABSENT.
+**Escape defect found in browser & fixed (`a4e0c03e`):** both Enter/Escape end focus and
+the span's blur-settle fired same-task with the pre-key draft closure — Escape committed
+the garbage it abandoned. Fix = pure `customComponentDraftKeyAction`/
+`…KeySuppressesBlur` + a skip-next-blur-settle ref; deliberate deviation from the
+source's wiring (same hazard upstream; semantics = "Escape sends nothing"). All six
+behaviors browser-verified; seeded props restored through the fixed form. Gates 634/634,
+lint, ds-build, build. Implementer report: `.superpowers/sdd/…/task-5-report.md`
+(residual notes: `layoutOnly` not yet consumed by web-inspector so full container view
+shows beneath the form — pre-existing lane A/B state; footer hint unconditional, source
+parity; post-commit remount flicker, same as rich-text).
+
 ## Open / next
 
-- **W4.7** (custom-component props form, item 34) + its seeding (web account → source PUT →
-  compile → insert op; endpoints mapped in the scout report §7).
-- Then full W4.8+W4.7 browser pass, whole-branch review, close-out. Lane C merges AFTER
-  lane B (rebase on the updated trunk first).
+- Full W4.8+W4.7 combined browser pass, whole-branch review, close-out. Lane C merges
+  AFTER lane B (rebase on the updated trunk first).
 - Carried caveat (source semantics): a rich-text commit landing while another write is in
   flight is silently dropped after the Lexical session destroyed itself — unrecoverable;
   same upstream.
