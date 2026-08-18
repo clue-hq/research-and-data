@@ -1,15 +1,23 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { HARVESTED_BRAND_KIT } from "../data/__fixtures__/harvest";
+import {
+  HARVESTED_ASSET_RECORDS,
+  HARVESTED_BRAND_KIT,
+} from "../data/__fixtures__/harvest";
 import { BrandContextWorkspaceSchema } from "./brand-context";
 import {
+  brandKitAssetIds,
   emptyBrandContextWorkspace,
+  parseAssetRecords,
   toBrandContextWorkspace,
 } from "./brand-context-mapping";
 import { BrandKitDetailSchema } from "./brand-kit";
 
 const kit = BrandKitDetailSchema.parse(HARVESTED_BRAND_KIT);
 const workspace = toBrandContextWorkspace(kit);
+const workspaceWithAssets = toBrandContextWorkspace(kit, {
+  assetRecords: parseAssetRecords(HARVESTED_ASSET_RECORDS),
+});
 
 test("the harvested kit maps to a workspace the page's schema accepts", () => {
   BrandContextWorkspaceSchema.parse(workspace);
@@ -271,4 +279,131 @@ test("a kit with no typography and no fonts renders both empty states", () => {
 
   assert.deepEqual(mapped.typefaces, []);
   assert.deepEqual(mapped.textStyles, []);
+});
+
+test("assets are the kit's logos then its images, deduped and ordered", () => {
+  assert.deepEqual(
+    workspaceWithAssets.assets.map((asset) => [asset.id, asset.category]),
+    [
+      ["asset_ing_cb86ad335799c963", "logo"],
+      ["asset_ing_61a219a05909b652", "logo"],
+      ["asset_ing_53f9b6455350e5b5", "background"],
+      ["asset_ing_7262ca0dc07c8d9c", "background"],
+      ["asset_ing_5ea77b5ffa4992f3", "background"],
+      ["asset_ing_421820f838bdedce", "background"],
+      ["asset_ing_e33a3733dcbaa605", "background"],
+      ["asset_ing_2240f4c56a7ba765", "background"],
+      ["asset_ing_2b0928ca4f3a3c70", "background"],
+      ["asset_ing_1511de1ec38185ac", "background"],
+      ["asset_ing_0888ff6595f4662d", "background"],
+      ["asset_ing_ecf26311cdeb734d", "background"],
+      ["asset_ing_9ea5ee9c9f82fa56", "background"],
+      ["asset_ing_fa2ed16107766130", "background"],
+      ["asset_ing_f436261cad2c2aa9", "background"],
+    ],
+  );
+});
+
+test("an asset's bytes are addressed through the BFF, never the design API", () => {
+  for (const asset of workspaceWithAssets.assets) {
+    assert.equal(asset.visual.kind, "image");
+    assert.match(
+      asset.visual.kind === "image" ? asset.visual.imagePath : "",
+      /^\/api\/clue\/design\/assets\/asset_ing_[0-9a-f]+\/bytes$/,
+    );
+  }
+});
+
+test("the asset registry supplies the name, type, size and geometry", () => {
+  const logo = workspaceWithAssets.assets.find(
+    (asset) => asset.id === "asset_ing_61a219a05909b652",
+  );
+  assert.deepEqual(
+    {
+      name: logo?.name,
+      type: logo?.type,
+      sizeBytes: logo?.sizeBytes,
+      sizeLabel: logo?.sizeLabel,
+      dimensions: logo?.dimensions,
+      createdLabel: logo?.createdLabel,
+      description: logo?.description,
+    },
+    {
+      name: "logo.svg",
+      type: "SVG",
+      sizeBytes: 1922,
+      sizeLabel: "1.9 KB",
+      dimensions: "60×25px",
+      createdLabel: "Aug 18, 2026",
+      // The harvest carries no description — the kit's describe pass was off.
+      description: "",
+    },
+  );
+});
+
+test("an asset with no registry record still renders, with honest unknowns", () => {
+  const mapped = toBrandContextWorkspace(kit, {});
+  const logo = mapped.assets.find(
+    (asset) => asset.id === "asset_ing_61a219a05909b652",
+  );
+  assert.deepEqual(
+    {
+      name: logo?.name,
+      type: logo?.type,
+      sizeBytes: logo?.sizeBytes,
+      sizeLabel: logo?.sizeLabel,
+      dimensions: logo?.dimensions,
+    },
+    {
+      // Without the registry the kit's own key is all we honestly have.
+      name: "primary",
+      type: "—",
+      sizeBytes: 0,
+      sizeLabel: "—",
+      dimensions: "—",
+    },
+  );
+});
+
+test("a captured screenshot is the screen's mockup category", () => {
+  const mapped = toBrandContextWorkspace(
+    BrandKitDetailSchema.parse({
+      brand_kit: { id: "kit", version: 1, name: "Shots" },
+      brand_kit_json: {
+        id: "kit",
+        name: "Shots",
+        version: 1,
+        assets: {
+          images: {
+            "img.1": { asset_id: "asset_shot", role: "screenshot" },
+            "img.2": { asset_id: "asset_photo", role: "photo" },
+          },
+        },
+      },
+    }),
+    {},
+  );
+
+  assert.deepEqual(
+    mapped.assets.map((asset) => [asset.id, asset.category]),
+    [
+      ["asset_shot", "mockup"],
+      ["asset_photo", "background"],
+    ],
+  );
+});
+
+test("no kit models a gradient, so no asset claims to be one", () => {
+  assert.ok(
+    workspaceWithAssets.assets.every((asset) => asset.visual.kind === "image"),
+  );
+});
+
+test("brand knowledge is honestly empty — the kit has no documents", () => {
+  assert.deepEqual(workspaceWithAssets.knowledgeFolders, []);
+});
+
+test("every asset the kit references is collected for the registry read", () => {
+  assert.equal(brandKitAssetIds(kit).length, 15);
+  assert.ok(brandKitAssetIds(kit).includes("asset_ing_61a219a05909b652"));
 });
