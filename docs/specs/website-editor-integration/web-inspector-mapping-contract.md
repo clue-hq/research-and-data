@@ -124,6 +124,20 @@ Tracked, never silently dropped; each needs a UI slot decision when its turn com
    Companion note: node *moving* is NOT this item — it stays governed by ruling 29
    (keyboard-only for now, §4) and the W4.10 audit.
 
+7. **Canvas/page-root background — wired but unreachable (added 2026-08-18, W4.5).**
+   Row 1's inspector side is DONE (the canvas Background control feeds the real
+   theme-token popover and emits the sanctioned write; the page root is a Container, so
+   the existing background write path serves it). But `lumen-web`'s `render_page` renders
+   only `root.children` into `<body>` — no element carries `data-node-id="root"` (so
+   nothing can select the root: a background click clears selection, and the layer tree
+   starts at the root's children) — and `root.classes` is dropped at render, so even a
+   written `bg-<token>` paints nothing. Closing this needs a small engine change (render
+   the root's classes onto `<body>` + a root-selection path), which §8 does not authorize
+   — entering scope requires a founder §8 amendment. Until then the control is
+   honest-but-inert (the dummy's own visual state; the W3.1 null contract drops its
+   events), and the frontend needs zero further work when the gap closes. Full analysis:
+   the in-code note at `web-inspector.tsx::CanvasControls` + `_memory/2026-08-18-w45-canvas-background.md`.
+
 ## 8. Engine-side work authorized by this contract
 
 Exactly one item: the **radius facet** family in `webClassFacets.ts` (+ its parse/set tests),
