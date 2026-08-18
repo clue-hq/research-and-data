@@ -124,7 +124,7 @@ Tracked, never silently dropped; each needs a UI slot decision when its turn com
    Companion note: node *moving* is NOT this item — it stays governed by ruling 29
    (keyboard-only for now, §4) and the W4.10 audit.
 
-7. **Canvas/page-root background — wired but unreachable (added 2026-08-18, W4.5).**
+7. **[ENTERED SCOPE 2026-08-18 — founder §8 amendment, item 2; see §8]** ~~Canvas/page-root background — wired but unreachable (added 2026-08-18, W4.5).~~
    Row 1's inspector side is DONE (the canvas Background control feeds the real
    theme-token popover and emits the sanctioned write; the page root is a Container, so
    the existing background write path serves it). But `lumen-web`'s `render_page` renders
@@ -140,6 +140,18 @@ Tracked, never silently dropped; each needs a UI slot decision when its turn com
 
 ## 8. Engine-side work authorized by this contract
 
-Exactly one item: the **radius facet** family in `webClassFacets.ts` (+ its parse/set tests),
-covering `rounded` all-corners and the four per-corner variants used by the dummy's Shape section.
+~~Exactly one item~~ **Exactly two items** (second added by founder amendment, 2026-08-18):
+
+1. The **radius facet** family in `webClassFacets.ts` (+ its parse/set tests), covering
+   `rounded` all-corners and the four per-corner variants used by the dummy's Shape
+   section. **[DONE — W4.1]**
+2. **The page-root render fix** (closes §7 item 7 / contract row 1): `lumen-web`'s
+   `render_page` emits the root's classes onto the page body element (all render modes —
+   published pages start honoring page backgrounds, the intended truth) and stamps the
+   root's node id per the existing editor-mode attribute gating, so a click on empty page
+   background resolves to the root and opens the Canvas schema (replacing the old
+   click-clears-selection behavior — ratified with this amendment). Scope is that one
+   render emission + its tests + whatever minimal frontend join change is needed for a
+   root selection to hydrate; nothing else in the engine.
+
 No other engine change is authorized for the web-inspector flow.
