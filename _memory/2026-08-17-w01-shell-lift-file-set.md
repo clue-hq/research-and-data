@@ -398,6 +398,19 @@ dispatcher against a captured window (no renderer needed). Gates 490/490, lint c
   token option list still W4's color-flow decision), undo/redo live — FOUNDER BROWSER
   SIGN-OFF PENDING (relaunch recipe above).
 
+## Remount defect fixed — commit (post-W3.4) `fix(part4): edits no longer remount…`
+
+Founder observed every edit re-rendering the whole canvas + inspector (unlike the MVP).
+Causes were two of our own keyed remounts: canvas key carried the reloadToken; inspector key
+carried the document version. Fix = source semantics: quiet in-place srcdoc swap on the SAME
+iframe (loading state only at per-document mount; `useWebRender(documentId, reloadToken)`),
+inspector keyed on selected node only (accepted drift: engine-snapped values display as typed
+until reselect), plus the source's render-rebuild selection sequence (resetSelection on reload
+→ selectNode on the new frame's ready; canvas takes `selectedNodeId`). DOM-identity-marker
+verified: same inspector root + iframe element across a write; open sections persist; outline
+restored. LESSON for future W-work: never key-remount on write-cycle tokens — reserve keyed
+remounts for identity changes (document id, node id).
+
 ## Next
 
 - **W2** (read path): W2.1 real render in the artifact stage (sandboxed srcdoc iframe,
