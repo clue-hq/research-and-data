@@ -8,22 +8,29 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from dataclasses import dataclass, field
 from decimal import Decimal
 from uuid import UUID
 
-from pydantic import JsonValue
+import pytest
+from pydantic import JsonValue, ValidationError
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_core import (
     AspectContext,
     AspectWorker,
+    Completion,
     ExtractionMethod,
     IdentityBinding,
+    Message,
     Persona,
     ResearchMode,
     SourceTier,
     UseClass,
     WorkerStatus,
+    canonical_json,
+    new_claim_id,
+    new_entity_id,
 )
 from clue_research.claimstore import WorkspaceScope, claims_for, entities_with_field_claim
 from clue_research.profiling.committee import (
@@ -38,7 +45,11 @@ from clue_research.profiling.committee import (
     discover_committee,
 )
 from clue_research.profiling.committee.admission import DISCOVERY_PROVENANCE_FIELD
-from clue_research.profiling.committee.coverage import CommitteeStopReason
+from clue_research.profiling.committee.coverage import (
+    CommitteeStopReason,
+    estimate_committee_coverage,
+)
+from clue_research.profiling.committee.results import CommitteeMemberRef, CommitteeResult
 from clue_spine import create_brand, create_product
 from clue_storage import artifact_key, content_address, record_artifact
 
@@ -661,6 +672,300 @@ def test_grounded_candidate_keeps_tier4_llm_synthesis_provenance(
                 assert claim.evidence_span == "title: Chief Financial Officer"
 
     run_async(scenario())
+
+
+_ROLE_FIELD_NAMES = (
+    "persona",
+    "role_on_committee",
+    "role_confidence",
+    "role_plausible",
+    "role_claim_id",
+    "persona_claim_id",
+)
+
+
+@dataclass
+class RecordingGateway(FakeGateway):
+    """``FakeGateway`` + the prompts it saw, so a test can prove *which* candidate a call was for.
+
+    ``complete_calls`` alone proves how many role inferences ran; ``prompts`` proves the ungrounded
+    candidate's title never reached the model (D2: the ungrounded branch spends nothing)."""
+
+    prompts: list[str] = field(default_factory=list)
+
+    def complete(self, *, model: str, messages: list[Message], **opts: object) -> Completion:
+        self.prompts.append(messages[-1].content)
+        return super().complete(model=model, messages=messages, **opts)
+
+
+def _emailed_vp(email: str = "pat.ops@acme.example", *, key: str) -> object:
+    """An ungrounded candidate: a strong key (verified email) but NO grounding URL, so it can never
+    carry a tier-4 agent-derived role — plus one professional fact so its survival is observable."""
+    return make_candidate(
+        source_key="apollo_people",
+        verified_email=email,
+        full_name="Pat Ops",
+        title="VP of Operations",
+        professional_facts=(_professional_fact("VP of Operations", key=key),),
+    )
+
+
+def _is_roleless(member: object) -> bool:
+    return all(getattr(member, name) is None for name in _ROLE_FIELD_NAMES)
+
+
+def _has_full_role(member: object) -> bool:
+    return all(getattr(member, name) is not None for name in _ROLE_FIELD_NAMES)
+
+
+async def _discovery_and_professional_fingerprints(
+    conn: AsyncConnection, run_id: UUID
+) -> set[tuple[object, ...]]:
+    """Every discovery-provenance + professional-fact claim written in ``run_id``, keyed on content
+    (never on entity/claim ids, which differ between two independent runs)."""
+    scope = WorkspaceScope.for_workspace(_TENANT)
+    contacts = await entities_with_field_claim(
+        conn, DISCOVERY_PROVENANCE_FIELD, run_id=run_id, scope=scope
+    )
+    fingerprints: set[tuple[object, ...]] = set()
+    for contact_id in contacts:
+        for field_key in (DISCOVERY_PROVENANCE_FIELD, CURRENT_TITLE):
+            for claim in await claims_for(conn, contact_id, field_key, scope=scope):
+                fingerprints.add(
+                    (
+                        claim.field_key,
+                        canonical_json(claim.value_json),
+                        claim.source_url,
+                        claim.evidence_span,
+                        claim.extraction_method,
+                        int(claim.source_tier),
+                        claim.source_key,
+                    )
+                )
+    return fingerprints
+
+
+def test_agent_deferred_mode_discovers_without_any_role_work(require_profiling_db: None) -> None:
+    """``role_inference="agent_deferred"`` discovers + identity-resolves and stops there.
+
+    Contract §5.2 steps 1-2: discovery/identity is the worker's job, the role judgment is the
+    account agent's (D3 writes it back). So the deferred run makes ZERO gateway calls, writes no
+    role/persona claim at all, and every admitted member — grounded or not — is returned with its
+    six role fields absent and counted in ``needs_review``."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            await seed_packs(conn)
+            account = await insert_test_account(conn)
+            key = await _seed_professional_artifact(conn)
+            candidates = [_cfo(), _emailed_vp(key=key)]  # grounded + ungrounded
+            source = FakeCommitteeSource(source_key="apollo_people", tier=2, candidates=candidates)
+            gateway = RecordingGateway()
+            result = await discover_committee(
+                conn,
+                account_entity_id=account.id,
+                run_id=_RUN,
+                workspace_id=_TENANT,
+                sources=[source],
+                gateway=gateway,
+                role_model="model-x",
+                role_inference="agent_deferred",
+            )
+
+            assert result.admitted == 2
+            assert result.dropped == 0
+            assert len(result.members) == 2
+            # No role judgment happened anywhere — not for the grounded candidate either.
+            assert gateway.complete_calls == 0
+            assert gateway.prompts == []
+            assert all(_is_roleless(member) for member in result.members)
+            assert result.needs_review == len(result.members) == 2
+
+            scope = WorkspaceScope.for_workspace(_TENANT)
+            for member in result.members:
+                assert (
+                    await _committee_claims(conn, member.contact_entity_id, ROLE_ON_COMMITTEE) == []
+                )
+                assert await _committee_claims(conn, member.contact_entity_id, PERSONA) == []
+                # ...while the member's own discovery claim is durable and referenced.
+                discovery = await claims_for(
+                    conn, member.contact_entity_id, DISCOVERY_PROVENANCE_FIELD, scope=scope
+                )
+                assert [claim.id for claim in discovery] == [member.discovery_claim_id]
+                assert member.discovery_claim_id in result.claim_refs
+            # the ungrounded member's professional fact is materialized and referenced too.
+            professional = [
+                claim_id for member in result.members for claim_id in member.professional_claim_ids
+            ]
+            assert len(professional) == 1
+            assert professional[0] in result.claim_refs
+            assert result.committee() == ()  # nothing is handoff-shaped without a role
+
+    run_async(scenario())
+
+
+def test_agent_deferred_writes_the_same_discovery_and_professional_claims(
+    require_profiling_db: None,
+) -> None:
+    """Deferred mode changes only the role layer: the discovery-provenance + professional-fact
+    claims it writes are byte-for-byte what ``worker_llm`` mode writes for the same candidates."""
+
+    async def run_mode(mode: str, run_id: UUID) -> set[tuple[object, ...]]:
+        async with rollback_conn() as conn:
+            await seed_packs(conn)
+            account = await insert_test_account(conn)
+            key = await _seed_professional_artifact(conn)
+            source = FakeCommitteeSource(
+                source_key="apollo_people", tier=2, candidates=[_cfo(), _emailed_vp(key=key)]
+            )
+            await discover_committee(
+                conn,
+                account_entity_id=account.id,
+                run_id=run_id,
+                workspace_id=_TENANT,
+                sources=[source],
+                gateway=FakeGateway(),
+                role_model="model-x",
+                role_inference=mode,  # type: ignore[arg-type]
+            )
+            return await _discovery_and_professional_fingerprints(conn, run_id)
+
+    async def scenario() -> None:
+        deferred = await run_mode("agent_deferred", _RUN)
+        worker_llm = await run_mode("worker_llm", _RUN)
+        assert deferred == worker_llm
+        assert len(deferred) == 3  # two discovery claims + the ungrounded member's title fact
+
+    run_async(scenario())
+
+
+def test_worker_llm_mode_admits_an_ungrounded_member_without_role_fields(
+    require_profiling_db: None,
+) -> None:
+    """An ungrounded candidate is now *representable*: it enters ``members`` with its role fields
+    absent instead of vanishing (D1's temporary skip), spends nothing on a role it can never write,
+    and keeps its claim ids in ``claim_refs`` — while its grounded neighbour is untouched."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            await seed_packs(conn)
+            account = await insert_test_account(conn)
+            key = await _seed_professional_artifact(conn)
+            source = FakeCommitteeSource(
+                source_key="apollo_people", tier=2, candidates=[_cfo(), _emailed_vp(key=key)]
+            )
+            gateway = RecordingGateway()
+            result = await discover_committee(
+                conn,
+                account_entity_id=account.id,
+                run_id=_RUN,
+                workspace_id=_TENANT,
+                sources=[source],
+                gateway=gateway,
+                role_model="model-x",
+            )
+
+            assert result.admitted == 2
+            assert len(result.members) == 2
+            grounded = [member for member in result.members if _has_full_role(member)]
+            roleless = [member for member in result.members if _is_roleless(member)]
+            assert len(grounded) == 1
+            assert len(roleless) == 1
+            assert result.needs_review == 1
+
+            # The grounded neighbour still gets exactly one role inference; the ungrounded
+            # candidate's title never reaches the model (no verdict computed and discarded).
+            assert gateway.complete_calls == 1
+            assert any("Chief Financial Officer" in prompt for prompt in gateway.prompts)
+            assert not any("VP of Operations" in prompt for prompt in gateway.prompts)
+
+            member = roleless[0]
+            assert await _committee_claims(conn, member.contact_entity_id, ROLE_ON_COMMITTEE) == []
+            assert await _committee_claims(conn, member.contact_entity_id, PERSONA) == []
+            assert member.discovery_claim_id in result.claim_refs
+            assert len(member.professional_claim_ids) == 1
+            assert member.professional_claim_ids[0] in result.claim_refs
+            # the handoff committee carries the role-tagged member only.
+            assert len(result.committee()) == 1
+            assert result.committee()[0].contact_entity_id == grounded[0].contact_entity_id
+
+    run_async(scenario())
+
+
+def _full_role_member() -> CommitteeMemberRef:
+    return CommitteeMemberRef(
+        contact_entity_id=new_entity_id(),
+        persona=Persona.ECONOMIC_BUYER,
+        role_on_committee=Persona.ECONOMIC_BUYER.value,
+        role_confidence=0.9,
+        role_plausible=True,
+        discovery_claim_id=new_claim_id(),
+        role_claim_id=new_claim_id(),
+        persona_claim_id=new_claim_id(),
+    )
+
+
+def _roleless_member() -> CommitteeMemberRef:
+    return CommitteeMemberRef(
+        contact_entity_id=new_entity_id(),
+        discovery_claim_id=new_claim_id(),
+        professional_claim_ids=(new_claim_id(),),
+    )
+
+
+def test_member_role_fields_are_all_or_none() -> None:
+    """A half-role member is unrepresentable: either the full role set or none of it.
+
+    A partial mix would be a member that carries, say, a persona with no claim id behind it — a
+    role assertion with no provenance, which is exactly what the contract forbids."""
+    assert _full_role_member().persona is Persona.ECONOMIC_BUYER
+    assert _roleless_member().persona is None
+
+    with pytest.raises(ValidationError, match="all-or-none"):
+        CommitteeMemberRef(
+            contact_entity_id=new_entity_id(),
+            persona=Persona.CHAMPION,  # a persona with no role claim behind it
+            discovery_claim_id=new_claim_id(),
+        )
+    with pytest.raises(ValidationError, match="all-or-none"):
+        CommitteeMemberRef(
+            contact_entity_id=new_entity_id(),
+            role_claim_id=new_claim_id(),  # a claim id with no role
+            discovery_claim_id=new_claim_id(),
+        )
+
+
+def test_handoff_projection_covers_role_carrying_members_only() -> None:
+    """``committee()`` is the handoff shape (persona required), so it yields role-carrying members
+    only; projecting a roleless member is a loud programming error, never a fabricated persona."""
+    full = _full_role_member()
+    roleless = _roleless_member()
+    result = CommitteeResult(
+        account_entity_id=new_entity_id(),
+        members=(full, roleless),
+        coverage=estimate_committee_coverage(
+            channels_searched=["apollo_people"],
+            all_channels=["apollo_people"],
+            stopping_reason=CommitteeStopReason.EXHAUSTED,
+            candidates_seen=2,
+            admitted=2,
+        ),
+        admitted=2,
+        needs_review=1,
+    )
+    projected = result.committee()
+    assert len(projected) == 1
+    assert projected[0].contact_entity_id == full.contact_entity_id
+    assert projected[0].persona is Persona.ECONOMIC_BUYER
+    # both members' discovery + professional claims stay in the reference index.
+    assert full.discovery_claim_id in result.claim_refs
+    assert roleless.discovery_claim_id in result.claim_refs
+    assert roleless.professional_claim_ids[0] in result.claim_refs
+    assert full.role_claim_id in result.claim_refs
+    assert None not in result.claim_refs
+
+    with pytest.raises(ValueError, match="role"):
+        roleless.as_committee_member()
 
 
 def test_role_fallback_on_unparseable_gateway(require_profiling_db: None) -> None:

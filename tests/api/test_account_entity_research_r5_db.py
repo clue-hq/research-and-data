@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from collections.abc import AsyncIterator, Callable, Mapping, Sequence
 from contextlib import asynccontextmanager
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from typing import Any, cast
@@ -53,6 +53,7 @@ from clue_api.entity_research_tools import (
     EntityResearchGovernedRejection,
     EntityResearchProviderAction,
     EntityResearchProviderCausationStore,
+    EntityResearchResultIntegrityError,
     EntityResearchResultStore,
     EntityResearchToolRequestStore,
     ExternalResearchResultLineageReader,
@@ -71,10 +72,16 @@ from clue_api.exa_entity_research_tools import (
     ExaAccountSemanticResearchAction,
     ExaEntityResearchProjectionBuilder,
 )
+from clue_api.sumble_committee_acquisition import (
+    SumbleCommitteeAcquisitionCoordinator,
+    compile_sumble_committee_preflight,
+)
+from clue_api.sumble_committee_source import SumbleCommitteeSource
 from clue_api.sumble_entity_research_tools import SumbleCommitteeSemanticResearchAction
 from clue_api.trial.account_deep_fixture import seed_insight_health_account_deep_fixture
 from clue_core import (
     Claim,
+    CommitteeAcquisitionRequest,
     EntityId,
     EntityType,
     ExtractionMethod,
@@ -93,6 +100,7 @@ from clue_core.entity_research import (
     EntityResearchJobAuthorization,
     EntityResearchSelection,
     FieldSourceAuthority,
+    GovernedResearchToolRequest,
     PersistedResearchToolResult,
     ResearchClaimDelta,
     ResearchDiscoveredSubjectProjection,
@@ -107,11 +115,17 @@ from clue_core.entity_research import (
 )
 from clue_fleet import DbEntityResearchJobStore, EntityResearchRunEnvelope
 from clue_fleet.entity_research import EntityResearchExecutionFence
-from clue_research.claimstore import insert_claim
+from clue_research.claimstore import WorkspaceScope, claims_for, insert_claim
 from clue_research.durable import insert_account_run, pin_account_run_research_directive
 from clue_research.durable.discovery import capture_discovery_artifact
-from clue_research.identity import insert_contact_entity
-from clue_research.profiling.committee import load_committee_pack
+from clue_research.identity import get_account, insert_contact_entity
+from clue_research.profiling.committee import (
+    CURRENT_TITLE,
+    PERSONA,
+    ROLE_ON_COMMITTEE,
+    load_committee_pack,
+)
+from clue_research.profiling.committee.results import CommitteeMemberRef, CommitteeResult
 from clue_research.profiling.committee.sources import (
     CandidateFactProvenance,
     CandidateProfessionalFact,
@@ -126,16 +140,21 @@ from tests.api.account_deep_test_support import confirmed_account_research_direc
 from tests.api.test_account_deep_fixture_a1 import _pages
 from tests.api.test_exa_deep_acquisition_e1 import _payload as _exa_payload
 from tests.api.test_exa_deep_acquisition_e1 import _Transport as _ExaTransport
+from tests.api.test_sumble_committee_acquisition_s2b import _CommitteeTransport
+from tests.api.test_sumble_committee_acquisition_s2b import _setup as _committee_setup
 from tests.db.conftest import run_async
+from tests.durable.conftest import rollback_conn as durable_rollback_conn
 from tests.fleet.entity_research_r2_helpers import run_envelope
+from tests.profiling.conftest import (
+    FakeGateway,
+    rollback_conn,
+    seed_packs,
+)
 from tests.profiling.conftest import (
     migrated_db as migrated_db,
 )
 from tests.profiling.conftest import (
     require_profiling_db as require_profiling_db,
-)
-from tests.profiling.conftest import (
-    rollback_conn,
 )
 
 _PAIN = "account.operational_pain"
@@ -1613,3 +1632,201 @@ def test_r5_office_gate_admits_the_live_paramus_candidate_vetoed_by_region_spell
     )
     assert selected == (paramus_cmo, bloomingdale_ceo)
     assert ambiguous == 1
+
+
+def _committee_tool_request(durable: CommitteeAcquisitionRequest) -> GovernedResearchToolRequest:
+    """The governed committee request the R5 engine journals before the provider action runs."""
+    return GovernedResearchToolRequest(
+        research_run_id=uuid4(),
+        job_id=uuid4(),
+        subject_type=ResearchSubjectType.ACCOUNT,
+        target_entity_id=UUID(str(durable.account_id)),
+        agent_turn_id=uuid4(),
+        agent_execution_id=uuid4(),
+        tool_call_id=uuid4(),
+        tool_name="discover_buying_committee",
+        tool_version=1,
+        tool_input_sha256=canonical_sha256({"tool": "discover_buying_committee"}),
+        field_plan_ref="field-plan:d2-committee",
+        source_plan_ref="source-plan:d2-committee",
+        source_keys=(PEOPLE_SOURCE_KEY,),
+        questions=(_COMMITTEE_QUESTION,),
+        budget_reservation_key="budget:d2-committee",
+        idempotency_key="idempotency:d2-committee",
+    )
+
+
+def test_r5_production_committee_action_defers_role_inference_to_the_agent(tmp_path: Path) -> None:
+    """The production Sumble committee action discovers + identity-resolves, and judges no roles.
+
+    Contract §5.2 steps 1-2: discovery/identity is the provider action's job; the committee role is
+    the responsible account agent's judgment (written back by its own tool). So a production
+    committee call now spends nothing on role inference, writes NO ``contact.role_on_committee`` /
+    ``contact.persona`` claim, and still projects every admitted member as a discovered subject
+    carrying its provider-returned People facts. Between this and the agent's role write, a
+    committee legitimately has members and no roles — the ratified intermediate state."""
+
+    async def scenario() -> None:
+        storage = FsStorage(tmp_path / "artifacts")
+        async with durable_rollback_conn(seed_pack=True) as conn:
+            durable = await _committee_setup(conn, storage, workspace_id="ws-d2-committee")
+
+            @asynccontextmanager
+            async def same_connection() -> AsyncIterator[AsyncConnection]:
+                yield conn
+
+            coordinator = SumbleCommitteeAcquisitionCoordinator(
+                transport=_CommitteeTransport(),
+                storage=storage,
+                cents_per_credit=Decimal("0.5"),
+                conn_factory=same_connection,
+                poll_after_seconds=30,
+            )
+            preflight = compile_sumble_committee_preflight(durable, cents_per_credit=Decimal("0.5"))
+            ready = await coordinator.start(preflight)
+            for _ in range(2):  # the People submission settles on the polling path
+                await conn.execute(
+                    text(
+                        "UPDATE committee_acquisition_operation SET next_poll_at=:past WHERE id=:id"
+                    ),
+                    {
+                        "id": ready.operation.operation_id,
+                        "past": datetime.now(UTC) - timedelta(seconds=1),
+                    },
+                )
+                ready = await coordinator.start(preflight)
+            assert ready.operation.state.value == "ready"
+
+            account = await get_account(conn, durable.account_id)
+            assert account is not None
+            source = SumbleCommitteeSource(
+                operation_ids={durable.account_id: ready.operation.operation_id},
+                storage=storage,
+                conn_factory=same_connection,
+            )
+            selected = tuple(await source.find_candidates(account, limit=durable.people_limit))
+            assert selected
+
+            await seed_packs(conn)
+            gateway = FakeGateway()
+            action = SumbleCommitteeSemanticResearchAction(
+                preflight=preflight,
+                coordinator=coordinator,
+                storage=storage,
+                conn_factory=same_connection,
+                gateway=gateway,
+                role_model="d2-role-model",
+            )
+            committee = await action._discover_committee_members(
+                conn,
+                account_entity_id=durable.account_id,
+                run_id=RunId(UUID(str(durable.project_run_id))),
+                workspace_id=durable.workspace_id,
+                selected=selected,
+                budget_cap_cents=durable.money_budget_cap_cents,
+            )
+
+            assert committee.admitted == len(selected)
+            assert len(committee.members) == committee.admitted
+            assert gateway.complete_calls == 0  # no role model was consulted at all
+            assert committee.needs_review == len(committee.members)
+            scope = WorkspaceScope.for_workspace(durable.workspace_id)
+            for member in committee.members:
+                assert member.persona is None
+                assert member.role_claim_id is None
+                assert (
+                    await claims_for(conn, member.contact_entity_id, ROLE_ON_COMMITTEE, scope=scope)
+                    == []
+                )
+                assert await claims_for(conn, member.contact_entity_id, PERSONA, scope=scope) == []
+                assert member.professional_claim_ids  # the People facts are durable
+            assert committee.committee() == ()  # nothing handoff-shaped without a role
+
+            # The projection is role-independent: roleless members still flow through as
+            # discovered subjects carrying their provider-returned People facts.
+            request = _committee_tool_request(durable)
+            provider_operation = action._committee_descriptor(
+                ready.operation,
+                disposition=ProviderObservationDisposition.CAUSED,
+                include_dispatch=True,
+            )
+            # In production the engine journals the reservation through ``before_dispatch``
+            # before the action projects against it; do the same so the projection's FK holds.
+            await conn.execute(
+                text(
+                    """
+                    INSERT INTO entity_research_provider_operation
+                        (operation_ref, provider_kind, workspace_id, project_id, project_run_id,
+                         subject_type, target_entity_id, parent_account_id, source_key,
+                         field_keys, request_artifact_ref, reserved_at, dispatched_at)
+                    VALUES
+                        (:operation_ref, :provider_kind, :workspace_id, :project_id,
+                         :project_run_id, :subject_type, :target_entity_id, :parent_account_id,
+                         :source_key, :field_keys, :request_artifact_ref, :reserved_at,
+                         :dispatched_at)
+                    """
+                ),
+                {
+                    "operation_ref": provider_operation.operation_ref,
+                    "provider_kind": provider_operation.provider_kind,
+                    "workspace_id": provider_operation.workspace_id,
+                    "project_id": provider_operation.project_id,
+                    "project_run_id": provider_operation.project_run_id,
+                    "subject_type": provider_operation.subject_type.value,
+                    "target_entity_id": provider_operation.target_entity_id,
+                    "parent_account_id": provider_operation.parent_account_id,
+                    "source_key": provider_operation.source_key,
+                    "field_keys": list(provider_operation.field_keys),
+                    "request_artifact_ref": provider_operation.request_artifact_ref,
+                    "reserved_at": provider_operation.reserved_at,
+                    "dispatched_at": provider_operation.dispatched_at,
+                },
+            )
+            snapshot_ref, subjects = await action._persist_committee_projection(
+                request=request,
+                operation=ready.operation,
+                provider_operation=provider_operation,
+                committee=committee,
+                excluded=0,
+                ambiguous=0,
+            )
+            assert snapshot_ref.startswith("committee-snapshot:")
+            assert len(subjects) == len(committee.members)
+            subject = subjects[0]
+            assert subject.subject_type is ResearchSubjectType.CONTACT
+            assert subject.target_entity_id == UUID(str(committee.members[0].contact_entity_id))
+            assert subject.parent_account_id == request.target_entity_id
+            assert subject.fields
+            assert str(CURRENT_TITLE) in {field.field_key for field in subject.fields}
+            assert all(
+                field.outcome is ResearchFieldOutcome.FOUND
+                and field.claim_delta is ResearchClaimDelta.ACCEPTED
+                and field.evidence
+                for field in subject.fields
+            )
+
+            # ...and deferring the role does NOT relax the People-facts integrity rule: an
+            # office-admitted member with no direct People facts is still refused.
+            starved = CommitteeResult(
+                account_entity_id=committee.account_entity_id,
+                members=(
+                    CommitteeMemberRef(
+                        contact_entity_id=committee.members[0].contact_entity_id,
+                        discovery_claim_id=committee.members[0].discovery_claim_id,
+                    ),
+                ),
+                coverage=committee.coverage,
+                admitted=1,
+                needs_review=1,
+            )
+            with pytest.raises(EntityResearchResultIntegrityError, match="People facts"):
+                await action._persist_committee_projection(
+                    request=request,
+                    operation=ready.operation,
+                    provider_operation=provider_operation,
+                    committee=starved,
+                    excluded=0,
+                    ambiguous=0,
+                )
+
+    run_async(scenario())
