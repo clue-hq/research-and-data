@@ -36,8 +36,8 @@ Five parallel read-only recon agents mapped exact current state before writing (
 4. Channels observed-only — agreed, founder wording: display real provider-returned email clearly marked unverified; never call it validated, never promote as identity truth, never authorize delivery until an independent validator is added.
 5. NEW first-priority binding rule (added to the plan's Global Constraints and tasks C1/F6/G2-3b): **strict visual parity with the dummy frontend** at `/Users/aryankeshri/conductor/repos/clue-frontend/`, strongest on contact research details, buying-committee details, and contact details pages. Backend serves every researched field via API; frontend wires only fields with existing designed slots (backend 10, design 2 → wire 2); no new components/fields, no source/date captions under newly connected fields; ask the founder before any visual addition. Also strengthened in the global memory note `dummy-frontend-is-presentation-truth`.
 
-Still open: the chat-pagination adjacent defect (oldest-50, cursor ignored) — founder has not ruled on scope; recommended alongside Slice C.
+6. Chat-pagination defect ratified INTO scope — now plan Task C5 (newest-first initial load + upward cursor scrollback + identity dedupe; no new UI components). Nothing remains open; every plan decision is ratified.
 
 ## Follow-ups / not done here
-- No implementation started; Slice A is unblocked (all four plan decisions ratified).
+- No implementation started; Slice A is unblocked (all plan decisions ratified, C5 scheduled).
 - Profile/skill version numbers in the plan (v37/v38, skill v7, catalog v2) are "next free at implementation time" — re-check against the live catalog before promoting.
