@@ -26,6 +26,7 @@ import asyncio
 import json
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
@@ -35,6 +36,7 @@ from fastapi import FastAPI
 from httpx import ASGITransport
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_api import projections_app, projections_main, run_composition
 from clue_api.brand_kit_ingestion import (
     INGEST_WEBSITE_PATH,
     BrandKitWebsiteIngestion,
@@ -42,7 +44,7 @@ from clue_api.brand_kit_ingestion import (
 )
 from clue_api.stage0_setup import create_stage0_setup_router
 from clue_auth import provision_self_serve_workspace
-from clue_config import Settings
+from clue_config import Secrets, Settings
 from clue_db import db_lifespan, transaction
 from clue_design import brand as design_brand
 from clue_design import ingestion as design_ingestion
@@ -454,3 +456,52 @@ def test_a_configured_base_url_builds_the_trigger() -> None:
     assert isinstance(trigger, BrandKitWebsiteIngestion)
     # A trailing slash in the configured base must not double up in the request URL.
     assert trigger._base_url == DESIGN_BASE_URL  # noqa: SLF001 — one-line normalization check
+
+
+# --- 7. the production HTTP root actually passes the trigger through -------------------------
+
+
+class _NoKeySecrets:
+    """``Secrets`` with no model credential — composition only, never a model call."""
+
+    openrouter_api_key = None
+
+
+def _captured_setup_router(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
+    """Capture the kwargs the HTTP root hands ``create_stage0_setup_router``.
+
+    The router keeps its trigger private and the root returns only the app, so the composed
+    value is observed at the seam it is passed through. The real router is still built, so the
+    root's own wiring is exercised rather than replaced.
+    """
+    seen: dict[str, Any] = {}
+    real = projections_app.create_stage0_setup_router
+
+    def capturing(**kwargs: Any) -> Any:
+        seen.update(kwargs)
+        return real(**kwargs)
+
+    monkeypatch.setattr(projections_app, "create_stage0_setup_router", capturing)
+    return seen
+
+
+@pytest.mark.parametrize("configured", [True, False])
+def test_the_http_root_composes_the_trigger_exactly_when_configured(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, configured: bool
+) -> None:
+    monkeypatch.setattr(run_composition, "Secrets", _NoKeySecrets)
+    seen = _captured_setup_router(monkeypatch)
+    projections_main.build_application(
+        Settings(  # type: ignore[call-arg]
+            _env_file=None,
+            storage_fs_root=str(tmp_path / "artifacts"),
+            self_serve_provisioning_enabled=True,
+            design_api_base_url=(DESIGN_BASE_URL if configured else None),
+        ),
+        secrets=Secrets(_env_file=None),
+    )
+    trigger = seen["brand_kit_ingestion"]
+    if configured:
+        assert isinstance(trigger, BrandKitWebsiteIngestion)
+    else:
+        assert trigger is None
