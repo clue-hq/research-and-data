@@ -29,13 +29,15 @@ Five parallel read-only recon agents mapped exact current state before writing (
 - **F** — `SumbleContactSemanticEnrichmentAction` (reuse-first People/Teams); slot routing fixed; 15-field defaults (contacts 3→20, fields 8→15); batching behind one `source_action_ref` task; channels observed-only with real adapters (no validator vendor permitted — states capped at OBSERVED); contact/channel progress on the task read + gates SQL fix.
 - **G** — overlay completes (C7 read/compose/handoff); [C7×core] NULL-binding statement-drop fix; §12 browser acceptance matrix + paid email canary per the 2026-08-16 evidence conventions; §14 definition-of-done audit.
 
-## Open decisions flagged for founder (in the plan's final section)
-1. Product-path overlay mechanism (vs global default flips / tracked env file).
-2. Role inference relocated into the account agent (vs worker-LLM + provenance fix only).
-3. Ungrounded candidates carry no role claim (member visible, role empty).
-4. Channels observed-only (no permitted validator vendor; paid canary = real email lookup).
-5. Out-of-contract adjacent defect: chat pagination (oldest-50, cursor ignored) — recommended alongside Slice C, needs scope ruling.
+## Decisions — RATIFIED by the founder same day (2026-08-18)
+1. Product-path overlay mechanism (`CLUE_PRODUCT_PATH=integration_pilot`) — agreed.
+2. Role inference relocated into the account agent (`agent_deferred` + `record_committee_role_inferences`) — agreed.
+3. Ungrounded candidates carry no role claim (member visible, role honestly empty) — agreed; no display substitute.
+4. Channels observed-only — agreed, founder wording: display real provider-returned email clearly marked unverified; never call it validated, never promote as identity truth, never authorize delivery until an independent validator is added.
+5. NEW first-priority binding rule (added to the plan's Global Constraints and tasks C1/F6/G2-3b): **strict visual parity with the dummy frontend** at `/Users/aryankeshri/conductor/repos/clue-frontend/`, strongest on contact research details, buying-committee details, and contact details pages. Backend serves every researched field via API; frontend wires only fields with existing designed slots (backend 10, design 2 → wire 2); no new components/fields, no source/date captions under newly connected fields; ask the founder before any visual addition. Also strengthened in the global memory note `dummy-frontend-is-presentation-truth`.
+
+Still open: the chat-pagination adjacent defect (oldest-50, cursor ignored) — founder has not ruled on scope; recommended alongside Slice C.
 
 ## Follow-ups / not done here
-- No implementation started; every slice awaits founder review of the plan (and the four open decisions) before Slice A begins.
+- No implementation started; Slice A is unblocked (all four plan decisions ratified).
 - Profile/skill version numbers in the plan (v37/v38, skill v7, catalog v2) are "next free at implementation time" — re-check against the live catalog before promoting.
