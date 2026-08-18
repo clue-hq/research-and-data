@@ -242,7 +242,24 @@ pub fn render_page(
             "<script>/* lumen-runtime v2 */ {PLATFORM_RUNTIME_JS}</script>\n"
         ));
     }
-    html.push_str("</head>\n<body>\n");
+    // Contract §8 item 2 (founder amendment, 2026-08-18; closes §7 item 7 /
+    // contract row 1): the page root renders onto <body> — its classes in
+    // BOTH modes (a root `bg-<token>` finally paints, published pages
+    // included), its node id under the same editor-only gating as every
+    // other node, so a click on empty page background resolves to the root
+    // and the inspector's Canvas schema opens (deliberately replacing the
+    // old click-clears-selection behavior).
+    html.push_str("</head>\n<body");
+    if editor {
+        html.push_str(&format!(
+            " data-node-id=\"{}\"",
+            escape_attr(root.id.as_str())
+        ));
+    }
+    if !root.classes.trim().is_empty() {
+        html.push_str(&format!(" class=\"{}\"", escape_attr(root.classes.trim())));
+    }
+    html.push_str(">\n");
     html.push_str(&body);
     if editor {
         if let Some(bridge) = &options.bridge_script {
@@ -1222,6 +1239,57 @@ mod tests {
         );
         assert!(!outcome.has_errors(), "{:#?}", outcome.diagnostics);
         (doc, theme)
+    }
+
+    // Contract §8 item 2 (2026-08-18): the page root renders onto <body>.
+    #[test]
+    fn page_root_classes_and_editor_id_render_onto_body() {
+        let (mut doc, theme) = fixture();
+        let page_id = PageId::from("home");
+        let root_id = doc.page(&page_id).expect("page").root.clone();
+        doc.page_mut(&page_id)
+            .expect("page")
+            .nodes
+            .get_mut(&root_id)
+            .expect("root node")
+            .classes = "bg-surface-canvas".to_owned();
+
+        let editor = render_page(
+            &doc,
+            &page_id,
+            &theme,
+            &RenderOptions::editor("/asset-store"),
+        )
+        .expect("editor render");
+        assert!(editor.html.contains(&format!(
+            "<body data-node-id=\"{}\" class=\"bg-surface-canvas\">",
+            root_id.as_str()
+        )));
+
+        // Delivery keeps the classes (published backgrounds paint) but stays
+        // free of editor instrumentation, per the mode's zero-node-id law.
+        let delivery = render_page(
+            &doc,
+            &page_id,
+            &theme,
+            &RenderOptions::delivery("/asset-store"),
+        )
+        .expect("delivery render");
+        assert!(delivery.html.contains("<body class=\"bg-surface-canvas\">"));
+        assert!(!delivery.html.contains("data-node-id"));
+    }
+
+    #[test]
+    fn classless_root_keeps_a_bare_body_in_delivery() {
+        let (doc, theme) = fixture();
+        let delivery = render_page(
+            &doc,
+            &PageId::from("home"),
+            &theme,
+            &RenderOptions::delivery("/asset-store"),
+        )
+        .expect("delivery render");
+        assert!(delivery.html.contains("<body>\n"));
     }
 
     #[test]

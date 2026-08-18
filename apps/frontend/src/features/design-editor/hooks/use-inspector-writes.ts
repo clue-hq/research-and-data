@@ -1,7 +1,11 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { inspectorChangeToOperation } from "../adapter/apply";
+import {
+  inspectorChangeToOperation,
+  nextVisibilityMemory,
+  type VisibilityMemory,
+} from "../adapter/apply";
 import type { LoadedWebDocument } from "../engine/webDocuments";
 import type { WebArtifactSelection } from "./use-web-artifact-selection";
 import {
@@ -49,8 +53,20 @@ export function useInspectorWrites({
     selectionRef.current = selection;
   });
 
+  // W4.9 (row 40): the visibility eye's per-session memory of the display
+  // value it displaced, so an un-hide restores what was actually observed and
+  // never guesses. A ref, not state: it must not re-arm the listener or
+  // re-render, and its lifetime — this mounted editor — IS the "captured in
+  // this session" scope the ruling names. `nextVisibilityMemory` owns every
+  // decision (see `adapter/apply.ts`); this is just where it lives.
+  const visibilityMemoryRef = useRef<VisibilityMemory | null>(null);
+
   useEffect(() => {
     if (!documentId) return;
+    // A different document is a different session for the eye: node ids are
+    // page-local, so a capture from the previous document must not be handed
+    // to a same-named node here (that would restore an unobserved value).
+    visibilityMemoryRef.current = null;
     const onChange = (event: Event) => {
       const detail = (event as CustomEvent).detail as {
         artifactId?: unknown;
@@ -71,9 +87,20 @@ export function useInspectorWrites({
         Boolean(candidate.nodes?.[current.node.id]),
       );
       if (!page) return;
+      let restoreDisplay: string | null = null;
+      if (detail.property === "visible" && typeof detail.value === "boolean") {
+        const next = nextVisibilityMemory(
+          visibilityMemoryRef.current,
+          current.node,
+          detail.value,
+        );
+        visibilityMemoryRef.current = next.memory;
+        restoreDisplay = next.restoreDisplay;
+      }
       const operation = inspectorChangeToOperation(
         {
           property: detail.property,
+          restoreDisplay,
           selectionId: detail.selectionId,
           value: detail.value,
         },

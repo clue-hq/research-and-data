@@ -1,7 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { WebNode } from "../engine/webDocuments";
-import { HARVESTED_PAGE } from "./__fixtures__/web-nodes";
+import {
+  HARVESTED_HIDDEN_CONTAINER_V52,
+  HARVESTED_ICON_V56,
+  HARVESTED_IMAGE_PAGE,
+  HARVESTED_PAGE,
+  HARVESTED_PAGE_ROOT_V47,
+  IMAGE_RADIUS_CLASS_VARIANTS,
+} from "./__fixtures__/web-nodes";
 import { hydrateInspectorState, inspectorSelectionFor } from "./hydrate";
 
 // W2.2: the hydration adapter IS the contract's §1 mapping table — every case
@@ -18,6 +25,27 @@ function hydrate(id: string) {
   const n = node(id);
   return hydrateInspectorState(n, n.classes);
 }
+
+// W4.2 (lane B): the image/radius harvest is a second real document.
+function imageNode(id: string): WebNode {
+  const found = HARVESTED_IMAGE_PAGE.nodes[id];
+  assert.ok(found, `image fixture node ${id} missing`);
+  return found;
+}
+
+function hydrateImage(id: string) {
+  const n = imageNode(id);
+  return hydrateInspectorState(n, n.classes);
+}
+
+/** §1 row 14: an absent facet is the designed empty — NEVER "0". */
+const EMPTY_RADIUS = {
+  all: "",
+  bottomLeft: "",
+  bottomRight: "",
+  topLeft: "",
+  topRight: "",
+};
 
 // ── kind → schema (the plan's map; §5 fallback; 18b icon partition) ─────────
 
@@ -134,6 +162,27 @@ test("icon: padding hydrates (the only live sections per 18b)", () => {
   assert.equal(state.tokenTextColor, "Primary");
 });
 
+test("18b + R3: an icon with one padding axis states the other as a truthful zero", () => {
+  // ficon @56: "px-2 text-primary" — no py- utility means NO padding on that
+  // axis, so the trimmed schema's one live section must show 0, never the
+  // dummy's fixture default.
+  const icon = HARVESTED_ICON_V56.nodes.ficon;
+  assert.ok(icon);
+  const state = hydrateInspectorState(icon, icon.classes);
+  assert.deepEqual(state.padding, {
+    bottom: "0",
+    left: "2",
+    right: "2",
+    top: "0",
+  });
+  // 18b hides the icon's color/size/stroke sections, so nothing the schema
+  // renders reads these — the authored `text-primary` is the page's own
+  // styling, and the icon name stays agent-authored (no `iconName` state).
+  assert.equal(state.iconName, undefined);
+  assert.equal(state.iconSize, undefined);
+  assert.equal(state.iconStroke, undefined);
+});
+
 // ── container schema ────────────────────────────────────────────────────────
 
 test("container: display/gap/colors/padding hydrate per §1 rows 19-20", () => {
@@ -165,14 +214,35 @@ test("a one-axis padding fills the other axis with the truthful zero", () => {
 
 // ── section schema ──────────────────────────────────────────────────────────
 
-test("section: direction/gap hydrate per §1 row 22; absent wrap is omitted", () => {
+test("section: direction/gap hydrate per §1 row 22; absent wrap is a truthful No", () => {
   // hero: "flex flex-col items-center gap-6 py-24 px-8 bg-slate-900"
   const state = hydrate("hero");
   assert.equal(state.direction, "vertical"); // col
   assert.equal(state.gap, "6");
   assert.equal(state.layoutMode, "Flex");
   assert.equal(state.tokenBackgroundColor, "Slate-900");
-  assert.ok(!("wrap" in state)); // no flex-wrap token → dummy default stands
+  // W4.4 fix (controller ruling 2026-08-18): no flex-wrap utility has a KNOWN
+  // real behavior — CSS defaults to nowrap — so this is R3's truthful-value
+  // pattern (padding's truthful zeros), not §6(5)'s unknown-value omission.
+  assert.equal(state.wrap, false);
+});
+
+test("section: an explicit wrap value hydrates truthfully either way", () => {
+  const wrapping = hydrateInspectorState(node("hero"), "flex flex-wrap gap-6");
+  assert.equal(wrapping.wrap, true);
+  const notWrapping = hydrateInspectorState(node("hero"), "flex flex-nowrap gap-6");
+  assert.equal(notWrapping.wrap, false);
+  // `flex-wrap-reverse` still wraps.
+  const reverse = hydrateInspectorState(node("hero"), "flex flex-wrap-reverse");
+  assert.equal(reverse.wrap, true);
+});
+
+test("the truthful-No default is the section schema's own (it alone shows Wrap)", () => {
+  // A container with no flex-wrap keeps the dummy default: row 21 gives the
+  // container no Wrap control at all (§7 item 1, future work), so there is
+  // nothing to state truthfully.
+  const container = hydrateInspectorState(node("fgrid"), "grid gap-6");
+  assert.ok(!("wrap" in container));
 });
 
 // ── visibility (row 40) and the classes override parameter ─────────────────
@@ -191,9 +261,12 @@ test("a visible display value hydrates visible true", () => {
 
 // ── empty ───────────────────────────────────────────────────────────────────
 
-test("no facets, no props → an empty partial (defaults stand)", () => {
+test("no facets, no props → only the always-on radius record (defaults stand)", () => {
+  // §1 row 14 / ruling R-B1: radius is the one field that hydrates for EVERY
+  // node — the dummy default lies about real nodes, so the full record must
+  // always override it. Everything else stays omitted.
   const state = hydrateInspectorState(node("root"), "");
-  assert.deepEqual(state, {});
+  assert.deepEqual(state, { radius: EMPTY_RADIUS });
 });
 
 // ── W3.2 §2 additions: text style (ruling 25) and line spacing (ruling 26) ──
@@ -219,4 +292,150 @@ test("non-text nodes hydrate no style; absent leading omits line spacing", () =>
   const state = hydrate("cta");
   assert.ok(!("textStyle" in state));
   assert.ok(!("lineSpacing" in state));
+});
+
+// ── W4.5: the canvas schema's background (row 1) ────────────────────────────
+
+test("row 1: the page root's bg token reaches the canvas schema's state", () => {
+  const root = HARVESTED_PAGE_ROOT_V47.nodes.root;
+  assert.ok(root);
+  // The canvas schema is chosen by ID, not kind (the root is a container).
+  assert.deepEqual(
+    inspectorSelectionFor(root, HARVESTED_PAGE_ROOT_V47.page_root),
+    { selection: "canvas", layoutOnly: false },
+  );
+  // root: "bg-surface-canvas" — the document's own theme token, capitalized
+  // into the label the picker options use.
+  const state = hydrateInspectorState(root, root.classes);
+  assert.equal(state.tokenBackgroundColor, "Surface-canvas");
+});
+
+test("row 1: a page root with no background token leaves the dummy default", () => {
+  const root = HARVESTED_PAGE_ROOT_V47.nodes.root;
+  assert.ok(root);
+  const bare = hydrateInspectorState({ ...root, classes: "" }, "");
+  assert.ok(!("tokenBackgroundColor" in bare));
+});
+
+// ══ W4.9 — the eye and the segmented are ONE facet (rows 40 × 20) ═══════════
+
+test("row 40 × 20: the container the eye hid hydrates BOTH invisible and Hide", () => {
+  // Real bytes, written by the eye itself on the live editor (v51 → v52).
+  const fgrid = HARVESTED_HIDDEN_CONTAINER_V52.nodes.fgrid;
+  assert.ok(fgrid, "harvested hidden container missing");
+  assert.equal(fgrid.kind, "container");
+  const state = hydrateInspectorState(fgrid, fgrid.classes);
+  // One display parse feeds both controls, so they cannot disagree.
+  assert.equal(state.visible, false);
+  assert.equal(state.layoutMode, "Hide");
+  // And the eye's write displaced ONLY the display family.
+  assert.deepEqual(state.padding, { bottom: "8", left: "4", right: "4", top: "8" });
+  assert.equal(state.gap, "6");
+  assert.equal(state.tokenBackgroundColor, "Card");
+  assert.equal(state.tokenTextColor, "Dark");
+});
+
+// ── W4.2 (lane B): radius (§1 row 14, ruling R-B1) + the image harvest ──────
+
+test("image: an arbitrary pixel radius displays as its bare number", () => {
+  // img_plain: "object-contain rounded-[8px] w-80"
+  const state = hydrateImage("img_plain");
+  assert.deepEqual(state.radius, { ...EMPTY_RADIUS, all: "8" });
+});
+
+test("image: a named all-corners radius plus a corner override", () => {
+  // img_linked: "object-cover rounded-lg rounded-tl-[4px] w-80"
+  const state = hydrateImage("img_linked");
+  assert.deepEqual(state.radius, {
+    ...EMPTY_RADIUS,
+    all: "lg", // named scale values display verbatim
+    topLeft: "4",
+  });
+});
+
+test("bare `rounded` hydrates the empty radius, never zero", () => {
+  // img_bare: "rounded w-80" — the engine owns the bare token for removal but
+  // parses null, and null must never render as "0" (it would later write
+  // rounded-[0px] from an untouched field).
+  const state = hydrateImage("img_bare");
+  assert.deepEqual(state.radius, EMPTY_RADIUS);
+});
+
+test("no radius utility at all hydrates the empty radius", () => {
+  const state = hydrateInspectorState(
+    imageNode("img_plain"),
+    IMAGE_RADIUS_CLASS_VARIANTS.none,
+  );
+  assert.deepEqual(state.radius, EMPTY_RADIUS);
+});
+
+test("a variant-prefixed radius token is opaque and hydrates empty", () => {
+  const state = hydrateInspectorState(
+    imageNode("img_plain"),
+    IMAGE_RADIUS_CLASS_VARIANTS.variantOnly,
+  );
+  assert.deepEqual(state.radius, EMPTY_RADIUS);
+});
+
+test("only the exact [Npx] shape unwraps; other arbitrary values are verbatim", () => {
+  const percent = hydrateInspectorState(
+    imageNode("img_plain"),
+    IMAGE_RADIUS_CLASS_VARIANTS.arbitraryNonPixel,
+  );
+  assert.deepEqual(percent.radius, { ...EMPTY_RADIUS, all: "[50%]" });
+  const named = hydrateInspectorState(
+    imageNode("img_plain"),
+    IMAGE_RADIUS_CLASS_VARIANTS.named,
+  );
+  assert.deepEqual(named.radius, { ...EMPTY_RADIUS, all: "full" });
+});
+
+test("radius hydrates for non-image nodes too (the button's rounded-md)", () => {
+  // cta: "bg-accent text-dark px-4 py-2 rounded-md"
+  const state = hydrateImage("cta");
+  assert.deepEqual(state.radius, { ...EMPTY_RADIUS, all: "md" });
+});
+
+test("image: object-cover hydrates Fill; the linked pair hydrates (rows 11/13)", () => {
+  const state = hydrateImage("img_linked");
+  assert.equal(state.fillMode, "Fill"); // row 13, on a real image node
+  assert.equal(state.url, "https://example.com/teal"); // row 11
+  assert.equal(state.openInNewTab, true);
+});
+
+test("an unlinked image sets neither url nor openInNewTab", () => {
+  // img_plain carries new_tab false but NO href — an absent link must leave
+  // both fields untouched rather than hydrate a false/empty pair.
+  const state = hydrateImage("img_plain");
+  assert.ok(!("url" in state));
+  assert.ok(!("openInNewTab" in state));
+  assert.equal(state.fillMode, "Fit"); // object-contain → Fit
+});
+
+// ── W4.2 (lane B): the Fill preview src (§1 row 12, ruling R-B5) ────────────
+
+test("an image with an asset hydrates the BFF bytes URL as its preview src", () => {
+  const state = hydrateImage("img_linked");
+  assert.equal(
+    state.imagePreviewSrc,
+    "/api/clue/design/assets/asset_c42b6ba24117/bytes",
+  );
+});
+
+test("an image asset id is URL-encoded into the preview src", () => {
+  const base = imageNode("img_plain");
+  const odd: WebNode = { ...base, asset_id: "asset id/weird" };
+  const state = hydrateInspectorState(odd, odd.classes);
+  assert.equal(
+    state.imagePreviewSrc,
+    "/api/clue/design/assets/asset%20id%2Fweird/bytes",
+  );
+});
+
+test("a non-image node, and an image with no asset, leave the preview untouched", () => {
+  assert.ok(!("imagePreviewSrc" in hydrateImage("cta")));
+  const base = imageNode("img_plain");
+  const bare: WebNode = { ...base };
+  delete bare.asset_id;
+  assert.ok(!("imagePreviewSrc" in hydrateInspectorState(bare, bare.classes)));
 });

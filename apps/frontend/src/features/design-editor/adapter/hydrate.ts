@@ -2,6 +2,10 @@ import type {
   InspectorPresentationState,
 } from "@/features/chat-shell/hooks/use-inspector-controller";
 import type { ChatShellInspectorSelection } from "@/features/chat-shell/model/chat-shell";
+// The adapter may import data-layer constants (the presentation-component
+// import ban stops at `features/**/components/**`); `data/design-bff.ts` is the
+// single source of truth for the authenticated design mount.
+import { DESIGN_API_BFF_PREFIX } from "../data/design-bff";
 import { webClassFacets } from "../engine/webClassFacets";
 import type { WebNode } from "../engine/webDocuments";
 // W4.0: the capitalize-first token label is one shared rule — the picker's
@@ -28,8 +32,8 @@ import { tokenLabel } from "./theme-options";
  * token to its hex needs the server-compiled web theme and lands with the
  * color write flow (W4); the hex fields stay untouched here.
  *
- * The radius facet (§1 row 14) is the ONE §8-authorized engine addition and
- * does not exist yet — radius hydration lands with W4.1, not here.
+ * The radius facets (§1 row 14) are the ONE §8-authorized engine addition
+ * (W4.1); W4.2 hydrates them here.
  */
 
 /** §1 row 5 + §6(5): the size select's option set ends at 3xl/32 ("drop 13
@@ -120,6 +124,23 @@ const LINE_SPACING_VALUES = new Set([
   "tight",
 ]);
 
+/** §1 row 14: an arbitrary pixel radius is authored `rounded-[8px]` and shown
+ * as the bare number. Only this exact shape unwraps — `[50%]`, `[2rem]` and
+ * the named scale display verbatim. */
+const ARBITRARY_PIXEL_VALUE = /^\[(\d+)px\]$/;
+
+/** §1 row 14 display vocabulary. An absent facet (parse null — including the
+ * bare `rounded`, which the engine owns for removal but never reports) is the
+ * designed empty string, NEVER "0": a "0" would read as an authored zero
+ * radius and let an untouched field write `rounded-[0px]` on the next edit. */
+function radiusDisplayValue(value: string | null): string {
+  if (value === null) {
+    return "";
+  }
+  const pixels = ARBITRARY_PIXEL_VALUE.exec(value);
+  return pixels === null ? value : pixels[1];
+}
+
 export interface InspectorSchemaSelection {
   selection: ChatShellInspectorSelection;
   /** True → only the layout/padding sections are live (18b icons, §5
@@ -204,9 +225,20 @@ export function hydrateInspectorState(
   if (gap !== null) {
     state.gap = gap;
   }
+  // Row 22 + W4.4 (controller ruling, 2026-08-18): an ABSENT `flex-wrap`
+  // utility is not an unknown value — CSS's own default is `nowrap`, so the
+  // section's Wrap control states that truthfully as "No". This is R3's
+  // truthful-value pattern (the padding boxes' truthful zeros), NOT §6(5)'s
+  // omission rule (which is for values the dummy has no slot for, e.g. an
+  // off-ramp font size, where the dummy default rightly stands). Leaving the
+  // dummy's `wrap: true` default in place would misstate the page.
+  // Scoped to the section schema because it alone ships a Wrap control —
+  // container-level wrap is §7 item 1 (future work) with no UI slot.
   const flexWrap = webClassFacets.flexWrap.parse(classes);
   if (flexWrap !== null) {
     state.wrap = flexWrap !== "nowrap";
+  } else if (node.kind === "section") {
+    state.wrap = false;
   }
 
   // R3: two axis boxes. A present axis with the other absent means the other
@@ -219,6 +251,20 @@ export function hydrateInspectorState(
     const y = paddingY ?? "0";
     state.padding = { bottom: y, left: x, right: x, top: y };
   }
+
+  // §1 row 14 (ruling R-B1): the whole 5-field record hydrates for EVERY node,
+  // not just the image schema that renders the Shape section. The dummy's
+  // default ({ all: "0", corners: "4" }) is a fixture that lies about real
+  // nodes, so a partial record would leave invented corners on screen.
+  state.radius = {
+    all: radiusDisplayValue(webClassFacets.radius.parse(classes)),
+    bottomLeft: radiusDisplayValue(webClassFacets.radiusBottomLeft.parse(classes)),
+    bottomRight: radiusDisplayValue(
+      webClassFacets.radiusBottomRight.parse(classes),
+    ),
+    topLeft: radiusDisplayValue(webClassFacets.radiusTopLeft.parse(classes)),
+    topRight: radiusDisplayValue(webClassFacets.radiusTopRight.parse(classes)),
+  };
 
   const objectFit = webClassFacets.objectFit.parse(classes);
   if (objectFit !== null && objectFit in OBJECT_FIT_TO_FILL_MODE) {
@@ -248,6 +294,14 @@ export function hydrateInspectorState(
       state.url = node.href;
       state.openInNewTab = node.new_tab === true;
     }
+  }
+
+  // §1 row 12 (ruling R-B5): the Fill section's preview shows THIS node's
+  // asset, not the dummy's stock png. The bytes route is authenticated, so the
+  // src is the BFF mount (never a design-API origin); an image without an
+  // asset keeps the dummy default rather than pointing at a 404.
+  if (node.kind === "image" && typeof node.asset_id === "string" && node.asset_id) {
+    state.imagePreviewSrc = `${DESIGN_API_BFF_PREFIX}/assets/${encodeURIComponent(node.asset_id)}/bytes`;
   }
 
   return state;

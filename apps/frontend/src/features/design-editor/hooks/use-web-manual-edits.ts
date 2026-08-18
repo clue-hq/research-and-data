@@ -53,6 +53,11 @@ export interface WebManualEdits {
    * send or via {@link WebManualEdits.clearMessages}. */
   error: string | null;
   clearMessages: () => void;
+  /** W4.2 (§1 row 12): set the same inline error line from an adjacent write
+   * path that fails BEFORE any operation exists — today the Replace-image
+   * upload. State only: the inspector already renders this slot, and the W3.3
+   * founder ruling forbids any new failure UI. */
+  reportError: (message: string) => void;
 }
 
 export interface UseWebManualEditsOptions {
@@ -112,6 +117,17 @@ export function useWebManualEdits(options: UseWebManualEditsOptions): WebManualE
   const clearMessages = useCallback(() => {
     setNote(null);
     setError(null);
+  }, []);
+
+  // W4.2 (§1 row 12): the Replace-image upload fails before there is any batch
+  // to send, so it borrows this same inline slot instead of growing a second
+  // failure surface. Guarded by `mountedRef` like every other setter here.
+  const reportError = useCallback((message: string) => {
+    if (!mountedRef.current) {
+      return;
+    }
+    setNote(null);
+    setError(message);
   }, []);
 
   const base = useCallback(() => config ?? designBffConfig(), [config]);
@@ -185,5 +201,5 @@ export function useWebManualEdits(options: UseWebManualEditsOptions): WebManualE
   const undo = useCallback(() => runHistory(undoImpl), [runHistory, undoImpl]);
   const redo = useCallback(() => runHistory(redoImpl), [runHistory, redoImpl]);
 
-  return { applyOps, undo, redo, busy, note, error, clearMessages };
+  return { applyOps, undo, redo, busy, note, error, clearMessages, reportError };
 }
