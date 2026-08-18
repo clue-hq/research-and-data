@@ -74,6 +74,82 @@ test("an empty theme — or none at all — yields no options", () => {
   assert.deepEqual(buildThemeColorOptions(null), []);
 });
 
+// Ruling F3 (founder, 2026-08-18): the technical `palette-*` ramps are hidden
+// from the picker; only the semantic/role tokens are offered.
+
+test("palette-* ramp tokens are excluded from the picker", () => {
+  const options = buildThemeColorOptions(
+    theme({
+      primary: "#0A5",
+      "palette-neutral-50": "#FAFAFA",
+      "palette-neutral-950": "#0B0B0C",
+      "palette-primary-500": "#0A5",
+      accent: "#D85A00",
+    }),
+  );
+  assert.deepEqual(options, [
+    { label: "Primary", value: "#0A5" },
+    { label: "Accent", value: "#D85A00" },
+  ]);
+});
+
+test("a mixed-case PALETTE- token is excluded too (names lowercase on ingest)", () => {
+  assert.deepEqual(buildThemeColorOptions(theme({ "PALETTE-Neutral-50": "#FAFAFA" })), []);
+});
+
+test("compound non-palette tokens are retained", () => {
+  const names = [
+    "surface-brand-subtle",
+    "text-secondary",
+    "border-strong",
+    "focus-ring",
+    "accent-primary",
+  ];
+  const tokens: Record<string, string> = {};
+  for (const name of names) tokens[name] = `#${name.length.toString(16)}`;
+  assert.deepEqual(
+    buildThemeColorOptions(theme(tokens)).map((option) => option.label.toLowerCase()),
+    names,
+  );
+});
+
+test("the retained tokens keep the server's order across a filtered theme", () => {
+  const options = buildThemeColorOptions(
+    theme({
+      "palette-neutral-50": "#FAFAFA",
+      primary: "#0A5",
+      "palette-primary-500": "#0A5",
+      "text-secondary": "#5A6270",
+      dark: "#1C2028",
+      "palette-neutral-950": "#0B0B0C",
+      "focus-ring": "#2D7FF9",
+    }),
+  );
+  assert.deepEqual(
+    options.map((option) => option.label.toLowerCase()),
+    ["primary", "text-secondary", "dark", "focus-ring"],
+  );
+});
+
+test("the rule is the `palette-` PREFIX — a token named exactly `palette` survives", () => {
+  const options = buildThemeColorOptions(
+    theme({ palette: "#123456", palettes: "#654321", "palette-neutral-50": "#FAFAFA" }),
+  );
+  assert.deepEqual(options, [
+    { label: "Palette", value: "#123456" },
+    { label: "Palettes", value: "#654321" },
+  ]);
+});
+
+test("a filtered palette-* token no longer resolves a swatch (ruling F3)", () => {
+  const options = buildThemeColorOptions(
+    theme({ primary: "#0A5", "palette-primary-500": "#0A5" }),
+  );
+  // An agent-authored `text-palette-primary-500` node falls back to the dummy
+  // default rather than resolving a trigger swatch — accepted by ruling F3.
+  assert.equal(themeColorForToken(options, "palette-primary-500"), undefined);
+});
+
 test("tokenLabel is the one shared capitalize-first rule", () => {
   assert.equal(tokenLabel("dark"), "Dark");
   assert.equal(tokenLabel("d"), "D");

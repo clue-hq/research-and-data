@@ -31,21 +31,33 @@ export function tokenLabel(token: string): string {
 }
 
 /** Theme → ordered options, in the server's token order. An entry without a
- * non-empty string color is skipped (no swatch is better than a blank one). */
+ * non-empty string color is skipped (no swatch is better than a blank one), and
+ * the technical `palette-*` ramp tokens are hidden, leaving the semantic/role
+ * tokens the picker is for. */
 export function buildThemeColorOptions(
   theme: WebTheme | null | undefined,
 ): ThemeColorOption[] {
   const options: ThemeColorOption[] = [];
   for (const [name, value] of Object.entries(theme?.tokens ?? {})) {
     if (typeof value !== "string" || value.length === 0) continue;
-    options.push({ label: tokenLabel(name.toLowerCase()), value });
+    const token = name.toLowerCase();
+    // Ruling F3 (founder, 2026-08-18): technical palette-* ramps are hidden from the picker.
+    if (token.startsWith("palette-")) continue;
+    options.push({ label: tokenLabel(token), value });
   }
   return options;
 }
 
 /** The honest closed-state swatch: a hydrated token label → its theme color,
  * or `undefined` when the token is not in this document's theme (the dummy
- * default then stands, unchanged). */
+ * default then stands, unchanged).
+ *
+ * Consequence of ruling F3: the options this reads are the FILTERED list, so a
+ * node styled with an off-list token — an agent-authored `text-palette-primary-500`,
+ * say — resolves nothing here and falls back to the dummy default swatch even
+ * though the theme does define that color. Accepted by the ruling; do not
+ * special-case it (an unfilterable back door would put the ramp back in front
+ * of the user by way of the trigger). */
 export function themeColorForToken(
   options: readonly ThemeColorOption[] | undefined,
   token: string | undefined,
