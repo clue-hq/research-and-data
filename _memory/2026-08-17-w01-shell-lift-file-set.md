@@ -578,6 +578,19 @@ lane A now closes with every wired row demonstrably live. Contract §7 item 7 ma
 entered-scope; §8 lists two authorized items, both done. NOTE for lanes B/C merges: this
 touched only `crates/lumen-web/src/render.rs` + docs — zero overlap with their files.
 
+## LANE B MERGED (8dde2199) + chat-flow plan written (2026-08-19)
+
+Lane B (image+button) merged by Fable: 13 conflict clusters resolved; three merge rulings
+in the SDD ledger (B1 kind-guard kept + button joined; B2 ONE token-chip implementation —
+lane A's TokenField path, lane B's TokenColorField deleted, ButtonControls rewired; B3
+option-trim union). Union gates 641/641, lint, build; live smoke: button schema two live
+chips, Critical/Tile absent. THIRD dead-server incident (8030) mid-smoke — restarted.
+Lane C rebases onto 8dde2199, merges last. NEXT AFTER C MERGES: the chat-flow editor
+integration (R6 mount) — ratified plan `docs/superpowers/plans/2026-08-19-chat-flow-editor-integration.md`
+(scout-verified inventory baked in: the chats route's dock-swap machinery already exists;
+composer is a sibling of .chatBody; dismiss-on-send seam at chat-surface.tsx:170-174;
+EditorSurface refactors into a shared useWebEditingSession hook). Then W4.10 + exit gate + W5.
+
 ## Next on THIS branch — W4 fan-out (awaiting founder lane ruling)
 
 W4.1 done (above). W4.2–W4.9 fan out per the W-plan (each schema task applies its own §2
