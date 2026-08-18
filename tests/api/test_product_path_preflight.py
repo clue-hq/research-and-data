@@ -53,6 +53,29 @@ def test_pilot_with_all_credentials_passes() -> None:
     )
 
 
+def test_pilot_treats_a_blank_credential_as_missing() -> None:
+    """``CLUE_EXA_API_KEY=`` (the spelling ``.env.example`` ships) parses to ``SecretStr('')``.
+
+    A blank or whitespace-only key configures nothing, so it must fail the preflight exactly like an
+    absent one — otherwise an operator who copied the example file starts a pilot process whose
+    provider slots are silently dead.
+    """
+    with pytest.raises(ProductPathCompositionError) as err:
+        assert_product_path_composition(
+            _pilot(),
+            Secrets(  # type: ignore[call-arg]
+                _env_file=None,
+                exa_api_key=SecretStr(""),
+                sumble_api_key=SecretStr("   "),
+                openrouter_api_key=SecretStr("k"),
+            ),
+        )
+    msg = str(err.value)
+    assert "CLUE_EXA_API_KEY" in msg
+    assert "CLUE_SUMBLE_API_KEY" in msg
+    assert "CLUE_OPENROUTER_API_KEY" not in msg
+
+
 def test_pilot_names_every_missing_credential() -> None:
     with pytest.raises(ProductPathCompositionError) as err:
         assert_product_path_composition(_pilot(), Secrets(_env_file=None))  # type: ignore[call-arg]

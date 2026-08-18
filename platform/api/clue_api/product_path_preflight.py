@@ -14,6 +14,8 @@ today's flag-by-flag behaviour, including the degraded-but-running compositions.
 
 from __future__ import annotations
 
+from pydantic import SecretStr
+
 from clue_config import Secrets, Settings
 
 
@@ -34,6 +36,18 @@ _REQUIREMENTS: tuple[tuple[str, str, str], ...] = (
 )
 
 
+def _is_absent(value: SecretStr | None) -> bool:
+    """A credential is absent when it is unset **or** blank.
+
+    ``.env.example`` ships every provider key as a bare ``CLUE_EXA_API_KEY=``, which
+    pydantic-settings reads as ``SecretStr("")`` rather than ``None`` — so an ``is None`` test lets
+    a copied example file through, and the pilot process starts with a dead provider slot.
+    Whitespace is stripped for the same reason (a key that is only spaces configures nothing).
+    """
+
+    return value is None or not value.get_secret_value().strip()
+
+
 def assert_product_path_composition(settings: Settings, secrets: Secrets) -> None:
     """Refuse to compose an ``integration_pilot`` process that is missing a required credential."""
 
@@ -43,7 +57,7 @@ def assert_product_path_composition(settings: Settings, secrets: Secrets) -> Non
         {
             env_name
             for flag, secret_attr, env_name in _REQUIREMENTS
-            if getattr(settings, flag) and getattr(secrets, secret_attr) is None
+            if getattr(settings, flag) and _is_absent(getattr(secrets, secret_attr))
         }
     )
     if missing:
