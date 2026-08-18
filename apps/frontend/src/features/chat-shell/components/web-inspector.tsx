@@ -723,9 +723,33 @@ function CanvasControls({
   showLayers: boolean;
 }) {
   const { setValue, state, toggleSection } = controller;
+  // W4.5 (row 1): the same Background control the dummy ships, now fed the
+  // document's real theme tokens and emitting the token label — the write path
+  // `adapter/apply.ts` already serves for containers (the page root IS a
+  // container). The hex/Custom tab stays §3-inert. No other canvas change: the
+  // dummy canvas view has no padding boxes, so §2's padding 4→2 delta has
+  // nothing to collapse here.
+  //
+  // NOT YET REACHABLE end to end, and neither gap is the inspector's to close
+  // (both are upstream of this file; recorded 2026-08-18, W4.5):
+  //   • Nothing can SELECT the page root. `lumen-web`'s `render_page` renders
+  //     only `root.children` into <body>, so no element carries
+  //     data-node-id="root"; the canvas bridge's click handler resolves
+  //     `closest("[data-node-id]")` and a background click therefore CLEARS
+  //     the selection; and `adapter/layers.ts` starts the tree at the root's
+  //     children, so the Layers list has no root row either. With no
+  //     `selectionId`, W3.1's null contract drops every event this control
+  //     emits — which is why picking a token here moves the swatch and writes
+  //     nothing.
+  //   • Even once written, `root.classes` is DROPPED by the renderer (same
+  //     `render_page`), so a page-root `bg-<token>` paints nothing.
+  // Closing row 1 needs a lumen-web change (render the root, or hang its
+  // classes on <body>) plus a way to select it. Until then this control is
+  // honest-but-inert, exactly as it was before the wiring.
+  const themeColors = useThemeColors();
   return (
     <>
-      <Section id="background" label="Background" state={state} toggle={toggleSection}><InspectorField label="Color"><ColorControl color={state.backgroundColor} onColorChange={(value) => setValue("backgroundColor", value)} /></InspectorField></Section>
+      <Section id="background" label="Background" state={state} toggle={toggleSection}><InspectorField label="Color"><ColorControl color={themeColorForToken(themeColors, state.tokenBackgroundColor) ?? state.backgroundColor} onColorChange={(value) => setValue("backgroundColor", value)} onTokenChange={(label) => setValue("tokenBackgroundColor", label)} options={themeColors} /></InspectorField></Section>
       {showLayers ? <Section id="layers" label="Layers" state={state} toggle={toggleSection}><SchemaLayers fallback={<CanvasLayers onSelectionChange={onSelectionChange} tree={layerTree} />} /></Section> : null}
     </>
   );

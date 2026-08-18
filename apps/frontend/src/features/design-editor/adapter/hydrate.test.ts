@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { WebNode } from "../engine/webDocuments";
-import { HARVESTED_PAGE } from "./__fixtures__/web-nodes";
+import {
+  HARVESTED_PAGE,
+  HARVESTED_PAGE_ROOT_V47,
+} from "./__fixtures__/web-nodes";
 import { hydrateInspectorState, inspectorSelectionFor } from "./hydrate";
 
 // W2.2: the hydration adapter IS the contract's §1 mapping table — every case
@@ -240,4 +243,27 @@ test("non-text nodes hydrate no style; absent leading omits line spacing", () =>
   const state = hydrate("cta");
   assert.ok(!("textStyle" in state));
   assert.ok(!("lineSpacing" in state));
+});
+
+// ── W4.5: the canvas schema's background (row 1) ────────────────────────────
+
+test("row 1: the page root's bg token reaches the canvas schema's state", () => {
+  const root = HARVESTED_PAGE_ROOT_V47.nodes.root;
+  assert.ok(root);
+  // The canvas schema is chosen by ID, not kind (the root is a container).
+  assert.deepEqual(
+    inspectorSelectionFor(root, HARVESTED_PAGE_ROOT_V47.page_root),
+    { selection: "canvas", layoutOnly: false },
+  );
+  // root: "bg-surface-canvas" — the document's own theme token, capitalized
+  // into the label the picker options use.
+  const state = hydrateInspectorState(root, root.classes);
+  assert.equal(state.tokenBackgroundColor, "Surface-canvas");
+});
+
+test("row 1: a page root with no background token leaves the dummy default", () => {
+  const root = HARVESTED_PAGE_ROOT_V47.nodes.root;
+  assert.ok(root);
+  const bare = hydrateInspectorState({ ...root, classes: "" }, "");
+  assert.ok(!("tokenBackgroundColor" in bare));
 });

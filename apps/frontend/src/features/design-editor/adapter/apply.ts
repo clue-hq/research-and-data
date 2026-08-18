@@ -86,7 +86,14 @@ function nearestSpacingStep(raw: string): string | null {
  * schema has a sanctioned background-token control in v1. A kind outside this
  * set has no background slot — §5 layout-only fallbacks (embed, unknown kinds)
  * and the 18b icon partition included — so its event is refused rather than
- * written. Row 17's button joins this set with lane B's W4.3. */
+ * written. Row 17's button joins this set with lane B's W4.3.
+ *
+ * W4.5 (row 1) adds NO kind: the canvas schema is chosen by node ID
+ * (`hydrate.ts::inspectorSelectionFor` returns "canvas" for `page.root`), and
+ * `lumen-web` builds every page root as a Container
+ * (`crates/lumen-web/src/doc.rs::WebDoc::new`) — so the page background rides
+ * "container" here. `apply.test.ts` pins that dependency: narrowing this set
+ * to sections would silently kill row 1. */
 const TOKEN_BACKGROUND_KINDS = new Set(["container", "section"]);
 
 /** Row 20: the segmented labels → the display facet's values. The engine's

@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { HARVESTED_PAGE, HARVESTED_PAGE_V33 } from "./__fixtures__/web-nodes";
+import {
+  HARVESTED_PAGE,
+  HARVESTED_PAGE_ROOT_V47,
+  HARVESTED_PAGE_V33,
+} from "./__fixtures__/web-nodes";
 import { inspectorChangeToOperation } from "./apply";
 
 // W3.2: inspector change events → engine operations, one test per control.
@@ -312,4 +316,71 @@ test("§4: the section's tag/anchor_id round-trip byte-identically through every
   assert.equal(JSON.stringify(HARVESTED_PAGE_V33.nodes.hero), before);
   assert.equal(HARVESTED_PAGE_V33.nodes.hero.tag, "section");
   assert.equal(HARVESTED_PAGE_V33.nodes.hero.anchor_id, "hero-anchor");
+});
+
+// ══ W4.5 — the canvas schema (the page ROOT) ════════════════════════════════
+// Contract row 1: the canvas Background is the page background. The canvas
+// selection is chosen by node ID (`inspectorSelectionFor` returns "canvas" for
+// `page.root`), never by kind, and `lumen-web` builds every page root as a
+// Container — so row 1's write rides row 19's kind set instead of naming a
+// root kind that does not exist. The fixture below pins that dependency.
+
+const V47_PAGE_ID = "home";
+
+function rootChange(
+  property: string,
+  value: unknown,
+): ReturnType<typeof inspectorChangeToOperation> {
+  const node = HARVESTED_PAGE_ROOT_V47.nodes.root;
+  assert.ok(node, "harvested page root missing");
+  return inspectorChangeToOperation(
+    { property, selectionId: node.id, value },
+    node,
+    V47_PAGE_ID,
+  );
+}
+
+test("row 1: the harvested page root is a container, so the background-token kind set covers it", () => {
+  const root = HARVESTED_PAGE_ROOT_V47.nodes.root;
+  assert.ok(root);
+  assert.equal(root.id, HARVESTED_PAGE_ROOT_V47.page_root);
+  assert.equal(root.kind, "container");
+});
+
+test("row 1: a canvas background token writes bg-<token> onto the root node", () => {
+  // root: "bg-surface-canvas"
+  const op = rootChange("tokenBackgroundColor", "Surface-card");
+  assert.ok(op && op.kind === "set_node_classes");
+  assert.equal(op.id, "root");
+  assert.equal(op.page_id, V47_PAGE_ID);
+  assert.ok(op.classes.split(/\s+/).includes("bg-surface-card"));
+  assert.ok(!op.classes.includes("bg-surface-canvas"));
+});
+
+test("row 1: the canvas background rewrites only its own family", () => {
+  const node = HARVESTED_PAGE_ROOT_V47.nodes.root;
+  assert.ok(node);
+  const op = inspectorChangeToOperation(
+    { property: "tokenBackgroundColor", selectionId: "root", value: "Dark" },
+    { ...node, classes: "flex flex-col bg-surface-canvas text-primary" },
+    V47_PAGE_ID,
+  );
+  assert.ok(op && op.kind === "set_node_classes");
+  const tokens = op.classes.split(/\s+/);
+  assert.ok(tokens.includes("bg-dark"));
+  assert.ok(tokens.includes("flex"));
+  assert.ok(tokens.includes("flex-col"));
+  assert.ok(tokens.includes("text-primary"));
+});
+
+test("row 1: the canvas hex/custom tab stays §3-inert", () => {
+  assert.equal(rootChange("tokenBackgroundColor", "#00F59B"), null);
+  assert.equal(rootChange("backgroundColor", "#00F59B"), null);
+});
+
+test("row 1: kinds with no background control are still refused (embed/icon)", () => {
+  // The canvas wiring widens no guard: a node the schema map never sends to
+  // the canvas keeps its refusal.
+  assert.equal(v33Change("tokenBackgroundColor", "Surface-card", "fembed"), null);
+  assert.equal(v33Change("tokenBackgroundColor", "Surface-card", "ficon"), null);
 });

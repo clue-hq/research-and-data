@@ -139,6 +139,39 @@ export const HARVESTED_PAGE: { page_root: string; nodes: Record<string, WebNode>
 } as never;
 
 /**
+ * W4.5 fixture: the page ROOT — the canvas schema's node — harvested from the
+ * same document at **version 47**, captured 2026-08-18 via the design API
+ * (`GET /documents/{id}` → `scene.pages[0]`, never hand-written).
+ *
+ * Why its own snapshot: the roots above carry `classes: ""`, so neither can
+ * show a background token reaching canvas state. This one does — one
+ * `set_node_classes` op (46 → 47) put the document's real `surface-canvas`
+ * theme token on the root, exactly the class the Background popover writes.
+ *
+ * The kind is the load-bearing byte: `lumen-web` builds every page root as a
+ * Container (`crates/lumen-web/src/doc.rs::WebDoc::new`), and the canvas
+ * schema is chosen by node ID (`inspectorSelectionFor`), not by kind — so
+ * row 1's background write rides row 19's container kind rather than needing a
+ * kind of its own.
+ */
+export const HARVESTED_PAGE_ROOT_V47: { page_root: string; nodes: Record<string, WebNode> } =
+{
+  "page_root": "root",
+  "nodes": {
+    "root": {
+      "id": "root",
+      "kind": "container",
+      "classes": "bg-surface-canvas",
+      "new_tab": false,
+      "children": [
+        "hero",
+        "features"
+      ]
+    }
+  }
+} as never;
+
+/**
  * W4.4 fixtures: a SECOND wire-true harvest of the same document
  * (`doc_31126145a0aa4753920629ae323a301b`, workspace "Insight Health" dev DB)
  * at **version 33**, captured 2026-08-18 via the design API — again as
