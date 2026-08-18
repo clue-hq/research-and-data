@@ -227,9 +227,11 @@ def test_per_icp_tier_plan_override_wins_over_registry_default() -> None:
                 overrides={"account.recent_funding": FieldOverride(tier_plan=("custom_resolver",))},
             )
             assert overridden.fields[0].field.tier_plan == ("custom_resolver",)
-            # without the override, the registry default stands
+            # without the override, the registry default stands. ``exa_deep`` joined it when
+            # contract §3.1's Exa-Deep-owned rows were made dispatchable (the composed Exa account
+            # action refuses a field whose tier plan omits its source key).
             default = await compile_field_plan(conn, spec)
-            assert default.fields[0].field.tier_plan == ("apollo", "exa")
+            assert default.fields[0].field.tier_plan == ("apollo", "exa", "exa_deep")
 
     run_async(_run())
 

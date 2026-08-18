@@ -34,6 +34,7 @@ from clue_core import (
     ResearchSourcePolicy,
     new_entity_id,
 )
+from clue_research.claimstore import get_field
 from clue_research.icp import (
     Pack,
     PackSourceSlot,
@@ -43,6 +44,7 @@ from clue_research.icp import (
     register_pack_catalog,
 )
 from clue_research.narrative.prose import PROSE_ACCOUNT_FIELDS, PROSE_CONTACT_FIELDS
+from clue_research.resolvers.sumble import SUMBLE_SOURCE_KEYS, sumble_action_supports_field
 from clue_research.sources import plan_sources, seed_source_manifests
 from clue_research.stage0 import load_client_knowledge_pack
 from tests.db.conftest import run_async
@@ -187,6 +189,41 @@ def test_every_acquisition_field_plans_a_permitted_source() -> None:
                 f"no permitted source yields: {unplanned}; "
                 f"planned outside §3.1 ownership: {overreaching}"
             )
+
+    run_async(_run())
+
+
+@pytest.mark.usefixtures("require_profiling_db")
+def test_every_dispatchable_31_owner_is_declared_in_its_fields_tier_plan() -> None:
+    """Ownership must also survive the *action's* own tier-plan check.
+
+    The composed Exa account action refuses a field whose registered ``tier_plan`` does not name
+    ``exa_deep`` — a suspending integrity error, not a governed refusal — and the Sumble gap
+    materializer refuses the same way for its own source key. So for every §3.1 row, each owner
+    that can actually be dispatched for that field must appear in the field's tier plan. An owner
+    whose pinned action cannot even request the field (Sumble Organizations for the funding,
+    about-text and LinkedIn rows) is deliberately *not* declared: a tier plan states what a source
+    can answer, and B6 settles those rows as honest ``source_cannot_request_field`` gaps instead.
+    """
+
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            missing: dict[str, set[str]] = {}
+            for field, sources in COMPREHENSIVE_ACCOUNT_FIELD_SOURCES.items():
+                dispatchable = {
+                    source
+                    for source in sources
+                    if source not in SUMBLE_SOURCE_KEYS
+                    or sumble_action_supports_field(field, source)
+                }
+                if not dispatchable:
+                    continue
+                definition = await get_field(conn, field)
+                assert definition is not None, field
+                absent = dispatchable - set(definition.tier_plan)
+                if absent:
+                    missing[field] = absent
+            assert not missing, f"§3.1 owners absent from the field tier plan: {missing}"
 
     run_async(_run())
 
