@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { WebNode } from "../engine/webDocuments";
-import { HARVESTED_PAGE } from "./__fixtures__/web-nodes";
+import {
+  HARVESTED_IMAGE_PAGE,
+  HARVESTED_PAGE,
+  IMAGE_RADIUS_CLASS_VARIANTS,
+} from "./__fixtures__/web-nodes";
 import { hydrateInspectorState, inspectorSelectionFor } from "./hydrate";
 
 // W2.2: the hydration adapter IS the contract's §1 mapping table — every case
@@ -18,6 +22,27 @@ function hydrate(id: string) {
   const n = node(id);
   return hydrateInspectorState(n, n.classes);
 }
+
+// W4.2 (lane B): the image/radius harvest is a second real document.
+function imageNode(id: string): WebNode {
+  const found = HARVESTED_IMAGE_PAGE.nodes[id];
+  assert.ok(found, `image fixture node ${id} missing`);
+  return found;
+}
+
+function hydrateImage(id: string) {
+  const n = imageNode(id);
+  return hydrateInspectorState(n, n.classes);
+}
+
+/** §1 row 14: an absent facet is the designed empty — NEVER "0". */
+const EMPTY_RADIUS = {
+  all: "",
+  bottomLeft: "",
+  bottomRight: "",
+  topLeft: "",
+  topRight: "",
+};
 
 // ── kind → schema (the plan's map; §5 fallback; 18b icon partition) ─────────
 
@@ -191,9 +216,12 @@ test("a visible display value hydrates visible true", () => {
 
 // ── empty ───────────────────────────────────────────────────────────────────
 
-test("no facets, no props → an empty partial (defaults stand)", () => {
+test("no facets, no props → only the always-on radius record (defaults stand)", () => {
+  // §1 row 14 / ruling R-B1: radius is the one field that hydrates for EVERY
+  // node — the dummy default lies about real nodes, so the full record must
+  // always override it. Everything else stays omitted.
   const state = hydrateInspectorState(node("root"), "");
-  assert.deepEqual(state, {});
+  assert.deepEqual(state, { radius: EMPTY_RADIUS });
 });
 
 // ── W3.2 §2 additions: text style (ruling 25) and line spacing (ruling 26) ──
@@ -219,4 +247,81 @@ test("non-text nodes hydrate no style; absent leading omits line spacing", () =>
   const state = hydrate("cta");
   assert.ok(!("textStyle" in state));
   assert.ok(!("lineSpacing" in state));
+});
+
+// ── W4.2 (lane B): radius (§1 row 14, ruling R-B1) + the image harvest ──────
+
+test("image: an arbitrary pixel radius displays as its bare number", () => {
+  // img_plain: "object-contain rounded-[8px] w-80"
+  const state = hydrateImage("img_plain");
+  assert.deepEqual(state.radius, { ...EMPTY_RADIUS, all: "8" });
+});
+
+test("image: a named all-corners radius plus a corner override", () => {
+  // img_linked: "object-cover rounded-lg rounded-tl-[4px] w-80"
+  const state = hydrateImage("img_linked");
+  assert.deepEqual(state.radius, {
+    ...EMPTY_RADIUS,
+    all: "lg", // named scale values display verbatim
+    topLeft: "4",
+  });
+});
+
+test("bare `rounded` hydrates the empty radius, never zero", () => {
+  // img_bare: "rounded w-80" — the engine owns the bare token for removal but
+  // parses null, and null must never render as "0" (it would later write
+  // rounded-[0px] from an untouched field).
+  const state = hydrateImage("img_bare");
+  assert.deepEqual(state.radius, EMPTY_RADIUS);
+});
+
+test("no radius utility at all hydrates the empty radius", () => {
+  const state = hydrateInspectorState(
+    imageNode("img_plain"),
+    IMAGE_RADIUS_CLASS_VARIANTS.none,
+  );
+  assert.deepEqual(state.radius, EMPTY_RADIUS);
+});
+
+test("a variant-prefixed radius token is opaque and hydrates empty", () => {
+  const state = hydrateInspectorState(
+    imageNode("img_plain"),
+    IMAGE_RADIUS_CLASS_VARIANTS.variantOnly,
+  );
+  assert.deepEqual(state.radius, EMPTY_RADIUS);
+});
+
+test("only the exact [Npx] shape unwraps; other arbitrary values are verbatim", () => {
+  const percent = hydrateInspectorState(
+    imageNode("img_plain"),
+    IMAGE_RADIUS_CLASS_VARIANTS.arbitraryNonPixel,
+  );
+  assert.deepEqual(percent.radius, { ...EMPTY_RADIUS, all: "[50%]" });
+  const named = hydrateInspectorState(
+    imageNode("img_plain"),
+    IMAGE_RADIUS_CLASS_VARIANTS.named,
+  );
+  assert.deepEqual(named.radius, { ...EMPTY_RADIUS, all: "full" });
+});
+
+test("radius hydrates for non-image nodes too (the button's rounded-md)", () => {
+  // cta: "bg-accent text-dark px-4 py-2 rounded-md"
+  const state = hydrateImage("cta");
+  assert.deepEqual(state.radius, { ...EMPTY_RADIUS, all: "md" });
+});
+
+test("image: object-cover hydrates Fill; the linked pair hydrates (rows 11/13)", () => {
+  const state = hydrateImage("img_linked");
+  assert.equal(state.fillMode, "Fill"); // row 13, on a real image node
+  assert.equal(state.url, "https://example.com/teal"); // row 11
+  assert.equal(state.openInNewTab, true);
+});
+
+test("an unlinked image sets neither url nor openInNewTab", () => {
+  // img_plain carries new_tab false but NO href — an absent link must leave
+  // both fields untouched rather than hydrate a false/empty pair.
+  const state = hydrateImage("img_plain");
+  assert.ok(!("url" in state));
+  assert.ok(!("openInNewTab" in state));
+  assert.equal(state.fillMode, "Fit"); // object-contain → Fit
 });

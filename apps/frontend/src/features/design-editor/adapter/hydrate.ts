@@ -28,8 +28,8 @@ import { tokenLabel } from "./theme-options";
  * token to its hex needs the server-compiled web theme and lands with the
  * color write flow (W4); the hex fields stay untouched here.
  *
- * The radius facet (§1 row 14) is the ONE §8-authorized engine addition and
- * does not exist yet — radius hydration lands with W4.1, not here.
+ * The radius facets (§1 row 14) are the ONE §8-authorized engine addition
+ * (W4.1); W4.2 hydrates them here.
  */
 
 /** §1 row 5 + §6(5): the size select's option set ends at 3xl/32 ("drop 13
@@ -119,6 +119,23 @@ const LINE_SPACING_VALUES = new Set([
   "snug",
   "tight",
 ]);
+
+/** §1 row 14: an arbitrary pixel radius is authored `rounded-[8px]` and shown
+ * as the bare number. Only this exact shape unwraps — `[50%]`, `[2rem]` and
+ * the named scale display verbatim. */
+const ARBITRARY_PIXEL_VALUE = /^\[(\d+)px\]$/;
+
+/** §1 row 14 display vocabulary. An absent facet (parse null — including the
+ * bare `rounded`, which the engine owns for removal but never reports) is the
+ * designed empty string, NEVER "0": a "0" would read as an authored zero
+ * radius and let an untouched field write `rounded-[0px]` on the next edit. */
+function radiusDisplayValue(value: string | null): string {
+  if (value === null) {
+    return "";
+  }
+  const pixels = ARBITRARY_PIXEL_VALUE.exec(value);
+  return pixels === null ? value : pixels[1];
+}
 
 export interface InspectorSchemaSelection {
   selection: ChatShellInspectorSelection;
@@ -219,6 +236,20 @@ export function hydrateInspectorState(
     const y = paddingY ?? "0";
     state.padding = { bottom: y, left: x, right: x, top: y };
   }
+
+  // §1 row 14 (ruling R-B1): the whole 5-field record hydrates for EVERY node,
+  // not just the image schema that renders the Shape section. The dummy's
+  // default ({ all: "0", corners: "4" }) is a fixture that lies about real
+  // nodes, so a partial record would leave invented corners on screen.
+  state.radius = {
+    all: radiusDisplayValue(webClassFacets.radius.parse(classes)),
+    bottomLeft: radiusDisplayValue(webClassFacets.radiusBottomLeft.parse(classes)),
+    bottomRight: radiusDisplayValue(
+      webClassFacets.radiusBottomRight.parse(classes),
+    ),
+    topLeft: radiusDisplayValue(webClassFacets.radiusTopLeft.parse(classes)),
+    topRight: radiusDisplayValue(webClassFacets.radiusTopRight.parse(classes)),
+  };
 
   const objectFit = webClassFacets.objectFit.parse(classes);
   if (objectFit !== null && objectFit in OBJECT_FIT_TO_FILL_MODE) {
