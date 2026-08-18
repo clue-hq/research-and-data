@@ -856,7 +856,8 @@ function ContainerControls({
           value={state.layoutMode}
         />
       </Section>
-      <LayoutSection controller={controller} />
+      {/* R3: the container's padding boxes collapse to the two-axis form. */}
+      <LayoutSection controller={controller} paddingAxes="two" />
       {showLayers ? <Section id="layers" label="Layers" state={state} toggle={toggleSection}>
         <SchemaLayers fallback={<StructuralLayers onSelectionChange={onSelectionChange} selection="container" tree={layerTree} />} />
       </Section> : null}
@@ -878,7 +879,8 @@ function SectionControls({
   const { setValue, state, toggleSection } = controller;
   return (
     <>
-      <LinkSection ariaLabel="Section link URL" controller={controller} />
+      {/* Ruling 23 (§2 delta): a web section deliberately has no link — only
+          containers do — so the Link-to section is ABSENT here, not disabled. */}
       <Section id="style" label="Style" state={state} toggle={toggleSection}>
         {/* W4.4 (row 19): the two token buttons, hydrated + live. */}
         <StyleTokenFields controller={controller} />
@@ -911,7 +913,8 @@ function SectionControls({
           />
         </InspectorField>
       </Section>
-      <LayoutSection controller={controller} />
+      {/* R3: the section's padding boxes collapse to the two-axis form. */}
+      <LayoutSection controller={controller} paddingAxes="two" />
       {showLayers ? <Section id="layers" label="Layers" state={state} toggle={toggleSection}>
         <SchemaLayers fallback={<StructuralLayers onSelectionChange={onSelectionChange} selection="section" tree={layerTree} />} />
       </Section> : null}
