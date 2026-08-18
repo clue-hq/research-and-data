@@ -22,3 +22,25 @@ Plan D1 said "URL optional; span is the promotion requirement". False against fr
 
 ## Live behavior change to expect (intended)
 Sumble People always carry `source_url`, so only title-less Sumble candidates change: previously HUMAN/tier-1 role claims, now honestly roleless.
+
+---
+
+# ADDENDUM 2026-08-18 — D2 complete: discovery/identity separated from role judgment
+
+**Commit `b9d661c7`** (on top of D1 `48c5c250` + memory `d34bde6d`).
+
+## What landed (D2)
+- `discover_committee(..., role_inference: RoleInferenceMode = "worker_llm")` — `agent_deferred` mode: admission/identity/discovery+professional claims byte-identical to worker_llm, ZERO role work (no role pre-spend gate, no infer_role/gate_role, zero gateway calls), all members returned roleless. `worker_llm` unchanged for grounded candidates + D1 carry-forward folded in: ungrounded candidates skip the gate+LLM entirely (no wasted spend) and now RE-ENTER `members` roleless (D1's temporary members-skip removed).
+- `CommitteeMemberRef`: six role fields optional + all-or-none validator + `has_role`; `claim_refs` always carries discovery+professional ids (closes D1's references-index gap); `committee()` yields role-carrying members only; `as_committee_member()` raises on roleless (frozen handoff shape needs persona).
+- `CommitteeResult.needs_review` honest: count of admitted members without a role inference (was hardcoded 0).
+- Production `SumbleCommitteeSemanticResearchAction` discovers via new private seam `_discover_committee_members` → `role_inference="agent_deferred"`. Member projection verified role-independent; People-facts integrity rule unchanged (tested). **Ratified intermediate state: production committees are roleless until D3's agent write-back tool lands.**
+
+## Verification (Fable, independent)
+Suites: committee+r5+s2c+r11-bridge+api/deep+deep-orchestrator = 162 passed; frontend-read contacts/account-detail + full tests/profiling = 226 passed. Implementer: red-first TDD proven, make lint/typecheck/contracts clean, 16 pre-existing tests/api failures A/B-identical. Browser smoke: API boots clean on this branch vs clue_task_d1 (pilot preflight green), /frontend/v1/accounts 403 auth-gated (route live). Full committee browser check deferred to D3 (roles visible there) + paid D5 exit gate.
+
+## Rulings (D2)
+1. `_discover_committee_members` seam accepted (execute undrivable in tests; matches file's tested-private style).
+2. role_model fail-loud guard scoped to worker_llm (deferred mode never calls the gateway).
+
+## D3 must-knows (carried)
+Tool writes role+persona CLAIMS together via the worker's writer path; LLM_SYNTHESIS claims need a real source_url (frozen core) — cited evidence claim's url, fallback member grounding url; `RoleInferenceMode` exported; needs_review/coverage recompute must reflect post-inference counts; catalog version = next free at implementation time (check live catalog).
