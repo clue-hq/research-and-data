@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type RefObject } from "react";
+import { viewModeHtml } from "../adapter/view-mode-html";
 import { designBffConfig } from "../data/design-bff";
 import { fetchWebRenderHtml } from "../engine/webDocuments";
 
@@ -30,14 +31,30 @@ export type WebRenderState =
  *
  * Lives in hooks/ (not the presentation component) per the repo seam rule:
  * presentation receives typed props/hook state and never imports data/.
+ *
+ * W4 addendum (founder ruling, 2026-08-19): `editing` picks the render. Edit ON
+ * is the path above, verbatim. Edit OFF fetches the CLEAN render — no bridge,
+ * no nonce to rotate — and runs it through `viewModeHtml` so every link opens
+ * a new tab. The Tailwind BROWSER RUNTIME rides in BOTH modes: the server's
+ * static CSS carries theme tokens and font-faces but NO utility rules, so the
+ * runtime is what compiles the document's classes (`bg-accent` on a rich-text
+ * highlight, every layout utility) AND ships the preflight reset that keeps a
+ * linked phrase in its authored formatting instead of browser-default blue
+ * underline. Omitting it was the original task-6 spec's error — browser-caught
+ * 2026-08-19 (highlights vanished, link CSS changed, both same root cause).
+ * `editing` is an effect dep, so toggling the mode refetches into the SAME
+ * iframe under the reloadToken discipline: no keyed remount, no loading flash,
+ * and the old render keeps showing until the new html lands.
  */
 export function useWebRender(
   documentId: string,
   reloadToken = 0,
+  editing = false,
 ): {
   state: WebRenderState;
   /** The current render's bridge nonce — the ported selection listener
-   * validates inbound messages against it. */
+   * validates inbound messages against it. Empty while viewing: that render
+   * carries no bridge, so there is nothing to validate and nothing to post. */
   nonceRef: RefObject<string>;
 } {
   const [state, setState] = useState<WebRenderState>({ kind: "loading" });
@@ -45,13 +62,21 @@ export function useWebRender(
 
   useEffect(() => {
     let cancelled = false;
-    const nonce = crypto.randomUUID();
+    // Viewing has no bridge, so there is no nonce to rotate — and the ref is
+    // EMPTIED rather than left holding the last edit session's value, because
+    // every bridge sender is a no-op on a falsy nonce. A bridgeless frame can
+    // then never be posted into, whichever way the mode was reached.
+    const nonce = editing ? crypto.randomUUID() : "";
     nonceRef.current = nonce;
-    fetchWebRenderHtml(designBffConfig(), documentId, TAILWIND_RUNTIME_SRC, {
-      nonce,
-    })
-      .then(({ html }) => {
+    fetchWebRenderHtml(
+      designBffConfig(),
+      documentId,
+      TAILWIND_RUNTIME_SRC,
+      nonce ? { nonce } : undefined,
+    )
+      .then(({ html: fetched }) => {
         if (cancelled) return;
+        const html = editing ? fetched : viewModeHtml(fetched);
         setState(html ? { kind: "ready", html } : { kind: "empty" });
       })
       .catch((cause: unknown) => {
@@ -65,7 +90,7 @@ export function useWebRender(
     return () => {
       cancelled = true;
     };
-  }, [documentId, reloadToken]);
+  }, [documentId, editing, reloadToken]);
 
   return { nonceRef, state };
 }

@@ -475,7 +475,17 @@ export interface WebRenderResult {
  *
  * Pass `bridge: { nonce }` (editor mode only) to have the server inject the
  * selection bridge into the document — it draws hover/selection outlines,
- * blocks navigation, and posts nonce-tagged selection events to the parent. */
+ * blocks navigation, and posts nonce-tagged selection events to the parent.
+ *
+ * W4 addendum (2026-08-19, corrected same day): omitting `bridge` alone is the
+ * VIEW render — no editor chrome, no selection events. `runtimeSrc` is NOT
+ * optional in either mode: the server's inline CSS carries theme tokens and
+ * font-faces but no utility rules, so the browser runtime is what styles the
+ * document's classes (and its preflight is what keeps anchors in their
+ * authored formatting). The first task-6 cut omitted it from the view fetch
+ * and rich-text highlights/link CSS visibly broke — browser-caught. `mode`
+ * stays `editor`, which is the endpoint's own default and is NOT what injects
+ * the bridge — the opt-in `bridge=1&nonce=…` pair is. */
 export async function fetchWebRenderHtml(
   { apiBaseUrl, fetchImpl = defaultDesignFetch }: WebDocumentOptions,
   documentId: string,

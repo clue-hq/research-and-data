@@ -3,6 +3,23 @@
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import type { WebLayerRow } from "@/features/design-editor/adapter/layers";
+/* W4.7 (contract item 34): the props form's pure decisions. */
+import {
+  customComponentDraft,
+  customComponentDraftCommit,
+  customComponentDraftKeyAction,
+  customComponentDraftKeySuppressesBlur,
+  customComponentFields,
+  customComponentSelectCommit,
+  customComponentSelectLabel,
+  type CustomComponentField,
+  type CustomComponentFormBinding,
+  type CustomComponentPropCommit,
+} from "@/features/design-editor/adapter/custom-component-form";
+import {
+  richTextLinkPrefill,
+  type RichTextLinkBinding,
+} from "@/features/design-editor/adapter/rich-text-link-section";
 import {
   themeColorForToken,
   type ThemeColorOption,
@@ -743,22 +760,125 @@ function LayoutSection({
   );
 }
 
+/* ---- W4.8b: the TEXT schema's range-bound "Link to" (begins) --------------
+ *
+ * Binding contract item 3: for text the section is hidden by default and
+ * appears — functional — only while a rich-text range is selected, and it binds
+ * to the RANGE link, never to a whole-node href (text has none). The caller
+ * supplies the binding ONLY when the ledgered visibility ruling holds
+ * (`richTextLinkSectionVisible`), so "hidden" here is literally ABSENT
+ * (mapping contract §2) — no disabled fields, no empty shell.
+ *
+ * Presentation is the dummy's own LinkSection, unchanged: the same collapsed
+ * "Link to" section, the same URL field, the same "Open in a new tab"
+ * checkbox. Only the wiring underneath differs.
+ */
+function RichTextLinkSection({
+  controller,
+  range,
+}: {
+  controller: InspectorController;
+  range: RichTextLinkBinding;
+}) {
+  const { state, toggleSection } = controller;
+  // The live range's own values (the toolbar's prefill semantics). Callers
+  // remount this section when they change — see the `key` at the call site —
+  // so the draft below is always born from the range it edits.
+  const prefill = richTextLinkPrefill(range.selection);
+  const [href, setHref] = useState(prefill.href);
+  const [newTab, setNewTab] = useState(prefill.newTab);
+  // The dummy's own commit model for a typed value (PaddingXYControls above):
+  // a LOCAL draft that commits on blur/Enter, so the write path never sees a
+  // keystroke. An untouched field commits nothing.
+  const commitHref = () => {
+    if (href === prefill.href) return;
+    range.onSubmitLink(href, newTab, "submit");
+  };
+  return (
+    // Focus moving in tells the frame to hold its edit session open (the
+    // bridge otherwise settles it 180ms after its contenteditable blurs);
+    // focus leaving the whole section releases it again. `onBlur` bubbles
+    // (focusout), so the containment check keeps a hop between these two
+    // controls from releasing the session.
+    <div
+      onBlur={(event) => {
+        if (event.currentTarget.contains(event.relatedTarget)) return;
+        range.onInteractionChange(false);
+      }}
+      onFocusCapture={() => range.onInteractionChange(true)}
+      onPointerDownCapture={() => range.onInteractionChange(true)}
+    >
+      <Section id="link" label="Link to" state={state} toggle={toggleSection}>
+        <InspectorField label="URL">
+          <span
+            className={`${styles.inspectorControl} ${styles.inspectorInputControl}`}
+            onBlur={commitHref}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") commitHref();
+            }}
+          >
+            <input
+              aria-label="Link URL"
+              inputMode="text"
+              onChange={(event) => setHref(event.target.value)}
+              value={href}
+            />
+          </span>
+        </InspectorField>
+        <label className={styles.checkboxRow}>
+          <input
+            checked={newTab}
+            onChange={(event) => {
+              setNewTab(event.target.checked);
+              // Commits at once — but only over an href that is already
+              // valid, so a toggle can neither remove a link nor scold about a
+              // half-typed URL (the decision lives in `richTextLinkCommit`).
+              range.onSubmitLink(href, event.target.checked, "toggle");
+            }}
+            type="checkbox"
+          />
+          <span>Open in a new tab</span>
+        </label>
+      </Section>
+    </div>
+  );
+}
+/* ---- W4.8b (ends) ------------------------------------------------------- */
+
 function TextControls({
   controller,
   layerTree,
   onSelectionChange,
+  richTextRange,
   showLayers,
 }: {
   controller: InspectorController;
   layerTree: InspectorLayerTreeController;
   onSelectionChange: (selection: ChatShellInspectorSelection) => void;
+  /** W4.8b: the live rich-text range to bind "Link to" to. Null/absent → the
+   * text schema renders NO Link-to section (contract item 3; §2
+   * hidden = absent). The other schemas' LinkSection usages are untouched —
+   * they write node props, which text does not have. */
+  richTextRange?: RichTextLinkBinding | null;
   showLayers: boolean;
 }) {
   const { setValue, state, toggleSection } = controller;
   const themeColors = useThemeColors();
   return (
     <>
-      <LinkSection ariaLabel="Link URL" controller={controller} />
+      {richTextRange ? (
+        <RichTextLinkSection
+          controller={controller}
+          // Remount identity: the edited node plus the range's own link
+          // values. A new range (or a link changed inside the frame) starts
+          // the draft from the new prefill; our own commits leave the key
+          // untouched, so typing is never interrupted. This is the same
+          // remount-instead-of-reset-effect discipline W4.8a used for the
+          // toolbar (this repo's lint forbids a setState inside an effect).
+          key={`${richTextRange.nodeId}:${richTextRange.selection.link.state}:${richTextRange.selection.link.href ?? ""}:${richTextRange.selection.link.newTab ?? ""}`}
+          range={richTextRange}
+        />
+      ) : null}
       <Section id="typography" label="Typography" state={state} toggle={toggleSection}>
         {/* R2: the theme tab's token pick is the live write path
             (tokenTextColor); the hex path stays visual-only (§3 inert).
@@ -967,13 +1087,203 @@ function IconControls({
   );
 }
 
+/* ---- W4.7: the custom-component props form (begins) -----------------------
+ *
+ * Binding contract item 34: "Custom component → props form | manifest
+ * `props_schema` → `set_custom_component_props` | the existing schema-driven
+ * form, shown when a custom component is selected." A custom component falls to
+ * the §5 layout-only fallback (the CONTAINER view), so the form JOINS that
+ * view — it is passed to ContainerControls alone, and every other fallback kind
+ * (embed, component, …) keeps the bare layout view unchanged.
+ *
+ * SCOPE: the form only. The source inspector's first card — status pill,
+ * metrics, compile warnings, republish banner, "Edit with AI" — is chrome and
+ * is deliberately not ported, nor are its props.
+ *
+ * Ledgered ruling (2026-08-18): while the artifact is loading, or if its fetch
+ * failed, the binding is null and this section is simply ABSENT — no loading
+ * shell, no error chrome; the layout fallback stands alone.
+ *
+ * Every decision (which control, what label, what one settled draft commits,
+ * the whole-props payload) lives in the pure adapter so it is testable under
+ * this repo's renderer-free runner; what is left here is presentation.
+ */
+function CustomComponentPropDraftControl({
+  field,
+  onCommit,
+}: {
+  field: CustomComponentField;
+  onCommit: CustomComponentPropCommit;
+}) {
+  // The dummy's own commit model for a typed value (PaddingXYControls above):
+  // a LOCAL draft that settles on blur/Enter, so the write path never sees a
+  // keystroke. The source's `useEffect` re-sync of the draft (:62-64) is
+  // replaced by the call site's remount key — this repo's lint forbids a
+  // setState inside an effect (same discipline as W4.8a/b).
+  const [draft, setDraft] = useState(field.draft);
+  // Browser-verified defect (2026-08-18) and its fix. Enter and Escape both end
+  // the field's focus, and the blur they cause fires in the SAME browser task —
+  // holding the pre-key `draft` closure. So the blur-settle used to run with the
+  // stale draft: Escape wrote the very garbage it was abandoning, and Enter
+  // settled twice (survivable only because the manual-edits controller drops an
+  // apply while one is in flight). This ref makes the key own the outcome and
+  // the follow-on blur a no-op. Deliberate deviation from the source's event
+  // wiring, which has the same hazard (:141-150) — the binding semantics are the
+  // brief's and the source's INTENT (Escape restores and sends NOTHING), not its
+  // handler arrangement.
+  const skipBlurSettle = useRef(false);
+  const settle = () => {
+    const decision = customComponentDraftCommit({
+      draft,
+      schema: field.schema,
+      value: field.value,
+    });
+    if (decision.kind === "revert") setDraft(decision.draft);
+    if (decision.kind === "commit") onCommit(field.name, decision.value);
+  };
+  return (
+    <InspectorField label={field.displayLabel}>
+      <span
+        className={`${styles.inspectorControl} ${styles.inspectorInputControl}`}
+        onBlur={() => {
+          if (skipBlurSettle.current) {
+            skipBlurSettle.current = false;
+            return;
+          }
+          settle();
+        }}
+        onKeyDown={(event) => {
+          const action = customComponentDraftKeyAction(event.key);
+          if (action === "none") return;
+          skipBlurSettle.current = customComponentDraftKeySuppressesBlur(action);
+          if (action === "settle") {
+            event.preventDefault();
+            settle();
+          } else {
+            // Escape abandons the draft and sends nothing (source intent
+            // :146-149) — the write above is deliberately not reached.
+            setDraft(field.draft);
+          }
+          (event.target as HTMLInputElement).blur();
+        }}
+      >
+        <input
+          aria-label={field.ariaLabel}
+          id={field.inputId}
+          inputMode={field.kind === "number" ? "decimal" : "text"}
+          onChange={(event) => setDraft(event.target.value)}
+          step={field.kind === "number" ? "any" : undefined}
+          type={field.kind === "number" ? "number" : "text"}
+          value={draft}
+        />
+      </span>
+    </InspectorField>
+  );
+}
+
+function CustomComponentPropControl({
+  field,
+  onCommit,
+}: {
+  field: CustomComponentField;
+  onCommit: CustomComponentPropCommit;
+}) {
+  // Checkbox and select commit IMMEDIATELY (source :76, :99) — there is no
+  // half-typed state to protect. Text and number draft locally.
+  if (field.kind === "checkbox") {
+    return (
+      <label className={styles.checkboxRow} htmlFor={field.inputId}>
+        <input
+          aria-label={field.ariaLabel}
+          checked={field.value === true}
+          id={field.inputId}
+          onChange={(event) => onCommit(field.name, event.target.checked)}
+          type="checkbox"
+        />
+        <span>{field.displayLabel}</span>
+      </label>
+    );
+  }
+  if (field.kind === "select") {
+    return (
+      <InspectorField label={field.displayLabel}>
+        <InspectorSelect
+          label={field.ariaLabel}
+          onChange={(label) => {
+            const value = customComponentSelectCommit(field.selectOptions, label);
+            if (value !== null) onCommit(field.name, value);
+          }}
+          // The inspector's select speaks labels; the adapter owns the
+          // label → value mapping, including the "Default" entry whose value
+          // is the empty string.
+          options={field.selectOptions.map((option) => option.label)}
+          value={customComponentSelectLabel(field.selectOptions, field.value)}
+        />
+      </InspectorField>
+    );
+  }
+  return <CustomComponentPropDraftControl field={field} onCommit={onCommit} />;
+}
+
+function CustomComponentPropsSection({
+  form,
+}: {
+  form: CustomComponentFormBinding;
+}) {
+  // Section-local open state: this section is not one of the controller's
+  // fixed schema sections (it exists only for a custom component), so it does
+  // not take a slot in the shared `InspectorSectionId` union.
+  const [open, setOpen] = useState(true);
+  const fields = customComponentFields(form.artifact, form.props);
+  return (
+    <InspectorSection label="Component properties" onOpenChange={setOpen} open={open}>
+      {/* One write at a time: the manual-edits controller drops an apply that
+          lands mid-flight, so every control goes dead while one is in the air
+          (source `disabled={busy}` on each control). A `display: contents`
+          fieldset is the native way to disable a subtree — including the
+          select's trigger button — without touching the section's layout or
+          the shared primitives. */}
+      <fieldset disabled={form.busy} style={{ display: "contents" }}>
+        {fields.length === 0 ? (
+          <p className={styles.inspectorFieldLabel}>
+            This component has no editable properties.
+          </p>
+        ) : (
+          fields.map((field) => (
+            <CustomComponentPropControl
+              field={field}
+              // Remount identity: the prop's LIVE value. A committed change (or
+              // any change arriving from the document) reseeds the draft; our
+              // own keystrokes leave it untouched, so typing is never
+              // interrupted — and an equal-but-differently-spelled draft
+              // ("3.0" over 3) survives, exactly as upstream.
+              key={`${field.name}:${customComponentDraft(field.value)}`}
+              onCommit={form.onCommitProp}
+            />
+          ))
+        )}
+        <p className={styles.inspectorFieldLabel}>
+          * Required by the pinned artifact schema.
+        </p>
+      </fieldset>
+    </InspectorSection>
+  );
+}
+/* ---- W4.7 (ends) -------------------------------------------------------- */
+
 function ContainerControls({
   controller,
+  customComponentForm,
   layerTree,
   onSelectionChange,
   showLayers,
 }: {
   controller: InspectorController;
+  /** W4.7 (contract item 34): the selected custom component's pinned artifact
+   * + live props. Null/absent → NO props section, which is also what a loading
+   * or failed artifact fetch yields (ledgered ruling) and what every other
+   * fallback kind on this view gets. */
+  customComponentForm?: CustomComponentFormBinding | null;
   layerTree: InspectorLayerTreeController;
   onSelectionChange: (selection: ChatShellInspectorSelection) => void;
   showLayers: boolean;
@@ -981,6 +1291,12 @@ function ContainerControls({
   const { setValue, state, toggleSection } = controller;
   return (
     <>
+      {/* W4.7: the component's own properties lead — they are what the user
+          selected the component to change; the §5 layout fallback follows
+          unchanged beneath them. */}
+      {customComponentForm ? (
+        <CustomComponentPropsSection form={customComponentForm} />
+      ) : null}
       <LinkSection ariaLabel="Container link URL" controller={controller} />
       <Section id="style" label="Style" state={state} toggle={toggleSection}>
         {/* W4.4 (row 19): the two token buttons, hydrated + live. */}
@@ -1083,6 +1399,7 @@ const WEB_BUTTON_DUMMY_TOKENS: Partial<InspectorPresentationState> = {
 
 export function WebInspector({
   addressing,
+  customComponentForm = null,
   error = null,
   hydrated,
   layers,
@@ -1091,6 +1408,7 @@ export function WebInspector({
   onSelectionChange,
   onSelectLayer,
   reviewMenuEnabled = false,
+  richTextRange = null,
   selection,
   showLayers = true,
   themeColors,
@@ -1105,6 +1423,14 @@ export function WebInspector({
   /** W3.1: write addressing stamped onto every inspector event this panel
    * dispatches — passed through to the controllers verbatim. */
   addressing?: InspectorEventAddressing;
+  /** W4.7 (contract item 34): the selected custom component's pinned artifact
+   * + live props, feeding the schema-driven props form. A custom component
+   * falls to the §5 layout-only fallback, so ONLY that view (ContainerControls)
+   * consumes this; the other schemas are untouched. Null/absent → no props
+   * section — which is also what a loading or failed artifact fetch yields
+   * (ledgered ruling, 2026-08-18: the fallback stands alone, no loading shell,
+   * no error chrome). */
+  customComponentForm?: CustomComponentFormBinding | null;
   /** W2.2: real values for the selected node (design-editor hydrate adapter),
    * merged over the dummy defaults at mount. Callers remount per selection. */
   hydrated?: Partial<InspectorPresentationState>;
@@ -1121,6 +1447,13 @@ export function WebInspector({
   /** W2.3: a layer-row click — callers send bridge `selectNode`. */
   onSelectLayer?: (nodeId: string) => void;
   reviewMenuEnabled?: boolean;
+  /** W4.8b (contract item 3): the live rich-text range whose link the TEXT
+   * schema's "Link to" section edits — supplied by the owner only while a
+   * range is actually selected (`richTextLinkSectionVisible`). Null/absent →
+   * the text schema shows no Link-to section at all (§2 hidden = absent). Only
+   * the text schema consumes it; the other six schemas' node-href LinkSection
+   * is untouched. */
+  richTextRange?: RichTextLinkBinding | null;
   selection: ChatShellInspectorSelection;
   showLayers?: boolean;
   /** W4.0: the document's real theme tokens (design-editor
@@ -1236,11 +1569,11 @@ export function WebInspector({
         <ThemeColorsContext.Provider value={themeColors}>
           <DocumentLayersContext.Provider value={documentLayers}>
             {selection === "canvas" ? <CanvasControls controller={canvasController} layerTree={canvasLayerTree} onSelectionChange={onSelectionChange} showLayers={showLayers} /> : null}
-            {selection === "text" ? <TextControls controller={textController} layerTree={textLayerTree} onSelectionChange={onSelectionChange} showLayers={showLayers} /> : null}
+            {selection === "text" ? <TextControls controller={textController} layerTree={textLayerTree} onSelectionChange={onSelectionChange} richTextRange={richTextRange} showLayers={showLayers} /> : null}
             {selection === "image" ? <ImageControls controller={imageController} layerTree={imageLayerTree} onReplaceImage={onReplaceImage} onSelectionChange={onSelectionChange} showLayers={showLayers} /> : null}
             {selection === "button" ? <ButtonControls controller={buttonController} layerTree={buttonLayerTree} onSelectionChange={onSelectionChange} showLayers={showLayers} /> : null}
             {selection === "icon" ? <IconControls controller={iconController} layerTree={iconLayerTree} onSelectionChange={onSelectionChange} showLayers={showLayers} /> : null}
-            {selection === "container" ? <ContainerControls controller={containerController} layerTree={containerLayerTree} onSelectionChange={onSelectionChange} showLayers={showLayers} /> : null}
+            {selection === "container" ? <ContainerControls controller={containerController} customComponentForm={customComponentForm} layerTree={containerLayerTree} onSelectionChange={onSelectionChange} showLayers={showLayers} /> : null}
             {selection === "section" ? <SectionControls controller={sectionController} layerTree={sectionLayerTree} onSelectionChange={onSelectionChange} showLayers={showLayers} /> : null}
           </DocumentLayersContext.Provider>
         </ThemeColorsContext.Provider>

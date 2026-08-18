@@ -5,8 +5,13 @@ import type {
 import {
   WebArtifactCanvas,
   type WebArtifactCanvasControls,
+  type WebRichTextSessionState,
 } from "@/features/design-editor/components/web-artifact-canvas";
 import type { WebSelection } from "@/features/design-editor/engine/webBridge";
+import type {
+  RichTextDocument,
+  WebTheme,
+} from "@/features/design-editor/engine/webDocuments";
 import type { RefObject } from "react";
 import { ProjectGallery } from "@/features/gallery/components/project-gallery";
 import type { GalleryArtifact } from "@/features/gallery/model/project-gallery";
@@ -34,6 +39,11 @@ export function ArtifactStage({
   editing,
   onActivateArtifact,
   onCanvasSelect,
+  onRichTextCommit,
+  onRichTextSessionChange,
+  richTextBusy,
+  richTextEnabled,
+  richTextTheme,
   onCloseArtifact,
   onOpenGallery,
   onOpenGalleryArtifact,
@@ -70,6 +80,16 @@ export function ArtifactStage({
   onActivateArtifact: (artifactId: string) => void;
   /** W2.2: nonce-validated selection events from the web canvas bridge. */
   onCanvasSelect?: (selection: WebSelection | null) => void;
+  /** W4.8a: a text node's in-iframe rich-text session committed. */
+  onRichTextCommit?: (nodeId: string, content: RichTextDocument) => void;
+  /** W4.8a: the rich-text session state, mirrored up on every change. */
+  onRichTextSessionChange?: (state: WebRichTextSessionState) => void;
+  /** W4.8a: a write is already in flight — the toolbar disables itself. */
+  richTextBusy?: boolean;
+  /** W4.8a: the editing gate — falsy keeps the render read-only. */
+  richTextEnabled?: boolean;
+  /** W4.8a: the document's compiled theme, for the toolbar's color panels. */
+  richTextTheme?: WebTheme | null;
   onCloseArtifact: (artifactId: string) => void;
   onOpenGallery: () => void;
   onOpenGalleryArtifact: (artifact: GalleryArtifact) => void;
@@ -125,8 +145,14 @@ export function ArtifactStage({
                   <WebArtifactCanvas
                     controlsRef={canvasControlsRef}
                     documentId={activeDocumentId}
+                    editing={editing}
+                    onRichTextCommit={onRichTextCommit}
+                    onRichTextSessionChange={onRichTextSessionChange}
                     onSelect={onCanvasSelect}
                     reloadToken={canvasReloadToken}
+                    richTextBusy={richTextBusy}
+                    richTextEnabled={richTextEnabled}
+                    richTextTheme={richTextTheme}
                     selectedNodeId={selectedCanvasNodeId}
                   />
                 ) : null}
