@@ -241,6 +241,28 @@ function DocumentRender({
       settleRichText(editingNodeId, "cancel");
   }, [editingNodeId, richTextEnabled, settleRichText]);
 
+  // Turning Edit OFF unlatches the bridge. Reviewed defect (2026-08-18): the
+  // view refetch empties `nonceRef` synchronously inside `useWebRender`'s own
+  // effect, which runs BEFORE the cancel effect above — so `settleRichText`
+  // posts nothing (it is guarded on a live nonce) and the departing frame's
+  // `edit-end`/`rich-text-commit` are rejected inbound against an empty
+  // expected nonce. Nothing else cleared the LOCAL state, which only
+  // `reloadToken` bumps reach, so `editingRef` stayed latched true and every
+  // inbound `select` after Edit came back was dropped: dead selection, an
+  // inspector stuck on a stale node, property writes landing on the WRONG one,
+  // and a dead toolbar portal able to re-mount from the stale session.
+  //
+  // The in-progress rich-text edit is DELIBERATELY discarded here — leaving the
+  // editing dock is a cancel (the W4.8a ledgered ruling) — and the cancel
+  // message could not reach the frame anyway. This reset IS the unlatch.
+  // `resetSelection` never calls `onSelect`, so the owner's persisted selection
+  // survives and the editing-gated re-select effect above restores the outline
+  // when Edit returns. Same bridge-owned state clearing as the reloadToken path
+  // at :218-222, so no setState-in-effect violation.
+  useEffect(() => {
+    if (!editing) resetSelection();
+  }, [editing, resetSelection]);
+
   // W4.8a: mirror the session up. A passive effect (never a setState in an
   // effect, never a render-time write) — same discipline as the callback-ref
   // updates in use-web-bridge-selection.ts:144-149.

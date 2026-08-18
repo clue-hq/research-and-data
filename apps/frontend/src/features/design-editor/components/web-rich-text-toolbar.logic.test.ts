@@ -223,6 +223,39 @@ test("the toolbar never crosses either viewport edge", () => {
   );
 });
 
+test("a below-placed toolbar near the bottom edge clamps to the viewport", () => {
+  // Vertical clamp, the counterpart of the horizontal one above: a range low in
+  // a short viewport still flips BELOW (no room above), and the placement is
+  // pulled up to `viewport.height - toolbar.height - EDGE_GAP` instead of
+  // hanging off the bottom. Without that clamp the top would be
+  // rangeBottom(190) + RANGE_GAP(10) = 200 — the whole toolbar off-screen.
+  assert.deepEqual(
+    computeToolbarPosition({
+      frame: FRAME,
+      range: { ...RECT, top: 0, bottom: 150, y: 0, height: 150 },
+      toolbar: { width: 400, height: 40 },
+      viewport: { width: 1000, height: 200 },
+    }),
+    { left: 20, top: 148, placement: "below" },
+  );
+});
+
+test("the clamped toolbar top never rises above EDGE_GAP", () => {
+  // A viewport shorter than the toolbar makes the bottom clamp NEGATIVE
+  // (40 - 40 - 12 = -12). The final `Math.max(EDGE_GAP, top)` is what keeps the
+  // toolbar on screen at all: it settles at the edge gap rather than above the
+  // viewport, where nothing would be clickable.
+  assert.deepEqual(
+    computeToolbarPosition({
+      frame: FRAME,
+      range: { ...RECT, top: 0, bottom: 20, y: 0 },
+      toolbar: { width: 400, height: 40 },
+      viewport: { width: 1000, height: 40 },
+    }),
+    { left: 20, top: 12, placement: "below" },
+  );
+});
+
 test("a range scrolled out of the frame yields no position", () => {
   assert.equal(
     computeToolbarPosition({

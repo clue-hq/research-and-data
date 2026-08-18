@@ -70,6 +70,11 @@ export interface RichTextLinkPrefill {
  * existing link fills both fields, anything else (off, mixed, a null href
  * riding along) starts empty. Never surfaces `null` to the DOM — a controlled
  * input needs a string.
+ *
+ * BOTH surfaces call this: the inspector's Link-to section and the canvas
+ * toolbar's link panel (`components/web-rich-text-toolbar.tsx`, `togglePanel`),
+ * which no longer restates the rule inline. Two surfaces over one link path
+ * cannot disagree about what a field starts with.
  */
 export function richTextLinkPrefill(
   selection: RichTextSelectionState,

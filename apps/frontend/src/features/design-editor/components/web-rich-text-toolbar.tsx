@@ -14,6 +14,7 @@ import type {
   RichTextSelectionState,
 } from "../engine/webBridge";
 import type { WebRichTextVariable, WebTheme } from "../engine/webDocuments";
+import { richTextLinkPrefill } from "../adapter/rich-text-link-section";
 import {
   RICH_TEXT_BLOCK_CONTROLS,
   RICH_TEXT_MARK_CONTROLS,
@@ -273,12 +274,13 @@ export function WebRichTextToolbar({
       return;
     }
     if (panel === "link") {
-      setLinkHref(
-        selection.link.state === "on" ? (selection.link.href ?? "") : "",
-      );
-      setLinkNewTab(
-        selection.link.state === "on" ? Boolean(selection.link.newTab) : false,
-      );
+      // One prefill rule, one implementation: `richTextLinkPrefill` was
+      // extracted from these very lines for the inspector's Link-to section,
+      // and it is tested there. Restating it inline is how the two surfaces
+      // over one link path drift apart. No behavior change.
+      const prefill = richTextLinkPrefill(selection);
+      setLinkHref(prefill.href);
+      setLinkNewTab(prefill.newTab);
       setLinkError(null);
     }
     if (panel === "variable") {

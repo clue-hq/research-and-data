@@ -146,8 +146,10 @@ test("a collapsed caret at a MIXED link boundary → absent (the ruling says on)
   );
 });
 
-// --- prefill (the toolbar's own semantics: an existing link fills the fields,
-// anything else starts empty) ------------------------------------------------
+// --- prefill (an existing link fills the fields, anything else starts empty).
+// These cases now describe BOTH consumers: the canvas toolbar's link panel
+// calls `richTextLinkPrefill` too (web-rich-text-toolbar.tsx, `togglePanel`)
+// rather than restating the rule inline, so one link path has one prefill. ----
 
 test("a range inside a link prefills its href and new-tab flag", () => {
   assert.deepEqual(
