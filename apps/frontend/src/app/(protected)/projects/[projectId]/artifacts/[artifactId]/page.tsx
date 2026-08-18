@@ -6,10 +6,8 @@ import {
   httpDesignArtifactRepository,
   type DesignArtifactRepository,
 } from "@/features/design-editor/data/artifact.repository";
-import type {
-  ChatShellArtifact,
-  DesignArtifactListItem,
-} from "@/features/design-editor/model/artifact";
+import type { ChatShellArtifact } from "@/features/design-editor/model/artifact";
+import type { ProjectArtifact } from "@/features/projects/model/project-workspace";
 
 export const metadata: Metadata = {
   title: "Project artifact",
@@ -52,17 +50,24 @@ async function loadArtifact(
 /**
  * Slice 3 (gallery leg-derived feed): the project's design-artifact list —
  * the gallery's data. The same refusal posture as the single resolve: any
- * failure is an empty list, never a crash (a project with no legs is
- * legitimately empty; ruling 1).
+ * failure — the fetch OR the card mapping (an unparseable timestamp throws
+ * in `toProjectArtifact`) — is an empty feed, never a crash (a project with
+ * no legs is legitimately empty; ruling 1).
  */
-async function loadArtifactList(
+async function loadGalleryFeed(
   repository: DesignArtifactRepository,
   projectId: string,
-): Promise<DesignArtifactListItem[]> {
+): Promise<{ cards: ProjectArtifact[]; documentIds: Record<string, string> }> {
   try {
-    return await repository.list(projectId);
+    const listed = await repository.list(projectId);
+    return {
+      cards: listed.map((item) => toProjectArtifact(item)),
+      documentIds: Object.fromEntries(
+        listed.map((item) => [item.id, item.documentId]),
+      ),
+    };
   } catch {
-    return [];
+    return { cards: [], documentIds: {} };
   }
 }
 
@@ -71,25 +76,23 @@ export default async function ProjectArtifactPage({
 }: ProjectArtifactPageProps) {
   const { artifactId, projectId } = await params;
   const repository = backendRepository();
-  const [artifact, listed] = await Promise.all([
+  const [artifact, feed] = await Promise.all([
     loadArtifact(repository, projectId, artifactId),
-    loadArtifactList(repository, projectId),
+    loadGalleryFeed(repository, projectId),
   ]);
 
   // Every listed document is openable from the gallery, so the id→document
   // map covers the whole feed, not just the route's artifact. The route
   // artifact may legitimately be absent from the feed (a legless document —
   // ruling 1's accepted gap); its own entry rides along regardless.
-  const documentIds: Record<string, string> = Object.fromEntries(
-    listed.map((item) => [item.id, item.documentId]),
-  );
+  const documentIds = { ...feed.documentIds };
   if (artifact) {
     documentIds[artifact.id] = artifact.documentId;
   }
 
   return (
     <EditorSurface
-      artifacts={listed.map((item) => toProjectArtifact(item))}
+      artifacts={feed.cards}
       documentIds={documentIds}
       initial={{
         artifactId,
