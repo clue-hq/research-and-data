@@ -1275,6 +1275,7 @@ function ContainerControls({
   controller,
   customComponentForm,
   layerTree,
+  layoutOnly = false,
   onSelectionChange,
   showLayers,
 }: {
@@ -1285,6 +1286,10 @@ function ContainerControls({
    * fallback kind on this view gets. */
   customComponentForm?: CustomComponentFormBinding | null;
   layerTree: InspectorLayerTreeController;
+  /** W5.1 (§5): true when this view is the unknown-kind FALLBACK (embed —
+   * item 32; the interactive components — item 33; anything unmapped), not a
+   * real container. See the branch below. */
+  layoutOnly?: boolean;
   onSelectionChange: (selection: ChatShellInspectorSelection) => void;
   showLayers: boolean;
 }) {
@@ -1297,23 +1302,38 @@ function ContainerControls({
       {customComponentForm ? (
         <CustomComponentPropsSection form={customComponentForm} />
       ) : null}
-      <LinkSection ariaLabel="Container link URL" controller={controller} />
-      <Section id="style" label="Style" state={state} toggle={toggleSection}>
-        {/* W4.4 (row 19): the two token buttons, hydrated + live. */}
-        <StyleTokenFields controller={controller} />
-      </Section>
-      <Section id="alignment" label="Alignment" state={state} toggle={toggleSection}>
-        <SegmentedControl
-          ariaLabel="Container layout mode"
-          onChange={(value) => setValue("layoutMode", value)}
-          options={([
-            { label: "Flex", value: "Flex" },
-            { label: "Grid", value: "Grid" },
-            { label: "Hide", value: "Hide" },
-          ] as const)}
-          value={state.layoutMode}
-        />
-      </Section>
+      {/* W5.1 — §5's fallback rule: "unknown/unmapped selection kinds show
+          Layout(-padding) only", covering embeds (item 32) and the interactive
+          components — dialog/accordion/marquee/carousel/tabs/nav-menu (item
+          33). Those kinds land on THIS view (the schema mapper routes them to
+          `container` with `layoutOnly`), but they are not containers: they
+          carry no href, no bg-/text- facet the inspector may claim, and no
+          display mode to segment — the writes below all refuse fail-closed for
+          them. §5 rules "Layout only", so the three sections are ABSENT here,
+          not disabled — the same posture ruling 18b took for the icon schema.
+          A real container (`layoutOnly` false) renders exactly as before:
+          rows 19/20 and the Link-to section are untouched. */}
+      {layoutOnly ? null : (
+        <>
+          <LinkSection ariaLabel="Container link URL" controller={controller} />
+          <Section id="style" label="Style" state={state} toggle={toggleSection}>
+            {/* W4.4 (row 19): the two token buttons, hydrated + live. */}
+            <StyleTokenFields controller={controller} />
+          </Section>
+          <Section id="alignment" label="Alignment" state={state} toggle={toggleSection}>
+            <SegmentedControl
+              ariaLabel="Container layout mode"
+              onChange={(value) => setValue("layoutMode", value)}
+              options={([
+                { label: "Flex", value: "Flex" },
+                { label: "Grid", value: "Grid" },
+                { label: "Hide", value: "Hide" },
+              ] as const)}
+              value={state.layoutMode}
+            />
+          </Section>
+        </>
+      )}
       {/* R3: the container's padding boxes collapse to the two-axis form. */}
       <LayoutSection controller={controller} paddingAxes="two" />
       {showLayers ? <Section id="layers" label="Layers" state={state} toggle={toggleSection}>
@@ -1403,6 +1423,7 @@ export function WebInspector({
   error = null,
   hydrated,
   layers,
+  layoutOnly = false,
   note = null,
   onReplaceImage,
   onSelectionChange,
@@ -1438,6 +1459,15 @@ export function WebInspector({
    * When present, every schema's Layers section renders them instead of its
    * fixture tree; absent keeps the dummy fixtures untouched. */
   layers?: WebLayerRow[];
+  /** W5.1 (§5): the schema mapper's own flag for the selected node
+   * (`inspectorSelectionFor(...).layoutOnly`) — true for the unknown-kind
+   * fallback: embeds (item 32), the interactive components (item 33), and
+   * anything unmapped, all of which route to the CONTAINER view. Only that
+   * view consumes it, and only to hide the sections §5 rules out (Link-to,
+   * Style, Alignment); every other schema is untouched, and the icon schema's
+   * own trim (18b) is already unconditional in `IconControls`. Absent/false →
+   * a real container renders exactly as before. */
+  layoutOnly?: boolean;
   /** W4.2 §1 row 12: the image schema's Replace-image pick. The File travels
    * by prop to the editor surface, which uploads it and applies the
    * `upsert_asset`+`replace_asset` batch; absent keeps the dummy's
@@ -1573,7 +1603,7 @@ export function WebInspector({
             {selection === "image" ? <ImageControls controller={imageController} layerTree={imageLayerTree} onReplaceImage={onReplaceImage} onSelectionChange={onSelectionChange} showLayers={showLayers} /> : null}
             {selection === "button" ? <ButtonControls controller={buttonController} layerTree={buttonLayerTree} onSelectionChange={onSelectionChange} showLayers={showLayers} /> : null}
             {selection === "icon" ? <IconControls controller={iconController} layerTree={iconLayerTree} onSelectionChange={onSelectionChange} showLayers={showLayers} /> : null}
-            {selection === "container" ? <ContainerControls controller={containerController} customComponentForm={customComponentForm} layerTree={containerLayerTree} onSelectionChange={onSelectionChange} showLayers={showLayers} /> : null}
+            {selection === "container" ? <ContainerControls controller={containerController} customComponentForm={customComponentForm} layerTree={containerLayerTree} layoutOnly={layoutOnly} onSelectionChange={onSelectionChange} showLayers={showLayers} /> : null}
             {selection === "section" ? <SectionControls controller={sectionController} layerTree={sectionLayerTree} onSelectionChange={onSelectionChange} showLayers={showLayers} /> : null}
           </DocumentLayersContext.Provider>
         </ThemeColorsContext.Provider>

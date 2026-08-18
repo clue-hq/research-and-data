@@ -218,6 +218,10 @@ export function ChatSurface({
                 addressing={session.addressing}
                 hydrated={session.webSelection.selection?.hydrated}
                 layers={session.layerRows}
+                // W5.1 (§5): the mapper's fallback flag — embeds (item 32) and
+                // the interactive components (item 33) land on the container
+                // view and get Layout(-padding) only.
+                layoutOnly={session.webSelection.selection?.schema.layoutOnly}
                 onReplaceImage={session.onReplaceImage}
                 onSelectLayer={session.onSelectLayer}
                 onSelectionChange={shell.selectInspectorElement}
