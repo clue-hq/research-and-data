@@ -13,6 +13,18 @@ from clue_config import (
 from clue_config.gateway import default_gateway_config
 
 
+@pytest.fixture(autouse=True)
+def _hermetic_product_path(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Assert the *code* defaults, not the operator's deployment posture.
+
+    ``CLUE_PRODUCT_PATH=integration_pilot`` applies an overlay of default flag values, and the repo
+    workflow (``set -a; source .env; set +a``) exports it — so without this, a pilot shell flips the
+    default-off/default-on assertions below and the product-path tests stop testing the default
+    path. Every test here that *wants* a product path sets it after this cleanup.
+    """
+    monkeypatch.delenv("CLUE_PRODUCT_PATH", raising=False)
+
+
 def test_synthesis_model_default_when_unset(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("CLUE_SYNTHESIS_MODEL", raising=False)
     settings = load_settings(_env_file=None)  # type: ignore[call-arg]
