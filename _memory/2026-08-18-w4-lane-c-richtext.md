@@ -179,12 +179,21 @@ OPS: 8050 externally SIGTERM'd 3× (process-tree reaping); detached watchdog now
 it (/tmp/lane-c-8050-watchdog.sh, own session; kill via pkill -f lane-c-8050-watchdog
 at lane close).
 
+## View-mode links RULED (a) + SHIPPED (`7db8904f`, 2026-08-19; browser-verified)
+
+Founder chose Figma-like: absolute http(s)/mailto/tel → new tab (base target); #fragment
+→ in-preview scroll; other relative + unknown schemes → inert. ONE pure classifier
+(`viewModeLinkAction`) whose own toString() is injected as `VIEW_MODE_LINK_SCRIPT`
+(capture-phase; reads getAttribute('href') NOT a.href — the DOM property resolves against
+the inherited parent base URL and would eat the fragment). 14 tests; gates 752/752.
+Live-verified: fragment scrolls (1963→0), relative/javascript: inert, absolute untouched.
+
 ## Open / next
 
-- Founder ruling: view-mode non-absolute link behavior (a/b/c above), then implement if
-  (a)/(b).
-- Founder combined pass if desired → merge lane C → v2 (conflict-free; done in the
-  istanbul workspace; user pushes/decides).
+- LANE C FEATURE-COMPLETE, REVIEW-CLEAN (whole-branch review closed; all findings fixed
+  or ledgered). Remaining: optional founder final pass → merge lane C → v2 in the
+  istanbul workspace (pre-verified conflict-free; user pushes/decides) → kill the 8050
+  watchdog at lane close (pkill -f lane-c-8050-watchdog).
 - Carried caveat (source semantics): a rich-text commit landing while another write is in
   flight is silently dropped after the Lexical session destroyed itself — unrecoverable;
   same upstream.
