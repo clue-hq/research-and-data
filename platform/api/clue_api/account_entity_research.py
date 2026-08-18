@@ -40,6 +40,11 @@ from clue_agents.entity_research_runtime import (
     EntityResearchGovernedToolRefusal,
     current_entity_research_tool_execution,
 )
+from clue_api.account_field_derivation import (
+    DERIVED_ACCOUNT_FIELD_SOURCES,
+    AccountFieldDerivation,
+    derive_account_fields,
+)
 from clue_api.entity_research_tools import (
     convert_engine_authority_rejections,
     semantic_validation_error,
@@ -151,16 +156,15 @@ async def born_complete_account_field_keys(
     )
 
 
-async def read_account_committee_plan(
+async def pinned_account_research_directive(
     conn: AsyncConnection, *, authorization: EntityResearchJobAuthorization
-) -> AccountCommitteePlanProjection | None:
-    """Project the confirmed committee plan of the account run's pinned directive.
+) -> Any:
+    """The effective directive this job's account run pinned, or ``None`` when it pinned none.
 
-    This is a read-only projection of durable authority: the account run pins the directive, the
-    directive (plus any account override) composes the effective committee plan, and the plan is
-    what the engine later validates a committee tool call against.  A job whose account run carries
-    no directive pin (the historical/static R5 seam) has no plan to show, so the block is absent
-    rather than invented.
+    One read for every consumer of the job's *confirmed direction* (the committee plan below and
+    the derive-only profile axis), so they can never disagree about which directive governs.  A job
+    whose account run carries no directive pin is the historical/static R5 seam: it has no
+    confirmed direction to project, which is different from having an empty one.
     """
 
     runs = await find_account_runs_for_entity(
@@ -177,16 +181,56 @@ async def read_account_committee_plan(
         raise AccountResearchAuthorityError(
             "account run pins a directive the job selection did not authorize"
         )
-    effective = await effective_account_research_directive(
+    return await effective_account_research_directive(
         conn,
         workspace_id=authorization.workspace_id,
         directive_id=pin.directive_id,
         account_id=EntityId(authorization.subject_entity_id),
         expected_pin=pin,
     )
+
+
+async def derivable_account_profile_fields(
+    conn: AsyncConnection, *, authorization: EntityResearchJobAuthorization
+) -> tuple[str, ...]:
+    """The derive-only §3.1 rows (5 and 8) this job's confirmed directive actually asked for.
+
+    They are deliberately absent from ``selection.admitted_field_keys``: a field with no
+    acquisition source cannot be bought, estimated, or authorized against a source, so the launcher
+    partitions it out of the paid selection.  It is still part of the profile the directive
+    confirmed, so coverage answers for it — this is the exact set the coverage ledger adds to the
+    admitted axis, read from the same durable authority by the assessor and by the finalization
+    engine that verifies the assessor.
+    """
+
+    directive = await pinned_account_research_directive(conn, authorization=authorization)
+    if directive is None:
+        return ()
+    return tuple(
+        str(field_key)
+        for field_key in directive.field_keys
+        if str(field_key) in DERIVED_ACCOUNT_FIELD_SOURCES
+    )
+
+
+async def read_account_committee_plan(
+    conn: AsyncConnection, *, authorization: EntityResearchJobAuthorization
+) -> AccountCommitteePlanProjection | None:
+    """Project the confirmed committee plan of the account run's pinned directive.
+
+    This is a read-only projection of durable authority: the account run pins the directive, the
+    directive (plus any account override) composes the effective committee plan, and the plan is
+    what the engine later validates a committee tool call against.  A job whose account run carries
+    no directive pin (the historical/static R5 seam) has no plan to show, so the block is absent
+    rather than invented.
+    """
+
+    effective = await pinned_account_research_directive(conn, authorization=authorization)
+    if effective is None:
+        return None
     plan = effective.committee_plan
     return AccountCommitteePlanProjection(
-        directive_ref=pin.directive_ref,
+        directive_ref=effective.pin.directive_ref,
         functions=tuple(str(value) for value in plan.functions),
         levels=tuple(str(value) for value in plan.levels),
         teams=tuple(str(value) for value in plan.teams),
@@ -304,6 +348,30 @@ class AccountResearchStateStore:
             committee_plan=committee_plan,
         )
 
+    async def _derive_profile_fields(
+        self, authorization: EntityResearchJobAuthorization
+    ) -> tuple[AccountFieldDerivation, ...]:
+        """Settle the confirmed directive's derive-only §3.1 rows (contract rows 5 and 8).
+
+        One transaction: the derivation reads the governed employee-count / annual-revenue claims
+        and writes the band claims it can justify. It is deliberately *before* the state read, so
+        a band derived in this assessment is already the account's current truth when coverage
+        cites it.
+        """
+
+        async with self._conn_factory() as conn:
+            field_keys = await derivable_account_profile_fields(conn, authorization=authorization)
+            if not field_keys:
+                return ()
+            return await derive_account_fields(
+                conn,
+                workspace_id=str(authorization.workspace_id),
+                project_id=str(authorization.project_id),
+                project_run_id=ProjectRunId(authorization.project_run_id),
+                account_entity_id=EntityId(authorization.subject_entity_id),
+                field_keys=field_keys,
+            )
+
     @staticmethod
     async def _existing_claims(
         conn: AsyncConnection,
@@ -365,9 +433,18 @@ class AccountResearchStateStore:
             "current_state_sha256": state.current_state_sha256,
         }
 
-    async def assess(self, inputs: AssessAccountCoverageInput) -> AccountCoverageProjection:
-        active = self._active_account()
+    async def assess(
+        self,
+        inputs: AssessAccountCoverageInput,
+        active: ActiveEntityResearchToolExecution | None = None,
+    ) -> AccountCoverageProjection:
+        active = active or self._active_account()
         authorization = active.context.authorization
+        # Contract §3.1 rows 5 and 8 settle here, before the coverage row is written, so a run that
+        # acquired ``core.employee_count`` closes with its ``core.employee_range`` derived in the
+        # same run. Nothing is bought: the deriver only restates governed evidence already on file
+        # (or leaves the row honestly unresolved), and it is idempotent on (entity, field, run).
+        derivation = await self._derive_profile_fields(authorization)
         state = await self.state(active)
         if set(inputs.result_refs) != set(state.result_refs):
             raise AccountResearchAuthorityError(
@@ -422,17 +499,33 @@ class AccountResearchStateStore:
                 else:
                     reason = "existing_claim_missing_evidence"
                 unresolved_reasons.append(f"{field_key}:{reason}")
+            # §3.1 rows 5 and 8 join the axis here. They are not admitted (they own no acquisition
+            # source, so the launcher partitions them out of the paid selection) but the confirmed
+            # directive asked for them, so the ledger answers for them: settled with the derived or
+            # reused claim as its evidence, or unresolved with the exact derivation reason.
+            derived_completed = tuple(item.field_key for item in derivation if item.settled)
+            derived_unresolved = tuple(item.field_key for item in derivation if not item.settled)
+            unresolved_reasons.extend(
+                f"{item.field_key}:{item.reason}" for item in derivation if not item.settled
+            )
+            completed_field_keys = (*state.completed_field_keys, *derived_completed)
+            unresolved_field_keys = (*state.unresolved_field_keys, *derived_unresolved)
             # "Skipped" means the money was never spent, so *any* result row for the field
             # disqualifies it — a failed or empty attempt cost just as much as a successful one,
             # and reporting it as never-spent would misstate the spend trail.
             completed = set(state.completed_field_keys)
             researched = set(latest_account)
-            skipped_field_reasons = tuple(
-                f"{item.field_key}:existing_claim_fresh"
-                for item in state.existing_claims
-                if item.born_complete
-                and item.field_key in completed
-                and item.field_key not in researched
+            skipped_field_reasons = (
+                *(
+                    f"{item.field_key}:existing_claim_fresh"
+                    for item in state.existing_claims
+                    if item.born_complete
+                    and item.field_key in completed
+                    and item.field_key not in researched
+                ),
+                # A derived row costs nothing either, and its reason says which of the two §3.1
+                # dispositions ("reuse **or** derive") answered it.
+                *(f"{item.field_key}:{item.reason}" for item in derivation if item.settled),
             )
 
             scope_count = int(
@@ -494,7 +587,7 @@ class AccountResearchStateStore:
                 confirmed_empty_count=confirmed_empty_count,
             )
             review_flags = list(committee_flags)
-            if state.unresolved_field_keys:
+            if unresolved_field_keys:
                 review_flags.append("account_fields_unresolved")
 
             result_ids = [UUID(ref.removeprefix("research-result:")) for ref in state.result_refs]
@@ -539,13 +632,16 @@ class AccountResearchStateStore:
                 for item in state.existing_claims
                 if item.born_complete and item.field_key in set(state.completed_field_keys)
             )
-            claim_ids = tuple(dict.fromkeys((*claim_ids, *existing_claim_ids)))
+            derived_claim_ids = tuple(
+                str(item.claim_id) for item in derivation if item.claim_id is not None
+            )
+            claim_ids = tuple(dict.fromkeys((*claim_ids, *existing_claim_ids, *derived_claim_ids)))
             projection = AccountCoverageProjection(
                 coverage_id=coverage_id,
                 coverage_ledger_ref=f"account-coverage:{coverage_id}",
                 current_state_sha256=state.current_state_sha256,
-                completed_field_keys=state.completed_field_keys,
-                unresolved_field_keys=state.unresolved_field_keys,
+                completed_field_keys=completed_field_keys,
+                unresolved_field_keys=unresolved_field_keys,
                 unresolved_reasons=tuple(unresolved_reasons),
                 skipped_field_reasons=skipped_field_reasons,
                 committee_result_refs=state.committee_result_refs,
@@ -580,8 +676,8 @@ class AccountResearchStateStore:
                     "workspace_id": authorization.workspace_id,
                     "account_id": authorization.subject_entity_id,
                     "result_refs": list(state.result_refs),
-                    "completed": list(state.completed_field_keys),
-                    "unresolved": list(state.unresolved_field_keys),
+                    "completed": list(completed_field_keys),
+                    "unresolved": list(unresolved_field_keys),
                     "reasons": unresolved_reasons,
                     "committee_refs": list(state.committee_result_refs),
                     "member_ids": list(state.committee_member_ids),
@@ -1327,6 +1423,12 @@ class AccountResearchFinalizationEngine(EntityResearchFinalizationEngine):
                     field_keys=sorted(existing_completed),
                 )
             )
+            # The coverage axis is the admitted (paid) field set **plus** the derive-only §3.1
+            # rows the confirmed directive asked for. The engine re-reads that durable authority
+            # itself rather than trusting the coverage row it is verifying.
+            derived_axis = frozenset(
+                await derivable_account_profile_fields(conn, authorization=authorization)
+            )
         if (
             row is None
             or ResearchFinalizationProposal.model_validate(row["proposal_json"]) != proposal
@@ -1357,9 +1459,10 @@ class AccountResearchFinalizationEngine(EntityResearchFinalizationEngine):
             == proposal.current_state_sha256
             == str(row["current_state_sha256"])
         )
-        coverage_matches = set(
-            proposal.completed_field_keys + proposal.unresolved_field_keys
-        ) == set(authorization.selection.admitted_field_keys)
+        coverage_matches = (
+            set(proposal.completed_field_keys + proposal.unresolved_field_keys)
+            == set(authorization.selection.admitted_field_keys) | derived_axis
+        )
         review_shape = (
             proposal.outcome is ResearchFinalizationOutcome.NEEDS_REVIEW
             and int(row["open_reviews"]) > 0
@@ -1495,6 +1598,8 @@ __all__ = [
     "AccountResearchStateStore",
     "account_engine_tool_bindings",
     "born_complete_account_field_keys",
+    "derivable_account_profile_fields",
     "existing_account_claims",
+    "pinned_account_research_directive",
     "read_account_committee_plan",
 ]
