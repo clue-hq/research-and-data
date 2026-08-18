@@ -740,7 +740,8 @@ async def draft_research_directive(
         (
             await conn.execute(
                 text(
-                    "SELECT directive_id, version, status::text FROM account_research_directive "
+                    "SELECT directive_id, version, status::text, predecessor_id "
+                    "FROM account_research_directive "
                     "WHERE workspace_id=:workspace_id AND project_id=:project_id "
                     "AND product_id=:product_id AND icp_key=:icp_key AND icp_version=:icp_version "
                     "ORDER BY version DESC LIMIT 1"
@@ -775,10 +776,39 @@ async def draft_research_directive(
             if predecessor_id is not None and predecessor_id != latest_id:
                 raise ResearchDirectiveConflict("successor must name the latest directive version")
             superseded_draft_id = latest_id
-            # The superseded draft is not a confirmed authority link: the durable row keeps
-            # ``predecessor_id`` NULL (confirmation would otherwise demand a confirmed
-            # predecessor) and the lineage is carried by the superseded event below.
-            predecessor_id = None
+            # The fresh draft takes over the superseded draft's position in the lineage: its
+            # predecessor is the lineage's currently-confirmed directive (unique by the
+            # one-confirmed-per-lineage index), or NULL when nothing is confirmed yet. Pointing
+            # at the superseded draft instead would break confirmation twice over — the
+            # confirmed-predecessor check would refuse it, and the one-confirmed index would
+            # refuse a confirm that never superseded the lineage's current confirmed authority
+            # (found live at the Slice B browser gate).
+            confirmed_row = (
+                (
+                    await conn.execute(
+                        text(
+                            "SELECT directive_id FROM account_research_directive "
+                            "WHERE workspace_id=:workspace_id AND project_id=:project_id "
+                            "AND product_id=:product_id AND icp_key=:icp_key "
+                            "AND icp_version=:icp_version AND status='confirmed'"
+                        ),
+                        {
+                            "workspace_id": workspace_id,
+                            "project_id": project_id,
+                            "product_id": product_id,
+                            "icp_key": icp_key,
+                            "icp_version": icp_version,
+                        },
+                    )
+                )
+                .mappings()
+                .one_or_none()
+            )
+            predecessor_id = (
+                ResearchDirectiveId(confirmed_row["directive_id"])
+                if confirmed_row is not None
+                else None
+            )
         else:
             if predecessor_id != latest_id:
                 raise ResearchDirectiveConflict("successor must name the latest directive version")

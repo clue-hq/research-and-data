@@ -929,7 +929,8 @@ def test_a_fresh_draft_supersedes_an_unconfirmed_latest_draft(tmp_path: Path) ->
             second_row = rows[str(second_operation)]
             assert first_row.status == "superseded"
             assert second_row.status == "draft"
-            # The superseded draft is not a confirmed authority link: lineage rides the event.
+            # The fresh draft inherits the superseded draft's own predecessor (None here, the
+            # lineage's confirmed directive when one exists) — never the superseded draft itself.
             assert second_row.predecessor_id is None
             superseded_event = (
                 await conn.execute(
