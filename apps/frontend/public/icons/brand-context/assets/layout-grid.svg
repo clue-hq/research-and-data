@@ -1,0 +1,8 @@
+<svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="10" height="10" viewBox="0 0 10 10" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="Vector">
+<path d="M3.5 0.5H1C0.723858 0.5 0.5 0.723858 0.5 1V3.5C0.5 3.77614 0.723858 4 1 4H3.5C3.77614 4 4 3.77614 4 3.5V1C4 0.723858 3.77614 0.5 3.5 0.5Z" stroke="#5E636C" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M9 0.5H6.5C6.22386 0.5 6 0.723858 6 1V3.5C6 3.77614 6.22386 4 6.5 4H9C9.27614 4 9.5 3.77614 9.5 3.5V1C9.5 0.723858 9.27614 0.5 9 0.5Z" stroke="#5E636C" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M9 6H6.5C6.22386 6 6 6.22386 6 6.5V9C6 9.27614 6.22386 9.5 6.5 9.5H9C9.27614 9.5 9.5 9.27614 9.5 9V6.5C9.5 6.22386 9.27614 6 9 6Z" stroke="#5E636C" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M3.5 6H1C0.723858 6 0.5 6.22386 0.5 6.5V9C0.5 9.27614 0.723858 9.5 1 9.5H3.5C3.77614 9.5 4 9.27614 4 9V6.5C4 6.22386 3.77614 6 3.5 6Z" stroke="#5E636C" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+</svg>
