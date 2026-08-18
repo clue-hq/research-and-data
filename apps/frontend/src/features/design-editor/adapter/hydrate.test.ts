@@ -3,6 +3,7 @@ import test from "node:test";
 import type { WebNode } from "../engine/webDocuments";
 import {
   HARVESTED_HIDDEN_CONTAINER_V52,
+  HARVESTED_ICON_V56,
   HARVESTED_PAGE,
   HARVESTED_PAGE_ROOT_V47,
 } from "./__fixtures__/web-nodes";
@@ -136,6 +137,27 @@ test("icon: padding hydrates (the only live sections per 18b)", () => {
     top: "2",
   });
   assert.equal(state.tokenTextColor, "Primary");
+});
+
+test("18b + R3: an icon with one padding axis states the other as a truthful zero", () => {
+  // ficon @56: "px-2 text-primary" — no py- utility means NO padding on that
+  // axis, so the trimmed schema's one live section must show 0, never the
+  // dummy's fixture default.
+  const icon = HARVESTED_ICON_V56.nodes.ficon;
+  assert.ok(icon);
+  const state = hydrateInspectorState(icon, icon.classes);
+  assert.deepEqual(state.padding, {
+    bottom: "0",
+    left: "2",
+    right: "2",
+    top: "0",
+  });
+  // 18b hides the icon's color/size/stroke sections, so nothing the schema
+  // renders reads these — the authored `text-primary` is the page's own
+  // styling, and the icon name stays agent-authored (no `iconName` state).
+  assert.equal(state.iconName, undefined);
+  assert.equal(state.iconSize, undefined);
+  assert.equal(state.iconStroke, undefined);
 });
 
 // ── container schema ────────────────────────────────────────────────────────

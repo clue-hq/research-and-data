@@ -17,7 +17,6 @@ import {
 } from "../hooks/use-inspector-controller";
 import {
   ColorControl,
-  InspectorDecoratedSelect,
   InspectorField,
   InspectorHeader,
   InspectorIcon,
@@ -40,9 +39,11 @@ const LINE_SPACING_OPTIONS = ["none", "tight", "snug", "normal", "relaxed", "loo
 const FONT_WEIGHT_OPTIONS = ["Regular", "Medium", "Semi Bold", "Bold"] as const;
 const FILL_MODE_OPTIONS = ["Fit", "Fill", "Stretch", "Tile"] as const;
 const BUTTON_STYLE_OPTIONS = ["Primary", "Secondary", "Transparent", "Critical"] as const;
-const ICON_OPTIONS = ["Apple"] as const;
-const ICON_SIZE_OPTIONS = ["Small", "Medium", "Large"] as const;
-const ICON_STROKE_OPTIONS = ["Default", "Thin", "Bold"] as const;
+// Ruling 18b: the dummy's icon option lists (name / size / stroke) are gone
+// with the sections they fed — the engine backs none of them, and the ruling
+// hides rather than disables. The dummy's `InspectorDecoratedSelect` primitive
+// stays in `inspector-primitives.tsx` (presentation truth is not this task's to
+// delete); nothing in the web inspector renders it now.
 const INSPECTOR_TITLES: Record<ChatShellInspectorSelection, string> = {
   button: "Button",
   canvas: "Canvas",
@@ -826,22 +827,26 @@ function IconControls({
   onSelectionChange: (selection: ChatShellInspectorSelection) => void;
   showLayers: boolean;
 }) {
-  const { setValue, state, toggleSection } = controller;
+  const { state, toggleSection } = controller;
+  // Ruling 18b (§2 delta): the icon schema renders ONLY Layout/padding (plus
+  // the Layers section every schema carries). The engine's icon node is
+  // `WebNodeKind::Icon { icon }` — one agent-authored name from the curated
+  // set, no facets, no href — so the dummy's Icon section (icon select, icon
+  // color, background color, size, stroke) and its Link-to section have NOTHING
+  // behind them. 18b's ruling is "hide", so they are ABSENT here, not disabled:
+  // an inert control the marketer can click and watch do nothing is exactly
+  // what the ruling refused. Hiding them IS the ruled deviation from the dummy;
+  // nothing else about the icon panel changed.
+  //
+  // Padding is the icon's one live surface, and it needs no icon-specific
+  // sanction in `adapter/apply.ts`: the padding cases carry no kind guard
+  // because §5 gives the same Layout(-padding) section to embeds and every
+  // unmapped kind. The two-box (X/Y) form is R3, shared with every other
+  // schema. The header (eye per row 40, lock inert per 39) is global chrome and
+  // is untouched.
   return (
     <>
-      <LinkSection ariaLabel="Icon link URL" controller={controller} />
-      <Section id="icon" label="Icon" state={state} toggle={toggleSection}>
-        <InspectorField label="Icon">
-          <InspectorDecoratedSelect icon="apple" label="Icon" onChange={(value) => setValue("iconName", value)} options={ICON_OPTIONS} value={state.iconName} />
-        </InspectorField>
-        <TokenField controller={controller} label="Icon color" property="iconColor" swatch="#1C2028" value="Content" />
-        <TokenField controller={controller} label="Background color" property="backgroundColor" swatch="#FFFFFF" value="White" />
-        <div className={styles.fieldGrid}>
-          <InspectorField label="Size"><InspectorSelect label="Icon size" onChange={(value) => setValue("iconSize", value)} options={ICON_SIZE_OPTIONS} value={state.iconSize} /></InspectorField>
-          <InspectorField label="Stroke"><InspectorSelect label="Icon stroke" onChange={(value) => setValue("iconStroke", value)} options={ICON_STROKE_OPTIONS} value={state.iconStroke} /></InspectorField>
-        </div>
-      </Section>
-      <LayoutSection controller={controller} />
+      <LayoutSection controller={controller} paddingAxes="two" />
       {showLayers ? <Section id="layers" label="Layers" state={state} toggle={toggleSection}>
         <SchemaLayers fallback={<StructuralLayers onSelectionChange={onSelectionChange} selection="icon" tree={layerTree} />} />
       </Section> : null}

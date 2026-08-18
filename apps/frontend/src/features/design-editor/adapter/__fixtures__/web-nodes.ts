@@ -203,6 +203,36 @@ export const HARVESTED_HIDDEN_CONTAINER_V52: { page_root: string; nodes: Record<
 } as never;
 
 /**
+ * W4.6 fixture: the feature **icon** carrying ONE padding axis — harvested
+ * from the same document (`doc_31126145a0aa4753920629ae323a301b`) at **version
+ * 56**, `GET /documents/{id}` → `scene.pages[0]`, never hand-written.
+ *
+ * Why this snapshot exists: every earlier harvest catches `ficon` with BOTH
+ * axes present ("px-2 py-2 text-primary"), which cannot exercise R3's truthful
+ * zero — the rule that an absent axis is real zero padding, not the dummy's
+ * fixture default. One `set_node_classes` op (55 → 56) dropped `py-2`, so these
+ * are real bytes for the state the icon's two-box Layout control must state
+ * honestly: X = 2, Y = 0.
+ *
+ * The `text-primary` token is deliberately left in place: per ruling 18b the
+ * trimmed icon schema shows NO color control, so this class is the authored
+ * page's own styling that every icon write must leave untouched.
+ */
+export const HARVESTED_ICON_V56: { page_root: string; nodes: Record<string, WebNode> } =
+{
+  "page_root": "root",
+  "nodes": {
+    "ficon": {
+      "id": "ficon",
+      "icon": "star",
+      "kind": "icon",
+      "name": "Feature icon",
+      "classes": "px-2 text-primary"
+    }
+  }
+} as never;
+
+/**
  * W4.4 fixtures: a SECOND wire-true harvest of the same document
  * (`doc_31126145a0aa4753920629ae323a301b`, workspace "Insight Health" dev DB)
  * at **version 33**, captured 2026-08-18 via the design API — again as

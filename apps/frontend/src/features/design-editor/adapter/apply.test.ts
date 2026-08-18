@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  HARVESTED_ICON_V56,
   HARVESTED_PAGE,
   HARVESTED_PAGE_ROOT_V47,
   HARVESTED_PAGE_V33,
@@ -507,4 +508,101 @@ test("row 40: the capture is consumed once and never crosses to another node", (
   assert.equal(restored.restoreDisplay, "grid");
   assert.equal(restored.memory, null);
   assert.equal(nextVisibilityMemory(restored.memory, fgrid, true).restoreDisplay, null);
+});
+
+// ══ W4.6 — the icon schema, trimmed to layout-only (ruling 18b) ═════════════
+// The engine's icon node carries exactly one field — `icon`, the agent-authored
+// name (`lumen-web`'s `WebNodeKind::Icon`) — and no icon facets exist, so the
+// dummy's icon select / color tokens / size / stroke have NO backing. 18b hides
+// those sections, leaving Layout/padding as the icon's one live surface. This
+// block pins both halves: padding works on an icon, and nothing else does.
+
+const V56_PAGE_ID = "home";
+
+function iconChange(
+  property: string,
+  value: unknown,
+): ReturnType<typeof inspectorChangeToOperation> {
+  const node = HARVESTED_ICON_V56.nodes.ficon;
+  assert.ok(node, "harvested icon missing");
+  return inspectorChangeToOperation(
+    { property, selectionId: node.id, value },
+    node,
+    V56_PAGE_ID,
+  );
+}
+
+test("18b: the icon's padding X snaps to the nearest step and rewrites only that axis", () => {
+  // ficon @56: "px-2 text-primary"
+  const op = iconChange("padding.x", "7");
+  assert.ok(op && op.kind === "set_node_classes");
+  assert.equal(op.id, "ficon");
+  assert.equal(op.page_id, V56_PAGE_ID);
+  const tokens = op.classes.split(/\s+/);
+  assert.ok(tokens.includes("px-6")); // 7 → nearest step 6
+  assert.ok(!tokens.includes("px-2"));
+  // The authored color token is not the icon schema's to touch (18b hides the
+  // control) and survives verbatim.
+  assert.ok(tokens.includes("text-primary"));
+});
+
+test("18b + R3: the icon's zero Y axis writes a real py utility", () => {
+  // The two-box control shows Y as a truthful 0 (no py- utility at rest);
+  // committing a value must ADD the axis, not rewrite px.
+  const op = iconChange("padding.y", "7");
+  assert.ok(op && op.kind === "set_node_classes");
+  const tokens = op.classes.split(/\s+/);
+  assert.ok(tokens.includes("py-6"));
+  assert.ok(tokens.includes("px-2")); // the other axis is untouched
+  assert.ok(tokens.includes("text-primary"));
+});
+
+test("18b: padding needs no icon-specific sanction — §5's layout-only kinds share it", () => {
+  // Deliberately NOT an allowlist: §5 gives the same Layout(-padding) section
+  // to embeds and every unmapped kind, so a kind guard on the padding cases
+  // would break them. Icons are one member of that layout-only family, not an
+  // exception to it.
+  const embed = v33Change("padding.x", "4", "fembed");
+  assert.ok(embed && embed.kind === "set_node_classes");
+  assert.ok(embed.classes.split(/\s+/).includes("px-4"));
+});
+
+test("18b: every section the icon schema drops has no write behind it either", () => {
+  // The hidden controls (icon select, icon color, size, stroke) and the Link-to
+  // section the engine's icon node cannot back. Absent in the view AND refused
+  // here, so a stray event can never write one.
+  for (const [property, value] of [
+    ["iconName", "Apple"],
+    ["iconSize", "Large"],
+    ["iconStroke", "Bold"],
+    ["iconColor", "Content"],
+    ["tokenBackgroundColor", "Primary"],
+    ["url", "https://example.com"],
+    ["openInNewTab", true],
+    // Layout controls that belong to other schemas stay refused on an icon.
+    ["layoutMode", "Grid"],
+    ["direction", "horizontal"],
+    ["gap", "4"],
+    ["wrap", true],
+  ] as ReadonlyArray<[string, unknown]>) {
+    assert.equal(iconChange(property, value), null, `${property} must not write`);
+  }
+});
+
+test("18b: an icon padding edit never rewrites the icon's props", () => {
+  // `icon` (the agent-authored name) and `name` are props; the whole point of
+  // 18b is that the inspector does not own them. The adapter is pure, so the
+  // harvested node is byte-identical after the edits and no operation carries
+  // props at all.
+  const node = HARVESTED_ICON_V56.nodes.ficon;
+  assert.ok(node);
+  const before = JSON.stringify(node);
+  for (const value of ["0", "6", "24"]) {
+    const x = iconChange("padding.x", value);
+    const y = iconChange("padding.y", value);
+    assert.ok(x && x.kind === "set_node_classes");
+    assert.ok(y && y.kind === "set_node_classes");
+  }
+  assert.equal(JSON.stringify(HARVESTED_ICON_V56.nodes.ficon), before);
+  assert.equal(HARVESTED_ICON_V56.nodes.ficon.icon, "star");
 });
