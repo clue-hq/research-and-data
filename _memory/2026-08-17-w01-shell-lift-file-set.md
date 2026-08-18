@@ -495,6 +495,22 @@ ever — memory `opus-subabgents-fable-orchestrates` updated; typo aside, the sl
   feature appeared "broken" while the code was fine. Same check applies to 8010/8030.
 - Dev-doc note: the seeded subheadline now carries `text-accent` (cyan) from the verify.
 
+## Brand-kit × onboarding lane — RATIFIED plan, parallel worktree (2026-08-18)
+
+Founder ordered a fourth parallel lane: the design subsystem's SHIPPED brand-kit ingestion
+pipeline (website/PDF/assets → versioned `design_brand_kit` rows behind a human approval
+gate; theme compiled from kits — the W4.0 picker feed's upstream) integrates into
+onboarding. Six rulings ratified (2026-08-12 defer-ruling superseded; auto-fire ONLY at
+first-time provisioning, manual from the Brand-context screen otherwise; the dummy
+`codex/brand-context-page` is the parity baseline with a HARD lift-only-these-files
+constraint; approval stamps the kit on NEW documents at creation — never render-fallback;
+vision assist ON by default; L2 BrandContextCard out). Plan (self-contained, both scout
+inventories + the 36-file lift list baked in):
+`docs/superpowers/plans/2026-08-18-brandkit-onboarding-integration.md` (`b649e292`).
+Executes on worktree branch `feature/brandkit-onboarding-integration`; merged back locally.
+Slice 4 has a deliberate founder UI gate (no dummy slot for ingest/approve affordances).
+CLAUDE.md's stale "no versioned brand-kit payload" line fixed (`b9189131`).
+
 ## Next on THIS branch — W4 fan-out (awaiting founder lane ruling)
 
 W4.1 done (above). W4.2–W4.9 fan out per the W-plan (each schema task applies its own §2
