@@ -433,6 +433,22 @@ the W0.5 Decision-2 route swap of `/projects/{id}/gallery`. Contract rules to be
 apps/frontend/docs/api-contracts/projects.md by the worktree: creation surfaces must write
 project linkage; the read is replaced wholesale by the future artifact registry.
 
+## W2 + W3 gates SIGNED OFF; R6 dock ruling ratified (founder, 2026-08-18)
+
+Founder verdicts, verbatim intent: **W2 passes and W3 passes** — both exit gates closed
+(recorded in the W-plan at each gate). The W2.3 editing-dock composition is **ratified**:
+R6 stands exactly as the dummy designed it (inspector takes over the conversation column),
+with two behavioral clarifications now on the record at R6 in the Phase-C plan:
+(1) **Edit-only entry** — the dock appears only via the Edit button while a specific
+artifact is open, never any other trigger; (2) **send dismisses the dock** — on the chat
+screen, sending a message to the agent closes the dock and restores the conversation
+column; Edit reopens it. (2) is chats-route/chat-flow wiring (composer send event), NOT W4
+scope — it binds whoever mounts editing on the chats route. The artifact route's chat-less
+dock (W2.3) is the same arrangement transposed and is signed off with W2. W4 is fully
+unblocked; still awaiting founder word on the proposed lane split (A: container/section/
+canvas/icon/eye here; B: image+button worktree; C: rich-text+custom-component worktree)
+and on pulling the shared theme-token feed forward as trunk substrate before the fan-out.
+
 ## Next on THIS branch — W4 (remaining schemas + radius facet)
 
 W4.1 first (the §8-authorized radius facet in webClassFacets, BOTH trees, tests both

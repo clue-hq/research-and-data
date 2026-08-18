@@ -215,7 +215,7 @@ Replace the fixture trees: build rows from the document node hierarchy (names, k
 
 - [ ] Unit tests: tree-building from a nested fixture doc (cap, kind icons, active row). Browser-verify selection round-trip both directions (canvas click ↔ layer row). Commit.
 
-**Phase W2 exit gate (founder demo):** click any element on a real rendered page → the correct schema opens with that element's real values; inert/hidden partitions visibly correct per contract §2/§3.
+**Phase W2 exit gate (founder demo):** click any element on a real rendered page → the correct schema opens with that element's real values; inert/hidden partitions visibly correct per contract §2/§3. **PASSED — founder sign-off 2026-08-18.** The W2.3 editing-dock composition is ratified with it: R6 stands as designed (inspector takes the conversation column; Edit-only entry; send-dismisses-dock on the chat screen — full ruling recorded at R6 in the Phase-C plan, 2026-08-18).
 
 ---
 
@@ -270,7 +270,7 @@ write flow. Everything below the UI already exists; this is wiring, not construc
 - [ ] Wire + disabled states; browser-verify: edit typography (W3.2), undo → change reverts and
   persists reverted on reload, redo → reapplies; menu items disable at empty stacks. Commit.
 
-**Phase W3 exit gate:** text schema fully live per contract §1 rows 4–7 + §2 additions (variant, line-spacing); undo/redo live against real edits (W3.4); founder browser sign-off.
+**Phase W3 exit gate:** text schema fully live per contract §1 rows 4–7 + §2 additions (variant, line-spacing); undo/redo live against real edits (W3.4); founder browser sign-off. **PASSED — founder sign-off 2026-08-18** (known caveat carried into W4, on the record: the color popover's theme list is still the fixture palette; real theme-token options ride W4's color flow).
 
 ---
 
