@@ -1,9 +1,10 @@
 """Committee discovery — the M8.3 worker (mode M3).
 
-``discover_committee`` is the contact-axis trunk: within a known high-tier account, it enumerates
-candidate people via the bound :class:`CommitteeSource`s, runs each through the M2 existence gate
-(:mod:`admission`), and writes their discovery-provenance + professional-fact claims — producing the
-**buying committee** (Output 3) and the V1 contact graph (substrate §7). Whether it *also* infers +
+``discover_committee`` is the contact-axis trunk: within a known explicitly selected account, it
+enumerates candidate people via the bound :class:`CommitteeSource`s, then runs each through the M2
+existence gate (:mod:`admission`) and writes their discovery-provenance + professional-fact claims,
+producing the **buying committee** (Output 3) and the V1 contact graph (substrate §7). Whether it
+*also* infers +
 plausibility-gates each member's committee role (:mod:`roles`) is the caller's choice: the
 ``role_inference`` mode either keeps that judgment here (``worker_llm``) or defers it to the account
 agent (``agent_deferred``), which is discovery/identity only. It is a bounded ``expand`` over one
@@ -355,7 +356,7 @@ async def discover_committee(
     config: CommitteeConfig = DEFAULT_COMMITTEE_CONFIG,
     role_inference: RoleInferenceMode = "worker_llm",
 ) -> CommitteeResult:
-    """Discover the buying committee for one high-tier account (mode M3).
+    """Discover the buying committee for one explicitly selected account (mode M3).
 
     Existence-gates every candidate through M2 (a strong-key-less candidate is dropped), writes
     discovery-provenance + professional-fact claims, and bounds the walk by marginal-yield / budget.

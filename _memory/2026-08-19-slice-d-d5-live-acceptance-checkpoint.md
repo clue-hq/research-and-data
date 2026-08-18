@@ -1,5 +1,11 @@
 # 2026-08-19 — Slice D / D5 live acceptance checkpoint
 
+> **Superseded blocker ruling, later 2026-08-19:** the founder removed signal-tier eligibility for
+> explicit Account research. `high`, `low`, absent, and signal/effort vocabulary mismatch must not
+> block an exact user-selected Account. The implementation and continuation state are recorded in
+> `2026-08-19-explicit-account-research-not-tier-gated.md`. The evidence below remains the accurate
+> pre-fix diagnosis; its request for a per-account tier override is no longer the chosen remedy.
+
 **Branch:** `platform/comprehensive-account-contact-research-v2`.
 **D5 code/test commit:** `e3756c45`.
 **Full-suite baseline ledger:** `b4f62be3`.
