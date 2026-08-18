@@ -91,3 +91,18 @@ founder pushes. Plan: `docs/superpowers/plans/2026-08-18-gallery-leg-derived-art
   (extrapolated), and the unattributed-account presentation (empty group label under
   group-by-account; no badge) — both my rulings, both one-line to reword.
 - Stack LEFT RUNNING for founder sign-off (3030/8030/8010; logs /tmp/ankara-*.log).
+
+## Final whole-branch review (Opus) + fixes — PLAN COMPLETE at `5dcad201`
+
+Verdict READY WITH FIXES; both applied in `5dcad201`: (1) `project-gallery.test.ts` fixture
+assertion needed optional chaining — the ONE TS error this branch introduced, invisible to
+`tsx --test` (transpile-only) and to `next build` (which tolerates ~15 pre-existing
+`design-editor/engine/__tests__` tsc errors — worth knowing: tsc is NOT a gate here);
+(2) card mapping moved inside `loadGalleryFeed`'s try — an unparseable document timestamp
+now degrades to an empty feed instead of 500ing the editor page. Review minors deferred +
+recorded: "1 artifacts" unpluralized (pre-existing dummy string); empty unattributed group
+header (founder wording pending); editedLabel server-timezone; the feed does not exclude
+`is_template` documents (no flow opens template legs today; `AND NOT d.is_template` is the
+hedge); and `design_document.account_id` EXISTS — real account attribution is mappable when
+the founder rules on the unattributed-card presentation. Six commits over `fa16b832`;
+merge into `integration/frontend-design-part-iv-v2` awaits founder order (local, no push).
