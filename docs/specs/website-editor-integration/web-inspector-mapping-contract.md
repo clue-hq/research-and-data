@@ -130,6 +130,29 @@ Tracked, never silently dropped; each needs a UI slot decision when its turn com
    Companion note: node *moving* is NOT this item — it stays governed by ruling 29
    (keyboard-only for now, §4) and the W4.10 audit.
 
+8. **Keyboard node operations — delete / duplicate / reorder (W4.10 audit result,
+   2026-08-19).** Ruling 29's §4 line ("node move/duplicate/delete: keyboard-only for
+   now") turns out to describe an intent, not a shipped surface: **the web editor has NO
+   keyboard path for any node operation, anywhere in the stack.** Audited exhaustively,
+   wiring nothing (the task's own rule):
+   - *Engine:* the op vocabulary is fully present — `InsertNode` / `RemoveNode` /
+     `MoveNode` (`lumen-web/src/ops.rs:53-67`), so the substrate needs zero work.
+   - *Source `WebEditorApp`* (`apps/editor/.../WebEditorApp.tsx:855-872`): the only
+     keyboard handler is ⌘Z/⇧⌘Z undo/redo (focus-editable/busy-guarded).
+   - *Canvas bridge* (`lumen_api/web_bridge.py:557-570`): Escape cancels a rich-text
+     session / clears selection; ⌘-Enter commits a session. No node-op keys.
+   - *Our extracted stack* (audited file-by-file): the same ⌘Z/⇧⌘Z global
+     (`use-inspector-writes.ts:142`), Enter/blur value commits, Escape abandons the
+     props-form draft (W4.7), the rich-text session keys, and menu arrow navigation.
+     Zero Delete/Backspace/duplicate/reorder handlers.
+   - *Contrast:* the scene editor DOES delete on Delete/Backspace
+     (`EditorApp.tsx:1294`) — ruling 29's premise came from the scene shortcut map,
+     which does not apply to the web stack (the audit's founding assumption, confirmed).
+   Net: node move/duplicate/delete on web is **agent-only via ops** today. Entering
+   scope needs a founder ruling on the affordance (scene-style keyboard shortcuts vs an
+   inspector/layers affordance — the dummy offers neither), and §4's ruling-29 line
+   should be re-worded to "agent-only (no keyboard or UI path)" when that ruling lands.
+
 7. **[ENTERED SCOPE 2026-08-18 — founder §8 amendment, item 2; see §8]** ~~Canvas/page-root background — wired but unreachable (added 2026-08-18, W4.5).~~
    Row 1's inspector side is DONE (the canvas Background control feeds the real
    theme-token popover and emits the sanctioned write; the page root is a Container, so

@@ -306,8 +306,13 @@ One task per schema, same TDD adapter pattern as W3 (hydrate fixture → failing
   editor actually has (the scene editor's shortcut map does not apply to the web stack). Wire
   nothing new; if delete/duplicate/reorder have no keyboard path on web, record that in the
   contract's future-work register (§7) rather than inventing UI — per the minimalism rule.
+  **DONE 2026-08-19 — recorded as contract §7 item 8:** the web editor has NO keyboard path
+  for any node operation, in our stack or upstream (`WebEditorApp` carries only ⌘Z/⇧⌘Z; the
+  bridge only rich-text Escape/⌘-Enter + Escape-clears-selection; the scene editor's
+  Delete/Backspace does not apply); the engine op vocabulary (`InsertNode`/`RemoveNode`/
+  `MoveNode`) is fully present, so the substrate needs zero work. Nothing wired, per rule.
 
-**Phase W4 exit gate:** every §1 contract row demonstrably live; every §3 row demonstrably inert; every §2 hidden row absent; schemas fan-out-parallelizable after W4.1 lands.
+**Phase W4 exit gate:** every §1 contract row demonstrably live; every §3 row demonstrably inert; every §2 hidden row absent; schemas fan-out-parallelizable after W4.1 lands. **PASSED 2026-08-19** — consolidated browser sweep on the fully-merged union (all three lanes + chat-flow): §1 **22/22 live** (row 12 presence-only per its lane-B full-upload proof; row 34 proven on the lane-C seeded doc, the trunk doc carrying no custom component), §2 **6/6 absent**, §3 **5/5 provably inert** (engine version unchanged), chat-route union spot-check green; both test documents restored node-identical (version counters advance by design). Evidence: `.playwright-mcp/w4gate-*.png` + the sweep report; fan-out-parallelizability was proven by the three lanes themselves (independent worktrees, mechanical merges). The founder-facing acceptance walk remains W5's.
 
 ---
 
