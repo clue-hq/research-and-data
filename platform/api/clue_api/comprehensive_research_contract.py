@@ -15,11 +15,15 @@ Three rules this module exists to make importable rather than re-derived per cal
 * **Only the four permitted account field-sources may appear.** §2.2 defers Firecrawl,
   Scrapling, registries, CRM, Apollo, ZoomInfo, BuiltWith and every other provider family.
 
-``COMPREHENSIVE_ACCOUNT_FIELD_SOURCES`` values are **acquisition preference lists**, in the
-order §3.1 names them (structured Sumble first for structured facts, ``exa_deep`` first for
-qualitative ones), consumed only *after* a fresh governed existing claim has failed to satisfy
-the field — every §3.1 row's "reuse discovery truth" clause is the compiler's first step
-(§3.2 step 2), not a source. An empty tuple means the field owns no acquisition source at all:
+``COMPREHENSIVE_ACCOUNT_FIELD_SOURCES`` values are **ownership sets, not execution order**.
+Execution order is the source planner's business, and tier discipline governs it (ruling,
+2026-08-18): ``plan_sources`` stable-sorts by trust tier, so a dual-ownership row always plans
+its tier-1 Sumble source before tier-4 ``exa_deep``, whatever order this table lists — and the
+planned ``FieldSourceAuthority.source_keys`` is an ordered waterfall consumed stop-at-first-
+confident-hit, never fanned out (fanning out double-buys the field). Acquisition happens only
+*after* a fresh governed existing claim has failed to satisfy the field — every §3.1 row's
+"reuse discovery truth" clause is the compiler's first step (§3.2 step 2), not a source. An
+empty tuple means the field owns no acquisition source at all:
 ``core.employee_range`` and ``core.revenue_band`` are derived from governed employee-count /
 revenue evidence (§3.1 rows 5 and 8), and ``core.account_name`` is canonical identity truth
 reused from discovery (row 1).

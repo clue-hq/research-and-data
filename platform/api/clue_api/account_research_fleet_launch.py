@@ -22,6 +22,7 @@ from clue_api.account_research_fleet import (
     AccountResearchFleetProjection,
     AccountResearchFleetService,
 )
+from clue_api.comprehensive_research_contract import COMPREHENSIVE_ACCOUNT_FIELD_SOURCES
 from clue_core import (
     EffectiveFieldSourcePlan,
     EffectiveSourceAuthorization,
@@ -84,6 +85,12 @@ _JOB_NAMESPACE = uuid5(NAMESPACE_URL, "clue:m8d:r6:account-research-job")
 _ACCOUNT_RUN_NAMESPACE = uuid5(NAMESPACE_URL, "clue:m8d:r6:account-run-compatibility")
 _ATTEMPT_NAMESPACE = uuid5(NAMESPACE_URL, "clue:m8d:r6:account-research-attempt")
 _LEASE_NAMESPACE = uuid5(NAMESPACE_URL, "clue:m8d:r6:account-research-lease")
+#: §3.1 rows whose ownership tuple is empty — reused or derived, never bought (see the launch
+#: partition below). Derived from the frozen contract map so the two can never drift.
+_ZERO_ACQUISITION_PROFILE_FIELDS = frozenset(
+    field for field, sources in COMPREHENSIVE_ACCOUNT_FIELD_SOURCES.items() if not sources
+)
+
 _SUPPORTED_FIELD_SOURCES = frozenset(
     {
         EXA_DEEP_SOURCE_KEY,
@@ -346,6 +353,21 @@ class AccountResearchFleetLauncher:
                 raise AccountResearchFleetLaunchError(
                     "account research source compilation lacks its exact ICP/account"
                 )
+            # §3.1 rows 1/5/8 own no acquisition source: core.account_name is reused canonical
+            # identity truth, and core.employee_range / core.revenue_band are derived from
+            # governed evidence at finalization. The directive keeps carrying them (the runtime
+            # drives preparation and coverage off the directive's full field universe), but the
+            # launch selection admits only acquisition fields — you cannot buy, estimate, or
+            # authorize a source for a field that has none, and EntityResearchSelection requires
+            # source authority to cover every admitted field.
+            acquisition_field_keys = tuple(
+                key for key in field_keys if key not in _ZERO_ACQUISITION_PROFILE_FIELDS
+            )
+            if not acquisition_field_keys:
+                raise AccountResearchFleetLaunchError(
+                    "account research requires at least one acquisition field"
+                )
+            field_keys = acquisition_field_keys
             authorities: list[FieldSourceAuthority] = []
             source_plan_values: list[dict[str, object]] = []
             for field_key in field_keys:

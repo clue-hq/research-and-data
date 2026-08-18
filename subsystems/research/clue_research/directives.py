@@ -54,6 +54,7 @@ from clue_research.durable.scheduler import AccountSpec
 from clue_research.icp import get_icp_version
 from clue_research.identity import get_account
 from clue_research.membership import ensure_project_account
+from clue_research.narrative.prose import PROSE_ACCOUNT_FIELDS
 from clue_research.sources.authority import load_effective_source_plan
 from clue_research.sources.registry import get_source, sources_for
 from clue_research.sources.source_profile import resolve_allowed_set
@@ -97,6 +98,11 @@ def _override_id(
     return ResearchDirectiveOverrideId(uuid5(_OVERRIDE_NAMESPACE, f"{directive_id}:{account_id}"))
 
 
+#: Contract §3.1 — the fixed 21-field comprehensive account profile. Directive-valid as a
+#: platform contract independent of per-field pass_kind and of the pinned ICP's authored list.
+_COMPREHENSIVE_PROFILE_FIELDS = frozenset(PROSE_ACCOUNT_FIELDS)
+
+
 async def validate_research_directive_draft(
     conn: AsyncConnection,
     *,
@@ -134,11 +140,18 @@ async def validate_research_directive_draft(
     active_icp_fields = set(icp.field_keys)
     for field_key in sorted(field_keys):
         field = await get_field(conn, field_key)
-        if field is None or field.pass_kind is not PassKind.DEEP:
+        # The fixed comprehensive account profile (contract §3.1, PROSE_ACCOUNT_FIELDS) is a
+        # platform contract, not an ICP choice: its rows are directive-valid regardless of
+        # pass_kind (ten are core.* firmographics born in the scoring era) and regardless of the
+        # pinned ICP's authored field list (§3.3 row 1 — a full-profile command compiles to all
+        # 21 unless the user explicitly narrows). Every field OUTSIDE the fixed profile keeps the
+        # strict deep-registration and ICP-activation gates unchanged.
+        comprehensive = field_key in _COMPREHENSIVE_PROFILE_FIELDS
+        if field is None or (not comprehensive and field.pass_kind is not PassKind.DEEP):
             raise ResearchDirectiveInvalid(
                 f"research directive field {field_key!r} is not a registered deep field"
             )
-        if field_key not in active_icp_fields:
+        if not comprehensive and field_key not in active_icp_fields:
             raise ResearchDirectiveInvalid(
                 f"research directive field {field_key!r} is not active in the pinned ICP"
             )
