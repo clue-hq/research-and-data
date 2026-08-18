@@ -45,6 +45,7 @@ from clue_core.entity_research import (
     ResearchSubjectType,
     SelectedResearchSubject,
 )
+from clue_core.field import account_axis_field_keys
 from clue_db import ConnFactory, transaction
 from clue_fleet import EntityResearchJobEnvelope, EntityResearchRunEnvelope
 from clue_obs import get_logger
@@ -322,9 +323,12 @@ class AccountResearchFleetLauncher:
                         f"committee, and privacy authority; account {account_id} has an override"
                     )
 
-            field_keys = tuple(
-                str(value) for value in first.field_keys if str(value).startswith("account.")
-            )
+            # Project the confirmed authority onto the shared account axis (CORE | ACCOUNT |
+            # ACCOUNT_RESONANCE | PACK) — the same projection the in-job Exa preparation applies.
+            # A raw ``account.`` prefix filter silently dropped the comprehensive profile's
+            # ``core.*`` firmographic fields, so launcher and runtime disagreed about the field
+            # universe; contact fields stay excluded for the later committee/contact fleet.
+            field_keys = tuple(str(key) for key in account_axis_field_keys(first.field_keys))
             questions = tuple(item.text for item in first.questions)
             if not field_keys or not questions:
                 raise AccountResearchFleetLaunchError(

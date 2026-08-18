@@ -15,6 +15,12 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
+from clue_core.field import (
+    ACCOUNT_AXIS_FIELD_CLASSES,
+    classify_field_key,
+    is_valid_field_key,
+)
+
 Sha256 = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
 NonEmptyStr = Annotated[str, Field(min_length=1)]
 
@@ -22,8 +28,26 @@ NonEmptyStr = Annotated[str, Field(min_length=1)]
 def _assert_field_axis(
     subject_type: ResearchSubjectType, field_keys: tuple[str, ...], *, context: str
 ) -> None:
-    prefix = f"{subject_type.value}."
-    if any(not field_key.startswith(prefix) for field_key in field_keys):
+    """Refuse a field the named subject axis does not own.
+
+    The account axis is the shared field-class projection (``ACCOUNT_AXIS_FIELD_CLASSES`` —
+    CORE | ACCOUNT | ACCOUNT_RESONANCE | PACK), not a raw ``account.`` prefix: an account's
+    firmographic facts (``core.industry``, ``core.primary_tech_stack``, …) are organization-level
+    truth and belong to account research.  Contact and contact-facet fields remain outside it.
+    The contact axis keeps its literal prefix, so a ``core.*``/``account.*`` field can never be
+    smuggled into contact work.
+    """
+
+    if subject_type is ResearchSubjectType.ACCOUNT:
+        outside = any(
+            not is_valid_field_key(field_key)
+            or classify_field_key(field_key) not in ACCOUNT_AXIS_FIELD_CLASSES
+            for field_key in field_keys
+        )
+    else:
+        prefix = f"{subject_type.value}."
+        outside = any(not field_key.startswith(prefix) for field_key in field_keys)
+    if outside:
         raise ValueError(f"{context} contains a field outside the {subject_type.value} axis")
 
 

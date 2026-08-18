@@ -33,6 +33,7 @@ from clue_api.sumble_account_gaps import compile_sumble_account_gap_preflight
 from clue_api.trial.account_deep_fixture import seed_insight_health_account_deep_fixture
 from clue_config import GatewayConfig, Secrets, Settings
 from clue_core import LLMGateway, PreSpendGate, ProjectPhase, ProjectRunId, ResearchQuestion
+from clue_core.entity_research import EntityResearchSelection
 from clue_fleet import (
     DbEntityResearchJobStore,
     EntityResearchExecutionFence,
@@ -58,6 +59,8 @@ pytestmark = pytest.mark.usefixtures("require_profiling_db")
 _PAIN = "account.operational_pain"
 _MOVES = "account.strategic_moves"
 _HIRING = "account.hiring_velocity_eng"
+_INDUSTRY = "core.industry"
+_TECH = "core.primary_tech_stack"
 
 
 @asynccontextmanager
@@ -359,5 +362,128 @@ def test_confirmed_direction_compiles_exact_account_fleet_without_provider_or_co
                     allowed_phases=frozenset({ProjectPhase.DEEP}),
                     entity_research_job_id=uuid4(),
                 )
+
+    run_async(scenario())
+
+
+def test_core_fields_survive_launch_and_are_not_silently_dropped(tmp_path: Path) -> None:
+    """A confirmed directive's ``core.*`` account facts reach the launched selection.
+
+    The launcher used to project the confirmed field authority with a raw ``account.`` prefix
+    filter, so a comprehensive directive's ``core.industry`` / ``core.primary_tech_stack`` were
+    silently dropped before source compilation — and a wholly ``core.*`` directive raised. The
+    in-job Exa preparation already projects on the shared account axis, so launcher and runtime
+    disagreed about the field universe.
+    """
+
+    async def scenario() -> None:
+        storage = FsStorage(tmp_path / "r6-core-axis-artifacts")
+        async with rollback_conn() as conn:
+            fixture = await seed_insight_health_account_deep_fixture(
+                conn,
+                pages=_pages(),
+                storage=storage,
+                deep_field_keys=(_HIRING, _TECH, _PAIN, _MOVES, _INDUSTRY),
+            )
+            # The shipped core pack still registers both comprehensive ``core.*`` account facts as
+            # ``pass_kind=scoring``, and ``validate_research_directive_draft`` admits only DEEP
+            # fields — so a directive cannot yet *carry* them. That registry gap is a separate,
+            # unowned blocker (reported with this wave); this launcher test states it locally so
+            # the axis projection under test is what the assertions actually exercise.
+            await conn.execute(
+                text("UPDATE field_definition SET pass_kind='deep' WHERE field_key = ANY(:keys)"),
+                {"keys": [_INDUSTRY, _TECH]},
+            )
+            _, account_spec = await confirmed_account_research_direction(
+                conn,
+                workspace_id=fixture.discovery_fixture.workspace_id,
+                project_id=fixture.discovery_fixture.project_id,
+                product_id=fixture.discovery_fixture.product_id,
+                account_id=fixture.selected_account_id,
+                icp_key=fixture.deep_icp_key,
+                icp_version=fixture.deep_icp_version,
+                field_keys=(_INDUSTRY, _TECH, _HIRING, _PAIN),
+                allowed_source_keys=(
+                    "exa_deep",
+                    "sumble_jobs",
+                    "sumble_organizations",
+                    "sumble_tech_stack",
+                    "sumble_people",
+                ),
+                questions=(
+                    ResearchQuestion(
+                        question_id="industry-classification",
+                        text="Which specialty-care category does this practice operate in?",
+                        target_field_key=_INDUSTRY,
+                    ),
+                    ResearchQuestion(
+                        question_id="tech-stack",
+                        text="Which clinical and communication systems are in operational use?",
+                        target_field_key=_TECH,
+                    ),
+                    ResearchQuestion(
+                        question_id="hiring-signal",
+                        text="What is the hiring velocity for relevant operational roles?",
+                        target_field_key=_HIRING,
+                    ),
+                    ResearchQuestion(
+                        question_id="qualitative-burden",
+                        text="Where is administrative work creating avoidable burden?",
+                        target_field_key=_PAIN,
+                    ),
+                ),
+            )
+            pin = account_spec.research_directive
+            assert pin is not None
+            await conn.execute(
+                text("UPDATE project_run SET phase='scoring' WHERE id=:project_run_id"),
+                {"project_run_id": fixture.project_run_id},
+            )
+
+            def connection() -> AbstractAsyncContextManager[AsyncConnection]:
+                return _same_connection(conn)
+
+            launcher = AccountResearchFleetLauncher(
+                fleets=AccountResearchFleetService(conn_factory=connection),
+                conn_factory=connection,
+            )
+            projection = await launcher.launch(
+                AccountResearchFleetLaunchRequest(
+                    workspace_id=fixture.discovery_fixture.workspace_id,
+                    project_run_id=UUID(str(fixture.project_run_id)),
+                    research_directive_id=UUID(str(pin.directive_id)),
+                    account_entity_ids=(UUID(str(fixture.selected_account_id)),),
+                    approved_budget_cap_cents=Decimal("300"),
+                    expected_estimated_cost_cents=Decimal("300"),
+                    concurrency_limit=4,
+                    supervisor_policy=AccountResearchFleetPolicy(canary_size=1),
+                ),
+                actor="human:account-owner",
+                source_action_ref="turn:r6-core-axis-launch",
+                source_operation_id=uuid4(),
+            )
+            stored = (
+                (
+                    await conn.execute(
+                        text(
+                            "SELECT lifecycle_json FROM entity_research_run "
+                            "WHERE research_run_id=:run_id"
+                        ),
+                        {"run_id": projection.research_run_id},
+                    )
+                )
+                .mappings()
+                .one()
+            )
+            selection = EntityResearchSelection.model_validate(
+                stored["lifecycle_json"]["selection"]
+            )
+            assert "core.industry" in selection.admitted_field_keys
+            assert "core.primary_tech_stack" in selection.admitted_field_keys
+            assert set(selection.admitted_field_keys) == {_INDUSTRY, _TECH, _HIRING, _PAIN}
+            authority = {
+                item.field_key: tuple(item.source_keys) for item in selection.field_source_authority
+            }
+            assert set(authority) == {_INDUSTRY, _TECH, _HIRING, _PAIN}
 
     run_async(scenario())
