@@ -276,6 +276,21 @@ write flow. Everything below the UI already exists; this is wiring, not construc
 
 ## Phase W4 — Remaining schemas + the radius facet
 
+> **W4 fan-out rulings (founder, 2026-08-18 — binding):**
+> **(F1) Three-lane split approved.** Lane A (trunk workspace): W4.4 → W4.5 → W4.9 → W4.6.
+> Lane B (worktree `feature/w4-lane-b-image-button`): W4.2 → W4.3. Lane C (worktree
+> `feature/w4-lane-c-richtext-components`): W4.8 → W4.7. W4.10 on the trunk after both
+> merges (B merges first, C rebases then merges). Lane briefs:
+> `docs/superpowers/plans/2026-08-18-w4-lane-b-brief.md` / `…-w4-lane-c-brief.md`.
+> **(F2) "Radius (all)" CLEARS per-corner overrides** — an all-corners radius write also
+> clears the four corner facets (adapter-level, each facet clearing only its own family;
+> the §4 facet law is untouched; NO engine change). Owned by W4.2.
+> **(F3) Theme-tab curation: hide only the technical `palette-*` ramp tokens** (~28 of 52
+> remain). Applied on the trunk in the W4.0 mapper before the lanes forked, so every
+> color-consuming task inherits it.
+> Pre-existing substrate both lanes consume: the W4.1 radius facets (both engine copies)
+> and the W4.0 theme-token feed (`ThemeColorsContext` + `buildThemeColorOptions`).
+
 One task per schema, same TDD adapter pattern as W3 (hydrate fixture → failing adapter test → wire → browser-verify → commit). **Each schema task also applies that schema's contract-§2 deltas to its `web-inspector.tsx` schema component** — text: hide vertical alignment, padding 4→2 (in W3); section: hide Link-to; every schema: padding 4→2 where present — these are the only permitted UI edits and each cites its ruling number in the commit message:
 
 - **W4.1 Radius facet (engine, contract §8):** add `radiusFacet` + four corner facets to `subsystems/clue-design/apps/editor/src/engine/webClassFacets.ts` (`rounded`, `rounded-tl/tr/bl/br` families, arbitrary `[Npx]` values), mirrored into the extracted copy; parse/set unit tests both places; the "rewrite only own tokens" facet law holds.
