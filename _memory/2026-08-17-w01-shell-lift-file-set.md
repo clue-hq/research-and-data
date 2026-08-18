@@ -465,6 +465,36 @@ null as 0 and then write `rounded-[0px]`; (b) all-corners `set` deliberately lea
 per-corner/side overrides in place (conservative §4 reading) — W4.2 needs a founder
 micro-ruling: does "Radius (all)" clear per-corner overrides?
 
+## W4.0 DONE — commit `cf228bc9` (theme-token feed; founder-ordered trunk substrate, 2026-08-18)
+
+The ColorControl Theme tab now serves the document's REAL compiled theme
+(`GET /documents/{id}/web/theme` → engine `fetchWebTheme` → `designBffConfig()` BFF →
+`useWebTheme` hook → pure `buildThemeColorOptions` mapper → `ThemeColorsContext` →
+optional `options` prop with fixture fallback). Text schema only; other schemas join in
+their W4 lanes via the same context. Labels capitalize-first over lowercased token names
+so `label.toLowerCase() === token` round-trips into apply.ts's `text-<token>` write.
+`themeColorForToken` resolves the hydrated token → honest closed-state trigger swatch.
+Fixture palette moved verbatim to `model/inspector-theme-colors.ts` (fallback contract
+testable); hydrate's `tokenLabel` now imports the ONE shared rule. Gates 528/528 + lint +
+build. **Browser-verified end to end:** 52 real tokens with real swatches; picked Accent →
+`text-accent` written (other `text-*` utilities untouched — facet law held), persisted
+through reload, trigger resolved `#06B6D4`, aria-pressed on the current token. Process:
+Opus implemented; Fable reviewed INLINE (founder ruling 2026-08-18: no reviewer subagents,
+ever — memory `opus-subabgents-fable-orchestrates` updated; typo aside, the slug is
+`opus-subagents-fable-orchestrates`).
+- **OPEN founder ruling — Theme-tab curation:** the real theme has 52 tokens incl.
+  machine ramps (`palette-neutral/primary-50…950`) and structural roles (`surface-*`,
+  `border-*`, `focus-ring`); the popover honestly lists all 52 (screenshot
+  /tmp/w40-theme-popover.png). Options: keep all; filter `palette-*` out; or curated
+  role subset per control (text controls → `text-*` roles + semantic base). Until ruled,
+  all 52 stand.
+- **LAUNCH RECIPE AMENDMENT (ops trap, cost this session a false alarm):** before
+  `npm run dev -- --port 3030`, ALWAYS `lsof -nP -iTCP:3030 -sTCP:LISTEN` and kill any
+  stale listener. A pre-commit next-server from an earlier run held 3030; the new launch
+  died EADDRINUSE silently (log-only) and the browser exercised OLD code — the W4.0
+  feature appeared "broken" while the code was fine. Same check applies to 8010/8030.
+- Dev-doc note: the seeded subheadline now carries `text-accent` (cyan) from the verify.
+
 ## Next on THIS branch — W4 fan-out (awaiting founder lane ruling)
 
 W4.1 done (above). W4.2–W4.9 fan out per the W-plan (each schema task applies its own §2
