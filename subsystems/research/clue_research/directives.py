@@ -49,12 +49,12 @@ from clue_core import (
     research_directive_digest,
     research_directive_override_digest,
 )
+from clue_core.research_profile import COMPREHENSIVE_ACCOUNT_FIELDS
 from clue_research.claimstore.registry import get_field
 from clue_research.durable.scheduler import AccountSpec
 from clue_research.icp import get_icp_version
 from clue_research.identity import get_account
 from clue_research.membership import ensure_project_account
-from clue_research.narrative.prose import PROSE_ACCOUNT_FIELDS
 from clue_research.sources.authority import load_effective_source_plan
 from clue_research.sources.registry import get_source, sources_for
 from clue_research.sources.source_profile import resolve_allowed_set
@@ -100,7 +100,7 @@ def _override_id(
 
 #: Contract §3.1 — the fixed 21-field comprehensive account profile. Directive-valid as a
 #: platform contract independent of per-field pass_kind and of the pinned ICP's authored list.
-_COMPREHENSIVE_PROFILE_FIELDS = frozenset(PROSE_ACCOUNT_FIELDS)
+_COMPREHENSIVE_PROFILE_FIELDS = frozenset(COMPREHENSIVE_ACCOUNT_FIELDS)
 
 
 async def validate_research_directive_draft(
@@ -140,7 +140,7 @@ async def validate_research_directive_draft(
     active_icp_fields = set(icp.field_keys)
     for field_key in sorted(field_keys):
         field = await get_field(conn, field_key)
-        # The fixed comprehensive account profile (contract §3.1, PROSE_ACCOUNT_FIELDS) is a
+        # The fixed comprehensive account profile (contract §3.1, COMPREHENSIVE_ACCOUNT_FIELDS) is a
         # platform contract, not an ICP choice: its rows are directive-valid regardless of
         # pass_kind (ten are core.* firmographics born in the scoring era) and regardless of the
         # pinned ICP's authored field list (§3.3 row 1 — a full-profile command compiles to all
