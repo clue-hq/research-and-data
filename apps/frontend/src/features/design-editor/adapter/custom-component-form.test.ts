@@ -322,6 +322,47 @@ test("an emptied TEXT field commits the empty string — only numbers revert", (
   );
 });
 
+test("an UNSET text prop, focused and left alone, commits nothing", () => {
+  // The defect this pins (reviewed 2026-08-18): an unset optional prop drafts
+  // `""` while its value is `undefined`, so a raw `draft === value` compared
+  // "" against undefined → false → a plain focus-blur wrote `""` over the
+  // manifest default with zero user intent. Compare against the DERIVED draft
+  // and the untouched field is silent, exactly as an untouched field must be.
+  assert.deepEqual(
+    customComponentDraftCommit({
+      draft: "",
+      schema: properties.headline,
+      value: undefined,
+    }),
+    { kind: "none" },
+  );
+});
+
+test("an unset text prop the user actually TYPES into commits that string", () => {
+  assert.deepEqual(
+    customComponentDraftCommit({
+      draft: "Plans",
+      schema: properties.headline,
+      value: undefined,
+    }),
+    { kind: "commit", value: "Plans" },
+  );
+});
+
+test("a '3.0' draft over a value of 3 commits nothing — the equal-number branch", () => {
+  // Upstream's own behaviour: the draft is left on screen as typed, and no
+  // write is sent, because `Number("3.0") === 3`. Pinned so the number
+  // branch's parsed comparison can never regress into a string one.
+  assert.deepEqual(
+    customComponentDraftCommit({
+      draft: "3.0",
+      schema: properties.planCount,
+      value: 3,
+    }),
+    { kind: "none" },
+  );
+});
+
 // --- what a key press means to a draft field --------------------------------
 //
 // Browser-verified defect (2026-08-18): Escape COMMITTED the abandoned draft.

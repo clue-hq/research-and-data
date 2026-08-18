@@ -168,6 +168,17 @@ export type CustomComponentDraftDecision =
  *
  * Escape does not come through here: it restores {@link customComponentDraft}
  * of the live value and blurs (`:146-149`), sending nothing.
+ *
+ * Deliberate deviation from the source (reviewed 2026-08-18): the text branch
+ * compares the draft against {@link customComponentDraft} of the value, not
+ * against the value itself. The source's `draft === value`
+ * (`WebCustomComponentInspector.tsx:122`) compares `""` to `undefined` for an
+ * UNSET optional prop — false — so merely focusing and leaving that field wrote
+ * `""` over the manifest default with zero user intent. The derived draft is
+ * what the field was actually seeded with, so "unchanged" means what the user
+ * sees. Set-value semantics are untouched: a real "Pricing" emptied to `""`
+ * still commits `""`. Same precedent as the Escape fix below — the lane follows
+ * the source's intent, not wiring the source gets wrong.
  */
 export function customComponentDraftCommit({
   draft,
@@ -188,7 +199,9 @@ export function customComponentDraftCommit({
     }
     return { kind: "none" };
   }
-  return draft === value ? { kind: "none" } : { kind: "commit", value: draft };
+  return draft === customComponentDraft(value)
+    ? { kind: "none" }
+    : { kind: "commit", value: draft };
 }
 
 /** What a key press does to a text/number draft. */

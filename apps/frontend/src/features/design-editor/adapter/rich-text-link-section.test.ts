@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { RichTextSelectionState } from "../engine/webBridge";
+import { richTextToolbarValidContext } from "../components/web-rich-text-toolbar.logic";
 import {
   richTextLinkCommit,
   richTextLinkPrefill,
@@ -104,6 +105,30 @@ test("an expanded range selecting no text (and no link) → absent", () => {
     }),
     false,
   );
+});
+
+test("a STRUCTURED caret alone → absent, though the toolbar mounts for it", () => {
+  // The one arm that distinguishes this predicate from the toolbar's
+  // `richTextToolbarValidContext`: the toolbar carries BLOCK controls
+  // (paragraph/list/indent) which act on a bare caret, so a structured caret
+  // summons it. Link-to has no such control — a collapsed caret outside a link
+  // is no range to bind an href to — so this section stays ABSENT. Asserting
+  // both predicates on the SAME selection is the point: swap this function's
+  // body for the toolbar's and this case is the one that fails.
+  const structuredCaret: RichTextSelectionState = {
+    ...RANGE,
+    collapsed: true,
+    selectedText: "",
+    structured: true,
+  };
+  assert.equal(
+    richTextLinkSectionVisible({
+      editingNodeId: "t1",
+      richTextSelection: structuredCaret,
+    }),
+    false,
+  );
+  assert.equal(richTextToolbarValidContext(structuredCaret), true);
 });
 
 test("a collapsed caret at a MIXED link boundary → absent (the ruling says on)", () => {

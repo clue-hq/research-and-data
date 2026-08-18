@@ -177,7 +177,17 @@ export const CUSTOM_COMPONENT_NODE: WebNode = {
 };
 
 /** The page the node actually belongs to, as served — the node-membership
- * resolution the commit path performs before addressing an op. */
+ * resolution the commit path performs before addressing an op.
+ *
+ * Every id below resolves: `root` → `secc` → `cclanec1`, the chain the harvest
+ * note above attests. An earlier draft also carried a `boxc` container whose
+ * `children` named `txthead`/`txtbody` — copy residue from the rich-text
+ * fixture's own seeded document (`web-rich-text.ts`, a DIFFERENT doc), and
+ * dangling here because this page serves no such nodes. It is dropped rather
+ * than filled in: inventing two text nodes would put hand-written shapes into a
+ * fixture whose whole claim is that it is the wire body verbatim, and a
+ * tree-walking consumer would follow the invention off a cliff either way.
+ */
 export const CUSTOM_COMPONENT_PAGE: {
   page_root: string;
   nodes: Record<string, WebNode>;
@@ -196,14 +206,7 @@ export const CUSTOM_COMPONENT_PAGE: {
       tag: "section",
       kind: "section",
       classes: "",
-      children: ["cclanec1", "boxc"],
-    },
-    boxc: {
-      id: "boxc",
-      tag: "div",
-      kind: "container",
-      classes: "",
-      children: ["txthead", "txtbody"],
+      children: ["cclanec1"],
     },
     cclanec1: CUSTOM_COMPONENT_NODE,
   },
