@@ -155,11 +155,36 @@ use-web-render.ts (mode-aware fetch), web-artifact-canvas.tsx (view mount), a pu
 srcdoc helper + test, `editing` prop through artifact-stage.tsx. Founder-directed
 addendum to lane C (outside the ported-features contract).
 
+## Whole-branch review DONE (2026-08-19; fixes `6178d609` + `6d051ec4`)
+
+Three parallel Opus reviewers over v2..HEAD (~6.4k lines), findings orchestrator-verified.
+CLEAN: seams, merge honesty (84d8a79e both lanes fully wired), vendored runtime
+(byte-verbatim), security (<head> injection structurally safe, nonce fails closed, href
+grammar on every write path), tests mutation-proven non-vacuous. FIXED (task 7, reviewed
++ browser-verified): CRITICAL task-6 regression — Edit-off mid rich-text session
+stranded editingRef (nonce emptied before cancel; selects dropped after re-enable;
+inspector writes to STALE node) → reset local bridge state when editing flips false;
+MAJOR — unset optional text prop committed "" on focus-blur → compare against
+customComponentDraft(value); toolbar prefill unified onto richTextLinkPrefill; 6 tests
+(3 mutant-killers); fixture hygiene. Gates 738/738. LEDGERED (not fixed): per-node link
+error outlives its range; toolbar panel-open pointerdown commits session on inspector
+URL-field click; vendor cache-key ?v= owned upstream; toolbar/runtime interiors had no
+line-by-line pass (runtime byte-verbatim w/ upstream suite). PENDING FOUNDER RULING:
+view-mode non-absolute links — <base target="_blank"> + srcdoc's inherited parent base
+URL sends #fragment and /relative links to the APP origin in a new tab; options
+(a) Figma-like (absolute→new tab, #→in-preview scroll, relative→inert), (b) all
+non-absolute inert, (c) accept. Tests only ever covered absolute https.
+
+OPS: 8050 externally SIGTERM'd 3× (process-tree reaping); detached watchdog now guards
+it (/tmp/lane-c-8050-watchdog.sh, own session; kill via pkill -f lane-c-8050-watchdog
+at lane close).
+
 ## Open / next
 
-- Implement the view-mode canvas addendum (rulings above).
-- Full W4.8+W4.7 combined browser pass (now incl. view-mode), whole-branch review,
-  close-out, merge lane C → v2 (in the istanbul workspace; user pushes/decides).
+- Founder ruling: view-mode non-absolute link behavior (a/b/c above), then implement if
+  (a)/(b).
+- Founder combined pass if desired → merge lane C → v2 (conflict-free; done in the
+  istanbul workspace; user pushes/decides).
 - Carried caveat (source semantics): a rich-text commit landing while another write is in
   flight is silently dropped after the Lexical session destroyed itself — unrecoverable;
   same upstream.
