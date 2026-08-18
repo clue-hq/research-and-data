@@ -170,8 +170,8 @@ _EXA_WEBSETS_SOURCE_KEY = "exa_websets"
 #: §3.1 row 1 — canonical identity truth. It owns no acquisition source and is not a derive-only
 #: row either, so it is the one profile field the coverage axis cannot carry (module docstring).
 _IDENTITY_ROW = "core.account_name"
-#: The row whose provider double deliberately answers empty.
-_HONEST_EMPTY = "account.hiring_velocity_eng"
+#: The Exa-owned row whose scripted provider response deliberately leaves absent.
+_HONEST_EMPTY = "account.operational_pain"
 _QUESTION = "Where is administrative work creating avoidable burden?"
 #: The retained passage every scripted provider answer restates, so the Exa normalizer's
 #: lexical support check selects the citation instead of refusing it as unsupported.
@@ -424,8 +424,9 @@ class _ScriptedExaTransport:
     projection builder turns into a ``null`` outcome with ``explicit_null`` verification.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, *, empty_field_keys: Sequence[str] = ()) -> None:
         self.requests: list[Any] = []
+        self._empty = frozenset(empty_field_keys)
 
     @property
     def requested_field_keys(self) -> frozenset[str]:
@@ -444,6 +445,9 @@ class _ScriptedExaTransport:
         content: dict[str, Any] = {}
         grounding: list[Mapping[str, Any]] = []
         for alias, schema in properties.items():
+            if str(field_key_from_exa_alias(alias)) in self._empty:
+                content[alias] = None
+                continue
             content[alias] = _schema_example(schema)
             grounding.append({**template, "field": alias})
         payload["output"]["content"] = content
@@ -672,7 +676,7 @@ async def _drive_comprehensive_run(
     # The Sumble side: the shared R5 double's real reservation/artifact/claim plumbing, answering
     # each structured field with a value shaped by that field's registered schema.
     providers = _PartialAccountProviders(
-        empty_field_keys=(_HONEST_EMPTY,),
+        empty_field_keys=(),
         storage=storage,
         conn_factory=connection,
         contacts=(uuid4(), uuid4()),
@@ -683,7 +687,7 @@ async def _drive_comprehensive_run(
     )
     # The Exa side: the *production* account action over a scripted transport, so the honest empty
     # and every Exa claim carry real external-research lineage rather than fixture provenance.
-    transport = _ScriptedExaTransport()
+    transport = _ScriptedExaTransport(empty_field_keys=(_HONEST_EMPTY,))
     exa_action = ExaAccountSemanticResearchAction(
         workspace_id=fixture.workspace_id,
         project_id=fixture.project_id,
@@ -900,7 +904,8 @@ def test_every_comprehensive_account_field_reaches_a_settled_state(tmp_path: Pat
             assert _HONEST_EMPTY in requested
             assert unresolved == {_HONEST_EMPTY}
             reasons = {str(value) for value in row["unresolved_reasons"]}
-            assert reasons == {f"{_HONEST_EMPTY}:null:unverified"}
+            assert reasons == {f"{_HONEST_EMPTY}:null:explicit_null"}
+            assert _HONEST_EMPTY in drive.transport.requested_field_keys
             assert (
                 await current_value(conn, EntityId(fixture.account_id), _HONEST_EMPTY, scope=scope)
                 is None

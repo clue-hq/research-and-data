@@ -674,7 +674,9 @@ def test_comprehensive_directive_validates_and_launches_all_acquisition_fields(
     ``core.revenue_band``). The launch selection admits exactly the acquisition subset: a field
     with no §3.1 source is reused or derived, never bought, so it carries no source authority
     (EntityResearchSelection requires authority to cover every admitted field). Fields outside
-    the fixed profile keep the strict validator unchanged.
+    the fixed profile keep the strict validator unchanged. Directional questions are optional in
+    the durable directive contract; this case intentionally omits them to prove that the fixed
+    field profile is sufficient launch authority by itself.
     """
 
     async def scenario() -> None:
@@ -702,13 +704,12 @@ def test_comprehensive_directive_validates_and_launches_all_acquisition_fields(
                     "sumble_tech_stack",
                     "sumble_people",
                 ),
-                questions=(
-                    ResearchQuestion(
-                        question_id="qualitative-burden",
-                        text="Where is administrative work creating avoidable burden?",
-                        target_field_key=_PAIN,
-                    ),
-                ),
+                questions=(),
+                # The browser's comprehensive-profile default intentionally shares one opaque
+                # policy reference across freshness and recursion. The flattened selection must
+                # retain it once, rather than rejecting the launch as internally duplicated.
+                freshness_policy_ref="default",
+                recursion_policy_ref="default",
             )
             pin = account_spec.research_directive
             assert pin is not None
@@ -756,6 +757,8 @@ def test_comprehensive_directive_validates_and_launches_all_acquisition_fields(
             selection = EntityResearchSelection.model_validate(
                 stored["lifecycle_json"]["selection"]
             )
+            assert selection.research_questions == ()
+            assert selection.policy_refs.count("default") == 1
             zero_acquisition = {"core.account_name", "core.employee_range", "core.revenue_band"}
             expected_acquisition = set(PROSE_ACCOUNT_FIELDS) - zero_acquisition
             assert set(selection.admitted_field_keys) == expected_acquisition

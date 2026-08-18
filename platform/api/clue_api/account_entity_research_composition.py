@@ -238,6 +238,14 @@ class AccountResearchDefinitionResolver(EntityResearchDefinitionResolver):
         questions = "\n".join(
             f"- {value}" for value in job.authorization.selection.research_questions
         )
+        question_instruction = (
+            "The confirmed directional questions are:\n" + questions
+            if questions
+            else (
+                "No separate directional questions were confirmed. The admitted field/source "
+                "plan is the complete research boundary."
+            )
+        )
         return EntityResearchAgentDefinition(
             context=context,
             model_policy=self._model_policy,
@@ -256,9 +264,8 @@ class AccountResearchDefinitionResolver(EntityResearchDefinitionResolver):
                     if not self._enforce_budget
                     else ""
                 )
-                + "The confirmed directional questions are:\n"
-                f"{questions}"
-                f"{_committee_plan_block(committee_plan)}"
+                + question_instruction
+                + _committee_plan_block(committee_plan)
             ),
         )
 

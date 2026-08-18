@@ -1094,8 +1094,25 @@ class AccountResearchExecutionGuard(EntityResearchExecutionGuard):
         if context.authorization.subject_type is not ResearchSubjectType.ACCOUNT:
             raise AccountResearchAuthorityError("account guard received another subject type")
         names = [call.tool_name for call in calls]
-        if len(names) != len(set(names)):
-            raise AccountResearchAuthorityError("one model round cannot duplicate an account tool")
+        duplicates = {name for name in names if names.count(name) > 1}
+        if duplicates:
+            if duplicates != {"enrich_account"}:
+                raise AccountResearchAuthorityError(
+                    "one model round cannot duplicate account provider work"
+                )
+            source_sets = [
+                set(cast(Sequence[str], call.arguments.get("source_keys", ())))
+                for call in calls
+                if call.tool_name == "enrich_account"
+            ]
+            if any(not source_keys for source_keys in source_sets) or any(
+                left & right
+                for index, left in enumerate(source_sets)
+                for right in source_sets[index + 1 :]
+            ):
+                raise AccountResearchAuthorityError(
+                    "parallel account enrichment calls require disjoint structured sources"
+                )
         if "assess_account_coverage" in names and len(names) > 1:
             raise AccountResearchAuthorityError("coverage must follow settled provider results")
         if "finalize_account_research" in names and len(names) > 1:

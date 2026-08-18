@@ -497,17 +497,37 @@ class DbEntityResearchToolBatchCoordinator(EntityResearchToolBatchCoordinator):
         async with self._conn_factory() as conn:
             member = await self._member(conn, context=context, call=call)
             batch_id = UUID(str(member["batch_id"]))
-            event_id = await self._insert_event(
-                conn,
-                batch_id=batch_id,
-                call=call,
-                event_kind="failed",
-                disposition="handler_failed",
-                error={
-                    "error_type": type(error).__name__,
-                    "message": str(error)[:2000],
-                },
-            )
+            prior_failure_id = (
+                await conn.execute(
+                    text(
+                        "SELECT event_id FROM entity_research_tool_batch_event "
+                        "WHERE batch_id=:batch_id AND raw_tool_call_id=:call_id "
+                        "AND event_kind='failed'"
+                    ),
+                    {"batch_id": batch_id, "call_id": call.tool_call_id},
+                )
+            ).scalar_one_or_none()
+            if prior_failure_id is None:
+                event_id = await self._insert_event(
+                    conn,
+                    batch_id=batch_id,
+                    call=call,
+                    event_kind="failed",
+                    disposition="handler_failed",
+                    error={
+                        "error_type": type(error).__name__,
+                        "message": str(error)[:2000],
+                    },
+                )
+            else:
+                # A checkpoint retry can re-enter the same admitted tool call after its first
+                # handler failure. The batch ledger intentionally has one immutable ``failed``
+                # marker per member; retry-specific errors remain append-only in the agent-event
+                # journal, and a later ``completed`` event supersedes this marker for settlement.
+                # Requiring a later exception to equal the first one masks the real retry error
+                # as "tool batch event replay changed" and prevents safe retained-response
+                # recovery from ever reaching completion.
+                event_id = UUID(str(prior_failure_id))
             await self._release_permit(
                 conn,
                 batch_id=batch_id,
@@ -564,13 +584,21 @@ class DbEntityResearchToolBatchCoordinator(EntityResearchToolBatchCoordinator):
                 continue
             facets = {_facet_value(call) for call in duplicates}
             if (
-                name not in {"delegate_account_facet", "delegate_contact_facet"}
-                or None in facets
-                or len(facets) != len(duplicates)
+                name in {"delegate_account_facet", "delegate_contact_facet"}
+                and None not in facets
+                and len(facets) == len(duplicates)
             ):
-                raise EntityResearchParallelAdmissionError(
-                    "duplicate parallel provider work is not independently partitioned"
-                )
+                continue
+            source_sets = [set(_source_values(call)) for call in duplicates]
+            if all(source_sets) and not any(
+                left & right
+                for index, left in enumerate(source_sets)
+                for right in source_sets[index + 1 :]
+            ):
+                continue
+            raise EntityResearchParallelAdmissionError(
+                "duplicate parallel provider work is not independently partitioned"
+            )
 
     @staticmethod
     async def _lock_scope(

@@ -848,7 +848,14 @@ class ExaAccountSemanticResearchAction(EntityResearchProviderAction):
                         f"Exa field {field_key!r} lacks an effective schema/source authorization"
                     )
                 effective_fields.append(effective)
-        intent = self._research_intent
+        # A comprehensive account directive may be fully bounded by field/source authority and
+        # carry no separate human-authored directional question. Exa still needs an internal
+        # non-empty planning sentence; compile that mechanically from the exact field-bound task
+        # instead of making the user approve redundant prose.
+        intent = self._research_intent or (
+            "Target-lock research to this canonical account and answer only the admitted "
+            "structured fields with inspectable evidence."
+        )
         observation_window = self._observation_window
         if request.parent_operation_ref is not None:
             intent = (
@@ -974,7 +981,7 @@ class ExaAccountSemanticResearchAction(EntityResearchProviderAction):
         with bind_resolver_overrides({SOURCE_KEY: resolver}):
             for effective in effective_fields:
                 async with self._conn_factory() as conn:
-                    materialization = await resolve_field(
+                    await resolve_field(
                         conn,
                         Entity(entity_id=self._account_id, entity_type=EntityType.ACCOUNT),
                         effective.field_def.model_copy(update={"tier_plan": (SOURCE_KEY,)}),
@@ -982,16 +989,12 @@ class ExaAccountSemanticResearchAction(EntityResearchProviderAction):
                         run_id=run_id,
                         workspace_id=self._workspace_id,
                     )
-                    if not materialization.claim_refs:
-                        step_summary = ",".join(
-                            f"{step.source_key}:{step.outcome.value}:{step.n_claims}"
-                            for step in materialization.per_tier
-                        )
-                        raise EntityResearchResultIntegrityError(
-                            "Exa normalized field failed offline claim materialization: "
-                            f"{effective.field_def.field_key}; "
-                            f"stop={materialization.stop_reason.value}; steps={step_summary}"
-                        )
+                    # No claim is the correct materialization for an explicit provider null.
+                    # ``ExaEntityResearchProjectionBuilder._field`` below distinguishes that
+                    # honest empty from rejected/unsupported evidence and still fails closed if
+                    # the normalization contains a synthesized value without a durable claim.
+                    # Requiring one claim for every requested field here made comprehensive
+                    # research impossible whenever Exa correctly answered "not found".
         drafts: list[ExternalResearchProjectionDraft] = []
         for item in ready:
             assert item.snapshot is not None

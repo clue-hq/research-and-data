@@ -20,9 +20,11 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_agents.contracts import ModelPolicy
 from clue_agents.entity_research_contracts import (
+    EntityAgentJournalEventKind,
     EntityAgentRole,
     EntityResearchAgentDefinition,
     EntityResearchAgentSuspension,
+    EntityResearchJournalEvent,
     EntityResearchResource,
     EntityResearchResourceBundle,
     EntityResearchRuntimeContext,
@@ -35,7 +37,10 @@ from clue_agents.entity_research_runtime import (
     EntityResearchAgentFactory,
     EntityResearchAgentRuntime,
 )
-from clue_agents.entity_research_tools import ReadResearchEvidenceInput
+from clue_agents.entity_research_tools import (
+    EntityResearchSemanticToolInput,
+    ReadResearchEvidenceInput,
+)
 from clue_agents.model import ScriptedAgentChatModel
 from clue_api.entity_research_runtime_wiring import (
     DbEntityResearchAgentJournal,
@@ -447,6 +452,50 @@ def test_governed_exa_tool_persists_complete_result_causation_reads_and_replay(
 
             first_context = await run_turn(uuid4(), "r4-exa-first")
             assert transport.calls == 1
+            retry_arguments = {
+                "field_keys": [_FIELD],
+                "source_keys": ["exa_deep"],
+                "questions": [_QUESTION],
+            }
+            retry_call = EntityResearchToolCall(
+                tool_call_id="r4-exa-first",
+                tool_name="research_contact_deep",
+                tool_version=1,
+                tool_input_sha256=canonical_sha256(retry_arguments),
+                arguments=retry_arguments,
+            )
+            retry_event = EntityResearchJournalEvent(
+                event_id=uuid4(),
+                agent_execution_id=first_context.agent_execution_id,
+                agent_turn_id=first_context.agent_turn_id,
+                kind=EntityAgentJournalEventKind.TOOL_STARTED,
+                payload={"arguments": retry_arguments},
+                tool_call_id=retry_call.tool_call_id,
+                tool_name=retry_call.tool_name,
+                tool_version=retry_call.tool_version,
+                tool_input_sha256=retry_call.tool_input_sha256,
+            )
+            retry_ref = await DbEntityResearchAgentJournal(
+                conn_factory=connection
+            ).append(retry_event)
+            replayed_request = await request_store.record(
+                active=ActiveEntityResearchToolExecution(
+                    context=first_context,
+                    call=retry_call,
+                    journal_event_ref=retry_ref,
+                ),
+                semantic=EntityResearchSemanticToolInput.model_validate(retry_arguments),
+            )
+            original_event_id = (
+                await conn.execute(
+                    text(
+                        "SELECT tool_event_id FROM entity_research_tool_request "
+                        "WHERE tool_request_id=:request_id"
+                    ),
+                    {"request_id": replayed_request.tool_call_id},
+                )
+            ).scalar_one()
+            assert original_event_id != retry_event.event_id
             tool_event = (
                 await conn.execute(
                     text(
@@ -724,8 +773,12 @@ def test_governed_exa_tool_persists_complete_result_causation_reads_and_replay(
                         text(
                             """
                             SELECT
-                              (SELECT count(*) FROM entity_research_tool_request) AS requests,
-                              (SELECT count(*) FROM entity_research_result) AS results,
+                              (SELECT count(*) FROM entity_research_tool_request
+                               WHERE job_id=:job_id) AS requests,
+                              (SELECT count(*) FROM entity_research_result result
+                               JOIN entity_research_tool_request request_row
+                                 ON request_row.tool_request_id=result.tool_request_id
+                               WHERE request_row.job_id=:job_id) AS results,
                               (SELECT count(*) FROM external_research_operation
                                WHERE contact_id=:contact_id) AS operations,
                               (SELECT count(*) FROM external_research_receipt receipt
@@ -734,7 +787,10 @@ def test_governed_exa_tool_persists_complete_result_causation_reads_and_replay(
                                WHERE operation.contact_id=:contact_id) AS receipts
                             """
                         ),
-                        {"contact_id": seed.intent.contact_entity_id},
+                        {
+                            "job_id": authorization.job_id,
+                            "contact_id": seed.intent.contact_entity_id,
+                        },
                     )
                 )
                 .mappings()
@@ -753,7 +809,8 @@ def test_governed_exa_tool_persists_complete_result_causation_reads_and_replay(
                             "SELECT job.spent_cents AS job_spent, "
                             "run_row.spent_cents AS run_spent, "
                             "(SELECT count(*) FROM "
-                            "entity_research_provider_settlement_fold) AS folds "
+                            "entity_research_provider_settlement_fold fold "
+                            "WHERE fold.job_id=job.job_id) AS folds "
                             "FROM entity_research_job job "
                             "JOIN entity_research_run run_row "
                             "ON run_row.research_run_id=job.research_run_id "

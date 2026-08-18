@@ -456,7 +456,10 @@ class EntityResearchSelection(BaseModel):
     admitted_source_keys: tuple[NonEmptyStr, ...] = Field(min_length=1)
     field_source_authority: tuple[FieldSourceAuthority, ...] = Field(min_length=1)
     committee_source_keys: tuple[NonEmptyStr, ...] = ()
-    research_questions: tuple[NonEmptyStr, ...] = Field(min_length=1)
+    # Account research can be fully bounded by its exact field/source authority. Directional
+    # questions are optional there; the validator below keeps them mandatory for contact runs,
+    # where the question is part of the personal-research authorization.
+    research_questions: tuple[NonEmptyStr, ...] = ()
     facet_keys: tuple[NonEmptyStr, ...] = ()
     channel_permissions: tuple[ContactChannel, ...] = ()
     policy_refs: tuple[NonEmptyStr, ...] = Field(min_length=1)
@@ -484,6 +487,8 @@ class EntityResearchSelection(BaseModel):
                 raise ValueError(message)
         if self.confirmed_at.utcoffset() is None:
             raise ValueError("selection confirmation time must be timezone-aware")
+        if self.subject_type is ResearchSubjectType.CONTACT and not self.research_questions:
+            raise ValueError("contact research selection requires directional questions")
         if self.subject_type is ResearchSubjectType.ACCOUNT:
             if self.account_entity_id is not None:
                 raise ValueError("account selection subjects are their own account identities")
@@ -811,7 +816,7 @@ class GovernedResearchToolRequest(BaseModel):
     field_keys: tuple[NonEmptyStr, ...] = ()
     source_keys: tuple[NonEmptyStr, ...] = Field(min_length=1)
     field_source_authority: tuple[FieldSourceAuthority, ...] = ()
-    questions: tuple[NonEmptyStr, ...] = Field(min_length=1)
+    questions: tuple[NonEmptyStr, ...] = ()
     budget_reservation_key: NonEmptyStr
     idempotency_key: NonEmptyStr
     parent_operation_ref: NonEmptyStr | None = None
@@ -829,6 +834,8 @@ class GovernedResearchToolRequest(BaseModel):
         ):
             if len(values) != len(set(values)):
                 raise ValueError(message)
+        if self.subject_type is ResearchSubjectType.CONTACT and not self.questions:
+            raise ValueError("contact research request requires directional questions")
         if self.subject_type is ResearchSubjectType.CONTACT:
             if self.parent_account_id is None:
                 raise ValueError("contact tool request requires the exact parent account")

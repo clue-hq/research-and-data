@@ -31,6 +31,9 @@ from clue_api.run_composition import (
 from clue_api.storage_wiring import build_storage_backend
 from clue_api.sumble_account_gaps import build_production_sumble_account_gap_starter
 from clue_api.toolbelt_wiring import build_toolbelt
+from clue_api.transactional_account_launch import (
+    build_transactional_account_launch_invoker_factory,
+)
 from clue_config import Secrets, Settings, load_settings
 from clue_db import transaction
 from clue_obs import get_logger
@@ -295,6 +298,18 @@ def build_application(
         auth_service=auth_service,
         auth_closer=auth_closer,
         contact_email_lookup=contact_email_lookup,
+        # Slice B founder ruling: a budget-controls-disabled directive approval confirms and
+        # launches in one SQL transaction. This factory composes only the launch controller and
+        # queue writer over that request's connection — never the model/provider worker runtime.
+        transactional_tool_invoker_factory=(
+            build_transactional_account_launch_invoker_factory(
+                settings=resolved,
+                storage=storage,
+            )
+            if resolved.entity_research_runtime_enabled
+            and not resolved.budget_controls_enabled
+            else None
+        ),
     )
 
 

@@ -33,7 +33,11 @@ from clue_research.durable.provider_spend import (
 )
 from clue_research.identity import get_account
 from clue_research.resolvers.exa import ExaDeepRequestFailure
-from clue_research.resolvers.exa.deep_contract import ExaDeepFailureClass, ExaDeepFieldSpec
+from clue_research.resolvers.exa.deep_contract import (
+    ExaDeepFailureClass,
+    ExaDeepFieldSpec,
+    exa_field_alias,
+)
 from clue_storage import FsStorage
 from tests.api.test_sumble_committee_acquisition_s2b import _setup
 from tests.db.conftest import run_async
@@ -653,6 +657,13 @@ def test_e1_quarantines_success_persistence_failure_immediately(tmp_path: Path) 
             storage = _FailingPutStorage(base_storage, fail_on_put=3)
             payload = _payload()
             payload["costDollars"]["total"] = 0.07
+            canonical = exa_field_alias("account.operational_pain")
+            corrupted = f"{canonical[:26]}ெரrational_pain"
+            content = payload["output"]["content"]
+            content[corrupted] = content.pop(canonical)
+            for grounding in payload["output"]["grounding"]:
+                if grounding["field"] == canonical:
+                    grounding["field"] = corrupted
             result = await ExaDeepAcquisitionCoordinator(
                 transport=_Transport(payload),
                 storage=storage,
@@ -676,5 +687,49 @@ def test_e1_quarantines_success_persistence_failure_immediately(tmp_path: Path) 
             )
             assert attempt["state"] == "spend_outcome_unknown"
             assert attempt["response_artifact_key"] is not None
+
+            replay_transport = _NoReplayTransport()
+            replay = await ExaDeepAcquisitionCoordinator(
+                transport=replay_transport,
+                storage=base_storage,
+                conn_factory=same_connection,
+            ).acquire(preflight)
+            assert replay.outcome is ExaDeepAcquisitionOutcome.REPLAYED
+            assert replay.provider_calls == 0
+            assert replay.snapshot is not None
+            assert replay_transport.calls == 0
+            loaded_response, _ = await load_exa_deep_snapshot(
+                storage=base_storage,
+                snapshot=replay.snapshot,
+            )
+            assert canonical in loaded_response.output.content
+            recovered_attempt = (
+                await conn.execute(
+                    text(
+                        "SELECT state::text, failure_code, failure_detail FROM "
+                        "external_research_attempt WHERE operation_id=:operation_id"
+                    ),
+                    {"operation_id": result.operation.operation_id},
+                )
+            ).mappings().one()
+            assert dict(recovered_attempt) == {
+                "state": "responded",
+                "failure_code": None,
+                "failure_detail": None,
+            }
+            recovery = (
+                await conn.execute(
+                    text(
+                        "SELECT response_artifact_key, provider_request_id, parser_version, "
+                        "actor_ref FROM external_research_response_recovery "
+                        "WHERE operation_id=:operation_id"
+                    ),
+                    {"operation_id": result.operation.operation_id},
+                )
+            ).mappings().one()
+            assert recovery["response_artifact_key"] == attempt["response_artifact_key"]
+            assert recovery["provider_request_id"] == "exa-deep-fixture-request-1"
+            assert recovery["parser_version"] == "exa-deep-unique-alias-recovery-v1"
+            assert recovery["actor_ref"] == "engine:exa-deep-retained-response-recovery"
 
     run_async(scenario())

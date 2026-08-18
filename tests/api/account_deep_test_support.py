@@ -47,6 +47,8 @@ async def confirmed_account_research_direction(
     questions: Sequence[ResearchQuestion] = (),
     contact_profiling_allowed: bool = False,
     contact_reveals_allowed: bool = False,
+    freshness_policy_ref: str = "freshness:account-deep-test-v1",
+    recursion_policy_ref: str = "recursion:account-deep-test-v1",
 ) -> tuple[ResearchDirectiveBody, Any]:
     """Create one real human-confirmed A2 directive on a borrowed test transaction."""
 
@@ -81,8 +83,8 @@ async def confirmed_account_research_direction(
             max_fanout=6,
             budget_cap_cents=Decimal(300),
             budget_envelope_ref="budget:account-deep-test-v1",
-            recursion_policy_ref="recursion:account-deep-test-v1",
-            freshness_policy_ref="freshness:account-deep-test-v1",
+            recursion_policy_ref=recursion_policy_ref,
+            freshness_policy_ref=freshness_policy_ref,
         ),
     )
     draft_operation = new_operation_id()

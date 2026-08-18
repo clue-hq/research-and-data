@@ -529,6 +529,10 @@ class EntityResearchToolRequestStore:
         context = active.context
         authorization = context.authorization
         selection = authorization.selection
+        if authorization.subject_type is ResearchSubjectType.CONTACT and not semantic.questions:
+            raise EntityResearchToolAuthorityError(
+                "contact research requires confirmed directional questions"
+            )
         if not set(semantic.field_keys).issubset(authorization.effective_admitted_field_keys):
             raise EntityResearchToolAuthorityError("semantic tool widened selected fields")
         if not set(semantic.source_keys).issubset(authorization.effective_admitted_source_keys):
@@ -772,7 +776,6 @@ class EntityResearchToolRequestStore:
             for key in (
                 "agent_turn_id",
                 "agent_execution_id",
-                "tool_event_id",
                 "raw_tool_call_id",
                 "research_run_id",
                 "job_id",
@@ -802,6 +805,11 @@ class EntityResearchToolRequestStore:
             )
         }
         normalized = dict(observed)
+        # ``tool_event_id`` is the first journaled attempt that caused this immutable governed
+        # request, not part of the request's authority. A checkpoint retry in the same agent turn
+        # appends a new TOOL_STARTED event while retaining the same raw call id and semantic input;
+        # keep the original causal pointer and compare every actual authority field below.
+        normalized.pop("tool_event_id")
         for key in ("field_keys", "source_keys", "questions"):
             normalized[key] = list(normalized[key])
         normalized["field_source_authority"] = serialize_value_json(

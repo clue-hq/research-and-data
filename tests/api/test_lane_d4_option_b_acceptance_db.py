@@ -42,7 +42,9 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from clue_api.account_research_estimate import compute_account_research_estimate
 from clue_api.account_research_fleet import (
     AccountResearchFleetPolicy,
+    AccountResearchFleetProjection,
     AccountResearchFleetService,
+    AccountResearchFleetState,
 )
 from clue_api.account_research_fleet_launch import (
     AccountResearchFleetLauncher,
@@ -51,10 +53,11 @@ from clue_api.account_research_fleet_launch import (
 )
 from clue_api.agent_gate import get_gate, money_text
 from clue_api.agent_gate_tools import OpenDirectiveConfirmationGateTool, gate_ref
-from clue_api.agent_turn_submission import insert_submission
+from clue_api.agent_turn_submission import insert_submission, submission_context_refs
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
 from clue_api.chat import CHAT_PERMISSIONS, RequestPrincipal
 from clue_api.conversation_capture import persist_user_turn
+from clue_api.entity_research_launch_tools import LaunchSelectedAccountResearchTool
 from clue_api.execution_wiring import build_tool_invoker
 from clue_api.projections_app import create_projections_app
 from clue_api.research_directive_tools import build_research_directive_tools
@@ -421,7 +424,13 @@ def _gate_tool_registry(conn_factory: Any) -> ToolRegistry:
     return registry
 
 
-def _app(conn: AsyncConnection, scenario: _Scenario) -> Any:
+def _app(
+    conn: AsyncConnection,
+    scenario: _Scenario,
+    *,
+    settings: Settings | None = None,
+    extra_tools: tuple[Any, ...] = (),
+) -> Any:
     cf = scenario.conn_factory
     registry = ToolRegistry()
     register_thread_tools(registry, conn_factory=cf)
@@ -430,6 +439,8 @@ def _app(conn: AsyncConnection, scenario: _Scenario) -> Any:
         conn_factory=cf,
     ):
         registry.register(tool, make_default=tool.version == "2")
+    for tool in extra_tools:
+        registry.register(tool, make_default=True)
 
     def resolve(workspace_id: str) -> RequestPrincipal:
         return RequestPrincipal(
@@ -441,16 +452,17 @@ def _app(conn: AsyncConnection, scenario: _Scenario) -> Any:
             authenticated_at=_AUTHENTICATED_AT,
         )
 
+    app_settings = settings if settings is not None else _settings()
     return create_projections_app(
         surface=build_surface(conn),
         tool_invoker=build_tool_invoker(
             registry=registry,
             idempotency_store=DbIdempotencyStore(conn_factory=cf),
             storage=_MemoryStorage(),
-            settings=_settings(),
+            settings=app_settings,
             conn_factory=cf,
         ),
-        settings=_settings(),
+        settings=app_settings,
         conn_factory=cf,
         manage_db_lifespan=False,
         ingestion_storage=scenario.storage,
@@ -831,5 +843,136 @@ def test_presenting_the_same_gate_twice_in_one_turn_is_one_gate(tmp_path: Path) 
                     {"ws": scenario.workspace_id},
                 )
             ).scalar_one() == 1
+
+    run_async(scenario_body())
+
+
+class _StubLaunchService:
+    """Records the launch request the atomic approval hands the real launcher."""
+
+    def __init__(self, workspace_id: str, project_id: str, product_id: str) -> None:
+        self.workspace_id = workspace_id
+        self.project_id = project_id
+        self.product_id = product_id
+        self.requests: list[tuple[Any, str, str, Any]] = []
+
+    async def launch(
+        self,
+        request: AccountResearchFleetLaunchRequest,
+        *,
+        actor: str,
+        source_action_ref: str,
+        source_operation_id: Any,
+    ) -> AccountResearchFleetProjection:
+        self.requests.append((request, actor, source_action_ref, source_operation_id))
+        return AccountResearchFleetProjection(
+            research_run_id=uuid4(),
+            workspace_id=self.workspace_id,
+            project_id=self.project_id,
+            product_id=self.product_id,
+            project_run_id=request.project_run_id,
+            fleet_state=AccountResearchFleetState.OPEN,
+            run_state="active",
+            selected_accounts=0,
+            queued_accounts=0,
+            active_accounts=0,
+            waiting_accounts=0,
+            paused_accounts=0,
+            terminal_accounts=0,
+            completed_accounts=0,
+            needs_review_accounts=0,
+            spent_cents=Decimal(0),
+            budget_cap_cents=request.approved_budget_cap_cents,
+            jobs=(),
+            review_queue=(),
+            contact_research_request_count=0,
+        )
+
+
+def test_budget_disabled_approval_atomically_confirms_and_launches(tmp_path: Path) -> None:
+    """Founder ruling 2026-08-19 (Slice B): with budget controls DISABLED, the human's approval
+    of a directive-confirmation gate is one atomic act — the server confirms the reviewed draft
+    AND launches through ``launch_selected_account_research@1``. The tool's account authority is
+    the approval turn's durable context refs, which the capture path records from the gate's
+    frozen account set; budget-controls-enabled deployments keep the confirm-only gate unchanged
+    (the previous test).
+    """
+
+    async def scenario_body() -> None:
+        async with rollback_conn() as conn:
+            scenario = await _seed_two_account_conversation(conn, tmp_path)
+            opened = await _open_gate(conn, scenario)
+            gate_id = UUID(str(opened.references["gate_id"]))
+            view = await get_gate(conn, workspace_id=scenario.workspace_id, gate_id=gate_id)
+            assert view is not None
+
+            stub = _StubLaunchService(
+                scenario.workspace_id, scenario.project_id, scenario.product_id
+            )
+            launch_tool = LaunchSelectedAccountResearchTool(
+                service=stub,
+                budget_controls_enabled=False,
+                conn_factory=scenario.conn_factory,
+            )
+            app = _app(
+                conn,
+                scenario,
+                settings=_settings(budget_controls_enabled=False),
+                extra_tools=(launch_tool,),
+            )
+            transport = ASGITransport(app=app)
+            async with httpx.AsyncClient(transport=transport, base_url="http://t") as client:
+                response = await client.post(
+                    f"/api/v1/projects/{scenario.project_id}/threads/{scenario.thread_id}/turns",
+                    json={
+                        "gate_response": {
+                            "gate_id": str(gate_id),
+                            "decision": "approved",
+                            "expected_subject_sha256": scenario.directive_sha256,
+                            "expected_estimated_cost_cents": money_text(view.gate.max_spend_cents),
+                        }
+                    },
+                    headers={
+                        "X-Workspace-Id": scenario.workspace_id,
+                        "Idempotency-Key": "optionb-approve-launch",
+                    },
+                )
+            assert response.status_code == 202, response.text
+            confirming_turn_id = UUID(response.json()["data"]["turn_id"])
+
+            # The approval turn's durable refs are the gate's frozen account set, in order.
+            refs = await submission_context_refs(
+                conn, workspace_id=scenario.workspace_id, turn_id=confirming_turn_id
+            )
+            assert [ref.object_id for ref in refs] == [str(v) for v in scenario.account_ids]
+            assert all(ref.object_type == "account" for ref in refs)
+
+            # Confirmed…
+            directive_row = (
+                (
+                    await conn.execute(
+                        text(
+                            "SELECT status, confirmed_by FROM account_research_directive "
+                            "WHERE directive_id=:id"
+                        ),
+                        {"id": scenario.directive_id},
+                    )
+                )
+                .mappings()
+                .one()
+            )
+            assert directive_row["status"] == "confirmed"
+            assert directive_row["confirmed_by"] == USER_ID
+
+            # …and launched, atomically, from the same approval: the stub launcher received the
+            # gate's exact account set, the server-computed amount, and the turn-derived receipt.
+            assert len(stub.requests) == 1
+            request, actor, source_action_ref, _operation = stub.requests[0]
+            assert request.account_entity_ids == tuple(
+                UUID(str(value)) for value in scenario.account_ids
+            )
+            assert request.approved_budget_cap_cents == view.gate.max_spend_cents
+            assert actor == USER_ID
+            assert source_action_ref == derive_turn_action_ref(confirming_turn_id)
 
     run_async(scenario_body())

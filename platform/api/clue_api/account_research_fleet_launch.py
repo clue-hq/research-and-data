@@ -337,9 +337,14 @@ class AccountResearchFleetLauncher:
             # universe; contact fields stay excluded for the later committee/contact fleet.
             field_keys = tuple(str(key) for key in account_axis_field_keys(first.field_keys))
             questions = tuple(item.text for item in first.questions)
-            if not field_keys or not questions:
+            # ``ResearchDirectiveBody`` deliberately permits a field-only directive. The fixed
+            # comprehensive profile already supplies the complete 21-field execution authority;
+            # no placeholder question is invented merely to satisfy the older R0 envelope.
+            # Question-only directives remain ineligible because this launcher needs at least one
+            # governed acquisition field.
+            if not field_keys:
                 raise AccountResearchFleetLaunchError(
-                    "account research requires confirmed account fields and directional questions"
+                    "account research requires confirmed account fields"
                 )
             allowed_sources = set(first.source_policy.allowed_source_keys)
             icp = await get_icp_version(
@@ -521,12 +526,23 @@ class AccountResearchFleetLauncher:
                 field_source_authority=tuple(authorities),
                 committee_source_keys=committee_source_keys,
                 research_questions=questions,
-                policy_refs=(
-                    f"account-research-launch:{request_sha}",
-                    first.effort_policy.freshness_policy_ref,
-                    first.effort_policy.recursion_policy_ref,
-                    f"research-privacy:{_sha(first.privacy_policy.model_dump(mode='json'))}",
-                    request.supervisor_policy.policy_ref,
+                # These are references, not typed policy slots. Two slots can legitimately point
+                # at the same shared policy (the browser's default profile currently uses
+                # ``"default"`` for both freshness and recursion), so flatten them into a stable
+                # unique set before validating the selection envelope.
+                policy_refs=tuple(
+                    dict.fromkeys(
+                        (
+                            f"account-research-launch:{request_sha}",
+                            first.effort_policy.freshness_policy_ref,
+                            first.effort_policy.recursion_policy_ref,
+                            (
+                                "research-privacy:"
+                                f"{_sha(first.privacy_policy.model_dump(mode='json'))}"
+                            ),
+                            request.supervisor_policy.policy_ref,
+                        )
+                    )
                 ),
                 budget_envelope_ref=f"account-research-launch:{request_sha}",
                 # The launching action and the directive's confirming turn, de-duplicated. They are

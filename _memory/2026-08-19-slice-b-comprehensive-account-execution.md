@@ -181,3 +181,78 @@ job my launch creates. Launch→settle is proven by the B8 E2E test with provide
 - gstack browse keychain: cookie import from Chrome may prompt Keychain on first use.
 - My dev artifacts in the founder DB: superseded drafts v7/v8 (harmless, immutable history),
   the clerk_test auth identity, and one confirmed directive v9 for Columbia (NOT launched).
+
+## Isolated live continuation — zero-question launch through terminal settlement
+
+The browser journey resumed from the preserved Columbia Pain Management chat rather than being
+restarted. Tunis's processes and database were not stopped, signalled, migrated, queried for test
+data, or otherwise changed. Missoula used its own isolated runtime throughout:
+
+- DB: `clue_missoula_slice_b` at Alembic head `7ca91ddefee6`.
+- Artifact root: `/private/tmp/clue-combined-browser-20260817-m1`.
+- Agent workspace root: `/private/tmp/clue-agent-workspaces-missoula`.
+- Frontend: preserved session `78672`, port `3115`.
+- API: preserved session `42504`, PID `82955`, port `8115`.
+- Fleet: preserved session `4728`, worker
+  `worker:c227b0b7-f659-40ba-8a63-f1a080cc2787` (left idle and running).
+- A fresh QA Clerk identity was mapped to the existing isolated-DB platform user after the prior
+  browser session expired. No credentials are recorded here.
+
+### Directional-question requirement removed at the correct scope
+
+The requirement was mechanical duplication for a `profile="comprehensive"` account directive:
+the confirmed directive already fixes the complete 21-field plan and provider authority, so a
+human-authored question adds no missing execution authority. The account-only path now accepts an
+empty question tuple end to end (core contract, agent tool schema, API validator, launcher,
+Sumble/Exa composition, and DB CHECK via migration `486ee7b24ae8`). Contact research remains
+strict and still requires its bounded directional questions. Exa compiles a fixed internal
+target-lock intent when the directive carries no bespoke question; it does not widen the field or
+source contract.
+
+### Live v12 result
+
+The one live v12 directive (`4aaa0d16-1041-583c-bceb-bcf843474a12`) launched with no directional
+questions. Research run `7c9144d8-061e-5196-87c5-eaa62c8ee2a2` / job
+`1e8e01a3-f7cb-5761-9c1e-d84cee26acd1` reached durable terminal state with finalization outcome
+`needs_review`, receipt `entity-research-finalization:d269f023-2b90-5055-9b3b-b7865cb1962c`, and
+6.4 cents recorded while budget enforcement was disabled. Nine fields completed and nine were
+honestly unresolved; most misses were `null:explicit_null`, with primary tech stack recorded as
+`null:sumble_terminal_field_absent`. Committee status was complete because committee discovery
+was not selected. No provider was redispatched during recovery.
+
+Provider evidence for that one launch: Sumble organizations twice, tech once, jobs once, and Exa
+four times, all HTTP 200. Four Exa responses were retained before local replay corruption blocked
+materialization. Migration `7ca91ddefee6` plus the retained-response recovery path reclassified
+those exact operations without network dispatch and produced four result references. The live
+repairs made during that recovery also:
+
+- preserve the first immutable parallel-batch failure while allowing a later completion to
+  supersede it, instead of manufacturing `tool batch event replay changed`;
+- retain the original causal tool event while allowing a same-turn semantic retry to append a new
+  `TOOL_STARTED` journal event;
+- repair only uniquely identifiable provider-corrupted Exa aliases, failing closed on ambiguous
+  aliases; and
+- allow an Exa-requested field to settle as an explicit null with no claim, while the projection
+  still rejects a synthesized value that lacks a durable claim.
+
+The browser currently shows historical “Deep research 0 of 1 account settled” card text even
+though the backend job is terminal. The founder identified that card correction as likely owned by
+an unmerged Lane-E/other-slice worktree, so this Slice B continuation deliberately did not diagnose
+or change the card. Backend terminal evidence remains the acceptance authority for this run.
+
+### Focused regression close-out
+
+The comprehensive account E2E now makes an Exa-owned field (`account.operational_pain`) an
+explicit JSON null and proves the production Exa action settles it as `null:explicit_null` with no
+claim. The response must contain the requested property with value `null`; omitting the required
+property is correctly rejected by the Exa exchange contract.
+
+Verification ran on the separate `clue_missoula_slice_b_checks` database on the same local
+Postgres server so neither the preserved Missoula worker nor Tunis's worker could claim a test
+task. Ten focused tests passed: comprehensive 21-field closure and bundling, zero-question launch,
+budget-disabled atomic launch, retained-response recovery, unique/ambiguous alias handling,
+all-null settlement, parallel crash replay, and request-causation replay. Ruff passed for every
+changed Python file, mypy passed for every changed production Python file, `git diff --check` was
+clean, and both new migrations passed a focused down-to-`509e5d0e623a` then up-to-head cycle;
+Alembic reports the single head `7ca91ddefee6`. The scratch checks DB was left in place; all
+preserved Missoula runtime processes were left running.

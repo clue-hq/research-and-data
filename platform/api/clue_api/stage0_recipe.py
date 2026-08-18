@@ -403,6 +403,29 @@ class Stage0StepPinProvider:
                 requested.append(
                     await self._current(kind="research_directive", key=directive_id, ctx=ctx)
                 )
+        # --- Slice B browser-gate repair (founder ruling 2026-08-19): the research-view read ---
+        # ``get_research_view@1`` has been granted to the conversation slot since FI-2, but no
+        # case here ever REQUESTED its three declared pin kinds, so plan validation refused every
+        # call (``missing_tool_requirement``) and the grant was dead — the agent could never read
+        # run state and needed identifiers spoon-fed in chat.
+        if step.tool_name == "get_research_view":
+            view_run_id = body.get("project_run_id")
+            if isinstance(view_run_id, str):
+                requested.append(
+                    await self._current(kind="project_run", key=view_run_id, ctx=ctx)
+                )
+            requested.append(
+                await self._current(kind="field_registry", key="__all_active__", ctx=ctx)
+            )
+            # Verification may be disabled (the integration-pilot posture): the policy resource
+            # is then absent from the catalog, and the read must still be possible — the pin is
+            # requested not-required, so it resolves when the policy exists and records an
+            # explicit absence when verification is off, never failing the plan.
+            requested.append(
+                await self._current(
+                    kind="verification_policy", key="default", ctx=ctx, required=False
+                )
+            )
         if step.tool_name in {
             "launch_account_research",
             "launch_selected_account_research",

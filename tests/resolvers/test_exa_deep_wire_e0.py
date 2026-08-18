@@ -391,6 +391,52 @@ def test_unchanged_golden_normalizes_field_faithful_spans_cost_and_citations() -
     assert {citation.status for citation in normalization.citations} == {"selected"}
 
 
+def test_unique_provider_alias_corruption_is_repaired_inside_the_requested_schema() -> None:
+    request = compile_exa_deep_request(
+        _account(),
+        (_spec(_PAIN),),
+        research_intent="pain evidence",
+    )
+    payload = _one_field_payload()
+    canonical = exa_field_alias(_PAIN)
+    # Mirrors the live provider defect: a long canonical hex alias is partially rewritten as
+    # readable/Unicode text. Its intact byte-aligned prefix still identifies one requested field.
+    corrupted = f"{canonical[:26]}ெரrational_pain"
+    output = payload["output"]
+    assert isinstance(output, dict)
+    content = output["content"]
+    grounding = output["grounding"]
+    assert isinstance(content, dict) and isinstance(grounding, list)
+    content[corrupted] = content.pop(canonical)
+    assert isinstance(grounding[0], dict)
+    grounding[0]["field"] = corrupted
+
+    response = parse_exa_deep_response(request, payload)
+
+    assert set(response.output.content) == {canonical}
+    assert tuple(item.field for item in response.output.grounding) == (canonical,)
+
+
+def test_provider_alias_repair_refuses_an_ambiguous_requested_prefix() -> None:
+    request = _golden_request()
+    payload = _json("deep_response.json")
+    output = payload["output"]
+    assert isinstance(output, dict)
+    content = output["content"]
+    grounding = output["grounding"]
+    assert isinstance(content, dict) and isinstance(grounding, list)
+    pain_alias = exa_field_alias(_PAIN)
+    ambiguous = "f_6163636f756e742eெர"
+    content[ambiguous] = content.pop(pain_alias)
+    for item in grounding:
+        assert isinstance(item, dict)
+        if item["field"] == pain_alias:
+            item["field"] = ambiguous
+
+    with pytest.raises(ValidationError, match="canonical Exa field aliases"):
+        parse_exa_deep_response(request, payload)
+
+
 def test_retained_text_can_supply_a_field_faithful_span_when_highlights_are_absent() -> None:
     request = compile_exa_deep_request(_account(), (_spec(_PAIN),), research_intent="pain evidence")
     response = parse_exa_deep_response(request, _one_field_payload(include_highlight=False))

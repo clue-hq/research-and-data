@@ -453,7 +453,14 @@ class SumbleAccountSemanticEnrichmentAction(EntityResearchProviderAction):
                 account_id=self._account_id,
                 field_expected_value_credits={key: self._values[key] for key in request.field_keys},
                 provider_credit_cap=self._provider_credit_cap,
-                allow_unbounded_tech=self._allow_unbounded_tech,
+                # One composed action serves independently partitioned Sumble source calls.  The
+                # directive-level authority may include tech, but only the tech partition should
+                # carry that provider-specific approval; applying it to a simultaneous jobs or
+                # organizations call makes the preflight correctly reject that non-tech call.
+                allow_unbounded_tech=(
+                    self._allow_unbounded_tech
+                    and "core.primary_tech_stack" in request.field_keys
+                ),
                 before_dispatch=bind_sumble_before_dispatch,
                 entity_research_job_id=self._entity_research_job_id,
             )

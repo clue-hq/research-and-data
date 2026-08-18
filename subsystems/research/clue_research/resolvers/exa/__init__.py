@@ -575,9 +575,95 @@ def parse_exa_deep_response(
 ) -> ExaDeepSearchResponse:
     """Parse an additive response and prove it answers exactly the requested field set."""
 
-    response = ExaDeepSearchResponse.model_validate(payload)
+    response = ExaDeepSearchResponse.model_validate(
+        _repair_uniquely_identifiable_exa_aliases(request, payload)
+    )
     validate_exa_deep_exchange(request, response)
     return response
+
+
+def _repair_uniquely_identifiable_exa_aliases(
+    request: ExaDeepSearchRequest,
+    payload: Mapping[str, Any],
+) -> Mapping[str, Any]:
+    """Repair only a provider-corrupted alias with one provable requested target.
+
+    Search Deep occasionally returns a successful structured response where a long hex alias is
+    partially rewritten as Unicode or readable field-name text. The raw provider payload remains
+    the immutable response artifact; this parser-side copy only restores an alias when its intact,
+    byte-aligned hex prefix identifies exactly one property in the request schema. Ambiguous,
+    unrelated, colliding, or structurally malformed keys are left untouched so the strict response
+    and exchange validators reject them.
+    """
+
+    properties = request.output_schema.get("properties")
+    output = payload.get("output")
+    if not isinstance(properties, dict) or not isinstance(output, Mapping):
+        return payload
+    content = output.get("content")
+    if not isinstance(content, Mapping):
+        return payload
+    expected = tuple(str(alias) for alias in properties)
+    expected_set = set(expected)
+    alias_map: dict[str, str] = {}
+    used_targets: set[str] = set()
+    for raw_alias in content:
+        if not isinstance(raw_alias, str):
+            return payload
+        target = raw_alias
+        if raw_alias not in expected_set:
+            match = re.match(r"f_([0-9a-f]+)", raw_alias)
+            if match is None or match.end() == len(raw_alias):
+                return payload
+            hex_prefix = match.group(1)
+            if len(hex_prefix) % 2:
+                hex_prefix = hex_prefix[:-1]
+            try:
+                readable_prefix = bytes.fromhex(hex_prefix).decode("ascii")
+            except (UnicodeDecodeError, ValueError):
+                return payload
+            # A namespace alone (for example ``account.``) is not enough identity. Candidate
+            # uniqueness is the final proof and intentionally refuses shared field prefixes.
+            if "." not in readable_prefix or not readable_prefix.rsplit(".", 1)[-1]:
+                return payload
+            canonical_prefix = f"f_{hex_prefix}"
+            candidates = tuple(
+                alias for alias in expected if alias.startswith(canonical_prefix)
+            )
+            if len(candidates) != 1:
+                return payload
+            target = candidates[0]
+        if target in used_targets:
+            return payload
+        used_targets.add(target)
+        alias_map[raw_alias] = target
+    if used_targets != expected_set or all(
+        source == target for source, target in alias_map.items()
+    ):
+        return payload
+
+    repaired = copy.deepcopy(dict(payload))
+    repaired_output = repaired.get("output")
+    if not isinstance(repaired_output, dict):
+        return payload
+    repaired_content = repaired_output.get("content")
+    if not isinstance(repaired_content, dict):
+        return payload
+    repaired_output["content"] = {
+        alias_map.get(str(alias), str(alias)): value
+        for alias, value in repaired_content.items()
+    }
+    grounding = repaired_output.get("grounding")
+    if isinstance(grounding, list):
+        for item in grounding:
+            if not isinstance(item, dict) or not isinstance(item.get("field"), str):
+                continue
+            field = item["field"]
+            prefix = "content." if field.startswith("content.") else ""
+            bare_field = field.removeprefix("content.")
+            if bare_field in alias_map:
+                item["field"] = f"{prefix}{alias_map[bare_field]}"
+    return repaired
 
 
 def _confidence(grounding: ExaDeepGrounding, config: ExaDeepConfig) -> float:
