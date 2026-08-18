@@ -77,9 +77,44 @@ Mutation-proofed: removing the ledger append fails the revision assertion (`379 
 Suite 9/9 on `clue_slicec_bujumbura`; full `make lint` + `make typecheck` green (one `cast` needed
 for the poll helper's json destructure).
 
-## Handoff
+## C5 addendum (same session, commit `9cfe7d5c`) — newest-first pagination
 
-C5 (chat pagination) remains. The Slice
+The founder-ratified chat-loading fix. Step-1 inventory (recorded before changing anything): the
+route already accepted `cursor` and already returned `meta.next_cursor` — the frontend parsed and
+ignored it; the only oldest-first consumers were the projection's own tests, so the default
+flipped with no compatibility mode.
+
+- **Projection** (`thread_messages`): newest page first (`sequence < cursor … ORDER BY sequence
+  DESC LIMIT n+1`, reversed per page to ascending display order); `next_cursor` is a
+  before-cursor = the page's oldest sequence. Under-one-page threads byte-identical to the old
+  read. Route + wire unchanged. Red proof: the 120-message HTTP walk failed `[1..50] != [71..120]`
+  before the flip; after, pages walk 71-120 / 21-70 / 1-20 to exact exhaustion.
+- **Model**: `mergeThreadMessages` (chat-transcript.ts) — union by message id, sorted by the
+  gap-free `sequence`, reference-preserving; handles both the scrollback prepend and a reload's
+  newest page landing over older loaded history. `composeTranscript`'s identity guards remain the
+  optimistic/streamed dedupe seam (4 new model tests, red-proved `is not a function` first).
+- **Controller**: newest-page load seeds `olderCursor` once per mount (thread change = remount);
+  `loadOlderMessages`/`hasOlderMessages` walk backward, in-flight-guarded; `loadConversation` now
+  MERGES instead of replacing (consequence: an erased message would persist client-side until
+  remount — noted, acceptable).
+- **Scrollback**: `useTranscriptAutoScroll` gains a top sentinel (48px) + anchor-based restore —
+  the anchor is the oldest message's `data-message-id` element (attribute added to the existing
+  article, zero visual change), so restoration is immune to bottom growth during the fetch; the
+  restore layout-effect keeps waiting until the anchor actually moves. One eslint rule hit
+  (`react-hooks/refs`: no ref writes during render) — fixed by mirroring props into the ref
+  inside a layout effect.
+- **Verification**: frontend 369/369 + lint + build; backend 74/74 across the six touched DB
+  suites; full repo ruff/mypy/lint-imports green. Two seeding gotchas for future agents: the
+  message FK is composite `(turn_id, workspace_id, thread_id)` (each thread needs its own turn),
+  and `tests/projections/test_thread_shell_db.py`'s `_turn`/`_message` helpers are importable
+  from API-level tests.
+
+## Slice C status
+
+C1–C5 all landed. Remaining: the Slice C exit gate's founder browser test — launch a
+multi-account run, watch the card advance to settled with no interaction; reload mid-run and see
+the same live card; reload a >50-message thread and see the newest messages with older history
+loading on upward scroll. The Slice
 C exit gate's founder browser test should confirm: card advances to settled with no interaction;
 reload mid-run shows the same live card; a card older than the rehydration window reappears on its
 own message.
