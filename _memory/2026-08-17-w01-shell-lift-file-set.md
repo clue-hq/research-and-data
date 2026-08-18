@@ -526,6 +526,19 @@ stale-server incident during verify: a zombie design API held 8010 (earlier laun
 EADDRINUSE unnoticed) and began 500ing renders — the pre-launch port check is now proven
 twice; treat it as mandatory for 3030/8030/8010 alike.
 
+## W4 fan-out LAUNCHED (founder rulings F1–F3, 2026-08-18)
+
+Founder ruled with standing no-reconfirm: **F1** three-lane split approved; **F2**
+Radius-all CLEARS per-corner overrides (adapter-level, W4.2/lane B); **F3** theme tab
+hides only `palette-*` ramps — landed on the trunk as W4.0b (`34ecdcff`, live-verified
+30 options/zero palette) BEFORE the branch cut. Rulings recorded in the W-plan W4
+preamble (`4f95b192`). Lane briefs committed (`ae8a8abb`):
+`docs/superpowers/plans/2026-08-18-w4-lane-{b,c}-brief.md`. Branches cut at `ae8a8abb`:
+`feature/w4-lane-b-image-button` (W4.2→W4.3; ports 3040/8040/8011; seeds own doc; merges
+FIRST) and `feature/w4-lane-c-richtext-components` (W4.8→W4.7; ports 3050/8050/8012;
+rebases after B, merges last). Lane A runs on the trunk workspace: W4.4→W4.5→W4.9→W4.6,
+then W4.10 audit after both merges, then W5. Lane A owns the trunk doc `doc_31126…`.
+
 ## Next on THIS branch — W4 fan-out (awaiting founder lane ruling)
 
 W4.1 done (above). W4.2–W4.9 fan out per the W-plan (each schema task applies its own §2
