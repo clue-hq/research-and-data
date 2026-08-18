@@ -57,9 +57,17 @@ class AccountTierCheckpointMissing(ValueError):
     keeps raising its own launch error — one rule, two idioms, no duplicated predicate.
     """
 
-    def __init__(self, account_id: EntityId) -> None:
-        super().__init__(f"account {account_id} lacks one exact human-approved selected tier")
+    def __init__(self, account_id: EntityId, *, directive_tier: str | None = None) -> None:
+        detail = (
+            f" matching the directive's effort tier {directive_tier!r}"
+            if directive_tier is not None
+            else ""
+        )
+        super().__init__(
+            f"account {account_id} lacks one exact human-approved selected tier{detail}"
+        )
         self.account_id = account_id
+        self.directive_tier = directive_tier
 
 
 @dataclass(frozen=True, slots=True)
@@ -120,7 +128,13 @@ async def compute_account_research_estimate(
             and claim.value_json.get("disposition") == "selected"
         ]
         if len(matching_tiers) != 1:
-            raise AccountTierCheckpointMissing(account_id)
+            # Name the exact mismatch: found live at the Slice B browser gate, where a directive
+            # drafted with ``effort_policy.tier="comprehensive"`` (the field-breadth word, not a
+            # tier) surfaced only as "checkpoint missing" against an account whose human-selected
+            # ``high`` claim was sitting right there.
+            raise AccountTierCheckpointMissing(
+                account_id, directive_tier=str(effective.effort_policy.tier)
+            )
         effective_by_account[account_id] = effective
         total += effective.effort_policy.budget_cap_cents
     return AccountResearchEstimate(

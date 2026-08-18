@@ -14,7 +14,7 @@ skills:
     sha256: a90443bb61a5570c61aa843e8c339d1981dcfea9641f145743b9294496de08e9
   - name: account-deep-steering
     version: v8
-    sha256: 4d3a34bbd2e5f04867b92cd925aedbbfe1dd208199692bbd90054f23e35b051b
+    sha256: 55bd36ecc57813911b777bd9aaae8355781f05bd83f6e240177b7b7564764a24
 tools:
   - name: draft_account_research_directive
     version: "5"

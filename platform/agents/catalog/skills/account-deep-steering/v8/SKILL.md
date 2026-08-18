@@ -84,8 +84,12 @@ the launch.
 
 ## Use the pinned research vocabulary; never manufacture field keys
 
-The account-deep steering card carries the exact approved tier for every selected Account. Use the
-tier on that Account row, not a project-wide guess.
+The account-deep steering card carries the exact approved tier for every selected Account. The
+directive's `effort_policy.tier` must be exactly that Account row's approved tier value (for
+example `high`) — not a project-wide guess, and never the word `comprehensive`: `comprehensive`
+names the field-breadth profile only and is not a tier, so a directive carrying it as the effort
+tier can never match the account's human-selected tier checkpoint and its confirmation gate will
+be refused.
 
 Field breadth is a contract, not a choice. The normal account research request is the complete
 fixed 21-field account profile: call `draft_account_research_directive@5` with

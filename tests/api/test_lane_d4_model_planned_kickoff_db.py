@@ -614,7 +614,8 @@ def test_frozen_v2_remains_replayable_while_the_current_slot_uses_comprehensive_
             )
             assert "draft_account_research_directive@2" not in slot.dynamic_tool_allowlist
             assert "draft_account_research_directive@3" not in slot.dynamic_tool_allowlist
-            assert "draft_account_research_directive@4" in slot.dynamic_tool_allowlist
+            assert "draft_account_research_directive@4" not in slot.dynamic_tool_allowlist
+            assert "draft_account_research_directive@5" in slot.dynamic_tool_allowlist
             assert (
                 "body"
                 in plane.tools.descriptor(
@@ -631,14 +632,14 @@ def test_frozen_v2_remains_replayable_while_the_current_slot_uses_comprehensive_
             assert (
                 "profile"
                 in plane.tools.descriptor(
-                    "draft_account_research_directive", "4"
+                    "draft_account_research_directive", "5"
                 ).input_model.model_fields
             )
 
     run_async(scenario_body())
 
 
-def test_comprehensive_directive_v4_can_ride_the_current_conversation_plan(tmp_path: Path) -> None:
+def test_comprehensive_directive_v5_can_ride_the_current_conversation_plan(tmp_path: Path) -> None:
     """The promoted successor keeps v3's plan-safe shape and adds the breadth declaration.
 
     The scripted plan states an explicit field list, so it must declare ``profile="custom"`` —
@@ -658,7 +659,7 @@ def test_comprehensive_directive_v4_can_ride_the_current_conversation_plan(tmp_p
                     adapter,
                     PlanToolStep(
                         node_key="draft_direction_v4",
-                        tool=_pin(plane, "draft_account_research_directive", "4"),
+                        tool=_pin(plane, "draft_account_research_directive", "5"),
                         arguments={
                             "product_id": scenario.product_id,
                             "icp_key": scenario.fixture.deep_icp_key,
@@ -672,7 +673,7 @@ def test_comprehensive_directive_v4_can_ride_the_current_conversation_plan(tmp_p
                 constitution=adapter._constitution,
             )
 
-            assert validated.operations[0].address == "draft_account_research_directive@4"
+            assert validated.operations[0].address == "draft_account_research_directive@5"
 
     run_async(scenario_body())
 
