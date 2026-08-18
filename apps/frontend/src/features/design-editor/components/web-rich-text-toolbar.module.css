@@ -1,0 +1,259 @@
+/*
+ * W4.8a: the selected-range rich-text toolbar's styling, re-authored as a CSS
+ * module from the source editor's GLOBAL rules
+ * (`subsystems/clue-design/apps/editor/src/app/web/web.css:184-371`).
+ *
+ * Ruling 24 keeps this toolbar as the source editor shipped it — it is NOT
+ * part of the dummy UI, so the parity baseline is the SOURCE editor, not the
+ * inspector. The translation is faithful: same box model, same gaps, same
+ * states. Two mechanical differences, both forced by the module boundary:
+ *
+ *  1. The source scopes several rules under `.brand-app` purely to out-specify
+ *     shadcn's element resets in its own shell. A CSS module needs no such
+ *     scope, so those rules are flattened onto the module class.
+ *  2. The source design tokens do not exist in this app, so each is resolved
+ *     to the LITERAL value it has in the source token layer
+ *     (`apps/editor/src/app/tokens.css`) and named in a comment beside it.
+ *     Literals, not `--clue-ds-*` equivalents: the target is source parity,
+ *     and mapping onto a different palette would silently restyle it.
+ *
+ * ONE deliberate deviation, recorded rather than reproduced: in the source
+ * shell this toolbar renders inside `.brand-app`, whose shadcn bridge
+ * (tokens.css:167) rebinds `--accent` to `var(--bg-chip)` (#ebeae5) while
+ * `--accent-wash` keeps the orange :root value. The selected state therefore
+ * renders near-white text (#ebeae5) on a pale orange wash — unreadable, and
+ * plainly not what `background: var(--accent-wash); color: var(--accent)` was
+ * written to mean. The accent signal here is the :root orange (#f54e00) the
+ * wash belongs to. Revert to #ebeae5 if bug-for-bug parity is ever wanted.
+ */
+
+.toolbar {
+  position: fixed;
+  z-index: 40;
+  visibility: hidden;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px; /* --space-xs */
+  max-width: min(620px, calc(100vw - 24px));
+  color: #26251e; /* --text-primary (--ink) */
+}
+
+.positioned {
+  visibility: visible;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  border: 1px solid rgba(38, 37, 30, 0.2); /* --border-strong (--ink-20) */
+  border-radius: 8px; /* --radius-md */
+  background: #f2f1ed; /* --bg-card */
+}
+
+.tool {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 6px; /* --radius-sm */
+  background: transparent;
+  color: rgba(38, 37, 30, 0.92); /* --text-body (--ink-92) */
+  font: inherit;
+  font-size: 12px; /* --text-body-sm */
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.tool:hover:not(:disabled),
+.tool:focus-visible {
+  border-color: rgba(38, 37, 30, 0.1); /* --border-default (--ink-10) */
+  background: #e1e0db; /* --bg-card-04 */
+  color: #26251e; /* --text-primary */
+}
+
+.tool.selected {
+  background: rgba(245, 78, 0, 0.1); /* --accent-wash */
+  color: #f54e00; /* --accent (:root orange — see header note) */
+}
+
+.tool.mixed {
+  border-style: dashed;
+  border-color: #f54e00; /* --accent */
+}
+
+.tool:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.glyphItalic {
+  font-style: italic;
+}
+
+.glyphUnderline {
+  text-decoration: underline;
+}
+
+.glyphStrikethrough {
+  text-decoration: line-through;
+}
+
+.divider {
+  width: 1px;
+  height: 22px;
+  margin: 0 3px;
+  background: rgba(38, 37, 30, 0.1); /* --border-default */
+}
+
+.colorGlyph {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: stretch;
+  line-height: 1;
+}
+
+.colorGlyph > span {
+  display: block;
+  width: 14px;
+  height: 3px;
+  margin-top: 2px;
+  border-radius: 9999px; /* --radius-pill */
+  background: currentColor;
+}
+
+.highlightGlyph {
+  padding: 2px 4px;
+  border-radius: 2px;
+  background: rgba(245, 78, 0, 0.1); /* --accent-wash */
+}
+
+.popover {
+  width: min(360px, calc(100vw - 24px));
+  padding: 12px; /* --space-sm */
+  border: 1px solid rgba(38, 37, 30, 0.2); /* --border-strong */
+  border-radius: 8px; /* --radius-md */
+  background: #f2f1ed; /* --bg-card */
+}
+
+/* A toolbar sitting ABOVE its range opens its panel above the button row, so
+ * the row stays adjacent to the text it acts on. */
+.above .popover {
+  order: -1;
+}
+
+.popoverHead {
+  margin-bottom: 8px; /* --space-xs */
+  color: rgba(38, 37, 30, 0.6); /* --text-muted (--ink-60) */
+  font-size: 11px; /* --text-caption */
+  font-weight: 600;
+}
+
+.popoverHint {
+  margin: 0;
+  color: rgba(38, 37, 30, 0.6); /* --text-muted */
+  font-size: 12px; /* --text-body-sm */
+}
+
+.swatches {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px; /* --space-xs */
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.swatch {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px; /* --space-xs */
+  padding: 5px 7px;
+  border: 1px solid rgba(38, 37, 30, 0.1); /* --border-default */
+  border-radius: 6px; /* --radius-sm */
+  background: transparent;
+  color: rgba(38, 37, 30, 0.92); /* --text-body */
+  font: inherit;
+  font-size: 12px; /* --text-body-sm */
+  text-align: left;
+  cursor: pointer;
+}
+
+.swatch.swatchSelected {
+  border-color: #f54e00; /* --accent */
+  color: #26251e; /* --text-primary */
+}
+
+.swatchColor {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  border: 1px solid rgba(38, 37, 30, 0.1); /* --border-default */
+  border-radius: 9999px; /* --radius-pill */
+}
+
+.swatch.swatchClear {
+  justify-content: center;
+  color: rgba(38, 37, 30, 0.6); /* --text-muted */
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px; /* --space-sm */
+}
+
+.form label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: rgba(38, 37, 30, 0.6); /* --text-muted */
+  font-size: 11px; /* --text-caption */
+}
+
+.form input,
+.form select {
+  width: 100%;
+  min-width: 0;
+  padding: 7px 9px;
+  border: 1px solid rgba(38, 37, 30, 0.1); /* --border-default */
+  border-radius: 6px; /* --radius-sm */
+  background: #f0efeb; /* --bg-card-01 */
+  color: #26251e; /* --text-primary */
+  font: inherit;
+  font-size: 12px; /* --text-body-sm */
+}
+
+.form .check {
+  flex-direction: row;
+  align-items: center;
+}
+
+.form .check input {
+  width: auto;
+}
+
+.error {
+  margin: 0;
+  color: #cf2d56; /* --status-error */
+  font-size: 11px; /* --text-caption */
+}
+
+.formActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px; /* --space-xs */
+}
+
+.form button {
+  padding: 6px 9px;
+  border: 1px solid rgba(38, 37, 30, 0.1); /* --border-default */
+  border-radius: 6px; /* --radius-sm */
+  background: #e1e0db; /* --bg-card-04 */
+  color: #26251e; /* --text-primary */
+  font: inherit;
+  font-size: 12px; /* --text-body-sm */
+  cursor: pointer;
+}

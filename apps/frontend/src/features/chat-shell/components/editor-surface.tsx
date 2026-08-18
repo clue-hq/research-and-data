@@ -6,8 +6,13 @@ import {
   type EditorShellInitialState,
 } from "../hooks/use-editor-shell-controller";
 import { buildWebLayerRows } from "@/features/design-editor/adapter/layers";
+import { richTextCommitToOperation } from "@/features/design-editor/adapter/rich-text-commit";
 import { buildThemeColorOptions } from "@/features/design-editor/adapter/theme-options";
-import type { WebArtifactCanvasControls } from "@/features/design-editor/components/web-artifact-canvas";
+import type {
+  WebArtifactCanvasControls,
+  WebRichTextSessionState,
+} from "@/features/design-editor/components/web-artifact-canvas";
+import type { RichTextDocument } from "@/features/design-editor/engine/webDocuments";
 import { useInspectorWrites } from "@/features/design-editor/hooks/use-inspector-writes";
 import { useWebArtifactSelection } from "@/features/design-editor/hooks/use-web-artifact-selection";
 import { useWebTheme } from "@/features/design-editor/hooks/use-web-theme";
@@ -89,6 +94,36 @@ export function EditorSurface({
     selection: webSelection.selection,
   });
 
+  // W4.8a: the in-iframe rich-text session, mirrored up by the canvas. Held
+  // here because two surfaces outside the canvas need it — the inline error
+  // slot below, and (next task) the inspector's conditional Link-to.
+  const [richTextSession, setRichTextSession] = useState<WebRichTextSessionState>({
+    editingNodeId: null,
+    richTextSelection: null,
+    richTextError: null,
+  });
+
+  // The commit path: ONE `set_rich_text` op through the SAME manual-edits
+  // controller every inspector write uses (one in-flight mutation,
+  // `base_version` per apply, 409 → quiet reload + note, 422 → first
+  // diagnostic inline). Source semantics, WebEditorApp.tsx:331-340.
+  //
+  // Carried-over source caveat: `applyOps` no-ops while another write is in
+  // flight, and by commit time the frame has already destroyed its Lexical
+  // session — so a commit that lands mid-write is lost. The toolbar's
+  // `disabled` (richTextBusy below) narrows the window; the frame's own
+  // focusout/⌘-Enter paths can still hit it. Same upstream.
+  const applyOps = writes.applyOps;
+  const loadedDocument = webSelection.document;
+  const onRichTextCommit = useCallback(
+    (nodeId: string, content: RichTextDocument) => {
+      const operation = richTextCommitToOperation(loadedDocument, nodeId, content);
+      if (!operation) return;
+      applyOps([operation], "rich_text_commit");
+    },
+    [applyOps, loadedDocument],
+  );
+
   // W2.3 (completing the W2 exit gate): while EDITING a real web document,
   // the inspector docks beside the canvas — the dummy's own editing
   // arrangement (ruling R6: the inspector replaces the conversation column;
@@ -149,7 +184,10 @@ export function EditorSurface({
               // an engine-snapped value — padding 7→6 — displays as typed
               // until the node is reselected.)
               key={webSelection.selection?.node.id ?? "canvas"}
-              error={writes.error}
+              // W4.8a: one inline error slot, rich-text first — a failed
+              // runtime load or session error is what the user just did, so it
+              // outranks a stale write error (source: WebEditorApp.tsx:1297).
+              error={richTextSession.richTextError ?? writes.error}
               note={writes.note}
               addressing={{
                 // W3.1: what this surface holds — the write adapter (W3.2)
@@ -184,6 +222,14 @@ export function EditorSurface({
         onCanvasSelect={webSelection.onSelect}
         onCloseArtifact={controller.closeArtifact}
         onOpenGallery={controller.openGallery}
+        onRichTextCommit={onRichTextCommit}
+        onRichTextSessionChange={setRichTextSession}
+        richTextBusy={writes.busy}
+        // W4.8a editing gate: the SAME condition that mounts the editing dock.
+        // Outside editing the canvas cancels any session the bridge starts, so
+        // a double-click on the read-only render changes nothing.
+        richTextEnabled={inspectorVisible}
+        richTextTheme={theme}
         onOpenGalleryArtifact={(artifact) =>
           controller.openArtifact({
             id: artifact.id,
