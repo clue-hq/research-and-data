@@ -27,6 +27,10 @@ This repository is the data and research subsystem for the larger AI-native ABM 
 The central architecture bet is that verification must be modeled at the claim/data layer. LLM research is a last-resort tier-4 source, not the foundation. The product should prefer empty, flagged fields over fabricated fields.
 
 ## Topic notes
+- `2026-08-19-committee-discovery-blocker-inventory.md` — detailed permanent before/after ledger
+  of every Account-research and committee-discovery blocker removed, exact-job-only prerequisite
+  disabled, or historical threshold lowered through Account tier 4/source tier 4; also records the
+  governance, spend, lineage, ambiguity, and no-new-UI controls deliberately retained.
 - `2026-08-19-explicit-account-research-not-tier-gated.md` — founder ruling and implementation:
   explicit selected-Account research/committee discovery accepts high, low, tier 4, or absent
   signal tiers; exact R6 jobs bypass legacy scoring/must-have/tier checkpoints; a real paid Sumble
