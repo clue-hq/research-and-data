@@ -5,7 +5,11 @@ Authority: ``docs/FI-comprehensive-account-contact-research-contract.md`` §3.1 
 profile split 6 Sumble-structured / 9 Exa-Deep).
 """
 
+from decimal import Decimal
+from uuid import UUID
+
 import pytest
+from pydantic import ValidationError
 
 from clue_api.comprehensive_research_contract import (
     COMPREHENSIVE_ACCOUNT_FIELD_SOURCES,
@@ -13,12 +17,21 @@ from clue_api.comprehensive_research_contract import (
     CONTACT_DEEP_FIELDS,
     CONTACT_STRUCTURED_FIELDS,
 )
+from clue_api.research_directive_tools import DraftAccountResearchDirectiveInputV4
 from clue_core import (
     Entity,
+    EntityId,
     EntityScope,
     EntityType,
     ICPCreatedFrom,
+    ResearchAccountScope,
+    ResearchCommitteePlan,
+    ResearchDirectiveBody,
+    ResearchEffortPolicy,
     ResearchMode,
+    ResearchPrivacyPolicy,
+    ResearchQuestion,
+    ResearchSourcePolicy,
     new_entity_id,
 )
 from clue_research.icp import (
@@ -225,3 +238,101 @@ def test_no_excluded_provider_family_is_importable_from_the_entity_research_wiri
     source = inspect.getsource(wiring)
     for banned in ("firecrawl", "apollo", "zoominfo", "builtwith", "scrapling", "clay"):
         assert banned not in source.lower(), banned
+
+
+# --- B4: the deterministic comprehensive-profile compiler at directive drafting ----------------
+
+
+def _directive_body(field_keys: tuple[str, ...]) -> ResearchDirectiveBody:
+    """A minimal valid directive body; only ``field_keys`` varies across these cases."""
+
+    return ResearchDirectiveBody(
+        account_scope=ResearchAccountScope(
+            explicit_account_ids=(EntityId(UUID("30000000-0000-0000-0000-000000000001")),)
+        ),
+        field_keys=field_keys,
+        questions=(
+            ResearchQuestion(
+                question_id="operational-friction",
+                text="Is there grounded account-level evidence of operational friction?",
+                target_field_key="account.operational_pain",
+            ),
+        ),
+        committee_plan=ResearchCommitteePlan(
+            functions=("Operations",),
+            levels=("Director",),
+            teams=("Administration",),
+            personas=("champion",),
+            candidate_cap=6,
+        ),
+        source_policy=ResearchSourcePolicy(
+            allowed_source_keys=("sumble_organizations", "sumble_jobs", "exa_deep"),
+        ),
+        privacy_policy=ResearchPrivacyPolicy(
+            contact_profiling_allowed=False,
+            contact_reveals_allowed=False,
+        ),
+        effort_policy=ResearchEffortPolicy(
+            tier="high",
+            max_depth=2,
+            max_fanout=8,
+            budget_cap_cents=Decimal("300"),
+            budget_envelope_ref="budget:comprehensive-v1",
+            recursion_policy_ref="recursion:comprehensive-v1",
+            freshness_policy_ref="freshness:comprehensive-v1",
+        ),
+    )
+
+
+def _draft_input(
+    *, profile: str, field_keys: tuple[str, ...]
+) -> DraftAccountResearchDirectiveInputV4:
+    return DraftAccountResearchDirectiveInputV4(
+        project_id="project-comprehensive",
+        product_id="product-comprehensive",
+        icp_key="deep",
+        icp_version=1,
+        profile=profile,  # type: ignore[arg-type]
+        directive=_directive_body(field_keys),
+        user_instruction="Research these accounts comprehensively.",
+        source_turn_ref="turn:comprehensive-1",
+    )
+
+
+def test_a_comprehensive_request_compiles_to_all_21_fields() -> None:
+    """§3.3 row 1 — a full-profile command means the whole fixed profile, deterministically.
+
+    The expansion is the tool's, not the model's: §3.2 wants mechanical contract expansion, so a
+    directive drafted with no explicit field selection carries all 21 §3.1 rows in contract order.
+    """
+
+    drafted = _draft_input(profile="comprehensive", field_keys=())
+    assert tuple(str(key) for key in drafted.directive.field_keys) == COMPREHENSIVE_ACCOUNT_FIELDS
+
+
+def test_a_custom_request_passes_the_explicit_field_selection_through_unchanged() -> None:
+    """The narrower subset stays available — but only when the human explicitly asked for it."""
+
+    narrow = ("account.operational_pain", "account.strategic_moves")
+    drafted = _draft_input(profile="custom", field_keys=narrow)
+    assert tuple(str(key) for key in drafted.directive.field_keys) == narrow
+
+
+def test_a_comprehensive_request_with_explicit_fields_is_refused_as_ambiguous() -> None:
+    """Two conflicting statements of breadth are a request the tool must not silently resolve."""
+
+    with pytest.raises(ValidationError, match="comprehensive"):
+        _draft_input(profile="comprehensive", field_keys=("account.operational_pain",))
+
+
+def test_the_comprehensive_directive_tool_is_the_granted_head_of_abm_version() -> None:
+    """The expansion only reaches production if the *granted* address is the new version."""
+
+    from clue_agents import AgentRole
+    from clue_api.agent_registry_wiring import C6_ACTIVE_PROFILE_VERSIONS, c6_roles_for_tool
+    from clue_api.chat.composer_context import PROJECT_CONVERSATION_AGENT_PROFILE_ID
+
+    assert c6_roles_for_tool("draft_account_research_directive@4") == (AgentRole.HEAD_OF_ABM,)
+    assert c6_roles_for_tool("draft_account_research_directive@3") == ()
+    assert C6_ACTIVE_PROFILE_VERSIONS[AgentRole.HEAD_OF_ABM] == "v37"
+    assert PROJECT_CONVERSATION_AGENT_PROFILE_ID == "head-of-abm@v37"

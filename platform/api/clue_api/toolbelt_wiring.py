@@ -2920,7 +2920,7 @@ def build_toolbelt(
         registry.register(
             tool,
             make_default=(
-                (tool.name != "draft_account_research_directive" or tool.version == "3")
+                (tool.name != "draft_account_research_directive" or tool.version == "4")
                 and (tool.name != "confirm_account_research_directive" or tool.version == "2")
             ),
         )

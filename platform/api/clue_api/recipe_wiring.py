@@ -72,6 +72,11 @@ SYSTEM_RECIPE_FILENAMES: tuple[str, ...] = (
     # independent ceiling, so a profile grant alone would show the model a tool that plan
     # validation then refuses.
     "recipe0-stage0-v16.json",
+    # Slice B wave 2: the comprehensive-profile directive contract. A tool version bump is a new
+    # revision, never an edit — the C5 interaction slot's allowlist lives in the promoted revision,
+    # so ``draft_account_research_directive@4`` would be refused at plan validation
+    # (``c5_tool_not_allowed``) until this revision is the promoted one.
+    "recipe0-stage0-v17.json",
     "recipe1-classic-v1.json",
     "recipe1-classic-v2.json",
 )

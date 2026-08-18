@@ -5,12 +5,13 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Callable, Sequence
-from typing import Annotated, ClassVar
+from typing import Annotated, ClassVar, Literal
 
 from pydantic import ConfigDict, Field, StringConstraints, model_validator
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_api.auth_tool_context import require_human_authority
+from clue_api.comprehensive_research_contract import COMPREHENSIVE_ACCOUNT_FIELDS
 from clue_api.turn_binding import TRUSTED_TURN_FIELD
 from clue_core import (
     USER_RESEARCH_INSTRUCTION_MAX_BYTES,
@@ -143,6 +144,51 @@ class DraftAccountResearchDirectiveInputV3(ToolInput):
                 f"{USER_RESEARCH_INSTRUCTION_MAX_BYTES}-byte context contract"
             )
         return self
+
+
+class DraftAccountResearchDirectiveInputV4(DraftAccountResearchDirectiveInputV3):
+    """v3 plus the deterministic breadth declaration the comprehensive contract (§3.2/§3.3) wants.
+
+    Field breadth is a *contract*, not a model decision: the normal request is the whole fixed
+    21-field account profile, and the model's job is to say which of the two breadths the human
+    asked for — not to retype a field list it could truncate or invent. So ``profile`` defaults to
+    ``comprehensive`` and the expansion happens here, mechanically, from
+    :data:`COMPREHENSIVE_ACCOUNT_FIELDS`. ``custom`` is the narrower request the human explicitly
+    asked for and passes through untouched. Declaring ``comprehensive`` *and* an explicit field
+    list is two conflicting statements of breadth, so it is refused rather than silently resolved.
+    """
+
+    profile: Literal["comprehensive", "custom"] = "comprehensive"
+
+    @model_validator(mode="before")
+    @classmethod
+    def profile_decides_field_breadth(cls, data: object) -> object:
+        """Expand before validation so every later reader sees one already-decided field set.
+
+        A ``mode="after"`` validator cannot do this: the input model is frozen, and pydantic does
+        not honour a replacement instance returned from an after-validator constructed via
+        ``__init__``. Expanding here also means the directive body is validated exactly once, in
+        its final 21-field shape.
+        """
+
+        if not isinstance(data, dict):
+            return data
+        if data.get("profile", "comprehensive") != "comprehensive":
+            return data
+        directive = data.get("directive")
+        if isinstance(directive, ResearchDirectiveBody):
+            body = directive.model_dump()
+        elif isinstance(directive, dict):
+            body = dict(directive)
+        else:
+            return data  # absent or wrongly typed — let normal validation report it
+        if body.get("field_keys"):
+            raise ValueError(
+                "a comprehensive research directive covers the whole fixed 21-field account "
+                "profile; pass profile='custom' to request an explicit narrower field set"
+            )
+        body["field_keys"] = list(COMPREHENSIVE_ACCOUNT_FIELDS)
+        return {**data, "directive": body}
 
 
 class DraftAccountResearchDirectiveOutput(ToolOutput):
@@ -430,6 +476,34 @@ class DraftAccountResearchDirectiveToolV3(DraftAccountResearchDirectiveToolV2):
         return await super().invoke(self._v2_input(inputs), ctx)
 
 
+class DraftAccountResearchDirectiveToolV4(DraftAccountResearchDirectiveToolV3):
+    """Comprehensive-by-default field breadth; v3's durable directive semantics are unchanged.
+
+    The only difference from v3 is the input contract: the agent declares *which breadth* the human
+    asked for and the input model expands ``comprehensive`` to the full §3.1 profile before any
+    validation, spend, or persistence sees it. Everything after that point — validation, replay
+    identity, the drafted directive — is v3's, so a v3 draft replays as a v3 draft.
+    """
+
+    version = "4"
+    input_model = DraftAccountResearchDirectiveInputV4
+
+    @staticmethod
+    def _v2_input(inputs: ToolInput) -> DraftAccountResearchDirectiveInput:
+        assert isinstance(inputs, DraftAccountResearchDirectiveInputV4)
+        return DraftAccountResearchDirectiveInput(
+            project_id=inputs.project_id,
+            product_id=inputs.product_id,
+            icp_key=inputs.icp_key,
+            icp_version=inputs.icp_version,
+            body=inputs.directive,
+            account_overrides=inputs.account_overrides,
+            predecessor_id=inputs.predecessor_id,
+            user_instruction=inputs.user_instruction,
+            source_turn_ref=inputs.source_turn_ref,
+        )
+
+
 class ConfirmAccountResearchDirectiveTool(Tool):
     name = "confirm_account_research_directive"
     version = "1"
@@ -693,6 +767,10 @@ def build_research_directive_tools(
             memory_write_factory=memory_write_factory,
             conn_factory=conn_factory,
         ),
+        DraftAccountResearchDirectiveToolV4(
+            memory_write_factory=memory_write_factory,
+            conn_factory=conn_factory,
+        ),
         ConfirmAccountResearchDirectiveToolV2(conn_factory=conn_factory),
     )
 
@@ -706,11 +784,13 @@ __all__ = [
     "ConfirmAccountResearchDirectiveToolV2",
     "DraftAccountResearchDirectiveInput",
     "DraftAccountResearchDirectiveInputV3",
+    "DraftAccountResearchDirectiveInputV4",
     "DraftAccountResearchDirectiveOutput",
     "DraftAccountResearchDirectiveOutputV2",
     "DraftAccountResearchDirectiveTool",
     "DraftAccountResearchDirectiveToolV2",
     "DraftAccountResearchDirectiveToolV3",
+    "DraftAccountResearchDirectiveToolV4",
     "ResearchDirectiveOverrideInput",
     "build_research_directive_tools",
 ]

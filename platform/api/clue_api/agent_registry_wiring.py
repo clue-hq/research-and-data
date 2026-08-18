@@ -36,12 +36,16 @@ __all__ = [
 ]
 
 C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
+    # v37 (comprehensive account/contact research, Slice B): v36 plus the comprehensive-profile
+    # directive contract — ``draft_account_research_directive@4`` and steering skill v7. A normal
+    # full-profile request now compiles deterministically to the fixed 21-field account profile
+    # (contract §3.2/§3.3 row 1) instead of the three-field qualitative subset the v6 skill named.
     # v36 (part-iii merge): v35 plus ``open_design_leg@1`` — the delegation entry that opens the
     # design leg (§1-D1's "attach as subagent" wrapper, materialized as a durable act; introduced
     # as PD-part3 P3.4's v24, re-versioned onto the v35 chain at the integration merge). v35
     # preserves the frozen v34 surface and gives Account-focused turns the exact pinned
     # field/source vocabulary needed to launch profiling without model-invented field keys.
-    AgentRole.HEAD_OF_ABM: "v36",
+    AgentRole.HEAD_OF_ABM: "v37",
     AgentRole.RESEARCH: "v7",
     AgentRole.CONTENT_DRAFTER: "v5",
     AgentRole.REVIEWER: "v5",
@@ -386,7 +390,7 @@ def _roles_for(address: str, name: str) -> tuple[AgentRole, ...]:
     if name == "propose_field":
         return (AgentRole.HEAD_OF_ABM,) if address == "propose_field@2" else ()
     if name == "draft_account_research_directive":
-        return (AgentRole.HEAD_OF_ABM,) if address == "draft_account_research_directive@3" else ()
+        return (AgentRole.HEAD_OF_ABM,) if address == "draft_account_research_directive@4" else ()
     if name == "evaluate_stage0_readiness":
         return (AgentRole.HEAD_OF_ABM,) if address.endswith("@2") else ()
     if name == "synthesize_icps":

@@ -89,12 +89,14 @@ __all__ = [
 #: same rule. The trial surface withholds it too, so the shared ceiling again grants the trial
 #: nothing.
 CONVERSATION_RECIPE_KEY = "recipe0-stage0"
+# Revision 17 (Slice B wave 2) is revision 16 with ``draft_account_research_directive@4`` — the
+# comprehensive-profile directive contract — in place of @3.
 # Revision 16 (part-iii merge) is revision 15 plus the ``open_design_leg@1`` delegation entry
 # (PD-part3 P3.4's colliding v7, re-versioned onto the v15 lineage at the integration merge).
 # Revision 14 keeps the current-message Account launch path usable after discovery by admitting
 # the two read-only account-research tools already exposed by the promoted profile/skill. Revision
 # 13 remains the exact replay input for turns that were already pinned to it.
-CONVERSATION_RECIPE_VERSION = 16
+CONVERSATION_RECIPE_VERSION = 17
 
 #: Finalization ``domain_refs`` object types that render as a §3.4 ``plan`` part. Deliberately a
 #: closed set: an unknown object type is *not* projected, because a card whose contents the surface

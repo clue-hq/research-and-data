@@ -71,7 +71,10 @@ def test_registry_resolves_exact_reviewed_profiles_and_stable_manifests(
         # plan-safe directive @3, and pins the registered account-research field/source vocabulary.
         # v36 (part-iii merge) is v35 plus `open_design_leg@1` — P3.4's design delegation entry,
         # with P3.5's in-train schema revision (reopen_leg_id + reopened) in the pinned digests.
-        AgentRole.HEAD_OF_ABM: ("a2a1a950ce87b4f7f92eb92c674c21478d28a554efae7ac5146570d92b3986ef"),
+        # v37 (comprehensive research, Slice B wave 2) re-pins the directive draft tool at @4 and
+        # account-deep-steering at v7: a normal full-profile request now compiles deterministically
+        # to the fixed 21-field account profile instead of the v6 skill's three qualitative fields.
+        AgentRole.HEAD_OF_ABM: ("2264712934a5b8c16be3625f7c683433f2d130b467b056908dc003a2c1f4dcd3"),
         AgentRole.RESEARCH: "23cff2335bb82e0549ee0c830316968971146e8b90c8d2090447ee0ed92eed6f",
         AgentRole.CONTENT_DRAFTER: (
             "8985c13ead086350d952f76e6d3c0ed3f4162cc92de290f8dd7edd7fcab44cbf"
@@ -144,7 +147,9 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     # (110 + 1 = 111). The part-iii integration merge unions this branch's own additions since
     # the common base (readiness/synthesis @2s, company/product readers, the exact-subject
     # gates, FI-2's selected-Account launch and reads: 111 + 18 = 129).
-    assert len(by_address) == 129
+    # Slice B wave 2 installs `draft_account_research_directive@4` alongside its replayable
+    # predecessors, so the inventory gains exactly one address (129 -> 130).
+    assert len(by_address) == 130
     assert by_address["finish_design_leg@1"].status is AgentCapabilityStatus.ROLE_UNAVAILABLE
     # P3.3 retired the Part II reservation: the 49 design tools are GRANTED to
     # AgentRole.DESIGN now. From head-of-abm's view they are role-unavailable with
@@ -223,7 +228,9 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     # product readers, both gate tools, and FI-2's selected-Account launch. The part-iii merge
     # adds the 49 design_* write tools and the two design-leg tools to the disclosed inventory
     # (78 + 51 = 129); all but `open_design_leg` are role-unavailable to the Head of ABM.
-    assert len(by_address) == 129
+    # Slice B wave 2 installs `draft_account_research_directive@4` alongside its replayable
+    # predecessors, so the inventory gains exactly one address (129 -> 130).
+    assert len(by_address) == 130
     for address in (
         "create_thread@1",
         "rename_thread@1",
@@ -242,7 +249,7 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     assert by_address["inspect_product_claim@1"].status is AgentCapabilityStatus.AVAILABLE
     assert by_address["list_product_knowledge@1"].status is AgentCapabilityStatus.AVAILABLE
     assert available == {
-        "draft_account_research_directive@3",
+        "draft_account_research_directive@4",
         "evaluate_stage0_readiness@2",
         "get_research_view@1",
         "inspect_readiness_history@1",
@@ -323,7 +330,7 @@ def test_s4e_production_project_surface_resolves_strict_client_kb_v2_and_hardeni
     )
 
     addresses = {pin.address for pin in production.profile.tools}
-    assert production.profile_ref.address == "profile:head-of-abm@v36"
+    assert production.profile_ref.address == "profile:head-of-abm@v37"
     assert [item.resource.address for item in production.skill_disclosures()][0] == (
         "skill:stage0-interview@v20"
     )
@@ -371,7 +378,7 @@ def test_progressive_skill_disclosure_exposes_metadata_before_body(
 
     assert len(disclosures) == 2
     assert disclosures[0].resource.address == "skill:stage0-interview@v20"
-    assert disclosures[1].resource.address == "skill:account-deep-steering@v6"
+    assert disclosures[1].resource.address == "skill:account-deep-steering@v7"
     assert "Ask one compact question" not in disclosures[0].model_dump_json()
     body = head.open_skill(disclosures[0].resource.address)
     assert "Ask one compact question" in body
@@ -500,7 +507,7 @@ def test_engine_ceiling_removes_tools_and_skills_that_depend_on_them() -> None:
     head = narrowed.resolve(AgentRole.HEAD_OF_ABM)
     assert "evaluate_stage0_readiness@2" not in {pin.address for pin in head.profile.tools}
     assert [item.resource.address for item in head.skill_disclosures()] == [
-        "skill:account-deep-steering@v6"
+        "skill:account-deep-steering@v7"
     ]
 
 

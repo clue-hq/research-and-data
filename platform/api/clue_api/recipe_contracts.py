@@ -48,7 +48,7 @@ RECIPE_0_TOOL_ADDRESSES: tuple[str, ...] = (
     # the Stage-0 interaction slot is replay-certified here first, and these three are the whole
     # point of the widened conversation surface — draft the direction, present its confirmation
     # gate, and launch what the human's confirming turn approved.
-    "draft_account_research_directive@3",
+    "draft_account_research_directive@4",
     "open_directive_confirmation_gate@1",
     "get_research_view@1",
     "launch_account_research@1",
