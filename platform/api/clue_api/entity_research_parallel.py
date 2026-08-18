@@ -27,6 +27,7 @@ from clue_agents.entity_research_runtime import (
     EntityResearchToolBatchCoordinator,
     EntityResearchToolReplay,
 )
+from clue_api.entity_research_tools import field_key_on_subject_axis
 from clue_core import serialize_value_json
 from clue_core.entity_research import ResearchJobState
 from clue_db import ConnFactory, transaction
@@ -546,7 +547,7 @@ class DbEntityResearchToolBatchCoordinator(EntityResearchToolBatchCoordinator):
         fields: dict[str, str] = {}
         for call in calls:
             for field_key in _field_values(call):
-                if not field_key.startswith(f"{context.authorization.subject_type.value}."):
+                if not field_key_on_subject_axis(context.authorization.subject_type, field_key):
                     raise EntityResearchParallelAdmissionError(
                         "parallel tool call contains a cross-axis field"
                     )

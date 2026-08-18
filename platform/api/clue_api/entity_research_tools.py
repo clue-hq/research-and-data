@@ -80,6 +80,21 @@ _PROVIDER_CAPABLE_TOOL_NAMES = frozenset(
 )
 
 
+def field_key_on_subject_axis(subject_type: ResearchSubjectType, field_key: str) -> bool:
+    """True when ``field_key`` belongs to ``subject_type``'s governed research axis.
+
+    An account subject owns the launch-field axis the launcher admits (contract §3.1 via
+    ``account_axis_field_keys``): ``account.*`` plus the ``core.*`` firmographic rows.  A contact
+    subject owns ``contact.*`` only.  The DB restates exactly this rule in the
+    ``entity_research_validate_tool_request`` / ``protect_entity_research_provider_operation``
+    trigger functions (migration ``9184f54adc26``) — the two must stay in lockstep.
+    """
+
+    if field_key.startswith(f"{subject_type.value}."):
+        return True
+    return subject_type is ResearchSubjectType.ACCOUNT and field_key.startswith("core.")
+
+
 class EntityResearchToolAuthorityError(RuntimeError):
     """A semantic request, provider operation, claim, or read crosses exact job authority."""
 
@@ -249,7 +264,8 @@ class ProviderOperationReservation(BaseModel):
         if len(self.field_keys) != len(set(self.field_keys)):
             raise ValueError("provider operation field keys must be unique")
         if any(
-            not field_key.startswith(f"{self.subject_type.value}.") for field_key in self.field_keys
+            not field_key_on_subject_axis(self.subject_type, field_key)
+            for field_key in self.field_keys
         ):
             raise ValueError("provider operation contains a cross-axis field")
         return self
