@@ -1,10 +1,14 @@
-import type {
-  CustomComponentArtifact,
-  CustomComponentPropSchema,
-  CustomComponentPropValue,
-  WebCustomComponentProps,
-  WebNode,
+import {
+  setNodePropsOp,
+  type CustomComponentArtifact,
+  type CustomComponentPropSchema,
+  type CustomComponentPropValue,
+  type LoadedWebDocument,
+  type WebCustomComponentProps,
+  type WebNode,
+  type WebOperation,
 } from "../engine/webDocuments";
+import { pageIdForNode } from "./page-address";
 
 /**
  * W4.7 — the pure decisions behind the custom-component props form
@@ -276,6 +280,41 @@ export function customComponentPropsUpdate({
 }
 
 /**
+ * One settled field → exactly ONE canonical `set_node_props` operation, which
+ * the shell persists through the SAME manual-edits controller every inspector
+ * write uses (one in-flight mutation, `base_version` on every apply, 409 →
+ * quiet reload, 422 → inline diagnostic). There is deliberately no second write
+ * path — the intent string `set_custom_component_props` is the caller's, as
+ * upstream (`WebInspectorPanel.tsx:539-541,573-595`).
+ *
+ * The page is resolved by node membership through the shared
+ * {@link pageIdForNode}; a node on no loaded page yields `null` (no operation)
+ * rather than a guessed address.
+ */
+export function customComponentPropsToOperation(
+  document: LoadedWebDocument | null,
+  node: WebNode,
+  name: string,
+  value: CustomComponentPropValue,
+): WebOperation | null {
+  const pageId = pageIdForNode(document, node.id);
+  if (!pageId) return null;
+  return setNodePropsOp(
+    pageId,
+    node.id,
+    customComponentPropsUpdate({ name, node, value }),
+  );
+}
+
+/** One settled field → one whole-props write. Named here so presentation can
+ * type its handlers without importing the engine (the repo's seam rule:
+ * components speak to `adapter/`, never to `engine/` or `data/`). */
+export type CustomComponentPropCommit = (
+  name: string,
+  value: CustomComponentPropValue,
+) => void;
+
+/**
  * What the inspector needs to render and drive the form, shaped so presentation
  * stays transport-free: a value snapshot in, one callback out (the W4.8b
  * pattern). The fetch lives in `use-custom-component-artifact.ts` and the write
@@ -293,5 +332,5 @@ export interface CustomComponentFormBinding {
   busy: boolean;
   /** The node's live props, the base of every whole-props resend. */
   props: Record<string, CustomComponentPropValue>;
-  onCommitProp: (name: string, value: CustomComponentPropValue) => void;
+  onCommitProp: CustomComponentPropCommit;
 }

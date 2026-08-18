@@ -3,6 +3,17 @@
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import type { WebLayerRow } from "@/features/design-editor/adapter/layers";
+/* W4.7 (contract item 34): the props form's pure decisions. */
+import {
+  customComponentDraft,
+  customComponentDraftCommit,
+  customComponentFields,
+  customComponentSelectCommit,
+  customComponentSelectLabel,
+  type CustomComponentField,
+  type CustomComponentFormBinding,
+  type CustomComponentPropCommit,
+} from "@/features/design-editor/adapter/custom-component-form";
 import {
   richTextLinkPrefill,
   type RichTextLinkBinding,
@@ -850,13 +861,183 @@ function IconControls({
   );
 }
 
+/* ---- W4.7: the custom-component props form (begins) -----------------------
+ *
+ * Binding contract item 34: "Custom component → props form | manifest
+ * `props_schema` → `set_custom_component_props` | the existing schema-driven
+ * form, shown when a custom component is selected." A custom component falls to
+ * the §5 layout-only fallback (the CONTAINER view), so the form JOINS that
+ * view — it is passed to ContainerControls alone, and every other fallback kind
+ * (embed, component, …) keeps the bare layout view unchanged.
+ *
+ * SCOPE: the form only. The source inspector's first card — status pill,
+ * metrics, compile warnings, republish banner, "Edit with AI" — is chrome and
+ * is deliberately not ported, nor are its props.
+ *
+ * Ledgered ruling (2026-08-18): while the artifact is loading, or if its fetch
+ * failed, the binding is null and this section is simply ABSENT — no loading
+ * shell, no error chrome; the layout fallback stands alone.
+ *
+ * Every decision (which control, what label, what one settled draft commits,
+ * the whole-props payload) lives in the pure adapter so it is testable under
+ * this repo's renderer-free runner; what is left here is presentation.
+ */
+function CustomComponentPropDraftControl({
+  field,
+  onCommit,
+}: {
+  field: CustomComponentField;
+  onCommit: CustomComponentPropCommit;
+}) {
+  // The dummy's own commit model for a typed value (PaddingXYControls above):
+  // a LOCAL draft that settles on blur/Enter, so the write path never sees a
+  // keystroke. The source's `useEffect` re-sync of the draft (:62-64) is
+  // replaced by the call site's remount key — this repo's lint forbids a
+  // setState inside an effect (same discipline as W4.8a/b).
+  const [draft, setDraft] = useState(field.draft);
+  const settle = () => {
+    const decision = customComponentDraftCommit({
+      draft,
+      schema: field.schema,
+      value: field.value,
+    });
+    if (decision.kind === "revert") setDraft(decision.draft);
+    if (decision.kind === "commit") onCommit(field.name, decision.value);
+  };
+  return (
+    <InspectorField label={field.displayLabel}>
+      <span
+        className={`${styles.inspectorControl} ${styles.inspectorInputControl}`}
+        onBlur={settle}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            settle();
+            (event.target as HTMLInputElement).blur();
+          } else if (event.key === "Escape") {
+            // Escape abandons the draft and sends nothing (source :146-149).
+            setDraft(field.draft);
+            (event.target as HTMLInputElement).blur();
+          }
+        }}
+      >
+        <input
+          aria-label={field.ariaLabel}
+          id={field.inputId}
+          inputMode={field.kind === "number" ? "decimal" : "text"}
+          onChange={(event) => setDraft(event.target.value)}
+          step={field.kind === "number" ? "any" : undefined}
+          type={field.kind === "number" ? "number" : "text"}
+          value={draft}
+        />
+      </span>
+    </InspectorField>
+  );
+}
+
+function CustomComponentPropControl({
+  field,
+  onCommit,
+}: {
+  field: CustomComponentField;
+  onCommit: CustomComponentPropCommit;
+}) {
+  // Checkbox and select commit IMMEDIATELY (source :76, :99) — there is no
+  // half-typed state to protect. Text and number draft locally.
+  if (field.kind === "checkbox") {
+    return (
+      <label className={styles.checkboxRow} htmlFor={field.inputId}>
+        <input
+          aria-label={field.ariaLabel}
+          checked={field.value === true}
+          id={field.inputId}
+          onChange={(event) => onCommit(field.name, event.target.checked)}
+          type="checkbox"
+        />
+        <span>{field.displayLabel}</span>
+      </label>
+    );
+  }
+  if (field.kind === "select") {
+    return (
+      <InspectorField label={field.displayLabel}>
+        <InspectorSelect
+          label={field.ariaLabel}
+          onChange={(label) => {
+            const value = customComponentSelectCommit(field.selectOptions, label);
+            if (value !== null) onCommit(field.name, value);
+          }}
+          // The inspector's select speaks labels; the adapter owns the
+          // label → value mapping, including the "Default" entry whose value
+          // is the empty string.
+          options={field.selectOptions.map((option) => option.label)}
+          value={customComponentSelectLabel(field.selectOptions, field.value)}
+        />
+      </InspectorField>
+    );
+  }
+  return <CustomComponentPropDraftControl field={field} onCommit={onCommit} />;
+}
+
+function CustomComponentPropsSection({
+  form,
+}: {
+  form: CustomComponentFormBinding;
+}) {
+  // Section-local open state: this section is not one of the controller's
+  // fixed schema sections (it exists only for a custom component), so it does
+  // not take a slot in the shared `InspectorSectionId` union.
+  const [open, setOpen] = useState(true);
+  const fields = customComponentFields(form.artifact, form.props);
+  return (
+    <InspectorSection label="Component properties" onOpenChange={setOpen} open={open}>
+      {/* One write at a time: the manual-edits controller drops an apply that
+          lands mid-flight, so every control goes dead while one is in the air
+          (source `disabled={busy}` on each control). A `display: contents`
+          fieldset is the native way to disable a subtree — including the
+          select's trigger button — without touching the section's layout or
+          the shared primitives. */}
+      <fieldset disabled={form.busy} style={{ display: "contents" }}>
+        {fields.length === 0 ? (
+          <p className={styles.inspectorFieldLabel}>
+            This component has no editable properties.
+          </p>
+        ) : (
+          fields.map((field) => (
+            <CustomComponentPropControl
+              field={field}
+              // Remount identity: the prop's LIVE value. A committed change (or
+              // any change arriving from the document) reseeds the draft; our
+              // own keystrokes leave it untouched, so typing is never
+              // interrupted — and an equal-but-differently-spelled draft
+              // ("3.0" over 3) survives, exactly as upstream.
+              key={`${field.name}:${customComponentDraft(field.value)}`}
+              onCommit={form.onCommitProp}
+            />
+          ))
+        )}
+        <p className={styles.inspectorFieldLabel}>
+          * Required by the pinned artifact schema.
+        </p>
+      </fieldset>
+    </InspectorSection>
+  );
+}
+/* ---- W4.7 (ends) -------------------------------------------------------- */
+
 function ContainerControls({
   controller,
+  customComponentForm,
   layerTree,
   onSelectionChange,
   showLayers,
 }: {
   controller: InspectorController;
+  /** W4.7 (contract item 34): the selected custom component's pinned artifact
+   * + live props. Null/absent → NO props section, which is also what a loading
+   * or failed artifact fetch yields (ledgered ruling) and what every other
+   * fallback kind on this view gets. */
+  customComponentForm?: CustomComponentFormBinding | null;
   layerTree: InspectorLayerTreeController;
   onSelectionChange: (selection: ChatShellInspectorSelection) => void;
   showLayers: boolean;
@@ -864,6 +1045,12 @@ function ContainerControls({
   const { setValue, state, toggleSection } = controller;
   return (
     <>
+      {/* W4.7: the component's own properties lead — they are what the user
+          selected the component to change; the §5 layout fallback follows
+          unchanged beneath them. */}
+      {customComponentForm ? (
+        <CustomComponentPropsSection form={customComponentForm} />
+      ) : null}
       <LinkSection ariaLabel="Container link URL" controller={controller} />
       <Section id="style" label="Style" state={state} toggle={toggleSection}>
         <TokenField controller={controller} label="Text color" property="textColor" swatch="#1C2028" value="Content" />
@@ -945,6 +1132,7 @@ function SectionControls({
 
 export function WebInspector({
   addressing,
+  customComponentForm = null,
   error = null,
   hydrated,
   layers,
@@ -967,6 +1155,14 @@ export function WebInspector({
   /** W3.1: write addressing stamped onto every inspector event this panel
    * dispatches — passed through to the controllers verbatim. */
   addressing?: InspectorEventAddressing;
+  /** W4.7 (contract item 34): the selected custom component's pinned artifact
+   * + live props, feeding the schema-driven props form. A custom component
+   * falls to the §5 layout-only fallback, so ONLY that view (ContainerControls)
+   * consumes this; the other schemas are untouched. Null/absent → no props
+   * section — which is also what a loading or failed artifact fetch yields
+   * (ledgered ruling, 2026-08-18: the fallback stands alone, no loading shell,
+   * no error chrome). */
+  customComponentForm?: CustomComponentFormBinding | null;
   /** W2.2: real values for the selected node (design-editor hydrate adapter),
    * merged over the dummy defaults at mount. Callers remount per selection. */
   hydrated?: Partial<InspectorPresentationState>;
@@ -1101,7 +1297,7 @@ export function WebInspector({
             {selection === "image" ? <ImageControls controller={imageController} layerTree={imageLayerTree} onSelectionChange={onSelectionChange} showLayers={showLayers} /> : null}
             {selection === "button" ? <ButtonControls controller={buttonController} layerTree={buttonLayerTree} onSelectionChange={onSelectionChange} showLayers={showLayers} /> : null}
             {selection === "icon" ? <IconControls controller={iconController} layerTree={iconLayerTree} onSelectionChange={onSelectionChange} showLayers={showLayers} /> : null}
-            {selection === "container" ? <ContainerControls controller={containerController} layerTree={containerLayerTree} onSelectionChange={onSelectionChange} showLayers={showLayers} /> : null}
+            {selection === "container" ? <ContainerControls controller={containerController} customComponentForm={customComponentForm} layerTree={containerLayerTree} onSelectionChange={onSelectionChange} showLayers={showLayers} /> : null}
             {selection === "section" ? <SectionControls controller={sectionController} layerTree={sectionLayerTree} onSelectionChange={onSelectionChange} showLayers={showLayers} /> : null}
           </DocumentLayersContext.Provider>
         </ThemeColorsContext.Provider>

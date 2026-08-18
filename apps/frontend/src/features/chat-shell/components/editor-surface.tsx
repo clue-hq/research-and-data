@@ -6,6 +6,11 @@ import {
   type EditorShellInitialState,
 } from "../hooks/use-editor-shell-controller";
 import { buildWebLayerRows } from "@/features/design-editor/adapter/layers";
+import {
+  customComponentPropsToOperation,
+  type CustomComponentFormBinding,
+  type CustomComponentPropCommit,
+} from "@/features/design-editor/adapter/custom-component-form";
 import { richTextCommitToOperation } from "@/features/design-editor/adapter/rich-text-commit";
 import {
   richTextLinkCommit,
@@ -19,6 +24,7 @@ import type {
   WebRichTextSessionState,
 } from "@/features/design-editor/components/web-artifact-canvas";
 import type { RichTextDocument } from "@/features/design-editor/engine/webDocuments";
+import { useCustomComponentArtifact } from "@/features/design-editor/hooks/use-custom-component-artifact";
 import { useInspectorWrites } from "@/features/design-editor/hooks/use-inspector-writes";
 import { useWebArtifactSelection } from "@/features/design-editor/hooks/use-web-artifact-selection";
 import { useWebTheme } from "@/features/design-editor/hooks/use-web-theme";
@@ -192,6 +198,50 @@ export function EditorSurface({
         }
       : null;
 
+  // W4.7 (contract item 34): a selected CUSTOM COMPONENT gets the
+  // schema-driven props form. Its schema is the pinned artifact's manifest, so
+  // the form waits on a read the canvas does not perform: the account comes
+  // from the loaded document (only a derived, account-bound doc has one) and
+  // the artifact pin from the node itself. Either missing → no fetch, no form.
+  const selectedNode = webSelection.selection?.node ?? null;
+  const customComponentNode =
+    selectedNode?.kind === "custom_component" ? selectedNode : null;
+  const customComponentArtifact = useCustomComponentArtifact(
+    customComponentNode ? (loadedDocument?.accountId ?? null) : null,
+    customComponentNode?.artifact_id ?? null,
+  );
+  // One prop settles → the whole props object goes back as ONE
+  // `set_node_props` op through the SAME manual-edits controller (one
+  // in-flight, `base_version`, 409/422 handling) — no second write path. The
+  // intent string is the source's own.
+  const onCommitCustomComponentProp: CustomComponentPropCommit = useCallback(
+    (name, value) => {
+      if (!customComponentNode) return;
+      const operation = customComponentPropsToOperation(
+        loadedDocument,
+        customComponentNode,
+        name,
+        value,
+      );
+      if (!operation) return;
+      applyOps([operation], "set_custom_component_props");
+    },
+    [applyOps, customComponentNode, loadedDocument],
+  );
+  // Ledgered ruling (2026-08-18): while the artifact loads, or if its fetch
+  // failed, the binding is NULL and the props section is simply absent — the
+  // §5 layout fallback stands alone, no loading shell and no error chrome.
+  // Item 34's scope is the form.
+  const customComponentForm: CustomComponentFormBinding | null =
+    customComponentNode && customComponentArtifact.status === "ready"
+      ? {
+          artifact: customComponentArtifact.artifact,
+          busy: writes.busy,
+          onCommitProp: onCommitCustomComponentProp,
+          props: customComponentNode.props ?? {},
+        }
+      : null;
+
   // W2.3 (completing the W2 exit gate): while EDITING a real web document,
   // the inspector docks beside the canvas — the dummy's own editing
   // arrangement (ruling R6: the inspector replaces the conversation column;
@@ -252,6 +302,7 @@ export function EditorSurface({
               // an engine-snapped value — padding 7→6 — displays as typed
               // until the node is reselected.)
               key={webSelection.selection?.node.id ?? "canvas"}
+              customComponentForm={customComponentForm}
               // W4.8a: one inline error slot, rich-text first — a failed
               // runtime load or session error is what the user just did, so it
               // outranks a stale write error (source: WebEditorApp.tsx:1297).

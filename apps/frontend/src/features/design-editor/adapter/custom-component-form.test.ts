@@ -2,11 +2,14 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type {
   CustomComponentPropSchema,
+  LoadedWebDocument,
   WebNode,
 } from "../engine/webDocuments";
 import {
   CUSTOM_COMPONENT_ARTIFACT,
   CUSTOM_COMPONENT_NODE,
+  CUSTOM_COMPONENT_PAGE,
+  CUSTOM_COMPONENT_PAGE_ID,
 } from "./__fixtures__/web-custom-component";
 import {
   CUSTOM_COMPONENT_SELECT_DEFAULT_LABEL,
@@ -16,6 +19,7 @@ import {
   customComponentFields,
   customComponentPropInputId,
   customComponentPropLabel,
+  customComponentPropsToOperation,
   customComponentPropsUpdate,
   customComponentSelectCommit,
   customComponentSelectLabel,
@@ -358,7 +362,7 @@ test("a prop the node did not carry is ADDED, the rest untouched", () => {
 });
 
 test("a node missing its pin sends empty strings rather than undefined — the source's own shape", () => {
-  const node: WebNode = { id: "cc1", kind: "custom_component" };
+  const node: WebNode = { id: "cc1", kind: "custom_component", classes: "" };
   assert.deepEqual(
     customComponentPropsUpdate({ name: "headline", node, value: "Hi" }),
     {
@@ -367,5 +371,86 @@ test("a node missing its pin sends empty strings rather than undefined — the s
       artifact_id: "",
       props: { headline: "Hi" },
     },
+  );
+});
+
+// --- the addressed operation (source `WebInspectorPanel.tsx:539-541`) --------
+//
+// The op below is WIRE-TRUE: the identical batch (intent
+// `set_custom_component_props` + `base_version`) was accepted by the lane
+// design API against the harvested document (200, version 1 → 2), and the
+// re-read scene showed exactly the whole-props object it carried.
+
+const loadedDocument: LoadedWebDocument = {
+  documentId: "doc_b778a805381c4831844c490e30701719",
+  docKind: "web",
+  title: "Lane C custom-component test doc",
+  webDoc: {
+    pages: [
+      {
+        id: "other",
+        name: "Other",
+        route: "/other",
+        root: "r2",
+        nodes: { r2: { id: "r2", kind: "container", classes: "" } },
+      },
+      {
+        id: CUSTOM_COMPONENT_PAGE_ID,
+        name: "Home",
+        route: "/",
+        root: CUSTOM_COMPONENT_PAGE.page_root,
+        nodes: CUSTOM_COMPONENT_PAGE.nodes,
+      },
+    ],
+  },
+  currentVersion: 1,
+  undoDepth: 0,
+  redoDepth: 0,
+  isTemplate: false,
+  templateDocumentId: null,
+  accountId: "acc_403fa12213464a9cbb2a9a1dab3663db",
+};
+
+test("a committed prop becomes ONE set_node_props op on the node's own page", () => {
+  assert.deepEqual(
+    customComponentPropsToOperation(
+      loadedDocument,
+      CUSTOM_COMPONENT_NODE,
+      "planCount",
+      4,
+    ),
+    {
+      kind: "set_node_props",
+      page_id: CUSTOM_COMPONENT_PAGE_ID,
+      id: "cclanec1",
+      props: {
+        kind: "custom_component",
+        slug: "lane-c-pricing-card",
+        artifact_id:
+          "ccart_765fe726e17be4859452c9ff3293ec8d1149689f7b786f9834a2ec20c210925c",
+        props: {
+          accent: "blue",
+          headline: "Pricing",
+          planCount: 4,
+          showBadge: true,
+        },
+      },
+    },
+  );
+});
+
+test("a node on no loaded page yields no operation rather than a guessed address", () => {
+  assert.equal(
+    customComponentPropsToOperation(
+      loadedDocument,
+      { ...CUSTOM_COMPONENT_NODE, id: "stray" },
+      "planCount",
+      4,
+    ),
+    null,
+  );
+  assert.equal(
+    customComponentPropsToOperation(null, CUSTOM_COMPONENT_NODE, "planCount", 4),
+    null,
   );
 });
