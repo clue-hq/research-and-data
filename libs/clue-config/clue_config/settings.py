@@ -76,6 +76,28 @@ def _parse_string_list(value: Any, format_error: str) -> Any:
     return tuple(item.strip() for item in raw.split(",") if item.strip())
 
 
+# The checked-in activation record for the integration/pilot product path
+# (``docs/FI-comprehensive-account-contact-research-contract.md`` §9). Applied as *defaults* by
+# :meth:`Settings._apply_product_path_overlay` when ``CLUE_PRODUCT_PATH=integration_pilot``; an
+# explicitly provided value (env var or kwarg) always wins over an entry here.
+INTEGRATION_PILOT_OVERLAY: dict[str, bool] = {
+    "exa_websets_lifecycle_enabled": True,
+    "exa_websets_acquisition_enabled": True,
+    "exa_account_deep_acquisition_enabled": True,
+    "sumble_account_gap_enrichment_enabled": True,
+    "sumble_committee_acquisition_enabled": True,
+    "exa_contact_deep_acquisition_enabled": True,
+    "entity_research_runtime_enabled": True,
+    "chat_enabled": True,
+    "frontend_read_enabled": True,
+    "verification_enabled": False,
+    "budget_controls_enabled": False,
+    # Slice F adds: contact_channel_enrichment_enabled, frontend_contact_email_lookup_enabled.
+    # Slice G adds: c7_research_view_read_enabled, c7_snapshot_compose_enabled,
+    #               c7_production_handoff_enabled.
+}
+
+
 class Settings(BaseSettings):
     """Deploy-time settings read from the environment (not secrets)."""
 
@@ -127,6 +149,13 @@ class Settings(BaseSettings):
     # Deployment-scoped, not pinned per run (the same accepted caveat as ``verification_enabled``).
     # Env: ``CLUE_BUDGET_CONTROLS_ENABLED``.
     budget_controls_enabled: bool = True
+
+    # The integration/pilot product path (docs/FI-comprehensive-account-contact-research-contract.md
+    # §9). "integration_pilot" applies INTEGRATION_PILOT_OVERLAY as *defaults*: any flag explicitly
+    # provided (env var or kwarg) still wins. This is the checked-in activation record; individual
+    # deployments keep the conservative "default" path.
+    # Env: ``CLUE_PRODUCT_PATH``.
+    product_path: Literal["default", "integration_pilot"] = "default"
 
     # --- production metrics export -------------------------------------------------------
     # Tests/dev may retain the deterministic in-memory sink. A production-auth deployment must
@@ -631,6 +660,20 @@ class Settings(BaseSettings):
     # horizon, so a within-horizon reconnect can never observe a hole; configuring less is logged
     # and ignored, never honoured. Env: ``CLUE_DESIGN_RUN_EVENT_RETENTION_S``.
     design_run_event_retention_s: float = 2_592_000.0  # 30d
+
+    @model_validator(mode="before")
+    @classmethod
+    def _apply_product_path_overlay(cls, data: Any) -> Any:
+        """Fill the §9 activation defaults for the integration product path.
+
+        ``mode="before"`` sees the merged source dict (env + kwargs), so ``setdefault`` never
+        overrides a value the deployment stated explicitly.
+        """
+
+        if isinstance(data, dict) and data.get("product_path") == "integration_pilot":
+            for field, value in INTEGRATION_PILOT_OVERLAY.items():
+                data.setdefault(field, value)
+        return data
 
     @field_validator("agent_workspace_allowlist", mode="before")
     @classmethod
