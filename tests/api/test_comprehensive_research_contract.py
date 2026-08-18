@@ -399,8 +399,30 @@ def test_the_v5_schema_lets_the_model_omit_field_keys_entirely() -> None:
     assert tuple(str(key) for key in drafted.directive.field_keys) == COMPREHENSIVE_ACCOUNT_FIELDS
 
 
+def test_the_v5_accepts_a_verbatim_full_profile_retyping() -> None:
+    """A model whose steering card lists the 21 rows reliably retypes them (observed live at the
+    Slice B browser gate) — and an explicit list that IS the full fixed profile is the same
+    statement of breadth, not an ambiguity. It normalizes to the contract order; @4 keeps its
+    frozen refusal.
+    """
+
+    shuffled = tuple(reversed(COMPREHENSIVE_ACCOUNT_FIELDS))
+    drafted = DraftAccountResearchDirectiveInputV5(
+        project_id="project-comprehensive",
+        product_id="product-comprehensive",
+        icp_key="deep",
+        icp_version=1,
+        directive=_directive_body(shuffled),
+        user_instruction="Research these accounts comprehensively.",
+        source_turn_ref="turn:comprehensive-1",
+    )
+    assert tuple(str(key) for key in drafted.directive.field_keys) == COMPREHENSIVE_ACCOUNT_FIELDS
+    with pytest.raises(ValidationError, match="comprehensive"):
+        _draft_input(profile="comprehensive", field_keys=shuffled)
+
+
 def test_the_v5_ambiguity_refusal_is_unchanged() -> None:
-    """@5 relaxes only the schema; comprehensive plus a non-empty explicit list is still refused."""
+    """@5 relaxes only the schema; comprehensive plus a narrower explicit list is still refused."""
 
     with pytest.raises(ValidationError, match="comprehensive"):
         DraftAccountResearchDirectiveInputV5(

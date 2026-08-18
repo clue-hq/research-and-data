@@ -76,7 +76,7 @@ def test_registry_resolves_exact_reviewed_profiles_and_stable_manifests(
         # to the fixed 21-field account profile instead of the v6 skill's three qualitative fields.
         # v38 (Slice B browser-gate repair) re-pins the draft tool at @5 (omittable
         # `directive.field_keys`) and account-deep-steering at v8.
-        AgentRole.HEAD_OF_ABM: ("47934555bd8b071890719b93bdeeba18e286832867270cbced86354cbcc61723"),
+        AgentRole.HEAD_OF_ABM: ("f47c6db797cd13a1c4d821488df6cdd09360df651ba1451b0d8350a525c0091e"),
         AgentRole.RESEARCH: "23cff2335bb82e0549ee0c830316968971146e8b90c8d2090447ee0ed92eed6f",
         AgentRole.CONTENT_DRAFTER: (
             "8985c13ead086350d952f76e6d3c0ed3f4162cc92de290f8dd7edd7fcab44cbf"

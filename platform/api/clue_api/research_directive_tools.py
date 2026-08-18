@@ -219,13 +219,43 @@ class ResearchDirectiveBodyDraftInput(ResearchDirectiveBody):
 class DraftAccountResearchDirectiveInputV5(DraftAccountResearchDirectiveInputV4):
     """v4's breadth contract with a satisfiable schema: ``directive.field_keys`` is optional.
 
-    Behaviour is byte-identical to v4 — ``comprehensive`` expands mechanically, ``comprehensive``
-    plus a non-empty explicit list is still refused as two conflicting statements of breadth, and
-    ``custom`` passes through untouched. The only change is that the advertised schema finally
-    agrees with the steering skill: the model may (and should) omit ``field_keys`` entirely.
+    ``comprehensive`` expands mechanically and ``custom`` passes through untouched, exactly as in
+    v4. Two v5-only changes, both found at the live Slice B browser gate: the advertised schema
+    finally agrees with the steering skill (the model may — and should — omit ``field_keys``
+    entirely), and an explicit list that is *exactly* the full fixed profile normalizes to the
+    contract order instead of being refused — a model whose steering card lists the 21 rows
+    reliably retypes them, and an identical statement of breadth is not an ambiguity. Any other
+    non-empty list under ``comprehensive`` is still two conflicting statements of breadth and is
+    refused; a truncated or invented retyping therefore still fails loudly rather than silently
+    narrowing the profile.
     """
 
     directive: ResearchDirectiveBodyDraftInput
+
+    @model_validator(mode="before")
+    @classmethod
+    def profile_decides_field_breadth(cls, data: object) -> object:
+        """v4's expansion, plus tolerance for a verbatim full-profile retyping (v5 docstring)."""
+
+        if not isinstance(data, dict):
+            return data
+        if data.get("profile", "comprehensive") != "comprehensive":
+            return data
+        directive = data.get("directive")
+        if isinstance(directive, ResearchDirectiveBody):
+            body = directive.model_dump()
+        elif isinstance(directive, dict):
+            body = dict(directive)
+        else:
+            return data  # absent or wrongly typed — let normal validation report it
+        explicit = body.get("field_keys")
+        if explicit and {str(key) for key in explicit} != set(COMPREHENSIVE_ACCOUNT_FIELDS):
+            raise ValueError(
+                "a comprehensive research directive covers the whole fixed 21-field account "
+                "profile; pass profile='custom' to request an explicit narrower field set"
+            )
+        body["field_keys"] = list(COMPREHENSIVE_ACCOUNT_FIELDS)
+        return {**data, "directive": body}
 
 
 class DraftAccountResearchDirectiveOutput(ToolOutput):

@@ -12,7 +12,7 @@ readiness_requirements:
 tools:
   - name: draft_account_research_directive
     version: "5"
-    input_schema_sha256: 277559c45f3c7fff49123aaf7737b5f4ab1d558f7862a06434c0590fa390fc2d
+    input_schema_sha256: 5cf321a59b2aa856a98ecca7ed85e90b0c6c89eb2f4092bbe74042f4e5b23292
     output_schema_sha256: 1d805a759f731032c83ccb36b3b5f11b04b2e85682c6e6f1a503d2e0cb91bb8d
   - name: get_research_view
     version: "1"
