@@ -910,6 +910,7 @@ def test_d5_committee_discovery_defers_roles_and_the_account_agent_completes_the
                 UUID(str(members[0])): Persona.CHAMPION,
                 UUID(str(members[1])): Persona.ECONOMIC_BUYER,
             }
+            expected_reasoning: dict[UUID, str] = {}
             role_claim_refs: set[str] = set()
             for member_id, persona in expected_roles.items():
                 roles = await claims_for(conn, EntityId(member_id), ROLE_ON_COMMITTEE, scope=scope)
@@ -932,6 +933,7 @@ def test_d5_committee_discovery_defers_roles_and_the_account_agent_completes_the
                 }
                 assert role_claim.value_json["role"] == persona.value
                 assert role_claim.value_json["plausible"] is True
+                expected_reasoning[member_id] = str(role_claim.value_json["rationale"])
                 assert persona_claim.value_json == persona.value
                 assert role_claim.source_url and role_claim.evidence_span
                 assert role_claim.product_id == str(product_id)
@@ -1063,6 +1065,7 @@ def test_d5_committee_discovery_defers_roles_and_the_account_agent_completes_the
                 assert row["roleOnCommittee"]["confidence"] == (
                     0.84 if persona is Persona.CHAMPION else 0.71
                 )
+                assert row["roleOnCommittee"]["reasoning"] == expected_reasoning[member_id]
                 assert row["projectIds"] == [project_id]
 
     run_async(scenario())
