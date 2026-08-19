@@ -5,14 +5,19 @@ from __future__ import annotations
 from collections.abc import Sequence
 from decimal import Decimal
 from typing import Any
+from uuid import uuid4
 
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_api.research_directive_tools import build_research_directive_tools
 from clue_core import (
+    DiscoveryBatchId,
+    DiscoveryPlanId,
     EntityId,
     MemoryDisabled,
     MemorySubmission,
+    ProjectPhase,
+    ProjectRunId,
     ResearchAccountScope,
     ResearchCommitteePlan,
     ResearchDirectiveBody,
@@ -24,6 +29,13 @@ from clue_core import (
     new_operation_id,
 )
 from clue_research.directives import confirmed_directive_account_specs
+from clue_research.durable import (
+    create_discovery_batch,
+    ensure_project_run,
+    get_discovery_plan,
+    get_project_run,
+    put_discovery_plan,
+)
 from clue_toolbelt import ToolContext, ToolRegistry, invoke_tool
 from tests.profiling.conftest import conn_session_factory
 
@@ -141,4 +153,60 @@ async def confirmed_account_research_direction(
     return body, specs[0]
 
 
-__all__ = ["confirmed_account_research_direction"]
+async def in_progress_discovery_run(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    template_project_run_id: ProjectRunId,
+    template_discovery_plan_id: DiscoveryPlanId,
+) -> ProjectRunId:
+    """Create a separate valid run whose first discovery generation is still in progress."""
+
+    template_run = await get_project_run(conn, template_project_run_id)
+    template_plan = await get_discovery_plan(
+        conn,
+        workspace_id=workspace_id,
+        plan_id=template_discovery_plan_id,
+    )
+    assert template_run is not None and template_plan is not None
+
+    project_run_id = ProjectRunId(uuid4())
+    await ensure_project_run(
+        conn,
+        project_run_id=project_run_id,
+        project_id=template_run.project_id,
+        workspace_id=workspace_id,
+        icp_key=template_run.icp_key,
+        icp_version=template_run.icp_version,
+        budget_cap_cents=template_run.budget_cap_cents,
+        tier_cutoffs=template_run.tier_cutoffs,
+        phase=ProjectPhase.DISCOVERY,
+        client_entity_id=template_run.client_entity_id,
+        client_kb_version=template_run.client_kb_version,
+        product_id=template_run.product_id,
+        product_context_version_id=template_run.product_context_version_id,
+        readiness_decision_id=template_run.readiness_decision_id,
+    )
+    plan_id = DiscoveryPlanId(uuid4())
+    await put_discovery_plan(
+        conn,
+        workspace_id=workspace_id,
+        plan=template_plan.plan.model_copy(
+            update={
+                "discovery_plan_id": plan_id,
+                "project_run_id": project_run_id,
+                "plan_version": 1,
+            }
+        ),
+    )
+    await create_discovery_batch(
+        conn,
+        workspace_id=workspace_id,
+        batch_id=DiscoveryBatchId(uuid4()),
+        plan_id=plan_id,
+        generation=1,
+    )
+    return project_run_id
+
+
+__all__ = ["confirmed_account_research_direction", "in_progress_discovery_run"]

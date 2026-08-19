@@ -9,6 +9,7 @@ from uuid import UUID, uuid4
 
 import pytest
 from pydantic import JsonValue
+from sqlalchemy.exc import InterfaceError
 
 from clue_fleet import (
     FleetTaskKind,
@@ -181,6 +182,41 @@ class _DelayedRequeueHandler(_Handler):
         )
 
 
+class _StoppingHandler(_Handler):
+    async def handle(self, context: WorkContext) -> WorkResult:
+        self.contexts.append(context)
+        context.stop_requested.set()
+        return WorkResult(outcome="done", references={})
+
+
+class _TransientDbErrorQueue(_Queue):
+    def __init__(self, rows: list[WorkTaskRow]) -> None:
+        super().__init__(rows)
+        self.claim_attempts = 0
+
+    async def claim_next(
+        self,
+        *,
+        kind: FleetTaskKind,
+        worker_id: str,
+        work_id: WorkId | None = None,
+        stale_after: timedelta = timedelta(seconds=60),
+    ) -> WorkTaskRow | None:
+        self.claim_attempts += 1
+        if self.claim_attempts == 1:
+            raise InterfaceError(
+                "SELECT next fleet task",
+                {},
+                RuntimeError("connection is closed"),
+            )
+        return await super().claim_next(
+            kind=kind,
+            worker_id=worker_id,
+            work_id=work_id,
+            stale_after=stale_after,
+        )
+
+
 def _task(kind: FleetTaskKind) -> WorkTaskRow:
     now = _now()
     work_id = WorkId(uuid4())
@@ -299,3 +335,27 @@ def test_requeue_delay_requires_requeue_and_non_negative_duration() -> None:
             requeue=True,
             requeue_after=timedelta(seconds=-1),
         )
+
+
+def test_run_recovers_after_a_transient_closed_database_connection() -> None:
+    async def scenario() -> None:
+        task = _task(FleetTaskKind.ENTITY_RESEARCH_JOB)
+        queue = _TransientDbErrorQueue([task])
+        handler = _StoppingHandler(FleetTaskKind.ENTITY_RESEARCH_JOB)
+        worker = LeasedWorkWorker(
+            handlers=(handler,),
+            queue=queue,
+            leases=_Leases(),
+            worker_id="recovering-worker",
+            poll_interval=0.001,
+            heartbeat_interval=10,
+            lease_ttl=timedelta(seconds=30),
+        )
+
+        await worker.run()
+
+        assert queue.claim_attempts == 2
+        assert [status for _, status, _ in queue.finished] == [FleetTaskStatus.DONE]
+        assert len(handler.contexts) == 1
+
+    asyncio.run(scenario())

@@ -12,6 +12,10 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy import text
 
 from clue_api.account_entity_research_composition import account_research_profile_sha256
+from clue_api.account_research_discovery_readiness import (
+    AccountResearchDiscoveryNotReady,
+    require_sealed_account_discovery,
+)
 from clue_api.account_research_estimate import compute_account_research_estimate
 from clue_api.account_research_fleet import (
     AccountResearchFleetError,
@@ -196,6 +200,17 @@ class AccountResearchFleetLauncher:
                 raise AccountResearchFleetLaunchError(
                     "a failed project run cannot authorize new account research"
                 )
+            try:
+                await require_sealed_account_discovery(
+                    conn,
+                    workspace_id=request.workspace_id,
+                    project_run_id=ProjectRunId(request.project_run_id),
+                    icp_key=project_run.icp_key,
+                    icp_version=project_run.icp_version,
+                    for_update=True,
+                )
+            except AccountResearchDiscoveryNotReady as exc:
+                raise AccountResearchFleetLaunchError(str(exc)) from exc
             directive = await get_research_directive(
                 conn,
                 ResearchDirectiveId(request.research_directive_id),

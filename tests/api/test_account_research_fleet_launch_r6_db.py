@@ -98,7 +98,10 @@ from clue_research.resolvers.sumble import SUMBLE_API_VERSION, SumbleClient, Sum
 from clue_research.resolvers.sumble.people import PEOPLE_SOURCE_KEY
 from clue_storage import FsStorage
 from tests._run_lineage import assert_run_registered
-from tests.api.account_deep_test_support import confirmed_account_research_direction
+from tests.api.account_deep_test_support import (
+    confirmed_account_research_direction,
+    in_progress_discovery_run,
+)
 from tests.api.test_account_deep_fixture_a1 import _pages
 from tests.api.test_sumble_account_gaps_s1 import _SumbleHttp
 from tests.api.test_sumble_committee_acquisition_s2b import _CommitteeTransport
@@ -112,6 +115,81 @@ _MOVES = "account.strategic_moves"
 _HIRING = "account.hiring_velocity_eng"
 _INDUSTRY = "core.industry"
 _TECH = "core.primary_tech_stack"
+
+
+def test_launcher_refuses_an_unsealed_discovery_without_writing_research_state(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        storage = FsStorage(tmp_path / "r6-unsealed-artifacts")
+        async with rollback_conn() as conn:
+            fixture = await seed_insight_health_account_deep_fixture(
+                conn,
+                pages=_pages(),
+                storage=storage,
+            )
+            _, account_spec = await confirmed_account_research_direction(
+                conn,
+                workspace_id=fixture.discovery_fixture.workspace_id,
+                project_id=fixture.discovery_fixture.project_id,
+                product_id=fixture.discovery_fixture.product_id,
+                account_id=fixture.selected_account_id,
+                icp_key=fixture.deep_icp_key,
+                icp_version=fixture.deep_icp_version,
+                field_keys=(_PAIN, _MOVES, _HIRING),
+                allowed_source_keys=("exa_deep", "sumble_jobs", "sumble_people"),
+            )
+            pin = account_spec.research_directive
+            assert pin is not None
+            pending_run_id = await in_progress_discovery_run(
+                conn,
+                workspace_id=fixture.discovery_fixture.workspace_id,
+                template_project_run_id=fixture.project_run_id,
+                template_discovery_plan_id=fixture.discovery_plan_id,
+            )
+
+            def connection() -> AbstractAsyncContextManager[AsyncConnection]:
+                return _same_connection(conn)
+
+            launcher = AccountResearchFleetLauncher(
+                fleets=AccountResearchFleetService(conn_factory=connection),
+                conn_factory=connection,
+            )
+            with pytest.raises(
+                AccountResearchFleetLaunchError,
+                match="Account discovery is still in progress",
+            ):
+                await launcher.launch(
+                    AccountResearchFleetLaunchRequest(
+                        workspace_id=fixture.discovery_fixture.workspace_id,
+                        project_run_id=UUID(str(pending_run_id)),
+                        research_directive_id=UUID(str(pin.directive_id)),
+                        account_entity_ids=(UUID(str(fixture.selected_account_id)),),
+                        approved_budget_cap_cents=Decimal("300"),
+                        expected_estimated_cost_cents=Decimal("300"),
+                    ),
+                    actor="human:account-owner",
+                    source_action_ref="turn:r6-unsealed-launch",
+                    source_operation_id=uuid4(),
+                )
+
+            assert (
+                await conn.execute(
+                    text(
+                        "SELECT count(*) FROM entity_research_run "
+                        "WHERE project_run_id=:project_run_id"
+                    ),
+                    {"project_run_id": pending_run_id},
+                )
+            ).scalar_one() == 0
+            assert (
+                await conn.execute(
+                    text("SELECT count(*) FROM account_run WHERE project_run_id=:project_run_id"),
+                    {"project_run_id": pending_run_id},
+                )
+            ).scalar_one() == 0
+
+    run_async(scenario())
 
 
 @asynccontextmanager

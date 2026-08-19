@@ -98,6 +98,7 @@ from clue_toolbelt import (
     invoke_tool,
 )
 from tests._identity import seed_principal
+from tests.api.account_deep_test_support import in_progress_discovery_run
 from tests.api.test_account_deep_fixture_a1 import _pages
 from tests.db.conftest import run_async
 from tests.profiling.conftest import (
@@ -474,14 +475,19 @@ def _app(
     )
 
 
-async def _open_gate(conn: AsyncConnection, scenario: _Scenario) -> Any:
+async def _open_gate(
+    conn: AsyncConnection,
+    scenario: _Scenario,
+    *,
+    project_run_id: ProjectRunId | None = None,
+) -> Any:
     """The agent's own act: present the gate through the governed tool."""
 
     result = await invoke_tool(
         _gate_tool_registry(scenario.conn_factory),
         "open_directive_confirmation_gate",
         {
-            "project_run_id": str(scenario.fixture.project_run_id),
+            "project_run_id": str(project_run_id or scenario.fixture.project_run_id),
             "research_directive_id": str(scenario.directive_id),
             "account_entity_ids": [str(value) for value in scenario.account_ids],
             "source_turn_ref": derive_turn_action_ref(scenario.presenting_turn_id),
@@ -777,6 +783,36 @@ def test_a_selected_account_without_a_numeric_tier_can_still_be_presented_for_re
                     {"ws": scenario.workspace_id},
                 )
             ).scalar_one() == 1
+
+    run_async(scenario_body())
+
+
+def test_agent_tells_user_to_wait_while_account_discovery_is_unsealed(tmp_path: Path) -> None:
+    async def scenario_body() -> None:
+        async with rollback_conn() as conn:
+            scenario = await _seed_two_account_conversation(conn, tmp_path)
+            pending_run_id = await in_progress_discovery_run(
+                conn,
+                workspace_id=scenario.workspace_id,
+                template_project_run_id=scenario.fixture.project_run_id,
+                template_discovery_plan_id=scenario.fixture.discovery_plan_id,
+            )
+
+            with pytest.raises(PreconditionFailed) as caught:
+                await _open_gate(conn, scenario, project_run_id=pending_run_id)
+
+            failure = caught.value.failures[0]
+            assert failure.reason_code == "account_discovery_in_progress"
+            assert failure.message == (
+                "Account discovery is still in progress. Please wait and try account profiling "
+                "again after discovery finishes."
+            )
+            assert (
+                await conn.execute(
+                    text("SELECT count(*) FROM agent_gate WHERE workspace_id = :workspace_id"),
+                    {"workspace_id": scenario.workspace_id},
+                )
+            ).scalar_one() == 0
 
     run_async(scenario_body())
 
