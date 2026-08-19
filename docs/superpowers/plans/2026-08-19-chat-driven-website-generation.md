@@ -241,6 +241,50 @@ carry web work, then makes the frontend show what the leg already emits.
 > so it needs the full `LUMEN_AGENT_*`/`LUMEN_CORE_HELPER` env and must NOT inherit the
 > design API's `CLUE_STORAGE_FS_ROOT` (launch traps recorded in the slice-1 memory note).
 
+> **Founder rulings — 2026-08-19, post-slice-1 (G1–G4), on the slice-1 recorded
+> concerns + generation latency:**
+> - **G1 (finalized gate):** a design leg may edit a **draft** source document even if
+>   an older version is currently published; it may **never mutate a finalized
+>   document**. Revising a finalized artifact = a new draft revision + a governed
+>   move of the leg to that revision (the governed move is future work; until it
+>   exists the leg turn refuses finalized documents loudly). The substrate's
+>   `is_finalized_document` semantics (status `finalized` / finalized scene — NOT
+>   `published`) are exactly this ruling's vocabulary.
+> - **G2 (account context):** generic leg-born pages need no account — a document
+>   with no `account_id` generates un-personalized, as now. But when the pinned
+>   document **carries** `account_id`, every chat-driven turn must resolve that
+>   account in the same workspace and freeze the resulting `account_card` **by
+>   value** into the envelope (the design route's own discipline, `main.py:3045-3075`);
+>   resolution failure is a loud refusal, never a silent un-personalized run.
+> - **G3 (review fidelity):** keep the v1 downscale. If quality evidence demands it,
+>   move to a hybrid review — one downscaled full-page overview + near-native
+>   viewport/section crops, activated only beyond a height/scale threshold, with
+>   deterministic overlap so boundary defects stay visible. Registered §8.
+> - **G4 (latency):** ~13 minutes for a simple landing page is too much. Cap reviewer
+>   loops at **6** (mechanical cap, not just prose) and teach the web deepagent to
+>   finish in the **minimum number of turns possible** (a simple landing page should
+>   typically take one author pass + 1–2 review rounds). Honest UX wording becomes
+>   "Website generation often takes 5–15 minutes" (slice 3 consumes this).
+
+### Slice 1.5 — founder-rulings wave (backend + design runtime; G1, G2, G4)
+- **G1:** the leg turn path refuses a finalized pinned document with a typed, honest
+  failed-turn outcome (mirror `is_finalized_document`'s exact semantics platform-side;
+  published-but-draft stays editable). Scene legs inherit the same gate (the ruling is
+  about mutation, not doc kind).
+- **G2:** when the pinned document carries `account_id`, resolve the account
+  (same-workspace, fail-closed) and freeze the `account_card` by value into the web
+  envelope's `config` — the same card shape and freeze discipline as the design API's
+  web-turn route; the executor already reads `config.account_card`. No `account_id` →
+  no card, un-personalized, unchanged.
+- **G4:** a mechanical 6-review cap per web turn in the web harness + minimum-turns
+  pressure in the orchestrator prompt (and reviewer prompt where it invites loops);
+  scene prompts untouched.
+- Tests: gate refusal both kinds + draft-with-published still passes; frozen card in
+  envelope; missing/cross-workspace account refuses loud; cap enforcement unit test;
+  prompt-content assertions; scene regression stays byte-stable.
+- Commits: `feat(genweb): leg turns refuse finalized documents and freeze the account card (G1, G2)`;
+  `perf(design): web review loop capped at 6 with minimum-turns prompting (G4)`.
+
 ### Slice 2 — document birth at leg-open + the versioning wave (backend; B2, B4, F5)
 - `open_design_leg@2`: `doc_kind: "web" | "scene" | None` (required when
   `document_id is None`; refuse `scene` creation in v1 — scene legs keep requiring an
@@ -271,6 +315,20 @@ carry web work, then makes the frontend show what the leg already emits.
   `feat(genweb): head-of-abm v37 — the design delegation teaching (B4)`.
 
 ### Slice 3 — the visible loop (frontend; B5; AFTER W5 sign-off)
+
+**Founder requirements (2026-08-19, binding — the slice's acceptance list):**
+1. Refresh on durable terminal stream events, never on a timer.
+2. Survive stream disconnection and page reload: reconnect from the durable cursor and
+   refetch canonical thread/artifact state.
+3. Keep the thread visibly running while the user navigates elsewhere.
+4. Honest language: "Website generation often takes 5–15 minutes."
+5. No fake percentages, no precise ETA.
+6. Refresh the Gallery and any open canvas exactly when the committed turn completes.
+7. Surface failure/cancellation and allow retry on the same leg/document.
+8. Never produce an assistant success message before the version is durably committed
+   (backend already guarantees this — slice 1's summary is written only after the
+   terminal succeeded run; the frontend must not weaken it with optimistic UI).
+
 - Transcript: render `leg.opened` / `leg.awaiting_user` / `leg.closed` / `leg.reopened`
   frames as the transcript's existing system-line pattern (schema additions to the chat
   stream repository + conversation content; wording founder-visible in review). Design
@@ -336,7 +394,8 @@ carry web work, then makes the frontend show what the leg already emits.
 7. **Model/economics note:** the design trio runs its own pinned models via the platform
    gateway (`profiles/design/v1/profile.yaml`); a full generation turn is minutes and
    ~40+ LLM calls (the smoke's shape) — set that expectation in the transcript wording
-   ("this takes a few minutes"), don't engineer around it in v1.
+   ("Website generation often takes 5–15 minutes" — G4's honest phrasing), don't
+   engineer around it in v1 beyond the G4 cap + prompting.
 
 ## 7. Launch recipe (dev)
 
@@ -358,6 +417,13 @@ lane composed (slice 0 records the exact command). Test login per
 4. **Propose→accept gate / clarification rounds on web turns** — the web harness has
    neither (`useWebAgentTurn.ts:10-13`; no clarification tool in `harness_web.py`);
    direct-commit stands per F1.
+4b. **Hybrid tiled review (G3)** — one downscaled full-page overview + near-native
+   viewport/section crops beyond a height/scale threshold, deterministic overlap so
+   boundary defects stay visible. Activate only on quality evidence against the v1
+   downscale; founder-ruled 2026-08-19.
+4c. **The governed "move leg to a new draft revision" operation (G1's second half)** —
+   the revise-a-finalized-artifact path (new draft revision + leg repoint). Until it
+   exists, the leg turn's finalized refusal is the whole story.
 5. **Content-plane bundle consumption** — the design harness reads `config.request` (+
    the brand pin) and stays bundle-blind to claims/content-schema (recorded residual,
    `_memory/2026-08-14-p34-leg-engine.md:73-76`); joining research outputs to page copy
