@@ -416,6 +416,26 @@ def _prefixed_uuid(reference: str, prefix: str) -> UUID:
         raise EntityResearchResultIntegrityError(f"reference {reference!r} is malformed") from exc
 
 
+def _model_supplied_uuid(reference: str, prefix: str, *, argument: str) -> UUID:
+    """Parse a reference the MODEL typed; a wrong type is its mistake, never job integrity.
+
+    ``_prefixed_uuid`` keeps the suspending integrity species for engine-produced references
+    (money or truth at stake). A reference arriving through a tool argument is model output —
+    observed live (run 1d39023a): an agent passed a ``sumble-account-operation:`` reference as a
+    follow-up's parent result and the whole job suspended. That is R10 species 1: refuse
+    recoverably, name the expected shape, and let the model correct its call.
+    """
+
+    try:
+        return _prefixed_uuid(reference, prefix)
+    except EntityResearchResultIntegrityError as exc:
+        raise EntityResearchGovernedRejection(
+            "reference_type_rejected",
+            f"{argument} must be a '{prefix}<uuid>' reference; received {reference!r}. Use the "
+            "exact reference the tool result reported, not an operation or other ledger id",
+        ) from exc
+
+
 def _artifact_key(reference: str) -> str:
     if not reference.startswith("artifact:"):
         raise EntityResearchResultIntegrityError("artifact reference uses an unknown scheme")
@@ -610,9 +630,10 @@ class EntityResearchToolRequestStore:
         prior_research_context: str | None = None
         async with self._conn_factory() as conn:
             if is_follow_up:
-                parent_result_id = _prefixed_uuid(
+                parent_result_id = _model_supplied_uuid(
                     cast(str, semantic.parent_observation_ref),
                     "research-result:",
+                    argument="parent_observation_ref",
                 )
                 parent = (
                     (
@@ -2369,7 +2390,7 @@ class EntityResearchResultStore:
         active: ActiveEntityResearchToolExecution,
         result_ref: str,
     ) -> PersistedResearchToolResult:
-        result_id = _prefixed_uuid(result_ref, "research-result:")
+        result_id = _model_supplied_uuid(result_ref, "research-result:", argument="result_ref")
         authorization = active.context.authorization
         async with self._conn_factory() as conn:
             row = (
@@ -2496,7 +2517,9 @@ class EntityResearchResultStore:
         active: ActiveEntityResearchToolExecution,
         request: ReadResearchEvidenceInput,
     ) -> ResearchEvidenceReadPage:
-        evidence_id = _prefixed_uuid(request.evidence_ref, "research-evidence:")
+        evidence_id = _model_supplied_uuid(
+            request.evidence_ref, "research-evidence:", argument="evidence_ref"
+        )
         authorization = active.context.authorization
         async with self._conn_factory() as conn:
             row = (
