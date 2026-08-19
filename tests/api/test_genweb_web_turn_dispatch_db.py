@@ -41,6 +41,7 @@ from clue_api.design_leg_wiring import DesignLegTurnRunner, design_leg_run_id
 from clue_api.toolbelt_wiring import build_toolbelt
 from clue_design import legs as design_legs
 from clue_design import runs as design_runs
+from clue_design.accounts import create_web_account
 from clue_design.documents import create_document, update_web_document
 from clue_storage import FsStorage
 from tests._identity import seed_principal
@@ -218,7 +219,11 @@ async def _seed_leg_conversation(
 
 
 async def _seed_web_leg(
-    conn: AsyncConnection, *, storage_root: Path, label: str
+    conn: AsyncConnection,
+    *,
+    storage_root: Path,
+    label: str,
+    account_id: str | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """A leg pinned to a real ``doc_kind='web'`` document."""
 
@@ -229,6 +234,7 @@ async def _seed_web_leg(
         workspace_id=seeds["workspace_id"],
         scene=_web_doc(document_id),
         doc_kind="web",
+        account_id=account_id,
     )
     await conn.execute(
         text("UPDATE design_leg SET document_id = :doc WHERE id = CAST(:leg AS uuid)"),
@@ -601,5 +607,315 @@ def test_a_document_less_leg_still_dispatches_a_scene_agent_turn(
                 "document_id": None,
                 "previous_turn_outcome": None,
             }
+
+    run_async(scenario())
+
+
+# --- G1: the finalized-document gate -------------------------------------------------------------
+
+
+async def _turn_facts(conn: AsyncConnection, seeds: dict[str, Any], turn_id: Any) -> dict[str, Any]:
+    """What a refused turn must leave behind: no run, no reply, no finalization, leg open."""
+
+    runs = (
+        await conn.execute(
+            text("SELECT count(*) FROM design_agent_run WHERE run_id = :run"),
+            {"run": design_leg_run_id(turn_id)},
+        )
+    ).scalar_one()
+    roles = (
+        await conn.execute(
+            text(
+                "SELECT role FROM agent_thread_message "
+                "WHERE workspace_id = :ws AND thread_id = :thread ORDER BY sequence"
+            ),
+            {"ws": seeds["workspace_id"], "thread": seeds["thread_id"]},
+        )
+    ).scalars()
+    commits = (
+        await conn.execute(
+            text("SELECT count(*) FROM agent_finalization_commit WHERE turn_id = :turn"),
+            {"turn": turn_id},
+        )
+    ).scalar_one()
+    leg = await design_legs.get_leg(
+        conn, workspace_id=seeds["workspace_id"], leg_id=seeds["leg"]["id"]
+    )
+    return {
+        "runs": int(runs),
+        "roles": list(roles),
+        "commits": int(commits),
+        "leg_state": leg["state"],
+    }
+
+
+def test_a_finalized_web_document_refuses_the_turn(
+    tmp_path: Path,
+    migrated_db: bool,  # noqa: F811
+) -> None:
+    """G1: a finalized document is never mutated — the turn refuses BEFORE any design run."""
+
+    if not migrated_db:
+        pytest.skip("database not reachable")
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            seeds, document = await _seed_web_leg(conn, storage_root=tmp_path, label="finalweb")
+            await conn.execute(
+                text("UPDATE design_document SET status = 'finalized' WHERE id = :d"),
+                {"d": document["id"]},
+            )
+            registry = build_agent_profile_registry(build_toolbelt(storage=None, gateway=None))
+            lane = _FakeLane(conn_factory=seeds["conn_factory"], result=APPLIED_WEB_RESULT)
+            submission = await _submit_message(
+                conn, seeds, label="finalweb", message="Change the hero copy."
+            )
+            result = await _run_turn(conn, seeds, registry, lane, submission)
+
+            assert result.outcome.status is AgentExecutionStatus.FAILED
+            assert result.outcome.failure_code == "design_leg_document_finalized"
+            assert result.assistant_message is None
+            assert lane.envelopes == []  # nothing was dispatched
+            facts = await _turn_facts(conn, seeds, submission.turn_id)
+            assert facts == {
+                "runs": 0,
+                "roles": ["user"],
+                "commits": 0,
+                "leg_state": "open_awaiting_user",
+            }
+
+    run_async(scenario())
+
+
+def test_a_finalized_scene_document_refuses_the_turn_the_same_way(
+    tmp_path: Path,
+    migrated_db: bool,  # noqa: F811
+) -> None:
+    """G1 is about mutation, not doc kind — and the SCENE half of the substrate's own
+    ``is_finalized_document`` (a draft row whose scene carries a finalized status) counts."""
+
+    if not migrated_db:
+        pytest.skip("database not reachable")
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            seeds = await _seed_leg_conversation(conn, storage_root=tmp_path, label="finalscene")
+            document = await create_document(
+                conn,
+                workspace_id=seeds["workspace_id"],
+                scene={
+                    "meta": {
+                        "id": "doc_genweb_finalscene",
+                        "title": "Launch artboard",
+                        "status": {"kind": "finalized"},
+                    }
+                },
+            )
+            await conn.execute(
+                text("UPDATE design_leg SET document_id = :doc WHERE id = CAST(:leg AS uuid)"),
+                {"doc": document["id"], "leg": seeds["leg"]["id"]},
+            )
+            # Isolate the SCENE branch of the mirrored predicate: the row says draft, the
+            # scene says finalized, and the gate must still refuse.
+            await conn.execute(
+                text("UPDATE design_document SET status = 'draft' WHERE id = :d"),
+                {"d": document["id"]},
+            )
+            registry = build_agent_profile_registry(build_toolbelt(storage=None, gateway=None))
+            lane = _FakeLane(conn_factory=seeds["conn_factory"])
+            submission = await _submit_message(
+                conn, seeds, label="finalscene", message="Make the headline two lines."
+            )
+            result = await _run_turn(conn, seeds, registry, lane, submission)
+
+            assert result.outcome.status is AgentExecutionStatus.FAILED
+            assert result.outcome.failure_code == "design_leg_document_finalized"
+            assert lane.envelopes == []
+            facts = await _turn_facts(conn, seeds, submission.turn_id)
+            assert facts["runs"] == 0
+            assert facts["roles"] == ["user"]
+            assert facts["leg_state"] == "open_awaiting_user"
+
+    run_async(scenario())
+
+
+def test_a_published_web_document_still_dispatches(
+    tmp_path: Path,
+    migrated_db: bool,  # noqa: F811
+) -> None:
+    """G1's other half: published is NOT finalized.
+
+    Publishing a web document writes a ``design_web_publish`` row and leaves the document row
+    ``draft`` (``clue_design.publishes``), so the realistic case is exercised by the plain draft
+    document; the ``status = 'published'`` row below pins the ruling literally — a document
+    carrying that word is still editable, exactly as the substrate's own predicate says.
+    """
+
+    if not migrated_db:
+        pytest.skip("database not reachable")
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            seeds, document = await _seed_web_leg(conn, storage_root=tmp_path, label="published")
+            await conn.execute(
+                text("UPDATE design_document SET status = 'published' WHERE id = :d"),
+                {"d": document["id"]},
+            )
+            registry = build_agent_profile_registry(build_toolbelt(storage=None, gateway=None))
+            lane = _FakeLane(conn_factory=seeds["conn_factory"], result=APPLIED_WEB_RESULT)
+            submission = await _submit_message(
+                conn, seeds, label="published", message="Warm up the palette."
+            )
+            result = await _run_turn(conn, seeds, registry, lane, submission)
+
+            assert result.outcome.status is AgentExecutionStatus.AWAITING_INPUT
+            assert lane.envelopes[0].kind == "web_turn"
+
+    run_async(scenario())
+
+
+# --- G2: the frozen account card -----------------------------------------------------------------
+
+
+async def _seed_account(
+    conn: AsyncConnection, *, workspace_id: str, account_id: str
+) -> dict[str, Any]:
+    return await create_web_account(
+        conn,
+        workspace_id=workspace_id,
+        account_id=account_id,
+        name="Northwind Logistics",
+        domain="northwind.example",
+        logo_asset_id=None,
+        data={"industry": "freight", "hq": "Rotterdam"},
+        notes="Prefers plain language; no jargon.",
+    )
+
+
+def test_an_account_stamped_web_document_freezes_the_account_card(
+    tmp_path: Path,
+    migrated_db: bool,  # noqa: F811
+) -> None:
+    """G2: the pinned document's account is resolved in-workspace and frozen BY VALUE."""
+
+    if not migrated_db:
+        pytest.skip("database not reachable")
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            seeds = await _seed_leg_conversation(conn, storage_root=tmp_path, label="acctcard")
+            account_id = f"acct_genweb_{uuid4().hex[:8]}"
+            await _seed_account(conn, workspace_id=seeds["workspace_id"], account_id=account_id)
+            document_id = f"doc_genweb_acctcard_{uuid4().hex[:8]}"
+            document = await create_document(
+                conn,
+                workspace_id=seeds["workspace_id"],
+                scene=_web_doc(document_id),
+                doc_kind="web",
+                account_id=account_id,
+            )
+            await conn.execute(
+                text("UPDATE design_leg SET document_id = :doc WHERE id = CAST(:leg AS uuid)"),
+                {"doc": document["id"], "leg": seeds["leg"]["id"]},
+            )
+            registry = build_agent_profile_registry(build_toolbelt(storage=None, gateway=None))
+            lane = _FakeLane(conn_factory=seeds["conn_factory"], result=APPLIED_WEB_RESULT)
+            submission = await _submit_message(
+                conn, seeds, label="acctcard", message="Build the page for Northwind."
+            )
+            result = await _run_turn(conn, seeds, registry, lane, submission)
+            assert result.outcome.status is AgentExecutionStatus.AWAITING_INPUT
+
+            # The design route's card, key for key — the executor reads only this key.
+            assert lane.envelopes[0].config["account_card"] == {
+                "name": "Northwind Logistics",
+                "domain": "northwind.example",
+                "logo_asset_id": None,
+                "data": {"industry": "freight", "hq": "Rotterdam"},
+                "notes": "Prefers plain language; no jargon.",
+            }
+
+    run_async(scenario())
+
+
+def test_a_web_document_naming_an_unresolvable_account_refuses_the_turn(
+    tmp_path: Path,
+    migrated_db: bool,  # noqa: F811
+) -> None:
+    """G2 fail-closed: never a silent un-personalized run.
+
+    ``design_document_account_fk`` normally makes an unresolvable stamp impossible (and
+    SET-NULLs it on account deletion), so the constraint is dropped inside this rolled-back
+    transaction to reach the guard the founder ruling asks for — the platform must not trust
+    the FK to be the only thing standing between a stale stamp and a generic page.
+    """
+
+    if not migrated_db:
+        pytest.skip("database not reachable")
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            seeds, document = await _seed_web_leg(conn, storage_root=tmp_path, label="acctgone")
+            await conn.execute(
+                text("ALTER TABLE design_document DROP CONSTRAINT design_document_account_fk")
+            )
+            await conn.execute(
+                text("UPDATE design_document SET account_id = :a WHERE id = :d"),
+                {"a": "acct_vanished", "d": document["id"]},
+            )
+            registry = build_agent_profile_registry(build_toolbelt(storage=None, gateway=None))
+            lane = _FakeLane(conn_factory=seeds["conn_factory"], result=APPLIED_WEB_RESULT)
+            submission = await _submit_message(
+                conn, seeds, label="acctgone", message="Personalize the hero."
+            )
+            result = await _run_turn(conn, seeds, registry, lane, submission)
+
+            assert result.outcome.status is AgentExecutionStatus.FAILED
+            assert result.outcome.failure_code == "design_leg_account_unresolved"
+            assert result.assistant_message is None
+            assert lane.envelopes == []
+            facts = await _turn_facts(conn, seeds, submission.turn_id)
+            assert facts == {
+                "runs": 0,
+                "roles": ["user"],
+                "commits": 0,
+                "leg_state": "open_awaiting_user",
+            }
+
+    run_async(scenario())
+
+
+def test_an_account_less_web_document_carries_no_account_card_key(
+    tmp_path: Path,
+    migrated_db: bool,  # noqa: F811
+) -> None:
+    """G2 regression: no account stamp -> the slice-1 envelope, byte for byte."""
+
+    if not migrated_db:
+        pytest.skip("database not reachable")
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            seeds, document = await _seed_web_leg(conn, storage_root=tmp_path, label="noacct")
+            registry = build_agent_profile_registry(build_toolbelt(storage=None, gateway=None))
+            lane = _FakeLane(conn_factory=seeds["conn_factory"], result=APPLIED_WEB_RESULT)
+            submission = await _submit_message(
+                conn, seeds, label="noacct", message="Build the page."
+            )
+            await _run_turn(conn, seeds, registry, lane, submission)
+
+            config = lane.envelopes[0].config
+            assert "account_card" not in config
+            assert _canonical(config) == _canonical(
+                {
+                    "request": {
+                        "prompt": "Build the page.",
+                        "base_version": document["current_version"],
+                    },
+                    "delegation_bundle": config["delegation_bundle"],
+                    "history": [],
+                    "leg": config["leg"],
+                }
+            )
 
     run_async(scenario())

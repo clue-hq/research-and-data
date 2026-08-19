@@ -73,9 +73,10 @@ from clue_api.chat.turn_stream import TurnStreamEmitter
 from clue_api.turn_action import derive_turn_action_ref
 from clue_core import ExecutionId, operation_id_from_key
 from clue_db import ConnFactory, transaction
+from clue_design import accounts as design_accounts
 from clue_design import legs as design_legs
 from clue_design import runs as design_runs
-from clue_design.documents import get_document
+from clue_design.documents import get_document, is_finalized_document
 from clue_design.enums import DesignRunKind
 from clue_design.envelopes import DesignTurnEnvelope
 from clue_design.errors import DesignNotFoundError
@@ -91,7 +92,9 @@ from clue_toolbelt import ToolInvoker
 log = get_logger("clue_api.design_leg")
 
 __all__ = [
+    "DESIGN_LEG_ACCOUNT_UNRESOLVED",
     "DESIGN_LEG_BUDGET_LIMIT_MILLICENTS",
+    "DESIGN_LEG_DOCUMENT_FINALIZED",
     "DESIGN_LEG_TURN_CRASHED",
     "DESIGN_LEG_TURN_FAILED",
     "DesignLegLaneDriver",
@@ -112,6 +115,16 @@ DESIGN_LEG_BUDGET_LIMIT_MILLICENTS = 1_000_000
 
 #: The one stable failure code a failed design run surfaces on the platform turn.
 DESIGN_LEG_TURN_FAILED = "design_leg_turn_failed"
+
+#: G1 (founder ruling, 2026-08-19): the pinned document is finalized, so this turn would be a
+#: mutation of a frozen artifact. Revising one means a new draft revision plus a governed move
+#: of the leg onto it — machinery that does not exist yet — so the turn refuses instead.
+DESIGN_LEG_DOCUMENT_FINALIZED = "design_leg_document_finalized"
+
+#: G2 (founder ruling, 2026-08-19): the pinned document names an account this workspace cannot
+#: resolve. Fail-closed by ruling: a personalized document must never quietly generate a generic
+#: page, so an unresolvable stamp fails the turn rather than dropping the card.
+DESIGN_LEG_ACCOUNT_UNRESOLVED = "design_leg_account_unresolved"
 
 #: The containment code for a turn body that RAISED (vs a design run that honestly
 #: failed): lane unavailable, join timeout, bundle fault, finisher fault. Marked
@@ -502,6 +515,25 @@ def _web_turn_summary(run: dict[str, Any], result: dict[str, Any]) -> str:
     return f"Design turn {status} on {subject}."
 
 
+def _account_card(account: dict[str, Any]) -> dict[str, JsonValue]:
+    """The compact by-value account context a personalized web turn runs against.
+
+    Key-for-key the card the design API's own web-turn route freezes into the envelope
+    (``lumen_api.main.start_web_turn``), because the executor reads exactly one place —
+    ``envelope.config['account_card']`` — and nothing downstream re-reads the account row. A
+    platform-frozen card therefore needs no design-side change; a card with different keys
+    would silently drop context.
+    """
+
+    return {
+        "name": account["name"],
+        "domain": account["domain"],
+        "logo_asset_id": account["logo_asset_id"],
+        "data": account["data"],
+        "notes": account["notes"],
+    }
+
+
 class DesignLegTurnRunner:
     """Run one user message as one design turn on its open leg."""
 
@@ -745,6 +777,60 @@ class DesignLegTurnRunner:
                     stream=stream,
                 )
 
+            # --- G1: the finalized-document gate (founder ruling, 2026-08-19) ------------------
+            # A leg may edit a DRAFT document — even one whose older version is published — but
+            # may never mutate a FINALIZED one. The refusal happens here, AFTER the exit
+            # judgment (closing a leg is not a mutation, so "lock it in" still works on a
+            # finalized document) and BEFORE dispatch: no design run row, no envelope, no
+            # assistant sentence, and the leg is never marked running, so it stays open.
+            if pinned_document is not None and is_finalized_document(pinned_document):
+                log.warning(
+                    "design_leg.document_finalized",
+                    leg_id=leg_id,
+                    turn_id=str(turn_id),
+                    document_id=str(pinned_document.get("id")),
+                )
+                return await self._fail_turn(
+                    submission=submission,
+                    execution_id=execution_id,
+                    failure_code=DESIGN_LEG_DOCUMENT_FINALIZED,
+                    stream=stream,
+                )
+
+            # --- G2: resolve and freeze the account card (founder ruling, 2026-08-19) ---------
+            # A web document that carries an account_id is a 1:1 page: every chat-driven turn
+            # resolves that account IN THIS WORKSPACE and freezes the card by value, exactly as
+            # the design API's own route does before enqueue. Fail-closed — an unresolvable
+            # stamp refuses the turn rather than generating an un-personalized page in silence.
+            account_card: dict[str, JsonValue] | None = None
+            account_id = (
+                pinned_document.get("account_id")
+                if pinned_document is not None and pinned_document.get("doc_kind") == "web"
+                else None
+            )
+            if account_id:
+                async with self._conn_factory() as conn:
+                    account = await design_accounts.get_web_account(
+                        conn, workspace_id=workspace_id, account_id=str(account_id)
+                    )
+                if account is None:
+                    # Workspace-scoped read, so this is both "no such account" and
+                    # "another workspace's account" — one refusal for both.
+                    log.warning(
+                        "design_leg.account_unresolved",
+                        leg_id=leg_id,
+                        turn_id=str(turn_id),
+                        document_id=str(pinned_document.get("id") if pinned_document else None),
+                        account_id=str(account_id),
+                    )
+                    return await self._fail_turn(
+                        submission=submission,
+                        execution_id=execution_id,
+                        failure_code=DESIGN_LEG_ACCOUNT_UNRESOLVED,
+                        stream=stream,
+                    )
+                account_card = _account_card(account)
+
             run = await self._dispatch(
                 submission=submission,
                 leg=leg,
@@ -753,6 +839,7 @@ class DesignLegTurnRunner:
                 user_message_ref=user_message_ref,
                 prior_history=prior_history,
                 pinned_document=pinned_document,
+                account_card=account_card,
                 focus_refs=focus_refs,
                 workspace_id=workspace_id,
             )
@@ -763,32 +850,17 @@ class DesignLegTurnRunner:
             )
 
             if run["status"] != "succeeded":
-                await self._turns.mark_unfinalized(
-                    turn_id=turn_id,
-                    workspace_id=workspace_id,
-                    reason_code=DESIGN_LEG_TURN_FAILED,
-                    abandoned=False,
-                )
-                if stream is not None:
-                    await stream.turn_finished(
-                        status="failed",
-                        failure_code=DESIGN_LEG_TURN_FAILED,
-                    )
                 log.warning(
                     "design_leg.turn_failed",
                     leg_id=leg_id,
                     turn_id=str(turn_id),
                     run_id=str(run.get("run_id")),
                 )
-                return DesignLegTurnResult(
-                    outcome=AgentTurnOutcome(
-                        turn_id=turn_id,
-                        execution_id=execution_id,
-                        status=AgentExecutionStatus.FAILED,
-                        failure_code=DESIGN_LEG_TURN_FAILED,
-                    ),
-                    assistant_message=None,
-                    replayed=False,
+                return await self._fail_turn(
+                    submission=submission,
+                    execution_id=execution_id,
+                    failure_code=DESIGN_LEG_TURN_FAILED,
+                    stream=stream,
                 )
 
             assistant_message = _assistant_summary(run)
@@ -862,6 +934,42 @@ class DesignLegTurnRunner:
         except BaseException:
             await self._contain_crash(turn_id=turn_id, workspace_id=workspace_id, stream=stream)
             raise
+
+    async def _fail_turn(
+        self,
+        *,
+        submission: AgentTurnSubmissionRow,
+        execution_id: ExecutionId,
+        failure_code: str,
+        stream: TurnStreamEmitter | None,
+    ) -> DesignLegTurnResult:
+        """The one honest failed-turn shape, shared by every non-crash failure.
+
+        The turn is marked unfinalized with its typed code and the stream lands a terminal
+        failed frame; nothing is finalized and no assistant message is manufactured. The two
+        pre-dispatch refusals (G1, G2) reach it before the leg is ever marked running, so the
+        leg stays ``open_awaiting_user`` and the user can say something else on it; the failed
+        design run reaches it after ``_leg_back_to_awaiting`` has already put it back there.
+        """
+
+        await self._turns.mark_unfinalized(
+            turn_id=submission.turn_id,
+            workspace_id=submission.workspace_id,
+            reason_code=failure_code,
+            abandoned=False,
+        )
+        if stream is not None:
+            await stream.turn_finished(status="failed", failure_code=failure_code)
+        return DesignLegTurnResult(
+            outcome=AgentTurnOutcome(
+                turn_id=submission.turn_id,
+                execution_id=execution_id,
+                status=AgentExecutionStatus.FAILED,
+                failure_code=failure_code,
+            ),
+            assistant_message=None,
+            replayed=False,
+        )
 
     async def _contain_crash(
         self,
@@ -1045,6 +1153,7 @@ class DesignLegTurnRunner:
         user_message_ref: ArtifactRef,
         prior_history: Sequence[HistoryMessageRef],
         pinned_document: dict[str, Any] | None,
+        account_card: dict[str, JsonValue] | None,
         focus_refs: tuple[DomainObjectRef, ...],
         workspace_id: str,
     ) -> dict[str, Any]:
@@ -1065,6 +1174,7 @@ class DesignLegTurnRunner:
             user_message_ref=user_message_ref,
             prior_history=prior_history,
             pinned_document=pinned_document,
+            account_card=account_card,
             focus_refs=focus_refs,
             workspace_id=workspace_id,
         )
@@ -1109,6 +1219,7 @@ class DesignLegTurnRunner:
         user_message_ref: ArtifactRef,
         prior_history: Sequence[HistoryMessageRef],
         pinned_document: dict[str, Any] | None,
+        account_card: dict[str, JsonValue] | None,
         focus_refs: tuple[DomainObjectRef, ...],
         workspace_id: str,
     ) -> DesignTurnEnvelope:
@@ -1151,6 +1262,34 @@ class DesignLegTurnRunner:
                 "document_id": leg.get("document_id"),
                 "previous_turn_outcome": submission.previous_turn_outcome,
             }
+        # ``ConfigPayload`` — deliberately opaque at the substrate (clue_design.envelopes).
+        config: dict[str, Any] = {
+            "request": request,
+            "delegation_bundle": bundle,
+            "history": history_texts,
+            "leg": {
+                "leg_id": leg_id,
+                "thread_id": submission.thread_id,
+                "agent_turn_id": str(submission.turn_id),
+                "execution_id": str(execution_id),
+                "brand_kit_id": leg.get("brand_kit_id"),
+                "brand_kit_version": leg.get("brand_kit_version"),
+                "document_version_guard": leg.get("document_version_guard"),
+                "focus_refs": [
+                    {
+                        "object_type": ref.object_type,
+                        "object_id": ref.object_id,
+                        "version": ref.version,
+                    }
+                    for ref in focus_refs
+                ],
+            },
+        }
+        if account_card is not None:
+            # G2: frozen by value, and only when the document actually named an account — an
+            # un-personalized turn's envelope carries no such key at all (the design route's
+            # own shape, and the executor treats a missing card exactly as it treats a null).
+            config["account_card"] = account_card
         return DesignTurnEnvelope(
             kind=kind,
             work_id=design_runs.work_id_for_run(run_id),
@@ -1158,28 +1297,7 @@ class DesignLegTurnRunner:
             run_id=run_id,
             checkpoint_thread_id=run_id,
             document_id=leg.get("document_id"),
-            config={
-                "request": request,
-                "delegation_bundle": bundle,
-                "history": history_texts,
-                "leg": {
-                    "leg_id": leg_id,
-                    "thread_id": submission.thread_id,
-                    "agent_turn_id": str(submission.turn_id),
-                    "execution_id": str(execution_id),
-                    "brand_kit_id": leg.get("brand_kit_id"),
-                    "brand_kit_version": leg.get("brand_kit_version"),
-                    "document_version_guard": leg.get("document_version_guard"),
-                    "focus_refs": [
-                        {
-                            "object_type": ref.object_type,
-                            "object_id": ref.object_id,
-                            "version": ref.version,
-                        }
-                        for ref in focus_refs
-                    ],
-                },
-            },
+            config=config,
         )
 
     # -- helpers -------------------------------------------------------------------------------

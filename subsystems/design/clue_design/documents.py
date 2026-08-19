@@ -93,6 +93,22 @@ def scene_status(scene: JsonObject) -> str:
     return str(status)
 
 
+def is_finalized_document(document: JsonObject) -> bool:
+    """Is this document frozen against mutation?
+
+    The platform-side mirror of the design API's own predicate
+    (``lumen_api.main.is_finalized_document``), kept semantically identical so one document
+    cannot be finalized to the design route and editable to a platform caller: the row says
+    ``finalized``, OR the scene carries a finalized status. Note what is deliberately absent —
+    ``published`` is NOT finalized. A draft whose older version is currently published stays
+    editable (founder ruling G1, 2026-08-19), and publishing writes ``design_web_publish``
+    rather than the document row anyway.
+    """
+    if document.get("status") == "finalized":
+        return True
+    return scene_status(document.get("scene") or {}) == "finalized"
+
+
 def _document_from_row(row: Any) -> JsonObject:
     return {
         "id": row.id,
