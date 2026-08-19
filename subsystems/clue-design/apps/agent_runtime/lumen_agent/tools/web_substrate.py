@@ -21,6 +21,7 @@ import base64
 import copy
 import hashlib
 import json
+import os
 import re
 import shutil
 import threading
@@ -77,6 +78,70 @@ _SEMANTIC_WEB_TOKENS = [
     "border",
     "inverse",
 ]
+
+# --- the Tailwind browser runtime the preview render inlines -----------------
+#
+# An editor-mode render carries the document's theme as a
+# `<style type="text/tailwindcss">` block and nothing else: the served CSS has
+# theme tokens and @font-face rules but NO utility rules. Every layout class the
+# agent authors (`flex`, `mx-auto`, `py-24`, `max-w-[900px]`, `min-h-screen`) is
+# compiled at load time by the Tailwind v4 BROWSER runtime. Without it a preview
+# screenshot is the page with its entire layout layer deleted — content stacked
+# top-left — and the visual reviewer grades that, so its absence blinds the
+# quality loop rather than merely uglifying it.
+#
+# The bytes are the `@tailwindcss/browser` package's single dist file. Resolved
+# through an ordered search path because the two places that hold it are both
+# generated artifacts (gitignored), so a fresh checkout has neither until an
+# `npm install`/`npm run dev` in `apps/editor` materializes them:
+#
+#   1. `LUMEN_TAILWIND_RUNTIME` — an absolute path override; the deployment
+#      seam for an image that ships the file outside the source tree.
+#   2. `apps/editor/public/vendor/tailwind-browser.js` — the copy the editor's
+#      Next server also serves at `/vendor/tailwind-browser.js` (the URL the
+#      shells pass as `runtime_src`); produced by
+#      `scripts/vendor_tailwind_runtime.mjs`.
+#   3. `apps/editor/node_modules/@tailwindcss/browser/dist/index.global.js` —
+#      the installed package the copy above is made from. Falling back to it
+#      means a plain `npm install` in `apps/editor` is enough for the fleet
+#      worker, which never runs the editor's npm scripts.
+#
+# Before this search path existed only (2) was consulted, and nothing in this
+# subsystem produced it — the pre-merge MVP working tree simply still had a
+# hand-copied file that a fresh monorepo checkout never received.
+_TAILWIND_RUNTIME_ENV = "LUMEN_TAILWIND_RUNTIME"
+_TAILWIND_RUNTIME_CANDIDATES = (
+    ("apps", "editor", "public", "vendor", "tailwind-browser.js"),
+    (
+        "apps",
+        "editor",
+        "node_modules",
+        "@tailwindcss",
+        "browser",
+        "dist",
+        "index.global.js",
+    ),
+)
+
+
+def tailwind_runtime_path(repo_root: Path) -> Optional[Path]:
+    """The Tailwind browser runtime to inline, or None when nothing supplies it.
+
+    A set-but-missing `LUMEN_TAILWIND_RUNTIME` resolves to None rather than
+    silently falling through to the search path: an operator who named a file
+    must be told their path is wrong, not handed a different one.
+    """
+
+    override = os.environ.get(_TAILWIND_RUNTIME_ENV)
+    if override:
+        candidate = Path(override).expanduser()
+        return candidate if candidate.is_file() else None
+    for parts in _TAILWIND_RUNTIME_CANDIDATES:
+        candidate = Path(repo_root).joinpath(*parts)
+        if candidate.is_file():
+            return candidate
+    return None
+
 
 # The screenshot widths captured for every render, in emission order.
 _PREVIEW_WIDTHS = (1440, 768, 375)
@@ -3551,15 +3616,8 @@ class LumenWebTools:
         # `<style type="text/tailwindcss">` block is processed at set_content
         # time (the runtime scans on load). Absent → render bare + warn.
         tailwind_missing = False
-        runtime_path = (
-            Path(self.config.repo_root)
-            / "apps"
-            / "editor"
-            / "public"
-            / "vendor"
-            / "tailwind-browser.js"
-        )
-        if runtime_path.exists():
+        runtime_path = tailwind_runtime_path(Path(self.config.repo_root))
+        if runtime_path is not None:
             script = "<script>" + runtime_path.read_text(encoding="utf-8") + "</script>"
             if "</head>" in html:
                 html = html.replace("</head>", script + "\n</head>", 1)
@@ -3567,6 +3625,18 @@ class LumenWebTools:
                 html = script + html
         else:
             tailwind_missing = True
+            # Loud in the process log too, not only in the tool result: a
+            # screenshot with no utility CSS still LOOKS like a page, so a
+            # silent miss is graded as a real render by the visual reviewer.
+            logger.warning(
+                "tailwind_runtime_missing: no Tailwind browser runtime found "
+                "(searched %s=%r then %s under %s) — preview screenshots will "
+                "carry NO layout utilities",
+                _TAILWIND_RUNTIME_ENV,
+                os.environ.get(_TAILWIND_RUNTIME_ENV),
+                [str(Path(*parts)) for parts in _TAILWIND_RUNTIME_CANDIDATES],
+                self.config.repo_root,
+            )
 
         try:
             from playwright.sync_api import sync_playwright  # noqa: F401

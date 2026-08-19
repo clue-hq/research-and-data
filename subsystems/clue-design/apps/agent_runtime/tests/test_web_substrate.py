@@ -13,6 +13,8 @@ import json
 from dataclasses import replace
 from pathlib import Path
 
+import pytest
+
 from lumen_agent.config import AgentRuntimeConfig
 from lumen_agent.tools import view as view_mod
 from lumen_agent.tools import web_substrate as ws
@@ -46,6 +48,89 @@ SAMPLE_HTML = """
   </div>
 </footer>
 """
+
+
+# --- the Tailwind browser runtime search path (G7) ---------------------------
+#
+# Regression cover for the missing-runtime defect: the preview render inlines
+# this file, and without it every screenshot loses its whole layout layer while
+# still looking like a page — so the visual reviewer grades a broken render as a
+# real one. Before G7 exactly one (gitignored, unproduced) path was consulted.
+
+
+def _write(path: Path) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("/* runtime */", encoding="utf-8")
+    return path
+
+
+def test_tailwind_runtime_prefers_the_vendored_editor_copy(tmp_path, monkeypatch):
+    monkeypatch.delenv("LUMEN_TAILWIND_RUNTIME", raising=False)
+    vendored = _write(
+        tmp_path / "apps" / "editor" / "public" / "vendor" / "tailwind-browser.js"
+    )
+    _write(
+        tmp_path
+        / "apps"
+        / "editor"
+        / "node_modules"
+        / "@tailwindcss"
+        / "browser"
+        / "dist"
+        / "index.global.js"
+    )
+    assert ws.tailwind_runtime_path(tmp_path) == vendored
+
+
+def test_tailwind_runtime_falls_back_to_the_installed_package(tmp_path, monkeypatch):
+    # The fleet worker never runs the editor's npm scripts, so a plain
+    # `npm install` under apps/editor must be enough on its own.
+    monkeypatch.delenv("LUMEN_TAILWIND_RUNTIME", raising=False)
+    installed = _write(
+        tmp_path
+        / "apps"
+        / "editor"
+        / "node_modules"
+        / "@tailwindcss"
+        / "browser"
+        / "dist"
+        / "index.global.js"
+    )
+    assert ws.tailwind_runtime_path(tmp_path) == installed
+
+
+def test_tailwind_runtime_env_override_wins(tmp_path, monkeypatch):
+    _write(tmp_path / "apps" / "editor" / "public" / "vendor" / "tailwind-browser.js")
+    elsewhere = _write(tmp_path / "image" / "tailwind.js")
+    monkeypatch.setenv("LUMEN_TAILWIND_RUNTIME", str(elsewhere))
+    assert ws.tailwind_runtime_path(tmp_path) == elsewhere
+
+
+def test_tailwind_runtime_env_override_pointing_nowhere_does_not_fall_through(
+    tmp_path, monkeypatch
+):
+    # An operator who named a path must be told it is wrong, not silently
+    # handed a different runtime.
+    _write(tmp_path / "apps" / "editor" / "public" / "vendor" / "tailwind-browser.js")
+    monkeypatch.setenv("LUMEN_TAILWIND_RUNTIME", str(tmp_path / "nope.js"))
+    assert ws.tailwind_runtime_path(tmp_path) is None
+
+
+def test_tailwind_runtime_absent_everywhere_is_none(tmp_path, monkeypatch):
+    monkeypatch.delenv("LUMEN_TAILWIND_RUNTIME", raising=False)
+    assert ws.tailwind_runtime_path(tmp_path) is None
+
+
+def test_tailwind_runtime_resolves_in_this_checkout(monkeypatch):
+    # The end the defect was actually about: from the real repo root, with no
+    # override, SOMETHING supplies the runtime. `apps/editor`'s npm install is
+    # the design subsystem's documented dev prerequisite (its own test gate
+    # already requires the wasm build from the same tree).
+    monkeypatch.delenv("LUMEN_TAILWIND_RUNTIME", raising=False)
+    resolved = ws.tailwind_runtime_path(REPO_ROOT)
+    if not (REPO_ROOT / "apps" / "editor" / "node_modules").is_dir():
+        pytest.skip("apps/editor dependencies are not installed in this checkout")
+    assert resolved is not None and resolved.is_file()
 
 
 # --- pure token-name derivation --------------------------------------------
