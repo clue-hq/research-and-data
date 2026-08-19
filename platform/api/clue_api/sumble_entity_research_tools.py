@@ -50,6 +50,7 @@ from clue_core import (
     AccountGapOperation,
     AccountGapOperationState,
     AccountGapSnapshotState,
+    ClaimId,
     CommitteeAcquisitionOperation,
     CommitteeEligibilityOutcome,
     EntityId,
@@ -789,15 +790,26 @@ class SumbleAccountSemanticEnrichmentAction(EntityResearchProviderAction):
                 claim_delta=ResearchClaimDelta.NONE,
                 verification_status=field.reason_code or "confirmed_missing",
             )
-        ids = tuple(
-            UUID(str(value))
-            for value in (
-                field.conflicting_claim_ids
-                if field.state is AccountGapFieldState.CONFLICT
-                else ((field.sumble_claim_id,) if field.sumble_claim_id else ())
+        contenders: tuple[ClaimId | None, ...]
+        if field.state is AccountGapFieldState.CONFLICT:
+            # The provider's own contender is part of its conflict by definition; the corroborator
+            # is not required to list it, so name it explicitly rather than rely on the group.
+            contenders = field.conflicting_claim_ids + (
+                ()
+                if field.sumble_claim_id is None
+                or field.sumble_claim_id in field.conflicting_claim_ids
+                else (field.sumble_claim_id,)
             )
-        )
+        else:
+            contenders = (field.sumble_claim_id,) if field.sumble_claim_id else ()
+        ids = tuple(UUID(str(value)) for value in contenders)
         rows = tuple(claims_by_id[value] for value in ids)
+        # Evidence is this operation's own retained provenance, never a contender's.  A conflict's
+        # foreign claims are cited by *reference* (``claim_refs`` plus the durable conflict
+        # decision) and the agent reads them through the claim surface.  Projecting their spans
+        # here would have this tool vouch for artifacts it neither bought nor was authorized for:
+        # the engine's exact field/source authority refuses that, and rightly — a Sumble result
+        # citing an Exa artifact is provenance laundering, not corroboration.
         evidence = tuple(
             ResearchEvidenceProjection(
                 evidence_ref=(
@@ -810,6 +822,7 @@ class SumbleAccountSemanticEnrichmentAction(EntityResearchProviderAction):
                 evidence_span=str(row["evidence_span"]),
             )
             for row in rows
+            if str(row["source_key"]) == str(field.source_key)
         )
         if field.state is AccountGapFieldState.CONFLICT:
             return ResearchFieldResultProjection(
