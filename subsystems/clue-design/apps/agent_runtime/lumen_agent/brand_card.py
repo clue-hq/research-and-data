@@ -12,8 +12,11 @@ token discipline.
 
 from __future__ import annotations
 
+import json
 import math
 from typing import Any, Optional
+
+from .brand_brief import BRAND_BRIEF_TOKEN_BUDGET, read_brief, render_brand_grammar
 
 JsonObject = dict[str, Any]
 
@@ -49,8 +52,17 @@ def build_brand_card(
     *,
     source: Optional[str] = None,
     notice: Optional[str] = None,
+    include_brief: bool = False,
 ) -> Optional[JsonObject]:
-    """The compact card, or None when the run has no attached kit."""
+    """The compact card, or None when the run has no attached kit.
+
+    ``include_brief`` (slice 4, D4) adds the kit's Creative Brief and its
+    measured geometry, rendered to bounded prose. It defaults OFF: the scene/ad
+    path keeps today's card byte for byte until the ad-editor lane rules, and a
+    kit that carries no `BrandBrief@1` renders today's card either way — the
+    brief and the geometry ride together, so "no brief" is one clean switch
+    back to pre-slice-4 behavior rather than two half-states.
+    """
     if not isinstance(brand_kit, dict) or not brand_kit.get("id"):
         return None
 
@@ -92,7 +104,37 @@ def build_brand_card(
         card["font_gaps"] = font_gaps
     if notice:
         card["notice"] = notice
+    if include_brief:
+        brief = read_brief(brand_kit)
+        if brief is not None:
+            render = render_brand_grammar(brand_kit, brief)
+            card["creative_brief"] = {
+                "schema": "BrandBrief@1",
+                "rendered": render.markdown,
+                "truncated": render.truncated,
+                "omitted_sections": list(render.omitted),
+                "estimated_tokens": render.estimated_tokens,
+                "token_budget": BRAND_BRIEF_TOKEN_BUDGET,
+            }
     return card
+
+
+def render_brand_card_text(card: JsonObject) -> str:
+    """The card as it is INJECTED into a role prompt.
+
+    The card is JSON; the brief is prose. Serializing the prose inside the JSON
+    would escape every newline and hand the model a 6,000-token single line, so
+    the brief is spliced out and appended beside it. A card with no brief
+    renders exactly the `json.dumps(card, indent=2)` this seam has always
+    injected — byte for byte, which is the back-compat guarantee.
+    """
+    brief_block = card.get("creative_brief")
+    if not isinstance(brief_block, dict):
+        return json.dumps(card, indent=2)
+    body = {key: value for key, value in card.items() if key != "creative_brief"}
+    rendered = brief_block.get("rendered")
+    prose = rendered if isinstance(rendered, str) else ""
+    return json.dumps(body, indent=2) + "\n\n" + prose
 
 
 def _font_gaps(fonts: JsonObject) -> list[str]:

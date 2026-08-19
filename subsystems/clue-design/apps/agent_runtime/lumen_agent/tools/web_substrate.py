@@ -51,7 +51,8 @@ try:  # pragma: no cover - exercised only when the T2I model is configured
 except Exception:  # pragma: no cover
     image_provider = None  # type: ignore[assignment]
 
-from ..brand_card import build_brand_card
+from ..brand_brief import read_brief, render_reviewer_brief
+from ..brand_card import build_brand_card, render_brand_card_text
 from ..config import AgentRuntimeConfig
 from ..models.schemas import LumenRunTraceEvent, new_run_id
 from .substrate import _CoreHelperProxy
@@ -562,11 +563,21 @@ class LumenWebTools:
 
         # Compact brand card (None without an attached kit) + its text form for
         # the prompts and view("brand").
+        # Slice 4 (D4): the WEB card carries the kit's Creative Brief and its
+        # measured geometry; the scene substrate's call keeps the default and
+        # stays byte-identical. `reviewer_brief_text` is the small
+        # review-relevant subset the harness hands the visual reviewer, so
+        # review-website's brief checks do not depend on the director quoting
+        # the brief into its delegation.
         self.brand_card: Optional[JsonObject] = build_brand_card(
-            config.brand_kit, source=config.brand_kit_source
+            config.brand_kit, source=config.brand_kit_source, include_brief=True
         )
+        self.reviewer_brief_text: Optional[str] = None
         if self.brand_card:
-            self.brand_card_text = json.dumps(self.brand_card, indent=2)
+            self.brand_card_text = render_brand_card_text(self.brand_card)
+            self.reviewer_brief_text = render_reviewer_brief(
+                read_brief(config.brand_kit)
+            )
         else:
             self.brand_card_text = (
                 "No brand kit is attached to this document. Author against the "

@@ -300,7 +300,8 @@ def create_web_deepagent(
                 "all three widths and returns a structured VisualCritique."
             ),
             "system_prompt": build_web_reviewer_prompt(
-                has_account=bool(tools.account_card)
+                has_account=bool(tools.account_card),
+                brief=tools.reviewer_brief_text,
             ),
             "model": reviewer_model,
             "tools": [subagent_view, tools.provenance],

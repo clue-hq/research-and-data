@@ -280,7 +280,20 @@ generated, and any diagnostics you could not resolve.
 """
 
 
-def build_web_reviewer_prompt(*, has_account: bool = False) -> str:
+def build_web_reviewer_prompt(
+    *, has_account: bool = False, brief: str | None = None
+) -> str:
+    """The visual reviewer's prompt.
+
+    ``brief`` (slice 4) is the review-relevant subset of the kit's Creative
+    Brief — characterization, hard constraints, background rhythm — rendered by
+    `brand_brief.render_reviewer_brief` and passed by the harness. It arrives
+    deterministically rather than depending on the director quoting it into the
+    delegation, which is what makes `review-website`'s brief checks fire on
+    every round. None (no kit, or a kit with no brief) leaves this prompt byte
+    for byte what it was before the brief existed.
+    """
+    brief_block = f"\n{brief}\n" if brief else ""
     account_line = (
         "\nThis is a 1:1 account page: additionally run the skill's "
         "personalization check — no generic template fallback text where the "
@@ -300,7 +313,7 @@ three widths AND every state capture before judging — the skill's
 Interactive-states checklist applies whenever captures exist. Request ALL
 the views you need as multiple tool calls in ONE response (they are
 independent reads); one-view-per-turn wastes the round-trip.
-Your brief carries the director's BRAND ANCHOR: apply the skill's anchor
+{brief_block}Your brief carries the director's BRAND ANCHOR: apply the skill's anchor
 check — point at one concrete element that could only belong to this brand,
 or report "brand expression generic" naming the band that most needs it.
 Use `provenance(action="list")` only as a READ: external claims and library
