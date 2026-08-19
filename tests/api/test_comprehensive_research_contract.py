@@ -306,7 +306,14 @@ def _directive_body(field_keys: tuple[str, ...]) -> ResearchDirectiveBody:
             candidate_cap=6,
         ),
         source_policy=ResearchSourcePolicy(
-            allowed_source_keys=("sumble_organizations", "sumble_jobs", "exa_deep"),
+            # sumble_people keeps the intentional committee plan above executable — the 9dc3e693
+            # draft guard refuses a committee-intent body with no committee-capable source.
+            allowed_source_keys=(
+                "sumble_organizations",
+                "sumble_jobs",
+                "exa_deep",
+                "sumble_people",
+            ),
         ),
         privacy_policy=ResearchPrivacyPolicy(
             contact_profiling_allowed=False,
