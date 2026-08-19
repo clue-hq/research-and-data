@@ -329,6 +329,31 @@ carry web work, then makes the frontend show what the leg already emits.
 - Commits: `feat(genweb): open_design_leg@2 births the web document (B2)` +
   `feat(genweb): head-of-abm v37 — the design delegation teaching (B4)`.
 
+> **Slice 2 OUTCOME (2026-08-19): DONE, reviewed clean — the loop is closed end to end
+> in chat** (commits `a186445b` tool@2 birth, `ef4884d0` v37 wave, `4ebd094e` S4-E
+> re-pin; records `_memory/2026-08-19-genweb-slice2-document-birth.md` + close-out).
+> One chat ask made head-of-abm@v37 call `open_design_leg@2` UNPROMPTED with
+> `doc_kind="web"` and its own title; `doc_a37154cd…` was born (web/draft/v0, no kit →
+> all-null theme + no pin, live), the card appeared first in the gallery feed read, and
+> the next message routed to Design and committed v0→v1. Seam note: the birth calls the
+> DAL's `create_document` directly inside the leg's own transaction (the plan's assumed
+> `design_create_document@1` route runs a private engine/transaction on another thread
+> — wrong caller for an atomic birth) + a narrow `design_tools.mint_empty_web_document`
+> engine seam; the frozen brand-stamp contract is honored and the twin-proofing is
+> structural (`doc_` id derived from the leg id, one transaction).
+> **NEW BLOCKER (G5, needs a founder go — must land before slice 4's acceptance
+> walk):** slice 1's 7500px preview clamp is the provider's SINGLE-image ceiling; a
+> request carrying MANY images drops the per-image limit to **2000px**, so an ordinary
+> multi-section brief (hero + 3 benefits + CTA + FAQ) died mid-review at ~28min and the
+> transactional turn discarded the whole authored page. The proven loop used a
+> deliberately small page. Fix shape: make the clamp attachment-count-aware (the view
+> tool knows how many images ride the request; >1 → clamp each to the multi-image
+> ceiling), same file and test idiom as slice 1's fix. Also recorded: the platform
+> FLEET worker now needs `LUMEN_CORE_HELPER` (the birth path shells to the engine —
+> §7 recipe updated); design-lane noise seen live (`generate_asset` CoreError, one
+> failed-then-retried generation, `tailwind_runtime_missing` on fleet-side renders) —
+> worth a design-lane look, not this plan's.
+
 ### Slice 3 — the visible loop (frontend; B5; AFTER W5 sign-off)
 
 **Founder requirements (2026-08-19, binding — the slice's acceptance list):**
@@ -422,7 +447,10 @@ Ports 3030 (frontend) / 8030 (platform API) / 8010 (design API), all port-checke
 Platform API + fleet worker: `CLUE_DESIGN_RUNTIME_ENABLED=1`. Design API:
 `LUMEN_CORE_HELPER=<repo>/subsystems/clue-design/target/release/lumen-api-helper`,
 `LUMEN_AGENT_API_KEY=<openrouter key>`. One platform fleet worker running with the design
-lane composed (slice 0 records the exact command). Test login per
+lane composed (slice 0 records the exact command) — and since slice 2 the FLEET worker
+also needs `LUMEN_CORE_HELPER` (document birth shells to the engine) plus the full
+`LUMEN_AGENT_*` set and an absolute `/private/tmp/...` `CLUE_AGENT_WORKSPACE_ROOT`
+(slice 1.5/2 memory notes record the traps). Test login per
 `_memory/2026-08-17-w01-shell-lift-file-set.md`. Browser work: Playwright MCP only.
 
 ## 8. Out of scope (registered, never silently dropped)
