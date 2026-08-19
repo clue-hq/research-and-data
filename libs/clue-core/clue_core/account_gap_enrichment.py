@@ -36,6 +36,10 @@ class AccountGapReason(StrEnum):
     LOW_CONFIDENCE = "low_confidence"
     CONFLICT = "conflict"
     STALE = "stale"  # confidently resolved, conflict-free, but past the field's freshness TTL
+    # Confidently resolved, conflict-free and fresh, but the winning claim carries no evidence
+    # span — so no consumer may treat the field as answered (``CurrentValue.evidence_backed``).
+    # Distinct from MISSING: something *is* on file, and it is the basis of the re-buy.
+    NO_EVIDENCE = "no_evidence"
 
 
 class AccountGapOperationState(StrEnum):

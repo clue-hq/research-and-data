@@ -8,13 +8,14 @@ from datetime import timedelta
 from decimal import Decimal
 from pathlib import Path
 from typing import cast
-from uuid import UUID, uuid4
+from uuid import UUID, uuid4, uuid5
 
 import pytest
 from pydantic import SecretStr
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_api import account_research_fleet_launch
 from clue_api.account_research_fleet import (
     AccountResearchFleetPolicy,
     AccountResearchFleetService,
@@ -75,6 +76,7 @@ from clue_core.entity_research import (
     EntityResearchJobAuthorization,
     EntityResearchSelection,
     GovernedResearchToolRequest,
+    SealedDiscoveryLaunchReceipt,
 )
 from clue_fleet import (
     DbEntityResearchJobStore,
@@ -88,13 +90,24 @@ from clue_research.directives import (
     ResearchDirectiveInvalid,
     validate_research_directive_draft,
 )
-from clue_research.durable import find_account_runs_for_entity
+from clue_research.durable import (
+    find_account_runs_for_entity,
+    get_discovery_batch_manifest,
+    get_discovery_batch_seal,
+)
 from clue_research.durable.provider_spend import (
     ProviderSpendRunIneligible,
     require_provider_spend_capacity,
 )
+from clue_research.identity import insert_account_entity
 from clue_research.narrative.prose import PROSE_ACCOUNT_FIELDS
-from clue_research.resolvers.sumble import SUMBLE_API_VERSION, SumbleClient, SumbleCreditBudget
+from clue_research.resolvers.sumble import (
+    SUMBLE_API_VERSION,
+    SUMBLE_SOURCE_KEYS,
+    SumbleClient,
+    SumbleCreditBudget,
+    sumble_action_supports_field,
+)
 from clue_research.resolvers.sumble.people import PEOPLE_SOURCE_KEY
 from clue_storage import FsStorage
 from tests._run_lineage import assert_run_registered
@@ -910,6 +923,7 @@ def test_account_only_research_composes_without_committee_configuration(tmp_path
                 await bindings["discover_buying_committee"].action.execute(
                     cast(GovernedResearchToolRequest, object()),
                     before_dispatch=None,
+                    settle_terminal=None,
                 )
             assert rejection.value.code == "provider_not_selected"
 
@@ -949,7 +963,8 @@ def test_comprehensive_directive_validates_and_launches_all_acquisition_fields(
     and the three zero-acquisition rows (``core.account_name``, ``core.employee_range``,
     ``core.revenue_band``). The launch selection admits exactly the acquisition subset: a field
     with no §3.1 source is reused or derived, never bought, so it carries no source authority
-    (EntityResearchSelection requires authority to cover every admitted field). Fields outside
+    (EntityResearchSelection requires an authority entry for every admitted field, though that
+    entry may authorize no source at all — see the settlement-F3 assertions below). Fields outside
     the fixed profile keep the strict validator unchanged. Directional questions are optional in
     the durable directive contract; this case intentionally omits them to prove that the fixed
     field profile is sufficient launch authority by itself.
@@ -1043,10 +1058,38 @@ def test_comprehensive_directive_validates_and_launches_all_acquisition_fields(
             }
             assert set(authority) == expected_acquisition
             for field_key, sources in authority.items():
-                assert sources, field_key
                 assert set(sources) <= set(COMPREHENSIVE_ACCOUNT_FIELD_SOURCES[field_key]), (
                     field_key
                 )
+
+            # Settlement F3: every compiled (field, source) pair must be one a real dispatch could
+            # actually make. Ownership and wire-requestability are different facts — Sumble
+            # Organizations *owns* seven §3.1 rows and its pinned v9 action can ask for three —
+            # so an un-intersected authority minted pairs no attempt could ever settle, and the
+            # execution-completeness reader then waited on them forever: the account could never
+            # reach a terminal disposition. Asserted against the resolver's own support predicate,
+            # so the launcher cannot drift from the wire it plans for.
+            unrequestable = tuple(
+                (field_key, source_key)
+                for field_key, sources in authority.items()
+                for source_key in sources
+                if source_key in SUMBLE_SOURCE_KEYS
+                and not sumble_action_supports_field(field_key, source_key)
+            )
+            assert not unrequestable
+            # The three rows that carry the defect. Two keep a second, requestable owner; the
+            # third has none and is admitted with *no* authority at all — nothing outstanding,
+            # so a fully-attempted account settles with it as an honest gap instead of deadlocking
+            # (the coverage ledger still reports the row; §5.1's zero-acquisition disposition).
+            assert authority["account.total_funding"] == ("exa_deep",)
+            assert authority["account.recent_funding"] == ("exa_deep",)
+            assert authority["core.company_linkedin_url"] == ()
+            # An empty authority is still exact authority: it authorizes nothing, so the run-wide
+            # admitted source set never gains a source on that field's behalf.
+            assert "core.company_linkedin_url" in selection.admitted_field_keys
+            assert set(selection.admitted_source_keys) == {
+                source for sources in authority.values() for source in sources
+            } | set(selection.committee_source_keys)
 
             # Outside the fixed profile the strict validator is unchanged: a reserved scoring
             # field is still refused as a directive field.
@@ -1071,5 +1114,260 @@ def test_comprehensive_directive_validates_and_launches_all_acquisition_fields(
                     ),
                     overrides={},
                 )
+
+    run_async(scenario())
+
+
+def test_an_account_outside_the_sealed_membership_is_refused_before_any_write(
+    tmp_path: Path,
+) -> None:
+    """Plan §6 Slice-5 case 4: the seal is the launch's account authority, checked first.
+
+    An explicitly selected Account that the sealed generation does not contain has no lineage to
+    research against — its claims could not cite the seal the whole run is authorized by. The
+    refusal happens inside the launch transaction *before* the estimate, the run, the jobs, or any
+    account_run row, so a mis-scoped selection leaves no durable trace at all.
+    """
+
+    async def scenario() -> None:
+        storage = FsStorage(tmp_path / "r6-outside-seal-artifacts")
+        async with rollback_conn() as conn:
+            fixture = await seed_insight_health_account_deep_fixture(
+                conn,
+                pages=_pages(),
+                storage=storage,
+            )
+            workspace_id = fixture.discovery_fixture.workspace_id
+            _, account_spec = await confirmed_account_research_direction(
+                conn,
+                workspace_id=workspace_id,
+                project_id=fixture.discovery_fixture.project_id,
+                product_id=fixture.discovery_fixture.product_id,
+                account_id=fixture.selected_account_id,
+                icp_key=fixture.deep_icp_key,
+                icp_version=fixture.deep_icp_version,
+                field_keys=(_PAIN, _MOVES),
+                allowed_source_keys=("exa_deep",),
+                questions=(
+                    ResearchQuestion(
+                        question_id="qualitative-burden",
+                        text="Where is administrative work creating avoidable burden?",
+                        target_field_key=_PAIN,
+                    ),
+                    ResearchQuestion(
+                        question_id="strategic-change",
+                        text="What strategic operational changes are visible?",
+                        target_field_key=_MOVES,
+                    ),
+                ),
+            )
+            pin = account_spec.research_directive
+            assert pin is not None
+            # A real, workspace-local account that simply was not part of the sealed generation —
+            # so the refusal is about membership, not about a missing entity.
+            unsealed_account_id = await insert_account_entity(
+                conn,
+                canonical_name="Outside The Seal Clinics",
+                primary_domain="outside-the-seal.test",
+                workspace_id=workspace_id,
+            )
+
+            def connection() -> AbstractAsyncContextManager[AsyncConnection]:
+                return _same_connection(conn)
+
+            launcher = AccountResearchFleetLauncher(
+                fleets=AccountResearchFleetService(conn_factory=connection),
+                conn_factory=connection,
+            )
+            with pytest.raises(
+                AccountResearchFleetLaunchError,
+                match="outside the exact sealed",
+            ):
+                await launcher.launch(
+                    AccountResearchFleetLaunchRequest(
+                        workspace_id=workspace_id,
+                        project_run_id=UUID(str(fixture.project_run_id)),
+                        research_directive_id=UUID(str(pin.directive_id)),
+                        account_entity_ids=(
+                            UUID(str(fixture.selected_account_id)),
+                            UUID(str(unsealed_account_id)),
+                        ),
+                        approved_budget_cap_cents=Decimal("300"),
+                        expected_estimated_cost_cents=Decimal("300"),
+                    ),
+                    actor="human:account-owner",
+                    source_action_ref="turn:r6-outside-seal-launch",
+                    source_operation_id=uuid4(),
+                )
+
+            for table in ("entity_research_run", "entity_research_job", "account_run"):
+                assert (
+                    await conn.execute(
+                        text(  # noqa: S608 - fixed table names from this test's own tuple
+                            f"SELECT count(*) FROM {table} WHERE project_run_id=:project_run_id"
+                        ),
+                        {"project_run_id": fixture.project_run_id},
+                    )
+                ).scalar_one() == 0
+
+    run_async(scenario())
+
+
+def test_the_launch_receipt_pins_the_whole_seal_and_fixes_replay_identity(
+    tmp_path: Path,
+) -> None:
+    """Plan §6 Slice-5 case 5: the complete receipt is pinned *and* it is part of the identity.
+
+    Two halves, both required. The stored selection must carry every field of the immutable
+    receipt — generation, seal hash, and both manifest ref/sha pairs — because downstream provider
+    work reads its discovery authority from exactly that receipt instead of re-deriving present-day
+    membership. And the receipt must enter ``request_sha``, which is what the run/job ids are
+    derived from: the same selection against the same seal replays onto the same run, while the
+    same selection against a *different* seal is a different launch, not an idempotent repeat.
+    """
+
+    async def scenario() -> None:
+        storage = FsStorage(tmp_path / "r6-receipt-artifacts")
+        async with rollback_conn() as conn:
+            fixture = await seed_insight_health_account_deep_fixture(
+                conn,
+                pages=_pages(),
+                storage=storage,
+            )
+            workspace_id = fixture.discovery_fixture.workspace_id
+            _, account_spec = await confirmed_account_research_direction(
+                conn,
+                workspace_id=workspace_id,
+                project_id=fixture.discovery_fixture.project_id,
+                product_id=fixture.discovery_fixture.product_id,
+                account_id=fixture.selected_account_id,
+                icp_key=fixture.deep_icp_key,
+                icp_version=fixture.deep_icp_version,
+                field_keys=(_PAIN, _MOVES),
+                allowed_source_keys=("exa_deep",),
+                questions=(
+                    ResearchQuestion(
+                        question_id="qualitative-burden",
+                        text="Where is administrative work creating avoidable burden?",
+                        target_field_key=_PAIN,
+                    ),
+                    ResearchQuestion(
+                        question_id="strategic-change",
+                        text="What strategic operational changes are visible?",
+                        target_field_key=_MOVES,
+                    ),
+                ),
+            )
+            pin = account_spec.research_directive
+            assert pin is not None
+
+            def connection() -> AbstractAsyncContextManager[AsyncConnection]:
+                return _same_connection(conn)
+
+            recorded: list[dict[str, object]] = []
+            real_sha = account_research_fleet_launch._sha
+
+            def recording_sha(value: object) -> str:
+                if isinstance(value, dict) and "discovery_receipt" in value:
+                    recorded.append(value)
+                return real_sha(value)
+
+            launcher = AccountResearchFleetLauncher(
+                fleets=AccountResearchFleetService(conn_factory=connection),
+                conn_factory=connection,
+            )
+            request = AccountResearchFleetLaunchRequest(
+                workspace_id=workspace_id,
+                project_run_id=UUID(str(fixture.project_run_id)),
+                research_directive_id=UUID(str(pin.directive_id)),
+                account_entity_ids=(UUID(str(fixture.selected_account_id)),),
+                approved_budget_cap_cents=Decimal("300"),
+                expected_estimated_cost_cents=Decimal("300"),
+            )
+            launch_operation_id = uuid4()
+            account_research_fleet_launch._sha = recording_sha
+            try:
+                projection = await launcher.launch(
+                    request,
+                    actor="human:account-owner",
+                    source_action_ref="turn:r6-receipt-launch",
+                    source_operation_id=launch_operation_id,
+                )
+                replayed = await launcher.launch(
+                    request,
+                    actor="human:account-owner",
+                    source_action_ref="turn:r6-receipt-launch",
+                    source_operation_id=launch_operation_id,
+                )
+            finally:
+                account_research_fleet_launch._sha = real_sha
+
+            seal = await get_discovery_batch_seal(
+                conn, workspace_id=workspace_id, batch_id=fixture.discovery_batch_id
+            )
+            bundle = await get_discovery_batch_manifest(
+                conn, workspace_id=workspace_id, batch_id=fixture.discovery_batch_id
+            )
+            assert seal is not None and bundle is not None
+            stored = (
+                (
+                    await conn.execute(
+                        text(
+                            "SELECT lifecycle_json FROM entity_research_run "
+                            "WHERE research_run_id=:run_id"
+                        ),
+                        {"run_id": projection.research_run_id},
+                    )
+                )
+                .mappings()
+                .one()
+            )
+            selection = EntityResearchSelection.model_validate(
+                stored["lifecycle_json"]["selection"]
+            )
+            receipt = selection.discovery_receipt
+            assert receipt is not None
+            assert receipt == SealedDiscoveryLaunchReceipt(
+                discovery_batch_id=UUID(str(fixture.discovery_batch_id)),
+                discovery_generation=bundle.generation,
+                discovery_seal_sha256=seal.seal_sha256,
+                account_manifest_ref=bundle.account_manifest_artifact_key,
+                account_manifest_sha256=bundle.account_manifest_sha256,
+                claim_manifest_ref=bundle.claim_manifest_artifact_key,
+                claim_manifest_sha256=bundle.claim_manifest_sha256,
+            )
+
+            # Replay identity: one durable run, and the second confirmation of the same request
+            # against the same seal lands on it rather than minting a second paid fleet.
+            assert replayed.research_run_id == projection.research_run_id
+            assert (
+                await conn.execute(
+                    text(
+                        "SELECT count(*) FROM entity_research_run "
+                        "WHERE project_run_id=:project_run_id"
+                    ),
+                    {"project_run_id": fixture.project_run_id},
+                )
+            ).scalar_one() == 1
+
+            # The receipt is *inside* that identity: the run id is uuid5 over the request hash the
+            # launcher actually built, and swapping only the seal hash in it moves the run id.
+            assert len(recorded) == 2
+            request_payload = recorded[0]
+            assert request_payload["discovery_receipt"] == receipt.model_dump(mode="json")
+            assert projection.research_run_id == uuid5(
+                account_research_fleet_launch._RUN_NAMESPACE, real_sha(request_payload)
+            )
+            other_seal = {
+                **request_payload,
+                "discovery_receipt": {
+                    **cast(dict[str, object], request_payload["discovery_receipt"]),
+                    "discovery_seal_sha256": "0" * 64,
+                },
+            }
+            assert (
+                uuid5(account_research_fleet_launch._RUN_NAMESPACE, real_sha(other_seal))
+                != projection.research_run_id
+            )
 
     run_async(scenario())

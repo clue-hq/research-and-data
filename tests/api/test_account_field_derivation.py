@@ -479,7 +479,7 @@ def _coverage_envelope(
 
 
 class _NoProviderAction(EntityResearchProviderAction):
-    async def execute(self, request: Any, *, before_dispatch: Any) -> Any:
+    async def execute(self, request: Any, *, before_dispatch: Any, settle_terminal: Any) -> Any:
         raise AssertionError("coverage assessment must not dispatch a provider")
 
 

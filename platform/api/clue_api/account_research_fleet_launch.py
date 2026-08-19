@@ -66,7 +66,9 @@ from clue_research.resolvers.exa import SOURCE_KEY as EXA_DEEP_SOURCE_KEY
 from clue_research.resolvers.sumble import (
     JOBS_SOURCE_KEY,
     ORGANIZATIONS_SOURCE_KEY,
+    SUMBLE_SOURCE_KEYS,
     TECH_STACK_SOURCE_KEY,
+    sumble_action_supports_field,
 )
 from clue_research.resolvers.sumble.people import PEOPLE_SOURCE_KEY
 from clue_research.sources import (
@@ -101,6 +103,26 @@ _SUPPORTED_FIELD_SOURCES = frozenset(
         TECH_STACK_SOURCE_KEY,
     }
 )
+
+
+def _source_can_request(source_key: str, field_key: str) -> bool:
+    """Whether ``source_key``'s pinned provider action can put ``field_key`` on the wire.
+
+    Ownership and requestability are different facts (contract §3.1 docstring). Sumble's pinned v9
+    actions have a closed requestable set — ``sumble_organizations`` owns seven §3.1 rows and can
+    ask for three of them — and the resolver exposes that as policy-shaped data
+    (``sumble_action_supports_field``) precisely so consumers intersect before dispatching. Exa
+    Deep compiles its output schema per bundle from the field registry, so it can request any
+    account row it owns.
+
+    Intersecting this into the *authority* at launch is what keeps the two halves of the platform
+    honest: a pair nobody can ever dispatch must not be born as an obligation the completeness
+    reader then waits on forever.
+    """
+
+    if source_key in SUMBLE_SOURCE_KEYS:
+        return sumble_action_supports_field(field_key, source_key)
+    return True
 
 
 class AccountResearchFleetLaunchError(RuntimeError):
@@ -465,16 +487,29 @@ class AccountResearchFleetLauncher:
                         compiled,
                         source_profile_ref=icp.source_profile_ref,
                     )
-                source_keys = tuple(
+                authorized = tuple(
                     item.source_key
                     for item in plan.sources
                     if item.source_key in allowed_sources
                     and item.source_key in _SUPPORTED_FIELD_SOURCES
                 )
-                if not source_keys:
+                if not authorized:
                     raise AccountResearchFleetLaunchError(
                         f"no composed R5 source is authorized for {field_key}"
                     )
+                # Requestability is intersected into the effective authority here, once, at the
+                # only place that mints it. A source whose pinned action structurally cannot ask
+                # for this field never enters the field's authorized list, so no unbuyable
+                # (field, source) pair is ever born: the field either keeps its remaining sources
+                # (e.g. ``account.total_funding`` keeps Exa Deep after Sumble Organizations drops
+                # out) or is admitted with *no* authority and settles like the zero-acquisition
+                # rows — an honest gap the coverage ledger reports and finalization closes
+                # ``needs_review``, instead of an obligation no dispatch could ever discharge.
+                source_keys = tuple(
+                    source_key
+                    for source_key in authorized
+                    if _source_can_request(source_key, field_key)
+                )
                 authorities.append(
                     FieldSourceAuthority(field_key=field_key, source_keys=source_keys)
                 )
@@ -497,6 +532,14 @@ class AccountResearchFleetLauncher:
                 else ()
             )
             admitted_sources = (*source_keys, *committee_source_keys)
+            if not admitted_sources:
+                # Every admitted field lost its whole authority to the requestability intersection
+                # and no committee source is authorized either: this launch could dispatch nothing
+                # at all. Refuse it here, loudly, rather than emitting a selection with no admitted
+                # source for the envelope contract to reject as a shape error.
+                raise AccountResearchFleetLaunchError(
+                    "no admitted account field can be requested from any authorized source"
+                )
             field_plan_sha = _sha({"field_keys": field_keys})
             source_plan_sha = _sha(source_plan_values)
             request_sha = _sha(

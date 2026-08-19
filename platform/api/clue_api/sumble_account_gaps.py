@@ -547,13 +547,23 @@ async def compile_sumble_account_gap_preflight(
                 # expired.  The stale winner is the durable basis for the refresh.
                 reason = AccountGapReason.STALE
                 basis = (merged.provenance.claim_id,)
+            elif not merged.evidence_backed:
+                # The same span rule the completeness reader satisfies a field with
+                # (``CurrentValue.evidence_backed`` — one predicate, not two).  A fresh,
+                # confident, unconflicted winner carrying *no evidence span* is not an answer:
+                # refusing to re-buy it while nothing can ever count it as satisfied left the
+                # field permanently outstanding, so the account could never settle.  It is a gap
+                # like any other, and it is bought like any other; the span-less winner is the
+                # durable basis for the purchase.
+                reason = AccountGapReason.NO_EVIDENCE
+                basis = (merged.provenance.claim_id,)
             else:
                 # The one refusal §6.3(b) converts into a governed agent turn: the ladder found
                 # the field already answered.  Everything else in this function stays the base
                 # class and keeps suspending.
                 raise SumbleAccountGapNotEligible(
-                    f"{field_key} is already confidently resolved, fresh, and without an open "
-                    "conflict"
+                    f"{field_key} is already confidently resolved, fresh, evidence-backed, and "
+                    "without an open conflict"
                 )
             field_plans.append(
                 AccountGapFieldPlan(

@@ -359,12 +359,20 @@ class FieldSourceAuthority(BaseModel):
     cross-product: a source selected for field A could be submitted for field B.  This value is the
     executable relation.  Strategy labels are intentionally absent; an agent chooses a semantic
     tool and an exact source, while the frozen effective source plan remains the authority.
+
+    ``source_keys`` may be **empty**: an admitted field that no authorized source can actually
+    request (a source may *own* a field under the §3.1 contract while its pinned provider action
+    has no wire parameter for it) is born with no authority at all.  That is the honest
+    disposition, not a defect — every source is then unauthorized for the field, so the engine
+    refuses any request for it and the execution-completeness reader treats it as exhausted, i.e.
+    an honest gap that settles ``needs_review`` instead of an obligation nothing can discharge.
+    The launcher, not this contract, decides when that is correct.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     field_key: NonEmptyStr
-    source_keys: tuple[NonEmptyStr, ...] = Field(min_length=1)
+    source_keys: tuple[NonEmptyStr, ...] = ()
 
     @model_validator(mode="after")
     def _sources_are_unique(self) -> Self:

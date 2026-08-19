@@ -44,7 +44,6 @@ from clue_core import (
     ClaimProvenanceKind,
     EntityId,
     ExtractionMethod,
-    FreshnessState,
     ProjectRunId,
     ResearchMode,
     RunId,
@@ -199,12 +198,7 @@ async def _live_source_claim(
 
     scope = WorkspaceScope.for_workspace(workspace_id)
     merged = await current_value(conn, account_entity_id, field_key, scope=scope)
-    if (
-        merged is None
-        or merged.conflict
-        or merged.freshness_state is not FreshnessState.FRESH
-        or not (merged.provenance.evidence_span or "").strip()
-    ):
+    if merged is None or not merged.evidence_backed:
         return None
     for claim in await claims_for(conn, account_entity_id, field_key, scope=scope):
         if claim.id == merged.provenance.claim_id:

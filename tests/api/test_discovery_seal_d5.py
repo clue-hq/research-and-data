@@ -398,6 +398,27 @@ def test_waits_then_seals_and_project_run_advances_once(tmp_path: Path) -> None:
             assert reread is not None
             assert reread.claim_ids == tuple(bundle.claim_ids)
 
+            # A receipt is authority only while it still describes the stored lineage exactly.
+            # Every field of it is compared, so a job whose pinned receipt disagrees with the seal
+            # it names — a replaced generation, a re-pointed or re-hashed manifest — fails closed
+            # instead of quietly researching against a lineage it was never authorized for.
+            for mismatch in (
+                {"discovery_generation": bundle.generation + 1},
+                {"discovery_seal_sha256": "0" * 64},
+                {"account_manifest_ref": f"{bundle.account_manifest_artifact_key}-other"},
+                {"account_manifest_sha256": "1" * 64},
+                {"claim_manifest_ref": f"{bundle.claim_manifest_artifact_key}-other"},
+                {"claim_manifest_sha256": "2" * 64},
+            ):
+                with pytest.raises(DiscoverySealConflict, match="differs from launch receipt"):
+                    await reader.read(
+                        workspace_id=workspace_id,
+                        project_run_id=started.project_run_id,
+                        icp_key="independent-specialty-practices",
+                        icp_version=1,
+                        discovery_receipt=receipt.model_copy(update=mismatch),
+                    )
+
             # A late team-level webhook remains auditable but is explicitly outside the sealed
             # generation. It cannot change candidate membership or field resolution.
             late_key = await _artifact(
