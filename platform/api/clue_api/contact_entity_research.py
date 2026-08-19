@@ -691,10 +691,9 @@ class ContactResearchStateStore:
                 if unresolved or review_flags
                 else ResearchFinalizationOutcome.COMPLETED
             )
-            if inputs.requested_outcome is not expected:
-                raise ContactResearchAuthorityError(
-                    f"requested outcome must be {expected.value} for persisted contact coverage"
-                )
+            # Engine-derived, same normalization as the account lane: the model's requested
+            # outcome never reaches the proposal, so a mismatch is corrected by the honest derived
+            # value in the tool result instead of a refusal the model can wedge itself against.
             proposal_id = uuid5(
                 _PROPOSAL_NAMESPACE,
                 f"{authorization.job_id}:{coverage_id}:{state_sha}:{expected.value}",

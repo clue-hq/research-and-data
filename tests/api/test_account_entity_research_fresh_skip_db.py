@@ -566,6 +566,10 @@ class _ScriptedModel(BaseChatModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     plan: list[dict[str, Any]]
+    #: Deliberately request the opposite finalization outcome from the one the coverage derives.
+    #: The engine owns the outcome, so the proposal must carry the derived value regardless —
+    #: the live GraphRecursionError loop started as a refusal of exactly this mismatch.
+    request_wrong_outcome: bool = False
     _result_refs: list[str] = PrivateAttr(default_factory=list)
     _next: int = PrivateAttr(default=0)
     _observed_state: dict[str, Any] | None = PrivateAttr(default=None)
@@ -633,13 +637,15 @@ class _ScriptedModel(BaseChatModel):
                     + json.dumps(payload, sort_keys=True)
                 )
             self._observed_coverage = payload
-            outcome = (
-                "needs_review"
-                if payload["unresolved_field_keys"]
+            derived_needs_review = (
+                payload["unresolved_field_keys"]
                 or payload["review_flags"]
                 or payload["committee_status"] != "complete"
-                else "completed"
             )
+            if self.request_wrong_outcome:
+                outcome = "completed" if derived_needs_review else "needs_review"
+            else:
+                outcome = "needs_review" if derived_needs_review else "completed"
             return self._call(
                 "finalize_account_research",
                 {
@@ -673,6 +679,7 @@ async def _run_p2_agent(
     admitted: Sequence[str],
     plan: list[dict[str, Any]],
     tmp_path: Path,
+    request_wrong_outcome: bool = False,
 ) -> tuple[Any, _ScriptedModel, _EmptyCommitteeProviders, EntityResearchJobAuthorization]:
     storage = FsStorage(tmp_path / f"fi2-artifacts-{uuid4().hex[:8]}")
     envelope, connection = await _launch_p2_job(conn, fixture=fixture, admitted=admitted)
@@ -735,7 +742,7 @@ async def _run_p2_agent(
         conn_factory=connection,
     )
     definition = await resolver.resolve(job=live_job, fence=fence)
-    model = _ScriptedModel(plan=plan)
+    model = _ScriptedModel(plan=plan, request_wrong_outcome=request_wrong_outcome)
     journal = DbEntityResearchAgentJournal(conn_factory=connection)
     runtime = EntityResearchAgentRuntime(
         factory=EntityResearchAgentFactory(
@@ -974,6 +981,49 @@ def test_fi2_61_an_all_born_complete_job_spends_nothing_and_finalizes_completed(
             ).scalar_one()
             # Only the committee call's cost — no field research was reserved or settled.
             assert Decimal(spent) == Decimal("1.25")
+
+    run_async(scenario())
+
+
+def test_fi2_61_a_wrong_requested_outcome_is_normalized_to_the_engine_derived_one(
+    tmp_path: Path,
+    require_profiling_db: None,
+) -> None:
+    """The finalization outcome is engine-owned; a model's wrong request cannot wedge the job.
+
+    Live (job 2dd04bc4): the agent requested ``completed`` while the persisted coverage derived
+    ``needs_review``, the mismatch was refused, and the model looped back into re-buying
+    terminally-unproductive fields until the graph recursion cap suspended the job. The refusal is
+    gone: the proposal carries the derived outcome and the tool result is the correction the
+    model reads.
+    """
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            fixture = await _seed_p1_research(conn, stale_culture=False)
+            admitted = (_PAIN, _MOVES, _HIRING)
+            outcome, model, providers, _authorization = await _run_p2_agent(
+                conn,
+                fixture=fixture,
+                admitted=admitted,
+                plan=[
+                    _committee_call(
+                        account_id=fixture.account_id,
+                        evidence_claim_id=fixture.p1_claim_ids[_PAIN],
+                    )
+                ],
+                tmp_path=tmp_path,
+                request_wrong_outcome=True,
+            )
+
+            assert isinstance(outcome, EntityResearchAgentResult)
+            receipt = outcome.finalization_receipt
+            assert receipt is not None
+            # The model asked for needs_review; the engine derived (and proposed) COMPLETED.
+            assert receipt.proposal.outcome is ResearchFinalizationOutcome.COMPLETED
+            assert receipt.verification.all_passed()
+            assert providers.calls == ["discover_buying_committee"]
+            assert model.observed_coverage["unresolved_field_keys"] == []
 
     run_async(scenario())
 

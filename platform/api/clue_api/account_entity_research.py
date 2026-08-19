@@ -1392,10 +1392,12 @@ class AccountResearchStateStore:
                 if review_flags or unresolved or str(row["committee_status"]) != "complete"
                 else ResearchFinalizationOutcome.COMPLETED
             )
-            if inputs.requested_outcome is not expected_outcome:
-                raise AccountResearchAuthorityError(
-                    f"requested outcome must be {expected_outcome.value} for persisted coverage"
-                )
+            # The outcome is engine-derived from the persisted coverage; the model's requested
+            # value never reaches the proposal. Refusing a mismatch here only quizzed the model on
+            # a fact it does not own — observed live: an agent asked for `completed`, was refused,
+            # and went back to re-buying terminally-unproductive fields to "earn" it, looping until
+            # the graph recursion cap suspended the job. The engine disposes: the proposal carries
+            # the honest derived outcome and the tool result is the correction the model reads.
             proposal_id = uuid5(
                 _PROPOSAL_NAMESPACE,
                 f"{authorization.job_id}:{coverage_id}:{state_sha}:{expected_outcome.value}",
