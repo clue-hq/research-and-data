@@ -259,6 +259,92 @@ def test_view_clamps_a_tall_preview_before_attaching_it(tmp_path, monkeypatch):
     assert max(emitted.size) <= view_mod._VISION_MAX_PX
 
 
+# --- G5: the MANY-IMAGE ceiling (genweb slice 2 blocker) --------------------
+#
+# The slice-1 ceiling above is the SINGLE-image limit. A request carrying many
+# images has a lower per-image limit, and the web review conversation reaches it
+# routinely: one render is three widths, plus state captures, and the
+# orchestrator's history keeps every image it ever viewed. The first realistic
+# chat-driven landing page died on the ORCHESTRATOR's own call after ~28 minutes:
+#
+#   invalid_prompt ... messages.1.content.39.image.source.base64.data: At least
+#   one of the image dimensions exceed max allowed size for many-image requests:
+#   2000 pixels
+#
+# Probed against the provider that refused it (anthropic/claude-opus-4.8 through
+# OpenRouter's /responses endpoint — the one the runtime calls), 2026-08-19:
+#
+#   20 x 200x7500  ACCEPTED     |  21 x 200x7500  REFUSED   -> threshold is >20 images
+#   40 x 200x3000  REFUSED      |  40 x 200x2000  ACCEPTED  -> 2000 is safe at any count
+#
+# and the vendor doc states the same rule: "If a single API request contains more
+# than 20 images, a stricter per-image dimension limit applies ... resize each
+# image so that neither dimension exceeds 2000 px, or keep the request to 20 or
+# fewer image and document blocks."
+
+
+def test_many_image_ceiling_is_the_limit_the_provider_states():
+    # Not folklore: this is the number in the live refusal AND in the vendor doc.
+    assert view_mod._VISION_MANY_IMAGE_MAX_PX == 2000
+    assert view_mod._VISION_MANY_IMAGE_MAX_PX < view_mod._VISION_MAX_PX
+
+
+def test_normalize_clamps_a_tall_page_capture_to_the_many_image_ceiling():
+    # The exact capture the web reviewer attaches, three times per render.
+    raw = _png_bytes((1440, 14325))
+    out, mime = view_mod._normalize_image_bytes(
+        raw, max_px=view_mod._VISION_MANY_IMAGE_MAX_PX
+    )
+    assert mime == "image/png"
+    w, h = Image.open(io.BytesIO(out)).size
+    assert max(w, h) <= view_mod._VISION_MANY_IMAGE_MAX_PX
+    # Aspect preserved: the reviewer judges the page it rendered, not a squashed one.
+    assert abs((w / h) - (1440 / 14325)) < 0.005
+
+
+def test_normalize_clamps_the_narrow_capture_to_the_many_image_ceiling_too():
+    raw = _png_bytes((768, 8095))
+    out, _mime = view_mod._normalize_image_bytes(
+        raw, max_px=view_mod._VISION_MANY_IMAGE_MAX_PX
+    )
+    w, h = Image.open(io.BytesIO(out)).size
+    assert max(w, h) <= view_mod._VISION_MANY_IMAGE_MAX_PX
+    assert abs((w / h) - (768 / 8095)) < 0.005
+
+
+def test_normalize_defaults_to_the_single_image_ceiling():
+    # The default is unchanged, so the scene path keeps its shipped behaviour.
+    raw = _png_bytes((1440, 14325))
+    assert view_mod._normalize_image_bytes(raw) == view_mod._normalize_image_bytes(
+        raw, max_px=view_mod._VISION_MAX_PX
+    )
+    w, h = Image.open(io.BytesIO(view_mod._normalize_image_bytes(raw)[0])).size
+    assert max(w, h) == view_mod._VISION_MAX_PX
+
+
+def test_scene_view_keeps_the_single_image_ceiling(tmp_path, monkeypatch):
+    """The scene harness attaches ONE artboard preview per view call and has never
+    hit the many-image refusal; G5 deliberately leaves it on the single-image
+    ceiling. If that ever changes, change this assertion with it."""
+    tools = _tools(tmp_path, monkeypatch)
+    png_path = tools.trace_dir / "preview.png"
+    png_path.write_bytes(_png_bytes((1440, 14325)))
+    tools.latest_export_summary = {
+        "status": "ok",
+        "artifacts": [
+            {"format": "png", "path": str(png_path), "width": 1440, "height": 14325}
+        ],
+    }
+    view = view_mod.make_view_tool(tools)
+    msg = view.invoke(
+        {"name": "view", "args": {"target": "preview"}, "id": "c1", "type": "tool_call"}
+    )
+    emitted = Image.open(
+        io.BytesIO(base64.b64decode([b for b in msg.content if b["type"] == "image"][0]["data"]))
+    )
+    assert max(emitted.size) == view_mod._VISION_MAX_PX
+
+
 # --- Task 2: preview staleness contract ------------------------------------
 
 

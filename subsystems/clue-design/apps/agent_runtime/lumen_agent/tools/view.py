@@ -35,6 +35,34 @@ _VISION_MIN_PX = 512
 # and unlike the upscale it invents no detail — it averages the pixels that are there.
 _VISION_MAX_PX = 7500
 
+# The SAME refusal one limit lower, and the one web review actually lives under (genweb
+# slice 2, G5): once a single request carries more than 20 image blocks, the provider's
+# per-image dimension limit drops, and the first realistic chat-driven landing page died
+# on the orchestrator's own call after ~28 minutes — "messages.1.content.39.image.source.
+# base64.data: At least one of the image dimensions exceed max allowed size for
+# many-image requests: 2000 pixels" (run_c6f4485…, anthropic/claude-opus-4.8 through
+# OpenRouter's /responses endpoint). The turn is transactional, so the whole authored
+# page was discarded.
+#
+# The number is evidence, not folklore. Probed against that same provider and endpoint
+# (2026-08-19): 20 x 200x7500 ACCEPTED, 21 x 200x7500 REFUSED — the threshold is >20
+# images; 40 x 200x3000/4000/5000/6000/7500 REFUSED, 40 x 200x2000 ACCEPTED — 2000 is
+# accepted at twice the image count that killed the run. The vendor doc states the same
+# rule: "If a single API request contains more than 20 images, a stricter per-image
+# dimension limit applies ... resize each image so that neither dimension exceeds
+# 2000 px, or keep the request to 20 or fewer image and document blocks."
+#
+# Why the web path clamps here unconditionally rather than counting images: an image is
+# encoded ONCE, at attach time, and then lives in the conversation history that every
+# later request replays. By the time a request is "many-image", the earlier images are
+# already inside it at their original size — a clamp that only tightened on the 21st
+# image would still send the first twenty oversized, and still be refused. Clamping every
+# web view image is therefore the only version that provably survives accumulation, and
+# it costs little real fidelity: providers downscale to their own long-edge budget anyway
+# (Claude's high-resolution tier renders at most a 2576px long edge), so a whole-page
+# capture was never actually being judged at 7500px.
+_VISION_MANY_IMAGE_MAX_PX = 2000
+
 
 def _latest_preview_png(tools: LumenDesignTools) -> Optional[Path]:
     """Resolve the newest rendered PNG on disk, or None if nothing rendered yet.
@@ -79,10 +107,15 @@ def _reference_target_labels(tools: LumenDesignTools) -> list[str]:
     return [f"reference:{i}" for (i, _aid, _e) in _reference_entries(tools)]
 
 
-def _normalize_image_bytes(raw: bytes) -> tuple[bytes, str]:
+def _normalize_image_bytes(raw: bytes, max_px: int = _VISION_MAX_PX) -> tuple[bytes, str]:
     """Return (bytes, mime) for `raw`, clamped into the vision provider's accepted
-    size band: at least `_VISION_MIN_PX` on the short side, at most `_VISION_MAX_PX`
-    on the long side.
+    size band: at least `_VISION_MIN_PX` on the short side, at most `max_px` on the
+    long side.
+
+    `max_px` defaults to the SINGLE-image ceiling `_VISION_MAX_PX`. Callers whose
+    images accumulate in one request — the website harness, whose review conversation
+    carries three widths per render plus state captures — pass
+    `_VISION_MANY_IMAGE_MAX_PX` instead.
 
     Sub-minimum images are magnified with nearest-neighbor and over-ceiling ones are
     reduced with LANCZOS — aspect preserved either way — so a provider can never
@@ -103,8 +136,8 @@ def _normalize_image_bytes(raw: bytes) -> tuple[bytes, str]:
         scale = 1.0
         if min(width, height) < _VISION_MIN_PX:
             scale = _VISION_MIN_PX / float(min(width, height))
-        if max(width, height) * scale > _VISION_MAX_PX:
-            scale = _VISION_MAX_PX / float(max(width, height))
+        if max(width, height) * scale > max_px:
+            scale = max_px / float(max(width, height))
         if scale == 1.0:
             return raw, "image/png"  # already inside the band — untouched bytes
         if scale > 1.0:
@@ -112,8 +145,8 @@ def _normalize_image_bytes(raw: bytes) -> tuple[bytes, str]:
             resample = Image.NEAREST
         else:
             new_size = (
-                max(1, min(_VISION_MAX_PX, round(width * scale))),
-                max(1, min(_VISION_MAX_PX, round(height * scale))),
+                max(1, min(max_px, round(width * scale))),
+                max(1, min(max_px, round(height * scale))),
             )
             resample = Image.LANCZOS
         if img.mode not in ("RGB", "RGBA"):
@@ -124,11 +157,13 @@ def _normalize_image_bytes(raw: bytes) -> tuple[bytes, str]:
         return buffer.getvalue(), "image/png"
 
 
-def _image_block(png_path: Path) -> dict:
-    """Build a base64 image block, normalizing sub-minimum images to the vision
-    floor so the block cannot be rejected downstream. May raise on unreadable/
-    corrupt bytes — `_view_content` is wrapped to contain that into a string."""
-    normalized, mime = _normalize_image_bytes(png_path.read_bytes())
+def _image_block(png_path: Path, max_px: int = _VISION_MAX_PX) -> dict:
+    """Build a base64 image block, normalizing the image into the vision provider's
+    accepted size band so the block cannot be rejected downstream. `max_px` is the
+    long-side ceiling to clamp to (see `_normalize_image_bytes`). May raise on
+    unreadable/corrupt bytes — `_view_content` is wrapped to contain that into a
+    string."""
+    normalized, mime = _normalize_image_bytes(png_path.read_bytes(), max_px=max_px)
     data = base64.b64encode(normalized).decode("ascii")
     return {
         "type": "image",

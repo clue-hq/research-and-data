@@ -54,7 +54,7 @@ from ..brand_card import build_brand_card
 from ..config import AgentRuntimeConfig
 from ..models.schemas import LumenRunTraceEvent, new_run_id
 from .substrate import _CoreHelperProxy
-from .view import _image_block, _text_block
+from .view import _VISION_MANY_IMAGE_MAX_PX, _image_block, _text_block
 
 logger = get_logger("lumen_agent.tools.web_substrate")
 
@@ -3896,7 +3896,11 @@ class LumenWebTools:
                 _text_block(
                     f"view: latest preview at {width}px (iteration {self._preview_iteration})"
                 ),
-                _image_block(Path(path)),
+                # G5: web review is many-image by construction (three widths per
+                # render, state captures, and every image the orchestrator has
+                # already viewed rides the same request), so every image attached
+                # here clamps to the many-image ceiling — see view.py.
+                _image_block(Path(path), max_px=_VISION_MANY_IMAGE_MAX_PX),
             ]
         if target.startswith("state:"):
             return self._view_state(target)
@@ -3967,7 +3971,9 @@ class LumenWebTools:
                 f"view: state capture {index} — {capture.get('kind')}"
                 f"{node_note} at {capture.get('width')}px"
             ),
-            _image_block(Path(path)),
+            # G5: same many-image ceiling as the preview blocks above — a state
+            # capture rides the identical accumulating request.
+            _image_block(Path(path), max_px=_VISION_MANY_IMAGE_MAX_PX),
         ]
 
     def finalize_web_run(

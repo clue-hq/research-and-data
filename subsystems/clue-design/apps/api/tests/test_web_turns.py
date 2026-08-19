@@ -693,6 +693,53 @@ def test_web_turn_failure_reason_lands_in_diagnostics(client: TestClient) -> Non
     assert diagnostics[0]["message"] == refusal
 
 
+def test_many_image_refusal_lands_in_diagnostics(client: TestClient) -> None:
+    """The G5 refusal, verbatim, must reach `diagnostics` if it ever recurs.
+
+    The clamp in `lumen_agent.tools.view` (every web view image rides the
+    many-image ceiling) is what stops this from being reachable; this test pins
+    the OTHER half of the contract — that a review-kill is explained rather than
+    silent. The string is the one recorded live on run_c6f4485… (2026-08-19),
+    which discarded a whole authored landing page after ~28 minutes.
+    """
+    document = create_web_document(client)
+    refusal = (
+        "ValueError: ResponseError(code='invalid_prompt', "
+        "message='messages.1.content.39.image.source.base64.data: At least one of "
+        "the image dimensions exceed max allowed size for many-image requests: "
+        "2000 pixels')"
+    )
+
+    def stub(doc, prompt, model, root):
+        return {
+            "schema_version": 1,
+            "status": "failed",
+            "outcome": "failed",
+            "summary": refusal,
+            "web_doc": doc["scene"],
+            "operations": [],
+            "preview_paths": [],
+            "doc_kind": "web",
+        }
+
+    client.app.state.web_turn_runner = stub
+    response = client.post(
+        f"/documents/{document['id']}/web/turns",
+        json={"prompt": "Build a landing page", "base_version": 0},
+    )
+    run = wait_for_run(client, response.json()["run_id"])
+    assert run["status"] == "failed"
+
+    diagnostics = run["result"]["diagnostics"]
+    assert len(diagnostics) == 1
+    assert diagnostics[0]["code"] == "web_turn.no_result"
+    assert diagnostics[0]["severity"] == "error"
+    # The reason is carried WHOLE — a reader must be able to see the pixel limit
+    # and the image count position without going to the fleet log.
+    assert diagnostics[0]["message"] == refusal
+    assert "many-image requests: 2000 pixels" in diagnostics[0]["message"]
+
+
 def test_web_turn_applied_carries_no_synthetic_diagnostic(client: TestClient) -> None:
     document = create_web_document(client)
     operations = [{"kind": "set_custom_css", "css": "body { opacity: 0.9; }"}]

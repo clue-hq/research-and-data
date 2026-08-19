@@ -8,11 +8,13 @@ ingest only, no LLM or browser).
 from __future__ import annotations
 
 import base64
+import io
 import json
 from dataclasses import replace
 from pathlib import Path
 
 from lumen_agent.config import AgentRuntimeConfig
+from lumen_agent.tools import view as view_mod
 from lumen_agent.tools import web_substrate as ws
 from lumen_agent.tools.web_substrate import (
     _MAX_DIALOG_CAPTURES,
@@ -1104,6 +1106,74 @@ def test_view_state_none_captured(tmp_path: Path):
     blocks = tools._view_content("state:0")
     assert blocks[0]["type"] == "text"
     assert "no state captures" in blocks[0]["text"]
+
+
+# --- G5: every web view image rides the MANY-IMAGE ceiling ------------------
+#
+# The web review conversation is many-image by construction: one render is three
+# widths plus state captures, and the orchestrator's history keeps every image it
+# has ever viewed. Past 20 images in one request the provider's per-image
+# dimension limit drops to 2000px, and the first realistic chat-driven landing
+# page died there after ~28 minutes ("...exceed max allowed size for many-image
+# requests: 2000 pixels", messages.1.content.39, run_c6f4485…). Clamping at the
+# attach point is the whole fix: a late clamp cannot help, because the earlier
+# oversized images are already sitting in the history the request replays.
+
+
+def _emitted_image(blocks: list) -> "Image.Image":
+    from PIL import Image
+
+    payload = [b for b in blocks if b.get("type") == "image"][0]["data"]
+    return Image.open(io.BytesIO(base64.b64decode(payload)))
+
+
+def _seed_page_capture(tmp_path: Path, tools: LumenWebTools, width: int, size) -> None:
+    from PIL import Image
+
+    path = tmp_path / f"preview_{width}.png"
+    Image.new("RGB", size, "white").save(path)
+    tools._preview_by_width[width] = str(path)
+    tools._preview_doc_version = tools._doc_version
+    tools._preview_iteration = 1
+
+
+def test_web_view_preview_clamps_to_the_many_image_ceiling(tmp_path: Path):
+    tools = _bare_tools(tmp_path)
+    # The observed whole-page capture of an ordinary landing page.
+    _seed_page_capture(tmp_path, tools, 1440, (1440, 14325))
+    emitted = _emitted_image(tools._view_content("preview:1440"))
+    assert max(emitted.size) <= view_mod._VISION_MANY_IMAGE_MAX_PX
+    assert abs((emitted.size[0] / emitted.size[1]) - (1440 / 14325)) < 0.005
+
+
+def test_web_view_state_capture_clamps_to_the_many_image_ceiling(tmp_path: Path):
+    from PIL import Image
+
+    tools = _bare_tools(tmp_path)
+    path = tmp_path / "state_1440_dialog.png"
+    Image.new("RGB", (1440, 9000), "white").save(path)
+    tools._state_captures = [
+        {"kind": "dialog-open", "node_id": "dlg_1", "width": 1440, "path": str(path)}
+    ]
+    emitted = _emitted_image(tools._view_content("state:0"))
+    assert max(emitted.size) <= view_mod._VISION_MANY_IMAGE_MAX_PX
+
+
+def test_six_review_rounds_of_three_widths_all_ride_under_the_ceiling(tmp_path: Path):
+    """The founder's review budget is 6 reviewer delegations and one render is
+    three widths — so a full turn's history holds well over the 20-image
+    threshold. Every one of them must be legal, not just the last."""
+    tools = _bare_tools(tmp_path)
+    sizes = {1440: (1440, 14325), 768: (768, 8095), 375: (375, 11200)}
+    emitted = []
+    for _round in range(6):
+        for width, size in sizes.items():
+            _seed_page_capture(tmp_path, tools, width, size)
+            emitted.append(_emitted_image(tools._view_content(f"preview:{width}")))
+    assert len(emitted) == 18
+    # 18 previews + the orchestrator's own between-round looks is what actually
+    # crossed 20 live; the assertion that matters is that EVERY image is legal.
+    assert all(max(img.size) <= view_mod._VISION_MANY_IMAGE_MAX_PX for img in emitted)
 
 
 # --- render_web_preview unchanged guard (the L4b analogue) -------------------
