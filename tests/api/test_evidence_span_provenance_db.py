@@ -35,6 +35,7 @@ from uuid import uuid4
 
 import pytest
 from pydantic import SecretStr
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_api.entity_research_tools import (
@@ -206,10 +207,13 @@ def test_every_exa_websets_claim_span_is_verbatim_in_the_retained_item(tmp_path:
             ).materialize(workspace_id=workspace_id, batch_id=batch_id)
             retained = {key: await storage.get(key) for key in item_keys}
             rows = (
-                await conn.exec_driver_sql(
-                    "SELECT field_key, artifact_key, evidence_span FROM claim "
-                    "WHERE source_key = 'exa_websets' AND artifact_key = ANY(%s)",
-                    (list(item_keys),),
+                await conn.execute(
+                    text(
+                        "SELECT field_key, artifact_key, evidence_span FROM claim "
+                        "WHERE source_key = 'exa_websets' "
+                        "AND artifact_key = ANY(CAST(:keys AS text[]))"
+                    ),
+                    {"keys": list(item_keys)},
                 )
             ).all()
 

@@ -771,7 +771,25 @@ class SumbleAccountSemanticEnrichmentAction(EntityResearchProviderAction):
                 str(stored["provider_snapshot_ref"]) != snapshot_ref
                 or str(stored["normalized_result_artifact_key"]) != normalized_key
             ):
-                raise EntityResearchResultIntegrityError("Sumble projection replay changed")
+                # First write wins — the same lesson as the seal reader and the settlement fold:
+                # history is validated against what was STORED, never recomputed under newer
+                # code. A projection-composition improvement (live: aa88e0b0's conflict-evidence
+                # fix) legitimately changes what today's code would project for a terminal
+                # operation recorded yesterday; refusing that replay suspended the job
+                # ("Sumble projection replay changed"). The stored normalized artifact is
+                # self-describing, so the immutable first projection is served instead.
+                stored_payload = json.loads(
+                    await self._storage.get(str(stored["normalized_result_artifact_key"]))
+                )
+                if stored_payload.get("contract") != "m8d-r5-sumble-account-projection-v1":
+                    raise EntityResearchResultIntegrityError(
+                        "stored Sumble projection carries an unknown contract"
+                    )
+                stored_projected = tuple(
+                    ResearchFieldResultProjection.model_validate(item)
+                    for item in stored_payload["fields"]
+                )
+                return str(stored["provider_snapshot_ref"]), stored_projected
         return snapshot_ref, projected
 
     def _field(
@@ -1586,9 +1604,21 @@ class SumbleCommitteeSemanticResearchAction(EntityResearchProviderAction):
                 != Decimal(str(values["settled_cost"]))
                 or serialize_value_json(stored["metadata_json"]) != values["metadata"]
             ):
-                raise EntityResearchResultIntegrityError(
-                    "Sumble committee projection replay changed"
+                # Same first-write-wins rule as the account projection above: a terminal
+                # operation's stored projection is history; newer code must serve it, not
+                # recompute it and refuse the difference.
+                stored_payload = json.loads(
+                    await self._storage.get(str(stored["normalized_result_artifact_key"]))
                 )
+                if stored_payload.get("contract") != "m8d-r5-sumble-office-committee-v1":
+                    raise EntityResearchResultIntegrityError(
+                        "stored Sumble committee projection carries an unknown contract"
+                    )
+                stored_subjects = tuple(
+                    ResearchDiscoveredSubjectProjection.model_validate(item)
+                    for item in stored_payload["members"]
+                )
+                return str(stored["provider_snapshot_ref"]), stored_subjects
         return snapshot_ref, tuple(subjects)
 
     @staticmethod
