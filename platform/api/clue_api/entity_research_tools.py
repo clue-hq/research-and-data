@@ -544,7 +544,26 @@ class EntityResearchToolRequestStore:
         if not is_follow_up and not set(semantic.questions).issubset(
             authorization.effective_research_questions
         ):
-            raise EntityResearchToolAuthorityError("semantic tool widened confirmed questions")
+            if authorization.subject_type is ResearchSubjectType.ACCOUNT:
+                # Model-authored question text is not authority — the confirmed directive is.
+                # Narrow to the confirmed set instead of refusing: a zero-question comprehensive
+                # directive confirms no questions at all, so a model that insists on adding intent
+                # text (observed live, job 5d9dfe7b) was refused on every composition, then
+                # refused assessment for the unattempted pair, and looped to the recursion cap.
+                # Narrowing never widens scope; an emptied set is the valid Slice-B zero-question
+                # shape (Exa substitutes its fixed target-lock sentence). Contacts stay strict:
+                # their directives must carry confirmed questions and an emptied set would
+                # silently break that contract.
+                confirmed = set(authorization.effective_research_questions)
+                semantic = semantic.model_copy(
+                    update={
+                        "questions": tuple(
+                            question for question in semantic.questions if question in confirmed
+                        )
+                    }
+                )
+            else:
+                raise EntityResearchToolAuthorityError("semantic tool widened confirmed questions")
         if active.call.tool_name not in context.tool_surface.tool_names:
             raise EntityResearchToolAuthorityError("semantic tool is outside the exact surface")
         if active.call.tool_name == "discover_buying_committee" and not set(

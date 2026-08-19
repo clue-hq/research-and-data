@@ -587,3 +587,77 @@ def test_a_committee_call_is_constructible_when_the_confirmed_plan_has_no_questi
     )
     assert "leave `questions` empty" not in with_question
     assert "Which exact people form the committee?" in with_question
+
+
+def test_account_model_authored_questions_narrow_to_the_confirmed_set() -> None:
+    """Model question text is not authority; the confirmed directive is.
+
+    Live (job 5d9dfe7b): a zero-question comprehensive directive confirms no questions, so a
+    model that insisted on adding intent text was refused on every committee/enrichment
+    composition, then refused assessment for the unattempted pair, and looped to the recursion
+    cap. For ACCOUNT subjects the request store now narrows to the confirmed subset instead of
+    refusing (an emptied set is the valid Slice-B zero-question shape); CONTACT stays strict
+    because its directives must carry confirmed questions.
+    """
+
+    async def scenario() -> None:
+        account_context = _context(ResearchSubjectType.ACCOUNT, EntityAgentRole.ACCOUNT)
+        authorized_field = account_context.authorization.effective_admitted_field_keys[0]
+        authorized_source = account_context.authorization.effective_field_source_authority[
+            0
+        ].source_keys[0]
+        arguments = {
+            "field_keys": [authorized_field],
+            "source_keys": [authorized_source],
+            "questions": ["an invented question the directive never confirmed"],
+        }
+        active = ActiveEntityResearchToolExecution(
+            context=account_context,
+            call=EntityResearchToolCall(
+                tool_call_id="narrow-not-refuse",
+                tool_name="research_account_deep",
+                tool_version=1,
+                tool_input_sha256=canonical_sha256(arguments),
+                arguments=arguments,
+            ),
+            journal_event_ref=f"entity-agent-event:{uuid4()}",
+        )
+        # The old widening refusal raised EntityResearchToolAuthorityError before any DB use.
+        # Narrowing lets record() proceed to its durable write, which this pure composition
+        # harness deliberately cannot perform — reaching the DB boundary IS the proof the
+        # authority gate no longer refuses.
+        with pytest.raises(AssertionError, match="must not open Postgres"):
+            await EntityResearchToolRequestStore(conn_factory=_unused_conn).record(
+                active=active,
+                semantic=EntityResearchSemanticToolInput.model_validate(arguments),
+            )
+
+        contact_context = _context(ResearchSubjectType.CONTACT, EntityAgentRole.CONTACT)
+        contact_subject = contact_context.authorization.selected_subject
+        assert contact_subject.contact_authority is not None
+        contact_field = contact_subject.contact_authority.admitted_field_keys[0]
+        contact_arguments = {
+            "field_keys": [contact_field],
+            "source_keys": ["exa_deep"],
+            "questions": ["an invented contact question"],
+        }
+        contact_active = ActiveEntityResearchToolExecution(
+            context=contact_context,
+            call=EntityResearchToolCall(
+                tool_call_id="contact-still-strict",
+                tool_name="research_contact_deep",
+                tool_version=1,
+                tool_input_sha256=canonical_sha256(contact_arguments),
+                arguments=contact_arguments,
+            ),
+            journal_event_ref=f"entity-agent-event:{uuid4()}",
+        )
+        with pytest.raises(EntityResearchToolAuthorityError, match="widened confirmed questions"):
+            await EntityResearchToolRequestStore(conn_factory=_unused_conn).record(
+                active=contact_active,
+                semantic=EntityResearchSemanticToolInput.model_validate(contact_arguments),
+            )
+
+    from tests.db.conftest import run_async
+
+    run_async(scenario())
