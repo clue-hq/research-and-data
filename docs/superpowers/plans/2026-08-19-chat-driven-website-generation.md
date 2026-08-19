@@ -392,6 +392,26 @@ carry web work, then makes the frontend show what the leg already emits.
   sane).
 - Commit: `feat(genweb): the chat surface shows the design leg — frames, feed refresh, canvas reload (B5)`.
 
+> **Slice 3 OUTCOME (2026-08-19): DONE, reviewed clean, all 8 founder requirements
+> live-verified** (commit `67d2b191`; record `_memory/2026-08-19-genweb-slice3-visible-loop.md`;
+> 857/857 frontend tests). The full walk ran: ask → leg line + card appears (F2(a),
+> no auto-open) → honest wait copy on the design turn only → 12m07s generation →
+> canvas re-rendered on the durable `leg.awaiting_user` frame with no navigation →
+> forced finalized-refusal renders its sentence → inspector hand-edit v1→v2 + R6
+> dismiss → failed turn renders honest copy → retry on the same leg succeeds. All
+> user-facing strings live in one file (`projects/model/design-leg.ts`) pending
+> founder wording review. Presentation deltas accepted in review: generic "Response
+> failed" suppressed when a typed sentence renders; failure sentence above leg lines;
+> `design_leg_turn_crashed` also got a sentence. OPEN founder decisions: the sidebar
+> running-spinner is fetch-on-navigation, not live (a live cross-route ticker = the
+> F3 follow-up); string wording sign-off. **Pre-slice-4 design-lane flag (G8):** the
+> design agent declined a scoped edit on a generated page ("cannot target the hero
+> headline node — only the hero section container is exposed") — honest failure,
+> retry succeeded, but slice 4's script says "make the hero darker": generated-page
+> node addressability needs a design-lane look first. (G7 tailwind-runtime
+> investigation running in parallel; the editor canvas renders layout — the
+> fleet-side preview renderer is the missing-runtime surface.)
+
 ### Slice 4 — end-to-end acceptance + close-out (~1 day)
 - The definition-of-done walk, scripted for the founder: strategy chat → "build me a
   landing page for <account>" → leg opens (transcript line) → generation (~minutes) →
