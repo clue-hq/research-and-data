@@ -2900,6 +2900,7 @@ class GovernedEntityResearchToolFactory:
             name="read_research_result",
             description="Losslessly read one complete persisted result in this exact job.",
             args_schema=ReadResearchResultInput,
+            handle_tool_error=True,
         )
 
     def _read_evidence_tool(self) -> StructuredTool:
@@ -2919,6 +2920,7 @@ class GovernedEntityResearchToolFactory:
             name="read_evidence",
             description="Read a bounded lossless page from retained evidence in this exact job.",
             args_schema=ReadResearchEvidenceInput,
+            handle_tool_error=True,
         )
 
 
