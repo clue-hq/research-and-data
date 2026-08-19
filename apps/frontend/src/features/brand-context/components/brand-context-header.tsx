@@ -1,5 +1,7 @@
+import { Fragment } from "react";
 import type { BrandContextController } from "../hooks/use-brand-context-controller";
 import type { BrandKitActionsController } from "../hooks/use-brand-kit-actions";
+import { knowledgeBreadcrumb } from "../model/knowledge-breadcrumb";
 import { BrandContextIcon } from "./brand-context-icon";
 import { BrandKitActionsRow } from "./brand-kit-actions";
 import styles from "./brand-context.module.css";
@@ -40,16 +42,33 @@ export function BrandContextHeader({
   };
 
   if (controller.section === "knowledge" && controller.selectedDocument) {
+    // The trail is the selected document's own path — the same value the route
+    // carries as `?file=`. The dummy hardcoded `Company / brand-kit.md` here,
+    // which read as a lie the moment the store served any other document.
+    const breadcrumb = knowledgeBreadcrumb(controller.selectedDocument.path);
     return (
       <div className={styles.documentHeaderStack}>
         <header className={styles.documentNavigationBar}>
           <nav aria-label="Document breadcrumb" className={styles.documentBreadcrumbs}>
-            <span className={styles.documentParentLabel}>Company</span>
-            <BrandContextIcon className={styles.documentBreadcrumbSlash} name="slash" size={8} />
-            <span className={styles.documentFileLabel}>
-              <BrandContextIcon name="document" size={12} />
-              brand-kit.md
-            </span>
+            {breadcrumb.map((segment, index) => (
+              <Fragment key={`${segment.kind}-${index}-${segment.label}`}>
+                {index > 0 ? (
+                  <BrandContextIcon
+                    className={styles.documentBreadcrumbSlash}
+                    name="slash"
+                    size={8}
+                  />
+                ) : null}
+                {segment.kind === "folder" ? (
+                  <span className={styles.documentParentLabel}>{segment.label}</span>
+                ) : (
+                  <span className={styles.documentFileLabel}>
+                    <BrandContextIcon name="document" size={12} />
+                    {segment.label}
+                  </span>
+                )}
+              </Fragment>
+            ))}
           </nav>
           <button
             aria-label={controller.shareCopied ? "Document link copied" : "Copy document link"}
