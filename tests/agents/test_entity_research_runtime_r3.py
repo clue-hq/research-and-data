@@ -1323,3 +1323,67 @@ def test_a_refused_round_shape_returns_to_the_model_instead_of_killing_the_graph
         assert len(refusals) == 2
 
     run_async(run())
+
+
+def test_a_fourth_identical_read_is_refused_back_to_the_model() -> None:
+    """Live regression (job 5d9dfe7b): a model read the same unchanged state until the graph
+    recursion cap suspended the job. Identical consecutive read-only calls are answered normally
+    three times, refused recoverably from the fourth, and any different call resets the streak.
+    """
+
+    async def run() -> None:
+        context = _context(ResearchSubjectType.ACCOUNT, EntityAgentRole.ACCOUNT)
+        definition = _definition(context)
+        journal = Journal()
+        middleware = runtime_module._EntityResearchRuntimeMiddleware(
+            definition=definition,
+            journal=journal,
+            guard=Guard(),
+            batches=BatchRecorder(),
+        )
+
+        answer = ToolMessage(content='{"state":"unchanged"}', tool_call_id="r", name="read")
+
+        def read_request(call_id: str) -> SimpleNamespace:
+            call = {"name": "read_account_research_state", "args": {}, "id": call_id}
+            return SimpleNamespace(
+                tool_call=call,
+                state={"messages": (AIMessage(content="", tool_calls=[call]),)},
+            )
+
+        async def read_handler(_request: object) -> ToolMessage:
+            return answer
+
+        for attempt in range(3):
+            returned = await middleware.awrap_tool_call(
+                read_request(f"read-{attempt}"), read_handler
+            )
+            assert returned is answer, f"read {attempt} should be answered"
+
+        refused = await middleware.awrap_tool_call(read_request("read-3"), read_handler)
+        assert isinstance(refused, ToolMessage)
+        assert refused.status == "error"
+        assert "identical_read_loop" in str(refused.content)
+        assert journal.events[-1].payload["disposition"] == "identical_read_loop_refused"
+
+        # A different call resets the streak: the same read is answered again afterwards.
+        different_call = {
+            "name": "read_research_result",
+            "args": {"result_ref": "research-result:x"},
+            "id": "different-read",
+        }
+
+        async def different_handler(_request: object) -> ToolMessage:
+            return ToolMessage(content="{}", tool_call_id="different-read", name="read")
+
+        await middleware.awrap_tool_call(
+            SimpleNamespace(
+                tool_call=different_call,
+                state={"messages": (AIMessage(content="", tool_calls=[different_call]),)},
+            ),
+            different_handler,
+        )
+        again = await middleware.awrap_tool_call(read_request("read-after-reset"), read_handler)
+        assert again is answer
+
+    run_async(run())

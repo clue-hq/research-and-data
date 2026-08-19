@@ -387,6 +387,35 @@ _FINALIZE_TOOL_NAMES = ("finalize_account_research", "finalize_contact_research"
 #: not going to on the fourth.
 _MAX_EMPTY_TURN_REPAIRS = 3
 
+#: State-reading engine tools that buy nothing and change nothing. Mirrors the api layer's
+#: read-only set (``clue_api.account_entity_research._READ_ONLY_TOOL_NAMES``); duplicated here
+#: because the runtime may not import the api package (dependency direction).
+_STATE_READ_TOOL_NAMES = frozenset(
+    {
+        "read_account_research_state",
+        "inspect_account_evidence",
+        "read_research_result",
+        "read_evidence",
+        "read_contact_research_state",
+        "inspect_contact_evidence",
+    }
+)
+
+#: Consecutive identical read-only calls tolerated before the runtime refuses the next one back
+#: to the model. Reading the same unchanged state cannot make progress; observed live (job
+#: 5d9dfe7b): a model called ``read_account_research_state`` back-to-back until the graph
+#: recursion cap suspended the job. The refusal is recoverable — any *different* call resets it.
+_MAX_IDENTICAL_READS = 3
+
+
+def _read_loop_refusal(tool_name: str, repeats: int) -> EntityResearchGovernedToolRefusal:
+    return EntityResearchGovernedToolRefusal(
+        f"{tool_name} was already answered identically {repeats} times in a row and the state "
+        "has not changed; do not read it again — research an outstanding field/source pair, "
+        "assess coverage, or finalize honestly with the remaining gap",
+        code="identical_read_loop",
+    )
+
 
 def _empty_turn_refusal() -> EntityResearchGovernedToolRefusal:
     """The one refusal text an empty model turn gets, in-turn and across a process resume."""
@@ -463,6 +492,8 @@ class _EntityResearchRuntimeMiddleware(AgentMiddleware[Any, Any, Any]):
         # Process-local like `_finalization_proposed`: a cold resume re-reads the persisted
         # messages and simply gets its own repair budget.
         self._empty_turn_repairs = 0
+        self._last_read_signature: tuple[str, str] | None = None
+        self._identical_reads = 0
 
     def _call(self, raw: Mapping[str, Any]) -> EntityResearchToolCall:
         name = str(raw.get("name", ""))
@@ -717,6 +748,37 @@ class _EntityResearchRuntimeMiddleware(AgentMiddleware[Any, Any, Any]):
 
     async def awrap_tool_call(self, request: Any, handler: Any) -> Any:
         call = self._call(cast(dict[str, Any], request.tool_call))
+        if call.tool_name in _STATE_READ_TOOL_NAMES:
+            signature = (
+                call.tool_name,
+                hashlib.sha256(json.dumps(call.arguments, sort_keys=True).encode()).hexdigest(),
+            )
+            if signature == self._last_read_signature:
+                self._identical_reads += 1
+            else:
+                self._last_read_signature = signature
+                self._identical_reads = 1
+            if self._identical_reads > _MAX_IDENTICAL_READS:
+                read_refusal = _read_loop_refusal(call.tool_name, self._identical_reads - 1)
+                await self._journal.append(
+                    self._event(
+                        EntityAgentJournalEventKind.TOOL_FAILED,
+                        call=call,
+                        payload={
+                            **_error_payload(read_refusal),
+                            "disposition": "identical_read_loop_refused",
+                        },
+                    )
+                )
+                return ToolMessage(
+                    content=read_refusal.render(),
+                    status="error",
+                    tool_call_id=call.tool_call_id,
+                    name=call.tool_name,
+                )
+        else:
+            self._last_read_signature = None
+            self._identical_reads = 0
         if self._finalization_proposed:
             refusal = ToolMessage(
                 content=(
