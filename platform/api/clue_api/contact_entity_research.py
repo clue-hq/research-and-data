@@ -891,12 +891,19 @@ class ContactResearchStateStore:
                         "result_request ON result_request.tool_request_id=result.tool_request_id "
                         "WHERE result.provider_operation_ref=observation.provider_operation_ref "
                         "AND result_request.job_id=request_row.job_id) "
-                        # A zero-cost fold without any result is a deterministic terminal
-                        # rejection: never pending (live Sumble 402 livelock).
+                        # A fold without any result is a deterministic terminal rejection: never
+                        # pending (live Sumble 402 livelock). It releases the operation whichever
+                        # job filed it — a fold is a property of the operation, not of the asker,
+                        # and the join above already scopes this to operations *this* job observed.
+                        # Content-keyed operations are reused across jobs and the fold is written
+                        # once, ON CONFLICT DO NOTHING, so demanding one's own job id left a
+                        # replaying job waiting forever on work the provider had already finished
+                        # (the live 2026-08-19 Millennium wedge). Results stay job-scoped: a
+                        # cross-job result is repairable by a zero-spend replay under this job.
                         "AND NOT EXISTS (SELECT 1 FROM "
                         "entity_research_provider_settlement_fold fold WHERE "
                         "fold.provider_operation_ref=observation.provider_operation_ref AND "
-                        "fold.job_id=request_row.job_id AND NOT EXISTS (SELECT 1 FROM "
+                        "NOT EXISTS (SELECT 1 FROM "
                         "entity_research_result settled WHERE settled.provider_operation_ref="
                         "fold.provider_operation_ref)) ORDER BY 1"
                     ),
@@ -1178,9 +1185,13 @@ class ContactResearchFinalizationEngine(EntityResearchFinalizationEngine):
                             "result_request.tool_request_id=result.tool_request_id WHERE "
                             "result.provider_operation_ref=obs.provider_operation_ref AND "
                             "result_request.job_id=req.job_id) AND NOT EXISTS "
+                            # Same predicate as ``_pending_refs``, and for the same reason: the
+                            # fold releases this job's observation whichever job filed it, because
+                            # a fold says the provider is done with the operation. Only the spend
+                            # sum above stays job-scoped — a replaying job bought nothing.
                             "(SELECT 1 FROM entity_research_provider_settlement_fold fold "
                             "WHERE fold.provider_operation_ref=obs.provider_operation_ref "
-                            "AND fold.job_id=req.job_id AND NOT EXISTS (SELECT 1 FROM "
+                            "AND NOT EXISTS (SELECT 1 FROM "
                             "entity_research_result settled WHERE "
                             "settled.provider_operation_ref=fold.provider_operation_ref))) "
                             "AS pending, "

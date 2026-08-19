@@ -136,6 +136,18 @@ def pending_provider_operations_sql(job_expression: str) -> str:
     2. Its operation carries a settlement fold with no result — a real provider exchange that
        terminally refused or could not be settled (the live Sumble 402 livelock). A fold means
        settlement and nothing else; it is never written for work the provider never received.
+       The fold releases the operation **whichever job filed it**: a fold is a property of the
+       operation ("the provider is done with this"), not of the asker, and the observation join
+       above already scopes the release to operations *this* job observed. Operations are
+       content-keyed and deliberately reused across jobs, so a later job re-derives the same ref
+       and only replays it; the fold is inserted once, ON CONFLICT DO NOTHING, under whoever
+       settled it first. Demanding one's own job id wedged the live 2026-08-19 Millennium jobs
+       forever on ``sumble-account-operation:89f64be2`` (HTTP 402, folded under an earlier job):
+       every ``assess_account_coverage`` and ``finalize_account_research`` refused with pending
+       work, and no retry could repair it because the replay hits the terminal rejection and the
+       first job's fold survives. Spend attribution stays job-scoped — the replaying job paid
+       nothing — and a result must still be *this* job's, because a cross-job result is repairable
+       by a zero-spend replay that writes a result row under this job's own tool request.
     3. Its operation was **never dispatched** and the batch member that caused it is durably
        ``failed`` — a sibling failure, a lost lease or a crash. Nothing was sent, so nothing will
        arrive; the operation stops blocking. This is a pending-release only: the row keeps
@@ -161,7 +173,6 @@ def pending_provider_operations_sql(job_expression: str) -> str:
           AND NOT EXISTS (
               SELECT 1 FROM entity_research_provider_settlement_fold fold
               WHERE fold.provider_operation_ref=observation.provider_operation_ref
-                AND fold.job_id=request_row.job_id
                 AND NOT EXISTS (
                     SELECT 1 FROM entity_research_result settled
                     WHERE settled.provider_operation_ref=fold.provider_operation_ref
@@ -325,9 +336,17 @@ async def read_account_research_execution_completeness(
                                 AND result_request.job_id=:job_id
                           )
                           OR EXISTS (
+                              -- A fold belongs to the operation, not to whoever filed it: it is
+                              -- written once, ON CONFLICT DO NOTHING, under the first job to
+                              -- settle it, while content-keyed operations are deliberately reused
+                              -- across jobs. The join above already requires *this* job to have
+                              -- observed the operation and the operation to have dispatched, so
+                              -- "this job attempted it and the provider is terminally done" is an
+                              -- honest attempt for this job too (spec §5.2). Demanding one's own
+                              -- job id left a replaying job with no attempt and no pending work it
+                              -- could ever clear — the live 2026-08-19 Millennium wedge.
                               SELECT 1 FROM entity_research_provider_settlement_fold fold
                               WHERE fold.provider_operation_ref=operation.operation_ref
-                                AND fold.job_id=:job_id
                           )
                       )
                     ORDER BY operation.source_key, request_row.tool_name

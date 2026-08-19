@@ -137,11 +137,16 @@ from clue_core.entity_research import (
     ResearchFieldOutcome,
     ResearchFieldResultProjection,
     ResearchFinalizationOutcome,
+    ResearchOperationKind,
+    ResearchRunKind,
+    ResearchRunLifecycleContract,
     ResearchSubjectType,
 )
 from clue_fleet import (
     DbEntityResearchJobStore,
     EntityResearchExecutionFence,
+    EntityResearchJobEnvelope,
+    EntityResearchRunEnvelope,
     FleetTaskKind,
     FleetTaskStatus,
     LeaseGeneration,
@@ -1636,6 +1641,295 @@ def test_a_dispatched_but_pending_operation_is_not_a_terminal_attempt(
             assert not pending_pairs & set(completeness.terminal_field_source_pairs)
             assert pending_pairs <= set(completeness.outstanding_field_source_pairs)
             assert not completeness.complete
+
+    run_async(scenario())
+
+
+async def _replay_the_operation_under_a_second_job(
+    conn: AsyncConnection, *, drive: _Drive, operation_ref: str
+) -> EntityResearchJobAuthorization:
+    """Launch a second run over the same account and journal its replay of one operation.
+
+    The live shape (Millennium, 2026-08-19): a provider operation ref is content-keyed, so a later
+    job over the same account re-derives *the same* ref, joins it and records a
+    ``replay_observation``. It dispatches nothing, buys nothing and files no fold of its own — the
+    anti-double-spend rule is exactly what makes the fold single and cross-job.
+
+    The run/job pair is written through the fleet store rather than through the account launcher on
+    purpose: a second launcher call can mint a second account run pinning the same directive, which
+    ``pinned_account_research_directive`` refuses as ambiguous. The authority itself is the first
+    job's, copied verbatim — both jobs execute the same confirmed directive over the same account,
+    which is precisely why they meet on one operation.
+    """
+
+    connection = _NestedConnFactory(conn)
+    selection = drive.authorization.selection.model_copy(update={"selection_id": uuid4()})
+    research_run_id = uuid4()
+    job_id = uuid4()
+    authorization = drive.authorization.model_copy(
+        update={
+            "job_id": job_id,
+            "research_run_id": research_run_id,
+            "selection": selection,
+            "checkpoint_thread_id": f"entity-research:{job_id}",
+            "attempt_id": uuid4(),
+            "lease_id": uuid4(),
+        }
+    )
+    await DbEntityResearchJobStore(conn_factory=connection).launch(
+        EntityResearchRunEnvelope(
+            lifecycle=ResearchRunLifecycleContract(
+                run_id=research_run_id,
+                run_kind=ResearchRunKind.ACCOUNT_RESEARCH,
+                selection=selection,
+                user_confirmed_launch=True,
+                operations=(ResearchOperationKind.ACCOUNT_PROFILE,),
+            ),
+            jobs=(
+                EntityResearchJobEnvelope(
+                    authorization=authorization,
+                    priority=0,
+                    budget_envelope_ref=selection.budget_envelope_ref,
+                    budget_cap_cents=Decimal("300"),
+                ),
+            ),
+            budget_cap_cents=Decimal("300"),
+            concurrency_limit=1,
+        )
+    )
+    # The replaying request repeats the first job's exact governed authority — same tool, fields,
+    # sources and questions — because both jobs execute the same confirmed directive. Only the
+    # journal identity and the budget/idempotency keys are the second job's own.
+    source = (
+        (
+            await conn.execute(
+                text(
+                    """
+                    SELECT request_row.subject_type, request_row.target_entity_id,
+                           request_row.workspace_id, request_row.project_id,
+                           request_row.product_id, request_row.project_run_id,
+                           request_row.tool_name, request_row.tool_version,
+                           request_row.tool_input_sha256, request_row.field_plan_ref,
+                           request_row.source_plan_ref, request_row.field_keys,
+                           request_row.source_keys, request_row.questions,
+                           request_row.field_source_authority, turn_row.context_json
+                    FROM entity_research_tool_request request_row
+                    JOIN entity_research_provider_observation observation
+                      ON observation.tool_request_id=request_row.tool_request_id
+                    JOIN entity_research_agent_turn turn_row
+                      ON turn_row.agent_turn_id=request_row.agent_turn_id
+                     AND turn_row.agent_execution_id=request_row.agent_execution_id
+                    WHERE observation.provider_operation_ref=:operation_ref
+                    """
+                ),
+                {"operation_ref": operation_ref},
+            )
+        )
+        .mappings()
+        .one()
+    )
+    turn_id, execution_id, event_id, request_id = uuid4(), uuid4(), uuid4(), uuid4()
+    call_id = f"replay-call:{job_id}"
+    params = {
+        **dict(source),
+        "turn_id": turn_id,
+        "execution_id": execution_id,
+        "event_id": event_id,
+        "request_id": request_id,
+        "call_id": call_id,
+        "job_id": job_id,
+        "research_run_id": research_run_id,
+        "checkpoint_thread_id": authorization.checkpoint_thread_id,
+        "observation_id": uuid4(),
+        "operation_ref": operation_ref,
+        "sha": "a" * 64,
+        "authority": json.dumps(source["field_source_authority"]),
+        # The admitted half of the context (tool names, field/source authority, questions) is the
+        # first job's real journal: both jobs run the same confirmed directive, and the request
+        # trigger checks every requested tool/field/source/question against it. Only the turn's own
+        # identity is the second job's.
+        "context": json.dumps(
+            {
+                **dict(source["context_json"]),
+                "agent_execution_id": str(execution_id),
+                "agent_turn_id": str(turn_id),
+                "role": "account",
+                "subject_type": str(source["subject_type"]),
+                "subject_entity_id": str(source["target_entity_id"]),
+                "job_id": str(job_id),
+                "research_run_id": str(research_run_id),
+                "workspace_id": str(source["workspace_id"]),
+                "project_id": str(source["project_id"]),
+                "product_id": str(source["product_id"]),
+                "project_run_id": str(source["project_run_id"]),
+                "checkpoint_thread_id": authorization.checkpoint_thread_id,
+            }
+        ),
+    }
+    await conn.execute(
+        text(
+            """
+            INSERT INTO entity_research_agent_turn
+                (agent_turn_id, agent_execution_id, job_id, research_run_id, role, subject_type,
+                 target_entity_id, workspace_id, project_id, product_id, project_run_id,
+                 checkpoint_thread_id, context_json, context_sha256, resource_manifest_json,
+                 resource_manifest_sha256, tool_manifest_json, tool_manifest_sha256,
+                 system_prompt_sha256)
+            VALUES
+                (:turn_id, :execution_id, :job_id, :research_run_id, 'account', :subject_type,
+                 :target_entity_id, :workspace_id, :project_id, :product_id, :project_run_id,
+                 :checkpoint_thread_id, CAST(:context AS jsonb), :sha, '{}'::jsonb, :sha,
+                 '[]'::jsonb, :sha, :sha)
+            """
+        ),
+        params,
+    )
+    await conn.execute(
+        text(
+            """
+            INSERT INTO entity_research_agent_event
+                (event_id, agent_turn_id, agent_execution_id, event_kind, tool_call_id, tool_name,
+                 tool_version, tool_input_sha256, payload_json)
+            VALUES (:event_id, :turn_id, :execution_id, 'tool_started', :call_id, :tool_name,
+                    :tool_version, :tool_input_sha256, '{}'::jsonb)
+            """
+        ),
+        params,
+    )
+    await conn.execute(
+        text(
+            """
+            INSERT INTO entity_research_tool_request
+                (tool_request_id, agent_turn_id, agent_execution_id, tool_event_id,
+                 raw_tool_call_id, research_run_id, job_id, subject_type, target_entity_id,
+                 workspace_id, project_id, product_id, project_run_id, tool_name, tool_version,
+                 tool_input_sha256, field_plan_ref, source_plan_ref, field_keys, source_keys,
+                 questions, budget_reservation_key, idempotency_key, field_source_authority)
+            VALUES
+                (:request_id, :turn_id, :execution_id, :event_id, :call_id, :research_run_id,
+                 :job_id, :subject_type, :target_entity_id, :workspace_id, :project_id,
+                 :product_id, :project_run_id, :tool_name, :tool_version, :tool_input_sha256,
+                 :field_plan_ref, :source_plan_ref, :field_keys, :source_keys, :questions,
+                 :call_id, :call_id, CAST(:authority AS jsonb))
+            """
+        ),
+        params,
+    )
+    await conn.execute(
+        text(
+            """
+            INSERT INTO entity_research_provider_observation
+                (observation_id, tool_request_id, external_workspace_id, disposition,
+                 provider_operation_ref)
+            VALUES (:observation_id, :request_id, :workspace_id, 'replay_observation',
+                    :operation_ref)
+            """
+        ),
+        params,
+    )
+    return authorization
+
+
+def test_a_replaying_job_sees_the_settlement_another_job_folded(tmp_path: Path) -> None:
+    """The live Millennium wedge: a fold is a property of the operation, not of the asker.
+
+    ``entity_research_provider_settlement_fold`` is keyed on the operation and inserted ON CONFLICT
+    DO NOTHING, so it is written once and carries the job id of whoever settled it first. While the
+    pending predicate and the completeness derivation demanded a fold carrying *their own* job id,
+    a job that merely replayed the operation could never see the settlement:
+    ``sumble-account-operation:89f64be2`` (Sumble tech stack, HTTP 402, folded 2026-08-19 under job
+    ``298f3dec``) held two later jobs' ``assess_account_coverage`` and ``finalize_account_research``
+    at "dependent account decision has pending work" until the graph recursion cap killed them.
+    Nothing repaired it: the gap-ledger replay hits the terminal rejection and ON CONFLICT DO
+    NOTHING keeps the first job's fold. The provider is done with this operation, so every job that
+    observed it is done waiting on it.
+    """
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            fixture = await _seed_discovered_account(
+                conn, FsStorage(tmp_path / "b8-cross-job-fold-artifacts")
+            )
+            action = _PendingEnrichAction(
+                conn_factory=_NestedConnFactory(conn),
+                workspace_id=fixture.workspace_id,
+                project_id=fixture.project_id,
+                project_run_id=fixture.project_run_id,
+                account_id=fixture.account_id,
+            )
+            drive = await _drive_comprehensive_run(
+                conn,
+                fixture=fixture,
+                tmp_path=tmp_path,
+                enrich_action=action,
+                expect_error=EntityResearchResultIntegrityError,
+            )
+            rows = await _operation_states(conn, job_id=drive.job_id)
+            assert rows and all(
+                row["dispatched_at"] is not None and not row["folded"] for row in rows
+            )
+            settled = rows[0]
+            operation_ref = str(settled["operation_ref"])
+            replayed_pairs = {
+                (field_key, str(settled["source_key"])) for field_key in settled["field_keys"]
+            }
+            assert replayed_pairs
+            # The first job reaches the provider and settles the operation terminally. A non-zero
+            # cost is deliberate: the release below must move the settlement's *visibility*, never
+            # its money.
+            await conn.execute(
+                text(
+                    """
+                    INSERT INTO entity_research_provider_settlement_fold
+                        (provider_operation_ref, research_run_id, job_id, settled_cost_cents)
+                    VALUES (:operation_ref, :run_id, :job_id, 4.5)
+                    """
+                ),
+                {
+                    "operation_ref": operation_ref,
+                    "run_id": drive.authorization.research_run_id,
+                    "job_id": drive.job_id,
+                },
+            )
+
+            replay = await _replay_the_operation_under_a_second_job(
+                conn, drive=drive, operation_ref=operation_ref
+            )
+            pending = AccountResearchStateStore._pending_refs
+            # The replaying job observed exactly this one operation, and the provider is done with
+            # it, so it waits on nothing — assessment and finalization can both proceed.
+            assert await pending(conn, replay.job_id) == ()
+            assert operation_ref not in await pending(conn, drive.job_id)
+
+            # And the settled work counts as this job's attempt: it observed a dispatched operation
+            # that terminally settled, which is the whole of the §5.2 attempt test.
+            completeness = await read_account_research_execution_completeness(
+                conn, authorization=replay
+            )
+            assert replayed_pairs <= set(completeness.terminal_field_source_pairs)
+            assert not replayed_pairs & set(completeness.outstanding_field_source_pairs)
+
+            # Spend attribution is untouched and stays job-scoped: the replaying job spent nothing
+            # on an operation it never dispatched.
+            spend = (
+                (
+                    await conn.execute(
+                        text(
+                            "SELECT job.job_id, (SELECT COALESCE(sum(fold.settled_cost_cents), 0) "
+                            "FROM entity_research_provider_settlement_fold fold "
+                            "WHERE fold.job_id=job.job_id) AS folded_spend "
+                            "FROM entity_research_job job WHERE job.job_id=ANY(:job_ids)"
+                        ),
+                        {"job_ids": [str(drive.job_id), str(replay.job_id)]},
+                    )
+                )
+                .mappings()
+                .all()
+            )
+            assert {UUID(str(row["job_id"])): row["folded_spend"] for row in spend} == {
+                drive.job_id: Decimal("4.5"),
+                replay.job_id: Decimal("0"),
+            }
 
     run_async(scenario())
 

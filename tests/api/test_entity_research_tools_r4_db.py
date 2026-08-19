@@ -42,6 +42,7 @@ from clue_agents.entity_research_tools import (
     ReadResearchEvidenceInput,
 )
 from clue_agents.model import ScriptedAgentChatModel
+from clue_api.contact_entity_research import ContactResearchStateStore
 from clue_api.entity_research_runtime_wiring import (
     DbEntityResearchAgentJournal,
     PostgresEntityResearchCheckpointers,
@@ -1321,6 +1322,259 @@ def test_provider_neutral_join_records_wait_and_advances_durable_state(tmp_path:
     request_workspace_id = ""
     request_project_id = ""
     request_project_run_id = uuid4()
+    from tests.db.conftest import run_async
+
+    run_async(scenario())
+
+
+async def _journal_governed_request(
+    conn: AsyncConnection,
+    *,
+    authorization: EntityResearchJobAuthorization,
+    operation_ref: str,
+    disposition: str,
+) -> UUID:
+    """Journal one governed contact tool request and its observation of ``operation_ref``.
+
+    Written as SQL rather than driven through the agent because the shape under test is durable,
+    not behavioural: two jobs over the same contact, one provider operation, one settlement. Every
+    row still passes the production triggers (turn ⇄ event ⇄ request authority, and the observation
+    ⇄ operation authority), so nothing here is admitted that the runtime could not have written.
+    """
+
+    selection = authorization.selection
+    turn_id, execution_id, event_id, request_id = uuid4(), uuid4(), uuid4(), uuid4()
+    call_id = f"governed-call:{authorization.job_id}"
+    params = {
+        "turn_id": turn_id,
+        "execution_id": execution_id,
+        "event_id": event_id,
+        "request_id": request_id,
+        "observation_id": uuid4(),
+        "call_id": call_id,
+        "job_id": authorization.job_id,
+        "research_run_id": authorization.research_run_id,
+        "contact_id": authorization.subject_entity_id,
+        "account_id": authorization.parent_account_id,
+        "workspace_id": authorization.workspace_id,
+        "project_id": authorization.project_id,
+        "product_id": authorization.product_id,
+        "project_run_id": authorization.project_run_id,
+        "checkpoint_thread_id": authorization.checkpoint_thread_id,
+        "field_keys": list(selection.admitted_field_keys),
+        "source_keys": list(selection.admitted_source_keys),
+        "questions": list(selection.research_questions),
+        "operation_ref": operation_ref,
+        "disposition": disposition,
+        "sha": "a" * 64,
+        "authority": json.dumps(
+            [
+                {"field_key": item.field_key, "source_keys": list(item.source_keys)}
+                for item in selection.field_source_authority
+            ]
+        ),
+    }
+    params["context"] = json.dumps(
+        {
+            "agent_execution_id": str(execution_id),
+            "agent_turn_id": str(turn_id),
+            "role": "contact",
+            "subject_type": "contact",
+            "subject_entity_id": str(authorization.subject_entity_id),
+            "job_id": str(authorization.job_id),
+            "research_run_id": str(authorization.research_run_id),
+            "workspace_id": authorization.workspace_id,
+            "project_id": authorization.project_id,
+            "product_id": authorization.product_id,
+            "project_run_id": str(authorization.project_run_id),
+            "checkpoint_thread_id": authorization.checkpoint_thread_id,
+            "tool_names": ["research_contact_deep"],
+            "admitted_field_keys": list(selection.admitted_field_keys),
+            "admitted_source_keys": list(selection.admitted_source_keys),
+            "field_source_authority": json.loads(str(params["authority"])),
+            "research_questions": list(selection.research_questions),
+        }
+    )
+    await conn.execute(
+        text(
+            """
+            INSERT INTO entity_research_agent_turn
+                (agent_turn_id, agent_execution_id, job_id, research_run_id, role, subject_type,
+                 target_entity_id, parent_account_id, workspace_id, project_id, product_id,
+                 project_run_id, checkpoint_thread_id, context_json, context_sha256,
+                 resource_manifest_json, resource_manifest_sha256, tool_manifest_json,
+                 tool_manifest_sha256, system_prompt_sha256)
+            VALUES
+                (:turn_id, :execution_id, :job_id, :research_run_id, 'contact', 'contact',
+                 :contact_id, :account_id, :workspace_id, :project_id, :product_id,
+                 :project_run_id, :checkpoint_thread_id, CAST(:context AS jsonb), :sha,
+                 '{}'::jsonb, :sha, '[]'::jsonb, :sha, :sha)
+            """
+        ),
+        params,
+    )
+    await conn.execute(
+        text(
+            """
+            INSERT INTO entity_research_agent_event
+                (event_id, agent_turn_id, agent_execution_id, event_kind, tool_call_id, tool_name,
+                 tool_version, tool_input_sha256, payload_json)
+            VALUES (:event_id, :turn_id, :execution_id, 'tool_started', :call_id,
+                    'research_contact_deep', 1, :sha, '{}'::jsonb)
+            """
+        ),
+        params,
+    )
+    await conn.execute(
+        text(
+            """
+            INSERT INTO entity_research_tool_request
+                (tool_request_id, agent_turn_id, agent_execution_id, tool_event_id,
+                 raw_tool_call_id, research_run_id, job_id, subject_type, target_entity_id,
+                 parent_account_id, workspace_id, project_id, product_id, project_run_id,
+                 tool_name, tool_version, tool_input_sha256, field_plan_ref, source_plan_ref,
+                 field_keys, source_keys, questions, budget_reservation_key, idempotency_key,
+                 field_source_authority)
+            VALUES
+                (:request_id, :turn_id, :execution_id, :event_id, :call_id, :research_run_id,
+                 :job_id, 'contact', :contact_id, :account_id, :workspace_id, :project_id,
+                 :product_id, :project_run_id, 'research_contact_deep', 1, :sha,
+                 'contact-field-plan:1', 'contact-source-plan:1', :field_keys, :source_keys,
+                 :questions, :call_id, :call_id, CAST(:authority AS jsonb))
+            """
+        ),
+        params,
+    )
+    await conn.execute(
+        text(
+            """
+            INSERT INTO entity_research_provider_observation
+                (observation_id, tool_request_id, external_workspace_id, disposition,
+                 provider_operation_ref)
+            VALUES (:observation_id, :request_id, :workspace_id, :disposition, :operation_ref)
+            """
+        ),
+        params,
+    )
+    return request_id
+
+
+def test_a_replaying_contact_job_sees_the_settlement_another_job_folded(tmp_path: Path) -> None:
+    """The contact half of the live Millennium wedge: the fold belongs to the operation.
+
+    ``entity_research_provider_settlement_fold`` is keyed on the provider operation and inserted ON
+    CONFLICT DO NOTHING, so it is written once and stamped with the job that settled it first.
+    Provider operations are content-keyed and deliberately reused across jobs (that is the
+    anti-double-spend rule), so a later job re-derives the same ref and records a
+    ``replay_observation``. While ``_pending_refs`` demanded a fold carrying its *own* job id, that
+    operation stayed pending forever and the contact finalization guard refused every attempt —
+    the account-side shape that wedged two live jobs on 2026-08-19. Spend stays job-scoped: the
+    replaying job dispatched nothing and owes nothing.
+    """
+
+    async def scenario() -> None:
+        storage = FsStorage(tmp_path / "cross-job-fold-artifacts")
+        async with rollback_conn() as conn:
+            seed = await _seed(conn, storage, suffix="cross-job-fold")
+            connection = _TransactionalTrackedConnFactory(conn)
+            profile_body = "role: contact-research\nframework: langchain-create-agent\n"
+            profile_sha = hashlib.sha256(profile_body.encode()).hexdigest()
+            store = DbEntityResearchJobStore(conn_factory=connection)
+            # Two runs over the same contact — a relaunch, which is exactly how the live wedge
+            # arose. Each envelope mints its own selection, run and job.
+            envelopes = tuple(_fleet_envelope(seed, profile_sha256=profile_sha) for _ in range(2))
+            for envelope in envelopes:
+                await store.launch(envelope)
+            settling, replaying = (envelope.jobs[0].authorization for envelope in envelopes)
+
+            operation_ref = f"exa-contact-operation:{uuid4()}"
+            await conn.execute(
+                text(
+                    """
+                    INSERT INTO entity_research_provider_operation
+                        (operation_ref, provider_kind, workspace_id, project_id, project_run_id,
+                         subject_type, target_entity_id, parent_account_id, source_key,
+                         field_keys, request_artifact_ref, reserved_at)
+                    VALUES
+                        (:operation_ref, 'exa_deep', :workspace_id, :project_id, :project_run_id,
+                         'contact', :contact_id, :account_id, 'exa_deep', :field_keys,
+                         'artifact:cross-job-fold-request', now())
+                    """
+                ),
+                {
+                    "operation_ref": operation_ref,
+                    "workspace_id": settling.workspace_id,
+                    "project_id": settling.project_id,
+                    "project_run_id": settling.project_run_id,
+                    "contact_id": settling.subject_entity_id,
+                    "account_id": settling.parent_account_id,
+                    "field_keys": list(settling.selection.admitted_field_keys),
+                },
+            )
+            await _journal_governed_request(
+                conn,
+                authorization=settling,
+                operation_ref=operation_ref,
+                disposition="caused",
+            )
+            # Causation is journalled before dispatch (the trigger enforces that order), so the
+            # dispatch stamp lands after it, exactly as the provider path stamps it.
+            await conn.execute(
+                text(
+                    "UPDATE entity_research_provider_operation SET dispatched_at=now() "
+                    "WHERE operation_ref=:operation_ref"
+                ),
+                {"operation_ref": operation_ref},
+            )
+            pending = ContactResearchStateStore._pending_refs
+            assert await pending(conn, settling.job_id) == (operation_ref,)
+
+            # The provider terminally settles the operation under the job that dispatched it.
+            await conn.execute(
+                text(
+                    """
+                    INSERT INTO entity_research_provider_settlement_fold
+                        (provider_operation_ref, research_run_id, job_id, settled_cost_cents)
+                    VALUES (:operation_ref, :run_id, :job_id, 3.25)
+                    """
+                ),
+                {
+                    "operation_ref": operation_ref,
+                    "run_id": settling.research_run_id,
+                    "job_id": settling.job_id,
+                },
+            )
+            await _journal_governed_request(
+                conn,
+                authorization=replaying,
+                operation_ref=operation_ref,
+                disposition="replay_observation",
+            )
+
+            assert await pending(conn, settling.job_id) == ()
+            assert await pending(conn, replaying.job_id) == ()
+
+            # Spend attribution is untouched and stays job-scoped.
+            spend = (
+                (
+                    await conn.execute(
+                        text(
+                            "SELECT job.job_id, (SELECT COALESCE(sum(fold.settled_cost_cents), 0) "
+                            "FROM entity_research_provider_settlement_fold fold "
+                            "WHERE fold.job_id=job.job_id) AS folded_spend "
+                            "FROM entity_research_job job WHERE job.job_id=ANY(:job_ids)"
+                        ),
+                        {"job_ids": [str(settling.job_id), str(replaying.job_id)]},
+                    )
+                )
+                .mappings()
+                .all()
+            )
+            assert {UUID(str(row["job_id"])): row["folded_spend"] for row in spend} == {
+                settling.job_id: Decimal("3.25"),
+                replaying.job_id: Decimal("0"),
+            }
+
     from tests.db.conftest import run_async
 
     run_async(scenario())
