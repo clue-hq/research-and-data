@@ -272,6 +272,48 @@ def failed_agent_turn_response(code: str, message: str, detail: str) -> JsonObje
     }
 
 
+def with_web_turn_failure_diagnostic(response: JsonObject) -> JsonObject:
+    """Guarantee a non-applied website turn carries its reason as a real diagnostic.
+
+    The web twin of the scene path's ``agent_runtime.no_proposal`` synthesis (see
+    ``run_agent_turn_preview``): a turn that dies inside the runtime — the reviewer's
+    vision call refused, a recursion limit, an orchestrator crash — comes back with the
+    reason only in ``summary`` and an EMPTY ``diagnostics``, so every surface that reads
+    diagnostics (the editor's panel, the platform's leg projections) reports an
+    unexplained failure. Observed live: OpenRouter's "image dimensions exceed max
+    allowed size: 8000 pixels" refusal discarded 84 authored nodes with nothing in
+    ``diagnostics`` to say why.
+
+    Never overwrites diagnostics that already exist (``failed_agent_turn_response`` and
+    ``conflicted_web_turn_response`` author their own) and never invents a message: the
+    text IS the runtime's own summary.
+    """
+    if response.get("status") == "applied":
+        return response
+    existing = response.get("diagnostics")
+    if isinstance(existing, list) and existing:
+        return response
+    summary = response.get("summary")
+    message = (
+        str(summary).strip()
+        if isinstance(summary, str) and summary.strip()
+        else "The website turn ended without applying any change, and gave no reason."
+    )
+    outcome = response.get("outcome")
+    return {
+        **response,
+        "diagnostics": [
+            agent_diagnostic(
+                "web_turn.no_result",
+                message,
+                "validation",
+                "error",
+                f"The runtime reported outcome {outcome!r}." if outcome else None,
+            )
+        ],
+    }
+
+
 def conflicted_web_turn_response(
     base_version: int, current_version: int
 ) -> JsonObject:
@@ -8108,7 +8150,7 @@ def execute_web_turn_job(
         status = "succeeded" if response.get("status") == "applied" else "failed"
         return (
             status,
-            {**response, "doc_kind": "web"},
+            {**with_web_turn_failure_diagnostic(response), "doc_kind": "web"},
             "result",
             {"status": response.get("status")},
         )

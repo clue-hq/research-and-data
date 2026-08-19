@@ -24,6 +24,17 @@ logger = get_logger("lumen_agent.tools.view")
 # honest — it magnifies the real pixels without inventing detail.
 _VISION_MIN_PX = 512
 
+# The other end of the same class of provider refusal, found on the first realistic
+# website generation (genweb slice 0): a whole-page capture of a 3-4 section landing
+# page comes out 1440x14325 (and 768x8095 at the narrow width), and OpenRouter refuses
+# it outright — "invalid_prompt ... image dimensions exceed max allowed size: 8000
+# pixels". The web turn is transactional, so that refusal discarded all 84 authored
+# nodes. We downscale any over-ceiling image to the ceiling BEFORE it is attached, with
+# headroom under the provider's 8000px so no rounding can land on the limit. LANCZOS
+# (not NEAREST) on the way down: a downscale must keep the page legible enough to judge,
+# and unlike the upscale it invents no detail — it averages the pixels that are there.
+_VISION_MAX_PX = 7500
+
 
 def _latest_preview_png(tools: LumenDesignTools) -> Optional[Path]:
     """Resolve the newest rendered PNG on disk, or None if nothing rendered yet.
@@ -69,28 +80,47 @@ def _reference_target_labels(tools: LumenDesignTools) -> list[str]:
 
 
 def _normalize_image_bytes(raw: bytes) -> tuple[bytes, str]:
-    """Return (bytes, mime) for `raw`, upscaling to `_VISION_MIN_PX` on the short
-    side when either dimension is below the vision-provider minimum.
+    """Return (bytes, mime) for `raw`, clamped into the vision provider's accepted
+    size band: at least `_VISION_MIN_PX` on the short side, at most `_VISION_MAX_PX`
+    on the long side.
 
-    Sub-minimum images are magnified with nearest-neighbor (aspect preserved) so
-    a provider can never reject the block; already-large images pass through
-    unchanged. Raises on unreadable/corrupt bytes — the caller contains it into
-    an honest error string so the turn continues.
+    Sub-minimum images are magnified with nearest-neighbor and over-ceiling ones are
+    reduced with LANCZOS — aspect preserved either way — so a provider can never
+    reject the block; an image already inside the band passes through byte-identical.
+    Raises on unreadable/corrupt bytes — the caller contains it into an honest error
+    string so the turn continues.
+
+    The ceiling wins when a single image violates both bounds (an extreme sliver
+    whose long side is over the ceiling and whose short side is still under the
+    floor after the reduction): the two bounds are then unsatisfiable together at a
+    fixed aspect, and the over-ceiling refusal is the one realistic page captures hit.
     """
     from PIL import Image
 
     with Image.open(io.BytesIO(raw)) as img:
         img.load()
         width, height = img.size
-        if width >= _VISION_MIN_PX and height >= _VISION_MIN_PX:
-            return raw, "image/png"
-        scale = _VISION_MIN_PX / float(min(width, height))
-        new_size = (max(_VISION_MIN_PX, round(width * scale)), max(_VISION_MIN_PX, round(height * scale)))
+        scale = 1.0
+        if min(width, height) < _VISION_MIN_PX:
+            scale = _VISION_MIN_PX / float(min(width, height))
+        if max(width, height) * scale > _VISION_MAX_PX:
+            scale = _VISION_MAX_PX / float(max(width, height))
+        if scale == 1.0:
+            return raw, "image/png"  # already inside the band — untouched bytes
+        if scale > 1.0:
+            new_size = (max(_VISION_MIN_PX, round(width * scale)), max(_VISION_MIN_PX, round(height * scale)))
+            resample = Image.NEAREST
+        else:
+            new_size = (
+                max(1, min(_VISION_MAX_PX, round(width * scale))),
+                max(1, min(_VISION_MAX_PX, round(height * scale))),
+            )
+            resample = Image.LANCZOS
         if img.mode not in ("RGB", "RGBA"):
             img = img.convert("RGBA")
-        upscaled = img.resize(new_size, Image.NEAREST)
+        resized = img.resize(new_size, resample)
         buffer = io.BytesIO()
-        upscaled.save(buffer, format="PNG")
+        resized.save(buffer, format="PNG")
         return buffer.getvalue(), "image/png"
 
 

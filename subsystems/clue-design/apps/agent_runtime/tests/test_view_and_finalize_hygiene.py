@@ -190,6 +190,75 @@ def test_normalize_leaves_large_images_untouched(tmp_path, monkeypatch):
     assert mime == "image/png"
 
 
+# --- Task 1b: the vision size CEILING (genweb slice 1) ----------------------
+#
+# The website reviewer captures whole pages: a realistic 3-4 section landing page
+# renders 1440x14325 / 768x8095, and OpenRouter refuses those outright
+# ("invalid_prompt ... image dimensions exceed max allowed size: 8000 pixels").
+# The turn is transactional, so the refusal discarded every authored node.
+
+
+def test_normalize_clamps_a_tall_page_capture_to_the_vision_ceiling():
+    # The exact capture that killed the slice-0 generation run.
+    raw = _png_bytes((1440, 14325))
+    out, mime = view_mod._normalize_image_bytes(raw)
+    assert mime == "image/png"
+    clamped = Image.open(io.BytesIO(out))
+    w, h = clamped.size
+    assert max(w, h) <= view_mod._VISION_MAX_PX
+    assert min(w, h) >= view_mod._VISION_MIN_PX
+    # Aspect preserved: the reviewer must judge the page it rendered, not a squashed one.
+    assert abs((w / h) - (1440 / 14325)) < 0.005
+
+
+def test_normalize_clamps_the_narrow_tall_capture_too():
+    raw = _png_bytes((768, 8095))
+    out, _mime = view_mod._normalize_image_bytes(raw)
+    w, h = Image.open(io.BytesIO(out)).size
+    assert max(w, h) <= view_mod._VISION_MAX_PX
+    assert abs((w / h) - (768 / 8095)) < 0.005
+
+
+def test_normalize_ceiling_is_below_the_provider_limit():
+    # The provider refuses AT 8000px; the ceiling leaves headroom for rounding.
+    assert view_mod._VISION_MAX_PX < 8000
+
+
+def test_normalize_ceiling_wins_when_both_bounds_are_violated():
+    # A sliver: too narrow for the floor AND too tall for the ceiling. The two bounds
+    # cannot both hold at a fixed aspect; the hard refusal we actually hit is the ceiling.
+    raw = _png_bytes((120, 20000))
+    out, _mime = view_mod._normalize_image_bytes(raw)
+    w, h = Image.open(io.BytesIO(out)).size
+    assert max(w, h) <= view_mod._VISION_MAX_PX
+
+
+def test_normalize_leaves_an_in_range_image_byte_identical():
+    raw = _png_bytes((1440, 3200))
+    out, _mime = view_mod._normalize_image_bytes(raw)
+    assert out == raw
+
+
+def test_view_clamps_a_tall_preview_before_attaching_it(tmp_path, monkeypatch):
+    tools = _tools(tmp_path, monkeypatch)
+    png_path = tools.trace_dir / "preview.png"
+    png_path.write_bytes(_png_bytes((1440, 14325)))
+    tools.latest_export_summary = {
+        "status": "ok",
+        "artifacts": [
+            {"format": "png", "path": str(png_path), "width": 1440, "height": 14325}
+        ],
+    }
+    view = view_mod.make_view_tool(tools)
+    msg = view.invoke(
+        {"name": "view", "args": {"target": "preview"}, "id": "c1", "type": "tool_call"}
+    )
+    image_blocks = [b for b in msg.content if b["type"] == "image"]
+    assert len(image_blocks) == 1
+    emitted = Image.open(io.BytesIO(base64.b64decode(image_blocks[0]["data"])))
+    assert max(emitted.size) <= view_mod._VISION_MAX_PX
+
+
 # --- Task 2: preview staleness contract ------------------------------------
 
 

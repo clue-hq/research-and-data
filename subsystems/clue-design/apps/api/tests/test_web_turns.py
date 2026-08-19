@@ -651,6 +651,75 @@ def test_web_turn_failed_leaves_document_unchanged(client: TestClient) -> None:
     assert store.list_envelopes(document["id"]) == []
 
 
+def test_web_turn_failure_reason_lands_in_diagnostics(client: TestClient) -> None:
+    """A failed website turn must say WHY in `diagnostics`, not only inside `summary`.
+
+    The genweb slice-0 run died on the reviewer's vision call ("image dimensions exceed
+    max allowed size: 8000 pixels"); the reason reached the editor stringified inside
+    `summary` while `diagnostics` stayed empty, so every surface that reads diagnostics
+    reported an unexplained failure. The scene path already synthesizes this entry
+    (`agent_runtime.no_proposal`); the web path did not.
+    """
+    document = create_web_document(client)
+    refusal = (
+        "Error code: 400 - invalid_prompt: image dimensions exceed max allowed "
+        "size: 8000 pixels"
+    )
+
+    def stub(doc, prompt, model, root):
+        return {
+            "schema_version": 1,
+            "status": "failed",
+            "outcome": "failed",
+            "summary": refusal,
+            "web_doc": doc["scene"],
+            "operations": [],
+            "preview_paths": [],
+            "doc_kind": "web",
+        }
+
+    client.app.state.web_turn_runner = stub
+    response = client.post(
+        f"/documents/{document['id']}/web/turns",
+        json={"prompt": "Build a landing page", "base_version": 0},
+    )
+    run = wait_for_run(client, response.json()["run_id"])
+    assert run["status"] == "failed"
+
+    diagnostics = run["result"]["diagnostics"]
+    assert len(diagnostics) == 1
+    assert diagnostics[0]["severity"] == "error"
+    assert diagnostics[0]["code"] == "web_turn.no_result"
+    assert diagnostics[0]["message"] == refusal
+
+
+def test_web_turn_applied_carries_no_synthetic_diagnostic(client: TestClient) -> None:
+    document = create_web_document(client)
+    operations = [{"kind": "set_custom_css", "css": "body { opacity: 0.9; }"}]
+
+    def stub(doc, prompt, model, root):
+        candidate = client.app.state.core.web_apply_ops(doc["scene"], operations)["web_doc"]
+        return {
+            "schema_version": 1,
+            "status": "applied",
+            "outcome": "accepted",
+            "summary": "Adjusted the page.",
+            "web_doc": candidate,
+            "operations": operations,
+            "preview_paths": [],
+            "doc_kind": "web",
+        }
+
+    client.app.state.web_turn_runner = stub
+    response = client.post(
+        f"/documents/{document['id']}/web/turns",
+        json={"prompt": "Soften it", "base_version": 0},
+    )
+    run = wait_for_run(client, response.json()["run_id"])
+    assert run["status"] == "succeeded"
+    assert run["result"].get("diagnostics", []) == []
+
+
 def test_web_turn_requires_base_version(client: TestClient) -> None:
     document = create_web_document(client)
     response = client.post(
