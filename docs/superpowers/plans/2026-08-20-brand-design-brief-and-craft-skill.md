@@ -140,8 +140,10 @@ and nothing else. It runs where the ingestion worker already runs.
   `/brand-context?section=knowledge&file=company%2FOverview.md&mode=preview`
   (`section` / `file` = an md path / `mode=preview`). Live dummy on
   `http://localhost:3002` (HTTP 200 on that exact route); dummy SOURCE =
-  `/Users/aryankeshri/conductor/workspaces/clue-frontend/port-of-spain`
-  (`clue-frontend@codex/chat-shell` — another session's server: inspect read-only,
+  `/Users/aryankeshri/conductor/workspaces/clue-frontend/milan`
+  (`clue-frontend@codex/brand-context-page` — CORRECTED by slice 3's implementer;
+  the controller's original note said port-of-spain/`codex/chat-shell`, which has
+  no brand-context page. Another session's checkout either way: inspect read-only,
   NEVER restart it). Slice 3 lifts this section per the standing re-lift discipline
   and serves the kit's brief as a file in it (e.g. `design/Design.md`), rendered
   from `brand_kit_json.brief` — the md is a projection of the structured brief,
@@ -239,6 +241,28 @@ approved pre-brief-era still serves (back-compat); DSAR/erasure posture unchange
 - Commit: `feat(design): the ingestion brief agent — per-brand creative brief on the kit (tier 2)`.
 
 
+
+> **Slice 3 OUTCOME (2026-08-20): DONE, reviewed clean — the brand has a Creative
+> Brief and a face** (commits `698f2993` design + `0f120a65` frontend + `13d64618`
+> record). Live-proven on stripe.com (shipped pipeline, out-of-process): Stripe
+> **v4 DRAFT** published carrying a real `BrandBrief@1` — characterization
+> "precise, expansive, iridescent"; constraints like "surface.brand violet is the
+> sole solid saturated CTA fill"; recipes in token names (`radius.button`,
+> `space.md`, `surface.brand`, `text.inverse`); zero refusal diagnostics. The
+> knowledge panel renders **Design → Design.md** headed `version 4 · Draft` on
+> :3030 (browser-proven). Token law enforced twice (shape + kit-resolution);
+> every branch fail-soft; the digest-pin STOP condition checked — nothing hashes
+> the kit payload, no contract-delta needed. **NOTHING approved — the Stripe v4
+> draft awaits the founder on `/brand-context`; approving it is slice 4's
+> precondition.** Notes: D2's 6k cap governs the md projection — slice 4 re-applies
+> it to the INJECTED brand-card form; bands whose color has no kit token carry
+> `token: null` + a diagnostic (the token law working — a slice-2-side
+> surface-token follow-up would let briefs name them); website-path only
+> (PDF/upload have no screenshots/geometry); ~27k gateway tokens per ingestion,
+> stage off unless configured. **Founder ruling wanted (small):** the brand-context
+> breadcrumb hardcodes "Company / brand-kit.md" over every document — hardcoded
+> identically in the dummy, so left alone per presentation-truth; a one-line fix
+> once the dummy names it.
 
 ### Slice 4 — consumption + the coherence walk
 
