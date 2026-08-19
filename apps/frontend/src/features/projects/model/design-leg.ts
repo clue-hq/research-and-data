@@ -135,8 +135,14 @@ const NO_REFRESH: DesignRefreshDecision = {
  *
  * `leg.opened` / `leg.reopened` refresh the feed but NOT the canvas: the leg's
  * web document is born in that same transaction (slice 2), so a card genuinely
- * appears — and founder ruling F2 (option a) is that it simply appears, with no
- * auto-open and nothing to reload.
+ * appears, and there is no open canvas of it yet to reload.
+ *
+ * Under founder ruling F2 **(b)** (2026-08-19, superseding option (a)) that
+ * refreshed feed is also what opens the new document's tab by itself — but the
+ * decision is NOT taken here. This frame names only a leg, never a document; the
+ * chat surface picks the born artifact out of the refreshed feed
+ * (`chat-shell/model/artifact-auto-open`). A `leg.reopened` births no document,
+ * so its refresh carries nothing new and opens nothing.
  */
 export function designRefreshForEvent(
   event: { type: string; threadId: string },

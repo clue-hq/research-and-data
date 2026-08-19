@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { ConversationContent } from "@/features/projects/components/conversation-content";
 import { ProjectComposer } from "@/features/projects/components/project-composer";
@@ -12,6 +12,7 @@ import type {
 } from "@/features/projects/model/project-workspace";
 import { useWebEditingSession } from "@/features/design-editor/hooks/use-web-editing-session";
 import { useEditorShellController } from "../hooks/use-editor-shell-controller";
+import { artifactToAutoOpen } from "../model/artifact-auto-open";
 import {
   chatDockContent,
   chatDockDismissedBySubmission,
@@ -52,6 +53,10 @@ import { WebInspector } from "./web-inspector";
 // every pane change, so every editing state the user reaches is a shareable
 // deep link. Hydration stays one-directional: the effect below only calls
 // router.replace; it never feeds the URL back into the shell state.
+
+/** One stable empty feed, so a page mounted without artifacts does not hand
+ * the auto-open effect a new array identity on every render. */
+const NO_ARTIFACTS: ProjectArtifact[] = [];
 
 export function ChatSurface({
   artifacts,
@@ -164,8 +169,8 @@ export function ChatSurface({
   // The feed is server-fetched by the chats page (`loadGalleryFeed`, a
   // server-only repository), so `router.refresh()` IS the client's re-fetch of
   // it: the page re-runs and hands down fresh `artifacts`/`documentIds` props
-  // with no client state lost. Per founder ruling F2 (option a) the new card
-  // simply appears in the rail — nothing auto-opens.
+  // with no client state lost — which is also what lets the auto-open below
+  // notice the born document by comparing props, rather than remounting.
   const { canvasRevision, feedRevision } = chat.designRefresh;
   useEffect(() => {
     if (feedRevision === 0) return;
@@ -178,6 +183,49 @@ export function ChatSurface({
     // whether the version was advanced by hand or by the design agent.
     reloadCanvas();
   }, [canvasRevision, reloadCanvas]);
+
+  // Founder ruling F2 **(b)**, 2026-08-19 — superseding option (a) for v1: the
+  // leg-born document opens ITSELF next to the Gallery, so the user watches the
+  // page land instead of hunting for the card. The whole rule is the pure
+  // `../model/artifact-auto-open`; this effect is only its transport, and it
+  // reuses the exact `shell.openArtifact` the gallery card's own click uses (so
+  // the tab, its activation, and the R6 dock choreography behave identically
+  // whether the user opened it or the leg did).
+  //
+  // The trigger is the FEED, never the frame: `leg.opened` carries only a leg
+  // id and names no document, and on a cold load the replayed backlog re-fires
+  // it — keying off the frame would re-open the tab on every page load. What
+  // the frame does do is refresh the feed, so the born card arrives in props on
+  // its own; everything already there at mount is banked as known and can never
+  // auto-open.
+  const knownArtifactIds = useRef<Set<string> | null>(null);
+  const openArtifact = shell.openArtifact;
+  const feedArtifacts = artifacts ?? NO_ARTIFACTS;
+  useEffect(() => {
+    const known = knownArtifactIds.current;
+    if (known === null) {
+      // The mount snapshot. Taken on the first commit rather than during
+      // render (no render-phase side effects), which is the same set: the
+      // chats page awaits `loadGalleryFeed` server-side, so the first client
+      // render already holds the complete feed.
+      knownArtifactIds.current = new Set(
+        feedArtifacts.map((artifact) => artifact.id),
+      );
+      return;
+    }
+    const opening = artifactToAutoOpen({
+      activeThreadId: chat.activeThreadId,
+      artifacts: feedArtifacts,
+      knownArtifactIds: known,
+    });
+    // Bank everything this delivery carried — including the one being opened —
+    // before acting on the decision. That is what makes a document open at
+    // most once: a tab the user then closes stays closed, and the next feed
+    // refresh (the URL write-back below re-renders the page too) is inert.
+    for (const artifact of feedArtifacts) known.add(artifact.id);
+    if (opening === null) return;
+    openArtifact(opening);
+  }, [chat.activeThreadId, feedArtifacts, openArtifact]);
 
   useEffect(() => {
     // Compose over the LIVE query so params we do not own (?handoff=, anything
@@ -343,7 +391,7 @@ export function ChatSurface({
       <ArtifactStage
         activeArtifactId={shell.activeArtifactId}
         activeDocumentId={session.activeDocumentId}
-        artifacts={artifacts ?? []}
+        artifacts={feedArtifacts}
         artifactKind={shell.artifactKind}
         artifactMaximized={shell.artifactMaximized}
         artifactTitle={shell.artifactTitle}
