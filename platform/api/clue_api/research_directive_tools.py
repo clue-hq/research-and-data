@@ -22,7 +22,7 @@ from clue_core import (
     ResearchDirectiveId,
     ResearchDirectiveStatus,
 )
-from clue_core.research_directive import StableKey
+from clue_core.research_directive import ResearchCommitteePlan, StableKey
 from clue_db import ConnFactory, transaction
 from clue_projections import ResearchDirectivePreview, project_research_directive_preview
 from clue_research.directives import (
@@ -35,6 +35,7 @@ from clue_research.directives import (
     research_directive_draft_request_sha256,
     validate_research_directive_draft,
 )
+from clue_research.resolvers.sumble.people import PEOPLE_SOURCE_KEY
 from clue_toolbelt import (
     ExternalReplayBoundary,
     JournalParameterPolicy,
@@ -214,6 +215,39 @@ class ResearchDirectiveBodyDraftInput(ResearchDirectiveBody):
             "user explicitly asked for a narrower subset."
         ),
     )
+
+    @model_validator(mode="after")
+    def _committee_intent_names_a_capable_source(self) -> ResearchDirectiveBodyDraftInput:
+        """An intentional committee plan must be executable, or committee-off must be explicit.
+
+        ``committee_plan`` is required on every body, so "plan present, no people source" is also
+        the legitimate committee-off shape — the launcher compiles committee sources from
+        ``source_policy`` ∩ privacy, not from the plan. That made a silent contradiction
+        representable: found live when a draft repair stripped ``sumble_people`` from
+        ``allowed_source_keys`` (person-adjacent memory guard) while keeping the human's explicit
+        cap-200/depth-2 plan, so the confirmation card still showed committee discovery while the
+        launched selection carried zero committee sources. A plan that departs from the model
+        defaults states committee intent; a draft stating that intent while authorizing no
+        committee-capable source is refused here — restore the source or reset the plan to its
+        defaults so the card honestly shows committee discovery off. Draft-input only: durable
+        historical bodies never re-validate through this subclass.
+        """
+
+        if self.committee_plan == ResearchCommitteePlan():
+            return self
+        people_allowed = (
+            PEOPLE_SOURCE_KEY in self.source_policy.allowed_source_keys
+            and PEOPLE_SOURCE_KEY not in self.source_policy.excluded_source_keys
+        )
+        if people_allowed and self.privacy_policy.committee_discovery_allowed:
+            return self
+        raise ValueError(
+            "the draft states an intentional buying-committee plan but authorizes no "
+            f"committee-capable source: include '{PEOPLE_SOURCE_KEY}' in "
+            "source_policy.allowed_source_keys with privacy committee discovery allowed, or "
+            "reset committee_plan to its defaults to state explicitly that committee discovery "
+            "is off"
+        )
 
 
 class DraftAccountResearchDirectiveInputV5(DraftAccountResearchDirectiveInputV4):

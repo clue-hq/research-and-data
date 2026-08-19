@@ -944,3 +944,33 @@ def test_a_fresh_draft_supersedes_an_unconfirmed_latest_draft(tmp_path: Path) ->
             assert str(superseded_event.successor_id) == str(second_operation)
 
     run_async(scenario())
+
+
+def test_a_committee_intent_draft_without_a_capable_source_is_refused_repairably() -> None:
+    """A draft stating committee intent must be executable, or committee-off must be explicit.
+
+    Found live (directive 55c11b06 v3): a draft repair stripped ``sumble_people`` from the
+    allowed sources while keeping the human's explicit cap-200/depth-2 committee plan, so the
+    confirmation card showed committee discovery while the launched selection compiled zero
+    committee sources and every coverage row settled ``Committee research was not selected``.
+    The draft input now refuses the contradiction as an input validation error (the repairable
+    species), while both honest shapes stay accepted.
+    """
+
+    from clue_api.research_directive_tools import ResearchDirectiveBodyDraftInput
+
+    account_id = EntityId(UUID("10000000-0000-0000-0000-000000000099"))
+    intent_without_source = _body(account_id).model_dump(mode="json")
+    intent_without_source["source_policy"]["allowed_source_keys"] = ["exa_deep"]
+    intent_without_source["source_policy"]["preferred_source_keys"] = ["exa_deep"]
+    with pytest.raises(ValidationError, match="committee-capable source"):
+        ResearchDirectiveBodyDraftInput.model_validate(intent_without_source)
+
+    capable = _body(account_id).model_dump(mode="json")
+    ResearchDirectiveBodyDraftInput.model_validate(capable)
+
+    committee_off = _body(account_id).model_dump(mode="json")
+    committee_off["source_policy"]["allowed_source_keys"] = ["exa_deep"]
+    committee_off["source_policy"]["preferred_source_keys"] = ["exa_deep"]
+    committee_off["committee_plan"] = {}
+    ResearchDirectiveBodyDraftInput.model_validate(committee_off)
