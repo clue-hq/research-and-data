@@ -129,7 +129,10 @@ def test_the_capability_map_names_the_surface_and_its_withheld_tools_honestly(
     generated = trial.generated_resource_map
 
     for name in sorted(_WITHHELD):
-        address = f"{name}@2" if name == "synthesize_icps" else f"{name}@1"
+        # genweb slice 2 promoted the design delegation entry to @2 (document birth at
+        # leg-open); the trial withholds it at whatever version the belt carries.
+        _promoted = {"synthesize_icps": "2", "open_design_leg": "2"}
+        address = f"{name}@{_promoted.get(name, '1')}"
         disclosure = by_address[address]
         assert disclosure.status is AgentCapabilityStatus.PROFILE_UNAVAILABLE
         assert disclosure.reason_code == "trial_manual_conversation_only"

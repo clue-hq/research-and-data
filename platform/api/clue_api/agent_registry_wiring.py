@@ -36,12 +36,16 @@ __all__ = [
 ]
 
 C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
+    # v37 (genweb slice 2): v36 with the delegation entry at ``open_design_leg@2`` and prompt v5
+    # — the design-delegation teaching. The tool's own description remains the contract; the
+    # prompt only says WHEN to hand the thread over and what the handover costs (the user's next
+    # message starts a generation that takes minutes).
     # v36 (part-iii merge): v35 plus ``open_design_leg@1`` — the delegation entry that opens the
     # design leg (§1-D1's "attach as subagent" wrapper, materialized as a durable act; introduced
     # as PD-part3 P3.4's v24, re-versioned onto the v35 chain at the integration merge). v35
     # preserves the frozen v34 surface and gives Account-focused turns the exact pinned
     # field/source vocabulary needed to launch profiling without model-invented field keys.
-    AgentRole.HEAD_OF_ABM: "v36",
+    AgentRole.HEAD_OF_ABM: "v37",
     AgentRole.RESEARCH: "v7",
     AgentRole.CONTENT_DRAFTER: "v5",
     AgentRole.REVIEWER: "v5",

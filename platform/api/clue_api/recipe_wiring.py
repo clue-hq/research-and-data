@@ -72,6 +72,10 @@ SYSTEM_RECIPE_FILENAMES: tuple[str, ...] = (
     # independent ceiling, so a profile grant alone would show the model a tool that plan
     # validation then refuses.
     "recipe0-stage0-v16.json",
+    # genweb slice 2: the delegation entry becomes ``open_design_leg@2`` (document birth at
+    # leg-open). The C5 slot pins an exact tool ADDRESS, so promoting the tool without a new
+    # revision would make plan validation refuse the very tool the profile now grants.
+    "recipe0-stage0-v17.json",
     "recipe1-classic-v1.json",
     "recipe1-classic-v2.json",
 )

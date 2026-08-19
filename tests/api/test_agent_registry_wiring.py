@@ -71,7 +71,9 @@ def test_registry_resolves_exact_reviewed_profiles_and_stable_manifests(
         # plan-safe directive @3, and pins the registered account-research field/source vocabulary.
         # v36 (part-iii merge) is v35 plus `open_design_leg@1` — P3.4's design delegation entry,
         # with P3.5's in-train schema revision (reopen_leg_id + reopened) in the pinned digests.
-        AgentRole.HEAD_OF_ABM: ("a2a1a950ce87b4f7f92eb92c674c21478d28a554efae7ac5146570d92b3986ef"),
+        # v37 (genweb slice 2) is v36 with that entry promoted to `open_design_leg@2` (a
+        # document-less open births the web document) and prompt v5's design-delegation teaching.
+        AgentRole.HEAD_OF_ABM: ("dcafadde77c01cda5ce125c1a4560a819ecc469e44b0bb321aff7e51d8c5e41b"),
         AgentRole.RESEARCH: "23cff2335bb82e0549ee0c830316968971146e8b90c8d2090447ee0ed92eed6f",
         AgentRole.CONTENT_DRAFTER: (
             "8985c13ead086350d952f76e6d3c0ed3f4162cc92de290f8dd7edd7fcab44cbf"
@@ -254,7 +256,7 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
         "launch_account_research@1",
         "launch_selected_account_research@1",
         "launch_contact_research@1",
-        "open_design_leg@1",
+        "open_design_leg@2",
         "open_directive_confirmation_gate@1",
         "open_icp_confirmation_gate@1",
         "open_product_selection_gate@1",
@@ -323,7 +325,7 @@ def test_s4e_production_project_surface_resolves_strict_client_kb_v2_and_hardeni
     )
 
     addresses = {pin.address for pin in production.profile.tools}
-    assert production.profile_ref.address == "profile:head-of-abm@v36"
+    assert production.profile_ref.address == "profile:head-of-abm@v37"
     assert [item.resource.address for item in production.skill_disclosures()][0] == (
         "skill:stage0-interview@v20"
     )
@@ -530,7 +532,7 @@ def test_resolved_snapshot_materializes_through_c61_backend(
 def test_changed_resource_or_tool_schema_fails_before_profile_use(tmp_path: Path) -> None:
     copied = tmp_path / "catalog"
     shutil.copytree(CATALOG_ROOT, copied)
-    prompt = copied / "prompts/head-of-abm/v4/SYSTEM.md"
+    prompt = copied / "prompts/head-of-abm/v5/SYSTEM.md"
     prompt.write_text(prompt.read_text() + "\nChanged under the same version.\n")
     toolbelt = build_toolbelt(storage=None, gateway=None)
     admitted = frozenset(
