@@ -39,13 +39,41 @@ from types import MappingProxyType
 from typing import Final
 
 from clue_research.narrative.prose import PROSE_ACCOUNT_FIELDS
+from clue_research.resolvers.sumble import SUMBLE_SOURCE_KEYS, sumble_action_supports_field
 
 __all__ = [
     "COMPREHENSIVE_ACCOUNT_FIELDS",
     "COMPREHENSIVE_ACCOUNT_FIELD_SOURCES",
     "CONTACT_DEEP_FIELDS",
     "CONTACT_STRUCTURED_FIELDS",
+    "source_can_request",
 ]
+
+
+def source_can_request(source_key: str, field_key: str) -> bool:
+    """Whether ``source_key``'s pinned provider action can put ``field_key`` on the wire.
+
+    Ownership and requestability are different facts (see the module docstring's consumer
+    obligation). Sumble's pinned v9 actions have a closed requestable set — ``sumble_organizations``
+    owns seven §3.1 rows and can ask for three of them — and the resolver exposes that as
+    policy-shaped data (``sumble_action_supports_field``) precisely so consumers intersect before
+    dispatching. Exa Deep compiles its output schema per bundle from the field registry, so it can
+    request any account row it owns.
+
+    This is the *single* definition, read by both halves that must agree: the launcher intersects
+    it into a new selection's authority, and the execution-completeness reader intersects it into
+    the obligations it derives from an already-durable selection. A selection minted before the
+    launcher learned to intersect still carries unrequestable pairs, and holding one outstanding
+    is a deadlock with no exit — the tool refuses the request as ineligible, coverage refuses to
+    close while it is outstanding, and the agent loops until the graph recursion cap kills the job
+    (observed live). A pair no wire action can ever request is exhausted by construction and
+    belongs in the coverage ledger as an honest gap, never as pending work.
+    """
+
+    if source_key in SUMBLE_SOURCE_KEYS:
+        return sumble_action_supports_field(field_key, source_key)
+    return True
+
 
 #: §3.1 — the fixed 21-field account profile, re-exported verbatim from the prose contract so
 #: the two can never drift.

@@ -83,6 +83,17 @@ def _committee_plan_block(plan: AccountCommitteePlanProjection | None) -> str:
     if plan.questions:
         lines.append("- confirmed committee questions:")
         lines.extend(f"  - {value}" for value in plan.questions)
+    else:
+        # An unrestricted plan is authority to research the committee, not a reason to refuse it.
+        # Live, an agent read "(unrestricted)" plus a `questions` field it could not leave empty,
+        # concluded it had no verbatim question to copy and no function it was allowed to choose,
+        # and looped on the coverage refusal until the graph recursion cap killed the job. Say the
+        # two admissible values out loud instead.
+        lines.append(
+            "- this plan confirms no committee question: leave `questions` empty (never invent "
+            "one), and because every selector above is unrestricted, choose the "
+            "`buying_unit_scope.target_functions` your account evidence supports."
+        )
     return "\n".join(lines)
 
 

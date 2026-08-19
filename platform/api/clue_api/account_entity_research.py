@@ -47,7 +47,10 @@ from clue_api.account_field_derivation import (
     AccountFieldDerivation,
     derive_account_fields,
 )
-from clue_api.comprehensive_research_contract import COMPREHENSIVE_ACCOUNT_FIELD_SOURCES
+from clue_api.comprehensive_research_contract import (
+    COMPREHENSIVE_ACCOUNT_FIELD_SOURCES,
+    source_can_request,
+)
 from clue_api.entity_research_tools import (
     convert_engine_authority_rejections,
     semantic_validation_error,
@@ -103,6 +106,18 @@ _CONTACT_TOOL_PREFIXES = (
     "enrich_contact",
     "reveal_contact",
     "validate_contact",
+)
+#: Account tools that buy nothing: they read durable state this job already owns. Two of them in
+#: one model round is neither duplicated provider work nor a widened scope — it is the agent
+#: reading two persisted results at once. Live, a round holding two ``read_research_result`` calls
+#: was refused as "duplicate account provider work" and suspended the whole job.
+_READ_ONLY_TOOL_NAMES = frozenset(
+    {
+        "read_account_research_state",
+        "inspect_account_evidence",
+        "read_research_result",
+        "read_evidence",
+    }
 )
 
 
@@ -328,7 +343,20 @@ async def read_account_research_execution_completeness(
         for field_key in row["field_keys"]
     )
     authority = {
-        item.field_key: tuple(item.source_keys)
+        # Requestability is intersected here for exactly the reason the launcher intersects it
+        # into a new selection's authority (``source_can_request``): an already-durable selection
+        # minted before that intersection existed still names pairs whose pinned provider action
+        # structurally cannot ask for the field. The tool refuses such a request as ineligible and
+        # coverage refuses to close while it is outstanding, so the agent loops between the two
+        # until the graph recursion cap kills the job — observed live on
+        # ``account.recent_funding@sumble_organizations``. An unrequestable pair is exhausted by
+        # construction: never outstanding, never terminal, reported as an honest gap. This does not
+        # relax the no-work rule — a pair no dispatch can carry was never work.
+        item.field_key: tuple(
+            source_key
+            for source_key in item.source_keys
+            if source_can_request(source_key, item.field_key)
+        )
         for item in authorization.effective_field_source_authority
     }
     outstanding_pairs = tuple(
@@ -1744,7 +1772,9 @@ class AccountResearchExecutionGuard(EntityResearchExecutionGuard):
         if context.authorization.subject_type is not ResearchSubjectType.ACCOUNT:
             raise AccountResearchAuthorityError("account guard received another subject type")
         names = [call.tool_name for call in calls]
-        duplicates = {name for name in names if names.count(name) > 1}
+        duplicates = {
+            name for name in names if names.count(name) > 1 and name not in _READ_ONLY_TOOL_NAMES
+        }
         if duplicates:
             if duplicates != {"enrich_account"}:
                 raise AccountResearchAuthorityError(

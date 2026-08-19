@@ -538,3 +538,52 @@ def test_governed_rejection_renders_bounded_recoverable_feedback() -> None:
     assert payload["recoverable"] is True
     assert len(payload["detail"]) <= 1_000
     assert "finalize honestly" in payload["guidance"]
+
+
+def test_a_committee_call_is_constructible_when_the_confirmed_plan_has_no_question() -> None:
+    """Live regression: an unrestricted committee plan made the call impossible to build.
+
+    The confirmed directive allowed committee discovery, authorised ``sumble_people`` and left
+    every selector unrestricted — but it confirmed no committee question, while the tool demanded
+    at least one *verbatim confirmed* question. The agent correctly refused to synthesize one, so
+    the committee obligation could never be attempted, coverage could never close, and the job
+    looped to the recursion cap. An empty tuple is the honest value; the engine separately refuses
+    any question the confirmed set does not contain, so nothing can be invented here.
+    """
+
+    from clue_agents.account_entity_research import AccountCommitteePlanProjection
+    from clue_api.account_entity_research_composition import _committee_plan_block
+
+    admitted = DiscoverBuyingCommitteeInput.model_validate(
+        {
+            "source_keys": ["sumble_people"],
+            "buying_unit_scope": {
+                "scope_id": str(uuid4()),
+                "account_entity_id": str(uuid4()),
+                "office_label": "Boston office",
+                "locality": "Boston",
+                "target_functions": ["Operations"],
+                "evidence_refs": [f"research-evidence:{uuid4()}"],
+            },
+        }
+    )
+    assert admitted.questions == ()
+
+    block = _committee_plan_block(
+        AccountCommitteePlanProjection(
+            directive_ref="research-directive:fixture:v1",
+            candidate_cap=200,
+        )
+    )
+    assert "leave `questions` empty" in block
+    assert "never invent" in block
+
+    with_question = _committee_plan_block(
+        AccountCommitteePlanProjection(
+            directive_ref="research-directive:fixture:v2",
+            candidate_cap=200,
+            questions=("Which exact people form the committee?",),
+        )
+    )
+    assert "leave `questions` empty" not in with_question
+    assert "Which exact people form the committee?" in with_question

@@ -68,6 +68,16 @@ _ACCOUNT_TOOL_PREFIXES = (
     "finalize_account",
 )
 _PROVIDER_TOOLS = {"research_contact_deep", "enrich_contact"}
+#: Contact tools that buy nothing (see the account lane's identical note): repeating one in a
+#: single model round is reading, never duplicated provider work.
+_READ_ONLY_TOOL_NAMES = frozenset(
+    {
+        "read_contact_research_state",
+        "inspect_contact_evidence",
+        "read_research_result",
+        "read_evidence",
+    }
+)
 _TERMINAL_CHANNEL_STATES = {"succeeded", "rejected", "failed_terminal", "cancelled"}
 _PENDING_CHANNEL_STATES = {
     "planned",
@@ -1031,7 +1041,9 @@ class ContactResearchExecutionGuard(EntityResearchExecutionGuard):
         if context.authorization.subject_type is not ResearchSubjectType.CONTACT:
             raise ContactResearchAuthorityError("contact guard received another subject type")
         names = [call.tool_name for call in calls]
-        duplicates = {name for name in names if names.count(name) > 1}
+        duplicates = {
+            name for name in names if names.count(name) > 1 and name not in _READ_ONLY_TOOL_NAMES
+        }
         if duplicates:
             if duplicates != {"delegate_contact_facet"}:
                 raise ContactResearchAuthorityError(

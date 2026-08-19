@@ -966,3 +966,45 @@ def test_account_parallel_guard_allows_disjoint_structured_sources() -> None:
             )
 
     run_async(scenario())
+
+
+def test_two_read_only_calls_in_one_round_are_not_duplicate_provider_work() -> None:
+    """Live regression: a round holding two persisted-result reads suspended the whole job.
+
+    Both guards refused it — the account guard as "duplicate account provider work", and R9's own
+    batch validation as work "not independently partitioned", because a read tool carries no source
+    keys to partition. A read buys nothing, reserves nothing and dispatches nothing, so a repeated
+    one is reading, never duplicated provider work.
+    """
+
+    from clue_agents.entity_research_contracts import EntityResearchToolCall, canonical_sha256
+
+    def read(call_id: str, ref: str, *, tool_name: str = "read_research_result") -> Any:
+        arguments: dict[str, Any] = {"result_ref": ref}
+        return EntityResearchToolCall(
+            tool_call_id=call_id,
+            tool_name=tool_name,
+            tool_version=1,
+            tool_input_sha256=canonical_sha256(arguments),
+            arguments=arguments,
+        )
+
+    async def scenario() -> None:
+        account_context = _context(ResearchSubjectType.ACCOUNT, EntityAgentRole.ACCOUNT)
+        account_calls = (read("read-a", "research-result:a"), read("read-b", "research-result:b"))
+        await AccountResearchExecutionGuard(conn_factory=None).authorize_parallel(  # type: ignore[arg-type]
+            context=account_context, calls=account_calls
+        )
+        DbEntityResearchToolBatchCoordinator._validate_batch(account_context, account_calls)
+
+        contact_context = _context(ResearchSubjectType.CONTACT, EntityAgentRole.CONTACT)
+        contact_calls = (
+            read("c-read-a", "research-result:a"),
+            read("c-read-b", "research-result:b", tool_name="read_evidence"),
+            read("c-read-c", "research-result:c", tool_name="read_evidence"),
+        )
+        await ContactResearchExecutionGuard(conn_factory=None).authorize_parallel(  # type: ignore[arg-type]
+            context=contact_context, calls=contact_calls
+        )
+
+    run_async(scenario())

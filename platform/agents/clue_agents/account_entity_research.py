@@ -62,8 +62,12 @@ class DiscoverBuyingCommitteeInput(EntityResearchSemanticToolInput):
         description="Exact admitted committee-enumeration source keys only.",
     )
     questions: tuple[NonEmptyStr, ...] = Field(
-        min_length=1,
-        description="Verbatim confirmed committee question; never synthesize or paraphrase it.",
+        default=(),
+        description=(
+            "Verbatim confirmed committee questions only; never synthesize or paraphrase one. "
+            "Leave empty when the confirmed committee plan carries no question — an empty tuple "
+            "is the honest value, and the engine refuses any question the plan does not contain."
+        ),
     )
     parent_operation_ref: None = Field(
         default=None,

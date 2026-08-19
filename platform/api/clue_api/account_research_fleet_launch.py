@@ -23,7 +23,10 @@ from clue_api.account_research_fleet import (
     AccountResearchFleetProjection,
     AccountResearchFleetService,
 )
-from clue_api.comprehensive_research_contract import COMPREHENSIVE_ACCOUNT_FIELD_SOURCES
+from clue_api.comprehensive_research_contract import (
+    COMPREHENSIVE_ACCOUNT_FIELD_SOURCES,
+    source_can_request,
+)
 from clue_core import (
     EffectiveFieldSourcePlan,
     EffectiveSourceAuthorization,
@@ -66,9 +69,7 @@ from clue_research.resolvers.exa import SOURCE_KEY as EXA_DEEP_SOURCE_KEY
 from clue_research.resolvers.sumble import (
     JOBS_SOURCE_KEY,
     ORGANIZATIONS_SOURCE_KEY,
-    SUMBLE_SOURCE_KEYS,
     TECH_STACK_SOURCE_KEY,
-    sumble_action_supports_field,
 )
 from clue_research.resolvers.sumble.people import PEOPLE_SOURCE_KEY
 from clue_research.sources import (
@@ -105,24 +106,12 @@ _SUPPORTED_FIELD_SOURCES = frozenset(
 )
 
 
-def _source_can_request(source_key: str, field_key: str) -> bool:
-    """Whether ``source_key``'s pinned provider action can put ``field_key`` on the wire.
-
-    Ownership and requestability are different facts (contract §3.1 docstring). Sumble's pinned v9
-    actions have a closed requestable set — ``sumble_organizations`` owns seven §3.1 rows and can
-    ask for three of them — and the resolver exposes that as policy-shaped data
-    (``sumble_action_supports_field``) precisely so consumers intersect before dispatching. Exa
-    Deep compiles its output schema per bundle from the field registry, so it can request any
-    account row it owns.
-
-    Intersecting this into the *authority* at launch is what keeps the two halves of the platform
-    honest: a pair nobody can ever dispatch must not be born as an obligation the completeness
-    reader then waits on forever.
-    """
-
-    if source_key in SUMBLE_SOURCE_KEYS:
-        return sumble_action_supports_field(field_key, source_key)
-    return True
+#: Intersecting requestability into the *authority* at launch is what keeps the two halves of the
+#: platform honest: a pair nobody can ever dispatch must not be born as an obligation the
+#: completeness reader then waits on forever. The predicate itself lives in the frozen contract
+#: module, because the completeness reader must apply exactly the same one to selections minted
+#: before this intersection existed.
+_source_can_request = source_can_request
 
 
 class AccountResearchFleetLaunchError(RuntimeError):

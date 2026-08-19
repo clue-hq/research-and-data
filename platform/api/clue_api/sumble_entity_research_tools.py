@@ -518,6 +518,36 @@ class SumbleAccountSemanticEnrichmentAction(EntityResearchProviderAction):
                 f"(failure_code={result.operation.failure_code or 'unrecorded'}); the durable "
                 "operation ledger retains the exact provider diagnostic",
             )
+        if result.outcome is SumbleAccountGapOutcome.SPEND_OUTCOME_UNKNOWN:
+            # The provider may have charged for a dispatch we could not reconcile (a crash between
+            # dispatch and receipt quarantines the snapshot; an unreconciled paid dispatch marks
+            # the same state).  That is a *provider* outcome, not a violation of the result
+            # contract, and it is durably terminal: ``_terminal_result`` replays it forever, so
+            # raising here left the job re-suspending on every resume with nothing it could do.
+            # Settle it exactly like the deterministic refusal — the operation's real dispatch
+            # time plus an append-only zero-cost fold, so the (field, source) pair reaches a
+            # terminal attempt and coverage can close honestly — and refuse the call back to the
+            # agent, which may pick another admitted source or finalize with the gap.
+            await settle_terminal(
+                self._descriptor(
+                    result.operation,
+                    source_key=request.source_keys[0],
+                    field_keys=request.field_keys,
+                    disposition=(
+                        ProviderObservationDisposition.CAUSED
+                        if caused
+                        else ProviderObservationDisposition.REPLAY
+                    ),
+                    include_dispatch=True,
+                )
+            )
+            raise EntityResearchGovernedRejection(
+                "provider_spend_unreconciled",
+                "Sumble account enrichment dispatched but its spend outcome could not be "
+                f"reconciled (failure_code={result.operation.failure_code or 'unrecorded'}); the "
+                "durable operation ledger retains the exact provider diagnostic and the attempt "
+                "is terminal",
+            )
         if (
             result.outcome
             not in {
@@ -947,6 +977,29 @@ class SumbleCommitteeSemanticResearchAction(EntityResearchProviderAction):
                 "Sumble committee acquisition was terminally rejected "
                 f"(failure_code={acquired.operation.failure_code or 'unrecorded'}); the durable "
                 "committee ledger retains the exact provider diagnostic",
+            )
+        if acquired.outcome is SumbleCommitteeOutcome.SPEND_OUTCOME_UNKNOWN:
+            # Same species as the account lane above: a dispatched committee call whose charge we
+            # cannot reconcile is a durably terminal provider outcome, not a result-contract
+            # violation.  Settle the attempt (real dispatch time + zero-cost fold) and refuse the
+            # call back to the agent instead of suspending the job on every resume.
+            await settle_terminal(
+                self._committee_descriptor(
+                    acquired.operation,
+                    disposition=(
+                        ProviderObservationDisposition.CAUSED
+                        if caused
+                        else ProviderObservationDisposition.REPLAY
+                    ),
+                    include_dispatch=True,
+                )
+            )
+            raise EntityResearchGovernedRejection(
+                "provider_spend_unreconciled",
+                "Sumble committee acquisition dispatched but its spend outcome could not be "
+                f"reconciled (failure_code={acquired.operation.failure_code or 'unrecorded'}); "
+                "the durable committee ledger retains the exact provider diagnostic and the "
+                "attempt is terminal",
             )
         if acquired.outcome not in {
             SumbleCommitteeOutcome.READY,

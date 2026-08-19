@@ -170,6 +170,7 @@ from clue_research.resolvers.exa.deep_contract import (
     ExaDeepFieldSpec,
     field_key_from_exa_alias,
 )
+from clue_research.resolvers.sumble import ORGANIZATIONS_SOURCE_KEY
 from clue_storage import FsStorage
 from tests.agents.test_entity_research_runtime_r3 import Checkpointers
 from tests.api.account_deep_test_support import confirmed_account_research_direction
@@ -1930,5 +1931,72 @@ def test_the_journal_still_refuses_one_turn_id_under_two_constructions(tmp_path:
                     tool_manifest_sha256="d" * 64,
                     system_prompt_sha256="e" * 64,
                 )
+
+    run_async(scenario())
+
+
+def test_a_historical_unrequestable_pair_is_exhausted_not_outstanding(tmp_path: Path) -> None:
+    """Live regression: an unbuyable obligation looped the agent until the recursion cap.
+
+    A selection minted before the launcher intersected wire-requestability still names pairs whose
+    pinned Sumble action structurally cannot ask for the field. ``enrich_account`` refuses such a
+    request as ineligible and coverage refuses to close while it is outstanding, so the agent
+    alternates between the two refusals until LangGraph's recursion limit kills the job. The
+    completeness reader must apply the same requestability intersection the launcher does: the
+    pair is exhausted by construction and reported as an honest gap, while every requestable
+    source of the same field stays outstanding until it is really attempted.
+    """
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            fixture = await _seed_discovered_account(
+                conn, FsStorage(tmp_path / "unrequestable-artifacts")
+            )
+            connection = _NestedConnFactory(conn)
+            projection = await _launch(conn, fixture=fixture, connection=connection)
+            jobs = DbEntityResearchJobStore(conn_factory=connection)
+            stored = await jobs.get_job(projection.jobs[0].job_id)
+            assert stored is not None
+            authorization = stored.authorization
+            unbuyable = "account.operational_pain"
+            # The launcher already refuses to mint the pair (the F3 intersection).
+            assert not any(
+                item.field_key == unbuyable and ORGANIZATIONS_SOURCE_KEY in item.source_keys
+                for item in authorization.effective_field_source_authority
+            )
+
+            widened = tuple(
+                item.model_copy(
+                    update={"source_keys": (ORGANIZATIONS_SOURCE_KEY, *item.source_keys)}
+                )
+                if item.field_key == unbuyable
+                else item
+                for item in authorization.selection.field_source_authority
+            )
+            historical = authorization.model_copy(
+                update={
+                    "selection": authorization.selection.model_copy(
+                        update={"field_source_authority": widened}
+                    )
+                }
+            )
+            assert any(
+                item.field_key == unbuyable and ORGANIZATIONS_SOURCE_KEY in item.source_keys
+                for item in historical.effective_field_source_authority
+            )
+
+            completeness = await read_account_research_execution_completeness(
+                conn, authorization=historical
+            )
+            outstanding = set(completeness.outstanding_field_source_pairs)
+            assert (unbuyable, ORGANIZATIONS_SOURCE_KEY) not in outstanding
+            assert (unbuyable, ORGANIZATIONS_SOURCE_KEY) not in set(
+                completeness.terminal_field_source_pairs
+            )
+            # Nothing was researched, so the requestable half of the same field is still owed:
+            # the intersection drops unbuyable pairs, never real obligations.
+            assert (unbuyable, EXA_DEEP_SOURCE_KEY) in outstanding
+            assert unbuyable not in completeness.satisfied_field_keys
+            assert not completeness.complete
 
     run_async(scenario())

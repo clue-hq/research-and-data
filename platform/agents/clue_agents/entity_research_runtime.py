@@ -11,7 +11,7 @@ import asyncio
 import hashlib
 import json
 from collections.abc import Mapping, Sequence
-from contextlib import AbstractAsyncContextManager
+from contextlib import AbstractAsyncContextManager, suppress
 from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import Any, Protocol, cast, runtime_checkable
@@ -388,6 +388,16 @@ _FINALIZE_TOOL_NAMES = ("finalize_account_research", "finalize_contact_research"
 _MAX_EMPTY_TURN_REPAIRS = 3
 
 
+def _empty_turn_refusal() -> EntityResearchGovernedToolRefusal:
+    """The one refusal text an empty model turn gets, in-turn and across a process resume."""
+
+    return EntityResearchGovernedToolRefusal(
+        "the turn produced neither a governed tool call nor the typed finalization proposal; "
+        "call a tool, or finalize honestly with the remaining gap",
+        code="empty_model_turn",
+    )
+
+
 def _tool_message_text(result: Any) -> str:
     content = getattr(result, "content", "")
     if isinstance(content, str):
@@ -579,7 +589,14 @@ class _EntityResearchRuntimeMiddleware(AgentMiddleware[Any, Any, Any]):
         if len(calls) > self._context.stop_policy.max_parallel_tools:
             raise EntityResearchRuntimeError("model proposed more parallel tools than admitted")
         if calls:
-            await self._admit_batch(calls)
+            # A refused *round shape* (duplicated work in one wave, a dependent tool travelling
+            # with siblings, overlapping fields) is model output, not job integrity: nothing was
+            # admitted, reserved or dispatched. Raising here killed the graph and suspended the
+            # job. Let the response through instead — admission is deterministic over the wave, so
+            # each call re-runs it in ``awrap_tool_call`` and comes back to the model as its own
+            # error tool message, which is the repair path the refusal species promises.
+            with suppress(EntityResearchGovernedToolRefusal):
+                await self._admit_batch(calls)
         return response
 
     @staticmethod
@@ -681,12 +698,10 @@ class _EntityResearchRuntimeMiddleware(AgentMiddleware[Any, Any, Any]):
         if self._empty_turn_repairs >= _MAX_EMPTY_TURN_REPAIRS:
             return None
         self._empty_turn_repairs += 1
-        refusal = EntityResearchGovernedToolRefusal(
-            "the turn produced neither a governed tool call nor the typed finalization proposal; "
-            "call a tool, or finalize honestly with the remaining gap",
-            code="empty_model_turn",
-        )
-        return {"messages": [HumanMessage(content=refusal.render())], "jump_to": "model"}
+        return {
+            "messages": [HumanMessage(content=_empty_turn_refusal().render())],
+            "jump_to": "model",
+        }
 
     @staticmethod
     def _state_messages(state: Any) -> Sequence[BaseMessage]:
@@ -733,7 +748,29 @@ class _EntityResearchRuntimeMiddleware(AgentMiddleware[Any, Any, Any]):
             )
         )
         try:
-            await self._admit_batch(self._persisted_tool_wave(request, call))
+            try:
+                await self._admit_batch(self._persisted_tool_wave(request, call))
+            except EntityResearchGovernedToolRefusal as refusal:
+                # The wave was refused on its shape, so no batch member exists to settle and no
+                # provider work was reserved or dispatched. Journal the refusal and hand it to the
+                # model as this call's result; ``self._batches.failed`` is deliberately not called
+                # (it would look for the member this refusal is the reason there is none of).
+                await self._journal.append(
+                    self._event(
+                        EntityAgentJournalEventKind.TOOL_FAILED,
+                        call=call,
+                        payload={
+                            **_error_payload(refusal),
+                            "disposition": "round_admission_refused",
+                        },
+                    )
+                )
+                return ToolMessage(
+                    content=refusal.render(),
+                    status="error",
+                    tool_call_id=call.tool_call_id,
+                    name=call.tool_name,
+                )
             try:
                 await self._guard.authorize_tool(
                     context=self._context,
@@ -834,7 +871,10 @@ class _EntityResearchRuntimeMiddleware(AgentMiddleware[Any, Any, Any]):
             )
             raise batch_wait from wait
         except BaseException as error:
-            await self._batches.failed(context=self._context, call=call, error=error)
+            # Journal the real cause *first*. Settling the batch can itself fail (a wave that never
+            # reached admission has no member to settle), and when it did, its own error replaced
+            # the original and skipped this record entirely — a live job's true failure was
+            # unknowable afterwards. Settlement failure is recorded, never substituted.
             await self._journal.append(
                 self._event(
                     EntityAgentJournalEventKind.TOOL_FAILED,
@@ -842,6 +882,19 @@ class _EntityResearchRuntimeMiddleware(AgentMiddleware[Any, Any, Any]):
                     payload=_error_payload(error),
                 )
             )
+            try:
+                await self._batches.failed(context=self._context, call=call, error=error)
+            except Exception as settlement_error:
+                await self._journal.append(
+                    self._event(
+                        EntityAgentJournalEventKind.TOOL_FAILED,
+                        call=call,
+                        payload={
+                            **_error_payload(settlement_error),
+                            "disposition": "batch_settlement_failed",
+                        },
+                    )
+                )
             raise
         await self._journal.append(
             self._event(
@@ -945,13 +998,23 @@ class EntityResearchAgentRuntime:
         lease_lost: asyncio.Event | None,
     ) -> dict[str, Any]:
         snapshot = await graph.aget_state(config)
-        if snapshot.values and not snapshot.next and "structured_response" in snapshot.values:
+        resumed = bool(snapshot.values)
+        if resumed and not snapshot.next and snapshot.values.get("structured_response") is not None:
             return cast(dict[str, Any], snapshot.values)
-        graph_input: dict[str, Any] | None = (
-            None
-            if snapshot.values
-            else {"messages": [HumanMessage(content=definition.task_instruction)]}
-        )
+        graph_input: dict[str, Any] | None
+        if not resumed:
+            graph_input = {"messages": [HumanMessage(content=definition.task_instruction)]}
+        elif not snapshot.next:
+            # The persisted graph is already at END with no proposal: the crashed drive's last
+            # model turn spent its whole output budget on reasoning and returned neither a tool
+            # call nor the typed response. Resuming such a thread with no input replays that dead
+            # end in microseconds — no node runs, so the middleware's empty-turn repair can never
+            # fire and every resume fails identically (live: two account jobs re-suspended on
+            # exactly this). Re-enter with the same governed refusal the in-turn repair uses, so a
+            # fresh process gives the model its bounded chance to call a tool or finalize honestly.
+            graph_input = {"messages": [HumanMessage(content=_empty_turn_refusal().render())]}
+        else:
+            graph_input = None
         invocation = asyncio.create_task(graph.ainvoke(graph_input, config=config))
         stop_task = (
             asyncio.create_task(stop_requested.wait()) if stop_requested is not None else None

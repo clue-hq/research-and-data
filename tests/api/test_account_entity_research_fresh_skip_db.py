@@ -875,8 +875,12 @@ def test_fi2_61_an_empty_close_is_refused_over_a_field_that_was_not_borrowed(
             token = _ACTIVE_TOOL_EXECUTION.set(_active(authorization))
             try:
                 with pytest.raises(
+                    # ``sumble_jobs`` is named in this fixture's synthetic authority for every
+                    # field, but its pinned action can only ask for hiring velocity, so the
+                    # completeness reader no longer holds the unrequestable pairs outstanding
+                    # (``source_can_request``). The requestable half of the same field is.
                     AccountResearchAuthorityError,
-                    match=r"account\.recent_funding@sumble_jobs",
+                    match=r"account\.recent_funding@exa_deep",
                 ):
                     await store.assess(
                         AssessAccountCoverageInput(
@@ -985,8 +989,10 @@ def test_fi2_61_stale_conflicted_and_relative_fields_cannot_settle_unattempted(
             fixture = await _seed_p1_research(conn, conflicted_hiring=True)
             admitted = (_PAIN, _MOVES, _CULTURE, _HIRING, _FIT)
             with pytest.raises(
+                # See the note above: only the requestable half of this fixture's synthetic
+                # ``(sumble_jobs, exa_deep)`` authority can be outstanding.
                 RuntimeError,
-                match=r"account\.resonance\.culture@sumble_jobs",
+                match=r"account\.resonance\.culture@exa_deep",
             ):
                 await _run_p2_agent(
                     conn,

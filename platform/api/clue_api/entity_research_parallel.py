@@ -24,6 +24,7 @@ from clue_agents.entity_research_contracts import (
 )
 from clue_agents.entity_research_runtime import (
     EntityResearchExternalWait,
+    EntityResearchGovernedToolRefusal,
     EntityResearchToolBatchCoordinator,
     EntityResearchToolReplay,
 )
@@ -47,6 +48,26 @@ _WAIT_NAMESPACE = uuid5(NAMESPACE_URL, "clue:m8d:r9:batch-wait")
 
 class EntityResearchParallelAdmissionError(RuntimeError):
     """A batch cannot safely execute under its exact dependencies, limits, or budget."""
+
+
+class EntityResearchParallelRoundShapeRefusal(
+    EntityResearchParallelAdmissionError, EntityResearchGovernedToolRefusal
+):
+    """The model's *wave shape* is inadmissible — repairable, and never a dead job.
+
+    ``_validate_batch`` runs before any row is written, any budget is reserved and any provider is
+    touched: it only reads the calls the model just proposed. Refusing one is therefore the same
+    species as any other guard refusal (R10) — the model re-plans its round — while every other
+    admission failure (budget, provider concurrency, replayed identity, missing member) remains an
+    ordinary suspending error because those are facts about durable state, not about the wave.
+    Kept a subclass of the admission error so existing callers and tests that catch the family are
+    unaffected.
+    """
+
+    def __init__(self, detail: str) -> None:
+        EntityResearchGovernedToolRefusal.__init__(
+            self, detail, code="parallel_round_shape_rejected"
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -553,27 +574,29 @@ class DbEntityResearchToolBatchCoordinator(EntityResearchToolBatchCoordinator):
         context: EntityResearchRuntimeContext,
         calls: Sequence[EntityResearchToolCall],
     ) -> None:
-        if not calls or len(calls) > context.stop_policy.max_parallel_tools:
+        if not calls:
             raise EntityResearchParallelAdmissionError("tool batch exceeds its concurrency cap")
+        if len(calls) > context.stop_policy.max_parallel_tools:
+            raise EntityResearchParallelRoundShapeRefusal("tool batch exceeds its concurrency cap")
         identities = [call.tool_call_id for call in calls]
         if len(identities) != len(set(identities)):
-            raise EntityResearchParallelAdmissionError("tool batch call ids must be unique")
+            raise EntityResearchParallelRoundShapeRefusal("tool batch call ids must be unique")
         if len(calls) > 1 and any(
             call.arguments.get("parent_operation_ref") is not None for call in calls
         ):
-            raise EntityResearchParallelAdmissionError(
+            raise EntityResearchParallelRoundShapeRefusal(
                 "additive follow-up is dependent and cannot share a parallel batch"
             )
         fields: dict[str, str] = {}
         for call in calls:
             for field_key in _field_values(call):
                 if not field_key_on_subject_axis(context.authorization.subject_type, field_key):
-                    raise EntityResearchParallelAdmissionError(
+                    raise EntityResearchParallelRoundShapeRefusal(
                         "parallel tool call contains a cross-axis field"
                     )
                 previous = fields.setdefault(field_key, call.tool_call_id)
                 if previous != call.tool_call_id:
-                    raise EntityResearchParallelAdmissionError(
+                    raise EntityResearchParallelRoundShapeRefusal(
                         "parallel field overlap lacks explicit corroboration authority"
                     )
         grouped: dict[str, list[EntityResearchToolCall]] = {}
@@ -581,6 +604,18 @@ class DbEntityResearchToolBatchCoordinator(EntityResearchToolBatchCoordinator):
             grouped.setdefault(call.tool_name, []).append(call)
         for name, duplicates in grouped.items():
             if len(duplicates) < 2:
+                continue
+            if all(
+                call.provider_family is None
+                and not _source_values(call)
+                and not _field_values(call)
+                for call in duplicates
+            ):
+                # Not provider work at all: a repeated read tool buys nothing, reserves nothing and
+                # partitions nothing. It has no source keys either, so the disjoint-partition test
+                # below would refuse it as "duplicate provider work" — which is how a live round
+                # holding two persisted-result reads suspended its job. All three conditions are
+                # required together so an unbound provider call can never slip through this door.
                 continue
             facets = {_facet_value(call) for call in duplicates}
             if (
@@ -596,7 +631,7 @@ class DbEntityResearchToolBatchCoordinator(EntityResearchToolBatchCoordinator):
                 for right in source_sets[index + 1 :]
             ):
                 continue
-            raise EntityResearchParallelAdmissionError(
+            raise EntityResearchParallelRoundShapeRefusal(
                 "duplicate parallel provider work is not independently partitioned"
             )
 
@@ -1515,5 +1550,6 @@ __all__ = [
     "DbEntityResearchToolBatchCoordinator",
     "EntityResearchBatchWakeService",
     "EntityResearchParallelAdmissionError",
+    "EntityResearchParallelRoundShapeRefusal",
     "R9EntityResearchJobStore",
 ]
