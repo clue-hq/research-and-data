@@ -20,18 +20,29 @@ is deterministic engine code, so the divergence had to be on the writing side. I
    anyway. Conflicting claims are now cited by reference; evidence stays the operation's own.
 
 Neither guard is relaxed here: a genuine mismatch still refuses, which the last test asserts.
+
+**The second act — the wedge (03:17 and 03:46).** The defect-29 fixes changed what the projection
+*composes*, and the operation above had already stored a first projection under the defective code.
+The replay guard recomputed, saw the difference, and refused (``Sumble projection replay changed``);
+``c7d6da82`` then made that branch serve the STORED projection, which handed the job back the very
+draft whose foreign span the guard had refused at 02:14 — the identical error, on every resume. The
+last three tests hold the amendment that opened the loop: first-write-wins guards *admitted*
+history, and a stored projection whose operation has no ``entity_research_result`` anywhere was
+never admitted to any turn. For that draft the immutable truth is the retained snapshot, so the
+replay serves the fresh recomputation; the append-only first draft stays at rest as audit.
 """
 
 from __future__ import annotations
 
 import json
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from contextlib import asynccontextmanager
-from datetime import UTC, datetime
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
-from uuid import uuid4
+from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 import pytest
 from pydantic import SecretStr
@@ -42,14 +53,22 @@ from clue_api.entity_research_tools import (
     EntityResearchProviderCausationStore,
     EntityResearchResultIntegrityError,
     EntityResearchResultStore,
+    ExternalResearchProjectionDraft,
+    ProviderObservationDisposition,
     ProviderOperationObservation,
     ProviderOperationReservation,
     _json_contains_text,
 )
 from clue_api.exa_websets_materialization import ExaWebsetsD4Materializer
 from clue_api.sumble_account_gaps import SumbleAccountGapCoordinator, SumbleAccountGapStarter
+from clue_api.sumble_committee_acquisition import (
+    SumbleCommitteeAcquisitionCoordinator,
+    compile_sumble_committee_preflight,
+)
+from clue_api.sumble_committee_source import SumbleCommitteeSource
 from clue_api.sumble_entity_research_tools import (
     SumbleAccountSemanticEnrichmentAction,
+    SumbleCommitteeSemanticResearchAction,
     SumbleEntityResearchLineageReader,
 )
 from clue_core import (
@@ -65,22 +84,26 @@ from clue_core.entity_research import (
     GovernedResearchToolRequest,
     ResearchEvidenceProjection,
     ResearchFieldOutcome,
+    ResearchFieldResultProjection,
     ResearchSubjectType,
 )
 from clue_research.claimstore import insert_claim
 from clue_research.durable import capture_discovery_artifact
-from clue_research.identity import stamp_reuse
+from clue_research.identity import get_account, stamp_reuse
 from clue_research.resolvers.sumble import (
     ORGANIZATIONS_SOURCE_KEY,
     SumbleClient,
     SumbleCreditBudget,
 )
 from clue_storage import FsStorage
+from tests.api.test_account_entity_research_r5_db import _committee_tool_request
 from tests.api.test_exa_websets_materialization_d4 import _company_item, _seed_terminal_batch
 from tests.api.test_sumble_account_gaps_s1 import _seed_selected_high_tier_account
+from tests.api.test_sumble_committee_acquisition_s2b import _CommitteeTransport
+from tests.api.test_sumble_committee_acquisition_s2b import _setup as _committee_setup
 from tests.db.conftest import run_async
 from tests.durable.conftest import rollback_conn
-from tests.profiling.conftest import conn_session_factory
+from tests.profiling.conftest import FakeGateway, conn_session_factory, seed_packs
 
 pytestmark = pytest.mark.usefixtures("require_profiling_db")
 
@@ -426,5 +449,720 @@ def test_a_sumble_conflict_projects_only_its_own_retained_evidence(tmp_path: Pat
                 await store._validate_fields(
                     conn, request=request, draft=laundered, lineage=lineage
                 )
+
+    run_async(scenario())
+
+
+# --- The second act: replaying a projection that was written but never admitted ------------------
+
+_LEGACY_EVIDENCE_NAMESPACE = uuid5(NAMESPACE_URL, "clue:test:defect-29:superseded-projection")
+"""Stands in for any evidence-ref minting rule the shipped code no longer reproduces."""
+
+
+class _PreFixAccountProjection(SumbleAccountSemanticEnrichmentAction):
+    """The pre-``aa88e0b0`` account projection: a conflict published its *contenders'* evidence.
+
+    Only the composition is rolled back — the operation, the provider call, the retained snapshot
+    and the durable gap ledger are all the real production ones — so the projection this stores is
+    exactly the shape the live job wedged on: a ``sumble_organizations`` result carrying an
+    ``exa_websets`` artifact and its described (unquotable) span.
+    """
+
+    def _field(
+        self,
+        result: object,
+        *,
+        claims_by_id: Mapping[UUID, Mapping[str, object]],
+        provider_request_id: str,
+        operation_id: UUID,
+    ) -> ResearchFieldResultProjection:
+        projection = super()._field(
+            result,
+            claims_by_id=claims_by_id,
+            provider_request_id=provider_request_id,
+            operation_id=operation_id,
+        )
+        if projection.outcome is not ResearchFieldOutcome.CONFLICT:
+            return projection
+        return projection.model_copy(
+            update={
+                "evidence": projection.evidence
+                + tuple(
+                    ResearchEvidenceProjection(
+                        evidence_ref=(
+                            f"research-evidence:{uuid5(_LEGACY_EVIDENCE_NAMESPACE, str(row['id']))}"
+                        ),
+                        source_key=str(row["source_key"]),
+                        provider_source_id=provider_request_id,
+                        source_url=str(row["source_url"]) if row["source_url"] else None,
+                        artifact_ref=f"artifact:{row['artifact_key']}",
+                        evidence_span=str(row["evidence_span"]),
+                    )
+                    for row in claims_by_id.values()
+                    if str(row["source_key"]) != ORGANIZATIONS_SOURCE_KEY
+                )
+            }
+        )
+
+
+Observer = Callable[[ProviderOperationReservation], Awaitable[ProviderOperationObservation]]
+
+
+@dataclass(frozen=True)
+class _Wedge:
+    """The live wedge's first half: a defective projection stored, and never admitted anywhere."""
+
+    request: GovernedResearchToolRequest
+    observe: Observer
+    action: SumbleAccountSemanticEnrichmentAction
+    store: EntityResearchResultStore
+    reader: SumbleEntityResearchLineageReader
+    defective: ExternalResearchProjectionDraft
+    stored_normalized_key: str
+    operation_ref: str
+
+
+async def _wedge_a_stored_projection(
+    conn: AsyncConnection, storage: FsStorage, *, workspace_id: str
+) -> _Wedge:
+    """Run one real Sumble enrichment under the superseded projection code and store its draft."""
+
+    started, ready = await _seed_selected_high_tier_account(
+        conn,
+        storage,
+        workspace_id=workspace_id,
+        account_tier="tier4",
+        tier_claim_source_tier=4,
+    )
+    account_id = EntityId(ready.account_id)
+    run_id = ProjectRunId(started.project_run_id)
+
+    @asynccontextmanager
+    async def same_connection() -> AsyncIterator[AsyncConnection]:
+        yield conn
+
+    exa_bytes = json.dumps(
+        _live_shaped_item("item_defect_29_wedge"), sort_keys=True, separators=(",", ":")
+    ).encode()
+    exa_artifact = await capture_discovery_artifact(
+        conn,
+        storage,
+        workspace_id=workspace_id,
+        content=exa_bytes,
+        media_type="application/json",
+        source_key="exa_websets",
+        source_url="https://insighthealth.ai",
+    )
+    assert not _json_contains_text(exa_bytes, _LIVE_DESCRIBED_SPAN)
+    await insert_claim(
+        conn,
+        stamp_reuse(
+            account_claim(
+                entity_id=account_id,
+                field_key=_HQ,
+                value_json={
+                    "raw": "Fort Myers, United States",
+                    "city": "Fort Myers",
+                    "region": "Florida",
+                    "country": "United States",
+                    "country_code": "US",
+                },
+                source_tier=2,
+                extraction_method=ExtractionMethod.API,
+                confidence=0.5,
+                run_id=RunId(started.project_run_id),
+                research_mode=ResearchMode.ACCOUNT_DISCOVERY,
+                source_url="https://insighthealth.ai",
+                evidence_span=_LIVE_DESCRIBED_SPAN,
+            ).model_copy(update={"source_key": "exa_websets", "artifact_key": exa_artifact}),
+            workspace_id=workspace_id,
+        ),
+    )
+
+    http = _OrganizationsHttp("insighthealth.ai")
+
+    def client_factory(maximum: int, cents: Decimal) -> SumbleClient:
+        return SumbleClient(
+            api_key=SecretStr("fixture"),
+            budget=SumbleCreditBudget(maximum=maximum),
+            http=http,
+            cents_per_credit=cents,
+        )
+
+    starter = SumbleAccountGapStarter(
+        coordinator=SumbleAccountGapCoordinator(
+            api_key=SecretStr("fixture"),
+            storage=storage,
+            cents_per_credit=Decimal("0.5"),
+            conn_factory=same_connection,
+            client_factory=client_factory,
+        ),
+        storage=storage,
+        cents_per_credit=Decimal("0.5"),
+        conn_factory=same_connection,
+    )
+
+    def build(
+        action_type: type[SumbleAccountSemanticEnrichmentAction],
+    ) -> SumbleAccountSemanticEnrichmentAction:
+        return action_type(
+            starter=starter,
+            storage=storage,
+            conn_factory=same_connection,
+            workspace_id=workspace_id,
+            project_id=started.project_id,
+            project_run_id=run_id,
+            account_id=account_id,
+            field_expected_value_credits={_HQ: Decimal(25)},
+            provider_credit_cap=25,
+        )
+
+    request = _request(account_id)
+    causation = EntityResearchProviderCausationStore(conn_factory=same_connection)
+
+    async def observe(reservation: ProviderOperationReservation) -> ProviderOperationObservation:
+        await causation._project_operation(conn, request=request, operation=reservation)
+        return ProviderOperationObservation(
+            observation_id=uuid4(),
+            tool_request_id=request.tool_call_id,
+            operation_ref=reservation.operation_ref,
+            workspace_id=reservation.workspace_id,
+            disposition=reservation.observation_disposition.value,
+            created_at=datetime.now(UTC),
+        )
+
+    (defective,) = await build(_PreFixAccountProjection).execute(
+        request, before_dispatch=observe, settle_terminal=observe
+    )
+    operation_ref = defective.operation.operation_ref
+    stored_normalized_key = str(
+        (
+            await conn.execute(
+                text(
+                    "SELECT normalized_result_artifact_key FROM entity_research_sumble_projection "
+                    "WHERE provider_operation_ref=:operation_ref"
+                ),
+                {"operation_ref": operation_ref},
+            )
+        ).scalar_one()
+    )
+    reader = SumbleEntityResearchLineageReader(
+        provider_kind=defective.operation.provider_kind,
+        conn_factory=same_connection,
+    )
+    return _Wedge(
+        request=request,
+        observe=observe,
+        action=build(SumbleAccountSemanticEnrichmentAction),
+        store=EntityResearchResultStore(
+            storage=storage,
+            conn_factory=same_connection,
+            lineage_readers={defective.operation.provider_kind: reader},
+        ),
+        reader=reader,
+        defective=defective,
+        stored_normalized_key=stored_normalized_key,
+        operation_ref=operation_ref,
+    )
+
+
+async def _admit_one_result(
+    conn: AsyncConnection, *, operation_ref: str, result_artifact_key: str
+) -> None:
+    """Write one admitted ``entity_research_result`` for ``operation_ref`` — the whole FK chain.
+
+    The chain is written directly rather than driven through the governed tool invoker (which needs
+    a live agent turn, journal event and budget reservation): what is under test here is the
+    *existence* predicate over this row, and R4's own suite owns proving the writer. Every scope
+    value is read back off the real provider-operation row, because the tool-request and
+    observation authority triggers check exactly that identity.
+    """
+
+    scope = (
+        (
+            await conn.execute(
+                text(
+                    "SELECT workspace_id, project_id, project_run_id, target_entity_id, "
+                    "source_key, field_keys FROM entity_research_provider_operation "
+                    "WHERE operation_ref=:operation_ref"
+                ),
+                {"operation_ref": operation_ref},
+            )
+        )
+        .mappings()
+        .one()
+    )
+    ids = {
+        name: uuid4()
+        for name in ("run", "job", "turn", "execution", "event", "request", "observation", "result")
+    }
+    field_keys = [str(value) for value in scope["field_keys"]]
+    authority = [
+        {"field_key": key, "source_keys": [str(scope["source_key"])]} for key in field_keys
+    ]
+    selection_id = uuid4()
+    workspace_id = str(scope["workspace_id"])
+    project_id = str(scope["project_id"])
+    product_id = "product:defect-29"
+    checkpoint = f"checkpoint:{ids['run']}:{scope['target_entity_id']}"
+    context = {
+        "agent_execution_id": str(ids["execution"]),
+        "agent_turn_id": str(ids["turn"]),
+        "role": "account",
+        "subject_type": "account",
+        "subject_entity_id": str(scope["target_entity_id"]),
+        "job_id": str(ids["job"]),
+        "research_run_id": str(ids["run"]),
+        "workspace_id": workspace_id,
+        "project_id": project_id,
+        "product_id": product_id,
+        "project_run_id": str(scope["project_run_id"]),
+        "checkpoint_thread_id": checkpoint,
+        # The governed-request trigger checks the request against what the turn admitted.
+        "tool_names": ["enrich_account"],
+        "admitted_field_keys": field_keys,
+        "admitted_source_keys": [str(scope["source_key"])],
+        "field_source_authority": authority,
+        "research_questions": ["what?"],
+    }
+    selection = {
+        "selection_id": str(selection_id),
+        "subject_type": "account",
+        "workspace_id": workspace_id,
+        "project_id": project_id,
+        "product_id": product_id,
+        "project_run_id": str(scope["project_run_id"]),
+        "budget_envelope_ref": "budget:defect-29",
+    }
+    params: dict[str, Any] = {
+        **{f"{name}_id": value for name, value in ids.items()},
+        "workspace_id": workspace_id,
+        "project_id": project_id,
+        "project_run_id": scope["project_run_id"],
+        "target_entity_id": scope["target_entity_id"],
+        "source_key": str(scope["source_key"]),
+        "field_keys": field_keys,
+        "product_id": product_id,
+        "operation_ref": operation_ref,
+        "artifact_key": result_artifact_key,
+        "sha": "0" * 64,
+        "checkpoint": checkpoint,
+        "context": json.dumps(context),
+        "authority": json.dumps(authority),
+        "selection_id": selection_id,
+        "lifecycle": json.dumps(
+            {
+                "run_id": str(ids["run"]),
+                "run_kind": "account_research",
+                "selection": selection,
+            }
+        ),
+        "authorization": json.dumps(
+            {
+                "job_id": str(ids["job"]),
+                "research_run_id": str(ids["run"]),
+                "subject_type": "account",
+                "subject_entity_id": str(scope["target_entity_id"]),
+                "workspace_id": workspace_id,
+                "project_id": project_id,
+                "product_id": product_id,
+                "project_run_id": str(scope["project_run_id"]),
+                "checkpoint_thread_id": checkpoint,
+                "selection": selection,
+            }
+        ),
+    }
+    await conn.execute(
+        text(
+            """
+            INSERT INTO entity_research_run
+                (research_run_id, run_kind, subject_type, workspace_id, project_id, product_id,
+                 project_run_id, selection_id, lifecycle_json, lifecycle_sha256,
+                 budget_envelope_ref, budget_cap_cents, concurrency_limit)
+            VALUES (:run_id, 'account_research', 'account', :workspace_id, :project_id,
+                    :product_id, :project_run_id, :selection_id, CAST(:lifecycle AS jsonb), :sha,
+                    'budget:defect-29', 1000, 1)
+            """
+        ),
+        params,
+    )
+    await conn.execute(
+        text(
+            """
+            INSERT INTO entity_research_job
+                (job_id, research_run_id, subject_type, subject_entity_id, workspace_id,
+                 project_id, product_id, project_run_id, authorization_json, authorization_sha256,
+                 priority, budget_envelope_ref, budget_cap_cents, checkpoint_thread_id,
+                 initial_state_sha256, current_state_sha256)
+            VALUES (:job_id, :run_id, 'account', :target_entity_id, :workspace_id, :project_id,
+                    :product_id, :project_run_id, CAST(:authorization AS jsonb), :sha, 0,
+                    'budget:defect-29', 1000, :checkpoint, :sha, :sha)
+            """
+        ),
+        params,
+    )
+    await conn.execute(
+        text(
+            """
+            INSERT INTO entity_research_agent_turn
+                (agent_turn_id, agent_execution_id, job_id, research_run_id, role, subject_type,
+                 target_entity_id, workspace_id, project_id, product_id, project_run_id,
+                 checkpoint_thread_id, context_json, context_sha256, resource_manifest_json,
+                 resource_manifest_sha256, tool_manifest_json, tool_manifest_sha256,
+                 system_prompt_sha256)
+            VALUES (:turn_id, :execution_id, :job_id, :run_id, 'account', 'account',
+                    :target_entity_id, :workspace_id, :project_id, :product_id, :project_run_id,
+                    :checkpoint, CAST(:context AS jsonb), :sha, '{}'::jsonb, :sha, '[]'::jsonb,
+                    :sha, :sha)
+            """
+        ),
+        params,
+    )
+    await conn.execute(
+        text(
+            """
+            INSERT INTO entity_research_agent_event
+                (event_id, agent_turn_id, agent_execution_id, event_kind, tool_call_id, tool_name,
+                 tool_version, tool_input_sha256, payload_json)
+            VALUES (:event_id, :turn_id, :execution_id, 'tool_started', 'defect-29-call',
+                    'enrich_account', 1, :sha, '{}'::jsonb)
+            """
+        ),
+        params,
+    )
+    await conn.execute(
+        text(
+            """
+            INSERT INTO entity_research_tool_request
+                (tool_request_id, agent_turn_id, agent_execution_id, tool_event_id,
+                 raw_tool_call_id, research_run_id, job_id, subject_type, target_entity_id,
+                 workspace_id, project_id, product_id, project_run_id, tool_name, tool_version,
+                 tool_input_sha256, field_plan_ref, source_plan_ref, field_keys, source_keys,
+                 questions, budget_reservation_key, idempotency_key, field_source_authority)
+            VALUES (:request_id, :turn_id, :execution_id, :event_id, 'defect-29-call', :run_id,
+                    :job_id, 'account', :target_entity_id, :workspace_id, :project_id,
+                    :product_id, :project_run_id, 'enrich_account', 1, :sha,
+                    'field-plan:defect-29', 'source-plan:defect-29',
+                    CAST(:field_keys AS text[]), ARRAY[:source_key], ARRAY['what?'],
+                    'budget:defect-29', 'idempotency:defect-29', CAST(:authority AS jsonb))
+            """
+        ),
+        params,
+    )
+    await conn.execute(
+        text(
+            """
+            INSERT INTO entity_research_provider_observation
+                (observation_id, tool_request_id, external_workspace_id, disposition,
+                 provider_operation_ref)
+            VALUES (:observation_id, :request_id, :workspace_id, 'replay_observation',
+                    :operation_ref)
+            """
+        ),
+        params,
+    )
+    await conn.execute(
+        text(
+            """
+            INSERT INTO entity_research_result
+                (result_id, tool_request_id, provider_observation_id, workspace_id, subject_type,
+                 target_entity_id, result_artifact_key, result_sha256, delivery,
+                 requested_field_keys, provider_operation_ref, provider_snapshot_ref)
+            VALUES (:result_id, :request_id, :observation_id, :workspace_id, 'account',
+                    :target_entity_id, :artifact_key, :sha, 'inline_complete',
+                    CAST(:field_keys AS text[]), :operation_ref, 'snapshot:defect-29')
+            """
+        ),
+        params,
+    )
+
+
+def test_a_never_admitted_stored_projection_is_recomputed_on_replay(tmp_path: Path) -> None:
+    """The closed loop, end to end: 02:14's refusal, 03:17's replay, and 03:46's re-refusal.
+
+    The stored draft cites a foreign contender's span, so the anti-fabrication guard can never
+    admit it — serving it back on resume wedges the job forever. Nothing was ever admitted for the
+    operation, so the draft is not history: the replay recomputes from the retained snapshot.
+    """
+
+    async def scenario() -> None:
+        storage = FsStorage(tmp_path / "artifacts")
+        async with rollback_conn(seed_pack=True) as conn:
+            wedge = await _wedge_a_stored_projection(
+                conn, storage, workspace_id="ws-defect-29-wedge"
+            )
+
+            # 02:14 — the first write is a draft that no guard can ever admit.
+            (defective_field,) = wedge.defective.fields
+            assert _LIVE_DESCRIBED_SPAN in {item.evidence_span for item in defective_field.evidence}
+            defective_lineage = await wedge.reader.load(
+                request=wedge.request,
+                operation=wedge.defective.operation,
+                snapshot_ref=wedge.defective.snapshot_ref,
+            )
+            with pytest.raises(
+                EntityResearchResultIntegrityError,
+                match="projected evidence span is absent from retained artifact",
+            ):
+                await wedge.store._validate_fields(
+                    conn,
+                    request=wedge.request,
+                    draft=wedge.defective,
+                    lineage=defective_lineage,
+                )
+            # …so no result was ever admitted for this operation. That is the whole distinction.
+            assert (
+                await conn.execute(
+                    text(
+                        "SELECT count(*) FROM entity_research_result "
+                        "WHERE provider_operation_ref=:operation_ref"
+                    ),
+                    {"operation_ref": wedge.operation_ref},
+                )
+            ).scalar_one() == 0
+
+            # 03:17 — the resume replays the terminal operation under current code.
+            (replayed,) = await wedge.action.execute(
+                wedge.request, before_dispatch=wedge.observe, settle_terminal=wedge.observe
+            )
+            (fresh,) = replayed.fields
+            assert fresh.field_key == _HQ
+            assert fresh.outcome is ResearchFieldOutcome.CONFLICT
+            assert {item.source_key for item in fresh.evidence} == {ORGANIZATIONS_SOURCE_KEY}
+            for item in fresh.evidence:
+                cited = await storage.get(item.artifact_ref.removeprefix("artifact:"))
+                assert _json_contains_text(cited, item.evidence_span)
+
+            # …and the engine that refused at 02:14 and 03:46 now admits it.
+            replay_lineage = await wedge.reader.load(
+                request=wedge.request,
+                operation=replayed.operation,
+                snapshot_ref=replayed.snapshot_ref,
+            )
+            await wedge.store._validate_artifacts(
+                conn, request=wedge.request, lineage=replay_lineage
+            )
+            await wedge.store._validate_fields(
+                conn, request=wedge.request, draft=replayed, lineage=replay_lineage
+            )
+
+            # Supersession is by non-adoption: the append-only first draft is untouched at rest.
+            assert (
+                str(
+                    (
+                        await conn.execute(
+                            text(
+                                "SELECT normalized_result_artifact_key "
+                                "FROM entity_research_sumble_projection "
+                                "WHERE provider_operation_ref=:operation_ref"
+                            ),
+                            {"operation_ref": wedge.operation_ref},
+                        )
+                    ).scalar_one()
+                )
+                == wedge.stored_normalized_key
+            )
+            audit = await storage.get(wedge.stored_normalized_key)
+            assert _json_contains_text(audit, _LIVE_DESCRIBED_SPAN)
+
+    run_async(scenario())
+
+
+def test_an_admitted_result_still_replays_its_stored_first_projection(tmp_path: Path) -> None:
+    """The ``c7d6da82`` guarantee, kept: what a job was actually shown is served from the store.
+
+    Same stored draft, same difference from what today's code composes — but this operation carries
+    an admitted ``entity_research_result``, so the projection is admitted history and recomputing it
+    under newer code would rewrite what downstream already consumed.
+    """
+
+    async def scenario() -> None:
+        storage = FsStorage(tmp_path / "artifacts")
+        async with rollback_conn(seed_pack=True) as conn:
+            wedge = await _wedge_a_stored_projection(
+                conn, storage, workspace_id="ws-defect-29-admitted"
+            )
+            await _admit_one_result(
+                conn,
+                operation_ref=wedge.operation_ref,
+                result_artifact_key=wedge.stored_normalized_key,
+            )
+
+            (replayed,) = await wedge.action.execute(
+                wedge.request, before_dispatch=wedge.observe, settle_terminal=wedge.observe
+            )
+            (served,) = replayed.fields
+            assert served.field_key == _HQ
+            # Byte-for-byte the stored first write, foreign contender evidence and all.
+            assert served == wedge.defective.fields[0]
+            assert replayed.snapshot_ref == wedge.defective.snapshot_ref
+            assert _LIVE_DESCRIBED_SPAN in {item.evidence_span for item in served.evidence}
+
+    run_async(scenario())
+
+
+class _PreFixCommitteeProjection(SumbleCommitteeSemanticResearchAction):
+    """A committee first draft whose evidence refs current code no longer reproduces."""
+
+    @staticmethod
+    def _committee_evidence_ref(operation_id: object, claim_id: object) -> str:
+        return (
+            f"research-evidence:{uuid5(_LEGACY_EVIDENCE_NAMESPACE, f'{operation_id}:{claim_id}')}"
+        )
+
+
+def test_a_never_admitted_committee_projection_is_recomputed_on_replay(tmp_path: Path) -> None:
+    """The same amendment on the committee branch, whose first-write-wins rule is the same rule."""
+
+    async def scenario() -> None:
+        storage = FsStorage(tmp_path / "artifacts")
+        async with rollback_conn(seed_pack=True) as conn:
+            durable = await _committee_setup(conn, storage, workspace_id="ws-defect-29-committee")
+
+            @asynccontextmanager
+            async def same_connection() -> AsyncIterator[AsyncConnection]:
+                yield conn
+
+            coordinator = SumbleCommitteeAcquisitionCoordinator(
+                transport=_CommitteeTransport(),
+                storage=storage,
+                cents_per_credit=Decimal("0.5"),
+                conn_factory=same_connection,
+                poll_after_seconds=30,
+            )
+            preflight = compile_sumble_committee_preflight(durable, cents_per_credit=Decimal("0.5"))
+            ready = await coordinator.start(preflight)
+            for _ in range(2):  # the People submission settles on the polling path
+                await conn.execute(
+                    text(
+                        "UPDATE committee_acquisition_operation SET next_poll_at=:past WHERE id=:id"
+                    ),
+                    {
+                        "id": ready.operation.operation_id,
+                        "past": datetime.now(UTC) - timedelta(seconds=1),
+                    },
+                )
+                ready = await coordinator.start(preflight)
+            assert ready.operation.state.value == "ready"
+
+            account = await get_account(conn, durable.account_id)
+            assert account is not None
+            selected = tuple(
+                await SumbleCommitteeSource(
+                    operation_ids={durable.account_id: ready.operation.operation_id},
+                    storage=storage,
+                    conn_factory=same_connection,
+                ).find_candidates(account, limit=durable.people_limit)
+            )
+            assert selected
+
+            await seed_packs(conn)
+
+            def build(
+                action_type: type[SumbleCommitteeSemanticResearchAction],
+            ) -> SumbleCommitteeSemanticResearchAction:
+                return action_type(
+                    preflight=preflight,
+                    coordinator=coordinator,
+                    storage=storage,
+                    conn_factory=same_connection,
+                    gateway=FakeGateway(),
+                    role_model="defect-29-role-model",
+                )
+
+            action = build(SumbleCommitteeSemanticResearchAction)
+            committee = await action._discover_committee_members(
+                conn,
+                account_entity_id=durable.account_id,
+                run_id=RunId(UUID(str(durable.project_run_id))),
+                workspace_id=durable.workspace_id,
+                selected=selected,
+                budget_cap_cents=durable.money_budget_cap_cents,
+            )
+            request = _committee_tool_request(durable)
+            provider_operation = action._committee_descriptor(
+                ready.operation,
+                disposition=ProviderObservationDisposition.CAUSED,
+                include_dispatch=True,
+            )
+            await conn.execute(
+                text(
+                    """
+                    INSERT INTO entity_research_provider_operation
+                        (operation_ref, provider_kind, workspace_id, project_id, project_run_id,
+                         subject_type, target_entity_id, parent_account_id, source_key,
+                         field_keys, request_artifact_ref, reserved_at, dispatched_at)
+                    VALUES
+                        (:operation_ref, :provider_kind, :workspace_id, :project_id,
+                         :project_run_id, :subject_type, :target_entity_id, :parent_account_id,
+                         :source_key, :field_keys, :request_artifact_ref, :reserved_at,
+                         :dispatched_at)
+                    """
+                ),
+                {
+                    "operation_ref": provider_operation.operation_ref,
+                    "provider_kind": provider_operation.provider_kind,
+                    "workspace_id": provider_operation.workspace_id,
+                    "project_id": provider_operation.project_id,
+                    "project_run_id": provider_operation.project_run_id,
+                    "subject_type": provider_operation.subject_type.value,
+                    "target_entity_id": provider_operation.target_entity_id,
+                    "parent_account_id": provider_operation.parent_account_id,
+                    "source_key": provider_operation.source_key,
+                    "field_keys": list(provider_operation.field_keys),
+                    "request_artifact_ref": provider_operation.request_artifact_ref,
+                    "reserved_at": provider_operation.reserved_at,
+                    "dispatched_at": provider_operation.dispatched_at,
+                },
+            )
+
+            _, superseded = await build(_PreFixCommitteeProjection)._persist_committee_projection(
+                request=request,
+                operation=ready.operation,
+                provider_operation=provider_operation,
+                committee=committee,
+                excluded=0,
+                ambiguous=0,
+            )
+            stored_refs = {
+                item.evidence_ref
+                for subject in superseded
+                for field in subject.fields
+                for item in field.evidence
+            }
+            assert stored_refs
+            assert (
+                await conn.execute(
+                    text(
+                        "SELECT count(*) FROM entity_research_result "
+                        "WHERE provider_operation_ref=:operation_ref"
+                    ),
+                    {"operation_ref": provider_operation.operation_ref},
+                )
+            ).scalar_one() == 0
+
+            _, replayed = await action._persist_committee_projection(
+                request=request,
+                operation=ready.operation,
+                provider_operation=provider_operation,
+                committee=committee,
+                excluded=0,
+                ambiguous=0,
+            )
+            fresh_refs = {
+                item.evidence_ref
+                for subject in replayed
+                for field in subject.fields
+                for item in field.evidence
+            }
+            assert fresh_refs == {
+                action._committee_evidence_ref(
+                    ready.operation.operation_id, claim.removeprefix("claim:")
+                )
+                for subject in replayed
+                for field in subject.fields
+                for claim in field.claim_refs
+            }
+            assert fresh_refs.isdisjoint(stored_refs)
 
     run_async(scenario())

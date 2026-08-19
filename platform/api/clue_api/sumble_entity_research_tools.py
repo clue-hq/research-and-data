@@ -96,6 +96,26 @@ ConnFactory = Callable[[], AbstractAsyncContextManager[AsyncConnection]]
 _EVIDENCE_NAMESPACE = uuid5(NAMESPACE_URL, "clue:m8d:r5:sumble-account-evidence")
 
 
+async def _operation_result_admitted(conn: AsyncConnection, *, operation_ref: str) -> bool:
+    """Was any governed result for this provider operation ever ADMITTED to a job?
+
+    The distinction the projection replay turns on. A stored projection is *history* only once a
+    result carrying it reached a turn — that is what an ``entity_research_result`` row records, and
+    what downstream has consumed. A stored projection with no result row anywhere was shown to
+    nobody: it is a failed draft, not a fact about the past.
+    """
+
+    return (
+        await conn.execute(
+            text(
+                "SELECT 1 FROM entity_research_result "
+                "WHERE provider_operation_ref=:operation_ref LIMIT 1"
+            ),
+            {"operation_ref": operation_ref},
+        )
+    ).first() is not None
+
+
 def _match_haystack(*values: object) -> str:
     """Fold provider-returned string values (never JSON keys) into one search haystack.
 
@@ -767,17 +787,40 @@ class SumbleAccountSemanticEnrichmentAction(EntityResearchProviderAction):
                 .mappings()
                 .one()
             )
-            if (
+            replay_differs = (
                 str(stored["provider_snapshot_ref"]) != snapshot_ref
                 or str(stored["normalized_result_artifact_key"]) != normalized_key
+            )
+            # First write wins — for ADMITTED history, and only for it. The same lesson as the
+            # seal reader and the settlement fold: what a job was actually shown, and what
+            # downstream consumed, is validated against what was STORED, never recomputed under
+            # newer code. A projection-composition improvement (live: aa88e0b0's conflict-evidence
+            # fix) legitimately changes what today's code would project for a terminal operation
+            # recorded yesterday; refusing that replay suspended the job ("Sumble projection replay
+            # changed"). The stored normalized artifact is self-describing, so the immutable first
+            # projection is served instead.
+            #
+            # A stored projection whose operation carries NO ``entity_research_result`` anywhere is
+            # not history: no turn was ever shown it. It is a failed draft written under code that
+            # has since been fixed — live (job eea48931), the pre-aa88e0b0 draft published a
+            # conflict contender's evidence span, the span-fidelity guard refused it at 02:14, and
+            # serving that same draft back at 03:46 raised the identical refusal, so the job
+            # re-wedged on every resume. For that draft the immutable truth is the retained
+            # provider snapshot, and the only projection of it that can ever pass the guard is the
+            # fresh one recomputed above from the durable gap-ledger snapshots — so it is returned.
+            # Supersession is by NON-ADOPTION: the projection table is append-only, so the refused
+            # first draft stays exactly where it is as the audit record of what defective code
+            # wrote, and the replay stays deterministic (same snapshot + same code = same fresh
+            # projection). One accepted residual follows: the lineage reader serves this
+            # append-only row, so a result admitted from the fresh projection carries a
+            # ``normalized_result_artifact_ref`` naming the superseded draft. Nothing recomputes
+            # or compares that artifact downstream (``_validate_artifacts`` only
+            # existence-verifies it), the snapshot_ref both sides cite is content-derived from
+            # the durable raw refs and therefore identical, and the fresh normalized artifact is
+            # captured and subject-bound above — both normalizations survive in storage.
+            if replay_differs and await _operation_result_admitted(
+                conn, operation_ref=provider_operation.operation_ref
             ):
-                # First write wins — the same lesson as the seal reader and the settlement fold:
-                # history is validated against what was STORED, never recomputed under newer
-                # code. A projection-composition improvement (live: aa88e0b0's conflict-evidence
-                # fix) legitimately changes what today's code would project for a terminal
-                # operation recorded yesterday; refusing that replay suspended the job
-                # ("Sumble projection replay changed"). The stored normalized artifact is
-                # self-describing, so the immutable first projection is served instead.
                 stored_payload = json.loads(
                     await self._storage.get(str(stored["normalized_result_artifact_key"]))
                 )
@@ -1590,7 +1633,7 @@ class SumbleCommitteeSemanticResearchAction(EntityResearchProviderAction):
                 .mappings()
                 .one()
             )
-            if (
+            replay_differs = (
                 str(stored["provider_snapshot_ref"]) != snapshot_ref
                 or str(stored["normalized_result_artifact_key"]) != normalized_key
                 or tuple(str(value) for value in stored["raw_response_artifact_refs"])
@@ -1603,10 +1646,17 @@ class SumbleCommitteeSemanticResearchAction(EntityResearchProviderAction):
                 or Decimal(str(stored["settled_cost_cents"]))
                 != Decimal(str(values["settled_cost"]))
                 or serialize_value_json(stored["metadata_json"]) != values["metadata"]
+            )
+            # Same first-write-wins rule as the account projection above, with the same boundary:
+            # an ADMITTED terminal operation's stored projection is history, and newer code must
+            # serve it rather than recompute it and refuse the difference — but a stored projection
+            # whose operation has no ``entity_research_result`` anywhere was shown to no turn, so it
+            # is a failed draft and the retained snapshot is the truth. That draft's replay returns
+            # the fresh recomputation instead; the append-only table keeps the first write at rest
+            # as audit (see the account branch for the live wedge this closes).
+            if replay_differs and await _operation_result_admitted(
+                conn, operation_ref=provider_operation.operation_ref
             ):
-                # Same first-write-wins rule as the account projection above: a terminal
-                # operation's stored projection is history; newer code must serve it, not
-                # recompute it and refuse the difference.
                 stored_payload = json.loads(
                     await self._storage.get(str(stored["normalized_result_artifact_key"]))
                 )
