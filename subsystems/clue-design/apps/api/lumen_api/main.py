@@ -8015,7 +8015,28 @@ def execute_web_turn_job(
     payload = WebTurnRequest.model_validate(request)
     account_card = envelope.config.get("account_card")
     document_id = envelope.document_id
-    prompt = payload.prompt
+
+    # --- G9: consume the platform leg envelope's frozen context --------------------------------
+    # A design-leg turn (PD-part3 §2.3/§2.4) carries the delegation bundle and the leg history on
+    # ``config``; the scene executor has composed both into its prompt since P3.7, and this one
+    # read only ``config.request`` — so a chat-born generation ran on the raw text of the user's
+    # LATEST message alone ("go ahead" generated from almost nothing, and every iteration turn
+    # lost the standing brief). Same renderer, same block order (brief, history, message), so
+    # both executors reassemble the session identically. A direct BFF turn carries neither block
+    # and its prompt stays byte-identical.
+    delegation_bundle = envelope.config.get("delegation_bundle")
+    leg_history = envelope.config.get("history")
+    user_message = payload.prompt
+    prompt = (
+        render_leg_turn_prompt(
+            bundle=delegation_bundle if isinstance(delegation_bundle, dict) else None,
+            history=leg_history if isinstance(leg_history, list) else None,
+            prompt=user_message,
+        )
+        if delegation_bundle or leg_history
+        else user_message
+    )
+
     model = payload.model
     target_node_ids = payload.target_node_ids
     base_version = payload.base_version
@@ -8121,7 +8142,11 @@ def execute_web_turn_job(
                                     "inverse_operations": replay.get(
                                         "inverse_operations"
                                     ),
-                                    "intent": prompt[:120],
+                                    # The USER's words, never the composed runtime prompt: this
+                                    # is the human-facing label on the durable edit envelope,
+                                    # and a leg turn's composed prompt opens with the fenced
+                                    # brief block (G9).
+                                    "intent": user_message[:120],
                                     "checkpoint_label": "Website turn",
                                     "actor_kind": "agent",
                                     "source": "agent",

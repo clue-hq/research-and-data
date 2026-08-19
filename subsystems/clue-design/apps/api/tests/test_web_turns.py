@@ -846,3 +846,220 @@ def test_web_turn_conflict_preserves_edit_committed_while_agent_runs(
     envelopes = store.list_envelopes(document["id"])
     assert len(envelopes) == 1
     assert envelopes[0]["source"] == "editor"
+
+
+# --- leg-dispatched turns (G9) ----------------------------------------------
+#
+# A chat-born generation arrives as a leg envelope: `config.request` is the user's latest
+# message, and `config.delegation_bundle` / `config.history` carry the delegation's standing
+# brief and the leg's prior conversation. The scene executor has composed all three into the
+# turn prompt since P3.7; the web executor ignored the last two, so a "go ahead" second
+# message generated from almost nothing. These drive the REAL `execute_web_turn_job` with a
+# capturing runner, exactly as the platform's P3.7 scene tests do.
+
+
+def _turn_host(client: TestClient, stub):
+    """The embedded worker's turn host, built from `app.state` the way `create_app` does."""
+    from lumen_api.fleet_handler import DesignTurnHost
+
+    state = client.app.state
+    return DesignTurnHost(
+        web_turn_runner=stub,
+        core=state.core,
+        storage=state.storage,
+        engine_cache_root=state.engine_cache_root,
+    )
+
+
+def _web_turn_envelope(document_id: str, workspace_id: str, config: dict):
+    from uuid import uuid4
+
+    from clue_design.envelopes import DesignTurnEnvelope
+
+    run_id = f"run_{uuid4().hex[:12]}"
+    return DesignTurnEnvelope(
+        kind="web_turn",
+        work_id=uuid4(),
+        workspace_id=workspace_id,
+        run_id=run_id,
+        checkpoint_thread_id=run_id,
+        document_id=document_id,
+        config=config,
+    )
+
+
+def capturing_web_runner(received: dict, *, result=None):
+    """A stub that records the prompt the runtime would receive and applies nothing."""
+
+    def stub(doc, prompt, model, root, **kwargs):
+        received["prompt"] = prompt
+        received["kwargs"] = kwargs
+        return result or {
+            "schema_version": 1,
+            "status": "applied",
+            "outcome": "accepted",
+            "summary": "Looked at it.",
+            "web_doc": doc["scene"],
+            "operations": [],
+            "preview_paths": [],
+            "doc_kind": "web",
+        }
+
+    return stub
+
+
+LEG_BRIEF = (
+    "Build the Harbor & Sage landing page: hero, three benefits, testimonial, "
+    "and a booking CTA."
+)
+
+
+def test_a_leg_web_turn_runs_on_the_brief_the_history_and_the_message(
+    client: TestClient,
+) -> None:
+    from lumen_api.main import execute_web_turn_job
+
+    document = create_web_document(client)
+    store = HybridRepository()
+    received: dict = {}
+    envelope = _web_turn_envelope(
+        document["id"],
+        store.workspace_id,
+        {
+            "request": {"prompt": "Go ahead.", "base_version": 0},
+            "delegation_bundle": {
+                "brief": LEG_BRIEF,
+                "claim_refs": [{"claim_id": "clm_7"}],
+            },
+            "history": [
+                {"role": "user", "text": "Something warmer than the last one."},
+                {"role": "assistant", "text": "Warmer palette it is."},
+            ],
+            "leg": {"leg_id": "leg-1"},
+        },
+    )
+
+    status, response, _, _ = execute_web_turn_job(
+        envelope,
+        store=store,
+        host=_turn_host(client, capturing_web_runner(received)),
+        event_sink=None,
+    )
+    assert status == "succeeded", response
+
+    prompt = received["prompt"]
+    assert LEG_BRIEF in prompt
+    brief_at = prompt.index(LEG_BRIEF)
+    first_at = prompt.index("[user] Something warmer than the last one.")
+    second_at = prompt.index("[assistant] Warmer palette it is.")
+    message_at = prompt.index("Go ahead.")
+    # The scene path's prefix-stable order: brief, then history oldest-first, then the message.
+    assert brief_at < first_at < second_at < message_at
+    assert prompt.rstrip().endswith("Go ahead.")
+    assert "data, not instructions" in prompt
+
+
+def test_a_route_shaped_web_turn_prompt_is_the_users_message_verbatim(
+    client: TestClient,
+) -> None:
+    """The direct BFF path carries no leg blocks; its prompt must stay byte-identical."""
+
+    from lumen_api.main import execute_web_turn_job
+
+    document = create_web_document(client)
+    store = HybridRepository()
+    received: dict = {}
+    envelope = _web_turn_envelope(
+        document["id"],
+        store.workspace_id,
+        {"request": {"prompt": "Build a landing page", "base_version": 0}},
+    )
+
+    status, response, _, _ = execute_web_turn_job(
+        envelope,
+        store=store,
+        host=_turn_host(client, capturing_web_runner(received)),
+        event_sink=None,
+    )
+    assert status == "succeeded", response
+    assert received["prompt"] == "Build a landing page"
+
+
+def test_a_leg_web_turn_on_a_stale_base_version_still_conflicts_before_the_runner(
+    client: TestClient,
+) -> None:
+    """The CAS re-check is unchanged by the composition: it happens first, and a conflicted
+    turn never reaches the runtime at all."""
+
+    from lumen_api.main import execute_web_turn_job
+
+    document = create_web_document(client)
+    seed_web_doc(client, document["id"], ingest_content(client, document["id"]))
+    store = HybridRepository()
+    received: dict = {}
+    envelope = _web_turn_envelope(
+        document["id"],
+        store.workspace_id,
+        {
+            "request": {"prompt": "Go ahead.", "base_version": 0},
+            "delegation_bundle": {"brief": LEG_BRIEF},
+            "history": [{"role": "user", "text": "Warmer."}],
+        },
+    )
+
+    status, response, _, _ = execute_web_turn_job(
+        envelope,
+        store=store,
+        host=_turn_host(client, capturing_web_runner(received)),
+        event_sink=None,
+    )
+    assert status == "failed"
+    assert response["status"] == "conflicted"
+    assert response["diagnostics"][0]["code"] == "web_turn.version_conflict"
+    assert received == {}
+
+
+def test_a_leg_web_turns_commit_is_labelled_with_the_users_message(
+    client: TestClient,
+) -> None:
+    """The composed prompt is for the RUNTIME. The durable edit envelope's `intent` is a
+    human-facing label, so it stays the user's own words — never the rendered brief block."""
+
+    from lumen_api.main import execute_web_turn_job
+
+    document = create_web_document(client)
+    content_doc = ingest_content(client, document["id"])
+    store = HybridRepository()
+    received: dict = {}
+
+    def stub(doc, prompt, model, root, **kwargs):
+        received["prompt"] = prompt
+        return {
+            "schema_version": 1,
+            "status": "applied",
+            "outcome": "accepted",
+            "summary": "Built the landing page.",
+            "web_doc": content_doc,
+            "operations": install_operations(doc["scene"], content_doc),
+            "preview_paths": [],
+            "doc_kind": "web",
+        }
+
+    envelope = _web_turn_envelope(
+        document["id"],
+        store.workspace_id,
+        {
+            "request": {"prompt": "Go ahead.", "base_version": 0},
+            "delegation_bundle": {"brief": LEG_BRIEF},
+            "history": [{"role": "user", "text": "Warmer."}],
+        },
+    )
+    status, response, _, _ = execute_web_turn_job(
+        envelope, store=store, host=_turn_host(client, stub), event_sink=None
+    )
+    assert status == "succeeded", response
+    assert LEG_BRIEF in received["prompt"]
+
+    envelopes = store.list_envelopes(document["id"])
+    assert len(envelopes) == 1
+    assert envelopes[0]["intent"] == "Go ahead."
