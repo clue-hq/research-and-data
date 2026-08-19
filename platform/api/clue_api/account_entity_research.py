@@ -106,6 +106,68 @@ _CONTACT_TOOL_PREFIXES = (
 )
 
 
+def pending_provider_operations_sql(job_expression: str) -> str:
+    """The one definition of "provider work this job is still waiting on".
+
+    Spec §5.4 makes assessment and finalization re-derive the same invariant independently, so
+    both must read *this* predicate and can never drift apart: ``_pending_refs`` selects the refs,
+    the finalization guard counts them, and the body below is written once.
+
+    An observation is pending unless one of three things is true.
+
+    1. Its operation produced a result in this job.
+    2. Its operation carries a settlement fold with no result — a real provider exchange that
+       terminally refused or could not be settled (the live Sumble 402 livelock). A fold means
+       settlement and nothing else; it is never written for work the provider never received.
+    3. Its operation was **never dispatched** and the batch member that caused it is durably
+       ``failed`` — a sibling failure, a lost lease or a crash. Nothing was sent, so nothing will
+       arrive; the operation stops blocking. This is a pending-release only: the row keeps
+       ``dispatched_at IS NULL``, so ``read_account_research_execution_completeness`` still
+       refuses to count it as an attempt and the member's fields go back to outstanding for the
+       agent to research again. A member that *did* dispatch is deliberately excluded — that
+       outcome belongs to the provider's own attempt ledger and its unknown-spend machinery.
+    """
+
+    return f"""
+        SELECT observation.provider_operation_ref
+        FROM entity_research_provider_observation observation
+        JOIN entity_research_tool_request request_row
+          ON request_row.tool_request_id=observation.tool_request_id
+        WHERE request_row.job_id={job_expression}
+          AND NOT EXISTS (
+              SELECT 1 FROM entity_research_result result
+              JOIN entity_research_tool_request result_request
+                ON result_request.tool_request_id=result.tool_request_id
+              WHERE result.provider_operation_ref=observation.provider_operation_ref
+                AND result_request.job_id=request_row.job_id
+          )
+          AND NOT EXISTS (
+              SELECT 1 FROM entity_research_provider_settlement_fold fold
+              WHERE fold.provider_operation_ref=observation.provider_operation_ref
+                AND fold.job_id=request_row.job_id
+                AND NOT EXISTS (
+                    SELECT 1 FROM entity_research_result settled
+                    WHERE settled.provider_operation_ref=fold.provider_operation_ref
+                )
+          )
+          AND NOT EXISTS (
+              SELECT 1
+              FROM entity_research_provider_operation operation
+              JOIN entity_research_tool_batch batch
+                ON batch.agent_turn_id=request_row.agent_turn_id
+              JOIN entity_research_tool_batch_member member
+                ON member.batch_id=batch.batch_id
+               AND member.raw_tool_call_id=request_row.raw_tool_call_id
+              JOIN entity_research_tool_batch_event event
+                ON event.batch_id=member.batch_id
+               AND event.raw_tool_call_id=member.raw_tool_call_id
+              WHERE operation.operation_ref=observation.provider_operation_ref
+                AND operation.dispatched_at IS NULL
+                AND event.event_kind='failed'
+          )
+    """
+
+
 class AccountResearchAuthorityError(EntityResearchGovernedToolRefusal):
     """Model-repairable account guard/engine refusal (returned to the agent, never fatal)."""
 
@@ -151,8 +213,14 @@ async def read_account_research_execution_completeness(
     """Compute execution completeness from claims plus dispatched, terminal provider ledgers.
 
     A tool request or reservation is not an attempt. A field/source pair counts only when its
-    provider operation was durably dispatched and then produced either a persisted result or an
-    idempotent terminal settlement fold. Successful evidence may stop a field's waterfall.
+    provider operation was durably **dispatched** and then produced either a persisted result or
+    an idempotent terminal settlement fold. The dispatch stamp is load-bearing and deliberately
+    not relaxed for a fold: a settlement written over an operation the provider never received
+    (a sibling-cancelled or crashed member) releases that operation's pending-ness, but it is not
+    evidence that anything was researched, and the ratified contract refuses to let a cancellation
+    settle a field. Every fold that *does* represent a real provider exchange stamps the true
+    dispatch time from the provider's own attempt ledger first, so it counts. Successful evidence
+    may stop a field's waterfall.
     """
 
     acquisition_fields = tuple(authorization.selection.admitted_field_keys)
@@ -210,9 +278,9 @@ async def read_account_research_execution_completeness(
     reusable_fields = {
         field_key
         for (_entity_id, field_key), value in current.items()
-        if value.freshness_state.value == "fresh"
-        and bool((value.provenance.evidence_span or "").strip())
-        and not value.conflict
+        # ``evidence_backed`` is the one shared satisfaction test (fresh, unconflicted, spanned);
+        # species is applied beside it because reusability across projects is a field property.
+        if value.evidence_backed
         and species.get(field_key, ResearchScope.PROJECT_RELATIVE) is ResearchScope.PROJECT_NEUTRAL
     }
     satisfied_fields = frozenset(result_evidence_fields | reusable_fields)
@@ -281,12 +349,20 @@ async def read_account_research_execution_completeness(
         if field_key in satisfied_fields:
             continue
         source_field = DERIVED_ACCOUNT_FIELD_SOURCES.get(field_key)
-        if source_field is not None and source_field not in authority:
+        if source_field is None:
+            # A row that is neither acquired nor derived (``core.account_name`` is the only one)
+            # has no provider action and no source field, so nothing can ever exhaust it. Holding
+            # it outstanding blocked both assessment and finalization forever whenever its
+            # identity claim was absent, stale, conflicted or span-less; the honest disposition is
+            # a gap the coverage ledger reports, which is what the canonical-identity review flag
+            # already exists to say.
+            continue
+        if source_field not in authority:
             # A narrow historical/non-comprehensive directive may request a derived display row
             # without authorizing acquisition of its numeric source. There is then no applicable
             # provider action to attempt; the derived row may close as an honest gap.
             continue
-        if source_field is not None and source_field in exhausted_acquisition_fields:
+        if source_field in exhausted_acquisition_fields:
             continue
         outstanding_non_acquisition.append(field_key)
 
@@ -1616,41 +1692,17 @@ class AccountResearchStateStore:
 
     @staticmethod
     async def _pending_refs(conn: AsyncConnection, job_id: UUID) -> Sequence[str]:
+        # Shares one body with the finalization guard's ``pending_operations`` count; see
+        # ``pending_provider_operations_sql``.
         return tuple(
             str(value)
             for value in (
                 (
                     await conn.execute(
                         text(
-                            """
-                            SELECT DISTINCT observation.provider_operation_ref
-                            FROM entity_research_provider_observation observation
-                            JOIN entity_research_tool_request request_row
-                              ON request_row.tool_request_id=observation.tool_request_id
-                            WHERE request_row.job_id=:job_id AND NOT EXISTS (
-                                SELECT 1 FROM entity_research_result result
-                                JOIN entity_research_tool_request result_request
-                                  ON result_request.tool_request_id=result.tool_request_id
-                                WHERE result.provider_operation_ref=
-                                      observation.provider_operation_ref
-                                  AND result_request.job_id=request_row.job_id
-                            ) AND NOT EXISTS (
-                                -- A settled operation without a result is a deterministic
-                                -- terminal rejection (zero-cost fold): it can never produce a
-                                -- result and must not block coverage or an honest NEEDS_REVIEW
-                                -- finalization (live Sumble 402 livelock).
-                                SELECT 1 FROM entity_research_provider_settlement_fold fold
-                                WHERE fold.provider_operation_ref=
-                                      observation.provider_operation_ref
-                                  AND fold.job_id=request_row.job_id
-                                  AND NOT EXISTS (
-                                      SELECT 1 FROM entity_research_result settled
-                                      WHERE settled.provider_operation_ref=
-                                            fold.provider_operation_ref
-                                  )
-                            )
-                            ORDER BY observation.provider_operation_ref
-                            """
+                            "SELECT DISTINCT provider_operation_ref FROM ("
+                            f"{pending_provider_operations_sql(':job_id')}"
+                            ") pending ORDER BY provider_operation_ref"
                         ),
                         {"job_id": job_id},
                     )
@@ -1914,32 +1966,13 @@ class AccountResearchFinalizationEngine(EntityResearchFinalizationEngine):
                                    (SELECT count(*) FROM entity_research_tool_request request_row
                                     WHERE request_row.research_run_id=intent.research_run_id
                                       AND request_row.subject_type='contact') AS contact_requests,
-                                   (SELECT count(*)
-                                    FROM entity_research_provider_observation observation
-                                    JOIN entity_research_tool_request request_row
-                                      ON request_row.tool_request_id=observation.tool_request_id
-                                    WHERE request_row.job_id=intent.job_id
-                                      AND NOT EXISTS (
-                                          SELECT 1 FROM entity_research_result result
-                                          JOIN entity_research_tool_request result_request
-                                            ON result_request.tool_request_id=
-                                               result.tool_request_id
-                                          WHERE result.provider_operation_ref=
-                                                observation.provider_operation_ref
-                                            AND result_request.job_id=request_row.job_id
-                                      )
-                                      AND NOT EXISTS (
-                                          SELECT 1 FROM
-                                          entity_research_provider_settlement_fold fold
-                                          WHERE fold.provider_operation_ref=
-                                                observation.provider_operation_ref
-                                            AND fold.job_id=request_row.job_id
-                                            AND NOT EXISTS (
-                                                SELECT 1 FROM entity_research_result settled
-                                                WHERE settled.provider_operation_ref=
-                                                      fold.provider_operation_ref
-                                            )
-                                      )) AS pending_operations
+                                   -- Shares one body with ``_pending_refs``; see
+                                   -- ``pending_provider_operations_sql``.
+                                   (SELECT count(*) FROM (
+                                    """
+                            + pending_provider_operations_sql("intent.job_id")
+                            + """
+                                   ) pending) AS pending_operations
                                    ,ARRAY(SELECT DISTINCT result_field.field_key
                                      FROM entity_research_result_field result_field
                                      JOIN entity_research_result result

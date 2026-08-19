@@ -531,7 +531,9 @@ class _FixtureAccountProviders(EntityResearchProviderAction):
         request: Any,
         *,
         before_dispatch: Callable[[ProviderOperationReservation], Any],
+        settle_terminal: Callable[[ProviderOperationReservation], Any],
     ) -> Sequence[ProviderResearchProjectionDraft]:
+        del settle_terminal
         active = current_entity_research_tool_execution()
         authorization = active.context.authorization
         self.calls.append(request.tool_name)

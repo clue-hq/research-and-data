@@ -45,7 +45,12 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_agents.account_entity_research import AssessAccountCoverageInput
 from clue_agents.contracts import ModelPolicy
-from clue_agents.entity_research_contracts import EntityResearchAgentResult, EntityResearchToolCall
+from clue_agents.entity_research_contracts import (
+    EntityResearchAgentResult,
+    EntityResearchAgentSuspension,
+    EntityResearchToolCall,
+    canonical_sha256,
+)
 from clue_agents.entity_research_runtime import (
     ActiveEntityResearchToolExecution,
     EntityResearchAgentFactory,
@@ -85,11 +90,13 @@ from clue_api.comprehensive_research_contract import (
 from clue_api.entity_research_runtime_wiring import DbEntityResearchAgentJournal
 from clue_api.entity_research_tools import (
     EntityResearchProviderCausationStore,
+    EntityResearchResultIntegrityError,
     EntityResearchResultStore,
     EntityResearchToolRequestStore,
     ExternalResearchResultLineageReader,
     GovernedEntityResearchToolFactory,
     ProviderActionBinding,
+    ProviderObservationDisposition,
     ProviderOperationReservation,
     ProviderResearchProjectionDraft,
 )
@@ -116,11 +123,13 @@ from clue_core import (
     revalidate_with,
 )
 from clue_core.entity_research import (
+    EntityResearchJobAuthorization,
     EntityResearchSelection,
     ResearchClaimDelta,
     ResearchFieldOutcome,
     ResearchFieldResultProjection,
     ResearchFinalizationOutcome,
+    ResearchSubjectType,
 )
 from clue_fleet import (
     DbEntityResearchJobStore,
@@ -454,6 +463,33 @@ class _ScriptedExaTransport:
         return payload
 
 
+class _TruncatingExaTransport(_ScriptedExaTransport):
+    """Exa answers one bundle with corrupted alias keys, exactly as it did live.
+
+    A real comprehensive run returned a 200 whose structured-output keys were truncated copies of
+    the requested aliases, so ``validate_exa_deep_exchange`` refused the exchange and the operation
+    settled ``spend_outcome_unknown``. Only the first bundle is corrupted, so the batch is the live
+    shape: some bundles ready, one dispatched bundle that can never yield a snapshot.
+    """
+
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self.corrupted_field_keys: frozenset[str] = frozenset()
+
+    def search(self, request: Any) -> Mapping[str, Any]:
+        payload = dict(super().search(request))
+        if self.corrupted_field_keys:
+            return payload
+        output = dict(cast(Mapping[str, Any], payload["output"]))
+        content = cast(Mapping[str, Any], output["content"])
+        output["content"] = {alias[:-4]: value for alias, value in content.items()}
+        payload["output"] = output
+        self.corrupted_field_keys = frozenset(
+            str(field_key_from_exa_alias(alias)) for alias in content
+        )
+        return payload
+
+
 class _PartialAccountProviders(_FixtureAccountProviders):
     """The Sumble double, with a deliberate honest empty on the nominated field keys.
 
@@ -609,17 +645,29 @@ async def _launch(
 class _Drive:
     """Everything the assertions need about one finalized comprehensive run."""
 
-    outcome: EntityResearchAgentResult
+    outcome: EntityResearchAgentResult | EntityResearchAgentSuspension | None
     model: _ScriptedModel
     providers: _PartialAccountProviders
     transport: _ScriptedExaTransport
     job_id: UUID
     selection: EntityResearchSelection
     borrowed: frozenset[str]
+    authorization: EntityResearchJobAuthorization
+
+    @property
+    def result(self) -> EntityResearchAgentResult:
+        assert isinstance(self.outcome, EntityResearchAgentResult)
+        return self.outcome
 
 
 async def _drive_comprehensive_run(
-    conn: AsyncConnection, *, fixture: _Fixture, tmp_path: Path
+    conn: AsyncConnection,
+    *,
+    fixture: _Fixture,
+    tmp_path: Path,
+    transport: _ScriptedExaTransport | None = None,
+    enrich_action: Any | None = None,
+    expect_error: type[BaseException] | None = None,
 ) -> _Drive:
     """Launch through the real launcher, then run the composed job to finalization."""
 
@@ -686,7 +734,7 @@ async def _drive_comprehensive_run(
     )
     # The Exa side: the *production* account action over a scripted transport, so the honest empty
     # and every Exa claim carry real external-research lineage rather than fixture provenance.
-    transport = _ScriptedExaTransport(empty_field_keys=(_HONEST_EMPTY,))
+    transport = transport or _ScriptedExaTransport(empty_field_keys=(_HONEST_EMPTY,))
     exa_action = ExaAccountSemanticResearchAction(
         workspace_id=fixture.workspace_id,
         project_id=fixture.project_id,
@@ -733,7 +781,9 @@ async def _drive_comprehensive_run(
             {
                 launched.job_id: {
                     "research_account_deep": ProviderActionBinding(action=exa_action, version=1),
-                    "enrich_account": ProviderActionBinding(action=providers, version=1),
+                    "enrich_account": ProviderActionBinding(
+                        action=enrich_action or providers, version=1
+                    ),
                     "discover_buying_committee": ProviderActionBinding(action=providers, version=1),
                 }
             }
@@ -786,8 +836,13 @@ async def _drive_comprehensive_run(
         journal=journal,
         finalizer=AccountResearchFinalizationEngine(conn_factory=connection),
     )
-    outcome = await runtime.run(definition=definition)
-    assert isinstance(outcome, EntityResearchAgentResult)
+    outcome: EntityResearchAgentResult | EntityResearchAgentSuspension | None
+    if expect_error is not None:
+        with pytest.raises(expect_error):
+            await runtime.run(definition=definition)
+        outcome = None
+    else:
+        outcome = await runtime.run(definition=definition)
     return _Drive(
         outcome=outcome,
         model=model,
@@ -796,6 +851,7 @@ async def _drive_comprehensive_run(
         job_id=launched.job_id,
         selection=selection,
         borrowed=borrowed,
+        authorization=begun.job.authorization,
     )
 
 
@@ -865,7 +921,7 @@ def test_every_comprehensive_account_field_reaches_a_settled_state(tmp_path: Pat
                 conn, FsStorage(tmp_path / "b8-fixture-artifacts")
             )
             drive = await _drive_comprehensive_run(conn, fixture=fixture, tmp_path=tmp_path)
-            receipt = drive.outcome.finalization_receipt
+            receipt = drive.result.finalization_receipt
             assert receipt is not None
             assert receipt.verification.all_passed()
             # One row is honestly empty, so the honest close is NEEDS_REVIEW, not COMPLETED.
@@ -1045,5 +1101,498 @@ def test_the_exa_owned_profile_rows_need_more_than_one_acquisition_bundle(
             ]
             assert all(count <= EXA_OUTPUT_MAX_FIELDS for count in packed)
             assert sum(packed) == len(exa_owned)
+
+    run_async(scenario())
+
+
+def test_an_unsettleable_exa_bundle_settles_terminally_instead_of_stranding_the_account(
+    tmp_path: Path,
+) -> None:
+    """A dispatched bundle that can never yield a snapshot must still close its fields.
+
+    Live regression: Exa answered one of four dispatched bundles with corrupted structured-output
+    keys, so the whole tool call raised and no bundle was ever stamped dispatched or settled. Under
+    execution closure a reservation is not an attempt, so those fields stayed outstanding on every
+    replay and the account could never settle. The dispatched-but-unproductive bundle now carries
+    its real dispatch time plus an append-only settlement fold, the ready bundles still persist,
+    and the run closes honestly.
+    """
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            fixture = await _seed_discovered_account(
+                conn, FsStorage(tmp_path / "b8-unsettleable-artifacts")
+            )
+            transport = _TruncatingExaTransport(empty_field_keys=(_HONEST_EMPTY,))
+            drive = await _drive_comprehensive_run(
+                conn, fixture=fixture, tmp_path=tmp_path, transport=transport
+            )
+            assert transport.corrupted_field_keys
+            receipt = drive.result.finalization_receipt
+            assert receipt is not None
+            assert receipt.proposal.outcome is ResearchFinalizationOutcome.NEEDS_REVIEW
+
+            operations = (
+                (
+                    await conn.execute(
+                        text(
+                            """
+                            SELECT operation.operation_ref, operation.field_keys,
+                                   operation.dispatched_at,
+                                   EXISTS (
+                                       SELECT 1 FROM entity_research_provider_settlement_fold fold
+                                       WHERE fold.provider_operation_ref=operation.operation_ref
+                                   ) AS folded,
+                                   EXISTS (
+                                       SELECT 1 FROM entity_research_result result
+                                       WHERE result.provider_operation_ref=operation.operation_ref
+                                   ) AS produced
+                            FROM entity_research_provider_operation operation
+                            JOIN entity_research_provider_observation observation
+                              ON observation.provider_operation_ref=operation.operation_ref
+                            JOIN entity_research_tool_request request_row
+                              ON request_row.tool_request_id=observation.tool_request_id
+                            WHERE request_row.job_id=:job_id
+                              AND operation.source_key=:source_key
+                            """
+                        ),
+                        {"job_id": drive.job_id, "source_key": EXA_DEEP_SOURCE_KEY},
+                    )
+                )
+                .mappings()
+                .all()
+            )
+            assert len(operations) > 1
+            # No operation is left reserved-but-never-dispatched: that is the state execution
+            # closure refuses to count, and the state the live account was stranded in.
+            assert all(row["dispatched_at"] is not None for row in operations)
+            unproductive = [row for row in operations if not row["produced"]]
+            assert len(unproductive) == 1
+            assert unproductive[0]["folded"]
+            assert set(unproductive[0]["field_keys"]) == transport.corrupted_field_keys
+            assert all(row["folded"] or row["produced"] for row in operations)
+
+            jobs = DbEntityResearchJobStore(conn_factory=_NestedConnFactory(conn))
+            stored = await jobs.get_job(drive.job_id)
+            assert stored is not None
+            completeness = await read_account_research_execution_completeness(
+                conn, authorization=stored.authorization
+            )
+            assert completeness.complete
+            assert not completeness.outstanding_field_source_pairs
+            terminal = set(completeness.terminal_field_source_pairs)
+            assert {
+                (field_key, EXA_DEEP_SOURCE_KEY) for field_key in transport.corrupted_field_keys
+            } <= terminal
+            # The corrupted bundle bought no evidence, so its rows close as honest gaps — the
+            # positive settlement disposition: NEEDS_REVIEW *after* every authorized source is
+            # terminal, with the unattributable rows named in the ledger rather than fabricated.
+            assert not transport.corrupted_field_keys & set(completeness.satisfied_field_keys)
+            coverage = await _coverage_row(conn, job_id=drive.job_id)
+            unresolved = {str(value) for value in coverage["unresolved_field_keys"]}
+            completed = {str(value) for value in coverage["completed_field_keys"]}
+            assert transport.corrupted_field_keys <= unresolved
+            assert not transport.corrupted_field_keys & completed
+            assert completed | unresolved == set(COMPREHENSIVE_ACCOUNT_FIELDS)
+
+    run_async(scenario())
+
+
+class _ReserveOnlyEnrichAction:
+    """Reserve one provider operation, then die before dispatch — the crash-window shape."""
+
+    provider_kind = "sumble_account_gaps"
+
+    def __init__(
+        self, *, workspace_id: str, project_id: str, project_run_id: UUID, account_id: UUID
+    ) -> None:
+        self._workspace_id = workspace_id
+        self._project_id = project_id
+        self._project_run_id = project_run_id
+        self._account_id = account_id
+        self.reserved: list[str] = []
+
+    def _reservation(
+        self,
+        request: Any,
+        *,
+        dispatched_at: datetime | None,
+    ) -> ProviderOperationReservation:
+        return ProviderOperationReservation(
+            provider_kind=self.provider_kind,
+            operation_ref=f"sumble-account-gap-operation:{request.tool_call_id}",
+            workspace_id=self._workspace_id,
+            project_id=self._project_id,
+            project_run_id=self._project_run_id,
+            subject_type=ResearchSubjectType.ACCOUNT,
+            target_entity_id=self._account_id,
+            source_key=request.source_keys[0],
+            field_keys=request.field_keys,
+            request_artifact_ref=f"artifact:reserve-only-{request.tool_call_id}",
+            reserved_at=datetime.now(UTC),
+            dispatched_at=dispatched_at,
+            observation_disposition=ProviderObservationDisposition.CAUSED,
+        )
+
+    async def execute(
+        self,
+        request: Any,
+        *,
+        before_dispatch: Any,
+        settle_terminal: Any,
+    ) -> Sequence[ProviderResearchProjectionDraft]:
+        del settle_terminal
+        reservation = self._reservation(request, dispatched_at=None)
+        await before_dispatch(reservation)
+        self.reserved.append(reservation.operation_ref)
+        raise EntityResearchResultIntegrityError("provider worker died after reserving")
+
+
+class _PendingEnrichAction(_ReserveOnlyEnrichAction):
+    """Reserve, dispatch, then die with the provider call still in flight."""
+
+    def __init__(self, *, conn_factory: _NestedConnFactory, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self._conn_factory = conn_factory
+
+    async def execute(
+        self,
+        request: Any,
+        *,
+        before_dispatch: Any,
+        settle_terminal: Any,
+    ) -> Sequence[ProviderResearchProjectionDraft]:
+        del settle_terminal
+        reservation = self._reservation(request, dispatched_at=None)
+        await before_dispatch(reservation)
+        self.reserved.append(reservation.operation_ref)
+        async with self._conn_factory() as conn:
+            await conn.execute(
+                text(
+                    "UPDATE entity_research_provider_operation SET dispatched_at=reserved_at "
+                    "WHERE operation_ref=:operation_ref"
+                ),
+                {"operation_ref": reservation.operation_ref},
+            )
+        raise EntityResearchResultIntegrityError("provider worker died with the call in flight")
+
+
+async def _operation_states(conn: AsyncConnection, *, job_id: UUID) -> Sequence[Mapping[str, Any]]:
+    return (
+        (
+            await conn.execute(
+                text(
+                    """
+                    SELECT operation.operation_ref, operation.source_key, operation.field_keys,
+                           operation.dispatched_at,
+                           EXISTS (
+                               SELECT 1 FROM entity_research_provider_settlement_fold fold
+                               WHERE fold.provider_operation_ref=operation.operation_ref
+                           ) AS folded
+                    FROM entity_research_provider_operation operation
+                    JOIN entity_research_provider_observation observation
+                      ON observation.provider_operation_ref=operation.operation_ref
+                    JOIN entity_research_tool_request request_row
+                      ON request_row.tool_request_id=observation.tool_request_id
+                    WHERE request_row.job_id=:job_id
+                      AND request_row.tool_name='enrich_account'
+                    """
+                ),
+                {"job_id": job_id},
+            )
+        )
+        .mappings()
+        .all()
+    )
+
+
+def test_a_reserved_but_undispatched_operation_is_not_a_terminal_attempt(
+    tmp_path: Path,
+) -> None:
+    """Slice-5 case 8: a reservation is journalled causation, never evidence of provider work."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            fixture = await _seed_discovered_account(
+                conn, FsStorage(tmp_path / "b8-reserve-only-artifacts")
+            )
+            action = _ReserveOnlyEnrichAction(
+                workspace_id=fixture.workspace_id,
+                project_id=fixture.project_id,
+                project_run_id=fixture.project_run_id,
+                account_id=fixture.account_id,
+            )
+            drive = await _drive_comprehensive_run(
+                conn,
+                fixture=fixture,
+                tmp_path=tmp_path,
+                enrich_action=action,
+                expect_error=EntityResearchResultIntegrityError,
+            )
+            assert action.reserved
+            rows = await _operation_states(conn, job_id=drive.job_id)
+            assert rows and all(row["dispatched_at"] is None and not row["folded"] for row in rows)
+            completeness = await read_account_research_execution_completeness(
+                conn, authorization=drive.authorization
+            )
+            reserved_pairs = {
+                (field_key, str(row["source_key"]))
+                for row in rows
+                for field_key in row["field_keys"]
+            }
+            assert reserved_pairs
+            assert not reserved_pairs & set(completeness.terminal_field_source_pairs)
+            assert reserved_pairs <= set(completeness.outstanding_field_source_pairs)
+            assert not completeness.complete
+            # One member's death marks nothing attempted — neither its own fields nor any
+            # sibling's. Before the pending-release fold there is no settlement at all.
+            assert not completeness.terminal_field_source_pairs
+            assert (
+                await conn.execute(
+                    text("SELECT count(*) FROM entity_research_provider_settlement_fold")
+                )
+            ).scalar_one() == 0
+
+    run_async(scenario())
+
+
+def test_a_dispatched_but_pending_operation_is_not_a_terminal_attempt(
+    tmp_path: Path,
+) -> None:
+    """Slice-5 case 9: in-flight provider work is not a settled attempt either."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            fixture = await _seed_discovered_account(
+                conn, FsStorage(tmp_path / "b8-pending-artifacts")
+            )
+            action = _PendingEnrichAction(
+                conn_factory=_NestedConnFactory(conn),
+                workspace_id=fixture.workspace_id,
+                project_id=fixture.project_id,
+                project_run_id=fixture.project_run_id,
+                account_id=fixture.account_id,
+            )
+            drive = await _drive_comprehensive_run(
+                conn,
+                fixture=fixture,
+                tmp_path=tmp_path,
+                enrich_action=action,
+                expect_error=EntityResearchResultIntegrityError,
+            )
+            assert action.reserved
+            rows = await _operation_states(conn, job_id=drive.job_id)
+            assert rows and all(
+                row["dispatched_at"] is not None and not row["folded"] for row in rows
+            )
+            completeness = await read_account_research_execution_completeness(
+                conn, authorization=drive.authorization
+            )
+            pending_pairs = {
+                (field_key, str(row["source_key"]))
+                for row in rows
+                for field_key in row["field_keys"]
+            }
+            assert pending_pairs
+            assert not pending_pairs & set(completeness.terminal_field_source_pairs)
+            assert pending_pairs <= set(completeness.outstanding_field_source_pairs)
+            assert not completeness.complete
+
+    run_async(scenario())
+
+
+async def _fail_the_causing_member(conn: AsyncConnection, *, job_id: UUID) -> tuple[UUID, ...]:
+    """Record the durable batch rows a member killed before dispatch leaves behind.
+
+    ``EntityResearchParallelAdmission`` writes these itself in production; the R9 harness that
+    drives it seeds no tool-request or provider-operation rows, so the rows are written here
+    against the real tool request the run already produced.
+    """
+
+    requests = (
+        (
+            await conn.execute(
+                text(
+                    """
+                    SELECT DISTINCT request_row.tool_request_id, request_row.agent_turn_id,
+                           request_row.agent_execution_id, request_row.raw_tool_call_id,
+                           request_row.research_run_id, request_row.job_id,
+                           request_row.subject_type, request_row.target_entity_id,
+                           request_row.workspace_id, request_row.tool_name,
+                           request_row.tool_version, request_row.tool_input_sha256
+                    FROM entity_research_tool_request request_row
+                    JOIN entity_research_provider_observation observation
+                      ON observation.tool_request_id=request_row.tool_request_id
+                    JOIN entity_research_provider_operation operation
+                      ON operation.operation_ref=observation.provider_operation_ref
+                    WHERE request_row.job_id=:job_id
+                      AND request_row.tool_name='enrich_account'
+                      AND operation.dispatched_at IS NULL
+                    """
+                ),
+                {"job_id": job_id},
+            )
+        )
+        .mappings()
+        .all()
+    )
+    assert requests
+    for row in requests:
+        batch_id = uuid4()
+        await conn.execute(
+            text(
+                """
+                INSERT INTO entity_research_tool_batch
+                    (batch_id, agent_turn_id, agent_execution_id, research_run_id, job_id,
+                     subject_type, target_entity_id, workspace_id, concurrency_cap,
+                     call_count, batch_json, batch_sha256)
+                VALUES (:batch_id, :turn_id, :execution_id, :run_id, :job_id, :subject_type,
+                        :target_id, :workspace_id, 2, 1, CAST(:payload AS jsonb), :sha)
+                """
+            ),
+            {
+                "batch_id": batch_id,
+                "turn_id": row["agent_turn_id"],
+                "execution_id": row["agent_execution_id"],
+                "run_id": row["research_run_id"],
+                "job_id": row["job_id"],
+                "subject_type": row["subject_type"],
+                "target_id": row["target_entity_id"],
+                "workspace_id": row["workspace_id"],
+                "payload": json.dumps({"calls": [str(row["raw_tool_call_id"])]}),
+                "sha": canonical_sha256({"calls": [str(row["raw_tool_call_id"])]}),
+            },
+        )
+        await conn.execute(
+            text(
+                """
+                INSERT INTO entity_research_tool_batch_member
+                    (batch_id, raw_tool_call_id, tool_name, tool_version, tool_input_sha256,
+                     field_keys, source_keys)
+                VALUES (:batch_id, :call_id, :tool_name, :version, :input_sha, '{}', '{}')
+                """
+            ),
+            {
+                "batch_id": batch_id,
+                "call_id": row["raw_tool_call_id"],
+                "tool_name": row["tool_name"],
+                "version": row["tool_version"],
+                "input_sha": row["tool_input_sha256"],
+            },
+        )
+        await conn.execute(
+            text(
+                """
+                INSERT INTO entity_research_tool_batch_event
+                    (event_id, batch_id, raw_tool_call_id, event_kind, disposition, error_json)
+                VALUES (:event_id, :batch_id, :call_id, 'failed', 'handler_failed',
+                        CAST(:error AS jsonb))
+                """
+            ),
+            {
+                "event_id": uuid4(),
+                "batch_id": batch_id,
+                "call_id": row["raw_tool_call_id"],
+                "error": json.dumps({"error_type": "CancelledError", "message": "sibling failed"}),
+            },
+        )
+    return tuple(UUID(str(row["tool_request_id"])) for row in requests)
+
+
+def test_a_cancelled_members_pending_release_is_not_an_attempt(tmp_path: Path) -> None:
+    """Slice-5 case 15: a failed member's undispatched work stops pending, never settles.
+
+    The release is a *read*: no durable row claims the operation was settled, because nothing was
+    sent. So assessment stops waiting on work that will never arrive, while execution closure
+    still refuses to count it — the pairs go back to outstanding and only a real dispatch that
+    produces a result settles them.
+    """
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            fixture = await _seed_discovered_account(
+                conn, FsStorage(tmp_path / "b8-pending-release-artifacts")
+            )
+            action = _ReserveOnlyEnrichAction(
+                workspace_id=fixture.workspace_id,
+                project_id=fixture.project_id,
+                project_run_id=fixture.project_run_id,
+                account_id=fixture.account_id,
+            )
+            drive = await _drive_comprehensive_run(
+                conn,
+                fixture=fixture,
+                tmp_path=tmp_path,
+                enrich_action=action,
+                expect_error=EntityResearchResultIntegrityError,
+            )
+            rows = await _operation_states(conn, job_id=drive.job_id)
+            assert rows and all(row["dispatched_at"] is None and not row["folded"] for row in rows)
+            cancelled_pairs = {
+                (field_key, str(row["source_key"]))
+                for row in rows
+                for field_key in row["field_keys"]
+            }
+            pending = AccountResearchStateStore._pending_refs
+            assert len(await pending(conn, drive.job_id)) == len(rows)
+
+            await _fail_the_causing_member(conn, job_id=drive.job_id)
+
+            # Pending-ness is released, and no settlement row was invented to do it.
+            assert await pending(conn, drive.job_id) == ()
+            assert (
+                await conn.execute(
+                    text("SELECT count(*) FROM entity_research_provider_settlement_fold")
+                )
+            ).scalar_one() == 0
+            # An undispatched, fold-less operation is still not a terminal attempt, so the fields
+            # go back to outstanding and the agent must research them again.
+            released = await read_account_research_execution_completeness(
+                conn, authorization=drive.authorization
+            )
+            assert not cancelled_pairs & set(released.terminal_field_source_pairs)
+            assert cancelled_pairs <= set(released.outstanding_field_source_pairs)
+            assert not released.complete
+
+            # A retry that really reaches the provider supersedes the release. Exa's request
+            # fingerprint is job-scoped, so the retry re-dispatches this very operation; its
+            # settlement is therefore the operation's *first* fold and the real spend lands.
+            # The bare INSERT below is the regression guard: reintroduce a zero-cost
+            # pending-release fold and it raises a unique violation here, which is exactly how
+            # ``_fold_settled_spend`` used to break the production retry path.
+            await conn.execute(
+                text(
+                    "UPDATE entity_research_provider_operation SET dispatched_at=reserved_at "
+                    "WHERE operation_ref=ANY(:refs)"
+                ),
+                {"refs": [str(row["operation_ref"]) for row in rows]},
+            )
+            # A dispatch stamp alone is still not terminal: something has to come back.
+            mid_flight = await read_account_research_execution_completeness(
+                conn, authorization=drive.authorization
+            )
+            assert not cancelled_pairs & set(mid_flight.terminal_field_source_pairs)
+            await conn.execute(
+                text(
+                    """
+                    INSERT INTO entity_research_provider_settlement_fold
+                        (provider_operation_ref, research_run_id, job_id, settled_cost_cents)
+                    VALUES (:operation_ref, :run_id, :job_id, 4.5)
+                    """
+                ),
+                {
+                    "operation_ref": str(rows[0]["operation_ref"]),
+                    "run_id": drive.authorization.research_run_id,
+                    "job_id": drive.job_id,
+                },
+            )
+            settled = await read_account_research_execution_completeness(
+                conn, authorization=drive.authorization
+            )
+            retried_pairs = {
+                (field_key, str(rows[0]["source_key"])) for field_key in rows[0]["field_keys"]
+            }
+            assert retried_pairs <= set(settled.terminal_field_source_pairs)
+            assert not retried_pairs & set(settled.outstanding_field_source_pairs)
 
     run_async(scenario())

@@ -1006,8 +1006,9 @@ def test_provider_neutral_join_records_wait_and_advances_durable_state(tmp_path:
             request: GovernedResearchToolRequest,
             *,
             before_dispatch: object,
+            settle_terminal: object,
         ) -> tuple[()]:
-            del before_dispatch
+            del before_dispatch, settle_terminal
             now = datetime.now(UTC)
             raise EntityResearchProviderWait(
                 ProviderOperationReservation(

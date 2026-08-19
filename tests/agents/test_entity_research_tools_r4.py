@@ -35,6 +35,7 @@ from clue_agents.entity_research_runtime import (
 from clue_agents.entity_research_tools import EntityResearchSemanticToolInput
 from clue_agents.model import ScriptedAgentChatModel
 from clue_api.entity_research_tools import (
+    EntityResearchGovernedRejection,
     EntityResearchProviderCausationStore,
     EntityResearchResultIntegrityError,
     EntityResearchResultStore,
@@ -77,8 +78,9 @@ class _Action:
         request: GovernedResearchToolRequest,
         *,
         before_dispatch: Any,
+        settle_terminal: Any,
     ) -> Sequence[Any]:
-        del request, before_dispatch
+        del request, before_dispatch, settle_terminal
         raise AssertionError("pure composition test must not dispatch a provider")
 
 
@@ -265,11 +267,16 @@ def test_semantic_request_cannot_apply_one_fields_source_to_another_field() -> N
             ),
             journal_event_ref=f"entity-agent-event:{uuid4()}",
         )
-        with pytest.raises(EntityResearchToolAuthorityError, match="no authorized requested"):
+        # R10 species 1: applying one field's source to another is a model mistake the agent can
+        # repair by dropping the pairing, so it refuses as a governed rejection, never a
+        # suspension. A comprehensive field may also legitimately carry an empty authority.
+        with pytest.raises(EntityResearchGovernedRejection) as refusal:
             await EntityResearchToolRequestStore(conn_factory=_unused_conn).record(
                 active=active,
                 semantic=EntityResearchSemanticToolInput.model_validate(arguments),
             )
+        assert refusal.value.code == "field_source_authority_mismatch"
+        assert "no authorized requested" in refusal.value.detail
 
     from tests.db.conftest import run_async
 

@@ -355,6 +355,9 @@ class EntityResearchProviderAction(Protocol):
         before_dispatch: Callable[
             [ProviderOperationReservation], Awaitable[ProviderOperationObservation]
         ],
+        settle_terminal: Callable[
+            [ProviderOperationReservation], Awaitable[ProviderOperationObservation]
+        ],
     ) -> Sequence[ProviderResearchProjectionDraft]: ...
 
 
@@ -559,8 +562,14 @@ class EntityResearchToolRequestStore:
                 source for source in authority.source_keys if source in semantic.source_keys
             )
             if not sources:
-                raise EntityResearchToolAuthorityError(
-                    f"field {authority.field_key!r} has no authorized requested source"
+                # R10 species 1: a field outside the exact field/source authority is a model
+                # mistake, not a job-integrity failure. A comprehensive field may legitimately
+                # carry an *empty* authority (no requestable owner), and the agent's context says
+                # so — but a model that names it anyway must be able to drop it and continue
+                # rather than suspend the whole account.
+                raise EntityResearchGovernedRejection(
+                    "field_source_authority_mismatch",
+                    f"field {authority.field_key!r} has no authorized requested source",
                 )
             requested_authority.append(
                 FieldSourceAuthority(field_key=authority.field_key, source_keys=sources)
@@ -1143,6 +1152,31 @@ class EntityResearchProviderCausationStore:
             operation=operation,
             disposition=operation.observation_disposition.value,
         )
+
+    async def settle_terminal(
+        self,
+        *,
+        request: GovernedResearchToolRequest,
+        operation: ProviderOperationReservation,
+    ) -> ProviderOperationObservation:
+        """Close one already-dispatched operation that will never produce a result.
+
+        Causation is journalled *before* dispatch, but the ledger only learned that dispatch
+        actually happened when a result was persisted. A bundle that came back terminally
+        unsettleable (an unparseable provider success, a validated provider refusal) therefore
+        stayed reserved-never-dispatched forever — live, four dispatched Exa bundles left an
+        account permanently unable to settle, because execution closure counts neither a
+        reservation nor an undispatched operation as an attempt. This stamps the operation's true
+        dispatch time and folds it at zero settled cost, which is its exact terminal disposition.
+        """
+
+        observation = await self.observe(request=request, operation=operation)
+        await fold_rejected_operation_settlement(
+            self._conn_factory,
+            request=request,
+            operation_ref=operation.operation_ref,
+        )
+        return observation
 
     async def _record(
         self,
@@ -2674,6 +2708,10 @@ class GovernedEntityResearchToolFactory:
                         "request_authority_violation", str(authority)
                     ).render()
                 ) from authority
+            except EntityResearchGovernedRejection as rejection:
+                # The request store may already refuse in the repairable species (a field whose
+                # authority is legitimately empty). Keep it repairable here too.
+                raise ToolException(rejection.render()) from rejection
 
             async def before_dispatch(
                 operation: ProviderOperationReservation,
@@ -2683,8 +2721,26 @@ class GovernedEntityResearchToolFactory:
                     operation=operation,
                 )
 
+            settled_field_keys: set[str] = set()
+
+            async def settle_terminal(
+                operation: ProviderOperationReservation,
+            ) -> ProviderOperationObservation:
+                observation = await self._causation.settle_terminal(
+                    request=request,
+                    operation=operation,
+                )
+                settled_field_keys.update(operation.field_keys)
+                return observation
+
             try:
-                drafts = tuple(await action.execute(request, before_dispatch=before_dispatch))
+                drafts = tuple(
+                    await action.execute(
+                        request,
+                        before_dispatch=before_dispatch,
+                        settle_terminal=settle_terminal,
+                    )
+                )
             except EntityResearchGovernedRejection as rejection:
                 # The refusal is complete and durable; surface it to the model as an error tool
                 # message (LangGraph keeps the loop alive) instead of suspending the whole job.
@@ -2697,6 +2753,19 @@ class GovernedEntityResearchToolFactory:
                     current_state_sha256=current_state,
                 ) from wait
             if not drafts:
+                if settled_field_keys:
+                    # Every bundle settled terminally without producing a result. The ledger is
+                    # complete (dispatch stamped, folds written) so execution closure can see the
+                    # exhausted sources; the agent picks another admitted source or finalizes the
+                    # gap honestly instead of suspending on a state it cannot repair.
+                    raise ToolException(
+                        EntityResearchGovernedRejection(
+                            "provider_terminally_unproductive",
+                            "every provider bundle settled terminally without a result for "
+                            f"{', '.join(sorted(settled_field_keys))}; the durable operation "
+                            "ledger retains the exact provider diagnostic",
+                        ).render()
+                    )
                 raise EntityResearchResultIntegrityError(
                     "provider action returned no complete result or external wait"
                 )
@@ -2712,9 +2781,13 @@ class GovernedEntityResearchToolFactory:
                 raise EntityResearchResultIntegrityError(
                     "only one committee result may confirm an empty enumeration"
                 )
+            # A terminally settled bundle carries no result, so its fields are partitioned by the
+            # durable settlement fold rather than by a draft. Everything else still has to
+            # partition exactly: a field may not be both answered and written off.
             if (
                 len(covered) != len(set(covered))
-                or set(covered) != set(request.field_keys)
+                or set(covered) & settled_field_keys
+                or set(covered) | settled_field_keys != set(request.field_keys)
                 or (not covered and not has_discovered)
             ):
                 raise EntityResearchResultIntegrityError(

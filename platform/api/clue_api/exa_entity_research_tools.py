@@ -29,6 +29,7 @@ from clue_api.exa_contact_materialization import ExaDeepContactSnapshotMateriali
 from clue_api.exa_deep_acquisition import (
     ExaDeepAcquisitionCoordinator,
     ExaDeepAcquisitionOutcome,
+    ExaDeepAcquisitionResult,
     compile_exa_deep_acquisition_plan,
 )
 from clue_api.exa_deep_materialization import ExaDeepSnapshotResolverProvider
@@ -76,6 +77,49 @@ _MATERIALIZATION_RUN_NAMESPACE = uuid5(NAMESPACE_URL, "clue:m8d:r4:exa-contact-m
 _ACCOUNT_MATERIALIZATION_RUN_NAMESPACE = uuid5(
     NAMESPACE_URL, "clue:m8d:r5:exa-account-materialization-run"
 )
+# Both are terminal in the external ledger and can never yield a snapshot: the operation was
+# dispatched, the provider answered or refused, and no retry of this exact request will change it.
+_UNPRODUCTIVE_OUTCOMES = frozenset(
+    {
+        ExaDeepAcquisitionOutcome.FAILED_TERMINAL,
+        ExaDeepAcquisitionOutcome.SPEND_OUTCOME_UNKNOWN,
+    }
+)
+
+
+async def _settle_unproductive_bundles(
+    items: Sequence[ExaDeepAcquisitionResult],
+    *,
+    projector: ExaEntityResearchProjectionBuilder,
+    field_keys_for: Callable[[ExaDeepAcquisitionResult], tuple[str, ...]],
+    caused_refs: set[str],
+    settle_terminal: Callable[
+        [ProviderOperationReservation], Awaitable[ProviderOperationObservation]
+    ],
+) -> frozenset[str]:
+    """Give every dispatched-but-unproductive bundle a durable terminal disposition.
+
+    Without this the bundle stays reserved-never-dispatched on the entity-research ledger, which
+    execution closure refuses to count as an attempt, so its fields can never settle and the whole
+    tool call fails identically on every replay.
+    """
+
+    settled: set[str] = set()
+    for item in items:
+        operation_ref = f"external-research-operation:{item.operation.operation_id}"
+        descriptor = await projector.operation(
+            item.operation,
+            disposition=(
+                ProviderObservationDisposition.CAUSED
+                if operation_ref in caused_refs
+                else ProviderObservationDisposition.REPLAY
+            ),
+            include_dispatch=True,
+            field_keys=field_keys_for(item),
+        )
+        await settle_terminal(descriptor)
+        settled.update(descriptor.field_keys)
+    return frozenset(settled)
 
 
 def _external_operation_id(reference: str) -> UUID:
@@ -635,6 +679,9 @@ class ExaContactSemanticResearchAction(EntityResearchProviderAction):
         before_dispatch: Callable[
             [ProviderOperationReservation], Awaitable[ProviderOperationObservation]
         ],
+        settle_terminal: Callable[
+            [ProviderOperationReservation], Awaitable[ProviderOperationObservation]
+        ],
     ) -> Sequence[ExternalResearchProjectionDraft]:
         facet_fields = tuple(
             str(field_key)
@@ -720,6 +767,21 @@ class ExaContactSemanticResearchAction(EntityResearchProviderAction):
             in {ExaDeepAcquisitionOutcome.READY, ExaDeepAcquisitionOutcome.REPLAYED}
             and result.snapshot is not None
         ]
+        if not ready and all(
+            result.outcome in _UNPRODUCTIVE_OUTCOMES for result in acquired.results
+        ):
+            # Every dispatched bundle is terminal without a snapshot. Settle them so execution
+            # closure sees real attempts; the tool layer turns the empty draft set into a governed
+            # rejection. A mixed ready/unproductive batch still raises: contact bundles are all
+            # projected over the same request field set, so there is no honest field partition.
+            await _settle_unproductive_bundles(
+                acquired.results,
+                projector=self._projector,
+                field_keys_for=lambda _result: request.field_keys,
+                caused_refs=caused_refs,
+                settle_terminal=settle_terminal,
+            )
+            return ()
         if len(ready) != len(acquired.results):
             raise EntityResearchResultIntegrityError(
                 "Exa contact action did not produce a settled ready snapshot"
@@ -816,6 +878,9 @@ class ExaAccountSemanticResearchAction(EntityResearchProviderAction):
         request: GovernedResearchToolRequest,
         *,
         before_dispatch: Callable[
+            [ProviderOperationReservation], Awaitable[ProviderOperationObservation]
+        ],
+        settle_terminal: Callable[
             [ProviderOperationReservation], Awaitable[ProviderOperationObservation]
         ],
     ) -> Sequence[ExternalResearchProjectionDraft]:
@@ -943,10 +1008,25 @@ class ExaAccountSemanticResearchAction(EntityResearchProviderAction):
             if item.outcome in {ExaDeepAcquisitionOutcome.READY, ExaDeepAcquisitionOutcome.REPLAYED}
             and item.snapshot is not None
         ]
-        if len(ready) != len(acquired):
+        unproductive = [item for item in acquired if item.outcome in _UNPRODUCTIVE_OUTCOMES]
+        if len(ready) + len(unproductive) != len(acquired):
             raise EntityResearchResultIntegrityError(
                 "Exa account action did not produce settled ready snapshots"
             )
+        settled_fields = await _settle_unproductive_bundles(
+            unproductive,
+            projector=self._projector,
+            field_keys_for=lambda item: operation_fields[item.operation.operation_id],
+            caused_refs=caused_refs,
+            settle_terminal=settle_terminal,
+        )
+        if not ready:
+            return ()
+        effective_fields = [
+            effective
+            for effective in effective_fields
+            if effective.field_def.field_key not in settled_fields
+        ]
         bindings = await self._snapshots.resolver_bindings(
             workspace_id=self._workspace_id,
             project_run_id=self._project_run_id,

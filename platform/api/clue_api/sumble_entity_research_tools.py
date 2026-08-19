@@ -31,7 +31,6 @@ from clue_api.entity_research_tools import (
     ProviderOperationReservation,
     ProviderResultLineage,
     ProviderResultLineageReader,
-    fold_rejected_operation_settlement,
 )
 from clue_api.sumble_account_gaps import (
     SumbleAccountGapNotEligible,
@@ -413,6 +412,9 @@ class SumbleAccountSemanticEnrichmentAction(EntityResearchProviderAction):
         before_dispatch: Callable[
             [ProviderOperationReservation], Awaitable[ProviderOperationObservation]
         ],
+        settle_terminal: Callable[
+            [ProviderOperationReservation], Awaitable[ProviderOperationObservation]
+        ],
     ) -> Sequence[ExternalResearchProjectionDraft]:
         if (
             request.subject_type is not ResearchSubjectType.ACCOUNT
@@ -494,11 +496,21 @@ class SumbleAccountSemanticEnrichmentAction(EntityResearchProviderAction):
             )
         if result.outcome is SumbleAccountGapOutcome.FAILED_TERMINAL:
             # Deterministic provider refusal: zero-charge, diagnostics durable on the gap ledger.
-            # The agent may pick another admitted source or finalize with an explicit gap.
-            await fold_rejected_operation_settlement(
-                self._conn_factory,
-                request=request,
-                operation_ref=_operation_ref(result.operation),
+            # The agent may pick another admitted source or finalize with an explicit gap. The
+            # settlement must carry the operation's real dispatch time as well as the fold —
+            # execution closure counts neither an undispatched operation nor a bare fold.
+            await settle_terminal(
+                self._descriptor(
+                    result.operation,
+                    source_key=request.source_keys[0],
+                    field_keys=request.field_keys,
+                    disposition=(
+                        ProviderObservationDisposition.CAUSED
+                        if caused
+                        else ProviderObservationDisposition.REPLAY
+                    ),
+                    include_dispatch=True,
+                )
             )
             raise EntityResearchGovernedRejection(
                 "provider_rejected",
@@ -853,6 +865,9 @@ class SumbleCommitteeSemanticResearchAction(EntityResearchProviderAction):
         before_dispatch: Callable[
             [ProviderOperationReservation], Awaitable[ProviderOperationObservation]
         ],
+        settle_terminal: Callable[
+            [ProviderOperationReservation], Awaitable[ProviderOperationObservation]
+        ],
     ) -> Sequence[ExternalResearchProjectionDraft]:
         active = current_entity_research_tool_execution()
         semantic = DiscoverBuyingCommitteeInput.model_validate(active.call.arguments)
@@ -916,10 +931,16 @@ class SumbleCommitteeSemanticResearchAction(EntityResearchProviderAction):
             # Deterministic provider refusal (for example a validated zero-charge HTTP 4xx): the
             # committee ledger retains the status and the provider's own bounded error body. The
             # agent decides — repair, another admitted source, or an explicit partial committee.
-            await fold_rejected_operation_settlement(
-                self._conn_factory,
-                request=request,
-                operation_ref=f"committee-operation:{acquired.operation.operation_id}",
+            await settle_terminal(
+                self._committee_descriptor(
+                    acquired.operation,
+                    disposition=(
+                        ProviderObservationDisposition.CAUSED
+                        if caused
+                        else ProviderObservationDisposition.REPLAY
+                    ),
+                    include_dispatch=True,
+                )
             )
             raise EntityResearchGovernedRejection(
                 "provider_rejected",

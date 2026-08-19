@@ -108,8 +108,9 @@ class _UnavailableProviderAction(EntityResearchProviderAction):
         request: GovernedResearchToolRequest,
         *,
         before_dispatch: Any,
+        settle_terminal: Any,
     ) -> tuple[ProviderResearchProjectionDraft, ...]:
-        del request, before_dispatch
+        del request, before_dispatch, settle_terminal
         # A model choosing a provider the exact job never selected is a repairable request, not a
         # job-integrity failure: refuse it back to the agent without suspending the account.
         raise EntityResearchGovernedRejection("provider_not_selected", self._reason)
