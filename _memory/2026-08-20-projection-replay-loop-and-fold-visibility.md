@@ -93,6 +93,35 @@ Note for whoever resumes job `eea48931`: this fixes the loop for the *account* o
 `7e29c0bf…`. The stored defective row stays in `entity_research_sumble_projection` forever by
 design — do not "clean it up".
 
+## LIVE PROOF — job `eea48931` settled (2026-08-20 05:20 IST)
+
+Committed as `5dd1b3f8` (fold visibility) + `15f27702` (reprojection) + `55ed419d` (this note);
+strict review passed (red-proofs independently re-run by the orchestrator; 41-test regression net
+incl. the 5×3 harness green; full-gate triage: 56/58 failures byte-identical at HEAD =
+pre-existing/environmental, 1 suite-order artifact, 1 load-flaky 30s-subprocess test — none ours).
+Fleet restarted on the fixed code (worker `018f8a47`, 05:19 IST), `eea48931` resumed via the
+governed path. **28 seconds later: terminal / needs_review.** The four-times-lethal replayed
+`enrich_account` ADMITTED (result `c8be9969…`: `core.employee_count` found/accepted — the tier-1
+955; `core.hq_location` conflict/conflicting, projected with same-source evidence only), assess
+wrote coverage `5d94747d…` with no phantom pending-work refusal, finalize settled. Zero new spend
+(2.50 total, unchanged — the replay served retained snapshots).
+
+Committee: `needs_review`, zero members — CORRECT: this job's `sumble_people` op is terminally
+402-folded (an honest attempt from the paywall era). Getting real members now that the founder's
+new key returns 200 requires a FRESH Millennium attempt (fresh job → fresh committee operation) —
+i.e. a relaunch through the deepagent thread + the founder's approval gate. That is the third
+consecutive instance of the retry-after-remediation gap; see the design thread below.
+
+## Full-gate pre-existing failures (recorded 2026-08-20, NOT ours, NOT triaged further)
+
+56 failures on hermetic `make check` (clean env, throwaway `clue_missoula_reproj` DB) are
+byte-identical at HEAD `c7d6da82` before either fix: waterfall(7), stage0 recipe0(6), tier
+checkpoint(9), lane-E acceptance(6), fi2(4+3), db migrations(3), production-context(4), misc.
+Likely environmental to that DB or genuinely pre-existing on the branch after the 08-19 merge day
+(yesterday's "green gate 2,855 passed" vs today's 5,327 collected also needs explaining). Founder
+directive 05:0x: do not chase failures unrelated to our changes. Whoever next needs a green full
+gate should triage these against the default dev DB first.
+
 ## Design thread this feeds (discussion earlier this session)
 
 Second instance in one night of the missing "fresh attempt after the cause changed" primitive
