@@ -412,6 +412,24 @@ carry web work, then makes the frontend show what the leg already emits.
 > investigation running in parallel; the editor canvas renders layout — the
 > fleet-side preview renderer is the missing-runtime surface.)
 
+> **G7 OUTCOME (2026-08-19): the missing-Tailwind-runtime defect is FIXED and
+> root-caused** (commit `957a1e09`; record `_memory/2026-08-19-genweb-g7-tailwind-runtime.md`).
+> The preview renderer inlined one hardcoded, GITIGNORED path that nothing in the
+> repo ever produced — the file survived only as a hand-copied artifact in the
+> pre-merge havana working tree, which is why the MVP editor never saw the defect
+> and every fresh monorepo checkout did. No env var was involved (there was no env
+> seam at all). Now: an ordered search path (`LUMEN_TAILWIND_RUNTIME` override →
+> vendored copy → package dist, so a plain `npm install` suffices for the fleet
+> worker), the missing producer script wired into the editor's predev/prebuild, a
+> loud path-naming warning on any miss, and deployment lines recorded. Proven on the
+> live doc: the hero renders centered/flex/dark instead of stacked top-left; the
+> canvas needed no frontend change. **Consequence for G6/slice 4: the visual
+> reviewer can SEE layout for the first time** — expect real layout findings (and
+> possibly more review rounds) until the author's output improves; judge terra's
+> design quality only from post-G7 generations. Sibling setup gap recorded: 16
+> standing `apps/api` custom-component reds trace to a missing
+> `apps/custom-component-compiler/node_modules` — wants an owner.
+
 ### Slice 4 — end-to-end acceptance + close-out (~1 day)
 - The definition-of-done walk, scripted for the founder: strategy chat → "build me a
   landing page for <account>" → leg opens (transcript line) → generation (~minutes) →
