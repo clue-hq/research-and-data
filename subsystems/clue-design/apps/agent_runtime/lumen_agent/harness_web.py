@@ -15,9 +15,13 @@ Public API:
 from __future__ import annotations
 
 import json
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
+from langchain.agents.middleware import AgentMiddleware
 from langchain.agents.structured_output import ToolStrategy
+from langchain_core.messages import ToolMessage
+from langgraph.prebuilt.tool_node import ToolCallRequest
+from langgraph.types import Command
 from py_lumen_obs import configure, get_logger
 
 from .checkpoint import invoke_turn_graph
@@ -38,6 +42,78 @@ from .tools.web_substrate import (
 )
 
 logger = get_logger("lumen_agent.harness_web")
+
+#: G4 (founder ruling, 2026-08-19): at most this many `lumen-web-reviewer` delegations
+#: per web turn. A live chat-driven generation spent ~13 minutes on a simple landing page
+#: because the review loop kept going, so the budget is MECHANICAL — the prompt asks for
+#: the fewest rounds, this number is what actually stops the seventh.
+WEB_REVIEW_DELEGATION_CAP = 6
+
+_REVIEWER_SUBAGENT = "lumen-web-reviewer"
+
+_REVIEW_BUDGET_EXHAUSTED = (
+    "Review budget exhausted: this turn has already used all {cap} `lumen-web-reviewer` "
+    "delegations, which is the hard per-turn cap. No further review will run. Finish now "
+    "from the critique you already hold: send any outstanding blocking fix to the author "
+    "and judge the re-render with your own `view` calls, then call `finalize_web_run` — "
+    "`accepted` if the page meets the ship bar, `completed_with_warnings` if advisory "
+    "issues remain, naming them in the summary."
+)
+
+
+class WebReviewDelegationCap(AgentMiddleware):
+    """Enforce the per-turn reviewer budget at the `task` tool.
+
+    One instance is built per :func:`create_web_deepagent` call, so the counter is
+    turn-scoped by construction rather than by a framework — the whole mechanism is an
+    integer and one branch. Only `lumen-web-reviewer` delegations count: author rounds and
+    ordinary tools pass straight through.
+
+    Exceeding the cap is a tool-level REFUSAL, never an exception: an exhausted budget must
+    leave the orchestrator able to finalize honestly with its standing critique, and killing
+    the turn would throw away a page that is very likely already shippable.
+
+    Sync only, deliberately: the web turn is invoked through `agent.invoke`
+    (`checkpoint.invoke_turn_graph`). An async invocation would raise LangChain's own
+    "synchronous implementation only" error rather than silently skipping the cap.
+    """
+
+    def __init__(
+        self,
+        *,
+        cap: int = WEB_REVIEW_DELEGATION_CAP,
+        record: Optional[Callable[..., None]] = None,
+    ) -> None:
+        super().__init__()
+        self._cap = cap
+        self._record = record
+        self.delegations = 0
+
+    def wrap_tool_call(
+        self,
+        request: ToolCallRequest,
+        handler: Callable[[ToolCallRequest], ToolMessage | Command],
+    ) -> ToolMessage | Command:
+        call = request.tool_call
+        args = call.get("args") or {}
+        if call.get("name") != "task" or args.get("subagent_type") != _REVIEWER_SUBAGENT:
+            return handler(request)
+        if self.delegations >= self._cap:
+            logger.warning("web_review_cap_reached", cap=self._cap)
+            if self._record is not None:
+                self._record(
+                    "coordinator",
+                    "web_review_cap_reached",
+                    output_summary=f"reviewer delegation refused after {self._cap} rounds",
+                    payload={"cap": self._cap},
+                )
+            return ToolMessage(
+                content=_REVIEW_BUDGET_EXHAUSTED.format(cap=self._cap),
+                tool_call_id=call["id"],
+                name="task",
+            )
+        self.delegations += 1
+        return handler(request)
 
 
 def _has_existing_content(web_doc: dict, page_id: str) -> bool:
@@ -202,9 +278,13 @@ def create_web_deepagent(
             doc_title=doc_title,
             has_existing_content=_has_existing_content(initial_web_doc, HOME_PAGE_ID),
             brand_card=tools.brand_card_text,
+            review_cap=WEB_REVIEW_DELEGATION_CAP,
             account_card=tools.account_card_text,
         ),
         subagents=subagents,
+        # G4: the review budget rides as ordinary tool-call middleware on the ORCHESTRATOR,
+        # which is where `task` executes. Fresh per turn, so its counter cannot leak.
+        middleware=[WebReviewDelegationCap(record=tools.record)],
         name="lumen-web-deepagent",
         checkpointer=checkpointer,
     )

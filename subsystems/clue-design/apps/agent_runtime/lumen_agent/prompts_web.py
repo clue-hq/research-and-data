@@ -15,8 +15,15 @@ def build_web_orchestrator_prompt(
     doc_title: str,
     has_existing_content: bool,
     brand_card: str,
+    review_cap: int,
     account_card: str | None = None,
 ) -> str:
+    """The director's prompt.
+
+    ``review_cap`` is passed in rather than read here: the harness OWNS the budget (it is
+    the thing that actually refuses the delegation), and the prompt must never be able to
+    promise a different number than the runtime enforces.
+    """
     starting_state = (
         "The document already has content; treat the turn as an edit of the "
         "live page unless the brief clearly asks for a rebuild."
@@ -45,8 +52,16 @@ Account rules (binding):
     )
     return f"""You direct a website-building turn for the document "{doc_title}".
 You do not author markup yourself — you delegate, verify with your own eyes,
-and decide when the page is genuinely done. There is no script above you and
-no fixed number of rounds.
+and decide when the page is genuinely done.
+
+FINISH IN THE FEWEST ROUNDS THAT PRODUCE A GOOD PAGE. A user is waiting on this
+turn; every extra author or review round costs them minutes. A simple landing
+page should take ONE author pass and one, at most two, review rounds. Plan for
+that shape from the start: a thorough brief up front is worth three repair
+rounds later. You have a HARD BUDGET of {review_cap} `lumen-web-reviewer`
+delegations for this whole turn — past it the runtime refuses the delegation and
+you must finalize from the critique you already hold, so spend them deliberately
+and expect to use far fewer.
 
 {starting_state}
 
@@ -90,8 +105,10 @@ OPERATING SHAPE
    could only belong to this brand). Blocking issues go back to the author
    as a scoped repair brief (name the section ids and the exact fixes);
    advisory notes are yours to judge.
-6. Repeat render → review only while it earns real improvement. If two
-   consecutive rounds change nothing material, stop and ship what is best.
+6. Repeat render → review ONLY for a blocking issue you cannot judge yourself.
+   A cosmetic-only repair (spacing, a word, a token swap) is verified by your
+   own eyes on the re-render — never spend a review round on it. If a round
+   changes nothing material, stop and ship the best state you have.
 7. Finish with `finalize_web_run(outcome, summary, ladder_gap?)`: `accepted`
    when the page meets the ship bar, `completed_with_warnings` when advisory
    issues remain, `failed` only when you could not produce a usable page at
@@ -126,8 +143,11 @@ DISCIPLINE
   judged — reuse the standing critique; re-viewing or re-delegating a review
   of identical pixels is zero-information waste.
 - Keep repair briefs scoped — name sections, do not re-commission the page
-  for a spacing fix. Render → review only while it earns real improvement;
-  two rounds with nothing material means ship the best state now.
+  for a spacing fix. Send ALL of a round's fixes to the author in ONE brief;
+  drip-feeding them costs a full round each.
+- Advisory notes are yours to judge and are usually shipped, not fixed: they
+  belong in your finalize summary as `completed_with_warnings`, not in another
+  author/review round. Only a blocking issue earns a round.
 """
 
 
@@ -271,4 +291,9 @@ Classify honestly: blocking (overflow, unreadable contrast, broken images,
 dead or missing primary CTA, unusable phone header) versus advisory. Never
 report an issue you cannot point to in a screenshot; never pass a width you
 did not open.
+Classification decides the user's wait, so be strict about it: BLOCKING means
+the page cannot ship as it is. An advisory is a note for the director's final
+summary, not a request for another author/review round — a taste preference, a
+nicer-if variant, or a polish idea is advisory. Say everything you have in ONE
+critique; there may be no next round to say it in.
 """
