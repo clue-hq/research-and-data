@@ -171,3 +171,13 @@ layout at all.
 - Launch recipes (`/tmp/slice0-relaunch-8010.sh`, `/tmp/slice15_fleet_worker.sh`)
   need **no** change: the fix is not env-driven in dev. They do now depend on
   `apps/editor` being `npm install`ed, which this workspace already is.
+- **No restart needed for the running fleet worker** — the runtime path is read
+  at call time and the first search-path hop now exists on disk. The **design
+  editor at :3000 does** need one: Next wires the static `public/` middleware at
+  boot and that directory did not exist when the running server started, so it
+  still 404s on `/vendor/tailwind-browser.js` (its `predev` now regenerates it).
+- `pytest apps/api/tests` has **16 standing reds in this checkout**, all from a
+  missing `apps/custom-component-compiler/node_modules` (compile → 503). Proven
+  identical at the parent commit in a throwaway worktree. Unrelated to G7 but
+  the same species of fault — an npm artifact nothing declares or installs — and
+  it means the design API suite is not a clean gate here. Wants an owner.
