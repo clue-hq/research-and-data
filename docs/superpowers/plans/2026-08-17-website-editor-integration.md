@@ -318,9 +318,11 @@ One task per schema, same TDD adapter pattern as W3 (hydrate fixture → failing
 
 ## Phase W5 — Acceptance audit
 
-- [ ] **W5.1 Contract audit:** walk all 42 items against the running app in the browser; produce `docs/specs/website-editor-integration/acceptance-record.md` (item → observed state → pass/fail), fixing fails before recording.
-- [ ] **W5.2 Visual parity pass:** side-by-side against the dummy build + reference PNGs for every schema and chrome state; founder review.
-- [ ] **W5.3 Gates:** `apps/frontend` npm gate + root `make check` green; `_memory/` close-out note; final commit.
+- [x] **W5.1 Contract audit:** walk all 42 items against the running app in the browser; produce `docs/specs/website-editor-integration/acceptance-record.md` (item → observed state → pass/fail), fixing fails before recording. **DONE 2026-08-19 — 41/41 substantive PASS.** One defect surfaced and fixed before recording (`15d7a6c8`: §5 fallback kinds — embeds/components — now render Layout-only via the mapper's `layoutOnly` flag, which the view had never consumed).
+- [x] **W5.2 Visual parity pass:** side-by-side against the dummy build + reference PNGs for every schema and chrome state; founder review. **FOUNDER-WAIVED 2026-08-19** (extensive personal manual testing; "nothing broke visual parity drastically"). The completed comparison pass (13 states vs reference PNGs + a live dummy-HEAD baseline) is registered in the acceptance record: 11/13 parity, reference-PNG set found stale (3 apparent diffs are reference staleness), findings D1–D4 registered as founder-waived polish candidates (D1 — the color popover overflows the viewport with no scroll — is functional, flagged for a ruling).
+- [x] **W5.3 Gates:** `apps/frontend` npm gate + root `make check` green; `_memory/` close-out note; final commit. **DONE 2026-08-19** — frontend design-system:build/test 772-772/lint/build all green; `make check` carries only the 5 pre-existing reds recorded at the Part-III merge (other lanes'; zero backend paths in W0–W5's range).
+
+**Phase W5 complete 2026-08-19 — awaiting founder sign-off on the acceptance record.**
 
 **Done means:** a marketer opens a web artifact in the platform shell, sees the co-founder's exact UI, edits text/image/button/container/section/canvas properties that persist through the real engine, and everything the contract says is inert/hidden/invisible behaves exactly that way.
 
