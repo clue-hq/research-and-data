@@ -1,5 +1,29 @@
 # Chat-Driven Website Generation — Ratified Plan (the generation mount)
 
+> **STATUS 2026-08-19 — BUILT AND WALKED; COMPLETE pending founder sign-off and ONE
+> blocker.** Every slice landed on `integration/frontend-design-part-iv-v2`: slice 0
+> (enablement preflight), slice 1 (web-turn dispatch + the 7500px preview ceiling), slice
+> 1.5 (the founder-rulings wave — G1 finalized-document gate, G2 account_card freeze, G4
+> reviewer cap 6 + honest "5–15 minutes" wording), slice 2 (document birth at leg-open,
+> `open_design_leg@2`, prompt v5 / profile v37 / Recipe #0, the brand stamp read back as
+> the leg pin), slice 3 (the visible loop — leg frames, feed refresh, canvas reload, all 8
+> founder acceptance requirements live-verified), plus the G-waves that unblocked it: G5
+> (many-image 2000px clamp), G6 (terra/luna latency benchmark — 3.25/10.0 min at n=2),
+> G7 (the gitignored Tailwind runtime — pages LAY OUT again and the reviewer can finally
+> see), G9 (leg web turns carry the delegation brief + history) and the author(4)/
+> reviewer(6) delegation caps. Slice 4's acceptance walk (evidence:
+> `_memory/2026-08-19-genweb-slice4-acceptance.md`) proved the loop end to end — ask → leg
+> opens → document born → page generated **with layout** → "make the hero darker" lands →
+> inspector hand-edit interleaves → brand-themed generation resolves the approved kit in
+> engine, visual and inspector — and the two brand counter-walks. **The one step that could
+> NOT be exercised: "lock it in" does not close the leg.** `build_design_leg_exit_judge`
+> builds the judge with the DESIGN profile's `timeout_s: 120.0`, which the gateway refuses
+> (`GatewayConfig.timeout_s` default 30.0; 59 of the other 60 profiles use 30.0), so the
+> judge always raises and P3.6's fail-safe envelope turns every exit intent into CONTINUE.
+> First live exercise of a pre-existing defect; slice 4 shipped no code, so the fix (clamp
+> in the builder, or mint design profile v2) is the founder's call, and the walk's leg is
+> left OPEN so steps 8–10 can be re-run on it without redoing the walk.
+>
 > **For agentic workers:** REQUIRED SUB-SKILL: superpowers:subagent-driven-development,
 > task-by-task. **Process rule (founder, binding): Opus agents implement; the
 > orchestrating session reviews every diff INLINE itself — never via a reviewer
