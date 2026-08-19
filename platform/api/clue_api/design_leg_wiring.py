@@ -41,7 +41,7 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 from pydantic import JsonValue
@@ -76,6 +76,7 @@ from clue_db import ConnFactory, transaction
 from clue_design import legs as design_legs
 from clue_design import runs as design_runs
 from clue_design.documents import get_document
+from clue_design.enums import DesignRunKind
 from clue_design.envelopes import DesignTurnEnvelope
 from clue_design.errors import DesignNotFoundError
 from clue_design.exit_judgment import (
@@ -468,14 +469,37 @@ def _assistant_summary(run: dict[str, Any]) -> str:
 
     Derived from the run's terminal result — never invented. Part IV owns the rich rendering
     (the canvas preview, the proposal card); the durable message is the honest minimum.
+
+    The two turn kinds carry their reason under different keys, so the text is derived per
+    kind: a scene turn's ``stop_reason`` (the reviewer's verdict), a web turn's ``summary``
+    (the orchestrator's own note — the web result shape has no ``stop_reason``). A web turn
+    edits a durable artifact rather than proposing a scene, so its sentence names the
+    document it changed and the version it landed.
     """
 
     result = run.get("result") or {}
+    if str(result.get("doc_kind") or "") == "web":
+        return _web_turn_summary(run, result)
     status = str(result.get("status") or run.get("status") or "unknown")
     reason = result.get("stop_reason")
     if isinstance(reason, str) and reason.strip():
         return f"Design turn {status}: {reason.strip()}"
     return f"Design turn {status}."
+
+
+def _web_turn_summary(run: dict[str, Any], result: dict[str, Any]) -> str:
+    """The web half of :func:`_assistant_summary` — names the artifact, invents nothing."""
+
+    status = str(result.get("status") or run.get("status") or "unknown")
+    document_id = run.get("document_id")
+    subject = f"website document {document_id}" if document_id else "the website document"
+    version = result.get("current_version")
+    if isinstance(version, int):
+        subject = f"{subject} (now version {version})"
+    note = result.get("summary")
+    if isinstance(note, str) and note.strip():
+        return f"Design turn {status} on {subject}: {note.strip()}"
+    return f"Design turn {status} on {subject}."
 
 
 class DesignLegTurnRunner:
@@ -538,15 +562,16 @@ class DesignLegTurnRunner:
                 exclude_turn_id=turn_id,
             )
             bundle_ref = await self._bundle_ref(conn, leg=leg, workspace_id=workspace_id)
-            document_scene: dict[str, Any] = {}
+            # The whole row, not just its scene: the envelope branches on ``doc_kind`` and a
+            # web turn is defined against the document's CURRENT version (its CAS base).
+            pinned_document: dict[str, Any] | None = None
             if leg.get("document_id") is not None:
                 try:
-                    document = await get_document(
+                    pinned_document = await get_document(
                         conn,
                         workspace_id=workspace_id,
                         document_id=str(leg["document_id"]),
                     )
-                    document_scene = document.get("scene") or {}
                 except DesignNotFoundError:
                     # The pinned document vanished between delegation and this turn: dispatch
                     # with an empty scene and let the design runtime's own gates speak — a
@@ -727,7 +752,7 @@ class DesignLegTurnRunner:
                 execution_id=execution_id,
                 user_message_ref=user_message_ref,
                 prior_history=prior_history,
-                document_scene=document_scene,
+                pinned_document=pinned_document,
                 focus_refs=focus_refs,
                 workspace_id=workspace_id,
             )
@@ -1019,7 +1044,7 @@ class DesignLegTurnRunner:
         execution_id: ExecutionId,
         user_message_ref: ArtifactRef,
         prior_history: Sequence[HistoryMessageRef],
-        document_scene: dict[str, Any],
+        pinned_document: dict[str, Any] | None,
         focus_refs: tuple[DomainObjectRef, ...],
         workspace_id: str,
     ) -> dict[str, Any]:
@@ -1039,7 +1064,7 @@ class DesignLegTurnRunner:
             run_id=run_id,
             user_message_ref=user_message_ref,
             prior_history=prior_history,
-            document_scene=document_scene,
+            pinned_document=pinned_document,
             focus_refs=focus_refs,
             workspace_id=workspace_id,
         )
@@ -1054,6 +1079,9 @@ class DesignLegTurnRunner:
                     workspace_id=workspace_id,
                     run_id=run_id,
                     document_id=leg.get("document_id"),
+                    # The row's kind mirrors the envelope's discriminant (the fleet dispatches
+                    # on the envelope; the column is what an operator and the projections read).
+                    kind=DesignRunKind(envelope.kind),
                     # The row payload IS the frozen envelope — the design substrate's
                     # re-offer contract (the reaper re-enqueues the row's own payload
                     # verbatim), so a stranded leg run replays as a valid design_job and
@@ -1080,7 +1108,7 @@ class DesignLegTurnRunner:
         run_id: str,
         user_message_ref: ArtifactRef,
         prior_history: Sequence[HistoryMessageRef],
-        document_scene: dict[str, Any],
+        pinned_document: dict[str, Any] | None,
         focus_refs: tuple[DomainObjectRef, ...],
         workspace_id: str,
     ) -> DesignTurnEnvelope:
@@ -1094,20 +1122,44 @@ class DesignLegTurnRunner:
                     "text": (await self._artifacts.read(item.body_ref)).decode(),
                 }
             )
+        document = pinned_document or {}
+        # B1: the leg document's kind decides which design runtime executes the turn. A web
+        # document takes the ``web_turn`` path with a ``WebTurnRequest``-shaped request; a
+        # scene document (or no pinned document at all — nothing to read a kind from) keeps
+        # the shipped ``agent_turn`` request byte-for-byte.
+        kind: Literal["agent_turn", "web_turn"] = (
+            "web_turn" if document.get("doc_kind") == "web" else "agent_turn"
+        )
+        request: dict[str, JsonValue]
+        if kind == "web_turn":
+            request = {
+                "prompt": message_text,
+                # Read once, HERE, because the envelope is frozen as the run row's payload and
+                # a re-offer replays it verbatim. The executor's CAS re-check against the
+                # stored document stays the authority on staleness: a turn that lost the race
+                # comes back conflicted rather than clobbering a newer human edit.
+                "base_version": int(document.get("current_version") or 0),
+                # v1 (plan F4): no scoped targets, no model override, no account — the design
+                # request model defaults each of them, and a fabricated value here would be a
+                # platform guess. ``previous_turn_outcome`` has no WebTurnRequest field at all;
+                # the clarification echo is a scene-path contract.
+            }
+        else:
+            request = {
+                "prompt": message_text,
+                "scene": document.get("scene") or {},
+                "document_id": leg.get("document_id"),
+                "previous_turn_outcome": submission.previous_turn_outcome,
+            }
         return DesignTurnEnvelope(
-            kind="agent_turn",
+            kind=kind,
             work_id=design_runs.work_id_for_run(run_id),
             workspace_id=workspace_id,
             run_id=run_id,
             checkpoint_thread_id=run_id,
             document_id=leg.get("document_id"),
             config={
-                "request": {
-                    "prompt": message_text,
-                    "scene": document_scene,
-                    "document_id": leg.get("document_id"),
-                    "previous_turn_outcome": submission.previous_turn_outcome,
-                },
+                "request": request,
                 "delegation_bundle": bundle,
                 "history": history_texts,
                 "leg": {
