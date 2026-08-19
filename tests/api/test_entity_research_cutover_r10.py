@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import inspect
 import json
 import re
@@ -14,6 +15,7 @@ from uuid import UUID, uuid4
 import pytest
 
 from clue_agents.account_entity_research import DiscoverBuyingCommitteeInput
+from clue_api import account_entity_research_composition as composition
 from clue_api.entity_research_fleet_composition import (
     EntityResearchSubjectResolver,
     SubjectNeutralEntityResearchWorkHandler,
@@ -194,10 +196,26 @@ def test_promoted_deep_field_pack_names_the_real_exa_deep_source() -> None:
     )
 
 
+#: The steering bundle the production resolver actually composes. These assertions guarded the
+#: live prompt until the v1→v2 bump left them pointing at a frozen historical directory, where
+#: they could no longer catch a regression; they now follow the live version.
+_ACCOUNT_STEERING_ROOT = _ROOT / "platform/agents/catalog/entity-research/account/v3"
+
+
+def _steering_text(name: str) -> str:
+    """Read one live steering resource with its hard wrapping flattened.
+
+    The bodies are hand-wrapped prose, so a sentence the agent reads as one instruction can hold a
+    newline anywhere. Asserting on the raw text made these guards depend on the wrap column — the
+    finalization guard silently stopped matching the moment v2 rewrapped it.
+    """
+
+    return " ".join((_ACCOUNT_STEERING_ROOT / name).read_text().split())
+
+
 def test_account_agent_parallel_provider_instructions_require_disjoint_fields() -> None:
-    resource_root = _ROOT / "platform/agents/catalog/entity-research/account/v1"
-    prompt = (resource_root / "prompt.md").read_text()
-    skill = (resource_root / "skill.md").read_text()
+    prompt = _steering_text("prompt.md")
+    skill = _steering_text("skill.md")
 
     assert "no field may appear in both calls" in prompt
     assert "Parallel provider calls must own disjoint fields" in skill
@@ -205,9 +223,8 @@ def test_account_agent_parallel_provider_instructions_require_disjoint_fields() 
 
 
 def test_account_agent_committee_and_finalization_instructions_are_machine_visible() -> None:
-    resource_root = _ROOT / "platform/agents/catalog/entity-research/account/v1"
-    prompt = (resource_root / "prompt.md").read_text()
-    skill = (resource_root / "skill.md").read_text()
+    prompt = _steering_text("prompt.md")
+    skill = _steering_text("skill.md")
     properties = DiscoverBuyingCommitteeInput.model_json_schema()["properties"]
 
     assert properties["field_keys"]["maxItems"] == 0
@@ -240,3 +257,83 @@ def test_live_canary_uses_the_accepted_fifty_result_exa_contract() -> None:
     # Contact side: the durable selection policy already caps at the accepted 50
     # (clue_core.contact_research); the harness must never clamp it back down.
     assert "min(target.exa_max_results" not in source
+
+
+#: Every tool the production account surface can bind, plus the facet tool the runtime admits when
+#: delegation is enabled. The operations manual must speak about all of them by name.
+_ACCOUNT_MANUAL_TOOLS = (
+    "read_account_research_state",
+    "research_account_deep",
+    "enrich_account",
+    "inspect_account_evidence",
+    "discover_buying_committee",
+    "record_committee_role_inferences",
+    "assess_account_coverage",
+    "read_research_result",
+    "read_evidence",
+    "finalize_account_research",
+    "delegate_account_facet",
+)
+
+#: The refusal codes and engine refusal texts the live run actually produced. The manual exists so
+#: the agent's next move after each of them is stated, not improvised.
+_ACCOUNT_MANUAL_REFUSALS = (
+    "provider_terminally_unproductive",
+    "provider_rejected",
+    "provider_spend_unreconciled",
+    "engine_authority_rejection",
+    "reference_type_rejected",
+    "request_authority_violation",
+    "research_request_shape_rejected",
+    "identical_read_loop",
+    "empty_model_turn",
+    "parallel_round_shape_rejected",
+    "finalization_already_proposed",
+)
+
+
+def test_account_operations_manual_covers_every_tool_and_live_refusal() -> None:
+    manual = _steering_text("manual.md")
+
+    for tool_name in _ACCOUNT_MANUAL_TOOLS:
+        assert f"## {tool_name}" in manual, tool_name
+    for code in _ACCOUNT_MANUAL_REFUSALS:
+        assert code in manual, code
+    # The settlement contract and the loop rule are the manual's two global obligations.
+    assert "exhausted" in manual
+    assert "honest gap" in manual
+    assert "Never send an identical call after a refusal." in manual
+    # Reference shapes the live run got wrong.
+    assert "research-result:<uuid>" in manual
+    assert "research-evidence:<uuid>" in manual
+    assert "account-coverage:<uuid>" in manual
+    assert "sumble-account-operation" in manual
+    # The prompt must point at the manual, or it is inert context.
+    assert "account tool operations manual" in _steering_text("prompt.md")
+
+
+def test_account_steering_version_moves_without_repinning_the_authorization_profile() -> None:
+    """Steering may evolve under already-launched jobs; the authorization pin may not.
+
+    ``AccountResearchDefinitionResolver.resolve`` refuses any job whose authorization names
+    another profile ref, and every launched job carries its ref at rest — so the profile pin is
+    bumped only for a genuine role-identity change, while prompt/skill/manual (replay-pinned by
+    the R3 journal, not by the authorization) carry the version of the day.
+    """
+
+    assert composition.ACCOUNT_RESEARCH_PROFILE_REF == "agent-profile:account-research:v2"
+    assert composition._ACCOUNT_PROFILE_VERSION == "v2"
+    assert composition._ACCOUNT_STEERING_VERSION == "v3"
+    assert composition._ACCOUNT_PROMPT_REF == "agent-prompt:account-research:v3"
+    assert composition._ACCOUNT_SKILL_REF == "agent-skill:governed-account-research:v3"
+    assert composition._ACCOUNT_MANUAL_REF == "agent-skill:account-tool-operations-manual:v3"
+    profile_root = _ROOT / "platform/agents/catalog/entity-research/account/v2"
+    expected_sha = hashlib.sha256((profile_root / "profile.md").read_bytes()).hexdigest()
+    assert composition.account_research_profile_sha256() == expected_sha
+    # Historical steering stays frozen and self-contained; the live root carries the manual.
+    for version in ("v1", "v2"):
+        historical = _ROOT / "platform/agents/catalog/entity-research/account" / version
+        assert (historical / "prompt.md").exists()
+        assert not (historical / "manual.md").exists()
+    assert (_ACCOUNT_STEERING_ROOT / "manual.md").exists()
+    assert not (_ACCOUNT_STEERING_ROOT / "profile.md").exists()

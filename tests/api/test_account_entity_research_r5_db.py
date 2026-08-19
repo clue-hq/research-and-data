@@ -1145,6 +1145,26 @@ def test_r5_account_agent_observes_results_decides_and_finalizes_without_contact
                 conn_factory=connection,
             )
             definition = await resolver.resolve(job=live_job, fence=fence)
+            # The steering bundle the mind is actually built from: the authorization-pinned
+            # profile stays v2 (every launched job carries that ref at rest), while the prompt and
+            # both skills — the decision rubric and the tool operations manual — are the live v3
+            # steering. The manual must reach the resolved system prompt, not just the catalog.
+            resources = definition.context.resources
+            assert (resources.profile.ref, resources.profile.version) == (
+                "agent-profile:account-research:v2",
+                "v2",
+            )
+            assert resources.profile.sha256 == authorization.agent_profile_sha256
+            assert (resources.prompt.ref, resources.prompt.version) == (
+                "agent-prompt:account-research:v3",
+                "v3",
+            )
+            assert tuple((skill.ref, skill.version) for skill in resources.skills) == (
+                ("agent-skill:governed-account-research:v3", "v3"),
+                ("agent-skill:account-tool-operations-manual:v3", "v3"),
+            )
+            manual = " ".join(resources.skills[1].body.split())
+            assert "Never send an identical call after a refusal." in manual
             # The confirmed committee plan reaches the agent before its first tool choice.
             assert directive.directive_ref in definition.task_instruction
             assert "- functions: Operations" in definition.task_instruction

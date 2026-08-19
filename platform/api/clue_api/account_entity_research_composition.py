@@ -43,9 +43,21 @@ from clue_db import ConnFactory, transaction
 from clue_fleet.entity_research import EntityResearchExecutionFence, EntityResearchJobRow
 
 _TURN_NAMESPACE = uuid5(NAMESPACE_URL, "clue:m8d:r5:account-agent-turn")
-_ACCOUNT_PROFILE_REF = "agent-profile:account-research:v2"
-_ACCOUNT_PROMPT_REF = "agent-prompt:account-research:v2"
-_ACCOUNT_SKILL_REF = "agent-skill:governed-account-research:v2"
+#: The profile is the resource a launch durably pins into `EntityResearchJobAuthorization`
+#: (`agent_profile_ref` + `agent_profile_sha256`), and `resolve` refuses any job whose
+#: authorization names a different one. Its body is unchanged since v2, so its pin stays v2: a ref
+#: bump here would strand every already-launched job (they carry the v2 ref at rest) and is
+#: warranted only when the role identity itself changes.
+_ACCOUNT_PROFILE_VERSION = "v2"
+_ACCOUNT_PROFILE_REF = f"agent-profile:account-research:{_ACCOUNT_PROFILE_VERSION}"
+#: Steering content (prompt + skills) is *not* authorization-pinned — it is pinned for replay by
+#: the R3 journal's `system_prompt_sha256`/`resource_manifest_sha256`, and the turn key carries the
+#: task attempt, so a resumed job legitimately re-drives under newer steering. v3 adds the account
+#: tool operations manual (the Tier-1 static failure playbook) alongside the v2 prompt/skill.
+_ACCOUNT_STEERING_VERSION = "v3"
+_ACCOUNT_PROMPT_REF = f"agent-prompt:account-research:{_ACCOUNT_STEERING_VERSION}"
+_ACCOUNT_SKILL_REF = f"agent-skill:governed-account-research:{_ACCOUNT_STEERING_VERSION}"
+_ACCOUNT_MANUAL_REF = f"agent-skill:account-tool-operations-manual:{_ACCOUNT_STEERING_VERSION}"
 _ACCOUNT_TOOL_NAMES = (
     "read_account_research_state",
     "research_account_deep",
@@ -132,6 +144,7 @@ class AccountResearchDefinitionResolver(EntityResearchDefinitionResolver):
         model_policy: ModelPolicy,
         conn_factory: ConnFactory = transaction,
         catalog_root: Path | None = None,
+        profile_catalog_root: Path | None = None,
         require_atomic_admission: bool = False,
         enforce_budget: bool = True,
     ) -> None:
@@ -140,9 +153,8 @@ class AccountResearchDefinitionResolver(EntityResearchDefinitionResolver):
         self._provider_actions = provider_actions
         self._model_policy = model_policy
         self._conn_factory = conn_factory
-        self._catalog_root = catalog_root or (
-            Path(__file__).parents[2] / "agents" / "catalog" / "entity-research" / "account" / "v2"
-        )
+        self._catalog_root = catalog_root or _account_catalog_root()
+        self._profile_root = profile_catalog_root or _account_catalog_root(_ACCOUNT_PROFILE_VERSION)
         self._require_atomic_admission = require_atomic_admission
         self._enforce_budget = enforce_budget
 
@@ -287,31 +299,52 @@ class AccountResearchDefinitionResolver(EntityResearchDefinitionResolver):
         )
 
     def _resources(self) -> EntityResearchResourceBundle:
-        def resource(kind: str, ref: str, name: str) -> EntityResearchResource:
-            body = (self._catalog_root / name).read_text(encoding="utf-8")
+        def resource(kind: str, ref: str, version: str, path: Path) -> EntityResearchResource:
+            body = path.read_text(encoding="utf-8")
             return EntityResearchResource(
                 kind=kind,  # type: ignore[arg-type]
                 ref=ref,
-                version="v2",
+                version=version,
                 sha256=hashlib.sha256(body.encode()).hexdigest(),
                 body=body,
             )
 
+        def steering(kind: str, ref: str, name: str) -> EntityResearchResource:
+            return resource(kind, ref, _ACCOUNT_STEERING_VERSION, self._catalog_root / name)
+
         return EntityResearchResourceBundle(
-            profile=resource("profile", _ACCOUNT_PROFILE_REF, "profile.md"),
-            prompt=resource("prompt", _ACCOUNT_PROMPT_REF, "prompt.md"),
-            skills=(resource("skill", _ACCOUNT_SKILL_REF, "skill.md"),),
+            profile=resource(
+                "profile",
+                _ACCOUNT_PROFILE_REF,
+                _ACCOUNT_PROFILE_VERSION,
+                self._profile_root / "profile.md",
+            ),
+            prompt=steering("prompt", _ACCOUNT_PROMPT_REF, "prompt.md"),
+            skills=(
+                steering("skill", _ACCOUNT_SKILL_REF, "skill.md"),
+                steering("skill", _ACCOUNT_MANUAL_REF, "manual.md"),
+            ),
         )
 
 
-def account_research_profile_sha256(catalog_root: Path | None = None) -> str:
-    root = catalog_root or (
-        Path(__file__).parents[2] / "agents" / "catalog" / "entity-research" / "account" / "v2"
+def _account_catalog_root(version: str = _ACCOUNT_STEERING_VERSION) -> Path:
+    return (
+        Path(__file__).parents[2] / "agents" / "catalog" / "entity-research" / "account" / version
     )
+
+
+def account_research_profile_sha256(catalog_root: Path | None = None) -> str:
+    root = catalog_root or _account_catalog_root(_ACCOUNT_PROFILE_VERSION)
     return hashlib.sha256((root / "profile.md").read_bytes()).hexdigest()
 
 
+#: The one profile reference a launch may stamp into a job authorization. The launcher and this
+#: resolver must never disagree about it — ``resolve`` refuses a job whose authorization names any
+#: other profile — so both read this constant.
+ACCOUNT_RESEARCH_PROFILE_REF = _ACCOUNT_PROFILE_REF
+
 __all__ = [
+    "ACCOUNT_RESEARCH_PROFILE_REF",
     "AccountResearchCompositionError",
     "AccountResearchDefinitionResolver",
     "AccountResearchProviderActionResolver",

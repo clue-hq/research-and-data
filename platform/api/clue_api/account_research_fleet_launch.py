@@ -11,7 +11,10 @@ from uuid import NAMESPACE_URL, UUID, uuid5
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy import text
 
-from clue_api.account_entity_research_composition import account_research_profile_sha256
+from clue_api.account_entity_research_composition import (
+    ACCOUNT_RESEARCH_PROFILE_REF,
+    account_research_profile_sha256,
+)
 from clue_api.account_research_discovery_readiness import (
     AccountResearchDiscoveryNotReady,
     require_sealed_account_discovery,
@@ -688,7 +691,7 @@ class AccountResearchFleetLauncher:
                     product_id=project_run.product_id,
                     project_run_id=request.project_run_id,
                     selection=selection,
-                    agent_profile_ref="agent-profile:account-research:v2",
+                    agent_profile_ref=ACCOUNT_RESEARCH_PROFILE_REF,
                     agent_profile_sha256=profile_sha,
                     checkpoint_thread_id=f"entity-research:{job_id}",
                     attempt_id=uuid5(_ATTEMPT_NAMESPACE, str(job_id)),
