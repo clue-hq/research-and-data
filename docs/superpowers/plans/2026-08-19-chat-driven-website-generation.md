@@ -222,6 +222,25 @@ carry web work, then makes the frontend show what the leg already emits.
   document changes, the transcript carries the reply.
 - Commit: `feat(genweb): design legs dispatch web turns for web documents (B1)`.
 
+> **Slice 1 OUTCOME (2026-08-19): DONE, live-verified** (commits `79dac699` +
+> `a27440fa`; record `_memory/2026-08-19-genweb-slice1-web-turn-dispatch.md`). A chat
+> message on a leg pinned to a web document now runs the WEB agent end to end: run
+> `run_96cbbc52…` (`kind=web_turn`), the slice-0 doc v1→v2, transcript summary naming
+> the artifact; a lost CAS race fails the turn honestly (pinned by test). The ceiling
+> fix landed as a 7500px long-side clamp (LANCZOS down / NEAREST up, band-tested), and
+> non-applied web turns now always carry their reason as a real `diagnostics` entry.
+> **Recorded for later slices:** (a) the leg path has NO draft/published gate — the
+> design API's own web-turn route calls `require_draft_document`, the leg dispatch does
+> not (pre-existing for scene, inherited by web; policy decision pending); (b) the leg
+> web envelope carries no `account_card`, so chat turns on account-stamped derived docs
+> run un-personalized (v1 scope per F4 — name it before personalization enters chat);
+> (c) downscale-not-tile: the reviewer judges long pages at reduced scale — tiling is
+> the follow-up if review quality degrades; (d) a real generation took ~13 min when the
+> reviewer looped once — slice 3's refresh-on-completion must not assume ~6 min; (e) the
+> platform FLEET worker is where the design turn actually executes (InlineDesignLane),
+> so it needs the full `LUMEN_AGENT_*`/`LUMEN_CORE_HELPER` env and must NOT inherit the
+> design API's `CLUE_STORAGE_FS_ROOT` (launch traps recorded in the slice-1 memory note).
+
 ### Slice 2 — document birth at leg-open + the versioning wave (backend; B2, B4, F5)
 - `open_design_leg@2`: `doc_kind: "web" | "scene" | None` (required when
   `document_id is None`; refuse `scene` creation in v1 — scene legs keep requiring an
