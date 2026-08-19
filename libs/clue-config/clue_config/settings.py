@@ -315,7 +315,7 @@ class Settings(BaseSettings):
     # One process-wide provider permit policy is shared by account/contact jobs. Exact per-run and
     # per-job concurrency limits are still enforced separately by the R2/R9 substrate.
     # Env: ``CLUE_ENTITY_RESEARCH_PROVIDER_CONCURRENCY_LIMIT``.
-    entity_research_provider_concurrency_limit: int = Field(default=10, ge=1, le=1024)
+    entity_research_provider_concurrency_limit: int = Field(default=30, ge=1, le=1024)
     # R5 structured Sumble actions retain the S1 per-request credit cap in addition to monetary
     # admission. The compiler still raises when a selected field set has a larger documented
     # bounded maximum. Env: ``CLUE_ENTITY_RESEARCH_SUMBLE_PROVIDER_CREDIT_CAP``.

@@ -138,7 +138,7 @@ def test_r10_runtime_is_independently_default_off_and_composition_does_no_eager_
     settings = Settings(_env_file=None)
     assert not settings.entity_research_runtime_enabled
     assert settings.entity_research_unpriced_reservation_cents > 0
-    assert settings.entity_research_provider_concurrency_limit == 10
+    assert settings.entity_research_provider_concurrency_limit == 30
     assert (
         build_production_entity_research_fleet(
             settings=settings,
