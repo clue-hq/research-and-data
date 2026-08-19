@@ -504,3 +504,21 @@ all nine tests in `tests/stage0/test_phase_c4_governed.py` and
 `tests/api/test_stage0_project_tools_db.py`, including a 0%-coverage API case that remains refused
 for missing product/client scope but no longer reports the coverage reason. Ruff passed for the
 changed policy/tests, mypy passed for `clue_config/stage0.py`, and `git diff --check` passed.
+
+The live Missoula API/fleet were then restarted against their preserved database/artifact pairing:
+PostgreSQL `clue` plus `/private/tmp/clue-combined-browser-20260817-m1`. Frontend `3115`, the
+existing browser tab/session, and Tunis fleet PID `16459` were not restarted or changed. The typed
+Aura proof answer survived the restart and was submitted in the same thread. The application
+recorded readiness decision `48f0257c-953d-55a9-a799-ae478b90a69d` as `ready` under readiness spec
+v2 with the same trusted coverage ratio `0.5555555555555556` and an empty reason-code list; the
+preceding v1 decision `41945544-d25e-50b1-9ea4-bd469408d714` had the identical coverage ratio but
+was `not_ready` solely for `coverage_below_floor`. Durable spec rows prove that only the requested
+gate changed: `icp_synthesis` 0.75 -> 0.0, while `discovery_spend` remains 0.25 and `deep_spend`
+remains 0.5.
+
+The same turn synthesized ICP `us_ambulatory_documentation_heavy_clinician_orgs` v1 and opened
+human confirmation gate `agent-gate:116d42d7-2105-5f87-93f8-6381842fc81f`. No discovery, Account
+research, committee research, or provider spend was launched. Browser evidence is retained as
+screenshots `17-zero-floor-proof-answer-ready.png`, `18-proof-answer-submitted.png`,
+`19-zero-floor-icp-synthesis-running.png`, and `21-icp-approval-card.png` under
+`.context/live-browser-20260819/`; `21` is the clearest ready-decision plus human-gate proof.
