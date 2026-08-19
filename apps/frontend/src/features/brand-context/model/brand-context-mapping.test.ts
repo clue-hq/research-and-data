@@ -13,6 +13,30 @@ import {
 } from "./brand-context-mapping";
 import { BrandKitDetailSchema } from "./brand-kit";
 
+/** A minimal, valid `BrandBrief@1` — the shape the ingestion agent writes. */
+const BRIEF_FIXTURE = {
+  background_rhythm: { bands: [], confidence: "high" },
+  characterization: {
+    confidence: "high",
+    support: "Violet CTAs on a white canvas.",
+    words: ["expansive", "polished"],
+  },
+  chromatic_moment: {
+    confidence: "high",
+    element: "the primary CTA",
+    quiet: false,
+    token: "surface.brand",
+  },
+  component_recipes: [],
+  constraints: [],
+  diagnostics: [],
+  imagery_posture: { absences: [], confidence: "low", slots: [] },
+  palette_application: [],
+  schema_version: 1,
+  signature_compositions: [],
+  typographic_posture: { confidence: "low", signature_moves: [], tokens: [] },
+};
+
 const kit = BrandKitDetailSchema.parse(HARVESTED_BRAND_KIT);
 const workspace = toBrandContextWorkspace(kit);
 const workspaceWithAssets = toBrandContextWorkspace(kit, {
@@ -399,8 +423,56 @@ test("no kit models a gradient, so no asset claims to be one", () => {
   );
 });
 
-test("brand knowledge is honestly empty — the kit has no documents", () => {
+test("a briefless kit shows an honestly empty knowledge tree", () => {
+  // The harvested Stripe kit predates the brief — no folder, and no placeholder
+  // Design.md claiming this brand has no design rules.
   assert.deepEqual(workspaceWithAssets.knowledgeFolders, []);
+});
+
+test("a kit carrying a brief serves it as design/Design.md", () => {
+  const withBrief = toBrandContextWorkspace(
+    BrandKitDetailSchema.parse({
+      ...HARVESTED_BRAND_KIT,
+      brand_kit: {
+        ...(HARVESTED_BRAND_KIT as { brand_kit: Record<string, unknown> }).brand_kit,
+        approval_status: "approved",
+      },
+      brand_kit_json: {
+        ...(HARVESTED_BRAND_KIT as { brand_kit_json: Record<string, unknown> })
+          .brand_kit_json,
+        brief: BRIEF_FIXTURE,
+      },
+    }),
+  );
+
+  assert.deepEqual(
+    withBrief.knowledgeFolders.map((folder) => [folder.id, folder.label]),
+    [["design", "Design"]],
+  );
+  const document = withBrief.knowledgeFolders[0].documents[0];
+  assert.equal(document.path, "design/Design.md");
+  assert.equal(document.name, "Design.md");
+  // The content header carries the kit's identity, version and approval state.
+  assert.match(document.body, /version 1/);
+  assert.match(document.body, /Approved/);
+  assert.match(document.body, /## Characterization/);
+  assert.match(document.body, /surface\.brand/);
+  BrandContextWorkspaceSchema.parse(withBrief);
+});
+
+test("a brief in a shape this build cannot read is no brief, not a broken page", () => {
+  const mapped = toBrandContextWorkspace(
+    BrandKitDetailSchema.parse({
+      ...HARVESTED_BRAND_KIT,
+      brand_kit_json: {
+        ...(HARVESTED_BRAND_KIT as { brand_kit_json: Record<string, unknown> })
+          .brand_kit_json,
+        brief: { schema_version: 99, characterization: "who knows" },
+      },
+    }),
+  );
+  assert.deepEqual(mapped.knowledgeFolders, []);
+  assert.ok(mapped.colorGroups.length > 0);
 });
 
 test("every asset the kit references is collected for the registry read", () => {

@@ -1,13 +1,20 @@
 import type { z } from "zod";
+import {
+  DESIGN_BRIEF_DOCUMENT,
+  renderBrandBrief,
+  type BrandBrief,
+} from "./brand-brief";
 import type {
   BrandAsset,
   BrandAssetCategory,
   BrandColorGroupSchema,
   BrandColorSwatchSchema,
   BrandContextWorkspace,
+  BrandKnowledgeFolderSchema,
   BrandTextStyle,
   BrandTypeface,
 } from "./brand-context";
+import { approvalChip, toBrandKitMeta } from "./brand-kit-actions";
 import {
   DesignAssetRecordSchema,
   type BrandColorToken,
@@ -34,6 +41,7 @@ import {
 // keeps that file byte-untouched.
 type BrandColorGroup = z.infer<typeof BrandColorGroupSchema>;
 type BrandColorSwatch = z.infer<typeof BrandColorSwatchSchema>;
+type BrandKnowledgeFolder = z.infer<typeof BrandKnowledgeFolderSchema>;
 
 /** The mode selector the ingestion emitter writes its dark colorway under. */
 const DARK_MODE_SELECTOR = "theme.dark";
@@ -89,14 +97,61 @@ export function toBrandContextWorkspace(
     assets: toAssets(kit, options.assetRecords),
     colorGroups: toColorGroups(json.tokens?.colors),
     id: kit.brand_kit.id,
-    // Brand knowledge documents have no form in the kit (`constraints.tone` is
-    // a word list, not markdown) — honest empty in v1, recorded as future work
-    // in `docs/api-contracts/brand-context.md`.
-    knowledgeFolders: [],
+    knowledgeFolders: toKnowledgeFolders(kit),
     name: kit.brand_kit.name,
     textStyles: toTextStyles(json.tokens?.typography),
     typefaces: toTypefaces(json.assets?.fonts),
   };
+}
+
+/**
+ * The knowledge tree: `design/Design.md` when this kit version carries a brief,
+ * and nothing at all when it does not.
+ *
+ * A briefless kit — one ingested before the brief existed, or one whose brief
+ * the agent refused — shows the section's designed empty state. No placeholder
+ * file: an empty document called Design.md would read as "this brand has no
+ * design rules", which is a different (and false) claim from "we have not
+ * extracted them".
+ *
+ * The dummy's other folders (Company, Product, Audience, Proof, Memories) stay
+ * absent: nothing in the store fills them, and an empty folder is the honest
+ * report. They remain the future work `docs/api-contracts/brand-context.md`
+ * already records.
+ */
+function toKnowledgeFolders(kit: BrandKitDetail): BrandKnowledgeFolder[] {
+  const brief: BrandBrief | null | undefined = kit.brand_kit_json.brief;
+  if (!brief) return [];
+
+  const { markdown } = renderBrandBrief(brief, {
+    approvalLabel: approvalChip(toBrandKitMeta(kit))?.label ?? null,
+    brandKitId: kit.brand_kit.id,
+    brandName: kit.brand_kit.name,
+    version: kit.brand_kit.version,
+  });
+  const extractedAt = dateLabel(
+    kit.brand_kit.updated_at ?? kit.brand_kit.created_at ?? "",
+  );
+
+  return [
+    {
+      documents: [
+        {
+          body: markdown,
+          folderId: DESIGN_BRIEF_DOCUMENT.folderId,
+          id: DESIGN_BRIEF_DOCUMENT.documentId,
+          name: DESIGN_BRIEF_DOCUMENT.name,
+          path: DESIGN_BRIEF_DOCUMENT.path,
+          updatedLabel:
+            extractedAt === UNKNOWN
+              ? "Extracted with this kit version"
+              : `Extracted ${extractedAt}`,
+        },
+      ],
+      id: DESIGN_BRIEF_DOCUMENT.folderId,
+      label: DESIGN_BRIEF_DOCUMENT.folderLabel,
+    },
+  ];
 }
 
 type ColorTokens = Readonly<Record<string, BrandColorToken | null>>;

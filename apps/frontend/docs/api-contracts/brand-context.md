@@ -442,3 +442,66 @@ theme, and a document pinned to an older approved version stays pinned. Re-stamp
 document is future work and must be an explicit manual action with its own history/undo contract.
 `GET /documents/{id}/web/theme` simply resolves the exact reference already stored on that
 document and exposes those compiled tokens to the W4.0 color picker.
+
+---
+
+## Resolution (2026-08-20, design-brief slice 3) — the Knowledge section serves `design/Design.md`
+
+This section supersedes Slice 1's **"knowledgeFolders ← honest empty in v1"** note and future-work
+item 1, for the design brief only. Every other knowledge document remains unbuilt, and the
+proposed `/api/v1/brand-context/knowledge/*` endpoints remain proposals.
+
+### What changed on the backend
+
+Website ingestion now runs a design-brief stage and attaches its output to the kit payload:
+
+```jsonc
+// GET /brand-kits/{id} → brand_kit_json
+{
+  "id": "brand_kit_ing_…", "version": 3, "approval_status": "approved",
+  "tokens": { /* … */ }, "assets": { /* … */ },
+  "brief": {                       // BrandBrief@1 — absent on a briefless kit
+    "schema_version": 1,
+    "characterization": { "words": ["expansive", "polished", "technical"], "support": "…", "confidence": "high" },
+    "chromatic_moment": { "element": "…", "token": "surface.brand", "quiet": false, "confidence": "high" },
+    "signature_compositions": [{ "name": "…", "structure": "…", "strength": "STRONG", "confidence": "high" }],
+    "palette_application": [{ "token": "surface.brand", "scope": "accent-punctuation", "evidence": "…", "confidence": "high" }],
+    "background_rhythm": { "bands": [{ "index": 0, "token": "surface.page", "note": "…" }], "ratio_summary": "…", "differentiation": "chromatic", "confidence": "high" },
+    "typographic_posture": { "case_posture": "…", "scale_temperament": "stadium", "signature_moves": ["…"], "tokens": ["type.display"], "confidence": "high" },
+    "imagery_posture": { "diet": "product-ui-led", "slots": ["…"], "absences": ["…"], "confidence": "medium" },
+    "constraints": [{ "rule": "…", "scope": "buttons", "confidence": "high" }],
+    "component_recipes": [{ "component": "button", "variant": "primary", "radius": "radius.button", "background": "surface.brand", "text": "text.inverse", "unmapped": ["…"], "confidence": "high" }],
+    "diagnostics": [{ "observation": "…", "reason": "…" }]
+  }
+}
+```
+
+**No new endpoint.** The brief rides the brand-kit read the page already makes.
+
+### What the page does with it
+
+- `brand_kit_json.brief` → one knowledge folder **Design** holding one document
+  **`design/Design.md`**, addressable at the section's existing route vocabulary:
+  `/brand-context?section=knowledge&file=design%2FDesign.md&mode=preview`.
+- **The markdown is a projection, never a second source of truth.** `renderBrandBrief`
+  (`src/features/brand-context/model/brand-brief.ts`) is a pure function of the structured brief;
+  the design agent consumes the structure, not this prose. Editing the document in the panel is
+  client-local, exactly like every other lifted edit on this screen.
+- The content header carries the kit's identity: `Brand kit: <id> · version <n> · <approval label>`,
+  using the same ruled approval labels as the header chip.
+- **D2 (founder-ruled): the rendered document is capped at 6,000 tokens**, estimated as
+  characters ÷ 4 (this seam has no tokenizer). Past the cap the render drops whole trailing
+  sections and says so, naming them; the stored structured brief is never truncated.
+- **No brief → the file is simply absent from the listing.** A kit ingested before the brief
+  existed, or one whose brief the agent refused, shows the section's designed empty state. A
+  placeholder `Design.md` would read as "this brand has no design rules", which is a different
+  and false claim.
+- A `brief` in a shape this build cannot read parses to `null` (`.catch(null)`), so the document
+  drops and the rest of the page is unaffected.
+
+### Still future work
+
+The dummy's other knowledge folders (Company, Product, Audience, Proof, Memories) stay absent —
+nothing in the store fills them, and an empty folder tree is the honest report. A real
+markdown-document store behind the section, and persistence for the lifted edits, remain
+unbuilt.

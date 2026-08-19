@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { BrandBriefSchema } from "./brand-brief";
 
 /**
  * Slice 1: the design API's brand-kit wire shapes — the REAL store behind the
@@ -123,6 +124,14 @@ export const BrandKitJsonSchema = z.object({
       images: tolerant(BrandImageAssetSchema),
     })
     .nullish(),
+  /**
+   * The per-brand Creative Brief (`BrandBrief@1`), written by the ingestion
+   * brief agent and riding this kit version. Absent on every kit ingested before
+   * the brief existed, and on any kit whose brief was refused — which is a valid,
+   * honest state, so it is `nullish`, never required. `.catch(null)`: a brief in
+   * a shape this build cannot read is no brief, never a broken page.
+   */
+  brief: BrandBriefSchema.nullish().catch(null),
 });
 
 /** `brand_kit_summary` (dto.py:71) — the list row and the detail envelope's header. */
