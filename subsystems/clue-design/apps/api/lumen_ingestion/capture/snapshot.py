@@ -46,6 +46,10 @@ class SiteSnapshot(BaseModel):
     stylesheets: list[Stylesheet] = []
     custom_props: dict[str, str] | None = None
     computed_samples: list[dict] | None = None
+    # The rendered tier's brand-geometry harvest (design-brief slice 2). Optional
+    # so every pre-slice-2 snapshot fixture still loads, and ``None`` on the
+    # static tier, which has no live page to measure.
+    geometry: dict | None = None
     downloads: list[Download] = []
     meta: dict = {}
     diagnostics: list[dict] = []

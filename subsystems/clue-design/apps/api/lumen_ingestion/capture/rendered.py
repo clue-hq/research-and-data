@@ -15,6 +15,7 @@ from urllib.parse import urljoin
 
 from selectolax.parser import HTMLParser
 
+from .geometry import GEOMETRY_JS
 from .net import BoundedFetcher, FetchRequest, guard_url
 from .snapshot import Download, SiteSnapshot, Stylesheet, HTML_MAX_BYTES
 from .static import _collect_assets, _extract_meta
@@ -113,6 +114,21 @@ async def fetch_rendered(
             data = await page.evaluate(_EVALUATE_JS)
             html = await page.content()
             shot = await page.screenshot(full_page=True)
+            # Brand geometry, measured LAST: the probe programmatically focuses a
+            # few elements to read the focus ring, so it runs after the
+            # screenshot and can never change the captured pixels. A probe that
+            # throws costs the ingest a diagnostic and nothing else.
+            geometry = None
+            try:
+                geometry = await page.evaluate(GEOMETRY_JS)
+            except Exception as error:  # noqa: BLE001 — measurement is fail-soft
+                diagnostics.append(
+                    {
+                        "code": "LUMI0509",
+                        "severity": "warning",
+                        "message": f"geometry measurement failed; scales fall back to the derived defaults: {error}",
+                    }
+                )
         finally:
             await browser.close()
 
@@ -169,6 +185,7 @@ async def fetch_rendered(
         stylesheets=stylesheets,
         custom_props=data.get("props") or {},
         computed_samples=data.get("samples") or [],
+        geometry=geometry if isinstance(geometry, dict) else None,
         downloads=downloads,
         meta=meta,
         diagnostics=diagnostics,

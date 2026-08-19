@@ -27,6 +27,7 @@ from .roles import (
     build_dark_colorway,
 )
 from .font_metrics import build_type_size_ramp, glyph_gap_diagnostic
+from .geometry import build_shadows
 from .scales import build_opacity, build_radii, build_spacing, build_strokes
 from .typography import build_type_styles, resolve_anchors
 
@@ -133,13 +134,22 @@ def normalize_evidence(
     for path, style in styles.items():
         builder.add_typography(path, style, type_basis, type_pointer)
 
-    # Number scales.
-    spacing, spacing_diags = build_spacing(evidence.numbers)
+    # Number scales. Measured geometry (design-brief slice 2) claims the steps
+    # the brand's own site can fill; the rest stay on the derived base scale.
+    spacing, spacing_measured, spacing_diags = build_spacing(evidence.numbers)
     diagnostics.extend(spacing_diags)
-    builder.add_numbers(builder.spacing, spacing, "spacing", "derived:spacing-scale")
-    builder.add_numbers(builder.radii, build_radii(evidence.numbers), "radius", "derived:radius-scale")
-    builder.add_numbers(builder.stroke_widths, build_strokes(), "stroke", "derived:stroke-scale")
+    builder.add_numbers(
+        builder.spacing, spacing, "spacing", "derived:spacing-scale", spacing_measured
+    )
+    radii, radii_measured = build_radii(evidence.numbers)
+    builder.add_numbers(builder.radii, radii, "radius", "derived:radius-scale", radii_measured)
+    strokes, strokes_measured = build_strokes(evidence.numbers)
+    builder.add_numbers(
+        builder.stroke_widths, strokes, "stroke", "derived:stroke-scale", strokes_measured
+    )
     builder.add_numbers(builder.opacity, build_opacity(), "visibility", "derived:opacity-scale")
+    # Elevation: measured or honestly empty — never a fabricated default.
+    builder.add_shadows(build_shadows(evidence.shadows))
 
     # K4 rung 2: the canonical type.size ramp, x-height-normalized against the
     # platform reference font using metrics MEASURED from this kit's own font

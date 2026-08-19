@@ -26,6 +26,7 @@ from ..evidence import (
     NarrativeEvidence,
     TypeSample,
 )
+from .geometry import parse_geometry
 from .parse import ParsedAsset, ParsedSite, parse_site
 
 INGEST_CONCURRENCY = 4
@@ -207,6 +208,15 @@ def build_evidence(outcome, *, core, store_root: str, reporter) -> BrandEvidence
     if jobs:
         _run_ingest(list(jobs.values()), core=core, store_root=store_root, snapshot=snapshot)
 
+    # Brand geometry (design-brief slice 2): the rendered tier's measurement
+    # harvest → number/shadow evidence + the structured shape records slice 3's
+    # brief agent reads. A static-tier capture (or a failed probe) carries no
+    # harvest, so this contributes nothing and the derived scale stands.
+    geometry = parse_geometry(snapshot.geometry, page_url=snapshot.final_url)
+    outcome_diagnostics = getattr(outcome, "diagnostics", None)
+    if geometry.diagnostics and isinstance(outcome_diagnostics, list):
+        outcome_diagnostics.extend(geometry.diagnostics)
+
     narrative = NarrativeEvidence(
         brand_name=parsed.narrative.brand_name,
         url=parsed.narrative.url,
@@ -229,6 +239,9 @@ def build_evidence(outcome, *, core, store_root: str, reporter) -> BrandEvidence
         fonts=fonts,
         logos=logos,
         images=images,
+        numbers=geometry.numbers,
+        shadows=geometry.shadows,
+        geometry=geometry.evidence(),
         screenshots=screenshots,
         narrative=narrative,
     )

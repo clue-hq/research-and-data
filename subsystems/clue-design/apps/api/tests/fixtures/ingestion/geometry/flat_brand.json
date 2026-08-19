@@ -1,0 +1,115 @@
+{
+ "focus": [],
+ "gaps": [
+  64,
+  64
+ ],
+ "rhythm": [
+  [
+   64,
+   64,
+   0,
+   0
+  ]
+ ],
+ "sections": [
+  {
+   "bg": "rgb(255, 255, 255)",
+   "bgImage": null,
+   "gradient": false,
+   "height": 720,
+   "index": 0,
+   "padding": [
+    0,
+    32,
+    0,
+    32
+   ],
+   "tag": "section"
+  },
+  {
+   "bg": "rgb(17, 17, 17)",
+   "bgImage": null,
+   "gradient": false,
+   "height": 480,
+   "index": 1,
+   "padding": [
+    0,
+    32,
+    0,
+    32
+   ],
+   "tag": "section"
+  }
+ ],
+ "surfaces": [
+  {
+   "bg": "rgb(17, 17, 17)",
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": null,
+   "borderStyle": "none",
+   "cls": "button",
+   "color": "rgb(255, 255, 255)",
+   "font": "500 16px/24px Helvetica, sans-serif",
+   "gap": null,
+   "h": 48,
+   "padding": [
+    12,
+    24,
+    12,
+    24
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "button",
+   "w": 160
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    1,
+    1,
+    1,
+    1
+   ],
+   "borderColor": "rgb(17, 17, 17)",
+   "borderStyle": "solid",
+   "cls": "card",
+   "color": "rgb(17, 17, 17)",
+   "font": "400 16px/24px Helvetica, sans-serif",
+   "gap": null,
+   "h": 240,
+   "padding": [
+    32,
+    32,
+    32,
+    32
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "div",
+   "w": 360
+  }
+ ],
+ "url": "https://flat.example/",
+ "viewport": 1440
+}

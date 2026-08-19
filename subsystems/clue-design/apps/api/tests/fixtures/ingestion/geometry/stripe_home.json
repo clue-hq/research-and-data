@@ -1,0 +1,6169 @@
+{
+ "focus": [
+  {
+   "outlineColor": "rgba(84, 82, 251, 0.75)",
+   "outlineOffset": 3,
+   "outlineStyle": "solid",
+   "outlineWidth": 3,
+   "shadow": null
+  },
+  {
+   "outlineColor": "rgba(84, 82, 251, 0.75)",
+   "outlineOffset": 1,
+   "outlineStyle": "solid",
+   "outlineWidth": 3,
+   "shadow": null
+  },
+  {
+   "outlineColor": "rgba(84, 82, 251, 0.75)",
+   "outlineOffset": 1,
+   "outlineStyle": "solid",
+   "outlineWidth": 3,
+   "shadow": null
+  },
+  {
+   "outlineColor": "rgba(84, 82, 251, 0.75)",
+   "outlineOffset": 1,
+   "outlineStyle": "solid",
+   "outlineWidth": 3,
+   "shadow": null
+  },
+  {
+   "outlineColor": "rgba(84, 82, 251, 0.75)",
+   "outlineOffset": 1,
+   "outlineStyle": "solid",
+   "outlineWidth": 3,
+   "shadow": null
+  }
+ ],
+ "gaps": [],
+ "rhythm": [
+  [
+   36,
+   36,
+   0,
+   0
+  ],
+  [
+   96,
+   96,
+   0,
+   0
+  ],
+  [
+   80,
+   80,
+   0,
+   0
+  ],
+  [
+   0,
+   0,
+   32,
+   32
+  ],
+  [
+   80,
+   0,
+   0,
+   0
+  ],
+  [
+   96,
+   48,
+   0,
+   0
+  ],
+  [
+   0,
+   0,
+   16,
+   0
+  ],
+  [
+   96,
+   96,
+   0,
+   0
+  ],
+  [
+   0,
+   0,
+   340,
+   0
+  ],
+  [
+   96,
+   96,
+   0,
+   0
+  ],
+  [
+   96,
+   96,
+   0,
+   0
+  ]
+ ],
+ "sections": [
+  {
+   "bg": "rgb(255, 255, 255)",
+   "bgImage": null,
+   "gradient": false,
+   "height": 899,
+   "index": 0,
+   "padding": [
+    0,
+    16,
+    0,
+    16
+   ],
+   "tag": "section"
+  },
+  {
+   "bg": "rgb(255, 255, 255)",
+   "bgImage": null,
+   "gradient": false,
+   "height": 2195.56,
+   "index": 1,
+   "padding": [
+    0,
+    16,
+    0,
+    16
+   ],
+   "tag": "section"
+  },
+  {
+   "bg": "rgb(255, 255, 255)",
+   "bgImage": null,
+   "gradient": false,
+   "height": 560,
+   "index": 2,
+   "padding": [
+    0,
+    16,
+    0,
+    16
+   ],
+   "tag": "section"
+  },
+  {
+   "bg": "rgb(13, 23, 56)",
+   "bgImage": null,
+   "gradient": false,
+   "height": 977.48,
+   "index": 3,
+   "padding": [
+    0,
+    16,
+    0,
+    16
+   ],
+   "tag": "section"
+  },
+  {
+   "bg": "rgb(255, 255, 255)",
+   "bgImage": null,
+   "gradient": false,
+   "height": 4598.06,
+   "index": 4,
+   "padding": [
+    0,
+    16,
+    0,
+    16
+   ],
+   "tag": "section"
+  },
+  {
+   "bg": "rgb(13, 23, 56)",
+   "bgImage": null,
+   "gradient": false,
+   "height": 2341.36,
+   "index": 5,
+   "padding": [
+    0,
+    16,
+    0,
+    16
+   ],
+   "tag": "section"
+  },
+  {
+   "bg": "rgb(255, 255, 255)",
+   "bgImage": null,
+   "gradient": false,
+   "height": 1765.75,
+   "index": 6,
+   "padding": [
+    0,
+    16,
+    0,
+    16
+   ],
+   "tag": "section"
+  },
+  {
+   "bg": "rgb(248, 250, 253)",
+   "bgImage": null,
+   "gradient": false,
+   "height": 380.19,
+   "index": 7,
+   "padding": [
+    0,
+    16,
+    0,
+    16
+   ],
+   "tag": "section"
+  }
+ ],
+ "surfaces": [
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(6, 27, 49)",
+   "borderStyle": "none",
+   "cls": "button",
+   "color": "rgb(6, 27, 49)",
+   "font": "400 14px/14px sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": [
+    4,
+    4
+   ],
+   "h": 40,
+   "padding": [
+    12,
+    0,
+    12,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    4,
+    4,
+    4,
+    4
+   ],
+   "shadow": null,
+   "tag": "button",
+   "w": 76.67
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(6, 27, 49)",
+   "borderStyle": "none",
+   "cls": "button",
+   "color": "rgb(6, 27, 49)",
+   "font": "400 14px/14px sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": [
+    4,
+    4
+   ],
+   "h": 40,
+   "padding": [
+    12,
+    0,
+    12,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    4,
+    4,
+    4,
+    4
+   ],
+   "shadow": null,
+   "tag": "button",
+   "w": 78.47
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(6, 27, 49)",
+   "borderStyle": "none",
+   "cls": "button",
+   "color": "rgb(6, 27, 49)",
+   "font": "400 14px/14px sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": [
+    4,
+    4
+   ],
+   "h": 40,
+   "padding": [
+    12,
+    0,
+    12,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    4,
+    4,
+    4,
+    4
+   ],
+   "shadow": null,
+   "tag": "button",
+   "w": 91.02
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(6, 27, 49)",
+   "borderStyle": "none",
+   "cls": "button",
+   "color": "rgb(6, 27, 49)",
+   "font": "400 14px/14px sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": [
+    4,
+    4
+   ],
+   "h": 40,
+   "padding": [
+    12,
+    0,
+    12,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    4,
+    4,
+    4,
+    4
+   ],
+   "shadow": null,
+   "tag": "button",
+   "w": 85.92
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(6, 27, 49)",
+   "borderStyle": "none",
+   "cls": "button",
+   "color": "rgb(6, 27, 49)",
+   "font": "400 14px/14px sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": [
+    4,
+    4
+   ],
+   "h": 38,
+   "padding": [
+    12,
+    0,
+    12,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    4,
+    4,
+    4,
+    4
+   ],
+   "shadow": null,
+   "tag": "a",
+   "w": 44.3
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    1,
+    1,
+    1,
+    1
+   ],
+   "borderColor": "rgb(255, 255, 255)",
+   "borderStyle": "solid",
+   "cls": "button",
+   "color": "rgb(83, 58, 253)",
+   "font": "400 14px/14px sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": [
+    8,
+    8
+   ],
+   "h": 40,
+   "padding": [
+    10.5,
+    20,
+    13.5,
+    20
+   ],
+   "pill": false,
+   "radius": [
+    4,
+    4,
+    4,
+    4
+   ],
+   "shadow": null,
+   "tag": "a",
+   "w": 84.09
+  },
+  {
+   "bg": "rgb(83, 58, 253)",
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(255, 255, 255)",
+   "borderStyle": "none",
+   "cls": "button",
+   "color": "rgb(255, 255, 255)",
+   "font": "400 14px/14px sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": [
+    8,
+    8
+   ],
+   "h": 40,
+   "padding": [
+    11.5,
+    20,
+    12.5,
+    20
+   ],
+   "pill": false,
+   "radius": [
+    4,
+    4,
+    4,
+    4
+   ],
+   "shadow": null,
+   "tag": "a",
+   "w": 137.38
+  },
+  {
+   "bg": "rgb(83, 58, 253)",
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(255, 255, 255)",
+   "borderStyle": "none",
+   "cls": "button",
+   "color": "rgb(255, 255, 255)",
+   "font": "400 16px/16px sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": [
+    8,
+    8
+   ],
+   "h": 48,
+   "padding": [
+    15.5,
+    24,
+    16.5,
+    24
+   ],
+   "pill": false,
+   "radius": [
+    4,
+    4,
+    4,
+    4
+   ],
+   "shadow": null,
+   "tag": "a",
+   "w": 183.3
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "button",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 676,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "button",
+   "w": 816
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "button",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 676,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "button",
+   "w": 400
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "button",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 676,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "button",
+   "w": 400
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "button",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 676,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "button",
+   "w": 400
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "button",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 676,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "button",
+   "w": 400
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "button",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 450,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "button",
+   "w": 1232
+  },
+  {
+   "bg": "rgb(255, 255, 255)",
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(83, 58, 253)",
+   "borderStyle": "none",
+   "cls": "button",
+   "color": "rgb(83, 58, 253)",
+   "font": "400 16px/16px sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": [
+    8,
+    8
+   ],
+   "h": 48,
+   "padding": [
+    15.5,
+    24,
+    16.5,
+    24
+   ],
+   "pill": false,
+   "radius": [
+    4,
+    4,
+    4,
+    4
+   ],
+   "shadow": null,
+   "tag": "a",
+   "w": 138.98
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "button",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 48,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "button",
+   "w": 97.97
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "button",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 48,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "button",
+   "w": 181.11
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "button",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 48,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "button",
+   "w": 179.33
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "button",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 48,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "button",
+   "w": 152.66
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    1,
+    1,
+    1,
+    1
+   ],
+   "borderColor": "rgb(133, 134, 194)",
+   "borderStyle": "solid",
+   "cls": "button",
+   "color": "rgb(252, 253, 254)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 32,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    4,
+    4,
+    4,
+    4
+   ],
+   "shadow": null,
+   "tag": "button",
+   "w": 32
+  },
+  {
+   "bg": "rgb(83, 58, 253)",
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(255, 255, 255)",
+   "borderStyle": "none",
+   "cls": "button",
+   "color": "rgb(255, 255, 255)",
+   "font": "400 16px/16px sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": [
+    8,
+    8
+   ],
+   "h": 48,
+   "padding": [
+    15.5,
+    24,
+    16.5,
+    24
+   ],
+   "pill": false,
+   "radius": [
+    4,
+    4,
+    4,
+    4
+   ],
+   "shadow": null,
+   "tag": "a",
+   "w": 212.3
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "button",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 24.19,
+   "padding": [
+    0,
+    16,
+    0,
+    16
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "button",
+   "w": 1026
+  },
+  {
+   "bg": "rgba(255, 255, 255, 0)",
+   "bgImage": null,
+   "border": [
+    1,
+    1,
+    1,
+    1
+   ],
+   "borderColor": "rgb(214, 217, 252)",
+   "borderStyle": "solid",
+   "cls": "button",
+   "color": "rgb(83, 58, 253)",
+   "font": "400 16px/16px sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": [
+    8,
+    8
+   ],
+   "h": 40,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    4,
+    4,
+    4,
+    4
+   ],
+   "shadow": null,
+   "tag": "a",
+   "w": 166
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "button",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 24.19,
+   "padding": [
+    0,
+    16,
+    0,
+    16
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "button",
+   "w": 1152
+  },
+  {
+   "bg": "rgb(226, 228, 255)",
+   "bgImage": null,
+   "border": [
+    1,
+    1,
+    1,
+    1
+   ],
+   "borderColor": "rgb(226, 228, 255)",
+   "borderStyle": "solid",
+   "cls": "button",
+   "color": "rgb(83, 58, 253)",
+   "font": "400 16px/16px sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": [
+    8,
+    8
+   ],
+   "h": 40,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    4,
+    4,
+    4,
+    4
+   ],
+   "shadow": null,
+   "tag": "a",
+   "w": 40
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "button",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 24.19,
+   "padding": [
+    0,
+    16,
+    0,
+    16
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "button",
+   "w": 1152
+  },
+  {
+   "bg": "rgb(226, 228, 255)",
+   "bgImage": null,
+   "border": [
+    1,
+    1,
+    1,
+    1
+   ],
+   "borderColor": "rgb(226, 228, 255)",
+   "borderStyle": "solid",
+   "cls": "button",
+   "color": "rgb(83, 58, 253)",
+   "font": "400 16px/16px sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": [
+    8,
+    8
+   ],
+   "h": 40,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    4,
+    4,
+    4,
+    4
+   ],
+   "shadow": null,
+   "tag": "a",
+   "w": 40
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "button",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 24.19,
+   "padding": [
+    0,
+    16,
+    0,
+    16
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "button",
+   "w": 1152
+  },
+  {
+   "bg": "rgb(226, 228, 255)",
+   "bgImage": null,
+   "border": [
+    1,
+    1,
+    1,
+    1
+   ],
+   "borderColor": "rgb(226, 228, 255)",
+   "borderStyle": "solid",
+   "cls": "button",
+   "color": "rgb(83, 58, 253)",
+   "font": "400 16px/16px sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": [
+    8,
+    8
+   ],
+   "h": 40,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    4,
+    4,
+    4,
+    4
+   ],
+   "shadow": null,
+   "tag": "a",
+   "w": 40
+  },
+  {
+   "bg": "rgb(83, 58, 253)",
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(255, 255, 255)",
+   "borderStyle": "none",
+   "cls": "button",
+   "color": "rgb(255, 255, 255)",
+   "font": "400 16px/16px sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": [
+    8,
+    8
+   ],
+   "h": 48,
+   "padding": [
+    15.5,
+    24,
+    16.5,
+    24
+   ],
+   "pill": false,
+   "radius": [
+    4,
+    4,
+    4,
+    4
+   ],
+   "shadow": null,
+   "tag": "a",
+   "w": 190.44
+  },
+  {
+   "bg": "rgba(255, 255, 255, 0)",
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgba(16, 16, 16, 0.3)",
+   "borderStyle": "none",
+   "cls": "button",
+   "color": "rgba(16, 16, 16, 0.3)",
+   "font": "400 16px/16px sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 40,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    4,
+    4,
+    4,
+    4
+   ],
+   "shadow": null,
+   "tag": "button",
+   "w": 40
+  },
+  {
+   "bg": "rgb(232, 233, 255)",
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "button",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/16px sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 40,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    4,
+    4,
+    4,
+    4
+   ],
+   "shadow": null,
+   "tag": "button",
+   "w": 40
+  },
+  {
+   "bg": "rgb(83, 58, 253)",
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(255, 255, 255)",
+   "borderStyle": "none",
+   "cls": "button",
+   "color": "rgb(255, 255, 255)",
+   "font": "400 16px/16px sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": [
+    8,
+    8
+   ],
+   "h": 48,
+   "padding": [
+    15.5,
+    24,
+    16.5,
+    24
+   ],
+   "pill": false,
+   "radius": [
+    4,
+    4,
+    4,
+    4
+   ],
+   "shadow": null,
+   "tag": "a",
+   "w": 199.63
+  },
+  {
+   "bg": "rgb(255, 255, 255)",
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "button",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 40,
+   "padding": [
+    12,
+    12,
+    12,
+    12
+   ],
+   "pill": false,
+   "radius": [
+    4,
+    4,
+    4,
+    4
+   ],
+   "shadow": "rgba(0, 0, 0, 0.1) 0px 4px 8px 0px",
+   "tag": "button",
+   "w": 40
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(255, 255, 255)",
+   "borderStyle": "none",
+   "cls": "button",
+   "color": "rgb(255, 255, 255)",
+   "font": "400 16px/16px sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": [
+    8,
+    8
+   ],
+   "h": 100,
+   "padding": [
+    32,
+    0,
+    32,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    4,
+    4,
+    4,
+    4
+   ],
+   "shadow": null,
+   "tag": "button",
+   "w": 308
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(255, 255, 255)",
+   "borderStyle": "none",
+   "cls": "button",
+   "color": "rgb(255, 255, 255)",
+   "font": "400 16px/16px sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": [
+    8,
+    8
+   ],
+   "h": 100,
+   "padding": [
+    32,
+    0,
+    32,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    4,
+    4,
+    4,
+    4
+   ],
+   "shadow": null,
+   "tag": "button",
+   "w": 308
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(255, 255, 255)",
+   "borderStyle": "none",
+   "cls": "button",
+   "color": "rgb(255, 255, 255)",
+   "font": "400 16px/16px sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": [
+    8,
+    8
+   ],
+   "h": 100,
+   "padding": [
+    32,
+    0,
+    32,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    4,
+    4,
+    4,
+    4
+   ],
+   "shadow": null,
+   "tag": "button",
+   "w": 308
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(255, 255, 255)",
+   "borderStyle": "none",
+   "cls": "button",
+   "color": "rgb(255, 255, 255)",
+   "font": "400 16px/16px sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": [
+    8,
+    8
+   ],
+   "h": 100,
+   "padding": [
+    32,
+    0,
+    32,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    4,
+    4,
+    4,
+    4
+   ],
+   "shadow": null,
+   "tag": "button",
+   "w": 308
+  },
+  {
+   "bg": "rgb(83, 58, 253)",
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(255, 255, 255)",
+   "borderStyle": "none",
+   "cls": "button",
+   "color": "rgb(255, 255, 255)",
+   "font": "400 16px/16px sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": [
+    8,
+    8
+   ],
+   "h": 48,
+   "padding": [
+    15.5,
+    24,
+    16.5,
+    24
+   ],
+   "pill": false,
+   "radius": [
+    4,
+    4,
+    4,
+    4
+   ],
+   "shadow": null,
+   "tag": "a",
+   "w": 209.06
+  },
+  {
+   "bg": "rgba(255, 255, 255, 0)",
+   "bgImage": null,
+   "border": [
+    1,
+    1,
+    1,
+    1
+   ],
+   "borderColor": "rgba(72, 52, 219, 0.698)",
+   "borderStyle": "solid",
+   "cls": "button",
+   "color": "rgb(255, 255, 255)",
+   "font": "400 16px/16px sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": [
+    8,
+    8
+   ],
+   "h": 48,
+   "padding": [
+    14.5,
+    24,
+    15.5,
+    24
+   ],
+   "pill": false,
+   "radius": [
+    4,
+    4,
+    4,
+    4
+   ],
+   "shadow": null,
+   "tag": "a",
+   "w": 196.53
+  },
+  {
+   "bg": "rgb(83, 58, 253)",
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(255, 255, 255)",
+   "borderStyle": "none",
+   "cls": "button",
+   "color": "rgb(255, 255, 255)",
+   "font": "400 14px/14px sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": [
+    8,
+    8
+   ],
+   "h": 32,
+   "padding": [
+    6,
+    16,
+    6,
+    16
+   ],
+   "pill": false,
+   "radius": [
+    4,
+    4,
+    4,
+    4
+   ],
+   "shadow": null,
+   "tag": "a",
+   "w": 159.55
+  },
+  {
+   "bg": "rgb(232, 233, 255)",
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "button",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/16px sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 40,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    4,
+    4,
+    4,
+    4
+   ],
+   "shadow": null,
+   "tag": "button",
+   "w": 40
+  },
+  {
+   "bg": "rgb(232, 233, 255)",
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "button",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/16px sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 40,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    4,
+    4,
+    4,
+    4
+   ],
+   "shadow": null,
+   "tag": "button",
+   "w": 40
+  },
+  {
+   "bg": "rgba(255, 255, 255, 0)",
+   "bgImage": null,
+   "border": [
+    1,
+    1,
+    1,
+    1
+   ],
+   "borderColor": "rgb(185, 185, 249)",
+   "borderStyle": "solid",
+   "cls": "button",
+   "color": "rgb(83, 58, 253)",
+   "font": "400 16px/16px sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": [
+    8,
+    8
+   ],
+   "h": 48,
+   "padding": [
+    14.5,
+    24,
+    15.5,
+    24
+   ],
+   "pill": false,
+   "radius": [
+    4,
+    4,
+    4,
+    4
+   ],
+   "shadow": null,
+   "tag": "a",
+   "w": 167.75
+  },
+  {
+   "bg": "rgba(255, 255, 255, 0)",
+   "bgImage": null,
+   "border": [
+    1,
+    1,
+    1,
+    1
+   ],
+   "borderColor": "rgb(185, 185, 249)",
+   "borderStyle": "solid",
+   "cls": "button",
+   "color": "rgb(83, 58, 253)",
+   "font": "400 16px/16px sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": [
+    8,
+    8
+   ],
+   "h": 48,
+   "padding": [
+    14.5,
+    24,
+    15.5,
+    24
+   ],
+   "pill": false,
+   "radius": [
+    4,
+    4,
+    4,
+    4
+   ],
+   "shadow": null,
+   "tag": "a",
+   "w": 183.39
+  },
+  {
+   "bg": "rgba(255, 255, 255, 0)",
+   "bgImage": null,
+   "border": [
+    1,
+    1,
+    1,
+    1
+   ],
+   "borderColor": "rgb(185, 185, 249)",
+   "borderStyle": "solid",
+   "cls": "button",
+   "color": "rgb(83, 58, 253)",
+   "font": "400 16px/16px sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": [
+    8,
+    8
+   ],
+   "h": 48,
+   "padding": [
+    14.5,
+    24,
+    15.5,
+    24
+   ],
+   "pill": false,
+   "radius": [
+    4,
+    4,
+    4,
+    4
+   ],
+   "shadow": null,
+   "tag": "a",
+   "w": 150.25
+  },
+  {
+   "bg": "rgba(255, 255, 255, 0)",
+   "bgImage": null,
+   "border": [
+    1,
+    1,
+    1,
+    1
+   ],
+   "borderColor": "rgb(185, 185, 249)",
+   "borderStyle": "solid",
+   "cls": "button",
+   "color": "rgb(83, 58, 253)",
+   "font": "400 16px/16px sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": [
+    8,
+    8
+   ],
+   "h": 48,
+   "padding": [
+    14.5,
+    24,
+    15.5,
+    24
+   ],
+   "pill": false,
+   "radius": [
+    4,
+    4,
+    4,
+    4
+   ],
+   "shadow": null,
+   "tag": "a",
+   "w": 150.81
+  },
+  {
+   "bg": "rgba(255, 255, 255, 0)",
+   "bgImage": null,
+   "border": [
+    1,
+    1,
+    1,
+    1
+   ],
+   "borderColor": "rgb(185, 185, 249)",
+   "borderStyle": "solid",
+   "cls": "button",
+   "color": "rgb(83, 58, 253)",
+   "font": "400 16px/16px sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": [
+    8,
+    8
+   ],
+   "h": 48,
+   "padding": [
+    14.5,
+    24,
+    15.5,
+    24
+   ],
+   "pill": false,
+   "radius": [
+    4,
+    4,
+    4,
+    4
+   ],
+   "shadow": null,
+   "tag": "a",
+   "w": 136.7
+  },
+  {
+   "bg": "rgba(255, 255, 255, 0)",
+   "bgImage": null,
+   "border": [
+    1,
+    1,
+    1,
+    1
+   ],
+   "borderColor": "rgb(185, 185, 249)",
+   "borderStyle": "solid",
+   "cls": "button",
+   "color": "rgb(83, 58, 253)",
+   "font": "400 16px/16px sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": [
+    8,
+    8
+   ],
+   "h": 48,
+   "padding": [
+    14.5,
+    24,
+    15.5,
+    24
+   ],
+   "pill": false,
+   "radius": [
+    4,
+    4,
+    4,
+    4
+   ],
+   "shadow": null,
+   "tag": "a",
+   "w": 208.59
+  },
+  {
+   "bg": "rgba(255, 255, 255, 0)",
+   "bgImage": null,
+   "border": [
+    1,
+    1,
+    1,
+    1
+   ],
+   "borderColor": "rgb(185, 185, 249)",
+   "borderStyle": "solid",
+   "cls": "button",
+   "color": "rgb(83, 58, 253)",
+   "font": "400 16px/16px sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": [
+    8,
+    8
+   ],
+   "h": 48,
+   "padding": [
+    14.5,
+    24,
+    15.5,
+    24
+   ],
+   "pill": false,
+   "radius": [
+    4,
+    4,
+    4,
+    4
+   ],
+   "shadow": null,
+   "tag": "a",
+   "w": 140.59
+  },
+  {
+   "bg": "rgba(255, 255, 255, 0)",
+   "bgImage": null,
+   "border": [
+    1,
+    1,
+    1,
+    1
+   ],
+   "borderColor": "rgb(185, 185, 249)",
+   "borderStyle": "solid",
+   "cls": "button",
+   "color": "rgb(83, 58, 253)",
+   "font": "400 16px/16px sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": [
+    8,
+    8
+   ],
+   "h": 48,
+   "padding": [
+    14.5,
+    24,
+    15.5,
+    24
+   ],
+   "pill": false,
+   "radius": [
+    4,
+    4,
+    4,
+    4
+   ],
+   "shadow": null,
+   "tag": "a",
+   "w": 162.86
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    1,
+    1,
+    1,
+    1
+   ],
+   "borderColor": "rgb(229, 237, 245)",
+   "borderStyle": "solid",
+   "cls": "button",
+   "color": "rgb(0, 0, 238)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": [
+    12,
+    12
+   ],
+   "h": 38,
+   "padding": [
+    2,
+    2,
+    2,
+    2
+   ],
+   "pill": false,
+   "radius": [
+    4,
+    4,
+    4,
+    4
+   ],
+   "shadow": null,
+   "tag": "a",
+   "w": 141.61
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    1,
+    1,
+    1,
+    1
+   ],
+   "borderColor": "rgb(229, 237, 245)",
+   "borderStyle": "solid",
+   "cls": "button",
+   "color": "rgb(0, 0, 238)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": [
+    12,
+    12
+   ],
+   "h": 38,
+   "padding": [
+    2,
+    2,
+    2,
+    2
+   ],
+   "pill": false,
+   "radius": [
+    4,
+    4,
+    4,
+    4
+   ],
+   "shadow": null,
+   "tag": "a",
+   "w": 179.2
+  },
+  {
+   "bg": "rgb(83, 58, 253)",
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(255, 255, 255)",
+   "borderStyle": "none",
+   "cls": "button",
+   "color": "rgb(255, 255, 255)",
+   "font": "400 16px/16px sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": [
+    8,
+    8
+   ],
+   "h": 48,
+   "padding": [
+    15.5,
+    24,
+    16.5,
+    24
+   ],
+   "pill": false,
+   "radius": [
+    4,
+    4,
+    4,
+    4
+   ],
+   "shadow": null,
+   "tag": "a",
+   "w": 157.42
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(83, 58, 253)",
+   "borderStyle": "none",
+   "cls": "button",
+   "color": "rgb(83, 58, 253)",
+   "font": "400 16px/16px sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": [
+    8,
+    8
+   ],
+   "h": 16,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    4,
+    4,
+    4,
+    4
+   ],
+   "shadow": null,
+   "tag": "button",
+   "w": 125.2
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "chip",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 22,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "div",
+   "w": 69.34
+  },
+  {
+   "bg": "rgb(255, 255, 255)",
+   "bgImage": null,
+   "border": [
+    1,
+    1,
+    1,
+    1
+   ],
+   "borderColor": "rgb(246, 249, 252)",
+   "borderStyle": "solid",
+   "cls": "chip",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 11px/15.4px sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 22,
+   "padding": [
+    0,
+    6,
+    0,
+    6
+   ],
+   "pill": false,
+   "radius": [
+    4,
+    4,
+    4,
+    4
+   ],
+   "shadow": "rgba(50, 50, 93, 0.12) 0px 15.931px 31.863px -8px",
+   "tag": "div",
+   "w": 69.34
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "card",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 38,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "div",
+   "w": 38
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "card",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 38,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "div",
+   "w": 38
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "card",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 26px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 58.22,
+   "padding": [
+    0,
+    60,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "div",
+   "w": 687.88
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(6, 27, 49)",
+   "borderStyle": "none",
+   "cls": "card",
+   "color": "rgb(6, 27, 49)",
+   "font": "300 26px/29.12px sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 58.22,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "h3",
+   "w": 627.88
+  },
+  {
+   "bg": "rgb(229, 237, 245)",
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "card",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 686,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    6,
+    6,
+    6,
+    6
+   ],
+   "shadow": null,
+   "tag": "div",
+   "w": 827.66
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "card",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 1075.95,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "div",
+   "w": 1075.95
+  },
+  {
+   "bg": null,
+   "bgImage": "radial-gradient(circle, rgb(127, 125, 252), rgb(244, 75, 204) 33%, rgb(229, 237, 245) 66%)",
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "card",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 753.17,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "div",
+   "w": 753.17
+  },
+  {
+   "bg": "rgb(255, 255, 255)",
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "card",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 684,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "div",
+   "w": 825.66
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "card",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 684,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    5,
+    5,
+    5,
+    5
+   ],
+   "shadow": null,
+   "tag": "div",
+   "w": 825.66
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "card",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 684,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "div",
+   "w": 825.66
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "card",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 684,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "div",
+   "w": 825.66
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "card",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 11,
+   "padding": [
+    0,
+    5,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "div",
+   "w": 19
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "card",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 11,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "div",
+   "w": 14
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(60, 79, 105)",
+   "borderStyle": "none",
+   "cls": "card",
+   "color": "rgb(60, 79, 105)",
+   "font": "300 10px/8px sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 8,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "div",
+   "w": 32
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "card",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": [
+    5,
+    5
+   ],
+   "h": 77,
+   "padding": [
+    8,
+    0,
+    4,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "div",
+   "w": 225
+  },
+  {
+   "bg": "rgb(248, 250, 253)",
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(100, 116, 141)",
+   "borderStyle": "none",
+   "cls": "card",
+   "color": "rgb(100, 116, 141)",
+   "font": "300 9px/10.8px sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 30,
+   "padding": [
+    9,
+    7,
+    9,
+    7
+   ],
+   "pill": false,
+   "radius": [
+    6,
+    6,
+    6,
+    6
+   ],
+   "shadow": null,
+   "tag": "div",
+   "w": 225
+  },
+  {
+   "bg": "rgb(248, 250, 253)",
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(100, 116, 141)",
+   "borderStyle": "none",
+   "cls": "card",
+   "color": "rgb(100, 116, 141)",
+   "font": "300 9px/10.8px sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 30,
+   "padding": [
+    9,
+    7,
+    9,
+    7
+   ],
+   "pill": false,
+   "radius": [
+    6,
+    6,
+    6,
+    6
+   ],
+   "shadow": null,
+   "tag": "div",
+   "w": 110
+  },
+  {
+   "bg": "rgb(248, 250, 253)",
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(100, 116, 141)",
+   "borderStyle": "none",
+   "cls": "card",
+   "color": "rgb(100, 116, 141)",
+   "font": "300 9px/10.8px sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 30,
+   "padding": [
+    9,
+    7,
+    9,
+    7
+   ],
+   "pill": false,
+   "radius": [
+    6,
+    6,
+    6,
+    6
+   ],
+   "shadow": null,
+   "tag": "div",
+   "w": 110
+  },
+  {
+   "bg": "rgb(255, 255, 255)",
+   "bgImage": null,
+   "border": [
+    1,
+    1,
+    1,
+    1
+   ],
+   "borderColor": "rgb(229, 237, 245)",
+   "borderStyle": "solid",
+   "cls": "card",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 96,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    4,
+    4,
+    4,
+    4
+   ],
+   "shadow": null,
+   "tag": "div",
+   "w": 180
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "card",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 94,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "div",
+   "w": 178
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "card",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": [
+    10,
+    10
+   ],
+   "h": 94,
+   "padding": [
+    4,
+    4,
+    4,
+    4
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "div",
+   "w": 178
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "card",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 86,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "div",
+   "w": 80
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "card",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 86,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "picture",
+   "w": 80
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "card",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 54.39,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "div",
+   "w": 80
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(6, 27, 49)",
+   "borderStyle": "none",
+   "cls": "card",
+   "color": "rgb(6, 27, 49)",
+   "font": "400 9px/10.8px sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 32.39,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "div",
+   "w": 80
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(80, 97, 122)",
+   "borderStyle": "none",
+   "cls": "card",
+   "color": "rgb(80, 97, 122)",
+   "font": "300 10px/12px sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 12,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "div",
+   "w": 80
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "card",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": [
+    10,
+    10
+   ],
+   "h": 94,
+   "padding": [
+    4,
+    4,
+    4,
+    4
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "div",
+   "w": 178
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "card",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 86,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "div",
+   "w": 80
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "card",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 86,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "picture",
+   "w": 80
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "card",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 68.78,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "div",
+   "w": 80
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(6, 27, 49)",
+   "borderStyle": "none",
+   "cls": "card",
+   "color": "rgb(6, 27, 49)",
+   "font": "400 9px/10.8px sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 21.59,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "div",
+   "w": 80
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(100, 116, 141)",
+   "borderStyle": "none",
+   "cls": "card",
+   "color": "rgb(100, 116, 141)",
+   "font": "300 9px/12.6px sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 12.59,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "div",
+   "w": 80
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(100, 116, 141)",
+   "borderStyle": "none",
+   "cls": "card",
+   "color": "rgb(100, 116, 141)",
+   "font": "300 9px/12.6px sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 12.59,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "div",
+   "w": 80
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(80, 97, 122)",
+   "borderStyle": "none",
+   "cls": "card",
+   "color": "rgb(80, 97, 122)",
+   "font": "300 10px/12px sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 12,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "div",
+   "w": 80
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "card",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": [
+    10,
+    10
+   ],
+   "h": 94,
+   "padding": [
+    4,
+    4,
+    4,
+    4
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "div",
+   "w": 178
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "card",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 86,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "div",
+   "w": 80
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "card",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 86,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "picture",
+   "w": 80
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "card",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 54.39,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "div",
+   "w": 80
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(6, 27, 49)",
+   "borderStyle": "none",
+   "cls": "card",
+   "color": "rgb(6, 27, 49)",
+   "font": "400 9px/10.8px sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 32.39,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "div",
+   "w": 80
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(80, 97, 122)",
+   "borderStyle": "none",
+   "cls": "card",
+   "color": "rgb(80, 97, 122)",
+   "font": "300 10px/12px sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 12,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "div",
+   "w": 80
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "card",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": [
+    10,
+    10
+   ],
+   "h": 94,
+   "padding": [
+    4,
+    4,
+    4,
+    4
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "div",
+   "w": 178
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "card",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 86,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "div",
+   "w": 80
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "card",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 86,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "picture",
+   "w": 80
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "card",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 54.39,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "div",
+   "w": 80
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(6, 27, 49)",
+   "borderStyle": "none",
+   "cls": "card",
+   "color": "rgb(6, 27, 49)",
+   "font": "400 9px/10.8px sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 32.39,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "div",
+   "w": 80
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(80, 97, 122)",
+   "borderStyle": "none",
+   "cls": "card",
+   "color": "rgb(80, 97, 122)",
+   "font": "300 10px/12px sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 12,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "div",
+   "w": 80
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "card",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 684,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "div",
+   "w": 825.66
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "card",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 38,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "div",
+   "w": 38
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "card",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 38,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "div",
+   "w": 38
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "card",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 26px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 29.11,
+   "padding": [
+    0,
+    60,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "div",
+   "w": 334.48
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(6, 27, 49)",
+   "borderStyle": "none",
+   "cls": "card",
+   "color": "rgb(6, 27, 49)",
+   "font": "300 26px/29.12px sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 29.11,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "h3",
+   "w": 274.48
+  },
+  {
+   "bg": "rgb(229, 237, 245)",
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "card",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 690,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    6,
+    6,
+    6,
+    6
+   ],
+   "shadow": null,
+   "tag": "div",
+   "w": 409.09
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "card",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 552,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "div",
+   "w": 552
+  },
+  {
+   "bg": null,
+   "bgImage": "radial-gradient(circle, rgb(127, 125, 252), rgb(244, 75, 204) 33%, rgb(229, 237, 245) 66%)",
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "card",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 552,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "div",
+   "w": 552
+  },
+  {
+   "bg": "rgb(255, 255, 255)",
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "card",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 688,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "div",
+   "w": 407.09
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "card",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 688,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    5,
+    5,
+    5,
+    5
+   ],
+   "shadow": null,
+   "tag": "div",
+   "w": 407.09
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "card",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 688,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "div",
+   "w": 407.09
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "card",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 648,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "div",
+   "w": 407.09
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "card",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 169,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "div",
+   "w": 306
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "card",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 224,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "div",
+   "w": 306
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "nav",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 76,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "header",
+   "w": 1440
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "nav",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": [
+    28,
+    28
+   ],
+   "h": 64,
+   "padding": [
+    10,
+    16,
+    10,
+    16
+   ],
+   "pill": false,
+   "radius": [
+    6,
+    6,
+    6,
+    6
+   ],
+   "shadow": null,
+   "tag": "nav",
+   "w": 1262
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "nav",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": [
+    8,
+    16
+   ],
+   "h": 130.22,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "header",
+   "w": 1232
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "nav",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": [
+    8,
+    16
+   ],
+   "h": 130.22,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "header",
+   "w": 1232
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "nav",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": [
+    8,
+    16
+   ],
+   "h": 130.22,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "header",
+   "w": 1232
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "nav",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": [
+    64,
+    64
+   ],
+   "h": 102.38,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "header",
+   "w": 1232
+  },
+  {
+   "bg": "rgb(248, 250, 253)",
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "nav",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 1077.77,
+   "padding": [
+    0,
+    16,
+    0,
+    16
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "footer",
+   "w": 1440
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "divider",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 120,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "div",
+   "w": 1264
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "divider",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 120,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "div",
+   "w": 1264
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "divider",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 20,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "canvas",
+   "w": 1264
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "divider",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 120,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "div",
+   "w": 1264
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "divider",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 120,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "div",
+   "w": 1264
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "divider",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 20,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "canvas",
+   "w": 1264
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "divider",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 120,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "div",
+   "w": 1264
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "divider",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 120,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "div",
+   "w": 1264
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "divider",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 20,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "canvas",
+   "w": 1264
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "image",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 975,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "picture",
+   "w": 1392
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "image",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 975,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "img",
+   "w": 1392
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "image",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 477.27,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "picture",
+   "w": 280
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "image",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 477.27,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "img",
+   "w": 280
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "image",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 86,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "img",
+   "w": 80
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "image",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 86,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "img",
+   "w": 80
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "image",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 86,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "img",
+   "w": 80
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "image",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 86,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "img",
+   "w": 80
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "image",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 712,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "img",
+   "w": 860
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "image",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 92,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "picture",
+   "w": 92
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "image",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 92,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "img",
+   "w": 92
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "image",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 92,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "picture",
+   "w": 92
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "image",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 92,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "img",
+   "w": 92
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "image",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 638.45,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "picture",
+   "w": 447.09
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "image",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 638.45,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "img",
+   "w": 447.09
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "image",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 728.14,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "picture",
+   "w": 447.09
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "image",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 728.14,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "img",
+   "w": 447.09
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "image",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 728.14,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "picture",
+   "w": 447.09
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "image",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 728.14,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "img",
+   "w": 447.09
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "image",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 454.33,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "picture",
+   "w": 1242.94
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "image",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 454.33,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "img",
+   "w": 1242.94
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "image",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 400,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "picture",
+   "w": 1232
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "image",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 400,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    6,
+    6,
+    6,
+    6
+   ],
+   "shadow": null,
+   "tag": "img",
+   "w": 1232
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "image",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 518.7,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "picture",
+   "w": 1234
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "image",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 518.7,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "img",
+   "w": 1234
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "image",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 530.69,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "picture",
+   "w": 1232
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "image",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 530.69,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "img",
+   "w": 1232
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "image",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 448,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "img",
+   "w": 343.94
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "image",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 448,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "img",
+   "w": 343.94
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "image",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 448,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "img",
+   "w": 343.94
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "image",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 448,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "img",
+   "w": 343.94
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "image",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 448,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "img",
+   "w": 343.94
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "image",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 448,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "img",
+   "w": 343.94
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "image",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 448,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "img",
+   "w": 343.94
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "image",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 448,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "img",
+   "w": 343.94
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 238)",
+   "borderStyle": "none",
+   "cls": "image",
+   "color": "rgb(0, 0, 238)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 168.17,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "picture",
+   "w": 585
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 238)",
+   "borderStyle": "none",
+   "cls": "image",
+   "color": "rgb(0, 0, 238)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 236,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "img",
+   "w": 585
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "image",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 532,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "img",
+   "w": 1232
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "image",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 386,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "figure",
+   "w": 865.02
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "image",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 460,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "picture",
+   "w": 1232
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 0)",
+   "borderStyle": "none",
+   "cls": "image",
+   "color": "rgb(0, 0, 0)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 460,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "img",
+   "w": 1232
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 238)",
+   "borderStyle": "none",
+   "cls": "image",
+   "color": "rgb(0, 0, 238)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 32,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "picture",
+   "w": 32
+  },
+  {
+   "bg": null,
+   "bgImage": null,
+   "border": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "borderColor": "rgb(0, 0, 238)",
+   "borderStyle": "none",
+   "cls": "image",
+   "color": "rgb(0, 0, 238)",
+   "font": "400 16px/normal sohne-var, \"SF Pro Display\", sans-serif",
+   "gap": null,
+   "h": 32,
+   "padding": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "pill": false,
+   "radius": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "shadow": null,
+   "tag": "img",
+   "w": 32
+  }
+ ],
+ "url": "https://stripe.com/in",
+ "viewport": 1440
+}

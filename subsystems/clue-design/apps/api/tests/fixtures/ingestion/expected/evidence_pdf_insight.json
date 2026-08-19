@@ -1564,8 +1564,8 @@
         "space.8": {
           "description": null,
           "provenance": {
-            "confidence": 0.6,
-            "source": "derived:spacing-scale"
+            "confidence": 0.8,
+            "source": "pdf:page 8 :: grid"
           },
           "role": "spacing",
           "value": {
@@ -1644,8 +1644,8 @@
         "space.section": {
           "description": null,
           "provenance": {
-            "confidence": 0.6,
-            "source": "derived:spacing-scale"
+            "confidence": 0.8,
+            "source": "pdf:page 8 :: grid"
           },
           "role": "spacing",
           "value": {

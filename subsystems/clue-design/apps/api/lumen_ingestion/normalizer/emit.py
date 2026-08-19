@@ -14,6 +14,7 @@ import re
 
 from ..colorspace import hex_alpha
 from ..evidence import BrandEvidence, FontEvidence, ImageEvidence, LogoEvidence
+from .geometry import MEASURED_CONFIDENCE
 from .required import (
     REQUIRED_ASSET_TOKENS,
     REQUIRED_COLOR_TOKENS,
@@ -82,6 +83,7 @@ class KitBuilder:
         self.spacing: dict[str, dict] = {}
         self.radii: dict[str, dict] = {}
         self.stroke_widths: dict[str, dict] = {}
+        self.shadows: dict[str, dict] = {}
         self.opacity: dict[str, dict] = {}
         self.asset_tokens: dict[str, dict] = {}
         self.aliases: dict[str, dict] = {}
@@ -165,14 +167,48 @@ class KitBuilder:
 
     # --- numbers --------------------------------------------------------
 
-    def add_numbers(self, target: dict, values: dict[str, dict], role: str, source: str) -> None:
-        confidence = _confidence_for("derived")
+    def add_numbers(
+        self,
+        target: dict,
+        values: dict[str, dict],
+        role: str,
+        source: str,
+        measured: dict[str, str] | None = None,
+    ) -> None:
+        """Emit one number-scale group.
+
+        `measured` (design-brief slice 2) maps a token path to the evidence
+        pointer that measured it off the brand's live site; those paths carry
+        that pointer at `MEASURED_CONFIDENCE`, every other path keeps the
+        group's derived `source` at 0.6. Number scales stay out of
+        `confidence_samples` exactly as before, so the kit's overall confidence
+        remains the color/type figure it has always been.
+        """
+        derived = _confidence_for("derived")
+        measured = measured or {}
         for path, number in values.items():
+            pointer = measured.get(path)
             target[path] = {
                 "value": _mode_value(number, {}),
                 "role": role,
                 "description": None,
-                "provenance": _provenance(source, confidence),
+                "provenance": _provenance(
+                    pointer or source, MEASURED_CONFIDENCE if pointer else derived
+                ),
+            }
+
+    def add_shadows(self, entries: dict[str, tuple[dict, str]]) -> None:
+        """Emit the measured elevation tokens.
+
+        An empty `entries` leaves `shadows` empty — a site with no box-shadow
+        anywhere is a flat brand, and that IS the finding. `ShadowToken` carries
+        no `role` field (see `crates/lumen-core/src/brand.rs`), so none is set.
+        """
+        for path, (value, pointer) in entries.items():
+            self.shadows[path] = {
+                "value": _mode_value(value, {}),
+                "description": None,
+                "provenance": _provenance(pointer, MEASURED_CONFIDENCE),
             }
 
     # --- assets ---------------------------------------------------------
@@ -391,7 +427,7 @@ class KitBuilder:
                 "radii": self.radii,
                 "stroke_widths": self.stroke_widths,
                 "opacity": self.opacity,
-                "shadows": {},
+                "shadows": self.shadows,
                 "effects": {},
                 "assets": self.asset_tokens,
                 "aliases": self.aliases,

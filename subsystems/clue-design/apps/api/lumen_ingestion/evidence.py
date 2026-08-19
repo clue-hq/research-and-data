@@ -170,6 +170,77 @@ class ShadowSample(BaseModel):
         return _normalize_hex(value)
 
 
+class SurfaceShape(BaseModel):
+    """One measured visual variant of a brand surface (design-brief slice 2).
+
+    The kit's number tokens carry the brand's *scale*; this carries the brand's
+    *components* — the exact shape of the buttons, cards and inputs the site
+    actually draws, in the terms the design-brief agent needs to write component
+    recipes (slice 3). Structural only: ``fill`` is read from what is painted
+    (a background, a border, or neither), never guessed from a class name.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    surface: Literal[
+        "button", "card", "input", "chip", "nav", "divider", "image", "focus_ring"
+    ]
+    variant: str
+    count: int = 1
+    fill: Literal["solid", "outline", "ghost"] = "solid"
+    radius_px: list[float] = []
+    pill: bool = False
+    padding_px: list[float] = []
+    border_width_px: list[float] = []
+    border_style: str | None = None
+    border_color: str | None = None
+    shadow: str | None = None
+    background: str | None = None
+    text_color: str | None = None
+    font: str | None = None
+    pointer: EvidencePointer
+
+    @field_validator("border_color", "background", "text_color")
+    @classmethod
+    def _colors(cls, value: str | None) -> str | None:
+        return _normalize_hex(value) if value else value
+
+
+class SectionBackground(BaseModel):
+    """One band of the page's background rhythm, in DOM order (slice 2).
+
+    Not a token — the *sequence* is the finding ("brand, then white, then near-
+    black"), and slice 3's brief renders it as ``background_rhythm``.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    index: int
+    background: str | None = None
+    gradient: bool = False
+    has_image: bool = False
+    height_px: float = 0.0
+    pointer: EvidencePointer
+
+    @field_validator("background")
+    @classmethod
+    def _bg(cls, value: str | None) -> str | None:
+        return _normalize_hex(value) if value else value
+
+
+class GeometryEvidence(BaseModel):
+    """Structured shape evidence retained for the design-brief agent.
+
+    Additive and optional; ``schema_version`` stays 1 and pre-slice-2 evidence
+    deserializes unchanged (both lists default empty).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    surfaces: list[SurfaceShape] = []
+    background_sequence: list[SectionBackground] = []
+
+
 class RuleEvidence(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -218,6 +289,7 @@ class BrandEvidence(BaseModel):
     images: list[ImageEvidence] = []
     numbers: list[NumberSample] = []
     shadows: list[ShadowSample] = []
+    geometry: GeometryEvidence = GeometryEvidence()
     rules: list[RuleEvidence] = []
     screenshots: list[str] = []
     narrative: NarrativeEvidence = NarrativeEvidence()
