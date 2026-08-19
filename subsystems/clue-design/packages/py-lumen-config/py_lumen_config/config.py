@@ -101,6 +101,12 @@ class Settings(BaseSettings):
     lumen_ingestion_vision_model: str = "x-ai/grok-4.5"
     lumen_ingestion_describe: bool = False
     lumen_ingestion_describe_model: str = "x-ai/grok-4.5"
+    # The design-brief agent (tier 2). OFF → ingestion publishes exactly the kit
+    # it publishes today, with no `brand_kit_json.brief` and no diagnostic about
+    # one. The model must be vision-capable: the stage hands it the capture's
+    # screenshots alongside the measured evidence.
+    lumen_ingestion_brief: bool = False
+    lumen_ingestion_brief_model: str = "x-ai/grok-4.5"
 
     # --- Agent runtime (lumen_deepagent) ---
     # OpenRouter is the SOLE LLM gateway: the model id must be "openai:<id>" and

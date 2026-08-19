@@ -385,6 +385,71 @@ def _default_apply_descriptions(
 
 
 
+# ---------------------------------------------------------------------------
+# The design-brief stage (design-brief plan, slice 3).
+#
+# Runs after normalize + engine validation and BEFORE the kit is published, so
+# the brief rides the SAME draft version everything else in this job produced.
+# Everything about it is fail-soft: an unconfigured stage is silent, and every
+# other outcome is a diagnostic plus a briefless kit. `brief_agent` is injectable
+# so the ingestion suite can drive every branch without a gateway.
+# ---------------------------------------------------------------------------
+
+
+def _brief_screenshots(evidence: Any, resolve_bytes) -> "list[tuple[str, str]]":
+    """The capture's screenshots as `(base64, mime)`, for the agent's vision path.
+
+    The capture already stored them, so this is a read of durable bytes, never a
+    re-render. An unresolvable screenshot drops itself — the brief is then written
+    from the measured evidence alone, which is thinner but still honest.
+    """
+    import base64
+
+    from .brief_agent import MAX_SCREENSHOTS
+
+    shots: list[tuple[str, str]] = []
+    for asset_id in list(getattr(evidence, "screenshots", []) or [])[:MAX_SCREENSHOTS]:
+        resolved = resolve_bytes(asset_id)
+        if not resolved:
+            continue
+        data, mime = resolved
+        shots.append((base64.b64encode(data).decode("ascii"), mime))
+    return shots
+
+
+def _maybe_write_brief(
+    evidence: Any,
+    brand_kit: JsonObject,
+    *,
+    resolve_bytes: Callable[[str], "tuple[bytes, str] | None"],
+    brief_agent: Any | None,
+    diagnostics: list,
+) -> "JsonObject | None":
+    """The brief for this kit, or None. Never raises — a brief is never a gate."""
+    try:
+        from .brief_agent import build_brief_request, generate_brief, resolve_brief_agent
+
+        agent = brief_agent if brief_agent is not None else resolve_brief_agent()
+        # `generate_brief` re-checks this; asking here too keeps an unconfigured
+        # stage from reading (and base64-ing) every stored screenshot first.
+        if not getattr(agent, "active", False):
+            return None
+        request = build_brief_request(
+            evidence, brand_kit, screenshots=_brief_screenshots(evidence, resolve_bytes)
+        )
+        return generate_brief(request, agent=agent, diagnostics=diagnostics)
+    except Exception as error:  # noqa: BLE001 - the stage may never fail an ingest
+        logger.warning("the brief stage could not run; publishing briefless", exc_info=True)
+        diagnostics.append(
+            {
+                "code": "LUMI0903",
+                "severity": "warning",
+                "message": f"the brief stage could not run ({type(error).__name__}): {error}",
+            }
+        )
+        return None
+
+
 def _font_metrics_map(evidence: Any, resolve_bytes) -> dict:
     """K4 rung 2: measured metrics per font family, from the stored face
     bytes. Best-effort — a face that cannot be read or parsed contributes
@@ -638,6 +703,7 @@ def run_website_ingestion(
     build_evidence: _BuildEvidenceCallable = _default_build_evidence,
     describer: Any | None = None,
     apply_descriptions: _ApplyDescriptionsCallable | None = None,
+    brief_agent: Any | None = None,
     workspace_id: str,
     storage: StorageBackend | None = None,
     expected_generation: int | None = None,
@@ -686,6 +752,7 @@ def run_website_ingestion(
             build_evidence=build_evidence,
             describer=describer,
             apply_descriptions=apply_descriptions,
+            brief_agent=brief_agent,
         )
 
     run_ingestion_job(store, job_id, work)
@@ -705,6 +772,7 @@ def _ingest(
     build_evidence: _BuildEvidenceCallable,
     describer: Any | None = None,
     apply_descriptions: _ApplyDescriptionsCallable | None = None,
+    brief_agent: Any | None = None,
 ) -> "tuple[str, int, Optional[str]]":
     job = store.require(job_id)
     request = job["request"]
@@ -777,11 +845,27 @@ def _ingest(
     summary = summary_response.get("brand_summary") or {}
     summary["ingestion"] = result.ingestion_report
 
+    # The brief rides the VALIDATED kit: the engine's BrandKit has no `brief`
+    # field, so a payload carrying one through `validate_brand_kit` would come
+    # back with the section silently dropped. Attaching it after the round-trip
+    # keeps the engine's contract untouched and the section durable.
+    brief_diagnostics: list = []
+    brief = _maybe_write_brief(
+        evidence,
+        validated_kit,
+        resolve_bytes=_make_resolve_bytes(repo, blobs),
+        brief_agent=brief_agent,
+        diagnostics=brief_diagnostics,
+    )
+    if brief is not None:
+        validated_kit = {**validated_kit, "brief": brief}
+
     diagnostics = (
         result.diagnostics
         + _capture_diagnostics(outcome)
         + _validation_diagnostics(validation)
         + describe_diagnostics
+        + brief_diagnostics
     )
 
     record = _publish_ingested_kit(
