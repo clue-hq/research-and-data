@@ -119,8 +119,38 @@ Thread `thr_genweb_slice2_ask`, workspace `ws_804029…`, project `prj_79aa60…
    session and the shell-lift credentials are not recorded in `_memory/`. The BFF is a
    pass-through proxy over this exact route (and W1.3 already verified it live in a browser), so
    the gap is the cookie, not the code.
-4. **The follow-up message routed to Design**: turn `8cda8b52…` was created with `role='design'`
-   and dispatched a web turn on the born document.
+4. **The follow-up message routed to Design and generated the page**: turn `8cda8b52…` was
+   created with `role='design'` and dispatched `kind='web_turn'`. The first (ambitious) turn
+   FAILED honestly after ~28 min on a design-runtime vision limit (see below) — typed
+   `design_leg_turn_failed`, no success message, document left at v0, leg left
+   `open_awaiting_user`. A third message on the same leg ("just a single hero…") ran
+   `run_f67b5da086d75378b3029a3a2be5fb7a` to `succeeded` and committed the leg-born document
+   **v0 → v1** (nodes `root/splash/box_1/txt_2/btn_3`), with the design reply on the thread; the
+   gallery feed re-read then shows `current_version_id: "1"`. The founder's sentence holds end
+   to end on a leg-born document.
+
+## THE OPEN BLOCKER (not slice 2's — slice 1 / G3 territory)
+
+**The slice-1 preview ceiling is wrong for many-image requests.**
+`lumen_agent/tools/view.py::_normalize_image_bytes` clamps the long side to `_VISION_MAX_PX =
+7500` (correct for the *single*-image limit of 8000). But the reviewer accumulates screenshots
+across rounds, and once a request carries many images the provider's per-image ceiling drops to
+**2000 px**:
+
+> `ResponseError(code='invalid_prompt', … 'At least one of the image dimensions exceed max
+> allowed size for many-image requests: 2000 pixels')`
+
+The failing request had ~40 content blocks (`content.39`); the run logged 96
+`tool_web_view_completed`. Turns are transactional, so the whole authored page was discarded
+(it survives only in `design_agent_run.result_json.web_doc`). This reproduces on an ordinary
+brief (hero + three benefit cards + CTA + FAQ) — the same class as the slice-0 blocker, one
+limit lower. Fix candidates: lower/branch `_VISION_MAX_PX` when a request is multi-image, cap
+how many images ride one request, or activate the G3 hybrid tiled review. **Must be decided
+before slice 4's acceptance walk, which will hit it.**
+
+Second, smaller: every preview render in the successful run reported
+`tailwind_runtime_missing: true` — layout utility classes do not compile in the fleet-side
+preview (theme styles do); the agent noticed and said so in its own reply.
 
 ## Open items / concerns
 
@@ -132,8 +162,24 @@ Thread `thr_genweb_slice2_ask`, workspace `ws_804029…`, project `prj_79aa60…
 - `doc_kind` is **ignored** when `document_id` is present (the durable row's kind is the truth).
   The founder's refusal matrix listed four refusals and this is not one of them, so a mismatched
   `doc_kind` is silently ignored rather than refused — deliberate, recorded, cheap to add later.
-- Known pre-existing reds confirmed still red and NOT caused by this slice:
-  `tests/api/test_p36_leg_resilience_db.py::test_a_gate_answer_queued_behind_a_leg_opening_still_reaches_head_of_abm`
-  (`insert_gate_answer` TypeError — the brief's named red) and
-  `tests/api/test_toolbelt_wiring.py::test_out_of_order_matrix`
-  (`DraftAccountResearchDirectiveInputV3` validation — verified red on a stashed tree too).
+- **Eight pre-existing reds**, each verified red at the parent commit `218d4d04` in a throwaway
+  `git worktree`: `test_o3_account_deep_behavior` (skill v4 vs v6, documented at the part-iii
+  merge), `test_client_knowledge_privacy_s4e_db::test_dsar_reaches_every_agent_copy…`,
+  `test_p36…insert_gate_answer` (the brief's named red),
+  `test_toolbelt_wiring::test_out_of_order_matrix`, and four
+  `test_production_context_s3/s31` failures that all die on
+  `AgentTurnSubmissionRow.previous_turn_outcome: Field required` — contract/test drift on another
+  lane that wants an owner.
+- **Two test-running traps, both cost time this session:**
+  1. **Never `source .env` before pytest.** The dev `.env` sets
+     `CLUE_CHAT_REASONING_TRACE_MODE=raw`, which production `Settings()` refuses, so seven extra
+     suites fail with a pydantic `value_error` that looks exactly like a regression. Export only
+     `CLUE_DATABASE_URL`.
+  2. **Never `git stash` to baseline in this repo.** Three long-lived stash entries from OTHER
+     branches sit in the stash list; on a clean tree `git stash` saves nothing and the paired
+     `git stash pop` pops a *foreign* stash into the working tree (it did — conflict markers in
+     20+ files). `git reset --hard HEAD` recovered losslessly (commits intact, all three stashes
+     still listed). Use `git worktree add --detach <commit>` instead.
+- **One version pin escaped the targeted suites**: `tests/api/test_client_knowledge_privacy_s4e.py`
+  pinned `profile:head-of-abm@v36`. Only the full sweep caught it (fixed in `4ebd094e`). Add
+  "grep the whole test tree for the OLD address" to the ritual.
