@@ -430,6 +430,25 @@ carry web work, then makes the frontend show what the leg already emits.
 > standing `apps/api` custom-component reds trace to a missing
 > `apps/custom-component-compiler/node_modules` — wants an owner.
 
+> **G6 OUTCOME (2026-08-19): benchmarked at n=2 (founder capped at one new run).**
+> The slice-2 brief that died at ~28min now completes: **3.25min** and **10.0min**,
+> both applied/accepted, both ONE review round, terra/luna verified per role from
+> gateway usage. The spread is NOT provider latency (mean author call 6.2s in both
+> runs) — it is agent-chosen scope: wall clock tracks model-call count (2 vs 5
+> author delegations, 28 vs 78 views). **Verdict vs the 3–5min target: met once,
+> not reliably.** Next levers, in order: (1) bound author delegations the way G4
+> bounded review rounds; (2) collapse the orchestrator's per-image view
+> round-trips. **G9 (NEW, must fix before slice 4's walk):** the design API's
+> `execute_web_turn_job` never applies `render_leg_turn_prompt`, so a LEG-dispatched
+> web turn's delegation bundle — the brief — and leg history never reach the
+> runtime prompt (the scene path applies it; the web path does not). A chat-born
+> generation runs from the raw chat message alone: a bare "go ahead" second message
+> generates from almost nothing, and iteration turns lose the standing brief. This
+> quietly bounds chat-generation quality and likely explains part of the scope
+> variance. Also recorded: 8 malformed `web_apply_ops` retries in the slow run;
+> the pinned OpenAI models have no many-image limit, so the G5 clamp's live-refusal
+> proof would need one opus-pinned run (config change, not made).
+
 ### Slice 4 — end-to-end acceptance + close-out (~1 day)
 - The definition-of-done walk, scripted for the founder: strategy chat → "build me a
   landing page for <account>" → leg opens (transcript line) → generation (~minutes) →
