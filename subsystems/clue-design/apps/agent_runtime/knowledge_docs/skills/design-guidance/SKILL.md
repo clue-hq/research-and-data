@@ -33,9 +33,10 @@ Two situations, one discipline:
 4. Your design instincts.
 
 When 1 conflicts with 2–4: comply, and flag the deviation in one sentence in
-your finalize summary. Never silently "improve" a brief directive, and never
-refuse a user ask because the brief disagrees — comply-and-flag is the whole
-protocol.
+your report — the director flags it in the finalize summary, the author in
+its completion report back to the director. Never silently "improve" a brief
+directive, and never refuse a user ask because the brief disagrees —
+comply-and-flag is the whole protocol.
 
 ## Palette allocation — color has scopes, not just values
 
@@ -140,9 +141,9 @@ whole page, not per-section whims. `create-website` owns the mechanics
 adds the deployment rule: when the posture says text-only for a section
 type, **omit imagery rather than decorate** — restraint (space, type, one
 anchor) beats a filler visual every time. Product-UI briefs compose UI from
-the vocabulary as a system across the page (`create-website` §Composable
-primitives); photography briefs without library assets lead with type
-rather than shipping placeholder rectangles.
+the vocabulary as a system across the page (create-website's Design-guidance
+item on composable primitives); photography briefs without library assets
+lead with type rather than shipping placeholder rectangles.
 
 ## Constraints are law, not mood
 
@@ -154,9 +155,11 @@ finalizing; the reviewer receives the same constraints and will report a
 violation as a defect, not a taste note. When a user ask collides with a
 constraint, the ladder applies: comply with the user, flag the collision.
 
-## The pre-finalize ritual (authoring-side QA)
+## The pre-ship ritual (authoring-side QA)
 
-Before `finalize_web_run`, run the same three checks the reviewer will:
+Run the same three checks the reviewer will — as the author, before
+reporting success back to the director; as the director, before
+`finalize_web_run` (that tool is yours alone):
 
 1. **Characterization recheck.** Re-read the anchor (brief's
    characterization, else your own 2–3 words). Point — literally, to a
