@@ -455,3 +455,36 @@ mypy; all 26 import contracts; `git diff --check`; and the complete frontend des
 Next.js production build. The live Missoula database was not migrated or otherwise changed. No
 browser journey was replayed during this merge, so the now-merged card behavior is build- and
 test-verified but awaits the founder's existing live Slice-C browser exit gate.
+
+## Live browser continuation — Insight Health onboarding and product catalog
+
+Continued the preserved browser journey on 2026-08-19 using frontend `3115`, API `8115`, and the
+Missoula fleet. Onboarding for Insight Health (`https://insighthealth.ai`) completed and created
+workspace `ws_d98ab74cb0a943d4a483d1a3b4135ebd`, brand
+`brd_54b723b072204cafb8b4547aeb680e2d`, client entity
+`0e4f3c51-0435-4a5d-92aa-0705c1e66e46`, and project
+`prj_a4cfd10af5775d2c831eaed63373e3b3`. The onboarding fast recon completed, while its background
+lane failed on a transient Firecrawl request-per-minute limit. The application still released to
+Home, and the browser began the comprehensive Stage-0 directive without narrowing discovery, the
+fixed 21-field account profile, or committee research.
+
+Runtime audit corrected an earlier assumption: the live API/fleet processes are connected to the
+local database named `clue`, not `clue_missoula_slice_b`. Every subsequent read/write was therefore
+scoped by the exact Insight Health workspace above. No Tunis process, database, row, session, or
+worktree was changed.
+
+The first Stage-0 turn correctly refused ICP synthesis because no product was confirmed and the
+company catalog was empty. The next human answer recorded the Insight Health AI Clinical Agents
+suite and value proposition, advancing the account-wide Client-KB to v2, but still could not open
+the product-selection gate. At the founder's explicit request, seeded the seven products listed on
+Insight Health's official portfolio using the governed seams: appended `client.product_catalog`
+claim `cdab0496-1f2d-4ece-8791-2e8f1db08b77`, published company Client-KB v3 over base v2, and ran
+`ProductCatalogSynchronizer`. It created seven product identities and seven lineage rows with zero
+unresolved candidates. No existing claim or product was deleted or overwritten.
+
+After a fresh chat turn, the UI rendered gate
+`agent-gate:1dd8c156-6d46-5dd1-b0e9-629690c7fce6` with all seven product cards: Aura AI Scribe,
+Pre-Visit Intake AI Agent, Follow-up AI Agent, Referral Management AI Agent, Phone Triage AI Agent,
+Direct Access Colonoscopy AI Agent, and AI FrontDesk Agent. Browser testing is paused at this
+human-only choice; the exact tab is marked for handoff. Screenshots `01` through `12` are under
+`.context/live-browser-20260819/`, with `12-product-selection-gate.png` proving the current gate.
