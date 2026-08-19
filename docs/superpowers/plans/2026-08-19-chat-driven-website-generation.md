@@ -20,6 +20,11 @@ document, **generates** the page, and iterates on it through further chat messag
 the artifact appears in the rail's gallery, opens in the editor the W-plans built, accepts
 manual inspector edits between chat turns, and closes out ("lock it in") returning control
 to the platform deepagent. One thread, one conversation, both agents, real microsite.
+**Amendment (founder-ordered, 2026-08-19): the generated website is BRAND-THEMED** —
+when the workspace has an approved brand kit (born from the now-merged brand-kit
+ingestion pipeline: website scrape / PDF / assets → versioned draft → human approval on
+the Brand-context screen), the leg-born document carries that kit as its theme, so the
+deepagent's generation writes the client's real brand tokens, not the platform default.
 
 ---
 
@@ -61,6 +66,20 @@ line ("Part III not wired") suggests. **Part III is built, merged, and on this b
   `createWebDocument`) — zero callers outside its own tests.
 - A live API smoke (2026-08-14) ran a full design creation through the trio on the
   platform gateway end to end (`_memory/2026-08-14-part3-multiagent-review.md`).
+- **The brand-kit pipeline is merged onto this trunk** (`81e961ce`, 2026-08-19 — the
+  brandkit-onboarding worktree's slices 1–6): ingestion (website scrape / PDF with
+  vision assist / assets) → versioned draft kits → human approval on the
+  `/brand-context` screen (re-extract publishes a new draft version), auto-enqueued at
+  first-time provisioning, and — the load-bearing fact for this plan — **the frozen
+  creation contract**: `subsystems/design/clue_design/documents.py::create_document`
+  stamps the **latest approved** brand kit onto every new web document at birth
+  (explicit `scene.theme.brand_kit` ref wins; single-brand workspaces only — multi-brand
+  fails closed; approval never re-stamps existing documents; selection owned by
+  `brand.py::latest_approved_brand_kit_ref`). Because the web agent's own hard law is
+  "every color must be a theme token", a kit-stamped document makes generation
+  brand-themed **by composition** — no new mechanism. The leg's fail-closed brand pin
+  (`design_leg.brand_kit_id/version`, consumed design-side since P3.7c,
+  `main.py:7861-7899`) is the version-honesty half.
 
 ## 2. The FIVE BLOCKERS this plan removes (each verified at its line)
 
@@ -120,6 +139,16 @@ carry web work, then makes the frontend show what the leg already emits.
    accepts it) and `document_version_guard=0`. Consequence, for free: the rail's
    derivation picks the document up immediately (no state filter) — the card appears in
    the gallery the moment the leg opens.
+   **Brand-theming amendment:** the birth MUST route through the DAL's
+   `create_document` (the governed tool already does — verify, don't assume), because
+   that is where the frozen creation contract stamps the workspace's latest approved
+   brand kit. Then close the loop on version honesty: read the born document's stamped
+   kit ref back and pin it as the leg's `brand_kit_id`/`brand_kit_version` (the D5
+   fail-closed pin the design runtime already consumes) — so every generation turn on
+   the leg designs against exactly the kit version the document was born with, even if
+   a newer version is approved mid-conversation. No approved kit (or a multi-brand
+   workspace, which fails closed by contract) → the document keeps the platform default
+   theme and the leg carries no pin — generation still works, un-branded, honestly.
 2. **Turn-kind dispatch by document kind** (kills B1): `DesignLegTurnRunner._envelope`
    reads the leg document's `doc_kind`; `web` → `DesignTurnEnvelope(kind="web_turn")`
    with a `WebTurnRequest`-shaped `config.request` (`prompt`, `base_version` = the
@@ -195,6 +224,12 @@ carry web work, then makes the frontend show what the leg already emits.
   idempotency (same invocation replayed → same doc, `created=false` semantics); rail
   derivation picks the new doc up (extend the existing `project_design_documents` DB
   test); refusal matrix; profile/recipe pin parity suites green.
+  **Brand-theming tests:** a leg-born document in a workspace with an approved kit
+  carries the kit's theme ref at birth AND the leg row pins the same
+  `{brand_kit_id, version}` (read back from the stored document, not re-derived); no
+  approved kit → default theme, no pin; a kit approved AFTER birth does not re-stamp
+  the document or move the leg's pin (the frozen-contract + D5 guarantees, asserted at
+  this new call site).
 - Verification: in chat (API-driven or scripted turn), ask for a landing page → the leg
   opens, the document is born, **the card appears in the rail's gallery feed read**, the
   first web turn generates the page.
@@ -227,6 +262,14 @@ carry web work, then makes the frontend show what the leg already emits.
   card in rail → open → real page → "make the hero darker" → change lands → inspector
   hand-edit → "lock it in" → leg closes (transcript line) → platform agent resumes with
   the summary → mis-exit check ("go back to the design" reopens the same leg).
+- **The brand-themed walk (the amendment's acceptance):** run the ingestion pipeline for
+  a real brand (website scrape suffices), approve the kit on `/brand-context`, then ask
+  for a landing page in chat → the generated page's colors/type resolve through the
+  approved kit (visual: the brand's palette on the page; engine: the document's theme
+  ref = the approved `{kit, version}`; inspector: the color popover lists the KIT's
+  tokens — the W4.0 theme feed picks this up with zero work). Counter-walks: a
+  workspace with no approved kit generates on the platform default theme; a kit
+  approved mid-conversation does not re-theme the open leg's document.
 - Full gates (frontend suite/lint/build + backend targeted suites + `make check` with the
   5 known pre-existing reds recorded), contract/doc recordings (this plan's status
   header; the CLAUDE.md stale Part-III line fixed with a dated supersession), `_memory/`
@@ -285,8 +328,15 @@ lane composed (slice 0 records the exact command). Test login per
    the brand pin) and stays bundle-blind to claims/content-schema (recorded residual,
    `_memory/2026-08-14-p34-leg-engine.md:73-76`); joining research outputs to page copy
    is the Doc-S content-plane story.
-6. **Brand-kit onboarding** — its own live worktree; when an approved kit exists, the
-   leg's brand pin and the theme feed pick it up with zero work here.
+6. ~~**Brand-kit onboarding** — its own live worktree; when an approved kit exists, the
+   leg's brand pin and the theme feed pick it up with zero work here.~~ **[SUPERSEDED
+   2026-08-19 — the worktree MERGED (`81e961ce`) and brand-themed generation entered
+   THIS plan's scope by founder order: §4.1's stamp-at-birth + leg pin, slice 2's
+   tests, slice 4's brand-themed walk.]** Still out of scope from that pipeline:
+   multi-brand kit selection (the create contract carries no `brand_id` selector and
+   fails closed — a future contract change), manual re-stamping of pre-approval
+   documents, and tone/knowledge extraction feeding page COPY (that is the content
+   plane, item 5).
 7. **Publishing/share chrome + public-URL routing** (master plan Part IV item 5; founder
    ruled tenant-subdomain v1) — own contract.
 8. **Scene-leg document creation** — v1 refuses `doc_kind="scene"` creation; the ad flow
