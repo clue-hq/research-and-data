@@ -115,3 +115,34 @@ Screenshots are retained under `.context/live-browser-20260819/`:
 - `82`: final preserved new-project chat state
 
 No queue, database, discovery, or provider state was manually repaired during this browser pass.
+
+## Exact-five retry with provider concurrency 30
+
+After the founder changed the default provider concurrency to 30, only the five unsettled Accounts
+were selected again in the browser and attached to the same clean project chat. The new confirmed
+directive is `research-directive:98a97bbe-3894-57b8-b347-f9a3b12605fd:v2`; its immutable content
+contains exactly those five Account ids, all 21 fixed fields, high effort, every approved Exa and
+Sumble source, no exclusions, and committee discovery. Research run
+`79a24bd8-a0e2-5ff3-9483-7396bff31667` launched at 2026-08-19 16:23 IST.
+
+The live batch ledger proves the new setting was active: three Exa permits and nine Sumble permits
+all recorded concurrency limit 30. All 12 were released as failed; no permits remain active. The
+old concurrency-admission error did not recur.
+
+The retry stopped at the independent false discovery-seal failure:
+
+- Envision Physician Services, Millennium Physician Group, SurgOne, and VillageMD were returned to
+  `queued` after `SumbleAccountGapEligibilityError: Sumble account-gap enrichment requires an
+  intact discovery seal`. Sibling provider calls were cancelled.
+- The Permanente Medical Group did not attempt provider research; its agent read current state,
+  assessed coverage, and finalized `needs_review` with 5 completed fields, 15 unresolved fields,
+  `committee_not_researched`, and zero committee members.
+- There are zero new `external_research_operation` rows, zero new `account_gap_operation` rows,
+  zero committee-scope rows, and run spend remains 0. The browser card shows `1 of 5 accounts
+  settled`, `Queued 4`, `Partial 1`.
+- Cancellation again emitted SQLAlchemy/asyncpg connection-termination errors, but the Missoula
+  fleet remained alive (PID 48415). API/projections and frontend remained up. Tunis was untouched.
+
+Retry screenshots `83`-`92` are under `.context/live-browser-20260819/`, ending with the exact
+five-account `1 of 5 accounts settled` state. No queued job, seal, claim, or provider operation was
+manually mutated during the retry.
