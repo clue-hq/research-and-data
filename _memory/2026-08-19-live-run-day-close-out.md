@@ -75,3 +75,24 @@ re-run pending for the last four commits.
 - Terminal attempt = dispatched + (result|fold); every genuine-exchange path stamps.
 - Raw exception escaping to the supervisor = defect; governed refusal/honest
   settlement = correct. Every "worker_error:<raw type>" pause is a bug by definition.
+
+## Late-night addendum (post close-out)
+
+Three more commits after the close-out note:
+- 01c66700: fixed-width Exa aliases (k_ + 8 base32; live root cause was provider
+  TRANSCRIPTION loss over 52-74-char hex tokens - 16 of 20 unknown-spend attempts)
+  + jsonb key-order normalization fix (the exact ExaDeepSnapshotError holding d46d1414).
+  v1 compat proven against real stored production bytes.
+- (fixture commit): contract fixture made committee-executable under the 9dc3e693 guard.
+- 0296c177772f migration: committee_acquisition_snapshot_provider_unique was
+  UNIQUE NULLS NOT DISTINCT (source_key, provider_operation_id) - a database-wide
+  singleton for pre-dispatch snapshots; tonight's terminal 402 row occupied the
+  sumble_people slot forever. Now a partial unique index (non-null only).
+  Applied to the live DB. NOTE: make check's default DSN IS the live clue DB
+  (rollback-conn tests are safe by design, but full-gate runs share it - the r5
+  collision with the real 402 row is how the singleton defect was found).
+
+FINAL STATE: make check GREEN on final HEAD. Fleet restarted on final code
+(PID 41228 lineage) and ALL five held jobs resumed - d46d1414's exact error is
+fixed; the others get their first drive under narrowing+alias+migration. Left
+driving overnight; check settlement states first thing next session.
