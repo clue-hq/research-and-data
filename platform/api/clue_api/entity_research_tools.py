@@ -2883,10 +2883,16 @@ class GovernedEntityResearchToolFactory:
 
     def _read_result_tool(self) -> StructuredTool:
         async def invoke(result_ref: str) -> dict[str, JsonValue]:
-            result = await self._results.read_result(
-                active=current_entity_research_tool_execution(),
-                result_ref=result_ref,
-            )
+            try:
+                result = await self._results.read_result(
+                    active=current_entity_research_tool_execution(),
+                    result_ref=result_ref,
+                )
+            except EntityResearchGovernedRejection as rejection:
+                # A model-typed reference of the wrong shape is species 1; without this render
+                # the rejection escaped raw from the shared read tool and suspended the job
+                # (live: run 1d39023a, twice).
+                raise ToolException(rejection.render()) from rejection
             return cast(dict[str, JsonValue], result.model_dump(mode="json"))
 
         return StructuredTool.from_function(
@@ -2898,10 +2904,14 @@ class GovernedEntityResearchToolFactory:
 
     def _read_evidence_tool(self) -> StructuredTool:
         async def invoke(**values: object) -> dict[str, JsonValue]:
-            page = await self._results.read_evidence(
-                active=current_entity_research_tool_execution(),
-                request=ReadResearchEvidenceInput.model_validate(values),
-            )
+            try:
+                page = await self._results.read_evidence(
+                    active=current_entity_research_tool_execution(),
+                    request=ReadResearchEvidenceInput.model_validate(values),
+                )
+            except EntityResearchGovernedRejection as rejection:
+                # Same render as read_research_result: species 1, never a suspension.
+                raise ToolException(rejection.render()) from rejection
             return cast(dict[str, JsonValue], page.model_dump(mode="json"))
 
         return StructuredTool.from_function(
