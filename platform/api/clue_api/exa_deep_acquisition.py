@@ -941,29 +941,25 @@ class ExaDeepAcquisitionCoordinator:
         return None
 
 
-def compile_exa_deep_acquisition_plan(
-    *,
-    workspace_id: str,
-    project_id: str,
-    project_run_id: ProjectRunId,
+def pack_exa_deep_field_bundles(
     account: AccountEntity,
-    icp_key: str,
-    icp_version: int,
-    research_directive: ResearchDirectivePin,
     fields: Sequence[ExaDeepFieldSpec],
+    *,
     research_intent: str,
     additional_queries: Sequence[str],
-    observation_window: str,
-    freshness_policy_ref: str,
-    freshness_seconds: int,
-    cost_cents_reserved_per_bundle: Decimal,
-    entity_research_job_id: UUID | None = None,
     config: ExaDeepConfig = DEFAULT_EXA_CONFIG,
-) -> ExaDeepAcquisitionBundlePlan:
-    """Pack admitted fields deterministically under Exa's schema limits.
+) -> tuple[tuple[ExaDeepFieldSpec, ...], ...]:
+    """The one definition of how admitted fields split into provider-safe bundles.
 
-    Directional questions are attached to every necessary bundle, but never introduce fields.
-    Most account profiles fit one bundle; only the documented provider property limit can split it.
+    Greedy over the sorted field order: keep adding until ``compile_exa_deep_request`` refuses,
+    then start a new bundle. The refusal is *any* schema-shape limit, not just the alias cap —
+    ``validate_exa_output_schema`` also caps total **nested** properties, so object-valued rows
+    split earlier than a count of aliases predicts.
+
+    Extracted because the budget reservation has to be sized from exactly this rule. Sizing it
+    from a `ceil(len(fields) / max-aliases)` estimate under-reserved every object-heavy
+    comprehensive account: the plan really compiled four bundles, the reservation covered two, and
+    the atomic-reservation guard suspended the job on settlement — deterministic on replay.
     """
 
     ordered = sorted(fields, key=lambda field: str(field.field_key))
@@ -996,6 +992,41 @@ def compile_exa_deep_acquisition_plan(
         else:
             current = candidate
     grouped.append(current)
+    return tuple(tuple(bundle) for bundle in grouped)
+
+
+def compile_exa_deep_acquisition_plan(
+    *,
+    workspace_id: str,
+    project_id: str,
+    project_run_id: ProjectRunId,
+    account: AccountEntity,
+    icp_key: str,
+    icp_version: int,
+    research_directive: ResearchDirectivePin,
+    fields: Sequence[ExaDeepFieldSpec],
+    research_intent: str,
+    additional_queries: Sequence[str],
+    observation_window: str,
+    freshness_policy_ref: str,
+    freshness_seconds: int,
+    cost_cents_reserved_per_bundle: Decimal,
+    entity_research_job_id: UUID | None = None,
+    config: ExaDeepConfig = DEFAULT_EXA_CONFIG,
+) -> ExaDeepAcquisitionBundlePlan:
+    """Pack admitted fields deterministically under Exa's schema limits.
+
+    Directional questions are attached to every necessary bundle, but never introduce fields.
+    Most account profiles fit one bundle; only the documented provider property limit can split it.
+    """
+
+    grouped = pack_exa_deep_field_bundles(
+        account,
+        fields,
+        research_intent=research_intent,
+        additional_queries=additional_queries,
+        config=config,
+    )
     preflights: list[ExaDeepAcquisitionPreflight] = []
     for index, bundle in enumerate(grouped):
         wire = compile_exa_deep_request(

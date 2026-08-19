@@ -77,6 +77,13 @@ _MATERIALIZATION_RUN_NAMESPACE = uuid5(NAMESPACE_URL, "clue:m8d:r4:exa-contact-m
 _ACCOUNT_MATERIALIZATION_RUN_NAMESPACE = uuid5(
     NAMESPACE_URL, "clue:m8d:r5:exa-account-materialization-run"
 )
+# The planning sentence a comprehensive directive needs when it carries no human-authored
+# directional question. Shared with the composition root, whose budget reservation must size
+# itself against the *same* request the action will compile.
+DEFAULT_ACCOUNT_RESEARCH_INTENT = (
+    "Target-lock research to this canonical account and answer only the admitted "
+    "structured fields with inspectable evidence."
+)
 # Both are terminal in the external ledger and can never yield a snapshot: the operation was
 # dispatched, the provider answered or refused, and no retry of this exact request will change it.
 _UNPRODUCTIVE_OUTCOMES = frozenset(
@@ -917,10 +924,7 @@ class ExaAccountSemanticResearchAction(EntityResearchProviderAction):
         # carry no separate human-authored directional question. Exa still needs an internal
         # non-empty planning sentence; compile that mechanically from the exact field-bound task
         # instead of making the user approve redundant prose.
-        intent = self._research_intent or (
-            "Target-lock research to this canonical account and answer only the admitted "
-            "structured fields with inspectable evidence."
-        )
+        intent = self._research_intent or DEFAULT_ACCOUNT_RESEARCH_INTENT
         observation_window = self._observation_window
         if request.parent_operation_ref is not None:
             intent = (
@@ -1104,6 +1108,7 @@ class ExaAccountSemanticResearchAction(EntityResearchProviderAction):
 
 
 __all__ = [
+    "DEFAULT_ACCOUNT_RESEARCH_INTENT",
     "ExaAccountSemanticResearchAction",
     "ExaContactSemanticResearchAction",
     "ExaEntityResearchProjectionBuilder",

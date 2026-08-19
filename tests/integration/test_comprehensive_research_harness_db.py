@@ -52,6 +52,7 @@ from dataclasses import dataclass, field
 from datetime import timedelta
 from decimal import Decimal
 from functools import partial
+from math import ceil
 from pathlib import Path
 from types import ModuleType
 from typing import Any, cast
@@ -81,7 +82,10 @@ from clue_api.account_research_fleet_composition import (
     build_account_research_fleet_composition,
 )
 from clue_api.account_research_fleet_launch import AccountResearchFleetLaunchRequest
-from clue_api.comprehensive_research_contract import COMPREHENSIVE_ACCOUNT_FIELDS
+from clue_api.comprehensive_research_contract import (
+    COMPREHENSIVE_ACCOUNT_FIELD_SOURCES,
+    COMPREHENSIVE_ACCOUNT_FIELDS,
+)
 from clue_api.entity_research_provider_wiring import (
     ProductionAccountResearchProviderActions,
 )
@@ -106,6 +110,7 @@ from clue_fleet import (
 )
 from clue_fleet.work_worker import WorkContext, WorkResult
 from clue_research.resolvers.exa import SOURCE_KEY as EXA_DEEP_SOURCE_KEY
+from clue_research.resolvers.exa.deep_contract import EXA_OUTPUT_MAX_FIELDS
 from clue_research.resolvers.sumble import SumbleClient
 from clue_research.resolvers.sumble.committee_transport import SumbleV9CommitteeClient
 from clue_research.verification.pre_spend import PreSpendGateImpl
@@ -137,21 +142,34 @@ REJECTED_JOBS_SLUG = "willamette"
 #: The account whose Sumble committee genuinely enumerates nobody.
 EMPTY_COMMITTEE_SLUG = "front-range"
 
+#: The bundle cost the shipped scripted Exa transport reports — the honest recorded price.
+RECORDED_BUNDLE_COST_DOLLARS = 0.07
+
 #: What one fake Exa Deep bundle reports as its provider cost, in dollars.
 #:
-#: **This is load-bearing, and it is set below the recorded envelope's own figure on purpose.**
-#: :func:`test_the_comprehensive_exa_reservation_under_reserves_its_own_bundle_plan` documents the
-#: production defect this exposes: ``ProductionAccountResearchProviderActions`` sizes the
-#: ``research_account_deep`` atomic budget reservation from the field *count*
-#: (``ceil(len(exa_fields) / EXA_OUTPUT_MAX_FIELDS)``), while the real bundler splits on Exa's
-#: *total nested property* budget too and emits four bundles for the comprehensive profile's twelve
-#: Exa-owned rows. At the recorded 7c/bundle the settled cost (28c) exceeds the 20c reservation and
-#: every account suspends. One cent per bundle keeps the rest of the pipeline provable while that
-#: defect is owned elsewhere; it is a legitimate provider price, not a workaround inside production.
-HARNESS_BUNDLE_COST_DOLLARS = 0.01
+#: This was pinned at 1c while the Exa atomic reservation was sized by the alias count alone: the
+#: real packer emits more bundles than that estimate, so at the recorded price the settled cost
+#: exceeded the reservation and every account suspended. The reservation is now sized from the
+#: same packer, so the harness runs at the recorded price and the cost path is proved honestly.
+HARNESS_BUNDLE_COST_DOLLARS = RECORDED_BUNDLE_COST_DOLLARS
 
-#: The bundle cost the shipped scripted Exa transport reports, used by the defect proof below.
-RECORDED_BUNDLE_COST_DOLLARS = 0.07
+#: What the retired alias-only heuristic would have reserved for, in bundles. Read off the §3.1
+#: ownership table rather than hardcoded, so it moves with the contract. The real packer splits on
+#: Exa's nested-property budget too, so it always exceeds this for the comprehensive profile —
+#: which is exactly the gap that used to suspend every account.
+_ALIAS_ONLY_BUNDLE_ESTIMATE = max(
+    1,
+    ceil(
+        len(
+            tuple(
+                field_key
+                for field_key, sources in COMPREHENSIVE_ACCOUNT_FIELD_SOURCES.items()
+                if EXA_DEEP_SOURCE_KEY in sources
+            )
+        )
+        / EXA_OUTPUT_MAX_FIELDS
+    ),
+)
 
 #: The confirmed directive's committee plan functions. A ``discover_buying_committee`` call's
 #: ``buying_unit_scope.target_functions`` must be a subset of these, so the two are stated once.
@@ -908,25 +926,24 @@ def _assert_cycle(cycle: SeededCycle, outcomes: Mapping[str, _AccountOutcome]) -
         assert outcomes[slug].committee_confirmed_empty == 0, slug
 
 
-def test_the_comprehensive_exa_reservation_under_reserves_its_own_bundle_plan(
+def test_the_comprehensive_exa_reservation_covers_its_own_bundle_plan(
     tmp_path: Path,
 ) -> None:
-    """A pinned production defect: the Exa atomic reservation is sized by the wrong bound.
+    """The Exa atomic reservation is sized from the plan the action really compiles.
 
-    ``ProductionAccountResearchProviderActions.resolve`` reserves
+    ``ProductionAccountResearchProviderActions.resolve`` used to reserve
     ``exa_deep.cost_cents * ceil(len(exa_fields) / EXA_OUTPUT_MAX_FIELDS)`` for the whole
-    ``research_account_deep`` tool call (``entity_research_provider_wiring.py``), i.e. it assumes
-    the plan splits only on Exa's **8-alias** cap. ``compile_exa_deep_acquisition_plan`` actually
-    splits whenever ``compile_exa_deep_request`` raises, and Exa's schema contract also caps the
-    **total nested property count at 10** (``deep_contract.validate_exa_output_schema``). Several
-    comprehensive rows are object-valued, so the twelve outstanding Exa-owned §3.1 rows really
-    compile into **four** bundles, not two. The reservation therefore covers half the plan, and
-    ``DbEntityResearchToolBatchCoordinator.completed`` refuses the settlement.
+    ``research_account_deep`` call, i.e. it assumed the plan splits only on Exa's **8-alias** cap.
+    ``pack_exa_deep_field_bundles`` splits whenever ``compile_exa_deep_request`` raises, and Exa's
+    schema contract also caps the **total nested property count at 10**
+    (``deep_contract.validate_exa_output_schema``). Several comprehensive rows are object-valued,
+    so the outstanding Exa-owned §3.1 rows really compile into more bundles than the alias count
+    predicts. The reservation covered half the plan, ``DbEntityResearchToolBatchCoordinator``
+    refused the settlement, and the supervisor suspended every account — deterministic on replay.
 
-    The consequence is settlement-blocking and deterministic on replay: the fleet supervisor turns
-    the refusal into ``supervisor_suspended``, so the account never settles at all. This test fails
-    the moment the reservation is sized from the real plan — which is the intended fix, and is not
-    made here.
+    Sizing the reservation with that same packer fixes it, and this drives a whole cycle at the
+    recorded provider price to prove it: more bundles than the old estimate allowed for, all of
+    them settled, and every account closing honestly instead of suspending.
     """
 
     async def scenario() -> None:
@@ -934,18 +951,46 @@ def test_the_comprehensive_exa_reservation_under_reserves_its_own_bundle_plan(
             fixture = await seed_insight_health_account_deep_fixture(
                 conn,
                 pages=_pages(),
-                storage=FsStorage(tmp_path / "defect-stage0"),
+                storage=FsStorage(tmp_path / "reservation-stage0"),
                 deep_field_keys=_DEEP_ICP_FIELDS,
             )
-            with pytest.raises(AssertionError) as failure:
-                await _drive_cycle(
-                    conn,
-                    cycle_index=91,
-                    tmp_path=tmp_path,
-                    fixture=fixture,
-                    bundle_cost_dollars=RECORDED_BUNDLE_COST_DOLLARS,
+            cycle, outcomes, _exa, _sumble = await _drive_cycle(
+                conn,
+                cycle_index=91,
+                tmp_path=tmp_path,
+                fixture=fixture,
+                bundle_cost_dollars=RECORDED_BUNDLE_COST_DOLLARS,
+            )
+            _assert_cycle(cycle, outcomes)
+
+            # The defect only bites when the real plan outgrows the alias-count estimate, so the
+            # pin asserts that it does. Otherwise this cycle could pass on a profile that happens
+            # to fit two bundles and guard nothing.
+            for slug, outcome in sorted(outcomes.items()):
+                bundles = int(
+                    (
+                        await conn.execute(
+                            text(
+                                """
+                                SELECT count(DISTINCT operation.operation_ref)
+                                FROM entity_research_provider_operation operation
+                                JOIN entity_research_provider_observation observation
+                                  ON observation.provider_operation_ref=operation.operation_ref
+                                JOIN entity_research_tool_request request_row
+                                  ON request_row.tool_request_id=observation.tool_request_id
+                                WHERE request_row.job_id=:job_id
+                                  AND operation.source_key=:source_key
+                                """
+                            ),
+                            {"job_id": outcome.job_id, "source_key": EXA_DEEP_SOURCE_KEY},
+                        )
+                    ).scalar_one()
                 )
-            assert "supervisor_suspended" in str(failure.value)
+                assert bundles > _ALIAS_ONLY_BUNDLE_ESTIMATE, (
+                    slug,
+                    bundles,
+                    _ALIAS_ONLY_BUNDLE_ESTIMATE,
+                )
 
     run_async(scenario())
 
