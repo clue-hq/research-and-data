@@ -285,6 +285,21 @@ carry web work, then makes the frontend show what the leg already emits.
 - Commits: `feat(genweb): leg turns refuse finalized documents and freeze the account card (G1, G2)`;
   `perf(design): web review loop capped at 6 with minimum-turns prompting (G4)`.
 
+> **Slice 1.5 OUTCOME (2026-08-19): DONE, reviewed clean** (commits `55982a32` G1+G2,
+> `a50e81f0` G4; record `_memory/2026-08-19-genweb-slice15-founder-rulings.md`). G1
+> live-proven both directions on the scratch doc: finalized → typed refusal in 34ms
+> (zero run rows, leg open), reverted → the same leg applied v2→v3. The cap middleware
+> rode a real generation turn (assembled into the live graph); incidentally that
+> cosmetic turn used ZERO review rounds and finished in ~3m28s under the new prompting.
+> Recorded residuals: refused turns carry a typed code and no user-facing sentence
+> (slice 3 req 7 now owns the copy); the G2 refusal is a fail-closed backstop (the FK
+> makes it near-unreachable, card freeze proven by DB test — no seeded design account
+> in dev data for a live personalized run); the 6-cap is per attempt (checkpoint resume
+> = fresh budget, consistent with resume-as-restart); crash-retry of a succeeded run
+> refuses if a human finalized the doc inside the crash window (accepted edge). NEW
+> launch trap: `CLUE_AGENT_WORKSPACE_ROOT` must be `/private/tmp/...` on macOS (`/tmp`
+> is a symlink; workspace policy refuses link-traversing paths).
+
 ### Slice 2 — document birth at leg-open + the versioning wave (backend; B2, B4, F5)
 - `open_design_leg@2`: `doc_kind: "web" | "scene" | None` (required when
   `document_id is None`; refuse `scene` creation in v1 — scene legs keep requiring an
@@ -324,7 +339,11 @@ carry web work, then makes the frontend show what the leg already emits.
 4. Honest language: "Website generation often takes 5–15 minutes."
 5. No fake percentages, no precise ETA.
 6. Refresh the Gallery and any open canvas exactly when the committed turn completes.
-7. Surface failure/cancellation and allow retry on the same leg/document.
+7. Surface failure/cancellation and allow retry on the same leg/document — including
+   honest copy for the typed leg refusals slice 1.5 added
+   (`design_leg_document_finalized`: "this page is finalized; revising it needs a new
+   draft revision", `design_leg_account_unresolved`), which today land a code and no
+   user-facing sentence.
 8. Never produce an assistant success message before the version is durably committed
    (backend already guarantees this — slice 1's summary is written only after the
    terminal succeeded run; the frontend must not weaken it with optimistic UI).
