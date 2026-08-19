@@ -192,7 +192,22 @@ carry web work, then makes the frontend show what the leg already emits.
 - Record the working env/launch recipe in `_memory/` (ports, flags, keys, worker).
 - Commit: `chore(genweb): design runtime enabled in dev + substrate preflight record`.
 
-### Slice 1 — web-turn dispatch (backend; B1)
+> **Slice 0 OUTCOME (2026-08-19): PASSED — the substrate is proven end to end on this
+> trunk** (BFF-driven turn → embedded worker claim in ~2s → trio → committed v0→1 in
+> 6m29s → artifact route renders it; `_memory/2026-08-19-genweb-slice0-preflight.md`
+> holds the working recipe incl. the NEW `LUMEN_AGENT_BASE_URL` trap). **One blocker
+> found and adopted into slice 1's scope:** the reviewer's page previews have no size
+> ceiling (`lumen_agent/tools/view.py::_normalize_image_bytes` clamps only a 512px
+> floor), so any page taller than ~8000px — roughly 3–4 sections, i.e. nearly every
+> realistic landing-page brief — kills the review call (`invalid_prompt: image
+> dimensions exceed max allowed size`), the transactional turn discards ALL authored
+> nodes, and `result.diagnostics` stays empty. Slice 1 therefore also ships: a
+> downscale-to-ceiling (or tile) clamp in `_normalize_image_bytes` with tests, and the
+> review-failure reason landed as a real diagnostics entry. Also recorded: a no-kit
+> workspace births an ALL-NULL theme (not a "platform default kit") — slice 2's tests
+> assert that real fallback shape.
+
+### Slice 1 — web-turn dispatch (backend; B1) + the preview-ceiling fix
 - `DesignLegTurnRunner._envelope` branches on the leg document's `doc_kind` (read with
   the doc row the runner already loads for the scene path — verify; else one store read):
   web → `kind="web_turn"` + `WebTurnRequest`-shaped `config.request` per §4.2; scene →
