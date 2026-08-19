@@ -86,6 +86,7 @@ Run WITHOUT the platform root `.env` sourced, from `subsystems/clue-design` with
 `PYTHONPATH=.:apps/api:apps/agent_runtime` and the repo-root `.venv`:
 - `pytest apps/agent_runtime/tests` → 578 passed, 2 skipped.
 - `pytest apps/api/tests/test_web_turns.py` → 26 passed (22 pre-existing + 4 new).
+- `pytest apps/api/tests/test_web_operations.py apps/api/tests/test_design_toolbelt_documents.py` → 29 passed (the other two suites driving `/web/turns`).
 - Full `pytest apps/api/tests` is NOT a gate here: already red (the 16 standing reds
   recorded in `_memory/2026-08-19-genweb-g7-tailwind-runtime.md` — missing
   `apps/custom-component-compiler/node_modules` → compile 503) and it runs at ~1 test/s
