@@ -600,7 +600,10 @@ def test_assess_settles_the_directives_derived_rows_into_the_coverage_ledger(
             definition = await resolver.resolve(
                 job=live_job,
                 fence=EntityResearchExecutionFence(
-                    task_id=uuid4(), worker_id="b7-test-worker", lease_generation=1
+                    task_id=uuid4(),
+                    worker_id="b7-test-worker",
+                    lease_generation=1,
+                    task_attempt=1,
                 ),
             )
             active = ActiveEntityResearchToolExecution(

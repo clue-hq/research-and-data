@@ -684,7 +684,10 @@ async def _run_p2_agent(
         update={"active_worker_id": "fi2-s3-t2-worker", "lease_generation": 1}
     )
     fence = EntityResearchExecutionFence(
-        task_id=uuid4(), worker_id="fi2-s3-t2-worker", lease_generation=1
+        task_id=uuid4(),
+        worker_id="fi2-s3-t2-worker",
+        lease_generation=1,
+        task_attempt=1,
     )
     lineage = _FixtureLineageReader()
     providers = _EmptyCommitteeProviders(

@@ -209,9 +209,14 @@ class AccountResearchDefinitionResolver(EntityResearchDefinitionResolver):
             raise AccountResearchCompositionError("account research run is absent")
         context = EntityResearchRuntimeContext(
             agent_execution_id=job.authorization.attempt_id,
+            # One drive is one turn. The attempt ordinal is load-bearing: a released lease
+            # restarts at generation 1, so a crashed job resumed at the same durable state would
+            # otherwise re-mint the previous drive's turn id and the R3 journal would refuse the
+            # resume as a replay under different exact construction.
             agent_turn_id=uuid5(
                 _TURN_NAMESPACE,
-                f"{job.job_id}:{fence.lease_generation}:{job.current_state_sha256}",
+                f"{job.job_id}:{fence.lease_generation}:{fence.task_attempt}"
+                f":{job.current_state_sha256}",
             ),
             role=EntityAgentRole.ACCOUNT,
             authorization=job.authorization,

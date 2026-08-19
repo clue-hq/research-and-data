@@ -711,7 +711,10 @@ async def _run_p2(
         update={"active_worker_id": "fi2-s3-economics", "lease_generation": 1}
     )
     fence = EntityResearchExecutionFence(
-        task_id=uuid4(), worker_id="fi2-s3-economics", lease_generation=1
+        task_id=uuid4(),
+        worker_id="fi2-s3-economics",
+        lease_generation=1,
+        task_attempt=1,
     )
     contacts = (
         UUID(

@@ -1056,7 +1056,10 @@ def test_r5_account_agent_observes_results_decides_and_finalizes_without_contact
                 update={"active_worker_id": "r5-test-worker", "lease_generation": 1}
             )
             fence = EntityResearchExecutionFence(
-                task_id=uuid4(), worker_id="r5-test-worker", lease_generation=1
+                task_id=uuid4(),
+                worker_id="r5-test-worker",
+                lease_generation=1,
+                task_attempt=1,
             )
             lineage = _FixtureLineageReader()
             providers = _FixtureAccountProviders(

@@ -29,6 +29,7 @@ in one mechanically closed coverage ledger without authorizing a fake provider c
 
 from __future__ import annotations
 
+import asyncio
 import json
 from collections.abc import AsyncIterator, Mapping, Sequence
 from contextlib import asynccontextmanager
@@ -46,6 +47,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from clue_agents.account_entity_research import AssessAccountCoverageInput
 from clue_agents.contracts import ModelPolicy
 from clue_agents.entity_research_contracts import (
+    EntityResearchAgentDefinition,
     EntityResearchAgentResult,
     EntityResearchAgentSuspension,
     EntityResearchToolCall,
@@ -87,7 +89,10 @@ from clue_api.comprehensive_research_contract import (
     COMPREHENSIVE_ACCOUNT_FIELD_SOURCES,
     COMPREHENSIVE_ACCOUNT_FIELDS,
 )
-from clue_api.entity_research_runtime_wiring import DbEntityResearchAgentJournal
+from clue_api.entity_research_runtime_wiring import (
+    DbEntityResearchAgentJournal,
+    EntityResearchJournalConflict,
+)
 from clue_api.entity_research_tools import (
     EntityResearchProviderCausationStore,
     EntityResearchResultIntegrityError,
@@ -135,9 +140,13 @@ from clue_fleet import (
     DbEntityResearchJobStore,
     EntityResearchExecutionFence,
     FleetTaskKind,
+    FleetTaskStatus,
+    LeaseGeneration,
+    WorkContext,
     WorkId,
     acquire_work_lease,
     claim_next_task,
+    release_work_lease,
 )
 from clue_research.adapters.exa_websets import ExaDiscoveryCompanyItem
 from clue_research.claimstore import (
@@ -646,6 +655,7 @@ class _Drive:
     """Everything the assertions need about one finalized comprehensive run."""
 
     outcome: EntityResearchAgentResult | EntityResearchAgentSuspension | None
+    definition: EntityResearchAgentDefinition
     model: _ScriptedModel
     providers: _PartialAccountProviders
     transport: _ScriptedExaTransport
@@ -671,31 +681,64 @@ async def _drive_comprehensive_run(
 ) -> _Drive:
     """Launch through the real launcher, then run the composed job to finalization."""
 
-    storage = FsStorage(tmp_path / f"b8-artifacts-{uuid4().hex[:8]}")
     connection = _NestedConnFactory(conn)
     projection = await _launch(conn, fixture=fixture, connection=connection)
-    launched = projection.jobs[0]
+    return await _drive_launched_job(
+        conn,
+        fixture=fixture,
+        tmp_path=tmp_path,
+        job_id=projection.jobs[0].job_id,
+        transport=transport,
+        enrich_action=enrich_action,
+        expect_error=expect_error,
+    )
+
+
+async def _drive_launched_job(
+    conn: AsyncConnection,
+    *,
+    fixture: _Fixture,
+    tmp_path: Path,
+    job_id: UUID,
+    worker_id: str = "b8-comprehensive",
+    transport: _ScriptedExaTransport | None = None,
+    enrich_action: Any | None = None,
+    expect_error: type[BaseException] | None = None,
+    assert_premature_close_refused: bool = True,
+    model_id: str = "b8-comprehensive-model",
+) -> _Drive:
+    """Drive one already-launched job exactly once, as one worker claim would.
+
+    Separate from :func:`_drive_comprehensive_run` so the same durable job can be driven more
+    than once: a crashed drive followed by a resumed re-drive is a real fleet lifecycle, and each
+    call claims the task, takes the lease, and composes a fresh runtime the way a fresh worker
+    process does.
+    """
+
+    storage = FsStorage(tmp_path / f"b8-artifacts-{uuid4().hex[:8]}")
+    connection = _NestedConnFactory(conn)
     task = await claim_next_task(
         conn,
         kind=FleetTaskKind.ENTITY_RESEARCH_JOB,
-        worker_id="b8-comprehensive",
-        project_run_id=ProjectRunId(launched.job_id),
+        worker_id=worker_id,
+        project_run_id=ProjectRunId(job_id),
     )
     assert task is not None
     lease = await acquire_work_lease(
         conn,
-        work_id=WorkId(launched.job_id),
-        worker_id="b8-comprehensive",
+        work_id=WorkId(job_id),
+        worker_id=worker_id,
         ttl=timedelta(seconds=120),
     )
     assert lease is not None
     fence = EntityResearchExecutionFence(
         task_id=task.task_id,
-        worker_id="b8-comprehensive",
+        worker_id=worker_id,
         lease_generation=lease.generation,
+        task_attempt=task.attempts,
     )
     jobs = DbEntityResearchJobStore(conn_factory=connection)
-    begun = await jobs.begin(launched.job_id, fence=fence)
+    begun = await jobs.begin(job_id, fence=fence)
     assert begun.admitted
     selection = begun.job.authorization.selection
     assert selection.committee_source_keys == ()
@@ -749,7 +792,7 @@ async def _drive_comprehensive_run(
         snapshots=ExaDeepSnapshotResolverProvider(storage=storage, conn_factory=connection),
         projector=ExaEntityResearchProjectionBuilder(storage=storage, conn_factory=connection),
         conn_factory=connection,
-        observation_window=f"b8-comprehensive:{launched.job_id}",
+        observation_window=f"b8-comprehensive:{job_id}",
         research_intent=(
             "Target-lock research to this canonical account and answer only the admitted "
             "structured fields with inspectable evidence."
@@ -757,7 +800,7 @@ async def _drive_comprehensive_run(
         freshness_policy_ref="freshness:b8-comprehensive-v1",
         freshness_seconds=3_600,
         cost_cents_reserved_per_bundle=Decimal("8"),
-        entity_research_job_id=launched.job_id,
+        entity_research_job_id=job_id,
     )
     result_store = EntityResearchResultStore(
         storage=storage,
@@ -779,7 +822,7 @@ async def _drive_comprehensive_run(
         state=state,
         provider_actions=StaticAccountResearchProviderActions(
             {
-                launched.job_id: {
+                job_id: {
                     "research_account_deep": ProviderActionBinding(action=exa_action, version=1),
                     "enrich_account": ProviderActionBinding(
                         action=enrich_action or providers, version=1
@@ -789,7 +832,7 @@ async def _drive_comprehensive_run(
             }
         ),
         model_policy=ModelPolicy(
-            model_id="b8-comprehensive-model",
+            model_id=model_id,
             timeout_s=30,
             max_retries=0,
             max_output_tokens=4096,
@@ -809,21 +852,24 @@ async def _drive_comprehensive_run(
         ),
         journal_event_ref="entity-agent-journal:b8-premature-assessment",
     )
-    with pytest.raises(
-        AccountResearchAuthorityError,
-        match="coverage cannot close before every authorized field/source",
-    ):
-        await state.assess(
-            AssessAccountCoverageInput(result_refs=(), assessment_note="premature no-work close"),
-            premature,
-        )
-    async with connection() as execution_conn:
-        incomplete = await read_account_research_execution_completeness(
-            execution_conn, authorization=begun.job.authorization
-        )
-    assert not incomplete.complete
-    assert incomplete.outstanding_field_source_pairs
-    assert not incomplete.terminal_field_source_pairs
+    if assert_premature_close_refused:
+        with pytest.raises(
+            AccountResearchAuthorityError,
+            match="coverage cannot close before every authorized field/source",
+        ):
+            await state.assess(
+                AssessAccountCoverageInput(
+                    result_refs=(), assessment_note="premature no-work close"
+                ),
+                premature,
+            )
+        async with connection() as execution_conn:
+            incomplete = await read_account_research_execution_completeness(
+                execution_conn, authorization=begun.job.authorization
+            )
+        assert not incomplete.complete
+        assert incomplete.outstanding_field_source_pairs
+        assert not incomplete.terminal_field_source_pairs
     model = _ScriptedModel(plan=plan)
     journal = DbEntityResearchAgentJournal(conn_factory=connection)
     runtime = EntityResearchAgentRuntime(
@@ -845,10 +891,11 @@ async def _drive_comprehensive_run(
         outcome = await runtime.run(definition=definition)
     return _Drive(
         outcome=outcome,
+        definition=definition,
         model=model,
         providers=providers,
         transport=transport,
-        job_id=launched.job_id,
+        job_id=job_id,
         selection=selection,
         borrowed=borrowed,
         authorization=begun.job.authorization,
@@ -1594,5 +1641,203 @@ def test_a_cancelled_members_pending_release_is_not_an_attempt(tmp_path: Path) -
             }
             assert retried_pairs <= set(settled.terminal_field_source_pairs)
             assert not retried_pairs & set(settled.outstanding_field_source_pairs)
+
+    run_async(scenario())
+
+
+async def _crashed_job_task(conn: AsyncConnection, *, job_id: UUID) -> Mapping[str, Any]:
+    row = (
+        (
+            await conn.execute(
+                text(
+                    "SELECT task_id, attempts, status, result_ref_json FROM fleet_task "
+                    "WHERE work_id=:job_id AND kind='entity_research_job'"
+                ),
+                {"job_id": job_id},
+            )
+        )
+        .mappings()
+        .one()
+    )
+    return dict(row)
+
+
+async def _agent_turns(conn: AsyncConnection, *, job_id: UUID) -> Sequence[Mapping[str, Any]]:
+    rows = (
+        (
+            await conn.execute(
+                text(
+                    "SELECT agent_turn_id, context_sha256, tool_manifest_sha256 "
+                    "FROM entity_research_agent_turn WHERE job_id=:job_id ORDER BY started_at"
+                ),
+                {"job_id": job_id},
+            )
+        )
+        .mappings()
+        .all()
+    )
+    return [dict(row) for row in rows]
+
+
+def test_a_crashed_account_job_re_drives_after_a_supervisor_suspension_and_resume(
+    tmp_path: Path,
+) -> None:
+    """The live 2026-08-19 defect: a resumed job refused itself as a replayed agent turn.
+
+    A drive that dies inside a provider tool leaves an immutable R3 turn row keyed on
+    ``(job, lease_generation, current_state_sha256)``.  ``release_work_lease`` *deletes* the lease
+    row, so the resumed drive's lease starts again at generation 1 and — with the durable state
+    unchanged, because the crash bought nothing — every input to that key repeats.  The resumed
+    drive therefore re-minted the crashed drive's turn id, and because the fleet had meanwhile
+    moved (a provider reservation resized, a concurrency default raised), the journal saw the same
+    turn id under a different exact construction and failed closed with
+    ``EntityResearchJournalConflict``.  Every one of the five live jobs died that way on resume.
+
+    The attempt ordinal is now part of the turn key, so a resume is its own turn and the R3 guard
+    keeps its real meaning: one turn id, one immutable construction, still fail-closed.
+    """
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            fixture = await _seed_discovered_account(
+                conn, FsStorage(tmp_path / "b8-resume-artifacts")
+            )
+            connection = _NestedConnFactory(conn)
+            projection = await _launch(conn, fixture=fixture, connection=connection)
+            job_id = projection.jobs[0].job_id
+
+            crash = _ReserveOnlyEnrichAction(
+                workspace_id=fixture.workspace_id,
+                project_id=fixture.project_id,
+                project_run_id=fixture.project_run_id,
+                account_id=fixture.account_id,
+            )
+            crashed = await _drive_launched_job(
+                conn,
+                fixture=fixture,
+                tmp_path=tmp_path,
+                job_id=job_id,
+                worker_id="b8-resume-crash",
+                enrich_action=crash,
+                expect_error=EntityResearchResultIntegrityError,
+            )
+            assert crash.reserved
+            first_turns = await _agent_turns(conn, job_id=job_id)
+            assert len(first_turns) == 1
+            # The batch rows the production coordinator writes when a member dies before
+            # dispatch (the R9 harness seeds no tool-request rows, so the test writes them, as
+            # ``test_a_cancelled_members_pending_release_is_not_an_attempt`` does). Without them
+            # the crash's reservation stays pending and no later drive could ever settle.
+            await _fail_the_causing_member(conn, job_id=job_id)
+            assert crashed.outcome is None
+            crashed_state_sha = (
+                await conn.execute(
+                    text("SELECT current_state_sha256 FROM entity_research_job WHERE job_id=:j"),
+                    {"j": job_id},
+                )
+            ).scalar_one()
+
+            # The supervisor's own suspension path, then the human resume, then the re-offer.
+            task = await _crashed_job_task(conn, job_id=job_id)
+            fleets = AccountResearchFleetService(conn_factory=connection)
+            await fleets.suspend_failure(
+                WorkContext(
+                    task_id=UUID(str(task["task_id"])),
+                    work_id=WorkId(job_id),
+                    worker_id="b8-resume-crash",
+                    lease_generation=LeaseGeneration(1),
+                    payload={"job_id": str(job_id)},
+                    stop_requested=asyncio.Event(),
+                    lease_lost=asyncio.Event(),
+                    task_attempt=int(task["attempts"]),
+                ),
+                EntityResearchResultIntegrityError("provider worker died after reserving"),
+            )
+            # ``suspend_failure`` cancels the drive task itself, exactly as the live run recorded
+            # it: ``supervisor_suspended`` with the worker error as its reason code.
+            settled = await _crashed_job_task(conn, job_id=job_id)
+            assert str(settled["status"]) == FleetTaskStatus.DONE.value
+            assert settled["result_ref_json"] == {
+                "outcome": "supervisor_suspended",
+                "reason_code": "worker_error:EntityResearchResultIntegrityError",
+            }
+            await release_work_lease(
+                conn,
+                work_id=WorkId(job_id),
+                worker_id="b8-resume-crash",
+                generation=LeaseGeneration(1),
+            )
+            await fleets.resume_job(
+                job_id,
+                workspace_id=fixture.workspace_id,
+                actor="human:account-owner",
+            )
+
+            # The crash bought nothing and the released lease restarts at generation 1, so the
+            # old turn key repeats exactly. Only the attempt ordinal separates the two drives.
+            resumed = await _drive_launched_job(
+                conn,
+                fixture=fixture,
+                tmp_path=tmp_path,
+                job_id=job_id,
+                worker_id="b8-resume-redrive",
+                assert_premature_close_refused=False,
+                # Something that constructs the agent moved while the job sat paused — live it
+                # was an Exa reservation resized and a provider-concurrency default raised;
+                # here, one pinned model id. Any of them changes the exact-construction digests,
+                # which is what turned a re-minted turn id into a hard refusal.
+                model_id="b8-comprehensive-model-v2",
+            )
+            after = (
+                await conn.execute(
+                    text("SELECT current_state_sha256 FROM entity_research_job WHERE job_id=:j"),
+                    {"j": job_id},
+                )
+            ).scalar_one()
+            assert after != crashed_state_sha  # the re-drive is the one that did the work
+
+            turns = await _agent_turns(conn, job_id=job_id)
+            assert len(turns) == 2
+            assert turns[0]["agent_turn_id"] != turns[1]["agent_turn_id"]
+            assert isinstance(resumed.outcome, EntityResearchAgentResult)
+            receipt = resumed.result.finalization_receipt
+            assert receipt is not None
+            # The resumed drive reached a real engine-accepted finalization — the same honest
+            # ``needs_review`` (one deliberately empty Exa row) the uninterrupted run reaches.
+            assert receipt.proposal.outcome is ResearchFinalizationOutcome.NEEDS_REVIEW
+            assert receipt.proposal.review_flags == ("account_fields_unresolved",)
+
+    run_async(scenario())
+
+
+def test_the_journal_still_refuses_one_turn_id_under_two_constructions(tmp_path: Path) -> None:
+    """The R3 guard the resume fix must not weaken: a turn id is one immutable construction."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            fixture = await _seed_discovered_account(
+                conn, FsStorage(tmp_path / "b8-guard-artifacts")
+            )
+            connection = _NestedConnFactory(conn)
+            projection = await _launch(conn, fixture=fixture, connection=connection)
+            job_id = projection.jobs[0].job_id
+            drive = await _drive_launched_job(
+                conn,
+                fixture=fixture,
+                tmp_path=tmp_path,
+                job_id=job_id,
+                worker_id="b8-guard",
+            )
+            turns = await _agent_turns(conn, job_id=drive.job_id)
+            assert turns
+            journal = DbEntityResearchAgentJournal(conn_factory=connection)
+            with pytest.raises(EntityResearchJournalConflict, match="different exact"):
+                await journal.start(
+                    definition=drive.definition,
+                    context_sha256="b" * 64,
+                    resource_manifest_sha256="c" * 64,
+                    tool_manifest_sha256="d" * 64,
+                    system_prompt_sha256="e" * 64,
+                )
 
     run_async(scenario())

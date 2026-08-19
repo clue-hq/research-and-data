@@ -447,6 +447,7 @@ def test_confirmed_direction_compiles_exact_account_fleet_without_provider_or_co
                 task_id=task.task_id,
                 worker_id="r10-spend-authority",
                 lease_generation=lease.generation,
+                task_attempt=1,
             )
             begun = await DbEntityResearchJobStore(conn_factory=connection).begin(
                 job.job_id,
@@ -891,6 +892,7 @@ def test_account_only_research_composes_without_committee_configuration(tmp_path
                     task_id=task.task_id,
                     worker_id="b5-account-only",
                     lease_generation=lease.generation,
+                    task_attempt=1,
                 ),
             )
             assert begun.admitted

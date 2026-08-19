@@ -694,7 +694,10 @@ def test_d5_committee_discovery_defers_roles_and_the_account_agent_completes_the
                 update={"active_worker_id": "d5-test-worker", "lease_generation": 1}
             )
             fence = EntityResearchExecutionFence(
-                task_id=uuid4(), worker_id="d5-test-worker", lease_generation=1
+                task_id=uuid4(),
+                worker_id="d5-test-worker",
+                lease_generation=1,
+                task_attempt=1,
             )
 
             lineage = _FixtureLineageReader()
