@@ -32,7 +32,12 @@ def test_scripted_o3_conversations_cover_the_non_linear_gate() -> None:
     with hermetic_flag_env():
         registry = build_agent_profile_registry(build_toolbelt(storage=None, gateway=None))
     head = registry.resolve(AgentRole.HEAD_OF_ABM)
-    skill = head.open_skill("skill:account-deep-steering@v4")
+    # The promoted head-of-abm profile discloses the steering skill at exactly one version, so
+    # this pin follows the promotion: v4 → v8 across the Slice B waves (v5–v7 refined the
+    # research vocabulary and the budget-controls-off launch path; v8 pairs with
+    # ``draft_account_research_directive@5``'s omittable field list). Every guidance line this
+    # test asserts is carried forward unchanged by those revisions.
+    skill = head.open_skill("skill:account-deep-steering@v8")
 
     for scenario in scenarios:
         assert scenario["user_turns"]

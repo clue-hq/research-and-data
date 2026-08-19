@@ -1244,8 +1244,13 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # inventory as well (77 + 52 = 129).
     # Slice B wave 2 registers draft_account_research_directive@4 — the comprehensive-profile
     # directive contract — beside its replayable @1/@2/@3 predecessors (129 + 1 = 130).
-    assert len(registry) == 130
-    assert registry.descriptor("draft_account_research_directive").version == "4"
+    # The Slice B live-gate repair then registers draft_account_research_directive@5 — @4's
+    # advertised input schema made ``directive.field_keys`` required, so a schema-honouring model
+    # could never draft the comprehensive profile the steering skill asks for; @5 makes the key
+    # omittable and inherits @4's expansion/ambiguity semantics unchanged, beside its replayable
+    # @1/@2/@3/@4 predecessors (130 + 1 = 131, still no new name).
+    assert len(registry) == 131
+    assert registry.descriptor("draft_account_research_directive").version == "5"
     assert registry.descriptor("synthesize_icps").version == "3"
     assert registry.descriptor("synthesize_icps", "2").version == "2"
     assert registry.descriptor("start_confirmed_project_run").version == "3"
@@ -1267,8 +1272,9 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     assert len(registry.names()) == 114
     # C6 keeps profile_contact@1 for immutable historical pins and elects the governed,
     # project-run-scoped profile_contact@2 as the name-only default. Slice B wave 2's
-    # draft_account_research_directive@4 is the 130th address (no new name).
-    assert len(registry) == 130
+    # draft_account_research_directive@4 is the 130th address, and the Slice B live-gate repair's
+    # draft_account_research_directive@5 the 131st (neither adds a name).
+    assert len(registry) == 131
     assert registry.descriptor("profile_contact").version == "2"
     assert registry.descriptor("profile_contact", "1").version == "1"
     assert {
@@ -1278,8 +1284,9 @@ def test_build_toolbelt_registers_the_full_set() -> None:
         "research_account_gaps@2",
     }
     # Slice 5 promoted presentation-bearing draft @3 as the default; Slice B wave 2 promoted the
-    # comprehensive-profile @4. Confirm stays @2.
-    assert registry.descriptor("draft_account_research_directive").version == "4"
+    # comprehensive-profile @4, and the live-gate repair promoted the satisfiable-schema @5.
+    # Confirm stays @2.
+    assert registry.descriptor("draft_account_research_directive").version == "5"
     assert registry.descriptor("confirm_account_research_directive").version == "2"
 
 
