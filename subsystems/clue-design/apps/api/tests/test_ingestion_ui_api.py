@@ -290,6 +290,28 @@ def test_job_list_shape_and_recency_ordering(client: TestClient) -> None:
         assert {"job_id", "kind", "status", "stage", "progress"} <= set(job.keys())
 
 
+def test_job_dto_carries_the_website_url_for_website_jobs_only(client: TestClient) -> None:
+    """brand-kit slice 4: the Brand-context page's Re-extract button needs the URL a
+    kit-less workspace's failed auto-ingestion was submitted with — the workspace's own
+    input, served workspace-scoped. Non-website kinds have no URL and say so."""
+    from lumen_ingestion.jobs import IngestionJobStore
+
+    store = IngestionJobStore()
+    website = store.create("website", {"url": "https://insighthealth.example"})
+    pdf = store.create("pdf", {"filename": "brand.pdf"})
+    uploads = store.create("asset_upload", {"filenames": ["logo.png"]})
+
+    by_id = {job["job_id"]: job for job in client.get("/brand-kits/ingest").json()["jobs"]}
+    assert by_id[website["job_id"]]["website_url"] == "https://insighthealth.example"
+    assert by_id[pdf["job_id"]]["website_url"] is None
+    assert by_id[uploads["job_id"]]["website_url"] is None
+    # Still the public view: the URL is one named field, not the request body.
+    assert "request" not in by_id[website["job_id"]]
+
+    single = client.get(f"/brand-kits/ingest/{website['job_id']}").json()["job"]
+    assert single["website_url"] == "https://insighthealth.example"
+
+
 def test_job_list_empty(client: TestClient) -> None:
     resp = client.get("/brand-kits/ingest")
     assert resp.status_code == 200, resp.text

@@ -10,9 +10,11 @@ from conftest import make_client
 
 from lumen_api.main import create_app
 
-
 REPO_ROOT = Path(__file__).resolve().parents[3]
 MINIMAL_SCENE_PATH = REPO_ROOT / "crates/lumen-core/fixtures/minimal_scene.json"
+VALID_STYLES_PATH = (
+    REPO_ROOT / "crates/lumen-core/fixtures/styles/valid_insight_health.styles"
+)
 
 
 @pytest.fixture()
@@ -106,3 +108,44 @@ def test_web_document_brand_kit_ref_stored_in_theme(client: TestClient) -> None:
     theme = response.json()["scene"]["theme"]
     # P0 stores the ref verbatim; no validation against the kits table.
     assert theme["brand_kit"] == {"id": "platform_default", "version": 1}
+
+
+def test_approval_themes_only_documents_created_after_it(client: TestClient) -> None:
+    compiled = client.post(
+        "/brand-kits/compile-styles",
+        json={
+            "source": VALID_STYLES_PATH.read_text(),
+            "brand_kit_id": "brand_kit_insight_health",
+            "version": 4,
+            "name": "Insight Health",
+        },
+    )
+    assert compiled.status_code == 200, compiled.text
+
+    before = create_web_document(client)
+    before_scene = client.get(f"/documents/{before['id']}").json()["scene"]
+    assert before_scene["theme"].get("brand_kit") is None
+
+    approved = client.post(
+        "/brand-kits/brand_kit_insight_health/approval",
+        json={"approval_status": "approved"},
+    )
+    assert approved.status_code == 200, approved.text
+
+    # Stamp-at-creation is not a render-time fallback: approval leaves the old row untouched.
+    unchanged = client.get(f"/documents/{before['id']}").json()["scene"]
+    assert unchanged["theme"].get("brand_kit") is None
+
+    after = create_web_document(client)
+    after_scene = client.get(f"/documents/{after['id']}").json()["scene"]
+    assert after_scene["theme"]["brand_kit"] == {
+        "id": "brand_kit_insight_health",
+        "version": 4,
+    }
+
+    theme_response = client.get(f"/documents/{after['id']}/web/theme")
+    assert theme_response.status_code == 200, theme_response.text
+    theme = theme_response.json()["theme"]
+    # These values distinguish the compiled client kit from the platform-default theme.
+    assert theme["tokens"]["primary"].lower() != "#111827"
+    assert "Source Sans 3" in theme["display_family"]

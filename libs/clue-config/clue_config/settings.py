@@ -278,6 +278,14 @@ class Settings(BaseSettings):
     # races a worker that is merely between heartbeats.
     # Env: ``CLUE_DESIGN_REAPER_INTERVAL_S``.
     design_reaper_interval_s: float = 300.0
+    # Base URL of the design API (``lumen_api``) for the few platform surfaces that must reach it
+    # as a SERVICE rather than through the ``clue_design`` DAL — today only the brand-kit
+    # onboarding trigger, which enqueues a website ingestion through the design toolbelt's own
+    # guarded route instead of writing design rows behind its back. ``None`` (the default) means
+    # the platform makes no server-side design-API calls at all: the trigger logs that it is
+    # unconfigured and does nothing, which is a posture, not an error. Env:
+    # ``CLUE_DESIGN_API_BASE_URL``.
+    design_api_base_url: str | None = None
     # R9 requires a positive worst-case monetary reservation even when a subscription provider
     # reports credits while ``sumble_cents_per_credit`` is intentionally zero. This admission
     # floor is released after settlement and is never recorded as spend. It is policy, not an

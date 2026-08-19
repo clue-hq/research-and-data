@@ -28,6 +28,7 @@ from pathlib import Path
 from typing import Any, Awaitable, Callable, Optional, Protocol
 
 from clue_storage import StorageBackend, storage_from_settings
+from lumen_api.database import NotFoundError
 from lumen_api.design_store import DesignBlobStore, HybridRepository
 from py_lumen_config import settings
 
@@ -128,7 +129,12 @@ def _publish_ingested_kit(
     source: str,
     job_derived_id: bool,
 ) -> JsonObject:
-    """Publish the kit one ingestion produced, adopting its own earlier attempt's row.
+    """Publish the kit one ingestion produced.
+
+    A job-derived id creates version 1 and adopts that exact slot on a re-offer. A
+    client-supplied id has two meanings: create version 1 when the lineage does not exist yet,
+    or publish the existing lineage's NEXT version when it does. The latter is the manual
+    Re-extract contract — it must not run the capture and then collide with version 1.
 
     **The re-offer hole this closes.** The D5 Round C reaper re-offers a job whose worker died
     between publishing the kit and terminalizing the job row. The kit id is already per-job
@@ -136,12 +142,41 @@ def _publish_ingested_kit(
     collided on the composite primary key and the job failed with a database error instead of
     completing with the result it had already produced.
 
-    ``on_conflict='adopt'`` makes that create a no-op that returns the existing row, which is
-    safe *because* the id is derived from the job id: the only writer that can have filled that
-    slot is an earlier attempt of this same job. When the CLIENT supplied the kit id
-    (``job_derived_id=False``) the slot is not the job's to adopt, so the collision stays the
-    loud refusal it has always been.
+    ``on_conflict='adopt'`` makes the job-derived create a no-op that returns the existing row,
+    which is safe *because* the id is derived from the job id: the only writer that can have
+    filled that slot is an earlier attempt of this same job. When the CLIENT supplied the kit id,
+    an absent lineage still uses ``on_conflict='refuse'`` because that slot is not the job's to
+    adopt. An existing lineage uses ``design_publish_brand_kit_version``: its version is allocated
+    inside the locked write, its expected base is CAS-checked, and the DAL inherits the lineage's
+    explicit ``brand_id``.
+
+    A rare reaper residual remains deliberately visible: an existing-lineage job that dies after
+    this publish but before terminalizing has no durable producing-job marker in the kit row, so
+    its re-offer can publish one extra DRAFT version. The page shows the latest and the approval
+    gate still holds; adding a new provenance field solely for this recovery case was explicitly
+    left out of Slice 4.
     """
+    if not job_derived_id:
+        brand_kit_id = str(brand_kit["id"])
+        try:
+            current = repo.require_brand_kit(brand_kit_id)
+        except NotFoundError:
+            pass
+        else:
+            ref = tools.invoke(
+                "design_publish_brand_kit_version",
+                {
+                    "brand_kit": brand_kit,
+                    "brand_summary": brand_summary,
+                    "diagnostics": diagnostics,
+                    "source": source,
+                    "expected_base_version": int(current["version"]),
+                },
+                workspace_id=repo.workspace_id,
+                actor="agent",
+            ).references
+            return repo.require_brand_kit(ref["brand_kit_id"], ref["version"])
+
     ref = tools.invoke(
         "design_create_brand_kit",
         {
@@ -806,6 +841,20 @@ class _ExtractPdfCallable(Protocol):
     ) -> Any: ...
 
 
+def resolve_pdf_vision() -> Any:
+    """Return the configured PDF vision assist without changing library defaults.
+
+    Deployments opt in with ``LUMEN_INGESTION_VISION=1``. A missing OpenRouter key resolves
+    directly to :class:`NullPdfVision`, preserving deterministic extraction without paying the
+    PDF page-rasterization cost of an assist that cannot call its gateway.
+    """
+    from .capture.pdf_vision import NullPdfVision, OpenRouterPdfVision
+
+    if settings.lumen_ingestion_vision and settings.openrouter_api_key:
+        return OpenRouterPdfVision()
+    return NullPdfVision()
+
+
 def _default_extract_pdf(
     pdf_bytes: bytes,
     filename: str,
@@ -822,6 +871,7 @@ def _default_extract_pdf(
         core=core,
         store_root=store_root,
         reporter=reporter,
+        vision=resolve_pdf_vision(),
     )
 
 

@@ -92,8 +92,13 @@ sends the same `openai:` ids per turn; **Auto** falls back to the env default.
 Ingestion helpers (asset description, role-assist, PDF vision) and image
 generation route through OpenRouter the same way, each via its own override —
 `LUMEN_INGESTION_DESCRIBE_MODEL`, `LUMEN_INGESTION_ASSIST_MODEL`,
-`LUMEN_INGESTION_VISION_MODEL` (default `anthropic/claude-sonnet-4.5`) and the
+`LUMEN_INGESTION_VISION_MODEL` (current default `x-ai/grok-4.5`) and the
 `IMAGE_MODEL_*` vars in `.env.example`.
+
+The tracked launch recipes enable `LUMEN_INGESTION_VISION=1` and
+`LUMEN_INGESTION_DESCRIBE=1`. Live assistance additionally requires
+`OPENROUTER_API_KEY`; when it is absent, ingestion makes no assist calls and
+continues with deterministic extraction.
 
 ### Manual Run Commands
 

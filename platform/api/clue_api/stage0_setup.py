@@ -7,7 +7,10 @@ One narrow, flag-gated surface for the onboarding "setting up your workspace" sc
     not be able to trigger it). Captures the provisioned company website as a real B2
     artifact (capture-before-use), records the durable ``onboarding_input`` (kind
     ``website``, actor ``human``), and fires the recon driver. Returns 202; truth lives in
-    durable rows.
+    durable rows. Brand-kit slice 2 hangs one more thing off the same captured website: a
+    single, idempotent, fail-soft brand-kit website ingestion for the workspace
+    (:mod:`clue_api.brand_kit_ingestion`) — first-time-only by construction, because only the
+    self-serve provisioning scope reaches this route.
 
 ``GET /stage0/setup/current``
     Serves lane-level truth resolved through the self-serve provisioning record. The status
@@ -22,7 +25,10 @@ One narrow, flag-gated surface for the onboarding "setting up your workspace" sc
     the explicit onboarding-checklist order), and
     ``{fast,background}_budget_exhausted`` say whether a lane "completed" by finishing or by
     hitting its cap — ``None`` until that lane's
-    terminal event exists, never a guessed ``False``.
+    terminal event exists, never a guessed ``False``. Brand-kit slice 3 adds
+    ``brand_kit_ingestion``: the workspace's newest design ingestion job (``{job_id, status}``,
+    or ``None`` when it has none), read through the ``clue_design`` DAL port and served raw —
+    the onboarding checklist maps it onto its own row vocabulary, so no derivation happens here.
 
 Identity/replay model (review BE-B1/BE-B2):
 
@@ -61,6 +67,7 @@ from sqlalchemy import text
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
 from clue_api.auth_tool_context import tool_context_for_principal
 from clue_api.auth_wiring import principal_from_request
+from clue_api.brand_kit_ingestion import BrandKitIngestionTrigger
 from clue_api.stage0_setup_fleet import (
     ProvisioningScope,
     Stage0ReconEnqueuer,
@@ -77,6 +84,7 @@ from clue_core import (
     ReconRunId,
 )
 from clue_db import ConnFactory
+from clue_design.ingestion import list_recent
 from clue_execution.run_events import list_run_events
 from clue_obs import get_logger
 from clue_projections import PROJECTIONS_SCHEMA_VERSION, recon_brief, stage0_progress
@@ -158,6 +166,19 @@ class SetupOfficialSiteProgress(BaseModel):
     last_event_kind: str | None = None
 
 
+class SetupBrandKitIngestion(BaseModel):
+    """The workspace's newest design brand-kit ingestion job — job truth, nothing derived.
+
+    Deliberately two fields: the onboarding checklist's "Creating brand kit" row maps this onto
+    its three-state vocabulary on the client (brand-kit slice 3), and a server-side row status
+    would put presentation policy in the backend. ``status`` is the ``design_ingestion_status``
+    enum as stored (``queued|running|succeeded|failed``), served as-is.
+    """
+
+    job_id: str
+    status: str
+
+
 class SetupStatusResponse(BaseModel):
     """Lane-level truth for the setting-up screen; ``complete`` == the fast lane finished
     (the release-into-the-app signal) — the background lane keeps running behind it."""
@@ -181,6 +202,10 @@ class SetupStatusResponse(BaseModel):
     background_budget_exhausted: bool | None = None
     # C8 is nullable/additive: old clients ignore it; no crawl row is honest null.
     official_site: SetupOfficialSiteProgress | None = None
+    # Brand-kit slice 3: the workspace's newest brand-kit ingestion job (slice 2 fires exactly one
+    # at first-time setup). None = no job row at all — never a fabricated "queued" the checklist
+    # would spin on. Served in EVERY branch, so the client never has to ask why the key vanished.
+    brand_kit_ingestion: SetupBrandKitIngestion | None = None
 
 
 def _setup_official_site(
@@ -223,6 +248,7 @@ def create_stage0_setup_router(
     conn_factory: ConnFactory,
     storage: StorageBackend,
     recon_enqueuer: Stage0ReconEnqueuer | None = None,
+    brand_kit_ingestion: BrandKitIngestionTrigger | None = None,
 ) -> APIRouter:
     router = APIRouter(tags=["stage0-setup"])
     artifacts = DurableAgentArtifactStore(storage=storage, conn_factory=conn_factory)
@@ -427,6 +453,20 @@ def create_stage0_setup_router(
             )
             driver_tasks.add(task)
             task.add_done_callback(driver_tasks.discard)
+        if brand_kit_ingestion is not None:
+            # Brand-kit slice 2: the captured website also seeds the client's DRAFT brand kit,
+            # once, for the whole workspace. First-time-only is structural rather than flagged —
+            # this line is only reachable through the self-serve provisioning scope resolved
+            # above, so a workspace born any other way never gets an auto-fired ingestion.
+            #
+            # It runs AFTER the recon dispatch, not before: recon is the onboarding screen's
+            # actual work, and a slow or unreachable design API must not delay it by even the
+            # enqueue's timeout. ``ensure`` never raises (fail-soft), so nothing below the
+            # capture step can be broken by the design service being down — the next setup
+            # replay re-attempts while no job row exists.
+            await brand_kit_ingestion.ensure(
+                workspace_id=workspace_id, website=scope.company_website
+            )
         return SetupStartResponse(schema_version=PROJECTIONS_SCHEMA_VERSION, status="started")
 
     async def _field_truth(
@@ -488,8 +528,27 @@ def create_stage0_setup_router(
         ]
         return fields, budgets
 
+    async def _brand_kit_job(workspace_id: str) -> SetupBrandKitIngestion | None:
+        """The workspace's newest brand-kit ingestion job, or None when it has none.
+
+        One workspace-keyed read through the sanctioned ``clue_design`` DAL port (the same one
+        slice 2's trigger uses for its idempotency check) — ``list_recent`` is scoped to the
+        workspace and ordered newest-first, and ``limit=1`` is all the checklist row needs. The
+        setting-up screen polls this route ~1.5s, so nothing is derived here and nothing joins:
+        the design tables are read exactly once per poll, alongside the recon reads.
+        """
+        async with conn_factory() as conn:
+            jobs = await list_recent(conn, workspace_id=workspace_id, limit=1)
+        if not jobs:
+            return None
+        job = jobs[0]
+        return SetupBrandKitIngestion(job_id=str(job["job_id"]), status=str(job["status"]))
+
     async def _serve_lane_truth(
-        workspace_id: str, scope: ProvisioningScope, recon_run_id: Any
+        workspace_id: str,
+        scope: ProvisioningScope,
+        recon_run_id: Any,
+        brand_kit: SetupBrandKitIngestion | None,
     ) -> SetupStatusResponse | None:
         view = await stage0_progress(
             recon_run_id=ReconRunId(recon_run_id),
@@ -531,21 +590,28 @@ def create_stage0_setup_router(
             fast_budget_exhausted=budgets.get("fast"),
             background_budget_exhausted=budgets.get("background"),
             official_site=_setup_official_site(official_site),
+            brand_kit_ingestion=brand_kit,
         )
 
     @router.get("/stage0/setup/current", response_model=SetupStatusResponse)
     async def current_setup(workspace_id: WorkspaceDep) -> SetupStatusResponse:
+        # Read once, before the branching: the brand-kit ingestion is workspace-scoped work that
+        # is independent of any recon run, so every branch below answers the same question about
+        # it — including "unavailable", where a job can exist without a provisioning record.
+        brand_kit = await _brand_kit_job(workspace_id)
         scope = await _provisioning_scope(workspace_id)
         if scope is None:
             return SetupStatusResponse(
-                schema_version=PROJECTIONS_SCHEMA_VERSION, status="unavailable"
+                schema_version=PROJECTIONS_SCHEMA_VERSION,
+                status="unavailable",
+                brand_kit_ingestion=brand_kit,
             )
         digest = website_digest(scope.company_website)
         dedupe = _dedupe(workspace_id, scope)
         attempt = await _failed_attempt_count(workspace_id, dedupe)
         # 1) The current attempt's own run (its id is iteration 0's operation id).
         candidate_id = iteration_operation_id(workspace_id, digest, attempt, 0)
-        served = await _serve_lane_truth(workspace_id, scope, candidate_id)
+        served = await _serve_lane_truth(workspace_id, scope, candidate_id, brand_kit)
         if served is not None:
             return served
         # 2) The current attempt is captured but its run is not yet visible (driver warm-up
@@ -588,15 +654,17 @@ def create_stage0_setup_router(
                 fields=fields,
                 fast_budget_exhausted=budgets.get("fast"),
                 background_budget_exhausted=budgets.get("background"),
+                brand_kit_ingestion=brand_kit,
             )
         if latest_id is not None:
-            served = await _serve_lane_truth(workspace_id, scope, latest_id)
+            served = await _serve_lane_truth(workspace_id, scope, latest_id, brand_kit)
             if served is not None:
                 return served
         return SetupStatusResponse(
             schema_version=PROJECTIONS_SCHEMA_VERSION,
             status="none",
             company_website=scope.company_website,
+            brand_kit_ingestion=brand_kit,
         )
 
     return router

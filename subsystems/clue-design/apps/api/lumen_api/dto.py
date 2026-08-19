@@ -487,14 +487,33 @@ def has_error_diagnostics(diagnostics: List[JsonObject]) -> bool:
     return any(diagnostic.get("severity") == "error" for diagnostic in diagnostics)
 
 
+def ingestion_job_website_url(job: JsonObject) -> Optional[str]:
+    """The website a ``kind == "website"`` job was submitted for — the ONE request field the
+    public view names (brand-kit slice 4).
+
+    Why it is safe to surface: it is the workspace's own submitted URL, and every ingestion
+    route is workspace-scoped, so this tells a workspace something it already told us. Why it is
+    needed: a workspace whose first-time auto-ingestion FAILED has no kit to re-extract from, so
+    its failed job is the only record of which site to retry — the Brand-context page's manual
+    Re-extract has nothing to send without it. Non-website kinds carry no URL and answer None
+    (a PDF/asset job's request holds filenames and staged digests, which stay unpublished).
+    """
+    if job.get("kind") != "website":
+        return None
+    url = (job.get("request") or {}).get("url")
+    return url if isinstance(url, str) and url else None
+
+
 def ingestion_job_dto(job: JsonObject) -> JsonObject:
-    """Public view of an ingestion job row (no request/evidence bodies)."""
+    """Public view of an ingestion job row (no request/evidence bodies — one named URL apart,
+    see :func:`ingestion_job_website_url`)."""
     return {
         "job_id": job["job_id"],
         "kind": job["kind"],
         "status": job["status"],
         "stage": job.get("stage"),
         "progress": job.get("progress"),
+        "website_url": ingestion_job_website_url(job),
         "brand_kit_id": job.get("brand_kit_id"),
         "brand_kit_version": job.get("brand_kit_version"),
         "error": job.get("error"),

@@ -37,6 +37,7 @@ from clue_api.auth_wiring import (
     install_auth_wiring,
     principal_from_request,
 )
+from clue_api.brand_kit_ingestion import build_brand_kit_ingestion_trigger
 from clue_api.chat import PrincipalResolver, chat_workspace_resolver, install_chat_surface
 from clue_api.chat.stream import install_chat_stream_surface
 from clue_api.frontend_read import (
@@ -915,6 +916,12 @@ def create_projections_app(
                     stage0_recon_enqueuer
                     if stage0_recon_enqueuer is not None
                     else DbStage0ReconEnqueuer()
+                ),
+                # Brand-kit slice 2: None unless CLUE_DESIGN_API_BASE_URL names the design API,
+                # in which case first-time onboarding also enqueues one draft brand-kit
+                # ingestion of the captured website.
+                brand_kit_ingestion=build_brand_kit_ingestion_trigger(
+                    settings=resolved, conn_factory=conn_factory
                 ),
             )
         )

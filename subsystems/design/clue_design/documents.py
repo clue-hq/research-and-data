@@ -27,6 +27,7 @@ never stacked — undoing an undo is redo); a redo (``reapplies_batch_id``) move
 
 from __future__ import annotations
 
+import copy
 from collections.abc import Iterable
 from typing import Any
 
@@ -34,6 +35,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_design import assets as _assets
+from clue_design import brand as _brand
 from clue_design import diagnostics as _diagnostics
 from clue_design import history as _history
 from clue_design._codec import (
@@ -57,6 +59,31 @@ _BRAND_PERSIST_SOURCES = {
     "brand_kit_library",
     "scene_ref",
 }
+
+
+async def _stamp_approved_brand_kit_at_birth(
+    conn: AsyncConnection, *, workspace_id: str, web_doc: JsonObject
+) -> JsonObject:
+    """Default a NEW WebDoc to the workspace brand's latest approved kit.
+
+    This is deliberately a create-time operation. Reads/renders never infer a kit for an existing
+    document, so approving a kit cannot retroactively change documents that were already born.
+    The caller's explicit ``theme.brand_kit`` is authoritative, including a ref to a different
+    kit/version.
+    """
+    theme = web_doc.get("theme")
+    if theme is not None and not isinstance(theme, dict):
+        # The engine-produced creation paths always carry an object here. Do not silently repair
+        # a malformed tool input by replacing caller data while choosing its brand identity.
+        return web_doc
+    if isinstance(theme, dict) and theme.get("brand_kit") is not None:
+        return web_doc
+    brand_kit_ref = await _brand.latest_approved_brand_kit_ref(conn, workspace_id=workspace_id)
+    if brand_kit_ref is None:
+        return web_doc
+    stamped = copy.deepcopy(web_doc)
+    stamped.setdefault("theme", {})["brand_kit"] = brand_kit_ref
+    return stamped
 
 
 def scene_status(scene: JsonObject) -> str:
@@ -126,6 +153,9 @@ async def create_document(
     account_id: str | None = None,
 ) -> JsonObject:
     if doc_kind == "web":
+        scene = await _stamp_approved_brand_kit_at_birth(
+            conn, workspace_id=workspace_id, web_doc=scene
+        )
         document_id = str(scene["id"])
         title = str(scene["title"])
         status = "draft"
@@ -184,6 +214,9 @@ async def create_web_template(
     account_id: str | None = None,
 ) -> JsonObject:
     """Insert a NEW web document row as a template (fresh stacks, version 0, is_template)."""
+    web_doc = await _stamp_approved_brand_kit_at_birth(
+        conn, workspace_id=workspace_id, web_doc=web_doc
+    )
     brand_ref = (web_doc.get("theme") or {}).get("brand_kit")
     await conn.execute(
         text(

@@ -70,6 +70,21 @@ async def _create_kit(conn: AsyncConnection, workspace_id: str, **kwargs: Any) -
     )
 
 
+async def _publish_next(
+    conn: AsyncConnection, workspace_id: str, kit_id: str, base_version: int, **kwargs: Any
+) -> dict[str, Any]:
+    return await design_brand.publish_next_brand_kit_version(
+        conn,
+        workspace_id=workspace_id,
+        brand_kit=_kit(kit_id, base_version),
+        brand_summary={},
+        diagnostics=[],
+        source="website",
+        expected_base_version=base_version,
+        **kwargs,
+    )
+
+
 async def _brand_names(conn: AsyncConnection, workspace_id: str) -> list[str]:
     rows = await conn.execute(
         text("SELECT name FROM brand WHERE workspace_id = :w ORDER BY name"), {"w": workspace_id}
@@ -156,6 +171,98 @@ def test_explicit_foreign_workspace_brand_is_refused(require_design_db: None) ->
             with pytest.raises(IntegrityError):
                 await _create_kit(conn, ws_a, brand_id=foreign)
             await nested.rollback()
+            await txn.rollback()
+
+    run_async(_check())
+
+
+# --- brand join across VERSIONS (brand-kit slice 4, 2026-08-18) ------------------------------
+#
+# A kit's later versions belong to the brand its first version was bound to. Re-resolving per
+# version made a re-extract of a linked kit silently UNLINK it the moment its workspace grew a
+# second brand — the heuristic's honest "several brands, I cannot tell" answer applied to a
+# question that was already answered at birth.
+
+
+def test_next_version_inherits_the_lineage_brand_even_in_a_multi_brand_workspace(
+    require_design_db: None,
+) -> None:
+    async def _check() -> None:
+        async with db_lifespan() as engine, engine.connect() as conn, conn.begin() as txn:
+            ws = await _seed_ws(conn, "inherit")
+            brand_id = await _seed_brand(conn, ws, "Acme")
+            kit_id = f"kit_{uuid4().hex[:10]}"
+            born = await design_brand.create_brand_kit(
+                conn,
+                workspace_id=ws,
+                brand_kit=_kit(kit_id),
+                brand_summary={},
+                diagnostics=[],
+                source="website",
+            )
+            assert born["brand_id"] == brand_id
+            # The workspace becomes multi-brand: resolution would now answer NULL.
+            await _seed_brand(conn, ws, "Zenith")
+            assert (await _create_kit(conn, ws))["brand_id"] is None
+            # …but this kit's next version keeps the brand its lineage already names.
+            second = await _publish_next(conn, ws, kit_id, 1)
+            assert second["version"] == 2
+            assert second["brand_id"] == brand_id
+            # And so does the one after it, off the inherited stamp.
+            assert (await _publish_next(conn, ws, kit_id, 2))["brand_id"] == brand_id
+            await txn.rollback()
+
+    run_async(_check())
+
+
+def test_next_version_of_an_unlinked_kit_still_resolves(require_design_db: None) -> None:
+    """Nothing to inherit is not a reason to skip resolution: a kit born NULL in a workspace
+    that has since settled on ONE brand gets stamped like any other write."""
+
+    async def _check() -> None:
+        async with db_lifespan() as engine, engine.connect() as conn, conn.begin() as txn:
+            ws = await _seed_ws(conn, "inherit0")
+            first = await _seed_brand(conn, ws, "Acme")
+            second = await _seed_brand(conn, ws, "Zenith")
+            kit_id = f"kit_{uuid4().hex[:10]}"
+            born = await design_brand.create_brand_kit(
+                conn,
+                workspace_id=ws,
+                brand_kit=_kit(kit_id),
+                brand_summary={},
+                diagnostics=[],
+                source="website",
+            )
+            assert born["brand_id"] is None
+            await conn.execute(
+                text("DELETE FROM brand WHERE brand_id = :b AND workspace_id = :w"),
+                {"b": second, "w": ws},
+            )
+            assert (await _publish_next(conn, ws, kit_id, 1))["brand_id"] == first
+            await txn.rollback()
+
+    run_async(_check())
+
+
+def test_an_explicit_brand_id_still_wins_over_the_inherited_one(require_design_db: None) -> None:
+    async def _check() -> None:
+        async with db_lifespan() as engine, engine.connect() as conn, conn.begin() as txn:
+            ws = await _seed_ws(conn, "inherit_x")
+            born_with = await _seed_brand(conn, ws, "Acme")
+            chosen = await _seed_brand(conn, ws, "Zenith")
+            kit_id = f"kit_{uuid4().hex[:10]}"
+            born = await design_brand.create_brand_kit(
+                conn,
+                workspace_id=ws,
+                brand_kit=_kit(kit_id),
+                brand_summary={},
+                diagnostics=[],
+                source="website",
+                brand_id=born_with,
+            )
+            assert born["brand_id"] == born_with
+            published = await _publish_next(conn, ws, kit_id, 1, brand_id=chosen)
+            assert published["brand_id"] == chosen
             await txn.rollback()
 
     run_async(_check())

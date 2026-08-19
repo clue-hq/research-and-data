@@ -102,6 +102,10 @@ const EMPTY_FRAME: SetupStatus = {
   fast_budget_exhausted: null,
   background_budget_exhausted: null,
   official_site: null,
+  // The scripted stream replays RECON vocabulary only; a brand-kit ingestion is separate work
+  // this script does not stage, so every frame honestly reports no job (the checklist's
+  // brand-kit row then stays `queued`, claiming nothing).
+  brand_kit_ingestion: null,
 };
 
 /** One C8 wire fixture for repository/schema tests. It is not inserted into the timed walkthrough:

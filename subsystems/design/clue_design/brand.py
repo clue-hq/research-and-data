@@ -182,6 +182,16 @@ async def publish_next_brand_kit_version(
 
     The allocated number is stamped into ``brand_kit["version"]`` before the insert, so the row
     and the persisted kit JSON can never disagree about which version this is.
+
+    **The brand join is INHERITED, not re-resolved (brand-kit slice 4, 2026-08-18).** Without an
+    explicit ``brand_id`` this used to fall through to :func:`clue_design.joins.resolve_brand_id`
+    like a fresh kit, so publishing a new version of an ALREADY-LINKED kit into a workspace that
+    had since grown a second brand stamped NULL — silently unlinking a kit whose brand was never
+    in doubt. The heuristic answers "which brand does this NEW kit belong to?"; a later version
+    of an existing lineage has already been answered, at birth. So the current version's
+    ``brand_id`` is read under the same lock and passed as the explicit id. An explicit caller id
+    still wins, and a lineage that is genuinely unlinked (born NULL in a multi-brand workspace)
+    inherits nothing and resolves exactly as before.
     """
     brand_kit_id = str(brand_kit["id"])
     anchor = (
@@ -196,17 +206,21 @@ async def publish_next_brand_kit_version(
     ).first()
     if anchor is None:
         raise DesignNotFoundError("brand_kit", brand_kit_id)
-    current = int(
-        (
-            await conn.execute(
-                text(
-                    "SELECT MAX(version) FROM design_brand_kit"
-                    " WHERE brand_kit_id = :b AND workspace_id = :w"
-                ),
-                {"b": brand_kit_id, "w": workspace_id},
-            )
-        ).scalar_one()
-    )
+    # The lineage's current head: its number (the CAS base and the allocation seed) and its brand
+    # (the stamp the new version inherits). Safe as one ``ORDER BY … LIMIT 1`` — unlike the
+    # allocation lock above, this runs with the anchor row already held, so no phantom can land
+    # between it and the insert.
+    head = (
+        await conn.execute(
+            text(
+                "SELECT version, brand_id FROM design_brand_kit"
+                " WHERE brand_kit_id = :b AND workspace_id = :w"
+                " ORDER BY version DESC LIMIT 1"
+            ),
+            {"b": brand_kit_id, "w": workspace_id},
+        )
+    ).one()
+    current = int(head.version)
     if current != expected_base_version:
         raise DesignVersionConflictError("brand_kit", brand_kit_id, expected_base_version, current)
     published = dict(brand_kit)
@@ -218,7 +232,7 @@ async def publish_next_brand_kit_version(
         brand_summary=brand_summary,
         diagnostics=diagnostics,
         source=source,
-        brand_id=brand_id,
+        brand_id=brand_id if brand_id is not None else head.brand_id,
     )
 
 
@@ -239,6 +253,49 @@ async def list_brand_kits(
         )
     rows = await conn.execute(text(query), {"w": workspace_id})
     return [_brand_kit_from_row(row) for row in rows]
+
+
+async def latest_approved_brand_kit_ref(
+    conn: AsyncConnection, *, workspace_id: str
+) -> JsonObject | None:
+    """Return the newest approved kit ref for the workspace's unambiguous brand.
+
+    A document-create request currently carries a workspace but no platform ``brand_id``. In a
+    one-brand workspace that is sufficient context; in a multi-brand workspace it is not, and
+    guessing would stamp the wrong client's identity onto a durable document. The query therefore
+    fails closed unless the workspace owns exactly one brand. An explicit ref on the WebDoc is
+    handled by the document DAL and always wins over this default.
+
+    Approval is version-specific. A newer draft does not shadow an older approved version: the
+    newest *approved* row is selected by its store recency, with deterministic tie-breakers.
+    """
+    row = (
+        await conn.execute(
+            text(
+                """
+                WITH workspace_brand AS (
+                  SELECT min(brand_id) AS brand_id, count(*) AS brand_count
+                  FROM brand
+                  WHERE workspace_id = :w
+                )
+                SELECT kit.brand_kit_id, kit.version
+                FROM design_brand_kit AS kit
+                JOIN workspace_brand AS workspace_brand
+                  ON workspace_brand.brand_count = 1
+                 AND kit.brand_id = workspace_brand.brand_id
+                WHERE kit.workspace_id = :w
+                  AND kit.approval_status = 'approved'
+                ORDER BY kit.updated_at DESC, kit.created_at DESC,
+                         kit.version DESC, kit.brand_kit_id ASC
+                LIMIT 1
+                """
+            ),
+            {"w": workspace_id},
+        )
+    ).first()
+    if row is None:
+        return None
+    return {"id": str(row.brand_kit_id), "version": int(row.version)}
 
 
 async def update_brand_kit_approval(
