@@ -206,6 +206,23 @@ extraction byte-for-byte.
 
 
 
+> **Slice 2 OUTCOME (2026-08-20): DONE, reviewed clean** (commit `bef817cd`; record
+> `_memory/2026-08-20-design-brief-slice2.md`). Live-proven on stripe.com:
+> **`website:`-provenanced tokens 17 → 45** (derived 96 → 71); measured
+> `radius.button=4`, `radius.card=6`, `stroke.width.focus=3`, `space.section=96`,
+> and Stripe's real `shadow.brand` (`rgba(50,50,93,.12)`); 29 component shape
+> records + 8 background bands retained as slice-3 evidence. The merge is
+> claim-based (measured claims a step or the base stays `derived:` — binary, never
+> fabricated); the probe runs post-screenshot and fail-softs. **Notes for slices
+> 3/4:** token groups now MIX measured and derived rungs — consumers read
+> provenance per token; `tokens.shadows` has no consumer until slice 3/4 wire it.
+> **Follow-ups registered:** multi-page capture (the capture visits one page today,
+> so D3's "up to 3 pages" awaits a capture-layer change); card-padding clustering
+> refinement (small nav tiles outvote real cards in the frequency vote — shape
+> records carry the true per-variant paddings meanwhile). **Repo trap recorded:**
+> all ~20 worktrees share one `.git` → `refs/stash` is GLOBAL — never `git stash`
+> here; `git worktree add --detach` for baselines.
+
 ### Slice 3 — the design-brief agent (tier 2) + kit schema + approval ride-along
 
 - `BrandBrief@1` schema + the `create_agent`-style brief agent as a pipeline stage
