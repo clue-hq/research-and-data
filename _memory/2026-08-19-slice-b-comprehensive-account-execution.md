@@ -522,3 +522,17 @@ research, committee research, or provider spend was launched. Browser evidence i
 screenshots `17-zero-floor-proof-answer-ready.png`, `18-proof-answer-submitted.png`,
 `19-zero-floor-icp-synthesis-running.png`, and `21-icp-approval-card.png` under
 `.context/live-browser-20260819/`; `21` is the clearest ready-decision plus human-gate proof.
+
+The founder then approved the exact ICP gate in the browser. Screenshot
+`22-icp-profile-approved.png` proves the durable approval UI. The automatic post-approval turn did
+not create a discovery run: it reported `start_confirmed_project_run` as structurally unavailable.
+The exact cause is a constitution-dependent tool omission, not a missing backend tool or a spend
+gate. Active profile `head-of-abm@v38` and Stage-0 skill v20 both pin
+`start_confirmed_project_run@3`, but that tool declares a `product_kb` pin requirement and
+`GovernedAgentToolFactory._tool_admitted` removes every such tool when the turn constitution has no
+product-scoped KB. Durable claim inspection confirms Insight Health has company Client-KB markers
+v1-v3 but no `client.kb_version` marker scoped to Aura product
+`prd_63b952a0da3e5df08e2784a5a39ab82d`. The skill therefore told the model to call a tool the exact
+turn did not install, and the surface middleware returned its structural-unavailability error.
+Screenshot `23-start-confirmed-run-tool-unavailable.png` captures the live failure. No discovery,
+Account research, committee work, provider call, or spend occurred; Tunis remained untouched.
