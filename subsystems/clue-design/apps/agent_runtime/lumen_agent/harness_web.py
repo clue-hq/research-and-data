@@ -15,6 +15,7 @@ Public API:
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from typing import Any, Callable, Optional
 
 from langchain.agents.middleware import AgentMiddleware
@@ -49,6 +50,15 @@ logger = get_logger("lumen_agent.harness_web")
 #: the fewest rounds, this number is what actually stops the seventh.
 WEB_REVIEW_DELEGATION_CAP = 6
 
+#: G6 lever 1 (founder ruling, 2026-08-19): at most this many `lumen-web-author`
+#: delegations per web turn. The G6 benchmark ran the same ordinary brief twice — 3.25 and
+#: 10.0 minutes — and the spread was agent-CHOSEN SCOPE, not model speed: 2 author
+#: delegations versus 5, with an IDENTICAL 6.2s mean author-call latency. The fast run's
+#: shape is the target (one brief, one pass); four leaves room for two genuine repair
+#: rounds and still stops the churn.
+WEB_AUTHOR_DELEGATION_CAP = 4
+
+_AUTHOR_SUBAGENT = "lumen-web-author"
 _REVIEWER_SUBAGENT = "lumen-web-reviewer"
 
 _REVIEW_BUDGET_EXHAUSTED = (
@@ -60,34 +70,74 @@ _REVIEW_BUDGET_EXHAUSTED = (
     "issues remain, naming them in the summary."
 )
 
+_AUTHOR_BUDGET_EXHAUSTED = (
+    "Author budget exhausted: this turn has already used all {cap} `lumen-web-author` "
+    "delegations, which is the hard per-turn cap. No further authoring will run, so the "
+    "page as it stands is the page that ships. Finish now: call `render_web_preview` if "
+    "your last change is not on screen yet, judge the three widths with your own `view` "
+    "calls, then call `finalize_web_run` — `accepted` if it meets the ship bar, "
+    "`completed_with_warnings` naming every fix you could not make, so the user knows "
+    "exactly what to ask for next."
+)
 
-class WebReviewDelegationCap(AgentMiddleware):
-    """Enforce the per-turn reviewer budget at the `task` tool.
 
-    One instance is built per :func:`create_web_deepagent` call, so the counter is
-    turn-scoped by construction rather than by a framework — the whole mechanism is an
-    integer and one branch. Only `lumen-web-reviewer` delegations count: author rounds and
-    ordinary tools pass straight through.
+@dataclass(frozen=True)
+class DelegationBudget:
+    """One subagent's per-turn delegation budget: how many, and what the refusal says."""
 
-    Exceeding the cap is a tool-level REFUSAL, never an exception: an exhausted budget must
-    leave the orchestrator able to finalize honestly with its standing critique, and killing
-    the turn would throw away a page that is very likely already shippable.
+    subagent: str
+    role: str
+    cap: int
+    refusal: str
+
+
+#: The shipped per-turn budgets (G4 reviewer, G6 author). Immutable, so it is safe as the
+#: middleware's default — only the middleware instance's counters move.
+WEB_DELEGATION_BUDGETS: tuple[DelegationBudget, ...] = (
+    DelegationBudget(
+        subagent=_AUTHOR_SUBAGENT,
+        role="author",
+        cap=WEB_AUTHOR_DELEGATION_CAP,
+        refusal=_AUTHOR_BUDGET_EXHAUSTED,
+    ),
+    DelegationBudget(
+        subagent=_REVIEWER_SUBAGENT,
+        role="reviewer",
+        cap=WEB_REVIEW_DELEGATION_CAP,
+        refusal=_REVIEW_BUDGET_EXHAUSTED,
+    ),
+)
+
+
+class WebDelegationCap(AgentMiddleware):
+    """Enforce the per-turn subagent delegation budgets at the `task` tool.
+
+    ONE instance is built per :func:`create_web_deepagent` call and holds every budget, so
+    the counters are turn-scoped by construction rather than by a framework — the whole
+    mechanism is a dict of integers and one branch. Author and reviewer budgets are
+    independent; any other subagent and every ordinary tool pass straight through.
+
+    Exceeding a cap is a tool-level REFUSAL, never an exception: an exhausted budget must
+    leave the orchestrator able to finalize honestly with what it already holds, and killing
+    the turn would throw away a page that is very likely already shippable. Each refusal
+    names only tools the ORCHESTRATOR itself can call — naming an uncallable tool is what
+    sent a role into blind churn on a live run (2026-07-29).
 
     Sync only, deliberately: the web turn is invoked through `agent.invoke`
     (`checkpoint.invoke_turn_graph`). An async invocation would raise LangChain's own
-    "synchronous implementation only" error rather than silently skipping the cap.
+    "synchronous implementation only" error rather than silently skipping the caps.
     """
 
     def __init__(
         self,
         *,
-        cap: int = WEB_REVIEW_DELEGATION_CAP,
+        budgets: tuple[DelegationBudget, ...] = WEB_DELEGATION_BUDGETS,
         record: Optional[Callable[..., None]] = None,
     ) -> None:
         super().__init__()
-        self._cap = cap
+        self._budgets = {budget.subagent: budget for budget in budgets}
         self._record = record
-        self.delegations = 0
+        self.delegations = {subagent: 0 for subagent in self._budgets}
 
     def wrap_tool_call(
         self,
@@ -96,23 +146,29 @@ class WebReviewDelegationCap(AgentMiddleware):
     ) -> ToolMessage | Command:
         call = request.tool_call
         args = call.get("args") or {}
-        if call.get("name") != "task" or args.get("subagent_type") != _REVIEWER_SUBAGENT:
+        if call.get("name") != "task":
             return handler(request)
-        if self.delegations >= self._cap:
-            logger.warning("web_review_cap_reached", cap=self._cap)
+        budget = self._budgets.get(args.get("subagent_type"))
+        if budget is None:
+            return handler(request)
+        if self.delegations[budget.subagent] >= budget.cap:
+            event = f"web_{budget.role}_cap_reached"
+            logger.warning(event, cap=budget.cap)
             if self._record is not None:
                 self._record(
                     "coordinator",
-                    "web_review_cap_reached",
-                    output_summary=f"reviewer delegation refused after {self._cap} rounds",
-                    payload={"cap": self._cap},
+                    event,
+                    output_summary=(
+                        f"{budget.role} delegation refused after {budget.cap} rounds"
+                    ),
+                    payload={"cap": budget.cap, "subagent": budget.subagent},
                 )
             return ToolMessage(
-                content=_REVIEW_BUDGET_EXHAUSTED.format(cap=self._cap),
+                content=budget.refusal.format(cap=budget.cap),
                 tool_call_id=call["id"],
                 name="task",
             )
-        self.delegations += 1
+        self.delegations[budget.subagent] += 1
         return handler(request)
 
 
@@ -279,12 +335,14 @@ def create_web_deepagent(
             has_existing_content=_has_existing_content(initial_web_doc, HOME_PAGE_ID),
             brand_card=tools.brand_card_text,
             review_cap=WEB_REVIEW_DELEGATION_CAP,
+            author_cap=WEB_AUTHOR_DELEGATION_CAP,
             account_card=tools.account_card_text,
         ),
         subagents=subagents,
-        # G4: the review budget rides as ordinary tool-call middleware on the ORCHESTRATOR,
-        # which is where `task` executes. Fresh per turn, so its counter cannot leak.
-        middleware=[WebReviewDelegationCap(record=tools.record)],
+        # G4/G6: the delegation budgets ride as ordinary tool-call middleware on the
+        # ORCHESTRATOR, which is where `task` executes. Fresh per turn, so the counters
+        # cannot leak.
+        middleware=[WebDelegationCap(record=tools.record)],
         name="lumen-web-deepagent",
         checkpointer=checkpointer,
     )

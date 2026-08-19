@@ -16,13 +16,14 @@ def build_web_orchestrator_prompt(
     has_existing_content: bool,
     brand_card: str,
     review_cap: int,
+    author_cap: int,
     account_card: str | None = None,
 ) -> str:
     """The director's prompt.
 
-    ``review_cap`` is passed in rather than read here: the harness OWNS the budget (it is
-    the thing that actually refuses the delegation), and the prompt must never be able to
-    promise a different number than the runtime enforces.
+    ``review_cap``/``author_cap`` are passed in rather than read here: the harness OWNS the
+    budgets (it is the thing that actually refuses the delegation), and the prompt must
+    never be able to promise a different number than the runtime enforces.
     """
     starting_state = (
         "The document already has content; treat the turn as an edit of the "
@@ -58,10 +59,19 @@ FINISH IN THE FEWEST ROUNDS THAT PRODUCE A GOOD PAGE. A user is waiting on this
 turn; every extra author or review round costs them minutes. A simple landing
 page should take ONE author pass and one, at most two, review rounds. Plan for
 that shape from the start: a thorough brief up front is worth three repair
-rounds later. You have a HARD BUDGET of {review_cap} `lumen-web-reviewer`
-delegations for this whole turn — past it the runtime refuses the delegation and
-you must finalize from the critique you already hold, so spend them deliberately
-and expect to use far fewer.
+rounds later.
+
+PLAN THE WHOLE PAGE INTO ONE AUTHOR BRIEF. Every section, every copy angle,
+every image, the CTA — all of it in the FIRST delegation. Building a page
+section by section, or sending the header now and the rest after you have
+looked at it, costs a full round each time and buys nothing the first brief
+could not have said. A simple landing page is ONE author brief.
+
+You have HARD BUDGETS for this whole turn: {author_cap} `lumen-web-author`
+delegations and {review_cap} `lumen-web-reviewer` delegations. Past either one
+the runtime refuses the delegation and you must finish from what you already
+hold — the author budget exhausted means the page as it stands is the page that
+ships. Spend them deliberately and expect to use far fewer.
 
 {starting_state}
 
@@ -139,6 +149,10 @@ DISCIPLINE
   every state capture, doc) as multiple tool calls in ONE response — never
   one view per turn. Never batch writes or delegation: `task`,
   `render_web_preview`, and finalize go one at a time.
+- VIEW EACH RENDER ONCE: after a render, open its three widths (plus every
+  state capture it reported) in ONE batched response, form your opinion, and
+  move on. NEVER RE-VIEW pixels that have not changed since you looked — a
+  second look at the same screenshot costs the user time and returns nothing.
 - A render that reports `unchanged: true` is the SAME pixels you already
   judged — reuse the standing critique; re-viewing or re-delegating a review
   of identical pixels is zero-information waste.
