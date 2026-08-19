@@ -135,6 +135,17 @@ and nothing else. It runs where the ingestion worker already runs.
   designed slot (verify the dummy panel's exact shape before wiring; no new UI is
   being invented — this is naming + feeding an existing slot, dummy-presentation-truth
   compliant).
+  **Grounding (founder-supplied, verified live 2026-08-20):** the dummy's designed
+  slot is the brand-context *knowledge* section — route vocabulary
+  `/brand-context?section=knowledge&file=company%2FOverview.md&mode=preview`
+  (`section` / `file` = an md path / `mode=preview`). Live dummy on
+  `http://localhost:3002` (HTTP 200 on that exact route); dummy SOURCE =
+  `/Users/aryankeshri/conductor/workspaces/clue-frontend/port-of-spain`
+  (`clue-frontend@codex/chat-shell` — another session's server: inspect read-only,
+  NEVER restart it). Slice 3 lifts this section per the standing re-lift discipline
+  and serves the kit's brief as a file in it (e.g. `design/Design.md`), rendered
+  from `brand_kit_json.brief` — the md is a projection of the structured brief,
+  never a second source of truth.
 - **D2 — RULED (founder, 2026-08-20): the budget is denominated in TOKENS, never KB,
   and the brief may be as large as the founder's reference file** (the full reference
   ≈ 25KB ≈ **~6,000 tokens**; adopt **6k tokens rendered** as the v1 cap, honest
