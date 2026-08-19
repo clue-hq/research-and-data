@@ -488,3 +488,19 @@ Pre-Visit Intake AI Agent, Follow-up AI Agent, Referral Management AI Agent, Pho
 Direct Access Colonoscopy AI Agent, and AI FrontDesk Agent. Browser testing is paused at this
 human-only choice; the exact tab is marked for handoff. Screenshots `01` through `12` are under
 `.context/live-browser-20260819/`, with `12-product-selection-gate.png` proving the current gate.
+
+## Default ICP-synthesis coverage policy ruling
+
+The founder set the default passing coverage floor for the `icp_synthesis` readiness gate to
+exactly 0% on 2026-08-19. `default_readiness_spec()` now sets only
+`ReadinessGate.ICP_SYNTHESIS.min_coverage_ratio` to `0.0`; the separate `discovery_spend` and
+`deep_spend` defaults are unchanged. The readiness decision and its trusted coverage metrics remain
+auditable, but incomplete baseline-field coverage no longer emits `coverage_below_floor` or blocks
+ICP synthesis under the default policy. Product selection, client binding, Client-KB existence,
+human ICP confirmation, and later provider-spend authority were not disabled.
+
+Focused verification passed on the existing isolated `clue_missoula_slice_b_checks` database:
+all nine tests in `tests/stage0/test_phase_c4_governed.py` and
+`tests/api/test_stage0_project_tools_db.py`, including a 0%-coverage API case that remains refused
+for missing product/client scope but no longer reports the coverage reason. Ruff passed for the
+changed policy/tests, mypy passed for `clue_config/stage0.py`, and `git diff --check` passed.
