@@ -8,6 +8,10 @@ import {
   humanizeMessageBody,
 } from "../model/chat-message-presentation";
 import type { TranscriptMessage } from "../model/chat-transcript";
+import {
+  DESIGN_GENERATION_WAIT_NOTICE,
+  designTurnFailureNotice,
+} from "../model/design-leg";
 import type { ProjectEntity } from "../model/project-workspace";
 import { ChatMessagePartView, type ChatPartActions } from "./chat-message-part";
 import { ProjectIcon } from "./project-icon";
@@ -166,6 +170,10 @@ export function ChatTranscript({
             {message.role === "assistant" &&
             message.state === "failed" &&
             message.body === null &&
+            // A typed failure now renders its own sentence below, so the
+            // generic placeholder would only say the same thing worse. It
+            // exists for the failures that carry no code at all.
+            message.failureCode === null &&
             !message.parts.some(
               (part) =>
                 part.kind === "reasoning" ||
@@ -175,11 +183,39 @@ export function ChatTranscript({
                 Response failed
               </p>
             ) : null}
-            {message.failureCode ? (
-              <p className={styles.messageText} role="note">
-                {message.failureCode}
+            {message.generatingDesign ? (
+              // Genweb slice 3, founder requirements 4 + 5: the one honest
+              // thing this surface knows about a running design turn. No
+              // percentage, no ETA, no progress bar — none of those would be
+              // derived from anything.
+              <p className={styles.reasoningStatus} role="status">
+                {DESIGN_GENERATION_WAIT_NOTICE}
               </p>
             ) : null}
+            {message.failureCode ? (
+              // Requirement 7: a typed leg refusal renders as a sentence. An
+              // unrecognized code still renders as itself — true, if terse —
+              // rather than as an invented explanation.
+              //
+              // Above the leg lines on purpose: a failed design turn still
+              // emits `leg.awaiting_user` (the leg genuinely came back), and
+              // "what happened" has to be read before "what now".
+              <p className={styles.messageText} role="note">
+                {designTurnFailureNotice(message.failureCode)}
+              </p>
+            ) : null}
+            {message.legNotices.map((notice, index) => (
+              // The design leg's durable lifecycle, in the transcript's own
+              // status-line pattern — the same element the queue and Stop
+              // receipts use. No new component, and no speaker chip.
+              <p
+                className={styles.reasoningStatus}
+                key={`${index}:${notice}`}
+                role="status"
+              >
+                {notice}
+              </p>
+            ))}
           </div>
           </article>
         );

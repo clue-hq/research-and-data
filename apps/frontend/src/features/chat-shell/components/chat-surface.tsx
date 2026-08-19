@@ -155,6 +155,30 @@ export function ChatSurface({
     rawSurface: paneState.surface,
     surface: shell.surface,
   });
+  // Genweb slice 3 (B5), founder requirements 1 + 6: the gallery feed and any
+  // open canvas refresh exactly when a durable design-leg frame for THIS thread
+  // says the document moved. Never a timer, never a poll — the two counters are
+  // bumped by the chat controller from the stream, and the rule that decides
+  // which frame bumps which is the pure `designRefreshForEvent`.
+  //
+  // The feed is server-fetched by the chats page (`loadGalleryFeed`, a
+  // server-only repository), so `router.refresh()` IS the client's re-fetch of
+  // it: the page re-runs and hands down fresh `artifacts`/`documentIds` props
+  // with no client state lost. Per founder ruling F2 (option a) the new card
+  // simply appears in the rail — nothing auto-opens.
+  const { canvasRevision, feedRevision } = chat.designRefresh;
+  useEffect(() => {
+    if (feedRevision === 0) return;
+    router.refresh();
+  }, [feedRevision, router]);
+  const reloadCanvas = session.onWriteReload;
+  useEffect(() => {
+    if (canvasRevision === 0) return;
+    // The SAME seam a committed inspector write uses — one reload mechanism,
+    // whether the version was advanced by hand or by the design agent.
+    reloadCanvas();
+  }, [canvasRevision, reloadCanvas]);
+
   useEffect(() => {
     // Compose over the LIVE query so params we do not own (?handoff=, anything
     // future) survive; only the three pane keys are ours to rewrite.

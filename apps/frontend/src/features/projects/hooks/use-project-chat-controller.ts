@@ -35,6 +35,7 @@ import {
   type TranscriptMessage,
   type TranscriptState,
 } from "../model/chat-transcript";
+import { designRefreshForEvent } from "../model/design-leg";
 import {
   deriveThreadStatus,
   threadLabel,
@@ -98,6 +99,16 @@ export interface ProjectChatController {
   runningTurn: ChatTurn | null;
   /** Durable queued turns, preserving submission order. */
   queuedTurns: readonly ChatTurn[];
+  /**
+   * Two monotone counters the design surfaces watch (genweb slice 3, B5).
+   *
+   * Each bumps when a **durable design-leg frame** for this thread says the
+   * corresponding thing changed — never on a timer, and never optimistically.
+   * The controller only counts; the decision is
+   * `model/design-leg.designRefreshForEvent`, and the transport (a router
+   * refresh, a canvas reload nonce) belongs to whoever renders them.
+   */
+  designRefresh: DesignRefreshCounters;
   submitting: boolean;
   gateFor(part: ChatGatePart): GateCardModel | null;
   gateAnswerForTurn(turnId: string): GateAnswerDisplay | null;
@@ -132,6 +143,13 @@ export type ChatSubmissionResult =
   | { status: "accepted"; turnId: string }
   | { status: "failed" | "not_submitted" };
 
+export interface DesignRefreshCounters {
+  /** Bumps when the project's design-artifact feed should be re-read. */
+  feedRevision: number;
+  /** Bumps when an open web canvas should re-render from the durable document. */
+  canvasRevision: number;
+}
+
 export function useProjectChatController({
   projectId,
   initialThreadId,
@@ -165,6 +183,10 @@ export function useProjectChatController({
     ReadonlyMap<string, GateAuthorityFailure>
   >(new Map());
   const [stream, setStream] = useState<TranscriptState>(emptyTranscriptState);
+  const [designRefresh, setDesignRefresh] = useState<DesignRefreshCounters>({
+    feedRevision: 0,
+    canvasRevision: 0,
+  });
   const [optimistic, setOptimistic] = useState<OptimisticTurn[]>([]);
   const [access, setAccess] = useState<ChatAccessState | null>(null);
   const [route, setRoute] = useState<ChatRouteState | null>(null);
@@ -384,6 +406,21 @@ export function useProjectChatController({
         onEvent(event) {
           if (!mounted.current) return;
           setStream((current) => applyChatStreamEvent(current, event));
+          // Genweb slice 3 (founder requirements 1 + 6): the gallery and any
+          // open canvas refresh exactly when a durable design-leg transition
+          // says the document moved — the frame IS the signal, so there is no
+          // timer and nothing polls. `attach` is only ever called for the
+          // thread this controller is showing, so that thread is the active one.
+          const refresh = designRefreshForEvent(event, {
+            activeThreadId: threadId,
+          });
+          if (refresh.refetchFeed || refresh.reloadCanvas) {
+            setDesignRefresh((current) => ({
+              feedRevision: current.feedRevision + (refresh.refetchFeed ? 1 : 0),
+              canvasRevision:
+                current.canvasRevision + (refresh.reloadCanvas ? 1 : 0),
+            }));
+          }
           const streamedState = turnStateForStreamEvent(event.type);
           if (streamedState !== null) {
             // Turn events are already durable authority. Reflect running and
@@ -823,6 +860,7 @@ export function useProjectChatController({
     threadBusy: queue.threadBusy,
     runningTurn: queue.runningTurn,
     queuedTurns: queue.queuedTurns,
+    designRefresh,
     submitting,
     gateFor,
     gateAnswerForTurn,

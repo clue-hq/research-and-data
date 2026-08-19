@@ -2,6 +2,7 @@ import type { ChatMessage } from "./chat-message";
 import type { ChatPart, ChatTextPart } from "./chat-parts";
 import type { ChatStreamEvent } from "./chat-events";
 import { TERMINAL_TURN_EVENTS } from "./chat-events";
+import { designLegNotice } from "./design-leg";
 import type { ChatTurn } from "./chat-turn";
 
 /**
@@ -37,6 +38,10 @@ import type { ChatTurn } from "./chat-turn";
  *    part's id. The frame's `part_kind` decides which accumulator runs, so the
  *    trace can never be spliced into the answer — and after a reload it is
  *    simply gone, because unlike prose it has no durable counterpart.
+ * 7. **A `leg.*` frame is an announcement, not a part** (genweb slice 3, P3.7
+ *    delta 8). It adds one system line to the turn that performed the
+ *    transition and moves the thread's design-leg state; it never creates,
+ *    replaces or voids a part, and it never changes a turn's own state.
  */
 
 export interface TranscriptPartEntry {
@@ -56,6 +61,17 @@ export interface TranscriptTurn {
   parts: TranscriptPartEntry[];
   /** `text.delta` payloads by index, per part. Joined in index order. */
   deltas: Map<string, Map<number, string>>;
+  /**
+   * Design-leg system lines this turn announced, keyed by the frame's own
+   * `event_id` (genweb slice 3).
+   *
+   * Keyed rather than appended so a replayed backlog re-lands the same line
+   * instead of a second copy — and so `stream.reset`, which clears the cursor
+   * dedup set, cannot duplicate them either. Unlike parts, these have no
+   * durable counterpart the consumer could re-read, so a reset does NOT drop
+   * them: the transitions they announce definitely happened.
+   */
+  legNotices: Map<number, string>;
   /** True once this turn has asked its consumer to re-fetch the canonical message. */
   rehydrate: boolean;
 }
@@ -78,7 +94,33 @@ export interface TranscriptState {
   cursor: number;
   /** Non-fatal frames this build could not read, for a visible diagnostic. */
   warnings: string[];
+  /**
+   * The thread's design leg, as the lifecycle frames have described it so far.
+   *
+   * Stream-derived, and honestly so: if a leg was opened further back than the
+   * replayed backlog reaches, this stays closed and the surface simply says
+   * less. It never says something the frames did not.
+   */
+  designLeg: DesignLegState;
 }
+
+export interface DesignLegState {
+  /** True between `leg.opened`/`leg.reopened` and the matching `leg.closed`. */
+  open: boolean;
+  legId: string | null;
+  /**
+   * The turn that opened (or reopened) the leg — a head-of-abm turn, not a
+   * design turn. Excluded from the "generating" state so the delegating turn's
+   * own tail does not claim a website is being generated.
+   */
+  openedByTurnId: string | null;
+}
+
+const CLOSED_LEG: DesignLegState = {
+  open: false,
+  legId: null,
+  openedByTurnId: null,
+};
 
 export function emptyTranscriptState(): TranscriptState {
   return {
@@ -87,6 +129,7 @@ export function emptyTranscriptState(): TranscriptState {
     seenEventIds: new Set(),
     cursor: 0,
     warnings: [],
+    designLeg: CLOSED_LEG,
   };
 }
 
@@ -100,6 +143,7 @@ function blankTurn(turnId: string): TranscriptTurn {
     attemptOrdinal: 0,
     parts: [],
     deltas: new Map(),
+    legNotices: new Map(),
     rehydrate: false,
   };
 }
@@ -156,6 +200,7 @@ export function applyChatStreamEvent(
     seenEventIds: new Set(previous.seenEventIds),
     cursor: previous.cursor,
     warnings: previous.warnings,
+    designLeg: previous.designLeg,
   };
   if (event.eventId !== null) {
     state.seenEventIds.add(event.eventId);
@@ -169,6 +214,7 @@ export function applyChatStreamEvent(
     ...source,
     parts: [...source.parts],
     deltas: new Map(source.deltas),
+    legNotices: new Map(source.legNotices),
   };
   state.turns.set(event.turnId, turn);
   if (event.messageId !== null) turn.messageId = event.messageId;
@@ -256,6 +302,36 @@ export function applyChatStreamEvent(
       upsertText(turn, event.partId, event.generationAttemptId, {
         streaming: false,
       });
+      return state;
+    }
+    case "leg.opened":
+    case "leg.reopened":
+    case "leg.awaiting_user":
+    case "leg.closed": {
+      // Rule 7 (genweb slice 3): a leg frame is the durable announcement of a
+      // leg transition. It becomes one transcript system line on the turn that
+      // performed it, and it moves the thread's leg state — nothing else. It
+      // never touches parts, prose, or the turn's own lifecycle state.
+      const notice = designLegNotice({ type: event.type, reason: event.reason });
+      if (notice !== null && event.eventId !== null) {
+        turn.legNotices.set(event.eventId, notice);
+      }
+      state.designLeg =
+        event.type === "leg.closed"
+          ? CLOSED_LEG
+          : event.type === "leg.awaiting_user"
+            ? {
+                // The leg is still open; only the frames that OPEN it name the
+                // delegating turn, so an awaiting frame must not overwrite it.
+                open: true,
+                legId: event.legId ?? state.designLeg.legId,
+                openedByTurnId: state.designLeg.openedByTurnId,
+              }
+            : {
+                open: true,
+                legId: event.legId,
+                openedByTurnId: event.turnId,
+              };
       return state;
     }
     default: {
@@ -403,6 +479,23 @@ export interface TranscriptMessage {
   failureCode: string | null;
   /** True for a locally-submitted turn the server has not yet echoed back. */
   optimistic: boolean;
+  /**
+   * Design-leg system lines this turn announced, in frame order (slice 3).
+   *
+   * Ordered by `event_id`, which is the stream's own global sequence, so the
+   * open/hand-back/close lines read in the order they actually happened.
+   */
+  legNotices: readonly string[];
+  /**
+   * True while this turn is running INSIDE an open design leg — i.e. the
+   * message the user sent went to Design and a website is being generated.
+   *
+   * Derived from the leg frames alone (the turn read carries no role), and the
+   * delegating turn that opened the leg is excluded: it is a strategy turn that
+   * generates nothing. When the backlog does not reach the opening frame this
+   * is simply `false` — the surface says less, never something untrue.
+   */
+  generatingDesign: boolean;
 }
 
 export interface OptimisticTurn {
@@ -483,6 +576,8 @@ export function composeTranscript({
         state: projected?.state ?? "queued",
         failureCode: null,
         optimistic: true,
+        legNotices: [],
+        generatingDesign: false,
       });
     }
 
@@ -510,6 +605,11 @@ export function composeTranscript({
         state,
         failureCode: projected?.failureCode ?? null,
         optimistic: false,
+        legNotices: orderedLegNotices(projected),
+        generatingDesign:
+          state === "running" &&
+          stream.designLeg.open &&
+          stream.designLeg.openedByTurnId !== turnId,
       });
     }
   }
@@ -530,7 +630,17 @@ function userMessage(message: ChatMessage, optimistic: boolean): TranscriptMessa
     state: "completed",
     failureCode: null,
     optimistic,
+    legNotices: [],
+    generatingDesign: false,
   };
+}
+
+/** The turn's leg lines in stream order (`event_id` is globally monotone). */
+function orderedLegNotices(turn: TranscriptTurn | undefined): readonly string[] {
+  if (!turn || turn.legNotices.size === 0) return [];
+  return [...turn.legNotices.entries()]
+    .sort((left, right) => left[0] - right[0])
+    .map(([, notice]) => notice);
 }
 
 function livingParts(turn: TranscriptTurn | undefined): ChatPart[] {
