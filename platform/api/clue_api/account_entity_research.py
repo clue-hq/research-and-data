@@ -53,6 +53,7 @@ from clue_api.comprehensive_research_contract import (
     source_can_request,
 )
 from clue_api.entity_research_tools import (
+    EntityResearchGovernedRejection,
     convert_engine_authority_rejections,
     semantic_validation_error,
 )
@@ -2227,6 +2228,13 @@ def account_engine_tool_bindings(
                 # is bound to the same handler below). Either way it is a model mistake the agent
                 # can repair — never an uncaught exception that kills a live research job.
                 raise ToolException(semantic_validation_error(error)) from error
+            except EntityResearchGovernedRejection as rejection:
+                # Already the repairable species (e.g. a model-typed reference of the wrong
+                # type) — but the engine-tool path has no downstream converter, so without this
+                # it escaped raw and suspended the job (live: run 1d39023a, read_research_result
+                # handed a sumble-account-operation ref). Render it as the error tool message the
+                # species promises.
+                raise ToolException(rejection.render()) from rejection
 
         return guarded
 
