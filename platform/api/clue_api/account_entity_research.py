@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import functools
+import json
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from contextlib import AbstractAsyncContextManager
 from datetime import UTC, datetime
@@ -1011,10 +1012,24 @@ class AccountResearchStateStore:
                 field_keys=non_acquisition_fields,
             )
         if not execution.complete:
-            raise AccountResearchAuthorityError(
+            # Name the exact next call, not just the gap. Observed live (jobs 5d9dfe7b and
+            # 16e846d6): a model refused here for an unattempted committee source ping-ponged
+            # read_account_research_state <-> assess_account_coverage to the recursion cap
+            # without once calling discover_buying_committee - it knew what was missing but not
+            # what to do. The committee call for this authorization has zero planning freedom
+            # (sources and plan are confirmed), so the refusal spells it out literally.
+            detail = (
                 "coverage cannot close before every authorized field/source and committee "
                 f"attempt is terminal: {execution.outstanding_summary()}"
             )
+            if execution.outstanding_committee_source_keys:
+                sources_json = json.dumps(list(execution.outstanding_committee_source_keys))
+                detail += (
+                    "; to attempt the committee now, call discover_buying_committee with "
+                    f'arguments {{"source_keys": {sources_json}}} and no questions - do not '
+                    "read state again first"
+                )
+            raise AccountResearchAuthorityError(detail)
         # A zero-result close is legal exactly once (FI-2 §6.1): when the account was researched by
         # spending nothing, i.e. every completed field is borrowed from a claim already on file.
         # The set-equality above already refuses an agent that omits results it produced; this
