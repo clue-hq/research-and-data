@@ -39,7 +39,7 @@ from clue_toolbelt import Tool
 
 log = get_logger("clue_api.design_tools")
 
-__all__ = ["build_design_tools"]
+__all__ = ["build_design_tools", "mint_empty_web_document"]
 
 
 @lru_cache(maxsize=1)
@@ -66,6 +66,34 @@ def _live_host(storage: StorageBackend) -> Any:
         compiler_worker_path=default_compiler_worker_path,
         compiler_timeout_seconds=lambda: DEFAULT_COMPILER_TIMEOUT_SECONDS,
         compile_fn=lambda: compile_custom_component,
+    )
+
+
+def mint_empty_web_document(
+    *,
+    document_id: str,
+    title: str,
+    brand_kit_ref: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Mint the engine's empty ``WebDoc`` for a new website-mode document.
+
+    The Rust engine is the ONLY author of the WebDoc shape — the design API's own
+    ``POST /documents`` route does exactly this round-trip before handing the payload to the
+    governed ``design_create_document`` write (``lumen_api/main.py``), and every other
+    creation path (templates, derivations) mints engine-side too. Hand-assembling the JSON
+    platform-side would fork the schema, so the leg's document birth (genweb slice 2) reuses
+    this seam rather than inventing one.
+
+    It is a subprocess call to ``lumen-api-helper`` (``LUMEN_CORE_HELPER``, else a ``cargo
+    run`` fallback) and therefore SYNC and blocking — callers on an event loop must hop a
+    thread. ``brand_kit_ref`` is the ``{"id", "version"}`` shape the theme carries; ``None``
+    leaves ``theme`` empty, which is what lets the DAL's creation contract stamp the
+    workspace's latest approved kit at birth.
+    """
+
+    return cast(
+        dict[str, Any],
+        _core_client().web_new_doc(document_id, title, brand_kit_ref)["web_doc"],
     )
 
 

@@ -34,6 +34,7 @@ from clue_core import new_operation_id
 from clue_design import legs as design_legs
 from clue_toolbelt import ToolContext, ToolRegistry, invoke_tool
 from tests.api.conftest import hermetic_flag_env
+from tests.api.test_genweb_leg_document_birth_db import engine_web_doc
 from tests.api.test_p34_design_leg_engine_db import (
     _FakeLane,
     _run_turn,
@@ -138,7 +139,14 @@ def test_the_leg_lifecycle_lands_on_the_turn_stream_end_to_end(
                 registry = build_agent_profile_registry(build_toolbelt(storage=None, gateway=None))
             tools = ToolRegistry()
             tools.register(
-                OpenDesignLegTool(conn_factory=cf, storage=seeds["storage"]), make_default=True
+                OpenDesignLegTool(
+                    conn_factory=cf,
+                    storage=seeds["storage"],
+                    # @2: a document-less open births its web document — these are
+                    # lifecycle-frame tests, so the engine round-trip is the recorded one.
+                    web_document_minter=engine_web_doc,
+                ),
+                make_default=True,
             )
             tools.register(
                 FinishDesignLegTool(conn_factory=cf, storage=seeds["storage"]), make_default=True
@@ -152,6 +160,7 @@ def test_the_leg_lifecycle_lands_on_the_turn_stream_end_to_end(
                 {
                     "source_turn_ref": derive_turn_action_ref(delegating.turn_id),
                     "brief": "A streamed artboard.",
+                    "doc_kind": "web",
                 },
                 _context(seeds),
                 idempotency_ttl_s=60,
@@ -241,7 +250,14 @@ def test_replayed_invocations_announce_no_second_transition(
             cf = seeds["conn_factory"]
             tools = ToolRegistry()
             tools.register(
-                OpenDesignLegTool(conn_factory=cf, storage=seeds["storage"]), make_default=True
+                OpenDesignLegTool(
+                    conn_factory=cf,
+                    storage=seeds["storage"],
+                    # @2: a document-less open births its web document — these are
+                    # lifecycle-frame tests, so the engine round-trip is the recorded one.
+                    web_document_minter=engine_web_doc,
+                ),
+                make_default=True,
             )
             tools.register(
                 FinishDesignLegTool(conn_factory=cf, storage=seeds["storage"]), make_default=True
@@ -250,6 +266,7 @@ def test_replayed_invocations_announce_no_second_transition(
             open_args = {
                 "source_turn_ref": derive_turn_action_ref(delegating.turn_id),
                 "brief": "Once only.",
+                "doc_kind": "web",
             }
             await invoke_tool(
                 tools, "open_design_leg", open_args, _context(seeds), idempotency_ttl_s=60

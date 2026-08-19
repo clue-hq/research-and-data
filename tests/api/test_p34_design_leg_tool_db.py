@@ -1,4 +1,4 @@
-"""P3.4 acceptance — ``open_design_leg@1``, the delegation entry (PD-part3 §1-D1/§2.3).
+"""P3.4 acceptance — ``open_design_leg``, the delegation entry (PD-part3 §1-D1/§2.3).
 
 The head-of-abm's one way to hand the thread to the design deepagent: it validates the
 D5 pins (document CAS guard; fail-closed brand-kit pin), builds the §2.3 delegation
@@ -7,7 +7,10 @@ bundle as one canonical-JSON artifact under a hard byte cap, and opens the durab
 the ``open_directive_confirmation_gate`` precedent: everything of authority is *derived*
 from the durable presenting turn (``source_turn_ref``), never accepted from the model.
 
-All writes run in rolled-back transactions against the session-migrated DB.
+All writes run in rolled-back transactions against the session-migrated DB. genweb slice 2
+promoted the tool to @2 (a document-less open BIRTHS its web document); the birth itself is
+covered by ``test_genweb_leg_document_birth_db.py``, and what this module still owns is the
+@1 discipline that survived it unchanged — derived authority, the pins, the cap, the guard.
 """
 
 from __future__ import annotations
@@ -321,11 +324,19 @@ def test_open_design_leg_opens_the_leg_and_persists_the_bundle(
     run_async(scenario())
 
 
-def test_open_design_leg_accepts_a_leg_with_no_pins(
+def test_open_design_leg_with_no_document_must_say_what_to_create(
     tmp_path: Path,
     migrated_db: bool,  # noqa: F811
 ) -> None:
-    """A leg may create its document (§2.1) — document and brand pins are both optional."""
+    """@2 closed §2.1's hole: a leg that names no document CREATES one, so it has to say what.
+
+    Until genweb slice 2 this call opened a pinless leg — a design session with nothing to
+    design on, which is exactly the blocker (B2) that made "make me a landing page" land
+    nowhere. The pin-free shape is therefore gone: the brand pin stays optional, but a
+    document-less open now declares ``doc_kind``. The successful birth path (and its
+    twin-proofing, brand stamp and gallery derivation) lives in
+    ``test_genweb_leg_document_birth_db.py``.
+    """
 
     if not migrated_db:
         pytest.skip("database not reachable")
@@ -333,23 +344,26 @@ def test_open_design_leg_accepts_a_leg_with_no_pins(
     async def scenario() -> None:
         async with rollback_conn() as conn:
             seeds = await _seed_conversation(conn, storage_root=tmp_path, label="nopins")
-            result = await invoke_tool(
-                _registry(seeds),
-                "open_design_leg",
-                {
-                    "source_turn_ref": derive_turn_action_ref(seeds["turn_id"]),
-                    "brief": "Start a fresh design from the brief alone.",
-                },
-                _context(seeds),
-                idempotency_ttl_s=60,
+            with pytest.raises(PreconditionFailed) as failure:
+                await invoke_tool(
+                    _registry(seeds),
+                    "open_design_leg",
+                    {
+                        "source_turn_ref": derive_turn_action_ref(seeds["turn_id"]),
+                        "brief": "Start a fresh design from the brief alone.",
+                    },
+                    _context(seeds),
+                    idempotency_ttl_s=60,
+                )
+            assert "design_leg_doc_kind_required" in str(failure.value)
+            assert (
+                await design_legs.get_open_leg_for_thread(
+                    conn,
+                    workspace_id=seeds["workspace_id"],
+                    thread_id=seeds["thread_id"],
+                )
+                is None
             )
-            leg = await design_legs.get_leg(
-                conn,
-                workspace_id=seeds["workspace_id"],
-                leg_id=result.references["leg_id"],
-            )
-            assert leg["document_id"] is None
-            assert leg["brand_kit_id"] is None
 
     run_async(scenario())
 
@@ -413,6 +427,7 @@ def test_open_design_leg_brand_pin_is_fail_closed(
                     {
                         "source_turn_ref": derive_turn_action_ref(seeds["turn_id"]),
                         "brief": "Design with the pinned kit.",
+                        "doc_kind": "web",
                         "brand_kit_id": "kit_that_does_not_exist",
                         "brand_kit_version": 1,
                     },
@@ -427,6 +442,7 @@ def test_open_design_leg_brand_pin_is_fail_closed(
                     {
                         "source_turn_ref": derive_turn_action_ref(seeds["turn_id"]),
                         "brief": "Design with the pinned kit.",
+                        "doc_kind": "web",
                         "brand_kit_id": "kit_p34",
                     },
                     _context(seeds),
@@ -462,6 +478,7 @@ def test_open_design_leg_refuses_a_second_open_leg_on_the_thread(
                     {
                         "source_turn_ref": derive_turn_action_ref(seeds["turn_id"]),
                         "brief": "Open a second leg.",
+                        "doc_kind": "web",
                     },
                     _context(seeds),
                     idempotency_ttl_s=60,
@@ -502,6 +519,7 @@ def test_open_design_leg_enforces_the_bundle_byte_cap(
                     {
                         "source_turn_ref": derive_turn_action_ref(seeds["turn_id"]),
                         "brief": "x" * 8_000,
+                        "doc_kind": "web",
                         "claim_refs": oversized_refs,
                     },
                     _context(seeds),
