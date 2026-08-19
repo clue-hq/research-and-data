@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from clue_api.agent_turn_scope_pin import (
     COMPANY_ACCOUNT_WIDE_KNOWLEDGE_SCOPE_V1,
     COMPANY_AND_SELECTED_PRODUCT_SCOPE_POLICY_V2,
+    COMPANY_AND_SELECTED_PRODUCT_SCOPE_POLICY_V3,
     get_agent_turn_scope_pin,
     load_or_create_agent_turn_scope_pin,
 )
@@ -219,7 +220,7 @@ def test_turn_pin_freezes_independent_company_product_pair_and_preserves_v1_repl
             assert pin_v1.product_kb_version == product_profile.ref.client_kb_version
             assert (
                 pin_v1.knowledge_scope_policy_version
-                == COMPANY_AND_SELECTED_PRODUCT_SCOPE_POLICY_V2
+                == COMPANY_AND_SELECTED_PRODUCT_SCOPE_POLICY_V3
             )
 
             # The row is the retry authority, so neither an ordinary update nor a delete may
@@ -322,6 +323,10 @@ def test_turn_pin_freezes_independent_company_product_pair_and_preserves_v1_repl
             assert pin_v2.client_kb_version == background.ref.client_kb_version
             assert pin_v2.product_kb_version == product_background.ref.client_kb_version
             assert pin_v2.turn_id != pin_v1.turn_id
+            assert (
+                pin_v2.knowledge_scope_policy_version
+                == COMPANY_AND_SELECTED_PRODUCT_SCOPE_POLICY_V3
+            )
 
             # Historical V1 rows stay readable as exactly company-only receipts. They are not
             # upgraded in place or reinterpreted as containing the current product marker.
@@ -368,6 +373,77 @@ def test_turn_pin_freezes_independent_company_product_pair_and_preserves_v1_repl
             assert (
                 legacy_pin.knowledge_scope_policy_version == COMPANY_ACCOUNT_WIDE_KNOWLEDGE_SCOPE_V1
             )
+
+            # V2's selected-without-knowledge state remains readable as immutable history. The
+            # same shape is forbidden for a newly-authored V3 receipt.
+            historical_v2_turn = await _capture_submission(
+                conn,
+                artifacts=artifacts,
+                workspace_id=workspace_id,
+                project_id=project.project_id,
+                brand_id=brand.brand_id,
+                product_id=product.product_id,
+                client_entity_id=first_profile.ref.client_entity_id,
+                label="historical-v2-without-product-kb",
+            )
+            pin_values = {
+                "turn": historical_v2_turn.turn_id,
+                "workspace": workspace_id,
+                "project": project.project_id,
+                "name": project.name,
+                "status": project.status,
+                "brand": brand.brand_id,
+                "product": product.product_id,
+                "client": first_profile.ref.client_entity_id,
+                "company_version": first_profile.ref.client_kb_version,
+            }
+            await conn.execute(
+                text(
+                    "INSERT INTO agent_turn_scope_pin "
+                    "(turn_id, workspace_id, project_id, project_name, project_status, brand_id, "
+                    "product_id, client_entity_id, client_kb_version, product_kb_version, "
+                    "knowledge_scope_policy_version) VALUES "
+                    "(:turn, :workspace, :project, :name, :status, :brand, :product, :client, "
+                    ":company_version, NULL, 'company-and-selected-product-v2')"
+                ),
+                pin_values,
+            )
+            historical_v2_pin = await get_agent_turn_scope_pin(
+                conn,
+                workspace_id=workspace_id,
+                turn_id=historical_v2_turn.turn_id,
+            )
+            assert historical_v2_pin is not None
+            assert historical_v2_pin.product_kb_version is None
+            assert (
+                historical_v2_pin.knowledge_scope_policy_version
+                == COMPANY_AND_SELECTED_PRODUCT_SCOPE_POLICY_V2
+            )
+
+            invalid_v3_turn = await _capture_submission(
+                conn,
+                artifacts=artifacts,
+                workspace_id=workspace_id,
+                project_id=project.project_id,
+                brand_id=brand.brand_id,
+                product_id=product.product_id,
+                client_entity_id=first_profile.ref.client_entity_id,
+                label="invalid-v3-without-product-kb",
+            )
+            with pytest.raises(DBAPIError, match="agent_turn_scope_pin_policy_shape"):
+                async with conn.begin_nested():
+                    await conn.execute(
+                        text(
+                            "INSERT INTO agent_turn_scope_pin "
+                            "(turn_id, workspace_id, project_id, project_name, project_status, "
+                            "brand_id, product_id, client_entity_id, client_kb_version, "
+                            "product_kb_version, knowledge_scope_policy_version) VALUES "
+                            "(:turn, :workspace, :project, :name, :status, :brand, :product, "
+                            ":client, :company_version, NULL, "
+                            "'company-and-selected-product-required-v3')"
+                        ),
+                        {**pin_values, "turn": invalid_v3_turn.turn_id},
+                    )
 
             # Workspace isolation is fail-closed and does not disclose the foreign row.
             assert (

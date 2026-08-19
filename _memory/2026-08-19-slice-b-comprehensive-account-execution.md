@@ -536,3 +536,34 @@ v1-v3 but no `client.kb_version` marker scoped to Aura product
 turn did not install, and the surface middleware returned its structural-unavailability error.
 Screenshot `23-start-confirmed-run-tool-unavailable.png` captures the live failure. No discovery,
 Account research, committee work, provider call, or spend occurred; Tunis remained untouched.
+
+## Product-KB baseline invariant — founder ruling and implementation
+
+The founder ratified eliminating `selected_without_product_knowledge` as a valid current
+post-selection state. The direct live cause was not a missing trusted product id: Aura was
+correctly pinned on the project and subsequent turns. The missing state was the independently
+versioned Product-KB marker. Onboarding intentionally publishes company-scoped Client-KB and a
+selectable product catalog; it does not automatically run selected-product recon. The first
+product-fact route had also left the supplied structured values as unmapped evidence while the
+verification/entailment judge was disabled, so the claim-conditional materialization path never
+created a product marker.
+
+The implementation now makes Product-KB existence independent from claim promotion. Human product
+confirmation creates an idempotent empty Product-KB v1 in the same transaction as
+`project.product_id`; the baseline carries zero known claims, all nine registered product fields
+as open gaps, and 0/9 coverage. It does not require a verification judge and does not invent a
+claim. `load_or_create_agent_turn_scope_pin` provides an idempotent repair for legacy selected
+projects before writing a new pin. New pins use
+`company-and-selected-product-required-v3`, and migration `ab295072ba84` makes
+`product_id != NULL => product_kb_version != NULL` a database-enforced V3 shape. Historical V1/V2
+pins remain unchanged and readable. The frozen S5.0 selected-without state is documented as
+historical-only in both production-context contracts.
+
+Verification on `clue_missoula_slice_b_checks`: the focused selection/scope/decision set passed
+16 tests before and after a migration down/up cycle; 57 additional toolbelt, recipe, launch,
+context, card, and product-tool tests passed. Ruff, production mypy, `git diff --check`, and the
+single Alembic head `ab295072ba84` passed. Broader context runs still expose unrelated pre-existing
+failures: three S3 fixtures omit the newly required `previous_turn_outcome`, the fleet DSAR test
+expects a reusable product artifact that the current erasure path already removes, and two
+toolbelt inventory/matrix assertions are stale against already-merged tool versions. These were
+not changed as part of the Product-KB invariant.

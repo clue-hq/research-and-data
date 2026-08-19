@@ -6,9 +6,11 @@ publish vN+1 between attempts and silently mix vN and vN+1 inside one logical tu
 turns that tuple into an immutable receipt, written before cards, tools, or model execution.
 
 The receipt also pins the *meaning* of Client-KB scope. Historical
-``company-account-wide-v1`` rows admit only the account-wide marker. New turns use
-``company-and-selected-product-v2``: the company marker plus the independently current Product-KB
-version for the human-confirmed project product, resolved in one database snapshot.
+``company-account-wide-v1`` rows admit only the account-wide marker, while V2 receipts preserve
+the earlier honest selected-without-knowledge state. New turns use
+``company-and-selected-product-required-v3``: the company marker plus an independently current
+Product-KB version for every human-confirmed project product. A missing Product-KB is repaired to
+an honest empty baseline before the immutable receipt is inserted.
 """
 
 from __future__ import annotations
@@ -21,13 +23,18 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_api.agent_turn_submission import AgentTurnSubmissionRow
 from clue_api.conversation_capture import project_client_entity_id
-from clue_api.product_knowledge_decision import COMPANY_AND_SELECTED_PRODUCT_SCOPE_POLICY_V2
+from clue_api.product_knowledge_decision import (
+    COMPANY_AND_SELECTED_PRODUCT_SCOPE_POLICY_V2,
+    COMPANY_AND_SELECTED_PRODUCT_SCOPE_POLICY_V3,
+)
 from clue_core import EntityId, UtcDatetime
+from clue_research.stage0 import ensure_product_kb_baseline
 from clue_spine import get_project
 
 __all__ = [
     "COMPANY_ACCOUNT_WIDE_KNOWLEDGE_SCOPE_V1",
     "COMPANY_AND_SELECTED_PRODUCT_SCOPE_POLICY_V2",
+    "COMPANY_AND_SELECTED_PRODUCT_SCOPE_POLICY_V3",
     "AgentTurnScopePinRow",
     "AgentTurnScopePinConflict",
     "get_agent_turn_scope_pin",
@@ -71,6 +78,7 @@ class AgentTurnScopePinRow(BaseModel):
         if self.knowledge_scope_policy_version not in {
             COMPANY_ACCOUNT_WIDE_KNOWLEDGE_SCOPE_V1,
             COMPANY_AND_SELECTED_PRODUCT_SCOPE_POLICY_V2,
+            COMPANY_AND_SELECTED_PRODUCT_SCOPE_POLICY_V3,
         }:
             raise AgentTurnScopePinConflict(
                 "this turn's Client-KB scope policy is not supported by this worker"
@@ -87,6 +95,14 @@ class AgentTurnScopePinRow(BaseModel):
         ):
             raise AgentTurnScopePinConflict(
                 "a Product-KB pin requires company, client, and confirmed-product authority"
+            )
+        if (
+            self.knowledge_scope_policy_version == COMPANY_AND_SELECTED_PRODUCT_SCOPE_POLICY_V3
+            and self.product_id is not None
+            and self.product_kb_version is None
+        ):
+            raise AgentTurnScopePinConflict(
+                "a V3 selected-product turn requires an exact Product-KB lineage"
             )
 
 
@@ -192,9 +208,20 @@ async def load_or_create_agent_turn_scope_pin(
             product_id=project.product_id,
         )
     )
-    if client_kb_version is None:
-        # Product knowledge cannot become turn authority before the company Client-KB exists.
-        product_kb_version = None
+    if project.product_id is not None:
+        if client_entity_id is None or client_kb_version is None:
+            raise AgentTurnScopePinConflict(
+                "a selected-product turn requires an established company Client-KB"
+            )
+        if product_kb_version is None:
+            baseline = await ensure_product_kb_baseline(
+                conn,
+                workspace_id=submission.workspace_id,
+                client_entity_id=client_entity_id,
+                product_id=project.product_id,
+                operation_key=f"turn-pin-repair:{project.project_id}:{project.product_id}",
+            )
+            product_kb_version = baseline.version
     inserted = (
         (
             await conn.execute(
@@ -220,7 +247,7 @@ async def load_or_create_agent_turn_scope_pin(
                     "client_entity_id": client_entity_id,
                     "client_kb_version": client_kb_version,
                     "product_kb_version": product_kb_version,
-                    "policy": COMPANY_AND_SELECTED_PRODUCT_SCOPE_POLICY_V2,
+                    "policy": COMPANY_AND_SELECTED_PRODUCT_SCOPE_POLICY_V3,
                 },
             )
         )

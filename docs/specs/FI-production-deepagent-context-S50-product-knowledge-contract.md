@@ -9,6 +9,16 @@
 
 **Executable constants/state invariants:** `clue_api.product_knowledge_decision`
 
+> **Founder supersession — 2026-08-19:** `selected_without_product_knowledge` remains in the S5.0
+> fixture only as a frozen historical V2 state. It is not valid for a newly selected product or a
+> newly created turn pin. `confirm_project_product@1` now atomically creates an idempotent empty
+> Product-KB v1 when no product-scoped marker exists; that marker carries 0/N coverage, no claims,
+> and every registered product field as an open gap. New turns use
+> `company-and-selected-product-required-v3`, whose database and runtime invariant is
+> `confirmed_product_id != null => product_kb_version != null`. A new-turn repair creates the same
+> honest baseline for legacy selected projects before inserting their immutable V3 pin. Historical
+> V1/V2 pins remain unchanged and readable.
+
 ## 1. Outcome and boundary
 
 S5.0 resolves the product-knowledge decisions that were deliberately left open after S3.1. It is
