@@ -29,7 +29,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any, cast
 
-from clue_research.resolvers.exa.deep_contract import field_key_from_exa_alias
+from clue_research.resolvers.exa.deep_contract import EXA_FIELD_ALIAS_CHARACTERS
 from clue_research.resolvers.http import ProviderResponseError
 from tests.api.test_comprehensive_account_execution_db import (
     _schema_example,
@@ -70,6 +70,13 @@ class HarnessExaTransport(_ScriptedExaTransport):
     ``spend_outcome_unknown`` terminally instead of stranding the account. Only the *first* bundle
     of the nominated account is corrupted, so that account's batch is the live mixed shape: some
     bundles ready, one dispatched bundle that can never yield a snapshot.
+
+    The corruption is modelled as an *alias copy budget*: the provider only reproduces the first
+    ``alias_char_budget`` characters of a property name. That is the live shape — the resonance
+    bundle asked for 52, 66 and 74-character hex aliases and got 48, 62 and 62 characters back.
+    The default budget is deliberately below the current fixed alias length so this transport still
+    corrupts. What the real provider managed is ``LIVE_ALIAS_CHAR_BUDGET`` in
+    :mod:`tests.api.test_comprehensive_account_execution_db`, six times the current alias length.
     """
 
     def __init__(
@@ -78,6 +85,7 @@ class HarnessExaTransport(_ScriptedExaTransport):
         domains: Mapping[str, str],
         empty_field_keys: Sequence[str] = (),
         truncating_domains: Sequence[str] = (),
+        alias_char_budget: int = EXA_FIELD_ALIAS_CHARACTERS - 2,
         cost_dollars: float = _RECORDED_BUNDLE_COST_DOLLARS,
     ) -> None:
         super().__init__(empty_field_keys=empty_field_keys)
@@ -85,6 +93,7 @@ class HarnessExaTransport(_ScriptedExaTransport):
         self._domain_by_slug = dict(domains)
         self._slug_by_domain = {domain: slug for slug, domain in domains.items()}
         self._truncating = frozenset(truncating_domains)
+        self._alias_char_budget = alias_char_budget
         self._corrupted: dict[str, frozenset[str]] = {}
         self.requested_field_keys_by_slug: dict[str, set[str]] = {}
 
@@ -114,17 +123,22 @@ class HarnessExaTransport(_ScriptedExaTransport):
             json.dumps(super().search(request)).replace(_RECORDED_DOMAIN, domain)
         )
         cast(dict[str, Any], payload["costDollars"])["total"] = self._cost_dollars
-        properties = cast(Mapping[str, Any], request.output_schema["properties"])
+        field_key_by_alias = cast(Mapping[str, str], request.field_key_by_alias)
         self.requested_field_keys_by_slug.setdefault(slug, set()).update(
-            str(field_key_from_exa_alias(alias)) for alias in properties
+            str(field_key) for field_key in field_key_by_alias.values()
         )
         if domain not in self._truncating or slug in self._corrupted:
             return payload
         output = dict(cast(Mapping[str, Any], payload["output"]))
         content = cast(Mapping[str, Any], output["content"])
-        output["content"] = {alias[:-4]: value for alias, value in content.items()}
+        clipped = {alias[: self._alias_char_budget]: value for alias, value in content.items()}
+        if clipped == content:
+            # Every requested alias fitted the provider's copy budget, so nothing is corrupted and
+            # the exchange settles normally. This is the whole point of the short alias scheme.
+            return payload
+        output["content"] = clipped
         payload["output"] = output
-        self._corrupted[slug] = frozenset(str(field_key_from_exa_alias(alias)) for alias in content)
+        self._corrupted[slug] = frozenset(str(field_key_by_alias[alias]) for alias in content)
         return payload
 
 

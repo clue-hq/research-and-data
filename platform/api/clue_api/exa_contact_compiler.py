@@ -54,7 +54,6 @@ from clue_research.resolvers.exa import (
     compile_exa_contact_deep_request,
     validate_exa_contact_request_target,
 )
-from clue_research.resolvers.exa.deep_contract import field_key_from_exa_alias
 from clue_research.sources import get_source, plan_sources
 
 _KNOWN_DISAMBIGUATOR_FIELDS = (
@@ -119,10 +118,7 @@ class ExaDeepContactAcquisitionPreflight(BaseModel):
             != self.exa_config.highlight_max_characters
         ):
             raise ValueError("contact Exa wire request differs from its effective compiler policy")
-        wire_fields = self.exa_request.output_schema.get("properties")
-        if not isinstance(wire_fields, dict):
-            raise ValueError("contact Exa output schema properties must be an object")
-        emitted = {field_key_from_exa_alias(alias) for alias in wire_fields}
+        emitted = set(self.exa_request.field_key_by_alias.values())
         planned_keys = tuple(plan.field_key for plan in self.field_source_plans)
         if len(planned_keys) != len(set(planned_keys)):
             raise ValueError("contact Exa preflight source plans must be unique by field")

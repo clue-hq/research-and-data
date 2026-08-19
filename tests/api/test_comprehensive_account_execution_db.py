@@ -166,9 +166,9 @@ from clue_research.identity import get_account, stamp_reuse
 from clue_research.narrative.prose import PROSE_ACCOUNT_FIELDS
 from clue_research.resolvers.exa import SOURCE_KEY as EXA_DEEP_SOURCE_KEY
 from clue_research.resolvers.exa.deep_contract import (
+    EXA_FIELD_ALIAS_CHARACTERS,
     EXA_OUTPUT_MAX_FIELDS,
     ExaDeepFieldSpec,
-    field_key_from_exa_alias,
 )
 from clue_research.resolvers.sumble import ORGANIZATIONS_SOURCE_KEY
 from clue_storage import FsStorage
@@ -435,6 +435,13 @@ async def _seed_discovered_account(conn: AsyncConnection, storage: FsStorage) ->
     )
 
 
+#: The longest structured-output property name the live provider actually reproduced. Operation
+#: ``31b13c06-…`` of job ``04162ed5-…`` requested three v1 hex aliases of 52, 66 and 74 characters
+#: and answered with keys of 48, 62 and 62 — so ~62 characters is the copy budget that cost that
+#: account its whole resonance bundle. Every alias the compiler emits today is ten characters.
+LIVE_ALIAS_CHAR_BUDGET = 62
+
+
 class _ScriptedExaTransport:
     """A scripted Exa Deep response shaped by the *compiled bundle's own* output schema.
 
@@ -452,9 +459,9 @@ class _ScriptedExaTransport:
     @property
     def requested_field_keys(self) -> frozenset[str]:
         return frozenset(
-            str(field_key_from_exa_alias(alias))
+            str(field_key)
             for request in self.requests
-            for alias in request.output_schema["properties"]
+            for field_key in request.field_key_by_alias.values()
         )
 
     def search(self, request: Any) -> Mapping[str, Any]:
@@ -465,8 +472,9 @@ class _ScriptedExaTransport:
         properties = cast(Mapping[str, Mapping[str, Any]], request.output_schema["properties"])
         content: dict[str, Any] = {}
         grounding: list[Mapping[str, Any]] = []
+        field_key_by_alias = cast(Mapping[str, str], request.field_key_by_alias)
         for alias, schema in properties.items():
-            if str(field_key_from_exa_alias(alias)) in self._empty:
+            if str(field_key_by_alias[alias]) in self._empty:
                 content[alias] = None
                 continue
             content[alias] = _schema_example(schema)
@@ -483,10 +491,21 @@ class _TruncatingExaTransport(_ScriptedExaTransport):
     the requested aliases, so ``validate_exa_deep_exchange`` refused the exchange and the operation
     settled ``spend_outcome_unknown``. Only the first bundle is corrupted, so the batch is the live
     shape: some bundles ready, one dispatched bundle that can never yield a snapshot.
+
+    The corruption is modelled as an *alias copy budget*: the provider reproduces only the first
+    ``alias_char_budget`` characters of each property name. The live budget was about 62 characters
+    (see :data:`LIVE_ALIAS_CHAR_BUDGET`), which the v1 hex aliases blew straight through; the
+    default here is below the current fixed alias length so this transport still corrupts.
     """
 
-    def __init__(self, **kwargs: Any) -> None:
+    def __init__(
+        self,
+        *,
+        alias_char_budget: int = EXA_FIELD_ALIAS_CHARACTERS - 2,
+        **kwargs: Any,
+    ) -> None:
         super().__init__(**kwargs)
+        self._alias_char_budget = alias_char_budget
         self.corrupted_field_keys: frozenset[str] = frozenset()
 
     def search(self, request: Any) -> Mapping[str, Any]:
@@ -495,11 +514,14 @@ class _TruncatingExaTransport(_ScriptedExaTransport):
             return payload
         output = dict(cast(Mapping[str, Any], payload["output"]))
         content = cast(Mapping[str, Any], output["content"])
-        output["content"] = {alias[:-4]: value for alias, value in content.items()}
+        clipped = {alias[: self._alias_char_budget]: value for alias, value in content.items()}
+        if clipped == content:
+            # Every alias fitted the provider's copy budget, so the exchange settles normally.
+            return payload
+        output["content"] = clipped
         payload["output"] = output
-        self.corrupted_field_keys = frozenset(
-            str(field_key_from_exa_alias(alias)) for alias in content
-        )
+        field_key_by_alias = cast(Mapping[str, str], request.field_key_by_alias)
+        self.corrupted_field_keys = frozenset(str(field_key_by_alias[alias]) for alias in content)
         return payload
 
 
@@ -1245,6 +1267,84 @@ def test_an_unsettleable_exa_bundle_settles_terminally_instead_of_stranding_the_
             assert transport.corrupted_field_keys <= unresolved
             assert not transport.corrupted_field_keys & completed
             assert completed | unresolved == set(COMPREHENSIVE_ACCOUNT_FIELDS)
+
+    run_async(scenario())
+
+
+def test_the_live_alias_truncation_budget_no_longer_corrupts_any_bundle(tmp_path: Path) -> None:
+    """The same provider that lost the live resonance bundle now copies every alias intact.
+
+    Operation ``31b13c06-…`` of job ``04162ed5-…`` asked for three v1 hex aliases of 52, 66 and 74
+    characters and answered with keys of 48, 62 and 62, so ``validate_exa_deep_exchange`` refused a
+    paid exchange and ``account.resonance.buying_culture|culture|employee_sentiment`` closed as
+    gaps. This drives the *same* transport at the *same* ~62-character copy budget: under the short
+    alias scheme every property name is ten characters, nothing is clipped, and the fields that the
+    live run lost are researched and completed instead.
+    """
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            fixture = await _seed_discovered_account(
+                conn, FsStorage(tmp_path / "b8-alias-budget-artifacts")
+            )
+            transport = _TruncatingExaTransport(
+                empty_field_keys=(_HONEST_EMPTY,),
+                alias_char_budget=LIVE_ALIAS_CHAR_BUDGET,
+            )
+            drive = await _drive_comprehensive_run(
+                conn, fixture=fixture, tmp_path=tmp_path, transport=transport
+            )
+
+            assert transport.requests, "no Exa bundle was compiled"
+            requested = {
+                alias
+                for request in transport.requests
+                for alias in request.output_schema["properties"]
+            }
+            assert requested
+            assert all(len(alias) == EXA_FIELD_ALIAS_CHARACTERS for alias in requested)
+            assert max(len(alias) for alias in requested) < LIVE_ALIAS_CHAR_BUDGET
+            assert not transport.corrupted_field_keys
+
+            coverage = await _coverage_row(conn, job_id=drive.job_id)
+            completed = {str(value) for value in coverage["completed_field_keys"]}
+            unresolved = {str(value) for value in coverage["unresolved_field_keys"]}
+            assert completed | unresolved == set(COMPREHENSIVE_ACCOUNT_FIELDS)
+            live_casualties = {
+                "account.resonance.buying_culture",
+                "account.resonance.culture",
+                "account.resonance.employee_sentiment",
+            } & set(COMPREHENSIVE_ACCOUNT_FIELDS)
+            assert live_casualties, "the live casualties are no longer comprehensive fields"
+            assert live_casualties <= completed
+
+            operations = (
+                (
+                    await conn.execute(
+                        text(
+                            """
+                            SELECT EXISTS (
+                                       SELECT 1 FROM entity_research_result result
+                                       WHERE result.provider_operation_ref
+                                             =operation.operation_ref
+                                   ) AS produced
+                            FROM entity_research_provider_operation operation
+                            JOIN entity_research_provider_observation observation
+                              ON observation.provider_operation_ref=operation.operation_ref
+                            JOIN entity_research_tool_request request_row
+                              ON request_row.tool_request_id=observation.tool_request_id
+                            WHERE request_row.job_id=:job_id
+                              AND operation.source_key=:source_key
+                            """
+                        ),
+                        {"job_id": drive.job_id, "source_key": EXA_DEEP_SOURCE_KEY},
+                    )
+                )
+                .mappings()
+                .all()
+            )
+            assert operations
+            assert all(row["produced"] for row in operations)
 
     run_async(scenario())
 

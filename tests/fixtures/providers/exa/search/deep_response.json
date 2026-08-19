@@ -7,8 +7,8 @@
   },
   "output": {
     "content": {
-      "f_6163636f756e742e6f7065726174696f6e616c5f7061696e": "Referral-document indexing and patient-call routing create recurring administrative work.",
-      "f_6163636f756e742e7374726174656769635f6d6f766573": "The practice is expanding centralized patient-access and referral operations."
+      "k_g32m4d2u": "Referral-document indexing and patient-call routing create recurring administrative work.",
+      "k_t8u69a2b": "The practice is expanding centralized patient-access and referral operations."
     },
     "grounding": [
       {
@@ -19,7 +19,7 @@
           }
         ],
         "confidence": "high",
-        "field": "f_6163636f756e742e6f7065726174696f6e616c5f7061696e"
+        "field": "k_g32m4d2u"
       },
       {
         "citations": [
@@ -29,7 +29,7 @@
           }
         ],
         "confidence": "medium",
-        "field": "f_6163636f756e742e7374726174656769635f6d6f766573"
+        "field": "k_t8u69a2b"
       }
     ],
     "providerAdditiveMetadata": {

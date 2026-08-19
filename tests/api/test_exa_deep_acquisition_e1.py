@@ -19,6 +19,9 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from clue_api.exa_deep_acquisition import (
     ExaDeepAcquisitionCoordinator,
     ExaDeepAcquisitionOutcome,
+    ExaDeepAcquisitionPreflight,
+    _json_bytes,
+    _sha256,
     compile_exa_deep_acquisition_plan,
     load_exa_deep_snapshot,
 )
@@ -36,7 +39,8 @@ from clue_research.resolvers.exa import ExaDeepRequestFailure
 from clue_research.resolvers.exa.deep_contract import (
     ExaDeepFailureClass,
     ExaDeepFieldSpec,
-    exa_field_alias,
+    ExaDeepSearchRequest,
+    legacy_exa_field_alias,
 )
 from clue_storage import FsStorage
 from tests.api.test_sumble_committee_acquisition_s2b import _setup
@@ -641,23 +645,76 @@ def test_e1_bundle_compiler_splits_only_at_provider_schema_limit() -> None:
     assert plan.field_count == 10
 
 
+def _as_legacy_alias_preflight(
+    preflight: ExaDeepAcquisitionPreflight,
+) -> ExaDeepAcquisitionPreflight:
+    """Restate one compiled preflight in the frozen v1 hex-alias generation.
+
+    Every operation reserved before the short-alias cutover carries a v1 wire request in
+    ``request_json``, and its retained response names the v1 aliases. Durable acquisition, replay
+    and the one-shot retained-response recovery all have to keep reading those, so this rewrites a
+    live-compiled preflight rather than pinning a hand-written legacy body.
+    """
+
+    request = preflight.exa_request
+    rename = {
+        alias: legacy_exa_field_alias(field_key)
+        for alias, field_key in request.field_key_by_alias.items()
+    }
+    raw = request.model_dump(mode="json", by_alias=True, exclude_none=True)
+    schema = raw["outputSchema"]
+    assert isinstance(schema, dict)
+    properties = schema["properties"]
+    assert isinstance(properties, dict)
+    schema["properties"] = {rename[alias]: value for alias, value in properties.items()}
+    schema["required"] = [rename[alias] for alias in properties]
+    prompt = raw["systemPrompt"]
+    assert isinstance(prompt, str)
+    for alias, legacy in rename.items():
+        prompt = prompt.replace(f"{alias}=", f"{legacy}=")
+    raw["systemPrompt"] = prompt
+    legacy_request = ExaDeepSearchRequest.model_validate(raw)
+    payload = legacy_request.model_dump(mode="json", by_alias=True, exclude_none=True)
+    return preflight.model_copy(
+        update={
+            "exa_request": legacy_request,
+            "request": preflight.request.model_copy(
+                update={
+                    "request_payload": payload,
+                    "wire_request_sha256": _sha256(_json_bytes(payload)),
+                }
+            ),
+        }
+    )
+
+
 def test_e1_quarantines_success_persistence_failure_immediately(tmp_path: Path) -> None:
+    """The one-shot retained-response recovery still reads a v1 request and a v1 response.
+
+    The prefix salvage this exercises is a legacy-generation rescue: it identifies a corrupted
+    property name by its intact byte-aligned hex prefix, which only a v1 alias has. Driving it
+    through a legacy preflight is also the end-to-end proof that a pre-cutover operation still
+    dispatches, quarantines, replays and recovers after the compiler moved to short aliases.
+    """
+
     async def scenario() -> None:
         base_storage = FsStorage(tmp_path / "artifacts")
         async with rollback_conn(seed_pack=True) as conn:
             seed = await _setup(conn, base_storage, workspace_id="ws-exa-e1-persist-failure")
             account = await get_account(conn, seed.account_id)
             assert account is not None
-            preflight = _compile_preflight(seed, account, "window:exa-e1-persist-failure")
+            preflight = _as_legacy_alias_preflight(
+                _compile_preflight(seed, account, "window:exa-e1-persist-failure")
+            )
 
             @asynccontextmanager
             async def same_connection() -> AsyncIterator[AsyncConnection]:
                 yield conn
 
             storage = _FailingPutStorage(base_storage, fail_on_put=3)
-            payload = _payload()
+            payload = _payload("legacy_alias_deep_response.json")
             payload["costDollars"]["total"] = 0.07
-            canonical = exa_field_alias("account.operational_pain")
+            canonical = legacy_exa_field_alias("account.operational_pain")
             corrupted = f"{canonical[:26]}ெரrational_pain"
             content = payload["output"]["content"]
             content[corrupted] = content.pop(canonical)

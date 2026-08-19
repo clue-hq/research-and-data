@@ -45,7 +45,9 @@ from clue_research.resolvers.exa.deep_contract import (
     ExaDeepSearchResponse,
     ExaDeepTextOptions,
     exa_field_alias,
+    exa_field_aliases,
     field_key_from_exa_alias,
+    legacy_exa_field_alias,
     normalize_exa_profile_url,
     validate_exa_deep_exchange,
 )
@@ -284,10 +286,9 @@ def validate_exa_contact_request_target(
         or request.end_published_date != target.end_published_date
     ):
         raise ValueError("contact Search publication bounds differ from the persisted target lock")
-    properties = request.output_schema.get("properties")
-    if not isinstance(properties, dict) or any(
-        not str(field_key_from_exa_alias(alias)).startswith("contact.facet.")
-        for alias in properties
+    if any(
+        not str(field_key).startswith("contact.facet.")
+        for field_key in request.field_key_by_alias.values()
     ):
         raise ValueError("contact Search request contains a non-facet output field")
     return request
@@ -362,7 +363,7 @@ def _compile_output_schema(
     by_key = {spec.field_key: spec for spec in fields}
     if len(by_key) != len(fields):
         raise ValueError("Exa Deep field specs must have unique field keys")
-    aliases = {key: exa_field_alias(key) for key in sorted(by_key)}
+    aliases = exa_field_aliases(by_key)
     properties: dict[str, JsonValue] = {
         aliases[key]: _nullable_schema(by_key[key].value_schema) for key in sorted(by_key)
     }
@@ -599,14 +600,19 @@ def _repair_uniquely_identifiable_exa_aliases(
     request: ExaDeepSearchRequest,
     payload: Mapping[str, Any],
 ) -> Mapping[str, Any]:
-    """Repair only a provider-corrupted alias with one provable requested target.
+    """Repair only a provider-corrupted legacy alias with one provable requested target.
 
-    Search Deep occasionally returns a successful structured response where a long hex alias is
+    Search Deep occasionally returned a successful structured response where a long hex alias was
     partially rewritten as Unicode or readable field-name text. The raw provider payload remains
     the immutable response artifact; this parser-side copy only restores an alias when its intact,
     byte-aligned hex prefix identifies exactly one property in the request schema. Ambiguous,
     unrelated, colliding, or structurally malformed keys are left untouched so the strict response
     and exchange validators reject them.
+
+    This is a legacy-generation salvage and stays scoped to ``f_`` hex aliases. Short ``k_``
+    aliases are not repaired: they are ten characters the provider can copy verbatim, so the
+    corruption class this salvages is designed out rather than patched up, and a corrupted short
+    alias must fail closed like any other unrequested property name.
     """
 
     properties = request.output_schema.get("properties")
@@ -838,15 +844,24 @@ def normalize_exa_deep_snapshot(
     """Validate and normalize one immutable response without dropping citation attribution."""
 
     validate_exa_deep_exchange(request, response)
+    # Exchange validation already proves the returned aliases are exactly the requested ones, so
+    # the request's own declared table resolves every content and grounding key.
+    field_key_by_alias = request.field_key_by_alias
     result_by_url = {str(result.url): result for result in response.results}
     groundings = {
-        field_key_from_exa_alias(grounding.field.removeprefix("content.")): grounding
+        field_key_by_alias[grounding.field.removeprefix("content.")]: grounding
         for grounding in response.output.grounding
     }
     fields: list[SynthesizedField] = []
     citations: list[ExaDeepCitationAttribution] = []
-    for field_alias, value in response.output.content.items():
-        field_key = field_key_from_exa_alias(field_alias)
+    # Field order is the registry key's, never the payload's. E1 stores this normalization and the
+    # snapshot materializer recomputes it from the retained request/response, both of which have
+    # been through a jsonb round trip that does not preserve object key order — so ordering by the
+    # response's own keys made an equality check on the stored value depend on serialization luck.
+    for field_key, field_alias in sorted(
+        (field_key, alias) for alias, field_key in field_key_by_alias.items()
+    ):
+        value = response.output.content[field_alias]
         grounding = groundings.get(field_key)
         if grounding is None:
             continue
@@ -967,9 +982,8 @@ def normalize_exa_contact_deep_snapshot(
     validate_exa_contact_request_target(request, target)
     generic = normalize_exa_deep_snapshot(request, response, config=config)
     result_by_url = {str(result.url): result for result in response.results}
-    values = {
-        field_key_from_exa_alias(alias): value for alias, value in response.output.content.items()
-    }
+    field_key_by_alias = request.field_key_by_alias
+    values = {field_key_by_alias[alias]: value for alias, value in response.output.content.items()}
     citations: list[ExaDeepContactCitationAttribution] = []
     fields: list[SynthesizedField] = []
     for citation in generic.citations:
@@ -1057,7 +1071,7 @@ def normalize_exa_response(
     """Compatibility wrapper for the one-field resolver backend; structured responses only."""
 
     response = parse_exa_deep_response(request, payload)
-    if set(response.output.content) != {exa_field_alias(field.field_key)}:
+    if set(request.field_key_by_alias.values()) != {str(field.field_key)}:
         raise ValueError("one-field Exa resolver received a different structured field set")
     return normalize_exa_deep_response(request, response, config=config)
 
@@ -1230,7 +1244,9 @@ __all__ = [
     "compile_exa_deep_request",
     "compile_exa_contact_deep_request",
     "exa_field_alias",
+    "exa_field_aliases",
     "field_key_from_exa_alias",
+    "legacy_exa_field_alias",
     "make_backend",
     "normalize_exa_deep_response",
     "normalize_exa_deep_snapshot",

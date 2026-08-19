@@ -8,10 +8,10 @@
   "subject": "one canonical contact under one canonical employer",
   "channel_reveals": false,
   "fixtures": {
-    "exa_c3/supported.json": "091a1eb07217d0759ce94ee596d26bd6d1f8408506aa694969ccfd211721c115",
-    "exa_c3/empty.json": "c24733b5b2df1629c04513c5f4276828dc53c5e2eab155e6cabb89a18ae6e769",
-    "exa_c3/malformed.json": "7ddb7d39da29946f37d0feabf050f45836160e464904e3fe80b977a41d631ea6",
-    "exa_c3/contradictory_profile.json": "89e44206a1ea2637be807f5607e75957cf8b57fd106ee42be9557fa3781e75a7",
-    "exa_c3/same_name_wrong_employer.json": "9dc8f7fb4035d441204e1caf31dd6d5f18fdb4acc91f4db617ef6a9a8a8f6946"
+    "exa_c3/supported.json": "0e25f5361b17a0e520de600d34096e50c9fdc417fb3cacf26e3d24944240cb0f",
+    "exa_c3/empty.json": "217dedb763505af2a13471ad5783378f651e27a213682bda275ac70412c983fd",
+    "exa_c3/malformed.json": "77c3bcc7e0bd3505bab837e443e43737bfe09979edafbaa8050420582fb9e240",
+    "exa_c3/contradictory_profile.json": "3cba39c419483fe7c6ed17155ca72cdb48b4eedf89d6696e49777571a12cff06",
+    "exa_c3/same_name_wrong_employer.json": "233be93ff146885600e03709698b6dae1323c453d9397b718da8f5e26d2758cf"
   }
 }

@@ -37,7 +37,6 @@ from clue_research.resolvers.exa import (
     SOURCE_KEY,
     ExaDeepNormalization,
     ExaDeepSearchRequest,
-    field_key_from_exa_alias,
     normalize_exa_deep_snapshot,
     parse_exa_deep_response,
 )
@@ -197,11 +196,8 @@ async def _build_exa_deep_snapshot_resolver(
                 response = parse_exa_deep_response(request, response_payload)
         except (ValueError, TypeError, json.JSONDecodeError) as exc:
             raise ExaDeepSnapshotError("stored Exa snapshot JSON is malformed") from exc
-        properties = request.output_schema.get("properties")
-        if not isinstance(properties, dict):
-            raise ExaDeepSnapshotError("stored Exa request has no structured field map")
         requested_field_keys = frozenset(
-            str(field_key_from_exa_alias(alias)) for alias in properties
+            str(field_key) for field_key in request.field_key_by_alias.values()
         )
         unauthorized = requested_field_keys - allowed
         if unauthorized:

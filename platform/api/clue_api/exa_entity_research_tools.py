@@ -69,7 +69,6 @@ from clue_research.resolvers.exa import (
     ExaDeepFieldSpec,
     ExaDeepRequestBoundExceeded,
 )
-from clue_research.resolvers.exa.deep_contract import field_key_from_exa_alias
 from clue_research.sources import bind_resolver_overrides, resolve_field
 from clue_storage import StorageBackend, read_verified_artifact
 
@@ -399,14 +398,25 @@ class ExaEntityResearchProjectionBuilder:
         if not isinstance(wire, Mapping):
             raise EntityResearchResultIntegrityError("Exa stored request payload is malformed")
         schema = wire.get("outputSchema")
-        if not isinstance(schema, Mapping) or not isinstance(schema.get("properties"), Mapping):
+        prompt = wire.get("systemPrompt")
+        if (
+            not isinstance(schema, Mapping)
+            or not isinstance(schema.get("properties"), Mapping)
+            or not isinstance(prompt, str)
+        ):
             raise EntityResearchResultIntegrityError("Exa stored wire schema is malformed")
-        from clue_research.resolvers.exa.deep_contract import field_key_from_exa_alias
+        from clue_research.resolvers.exa.deep_contract import exa_alias_field_keys
 
-        keys = tuple(
-            str(field_key_from_exa_alias(str(alias)))
-            for alias in cast(Mapping[str, object], schema["properties"])
-        )
+        # The stored request declares its own alias generation, so a bundle compiled under the
+        # legacy hex aliases keeps partitioning correctly after the compiler moved to short ones.
+        try:
+            table = exa_alias_field_keys(
+                system_prompt=prompt,
+                aliases=cast(Mapping[str, object], schema["properties"]),
+            )
+        except ValueError as exc:
+            raise EntityResearchResultIntegrityError("Exa stored wire schema is malformed") from exc
+        keys = tuple(str(field_key) for field_key in table.values())
         if not set(keys).issubset(admitted_field_keys):
             raise EntityResearchResultIntegrityError("Exa bundle widened governed fields")
         return keys
@@ -980,8 +990,9 @@ class ExaAccountSemanticResearchAction(EntityResearchProviderAction):
         operation_fields: dict[UUID, tuple[str, ...]] = {}
         acquired = []
         for bundle in plan.bundles:
-            properties = cast(Mapping[str, object], bundle.exa_request.output_schema["properties"])
-            bundle_fields = tuple(str(field_key_from_exa_alias(alias)) for alias in properties)
+            bundle_fields = tuple(
+                str(field_key) for field_key in bundle.exa_request.field_key_by_alias.values()
+            )
 
             async def bind_external_before_dispatch(
                 row: ExternalResearchOperationRow,
