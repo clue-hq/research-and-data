@@ -475,9 +475,9 @@ def test_governed_exa_tool_persists_complete_result_causation_reads_and_replay(
                 tool_version=retry_call.tool_version,
                 tool_input_sha256=retry_call.tool_input_sha256,
             )
-            retry_ref = await DbEntityResearchAgentJournal(
-                conn_factory=connection
-            ).append(retry_event)
+            retry_ref = await DbEntityResearchAgentJournal(conn_factory=connection).append(
+                retry_event
+            )
             replayed_request = await request_store.record(
                 active=ActiveEntityResearchToolExecution(
                     context=first_context,

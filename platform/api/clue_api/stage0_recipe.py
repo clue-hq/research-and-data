@@ -411,9 +411,7 @@ class Stage0StepPinProvider:
         if step.tool_name == "get_research_view":
             view_run_id = body.get("project_run_id")
             if isinstance(view_run_id, str):
-                requested.append(
-                    await self._current(kind="project_run", key=view_run_id, ctx=ctx)
-                )
+                requested.append(await self._current(kind="project_run", key=view_run_id, ctx=ctx))
             requested.append(
                 await self._current(kind="field_registry", key="__all_active__", ctx=ctx)
             )

@@ -660,9 +660,7 @@ def build_chat_router(
         ctx = tool_context_for_principal(
             who,
             conn_factory=(
-                invocation_conn_factory
-                if invocation_conn_factory is not None
-                else conn_factory
+                invocation_conn_factory if invocation_conn_factory is not None else conn_factory
             ),
             operation_id=(
                 operation_id
@@ -2163,9 +2161,7 @@ def build_chat_router(
                         # Budget-controls-enabled deployments keep the confirm-only gate
                         # unchanged; the tool itself refuses the direct path there.
                         directive_gate = gate.kind == KIND_DIRECTIVE_CONFIRMATION
-                        atomic_launch = (
-                            directive_gate and not settings.budget_controls_enabled
-                        )
+                        atomic_launch = directive_gate and not settings.budget_controls_enabled
                         if atomic_launch:
                             tool_name = "launch_selected_account_research"
                             tool_body: dict[str, Any] = {
@@ -2212,17 +2208,13 @@ def build_chat_router(
                             # confirmation, fleet rows, and queue offer to this exact transaction.
                             # Other gate tools keep using the process toolbelt unchanged.
                             invoker=(
-                                transactional_tool_invoker_factory(
-                                    _bound_connection_factory(conn)
-                                )
-                                if atomic_launch
-                                and transactional_tool_invoker_factory is not None
+                                transactional_tool_invoker_factory(_bound_connection_factory(conn))
+                                if atomic_launch and transactional_tool_invoker_factory is not None
                                 else None
                             ),
                             invocation_conn_factory=(
                                 _bound_connection_factory(conn)
-                                if atomic_launch
-                                and transactional_tool_invoker_factory is not None
+                                if atomic_launch and transactional_tool_invoker_factory is not None
                                 else None
                             ),
                         )

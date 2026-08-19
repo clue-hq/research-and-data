@@ -704,29 +704,37 @@ def test_e1_quarantines_success_persistence_failure_immediately(tmp_path: Path) 
             )
             assert canonical in loaded_response.output.content
             recovered_attempt = (
-                await conn.execute(
-                    text(
-                        "SELECT state::text, failure_code, failure_detail FROM "
-                        "external_research_attempt WHERE operation_id=:operation_id"
-                    ),
-                    {"operation_id": result.operation.operation_id},
+                (
+                    await conn.execute(
+                        text(
+                            "SELECT state::text, failure_code, failure_detail FROM "
+                            "external_research_attempt WHERE operation_id=:operation_id"
+                        ),
+                        {"operation_id": result.operation.operation_id},
+                    )
                 )
-            ).mappings().one()
+                .mappings()
+                .one()
+            )
             assert dict(recovered_attempt) == {
                 "state": "responded",
                 "failure_code": None,
                 "failure_detail": None,
             }
             recovery = (
-                await conn.execute(
-                    text(
-                        "SELECT response_artifact_key, provider_request_id, parser_version, "
-                        "actor_ref FROM external_research_response_recovery "
-                        "WHERE operation_id=:operation_id"
-                    ),
-                    {"operation_id": result.operation.operation_id},
+                (
+                    await conn.execute(
+                        text(
+                            "SELECT response_artifact_key, provider_request_id, parser_version, "
+                            "actor_ref FROM external_research_response_recovery "
+                            "WHERE operation_id=:operation_id"
+                        ),
+                        {"operation_id": result.operation.operation_id},
+                    )
                 )
-            ).mappings().one()
+                .mappings()
+                .one()
+            )
             assert recovery["response_artifact_key"] == attempt["response_artifact_key"]
             assert recovery["provider_request_id"] == "exa-deep-fixture-request-1"
             assert recovery["parser_version"] == "exa-deep-unique-alias-recovery-v1"

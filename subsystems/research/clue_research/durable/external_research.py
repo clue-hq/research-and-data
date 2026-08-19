@@ -627,9 +627,7 @@ async def complete_external_research_success(
             f"cannot settle external research from {operation.state.value}"
         )
     if recover_spend_unknown:
-        if not (recovery_parser_version or "").strip() or not (
-            recovery_actor_ref or ""
-        ).strip():
+        if not (recovery_parser_version or "").strip() or not (recovery_actor_ref or "").strip():
             raise ValueError("spend-unknown recovery requires parser version and actor")
         reconciled = (
             await conn.execute(

@@ -674,9 +674,7 @@ class ExaDeepAcquisitionCoordinator:
                     "exa-deep-unique-alias-recovery-v1" if recover_spend_unknown else None
                 ),
                 recovery_actor_ref=(
-                    "engine:exa-deep-retained-response-recovery"
-                    if recover_spend_unknown
-                    else None
+                    "engine:exa-deep-retained-response-recovery" if recover_spend_unknown else None
                 ),
             )
             snapshot = await adopt_external_research_snapshot(

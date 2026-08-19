@@ -627,9 +627,7 @@ def _repair_uniquely_identifiable_exa_aliases(
             if "." not in readable_prefix or not readable_prefix.rsplit(".", 1)[-1]:
                 return payload
             canonical_prefix = f"f_{hex_prefix}"
-            candidates = tuple(
-                alias for alias in expected if alias.startswith(canonical_prefix)
-            )
+            candidates = tuple(alias for alias in expected if alias.startswith(canonical_prefix))
             if len(candidates) != 1:
                 return payload
             target = candidates[0]
@@ -650,8 +648,7 @@ def _repair_uniquely_identifiable_exa_aliases(
     if not isinstance(repaired_content, dict):
         return payload
     repaired_output["content"] = {
-        alias_map.get(str(alias), str(alias)): value
-        for alias, value in repaired_content.items()
+        alias_map.get(str(alias), str(alias)): value for alias, value in repaired_content.items()
     }
     grounding = repaired_output.get("grounding")
     if isinstance(grounding, list):

@@ -306,8 +306,7 @@ def build_application(
                 settings=resolved,
                 storage=storage,
             )
-            if resolved.entity_research_runtime_enabled
-            and not resolved.budget_controls_enabled
+            if resolved.entity_research_runtime_enabled and not resolved.budget_controls_enabled
             else None
         ),
     )
