@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import asyncio
 import re
 import time
-from collections.abc import AsyncIterator, Iterator, Sequence
+from collections.abc import AsyncIterator, Iterator, Mapping, Sequence
 from decimal import Decimal
 from typing import Any, cast
 
+import httpx
 from langchain_core.callbacks import (
     AsyncCallbackManagerForLLMRun,
     CallbackManagerForLLMRun,
@@ -18,6 +20,7 @@ from langchain_core.outputs import ChatGenerationChunk, ChatResult
 from langchain_core.runnables import Runnable
 from langchain_core.utils.function_calling import convert_to_openai_tool
 from langchain_openai import ChatOpenAI
+from openai import APIConnectionError
 from pydantic import ConfigDict, SecretStr, model_validator
 
 from clue_config.gateway import GatewayConfig
@@ -29,6 +32,7 @@ __all__ = [
     "GovernedAgentChatModel",
     "OpenRouterAgentModelProvider",
     "provider_compatible_tool_schema",
+    "transient_upstream_failure",
     "unsupported_schema_pattern",
 ]
 
@@ -94,8 +98,93 @@ def _catalog_input_modalities(model_entry: dict[str, Any]) -> list[str] | None:
     return None
 
 
+# --- bounded transient-failure retry ---------------------------------------------------------
+#
+# A live entity-research job was suspended because OpenRouter answered HTTP 200 with an in-body
+# ``{"error": {"code": "server_error"}}``.  ``langchain_openai`` turns that into a bare
+# ``ValueError(ResponseError(...))`` while *parsing* an otherwise successful response
+# (``chat_models/base.py::_construct_lc_result_from_responses_api``), so the OpenAI SDK's own
+# ``max_retries`` — which only sees transport/status failures — never applies.  The error escaped
+# this wrapper, killed the agent graph, and the supervisor contained the job.  A momentary upstream
+# blip is not a job-integrity failure, so it is retried here, at the single provider boundary every
+# agent lane already builds its model through.
+#
+# An attempt is one pass over the whole candidate sequence (primary, then the configured fallback),
+# so the existing contract — a failing primary reaches the fallback immediately — is unchanged; only
+# a round in which the LAST candidate also failed transiently is retried.
+#
+# The bound is a MODULE CONSTANT, not a ``Settings`` knob, on purpose: it is a provider-boundary
+# safety floor rather than per-deployment policy, and the effective spend ceiling is already bounded
+# by ``GatewayConfig.max_retries`` (SDK transport retries) times this bound times the candidate
+# count.  Promote it to config only if a deployment ever needs to tune it.
+_MAX_TRANSIENT_ATTEMPTS = 3
+# Seconds to wait before attempt 2 and attempt 3.  Deliberately short: the agent turn is holding a
+# fleet lease whose heartbeat must keep landing.
+_TRANSIENT_BACKOFF_S = (0.5, 1.5)
+
+# Responses-API in-body error codes that describe a momentary upstream condition.  Everything else
+# the enum carries (``invalid_prompt``, the image/policy codes) is a deterministic rejection that
+# retrying can only repeat, so it keeps today's loud behaviour.
+_TRANSIENT_RESPONSE_ERROR_CODES = frozenset(
+    {"server_error", "rate_limit_exceeded", "vector_store_timeout"}
+)
+# 429 = rate limited, 408/409 = request timeout / conflict, ≥500 = upstream fault.
+_TRANSIENT_STATUS_CODES = frozenset({408, 409, 429})
+
+
+def transient_upstream_failure(error: BaseException) -> bool:
+    """Report whether ``error`` is a momentary upstream failure worth one more attempt.
+
+    Three shapes, all observed from OpenRouter: a transport fault or timeout, a retryable HTTP
+    status, and — the shape that suspended a live job — a successful HTTP response carrying an
+    in-body Responses ``error`` object that ``langchain_openai`` re-raises as a plain
+    ``ValueError``.  The error is classified as raised; no ``__cause__`` chain is walked, since
+    this runs directly around the provider call, where nothing has wrapped it yet.
+    """
+
+    if isinstance(error, APIConnectionError | httpx.TransportError):
+        return True
+    code = next(
+        (found for found in map(_response_error_code, error.args) if found is not None),
+        None,
+    )
+    if code is not None:
+        # An in-body Responses error is the authoritative verdict, and must be read BEFORE any
+        # status: ``langchain_openai`` re-raises it with the raw HTTP response attached, and that
+        # response is the 200 the failing body arrived in.
+        return code in _TRANSIENT_RESPONSE_ERROR_CODES
+    status = getattr(error, "status_code", None)
+    if status is None:
+        status = getattr(getattr(error, "response", None), "status_code", None)
+    return isinstance(status, int) and (status >= 500 or status in _TRANSIENT_STATUS_CODES)
+
+
+def _response_error_code(argument: object) -> str | None:
+    """The Responses ``error.code`` an exception argument carries, if it is one."""
+
+    if isinstance(argument, Mapping):
+        code = argument.get("code")
+    else:
+        code = getattr(argument, "code", None)
+    return code if isinstance(code, str) else None
+
+
+def _transient_retry_backoff_s(error: Exception, attempt: int) -> float | None:
+    """Backoff before the next attempt, or ``None`` when this failure must surface as-is."""
+
+    if attempt >= _MAX_TRANSIENT_ATTEMPTS or not transient_upstream_failure(error):
+        return None
+    return _TRANSIENT_BACKOFF_S[attempt - 1]
+
+
 class GovernedAgentChatModel(BaseChatModel):
-    """Provider model(s) wrapped with fallback, usage/cost metadata, tracing, and tool binding."""
+    """Provider model(s) wrapped with fallback, bounded transient retry, usage/cost metadata,
+    tracing, and tool binding.
+
+    Retries live *inside* one call: a caller (and every journal that brackets that call, such as the
+    entity-research runtime's ``model_started``/``model_completed`` pair) observes exactly one model
+    call regardless of how many attempts it took.
+    """
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
@@ -299,18 +388,26 @@ class GovernedAgentChatModel(BaseChatModel):
         **kwargs: Any,
     ) -> tuple[ChatResult, str]:
         first_error: Exception | None = None
-        for index, (model, model_id) in enumerate(zip(self.models, self.model_ids, strict=True)):
-            try:
-                result = model._generate(
-                    messages,
-                    stop=stop,
-                    run_manager=run_manager,
-                    **kwargs,
-                )
-                return result, _served_model_from_result(result, fallback=model_id)
-            except Exception as exc:
-                first_error = first_error or exc
-                if index == len(self.models) - 1:
+        for attempt in range(1, _MAX_TRANSIENT_ATTEMPTS + 1):
+            for index, (model, model_id) in enumerate(
+                zip(self.models, self.model_ids, strict=True)
+            ):
+                try:
+                    result = model._generate(
+                        messages,
+                        stop=stop,
+                        run_manager=run_manager,
+                        **kwargs,
+                    )
+                    return result, _served_model_from_result(result, fallback=model_id)
+                except Exception as exc:
+                    first_error = first_error or exc
+                    if index != len(self.models) - 1:
+                        continue
+                    backoff = _transient_retry_backoff_s(exc, attempt)
+                    if backoff is not None:
+                        time.sleep(backoff)
+                        break
                     if first_error is not exc:
                         raise exc from first_error
                     raise
@@ -325,18 +422,26 @@ class GovernedAgentChatModel(BaseChatModel):
         **kwargs: Any,
     ) -> tuple[ChatResult, str]:
         first_error: Exception | None = None
-        for index, (model, model_id) in enumerate(zip(self.models, self.model_ids, strict=True)):
-            try:
-                result = await model._agenerate(
-                    messages,
-                    stop=stop,
-                    run_manager=run_manager,
-                    **kwargs,
-                )
-                return result, _served_model_from_result(result, fallback=model_id)
-            except Exception as exc:
-                first_error = first_error or exc
-                if index == len(self.models) - 1:
+        for attempt in range(1, _MAX_TRANSIENT_ATTEMPTS + 1):
+            for index, (model, model_id) in enumerate(
+                zip(self.models, self.model_ids, strict=True)
+            ):
+                try:
+                    result = await model._agenerate(
+                        messages,
+                        stop=stop,
+                        run_manager=run_manager,
+                        **kwargs,
+                    )
+                    return result, _served_model_from_result(result, fallback=model_id)
+                except Exception as exc:
+                    first_error = first_error or exc
+                    if index != len(self.models) - 1:
+                        continue
+                    backoff = _transient_retry_backoff_s(exc, attempt)
+                    if backoff is not None:
+                        await asyncio.sleep(backoff)
+                        break
                     if first_error is not exc:
                         raise exc from first_error
                     raise
@@ -351,24 +456,34 @@ class GovernedAgentChatModel(BaseChatModel):
         **kwargs: Any,
     ) -> Iterator[ChatGenerationChunk]:
         first_error: Exception | None = None
-        for index, (model, model_id) in enumerate(zip(self.models, self.model_ids, strict=True)):
-            yielded = False
-            try:
-                for chunk in model._stream(
-                    messages,
-                    stop=stop,
-                    run_manager=run_manager,
-                    **kwargs,
-                ):
-                    yielded = True
-                    _stamp_answering_model(chunk.message, fallback=model_id)
-                    yield chunk
-                return
-            except Exception as exc:
-                if yielded:
-                    raise
-                first_error = first_error or exc
-                if index == len(self.models) - 1:
+        for attempt in range(1, _MAX_TRANSIENT_ATTEMPTS + 1):
+            for index, (model, model_id) in enumerate(
+                zip(self.models, self.model_ids, strict=True)
+            ):
+                yielded = False
+                try:
+                    for chunk in model._stream(
+                        messages,
+                        stop=stop,
+                        run_manager=run_manager,
+                        **kwargs,
+                    ):
+                        yielded = True
+                        _stamp_answering_model(chunk.message, fallback=model_id)
+                        yield chunk
+                    return
+                except Exception as exc:
+                    # A partially consumed stream cannot be replayed: the consumer already holds
+                    # chunks, so another attempt would duplicate them.  Surface it, as today.
+                    if yielded:
+                        raise
+                    first_error = first_error or exc
+                    if index != len(self.models) - 1:
+                        continue
+                    backoff = _transient_retry_backoff_s(exc, attempt)
+                    if backoff is not None:
+                        time.sleep(backoff)
+                        break
                     if first_error is not exc:
                         raise exc from first_error
                     raise
@@ -382,24 +497,34 @@ class GovernedAgentChatModel(BaseChatModel):
         **kwargs: Any,
     ) -> AsyncIterator[ChatGenerationChunk]:
         first_error: Exception | None = None
-        for index, (model, model_id) in enumerate(zip(self.models, self.model_ids, strict=True)):
-            yielded = False
-            try:
-                async for chunk in model._astream(
-                    messages,
-                    stop=stop,
-                    run_manager=run_manager,
-                    **kwargs,
-                ):
-                    yielded = True
-                    _stamp_answering_model(chunk.message, fallback=model_id)
-                    yield chunk
-                return
-            except Exception as exc:
-                if yielded:
-                    raise
-                first_error = first_error or exc
-                if index == len(self.models) - 1:
+        for attempt in range(1, _MAX_TRANSIENT_ATTEMPTS + 1):
+            for index, (model, model_id) in enumerate(
+                zip(self.models, self.model_ids, strict=True)
+            ):
+                yielded = False
+                try:
+                    async for chunk in model._astream(
+                        messages,
+                        stop=stop,
+                        run_manager=run_manager,
+                        **kwargs,
+                    ):
+                        yielded = True
+                        _stamp_answering_model(chunk.message, fallback=model_id)
+                        yield chunk
+                    return
+                except Exception as exc:
+                    # A partially consumed stream cannot be replayed: the consumer already holds
+                    # chunks, so another attempt would duplicate them.  Surface it, as today.
+                    if yielded:
+                        raise
+                    first_error = first_error or exc
+                    if index != len(self.models) - 1:
+                        continue
+                    backoff = _transient_retry_backoff_s(exc, attempt)
+                    if backoff is not None:
+                        await asyncio.sleep(backoff)
+                        break
                     if first_error is not exc:
                         raise exc from first_error
                     raise
