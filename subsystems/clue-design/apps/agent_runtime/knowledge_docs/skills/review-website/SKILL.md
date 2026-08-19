@@ -77,6 +77,27 @@ e.g. "clinical calm precision"). Your job is structural, not vibes:
   button fill, **logo on its band** (a dark logo on a dark band is a
   blocking miss — no class fixes it), muted text still ≥ readable.
 
+## When a Creative Brief reaches you
+
+Some brands carry a per-brand **Creative Brief** (characterization, chromatic
+moment, background rhythm, postures, `constraints`) — it reaches you in the
+brand card or quoted in the director's brief. When one is present it is the
+spec the page was built to, so two extra checks apply:
+
+- **`constraints` are review criteria, not taste.** Each one is a hard rule
+  harvested from the brand's real presence ("mint is the sole saturated
+  color", "navy never as a mid-page background"). Read them, then look for
+  each in the pixels: a violation is a reportable **defect** — name the
+  constraint, the width, and the section id — never softened to a
+  preference. A deviation the user's own request forced is the director's to
+  reconcile: report what you see, plainly, and let them.
+- **Background rhythm** — compare the page's actual band sequence against
+  the brief's `background_rhythm` (a sequence plus a ratio, e.g. "1 dark
+  sliver : 20 cream"). Judge the ratio's spirit, not a mechanical section
+  count: a page that floods brand color where the brief says restraint, or
+  drops the statement band entirely, has missed the rhythm. With no brief,
+  the checklist's own Rhythm item is the bar.
+
 ## Personalization check (1:1 account pages)
 
 When your brief names a target account, additionally verify in the pixels:

@@ -78,6 +78,7 @@ Over-load, never under-load. The reference files are short and precise. Load
 | Task | Load |
 |------|------|
 | **Any new design** | `skills/create-design` + `knowledge/lumen-dsl/grammar` + `knowledge/lumen-dsl/text` + `knowledge/design/foundations` (taste rubric — one dominant element, hero-size-per-surface, whitespace-as-margin, anti-cliché) + `knowledge/design/artboard-frame-authoring` + the **vetted block catalog** `knowledge/design/blocks/*` (README + patterns + layout + actions + data-display — pinned automatically; ASSEMBLE from these, don't invent proportions) |
+| **Any website turn** (a WebDoc page — create, edit, or review) | `skills/design-guidance` — **must-read on every web turn**: the brand-deployment grammar (palette allocation, the chromatic moment, background rhythm, typographic/imagery posture) and the contract for a Creative Brief when the brand card carries one — plus `skills/create-website` (authoring contract) / `skills/edit-website` (live-page edits) / `skills/review-website` (ship bar) and the recipe `knowledge/web/landing-page` (or `knowledge/web/abm-page` for a 1:1 account page) |
 | **Any repair** (compile, preflight, or visual diagnostic) | `skills/repair-design` + `knowledge/lumen-dsl/directives` + `knowledge/lumen-dsl/diagnostics` |
 | **Page/artboard bounds or parent overflow repair** | `skills/repair-design` + `knowledge/lumen-dsl/layout` + `knowledge/loop/layout-cluster-repair` |
 | **Branded design** (a Brand Kit is in play) | `skills/brand-and-tokens` + `knowledge/design-systems/token-taxonomy` + `knowledge/design-systems/brand-kits` |
@@ -112,6 +113,7 @@ Each skill is a procedure for one job. Read the skill before doing that job.
 | **Create a design** | Composing a brand-new artifact from a prompt | `skills/create-design/SKILL.md` |
 | **Repair a design** | Fixing a compile / preflight / visual diagnostic on an existing scene — surgically, without re-authoring | `skills/repair-design/SKILL.md` |
 | **Brand & tokens** | Interpreting a Brand Kit and choosing `$tokens` instead of raw values | `skills/brand-and-tokens/SKILL.md` |
+| **Design guidance** | Deploying a brand rather than just its palette — where each color may live, how backgrounds sequence, what the buttons mean, and how to read a Creative Brief. **Must-read on every website turn** (it sits between brand-and-tokens and create-website) | `skills/design-guidance/SKILL.md` |
 | **Effects** | Shadows, special strokes (dash/cap/join/align), gradients | `skills/effects/SKILL.md` |
 | **Tools & functions** | Choosing the right tool/function for the step you're on | `skills/tools/SKILL.md` |
 | **Visual review** | Judging a rendered preview as a user-facing artifact | `skills/visual-review/SKILL.md` |

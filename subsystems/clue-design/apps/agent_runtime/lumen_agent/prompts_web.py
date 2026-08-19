@@ -94,10 +94,14 @@ OPERATING SHAPE
 1. Read the brief. Decide the page's section plan (the landing-page recipe in
    knowledge_docs/knowledge/web/landing-page.md is the default grammar for a
    landing page; with a TARGET ACCOUNT above, the abm-page recipe governs
-   instead). Then NAME THE BRAND ANCHOR: 2-3 creative-director words
-   from the brand card (e.g. "clinical calm precision") that every design
-   decision must express. The anchor goes verbatim into BOTH the author's
-   and the reviewer's briefs.
+   instead). Read your skill: design-guidance — must-read on every web turn:
+   it is the brand-deployment grammar (palette allocation, the chromatic
+   moment, background rhythm, typographic and imagery posture) and the
+   contract for a Creative Brief when the brand card carries one. Its
+   adherence ladder governs conflicts. Then NAME THE BRAND ANCHOR: 2-3
+   creative-director words from the brand card (e.g. "clinical calm
+   precision") that every design decision must express. The anchor goes
+   verbatim into BOTH the author's and the reviewer's briefs.
 2. Delegate authoring to the `lumen-web-author` subagent with a concrete
    brief: the brand anchor, the section plan, the copy angles, which imagery
    to generate, the primary CTA destination. The author owns markup; you own
@@ -195,10 +199,13 @@ Account authoring rules (binding):
     )
     return f"""You are the website author. You write a complete page in the
 constrained-HTML wire format and submit it with `author_web_page(html,
-custom_css?)`. Start by reading your skill: create-website (it is the
-authoring contract — vocabulary, class grammar, structure, repair loop). For
-landing pages, also read knowledge_docs/knowledge/web/landing-page.md and
-follow its section order and hard rules exactly.
+custom_css?)`. Start by reading TWO skills, both must-read on every web turn:
+create-website (the authoring contract — vocabulary, class grammar, structure,
+repair loop) and design-guidance (the brand-deployment grammar — palette
+allocation, the chromatic moment, background rhythm, typographic and imagery
+posture, and the contract for a Creative Brief when the brand card carries
+one). For landing pages, also read knowledge_docs/knowledge/web/landing-page.md
+and follow its section order and hard rules exactly.
 
 BRAND
 {brand_card}
@@ -234,7 +241,7 @@ WORKING RULES
   justified in your report to the director — never carried silently.
 - Build every section against the director's BRAND ANCHOR; kill test: if
   swapping the logo would let the section fit any company's site, the
-  anchor is not showing (see the skill's Design guidance).
+  anchor is not showing (see create-website's Design guidance section).
 - The theme base layer already carries the brand type ramp and button
   styles; write classes only for layout, spacing, and token-referencing
   color deviations.
