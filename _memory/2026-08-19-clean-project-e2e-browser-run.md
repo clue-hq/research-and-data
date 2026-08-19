@@ -79,6 +79,28 @@ The prior fleet DB-connection recovery fix held: Missoula fleet PID 47541 remain
 job suspensions. There was no repeat of the process-wide closed-connection crash. The run is stuck
 at a governed fleet suspension, not because the worker process died.
 
+## Sumble concurrency remediation
+
+Follow-up inspection proved the `provider concurrency limit is exhausted` event was entirely local,
+not a Sumble HTTP or subscription-tier response. The platform policy was 8 concurrent
+`sumble_account` permits. Six permits from old research run
+`9bb6ce35-5460-5625-9427-6d77797c4ba7` remained unreleased after their sibling tool failures;
+each clean-run failure then tried to atomically admit three new Sumble calls, so `6 + 3 > 8`.
+No clean-run `account_gap_operation` was created and Sumble received no request.
+
+At the founder's instruction, the default provider concurrency setting is now 10. The six exact
+old-run permits were append-only released with disposition `failed`, each referencing an existing
+failed event from its own tool batch. Zero unreleased `sumble_account` permits remain. The Missoula
+fleet alone was restarted against the same database, artifact root, and agent workspace; its new
+PID is 25720, worker id is `worker:764bfb0c-6b05-4538-bff6-ef69b94408af`, and its process setting
+is 10. API PID 60591 and frontend PID 82408 were unchanged; Tunis remained untouched.
+
+Focused verification passed: all 12 tests in `test_entity_research_cutover_r10.py`, Ruff check and
+format for the changed settings/test files, strict mypy for `clue_config/settings.py`, and database
+postconditions proving zero unreleased Sumble permits. The suspended clean run was deliberately not
+resumed because the false seal-claim drift, Exa no-snapshot failure, and premature partial
+finalization remain independent blockers.
+
 ## Browser evidence
 
 Screenshots are retained under `.context/live-browser-20260819/`:
