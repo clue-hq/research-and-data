@@ -43,6 +43,20 @@ arrange/stroke/position, D1-gated direct manipulation, export binding) → AD5 (
 Chat-loop for ads (accept path, scene birth, focus_refs) is an explicit separate follow-on plan.
 ~8–12 focused days.
 
+## Follow-up same day: disparity inventory authored
+Founder asked for the AD-R item-1 study itself before any ruling:
+**`docs/specs/ad-editor-integration/ad-editor-disparity-inventory.md`** — a decisions-free,
+control-by-control comparison of the dummy ad inspector (verified byte-identical to the inert
+`apps/frontend` copies) against the clue-design scene editor + `lumen-core` model. Headlines:
+no link/href concept exists on any node (dummy Link-to = NO-BACKING); no button node kind; no
+visibility field; dummy image fit Stretch/Tile unmapped (engine = contain/cover/crop+focal);
+the dummy's gradient editor is RICHER than the real editor's UI (engine supports gradients,
+editor UI is read-only); no opacity/W/H/content/line-height/etc. in the dummy (big NO-SLOT
+list); neither side has working insert tools; three conflicting size-preset vocabularies incl.
+a 1200×628 vs 1200×627 off-by-one; export JPEG+transparency in dummy vs Svg/Png/Pdf engine
+contract; text-wrap UI-vs-model default divergence (`no_wrap`). Founder will annotate rulings
+over this inventory.
+
 ## Open / next
 - **All of D1–D12 await founder rulings** — D1 (on-canvas direct manipulation in v1) is the big
   scope call; D2 button semantics; D3 size presets; D5 gallery inclusion; D7 drop Konva; D8
