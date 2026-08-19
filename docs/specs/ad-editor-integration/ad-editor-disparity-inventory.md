@@ -17,6 +17,20 @@ Date: 2026-08-19. Verified against:
 
 The web-document editor (`apps/editor/src/app/web/*`) is **not** part of this comparison.
 
+> **REVISION 2 — 2026-08-20.** The co-founder added four new inspector schemas to the dummy —
+> **auto-layout, rectangle, ellipse, group** — as an uncommitted 23-file delta (+663/−33) on top
+> of `c7f2bc5` in the checkout at `/Users/aryankeshri/Documents/clue-hq/clue-frontend`
+> (new `ad-dummy-inspectors.tsx` 389 L; `image-inspector.tsx` dispatch extended;
+> `CHAT_SHELL_INSPECTOR_SELECTIONS` grown to 11; 16 new icons; `web-inspector.tsx` defensively
+> narrowed to its own 7 web kinds — the web editor is unaffected). **That checkout's working
+> tree is now the dummy source of truth for the ad editor**; the port-of-spain worktree and the
+> "byte-identical to dummy HEAD" claim above are stale for ad-side files. Founder ruling
+> 2026-08-20: earlier founder comments about controls that the new schemas now design are
+> **stale** — each is marked `[STALE 2026-08-20]` in place below, superseded by §2.6.
+> Note: the new schemas are deliberate **static scaffolding** — every control is
+> `readOnly`/no-op with a single-option select — a pure visual spec (no state islands), unlike
+> the original four schemas' working local state.
+
 Legend used in the tables (factual, not a ruling):
 **HAS-BACKING** = the engine model can represent it · **EDITOR-HAS** = the MVP editor UI exposes
 it · **NO-BACKING** = no engine concept exists · **NO-SLOT** = the dummy has no designed place
@@ -33,40 +47,44 @@ for it · **MISMATCH** = both sides have it but the vocabularies/semantics diffe
 ### 1.1 The three vocabularies side by side
 
 
-| Dummy selection schemas | Dummy layer-row kinds | Engine `NodeKind` (`scene.rs:381-392`)                                    | MVP-editor inspector treats specially        |
-| ----------------------- | --------------------- | ------------------------------------------------------------------------- | -------------------------------------------- |
-| `canvas` (artboard)     | —                     | *(page is not a node —* `Page` *with* `root`*,* `size`*,* `background`*)* | DocumentPageSection when nothing is selected |
-| `text`                  | Text                  | `Text(TextNode)`                                                          | TextSection + TextToolbar                    |
-| `image`                 | Image                 | `Image(ImageNode{asset_id, alt})`                                         | ImageInspectorSection                        |
-| `button`                | Button                | **— (no button kind exists)**                                             | —                                            |
-| —                       | Group                 | `Group`                                                                   | generic sections only                        |
-| —                       | Rectangle             | `Rect`                                                                    | generic sections only                        |
-| —                       | Ellipse               | `Ellipse`                                                                 | generic sections only                        |
-| —                       | —                     | `Frame`                                                                   | generic sections only                        |
-| —                       | —                     | `AutoLayout(direction, wrap)`                                             | AutoLayoutSection                            |
-| —                       | —                     | `Line(x2, y2)`                                                            | generic sections only                        |
-| —                       | —                     | `Vector(path_data, view_box)`                                             | generic sections only                        |
-| —                       | —                     | `Instance{source_node_id}`                                                | generic sections only                        |
+*(Updated 2026-08-20 for the four new dummy schemas.)*
+
+| Dummy selection schemas (11 total) | Dummy layer-row kinds | Engine `NodeKind` (`scene.rs:381-392`) | MVP-editor inspector treats specially |
+|---|---|---|---|
+| `canvas` (artboard) | — | *(page is not a node — `Page` with `root`, `size`, `background`)* | DocumentPageSection when nothing is selected |
+| `text` | Text | `Text(TextNode)` | TextSection + TextToolbar |
+| `image` | Image | `Image(ImageNode{asset_id, alt})` | ImageInspectorSection |
+| `button` | Button | **— (no button kind exists)** | — |
+| **`auto-layout`** *(new 2026-08-20)* | Auto layout (`layout-template` icon) | `AutoLayout(direction, wrap)` | AutoLayoutSection |
+| **`rectangle`** *(new)* | Rectangle | `Rect` | generic sections only |
+| **`ellipse`** *(new)* | Ellipse | `Ellipse` | generic sections only |
+| **`group`** *(new)* | Group (`square-dashed` icon) | `Group` | generic sections only |
+| — | — | **`Frame`** | generic sections only |
+| — | — | `Line(x2, y2)` | generic sections only |
+| — | — | `Vector(path_data, view_box)` | generic sections only |
+| — | — | `Instance{source_node_id}` | generic sections only |
+| *(web-side, fall through to canvas)* `icon`/`container`/`section` | — | — | — |
 
 
 
 
 ### 1.2 Node types the MVP editor/engine WILL use that the dummy has no schema for
 
-1. **Frame** and **AutoLayout** — the *primary* structural vocabulary. The agent's authoring
-  guidance actively prescribes them ("clipped root artboard frame with fill", the hug-header /
-   fill-main / hug-footer poster idiom, `prompts.py:324-370`); in practice generated ads are
-   built from **Frame / AutoLayout / Text / Image**, with shapes as accents. The dummy has no
-   frame/auto-layout schema at all (a container selection is not representable), and the two
-   web-side kinds that *could* have caught it (`container`, `section`) fall through to the
-   **canvas** schema in the dummy's dispatch (`image-inspector.tsx:349-353`).
-2. **Rect / Ellipse** — the dummy *shows* them as layer rows but clicking them changes no
-  selection and no schema exists (`image-inspector.tsx:77-81`).
-3. **Group** — a layer row exists (expandable) but no schema.
-4. **Line, Vector** (`svg(icon:…)` lowers to Vector — `dsl.rs:4657-4660`), **Instance**
-  (personalization derivatives) — entirely absent from the dummy (no layer row, no schema).  
-  --> for now we will let it be without it, since we want to editor to be very less complicated i guess.
-5. **The page as a first-class selection** — in the MVP editor, deselecting everything shows a
+*(Rewritten 2026-08-20 — items 1–3 of the original list are RESOLVED by the co-founder's new
+schemas: AutoLayout, Rect, Ellipse and Group now have designed inspectors, mapped in §2.6.)*
+
+1. **Frame (plain, non-auto-layout) — the one structural kind STILL without a schema.** The
+   co-founder added `auto-layout` but not `frame`, and the engine distinguishes them
+   (`Frame` vs `AutoLayout`, `scene.rs:381-392`). This matters more than it looks: the agent's
+   prescribed idiom paints the canvas background as a **clipped root artboard Frame with a
+   fill** (`prompts.py:324-327`), so the most-clicked container in a real generated ad is a
+   plain Frame. Open question §OQ-1: which schema serves it (the auto-layout schema minus its
+   Auto Layout section ≡ Shape+Stroke+Layout+Arrange, the group schema, or a new design)?
+2. **Line, Vector** (`svg(icon:…)` lowers to Vector — `dsl.rs:4657-4660`), **Instance**
+   (personalization derivatives) — still absent from the dummy (no layer row, no schema).
+   Founder comment (2026-08-19, STANDS — these kinds were not added):
+   --> for now we will let it be without it, since we want to editor to be very less complicated i guess.
+3. **The page as a first-class selection** — in the MVP editor, deselecting everything shows a
   full document/page inspector (title, artifact type, page name/W/H/unit, safe margin, bleed,
    page fill token). The dummy's `canvas` schema is the nearest analogue but carries a different  field set (§2.1).  
   --> the title here will be correspond to the artifact's name in the gallery - similar to this - /Users/aryankeshri/conductor/workspaces/research-and-data/istanbul/docs/specs/ad-editor-integration/img1.png  
@@ -98,6 +116,11 @@ Header chrome first (present on every dummy schema):
 | Lock toggle (hidden on canvas)                                 | Lock/Unlock button (`ObjectSection.tsx:120-123`) + lock gates every write                                | `Node.locked` (`scene.rs`)                                             | HAS-BACKING + EDITOR-HAS                                                                                                                |
 | Visibility (eye) toggle (hidden on canvas)                     | **nothing** — no per-node visibility anywhere in the editor UI                                           | **no** `visible`**/**`hidden` **field on** `Node` (`scene.rs:270-319`) | NO-BACKING --> since mvp did not have it, and neither does the engine have it, we will omit it from the editor design.                  |
 | Ellipsis "More actions"                                        | n/a (inert in the dummy too — no `actionMenu` passed)                                                    | —                                                                      | inert both sides                                                                                                                        |
+
+*Addition 2026-08-20:* on the four NEW schemas the dummy renders the header lock/eye
+**disabled** (no handlers, `visible=true` hardcoded — scaffolding). The standing rulings above
+(lock = real per editor schema; eye = omitted, NO-BACKING) presumably govern the new kinds too
+— confirm (§OQ-7).
 
 
 
@@ -180,7 +203,82 @@ canvas background" therefore has *two* candidate targets in real documents.
 | Export button + menu                                             | see §5                                                                                    | Export button + popover menu; ExportPanel sidebar mode                                                                                                                                                                                                        | §5                                                                                                                                                                                                    |
 | Artifact action menu                                             | Rename, Duplicate, Undo ⌘Z, Redo ⇧⌘Z, Versions flyout (Current/V3/V2/V1), Archive, Delete | Rename = editable title (`EditorChrome.tsx:68-128`); Undo/Redo = toolbar buttons + ⌘Z/⇧⌘Z/⌘Y; **Version history dialog** (day-grouped envelope list, Undo last/Redo/Refresh) — richer than the dummy's 3-version flyout; no Duplicate/Archive at editor level | MISMATCH in placement and depth. --> maintain visual oarity the same as that of dummy frontend.                                                                                                       |
 | Tab bar (gallery tab, artifact tabs, rename F2, maximize, close) | chat-shell chrome                                                                         | n/a — platform shell owns it                                                                                                                                                                                                                                  | platform-side                                                                                                                                                                                         |
-| **Tool palette (authored, unbuilt)**                             | `ImageEditorTool = image                                                                  | pointer                                                                                                                                                                                                                                                       | shape                                                                                                                                                                                                 |
+| **Tool palette (authored, unbuilt)** | `ImageEditorTool` = image / pointer / shape / stroke / text + `.editorToolButton` CSS + `public/icons/chat-shell/editor/*` icons + `editor.tool.change` event — **nothing consumes them** | **the real editor has no insert palette either**: `WorkspaceTool` = select / hand only (`workspaceViewport.ts:11`); nodes enter via agent/DSL, Assets `Place`, or page creation (`WebInsertPalette.tsx` belongs to the web editor) | **NEITHER side has working insert tools** — the dummy sketched five, the founder's 2026-08-20 Figma mocks show them in the artifact header; scope undecided (§OQ, carried from the 2026-08-19 doubt list) |
+
+*(Row restored 2026-08-20 — the original was destroyed by unescaped `|` characters during the
+annotation session's table reformat.)*
+
+### 2.6 The four NEW schemas — auto-layout / rectangle / ellipse / group (added 2026-08-20)
+
+Source: `ad-dummy-inspectors.tsx` (uncommitted, `/Users/aryankeshri/Documents/clue-hq/clue-frontend`).
+Section composition per selection:
+
+| Section | auto-layout | rectangle | ellipse | group |
+|---|---|---|---|---|
+| Auto Layout | ✓ | — | — | — |
+| Shape | ✓ (with radii) | ✓ (with radii) | ✓ (**no radii**) | — |
+| Stroke | ✓ | ✓ | ✓ | — |
+| Layout | ✓ | ✓ | ✓ | ✓ |
+| Arrange | ✓ | ✓ | ✓ | ✓ (+ Group/Ungroup row) |
+| Layers | ✓ | ✓ | ✓ | ✓ |
+
+Control-by-control mapping to the MVP editor / engine:
+
+**Layout section (all four kinds)**
+
+| Dummy control | Dummy detail | MVP editor | Engine | Verdict |
+|---|---|---|---|---|
+| Position X / Y | prefixed inputs, static `0` | ObjectSection X/Y (freehand/unlocked gating; pinned → `absolute_box`) | `transform` / `absolute_box` | HAS-BACKING + EDITOR-HAS |
+| Dimensions W / H | static `100` | ObjectSection W/H | `SizeSpec` | HAS-BACKING + EDITOR-HAS |
+| Rotate | prefix `R`, static `0` | ObjectSection Rotate + canvas rotate handle | transform rotation | HAS-BACKING + EDITOR-HAS |
+| Opacity | prefix `%`, static `100` | ObjectSection Opacity **0–1 scale, step 0.05** | `Node.opacity` (+ token) | MISMATCH — % display vs 0–1 model (§OQ-3: convert at the seam?) |
+| Width mode / Height mode | selects, single static option **`Fixed`** | SizingSection selects **Fixed / Hug / Fill** (+ display-only Token) | `Dimension` kinds | MISMATCH — option set undesigned (§OQ-2); editor's fill-weight inputs have no dummy slot |
+| Width fixed / Height fixed | static `100` | SizingSection fixed inputs (min 1) | `Dimension::Fixed` | PARITY-shaped (mirrors the editor's own W/H-shown-twice) |
+
+**Auto Layout section (auto-layout only)**
+
+| Dummy control | Dummy detail | MVP editor | Engine | Verdict |
+|---|---|---|---|---|
+| Direction | select, static `Row` | Row / Column | `AutoLayoutNode.direction` | PARITY-shaped (option set to ratify) |
+| Wrap | select, static `No wrap` | No wrap / Wrap | `AutoLayoutNode.wrap` | PARITY-shaped |
+| Gap | prefix `G`, static `0` | Gap (min 0) | `layout.gap` | PARITY-shaped |
+| Grow | prefix `+`, static `0` | Grow (min 0) | `layout.grow` | PARITY-shaped |
+| Pad T/R/B/L | four prefixed inputs | Pad T/R/B/L (min 0) | `layout.padding` | PARITY-shaped (same T,R,B,L order) |
+| Align X / Align Y | selects, static `Space between` / `Center` | 5 options each: Start/Center/End/Space between/Stretch | `start/center/end/space_between/stretch` | PARITY-shaped (full option set to ratify) |
+| *(not designed)* | — | Gap Token, Padding Token (brand-gated) | spacing tokens | NO-SLOT (unchanged) |
+
+**Shape section (auto-layout, rectangle; ellipse without radii)**
+
+| Dummy control | Dummy detail | MVP editor | Engine | Verdict |
+|---|---|---|---|---|
+| Fill | `ColorControl` in `none` state, no opacity chip | RawStyle Fill Color (token-first popover) / DesignTokens Fill Token | `Node.fills` universal | HAS-BACKING; the color-policy question (hex vs tokens) applies here too |
+| Radius all + TL/TR/BR/BL | static `0` | RawStyle radii (writes clear `corner.token`) + Radius token | `Node.corner` universal | PARITY-shaped. Ellipse omission is sensible (engine tolerates but meaningless) |
+
+**Stroke section (all except group)** — Color (`none` state) + Width (`1`): RawStyle stroke
+color/width → `Node.strokes` universal. PARITY-shaped. *(Group omits Shape AND Stroke — the
+engine allows fills/strokes on `Group`, but the design treats groups as paint-less containers;
+recorded as a deliberate §2-style hiding to confirm, §OQ-6.)*
+
+**Arrange section (all four)**
+
+| Dummy control | Dummy detail | MVP editor | Engine | Verdict |
+|---|---|---|---|---|
+| Layer (4 z-order) | NEW icons `layer-front/up/down/back` | same 4 + ⌘]/⌘[/⌥⌘]/⌥⌘[ + edge disabling | `move_node` | PARITY-shaped |
+| Alignment (3+3) | NEW icons `align-start/center/end-{horizontal,vertical}` | 6 modes, requires **2+ unlocked freehand nodes** | `alignDistribute` | same semantics gap as the text schema — founder already ruled "as per the MVP editor's toolbar" there; presumed to extend (§OQ-5) |
+| Distribution (2) | **NEW in the dummy** — horizontal / vertical | requires **3+ nodes** | `alignDistribute` | as above |
+| Group / Ungroup (group schema only) | NEW icons `group`/`ungroup` | Group needs 2+ unlocked same-parent siblings; Ungroup a single container; ⌘G/⇧⌘G | `canGroupNodes`/`canUngroupNode` + structured edits | HAS-BACKING; enable/disable semantics to adopt from editor (§OQ-5) |
+
+**Layers section** — per-schema minimal fixture rows with the NEW kind icons
+(`layout-template` for auto-layout, `square-dashed` for group) and a NEW `accented` active
+style (`layerRowAccented`). In the main `AdLayers` tree: an "Auto layout" row was added, and
+the Group/Rectangle/Ellipse rows now actually change selection to their new schemas (formerly
+dead clicks). The §3.6 founder rulings for the real tree (any depth, fill-swatch glyphs,
+multi-select, auto-scroll, no up/down buttons) are unaffected and stand.
+
+**Icon-vocabulary note:** the new schemas introduce a second alignment icon family
+(`align-start-vertical` etc.) while the original text schema still uses the old family
+(`align-left` etc.) — two coexisting vocabularies for the same six operations; reconcile at
+lift time.
 
 
 ---
@@ -200,9 +298,19 @@ this is fine with what dummy has currently, just add W and H as well to this lis
 · **Rotate** (dummy: text only) · **Opacity** (0–1, step 0.05 — *no opacity control exists anywhere in the dummy ad editor, add one to our final integrated frontend, make it consistent and coherent with the design system convention eing followed in the dummy editor. for icons if you dont have one, let me know i will get them for you*)  
 · state summary (Locked / Pinned / Layout-managed / Slot-bound) · per-node diagnostics list with "Show node" jump.
 
+**[STALE 2026-08-20 — the founder's "add W/H" and "add opacity" comments above are superseded:
+the co-founder's new Layout section (§2.6) designs X/Y + W/H + Rotate + Opacity + size modes
+for the four new kinds. Remaining question is only whether that Layout section also extends to
+text/image/button (§OQ-4).]**
+
 ### 3.2 SizingSection + AutoLayoutSection (the layout system)
 
 Width/Height **mode** (Fixed / Hug / Fill) · fixed dims · fill weights · Direction (Row/Column) · Wrap · Gap · Grow · Pad T/R/B/L · Align X / Align Y (5 options each incl. Space between, Stretch) · Gap Token · Padding Token. The dummy has exactly one layout-ish control (button padding). This entire system — the backbone of how generated ads are actually structured — is unrepresented. --> it's okay to keep it from from frontend editor for now ig... 
+
+**[STALE 2026-08-20 — superseded by founder ruling: the co-founder's new auto-layout schema
+designs Direction/Wrap/Gap/Grow/Pad T,R,B,L/Align X,Y, and the new Layout section designs the
+Width/Height modes + fixed dims (§2.6). Still without a dummy slot: fill weights, Gap Token,
+Padding Token.]**
 
 ### 3.3 TextSection / TextToolbar beyond the dummy
 
@@ -235,6 +343,11 @@ artifact", `docs/api-contracts/chat-shell.md:151`).
 
 Real recursive tree (any depth; dummy caps at one Group) -- add any depth feature only · kind glyphs incl. **fill-swatch squares for Rect/Ellipse -- add this** · move up/down reorder buttons with lock-aware tooltips -- no up-down buttons · additive multi-select (shift/⌘-click) -add this · auto-scroll to primary -- add this. Neither side has: drag-and-drop reorder, per-row lock/visibility toggles, rename-in-place, collapse/expand (dummy *does* have
 collapse/expand chevrons on its one Group row — the editor's tree has none).
+
+*Update 2026-08-20:* the founder's add/omit rulings above stand. New facts from the delta: the
+`AdLayers` fixture tree gained an "Auto layout" row; Group/Rectangle/Ellipse rows now select
+their new schemas (formerly dead clicks); active rows can carry a new `accented` treatment
+(`layerRowAccented`); layer icons now include `layout-template` and `square-dashed`.
 
 ### 3.7 Brand system (token-first editing)
 
@@ -352,6 +465,15 @@ engine mostly can):
 | Text wrap default | n/a                                                                                                                            | UI displays `wrap` as fallback but the **model default is** `no_wrap` (`scene.rs:902-919`) — a known UI/model divergence to not replicate blindly |
 | Units             | px implied                                                                                                                     | pt/px/mm/in; "Dimensions use the active page unit"                                                                                                |
 
+*Additions 2026-08-20 (from the new schemas):* **Opacity** is now designed in the dummy as a
+`%`-prefixed field showing `100` — the engine/editor scale is **0–1** (unit conversion at the
+seam, §OQ-3). **Width/Height mode** selects are designed but show only `Fixed` — the
+editor/engine vocabulary is Fixed/Hug/Fill (§OQ-2). **Align X/Y** selects show
+`Space between`/`Center` — engine has start/center/end/space_between/stretch. **Alignment
+icons** now exist in two families (old `align-left…` on text; new `align-start-vertical…` on
+the new schemas). The earlier opacity row above is superseded accordingly.
+
+
 
 ---
 
@@ -397,4 +519,13 @@ targeted grep, not end-to-end); whether the export raster options carry a transp
 conclusion (Frame/AutoLayout/Text/Image-dominant) is inferred from prompts + DSL, not from a
 trace corpus; visual form of some editor controls (segmented vs plain button rows) is
 classified from DOM structure, not CSS.
+- **Revision-2 provenance (2026-08-20):** the four new schemas were read directly (full
+`ad-dummy-inspectors.tsx` + `git diff` of `image-inspector.tsx`, `inspector-primitives.tsx`,
+`web-inspector.tsx`, `model/chat-shell.ts`, `chat-shell.module.css`) in the
+`/Users/aryankeshri/Documents/clue-hq/clue-frontend` checkout, where they exist as an
+**uncommitted working-tree delta** on `c7f2bc5`. Until committed/pushed, that working tree is
+the only copy of this design — the lift will `cmp` against it. `web-inspector.tsx` (+32/−17)
+also changed upstream (defensive selection-narrowing), so the platform's lifted web-inspector
+copy is now behind the dummy by that delta — a re-lift consideration for AD0, functionally
+inert for the web editor.
 
