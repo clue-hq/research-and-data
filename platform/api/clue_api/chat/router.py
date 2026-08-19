@@ -118,6 +118,7 @@ from clue_api.chat.schemas import (
     ProjectBootstrapWire,
     ProjectShellResponse,
     ProjectShellWire,
+    ResearchTaskListResponse,
     SidebarConversationWire,
     SidebarPageMeta,
     SidebarProjectsResponse,
@@ -131,6 +132,7 @@ from clue_api.chat.schemas import (
     gate_response_message,
     gate_wire,
     message_list_response,
+    research_task_wire,
     thread_href,
     thread_speaker_wire,
     thread_wire,
@@ -162,6 +164,7 @@ from clue_projections import (
     project_sidebar_page,
     thread_gates,
     thread_messages,
+    thread_research_tasks,
     threads_for_project,
     threads_running,
     turn_context_receipt,
@@ -1362,6 +1365,50 @@ def build_chat_router(
                 gate_wire(view, budget_controls_enabled=settings.budget_controls_enabled)
                 for view in views
             )
+        )
+
+    @router.get("/projects/{project_id}/threads/{thread_id}/research-tasks")
+    async def list_research_tasks_route(
+        project_id: str,
+        thread_id: str,
+        who: PrincipalDep,
+    ) -> ResearchTaskListResponse:
+        """Every research run this thread launched, counted off its jobs, right now.
+
+        The turn's SSE stream emits one ``task`` snapshot at turn close and then ends — but the
+        fleet works for minutes afterwards, so without this the progress card is frozen at the last
+        frame. This is what a live card polls: the same task shape the stream emitted (it is built
+        by the same :func:`~clue_api.chat.turn_parts.task_part_from_run`, so the two merge as one
+        card), plus the ``revision`` the transcript reducer merges on and the per-field progress
+        inside the accounts still running.
+
+        **Unpaginated, and never a not-found for a thread that launched nothing.** The list is
+        bounded by the number of runs a conversation authorized, and the card asks *every* thread —
+        so "no launches" has to be an empty list. A 404 here would make the poller treat an
+        ordinary conversation as a broken one.
+
+        Scoped exactly like its neighbours: a thread in another project or another workspace is
+        **not found**, never forbidden, because a 403 would confirm to somebody who cannot see it
+        that it exists.
+        """
+
+        _require(who, PERMISSION_THREAD_READ)
+        async with conn_factory() as conn:
+            thread = await get_thread(conn, workspace_id=who.workspace_id, thread_id=thread_id)
+        if thread is None or thread.project_id != project_id:
+            raise _refuse(
+                status_code=404,
+                code="THREAD_NOT_FOUND",
+                message="no such thread in this project",
+            )
+        views = await thread_research_tasks(
+            workspace_id=who.workspace_id,
+            project_id=project_id,
+            thread_id=thread_id,
+            conn_factory=conn_factory,
+        )
+        return ResearchTaskListResponse(
+            tasks=tuple(research_task_wire(view, workspace_id=who.workspace_id) for view in views)
         )
 
     # --- the dev-lens turn-context inspector (dev-only; never registered in production) ---------

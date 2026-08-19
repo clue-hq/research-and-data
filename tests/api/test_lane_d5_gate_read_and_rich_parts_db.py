@@ -827,6 +827,73 @@ def test_an_ended_run_reports_partial_when_some_subjects_did_not_finish_everythi
     run_async(scenario())
 
 
+def test_a_subject_routed_to_review_is_counted_as_needs_review_not_as_partial(
+    tmp_path: Path,
+) -> None:
+    """ "Routed to review" is its own answer: a reviewable subject is not a budget casualty.
+
+    ``needs_review`` used to be folded into ``partial``, which made the two indistinguishable to
+    every consumer — yet only one of them is a queue a human can work. The count is split; the
+    *rendered* state is not: an ended run carrying a reviewable subject is still ``partial``,
+    because it still did not finish everything asked of it.
+    """
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            seeded = await _seed(conn, tmp_path, workspace_id="ws-d5-review", label="review")
+            action_ref = derive_turn_action_ref(seeded.turn_id)
+            envelope = await _launch_run(conn, seeded, action_ref=action_ref)
+            outcomes = (
+                ResearchFinalizationOutcome.COMPLETED,
+                ResearchFinalizationOutcome.NEEDS_REVIEW,
+            )
+            assert len(envelope.jobs) == len(outcomes)
+            for job, outcome in zip(envelope.jobs, outcomes, strict=True):
+                await conn.execute(
+                    text(
+                        "UPDATE entity_research_job SET state='terminal', "
+                        " finalization_outcome=:outcome, "
+                        " finalization_receipt_ref=:receipt, terminal_at=now() "
+                        "WHERE job_id = :job_id"
+                    ),
+                    {
+                        "outcome": outcome.value,
+                        "receipt": f"finalization-receipt:{job.authorization.job_id}",
+                        "job_id": job.authorization.job_id,
+                    },
+                )
+            await conn.execute(
+                text(
+                    "UPDATE entity_research_run SET state='terminal', terminal_at=now() "
+                    "WHERE research_run_id = :run_id"
+                ),
+                {"run_id": envelope.lifecycle.run_id},
+            )
+
+            tasks = await research_tasks_for_action_refs(
+                workspace_id=seeded.workspace_id,
+                action_refs=(action_ref,),
+                conn_factory=seeded.conn_factory,
+            )
+            assert len(tasks) == 1
+            assert tasks[0].counts.needs_review == 1
+            assert tasks[0].counts.partial == 0
+            assert tasks[0].counts.completed == 1
+
+            emitter = await _emitter(conn, seeded)
+            await emitter.emit_launched_task_parts()
+            assert emitter.emission_failures == []
+            parts = await _parts(conn, seeded, PartKind.TASK)
+            assert len(parts) == 1
+            assert parts[0]["counts"]["needs_review"] == 1
+            assert parts[0]["counts"]["partial"] == 0
+            assert parts[0]["counts"]["completed"] == 1
+            # The split lives in the counts; the card the human sees does not move.
+            assert parts[0]["state"] == TaskState.PARTIAL.value
+
+    run_async(scenario())
+
+
 # --- the wiring ----------------------------------------------------------------------------
 
 

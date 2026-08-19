@@ -65,6 +65,9 @@ export function ChatTranscript({
           data-active-message={
             message.id === activeUserMessageId ? "true" : undefined
           }
+          // The scrollback anchor (C5): re-anchoring after an older page
+          // prepends needs each message findable by its durable identity.
+          data-message-id={message.id}
           data-optimistic={message.optimistic || undefined}
           data-role={message.role}
           data-state={message.state}

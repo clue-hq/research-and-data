@@ -431,3 +431,27 @@ behavior; three frontend account/contact model tests; targeted frontend ESLint; 
 changed Python; mypy across all changed production Python; `git diff --check`; and a one-head
 Alembic check. No full-suite replay was started because the preceding Slice-B and v2 work had
 already completed their broader verification.
+
+## Merge close-out — comprehensive account/contact research v1
+
+Merged local branch `platform/comprehensive-account-contact-research-v1` at
+`58d7eb10183931e51d5f8c0d62cea74fd3b6b950` on top of the combined current+v2 parent
+`2f57038c5b4836c23b114efa37b01a652bf91974`. The source worktree in Bujumbura was inspected only
+to confirm its clean branch tip; no Bujumbura or Tunis process, database, session, or worktree
+state was changed.
+
+V1 contributes Slice C's durable thread research-task read, three-second frontend polling,
+monotone task-card merge/re-materialization, truthful state/count advancement, and newest-first
+thread pagination with upward scrollback. Its only path independently changed on both sides was
+`platform/api/clue_api/chat/router.py`; Git composed disjoint hunks. The audited result contains
+both V1's `GET /projects/{project_id}/threads/{thread_id}/research-tasks` route and the existing
+current+v2 transactional budget-disabled directive-confirmation launch flow. No migration was
+added by V1, and Alembic remains at the single head `f5f8c50f70f3`.
+
+Focused combined verification passed on `clue_missoula_slice_b_checks`: 43 backend tests covering
+the task read, chat/thread surface, D5 rich parts, thread projection, and the overlapping D4
+approval/launch route; 51 frontend poller/transcript/task tests; targeted frontend ESLint; Ruff;
+mypy; all 26 import contracts; `git diff --check`; and the complete frontend design-system plus
+Next.js production build. The live Missoula database was not migrated or otherwise changed. No
+browser journey was replayed during this merge, so the now-merged card behavior is build- and
+test-verified but awaits the founder's existing live Slice-C browser exit gate.
