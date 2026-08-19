@@ -1047,6 +1047,7 @@ class SumbleCommitteeSemanticResearchAction(EntityResearchProviderAction):
             prepared.preflight.request,
             authorization=prepared.authorization,
             proposed_cost_cents=prepared.preflight.maximum_cost_cents,
+            discovery_receipt=prepared.discovery_receipt,
         )
         if decision.outcome not in {
             CommitteeEligibilityOutcome.ELIGIBLE,

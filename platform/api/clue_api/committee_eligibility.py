@@ -35,6 +35,7 @@ from clue_core import (
     UseClass,
     new_committee_eligibility_decision_id,
 )
+from clue_core.entity_research import SealedDiscoveryLaunchReceipt
 from clue_db import ConnFactory, transaction
 from clue_research.claimstore import WorkspaceScope, claims_for
 from clue_research.discovery_scoring.tiering import (
@@ -137,6 +138,7 @@ class CommitteeEligibilityService:
         authorization: CommitteeExecutionAuthorization,
         proposed_cost_cents: Decimal,
         now: datetime | None = None,
+        discovery_receipt: SealedDiscoveryLaunchReceipt | None = None,
     ) -> CommitteeEligibilityDecision:
         if proposed_cost_cents < 0:
             raise ValueError("committee eligibility proposed cost cannot be negative")
@@ -152,6 +154,7 @@ class CommitteeEligibilityService:
                 project_run_id=request.project_run_id,
                 icp_key=request.icp_key,
                 icp_version=request.icp_version,
+                discovery_receipt=discovery_receipt,
             )
         except DiscoverySealConflict:
             seal_reasons.append("discovery_seal_conflict")

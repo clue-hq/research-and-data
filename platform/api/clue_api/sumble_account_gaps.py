@@ -50,6 +50,7 @@ from clue_core import (
     ResearchScope,
     new_account_gap_operation_id,
 )
+from clue_core.entity_research import EntityResearchJobAuthorization
 from clue_db import ConnFactory, transaction
 from clue_research.claimstore import (
     FieldRegistryScope,
@@ -366,6 +367,7 @@ async def compile_sumble_account_gap_preflight(
         )
 
     reader = DbSealedDiscoveryAccountManifestReader(storage=storage, conn_factory=conn_factory)
+    discovery_receipt = None
     async with conn_factory() as conn:
         run = await get_project_run(conn, project_run_id)
         if run is None or run.workspace_id != workspace_id:
@@ -374,7 +376,7 @@ async def compile_sumble_account_gap_preflight(
             exact_job = (
                 await conn.execute(
                     text(
-                        "SELECT 1 FROM entity_research_job WHERE job_id=:job_id "
+                        "SELECT authorization_json FROM entity_research_job WHERE job_id=:job_id "
                         "AND subject_type='account' AND subject_entity_id=:account_id "
                         "AND workspace_id=:workspace_id AND project_id=:project_id "
                         "AND project_run_id=:project_run_id"
@@ -392,6 +394,8 @@ async def compile_sumble_account_gap_preflight(
                 raise SumbleAccountGapEligibilityError(
                     "Sumble account-gap enrichment requires the exact Account research job"
                 )
+            job_authorization = EntityResearchJobAuthorization.model_validate(exact_job)
+            discovery_receipt = job_authorization.selection.discovery_receipt
         if entity_research_job_id is None:
             if run.status is not ProjectRunStatus.ACTIVE:
                 raise SumbleAccountGapEligibilityError(
@@ -426,6 +430,7 @@ async def compile_sumble_account_gap_preflight(
             project_run_id=project_run_id,
             icp_key=run.icp_key,
             icp_version=run.icp_version,
+            discovery_receipt=discovery_receipt,
         )
     except DiscoverySealConflict as exc:
         raise SumbleAccountGapEligibilityError(

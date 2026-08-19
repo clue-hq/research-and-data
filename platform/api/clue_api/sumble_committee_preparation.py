@@ -42,6 +42,7 @@ from clue_core import (
     RunId,
     SourceTier,
 )
+from clue_core.entity_research import SealedDiscoveryLaunchReceipt
 from clue_db import ConnFactory, transaction
 from clue_research.durable import (
     get_account_run,
@@ -62,6 +63,7 @@ class SumbleCommitteePreparationInputs(BaseModel):
     preflight: SumbleCommitteePreflight
     authorization: CommitteeExecutionAuthorization
     committee_plan: ResearchCommitteePlan
+    discovery_receipt: SealedDiscoveryLaunchReceipt | None = None
     """The confirmed plan the request's ``committee_plan_ref`` addresses.
 
     Carried typed so the engine can validate an agent-authored buying-unit scope against the

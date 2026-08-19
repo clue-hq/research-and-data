@@ -56,6 +56,7 @@ from clue_core.entity_research import (
     EntityResearchJobAuthorization,
     EntityResearchSelection,
     FieldSourceAuthority,
+    ResearchOperationKind,
     ResearchRunKind,
     ResearchRunLifecycleContract,
 )
@@ -434,18 +435,23 @@ def _coverage_envelope(
                     original.subjects[0].model_copy(update={"subject_entity_id": account_id}),
                 ),
                 "admitted_field_keys": admitted_field_keys,
-                "admitted_source_keys": ("sumble_organizations", "sumble_people"),
+                "admitted_source_keys": ("sumble_organizations",),
                 "field_source_authority": tuple(
                     FieldSourceAuthority(field_key=key, source_keys=("sumble_organizations",))
                     for key in admitted_field_keys
                 ),
-                "committee_source_keys": ("sumble_people",),
+                "committee_source_keys": (),
                 "research_questions": ("What is the current operational burden?",),
             }
         ).model_dump(mode="python")
     )
     lifecycle = ResearchRunLifecycleContract.model_validate(
-        base.lifecycle.model_copy(update={"selection": selection}).model_dump(mode="python")
+        base.lifecycle.model_copy(
+            update={
+                "selection": selection,
+                "operations": (ResearchOperationKind.ACCOUNT_PROFILE,),
+            }
+        ).model_dump(mode="python")
     )
     original_job = base.jobs[0]
     authorization = EntityResearchJobAuthorization.model_validate(
@@ -457,7 +463,7 @@ def _coverage_envelope(
                 "product_id": product_id,
                 "project_run_id": project_run_id,
                 "selection": selection,
-                "agent_profile_ref": "agent-profile:account-research:v1",
+                "agent_profile_ref": "agent-profile:account-research:v2",
                 "agent_profile_sha256": profile_sha256,
             }
         ).model_dump(mode="python")

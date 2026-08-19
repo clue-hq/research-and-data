@@ -47,6 +47,7 @@ from clue_api.account_field_derivation import (
     AccountFieldDerivation,
     derive_account_fields,
 )
+from clue_api.comprehensive_research_contract import COMPREHENSIVE_ACCOUNT_FIELD_SOURCES
 from clue_api.entity_research_tools import (
     convert_engine_authority_rejections,
     semantic_validation_error,
@@ -107,6 +108,239 @@ _CONTACT_TOOL_PREFIXES = (
 
 class AccountResearchAuthorityError(EntityResearchGovernedToolRefusal):
     """Model-repairable account guard/engine refusal (returned to the agent, never fatal)."""
+
+
+class AccountResearchExecutionCompleteness(BaseModel):
+    """Durably re-derived proof that every authorized Account action reached a disposition."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    satisfied_field_keys: tuple[str, ...]
+    terminal_field_source_pairs: tuple[tuple[str, str], ...]
+    outstanding_field_source_pairs: tuple[tuple[str, str], ...]
+    outstanding_non_acquisition_fields: tuple[str, ...]
+    terminal_committee_source_keys: tuple[str, ...]
+    outstanding_committee_source_keys: tuple[str, ...]
+
+    @property
+    def complete(self) -> bool:
+        return not (
+            self.outstanding_field_source_pairs
+            or self.outstanding_non_acquisition_fields
+            or self.outstanding_committee_source_keys
+        )
+
+    def outstanding_summary(self) -> str:
+        parts = [
+            *(
+                f"{field_key}@{source_key}"
+                for field_key, source_key in self.outstanding_field_source_pairs
+            ),
+            *(
+                f"{field_key}@reuse-or-derive"
+                for field_key in self.outstanding_non_acquisition_fields
+            ),
+            *(f"committee@{source_key}" for source_key in self.outstanding_committee_source_keys),
+        ]
+        return ", ".join(parts)
+
+
+async def read_account_research_execution_completeness(
+    conn: AsyncConnection, *, authorization: EntityResearchJobAuthorization
+) -> AccountResearchExecutionCompleteness:
+    """Compute execution completeness from claims plus dispatched, terminal provider ledgers.
+
+    A tool request or reservation is not an attempt. A field/source pair counts only when its
+    provider operation was durably dispatched and then produced either a persisted result or an
+    idempotent terminal settlement fold. Successful evidence may stop a field's waterfall.
+    """
+
+    acquisition_fields = tuple(authorization.selection.admitted_field_keys)
+    non_acquisition_fields = await non_acquisition_account_profile_fields(
+        conn, authorization=authorization
+    )
+    profile_fields = tuple(dict.fromkeys((*acquisition_fields, *non_acquisition_fields)))
+    result_evidence_fields = frozenset(
+        str(value)
+        for value in (
+            await conn.execute(
+                text(
+                    """
+                    SELECT DISTINCT result_field.field_key
+                    FROM entity_research_result_field result_field
+                    JOIN entity_research_result result
+                      ON result.result_id=result_field.result_id
+                    JOIN entity_research_tool_request request_row
+                      ON request_row.tool_request_id=result.tool_request_id
+                    JOIN entity_research_result_evidence evidence
+                      ON evidence.result_id=result_field.result_id
+                     AND evidence.field_ordinal=result_field.ordinal
+                    WHERE request_row.job_id=:job_id
+                      AND result_field.subject_type='account'
+                      AND result_field.target_entity_id=:account_id
+                      AND result_field.outcome='found'
+                    """
+                ),
+                {
+                    "job_id": authorization.job_id,
+                    "account_id": authorization.subject_entity_id,
+                },
+            )
+        ).scalars()
+    )
+    current = (
+        {}
+        if not profile_fields
+        else await current_values(
+            conn,
+            [EntityId(authorization.subject_entity_id)],
+            profile_fields,
+            scope=WorkspaceScope.for_workspace(str(authorization.workspace_id)),
+        )
+    )
+    species = (
+        {}
+        if not profile_fields
+        else await field_species(
+            conn,
+            workspace_id=str(authorization.workspace_id),
+            field_keys=profile_fields,
+        )
+    )
+    reusable_fields = {
+        field_key
+        for (_entity_id, field_key), value in current.items()
+        if value.freshness_state.value == "fresh"
+        and bool((value.provenance.evidence_span or "").strip())
+        and not value.conflict
+        and species.get(field_key, ResearchScope.PROJECT_RELATIVE) is ResearchScope.PROJECT_NEUTRAL
+    }
+    satisfied_fields = frozenset(result_evidence_fields | reusable_fields)
+
+    terminal_rows = (
+        (
+            await conn.execute(
+                text(
+                    """
+                    SELECT DISTINCT operation.source_key, operation.field_keys,
+                           request_row.tool_name
+                    FROM entity_research_provider_operation operation
+                    JOIN entity_research_provider_observation observation
+                      ON observation.provider_operation_ref=operation.operation_ref
+                    JOIN entity_research_tool_request request_row
+                      ON request_row.tool_request_id=observation.tool_request_id
+                    WHERE request_row.job_id=:job_id
+                      AND operation.dispatched_at IS NOT NULL
+                      AND (
+                          EXISTS (
+                              SELECT 1 FROM entity_research_result result
+                              JOIN entity_research_tool_request result_request
+                                ON result_request.tool_request_id=result.tool_request_id
+                              WHERE result.provider_operation_ref=operation.operation_ref
+                                AND result_request.job_id=:job_id
+                          )
+                          OR EXISTS (
+                              SELECT 1 FROM entity_research_provider_settlement_fold fold
+                              WHERE fold.provider_operation_ref=operation.operation_ref
+                                AND fold.job_id=:job_id
+                          )
+                      )
+                    ORDER BY operation.source_key, request_row.tool_name
+                    """
+                ),
+                {"job_id": authorization.job_id},
+            )
+        )
+        .mappings()
+        .all()
+    )
+    terminal_pairs = frozenset(
+        (str(field_key), str(row["source_key"]))
+        for row in terminal_rows
+        for field_key in row["field_keys"]
+    )
+    authority = {
+        item.field_key: tuple(item.source_keys)
+        for item in authorization.effective_field_source_authority
+    }
+    outstanding_pairs = tuple(
+        (field_key, source_key)
+        for field_key in acquisition_fields
+        if field_key not in satisfied_fields
+        for source_key in authority[field_key]
+        if (field_key, source_key) not in terminal_pairs
+    )
+    exhausted_acquisition_fields = {
+        field_key
+        for field_key in acquisition_fields
+        if field_key in satisfied_fields
+        or all((field_key, source_key) in terminal_pairs for source_key in authority[field_key])
+    }
+    outstanding_non_acquisition = []
+    for field_key in non_acquisition_fields:
+        if field_key in satisfied_fields:
+            continue
+        source_field = DERIVED_ACCOUNT_FIELD_SOURCES.get(field_key)
+        if source_field is not None and source_field not in authority:
+            # A narrow historical/non-comprehensive directive may request a derived display row
+            # without authorizing acquisition of its numeric source. There is then no applicable
+            # provider action to attempt; the derived row may close as an honest gap.
+            continue
+        if source_field is not None and source_field in exhausted_acquisition_fields:
+            continue
+        outstanding_non_acquisition.append(field_key)
+
+    terminal_committee_sources = frozenset(
+        str(row["source_key"])
+        for row in terminal_rows
+        if str(row["tool_name"]) == "discover_buying_committee"
+    )
+    committee_result_exists = bool(
+        (
+            await conn.execute(
+                text(
+                    """
+                    SELECT 1 FROM entity_research_result result
+                    JOIN entity_research_tool_request request_row
+                      ON request_row.tool_request_id=result.tool_request_id
+                    WHERE request_row.job_id=:job_id
+                      AND request_row.tool_name='discover_buying_committee'
+                    LIMIT 1
+                    """
+                ),
+                {"job_id": authorization.job_id},
+            )
+        ).scalar_one_or_none()
+    )
+    committee_sources = tuple(authorization.selection.committee_source_keys)
+    outstanding_committee = (
+        ()
+        if committee_result_exists
+        else tuple(
+            source_key
+            for source_key in committee_sources
+            if source_key not in terminal_committee_sources
+        )
+    )
+    return AccountResearchExecutionCompleteness(
+        satisfied_field_keys=tuple(
+            field_key for field_key in profile_fields if field_key in satisfied_fields
+        ),
+        terminal_field_source_pairs=tuple(
+            (field_key, source_key)
+            for field_key in acquisition_fields
+            for source_key in authority[field_key]
+            if (field_key, source_key) in terminal_pairs
+        ),
+        outstanding_field_source_pairs=outstanding_pairs,
+        outstanding_non_acquisition_fields=tuple(outstanding_non_acquisition),
+        terminal_committee_source_keys=tuple(
+            source_key
+            for source_key in committee_sources
+            if source_key in terminal_committee_sources
+        ),
+        outstanding_committee_source_keys=outstanding_committee,
+    )
 
 
 async def existing_account_claims(
@@ -240,6 +474,22 @@ async def derivable_account_profile_fields(
         str(field_key)
         for field_key in directive.field_keys
         if str(field_key) in DERIVED_ACCOUNT_FIELD_SOURCES
+    )
+
+
+async def non_acquisition_account_profile_fields(
+    conn: AsyncConnection, *, authorization: EntityResearchJobAuthorization
+) -> tuple[str, ...]:
+    """Confirmed profile rows that are reused/derived and therefore absent from paid authority."""
+
+    directive = await pinned_account_research_directive(conn, authorization=authorization)
+    if directive is None:
+        return ()
+    return tuple(
+        str(field_key)
+        for field_key in directive.field_keys
+        if str(field_key) in COMPREHENSIVE_ACCOUNT_FIELD_SOURCES
+        and not COMPREHENSIVE_ACCOUNT_FIELD_SOURCES[str(field_key)]
     )
 
 
@@ -643,6 +893,24 @@ class AccountResearchStateStore:
             raise AccountResearchAuthorityError(
                 "account coverage observed forbidden contact research"
             )
+        async with self._conn_factory() as conn:
+            execution = await read_account_research_execution_completeness(
+                conn, authorization=authorization
+            )
+            non_acquisition_fields = await non_acquisition_account_profile_fields(
+                conn, authorization=authorization
+            )
+            non_acquisition_existing = await existing_account_claims(
+                conn,
+                workspace_id=str(authorization.workspace_id),
+                account_entity_id=authorization.subject_entity_id,
+                field_keys=non_acquisition_fields,
+            )
+        if not execution.complete:
+            raise AccountResearchAuthorityError(
+                "coverage cannot close before every authorized field/source and committee "
+                f"attempt is terminal: {execution.outstanding_summary()}"
+            )
         # A zero-result close is legal exactly once (FI-2 §6.1): when the account was researched by
         # spending nothing, i.e. every completed field is borrowed from a claim already on file.
         # The set-equality above already refuses an agent that omits results it produced; this
@@ -695,8 +963,32 @@ class AccountResearchStateStore:
             unresolved_reasons.extend(
                 f"{item.field_key}:{item.reason}" for item in derivation if not item.settled
             )
-            completed_field_keys = (*state.completed_field_keys, *derived_completed)
-            unresolved_field_keys = (*state.unresolved_field_keys, *derived_unresolved)
+            non_derived_zero = tuple(
+                item
+                for item in non_acquisition_existing
+                if item.field_key not in DERIVED_ACCOUNT_FIELD_SOURCES
+            )
+            zero_completed = tuple(
+                item.field_key for item in non_derived_zero if item.born_complete
+            )
+            zero_unresolved = tuple(
+                item.field_key for item in non_derived_zero if not item.born_complete
+            )
+            unresolved_reasons.extend(
+                f"{item.field_key}:canonical_identity_missing_evidence"
+                for item in non_derived_zero
+                if not item.born_complete
+            )
+            completed_field_keys = (
+                *state.completed_field_keys,
+                *zero_completed,
+                *derived_completed,
+            )
+            unresolved_field_keys = (
+                *state.unresolved_field_keys,
+                *zero_unresolved,
+                *derived_unresolved,
+            )
             # "Skipped" means the money was never spent, so *any* result row for the field
             # disqualifies it — a failed or empty attempt cost just as much as a successful one,
             # and reporting it as never-spent would misstate the spend trail.
@@ -713,6 +1005,11 @@ class AccountResearchStateStore:
                 # A derived row costs nothing either, and its reason says which of the two §3.1
                 # dispositions ("reuse **or** derive") answered it.
                 *(f"{item.field_key}:{item.reason}" for item in derivation if item.settled),
+                *(
+                    f"{item.field_key}:existing_claim_fresh"
+                    for item in non_derived_zero
+                    if item.born_complete
+                ),
             )
 
             scope_count = int(
@@ -834,8 +1131,8 @@ class AccountResearchStateStore:
             # the finalization engine can verify it (FI-2 §6.1, the contact runtime's mechanism).
             existing_claim_ids = tuple(
                 item.claim_ref.removeprefix("claim:")
-                for item in state.existing_claims
-                if item.born_complete and item.field_key in set(state.completed_field_keys)
+                for item in (*state.existing_claims, *non_acquisition_existing)
+                if item.born_complete and item.field_key in set(completed_field_keys)
             )
             derived_claim_ids = tuple(
                 str(item.claim_id) for item in derivation if item.claim_id is not None
@@ -1742,11 +2039,14 @@ class AccountResearchFinalizationEngine(EntityResearchFinalizationEngine):
                     field_keys=sorted(existing_completed),
                 )
             )
-            # The coverage axis is the admitted (paid) field set **plus** the derive-only §3.1
-            # rows the confirmed directive asked for. The engine re-reads that durable authority
-            # itself rather than trusting the coverage row it is verifying.
-            derived_axis = frozenset(
-                await derivable_account_profile_fields(conn, authorization=authorization)
+            # The coverage axis is the admitted (paid) field set plus every confirmed
+            # zero-acquisition §3.1 row (canonical name and both derived bands). The engine
+            # re-reads that durable authority itself rather than trusting the coverage row.
+            non_acquisition_axis = frozenset(
+                await non_acquisition_account_profile_fields(conn, authorization=authorization)
+            )
+            execution = await read_account_research_execution_completeness(
+                conn, authorization=authorization
             )
         if (
             row is None
@@ -1780,7 +2080,8 @@ class AccountResearchFinalizationEngine(EntityResearchFinalizationEngine):
         )
         coverage_matches = (
             set(proposal.completed_field_keys + proposal.unresolved_field_keys)
-            == set(authorization.selection.admitted_field_keys) | derived_axis
+            == set(authorization.selection.admitted_field_keys) | non_acquisition_axis
+            and execution.complete
         )
         review_shape = (
             proposal.outcome is ResearchFinalizationOutcome.NEEDS_REVIEW
@@ -1928,6 +2229,7 @@ def account_engine_tool_bindings(
 
 __all__ = [
     "AccountResearchAuthorityError",
+    "AccountResearchExecutionCompleteness",
     "AccountResearchExecutionGuard",
     "AccountResearchFinalizationEngine",
     "AccountResearchStateStore",
@@ -1935,6 +2237,8 @@ __all__ = [
     "born_complete_account_field_keys",
     "derivable_account_profile_fields",
     "existing_account_claims",
+    "non_acquisition_account_profile_fields",
     "pinned_account_research_directive",
     "read_account_committee_plan",
+    "read_account_research_execution_completeness",
 ]

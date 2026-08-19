@@ -199,6 +199,10 @@ def test_canonical_r0_contract_fixture_is_fully_valid(
     EntityResearchJobStatus.model_validate(resolve("terminal_job_status"))
 
     assert account_selection.channel_permissions == ()
+    # The receipt was added compatibly: pre-receipt selections remain exact historical replay
+    # inputs, while every new Account launch pins one in the launcher transaction.
+    assert account_selection.discovery_receipt is None
+    assert contact_selection.discovery_receipt is None
     assert {subject.basis for subject in contact_selection.subjects} == {
         ResearchSelectionBasis.COMMITTEE_MEMBER,
         ResearchSelectionBasis.USER_SELECTED_ASSOCIATED_CONTACT,
@@ -298,7 +302,7 @@ def test_forbidden_flow_fixture_is_complete_and_unique(
 
 def test_public_r0_contract_schemas_match_frozen_fingerprints() -> None:
     fixture = _read_json("r0_schema_fingerprints.json")
-    assert fixture["contract_version"] == "m8d-r0-v5"
+    assert fixture["contract_version"] == "m8d-r0-v6"
     actual = {
         name: hashlib.sha256(
             json.dumps(

@@ -45,6 +45,7 @@ from clue_core.entity_research import (
     ResearchRunLifecycleContract,
     ResearchSelectionBasis,
     ResearchSubjectType,
+    SealedDiscoveryLaunchReceipt,
     SelectedResearchSubject,
 )
 from clue_core.field import account_axis_field_keys
@@ -201,7 +202,7 @@ class AccountResearchFleetLauncher:
                     "a failed project run cannot authorize new account research"
                 )
             try:
-                await require_sealed_account_discovery(
+                discovery = await require_sealed_account_discovery(
                     conn,
                     workspace_id=request.workspace_id,
                     project_run_id=ProjectRunId(request.project_run_id),
@@ -211,6 +212,21 @@ class AccountResearchFleetLauncher:
                 )
             except AccountResearchDiscoveryNotReady as exc:
                 raise AccountResearchFleetLaunchError(str(exc)) from exc
+            selected_outside_seal = set(account_ids) - set(discovery.account_ids)
+            if selected_outside_seal:
+                raise AccountResearchFleetLaunchError(
+                    "account research selection contains an Account outside the exact sealed "
+                    "discovery membership"
+                )
+            discovery_receipt = SealedDiscoveryLaunchReceipt(
+                discovery_batch_id=UUID(str(discovery.discovery_batch_id)),
+                discovery_generation=discovery.discovery_generation,
+                discovery_seal_sha256=discovery.discovery_seal_sha256,
+                account_manifest_ref=discovery.account_manifest_ref,
+                account_manifest_sha256=discovery.account_manifest_sha256,
+                claim_manifest_ref=discovery.claim_manifest_ref,
+                claim_manifest_sha256=discovery.claim_manifest_sha256,
+            )
             directive = await get_research_directive(
                 conn,
                 ResearchDirectiveId(request.research_directive_id),
@@ -489,6 +505,7 @@ class AccountResearchFleetLauncher:
                     "project_id": project_run.project_id,
                     "product_id": project_run.product_id,
                     "project_run_id": str(request.project_run_id),
+                    "discovery_receipt": discovery_receipt.model_dump(mode="json"),
                     "directive_ref": directive.directive_ref,
                     "directive_sha256": directive.canonical_json_sha256,
                     "account_pins": [
@@ -519,6 +536,7 @@ class AccountResearchFleetLauncher:
                 product_id=project_run.product_id,
                 project_run_id=request.project_run_id,
                 subject_type=ResearchSubjectType.ACCOUNT,
+                discovery_receipt=discovery_receipt,
                 subjects=tuple(
                     SelectedResearchSubject(
                         subject_entity_id=account_id,

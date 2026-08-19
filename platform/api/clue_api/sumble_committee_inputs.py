@@ -86,6 +86,32 @@ class DurableSumbleCommitteeInputResolver:
         tier: str,
         entity_research_job_id: UUID | None = None,
     ) -> SumbleCommitteePreparationInputs:
+        discovery_receipt = None
+        if entity_research_job_id is not None:
+            async with self._conn_factory() as conn:
+                authorization_json = (
+                    await conn.execute(
+                        text(
+                            "SELECT authorization_json FROM entity_research_job "
+                            "WHERE job_id=:job_id AND subject_type='account' "
+                            "AND subject_entity_id=:account_id AND workspace_id=:workspace_id "
+                            "AND project_run_id=:project_run_id"
+                        ),
+                        {
+                            "job_id": entity_research_job_id,
+                            "account_id": account_entity_id,
+                            "workspace_id": workspace_id,
+                            "project_run_id": project_run_id,
+                        },
+                    )
+                ).scalar_one_or_none()
+            if authorization_json is None:
+                raise SumbleCommitteePreparationError(
+                    "Sumble committee inputs require the exact Account research job"
+                )
+            discovery_receipt = EntityResearchJobAuthorization.model_validate(
+                authorization_json
+            ).selection.discovery_receipt
         reader = DbSealedDiscoveryAccountManifestReader(
             storage=self._storage,
             conn_factory=self._conn_factory,
@@ -99,6 +125,7 @@ class DurableSumbleCommitteeInputResolver:
             project_run_id=project_run_id,
             icp_key=project_run.icp_key,
             icp_version=project_run.icp_version,
+            discovery_receipt=discovery_receipt,
         )
         if sealed is None or account_entity_id not in set(sealed.account_ids):
             raise SumbleCommitteePreparationError(
@@ -390,6 +417,7 @@ class DurableSumbleCommitteeInputResolver:
             ),
             authorization=authorization,
             committee_plan=plan,
+            discovery_receipt=discovery_receipt,
         )
 
 

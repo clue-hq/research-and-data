@@ -21,15 +21,10 @@ The 21 rows settle through four distinct dispositions, and the test names each o
 * **Derived** — ``core.employee_range`` / ``core.revenue_band`` (§3.1 rows 5 and 8) settle at
   assessment from the governed employee-count / annual-revenue evidence (Task B7).
 
-**One honest divergence from the plan's wording, recorded here rather than papered over.** The
-coverage row's axis is the launch selection's admitted fields *plus* the derive-only rows
-(``AccountResearchFinalizationEngine`` re-derives exactly that union and refuses anything else —
-``account_entity_research.py:1462``). ``core.account_name`` is neither: §3.1 row 1 is canonical
-identity truth reused from discovery, so the launcher partitions it out of the paid selection and
-it is not a derive-only row either. The coverage axis is therefore 20 rows, not 21, **by contract**
-— so the 21st is asserted where it actually settles: as a live, fresh, governed claim on the
-account, never bought by this run. Asserting it inside the coverage row would require changing the
-finalization engine's axis, which is a contract change, not a test.
+The coverage axis is the launch selection's paid fields plus all three zero-acquisition rows.
+``core.account_name`` is evidence-backed canonical identity truth reused from discovery;
+``core.employee_range`` and ``core.revenue_band`` are reused or derived. All 21 therefore appear
+in one mechanically closed coverage ledger without authorizing a fake provider call.
 """
 
 from __future__ import annotations
@@ -48,17 +43,21 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_agents.account_entity_research import AssessAccountCoverageInput
 from clue_agents.contracts import ModelPolicy
-from clue_agents.entity_research_contracts import EntityResearchAgentResult
+from clue_agents.entity_research_contracts import EntityResearchAgentResult, EntityResearchToolCall
 from clue_agents.entity_research_runtime import (
+    ActiveEntityResearchToolExecution,
     EntityResearchAgentFactory,
     EntityResearchAgentRuntime,
 )
 from clue_api.account_entity_research import (
+    AccountResearchAuthorityError,
     AccountResearchExecutionGuard,
     AccountResearchFinalizationEngine,
     AccountResearchStateStore,
     born_complete_account_field_keys,
+    read_account_research_execution_completeness,
 )
 from clue_api.account_entity_research_composition import (
     AccountResearchDefinitionResolver,
@@ -167,8 +166,8 @@ from tests.profiling.conftest import rollback_conn
 pytestmark = pytest.mark.usefixtures("require_profiling_db")
 
 _EXA_WEBSETS_SOURCE_KEY = "exa_websets"
-#: §3.1 row 1 — canonical identity truth. It owns no acquisition source and is not a derive-only
-#: row either, so it is the one profile field the coverage axis cannot carry (module docstring).
+#: §3.1 row 1 — canonical identity truth. It owns no acquisition source and is reused with
+#: evidence inside the same 21-field coverage axis.
 _IDENTITY_ROW = "core.account_name"
 #: The Exa-owned row whose scripted provider response deliberately leaves absent.
 _HONEST_EMPTY = "account.operational_pain"
@@ -722,13 +721,14 @@ async def _drive_comprehensive_run(
             lineage.provider_kind: lineage,
         },
     )
+    state = AccountResearchStateStore(conn_factory=connection)
     resolver = AccountResearchDefinitionResolver(
         tools=GovernedEntityResearchToolFactory(
             requests=EntityResearchToolRequestStore(conn_factory=connection, storage=storage),
             causation=EntityResearchProviderCausationStore(conn_factory=connection),
             results=result_store,
         ),
-        state=AccountResearchStateStore(conn_factory=connection),
+        state=state,
         provider_actions=StaticAccountResearchProviderActions(
             {
                 launched.job_id: {
@@ -748,6 +748,32 @@ async def _drive_comprehensive_run(
         conn_factory=connection,
     )
     definition = await resolver.resolve(job=begun.job, fence=fence)
+    premature = ActiveEntityResearchToolExecution(
+        context=definition.context,
+        call=EntityResearchToolCall(
+            tool_call_id="b8-premature-assessment",
+            tool_name="assess_account_coverage",
+            tool_version=1,
+            tool_input_sha256="a" * 64,
+            arguments={"result_refs": [], "assessment_note": "premature no-work close"},
+        ),
+        journal_event_ref="entity-agent-journal:b8-premature-assessment",
+    )
+    with pytest.raises(
+        AccountResearchAuthorityError,
+        match="coverage cannot close before every authorized field/source",
+    ):
+        await state.assess(
+            AssessAccountCoverageInput(result_refs=(), assessment_note="premature no-work close"),
+            premature,
+        )
+    async with connection() as execution_conn:
+        incomplete = await read_account_research_execution_completeness(
+            execution_conn, authorization=begun.job.authorization
+        )
+    assert not incomplete.complete
+    assert incomplete.outstanding_field_source_pairs
+    assert not incomplete.terminal_field_source_pairs
     model = _ScriptedModel(plan=plan)
     journal = DbEntityResearchAgentJournal(conn_factory=connection)
     runtime = EntityResearchAgentRuntime(
@@ -851,22 +877,23 @@ def test_every_comprehensive_account_field_reaches_a_settled_state(tmp_path: Pat
             skipped = {str(value) for value in row["coverage_json"]["skipped_field_reasons"]}
             skipped_fields = {reason.rsplit(":", 1)[0] for reason in skipped}
 
-            # (1) Closure. The coverage axis is the launch selection plus the two derive-only
-            # rows; ``core.account_name`` settles outside it (module docstring), and every other
-            # profile row is either completed or unresolved — nothing vanished.
+            # (1) Closure. The coverage axis is the exact full 21-field contract. Every row is
+            # either completed or unresolved — nothing vanished.
             axis = completed | unresolved
-            assert axis == set(COMPREHENSIVE_ACCOUNT_FIELDS) - {_IDENTITY_ROW}
+            assert axis == set(COMPREHENSIVE_ACCOUNT_FIELDS)
             assert completed | unresolved | skipped_fields == axis
             assert not completed & unresolved
             assert (
-                set(drive.selection.admitted_field_keys) | set(DERIVED_ACCOUNT_FIELD_SOURCES)
+                set(drive.selection.admitted_field_keys)
+                | set(DERIVED_ACCOUNT_FIELD_SOURCES)
+                | {_IDENTITY_ROW}
                 == axis
             )
 
             requested = await _requested_field_keys(conn, job_id=drive.job_id)
             scope = WorkspaceScope.for_workspace(fixture.workspace_id)
 
-            # The 21st row: canonical identity truth, live and reused, never bought.
+            # Canonical identity truth is live, reused into coverage, and never bought.
             identity = await current_value(
                 conn, EntityId(fixture.account_id), _IDENTITY_ROW, scope=scope
             )
@@ -878,6 +905,8 @@ def test_every_comprehensive_account_field_reaches_a_settled_state(tmp_path: Pat
             assert identity_row["source_key"] == _EXA_WEBSETS_SOURCE_KEY
             assert _IDENTITY_ROW not in drive.selection.admitted_field_keys
             assert _IDENTITY_ROW not in requested
+            assert _IDENTITY_ROW in completed
+            assert f"{_IDENTITY_ROW}:existing_claim_fresh" in skipped
 
             # (2) Reuse, not re-buy. Every borrowed row is completed, carries the
             # ``existing_claim_fresh`` skip, cites the discovery claim that answered it, and was
@@ -946,7 +975,7 @@ def test_every_comprehensive_account_field_reaches_a_settled_state(tmp_path: Pat
 
             # (5) Everything else was acquired exactly once, through a governed tool, and every
             # acquisition that found something completed its row.
-            acquired = axis - drive.borrowed - set(DERIVED_ACCOUNT_FIELD_SOURCES)
+            acquired = axis - drive.borrowed - set(DERIVED_ACCOUNT_FIELD_SOURCES) - {_IDENTITY_ROW}
             assert acquired == requested
             assert acquired - {_HONEST_EMPTY} <= completed
             assert drive.transport.requested_field_keys <= acquired

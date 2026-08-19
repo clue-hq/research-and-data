@@ -434,6 +434,26 @@ class SelectedContactResearchAuthority(BaseModel):
         return self
 
 
+class SealedDiscoveryLaunchReceipt(BaseModel):
+    """Immutable discovery authority pinned when an Account fleet is launched.
+
+    The receipt names the exact sealed generation and both stored membership artifacts.  It is
+    intentionally carried inside the already-versioned selection JSON: newly launched Account
+    jobs can consume immutable launch authority without changing historical job rows or inventing
+    a second mutable pointer.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    discovery_batch_id: UUID
+    discovery_generation: int = Field(ge=1)
+    discovery_seal_sha256: Sha256
+    account_manifest_ref: NonEmptyStr
+    account_manifest_sha256: Sha256
+    claim_manifest_ref: NonEmptyStr
+    claim_manifest_sha256: Sha256
+
+
 class EntityResearchSelection(BaseModel):
     """Exact user-confirmed account/contact set for one separately launched run."""
 
@@ -447,6 +467,10 @@ class EntityResearchSelection(BaseModel):
     product_id: NonEmptyStr
     project_run_id: UUID
     subject_type: ResearchSubjectType
+    # Compatibility: historical Account authorizations predate the launch-pinned seal receipt and
+    # must remain readable. The Account launcher requires this for every new selection; contact
+    # selections have no discovery authority and therefore keep it absent.
+    discovery_receipt: SealedDiscoveryLaunchReceipt | None = None
     account_entity_id: UUID | None = None
     subjects: tuple[SelectedResearchSubject, ...] = Field(min_length=1)
     directive_ref: NonEmptyStr
@@ -510,6 +534,8 @@ class EntityResearchSelection(BaseModel):
             if any(subject.contact_authority is not None for subject in self.subjects):
                 raise ValueError("account selection cannot carry contact target authority")
         else:
+            if self.discovery_receipt is not None:
+                raise ValueError("contact selection cannot carry Account discovery authority")
             if self.committee_source_keys:
                 raise ValueError("contact selection cannot authorize committee enumeration")
             if self.account_entity_id is None:
@@ -1395,6 +1421,7 @@ __all__ = [
     "ResearchRunKind",
     "ResearchRunLifecycleContract",
     "ResearchSelectionBasis",
+    "SealedDiscoveryLaunchReceipt",
     "ResearchSubjectType",
     "SelectedContactResearchAuthority",
     "SelectedResearchSubject",

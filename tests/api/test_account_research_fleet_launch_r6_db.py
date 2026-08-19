@@ -770,6 +770,11 @@ def test_core_fields_survive_launch_and_are_not_silently_dropped(tmp_path: Path)
             selection = EntityResearchSelection.model_validate(
                 stored["lifecycle_json"]["selection"]
             )
+            assert selection.discovery_receipt is not None
+            assert selection.discovery_receipt.discovery_batch_id == UUID(
+                str(fixture.discovery_batch_id)
+            )
+            assert selection.discovery_receipt.discovery_generation == 1
             assert "core.industry" in selection.admitted_field_keys
             assert "core.primary_tech_stack" in selection.admitted_field_keys
             assert set(selection.admitted_field_keys) == {_INDUSTRY, _TECH, _HIRING, _PAIN}
