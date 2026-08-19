@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_agents.entity_research_contracts import canonical_sha256
 from clue_api.entity_research_tools import (
+    EntityResearchGovernedRejection,
     EntityResearchProviderAction,
     EntityResearchProviderWait,
     EntityResearchResultIntegrityError,
@@ -66,6 +67,7 @@ from clue_research.resolvers.exa import (
     SOURCE_KEY,
     ExaDeepConfig,
     ExaDeepFieldSpec,
+    ExaDeepRequestBoundExceeded,
 )
 from clue_research.resolvers.exa.deep_contract import field_key_from_exa_alias
 from clue_research.sources import bind_resolver_overrides, resolve_field
@@ -939,30 +941,41 @@ class ExaAccountSemanticResearchAction(EntityResearchProviderAction):
                 }
             )
             observation_window = f"{observation_window}:follow-up:{follow_up_digest[:16]}"
-        plan = compile_exa_deep_acquisition_plan(
-            workspace_id=self._workspace_id,
-            project_id=self._project_id,
-            project_run_id=self._project_run_id,
-            account=account,
-            icp_key=self._icp_key,
-            icp_version=self._icp_version,
-            research_directive=self._directive,
-            fields=tuple(
-                ExaDeepFieldSpec(
-                    field_key=effective.field_def.field_key,
-                    value_schema=cast(dict[str, JsonValue], effective.value_schema),
-                )
-                for effective in effective_fields
-            ),
-            research_intent=intent,
-            additional_queries=request.questions,
-            observation_window=observation_window,
-            freshness_policy_ref=self._freshness_policy_ref,
-            freshness_seconds=self._freshness_seconds,
-            cost_cents_reserved_per_bundle=self._reserved_per_bundle,
-            entity_research_job_id=self._entity_research_job_id,
-            config=self._config,
-        )
+        try:
+            plan = compile_exa_deep_acquisition_plan(
+                workspace_id=self._workspace_id,
+                project_id=self._project_id,
+                project_run_id=self._project_run_id,
+                account=account,
+                icp_key=self._icp_key,
+                icp_version=self._icp_version,
+                research_directive=self._directive,
+                fields=tuple(
+                    ExaDeepFieldSpec(
+                        field_key=effective.field_def.field_key,
+                        value_schema=cast(dict[str, JsonValue], effective.value_schema),
+                    )
+                    for effective in effective_fields
+                ),
+                research_intent=intent,
+                additional_queries=request.questions,
+                observation_window=observation_window,
+                freshness_policy_ref=self._freshness_policy_ref,
+                freshness_seconds=self._freshness_seconds,
+                cost_cents_reserved_per_bundle=self._reserved_per_bundle,
+                entity_research_job_id=self._entity_research_job_id,
+                config=self._config,
+            )
+        except ExaDeepRequestBoundExceeded as bound:
+            # Nothing was reserved or dispatched — the request text is simply too long, and above
+            # it is the model's own follow-up reason plus the prior result context that grew it.
+            # Live, this killed a whole account job as a raw ValueError; it is an ordinary
+            # request-shape violation, so refuse it repairably instead.
+            raise EntityResearchGovernedRejection(
+                "research_request_shape_rejected",
+                f"{bound}; shorten the follow-up reason, request the remaining fields without "
+                "the prior-result follow-up, or finalize honestly with the gap",
+            ) from bound
         caused_refs: set[str] = set()
         operation_fields: dict[UUID, tuple[str, ...]] = {}
         acquired = []

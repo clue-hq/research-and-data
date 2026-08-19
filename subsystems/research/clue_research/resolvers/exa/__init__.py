@@ -221,6 +221,19 @@ class ExaDeepContactNormalization(BaseModel):
 DEFAULT_EXA_CONFIG = ExaDeepConfig()
 
 
+class ExaDeepRequestBoundExceeded(ValueError):
+    """A compiled request exceeds a bounded product cap the *caller* can shrink and retry.
+
+    Distinct from the other compile-time refusals (a missing target lock, an unregistered field)
+    because it says nothing about the account or the registry — only that the text this call
+    handed in is too long. A follow-up ``research_account_deep`` grows the planning sentence with
+    the model's own ``follow_up_reason`` plus the prior result context, so live it is model input
+    that overflows; the caller converts this into a repairable governed rejection instead of
+    killing the job. Subclasses ``ValueError`` so ``pack_exa_deep_field_bundles``' greedy split
+    keeps treating it as an ordinary compile refusal.
+    """
+
+
 class ExaDeepRequestFailure(ResolverError):
     """Typed provider failure consumed by E1's durable outcome/settlement state machine."""
 
@@ -384,7 +397,7 @@ def compile_exa_deep_request(
     if not intent:
         raise ValueError("research_intent must be non-empty")
     if len(intent) > _MAX_RESEARCH_INTENT_CHARS:
-        raise ValueError("research_intent exceeds the 1000-character product cap")
+        raise ExaDeepRequestBoundExceeded("research_intent exceeds the 1000-character product cap")
 
     account_name = _single_line(account.canonical_name)
     if not account_name:
@@ -1207,6 +1220,7 @@ __all__ = [
     "ExaDeepFailureClass",
     "ExaDeepFieldSpec",
     "ExaDeepNormalization",
+    "ExaDeepRequestBoundExceeded",
     "ExaDeepRequestFailure",
     "ExaDeepSearchRequest",
     "ExaDeepSearchResponse",

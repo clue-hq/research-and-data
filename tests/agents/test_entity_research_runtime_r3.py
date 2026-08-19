@@ -46,6 +46,7 @@ from clue_agents.entity_research_runtime import (
     EntityResearchExecutionGuard,
     EntityResearchExternalWait,
     EntityResearchFinalizationEngine,
+    EntityResearchFinalizationRejected,
     EntityResearchRuntimeError,
 )
 from clue_agents.model import ScriptedAgentChatModel
@@ -1066,5 +1067,106 @@ def test_unparseable_finalize_render_falls_back_to_the_model_echo_path() -> None
         )
         assert middleware._finalization_proposed is True
         assert await middleware.abefore_model({}, None) is None
+
+    run_async(run())
+
+
+def test_an_empty_model_turn_is_refused_back_to_the_model_instead_of_failing_the_job() -> None:
+    """Live regression: a maxed-out reasoning turn produced no tool call and no typed proposal.
+
+    The graph ended with no ``structured_response`` and the run then failed the whole job
+    validating ``None`` as a ``ResearchFinalizationProposal``. An empty turn is model output, not
+    job integrity, so it comes back as the ordinary governed refusal and the model finalizes on
+    its next turn.
+    """
+
+    async def run() -> None:
+        context = _context(ResearchSubjectType.ACCOUNT, EntityAgentRole.ACCOUNT)
+        proposal = _proposal(context)
+        model = ScriptedAgentChatModel(
+            responses=(
+                AIMessage(content="(reasoning only; output budget exhausted)"),
+                AIMessage(
+                    content="",
+                    tool_calls=[
+                        {
+                            "name": "ResearchFinalizationProposal",
+                            "args": proposal.model_dump(mode="json"),
+                            "id": "typed-final-after-repair",
+                        }
+                    ],
+                ),
+            )
+        )
+        journal = Journal()
+        runtime = EntityResearchAgentRuntime(
+            factory=EntityResearchAgentFactory(
+                models=Models(model), journal=journal, guard=Guard()
+            ),
+            checkpointers=Checkpointers(),
+            journal=journal,
+            finalizer=Finalizer(),
+        )
+
+        outcome = await runtime.run(definition=_definition(context))
+
+        assert isinstance(outcome, EntityResearchAgentResult)
+        assert outcome.proposal == proposal
+        assert outcome.finalization_receipt is not None
+        assert not any(
+            event.kind is EntityAgentJournalEventKind.EXECUTION_FAILED for event in journal.events
+        )
+        # The refusal is durable without a new journal kind: it rides the message history the next
+        # model round records.
+        rounds = [
+            event
+            for event in journal.events
+            if event.kind is EntityAgentJournalEventKind.MODEL_STARTED
+        ]
+        assert len(rounds) == 2
+        replayed = json.dumps(rounds[-1].payload)
+        assert "governed_research_rejection" in replayed
+        assert "empty_model_turn" in replayed
+
+    run_async(run())
+
+
+def test_a_run_that_never_proposes_fails_in_the_runtime_species_not_pydantic() -> None:
+    """Repairs are bounded; exhausting them is a typed runtime refusal, never a ValidationError."""
+
+    async def run() -> None:
+        context = _context(ResearchSubjectType.ACCOUNT, EntityAgentRole.ACCOUNT)
+        model = ScriptedAgentChatModel(
+            responses=(AIMessage(content="(reasoning only, forever)"),), repeat_last=True
+        )
+        journal = Journal()
+        runtime = EntityResearchAgentRuntime(
+            factory=EntityResearchAgentFactory(
+                models=Models(model), journal=journal, guard=Guard()
+            ),
+            checkpointers=Checkpointers(),
+            journal=journal,
+            finalizer=Finalizer(),
+        )
+
+        with pytest.raises(
+            EntityResearchFinalizationRejected,
+            match="without an admissible typed finalization proposal",
+        ):
+            await runtime.run(definition=_definition(context))
+
+        failures = [
+            event
+            for event in journal.events
+            if event.kind is EntityAgentJournalEventKind.EXECUTION_FAILED
+        ]
+        assert len(failures) == 1
+        assert failures[0].payload["error_type"] == "EntityResearchFinalizationRejected"
+        rounds = [
+            event
+            for event in journal.events
+            if event.kind is EntityAgentJournalEventKind.MODEL_STARTED
+        ]
+        assert len(rounds) == runtime_module._MAX_EMPTY_TURN_REPAIRS + 1
 
     run_async(run())

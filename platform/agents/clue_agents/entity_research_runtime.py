@@ -33,7 +33,7 @@ from langchain_core.messages import (
 )
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import BaseCheckpointSaver
-from pydantic import BaseModel, JsonValue
+from pydantic import BaseModel, JsonValue, ValidationError
 
 from clue_agents.entity_research_contracts import (
     EntityAgentJournalEventKind,
@@ -381,6 +381,12 @@ def _resolved_system_prompt(definition: EntityResearchAgentDefinition) -> str:
 
 _FINALIZE_TOOL_NAMES = ("finalize_account_research", "finalize_contact_research")
 
+#: How many times one execution refuses an empty model turn back to the model before it stops
+#: paying for repairs. Deliberately small: the stop policy's model-round and runtime budgets are
+#: the real ceiling, and a model that cannot produce a tool call or a proposal in three tries is
+#: not going to on the fourth.
+_MAX_EMPTY_TURN_REPAIRS = 3
+
 
 def _tool_message_text(result: Any) -> str:
     content = getattr(result, "content", "")
@@ -443,6 +449,10 @@ class _EntityResearchRuntimeMiddleware(AgentMiddleware[Any, Any, Any]):
         # ends the graph deterministically with it instead of waiting for the model to echo it —
         # a live contact run looped on post-finalization refusals until the recursion limit.
         self._engine_proposal: ResearchFinalizationProposal | None = None
+        # How many empty model turns this execution has already refused (see `aafter_model`).
+        # Process-local like `_finalization_proposed`: a cold resume re-reads the persisted
+        # messages and simply gets its own repair budget.
+        self._empty_turn_repairs = 0
 
     def _call(self, raw: Mapping[str, Any]) -> EntityResearchToolCall:
         name = str(raw.get("name", ""))
@@ -514,13 +524,7 @@ class _EntityResearchRuntimeMiddleware(AgentMiddleware[Any, Any, Any]):
         request: Any,
         current: EntityResearchToolCall,
     ) -> tuple[EntityResearchToolCall, ...]:
-        state = request.state
-        messages = (
-            state.get("messages", ())
-            if isinstance(state, Mapping)
-            else getattr(state, "messages", ())
-        )
-        for message in reversed(tuple(messages)):
+        for message in reversed(tuple(self._state_messages(request.state))):
             if not isinstance(message, AIMessage):
                 continue
             calls = tuple(
@@ -647,6 +651,54 @@ class _EntityResearchRuntimeMiddleware(AgentMiddleware[Any, Any, Any]):
         if not self._finalization_proposed or self._engine_proposal is None:
             return None
         return {"jump_to": "end", "structured_response": self._engine_proposal}
+
+    @hook_config(can_jump_to=["model"])
+    async def aafter_model(self, state: Any, runtime: Any) -> dict[str, Any] | None:
+        """Refuse an empty model turn back to the model instead of ending with no proposal.
+
+        A turn that calls no governed tool and emits no typed proposal ends the graph with no
+        ``structured_response`` at all. Live, a run whose model spent its whole 16k output budget
+        on reasoning ended exactly that way, and the run then failed the job validating ``None``
+        as the finalization proposal. An empty turn is model output, not job integrity, so it is
+        refused in the ordinary governed species — the model gets a bounded number of attempts to
+        call a tool or finalize honestly. The refusal is durable without a new journal kind: it is
+        an ordinary message, so the next ``model_started`` event records it with the rest of the
+        history.
+        """
+
+        if self._finalization_proposed or self._structured_response(state) is not None:
+            return None
+        last = next(
+            (
+                message
+                for message in reversed(tuple(self._state_messages(state)))
+                if isinstance(message, AIMessage)
+            ),
+            None,
+        )
+        if last is None or last.tool_calls:
+            return None
+        if self._empty_turn_repairs >= _MAX_EMPTY_TURN_REPAIRS:
+            return None
+        self._empty_turn_repairs += 1
+        refusal = EntityResearchGovernedToolRefusal(
+            "the turn produced neither a governed tool call nor the typed finalization proposal; "
+            "call a tool, or finalize honestly with the remaining gap",
+            code="empty_model_turn",
+        )
+        return {"messages": [HumanMessage(content=refusal.render())], "jump_to": "model"}
+
+    @staticmethod
+    def _state_messages(state: Any) -> Sequence[BaseMessage]:
+        if isinstance(state, Mapping):
+            return cast(Sequence[BaseMessage], state.get("messages", ()))
+        return cast(Sequence[BaseMessage], getattr(state, "messages", ()))
+
+    @staticmethod
+    def _structured_response(state: Any) -> object | None:
+        if isinstance(state, Mapping):
+            return state.get("structured_response")
+        return getattr(state, "structured_response", None)
 
     async def awrap_tool_call(self, request: Any, handler: Any) -> Any:
         call = self._call(cast(dict[str, Any], request.tool_call))
@@ -1035,11 +1087,20 @@ class EntityResearchAgentRuntime:
                 )
                 return suspension
             raw_proposal = result.get("structured_response")
-            proposal = (
-                raw_proposal
-                if isinstance(raw_proposal, ResearchFinalizationProposal)
-                else ResearchFinalizationProposal.model_validate(raw_proposal)
-            )
+            if isinstance(raw_proposal, ResearchFinalizationProposal):
+                proposal = raw_proposal
+            else:
+                try:
+                    proposal = ResearchFinalizationProposal.model_validate(raw_proposal)
+                except ValidationError as invalid:
+                    # The graph ended without an admissible typed proposal — the middleware's
+                    # bounded empty-turn repairs are the recovery path, and reaching here means
+                    # they were exhausted. Fail in the runtime's own species with the shape that
+                    # was actually returned, not as a raw pydantic ValidationError.
+                    raise EntityResearchFinalizationRejected(
+                        "entity research ended without an admissible typed finalization proposal "
+                        f"(received {type(raw_proposal).__name__})"
+                    ) from invalid
             if (
                 proposal.subject_type is not context.authorization.subject_type
                 or proposal.target_entity_id != context.authorization.subject_entity_id

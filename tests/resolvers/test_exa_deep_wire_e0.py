@@ -19,6 +19,7 @@ from clue_core import AccountEntity, FieldDef, PassKind, RetryableResolverError,
 from clue_research.resolvers.exa import (
     DEFAULT_EXA_CONFIG,
     ExaDeepConfig,
+    ExaDeepRequestBoundExceeded,
     ExaDeepRequestFailure,
     build_exa_request,
     compile_exa_deep_request,
@@ -159,6 +160,21 @@ def test_target_lock_carries_available_alias_and_geography_hints() -> None:
     assert "cascade-gastro.example" in request.query
     assert "Cascade GI" in request.query
     assert "Oregon" in request.query
+
+
+def test_an_over_long_research_intent_refuses_in_the_repairable_bound_species() -> None:
+    """The cap is a *caller* bound, not a contract violation, so it raises its own type.
+
+    A follow-up ``research_account_deep`` grows the planning sentence with the model's own reason
+    plus the prior result context; live, that overflowed the cap and the bare ``ValueError``
+    killed the whole account job. The typed refusal is what lets the tool layer convert it into a
+    repairable governed rejection, and it still reads as an ordinary ``ValueError`` so the greedy
+    bundle packer's split logic is unchanged.
+    """
+
+    with pytest.raises(ExaDeepRequestBoundExceeded, match="1000-character product cap"):
+        compile_exa_deep_request(_account(), (_spec(_PAIN),), research_intent="pain " * 300)
+    assert issubclass(ExaDeepRequestBoundExceeded, ValueError)
 
 
 def test_compiler_preserves_registry_schema_without_mutating_it() -> None:

@@ -94,6 +94,7 @@ from clue_api.entity_research_runtime_wiring import (
     EntityResearchJournalConflict,
 )
 from clue_api.entity_research_tools import (
+    EntityResearchGovernedRejection,
     EntityResearchProviderCausationStore,
     EntityResearchResultIntegrityError,
     EntityResearchResultStore,
@@ -130,6 +131,8 @@ from clue_core import (
 from clue_core.entity_research import (
     EntityResearchJobAuthorization,
     EntityResearchSelection,
+    FieldSourceAuthority,
+    GovernedResearchToolRequest,
     ResearchClaimDelta,
     ResearchFieldOutcome,
     ResearchFieldResultProjection,
@@ -1241,6 +1244,94 @@ def test_an_unsettleable_exa_bundle_settles_terminally_instead_of_stranding_the_
             assert transport.corrupted_field_keys <= unresolved
             assert not transport.corrupted_field_keys & completed
             assert completed | unresolved == set(COMPREHENSIVE_ACCOUNT_FIELDS)
+
+    run_async(scenario())
+
+
+def test_an_over_long_research_intent_is_refused_recoverably(tmp_path: Path) -> None:
+    """A follow-up whose planning sentence overflows the product cap must not kill the job.
+
+    Live regression: the model's follow-up ``research_account_deep`` grew the Exa planning sentence
+    past the 1000-character cap, the compiler raised a bare ``ValueError`` through the tool, and
+    the account's whole execution failed. The overflow is an ordinary request-shape violation —
+    nothing is reserved, nothing is dispatched — so it must come back as the repairable governed
+    species the agent already knows how to act on.
+    """
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            storage = FsStorage(tmp_path / "b8-intent-cap-artifacts")
+            fixture = await _seed_discovered_account(conn, storage)
+            connection = _NestedConnFactory(conn)
+            action = ExaAccountSemanticResearchAction(
+                workspace_id=fixture.workspace_id,
+                project_id=fixture.project_id,
+                project_run_id=ProjectRunId(fixture.project_run_id),
+                account_id=EntityId(fixture.account_id),
+                icp_key=fixture.icp_key,
+                icp_version=fixture.icp_version,
+                research_directive=fixture.research_directive,
+                acquisition=ExaDeepAcquisitionCoordinator(
+                    transport=_ScriptedExaTransport(), storage=storage, conn_factory=connection
+                ),
+                snapshots=ExaDeepSnapshotResolverProvider(storage=storage, conn_factory=connection),
+                projector=ExaEntityResearchProjectionBuilder(
+                    storage=storage, conn_factory=connection
+                ),
+                conn_factory=connection,
+                observation_window="b8-intent-cap",
+                # The live shape: a confirmed directive's questions, joined, already near the cap
+                # and then extended by the follow-up augmentation inside ``execute``.
+                research_intent="Answer the confirmed qualitative questions with evidence. " * 40,
+                freshness_policy_ref="freshness:b8-intent-cap-v1",
+                freshness_seconds=3_600,
+                cost_cents_reserved_per_bundle=Decimal("8"),
+                entity_research_job_id=uuid4(),
+            )
+
+            async def _unreachable(operation: Any) -> Any:
+                raise AssertionError("a refused request must never reserve or settle an operation")
+
+            with pytest.raises(EntityResearchGovernedRejection) as refused:
+                await action.execute(
+                    GovernedResearchToolRequest(
+                        research_run_id=uuid4(),
+                        job_id=uuid4(),
+                        subject_type=ResearchSubjectType.ACCOUNT,
+                        target_entity_id=fixture.account_id,
+                        agent_turn_id=uuid4(),
+                        agent_execution_id=uuid4(),
+                        tool_call_id=uuid4(),
+                        tool_name="research_account_deep",
+                        tool_version=1,
+                        tool_input_sha256="b" * 64,
+                        field_plan_ref="field-plan:b8-intent-cap",
+                        source_plan_ref="source-plan:b8-intent-cap",
+                        field_keys=("account.operational_pain",),
+                        source_keys=(EXA_DEEP_SOURCE_KEY,),
+                        field_source_authority=(
+                            FieldSourceAuthority(
+                                field_key="account.operational_pain",
+                                source_keys=(EXA_DEEP_SOURCE_KEY,),
+                            ),
+                        ),
+                        budget_reservation_key="budget:b8-intent-cap",
+                        idempotency_key="idem:b8-intent-cap",
+                    ),
+                    before_dispatch=_unreachable,
+                    settle_terminal=_unreachable,
+                )
+
+            payload = json.loads(refused.value.render())
+            assert payload["error"] == "governed_research_rejection"
+            assert payload["code"] == "research_request_shape_rejected"
+            assert payload["recoverable"] is True
+            assert "1000-character product cap" in payload["detail"]
+            # Nothing was bought: no operation row exists for the refused call.
+            operations = await conn.execute(
+                text("SELECT count(*) FROM external_research_operation")
+            )
+            assert operations.scalar_one() == 0
 
     run_async(scenario())
 
