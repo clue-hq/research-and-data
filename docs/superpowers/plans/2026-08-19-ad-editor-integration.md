@@ -393,6 +393,12 @@ consolidated browser sweep, both documents restored node-identical.
 
 ## 5. Founder decision register (rule before the phase that names them)
 
+**Status 2026-08-20: ALL TWELVE CLOSED.** D1–D6 and D11–D12 were ruled through the disparity
+inventory's founder-annotation passes and are folded into the frozen
+`docs/specs/ad-editor-integration/ad-inspector-mapping-contract.md` (the normative record);
+D7–D10 were closed 2026-08-20 as recommended (contract amendment 3). Nothing in this table
+gates AD-R/AD0/AD1 anymore.
+
 | # | Decision | Gates | Recommendation |
 |---|---|---|---|
 | **D1** | **On-canvas direct manipulation in v1?** (drag/resize/rotate handles, double-click text edit — engine-ready, but the dummy shows no handles; selection outlines are the only ratified canvas chrome) | AD-R / Lane C | Ship **selection + move/resize** in v1 with the minimal SVG handle chrome presented as explicit founder options (screenshots) before building; defer rotate/text-overlay to v1.1. An ad editor whose canvas cannot be dragged reads as broken in a way the web editor did not. |
@@ -401,10 +407,10 @@ consolidated browser sweep, both documents restored node-identical.
 | **D4** | Tool palette / node insertion in v1 (authored-but-unbuilt in the dummy) | AD-R / AD4 | Out of v1 (§7 register); inserting content stays agent-driven, matching the web editor's node-op posture. |
 | **D5** | Gallery: do ad/scene documents enter the rail feed now? | AD2 | Yes — kind-aware feed with the ratified collateral type; card body stays the honest no-thumbnail state (or gate a cheap `/export-preview` thumbnail behind evidence). |
 | **D6** | Shape/group/frame selection fallback schema (§5 rule for kinds the dummy never designed) | AD-R | Layout-only fallback, mirroring the web §5 precedent. |
-| **D7** | Konva fallback: extract or drop? | AD1 | Drop — CanvasKit only; the software-surface fallback already covers WebGL-less environments. |
-| **D8** | `/asset-store/{digest}` + `/font-library` serving under the platform origin | AD1 | Narrow BFF passthrough without the workspace header (browser never leaves our origin; no CORS games). |
-| **D9** | Engine-stamp mismatch UX in the platform shell | AD1 | Loud banner + read-only canvas (never silent), mirroring the standalone editor's posture — wording proposed to founder first (new user-facing state). |
-| **D10** | CAS conflict posture: web-style reload-and-drop vs editQueue's optimistic reconciliation | AD3 | Web-style for v1 (honest + already ratified UX); revisit if editing feels laggy. |
+| **D7** | Konva fallback: extract or drop? | AD1 | **RULED 2026-08-20 (founder): as recommended.** Drop — CanvasKit only; the software-surface fallback already covers WebGL-less environments. |
+| **D8** | `/asset-store/{digest}` + `/font-library` serving under the platform origin | AD1 | **RULED 2026-08-20 (founder): as recommended.** Narrow BFF passthrough without the workspace header (browser never leaves our origin; no CORS games). |
+| **D9** | Engine-stamp mismatch UX in the platform shell | AD1 | **RULED 2026-08-20 (founder): as recommended.** Loud banner + read-only canvas (never silent), mirroring the standalone editor's posture — wording proposed to founder first (new user-facing state). |
+| **D10** | CAS conflict posture: web-style reload-and-drop vs editQueue's optimistic reconciliation | AD3 | **RULED 2026-08-20 (founder): as recommended.** Web-style for v1 (honest + already ratified UX); revisit if editing feels laggy. |
 | **D11** | Multi-page scenes: v1 = single-page ad ("one ad is one artifact" per the dummy contract) with multi-page/PageRail deferred? | AD-R | Yes — v1 single page; multi-artboard workspace is §7 future work. |
 | **D12** | Export JPEG: drop the dummy option or add the engine format (an enumerated §8 engine change)? | AD-R | Drop in v1 (§2 hidden); PNG scale covers the use case. |
 
