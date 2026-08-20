@@ -478,16 +478,33 @@ export function sceneChangeToOperation(
  * §1.1 is px-only (a `PageOutputSize.physical` a print page might carry is
  * therefore not preserved — a page authored in px has no physical output, and
  * the normalizer says so).
+ *
+ * BOTH dimensions are floored here, not just the typed one. `normalizePageSize`
+ * SUBSTITUTES 1 for any non-finite or non-positive value
+ * (`pageGeometry.ts` `normalizePositiveDimension`) — a silent guess, and
+ * exactly what the null contract forbids — so a page whose displayed size
+ * cannot state one of its dimensions refuses the write instead of turning a
+ * width edit into a 1px-tall document. The floor is §1.1's own "min 1", so a
+ * sub-pixel page is refused rather than rounded.
  */
 function pxPageSizeOperation(
   page: Page,
   width: number,
   height: number,
-): Operation {
+): Operation | null {
+  if (!isUsablePixelDimension(width) || !isUsablePixelDimension(height)) {
+    return null;
+  }
   return updatePageSize(
     page,
     normalizePageSize({ height, preset: "custom", unit: "px", width }),
   );
+}
+
+/** §1.1: a page dimension the inputs can honestly state — finite, and at least
+ * the contract's one pixel. */
+function isUsablePixelDimension(value: number): boolean {
+  return Number.isFinite(value) && value >= 1;
 }
 
 /**
@@ -552,8 +569,8 @@ export function sceneCanvasChangeToOperation(
     case "customHeight": {
       const typed = finiteNumber(value);
       // Min 1 is the contract's floor and the engine's (a non-positive page is
-      // LUMV0121); `normalizePageSize` would silently substitute 1 for a bad
-      // number, which is the guess the null contract forbids.
+      // LUMV0121). The PRESERVED dimension gets the same floor inside
+      // `pxPageSizeOperation`, which is where the refusal is explained.
       if (typed === null || typed < 1) {
         return null;
       }

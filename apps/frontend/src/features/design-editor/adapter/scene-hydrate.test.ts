@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { it } from "node:test";
+import { fileURLToPath } from "node:url";
 import type { Scene } from "../engine/scene/contracts";
 import {
   AD_PAGE_ID,
@@ -15,11 +18,25 @@ import {
   adTokenText,
 } from "./__fixtures__/scene-nodes";
 import {
+  CUSTOM_SIZE_PRESET,
+  SIZE_PRESETS,
   hydrateSceneCanvasState,
   hydrateSceneInspectorState,
   rootFrameId,
   sceneSelectionFor,
 } from "./scene-hydrate";
+
+/** The dummy ad inspector's own source, read off disk: a `.tsx` cannot be
+ * imported under this runner (`tsx --test`, no DOM), so the vocabulary guard
+ * below reads the literal instead. Same technique as
+ * `scene-engine-banners.test.ts`, which pins upstream banner copy this way. */
+const AD_INSPECTOR_SOURCE = readFileSync(
+  join(
+    dirname(fileURLToPath(import.meta.url)),
+    "../../chat-shell/components/image-inspector.tsx",
+  ),
+  "utf8",
+);
 
 /**
  * AD2.4: this file IS the ad-inspector mapping contract's §1 table for the
@@ -392,6 +409,42 @@ it("§1.1: a non-preset page is Custom, with its W/H in px", () => {
   assert.equal(state.sizePreset, "Custom");
   assert.equal(state.customWidth, "1200");
   assert.equal(state.customHeight, "628");
+});
+
+it("§1.1: a PRESET-matching page hydrates its real W/H too — the Custom boxes never open on a number the page does not have", () => {
+  // AD4.0 review finding: the boxes appear the moment the user picks "Custom"
+  // from the select, on a page that until that instant matched a preset. While
+  // these two fields were filled only in the no-preset case, that reveal
+  // showed the shared DEFAULT_STATE seed (1200x1200) — proven in the browser on
+  // a 1080x1920 page — and the user then edited from a fabricated basis. The
+  // write is the exact inverse of this function, so this function may not
+  // display a size the page does not have.
+  const square = hydrateSceneCanvasState(SCENE, AD_PAGE_ID);
+  assert.equal(square.sizePreset, "Linkedin square (1:1) - 1200x1200");
+  assert.equal(square.customWidth, "1200");
+  assert.equal(square.customHeight, "1200");
+  const story = hydrateSceneCanvasState(withPageSize(1080, 1920), AD_PAGE_ID);
+  assert.equal(story.sizePreset, "Story (9:16) - 1080x1920");
+  assert.equal(story.customWidth, "1080");
+  assert.equal(story.customHeight, "1920");
+});
+
+it("§1.1: the preset vocabulary is ONE list — the dummy's options are hydrate's labels plus Custom", () => {
+  // The three labels live in the dummy (`SIZE_PRESETS` in `image-inspector.tsx`)
+  // and their sizes live in the table above, which AD4.0's WRITE also reads. A
+  // relabel on one side alone breaks hydration's match AND makes the write
+  // silently return null, with nothing saying so — so the two lists are
+  // cross-checked against the dummy's actual source text, the same technique
+  // `scene-engine-banners.test.ts` uses to pin upstream banner copy.
+  const literal = /const SIZE_PRESETS = \[([\s\S]*?)\] as const;/.exec(
+    AD_INSPECTOR_SOURCE,
+  );
+  assert.ok(literal, "image-inspector.tsx no longer declares a SIZE_PRESETS literal");
+  const options = [...literal[1].matchAll(/"([^"]*)"/g)].map((match) => match[1]);
+  assert.deepEqual(options, [
+    ...SIZE_PRESETS.map((preset) => preset.label),
+    CUSTOM_SIZE_PRESET,
+  ]);
 });
 
 it("§1.1: the canvas Background is the ROOT FRAME's fill, not the page background", () => {

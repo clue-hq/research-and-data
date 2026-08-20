@@ -697,15 +697,58 @@ it("§1.1 Custom W/H: the preserved dimension is what the panel DISPLAYS, not th
   );
 });
 
-it("§1.1 Custom W/H: a non-px page's unit never rides along — the write is always px-authored", () => {
-  // ONE field edited: the page's geometry unit. A `{...page.size}` spread would
-  // carry `mm` metadata beside px numbers; re-minting through the engine's own
-  // normalizer cannot.
+it("§1.1 Custom W/H: the written size is CANONICAL whatever unit the stored page carries", () => {
+  // ONE field edited: the page's geometry unit. Scope, corrected after review —
+  // this does NOT discriminate against the plan's `{...page.size}` spread,
+  // which forces `unit:"px"` of its own accord, and `pagePixelSize` reads the
+  // raster rather than the unit, so both routes ignore the `mm` here. What it
+  // pins is that the OUTPUT is the engine's canonical shape and is independent
+  // of the stored unit: a `pt` box, a freshly minted px `source` and raster —
+  // never the page's own `mm` riding through.
   const scene = clone(SCENE);
   scene.pages[AD_PAGE_ID].size.unit = "mm";
   assert.deepEqual(
     applyCanvas("customHeight", "1350", scene),
     updatePage(AD_PAGE_ID, { size: set(pxPage(1200, 1350)) }),
+  );
+});
+
+/** A page whose DISPLAYED px size is not a usable number: the px metadata is
+ * dropped so `pagePixelSize` falls through to the layout box (its documented
+ * last resort), and that box carries the degenerate value. Derived from the
+ * harvest, one dimension at a time. */
+function degeneratePage(axis: "height" | "width", value: number): Scene {
+  const scene = clone(SCENE);
+  const page = scene.pages[AD_PAGE_ID];
+  page.size = { ...page.size, output: undefined, source: undefined };
+  page.size[axis] = value;
+  return scene;
+}
+
+it("§1.1 Custom W/H: a preserved dimension that is not a usable px number is REFUSED, never defaulted to 1", () => {
+  // `normalizePageSize` substitutes 1 for any non-finite or non-positive
+  // dimension (`pageGeometry.ts` `normalizePositiveDimension`) — a silent guess,
+  // and exactly what the null contract forbids. The typed number is guarded, so
+  // the preserved one must be too, or a broken page turns a width edit into a
+  // 1px-tall document.
+  for (const bad of [0, -20, 0.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+    assert.equal(
+      applyCanvas("customWidth", "1080", degeneratePage("height", bad)),
+      null,
+      `height ${bad}`,
+    );
+    assert.equal(
+      applyCanvas("customHeight", "1080", degeneratePage("width", bad)),
+      null,
+      `width ${bad}`,
+    );
+  }
+  // The refusal is about the PRESERVED dimension only, so the broken axis is
+  // still repairable by typing into it — the typed number replaces the value
+  // that could not be stated, and nothing is guessed.
+  assert.deepEqual(
+    applyCanvas("customHeight", "1080", degeneratePage("height", 0)),
+    updatePage(AD_PAGE_ID, { size: set(pxPage(1200, 1080)) }),
   );
 });
 

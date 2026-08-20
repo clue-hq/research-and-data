@@ -61,6 +61,10 @@ import {
  *
  * A canvas event states something positive rather than merely missing:
  *
+ *   • `detail.selectionType` is `"canvas"` — the schema that raised it says so
+ *     itself (`image-inspector.tsx`'s `AdCanvasInspector` stamps it, and every
+ *     controller puts it on the wire, `use-inspector-controller.ts:196-213`).
+ *     This is the fact stated directly rather than inferred from an absence.
  *   • `detail.selectionId` is exactly `null` — the controller HAS addressing
  *     and that addressing says "no node is selected". An event carrying no
  *     addressing at all (the dummy fixture path, `dispatchInspectorEvent` with
@@ -158,6 +162,7 @@ export function useSceneInspectorWrites({
         documentVersion?: unknown;
         property?: unknown;
         selectionId?: unknown;
+        selectionType?: unknown;
         value?: unknown;
       } | null;
       if (!detail || typeof detail.property !== "string") return;
@@ -167,6 +172,8 @@ export function useSceneInspectorWrites({
       // `!== "string"`) is the point: an addressed "nothing is selected", not
       // an event that simply carries no addressing.
       if (detail.selectionId === null) {
+        // The raising schema names itself — no inference from an absence.
+        if (detail.selectionType !== "canvas") return;
         if (
           typeof detail.artifactId !== "string" ||
           detail.artifactId !== artifactIdRef.current

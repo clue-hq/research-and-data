@@ -220,7 +220,10 @@ export const SIZE_PRESETS = [
   { height: 1920, label: "Story (9:16) - 1080x1920", width: 1080 },
 ] as const;
 
-const CUSTOM_SIZE_PRESET = "Custom";
+/** The select's fourth option — the one that names no size and reveals the W/H
+ * inputs instead. Exported for the vocabulary guard that cross-checks this
+ * table against the dummy's own option list. */
+export const CUSTOM_SIZE_PRESET = "Custom";
 
 /** Engine numbers are floats (`1056.0`); the inputs are strings. A non-finite
  * value has nothing truthful to show, so it shows nothing. */
@@ -467,11 +470,12 @@ export function hydrateSceneInspectorState(
 /**
  * §1.1: the canvas (page) schema — the state an EMPTY selection hydrates.
  *
- * Two rows: the size preset, matched on the page's pixel size, and the
- * Background, which is the ROOT FRAME's first fill (founder ruling — the
- * page's own `background` property is not the edit target and is not read
- * here). With no root frame the Background is the ColorControl none state and
- * its writes are no-ops (the null contract).
+ * Two rows: the size preset, matched on the page's pixel size (with the Custom
+ * W/H pair always stating that same pixel size, whether or not a preset
+ * matched), and the Background, which is the ROOT FRAME's first fill (founder
+ * ruling — the page's own `background` property is not the edit target and is
+ * not read here). With no root frame the Background is the ColorControl none
+ * state and its writes are no-ops (the null contract).
  */
 export function hydrateSceneCanvasState(
   scene: Scene,
@@ -486,10 +490,16 @@ export function hydrateSceneCanvasState(
       (candidate) => candidate.width === width && candidate.height === height,
     );
     state.sizePreset = preset ? preset.label : CUSTOM_SIZE_PRESET;
-    if (!preset) {
-      state.customWidth = numberText(width);
-      state.customHeight = numberText(height);
-    }
+    // ALWAYS, including when a preset matched (AD4.0 review finding, proven in
+    // the browser): the W/H boxes are revealed by picking "Custom" in the
+    // select, which happens on a page that matched a preset a moment earlier.
+    // Filling them only in the no-preset case left that reveal showing the
+    // shared dummy default (1200x1200) on, say, a 1080x1920 page — a size the
+    // page does not have, which the user then edits from. The write is the
+    // exact inverse of this function, so this function may never display a
+    // number the page cannot state.
+    state.customWidth = numberText(width);
+    state.customHeight = numberText(height);
   }
 
   const frameId = page ? rootFrameId(scene, pageId) : null;

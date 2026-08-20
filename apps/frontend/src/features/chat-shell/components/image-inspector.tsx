@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import type { SceneInspectorState } from "@/features/design-editor/adapter/scene-hydrate";
 import type { ChatShellInspectorSelection } from "../model/chat-shell";
 import {
@@ -345,13 +345,26 @@ function AdCanvasInspector({
   const controller = useInspectorController([], "canvas", initial, addressing);
   const { setValue, state, toggleSection } = controller;
   // §2 delta (contract row 1): Custom reveals W/H (px only). AD4.0 binds the
-  // pair to the controller — they were the last designed ad control still
-  // holding local draft state, so they dispatched nothing and could never
-  // write. They now seed and commit exactly like every sibling field (AD2.4
-  // hydrates them only when the page matches no preset, which is exactly when
-  // this pair is on screen), and, like §1.2's Size box, they fire per
-  // keystroke: `InspectorInput`'s blur/Enter `onCommit` is opt-in and no ad
-  // row opts in.
+  // pair to the write seam — they were the last designed ad control still
+  // holding draft state and dispatching nothing at all.
+  //
+  // They COMMIT ON BLUR/ENTER, not per keystroke (`InspectorInput`'s opt-in
+  // `onCommit`, the W4.2 ratified commit model). This is upstream parity, not
+  // a local preference: the standalone editor's own page W/H fields are
+  // `NumberField`s committing the same way (`DocumentPageSection.tsx:105-118`).
+  // Per keystroke, typing "108" persisted THREE document versions and left the
+  // page at 108px wide — proven in the browser at review — so one digit typed
+  // before switching tabs would durably resize the ad to 1px. The draft below
+  // is what the user sees while typing; only the commit reaches the seam.
+  // (§1.2's Size box keeps its per-keystroke behaviour: a font size is not a
+  // page resize, and changing it is not this step's row.)
+  const [drafts, setDrafts] = useState({
+    customHeight: state.customHeight,
+    customWidth: state.customWidth,
+  });
+  const commitCustomSize = (key: "customHeight" | "customWidth") => {
+    if (drafts[key] !== state[key]) setValue(key, drafts[key]);
+  };
   return (
     <>
       <Section id="dimensions" label="Dimensions" open={state.openSections.dimensions} toggle={() => toggleSection("dimensions")}>
@@ -359,8 +372,8 @@ function AdCanvasInspector({
         {state.sizePreset === "Custom" ? (
           <InspectorField label="Custom size">
             <div className={styles.fieldGrid}>
-              <InspectorInput ariaLabel="Custom width" onChange={(value) => setValue("customWidth", value)} prefix="W" value={state.customWidth} />
-              <InspectorInput ariaLabel="Custom height" onChange={(value) => setValue("customHeight", value)} prefix="H" value={state.customHeight} />
+              <InspectorInput ariaLabel="Custom width" onChange={(value) => setDrafts((current) => ({ ...current, customWidth: value }))} onCommit={() => commitCustomSize("customWidth")} prefix="W" value={drafts.customWidth} />
+              <InspectorInput ariaLabel="Custom height" onChange={(value) => setDrafts((current) => ({ ...current, customHeight: value }))} onCommit={() => commitCustomSize("customHeight")} prefix="H" value={drafts.customHeight} />
             </div>
           </InspectorField>
         ) : null}
