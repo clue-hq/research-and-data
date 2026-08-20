@@ -32,7 +32,13 @@ root, so `CLUE_DATABASE_URL` was set, the DB-gated suites stopped skipping and r
 `tests/test_config_settings.py` cases assert on auth settings the borrowed `.env` overrode.
 **Never leave a borrowed `.env` in place when running `make check`.**
 
-## The audit's verdict — and the two findings that change AD1's shape
+## The audit's verdict — and three findings for the AD2 mount tasks
+*(Orchestrator correction 2026-08-20: an earlier draft routed F1–F3 at AD1 — wrong. AD1 is pure
+engine substrate with no mounts. F1 is exactly AD2.1's scope [feed widening + the
+`toProjectArtifact` type mapping, both already steps there]; F2 is exactly AD2.7's step 2
+[`editor-surface.tsx` gains the ad dock]; F3 resolves in AD2.7's session wiring [gate the web
+session/theme fetch by artifact kind when the scene session mounts beside it]. Nothing about
+AD1's shape changes.)*
 
 Full evidence: `.superpowers/sdd/2026-08-20-ad-editor-integration-execution-plan/task-ad0.5-report.md`.
 
@@ -60,15 +66,17 @@ consume that feed, so `chatDockContent` can never return `"ad-inspector"`.
 dock on `artifactKind === "web"`; `ImageInspector` has no call site on that route.
 
 **Net: the AD0.4 inspector surface is not merely inert — it is currently unmountable.** AD2.1's
-feed widening is necessary but not sufficient; the artifact route needs its own ad branch too,
-or the ad dock will only ever appear on the chats route.
+feed widening is necessary but not sufficient; the artifact route needs its own ad branch too
+(that branch is AD2.7's step 2 in the execution plan), or the ad dock will only ever appear on
+the chats route.
 
 **F3 — one console error per ad-artifact load.** `EditorSurface` calls `useWebEditingSession`
 unconditionally, which calls `useWebTheme` with no kind guard, so an ad document triggers
 `GET …/documents/{id}/web/theme` → **409**. Caught, non-fatal, nothing renders wrong — but the
 AD0 checklist's "zero console errors" row is therefore **not met** on the artifact route.
 Deliberately not fixed in the audit: the minimal fix threads artifact kind into a hook the live
-web editor shares, and AD1 is about to rewire that seam anyway.
+web editor shares, and AD2.7 rewires that seam anyway (the scene session mounts beside the web
+one, kind-gated).
 
 ## Operational facts AD1 will need
 
@@ -126,8 +134,9 @@ web editor shares, and AD1 is about to rewire that seam anyway.
   schema. §2.7 hides the button *schema*; the layer list is scaffolding AD2 replaces.
 - AD0.4: three export CSS rules are deliberately left unreferenced so Gate G-E's "restore
   verbatim" stays a pure JSX revert.
-- **AD0.5 → AD1:** F3 (the ad-document 409 on `…/web/theme`).
-- **AD0.5 → AD1 / AD2.1:** F1 + F2 (the two missing mounts).
+- **AD0.5 → AD2.7:** F3 (the ad-document 409 on `…/web/theme`) and F2 (the artifact route's
+  missing ad dock — AD2.7 step 2).
+- **AD0.5 → AD2.1:** F1 (feed widening + the `toProjectArtifact` type mapping).
 
 ## Method notes
 
