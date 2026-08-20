@@ -48,8 +48,8 @@ import {
   subscribeTextMeasurementStatus,
   textMeasurementStatusSnapshot,
 } from "../engine/scene/canvaskit/loadCanvasKit";
-import type { NodeId, PageId, Scene } from "../engine/scene/contracts";
-import type { HitResult } from "../engine/scene/wasmEngine";
+import type { NodeId, Operation, PageId, Scene } from "../engine/scene/contracts";
+import type { EngineApplyOutcome, HitResult } from "../engine/scene/wasmEngine";
 import {
   defaultWorkspaceViewport,
   screenToWorkspace,
@@ -120,8 +120,13 @@ import styles from "./scene-artifact-canvas.module.css";
  * nothing else. `data-scene-selected-node` stays on the canvas as the
  * machine-readable assertion (AD2.5 finding 4, founder-confirmed).
  *
- * Still no write path: no operations, no edits. When the wasm stamp handshake
- * fails the scene still renders — from the server's own snapshot — and
+ * AD3.2 adds the ONE seam the write path needs: `applyOperations` on the
+ * controls below, which hands a batch to the live engine and repaints. The
+ * canvas still owns no write POLICY — what to write, when to persist it and
+ * what a rejection says all live in `hooks/use-scene-manual-edits.ts`.
+ *
+ * When the wasm stamp handshake fails the scene still renders — from the
+ * server's own snapshot — no operation can be applied at all, and
  * `engineDisabled` rides upward. A click in that state is a **no-op**: with no
  * engine there is no hit test, and a guess from descriptors would be a
  * selection the engine never agreed to. Gate G-D (founder, 2026-08-21) closed
@@ -131,6 +136,17 @@ import styles from "./scene-artifact-canvas.module.css";
  */
 
 export interface SceneCanvasControls {
+  /**
+   * AD3.2: apply operations to the LIVE engine and repaint — the optimistic
+   * half of the write path, which must land before anything is persisted (the
+   * queue reconciles the server's document against the local scene at drain,
+   * so persisting first would report divergence on every accepted edit).
+   *
+   * Null when the engine is unavailable (D9 read-only) — the caller must never
+   * persist what the engine never applied. A rejected outcome is returned
+   * rather than thrown: the caller shows the engine's own message.
+   */
+  applyOperations(operations: Operation[]): EngineApplyOutcome | null;
   /** Point→node hit-test in absolute PAGE space (scene units), straight from
    * the engine. Null when the engine is unavailable — a disabled engine
    * refuses to answer rather than guessing from descriptors (AD2.5 consumes
@@ -362,6 +378,21 @@ function SceneDocumentCanvas({
   // two disagreeing.
   const controls = useMemo<SceneCanvasControls>(
     () => ({
+      applyOperations: (operations) => {
+        if (!engine) {
+          return null;
+        }
+        const outcome = engine.applyOperations(operations);
+        // `refresh()` is BOTH halves of "the canvas owns it": it adopts the
+        // engine's post-apply scene as the rendered one (repaint) and, through
+        // the effect below, mirrors that same scene up to the session — which
+        // rehydrates the inspector and rebuilds the layer tree. A rejected
+        // batch changed nothing, so it repaints nothing.
+        if (outcome.accepted) {
+          refresh();
+        }
+        return outcome;
+      },
       hitTest: (x, y) =>
         engine && pageId ? engine.hitTest(pageId, x, y) : null,
       refresh,

@@ -22,7 +22,7 @@ import type { NodeId, PageId, Scene } from "../engine/scene/contracts";
 import { fetchBrandKitDetail } from "../engine/scene/documentStore";
 import { collectKitFontFaceRefs } from "../engine/scene/kitFonts";
 import { fetchFontLibrary } from "../engine/scene/libraryFonts";
-import type { StructuredEdit } from "../engine/scene/structuredEdits";
+import { useSceneInspectorWrites } from "./use-scene-inspector-writes";
 
 /**
  * AD2.7: the ad (scene) editing session — the twin of
@@ -49,43 +49,17 @@ import type { StructuredEdit } from "../engine/scene/structuredEdits";
  * `onSceneChange` instead of fetching a second copy that could disagree with
  * the one the engine is hit-testing. One fetch, one engine, one scene.
  *
- * Writes are NOT wired: `writes` is inert with `busy: false` (AD3 fills it),
- * and `addressing.documentVersion` is deliberately `null` — the W3.1 null
- * contract means "not addressable", which is exactly what a half-wired write
- * path must be. Nothing here can mutate a document.
+ * AD3.2 wires the writes: `writes` is the real manual-edits controller
+ * (`use-scene-manual-edits.ts`) and the inspector's events reach it through
+ * `use-scene-inspector-writes.ts`. The write is OPTIMISTIC — the live engine
+ * applies it, the canvas repaints and mirrors the new scene back through
+ * `onSceneChange`, and only then does the edit queue persist it; the reload
+ * nonce is bumped ONLY when the queue reports the server disagrees. The
+ * addressing triple's `documentVersion` stays `null` on this lane — the gate
+ * that replaces it is documented at its construction site below.
  */
 
-/** The write surface AD3 fills in. Shaped after the website lane's
- * `WebManualEdits` so the eventual controller drops straight in; every member
- * here is inert. */
-export interface SceneManualEdits {
-  /** Persist a structured-edit batch. AD3: today a no-op. */
-  applyEdits: (edits: readonly StructuredEdit[], intent?: string) => void;
-  busy: boolean;
-  clearMessages: () => void;
-  /** An inline error (a refused edit, or a transport failure). */
-  error: string | null;
-  /** A transient informational message (the 409 quiet-reload note). */
-  note: string | null;
-  redo: () => void;
-  /** Set the inline error from an adjacent path that fails before any edit
-   * exists. State only — the inspector already renders this slot. */
-  reportError: (message: string) => void;
-  undo: () => void;
-}
-
 export type SceneEditingSession = ReturnType<typeof useSceneEditingSession>;
-
-const NO_EDITS: SceneManualEdits = {
-  applyEdits: () => undefined,
-  busy: false,
-  clearMessages: () => undefined,
-  error: null,
-  note: null,
-  redo: () => undefined,
-  reportError: () => undefined,
-  undo: () => undefined,
-};
 
 const NO_ROWS: SceneLayerRow[] = [];
 
@@ -358,11 +332,28 @@ export function useSceneEditingSession({
     [kitFamilies, libraryFamilies],
   );
 
-  // W3.1's triple, ad-side. `documentVersion` is null until AD3: the scene
-  // lane's write path takes its own `base_version` from the edit queue, and a
-  // null here is the W3.1 "not addressable" contract — which is precisely what
-  // guarantees that no inspector interaction can become a write before AD3
-  // deliberately wires one.
+  // AD3.2: the real write path. The controller applies each operation to the
+  // live engine through the canvas seam, then persists it on the edit queue;
+  // the listener inside it is what turns an inspector event into an operation.
+  const writes = useSceneInspectorWrites({
+    canvasControls,
+    documentId: activeDocumentId,
+    onReload: onWriteReload,
+    primaryNodeId,
+    scene,
+  });
+
+  // W3.1's triple, ad-side. `documentVersion` stays NULL here, permanently and
+  // deliberately (AD3.2 ruling): the ad lane cannot honestly produce a document
+  // version — `documentStore.fetchDocument` does not parse `current_version`
+  // (read-only extracted code), the scene carries none, and fetching the
+  // document again just to read one integer would break this session's own
+  // "one fetch, one engine, one scene" principle above. The edit queue owns
+  // `base_version` internally (`editQueue.ts:110-113,152`), so nothing on this
+  // lane ever needed a copy. The write gate that replaces it asserts something
+  // strictly stronger — the event's selection IS this session's primary
+  // selection AND the live scene really carries that node — and lives in
+  // `use-scene-inspector-writes.ts`, where it is documented in full.
   const addressing = useMemo<InspectorEventAddressing>(
     () => ({
       artifactId: activeArtifactId,
@@ -378,12 +369,13 @@ export function useSceneEditingSession({
     canvasControls,
     fontOptions,
     hydrated,
-    /** One inline slot, write errors only for now — the rich-text and
-     * link-href rungs the website lane resolves above them have no ad
-     * equivalent (an ad has no in-canvas text session and no hrefs). */
-    inspectorError: NO_EDITS.error,
+    /** One inline slot, write errors only — the rich-text and link-href rungs
+     * the website lane resolves above them have no ad equivalent (an ad has no
+     * in-canvas text session and no hrefs), so the controller's error IS the
+     * precedence. */
+    inspectorError: writes.error,
     layerRows,
-    note: NO_EDITS.note,
+    note: writes.note,
     onSceneChange,
     onSelectCanvas,
     onSelectLayer,
@@ -392,14 +384,15 @@ export function useSceneEditingSession({
     onZoomChange,
     /** `[0]`, resolved against the live scene — what the inspector keys on. */
     primaryNodeId,
-    /** Undo/redo depth is not served by the document read, so the menu's
-     * entries stay disabled rather than offering a stack we cannot count. */
+    /** Undo/redo depth is not served by the document read, and AD3.3 owns the
+     * engine-side stacks, so the menu's entries stay disabled rather than
+     * offering a step that would do nothing. */
     redoDisabled: true,
     reloadNonce,
     selectedIds,
     selection,
     undoDisabled: true,
-    writes: NO_EDITS,
+    writes,
     /** The zoom to DISPLAY in the header menu (§1.10) — where a gesture left
      * the viewport when there was one, else the user's choice, else the snapped
      * fit the canvas reported. The `"100%"` fallback covers the frames before
