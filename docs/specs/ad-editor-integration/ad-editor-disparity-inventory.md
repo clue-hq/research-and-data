@@ -18,8 +18,9 @@ Date: 2026-08-19. Verified against:
 The web-document editor (`apps/editor/src/app/web/*`) is **not** part of this comparison.
 
 > **REVISION 2 — 2026-08-20.** The co-founder added four new inspector schemas to the dummy —
-> **auto-layout, rectangle, ellipse, group** — as an uncommitted 23-file delta (+663/−33) on top
-> of `c7f2bc5` in the checkout at `/Users/aryankeshri/Documents/clue-hq/clue-frontend`
+> **auto-layout, rectangle, ellipse, group** — a 23-file delta (+663/−33) on top of `c7f2bc5`
+> in the checkout at `/Users/aryankeshri/Documents/clue-hq/clue-frontend` **[now committed
+> locally as `32658ff`, 2026-08-20 — the AD0.1 lift pins against it]**
 > (new `ad-dummy-inspectors.tsx` 389 L; `image-inspector.tsx` dispatch extended;
 > `CHAT_SHELL_INSPECTOR_SELECTIONS` grown to 11; 16 new icons; `web-inspector.tsx` defensively
 > narrowed to its own 7 web kinds — the web editor is unaffected). **That checkout's working
@@ -223,7 +224,7 @@ annotation session's table reformat.)*
 
 ### 2.6 The four NEW schemas — auto-layout / rectangle / ellipse / group (added 2026-08-20)
 
-Source: `ad-dummy-inspectors.tsx` (uncommitted, `/Users/aryankeshri/Documents/clue-hq/clue-frontend`).
+Source: `ad-dummy-inspectors.tsx` (`/Users/aryankeshri/Documents/clue-hq/clue-frontend`, committed locally as `32658ff` 2026-08-20).
 Section composition per selection:
 
 | Section | auto-layout | rectangle | ellipse | group |
@@ -535,9 +536,9 @@ classified from DOM structure, not CSS.
 - **Revision-2 provenance (2026-08-20):** the four new schemas were read directly (full
 `ad-dummy-inspectors.tsx` + `git diff` of `image-inspector.tsx`, `inspector-primitives.tsx`,
 `web-inspector.tsx`, `model/chat-shell.ts`, `chat-shell.module.css`) in the
-`/Users/aryankeshri/Documents/clue-hq/clue-frontend` checkout, where they exist as an
-**uncommitted working-tree delta** on `c7f2bc5`. Until committed/pushed, that working tree is
-the only copy of this design — the lift will `cmp` against it. `web-inspector.tsx` (+32/−17)
+`/Users/aryankeshri/Documents/clue-hq/clue-frontend` checkout, where they existed as an
+uncommitted working-tree delta on `c7f2bc5` **[since committed locally as `32658ff`,
+2026-08-20; the AD0.1 lift `cmp`-verified against that commit]**. `web-inspector.tsx` (+32/−17)
 also changed upstream (defensive selection-narrowing), so the platform's lifted web-inspector
 copy is now behind the dummy by that delta — a re-lift consideration for AD0, functionally
 inert for the web editor.
