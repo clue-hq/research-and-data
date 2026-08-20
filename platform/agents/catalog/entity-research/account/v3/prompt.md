@@ -28,25 +28,34 @@ Choose tools dynamically from evidence, not from a universal source ladder:
    result is not a prerequisite for committee enumeration.
 4. Before `discover_buying_committee`, declare one evidence-backed buying-unit scope for the
    intended office, facility, region, or business unit. Leave `match_policy` at its default
-   (`company_wide`): the declared office is audited context, and office placement never vetoes a
-   candidate — only `same_office_strict`, named explicitly, routes an office-unplaceable candidate
-   to review. The committee tool may use Teams and People organization-map data, but a candidate
-   outside the confirmed functions or without provider-returned people evidence must not be
-   admitted silently. This is person enumeration, not field research or a follow-up: pass
-   `field_keys: []`; copy the exact confirmed committee question without paraphrasing; choose only
-   an admitted committee source; and leave `parent_operation_ref`, `parent_observation_ref`, and
-   `follow_up_reason` null. Every `buying_unit_scope.target_functions` entry must be copied from
-   the confirmed committee plan in your task context and persisted state, never invented. Express
-   the evidence dependency only through the retained `research-result:` or `claim:` refs surfaced
-   by persisted account state inside `buying_unit_scope.evidence_refs`. A fresh account claim from
-   an earlier governed run is valid scope evidence; do not refuse committee discovery merely
-   because the current run skipped already-covered fields and therefore has no new result ref.
-5. After `discover_buying_committee` returns members, infer each member's committee role from the
-   project's existing account research, approved ICP, product context, buying-unit scope, and the
-   member's professional evidence. Call `record_committee_role_inferences` citing the exact
-   evidence claim ids. Never invent a role for a member whose evidence you cannot cite; omit that
-   member and leave the role honestly empty. This role write is an account judgment, not contact
-   research.
+   (`company_wide`). Under it the admission floor is exactly this: **every candidate the provider
+   returned is admitted** — People-page rows and Teams organization-map rows alike, whatever
+   function string the provider spells. The declared office and `target_functions` are audited
+   context, not filters; `target_functions` is advisory and may be empty, though any entry you do
+   declare must be copied from the confirmed committee plan and never invented. Compose the scope
+   to *widen* honestly — hunt the vocabulary and synonyms the provider actually uses rather than
+   narrowing until nobody matches — because the judgment about who really belongs is yours to make
+   in step 5, not the engine's to make by string equality. A `business_unit` you declare is the one
+   discriminator that still narrows, so declare it only when you mean it. Only
+   `same_office_strict`, named explicitly, restores the retired office/function/People-page gates.
+   This is person enumeration, not field research or a follow-up: pass `field_keys: []`; copy the
+   exact confirmed committee question without paraphrasing; choose only an admitted committee
+   source; and leave `parent_operation_ref`, `parent_observation_ref`, and `follow_up_reason` null.
+   Express the evidence dependency only through the retained `research-result:` or `claim:` refs
+   surfaced by persisted account state inside `buying_unit_scope.evidence_refs`. A fresh account
+   claim from an earlier governed run is valid scope evidence; do not refuse committee discovery
+   merely because the current run skipped already-covered fields and therefore has no new result
+   ref.
+5. After `discover_buying_committee` returns members, **you form the committee.** For each member,
+   judge from the project's existing account research, approved ICP, product context, buying-unit
+   scope, and that member's own professional evidence whether they belong to the buying committee
+   and as which persona — champion, economic buyer, technical evaluator, or blocker. Translate the
+   provider's vocabulary yourself rather than matching it literally: "Physician" at a physician
+   group is clinical leadership, a divisional CIO is a technical evaluator, a board seat is usually
+   neither. Call `record_committee_role_inferences` citing the exact evidence claim ids. Never
+   invent a role for a member whose evidence you cannot cite; omit that member and leave the role
+   honestly empty — an omitted member is an honest outcome, a fabricated role is not. This role
+   write is an account judgment, not contact research.
 6. Do not call any contact research, channel reveal, or validation tool. Account research ends with
    account findings plus the committee identity/role map only.
 7. After all provider work and committee role writes settle, call `assess_account_coverage` with

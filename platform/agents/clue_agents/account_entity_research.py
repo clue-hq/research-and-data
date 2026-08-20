@@ -22,22 +22,29 @@ class AccountBuyingUnitScope(_FrozenModel):
     """The exact office/facility/business unit the account agent elects to map.
 
     At least one location discriminator and retained account-evidence reference are mandatory.
-    The provider may enumerate a broader organization, but only candidates matching this scope may
-    be projected as committee members; ambiguous rows become durable review, never silent admits.
+    The provider may enumerate a broader organization; the scope records, in durable audited form,
+    which buying unit the agent set out to map.
 
-    ``match_policy`` chooses how the declared office participates in that match:
+    ``match_policy`` chooses how much of that declaration is *enforced*:
 
-    - ``company_wide`` (default, founder ruling 2026-08-20) — the office is descriptive and
-      audited, but office *placement* never vetoes a candidate.  A committee at an HQ level of a
-      multi-site organization is a company-wide buying unit; provider profile values routinely
-      cannot evidence which site a person sits at, and vetoing on that admitted nobody at all on
-      the first complete live execution (913-person, multi-site physician group: seven real
-      candidates, zero admitted).  The identity gates are untouched — current-employer /
-      organization-relationship matching and target-function matching still decide admission.
-    - ``same_office_strict`` — the retired policy, still selectable explicitly: a candidate whose
-      provider values evidence no declared location tier routes to durable review.
+    - ``company_wide`` (default, founder rulings 2026-08-20) — the **truth floor is
+      provider-returned, and nothing more**.  Every candidate the provider returned is admitted:
+      People rows and Teams-organization-map rows alike, whatever function string the provider
+      spells.  The declared office, functions and source path are descriptive, audited context.
+      Two live executions forced this.  The first (913-person, multi-site physician group) fetched
+      seven real candidates and admitted zero, because no provider profile value could place
+      anyone at the declared headquarters.  The second, after the office veto retired, admitted
+      one of the same seven: two current CXOs were excluded because the plan said "Clinical" where
+      the provider says "Physician", and four more were routed to review only because their facts
+      arrived through Teams rather than People.  Vocabulary and persona judgment are the account
+      agent's work — taught by its operations manual, not enforced by string equality here.  A
+      *declared* ``business_unit`` still narrows admission: that is organization membership the
+      agent chose to assert, not geography and not a function synonym.
+    - ``same_office_strict`` — the retired policy, still selectable explicitly: office placement
+      vetoes, the target functions gate, and a candidate carrying no ``sumble_people`` fact routes
+      to durable review.
 
-    The ruling is a policy retirement, not a deletion: historical scopes replay byte-identically
+    The rulings are policy retirements, not deletions: historical scopes replay byte-identically
     under the policy they recorded.
     """
 
@@ -49,7 +56,12 @@ class AccountBuyingUnitScope(_FrozenModel):
     region: NonEmptyStr | None = None
     country: NonEmptyStr | None = None
     business_unit: NonEmptyStr | None = None
-    target_functions: tuple[NonEmptyStr, ...] = Field(min_length=1, max_length=20)
+    # Advisory since the provider-returned truth floor (2026-08-20): the functions the agent
+    # copied from the confirmed committee plan, kept as durable audited intent and still validated
+    # against that plan so the agent cannot widen it. Under ``company_wide`` they no longer gate
+    # admission, so declaring none is a legal, honest answer — the field is not removed, because
+    # ``same_office_strict`` still enforces it and the record of intent is worth keeping.
+    target_functions: tuple[NonEmptyStr, ...] = Field(default=(), max_length=20)
     evidence_refs: tuple[NonEmptyStr, ...] = Field(min_length=1, max_length=20)
     match_policy: Literal["company_wide", "same_office_strict"] = "company_wide"
 

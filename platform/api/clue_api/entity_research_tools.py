@@ -283,6 +283,15 @@ class ProviderResultLineage(BaseModel):
     # value, so the owning provider reader must enumerate those refs for relational validation.
     # An empty tuple preserves the ordinary one-operation/one-snapshot contract.
     claim_source_snapshot_refs: tuple[NonEmptyStr, ...] = ()
+    # The source keys of those same component snapshots. A discovered contact's claims are born
+    # against whichever component actually supplied them, which is not always the source key the
+    # semantic tool named for the operation as a whole: Sumble's committee acquisition buys the
+    # Teams organization map and the People page in one operation, and a member the map returned
+    # carries only ``sumble_teams`` facts (founder ruling 2026-08-20 — the truth floor is
+    # provider-returned, whichever page returned it). The owning provider reader enumerates them
+    # from its own ledger, so this stays a bounded widening to that operation's paid components
+    # rather than an open door. An empty tuple keeps the strict one-source contract.
+    claim_source_keys: tuple[NonEmptyStr, ...] = ()
     raw_response_artifact_refs: tuple[NonEmptyStr, ...] = Field(min_length=1)
     retained_result_artifact_refs: tuple[NonEmptyStr, ...] = Field(min_length=1)
     normalized_result_artifact_ref: NonEmptyStr
@@ -2108,8 +2117,11 @@ class EntityResearchResultStore:
                         raise EntityResearchResultIntegrityError(
                             "result claim violates exact field/source authority"
                         )
-                    if subject_type is ResearchSubjectType.CONTACT and (
-                        str(row["source_key"]) != draft.operation.source_key
+                    if subject_type is ResearchSubjectType.CONTACT and str(
+                        row["source_key"]
+                    ) not in (
+                        draft.operation.source_key,
+                        *lineage.claim_source_keys,
                     ):
                         raise EntityResearchResultIntegrityError(
                             "discovered contact claim uses another causative source"

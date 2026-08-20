@@ -447,7 +447,7 @@ class SumbleEntityResearchLineageReader(ProviderResultLineageReader):
                 .mappings()
                 .first()
             )
-            component_snapshot_refs = await self._component_snapshot_refs(
+            component_snapshot_refs, component_source_keys = await self._component_snapshots(
                 conn,
                 operation=operation,
             )
@@ -462,6 +462,7 @@ class SumbleEntityResearchLineageReader(ProviderResultLineageReader):
             operation=operation,
             snapshot_ref=snapshot_ref,
             claim_source_snapshot_refs=component_snapshot_refs,
+            claim_source_keys=component_source_keys,
             raw_response_artifact_refs=tuple(
                 str(value) for value in row["raw_response_artifact_refs"]
             ),
@@ -476,19 +477,24 @@ class SumbleEntityResearchLineageReader(ProviderResultLineageReader):
             settled_cost_cents=Decimal(row["settled_cost_cents"]),
         )
 
-    async def _component_snapshot_refs(
+    async def _component_snapshots(
         self,
         conn: AsyncConnection,
         *,
         operation: ProviderOperationReservation,
-    ) -> tuple[str, ...]:
+    ) -> tuple[tuple[str, ...], tuple[str, ...]]:
         """Resolve claim-level snapshots from the immutable owning Sumble ledger.
+
+        Returns the component snapshot refs and the source keys that produced them.
 
         Account enrichment normalizes the organization lookup and the selected structured source
         into one aggregate entity-research snapshot, while every claim correctly retains the
         specific `account_gap_snapshot` that supplied it. Committee acquisition has the same
         shape for Teams and People. The generic result store must validate those claim refs against
-        provider-owned rows rather than incorrectly requiring the aggregate ref on every claim.
+        provider-owned rows rather than incorrectly requiring the aggregate ref on every claim —
+        or, for a discovered contact, the aggregate *source key*: a committee member the Teams
+        organization map returned carries only ``sumble_teams`` facts, and refusing those was the
+        last mechanical blocker on a provider-returned candidate.
         """
 
         try:
@@ -515,12 +521,15 @@ class SumbleEntityResearchLineageReader(ProviderResultLineageReader):
                 .mappings()
                 .all()
             )
-            return tuple(
-                sorted(
-                    f"account-gap-snapshot:{operation_id}:{row['source_key']}:"
-                    f"{row['request_fingerprint']}"
-                    for row in rows
-                )
+            return (
+                tuple(
+                    sorted(
+                        f"account-gap-snapshot:{operation_id}:{row['source_key']}:"
+                        f"{row['request_fingerprint']}"
+                        for row in rows
+                    )
+                ),
+                tuple(sorted({str(row["source_key"]) for row in rows})),
             )
         if self.provider_kind == "sumble_committee":
             rows = (
@@ -541,12 +550,15 @@ class SumbleEntityResearchLineageReader(ProviderResultLineageReader):
                 .mappings()
                 .all()
             )
-            return tuple(
-                sorted(
-                    f"committee-snapshot:{operation_id}:{row['source_key']}:"
-                    f"{row['request_fingerprint']}"
-                    for row in rows
-                )
+            return (
+                tuple(
+                    sorted(
+                        f"committee-snapshot:{operation_id}:{row['source_key']}:"
+                        f"{row['request_fingerprint']}"
+                        for row in rows
+                    )
+                ),
+                tuple(sorted({str(row["source_key"]) for row in rows})),
             )
         raise EntityResearchResultIntegrityError("unknown Sumble provider lineage kind")
 
@@ -1112,7 +1124,7 @@ class SumbleCommitteeAgentInputResolver(Protocol):
 
 
 class SumbleCommitteeSemanticResearchAction(EntityResearchProviderAction):
-    """Acquire Teams/People, enforce the declared office, then project admitted members."""
+    """Acquire Teams/People, apply the declared buying-unit scope, then project admitted members."""
 
     provider_kind = "sumble_committee"
 
@@ -1336,7 +1348,7 @@ class SumbleCommitteeSemanticResearchAction(EntityResearchProviderAction):
         selected: Sequence[CommitteePersonCandidate],
         budget_cap_cents: Decimal | None,
     ) -> CommitteeResult:
-        """Discover + identity-resolve the office-admitted buying unit, WITHOUT judging roles.
+        """Discover + identity-resolve the admitted buying unit, WITHOUT judging roles.
 
         Contract §5.2 steps 1-2: this provider action's job is discovery and identity — who is
         really in the declared buying unit, with provider evidence behind them. The committee *role*
@@ -1545,8 +1557,31 @@ class SumbleCommitteeSemanticResearchAction(EntityResearchProviderAction):
     def _office_candidates(
         candidates: Sequence[CommitteePersonCandidate], *, scope: AccountBuyingUnitScope
     ) -> tuple[tuple[CommitteePersonCandidate, ...], int, int]:
+        """Classify provider-returned candidates into selected / excluded / review-routed.
+
+        Under the default ``company_wide`` policy the floor is **provider-returned, and nothing
+        more** (founder rulings 2026-08-20). Three discriminators retired, in this order, each
+        after a live execution that admitted real people it should not have refused:
+
+        * office placement — a multi-site HQ committee is not evidenced by profile metros;
+        * the ``sumble_people`` grounding filter — a Teams-organization-map row is provider data
+          bought in the same paid operation, not a weaker species of truth;
+        * the ``target_functions`` string match — the provider's vocabulary is its own
+          ("Physician" where the plan says "Clinical", "Uncategorized" where it says nothing at
+          all), and reconciling vocabulary is agent judgment, not string equality.
+
+        What survives under ``company_wide`` is the one discriminator the agent *declares on
+        purpose*: a non-null ``business_unit`` is an assertion of organization membership, matched
+        against provider-returned team names and current-employer organization names. A candidate
+        the agent's own declared unit does not cover routes to review, never to silent admission.
+
+        ``same_office_strict``, selected by name, keeps all three retired tiers exactly as they
+        were, so every historical scope replays under the policy it recorded.
+        """
+
         selected: list[CommitteePersonCandidate] = []
         excluded = ambiguous = 0
+        strict = scope.match_policy == "same_office_strict"
         for candidate in candidates:
             people_facts = tuple(
                 fact
@@ -1590,10 +1625,16 @@ class SumbleCommitteeSemanticResearchAction(EntityResearchProviderAction):
                 scope.business_unit is None
                 or scope.business_unit.casefold() in business_unit_haystack
             )
-            function_match = any(
-                value.casefold() in function_haystack for value in scope.target_functions
+            # Retired under ``company_wide``: a provider-returned candidate is grounded by having
+            # been returned, whichever page returned them, and the provider's function vocabulary
+            # is not the confirmed plan's vocabulary.
+            grounded = bool(people_facts) if strict else True
+            function_match = (
+                any(value.casefold() in function_haystack for value in scope.target_functions)
+                if strict
+                else True
             )
-            if not people_facts:
+            if not grounded:
                 ambiguous += 1
             elif location_match and business_unit_match and function_match:
                 selected.append(candidate)
@@ -1651,10 +1692,29 @@ class SumbleCommitteeSemanticResearchAction(EntityResearchProviderAction):
             )
             if people_snapshot.response_artifact_key is None:
                 raise EntityResearchResultIntegrityError("People committee snapshot lacks evidence")
+            # The operation's snapshot_ref remains the People one: it names the whole semantic
+            # acquisition, and both component snapshots hang off the same operation id.
             snapshot_ref = (
                 f"committee-snapshot:{typed.operation_id}:{PEOPLE_SOURCE_KEY}:"
                 f"{people_snapshot.request_fingerprint}"
             )
+            # Every component snapshot this exact operation paid for is admissible provenance
+            # (founder ruling 2026-08-20 — the truth floor is provider-returned, and a Teams
+            # organization-map row is provider data bought in the same call). A member whose
+            # facts came only through Teams was previously refused here as "lacking direct People
+            # facts", which is how the live v9 review class would have suspended the job.
+            snapshot_ref_by_source = {
+                item.source_key: (
+                    f"committee-snapshot:{typed.operation_id}:{item.source_key}:"
+                    f"{item.request_fingerprint}"
+                )
+                for item in snapshots
+                if item.response_artifact_key is not None
+            }
+            provider_source_id_by_source = {
+                item.source_key: (item.provider_operation_id or str(typed.operation_id))
+                for item in snapshots
+            }
             subjects: list[ResearchDiscoveredSubjectProjection] = []
             for member in result.members:
                 candidate_claim_ids = [UUID(str(value)) for value in member.professional_claim_ids]
@@ -1668,17 +1728,17 @@ class SumbleCommitteeSemanticResearchAction(EntityResearchProviderAction):
                                            artifact_key, evidence_span, confidence,
                                            verification_status::text
                                     FROM claim WHERE id=ANY(:claim_ids)
-                                      AND source_key=:source_key
+                                      AND source_key=ANY(:source_keys)
                                       AND source_operation_ref=:operation_ref
-                                      AND source_snapshot_ref=:snapshot_ref
+                                      AND source_snapshot_ref=ANY(:snapshot_refs)
                                     ORDER BY collected_at, id
                                     """
                                 ),
                                 {
                                     "claim_ids": candidate_claim_ids,
-                                    "source_key": PEOPLE_SOURCE_KEY,
+                                    "source_keys": list(snapshot_ref_by_source),
                                     "operation_ref": f"committee-operation:{typed.operation_id}",
-                                    "snapshot_ref": snapshot_ref,
+                                    "snapshot_refs": list(snapshot_ref_by_source.values()),
                                 },
                             )
                         )
@@ -1689,7 +1749,8 @@ class SumbleCommitteeSemanticResearchAction(EntityResearchProviderAction):
                     rows = ()
                 if not rows:
                     raise EntityResearchResultIntegrityError(
-                        "office-admitted committee member lacks direct People facts"
+                        "admitted committee member lacks provider-returned facts from this "
+                        "operation"
                     )
                 fields = tuple(
                     ResearchFieldResultProjection(
@@ -1703,9 +1764,9 @@ class SumbleCommitteeSemanticResearchAction(EntityResearchProviderAction):
                                 evidence_ref=self._committee_evidence_ref(
                                     typed.operation_id, row["id"]
                                 ),
-                                source_key=PEOPLE_SOURCE_KEY,
-                                provider_source_id=(
-                                    people_snapshot.provider_operation_id or str(typed.operation_id)
+                                source_key=str(row["source_key"]),
+                                provider_source_id=provider_source_id_by_source.get(
+                                    str(row["source_key"]), str(typed.operation_id)
                                 ),
                                 source_url=(str(row["source_url"]) if row["source_url"] else None),
                                 artifact_ref=f"artifact:{row['artifact_key']}",

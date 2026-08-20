@@ -153,34 +153,58 @@ the same question four times; act on what you already have.
 
 ## discover_buying_committee
 
-**Produces.** Identity-resolved committee members inside one declared office boundary, persisted
-as a committee result — or a `confirmed_empty_discovery`, which is a real, honest, terminal answer.
+**Produces.** Every person the provider returned for this account, identity-resolved and persisted
+as a committee result with their own provider evidence — or a `confirmed_empty_discovery`, which is
+a real, honest, terminal answer.
 
 **When.** Whenever the job's `committee_source_keys` are non-empty and no terminal committee
 attempt exists yet. It is *not* gated on fresh field results: an account whose fields were all
 borrowed from existing fresh claims still owes its committee attempt. If committee sources are
 empty, this tool is not part of your job at all.
 
+**The admission floor is provider-returned, and nothing more.** Every candidate the provider
+returned for this organization is admitted — whether it came back on the People page or only
+through the Teams organization map, and whatever function string the provider spells. The engine
+no longer filters candidates by source path, by function wording, or by office placement. That
+means **the whole judgment is yours**: which of these people belong to the buying unit, what each
+one's persona is, and why. (Founder rulings 2026-08-20, from two live executions. The first
+admitted zero of seven real CXOs at a 913-person multi-site physician group, because no provider
+profile value could place anyone at the declared headquarters. The second admitted one of the same
+seven: two current CXOs fell because the plan said "Clinical" where the provider says "Physician",
+and four more because their facts arrived via Teams. Every one of those six was a real, current,
+senior employee. Mechanical string gates cost real committee members; you don't have to.)
+
 **Call.** People enumeration, never field research:
 `{"source_keys": ["sumble_people"], "field_keys": [], "questions": [], "parent_operation_ref":
 null, "parent_observation_ref": null, "follow_up_reason": null, "buying_unit_scope": {...}}`.
 The scope requires `scope_id` (a new uuid), `account_entity_id` (exactly this account),
 `office_label`, at least one of `facility_name` / `locality` / `region` / `business_unit`,
-`target_functions` (1–20, each copied from the confirmed committee plan; when every plan selector
-is `(unrestricted)`, choose the functions your account evidence supports), `evidence_refs` (1–20
-`research-result:<uuid>` or `claim:<uuid>` refs surfaced by your state — an older run's fresh
-`claim:` ref is valid evidence), and `match_policy`. Copy a confirmed committee question verbatim
-or leave `questions` empty; never invent one.
+`evidence_refs` (1–20 `research-result:<uuid>` or `claim:<uuid>` refs surfaced by your state — an
+older run's fresh `claim:` ref is valid evidence), and optionally `target_functions` and
+`match_policy`. Copy a confirmed committee question verbatim or leave `questions` empty; never
+invent one.
+
+**`target_functions` is advisory, and may be empty (0–20).** It records, for audit, which of the
+confirmed committee plan's functions you set out to map. It does **not** decide who is admitted, so
+never omit a person from your thinking because the provider spelled their function differently from
+the plan — "Physician" *is* "Clinical", "Board of Directors" and "Uncategorized" are real rows.
+Each entry you do declare must still be copied from the confirmed plan (the engine refuses an
+invented one); when every plan selector is `(unrestricted)`, declare the functions your account
+evidence supports, or none. When you compose the scope, prefer the *broadest* honest declaration:
+your job is to hunt the synonyms and vocabulary the provider actually uses, not to narrow until
+nobody matches.
 
 **`match_policy`.** Default and correct answer: `"company_wide"` — omit the key and you get it.
-The declared office still rides the scope as descriptive, audited context, but office *placement*
-never vetoes a candidate: who someone works for and what they do decides admission, not which site
-their profile lists. (Founder ruling 2026-08-20, after the first complete live execution against a
-913-person multi-site physician group fetched seven real candidates and admitted zero, because no
-provider profile value could place anyone at the declared headquarters.) `"same_office_strict"` is
-retired but still selectable by name: under it a candidate whose provider values evidence no
-declared location tier routes to durable review instead of admission. Choose it only when the
-buying unit genuinely is one site and mixing sites would be wrong.
+The declared office and functions ride the scope as descriptive, audited context and veto nothing.
+`"same_office_strict"` is retired but still selectable by name: under it office placement vetoes,
+the target functions gate, and a candidate with no direct People-page fact routes to durable review
+instead of admission. Choose it only when the buying unit genuinely is one site, mixing sites would
+be wrong, and you accept losing real people to it.
+
+**A `business_unit` you declare still narrows admission.** Unlike office and function, that one is
+an assertion *you* make about organization membership, matched against provider-returned team names
+and current-employer organization names. Declare it only when you mean it; a candidate it does not
+cover is routed to review, not admitted.
 
 **Refusals.**
 - `engine_authority_rejection` naming an outstanding committee source (it prints the exact
@@ -190,13 +214,15 @@ buying unit genuinely is one site and mixing sites would be wrong.
 - `committee discovery requires the exact account buying-unit scope` — `account_entity_id` must be
   this job's account.
 - `request_authority_violation` — an invented `target_function`, a paraphrased question, or an
-  unadmitted source. Narrow to the confirmed plan and send once more.
+  unadmitted source. Narrow to the confirmed plan (or drop `target_functions` entirely, since it is
+  advisory) and send once more.
 - `provider_rejected` — the committee source terminally refused (live: a Sumble plan returning 402
   on `/people`). The committee axis is settled; the committee is honestly empty. Proceed to
   coverage; never retry that source.
 
 **Invariant.** One declared buying unit, one admitted source, one attempt — an empty committee
-after a real attempt is a result, not a failure.
+after a real attempt is a result, not a failure. And a candidate the provider returned is real
+evidence about a real person: reason about them, never discard them for wearing the wrong label.
 
 ## record_committee_role_inferences
 
@@ -207,6 +233,17 @@ after a real attempt is a result, not a failure.
 **When.** After `discover_buying_committee` returns members, once, as a single batch. Only for
 members whose own professional claims you can cite. Never for a member whose role you are
 inferring from someone else's evidence, from a title alone, or "for completeness".
+
+**This is where the committee is actually formed.** Discovery hands you every person the provider
+returned; the judgment about who is a champion, an economic buyer, a technical evaluator or a
+blocker — and who belongs to no committee at all — happens here and nowhere else. Read each
+member's own evidence (title, function, level, team membership, organization relationship,
+location) against the project's account research, the approved ICP, the product context and the
+buying unit you declared. Translate the provider's vocabulary yourself: a "Physician" at a
+physician group is clinical leadership; "Information Technology" at CXO level is a technical
+evaluator; "Board of Directors" is rarely an operator. A member you cannot justify is simply
+omitted — omission is honest and costs nothing, and there is no penalty for a small, correct
+committee.
 
 **Call.** `{"inferences": [{"contact_entity_id": "<uuid>", "role": "champion", "confidence": 0.7,
 "reasoning": "…", "evidence_claim_ids": ["<uuid>", ...]}, ...]}` — 1–64 inferences, each with 1–16

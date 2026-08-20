@@ -135,6 +135,7 @@ from clue_research.profiling.committee.sources import (
     CommitteePersonCandidate,
 )
 from clue_research.resolvers.sumble.people import PEOPLE_SOURCE_KEY
+from clue_research.resolvers.sumble.teams import TEAMS_SOURCE_KEY
 from clue_research.sources import seed_source_manifests
 from clue_research.stage0 import load_client_knowledge_pack
 from clue_storage import FsStorage, StorageBackend
@@ -1952,24 +1953,23 @@ def _millennium_scope(*, match_policy: str | None = None) -> AccountBuyingUnitSc
 
 
 def test_company_wide_policy_retires_the_office_veto_on_the_live_millennium_shape() -> None:
-    """Founder ruling 2026-08-20: office placement is the wrong veto for an HQ-level committee.
+    """Founder rulings 2026-08-20: office placement, source path, and function string all retire.
 
-    Under ``company_wide`` a candidate is never excluded and never routed to review on office
-    placement.  Everything else holds: a candidate carrying no people-source fact is still
-    ungrounded (review), and a candidate whose function is outside the declared target functions
-    is still excluded.
+    This shape was written when only the office veto had fallen, and it then asserted that the
+    grounding and function gates still stood. The later ruling took those two as well: under
+    ``company_wide`` every provider-returned candidate is admitted, so the same four rows that
+    once split 2/1/1 now come back whole.
     """
 
     engineer, naples, unplaced, ungrounded = _millennium_candidates()
+    candidates = (engineer, naples, unplaced, ungrounded)
     selected, excluded, ambiguous = SumbleCommitteeSemanticResearchAction._office_candidates(
-        (engineer, naples, unplaced, ungrounded),
+        candidates,
         scope=_millennium_scope(match_policy="company_wide"),
     )
 
-    # The office-evidence-less candidates are admitted; the function and grounding gates stand.
-    assert selected == (naples, unplaced)
-    assert excluded == 1  # engineer: right office, function outside the declared committee plan
-    assert ambiguous == 1  # ungrounded: no people-source fact at all
+    assert selected == candidates
+    assert (excluded, ambiguous) == (0, 0)
 
 
 def test_same_office_strict_classifies_the_live_millennium_shape_exactly_as_before() -> None:
@@ -2349,8 +2349,10 @@ def test_r5_production_committee_action_defers_role_inference_to_the_agent(tmp_p
                 for field in subject.fields
             )
 
-            # ...and deferring the role does NOT relax the People-facts integrity rule: an
-            # office-admitted member with no direct People facts is still refused.
+            # ...and the provider-returned floor is a floor, not a hole: an admitted member with
+            # no provider fact at all from this operation is still refused. What retired is the
+            # People-vs-Teams discrimination, not the requirement to be grounded in the operation
+            # that was actually paid for.
             starved = CommitteeResult(
                 account_entity_id=committee.account_entity_id,
                 members=(
@@ -2363,7 +2365,9 @@ def test_r5_production_committee_action_defers_role_inference_to_the_agent(tmp_p
                 admitted=1,
                 needs_review=1,
             )
-            with pytest.raises(EntityResearchResultIntegrityError, match="People facts"):
+            with pytest.raises(
+                EntityResearchResultIntegrityError, match="lacks provider-returned facts"
+            ):
                 await action._persist_committee_projection(
                     request=request,
                     operation=ready.operation,
@@ -2374,3 +2378,193 @@ def test_r5_production_committee_action_defers_role_inference_to_the_agent(tmp_p
                 )
 
     run_async(scenario())
+
+
+def _millennium_v9_candidates() -> tuple[CommitteePersonCandidate, ...]:
+    """The live v9 committee shape (job ``cd6a779e`` / operation ``8500325f``, 2026-08-20).
+
+    Seven real, provider-returned, *current* Millennium Physician Group employees at CXO/SVP
+    level. Three arrived on the People page and four only through the Teams organization map, so
+    their facts are stamped ``sumble_teams``. Live result under the pre-ruling ladder: one
+    admitted, two excluded because the provider spells the function "Physician" where the plan
+    said "Clinical", and four routed to review purely because their facts came from Teams.
+    """
+
+    def candidate(
+        *, name: str, title: str, function: str, source_key: str
+    ) -> CommitteePersonCandidate:
+        return CommitteePersonCandidate(
+            source_key=PEOPLE_SOURCE_KEY,
+            linkedin_url=f"https://linkedin.com/in/{name.casefold().replace(' ', '-')}",
+            full_name=name,
+            title=title,
+            job_function=function,
+            geo={},
+            source_url="https://sumble.example/people/millennium",
+            professional_facts=(
+                CandidateProfessionalFact(
+                    field_key="contact.current_location",
+                    value_json={
+                        "location": "Fort Myers, Florida, United States",
+                        "country": "United States",
+                    },
+                    provenance_kind=CandidateFactProvenance.PROVIDER_RETURNED,
+                    source_key=source_key,
+                    source_tier=1,
+                    source_url="https://sumble.example/people/millennium",
+                    evidence_span="Provider-returned person row.",
+                    artifact_key=f"sumble/{source_key}/millennium",
+                    source_operation_ref="committee-operation:millennium-v9",
+                    source_snapshot_ref=f"committee-snapshot:millennium-v9:{source_key}",
+                    source_request_ref=f"sumble-request:{source_key}:millennium-v9",
+                ),
+            ),
+        )
+
+    return (
+        # The People page — the only path the pre-ruling ladder could admit from.
+        candidate(
+            name="Lenny Brunson",
+            title="Divisional CIO",
+            function="Information Technology",
+            source_key=PEOPLE_SOURCE_KEY,
+        ),
+        candidate(
+            name="Alejandro Perez-Trepichio MD",
+            title="Chief Medical Officer",
+            function="Physician",
+            source_key=PEOPLE_SOURCE_KEY,
+        ),
+        candidate(
+            name="Zenobia Brown MD",
+            title="SVP Population Health",
+            function="Physician",
+            source_key=PEOPLE_SOURCE_KEY,
+        ),
+        # The Teams organization map — provider data too, bought in the same paid operation.
+        candidate(
+            name="Brian Fox",
+            title="Board Member",
+            function="Board of Directors",
+            source_key=TEAMS_SOURCE_KEY,
+        ),
+        candidate(
+            name="Tesha Simpson",
+            title="Chief Operating Officer",
+            function="Executive",
+            source_key=TEAMS_SOURCE_KEY,
+        ),
+        candidate(
+            name="Truly Peterson MD",
+            title="Chief Quality Officer",
+            function="Uncategorized",
+            source_key=TEAMS_SOURCE_KEY,
+        ),
+        candidate(
+            name="Dionne Leverette",
+            title="SVP Human Resources",
+            function="Executive",
+            source_key=TEAMS_SOURCE_KEY,
+        ),
+    )
+
+
+def _millennium_v9_scope(*, match_policy: str | None = None) -> AccountBuyingUnitScope:
+    fields: dict[str, Any] = {
+        "scope_id": uuid4(),
+        "account_entity_id": uuid4(),
+        "office_label": "Fort Myers, Florida headquarters",
+        "locality": "Fort Myers",
+        "region": "Florida",
+        "country": "US",
+        "target_functions": (
+            "Executive",
+            "Clinical",
+            "Operations",
+            "Administration",
+            "Information Technology",
+        ),
+        "evidence_refs": ("claim:26267450-f2ef-43a9-a173-4aaac129b022",),
+    }
+    if match_policy is not None:
+        fields["match_policy"] = match_policy
+    return AccountBuyingUnitScope(**fields)
+
+
+def test_company_wide_admits_every_provider_returned_candidate_on_the_live_v9_shape() -> None:
+    """Founder ruling 2026-08-20: the truth floor is provider-returned, and nothing more.
+
+    A candidate Sumble returned — from the People page **or** from the Teams organization map —
+    is admissible ground. The two mechanical judgment gates that survived the office retirement
+    die here: the ``sumble_people`` source-key grounding filter (Teams rows are provider data
+    too) and the ``target_functions`` string match ("Clinical" vs the provider's "Physician"
+    excluded two real CXOs). Function vocabulary and persona judgment are the agent's work,
+    taught by the operations manual, not enforced by string equality in the engine.
+    """
+
+    candidates = _millennium_v9_candidates()
+    selected, excluded, ambiguous = SumbleCommitteeSemanticResearchAction._office_candidates(
+        candidates, scope=_millennium_v9_scope(match_policy="company_wide")
+    )
+
+    assert selected == candidates
+    assert (excluded, ambiguous) == (0, 0)
+
+
+def test_same_office_strict_pins_exactly_what_the_provider_returned_floor_retired() -> None:
+    """The explicitly-selected strict policy still classifies the live v9 shape as it did.
+
+    This is the negative control for the ruling: under ``same_office_strict`` the same seven
+    candidates reproduce the exact live board — one admitted, two excluded on the function
+    string, four routed to review for arriving via Teams — so the two retired gates are visible
+    precisely where they used to fire.
+    """
+
+    candidates = _millennium_v9_candidates()
+    selected, excluded, ambiguous = SumbleCommitteeSemanticResearchAction._office_candidates(
+        candidates, scope=_millennium_v9_scope(match_policy="same_office_strict")
+    )
+
+    assert selected == (candidates[0],)
+    assert (excluded, ambiguous) == (2, 4)
+
+
+def test_target_functions_is_advisory_and_may_be_empty_end_to_end() -> None:
+    """``target_functions`` no longer gates admission, so an empty set is a legal declaration.
+
+    The field stays (it is how the agent records the confirmed plan's functions for audit and
+    narrowing), but it is descriptive: a scope that declares none still admits every
+    provider-returned candidate, and the plan-widening guard has nothing to refuse.
+    """
+
+    empty = AccountBuyingUnitScope(
+        scope_id=uuid4(),
+        account_entity_id=uuid4(),
+        office_label="Fort Myers, Florida headquarters",
+        locality="Fort Myers",
+        target_functions=(),
+        evidence_refs=("claim:26267450-f2ef-43a9-a173-4aaac129b022",),
+    )
+    assert empty.target_functions == ()
+    assert empty.match_policy == "company_wide"
+
+    # It survives the semantic tool input the agent actually sends...
+    committee_input = DiscoverBuyingCommitteeInput(
+        source_keys=(PEOPLE_SOURCE_KEY,),
+        buying_unit_scope=empty,
+    )
+    assert committee_input.buying_unit_scope.target_functions == ()
+
+    # ...the plan-widening guard (an empty declaration widens nothing)...
+    SumbleCommitteeSemanticResearchAction._validate_scope_against_plan(
+        empty,
+        plan=ResearchCommitteePlan(functions=("Executive",)),
+    )
+
+    # ...and the admission floor itself.
+    candidates = _millennium_v9_candidates()
+    selected, excluded, ambiguous = SumbleCommitteeSemanticResearchAction._office_candidates(
+        candidates, scope=empty
+    )
+    assert selected == candidates
+    assert (excluded, ambiguous) == (0, 0)
