@@ -182,10 +182,26 @@ harvest — but the lexicographic sort is untouched and will resurface on any si
 genuinely small assets. v8 itself carries seven sub-300px images (a 64x64 icon, a QR code,
 merch thumbs); none happened to land on a low-lex key, which is luck.
 
-Fix is a numeric/natural sort key at `web_substrate.py:3286` so the picker honours the
-ranking `emit` already built. **Deliberately not applied here** — it is the web lane's file,
-outside this wave's ordered scope, and the founder reviews diffs inline. Surfaced to the
-founder and to `img-tools` instead.
+State it plainly for whoever fixes it: **this wave mitigated the symptom and left the defect
+untouched.** The relief is contingent on the harvest containing no small assets at a low-lex
+key, which is not a property anything enforces.
+
+**A natural sort is necessary but may not be sufficient** (`img-tools`, verified at
+`web_substrate.py:3291-3303`): the picker also skips silently on a missing/invalid digest, on
+`not path.is_file()`, and on `OSError` — three `continue` guards. So even with correct
+ordering it collects the first two *resolvable* entries, which on a kit published elsewhere
+(blobs absent locally — an explicitly normal state per the docstring) can still land
+arbitrarily deep in the ranking. Two candidate fixes, and whoever picks this up should say
+which they are buying:
+- **minimal** — natural/numeric sort key at `web_substrate.py:3286`, so the picker honours
+  the ranking `emit` already built;
+- **complete** — that, plus a quality floor on what may serve as a style anchor, so a
+  resolvable-but-tiny image cannot become the anchor by default.
+
+**Deliberately not applied here** — it is the web lane's file, outside this wave's ordered
+scope, and the founder reviews diffs inline. `img-tools` independently declined to patch it
+for the same reason (read-only brief). Surfaced from both lanes to the founder instead, so it
+does not depend on either agent having quietly landed it.
 
 Second cost consequence, downstream of this wave and **not** something it changed: the
 describe stage runs one vision completion per asset, so 13 → 49 images is ~4x the
