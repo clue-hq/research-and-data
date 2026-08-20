@@ -147,6 +147,14 @@ back to ~1x for two batched rounds instead of one. **Not done** — it changes
 founder had already accepted the simple version. Recorded as the first optimisation to reach
 for if ingestion latency or bandwidth becomes a complaint.
 
+## A second consumer of these renditions
+
+`dcd4d47a` added `_brand_style_references`, which feeds up to two of the kit's brand **images**
+(never a logo) to the text-to-image provider as style anchors. So the harvest this wave
+widened is now read not only by generated microsites but by the T2I path as well — the
+296px-thumbnail defect would have been anchoring every generated image to a 296px reference.
+Worth remembering before anyone considers narrowing the harvest for cost.
+
 Second cost consequence, downstream of this wave and **not** something it changed: the
 describe stage runs one vision completion per asset, so 13 → 49 images is ~4x the
 description spend and wall-clock per website ingestion (stripe.com: ~53 vision calls,
@@ -195,28 +203,56 @@ normalizer / jobs / ui_api / describe / font_metrics / raster / deployment_confi
 pdf) — 250 passed, 4 skipped — and all 621 of `apps/agent_runtime/tests`. Baseline before any
 edit: 109 passed, 1 skipped on the required ingestion subset.
 
-**Red in the whole `apps/api/tests` suite — none of it mine, and the whole-suite numbers are
-confounded (see below).** 22 failures at HEAD. Twenty were re-run directly at parent
-`2ebb3976` in the throwaway worktree and fail identically there — pre-existing:
-`test_agent_custom_components` (1), `test_custom_component_compiler` (5),
-`test_custom_component_publish` (4), `test_custom_component_runtime` (7),
-`test_asset_custody` (2), `test_asset_store_serving` (1). The other two —
+**Red in the whole `apps/api/tests` suite — none of it mine.** 22 failures at HEAD, of two
+different kinds:
+
+**(a) 20 genuinely pre-existing, and nothing to do with the fleet worker.** Re-run at parent
+`2ebb3976` in the throwaway worktree: fail identically. Re-run at HEAD with 8010 **verified
+down before and after**: still 20, same list. `test_agent_custom_components` (1),
+`test_custom_component_compiler` (5), `test_custom_component_publish` (4),
+`test_custom_component_runtime` (7), `test_asset_custody` (2), `test_asset_store_serving` (1).
+The cause is a **missing local node toolchain**, not code rot: the constrained compiler worker
+returns `CCI0002 … Cannot find package 'typescript'` → `transient_error`, and the dependent
+serving assertions then see 503/404. `npm install` in `subsystems/clue-design` is the likely
+fix; not this wave's to make.
+
+**(b) 2 that were MY bisect error — contention, not a regression. Corrected 2026-08-20 after
+`img-tools` pushed back, and they were right.**
 `test_api.py::test_agent_turns_async_persists_result_and_terminal_event` and
 `test_design_toolbelt_documents.py::test_the_web_turn_worker_persists_through_the_governed_tool`
-— **pass at `2ebb3976` and pass at this wave's commit `a224b614`**, and fail only at HEAD,
-which carries the parallel image-generation lane's `dcd4d47a` / `209f4514` / `a5e6b832`. That
-lane was told.
+**pass at HEAD** once 8010 is confirmed down (verified 0 listeners before *and* after the run).
+I had attributed them to the parallel image-generation lane's commits; that was wrong on the
+evidence — those commits touch only `agent_runtime/`, `.env.example` and two SKILL/prompt
+files, and both tests install a **process-local** stub (`app.state.web_turn_runner` /
+`app.state.agent_turn_runner`) that short-circuits before any of that code. The real mechanism
+is the trap below: both are `wait_for_run`-shaped async worker tests, so they are the most
+lease-sensitive in the suite. My "green at `2ebb3976`/`a224b614`, red at HEAD" reading was a
+race that happened to break the same way twice, because 8010 came back up 35 seconds into the
+HEAD run. **Method lesson: when the suspected cause is a shared-resource race, a
+commit-to-commit bisect proves nothing unless the shared resource is pinned in every arm.**
 
 ## THE SUITE TRAP — a running design API poisons `apps/api/tests`
 
 The design API on 8010 runs with `LUMEN_EMBEDDED_FLEET_WORKER=1`. Its worker leases
 `design_job` rows out of the **same** Postgres the tests write to, so it drains work the
-tests enqueue: with 8010 up the suite showed **34** failures, with it down **22**. This is
+tests enqueue: with 8010 up the suite showed **34** failures, with it down **20**. This is
 the same class as the recorded "stale extra 801x listener poaches jobs" incident, except the
-poacher is the *canonical* server. **Run `apps/api/tests` with 8010 stopped**, and re-check
-that it is still stopped when the run ends — during this wave a sibling agent restarted 8010
-~20 seconds after I killed it (PID 70699, 13:53:35 UTC, PPID 1), which silently re-confounded
-a run I had labelled clean. `lsof -nP -iTCP:8010 -sTCP:LISTEN` before AND after.
+poacher is the *canonical* server.
+
+Why the isolation does not save you (mechanism, from `img-tools`): the suite isolates by
+**workspace id, not by database** (`apps/api/tests/conftest.py:22-25` — "Postgres is shared…
+run this suite against a disposable `CLUE_DATABASE_URL`"), and the lease has **no workspace
+predicate** — `platform/fleet/clue_fleet/queue.py:170-178` filters on `kind` (+ optional
+`project_run_id`) then `ORDER BY priority, enqueue_seq LIMIT 1 FOR UPDATE SKIP LOCKED`. The
+live worker is a separate process, so it holds none of the test's `app.state` stubs; when it
+wins the 0.1s poll race it runs the REAL runner and the assertions about the fake runner's
+output fail. `main.py:370-381` documents exactly this, diagnosed 2026-08-19/20.
+
+**Run `apps/api/tests` with 8010 stopped, and check `lsof -nP -iTCP:8010 -sTCP:LISTEN`
+returns nothing BEFORE and AFTER the run.** During this wave 8010 came back up 35 seconds
+after I killed it (PID 70699, 13:53:35 UTC, PPID 1 — detached, not mine), which silently
+re-confounded a run I had labelled clean and cost me a wrong regression attribution. The
+after-check is the part I skipped and the part that would have caught it.
 
 ## Traps hit
 
