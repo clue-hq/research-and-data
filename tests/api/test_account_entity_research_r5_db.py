@@ -1591,6 +1591,7 @@ def test_r5_committee_office_filter_admits_only_people_facts_in_the_exact_buying
         business_unit="Patient Access",
         target_functions=("Operations", "Finance"),
         evidence_refs=("research-evidence:account-location",),
+        match_policy="same_office_strict",
     )
 
     def candidate(
@@ -1784,6 +1785,7 @@ def test_r5_office_gate_admits_the_live_paramus_candidate_vetoed_by_region_spell
         country="United States",
         target_functions=("Executive", "Operations", "Marketing"),
         evidence_refs=("research-evidence:live-account-profile",),
+        match_policy="same_office_strict",
     )
 
     def live_candidate(*, name: str, title: str, function: str, location: str):
@@ -1846,6 +1848,7 @@ def test_r5_office_gate_admits_the_live_paramus_candidate_vetoed_by_region_spell
         region="NJ",
         target_functions=("Executive", "Operations", "Marketing"),
         evidence_refs=("research-evidence:live-account-profile",),
+        match_policy="same_office_strict",
     )
     selected, _excluded, ambiguous = SumbleCommitteeSemanticResearchAction._office_candidates(
         (paramus_cmo, bloomingdale_ceo, nyc_manager),
@@ -1853,6 +1856,193 @@ def test_r5_office_gate_admits_the_live_paramus_candidate_vetoed_by_region_spell
     )
     assert selected == (paramus_cmo, bloomingdale_ceo)
     assert ambiguous == 1
+
+
+def _millennium_candidates() -> tuple[
+    CommitteePersonCandidate,
+    CommitteePersonCandidate,
+    CommitteePersonCandidate,
+    CommitteePersonCandidate,
+]:
+    """The live v8 committee shape (job 4e1bc4fd / operation 8500325f, 2026-08-20).
+
+    Millennium Physician Group is a 913-person multi-site physician group whose declared scope was
+    the Fort Myers headquarters.  Sumble returned seven real people; the provider's own location
+    values placed almost none of them in Fort Myers, so the strict office gate admitted zero.
+    """
+
+    def candidate(
+        *, name: str, title: str, function: str, location: str | None, with_people_fact: bool = True
+    ) -> CommitteePersonCandidate:
+        facts: tuple[CandidateProfessionalFact, ...] = ()
+        if with_people_fact:
+            value: dict[str, Any] = {"country": "United States"}
+            if location is not None:
+                value["location"] = location
+            facts = (
+                CandidateProfessionalFact(
+                    field_key="contact.current_location",
+                    value_json=value,
+                    provenance_kind=CandidateFactProvenance.PROVIDER_RETURNED,
+                    source_key=PEOPLE_SOURCE_KEY,
+                    source_tier=1,
+                    source_url="https://sumble.example/people/millennium",
+                    evidence_span="Provider-returned person row.",
+                    artifact_key="sumble/people/millennium",
+                    source_operation_ref="committee-operation:millennium",
+                    source_snapshot_ref="committee-snapshot:millennium",
+                    source_request_ref="sumble-request:millennium",
+                ),
+            )
+        return CommitteePersonCandidate(
+            source_key=PEOPLE_SOURCE_KEY,
+            linkedin_url=f"https://linkedin.com/in/{name.casefold().replace(' ', '-')}",
+            full_name=name,
+            title=title,
+            job_function=function,
+            geo={},
+            source_url="https://sumble.example/people/millennium",
+            professional_facts=facts,
+        )
+
+    fort_myers_engineer = candidate(
+        name="Fort Myers Engineer",
+        title="Staff Software Engineer",
+        function="Engineering",
+        location="Fort Myers, Florida, United States",
+    )
+    naples_executive = candidate(
+        name="Naples Executive",
+        title="Chief Executive Officer",
+        function="Executive",
+        location="Naples, Florida, United States",
+    )
+    unplaced_operator = candidate(
+        name="Unplaced Operator",
+        title="VP Operations",
+        function="Operations",
+        location=None,
+    )
+    ungrounded_clinician = candidate(
+        name="Ungrounded Clinician",
+        title="Chief Medical Officer",
+        function="Clinical",
+        location="Fort Myers, Florida, United States",
+        with_people_fact=False,
+    )
+    return (fort_myers_engineer, naples_executive, unplaced_operator, ungrounded_clinician)
+
+
+def _millennium_scope(*, match_policy: str | None = None) -> AccountBuyingUnitScope:
+    """The exact scope the account agent declared live, replayed byte-for-byte apart from ids."""
+
+    fields: dict[str, Any] = {
+        "scope_id": uuid4(),
+        "account_entity_id": uuid4(),
+        "office_label": "Fort Myers, Florida headquarters",
+        "locality": "Fort Myers",
+        "region": "Florida",
+        "country": "US",
+        "target_functions": ("Executive", "Clinical", "Operations", "Administration", "Finance"),
+        "evidence_refs": ("claim:26267450-f2ef-43a9-a173-4aaac129b022",),
+    }
+    if match_policy is not None:
+        fields["match_policy"] = match_policy
+    return AccountBuyingUnitScope(**fields)
+
+
+def test_company_wide_policy_retires_the_office_veto_on_the_live_millennium_shape() -> None:
+    """Founder ruling 2026-08-20: office placement is the wrong veto for an HQ-level committee.
+
+    Under ``company_wide`` a candidate is never excluded and never routed to review on office
+    placement.  Everything else holds: a candidate carrying no people-source fact is still
+    ungrounded (review), and a candidate whose function is outside the declared target functions
+    is still excluded.
+    """
+
+    engineer, naples, unplaced, ungrounded = _millennium_candidates()
+    selected, excluded, ambiguous = SumbleCommitteeSemanticResearchAction._office_candidates(
+        (engineer, naples, unplaced, ungrounded),
+        scope=_millennium_scope(match_policy="company_wide"),
+    )
+
+    # The office-evidence-less candidates are admitted; the function and grounding gates stand.
+    assert selected == (naples, unplaced)
+    assert excluded == 1  # engineer: right office, function outside the declared committee plan
+    assert ambiguous == 1  # ungrounded: no people-source fact at all
+
+
+def test_same_office_strict_classifies_the_live_millennium_shape_exactly_as_before() -> None:
+    """The retired policy stays selectable and byte-identical when named explicitly."""
+
+    engineer, naples, unplaced, ungrounded = _millennium_candidates()
+    selected, excluded, ambiguous = SumbleCommitteeSemanticResearchAction._office_candidates(
+        (engineer, naples, unplaced, ungrounded),
+        scope=_millennium_scope(match_policy="same_office_strict"),
+    )
+
+    assert selected == ()
+    assert excluded == 1  # engineer evidences Fort Myers but fails the function gate
+    assert ambiguous == 3  # naples + unplaced (office) and ungrounded (no people fact)
+
+
+def test_buying_unit_scope_defaults_to_company_wide_and_still_accepts_a_declared_office() -> None:
+    """A scope built without ``match_policy`` carries the new default, office fields intact."""
+
+    default_scope = _millennium_scope()
+    assert default_scope.match_policy == "company_wide"
+    # The declared office survives as descriptive/audit context under the new default.
+    assert (default_scope.locality, default_scope.region, default_scope.country) == (
+        "Fort Myers",
+        "Florida",
+        "US",
+    )
+    assert _millennium_scope(match_policy="same_office_strict").match_policy == "same_office_strict"
+    with pytest.raises(ValidationError):
+        _millennium_scope(match_policy="nearest_metro")
+
+    # And the default policy is what the semantic tool input carries end to end.
+    committee_input = DiscoverBuyingCommitteeInput(
+        source_keys=("sumble_people",),
+        buying_unit_scope=default_scope,
+    )
+    assert committee_input.buying_unit_scope.match_policy == "company_wide"
+
+
+def test_persisted_buying_unit_scope_records_its_policy_and_replays_under_it() -> None:
+    """The durable scope row and its replay guard both carry the policy explicitly.
+
+    ``_persist_scope`` stores ``scope.model_dump(mode="json")`` and hashes it, and re-reads refuse
+    a changed sha ("buying-unit scope replay changed"). A ``company_wide`` scope must therefore
+    persist that literal, and a historical ``same_office_strict`` scope must keep hashing to what
+    it recorded — the new default can never silently repoint an already-stored scope.
+    """
+
+    scope_id, account_id = uuid4(), uuid4()
+
+    def scope(*, match_policy: str) -> AccountBuyingUnitScope:
+        return AccountBuyingUnitScope(
+            scope_id=scope_id,
+            account_entity_id=account_id,
+            office_label="Fort Myers, Florida headquarters",
+            locality="Fort Myers",
+            region="Florida",
+            country="US",
+            target_functions=("Executive",),
+            evidence_refs=("claim:26267450-f2ef-43a9-a173-4aaac129b022",),
+            match_policy=match_policy,
+        )
+
+    company_wide, strict = (
+        scope(match_policy="company_wide"),
+        scope(match_policy="same_office_strict"),
+    )
+    assert company_wide.model_dump(mode="json")["match_policy"] == "company_wide"
+    assert strict.model_dump(mode="json")["match_policy"] == "same_office_strict"
+    # Replay of the identical declaration is stable...
+    assert canonical_sha256(company_wide) == canonical_sha256(scope(match_policy="company_wide"))
+    # ...and the policy is inside the hash, so a replay that changed it is caught, never absorbed.
+    assert canonical_sha256(company_wide) != canonical_sha256(strict)
 
 
 def test_account_coverage_field_axis_admits_core_launch_fields(tmp_path: Path) -> None:

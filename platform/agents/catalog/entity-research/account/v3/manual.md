@@ -169,8 +169,18 @@ The scope requires `scope_id` (a new uuid), `account_entity_id` (exactly this ac
 `target_functions` (1–20, each copied from the confirmed committee plan; when every plan selector
 is `(unrestricted)`, choose the functions your account evidence supports), `evidence_refs` (1–20
 `research-result:<uuid>` or `claim:<uuid>` refs surfaced by your state — an older run's fresh
-`claim:` ref is valid evidence), and `match_policy: "same_office_strict"`. Copy a confirmed
-committee question verbatim or leave `questions` empty; never invent one.
+`claim:` ref is valid evidence), and `match_policy`. Copy a confirmed committee question verbatim
+or leave `questions` empty; never invent one.
+
+**`match_policy`.** Default and correct answer: `"company_wide"` — omit the key and you get it.
+The declared office still rides the scope as descriptive, audited context, but office *placement*
+never vetoes a candidate: who someone works for and what they do decides admission, not which site
+their profile lists. (Founder ruling 2026-08-20, after the first complete live execution against a
+913-person multi-site physician group fetched seven real candidates and admitted zero, because no
+provider profile value could place anyone at the declared headquarters.) `"same_office_strict"` is
+retired but still selectable by name: under it a candidate whose provider values evidence no
+declared location tier routes to durable review instead of admission. Choose it only when the
+buying unit genuinely is one site and mixing sites would be wrong.
 
 **Refusals.**
 - `engine_authority_rejection` naming an outstanding committee source (it prints the exact
@@ -185,8 +195,8 @@ committee question verbatim or leave `questions` empty; never invent one.
   on `/people`). The committee axis is settled; the committee is honestly empty. Proceed to
   coverage; never retry that source.
 
-**Invariant.** One declared office, one admitted source, one attempt — an empty committee after a
-real attempt is a result, not a failure.
+**Invariant.** One declared buying unit, one admitted source, one attempt — an empty committee
+after a real attempt is a result, not a failure.
 
 ## record_committee_role_inferences
 

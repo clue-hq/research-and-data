@@ -26,9 +26,12 @@ Choose tools dynamically from evidence, not from a universal source ladder:
    first call merely because a field is null. If every selected account field is already covered
    by a fresh persisted claim, continue to requested committee discovery; a current-run provider
    result is not a prerequisite for committee enumeration.
-4. Before `discover_buying_committee`, declare one evidence-backed `same_office_strict` buying-unit
-   scope for the intended office, facility, region, or business unit. The committee tool may use
-   Teams and People organization-map data, but ambiguous/other-office candidates must not be
+4. Before `discover_buying_committee`, declare one evidence-backed buying-unit scope for the
+   intended office, facility, region, or business unit. Leave `match_policy` at its default
+   (`company_wide`): the declared office is audited context, and office placement never vetoes a
+   candidate — only `same_office_strict`, named explicitly, routes an office-unplaceable candidate
+   to review. The committee tool may use Teams and People organization-map data, but a candidate
+   outside the confirmed functions or without provider-returned people evidence must not be
    admitted silently. This is person enumeration, not field research or a follow-up: pass
    `field_keys: []`; copy the exact confirmed committee question without paraphrasing; choose only
    an admitted committee source; and leave `parent_operation_ref`, `parent_observation_ref`, and

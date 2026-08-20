@@ -359,6 +359,17 @@ def _region_alternatives(region: str) -> tuple[str, ...]:
 def _location_scope_match(scope: AccountBuyingUnitScope, *, haystack: str) -> bool:
     """Match the office scope against provider-returned location values, most specific first.
 
+    Under the default ``company_wide`` policy this tier does not run at all: office placement is
+    never a veto, so the declared office is descriptive/audit context and every candidate passes
+    the location dimension. Founder ruling 2026-08-20, after the first complete live committee
+    execution (Millennium Physician Group — 913 people, multi-site) fetched seven real candidates
+    and admitted zero because no provider profile value could place anyone at the Fort Myers HQ.
+    Only the office-geography veto retires; the current-employer/organization-relationship and
+    target-function gates below are untouched and still decide admission.
+
+    Under the explicitly-selected ``same_office_strict`` policy the original contract stands, and
+    every historical scope replays under exactly the policy it recorded:
+
     The declared terms form a containment hierarchy (facility ⊂ locality ⊂ region ⊂ country).
     Only the most specific declared tier must be evidenced: once "Paramus" is present in the
     provider values, "New Jersey"/"United States" are containers of the same fact and requiring
@@ -367,6 +378,8 @@ def _location_scope_match(scope: AccountBuyingUnitScope, *, haystack: str) -> bo
     fails closed to review — profile metros are never inferred to be office assignments.
     """
 
+    if scope.match_policy == "company_wide":
+        return True
     if scope.facility_name is not None or scope.locality is not None:
         alternatives = tuple(
             value.casefold() for value in (scope.facility_name, scope.locality) if value is not None
@@ -1568,6 +1581,10 @@ class SumbleCommitteeSemanticResearchAction(EntityResearchProviderAction):
                 # never satisfy an office, facility, or business-unit discriminator.
                 candidate.title,
             )
+            # Always True under the default ``company_wide`` policy (founder ruling 2026-08-20):
+            # office placement can no longer send a candidate to review or exclusion. The
+            # business-unit discriminator below is organization membership, not geography, and
+            # stays live under both policies.
             location_match = _location_scope_match(scope, haystack=location_haystack)
             business_unit_match = (
                 scope.business_unit is None

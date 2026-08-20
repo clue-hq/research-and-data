@@ -24,6 +24,21 @@ class AccountBuyingUnitScope(_FrozenModel):
     At least one location discriminator and retained account-evidence reference are mandatory.
     The provider may enumerate a broader organization, but only candidates matching this scope may
     be projected as committee members; ambiguous rows become durable review, never silent admits.
+
+    ``match_policy`` chooses how the declared office participates in that match:
+
+    - ``company_wide`` (default, founder ruling 2026-08-20) — the office is descriptive and
+      audited, but office *placement* never vetoes a candidate.  A committee at an HQ level of a
+      multi-site organization is a company-wide buying unit; provider profile values routinely
+      cannot evidence which site a person sits at, and vetoing on that admitted nobody at all on
+      the first complete live execution (913-person, multi-site physician group: seven real
+      candidates, zero admitted).  The identity gates are untouched — current-employer /
+      organization-relationship matching and target-function matching still decide admission.
+    - ``same_office_strict`` — the retired policy, still selectable explicitly: a candidate whose
+      provider values evidence no declared location tier routes to durable review.
+
+    The ruling is a policy retirement, not a deletion: historical scopes replay byte-identically
+    under the policy they recorded.
     """
 
     scope_id: UUID
@@ -36,7 +51,7 @@ class AccountBuyingUnitScope(_FrozenModel):
     business_unit: NonEmptyStr | None = None
     target_functions: tuple[NonEmptyStr, ...] = Field(min_length=1, max_length=20)
     evidence_refs: tuple[NonEmptyStr, ...] = Field(min_length=1, max_length=20)
-    match_policy: Literal["same_office_strict"] = "same_office_strict"
+    match_policy: Literal["company_wide", "same_office_strict"] = "company_wide"
 
     @model_validator(mode="after")
     def _bounded_office(self) -> Self:
