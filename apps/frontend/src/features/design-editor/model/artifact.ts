@@ -65,6 +65,12 @@ export const DesignArtifactListItemSchema = ChatShellArtifactSchema.extend({
   createdAt: z.string().min(1),
   updatedAt: z.string().min(1),
   originThreadId: z.string().min(1),
+  /** G-H: the document's recorded artifact type (e.g. `linkedin_square_ad`),
+   * absent when it records none. Never inferred. */
+  artifactType: z.string().min(1).optional(),
+  /** G-H: the document's real page size in px, absent when it has no page. */
+  widthPx: z.number().int().positive().optional(),
+  heightPx: z.number().int().positive().optional(),
 });
 
 export type DesignArtifactListItem = z.infer<typeof DesignArtifactListItemSchema>;
@@ -77,6 +83,11 @@ export const DesignArtifactListWireSchema = z
         created_at: z.string().min(1),
         updated_at: z.string().min(1),
         origin_thread_id: z.string().min(1),
+        // G-H: what the DOCUMENT records about itself. Absent when it records
+        // nothing — the card then states nothing rather than guessing.
+        artifact_type: z.string().min(1).nullish(),
+        width_px: z.number().int().positive().nullish(),
+        height_px: z.number().int().positive().nullish(),
       }),
     ),
   })
@@ -93,6 +104,12 @@ export const DesignArtifactListWireSchema = z
         createdAt: item.created_at,
         updatedAt: item.updated_at,
         originThreadId: item.origin_thread_id,
+        // Absent stays ABSENT (not an `undefined` key): a document that
+        // records nothing must be indistinguishable from one this seam never
+        // asked about.
+        ...(item.artifact_type ? { artifactType: item.artifact_type } : {}),
+        ...(item.width_px ? { widthPx: item.width_px } : {}),
+        ...(item.height_px ? { heightPx: item.height_px } : {}),
       }),
     ),
   );

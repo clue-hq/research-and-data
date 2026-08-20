@@ -25,7 +25,7 @@ export function GalleryArtifactCard({
     artifact.title,
     artifact.account?.name,
     artifact.collateralTypeLabel,
-    artifact.size.label,
+    artifact.size?.label,
     artifact.editedLabel,
   ]
     .filter(Boolean)
@@ -34,7 +34,7 @@ export function GalleryArtifactCard({
     <button
       aria-label={`Open ${accessibleDetails}`}
       className={styles.artifactCard}
-      data-size={artifact.size.category}
+      data-size={artifact.size?.category}
       onClick={() => onOpen(artifact)}
       title={accessibleDetails}
       type="button"
@@ -53,7 +53,7 @@ export function GalleryArtifactCard({
         ) : null}
       </span>
       <span className={styles.artifactMeta}>
-        <span className={styles.artifactType} data-type={artifact.collateralType}>
+        <span className={styles.artifactType} data-type={artifact.collateralType ?? undefined}>
           <ProjectIcon name={typeIcon(artifact)} size={14} />
         </span>
         <span className={styles.artifactCopy}>
@@ -105,7 +105,7 @@ export function GalleryArtifactListRow({
         {artifact.account?.name}
       </span>
       <span>{artifact.collateralTypeLabel}</span>
-      <span>{artifact.size.label}</span>
+      <span>{artifact.size?.label ?? ""}</span>
       <span className={styles.listEditedCell}>{artifact.editedLabel}</span>
     </button>
   );

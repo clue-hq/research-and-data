@@ -173,3 +173,84 @@ test("the mapped artifact survives the gallery's normalizer", () => {
   assert.equal(normalized.imagePath, undefined);
   assert.equal(normalized.originRunId, undefined);
 });
+
+// ── G-H (founder ruling 2026-08-20) ────────────────────────────────────────
+// A card states only what its document records. The old defaults called every
+// design artifact a 1080x1080 "LinkedIn ad"; both facts now come from the
+// document, and a document that records neither says nothing.
+
+test("G-H: an ad carries the document's own size and its recorded channel", () => {
+  const normalized = normalizeGalleryArtifact(
+    toProjectArtifact(
+      listItem({
+        id: "doc-ad-1",
+        documentId: "doc-ad-1",
+        kind: "ad",
+        title: "Insight Health — LinkedIn square ad",
+        artifactType: "linkedin_square_ad",
+        widthPx: 1200,
+        heightPx: 1200,
+      }),
+      { now: NOW },
+    ),
+  );
+
+  assert.equal(normalized.collateralType, "linkedin-ad");
+  assert.equal(normalized.collateralTypeLabel, "LinkedIn ad");
+  assert.deepEqual(normalized.size, {
+    category: "square",
+    height: 1200,
+    label: "1200 × 1200",
+    width: 1200,
+  });
+});
+
+test("G-H: an ad whose document records no channel claims none", () => {
+  const normalized = normalizeGalleryArtifact(
+    toProjectArtifact(
+      listItem({
+        id: "doc-ad-2",
+        documentId: "doc-ad-2",
+        kind: "ad",
+        title: "Untitled design",
+        widthPx: 1080,
+        heightPx: 1920,
+      }),
+      { now: NOW },
+    ),
+  );
+
+  assert.equal(normalized.collateralType, undefined);
+  assert.equal(normalized.collateralTypeLabel, "");
+  // The size is still the document's own, and its category is derived.
+  assert.equal(normalized.size?.label, "1080 × 1920");
+  assert.equal(normalized.size?.category, "portrait");
+});
+
+test("G-H: an ad whose document records no page states no size", () => {
+  const normalized = normalizeGalleryArtifact(
+    toProjectArtifact(
+      listItem({ id: "doc-ad-3", documentId: "doc-ad-3", kind: "ad", title: "Empty" }),
+      { now: NOW },
+    ),
+  );
+
+  assert.equal(normalized.size, undefined);
+  assert.equal(normalized.collateralType, undefined);
+});
+
+test("G-H: an unrecognised artifact type is not forced into the vocabulary", () => {
+  const artifact = toProjectArtifact(
+    listItem({
+      id: "doc-ad-4",
+      documentId: "doc-ad-4",
+      kind: "ad",
+      title: "Conference poster",
+      artifactType: "a2_conference_poster",
+      widthPx: 1191,
+      heightPx: 1684,
+    }),
+  );
+
+  assert.equal(artifact.collateralType, undefined);
+});

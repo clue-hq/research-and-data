@@ -17,7 +17,7 @@ test("gallery artifacts retain project provenance and backend filter facets", ()
   assert.ok(artifacts.every((artifact) => artifact.originThreadId));
   assert.ok(artifacts.every((artifact) => artifact.account?.id));
   assert.ok(artifacts.every((artifact) => artifact.collateralType));
-  assert.ok(artifacts.every((artifact) => artifact.size.label));
+  assert.ok(artifacts.every((artifact) => artifact.size?.label));
   assert.ok(artifacts.every((artifact) => artifact.updatedAt));
 });
 
