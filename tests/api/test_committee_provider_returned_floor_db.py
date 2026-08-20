@@ -128,7 +128,7 @@ def _scope(
         office_label="Insight Health — organization-wide buying unit",
         locality="New York",
         target_functions=("Operations",),
-        evidence_refs=("research-evidence:provider-returned-floor",),
+        evidence_refs=("research-evidence:3f4a5b6c-7d8e-4f90-a1b2-c3d4e5f6a7b8",),
         match_policy=match_policy,
     )
 

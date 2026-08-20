@@ -1946,11 +1946,24 @@ class AccountResearchExecutionGuard(EntityResearchExecutionGuard):
             raise AccountResearchAuthorityError("structured enrichment is independent of Exa Deep")
         elif call.tool_name == "discover_buying_committee":
             scope = call.arguments.get("buying_unit_scope")
-            if not isinstance(scope, dict) or str(scope.get("account_entity_id")) != str(
+            if scope is not None and not isinstance(scope, dict):
+                raise AccountResearchAuthorityError(
+                    "committee discovery's buying_unit_scope must be an object, or omitted "
+                    "entirely so the engine composes it"
+                )
+            declared = scope.get("account_entity_id") if isinstance(scope, dict) else None
+            # An omitted account is now the *engine's* to fill (founder ruling 2026-08-20): the job
+            # is bound to exactly one account, so restating it was ceremony. A declared account is
+            # still an assertion, and a foreign one is still refused here and again at the
+            # provider action's account/people/scope authority check.
+            if declared is not None and str(declared) != str(
                 context.authorization.subject_entity_id
             ):
                 raise AccountResearchAuthorityError(
-                    "committee discovery requires the exact account buying-unit scope"
+                    "committee discovery requires the exact account buying-unit scope: "
+                    "buying_unit_scope.account_entity_id must be "
+                    f"{context.authorization.subject_entity_id} (this job's account, as "
+                    "read_account_research_state reports it), or omitted so the engine fills it"
                 )
         elif call.tool_name in {"assess_account_coverage", "finalize_account_research"}:
             async with self._conn_factory() as conn:

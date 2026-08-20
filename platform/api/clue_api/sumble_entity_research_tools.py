@@ -11,11 +11,13 @@ from decimal import Decimal
 from typing import Final, NamedTuple, Protocol, cast
 from uuid import NAMESPACE_URL, UUID, uuid5
 
+from pydantic import ValidationError
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_agents.account_entity_research import (
     AccountBuyingUnitScope,
+    AccountBuyingUnitScopeRequest,
     DiscoverBuyingCommitteeInput,
 )
 from clue_agents.entity_research_runtime import current_entity_research_tool_execution
@@ -59,6 +61,7 @@ from clue_core import (
     ProjectRunId,
     ResearchCommitteePlan,
     RunId,
+    decode_jsonb,
     decode_jsonb_scalar,
     serialize_value_json,
 )
@@ -72,7 +75,8 @@ from clue_core.entity_research import (
     ResearchFieldResultProjection,
     ResearchSubjectType,
 )
-from clue_research.claimstore import record_run_lineage
+from clue_obs import get_logger
+from clue_research.claimstore import WorkspaceScope, current_values, record_run_lineage
 from clue_research.durable import (
     bind_discovery_artifact_subject,
     capture_discovery_artifact,
@@ -96,6 +100,187 @@ from clue_storage import StorageBackend, content_address, read_verified_artifact
 
 ConnFactory = Callable[[], AbstractAsyncContextManager[AsyncConnection]]
 _EVIDENCE_NAMESPACE = uuid5(NAMESPACE_URL, "clue:m8d:r5:sumble-account-evidence")
+#: One tool call, one durable scope id. Derived rather than model-invented so a repeat committee
+#: call can never reuse an earlier call's scope id (live run ``dc86340f``: the same invented uuid
+#: rode four attempts against one account, which would have silently left the later attempts with
+#: no scope row of their own and their coverage in ``committee_scope_missing_or_ambiguous``).
+_COMMITTEE_SCOPE_NAMESPACE = uuid5(NAMESPACE_URL, "clue:m8d:r5:account-committee-scope")
+_HQ_LOCATION_FIELD: Final[str] = "core.hq_location"
+_MAX_SCOPE_EVIDENCE_REFS: Final[int] = 20
+log = get_logger("clue_api.sumble_entity_research_tools")
+
+
+def _hq_office_values(value: object) -> Mapping[str, str]:
+    """The office discriminators an account's ``core.hq_location`` value actually evidences.
+
+    The shape every writer of that field produces (``exa_websets_materialization``,
+    ``sumble_discovery_gaps``) is ``{"raw", "city", "region", "country", "country_code"}``. Only
+    what is present and non-empty is returned: the engine declares the office the account's own
+    evidence supports and nothing beyond it.
+    """
+
+    if not isinstance(value, Mapping):
+        return {}
+    office: dict[str, str] = {}
+    for claim_key, scope_key in (
+        ("raw", "raw"),
+        ("city", "locality"),
+        ("region", "region"),
+        ("country", "country"),
+    ):
+        item = value.get(claim_key)
+        if isinstance(item, str) and item.strip():
+            office[scope_key] = item.strip()
+    return office
+
+
+def _incomplete_scope_rejection(error: ValidationError) -> EntityResearchGovernedRejection:
+    """Render a resolved-scope violation with the exact repair, never a bare schema echo."""
+
+    items = error.errors(include_url=False, include_input=False)
+    faults = "; ".join(
+        f"{'.'.join(str(part) for part in item['loc']) or 'buying_unit_scope'}: {item['msg']}"
+        for item in items
+    )
+    corrections = " ".join(
+        dict.fromkeys(
+            correction
+            for item in items
+            if (correction := DiscoverBuyingCommitteeInput.validation_correction(item["loc"]))
+        )
+    )
+    return EntityResearchGovernedRejection(
+        "committee_scope_incomplete",
+        f"the buying unit this call resolves to is not complete ({faults}). {corrections}",
+    )
+
+
+async def resolve_account_buying_unit_scope(
+    conn: AsyncConnection,
+    *,
+    request: GovernedResearchToolRequest,
+    requested: AccountBuyingUnitScopeRequest,
+    workspace_id: str,
+) -> AccountBuyingUnitScope:
+    """Complete the model's declaration into the durable scope, from state the engine already holds.
+
+    Founder ruling 2026-08-20 — *the engine disposes, it never quizzes*. Five of the six values
+    this scope used to demand were never the model's to know better than the engine: the scope id
+    (this tool call), the account (the job is bound to exactly one), the office (the account's own
+    ``core.hq_location`` evidence), and the evidence references (this job's own result index).
+    Live run ``dc86340f`` paid for that: seven of eight committee calls died at the Pydantic
+    boundary on a missing ``evidence_refs`` — no provider call, no operation, no spend — and one
+    account burned its whole 900s runtime budget on four of them.
+
+    What the model still owns is preserved exactly: ``target_functions`` (advisory judgment),
+    ``match_policy``, and any deliberately narrower office or ``business_unit``. The engine fills
+    what was omitted and never overwrites what was sent — a *wrong* declaration (a foreign
+    ``account_entity_id``, an invented target function) still meets the same refusals it always
+    did, downstream of here.
+
+    Replay is durable-first: a scope already recorded for this tool request is returned exactly as
+    it was stored, so a historical scope replays byte-identically no matter how the account's
+    evidence has moved since, and ``scope_sha256`` stays stable for the job's state digest.
+    """
+
+    stored = (
+        await conn.execute(
+            text(
+                "SELECT scope_json FROM entity_research_account_committee_scope "
+                "WHERE tool_request_id=:tool_request_id"
+            ),
+            {"tool_request_id": request.tool_call_id},
+        )
+    ).scalar_one_or_none()
+    if stored is not None:
+        return AccountBuyingUnitScope.model_validate(decode_jsonb(stored))
+
+    values = dict(requested.model_dump())
+    values["scope_id"] = uuid5(_COMMITTEE_SCOPE_NAMESPACE, str(request.tool_call_id))
+    if values["account_entity_id"] is None:
+        values["account_entity_id"] = request.target_entity_id
+    account_id = EntityId(request.target_entity_id)
+    hq = (
+        await current_values(
+            conn,
+            [account_id],
+            [_HQ_LOCATION_FIELD],
+            scope=WorkspaceScope.for_workspace(workspace_id),
+        )
+    ).get((account_id, _HQ_LOCATION_FIELD))
+    office = _hq_office_values(hq.value_json) if hq is not None else {}
+    if not any(
+        values[key] is not None
+        for key in ("office_label", "facility_name", "locality", "region", "country")
+    ):
+        # Only when the model declared no geography at all: a model that named one office must not
+        # find a different city grafted onto it. ``business_unit`` is deliberately absent from that
+        # test and never filled — it is the one discriminator that still narrows admission, so the
+        # engine may not assert one on the agent's behalf.
+        for key in ("locality", "region", "country"):
+            values[key] = office.get(key)
+    if values["office_label"] is None:
+        account = await get_account(conn, account_id)
+        values["office_label"] = office.get("raw") or (
+            f"{account.canonical_name} (company-wide)" if account is not None else "company-wide"
+        )
+    if not values["evidence_refs"]:
+        values["evidence_refs"] = await _composed_scope_evidence_refs(
+            conn,
+            request=request,
+            hq_claim_id=None if hq is None else UUID(str(hq.provenance.claim_id)),
+        )
+        if not values["evidence_refs"]:
+            # The honest answer, recorded rather than fabricated: this account job holds no result
+            # and no current claim to cite, so the scope is persisted citing nothing and says so.
+            # The empty ``evidence_refs`` in the durable ``scope_json`` IS the audit trail (and it
+            # rides ``scope_sha256`` into the job's state digest). The alternative would be
+            # inventing a reference; refusing the call outright would put the committee behind
+            # research this job may not owe — an account whose every field was borrowed still owes
+            # its committee attempt.
+            log.warning(
+                "committee_scope_evidence_unavailable",
+                job_id=str(request.job_id),
+                account_entity_id=str(request.target_entity_id),
+                tool_request_id=str(request.tool_call_id),
+                detail="the account job holds no persisted result and no current claim to cite",
+            )
+    try:
+        return AccountBuyingUnitScope.model_validate(values)
+    except ValidationError as error:
+        raise _incomplete_scope_rejection(error) from error
+
+
+async def _composed_scope_evidence_refs(
+    conn: AsyncConnection,
+    *,
+    request: GovernedResearchToolRequest,
+    hq_claim_id: UUID | None,
+) -> tuple[str, ...]:
+    """This job's own retained account evidence, in the exact forms ``_persist_scope`` admits.
+
+    The HQ claim leads because it is the lineage of an engine-composed office; the job's persisted
+    results follow in creation order. Both are re-validated by ``_persist_scope`` against the same
+    job/account authority a model-authored reference meets, so composition can widen nothing.
+    """
+
+    refs: list[str] = []
+    if hq_claim_id is not None:
+        refs.append(f"claim:{hq_claim_id}")
+    rows = (
+        await conn.execute(
+            text(
+                "SELECT result.result_id FROM entity_research_result result "
+                "JOIN entity_research_tool_request request_row "
+                "ON request_row.tool_request_id=result.tool_request_id "
+                "WHERE request_row.job_id=:job_id "
+                "ORDER BY result.created_at, result.result_id"
+            ),
+            {"job_id": request.job_id},
+        )
+    ).scalars()
+    refs.extend(f"research-result:{value}" for value in rows)
+    return tuple(dict.fromkeys(refs))[:_MAX_SCOPE_EVIDENCE_REFS]
 
 
 class _AdmittedProjection(NamedTuple):
@@ -1166,9 +1351,18 @@ class SumbleCommitteeSemanticResearchAction(EntityResearchProviderAction):
     ) -> Sequence[ExternalResearchProjectionDraft]:
         active = current_entity_research_tool_execution()
         semantic = DiscoverBuyingCommitteeInput.model_validate(active.call.arguments)
-        scope = semantic.buying_unit_scope
         preflight, committee_plan = await self._resolve_inputs()
         durable = preflight.request
+        async with self._conn_factory() as conn:
+            # The engine composes what it already knows (scope id, account, office, evidence) so
+            # the model cannot get it wrong; everything the model *did* declare survives verbatim
+            # into the durable scope and meets every authority check below unchanged.
+            scope = await resolve_account_buying_unit_scope(
+                conn,
+                request=request,
+                requested=semantic.buying_unit_scope,
+                workspace_id=durable.workspace_id,
+            )
         self._validate_scope_against_plan(scope, plan=committee_plan)
         if (
             request.subject_type is not ResearchSubjectType.ACCOUNT
@@ -1448,6 +1642,8 @@ class SumbleCommitteeSemanticResearchAction(EntityResearchProviderAction):
             ref.startswith(("research-evidence:", "claim:", "research-result:"))
             for ref in scope.evidence_refs
         ):
+            # Unreachable from a model now — ``evidence_refs`` is shape-checked at the tool's own
+            # input boundary — and kept as the substrate backstop for any other caller.
             raise EntityResearchResultIntegrityError(
                 "buying-unit scope requires durable account evidence references"
             )
@@ -1491,8 +1687,19 @@ class SumbleCommitteeSemanticResearchAction(EntityResearchProviderAction):
                         },
                     )
                 if found.scalar_one_or_none() is None:
-                    raise EntityResearchResultIntegrityError(
-                        "buying-unit scope cites evidence outside the exact account job"
+                    # A model-authored reference to something this job/account does not own is the
+                    # repairable species (the same class ``cd15398d`` converted across the read
+                    # tools), not a truth violation: refuse it back with the exact repair instead
+                    # of suspending the job. An engine-composed reference cannot land here — it is
+                    # read from this job's own results and the account's own claim.
+                    raise EntityResearchGovernedRejection(
+                        "committee_scope_evidence_outside_job",
+                        f"buying_unit_scope.evidence_refs cites {ref[:80]!r}, which this account "
+                        "job does not own. Use only references your own "
+                        "read_account_research_state result index surfaces "
+                        "('result_refs' like 'research-result:<uuid>', "
+                        "'existing_claims[].claim_ref' like 'claim:<uuid>'), or omit the key "
+                        "entirely and the engine cites the evidence this job already holds.",
                     )
             values = {
                 "scope_id": scope.scope_id,
@@ -1921,4 +2128,5 @@ __all__ = [
     "SumbleAccountSemanticEnrichmentAction",
     "SumbleCommitteeSemanticResearchAction",
     "SumbleEntityResearchLineageReader",
+    "resolve_account_buying_unit_scope",
 ]

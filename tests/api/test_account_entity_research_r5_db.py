@@ -1591,7 +1591,7 @@ def test_r5_committee_office_filter_admits_only_people_facts_in_the_exact_buying
         region="Massachusetts",
         business_unit="Patient Access",
         target_functions=("Operations", "Finance"),
-        evidence_refs=("research-evidence:account-location",),
+        evidence_refs=("research-evidence:7c9e6f1a-2b3d-4e5f-8a91-0c1d2e3f4a5b",),
         match_policy="same_office_strict",
     )
 
@@ -1662,7 +1662,7 @@ def test_r5_committee_filter_accepts_exact_provider_employer_as_organization_wid
         office_label="Exact organization-wide buying unit",
         business_unit="New Jersey Brain and Spine",
         target_functions=("Executive", "Operations"),
-        evidence_refs=("research-evidence:exact-account",),
+        evidence_refs=("research-evidence:1d2e3f4a-5b6c-4d7e-8f90-a1b2c3d4e5f6",),
     )
 
     def candidate(*, name: str, employer: str) -> CommitteePersonCandidate:
@@ -1724,7 +1724,7 @@ def test_r5_committee_filter_matches_provider_values_never_schema_keys() -> None
         office_label="Organization-wide unit named like a schema key",
         business_unit="Current Employee",
         target_functions=("Executive",),
-        evidence_refs=("research-evidence:exact-account",),
+        evidence_refs=("research-evidence:1d2e3f4a-5b6c-4d7e-8f90-a1b2c3d4e5f6",),
     )
     candidate = CommitteePersonCandidate(
         source_key=PEOPLE_SOURCE_KEY,
@@ -1785,7 +1785,7 @@ def test_r5_office_gate_admits_the_live_paramus_candidate_vetoed_by_region_spell
         region="NJ",
         country="United States",
         target_functions=("Executive", "Operations", "Marketing"),
-        evidence_refs=("research-evidence:live-account-profile",),
+        evidence_refs=("research-evidence:2e3f4a5b-6c7d-4e8f-9a01-b2c3d4e5f6a7",),
         match_policy="same_office_strict",
     )
 
@@ -1848,7 +1848,7 @@ def test_r5_office_gate_admits_the_live_paramus_candidate_vetoed_by_region_spell
         office_label="New Jersey organization-wide unit",
         region="NJ",
         target_functions=("Executive", "Operations", "Marketing"),
-        evidence_refs=("research-evidence:live-account-profile",),
+        evidence_refs=("research-evidence:2e3f4a5b-6c7d-4e8f-9a01-b2c3d4e5f6a7",),
         match_policy="same_office_strict",
     )
     selected, _excluded, ambiguous = SumbleCommitteeSemanticResearchAction._office_candidates(

@@ -546,22 +546,35 @@ def _json_contains_text(data: bytes, span: str) -> bool:
     return contains(decoded)
 
 
-def semantic_validation_error(error: ValidationError) -> str:
+def semantic_validation_error(
+    error: ValidationError, *, schema: type[BaseModel] | None = None
+) -> str:
     """Return bounded actionable feedback without echoing model-authored values.
 
     Public because every governed tool surface — provider tools here, the account/contact *engine*
     tools at the composition root — must degrade an argument-schema violation to one repairable
     message rather than an uncaught ``ValidationError`` that kills the run.
+
+    When ``schema`` declares a ``validation_correction(location)`` classmethod, each detail also
+    carries the exact repair for that argument. Naming the field is not enough on its own: live
+    run ``dc86340f`` refused seven of eight committee calls with ``{"location":
+    ["buying_unit_scope", "evidence_refs"], "message": "Field required"}`` and the agent — told
+    what was missing but never what belongs in it, what one looks like, or where to find one —
+    retried the same malformed shape until the account's runtime budget ran out. Corrections are
+    opt-in per schema by registration, so no tool name is special-cased here.
     """
 
-    details = [
-        {
+    correction_for = getattr(schema, "validation_correction", None)
+    details: list[dict[str, JsonValue]] = []
+    for item in error.errors(include_url=False, include_input=False):
+        detail: dict[str, JsonValue] = {
             "location": [str(part) for part in item["loc"]],
             "message": str(item["msg"]),
             "type": str(item["type"]),
         }
-        for item in error.errors(include_url=False, include_input=False)
-    ]
+        if correction_for is not None and (correction := correction_for(item["loc"])) is not None:
+            detail["correction"] = str(correction)
+        details.append(detail)
     return json.dumps(
         {
             "error": "semantic_tool_input_validation_failed",
@@ -2955,7 +2968,9 @@ class GovernedEntityResearchToolFactory:
                 "lineage only after durable persistence."
             ),
             args_schema=args_schema,
-            handle_validation_error=semantic_validation_error,
+            handle_validation_error=functools.partial(
+                semantic_validation_error, schema=args_schema
+            ),
             handle_tool_error=True,
         )
 

@@ -174,15 +174,20 @@ seven: two current CXOs fell because the plan said "Clinical" where the provider
 and four more because their facts arrived via Teams. Every one of those six was a real, current,
 senior employee. Mechanical string gates cost real committee members; you don't have to.)
 
-**Call.** People enumeration, never field research:
-`{"source_keys": ["sumble_people"], "field_keys": [], "questions": [], "parent_operation_ref":
-null, "parent_observation_ref": null, "follow_up_reason": null, "buying_unit_scope": {...}}`.
-The scope requires `scope_id` (a new uuid), `account_entity_id` (exactly this account),
-`office_label`, at least one of `facility_name` / `locality` / `region` / `business_unit`,
-`evidence_refs` (1–20 `research-result:<uuid>` or `claim:<uuid>` refs surfaced by your state — an
-older run's fresh `claim:` ref is valid evidence), and optionally `target_functions` and
-`match_policy`. Copy a confirmed committee question verbatim or leave `questions` empty; never
-invent one.
+**Call.** People enumeration, never field research. The whole call is:
+`{"source_keys": ["sumble_people"], "field_keys": [], "questions": []}`. Copy a confirmed
+committee question verbatim or leave `questions` empty; never invent one.
+
+**The engine composes `buying_unit_scope` — omit it unless you want something narrower.** The
+scope id, the account, its office (from the account's own HQ-location evidence) and its
+`evidence_refs` (from your own result index) all come from durable state the engine already holds,
+so there is nothing there for you to get wrong. Every field is optional and so is the object. Send
+one only to declare something *deliberate*: advisory `target_functions`, a `business_unit`, a
+narrower office, or `"match_policy": "same_office_strict"`. Anything you do send is kept verbatim
+and still checked — a foreign `account_entity_id`, an invented target function, or an
+`evidence_refs` entry outside this job is refused (recoverably). If you send `evidence_refs`, each
+entry is `claim:<uuid>` or `research-result:<uuid>`, taken verbatim from your state's
+`result_refs` / `existing_claims[].claim_ref`; an older run's fresh `claim:` ref is valid evidence.
 
 **`target_functions` is advisory, and may be empty (0–20).** It records, for audit, which of the
 confirmed committee plan's functions you set out to map. It does **not** decide who is admitted, so
@@ -211,8 +216,15 @@ cover is routed to review, not admitted.
   arguments) — call `discover_buying_committee` with the listed `source_keys` and no questions
   **immediately, in the very next call**. Do not read state first, do not assess first, do not ask
   a question. This exact ping-pong killed live jobs.
-- `committee discovery requires the exact account buying-unit scope` — `account_entity_id` must be
-  this job's account.
+- `committee discovery requires the exact account buying-unit scope` — a declared
+  `account_entity_id` must be this job's account. Drop the key and the engine fills it.
+- `semantic_tool_input_validation_failed` — a malformed argument, refused before any spend. Every
+  detail now carries a `correction` naming the exact repair; read it and send once more. The
+  minimal always-legal call is `{"source_keys": ["<admitted key>"], "field_keys": [],
+  "questions": []}`.
+- `committee_scope_evidence_outside_job` / `committee_scope_incomplete` — an `evidence_refs` entry
+  this job does not own, or a scope that cannot be completed (only `same_office_strict` can do
+  that: it needs a declared office). Drop the offending key and re-send.
 - `request_authority_violation` — an invented `target_function`, a paraphrased question, or an
   unadmitted source. Narrow to the confirmed plan (or drop `target_functions` entirely, since it is
   advisory) and send once more.

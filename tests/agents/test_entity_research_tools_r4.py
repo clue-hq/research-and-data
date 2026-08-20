@@ -197,6 +197,14 @@ def test_governed_provider_tool_returns_actionable_bounded_schema_feedback(
     assert payload["error"] == "semantic_tool_input_validation_failed"
     assert payload["details"] == [
         {
+            # The committee schema registers a per-field correction, so the refusal names the
+            # exact repair as well as the fault. Naming only the fault is what let the live agent
+            # retry the same malformed shape until its runtime budget ran out (run ``dc86340f``).
+            "correction": (
+                "'field_keys' must be omitted or []: committee discovery enumerates people, "
+                "never account fields. Research fields with research_account_deep or "
+                "enrich_account instead."
+            ),
             "location": ["field_keys"],
             "message": "Tuple should have at most 0 items after validation, not 1",
             "type": "too_long",
