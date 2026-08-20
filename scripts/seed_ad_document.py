@@ -576,31 +576,42 @@ async def main() -> None:
 
         async with engine.connect() as conn:
             document = (
-                await conn.execute(
-                    text(
-                        "SELECT id, doc_kind, title, status, current_version,"
-                        " effective_brand_kit_id, effective_brand_kit_version"
-                        " FROM design_document WHERE id = :d AND workspace_id = :w"
-                    ),
-                    {"d": DOCUMENT_ID, "w": WORKSPACE_ID},
+                (
+                    await conn.execute(
+                        text(
+                            "SELECT id, doc_kind, title, status, current_version,"
+                            " effective_brand_kit_id, effective_brand_kit_version"
+                            " FROM design_document WHERE id = :d AND workspace_id = :w"
+                        ),
+                        {"d": DOCUMENT_ID, "w": WORKSPACE_ID},
+                    )
                 )
-            ).mappings().one()
+                .mappings()
+                .one()
+            )
             leg = (
-                await conn.execute(
-                    text(
-                        "SELECT id, thread_id, document_id, state FROM design_leg WHERE id = :id"
-                    ),
-                    {"id": LEG_ID},
+                (
+                    await conn.execute(
+                        text(
+                            "SELECT id, thread_id, document_id, state"
+                            " FROM design_leg WHERE id = :id"
+                        ),
+                        {"id": LEG_ID},
+                    )
                 )
-            ).mappings().one()
+                .mappings()
+                .one()
+            )
 
         print("document:", dict(document))
         print("leg:     ", dict(leg))
         print(f"workspace:      {WORKSPACE_ID}")
         print(f"artifact route: /projects/{PROJECT_ID}/artifacts/{DOCUMENT_ID}")
         print(f"chats route:    /projects/{PROJECT_ID}/chats/{THREAD_ID}")
-        print(f"harvest:        curl -s -H 'X-Workspace-Id: {WORKSPACE_ID}' "
-              f"{design_api_url()}/documents/{DOCUMENT_ID}")
+        print(
+            f"harvest:        curl -s -H 'X-Workspace-Id: {WORKSPACE_ID}' "
+            f"{design_api_url()}/documents/{DOCUMENT_ID}"
+        )
         print(f"asset bytes:    {design_api_url()}/asset-store/{ASSET_DIGEST}")
     finally:
         await engine.dispose()
