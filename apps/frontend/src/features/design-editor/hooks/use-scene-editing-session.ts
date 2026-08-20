@@ -3,8 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { InspectorEventAddressing } from "@/features/chat-shell/hooks/use-inspector-controller";
 import {
-  hydrateSceneCanvasState,
-  hydrateSceneInspectorState,
+  hydrateSceneSelectionState,
   rootFrameId,
   sceneSelectionFor,
   type SceneInspectorState,
@@ -210,11 +209,18 @@ export function useSceneEditingSession({
     );
   }, [pageId, primaryNode, scene]);
 
-  const hydrated = useMemo<SceneInspectorState | null>(() => {
-    if (!scene) return null;
-    if (primaryNode) return hydrateSceneInspectorState(primaryNode, scene);
-    return pageId ? hydrateSceneCanvasState(scene, pageId) : null;
-  }, [pageId, primaryNode, scene]);
+  // AD4.0 step 2: the routing moved into the adapter
+  // (`hydrateSceneSelectionState`) once the canvas schema gained its SECOND
+  // entry state — a selected root frame renders §1.1's page rows, which a node
+  // hydration cannot state. The rule, and why the node still wins every shared
+  // field, is documented there.
+  const hydrated = useMemo<SceneInspectorState | null>(
+    () =>
+      scene
+        ? hydrateSceneSelectionState(scene, pageId, primaryNode ?? null)
+        : null,
+    [pageId, primaryNode, scene],
+  );
 
   // AD2.6: `expanded` is an INPUT to the row builder — nobody below owns it.
   // The user's toggles live here and the seed (artboard + the primary's

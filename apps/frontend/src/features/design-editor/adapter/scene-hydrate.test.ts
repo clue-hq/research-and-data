@@ -17,12 +17,15 @@ import {
   adRect,
   adTokenText,
 } from "./__fixtures__/scene-nodes";
+import type { InspectorBackgroundFill } from "@/features/chat-shell/hooks/use-inspector-controller";
 import {
   CUSTOM_SIZE_PRESET,
   SIZE_PRESETS,
+  backgroundFillCommits,
   customSizeForPreset,
   hydrateSceneCanvasState,
   hydrateSceneInspectorState,
+  hydrateSceneSelectionState,
   rootFrameId,
   sceneSelectionFor,
 } from "./scene-hydrate";
@@ -548,16 +551,137 @@ it("§1.1: a RADIAL gradient root frame hydrates angle 0 — the engine stores n
   });
 });
 
-it("§1.1: a TOKEN-filled root frame hydrates its token name, and states no hex", () => {
-  // The harvested `$text.inverse` token paint on the root frame. The token
-  // name is the fact; a hex would be invented, so `backgroundColor` is left
-  // unstated and the caller's default stands.
+it("§1.1: a TOKEN-filled root frame hydrates its token name, and states it in the swatch", () => {
+  // The harvested `$text.inverse` token paint on the root frame. Ruling A15.1:
+  // the swatch states the token NAME — the fact the document carries — exactly
+  // as §1.2's stroke row already does for a token stroke. Leaving it unstated
+  // showed the shared `DEFAULT_STATE` seed `#00F59B`, a colour of the dummy's.
   const state = hydrateSceneCanvasState(
     withRootFills([...adTokenText().fills]),
     AD_PAGE_ID,
   );
   assert.equal(state.tokenBackgroundColor, "$text.inverse");
-  assert.equal(state.backgroundColor, undefined);
+  assert.equal(state.backgroundColor, "$text.inverse");
+});
+
+it("A15.1: a GRADIENT-filled root frame states its FIRST STOP in the swatch, never a fixture", () => {
+  // Browser-proven defect: with a radial gradient on the frame, picking
+  // "Solid" left the select saying "Solid", the swatch saying a colour from
+  // two edits earlier, and the artboard rendering the gradient — three answers
+  // at once. The first stop is a colour the document really has, and it is the
+  // exact inverse of `solidFill`, which already seeds a gradient's stops from
+  // the solid colour.
+  const gradient = withRootFills([...adRect().fills]);
+  assert.equal(
+    hydrateSceneCanvasState(gradient, AD_PAGE_ID).backgroundColor,
+    "#533AFD",
+  );
+  // And identically through the NODE hydrator, which is what the same panel
+  // uses when the artboard itself is the selection — the two ways of opening
+  // the canvas schema may not disagree.
+  assert.equal(
+    hydrateSceneInspectorState(gradient.nodes[AD_ROOT_FRAME_ID], gradient)
+      .backgroundColor,
+    "#533AFD",
+  );
+});
+
+it("A15.1: a fill-less root frame still states the honest none, through both hydrators", () => {
+  const bare = withRootFills([]);
+  assert.equal(hydrateSceneCanvasState(bare, AD_PAGE_ID).backgroundColor, "none");
+  assert.equal(
+    hydrateSceneInspectorState(bare.nodes[AD_ROOT_FRAME_ID], bare).backgroundColor,
+    "none",
+  );
+});
+
+// ── §1.1 row 2 / Ruling A15.2: what one Background fill change commits ──────
+
+/** The control's state for a gradient, as `BackgroundFillControl` holds it. */
+const GRADIENT: InspectorBackgroundFill = {
+  angle: 90,
+  stops: [
+    { color: "#533AFD", position: 0 },
+    { color: "#8B5CF6", position: 50 },
+    { color: "#EA2261", position: 100 },
+  ],
+  type: "linear-gradient",
+};
+const SOLID: InspectorBackgroundFill = {
+  angle: 0,
+  stops: [
+    { color: "#0E0B2E", position: 0 },
+    { color: "#0E0B2E", position: 100 },
+  ],
+  type: "solid",
+};
+
+it("A15.2: SOLID → gradient carries the colour the user just set, not the mount-time seed", () => {
+  // Browser-proven defect 1: setting the background to #2E7D32 (the document
+  // really became green) then picking "Linear gradient" wrote
+  // `stops:[#0e0b2e,#0e0b2e]` — the colour from BEFORE the green edit — and
+  // the artboard visibly reverted. The swatch's current value is what is on
+  // screen, so it is what the gradient starts from.
+  assert.deepEqual(
+    backgroundFillCommits(SOLID, { ...SOLID, type: "linear-gradient" }, "#2E7D32"),
+    [
+      {
+        property: "backgroundFill",
+        value: {
+          angle: 0,
+          stops: [
+            { color: "#2E7D32", position: 0 },
+            { color: "#2E7D32", position: 100 },
+          ],
+          type: "linear-gradient",
+        },
+      },
+    ],
+  );
+});
+
+it("A15.2: gradient → SOLID commits the outgoing paint's first stop, so one click is a real solid", () => {
+  // Browser-proven defect 2: it wrote nothing at all. The colour committed is
+  // one the document HAS (the first stop), never the swatch's stale value.
+  assert.deepEqual(
+    backgroundFillCommits(GRADIENT, { ...GRADIENT, type: "solid" }, "#2E7D32"),
+    [
+      { property: "backgroundFill", value: { ...GRADIENT, type: "solid" } },
+      { property: "backgroundColor", value: "#533AFD" },
+    ],
+  );
+});
+
+it("A15.2: linear ↔ radial re-seeds nothing — both stop lists are already on screen", () => {
+  assert.deepEqual(
+    backgroundFillCommits(GRADIENT, { ...GRADIENT, type: "radial-gradient" }, "#2E7D32"),
+    [{ property: "backgroundFill", value: { ...GRADIENT, type: "radial-gradient" } }],
+  );
+});
+
+it("A15.2: a stop or angle edit is ONE commit, verbatim — it is not a mode switch", () => {
+  const edited = {
+    ...GRADIENT,
+    angle: 45,
+    stops: [...GRADIENT.stops.slice(0, 1), { color: "#FF6B00", position: 50 }, ...GRADIENT.stops.slice(2)],
+  };
+  assert.deepEqual(backgroundFillCommits(GRADIENT, edited, "#2E7D32"), [
+    { property: "backgroundFill", value: edited },
+  ]);
+});
+
+it("A15.2: a stopless gradient → SOLID falls back to the swatch, inventing nothing", () => {
+  // Unreachable from the control (2–6 stops) but storable, so the rule is
+  // total: with no stop to read, the only other colour on screen is the
+  // swatch's own.
+  const stopless = { ...GRADIENT, stops: [] };
+  assert.deepEqual(
+    backgroundFillCommits(stopless, { ...stopless, type: "solid" }, "#2E7D32"),
+    [
+      { property: "backgroundFill", value: { ...stopless, type: "solid" } },
+      { property: "backgroundColor", value: "#2E7D32" },
+    ],
+  );
 });
 
 /** The harvested scene with the ROOT FRAME's fills replaced — the one field
@@ -567,3 +691,36 @@ function withRootFills(fills: Scene["nodes"][string]["fills"]): Scene {
   scene.nodes[AD_ROOT_FRAME_ID].fills = fills;
   return scene;
 }
+
+// ── AD4.0 step 2: the canvas schema's TWO entry states hydrate alike ────────
+
+it("§1.1: a selected ROOT FRAME hydrates the PAGE's rows too — the Size select may not show a fixture", () => {
+  // `sceneSelectionFor` routes the root frame to the canvas schema, so this
+  // panel shows §1.1's size rows while being hydrated from a NODE, which has
+  // no answer for them: the select fell back to the dummy's default preset on
+  // any page that was not 1200x1200. Same rule the review applied twice
+  // already — a field may not display a number the document does not have.
+  const story = withPageSize(1080, 1920);
+  const state = hydrateSceneSelectionState(
+    story,
+    AD_PAGE_ID,
+    story.nodes[AD_ROOT_FRAME_ID],
+  );
+  assert.equal(state?.sizePreset, "Story (9:16) - 1080x1920");
+  assert.equal(state?.customWidth, "1080");
+  assert.equal(state?.customHeight, "1920");
+  // The NODE still wins every field they share — its own title and lock.
+  assert.equal(state?.title, "Ad artboard");
+  assert.equal(state?.locked, false);
+  // …and the two entry states agree on the Background.
+  const empty = hydrateSceneSelectionState(story, AD_PAGE_ID, null);
+  assert.equal(state?.backgroundColor, empty?.backgroundColor);
+  assert.deepEqual(state?.backgroundFill, empty?.backgroundFill);
+});
+
+it("§1.1: any OTHER selected node hydrates as a node, with no page rows bolted on", () => {
+  const state = hydrateSceneSelectionState(SCENE, AD_PAGE_ID, adTokenText());
+  assert.equal(state?.sizePreset, undefined);
+  assert.equal(state?.customWidth, undefined);
+  assert.equal(state?.title, "Headline");
+});

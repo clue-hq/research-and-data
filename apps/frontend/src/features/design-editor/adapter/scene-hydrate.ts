@@ -264,6 +264,81 @@ export function customSizeForPreset(
   return { height: numberText(preset.height), width: numberText(preset.width) };
 }
 
+/** Ruling A15.2: ONE commit the Background section makes — the property and
+ * the value, exactly as `useInspectorController.setValue` takes them. */
+export type BackgroundCommit =
+  | { property: "backgroundColor"; value: string }
+  | { property: "backgroundFill"; value: InspectorBackgroundFill };
+
+/**
+ * §1.1 row 2 / Ruling A15.2: what ONE change of the Background fill control
+ * commits — the whole handler's decision, pure, so the component holds none of
+ * it (the `customSizeForPreset` precedent from AD4.0 step 1, which likewise
+ * dispatches AND keeps a sibling control honest inside one handler).
+ *
+ * Two browser-proven defects live here, and they are one bug: the fill OBJECT
+ * in controller state is seeded once at mount and does not track the writes
+ * that follow, so a mode switch commits a stale seed.
+ *
+ *   • SOLID → GRADIENT discarded the colour the user had just set (green
+ *     reverted to the pre-edit navy) because the object's stops still carried
+ *     the mount-time colour. Fixed by re-seeding every stop from `solidColor`
+ *     — which IS what the swatch is showing — when leaving solid. Hydrate's
+ *     own `solidFill` seeds stops from the solid colour for exactly this
+ *     reason; this keeps that true after the first edit, not only at mount.
+ *   • GRADIENT → SOLID wrote nothing at all, leaving the select saying
+ *     "Solid", the swatch saying something else, and the artboard still
+ *     rendering the gradient. Fixed by committing `backgroundColor` with the
+ *     OUTGOING paint's first stop — a colour the document really has — which
+ *     is the row that carries a colour (the fill object does not; see
+ *     `scene-apply.ts`'s `backgroundPaint` `solid` case).
+ *
+ * EXACTLY ONE DOCUMENT VERSION per switch, which is the property that matters:
+ * the two commits the gradient→solid case returns are one no-op and one write.
+ * `backgroundFill` with `type: "solid"` maps to NO operation by contract (it
+ * carries no colour), so the pair collapses to a single write in the adapter —
+ * proven by a test that runs both commits through it and counts operations.
+ * Stop positions, counts and the angle ride through untouched.
+ */
+export function backgroundFillCommits(
+  current: InspectorBackgroundFill,
+  next: InspectorBackgroundFill,
+  solidColor: string,
+): BackgroundCommit[] {
+  if (next.type === current.type) {
+    // A stop colour, a stop position, the angle — not a mode switch.
+    return [{ property: "backgroundFill", value: next }];
+  }
+  if (next.type === "solid") {
+    return [
+      { property: "backgroundFill", value: next },
+      {
+        property: "backgroundColor",
+        // The outgoing gradient's first stop. A stopless gradient cannot come
+        // from this control (2–6 stops); if one ever arrives, the swatch's own
+        // value is the only other thing on screen, so nothing is invented.
+        value: current.stops[0]?.color ?? solidColor,
+      },
+    ];
+  }
+  if (current.type === "solid") {
+    return [
+      {
+        property: "backgroundFill",
+        // Positions and count survive; only the colours are re-stated, because
+        // while solid there is exactly one colour on screen.
+        value: {
+          ...next,
+          stops: next.stops.map((stop) => ({ ...stop, color: solidColor })),
+        },
+      },
+    ];
+  }
+  // linear ↔ radial: both are gradients, so the stops are already the ones on
+  // screen and nothing needs re-seeding.
+  return [{ property: "backgroundFill", value: next }];
+}
+
 /**
  * A `Color` as the picker's swatch value: hex verbatim (upper-cased, the
  * casing `ColorControl` itself commits), oklch converted through the engine's
@@ -305,6 +380,27 @@ interface PaintState {
   /** The hex swatch, when the paint has one. */
   color?: string;
   fill: InspectorBackgroundFill;
+  /**
+   * Ruling A15.1 (2026-08-21): what a SINGLE swatch must display for this
+   * paint — always a fact the document carries, never a fixture.
+   *
+   * `color` is stated only for a paint that IS a solid hex, which left the
+   * Background swatch showing the shared `DEFAULT_STATE` seed (`#00F59B`)
+   * beside a gradient. Browser-proven defect: with a radial gradient on the
+   * frame, picking "Solid" showed the select saying "Solid", the swatch saying
+   * a colour from two edits earlier, and the artboard rendering the gradient —
+   * three answers at once. A gradient's FIRST STOP is the truthful answer (and
+   * the exact inverse of `solidFill` below, which already seeds a gradient's
+   * stops from the solid colour so a mode switch "starts from what is on
+   * screen"); a token paint states its `$name`, exactly as the stroke row
+   * already does.
+   *
+   * Only the two §1.1/§1.6 BACKGROUND consumers read this. `textColor` and
+   * `strokeColor` keep reading `color`/`token`: the text swatch's write is
+   * gradient-GUARDED (AD3.1), so showing a colour it would then refuse to edit
+   * is a different question, and not this ruling's.
+   */
+  swatch: string;
   /** The token NAME, when the paint is token-bound. */
   token?: string;
 }
@@ -313,28 +409,33 @@ interface PaintState {
  * stop positions are the engine's 0–1 as the control's 0–100 percent. */
 function paintState(paint: Paint | undefined): PaintState {
   if (!paint) {
-    return { color: COLOR_NONE, fill: NONE_FILL };
+    return { color: COLOR_NONE, fill: NONE_FILL, swatch: COLOR_NONE };
   }
   switch (paint.kind) {
     case "solid": {
       const hex = colorText(paint.color);
-      return { color: hex, fill: solidFill(hex) };
+      return { color: hex, fill: solidFill(hex), swatch: hex };
     }
     case "token":
-      return { fill: NONE_FILL, token: paint.token };
+      return { fill: NONE_FILL, swatch: paint.token, token: paint.token };
     case "linear_gradient":
-    case "radial_gradient":
+    case "radial_gradient": {
+      const stops = paint.stops.map((stop) => ({
+        color: colorText(stop.color),
+        position: Math.round(stop.position * 100),
+      }));
       return {
         fill: {
           angle: paint.kind === "linear_gradient" ? paint.angle : 0,
-          stops: paint.stops.map((stop) => ({
-            color: colorText(stop.color),
-            position: Math.round(stop.position * 100),
-          })),
+          stops,
           type:
             paint.kind === "linear_gradient" ? "linear-gradient" : "radial-gradient",
         },
+        // A stopless gradient (storable, unreachable from this control) has no
+        // colour to state, so it states none rather than inventing one.
+        swatch: stops[0]?.color ?? COLOR_NONE,
       };
+    }
   }
 }
 
@@ -423,7 +524,12 @@ export function hydrateSceneInspectorState(
     if (fill.color !== undefined) state.textColor = fill.color;
     if (fill.token !== undefined) state.tokenTextColor = fill.token;
   } else {
-    if (fill.color !== undefined) state.backgroundColor = fill.color;
+    // Ruling A15.1: the Background swatch states `swatch`, never a fixture.
+    // This branch hydrates the CANVAS schema too — a selected root frame routes
+    // there (`sceneSelectionFor`) and is hydrated as a node — so it must state
+    // exactly what `hydrateSceneCanvasState` does, or the panel would differ
+    // between the two ways of opening it.
+    state.backgroundColor = fill.swatch;
     if (fill.token !== undefined) state.tokenBackgroundColor = fill.token;
     state.backgroundFill = fill.fill;
   }
@@ -501,6 +607,39 @@ export function hydrateSceneInspectorState(
 }
 
 /**
+ * What the ad inspector hydrates for ONE selection — the router over the two
+ * hydrators below, so the panel reads the same values however it was opened.
+ *
+ * AD4.0 step 2. The canvas schema has TWO entry states (`sceneSelectionFor`
+ * routes the page's ROOT FRAME to it), and a node hydration cannot state
+ * §1.1's PAGE rows: with the artboard selected, the Size select fell back to
+ * the dummy's own default preset and the Custom boxes to `1200`/`1200`,
+ * whatever size the page really was — the same "a field may not display a
+ * number the document does not have" rule that AD4.0's review already applied
+ * twice. So a selected root frame hydrates the page's canvas state FIRST and
+ * its own node state over it; the node wins every field they share (its title,
+ * its lock, its own fill), and the page contributes only the rows a node has
+ * no answer for.
+ *
+ * Every other selection is unchanged: a node hydrates as a node, the empty
+ * selection as the page.
+ */
+export function hydrateSceneSelectionState(
+  scene: Scene,
+  pageId: PageId | null,
+  node: Node | null,
+): SceneInspectorState | null {
+  if (!node) {
+    return pageId ? hydrateSceneCanvasState(scene, pageId) : null;
+  }
+  const nodeState = hydrateSceneInspectorState(node, scene);
+  if (!pageId || node.id !== rootFrameId(scene, pageId)) {
+    return nodeState;
+  }
+  return { ...hydrateSceneCanvasState(scene, pageId), ...nodeState };
+}
+
+/**
  * §1.1: the canvas (page) schema — the state an EMPTY selection hydrates.
  *
  * Two rows: the size preset, matched on the page's pixel size (with the Custom
@@ -538,7 +677,9 @@ export function hydrateSceneCanvasState(
   const frameId = page ? rootFrameId(scene, pageId) : null;
   const root = frameId ? scene.nodes[frameId] : null;
   const fill = paintState(root?.fills[0]?.paint);
-  if (fill.color !== undefined) state.backgroundColor = fill.color;
+  // Ruling A15.1: `swatch`, not `color` — a gradient-filled frame must show the
+  // colour the document HAS (its first stop), not the dummy's `#00F59B` seed.
+  state.backgroundColor = fill.swatch;
   if (fill.token !== undefined) state.tokenBackgroundColor = fill.token;
   state.backgroundFill = fill.fill;
 

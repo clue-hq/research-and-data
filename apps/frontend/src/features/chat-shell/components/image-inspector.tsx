@@ -2,6 +2,7 @@
 
 import { useState, type ReactNode } from "react";
 import {
+  backgroundFillCommits,
   customSizeForPreset,
   type SceneInspectorState,
 } from "@/features/design-editor/adapter/scene-hydrate";
@@ -10,6 +11,7 @@ import {
   useInspectorController,
   useInspectorLayerTree,
   type HorizontalAlignment,
+  type InspectorBackgroundFill,
   type InspectorEventAddressing,
 } from "../hooks/use-inspector-controller";
 import {
@@ -398,6 +400,30 @@ function AdCanvasInspector({
       committed: { ...current.committed, [axis]: value },
     }));
   };
+  // §1.1 row 2 / Ruling A15.2: the Background fill control's one handler. The
+  // DECISION is pure and lives in the adapter (`backgroundFillCommits`, which
+  // states the two browser-proven defects it fixes); this is only the dispatch,
+  // exactly as `changeSizePreset` below is only the dispatch plus its re-seed.
+  //
+  // A mode switch to Solid returns TWO commits — the type (so the control
+  // renders the swatch) and the colour (the row that actually carries one) —
+  // and they collapse to ONE document version, because a solid fill object maps
+  // to no operation by contract. This is not a general re-hydrate mechanism: it
+  // is this section's own handler keeping its two controls consistent with the
+  // writes it dispatches.
+  const changeBackgroundFill = (next: InspectorBackgroundFill) => {
+    for (const commit of backgroundFillCommits(
+      state.backgroundFill,
+      next,
+      state.backgroundColor,
+    )) {
+      if (commit.property === "backgroundColor") {
+        setValue("backgroundColor", commit.value);
+      } else {
+        setValue("backgroundFill", commit.value);
+      }
+    }
+  };
   const changeSizePreset = (label: string) => {
     setValue("sizePreset", label);
     // The picked preset IS the page's new size, so the boxes read it — "Custom"
@@ -422,7 +448,7 @@ function AdCanvasInspector({
         <InspectorField label="Fill">
           <BackgroundFillControl
             fill={state.backgroundFill}
-            onFillChange={(value) => setValue("backgroundFill", value)}
+            onFillChange={changeBackgroundFill}
             onSolidColorChange={(value) => setValue("backgroundColor", value)}
             solidColor={state.backgroundColor}
           />

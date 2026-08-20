@@ -22,7 +22,11 @@ import {
   adRect,
   adTokenText,
 } from "./__fixtures__/scene-nodes";
-import { COLOR_NONE, hydrateSceneCanvasState } from "./scene-hydrate";
+import {
+  COLOR_NONE,
+  backgroundFillCommits,
+  hydrateSceneCanvasState,
+} from "./scene-hydrate";
 import {
   sceneCanvasChangeToOperation,
   sceneChangeToOperation,
@@ -1247,3 +1251,70 @@ function rehydrateBackground(scene: Scene, fill: InspectorBackgroundFill): Scene
   written.nodes[AD_ROOT_FRAME_ID].fills = fills.value;
   return written;
 }
+
+// ══ Ruling A15.2 — one mode switch is ONE document version ══════════════════
+
+it("A15.2: a gradient → SOLID switch produces EXACTLY ONE operation, and it is the colour", () => {
+  // The handler returns two commits (the type, so the control renders the
+  // swatch; then the colour, the only row that carries one). This is the
+  // property that matters: run BOTH through the adapter against the scene the
+  // panel is showing and exactly one operation comes out, so one click is one
+  // document version — never two, and never a lost write to the one-in-flight
+  // discipline.
+  const scene = rootLinearGradient();
+  const shown = harvestedGradientState(scene);
+  const operations = backgroundFillCommits(
+    shown,
+    { ...shown, type: "solid" },
+    hydrateSceneCanvasState(scene, AD_PAGE_ID).backgroundColor ?? "",
+  )
+    .map((commit) => applyCanvas(commit.property, commit.value, scene))
+    .filter((operation) => operation !== null);
+  assert.equal(operations.length, 1);
+  assert.deepEqual(
+    operations[0],
+    updateNode(AD_ROOT_FRAME_ID, {
+      fills: set([
+        {
+          id: "paint_accent_bar",
+          // The outgoing gradient's FIRST STOP — a colour the document has.
+          paint: { color: { kind: "hex", value: "#533afd" }, kind: "solid" },
+        },
+      ]),
+    }),
+  );
+});
+
+it("A15.2: a SOLID → gradient switch is one operation carrying the colour on screen", () => {
+  // Defect 1, end to end: the harvested frame is solid `#0E0B2E`; a user who
+  // has just committed `#2E7D32` and then picks a gradient must get THAT
+  // colour, not the one the panel was born with.
+  const shown = hydrateSceneCanvasState(SCENE, AD_PAGE_ID).backgroundFill;
+  assert.ok(shown, "the canvas state always states a background fill");
+  const operations = backgroundFillCommits(
+    shown,
+    { ...shown, type: "linear-gradient" },
+    "#2E7D32",
+  )
+    .map((commit) => applyCanvas(commit.property, commit.value, SCENE))
+    .filter((operation) => operation !== null);
+  assert.equal(operations.length, 1);
+  assert.deepEqual(
+    operations[0],
+    updateNode(AD_ROOT_FRAME_ID, {
+      fills: set([
+        {
+          id: "paint_root_ink",
+          paint: {
+            angle: 0,
+            kind: "linear_gradient",
+            stops: [
+              { color: { kind: "hex", value: "#2e7d32" }, position: 0 },
+              { color: { kind: "hex", value: "#2e7d32" }, position: 1 },
+            ],
+          },
+        },
+      ]),
+    }),
+  );
+});
