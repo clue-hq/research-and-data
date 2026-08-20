@@ -1,3 +1,14 @@
+// PLATFORM DELTA (AD3.3) — this module is otherwise verbatim upstream code. The
+// one divergence is that `LoadedDocument`/`fetchDocument` now also parse the
+// three history fields `GET /documents/{id}` already returns —
+// `current_version`, `undo_stack`, `redo_stack` — as `currentVersion` /
+// `undoDepth` / `redoDepth`. It is not a new idea: the SIBLING extracted loader
+// in this repo, `engine/webDocuments.ts:366-369` (`fetchWebDocument`), performs
+// exactly this parse for web documents, down to the
+// `Array.isArray(payload.undo_stack) ? payload.undo_stack.length : 0` form —
+// this makes the scene loader its equal instead of leaving the ad lane unable
+// to say whether an undo step exists. An upstream re-sync must re-apply the
+// delta, not straight-copy.
 import { defaultDesignFetch } from "../config";
 import type { BrandKitSummary, Operation, Scene } from "./contracts";
 import type { BrandKitDetailPayload } from "./tokenColors";
@@ -36,6 +47,13 @@ export interface LoadedDocument {
   /** Advanced per-document opt-out from handoff-absolute: when true the
    * editor skips both freeze seams so agent auto-layout stays live. */
   layoutManagedEditing: boolean;
+  /** PLATFORM DELTA (AD3.3, see the file header): the document's committed
+   * version, and the true depths of its server-side undo/redo stacks at the
+   * moment of this load. Mirrors `LoadedWebDocument`
+   * (`engine/webDocuments.ts:366-369`). */
+  currentVersion: number | null;
+  undoDepth: number;
+  redoDepth: number;
 }
 
 export async function createDocument(
@@ -144,6 +162,9 @@ export async function fetchDocument(
     scene?: unknown;
     agent_instructions?: unknown;
     layout_managed_editing?: unknown;
+    current_version?: unknown;
+    undo_stack?: unknown;
+    redo_stack?: unknown;
   };
   if (!payload.scene || typeof payload.scene !== "object") {
     throw new Error("document fetch returned no scene");
@@ -154,7 +175,15 @@ export async function fetchDocument(
     scene: payload.scene as Scene,
     agentInstructions:
       typeof payload.agent_instructions === "string" ? payload.agent_instructions : null,
-    layoutManagedEditing: payload.layout_managed_editing === true
+    layoutManagedEditing: payload.layout_managed_editing === true,
+    // PLATFORM DELTA (AD3.3) — the same three lines as
+    // `engine/webDocuments.ts:366-369`, against the same endpoint. A payload
+    // without the stacks (an older server) reads as depth 0, which disables the
+    // history controls rather than offering a step that would fail.
+    currentVersion:
+      typeof payload.current_version === "number" ? payload.current_version : null,
+    undoDepth: Array.isArray(payload.undo_stack) ? payload.undo_stack.length : 0,
+    redoDepth: Array.isArray(payload.redo_stack) ? payload.redo_stack.length : 0
   };
 }
 

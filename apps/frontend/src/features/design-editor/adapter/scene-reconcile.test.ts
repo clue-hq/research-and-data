@@ -6,9 +6,11 @@ import { it } from "node:test";
 import type { Diagnostic } from "../engine/scene/contracts";
 import type { ReconcileEvent } from "../engine/scene/editQueue";
 import {
+  HISTORY_STEP_FAILURE_PATTERN,
   REJECTED_BATCH_PREFIX,
   SCENE_RELOADED_NOTE,
   SCENE_WRITE_FALLBACK_ERROR,
+  historyFailureToMessages,
   reconcileToMessages,
 } from "./scene-reconcile";
 
@@ -30,6 +32,20 @@ const UPSTREAM_QUEUE = readFileSync(
   join(
     dirname(fileURLToPath(import.meta.url)),
     "../engine/scene/editQueue.ts",
+  ),
+  "utf8",
+);
+
+/** AD3.3: the second upstream template this file parses — the history step's
+ * (`structuredEdits.ts:275`). Pinned the same way, against the same kind of
+ * read-only extracted source. */
+const HISTORY_FAILURE_TEMPLATE =
+  "`${action} failed (${response.status}): ${JSON.stringify(detail)}`";
+
+const UPSTREAM_STRUCTURED_EDITS = readFileSync(
+  join(
+    dirname(fileURLToPath(import.meta.url)),
+    "../engine/scene/structuredEdits.ts",
   ),
   "utf8",
 );
@@ -163,6 +179,108 @@ it("surfaces the server's own words for any other status, not the queue's prose"
     ),
     { note: null, error: "Internal Server Error" },
   );
+});
+
+/* ── AD3.3: the history step's own failure prose ───────────────────────────── */
+
+/** The message `postHistoryAction` actually throws, assembled here the way it
+ * assembles it — so a fixture can never drift from the code it stands in for. */
+function historyError(
+  action: "undo" | "redo",
+  status: number,
+  detail: unknown,
+): Error {
+  return new Error(`${action} failed (${status}): ${JSON.stringify(detail)}`);
+}
+
+it("pins the upstream history-step template the parse depends on", () => {
+  assert.ok(
+    UPSTREAM_STRUCTURED_EDITS.includes(HISTORY_FAILURE_TEMPLATE),
+    "structuredEdits.ts no longer formats its history failure as `scene-reconcile.ts` parses it",
+  );
+  // …and the pattern the parse anchors on really matches that template's output.
+  assert.ok(
+    HISTORY_STEP_FAILURE_PATTERN.test(
+      historyError("undo", 409, { detail: "x" }).message,
+    ),
+  );
+});
+
+it("reads an empty undo stack as a quiet resync, never an error line", () => {
+  const detail = {
+    detail: {
+      code: "history.nothing_to_undo",
+      message: "no undoable batches in document history",
+    },
+  };
+  assert.deepEqual(historyFailureToMessages(historyError("undo", 409, detail)), {
+    emptyStack: true,
+    error: null,
+  });
+});
+
+it("reads an empty redo stack the same way", () => {
+  const detail = {
+    detail: {
+      code: "history.nothing_to_redo",
+      message: "no redoable batches in document history",
+    },
+  };
+  assert.deepEqual(historyFailureToMessages(historyError("redo", 409, detail)), {
+    emptyStack: true,
+    error: null,
+  });
+});
+
+it("keeps a 409 it cannot read quiet (the website lane's status-only rule)", () => {
+  assert.deepEqual(historyFailureToMessages(historyError("undo", 409, {})), {
+    emptyStack: true,
+    error: null,
+  });
+});
+
+it("says so when a 409 is a refusal rather than an empty stack", () => {
+  // `history.not_invertible` — the step genuinely cannot run. Reloading here
+  // would look like a button that did nothing.
+  const detail = {
+    detail: {
+      code: "history.not_invertible",
+      message: "batch b_7 (agent turn) is not invertible and blocks undo",
+      batch_id: "b_7",
+    },
+  };
+  assert.deepEqual(historyFailureToMessages(historyError("undo", 409, detail)), {
+    emptyStack: false,
+    error: "batch b_7 (agent turn) is not invertible and blocks undo",
+  });
+});
+
+it("surfaces the server's own words for any other status", () => {
+  assert.deepEqual(
+    historyFailureToMessages(
+      historyError("redo", 404, { detail: "document not found" }),
+    ),
+    { emptyStack: false, error: "document not found" },
+  );
+});
+
+it("shows the plain fallback for a failure that carries no readable body", () => {
+  assert.deepEqual(historyFailureToMessages(historyError("undo", 500, {})), {
+    emptyStack: false,
+    error: SCENE_WRITE_FALLBACK_ERROR,
+  });
+});
+
+it("never shows a transport failure's raw internal prose", () => {
+  // A fetch that rejects (offline) never matches the template at all.
+  assert.deepEqual(historyFailureToMessages(new TypeError("Failed to fetch")), {
+    emptyStack: false,
+    error: SCENE_WRITE_FALLBACK_ERROR,
+  });
+  assert.deepEqual(historyFailureToMessages("not an error at all"), {
+    emptyStack: false,
+    error: SCENE_WRITE_FALLBACK_ERROR,
+  });
 });
 
 it("treats a rejection it cannot parse at all as the reload note", () => {

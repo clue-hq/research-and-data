@@ -22,6 +22,7 @@ import type { NodeId, PageId, Scene } from "../engine/scene/contracts";
 import { fetchBrandKitDetail } from "../engine/scene/documentStore";
 import { collectKitFontFaceRefs } from "../engine/scene/kitFonts";
 import { fetchFontLibrary } from "../engine/scene/libraryFonts";
+import type { SceneDocumentHistory } from "./use-scene-document";
 import { useSceneInspectorWrites } from "./use-scene-inspector-writes";
 
 /**
@@ -57,6 +58,12 @@ import { useSceneInspectorWrites } from "./use-scene-inspector-writes";
  * nonce is bumped ONLY when the queue reports the server disagrees. The
  * addressing triple's `documentVersion` stays `null` on this lane — the gate
  * that replaces it is documented at its construction site below.
+ *
+ * AD3.3 adds the history leg: the canvas mirrors the loaded document's real
+ * undo/redo stack depths up through `onHistoryChange`, the controller adds the
+ * steps taken since that load, and `undoDisabled`/`redoDisabled` below are the
+ * result — so the action menu's two rows are offered exactly when the server
+ * has something to undo or redo.
  */
 
 export type SceneEditingSession = ReturnType<typeof useSceneEditingSession>;
@@ -348,25 +355,50 @@ export function useSceneEditingSession({
     [kitFamilies, libraryFamilies],
   );
 
+  // AD3.3: the document's own history, mirrored up by the canvas on every
+  // completed load — the depths the menu's Undo/Redo rows disable off, and the
+  // base the controller adds the steps taken since to. Stamped with its
+  // document and DERIVED against the current one, exactly like the scene and
+  // the selection above: a switched artifact must not disable (or enable) its
+  // rows off the previous ad's stacks.
+  const [history, setHistory] = useState<{
+    forDocumentId: string;
+    history: SceneDocumentHistory;
+  } | null>(null);
+  const onHistoryChange = useCallback(
+    (next: SceneDocumentHistory, documentId: string) => {
+      setHistory({ forDocumentId: documentId, history: next });
+    },
+    [],
+  );
+  const liveHistory =
+    activeDocumentId && history?.forDocumentId === activeDocumentId
+      ? history.history
+      : null;
+
   // AD3.2: the real write path. The controller applies each operation to the
   // live engine through the canvas seam, then persists it on the edit queue;
   // the listener inside it is what turns an inspector event into an operation.
+  // AD3.3: it also owns the two history steps, which is why the depths go in.
   const writes = useSceneInspectorWrites({
     canvasControls,
     documentId: activeDocumentId,
+    loadGeneration: liveHistory?.loadGeneration ?? 0,
     onReload: onWriteReload,
     primaryNodeId,
+    redoDepth: liveHistory?.redoDepth ?? 0,
     scene,
+    undoDepth: liveHistory?.undoDepth ?? 0,
   });
 
   // W3.1's triple, ad-side. `documentVersion` stays NULL here, permanently and
-  // deliberately (AD3.2 ruling): the ad lane cannot honestly produce a document
-  // version — `documentStore.fetchDocument` does not parse `current_version`
-  // (read-only extracted code), the scene carries none, and fetching the
-  // document again just to read one integer would break this session's own
-  // "one fetch, one engine, one scene" principle above. The edit queue owns
-  // `base_version` internally (`editQueue.ts:110-113,152`), so nothing on this
-  // lane ever needed a copy. The write gate that replaces it asserts something
+  // deliberately (AD3.2 ruling): the edit queue owns `base_version` internally
+  // (`editQueue.ts:110-113,152`), so a copy stamped on an inspector event would
+  // only ever be a second, staler source of the same fact, and the scene itself
+  // carries no version at all. (AD3.3 correction: this comment used to add that
+  // `documentStore.fetchDocument` does not parse `current_version` — it does
+  // now, for the history controls. The ruling never rested on that.)
+  // The write gate that replaces it asserts something
   // strictly stronger — the event's selection IS this session's primary
   // selection AND the live scene really carries that node — and lives in
   // `use-scene-inspector-writes.ts`, where it is documented in full.
@@ -405,6 +437,8 @@ export function useSceneEditingSession({
     inspectorError: writes.error,
     layerRows,
     note: writes.note,
+    /** AD3.3: receives the canvas's loaded undo/redo depths. */
+    onHistoryChange,
     onSceneChange,
     onSelectCanvas,
     onSelectLayer,
@@ -413,14 +447,16 @@ export function useSceneEditingSession({
     onZoomChange,
     /** `[0]`, resolved against the live scene — what the inspector keys on. */
     primaryNodeId,
-    /** Undo/redo depth is not served by the document read, and AD3.3 owns the
-     * engine-side stacks, so the menu's entries stay disabled rather than
-     * offering a step that would do nothing. */
-    redoDisabled: true,
+    /** AD3.3: the menu's Redo row disables off the DOCUMENT's real redo stack
+     * — the depth the load reported, plus every step taken since it. Empty
+     * means the step would do nothing, so the row is not offered. */
+    redoDisabled: writes.redoDisabled,
     reloadNonce,
     selectedIds,
     selection,
-    undoDisabled: true,
+    /** AD3.3: likewise the Undo row. Both stay disabled until a document has
+     * actually loaded (depth 0/0), never enabled speculatively. */
+    undoDisabled: writes.undoDisabled,
     writes,
     /** The zoom to DISPLAY in the header menu (§1.10) — where a gesture left
      * the viewport when there was one, else the user's choice, else the snapped

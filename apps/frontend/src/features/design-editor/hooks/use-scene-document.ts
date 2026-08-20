@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { textMeasurementSignature } from "../adapter/scene-canvas-view";
 import { designBffConfig } from "../data/design-bff";
 import { loadCanvasKit } from "../engine/scene/canvaskit/loadCanvasKit";
@@ -69,6 +69,22 @@ export interface SceneEngineStatus {
   detail: string | null;
 }
 
+/**
+ * AD3.3: the document's server-side history, as of the load that is on screen.
+ *
+ * The two depths are the server's own stacks (`documentStore.fetchDocument`
+ * parses them from `undo_stack`/`redo_stack`), and `loadGeneration` is what
+ * makes them usable: it advances on every COMPLETED load, so a consumer that
+ * counts steps taken since a load can tell "the same base I already counted
+ * against" from "a fresh authoritative base, start again". Without it, a reload
+ * whose depths happen to match the counted ones would be invisible.
+ */
+export interface SceneDocumentHistory {
+  loadGeneration: number;
+  undoDepth: number;
+  redoDepth: number;
+}
+
 export interface SceneDocumentState {
   kind: "loading" | "ready" | "error";
   scene: Scene | null;
@@ -77,6 +93,13 @@ export interface SceneDocumentState {
   title: string | null;
   error: string | null;
   engineStatus: SceneEngineStatus;
+  /** The loaded document's committed version. */
+  currentVersion: number | null;
+  /** AD3.3: the loaded document's undo/redo stack depths, and the counter that
+   * says when they were last refreshed. See {@link SceneDocumentHistory}. */
+  undoDepth: number;
+  redoDepth: number;
+  loadGeneration: number;
   /** The renderAdapter's kit-token generation: descriptors and text
    * measurements built before the kit lands resolve to skeleton values, so
    * every memo keyed on the scene keys on this too. */
@@ -94,7 +117,17 @@ type LoadState =
       engine: WasmEngine | null;
       pageId: PageId | null;
       title: string;
+      /** AD3.3: carried in the SAME state as the scene, so the depths on screen
+       * always belong to the load the scene came from. */
+      history: SceneDocumentHistory;
+      currentVersion: number | null;
     };
+
+const NO_HISTORY: SceneDocumentHistory = {
+  loadGeneration: 0,
+  undoDepth: 0,
+  redoDepth: 0,
+};
 
 const ENGINE_ACTIVE: SceneEngineStatus = {
   engineDisabled: false,
@@ -126,6 +159,11 @@ export function useSceneDocument(
   const [load, setLoad] = useState<LoadState>({ kind: "loading" });
   const [engineStatus, setEngineStatus] =
     useState<SceneEngineStatus>(ENGINE_ACTIVE);
+  // AD3.3: bumped by each COMPLETED load (the first fetch and every
+  // reload-token refetch), never by a failed one — a load that threw brought no
+  // new base with it. A ref, because it is read and advanced inside the async
+  // load below, and it is the value stamped into that load's state.
+  const loadGenerationRef = useRef(0);
 
   const tokenGeneration = useSyncExternalStore(
     subscribeTokenColors,
@@ -167,12 +205,20 @@ export function useSceneDocument(
           activated.status === "active"
             ? new WasmEngine(activated.module, loaded.scene)
             : null;
+        loadGenerationRef.current += 1;
         setLoad({
           kind: "ready",
           scene: engine ? engine.scene : loaded.scene,
           engine,
           pageId: firstPageId(engine ? engine.scene : loaded.scene),
           title: loaded.title,
+          // AD3.3: the server's own stack depths for THIS load.
+          currentVersion: loaded.currentVersion,
+          history: {
+            loadGeneration: loadGenerationRef.current,
+            undoDepth: loaded.undoDepth,
+            redoDepth: loaded.redoDepth,
+          },
         });
       } catch (error) {
         if (cancelled) {
@@ -287,6 +333,10 @@ export function useSceneDocument(
   }, [engine, textSignature]);
 
   return useMemo<SceneDocumentState>(() => {
+    // Before the first load there is no history to report, and zero depths are
+    // the honest answer: they disable the history controls rather than offering
+    // a step against a document nobody has read yet.
+    const history = load.kind === "ready" ? load.history : NO_HISTORY;
     return {
       kind: load.kind,
       scene,
@@ -295,6 +345,10 @@ export function useSceneDocument(
       title: load.kind === "ready" ? load.title : null,
       error: load.kind === "error" ? load.message : null,
       engineStatus,
+      currentVersion: load.kind === "ready" ? load.currentVersion : null,
+      loadGeneration: history.loadGeneration,
+      redoDepth: history.redoDepth,
+      undoDepth: history.undoDepth,
       tokenGeneration,
       refresh: () => {
         setLoad((current) =>

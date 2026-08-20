@@ -11,7 +11,10 @@ import {
   SceneArtifactCanvas,
   type SceneCanvasControls,
 } from "@/features/design-editor/components/scene-artifact-canvas";
-import type { SceneEngineStatus } from "@/features/design-editor/hooks/use-scene-document";
+import type {
+  SceneDocumentHistory,
+  SceneEngineStatus,
+} from "@/features/design-editor/hooks/use-scene-document";
 import type { PageId, Scene } from "@/features/design-editor/engine/scene/contracts";
 import type { WebSelection } from "@/features/design-editor/engine/webBridge";
 import type {
@@ -58,6 +61,7 @@ export function ArtifactStage({
   onSceneChange,
   onSceneEngineStatusChange,
   onSceneFitZoom,
+  onSceneHistoryChange,
   onSceneGestureZoom,
   onSceneSelect,
   onSceneZoomChange,
@@ -124,6 +128,12 @@ export function ArtifactStage({
   /** AD2.3: the ad canvas's fit-on-open zoom, as one of the header menu's own
    * 5% steps (§1.10) — AD2.8 shows it in the menu until the user chooses. */
   onSceneFitZoom?: (zoom: string) => void;
+  /** AD3.3: the loaded ad document's undo/redo stack depths, mirrored up so the
+   * header's two history rows disable off the server's real stacks. */
+  onSceneHistoryChange?: (
+    history: SceneDocumentHistory,
+    documentId: string,
+  ) => void;
   /** AD2.10: where a pan/wheel gesture left the viewport — the header's zoom
    * control displays this over both the fit and the chosen step, because after
    * a pinch it is the only one of the three that is true. Null when the canvas
@@ -232,6 +242,7 @@ export function ArtifactStage({
                   onEngineStatusChange={onSceneEngineStatusChange}
                   onFitZoom={onSceneFitZoom}
                   onGestureZoom={onSceneGestureZoom}
+                  onHistoryChange={onSceneHistoryChange}
                   onSceneChange={onSceneChange}
                   onSelect={onSceneSelect}
                   reloadToken={canvasReloadToken}

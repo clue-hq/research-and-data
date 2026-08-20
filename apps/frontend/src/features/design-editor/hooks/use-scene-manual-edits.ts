@@ -2,7 +2,15 @@
 
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import {
+  NO_HISTORY_DELTA,
+  afterRedo,
+  afterUndo,
+  afterWrite,
+  historyDepths,
+} from "../adapter/scene-history";
+import {
   SCENE_WRITE_FALLBACK_ERROR,
+  historyFailureToMessages,
   reconcileToMessages,
 } from "../adapter/scene-reconcile";
 import type { SceneCanvasControls } from "../components/scene-artifact-canvas";
@@ -10,6 +18,10 @@ import { designBffConfig } from "../data/design-bff";
 import type { DesignEditorConfig } from "../engine/config";
 import type { Operation, Scene } from "../engine/scene/contracts";
 import { createEditQueue, type EditQueuePort } from "../engine/scene/editQueue";
+import {
+  redoDocument,
+  undoDocument,
+} from "../engine/scene/structuredEdits";
 
 /**
  * AD3.2: the ad (scene) lane's manual-editing controller — the ONE write path
@@ -41,16 +53,41 @@ import { createEditQueue, type EditQueuePort } from "../engine/scene/editQueue";
  * reconcile event says the server disagrees; the reload IS the adoption path
  * for the server's authoritative scene (D10's web-style posture), which is why
  * `event.serverScene` is never adopted by hand here.
+ *
+ * ── AD3.3: undo/redo ──────────────────────────────────────────────────────
+ * A history step is the OPPOSITE shape to a write, and deliberately so. The
+ * server owns the stacks, so the step is a plain `POST /documents/{id}/undo`
+ * with nothing local about it, and the way its result reaches the screen is a
+ * RELOAD — the same adoption path a divergence takes. The engine's local scene
+ * is never patched by hand: the server has just rewritten the document, and
+ * inventing an equivalent local edit would be exactly the fabrication the
+ * optimistic write path avoids by applying the engine's own operations.
+ *
+ * Its control flow is lifted from the website lane's `runHistory`
+ * (`use-web-manual-edits.ts:170-199`) — single-flight, both message lines
+ * cleared first, a 409 empty stack resynced in silence — with the two
+ * mechanical adaptations this lane needs: the queue's cached `base_version` is
+ * re-based on the version the step returned (it is stale the moment the server
+ * writes without us), and the depth bookkeeping below records the step.
  */
 
 export interface SceneManualEdits {
   /** Apply a batch locally and persist it. No-op on an empty batch, on a
    * disabled engine, and on an engine-rejected batch. */
   applyOps: (operations: Operation[], intent?: string) => void;
-  /** AD3.3 wires the engine's undo/redo stacks; today a documented no-op. */
+  /** AD3.3: one server history step. No-op while another step is in flight and
+   * when no document is armed; the result arrives as a reload. */
   undo: () => void;
   redo: () => void;
-  /** True while an enqueued batch has not yet drained. */
+  /** AD3.3: the stack is empty, so the step would do nothing — the action
+   * menu's row disables off this. Computed from the loaded document's real
+   * depths plus the steps taken since that load. Deliberately NOT raised by
+   * `busy`: the single-flight guard already drops a second step, and disabling
+   * mid-flight would only flicker the row. */
+  undoDisabled: boolean;
+  redoDisabled: boolean;
+  /** True while an enqueued batch has not yet drained, or a history step is in
+   * flight. */
   busy: boolean;
   /** A transient informational message (the D10 quiet-reload note). */
   note: string | null;
@@ -70,6 +107,12 @@ export interface UseSceneManualEditsOptions {
   controlsRef: RefObject<SceneCanvasControls | null>;
   /** The session's reload nonce bump: refetch the authoritative document. */
   onReload: () => void;
+  /** AD3.3: the loaded document's real stack depths, and the load counter that
+   * says when they were last refreshed (`use-scene-document.ts`). Zero/zero
+   * before anything has loaded, which disables both controls. */
+  undoDepth?: number;
+  redoDepth?: number;
+  loadGeneration?: number;
   /** Injectable for tests/server callers; the real BFF transport by default. */
   config?: DesignEditorConfig;
 }
@@ -83,7 +126,15 @@ interface QueueHandle {
 export function useSceneManualEdits(
   options: UseSceneManualEditsOptions,
 ): SceneManualEdits {
-  const { config, controlsRef, documentId, onReload } = options;
+  const {
+    config,
+    controlsRef,
+    documentId,
+    loadGeneration = 0,
+    onReload,
+    redoDepth = 0,
+    undoDepth = 0,
+  } = options;
 
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
@@ -91,6 +142,11 @@ export function useSceneManualEdits(
 
   const mountedRef = useRef(true);
   const pendingRef = useRef(0);
+  // AD3.3: a history step is single-flight (the website lane's `busyRef`,
+  // `use-web-manual-edits.ts:91`). Separate from `pendingRef`, which COUNTS
+  // write batches and deliberately gates nothing — the two answer different
+  // questions, and only this one refuses work.
+  const historyRef = useRef(false);
   const queueRef = useRef<QueueHandle | null>(null);
   // The last scene the engine accepted — the fallback `localScene()` reads
   // when the canvas has unmounted mid-flight (the queue's reconcile runs after
@@ -135,6 +191,27 @@ export function useSceneManualEdits(
     };
   }, [documentId]);
 
+  // AD3.3: what has happened since the loaded base — the ONLY thing that keeps
+  // the disabled states honest between reloads, because a successful write
+  // deliberately does not refetch the document (see the header). React state,
+  // not a ref: it drives `undoDisabled`/`redoDisabled`, so it must re-render.
+  const [delta, setDelta] = useState(NO_HISTORY_DELTA);
+  // A fresh authoritative base arrived: everything the delta was counting is
+  // already inside the depths that came with it, so carrying it forward would
+  // double-count. Done as React's own adjust-state-on-prop-change (a
+  // render-time comparison, the pattern `scene-artifact-canvas.tsx:308-315`
+  // uses), never as an effect — an effect would render one frame of the stale
+  // count first, and this repo's react-hooks lint bars set-state in an effect.
+  const [lastLoadGeneration, setLastLoadGeneration] = useState(loadGeneration);
+  if (lastLoadGeneration !== loadGeneration) {
+    setLastLoadGeneration(loadGeneration);
+    setDelta(NO_HISTORY_DELTA);
+  }
+  const depths = historyDepths(
+    { redo: redoDepth, undo: undoDepth },
+    lastLoadGeneration === loadGeneration ? delta : NO_HISTORY_DELTA,
+  );
+
   const clearMessages = useCallback(() => {
     setNote(null);
     setError(null);
@@ -146,6 +223,17 @@ export function useSceneManualEdits(
     }
     setNote(null);
     setError(message);
+  }, []);
+
+  /** `busy` reports BOTH kinds of in-flight work through one flag, because the
+   * inspector shows one. Derived from the two counters rather than set by each
+   * caller, so a write draining cannot switch the flag off under a history step
+   * that is still running. */
+  const syncBusy = useCallback(() => {
+    if (!mountedRef.current) {
+      return;
+    }
+    setBusy(pendingRef.current > 0 || historyRef.current);
   }, []);
 
   /**
@@ -243,6 +331,14 @@ export function useSceneManualEdits(
       lastSceneRef.current = outcome.scene;
       setNote(null);
       setError(null);
+      // AD3.3: the batch the engine accepted is the batch that gets persisted,
+      // so from here the document has one more undoable step and no redo stack.
+      // Recorded at the hand-off rather than at the server's ack because every
+      // path where the server does NOT take it — a rejection, a divergence, a
+      // failed request — ends in `onReconcile`, which reloads; and a reload
+      // replaces this count with the server's own depths. A miscount cannot
+      // outlive the fetch that corrects it.
+      setDelta(afterWrite);
       // The callers' `intent` argument (the interface accepts one, for
       // signature parity with the web lane) stops HERE, deliberately: the only
       // label `EnqueueOptions` carries is `checkpoint`, and upstream
@@ -258,28 +354,94 @@ export function useSceneManualEdits(
       // would drop a keystroke rather than delay it — the opposite of the web
       // lane, whose single-flight gate exists because it has no local engine.
       pendingRef.current += 1;
-      setBusy(true);
+      syncBusy();
       // Settled on BOTH outcomes: the queue's chain swallows its own errors
       // (they arrive as `request_failed` reconcile events instead), but a
       // one-sided `.then` here would leave `busy` stuck true — and raise an
       // unhandled rejection — if that ever stopped being true.
       const settle = () => {
         pendingRef.current -= 1;
-        if (pendingRef.current === 0 && mountedRef.current) {
-          setBusy(false);
-        }
+        syncBusy();
       };
       void queue.idle().then(settle, settle);
     },
-    [ensureQueue],
+    [ensureQueue, syncBusy],
   );
 
-  // AD3.3 owns undo/redo (the engine's inverse operations + the queue). They
-  // are declared here so the surface AD3.3 fills is already the one the shell
-  // consumes; until then the session keeps `undoDisabled`/`redoDisabled` true,
-  // so nothing can call them.
-  const undo = useCallback(() => undefined, []);
-  const redo = useCallback(() => undefined, []);
+  /**
+   * AD3.3: one server history step, the website lane's `runHistory`
+   * (`use-web-manual-edits.ts:170-199`) with this lane's two additions.
+   *
+   * The success path does three things and adopts nothing by hand:
+   *  1. **re-base the queue.** The server just wrote the document without us,
+   *     so the queue's cached `base_version` is stale and the next inspector
+   *     edit would be refused as a concurrent write. `resync` takes the version
+   *     the step returned — the same re-basing the reconcile path does, for the
+   *     same reason.
+   *  2. **record the step**, so the two menu rows keep telling the truth
+   *     between reloads.
+   *  3. **reload.** The canvas refetches, the engine is rebuilt from the
+   *     server's scene, and the inspector re-reads it — the one adoption path.
+   */
+  const runHistory = useCallback(
+    (step: "undo" | "redo") => {
+      // Single-flight: a second step while one is in flight would race the
+      // first onto a stack the server has not finished moving.
+      if (historyRef.current) {
+        return;
+      }
+      const forDocumentId = documentIdRef.current;
+      if (!forDocumentId) {
+        return;
+      }
+      const resolved = configRef.current ?? designBffConfig();
+      historyRef.current = true;
+      syncBusy();
+      setNote(null);
+      setError(null);
+      const impl = step === "undo" ? undoDocument : redoDocument;
+      const settle = () => {
+        historyRef.current = false;
+        syncBusy();
+      };
+      void impl(resolved.apiBaseUrl, forDocumentId, resolved.fetchImpl)
+        .then((payload) => {
+          settle();
+          // A step for a document the user has already left must not re-base
+          // the queue that took its place, or move a count that is not its own.
+          if (!mountedRef.current || documentIdRef.current !== forDocumentId) {
+            return;
+          }
+          const active = queueRef.current;
+          if (active?.documentId === forDocumentId) {
+            active.queue.resync(currentVersionOf(payload));
+          }
+          setDelta(step === "undo" ? afterUndo : afterRedo);
+          onReloadRef.current();
+        })
+        .catch((cause: unknown) => {
+          settle();
+          if (!mountedRef.current || documentIdRef.current !== forDocumentId) {
+            return;
+          }
+          const failure = historyFailureToMessages(cause);
+          if (failure.emptyStack) {
+            // The stack raced empty: nothing happened, nothing to say. The
+            // reload re-reads the real depths, which is what disagreed.
+            onReloadRef.current();
+            return;
+          }
+          // A refusal about THIS step, in the server's own words (never the
+          // upstream sentence's internal prose). No reload: the document is
+          // unchanged, so there is nothing new to adopt.
+          setError(failure.error);
+        });
+    },
+    [syncBusy],
+  );
+
+  const undo = useCallback(() => runHistory("undo"), [runHistory]);
+  const redo = useCallback(() => runHistory("redo"), [runHistory]);
 
   return {
     applyOps,
@@ -288,7 +450,26 @@ export function useSceneManualEdits(
     error,
     note,
     redo,
+    redoDisabled: depths.redo === 0,
     reportError,
     undo,
+    undoDisabled: depths.undo === 0,
   };
+}
+
+/**
+ * The version the history step committed at, from its own response — the
+ * envelope shape `POST /documents/{id}/{undo,redo}` returns
+ * (`{document: {current_version}}`, `lumen_api/dto.py::document_summary`).
+ * `structuredEdits.undoDocument` hands back the raw payload, so this is the one
+ * place that reads it; anything unexpected reads as `null`, which makes the
+ * queue refetch the version on its next batch instead of trusting a guess.
+ */
+function currentVersionOf(payload: Record<string, unknown>): number | null {
+  const document = payload.document;
+  if (!document || typeof document !== "object") {
+    return null;
+  }
+  const version = (document as { current_version?: unknown }).current_version;
+  return typeof version === "number" ? version : null;
 }

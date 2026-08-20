@@ -451,6 +451,7 @@ export function ChatSurface({
         onSceneChange={sceneSession.onSceneChange}
         onSceneFitZoom={sceneSession.onFitZoom}
         onSceneGestureZoom={sceneSession.onGestureZoom}
+        onSceneHistoryChange={sceneSession.onHistoryChange}
         onSceneSelect={sceneSession.onSelectCanvas}
         onSceneZoomChange={sceneSession.onZoomChange}
         sceneCanvasControlsRef={sceneSession.canvasControls}
@@ -485,10 +486,23 @@ export function ChatSurface({
         onToggleEditing={() => shell.setEditing(!shell.editing)}
         openArtifacts={shell.openArtifacts}
         projectTitle={workspace.title}
-        redoDisabled={session.redoDisabled}
+        // AD3.3: the header carries ONE pair of history-row disables, and the
+        // artifact on screen decides which lane's stacks they describe — the
+        // same kind switch that gates the two sessions above. Without it an ad
+        // would read the (always-empty) web session's depths and its rows could
+        // never be offered.
+        redoDisabled={
+          shell.artifactKind === "ad"
+            ? sceneSession.redoDisabled
+            : session.redoDisabled
+        }
         selectedCanvasNodeId={session.webSelection.selection?.node.id ?? null}
         surface={shell.surface}
-        undoDisabled={session.undoDisabled}
+        undoDisabled={
+          shell.artifactKind === "ad"
+            ? sceneSession.undoDisabled
+            : session.undoDisabled
+        }
       />
     </main>
   );

@@ -222,6 +222,7 @@ export function EditorSurface({
         onSceneChange={sceneSession.onSceneChange}
         onSceneFitZoom={sceneSession.onFitZoom}
         onSceneGestureZoom={sceneSession.onGestureZoom}
+        onSceneHistoryChange={sceneSession.onHistoryChange}
         onSceneSelect={sceneSession.onSelectCanvas}
         onSceneZoomChange={sceneSession.onZoomChange}
         sceneCanvasControlsRef={sceneSession.canvasControls}
@@ -262,10 +263,21 @@ export function EditorSurface({
         onTogglePanel={() => undefined}
         onToggleEditing={() => controller.setEditing(!controller.editing)}
         openArtifacts={controller.openArtifacts}
-        redoDisabled={session.redoDisabled}
+        // AD3.3: one pair of history-row disables in the header, so the artifact
+        // on screen picks the lane whose stacks they describe (the same kind
+        // switch that gates the two sessions above).
+        redoDisabled={
+          controller.artifactKind === "ad"
+            ? sceneSession.redoDisabled
+            : session.redoDisabled
+        }
         selectedCanvasNodeId={session.webSelection.selection?.node.id ?? null}
         surface={controller.surface}
-        undoDisabled={session.undoDisabled}
+        undoDisabled={
+          controller.artifactKind === "ad"
+            ? sceneSession.undoDisabled
+            : session.undoDisabled
+        }
       />
     </main>
   );

@@ -13,6 +13,12 @@ import type { ReconcileEvent } from "../engine/scene/editQueue";
  * Pure on purpose: the controller owns the reload and the queue resync; this
  * decides only what the inspector's two existing lines say
  * (`chat-shell.module.css` `.inspectorStatusNote` / `.inspectorStatusError`).
+ *
+ * AD3.3 adds the second reader of an upstream prose format — the history step's
+ * (`historyFailureToMessages` at the foot of this file). It lives HERE, beside
+ * the queue's, because the containment is the point: every place this lane has
+ * to read a status back out of an extracted module's sentence is in one file,
+ * with one test pinning the upstream templates against the real sources.
  */
 
 export interface SceneReconcileMessages {
@@ -55,6 +61,15 @@ const REJECTED_BATCH_PATTERN =
 /** The FastAPI error shapes the design API's `/documents/{id}/operations`
  * actually returns: `{detail: {code, message, diagnostics?}}` (both the 409
  * base-version mismatch and every 422), or a bare string `detail`. */
+function serverCode(body: unknown): string | null {
+  const detail = (body as { detail?: unknown } | null | undefined)?.detail;
+  if (!detail || typeof detail !== "object") {
+    return null;
+  }
+  const code = (detail as { code?: unknown }).code;
+  return typeof code === "string" && code ? code : null;
+}
+
 function firstServerMessage(body: unknown): string | null {
   const detail = (body as { detail?: unknown } | null | undefined)?.detail;
   if (typeof detail === "string") {
@@ -112,6 +127,83 @@ export function reconcileToMessages(
   }
   return {
     note: null,
+    error: firstServerMessage(body) ?? SCENE_WRITE_FALLBACK_ERROR,
+  };
+}
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * AD3.3 — the history step's failure, read back out of its own upstream prose.
+ * ─────────────────────────────────────────────────────────────────────────── */
+
+/**
+ * The fixed head of the upstream history-step error
+ * (`engine/scene/structuredEdits.ts:275`):
+ *
+ *     `${action} failed (${response.status}): ${JSON.stringify(detail)}`
+ *
+ * Exported so `scene-reconcile.test.ts` can pin it against that file.
+ */
+export const HISTORY_STEP_FAILURE_PATTERN =
+  /^(?:undo|redo) failed \((\d+)\): ([\s\S]*)$/;
+
+/** The two `POST /documents/{id}/{undo,redo}` refusals that mean only "the
+ * stack raced empty" (`lumen_api/main.py` — `perform_undo_step` /
+ * `redo_document`). Everything else the server names is about THIS step. */
+const EMPTY_STACK_CODES = new Set([
+  "history.nothing_to_undo",
+  "history.nothing_to_redo",
+]);
+
+export interface SceneHistoryFailure {
+  /** The step could not run because there was nothing left to undo/redo. The
+   * controller resyncs quietly: nothing changed, and nothing needs saying. */
+  emptyStack: boolean;
+  /** What to show on the inspector's inline error line; null iff
+   * `emptyStack`. */
+  error: string | null;
+}
+
+const EMPTY_STACK: SceneHistoryFailure = { emptyStack: true, error: null };
+
+/**
+ * A SECOND PARSE OF AN UPSTREAM FORMAT, deliberately contained beside the
+ * first.
+ *
+ * `structuredEdits.ts`'s `undoDocument`/`redoDocument` throw a plain `Error`
+ * whose message flattens the HTTP status and the response body into prose
+ * (`structuredEdits.ts:273-276`), and it is read-only extracted code — so
+ * recovering "was this the empty stack, or a real refusal?" means reading that
+ * sentence back. The test pins the exact upstream template, so a reword fails
+ * the suite instead of quietly turning every failure into a silent reload.
+ *
+ * The rule, in one sentence: **a 409 is quiet unless the server named a reason
+ * that is not an empty stack.** An unreadable 409 therefore stays quiet (the
+ * website lane's precedent, `use-web-manual-edits.ts:191-193`, which resyncs on
+ * the status alone), while `history.not_invertible` — a 409 that means the step
+ * genuinely cannot run — says so in the server's own words rather than
+ * reloading and looking like a button that did nothing.
+ */
+export function historyFailureToMessages(cause: unknown): SceneHistoryFailure {
+  const message = cause instanceof Error ? cause.message : "";
+  const parsed = HISTORY_STEP_FAILURE_PATTERN.exec(message);
+  if (!parsed) {
+    // Not a server refusal at all: a transport failure, or an upstream reword.
+    // Either way the raw string is internal prose, never shown to the user.
+    return { emptyStack: false, error: SCENE_WRITE_FALLBACK_ERROR };
+  }
+  let body: unknown = null;
+  try {
+    body = JSON.parse(parsed[2]);
+  } catch {
+    // Upstream's own `response.json().catch(() => ({}))` yields `{}`; a
+    // truncated body lands here.
+  }
+  const code = serverCode(body);
+  if (parsed[1] === "409" && (code === null || EMPTY_STACK_CODES.has(code))) {
+    return EMPTY_STACK;
+  }
+  return {
+    emptyStack: false,
     error: firstServerMessage(body) ?? SCENE_WRITE_FALLBACK_ERROR,
   };
 }

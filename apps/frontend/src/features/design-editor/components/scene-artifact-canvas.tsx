@@ -57,6 +57,7 @@ import {
 } from "../engine/scene/workspaceViewport";
 import {
   useSceneDocument,
+  type SceneDocumentHistory,
   type SceneEngineStatus,
 } from "../hooks/use-scene-document";
 import styles from "./scene-artifact-canvas.module.css";
@@ -198,6 +199,21 @@ export interface SceneArtifactCanvasProps {
    * shell plumbing — this stays the shell's machine-readable copy.) */
   onEngineStatusChange?: (status: SceneEngineStatus) => void;
   /**
+   * AD3.3: the loaded document's undo/redo stack depths, mirrored up with the
+   * generation counter that says when they were last refreshed.
+   *
+   * A separate channel from `onSceneChange` because it is DOCUMENT metadata,
+   * not scene content — the same reason the engine status and the fit zoom have
+   * their own. It is what lets the shell disable a history control it cannot
+   * honour, without the session fetching a second copy of the document (this
+   * lane's "one fetch, one engine, one scene" rule). Fires on every completed
+   * load, including a reload-token refetch.
+   */
+  onHistoryChange?: (
+    history: SceneDocumentHistory,
+    documentId: string,
+  ) => void;
+  /**
    * AD2.7: the RENDERED scene, mirrored up whenever it changes (load, reload
    * token, the measure-then-inject relayout), tagged with the document it
    * belongs to.
@@ -245,6 +261,7 @@ function SceneDocumentCanvas({
   onEngineStatusChange,
   onFitZoom,
   onGestureZoom,
+  onHistoryChange,
   onSceneChange,
   onSelect,
   reloadToken = 0,
@@ -256,8 +273,17 @@ function SceneDocumentCanvas({
   const [ownSelectedNodeId, setOwnSelectedNodeId] = useState<NodeId | null>(
     null,
   );
-  const { engine, engineStatus, pageId, refresh, scene, tokenGeneration } =
-    useSceneDocument(documentId, reloadToken);
+  const {
+    engine,
+    engineStatus,
+    loadGeneration,
+    pageId,
+    redoDepth,
+    refresh,
+    scene,
+    tokenGeneration,
+    undoDepth,
+  } = useSceneDocument(documentId, reloadToken);
 
   // The engine's own text-measurement status store — `heuristic` means the
   // Skia pass never ran, which is a real rendering difference the G-D banner
@@ -356,6 +382,20 @@ function SceneDocumentCanvas({
   useEffect(() => {
     onEngineStatusRef.current?.(engineStatus);
   }, [engineStatus]);
+
+  // AD3.3: the loaded history, mirrored up the same way — a passive-ref effect
+  // (callback only, no state) keyed on the three SCALARS, never on a freshly
+  // built object, which would re-fire on every render.
+  const onHistoryChangeRef = useRef(onHistoryChange);
+  useEffect(() => {
+    onHistoryChangeRef.current = onHistoryChange;
+  });
+  useEffect(() => {
+    onHistoryChangeRef.current?.(
+      { loadGeneration, redoDepth, undoDepth },
+      documentId,
+    );
+  }, [documentId, loadGeneration, redoDepth, undoDepth]);
 
   useEffect(() => {
     const element = stageRef.current;

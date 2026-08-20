@@ -16,17 +16,23 @@ import {
  * through the pure AD3.1 `sceneChangeToOperation` adapter, and hands the
  * operation to the manual-edits controller (optimistic apply → persist).
  *
+ * AD3.3 adds the second pair of listeners this file's twin also owns — the
+ * action menu's Undo/Redo requests and the ⌘Z/⇧⌘Z shortcuts — at the foot of
+ * the file.
+ *
  * ── THE ADDRESSING RULING (AD3.2) ────────────────────────────────────────
  * The web lane's gate demands `typeof detail.documentVersion === "number"`,
- * because its write sends that number as `base_version`. **The ad lane cannot
- * honestly produce it**: `documentStore.fetchDocument` does not parse
- * `current_version` (read-only extracted code), the scene carries no document
- * version, and fetching the document a second time just to read one integer
- * would break this session's own principle — "One fetch, one engine, one
- * scene" (`use-scene-editing-session.ts:44-50`). The edit queue owns
- * `base_version` internally anyway: it fetches and tracks it
- * (`editQueue.ts:110-113,152`), which is precisely why the ad lane has no need
- * of a copy.
+ * because its write sends that number as `base_version`. **The ad lane does not
+ * send one**: the edit queue owns `base_version` internally — it fetches and
+ * tracks it (`editQueue.ts:110-113,152`) — so a copy on the event would be a
+ * second, staler source of the same fact.
+ *
+ * (AD3.3 CORRECTION: this paragraph used to give a second reason — that
+ * `documentStore.fetchDocument` "does not parse `current_version`". It does
+ * now: AD3.3 added that parse alongside the undo/redo stack depths the history
+ * controls need. The ruling is unchanged, because it never depended on that —
+ * the queue still owns the version, the scene still carries none, and the gate
+ * below still asserts something strictly stronger.)
  *
  * So this gate asserts what the ad lane actually HAS, which is strictly
  * stronger evidence than a version integer:
@@ -52,26 +58,37 @@ import {
 export function useSceneInspectorWrites({
   canvasControls,
   documentId,
+  loadGeneration,
   onReload,
   primaryNodeId,
+  redoDepth,
   scene,
+  undoDepth,
 }: {
   /** The mounted canvas's imperative seam (the live engine). */
   canvasControls: RefObject<SceneCanvasControls | null>;
   /** The active design document, or null when nothing is armed. */
   documentId: string | null;
+  /** AD3.3: the loaded document's history, mirrored up by the canvas — the
+   * base the controller's step count is added to. */
+  loadGeneration?: number;
   /** The session's reload nonce bump. */
   onReload: () => void;
   /** The session's primary selection — `selectedIds[0]`, already resolved
    * against the live scene. */
   primaryNodeId: string | null;
+  redoDepth?: number;
   /** The live scene the canvas mirrored up (the very one the engine holds). */
   scene: Scene | null;
+  undoDepth?: number;
 }): SceneManualEdits {
   const edits = useSceneManualEdits({
     controlsRef: canvasControls,
     documentId,
+    loadGeneration,
     onReload,
+    redoDepth,
+    undoDepth,
   });
 
   // Latest-value refs so the one listener reads current state without
@@ -135,12 +152,61 @@ export function useSceneInspectorWrites({
       window.removeEventListener("clue:inspector-property-change", onChange);
   }, [documentId]);
 
-  // ── AD3.3 insertion point ────────────────────────────────────────────────
-  // Undo/redo (the action menu's `clue:artifact-action-request` items and the
-  // ⌘Z/⇧⌘Z shortcuts, as `use-inspector-writes.ts:118-166` binds them for the
-  // web lane) belong here. NOTHING is wired today: the controller's `undo`/
-  // `redo` are no-ops and the session keeps both menu entries disabled, so a
-  // listener now would be an affordance that does nothing.
+  // ── AD3.3: the two ways a user asks for a history step ───────────────────
+  // The action menu's Undo/Redo rows (which already dispatch
+  // `clue:artifact-action-request` with `{action, kind}` —
+  // `use-artifact-action-menu-controller.ts:42-52`) and the ⌘Z / ⇧⌘Z
+  // shortcuts. Ported structurally from the website lane's pair
+  // (`use-inspector-writes.ts:118-166`), with `"ad"` in place of `"web"`.
+  //
+  // Scope, unchanged from that precedent: the SERVER-owned document history,
+  // never a general chrome undo.
+  const undoRef = useRef(edits.undo);
+  const redoRef = useRef(edits.redo);
+  useEffect(() => {
+    redoRef.current = edits.redo;
+    undoRef.current = edits.undo;
+  });
+
+  useEffect(() => {
+    if (!documentId) return;
+    const onAction = (event: Event) => {
+      const detail = (event as CustomEvent).detail as {
+        action?: unknown;
+        kind?: unknown;
+      } | null;
+      // The kind guard is what keeps the two lanes' listeners apart on one
+      // window — the header stamps the active artifact's kind onto every
+      // request (`artifact-header.tsx:78`), so a web artifact's Undo can never
+      // reach the ad document, and vice versa.
+      if (detail?.kind !== "ad") return;
+      if (detail.action === "undo") undoRef.current();
+      if (detail.action === "redo") redoRef.current();
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "z")
+        return;
+      // Native text-editing undo owns focused inputs/contenteditables — an
+      // inspector field mid-edit must undo the TYPING, not the document.
+      const target = event.target as HTMLElement | null;
+      if (
+        target &&
+        (target.isContentEditable ||
+          target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA")
+      )
+        return;
+      event.preventDefault();
+      if (event.shiftKey) redoRef.current();
+      else undoRef.current();
+    };
+    window.addEventListener("clue:artifact-action-request", onAction);
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("clue:artifact-action-request", onAction);
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [documentId]);
 
   return edits;
 }
