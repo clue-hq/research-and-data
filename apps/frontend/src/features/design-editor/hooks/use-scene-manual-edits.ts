@@ -404,7 +404,23 @@ export function useSceneManualEdits(
         historyRef.current = false;
         syncBusy();
       };
-      void impl(resolved.apiBaseUrl, forDocumentId, resolved.fetchImpl)
+      // AD3.3 review: DRAIN THE WRITE QUEUE FIRST. A history step is a second
+      // writer against the same document, and the queue's cached base_version
+      // belongs to the batches already in it — so an undo that lands between a
+      // batch's local apply and its POST makes the server refuse that batch
+      // (409), and D10 then drops the user's edit with a "moved on" note it did
+      // not earn. Waiting is ordering, not blocking: the queue is already
+      // serial, the batches are one keystroke each, and nothing is discarded.
+      // (The web lane gets this free — one busy flag covers edits and history
+      // because it has no queue.)
+      const pending = queueRef.current;
+      const drained =
+        pending?.documentId === forDocumentId
+          ? pending.queue.idle()
+          : Promise.resolve();
+      void drained
+        .catch(() => undefined)
+        .then(() => impl(resolved.apiBaseUrl, forDocumentId, resolved.fetchImpl))
         .then((payload) => {
           settle();
           // A step for a document the user has already left must not re-base

@@ -35,6 +35,11 @@ export const SCENE_RELOADED_NOTE = "Document moved on — reloaded.";
  * fallback): what an unreadable rejection says instead of an internal string. */
 export const SCENE_WRITE_FALLBACK_ERROR = "This edit could not be applied.";
 
+/** The web lane's own words for a failed history step
+ * (`use-web-manual-edits.ts:195`). A history step is not an edit, so it does not
+ * borrow the edit sentence — the two lanes say the same thing here too. */
+export const SCENE_HISTORY_FALLBACK_ERROR = "History step failed.";
+
 /**
  * The fixed head of the upstream rejection diagnostic
  * (`editQueue.ts:142`):
@@ -189,7 +194,7 @@ export function historyFailureToMessages(cause: unknown): SceneHistoryFailure {
   if (!parsed) {
     // Not a server refusal at all: a transport failure, or an upstream reword.
     // Either way the raw string is internal prose, never shown to the user.
-    return { emptyStack: false, error: SCENE_WRITE_FALLBACK_ERROR };
+    return { emptyStack: false, error: SCENE_HISTORY_FALLBACK_ERROR };
   }
   let body: unknown = null;
   try {
@@ -204,6 +209,6 @@ export function historyFailureToMessages(cause: unknown): SceneHistoryFailure {
   }
   return {
     emptyStack: false,
-    error: firstServerMessage(body) ?? SCENE_WRITE_FALLBACK_ERROR,
+    error: firstServerMessage(body) ?? SCENE_HISTORY_FALLBACK_ERROR,
   };
 }

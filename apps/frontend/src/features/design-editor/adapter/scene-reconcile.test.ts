@@ -9,6 +9,7 @@ import {
   HISTORY_STEP_FAILURE_PATTERN,
   REJECTED_BATCH_PREFIX,
   SCENE_RELOADED_NOTE,
+  SCENE_HISTORY_FALLBACK_ERROR,
   SCENE_WRITE_FALLBACK_ERROR,
   historyFailureToMessages,
   reconcileToMessages,
@@ -267,7 +268,7 @@ it("surfaces the server's own words for any other status", () => {
 it("shows the plain fallback for a failure that carries no readable body", () => {
   assert.deepEqual(historyFailureToMessages(historyError("undo", 500, {})), {
     emptyStack: false,
-    error: SCENE_WRITE_FALLBACK_ERROR,
+    error: SCENE_HISTORY_FALLBACK_ERROR,
   });
 });
 
@@ -275,11 +276,11 @@ it("never shows a transport failure's raw internal prose", () => {
   // A fetch that rejects (offline) never matches the template at all.
   assert.deepEqual(historyFailureToMessages(new TypeError("Failed to fetch")), {
     emptyStack: false,
-    error: SCENE_WRITE_FALLBACK_ERROR,
+    error: SCENE_HISTORY_FALLBACK_ERROR,
   });
   assert.deepEqual(historyFailureToMessages("not an error at all"), {
     emptyStack: false,
-    error: SCENE_WRITE_FALLBACK_ERROR,
+    error: SCENE_HISTORY_FALLBACK_ERROR,
   });
 });
 
