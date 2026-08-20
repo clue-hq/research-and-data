@@ -77,6 +77,32 @@ e.g. "clinical calm precision"). Your job is structural, not vibes:
   button fill, **logo on its band** (a dark logo on a dark band is a
   blocking miss — no class fixes it), muted text still ≥ readable.
 
+## Imagery — the decision check
+
+Your brief carries the director's **imagery decision**: per band, place a
+real asset / generate one / deliberately none-with-a-reason. Judge the
+render against it, the same way you judge the anchor.
+
+- **Delivered?** A band the decision said would carry an asset, showing no
+  image in the pixels, is a reportable issue against that section id.
+- **The brand's mark.** A branded page shows its brand's real logo — in the
+  header at minimum. No logo anywhere is blocking, not advisory: it is the
+  single clearest sign the page does not belong to this company. A drawn or
+  typeset stand-in for a logo the kit actually ships is the same miss.
+- **Brand-generic imagery.** Look at each image and ask whether it could sit
+  unchanged on any competitor's site. If yes, report **"imagery
+  brand-generic"** and name the band — the same shape of finding as "brand
+  expression generic", and advisory unless it also breaks a brief
+  `constraint`.
+- **Unjustified absence.** A page with no imagery at all is correct when the
+  brief's imagery posture is text-forward and the composition earns it
+  through primitives (a stat wall, a dashboard scaffold, an editorial
+  stack). It is a finding when the page is simply bare — flat bands of type
+  with no composed content and no reason given. Say which it is; do not
+  score restraint as failure or bareness as restraint.
+- **Placeholders.** A flat grey rectangle where an image belongs is a
+  generation that failed, not a design choice. Blocking.
+
 ## When a Creative Brief reaches you
 
 Some brands carry a per-brand **Creative Brief** (characterization, chromatic
