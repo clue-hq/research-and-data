@@ -65,3 +65,99 @@
   position: absolute;
   width: 100%;
 }
+
+/*
+ * Gate G-D (founder, 2026-08-21): the engine-forced banners.
+ *
+ * The ruling was "as is from the MVP editor, no separate banner" — so this is
+ * the design subsystem's `.engine-disabled-banner` block
+ * (`subsystems/clue-design/apps/editor/src/app/styles.css:912-974`), its tokens
+ * resolved to the literal values that editor's `tokens.css` gives them, since
+ * the platform shell defines no `--status-error*`. Read-only and degraded-text
+ * share one treatment, which is the second half of the same ruling.
+ *
+ * Two deviations from a literal copy, both shown to the founder before ruling:
+ *
+ *  1. **The background is opaque.** Upstream is `rgba(207, 45, 86, 0.15)`, which
+ *     only reads as pink because that editor's workspace is always light. Ours
+ *     floats over the ARTBOARD, and over a dark ad the body text disappeared
+ *     (previewed). `#efd7dd` is that exact wash composited over the workspace
+ *     grey — same colour, no longer see-through.
+ *  2. **The layer is a flex column.** Upstream pins both banners at
+ *     `top: 14px`, so a simultaneous engine + measurement failure paints one
+ *     over the other.
+ *
+ * `pointer-events` stays off on the layer and on for the banner itself, so the
+ * canvas underneath keeps every gesture the banner does not need.
+ */
+.bannerLayer {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  left: 50%;
+  pointer-events: none;
+  position: absolute;
+  top: 14px;
+  transform: translateX(-50%);
+  width: min(680px, calc(100% - 32px));
+  z-index: 40;
+}
+
+.banner {
+  align-items: flex-start;
+  background: #efd7dd;
+  border: 1px solid #cf2d56;
+  border-radius: 12px;
+  box-shadow: 0 6px 18px rgb(38 37 30 / 14%);
+  color: #26251e;
+  display: flex;
+  gap: 10px;
+  max-width: 100%;
+  padding: 12px 16px;
+  pointer-events: auto;
+}
+
+.bannerIcon {
+  color: #cf2d56;
+  flex: none;
+  margin-top: 1px;
+}
+
+.bannerBody {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.bannerTitle {
+  color: #cf2d56;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.bannerText {
+  color: rgb(38 37 30 / 92%);
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+.bannerCommand {
+  background: #ffffff;
+  border: 1px solid rgb(38 37 30 / 10%);
+  border-radius: 6px;
+  color: #26251e;
+  font-family: var(--font-mono, ui-monospace, sfmono-regular, menlo, monaco, consolas, monospace);
+  font-size: 11.5px;
+  max-width: 100%;
+  overflow: hidden;
+  padding: 3px 7px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bannerCommandName {
+  color: #cf2d56;
+  font-weight: 700;
+}

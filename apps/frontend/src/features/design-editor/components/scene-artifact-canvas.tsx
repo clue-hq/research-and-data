@@ -10,6 +10,8 @@ import {
   type RefObject,
 } from "react";
 import type { CanvasKit, Surface, TypefaceFontProvider } from "canvaskit-wasm";
+import { AlertTriangleIcon } from "lucide-react";
+import { sceneEngineBanners } from "../adapter/scene-engine-banners";
 import {
   ARTBOARD_BORDER_COLOR,
   ARTBOARD_SHADOW_COLOR,
@@ -120,10 +122,12 @@ import styles from "./scene-artifact-canvas.module.css";
  *
  * Still no write path: no operations, no edits. When the wasm stamp handshake
  * fails the scene still renders — from the server's own snapshot — and
- * `engineDisabled` rides upward (Gate G-D owns the banner wording; until it
- * lands the console diagnostic in `useSceneDocument` is the honest signal). A
- * click in that state is a **no-op**: with no engine there is no hit test, and
- * a guess from descriptors would be a selection the engine never agreed to.
+ * `engineDisabled` rides upward. A click in that state is a **no-op**: with no
+ * engine there is no hit test, and a guess from descriptors would be a
+ * selection the engine never agreed to. Gate G-D (founder, 2026-08-21) closed
+ * the last silence around it: `SceneEngineBanners` below now SAYS so, in the
+ * MVP editor's own words, instead of leaving the console diagnostic as the only
+ * signal that a click did nothing on purpose.
  */
 
 export interface SceneCanvasControls {
@@ -173,8 +177,9 @@ export interface SceneArtifactCanvasProps {
    * and re-deriving from a label would re-centre it and undo the pan.
    */
   onGestureZoom?: (zoom: string | null) => void;
-  /** Mirrors the wasm stamp handshake upward, so the shell can refuse edits
-   * and (post Gate G-D) explain why. */
+  /** Mirrors the wasm stamp handshake upward, so the shell can refuse edits.
+   * (The user-facing explanation is the canvas's own G-D banner, which needs no
+   * shell plumbing — this stays the shell's machine-readable copy.) */
   onEngineStatusChange?: (status: SceneEngineStatus) => void;
   /**
    * AD2.7: the RENDERED scene, mirrored up whenever it changes (load, reload
@@ -239,8 +244,8 @@ function SceneDocumentCanvas({
     useSceneDocument(documentId, reloadToken);
 
   // The engine's own text-measurement status store — `heuristic` means the
-  // Skia pass never ran, which is a real (silent) rendering difference the
-  // approved banner will name (Gate G-D).
+  // Skia pass never ran, which is a real rendering difference the G-D banner
+  // names (it was silent until then: the ad renders either way).
   const measurementStatus = useSyncExternalStore(
     subscribeTextMeasurementStatus,
     textMeasurementStatusSnapshot,
@@ -659,8 +664,8 @@ function SceneDocumentCanvas({
         artboard={artboard}
         assets={scene?.assets}
         // Test/diagnostic hooks, not chrome: the honest engine + text
-        // measurement state and the current selection, all readable without any
-        // approved visual (Gates G-A / G-D).
+        // measurement state and the current selection, readable independently
+        // of the approved visuals that now render them (Gates G-A / G-D).
         dataEngine={engineStatus.engineDisabled ? "disabled" : "wasm"}
         dataMeasurement={measurementStatus}
         dataSelectedNode={activeSelectedNodeId ?? "none"}
@@ -669,6 +674,88 @@ function SceneDocumentCanvas({
       {/* The selection overlay: an absolutely-positioned sibling of the canvas
           (never a canvas draw), so selection never triggers a wasm redraw. */}
       <SelectionChrome outline={selectionOutline} />
+      {/* Gate G-D: the two engine-forced states, said out loud. */}
+      <SceneEngineBanners
+        engineStatus={engineStatus}
+        measurementStatus={measurementStatus}
+      />
+    </div>
+  );
+}
+
+/**
+ * Gate G-D (founder, 2026-08-21): the engine-forced failure banners.
+ *
+ * Both states were live and SILENT before this — a stamp mismatch made the
+ * canvas read-only with nothing but a console line and a `data-scene-engine`
+ * attribute to say so (the founder hit exactly that when the design API died),
+ * and degraded text measurement is worse still, because the ad keeps rendering
+ * while its geometry is approximate.
+ *
+ * The ruling was "as is from the MVP editor, no separate banner", so this is
+ * the design subsystem's own `EngineDisabledBanner` / `HeuristicMeasurementBanner`
+ * (`EditorChrome.tsx:200-288`) ported whole: same lucide alert glyph, same
+ * copy (asserted against that file by `scene-engine-banners.test.ts`), same
+ * geometry, and the read-only state gets the SAME treatment as the degraded one
+ * rather than a canvas-specific variant.
+ *
+ * It lives here, inside the canvas stage, rather than in the shell: the stage
+ * is the one surface both mounts share, so the artifact route and the chat
+ * route get it with no plumbing, it survives the inspector being closed, and
+ * the state it reads (`engineStatus`, `measurementStatus`) is already local.
+ *
+ * The third G-D state — the CAS conflict — is deliberately NOT here: it stays
+ * the inspector's existing note line ("Document moved on — reloaded.", D10).
+ */
+function SceneEngineBanners({
+  engineStatus,
+  measurementStatus,
+}: {
+  engineStatus: SceneEngineStatus;
+  measurementStatus: string;
+}) {
+  const banners = sceneEngineBanners(engineStatus, measurementStatus);
+  // Nothing wrong → no element at all, so a healthy canvas holds no space and
+  // no assistive technology announces an empty alert region.
+  if (banners.length === 0) {
+    return null;
+  }
+  return (
+    <div className={styles.bannerLayer}>
+      {banners.map((banner) => (
+        <div
+          className={styles.banner}
+          data-scene-banner={banner.kind}
+          key={banner.kind}
+          role="alert"
+        >
+          <AlertTriangleIcon
+            aria-hidden="true"
+            className={styles.bannerIcon}
+            size={18}
+          />
+          <div className={styles.bannerBody}>
+            <strong className={styles.bannerTitle}>{banner.title}</strong>
+            <span className={styles.bannerText}>{banner.body}</span>
+            {/* The chip ellipses (upstream's own `white-space: nowrap`), and
+                our command string is longer than upstream's, so the DETAIL —
+                the two engine hashes, the diagnosis — is what gets cut. The
+                title restores it in full on hover without touching the approved
+                visual; the console diagnostic still carries it too. */}
+            <code
+              className={styles.bannerCommand}
+              title={
+                banner.detail
+                  ? `${banner.command} · ${banner.detail}`
+                  : banner.command
+              }
+            >
+              <span className={styles.bannerCommandName}>{banner.command}</span>
+              {banner.detail ? ` · ${banner.detail}` : null}
+            </code>
+          </div>
+        </div>
+      ))}
     </div>
   );
 }

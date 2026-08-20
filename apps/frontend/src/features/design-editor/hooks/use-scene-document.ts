@@ -42,8 +42,8 @@ import {
  *     missing, API unreachable, versions apart — means no engine, and the
  *     scene renders as the server's own read-only snapshot. Never a silent
  *     pretence that editing is live: the reason and detail go to the console
- *     now, and `engineDisabled` rides upward for the approved banner (Gate
- *     G-D owns its wording).
+ *     AND, since Gate G-D (founder, 2026-08-21), to the canvas's own banner in
+ *     the MVP editor's words — the same `reason`/`detail` pair drives both.
  *  2. the document fetch through `designBffConfig()`.
  *  3. the brand kit's token maps + font faces, then the curated library faces
  *     the scene references — both async, both re-rendering through the

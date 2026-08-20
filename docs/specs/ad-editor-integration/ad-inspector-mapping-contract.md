@@ -24,6 +24,31 @@ is the single normative restatement; where wording differs, the founder's annota
    canvas (wording still §6-gated); D10 CAS conflict = web-style "document moved on" reload
    message (wording still §6-gated). Mirrored into the plan's §5 register.
 
+**Amendment 4 — 2026-08-21 (founder): Gate G-D closed; §6 item 5 is built.**
+Ruling, verbatim: *"approve them as is from the mvp editor only, no separate banner needed…
+secondly, for readonly also keep them same as that in other mode only"*, then on the rendered
+preview: *"all 4 previews look good… proceed with them just the way you showed them to me."*
+Therefore:
+- **No new banner is designed.** The MVP editor's own `EngineDisabledBanner` and
+  `HeuristicMeasurementBanner` (`subsystems/clue-design/apps/editor/src/components/EditorChrome.tsx:200-288`
+  + `app/styles.css:912-974`) are ported whole — copy, glyph, geometry. A unit test asserts
+  every sentence against that source file, so the two editors cannot quietly fork their voice.
+- **Read-only is not special-cased.** The engine-stamp/handshake state gets the *same* canvas
+  treatment as degraded text (the second half of the ruling), not a bespoke read-only surface.
+- **The CAS conflict adds nothing:** it remains the inspector's existing note line
+  ("Document moved on — reloaded.", D10). The ad inspector already carries that `note` slot
+  from AD2.7; AD3's committer supplies the string.
+- **Three deviations, disclosed at the preview and taken with it:** (a) the banner background
+  is opaque — upstream's `rgba(207,45,86,0.15)` wash is only legible over that editor's always-light
+  workspace and vanished over a dark artboard, so it is composited to `#efd7dd`; (b) the two
+  banners **stack**, where upstream pins both at `top: 14px` and would overlap them; (c) the
+  command chip names *this* repo's remedy (`npm --prefix ../../subsystems/clue-design/apps/editor
+  run build:wasm`, the string our own `copy-design-vendor.mjs` prints, and
+  `node scripts/copy-design-vendor.mjs`) rather than the design subsystem's `npm run build:wasm`,
+  which does not exist in `apps/frontend`. Instructions that cannot be followed are not copy.
+D9's "loud banner" half is now literally true rather than mechanism-only; §6 item 5 leaves the
+queue, which is down to four.
+
 Sources it binds:
 - **Dummy surface:** `clue-hq/clue-frontend` branch `codex/chat-shell` — `c7f2bc5` **plus the
   co-founder's 23-file ad-schema delta** (per OQ-8 it is now committed locally at
@@ -193,8 +218,9 @@ italic/underline/strike, truncate) · Line/Vector/Instance schemas (2026-08-19 r
 2. The "leaves your brand palette" custom-color note (§1.6).
 3. The crop focal-point dot (§1.3).
 4. Export print-extras options in dummy style, demonstrated in the browser (§1.11).
-5. Engine-forced user-facing states, wording proposed first: engine-stamp-mismatch banner
-   (read-only canvas), degraded-text-measurement banner, CAS-conflict message.
+5. ~~Engine-forced user-facing states~~ — **CLOSED and BUILT (amendment 4, 2026-08-21):** the
+   MVP editor's two banners ported as-is (read-only shares the degraded-text treatment), the
+   CAS-conflict message unchanged from D10.
 
 (The merged multi-select mockup left this queue with amendment 2; it re-enters when its §7
 item is picked up.)
