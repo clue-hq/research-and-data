@@ -521,7 +521,14 @@ export function hydrateSceneInspectorState(
   // Shape/Background fill.
   const fill = paintState(node.fills[0]?.paint);
   if (node.kind.kind === "text") {
-    if (fill.color !== undefined) state.textColor = fill.color;
+    // Ruling A16: the text swatch states `swatch` too. A token-filled headline
+    // (the harvest's own `$text.inverse`) used to show the shared
+    // `DEFAULT_STATE` seed `#00F59B` — telling the user the text is mint green
+    // while it is brand-token coloured, on a control that ACCEPTS a write
+    // (§1.6's ratified detach), which is worse than the gradient case behind
+    // §1.2's guard. Same fabrication as the Background swatch, two lines away.
+    // Display only: §1.2's write gating is untouched.
+    state.textColor = fill.swatch;
     if (fill.token !== undefined) state.tokenTextColor = fill.token;
   } else {
     // Ruling A15.1: the Background swatch states `swatch`, never a fixture.
@@ -541,8 +548,11 @@ export function hydrateSceneInspectorState(
   // is one path for every kind and is proven on `auto_row_copy`'s real stroke.
   const stroke = node.strokes[0];
   if (stroke) {
-    const strokePaint = paintState(stroke.paint);
-    state.strokeColor = strokePaint.color ?? strokePaint.token ?? COLOR_NONE;
+    // Ruling A16: `swatch` here too. It already spelled `color ?? token ??
+    // none`, so solid and token strokes are unchanged; the one it fixes is a
+    // GRADIENT stroke, which used to read "none" on a node that visibly has a
+    // stroke. Display only — the width beside it still states the real width.
+    state.strokeColor = paintState(stroke.paint).swatch;
     state.strokeWidth = numberText(stroke.width);
   } else {
     state.strokeColor = COLOR_NONE;

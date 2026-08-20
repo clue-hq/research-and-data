@@ -224,10 +224,29 @@ it("§1.1/§1.6: a solid fill hydrates as its hex on the solid fill type", () =>
   assert.equal(state.backgroundFill?.type, "solid");
 });
 
-it("§1.6: a token fill hydrates as the token NAME, leaving the hex untouched", () => {
+it("A16/§1.6: a TOKEN-filled text states its token name in the swatch, never a fixture", () => {
+  // The harvested headline's real fill is the `$text.inverse` brand token.
+  // Leaving `textColor` unstated left the shared `DEFAULT_STATE` seed
+  // `#00F59B` on screen — the swatch claiming the headline is mint green while
+  // it is brand-token coloured — and unlike the gradient case this control
+  // ACCEPTS a write (§1.6's ratified detach), so the lie was live, not inert.
   const state = hydrateSceneInspectorState(adTokenText(), SCENE);
   assert.equal(state.tokenTextColor, "$text.inverse");
-  assert.equal(state.textColor, undefined);
+  assert.equal(state.textColor, "$text.inverse");
+});
+
+it("A16/§1.6: a GRADIENT-filled text states its first stop — the write stays guarded, only the display changes", () => {
+  // UNCOVERED by the harvest (no text carries a gradient), so the scene is
+  // cloned and ONE field is edited: `rect_accent_bar`'s real 3-stop paint onto
+  // the headline. The refusal this display sits behind is unchanged and is
+  // proven where it lives (`scene-apply.test.ts`, "§1.6 guard: a GRADIENT fill
+  // is not writable through the single swatch").
+  const scene = clone(SCENE);
+  scene.nodes.text_headline.fills = [...adRect().fills];
+  assert.equal(
+    hydrateSceneInspectorState(scene.nodes.text_headline, scene).textColor,
+    "#533AFD",
+  );
 });
 
 it("§1.2/§1.6: a solid text fill hydrates as the text color", () => {
@@ -262,6 +281,17 @@ it("§1.2: a node with no stroke hydrates none/0, never the dummy's width 1", ()
   const state = hydrateSceneInspectorState(adPlainText(), SCENE);
   assert.equal(state.strokeColor, "none");
   assert.equal(state.strokeWidth, "0");
+});
+
+it("A16/§1.4: a GRADIENT stroke states its first stop — it used to read `none` on a node that has one", () => {
+  // One field edited on a clone: the harvested gradient paint moved onto
+  // `auto_row_copy`'s REAL stroke, so the width beside it is real too. Solid
+  // and token strokes are unchanged (the row already read `color ?? token`).
+  const scene = clone(SCENE);
+  scene.nodes.auto_row_copy.strokes[0].paint = adRect().fills[0].paint;
+  const state = hydrateSceneInspectorState(scene.nodes.auto_row_copy, scene);
+  assert.equal(state.strokeColor, "#533AFD");
+  assert.equal(state.strokeWidth, "2");
 });
 
 // ── §1.2 Typography ────────────────────────────────────────────────────────
