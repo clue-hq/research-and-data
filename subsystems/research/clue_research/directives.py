@@ -26,6 +26,7 @@ from clue_core import (
     EntityScope,
     MemoryAccepted,
     MemoryDisabled,
+    MemoryPreconditionFailed,
     MemoryProvenanceClass,
     MemoryRejected,
     MemoryScopeType,
@@ -45,6 +46,7 @@ from clue_core import (
     ResearchDirectiveStatus,
     ResearchSealedSelectionRef,
     ScopeRef,
+    SubmissionOutcome,
     compose_account_research_directive,
     research_directive_digest,
     research_directive_override_digest,
@@ -52,6 +54,7 @@ from clue_core import (
 from clue_core.research_profile import COMPREHENSIVE_ACCOUNT_FIELDS
 from clue_research.claimstore.registry import get_field
 from clue_research.durable.scheduler import AccountSpec
+from clue_research.durable.spend_posture import record_policy_refusal_skipped
 from clue_research.icp import get_icp_version
 from clue_research.identity import get_account
 from clue_research.membership import ensure_project_account
@@ -59,6 +62,9 @@ from clue_research.sources.authority import load_effective_source_plan
 from clue_research.sources.registry import get_source, sources_for
 from clue_research.sources.source_profile import resolve_allowed_set
 from clue_spine import get_project
+
+#: Attribution for the record-only policy posture (:mod:`clue_research.durable.spend_posture`).
+_SITE_DIRECTIVE_MEMORY_SEAM = "research_directive_memory_seam"
 
 _OVERRIDE_NAMESPACE = UUID("466ca70e-f500-51b9-abf8-891353fcfc0c")
 _EVENT_NAMESPACE = UUID("742bbb9b-564f-572f-891a-0849122c3031")
@@ -817,20 +823,47 @@ async def draft_research_directive(
             superseded_draft_id = None
         version = int(latest_row["version"]) + 1
 
-    memory_outcome = await memory_write.submit(
-        MemorySubmission(
-            workspace_id=workspace_id,
-            scope=ScopeRef(scope_type=MemoryScopeType.PROJECT, scope_id=project_id),
-            type=MemoryType.PREFERENCE,
-            trigger=f"account-research-directive:{project_id}",
-            body=user_instruction,
-            provenance_class=MemoryProvenanceClass.USER_STATED,
-            creating_quote=user_instruction,
+    memory_outcome: SubmissionOutcome | None
+    try:
+        memory_outcome = await memory_write.submit(
+            MemorySubmission(
+                workspace_id=workspace_id,
+                scope=ScopeRef(scope_type=MemoryScopeType.PROJECT, scope_id=project_id),
+                type=MemoryType.PREFERENCE,
+                trigger=f"account-research-directive:{project_id}",
+                body=user_instruction,
+                provenance_class=MemoryProvenanceClass.USER_STATED,
+                creating_quote=user_instruction,
+            )
         )
-    )
+    except MemoryPreconditionFailed as exc:
+        # The seam's own deterministic person-adjacency guard: an instruction that happens to
+        # carry an email address or a phone-shaped number ("...and cc me at me@acme.com") is a
+        # malformed *memory submission* — the writer has no resolved contact to stamp, and this
+        # call site never has one by construction. That is a fact about the memory record, not
+        # about the directive, so it degrades like the rejection below rather than raising
+        # through a fully validated draft. (Scope shape, the guard's only other cause, is built
+        # by this function and cannot be wrong.)
+        record_policy_refusal_skipped(
+            site=_SITE_DIRECTIVE_MEMORY_SEAM,
+            reason="person_adjacent_precondition",
+            detail=str(exc),
+        )
+        memory_outcome = None
+    # The memory side-write is advisory and it stays that way: a rejection is recorded, never
+    # fatal (live blocker, 2026-08-20 16:26/16:29 IST — the memory seam's LLM reconciliation judge
+    # answered ``body_ok=false`` on an instruction that legitimately named committee personas, and
+    # the directive died). Doc M §2 is binding here — "memory is advisory; config is binding …
+    # nothing authoritative lives in memory" — and the seam already models the degradation:
+    # ``MemoryDisabled`` lands the directive with no refs and a truthful outcome. A rejection now
+    # degrades identically. Store hygiene is untouched (the seam still wrote nothing); only the
+    # veto over the primary flow dies. Deliberately unconditional, not pilot-gated: an advisory
+    # subsystem's hygiene opinion may not stop a directive in *any* posture.
     if isinstance(memory_outcome, MemoryRejected):
-        raise ResearchDirectiveInvalid(
-            f"project research instruction was rejected by the memory seam: {memory_outcome.reason}"
+        record_policy_refusal_skipped(
+            site=_SITE_DIRECTIVE_MEMORY_SEAM,
+            reason=memory_outcome.reason.value,
+            detail=memory_outcome.detail,
         )
     memory_refs = (memory_outcome.memory_id,) if isinstance(memory_outcome, MemoryAccepted) else ()
     memory_outcome_name = (
@@ -838,6 +871,10 @@ async def draft_research_directive(
         if isinstance(memory_outcome, MemoryAccepted)
         else "memory_disabled"
         if isinstance(memory_outcome, MemoryDisabled)
+        else f"memory_rejected:{memory_outcome.reason.value}"
+        if isinstance(memory_outcome, MemoryRejected)
+        else "memory_rejected:person_adjacent_precondition"
+        if memory_outcome is None
         else "unknown"
     )
 
