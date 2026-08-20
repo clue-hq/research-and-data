@@ -13,7 +13,7 @@ import type { CanvasKit, Surface, TypefaceFontProvider } from "canvaskit-wasm";
 import {
   sceneArtboardModel,
   sceneAssetPassthroughUrl,
-  snapZoomPercent,
+  sceneViewportModel,
   type SceneArtboardModel,
 } from "../adapter/scene-canvas-view";
 import {
@@ -31,7 +31,6 @@ import type { NodeId, PageId, Scene } from "../engine/scene/contracts";
 import type { HitResult } from "../engine/scene/wasmEngine";
 import {
   defaultWorkspaceViewport,
-  fitWorkspaceRectToViewport,
   screenToWorkspace,
   type WorkspaceViewport,
 } from "../engine/scene/workspaceViewport";
@@ -109,10 +108,18 @@ export interface SceneArtifactCanvasProps {
   /** Bump to refetch the document into the same mounted canvas (the website
    * lane's quiet-swap discipline: no keyed remount, no flash). */
   reloadToken?: number;
-  /** A menu-chosen zoom (`"45%"`). Absent — the AD2.3 read path — fits the
-   * artboard to the card on open (§1.10) and reports the step it landed on. */
+  /**
+   * A menu-chosen zoom (`"45%"`), applied EXACTLY as chosen.
+   *
+   * Null/absent is the fit mode (the AD2.3 read path and every freshly-opened
+   * artifact): the artboard is contain-fit to the card at its exact scale, not
+   * at the nearest menu step, so ruling 17's edge-to-edge fill survives the
+   * menu being wired. See `sceneViewportModel` for why the displayed label and
+   * the applied scale differ in that mode.
+   */
   zoom?: string | null;
-  /** The fit-on-open zoom as one of the header menu's own 5% steps. */
+  /** The fit-on-open zoom as one of the header menu's own 5% steps — what the
+   * menu DISPLAYS while nothing has been chosen. */
   onFitZoom?: (zoom: string) => void;
   /** Mirrors the wasm stamp handshake upward, so the shell can refuse edits
    * and (post Gate G-D) explain why. */
@@ -198,49 +205,28 @@ function SceneDocumentCanvas({
 
   // Fit-on-open (§1.10) is a pure function of the card's size and the page
   // box, so it is derived, never stored: no viewport state can go stale
-  // against a resize, and AD2.8's menu value simply overrides the zoom while
-  // keeping the same centering math.
-  const fitted = useMemo<WorkspaceViewport | null>(
+  // against a resize. AD2.8's menu value rides in the SAME derivation — the
+  // fit-vs-chosen rule lives in `sceneViewportModel`, where it is unit-tested
+  // (this component's internals cannot be: no DOM, no wasm in the runner).
+  const viewportModel = useMemo(
     () =>
       artboard
-        ? fitWorkspaceRectToViewport({
-            viewport: stageSize,
-            rect: artboard.rect,
-            // margin 0: the dummy's `.imageCanvas` card IS the artboard (its
-            // hairline border is the artboard edge), so the page fills it. The
-            // upstream default (128) exists for the standalone editor's
-            // infinite workspace, where the artboard floats in a dark shell —
-            // porting it here leaves a white ring inside the designed card.
-            // Contain-fit still letterboxes a non-square page in the square card.
-            margin: 0,
-          })
+        ? sceneViewportModel({ rect: artboard.rect, stage: stageSize, zoom })
         : null,
-    [artboard, stageSize],
+    [artboard, stageSize, zoom],
   );
-  const viewport = useMemo<WorkspaceViewport>(() => {
-    if (!artboard || !fitted) {
-      return defaultWorkspaceViewport();
-    }
-    const chosen = parseZoomPercent(zoom);
-    if (chosen === null) {
-      return fitted;
-    }
-    return {
-      zoom: chosen,
-      pan: {
-        x: stageSize.width / 2 - (artboard.rect.width / 2) * chosen,
-        y: stageSize.height / 2 - (artboard.rect.height / 2) * chosen,
-      },
-    };
-  }, [artboard, fitted, stageSize, zoom]);
+  const viewport: WorkspaceViewport =
+    viewportModel?.applied ?? defaultWorkspaceViewport();
 
-  // Report the fit as a step the header menu actually offers. Passive effect
-  // (callback only, no state) so it can never fight the derivation above.
+  // Report the fit as a step the header menu actually offers — the FIT, always,
+  // never the chosen zoom: this is the value the menu falls back to, so a
+  // choice must not overwrite it. Passive effect (callback only, no state) so
+  // it can never fight the derivation above.
   const onFitZoomRef = useRef(onFitZoom);
   useEffect(() => {
     onFitZoomRef.current = onFitZoom;
   });
-  const fitZoom = fitted ? snapZoomPercent(fitted.zoom) : null;
+  const fitZoom = viewportModel?.fitLabel ?? null;
   useEffect(() => {
     if (fitZoom) {
       onFitZoomRef.current?.(fitZoom);
@@ -626,18 +612,5 @@ function ArtboardSurface({
       ref={canvasRef}
     />
   );
-}
-
-/** `"45%"` → `0.45`; anything unparseable (including the AD2.3 default) → null,
- * which means "fit the artboard". */
-function parseZoomPercent(zoom: string | null | undefined): number | null {
-  if (!zoom) {
-    return null;
-  }
-  const parsed = Number.parseFloat(zoom.replace("%", ""));
-  if (!Number.isFinite(parsed) || parsed <= 0) {
-    return null;
-  }
-  return parsed / 100;
 }
 

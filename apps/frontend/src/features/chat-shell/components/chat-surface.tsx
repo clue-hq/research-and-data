@@ -447,9 +447,11 @@ export function ChatSurface({
         onSceneChange={sceneSession.onSceneChange}
         onSceneFitZoom={sceneSession.onFitZoom}
         onSceneSelect={sceneSession.onSelectCanvas}
+        onSceneZoomChange={sceneSession.onZoomChange}
         sceneCanvasControlsRef={sceneSession.canvasControls}
         sceneSelectedNodeId={sceneSession.primaryNodeId}
-        sceneZoom={sceneSession.zoomOverride}
+        sceneZoomLabel={sceneSession.zoom}
+        sceneZoomOverride={sceneSession.zoomOverride}
         editing={shell.editing}
         onActivateArtifact={shell.activateArtifact}
         onCanvasSelect={session.webSelection.onSelect}

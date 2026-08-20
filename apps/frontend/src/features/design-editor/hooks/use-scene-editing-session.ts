@@ -244,15 +244,50 @@ export function useSceneEditingSession({
     [expanded, pageId, scene],
   );
 
-  // §1.10: the canvas fits the artboard to its card on open and reports the
-  // step it landed on; the header menu (AD2.8) overrides it. The OVERRIDE is
-  // what the canvas consumes — absent, it keeps fitting exactly, so binding
-  // the menu cannot cost the read path its exact fit.
-  const [zoomOverride, setZoomOverride] = useState<string | null>(null);
-  const [fitZoom, setFitZoom] = useState<string | null>(null);
-  const onZoomChange = useCallback((zoom: string) => {
-    setZoomOverride(zoom);
-  }, []);
+  // §1.10 / AD2.8: two zooms, deliberately.
+  //
+  //  • `fit` is what the CANVAS reported — the exact contain-fit, snapped to
+  //    the nearest step the menu actually offers, so the menu can display a
+  //    value it can also check. It is a label, not a transform.
+  //  • `override` is what the USER chose. Only this reaches the canvas, and it
+  //    is applied exactly; while it is null the canvas keeps fitting exactly,
+  //    which is why wiring the menu cannot cost the read path ruling 17's
+  //    edge-to-edge fill.
+  //
+  // Both are stamped with the document they belong to and DERIVED against the
+  // current one (the same discipline as the selection above), so opening
+  // another artifact — or coming back to this one — starts at fit again rather
+  // than inheriting the previous artboard's zoom.
+  const [override, setOverride] = useState<{
+    forDocumentId: string;
+    zoom: string;
+  } | null>(null);
+  const [fit, setFit] = useState<{
+    forDocumentId: string;
+    zoom: string;
+  } | null>(null);
+  const onZoomChange = useCallback(
+    (zoom: string) => {
+      if (!activeDocumentId) return;
+      setOverride({ forDocumentId: activeDocumentId, zoom });
+    },
+    [activeDocumentId],
+  );
+  const onFitZoom = useCallback(
+    (zoom: string) => {
+      if (!activeDocumentId) return;
+      setFit({ forDocumentId: activeDocumentId, zoom });
+    },
+    [activeDocumentId],
+  );
+  const zoomOverride =
+    activeDocumentId && override?.forDocumentId === activeDocumentId
+      ? override.zoom
+      : null;
+  const fitZoom =
+    activeDocumentId && fit?.forDocumentId === activeDocumentId
+      ? fit.zoom
+      : null;
 
   // §2 row 3: the Font-family vocabulary. Both legs are best-effort and both
   // failure paths are already silent by construction — `fetchFontLibrary`
@@ -341,12 +376,15 @@ export function useSceneEditingSession({
     selection,
     undoDisabled: true,
     writes: NO_EDITS,
-    /** The zoom to DISPLAY (§1.10) — the menu's value when it has one, else
-     * the fit the canvas reported. */
+    /** The zoom to DISPLAY in the header menu (§1.10) — the user's choice when
+     * there is one, else the snapped fit the canvas reported. The `"100%"`
+     * fallback covers the frames before the canvas has measured its card;
+     * nothing is drawn in them. */
     zoom: zoomOverride ?? fitZoom ?? "100%",
-    /** The zoom to FEED the canvas: null means "fit the artboard". */
+    /** The zoom to FEED the canvas: null means "fit the artboard EXACTLY" —
+     * never the snapped label. */
     zoomOverride,
     /** The canvas's fit-on-open report. */
-    onFitZoom: setFitZoom,
+    onFitZoom,
   };
 }

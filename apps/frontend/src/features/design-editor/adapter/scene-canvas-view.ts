@@ -14,6 +14,12 @@ import {
 } from "../engine/scene/renderAdapter";
 import { isNodePinned } from "../engine/scene/sceneQueries";
 import type { Rect } from "../engine/scene/workspaceLayout";
+import {
+  clampWorkspaceZoom,
+  fitWorkspaceRectToViewport,
+  type ViewportSize,
+  type WorkspaceViewport,
+} from "../engine/scene/workspaceViewport";
 
 /**
  * AD2.3: every decision the scene canvas makes that is NOT a WebGL call.
@@ -62,6 +68,117 @@ export function snapZoomPercent(zoom: number): string {
     Math.max(MIN_ZOOM_PERCENT, stepped),
   );
   return `${clamped}%`;
+}
+
+/**
+ * A menu step (`"45%"`) as the scale the canvas applies, or null for "no
+ * choice yet — fit the artboard".
+ *
+ * Clamped through the engine's own `[0.1, 2.0]` viewport clamp so the value the
+ * canvas transforms by is one the engine would accept anywhere else. Every one
+ * of the menu's 29 options is already inside that clamp, so the clamp only ever
+ * bites on a hand-passed value.
+ */
+export function chosenZoomScale(zoom: string | null | undefined): number | null {
+  if (!zoom) {
+    return null;
+  }
+  const parsed = Number.parseFloat(zoom.replace("%", ""));
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return null;
+  }
+  return clampWorkspaceZoom(parsed / 100);
+}
+
+/**
+ * margin 0: the dummy's `.imageCanvas` card IS the artboard (its hairline
+ * border is the artboard edge), so the page fills it edge-to-edge (AD2.3
+ * review / ruling 17). The upstream default (128) exists for the standalone
+ * editor's infinite workspace, where the artboard floats in a dark shell —
+ * porting it here leaves a white ring inside the designed card. Contain-fit
+ * still letterboxes a non-square page in the square card.
+ */
+export const ARTBOARD_FIT_MARGIN = 0;
+
+/** What the canvas draws with, and what the header menu says it is drawing. */
+export interface SceneViewportModel {
+  /** The viewport the canvas actually applies. */
+  applied: WorkspaceViewport;
+  /** The exact contain-fit for this card and this page box. */
+  fit: WorkspaceViewport;
+  /** The fit as one of the menu's own 5% steps — a LABEL, not the applied
+   * scale. */
+  fitLabel: string;
+}
+
+/**
+ * AD2.8: the fit-vs-chosen decision, in one place.
+ *
+ * The two are deliberately NOT the same number:
+ *
+ * - **Fit-on-open (no choice yet).** The canvas applies the EXACT contain-fit
+ *   (`0.4267…`), because that is what makes the ad fill the designed artboard
+ *   card edge-to-edge (ruling 17). The header menu meanwhile shows
+ *   `fitLabel` — the nearest step it actually offers (`"45%"`) — because the
+ *   ratified menu has 29 items and no "Fit" entry, and inventing one is barred.
+ *   So on open the label is an honest APPROXIMATION of the applied scale, and
+ *   the gap is at most half a step (2.5%).
+ * - **After a choice.** The label and the transform are the same number: the
+ *   canvas applies exactly the chosen step and the menu checks exactly that
+ *   item. Picking the step the label already showed therefore does move the
+ *   canvas slightly (`45%` is not `42.67%`) — that is the model working, not a
+ *   bug.
+ *
+ * A chosen zoom re-centers with `fitWorkspaceRectToViewport`'s own pan math at
+ * the chosen scale, so the artboard stays centered in the card at every zoom.
+ * There is no pointer-anchored zoom (`zoomWorkspaceViewportAtPoint`) and no
+ * panning: the dummy has no designed affordance for either, so above the fit
+ * the page is simply clipped by the card, centered.
+ *
+ * A starved stage (zero-sized during the first layout pass) falls back to the
+ * fit's own default viewport rather than panning the artboard off-card.
+ */
+export function sceneViewportModel({
+  rect,
+  stage,
+  zoom,
+}: {
+  /** The artboard's rect in workspace space. */
+  rect: Rect;
+  /** The artboard card's measured size. */
+  stage: ViewportSize;
+  /** The header menu's chosen step, or null/absent for fit. */
+  zoom: string | null | undefined;
+}): SceneViewportModel {
+  const fit = fitWorkspaceRectToViewport({
+    viewport: stage,
+    rect,
+    margin: ARTBOARD_FIT_MARGIN,
+  });
+  const fitLabel = snapZoomPercent(fit.zoom);
+  const chosen = chosenZoomScale(zoom);
+  if (
+    chosen === null ||
+    !isPositiveFinite(stage.width) ||
+    !isPositiveFinite(stage.height)
+  ) {
+    return { applied: fit, fit, fitLabel };
+  }
+  return {
+    applied: {
+      zoom: chosen,
+      pan: {
+        x: stage.width / 2 - (rect.x + rect.width / 2) * chosen,
+        y: stage.height / 2 - (rect.y + rect.height / 2) * chosen,
+      },
+    },
+    fit,
+    fitLabel,
+  };
+}
+
+function isPositiveFinite(value: number): boolean {
+  return Number.isFinite(value) && value > 0;
 }
 
 const SHA256_HEX = /^[0-9a-f]{64}$/;

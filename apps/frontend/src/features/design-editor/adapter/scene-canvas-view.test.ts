@@ -5,12 +5,15 @@ import {
   HARVESTED_AD_PAGE,
 } from "./__fixtures__/scene-nodes";
 import {
+  chosenZoomScale,
   sceneArtboardModel,
   sceneAssetPassthroughUrl,
+  sceneViewportModel,
   snapZoomPercent,
   textMeasurementSignature,
 } from "./scene-canvas-view";
 import type { Scene } from "../engine/scene/contracts";
+import { workspaceToScreen } from "../engine/scene/workspaceViewport";
 
 const AD_ASSET_ID = "asset_ing_2b0928ca4f3a3c70";
 const AD_ASSET_DIGEST =
@@ -66,6 +69,123 @@ test("a starved fit reports the minimum step instead of NaN%", () => {
   assert.equal(snapZoomPercent(Number.NaN), "10%");
   assert.equal(snapZoomPercent(0), "10%");
   assert.equal(snapZoomPercent(-1), "10%");
+});
+
+// AD2.8: the fit-vs-chosen model. The card in these cases is the dummy's
+// square artboard (512px) and the page is the seeded ad (1200×1200pt), so the
+// exact fit is 512/1200 = 0.4266… — a scale the 5% menu cannot name.
+const AD_RECT = { x: 0, y: 0, width: 1200, height: 1200 };
+const CARD = { width: 512, height: 512 };
+
+test("fit-on-open applies the EXACT contain-fit, not the step it displays", () => {
+  const model = sceneViewportModel({ rect: AD_RECT, stage: CARD, zoom: null });
+  // The label rounds; the transform must not (ruling 17: the ad fills the
+  // designed card edge-to-edge — 45% would leave a gap inside it).
+  assert.equal(model.fitLabel, "45%");
+  assert.equal(model.applied.zoom, 512 / 1200);
+  assert.deepEqual(model.applied, model.fit);
+  assert.notEqual(model.applied.zoom, 0.45);
+});
+
+test("an exact fit fills the card edge to edge", () => {
+  const { applied } = sceneViewportModel({
+    rect: AD_RECT,
+    stage: CARD,
+    zoom: null,
+  });
+  const topLeft = workspaceToScreen({ x: 0, y: 0 }, applied);
+  const bottomRight = workspaceToScreen({ x: 1200, y: 1200 }, applied);
+  assert.deepEqual(topLeft, { x: 0, y: 0 });
+  assert.deepEqual(bottomRight, { x: 512, y: 512 });
+});
+
+test("a chosen step is applied at exactly that percentage", () => {
+  assert.equal(
+    sceneViewportModel({ rect: AD_RECT, stage: CARD, zoom: "50%" }).applied
+      .zoom,
+    0.5,
+  );
+  assert.equal(
+    sceneViewportModel({ rect: AD_RECT, stage: CARD, zoom: "150%" }).applied
+      .zoom,
+    1.5,
+  );
+});
+
+test("a chosen step keeps the artboard centered in the card", () => {
+  for (const zoom of ["10%", "50%", "150%"]) {
+    const { applied } = sceneViewportModel({
+      rect: AD_RECT,
+      stage: CARD,
+      zoom,
+    });
+    const center = workspaceToScreen({ x: 600, y: 600 }, applied);
+    assert.deepEqual(center, { x: 256, y: 256 }, zoom);
+  }
+});
+
+test("above the fit the page overflows the card — clipped, never re-panned", () => {
+  const { applied } = sceneViewportModel({
+    rect: AD_RECT,
+    stage: CARD,
+    zoom: "150%",
+  });
+  // 1200 × 1.5 = 1800px of page inside a 512px card: it hangs off both edges
+  // symmetrically. The card clips it (there is no designed pan affordance).
+  assert.equal(applied.pan.x, 256 - 900);
+  assert.equal(workspaceToScreen({ x: 0, y: 0 }, applied).x, -644);
+  assert.equal(workspaceToScreen({ x: 1200, y: 0 }, applied).x, 1156);
+});
+
+test("choosing a step does not disturb the reported fit", () => {
+  const fit = sceneViewportModel({ rect: AD_RECT, stage: CARD, zoom: null });
+  const chosen = sceneViewportModel({
+    rect: AD_RECT,
+    stage: CARD,
+    zoom: "150%",
+  });
+  assert.equal(chosen.fitLabel, fit.fitLabel);
+  assert.deepEqual(chosen.fit, fit.fit);
+});
+
+test("a chosen zoom rides the engine's own [0.1, 2.0] viewport clamp", () => {
+  assert.equal(chosenZoomScale("50%"), 0.5);
+  // Every menu option is inside the clamp; a hand-passed value is not trusted.
+  assert.equal(chosenZoomScale("400%"), 2);
+  assert.equal(chosenZoomScale("1%"), 0.1);
+});
+
+test("no choice — and no parsable one — means fit", () => {
+  assert.equal(chosenZoomScale(null), null);
+  assert.equal(chosenZoomScale(undefined), null);
+  assert.equal(chosenZoomScale(""), null);
+  assert.equal(chosenZoomScale("Fit"), null);
+  assert.equal(chosenZoomScale("0%"), null);
+  assert.equal(chosenZoomScale("-25%"), null);
+});
+
+test("a fit below the menu's floor is labelled honestly at the floor", () => {
+  // A huge page in a small card: the ENGINE clamps the fit at 10% too, so the
+  // label and the transform agree — the page simply overflows the card.
+  const model = sceneViewportModel({
+    rect: { x: 0, y: 0, width: 20000, height: 20000 },
+    stage: CARD,
+    zoom: null,
+  });
+  assert.equal(model.fit.zoom, 0.1);
+  assert.equal(model.fitLabel, "10%");
+});
+
+test("a starved card falls back to the default viewport, chosen zoom or not", () => {
+  const starved = { width: 0, height: 0 };
+  for (const zoom of [null, "150%"]) {
+    const { applied } = sceneViewportModel({
+      rect: AD_RECT,
+      stage: starved,
+      zoom,
+    });
+    assert.deepEqual(applied, { zoom: 1, pan: { x: 0, y: 0 } }, `${zoom}`);
+  }
 });
 
 test("the text signature covers only text nodes' measurement inputs", () => {

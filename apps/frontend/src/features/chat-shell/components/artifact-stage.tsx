@@ -59,9 +59,11 @@ export function ArtifactStage({
   onSceneEngineStatusChange,
   onSceneFitZoom,
   onSceneSelect,
+  onSceneZoomChange,
   sceneCanvasControlsRef,
   sceneSelectedNodeId,
-  sceneZoom,
+  sceneZoomLabel,
+  sceneZoomOverride,
   onToggleMaximized,
   onTogglePanel,
   onToggleEditing,
@@ -119,18 +121,29 @@ export function ArtifactStage({
    * the shell can refuse edits (and, post Gate G-D, explain why). */
   onSceneEngineStatusChange?: (status: SceneEngineStatus) => void;
   /** AD2.3: the ad canvas's fit-on-open zoom, as one of the header menu's own
-   * 5% steps (§1.10). AD2.8 binds it to the menu. */
+   * 5% steps (§1.10) — AD2.8 shows it in the menu until the user chooses. */
   onSceneFitZoom?: (zoom: string) => void;
   /** AD2.7: a press on the ad canvas resolved to the node it selects (§5's
    * nearest representable ancestor), or null for a press on nothing. */
   onSceneSelect?: (nodeId: string | null) => void;
+  /** AD2.8: the user picked a step from the ad header's zoom menu. */
+  onSceneZoomChange?: (zoom: string) => void;
   /** AD2.3: receives the mounted ad canvas's imperative controls (hit-testing
    * for AD2.5's selection, refresh, and the rendered scene). */
   sceneCanvasControlsRef?: RefObject<SceneCanvasControls | null>;
   /** AD2.7: the session's primary selection, back down to the canvas. */
   sceneSelectedNodeId?: string | null;
-  /** AD2.8/§1.10: the header menu's zoom. Null keeps the fit-on-open. */
-  sceneZoom?: string | null;
+  /**
+   * AD2.8/§1.10: the two halves of one zoom, deliberately separate.
+   *
+   * `sceneZoomLabel` is what the HEADER MENU shows — the chosen step, or the
+   * fit snapped to the nearest step the menu offers. `sceneZoomOverride` is
+   * what the CANVAS applies, and it is null until the user actually chooses,
+   * so an untouched artifact keeps its EXACT contain-fit (ruling 17) rather
+   * than the rounded label.
+   */
+  sceneZoomLabel?: string | null;
+  sceneZoomOverride?: string | null;
   onToggleMaximized: () => void;
   onTogglePanel: () => void;
   onToggleEditing: () => void;
@@ -165,9 +178,11 @@ export function ArtifactStage({
             kind={artifactKind}
             onEdit={onToggleEditing}
             onRename={onRenameArtifact}
+            onZoomChange={onSceneZoomChange}
             redoDisabled={redoDisabled}
             title={artifactTitle}
             undoDisabled={undoDisabled}
+            zoom={sceneZoomLabel}
           />
           <div className={`${styles.outputStage} ${artifactKind === "ad" ? styles.imageOutputStage : styles.webOutputStage}`}>
             {artifactKind === "web" ? (
@@ -213,7 +228,7 @@ export function ArtifactStage({
                     onSelect={onSceneSelect}
                     reloadToken={canvasReloadToken}
                     selectedNodeId={sceneSelectedNodeId}
-                    zoom={sceneZoom}
+                    zoom={sceneZoomOverride}
                   />
                 ) : null}
               </div>
