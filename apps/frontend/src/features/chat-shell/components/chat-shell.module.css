@@ -568,6 +568,12 @@
     var(--clue-ds-product-motion-easing-entry) both;
 }
 
+/* §2 delta (contract row 5 / §1.10): the 29-step zoom menu scrolls. */
+.toolbarMenuScrollable {
+  max-height: 320px;
+  overflow-y: auto;
+}
+
 .shareMenu {
   position: absolute;
   top: calc(100% + 6px);
@@ -2509,6 +2515,13 @@
   border: 0.5px solid #e6e9ed;
   border-radius: 10px;
   background: rgb(0 37 110 / 3%);
+}
+
+/* §2 delta (contract row 2): the ad text schema's horizontal alignment carries
+   four toggles (Justify), which a three-column row cannot hold. Web keeps
+   `.alignmentControl` alone. */
+.alignmentControlQuad {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
 .alignmentControl button {

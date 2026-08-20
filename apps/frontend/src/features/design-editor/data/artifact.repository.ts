@@ -43,6 +43,20 @@ const FIXTURE_ARTIFACTS: readonly DesignArtifactListItem[] = [
     updatedAt: "2026-08-16T12:30:00+00:00",
     originThreadId: "thread_fixture",
   }),
+  // AD0.4 (ruling 4): the ad surface's fixture counterpart, so a fixture-mode
+  // feed can serve an `ad` card the way it already serves the web one.
+  DesignArtifactListItemSchema.parse({
+    id: "doc_ad_fixture",
+    projectId: "10m-landing-page-campaign",
+    documentId: "doc_ad_fixture",
+    kind: "ad",
+    title: "Ad output",
+    currentVersionId: "0",
+    status: "draft",
+    createdAt: "2026-08-20T09:00:00+00:00",
+    updatedAt: "2026-08-20T12:30:00+00:00",
+    originThreadId: "thread_fixture",
+  }),
 ];
 
 export function fixtureDesignArtifactRepository(

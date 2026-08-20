@@ -29,7 +29,9 @@ const PREVIEW_DEVICE_ICONS = {
   Mobile: RectangleVerticalIcon,
   Tablet: RectangleHorizontalIcon,
 } satisfies Record<(typeof PREVIEW_DEVICES)[number], LucideIcon>;
-const ZOOM_LEVELS = ["23%", "50%", "75%", "100%"] as const;
+// §2 delta (contract row 5 / §1.10): zoom offers 10%–150% in 5% steps, in a
+// scrollable menu (`.toolbarMenuScrollable`). Fit-on-open is separate wiring.
+const ZOOM_LEVELS = Array.from({ length: 29 }, (_, index) => `${10 + index * 5}%`);
 
 export function ArtifactHeader({
   editing,
@@ -180,7 +182,7 @@ export function ArtifactHeader({
               />
             </button>
             {zoomMenuOpen ? (
-              <div aria-label="Canvas zoom" className={styles.toolbarMenu} role="menu">
+              <div aria-label="Canvas zoom" className={`${styles.toolbarMenu} ${styles.toolbarMenuScrollable}`} role="menu">
                 {ZOOM_LEVELS.map((option) => (
                   <button
                     aria-checked={zoom === option}

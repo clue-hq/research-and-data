@@ -1,6 +1,6 @@
 "use client";
 
-import { CheckIcon, ChevronDownIcon, DownloadIcon } from "lucide-react";
+import { ChevronDownIcon, DownloadIcon } from "lucide-react";
 import {
   type useImageExportController,
 } from "../hooks/use-image-export-controller";
@@ -8,7 +8,6 @@ import {
   IMAGE_EXPORT_FORMATS,
   IMAGE_EXPORT_SCALES,
   imageExportSupportsScale,
-  imageExportSupportsTransparency,
 } from "../model/image-export";
 import styles from "./chat-shell.module.css";
 
@@ -56,22 +55,9 @@ export function ImageExportMenu({ controller }: { controller: ImageExportControl
       {imageExportSupportsScale(controller.format) ? (
         <ExportChoice label="Scale" onChange={controller.setScale} options={IMAGE_EXPORT_SCALES} value={controller.scale} />
       ) : null}
-      {imageExportSupportsTransparency(controller.format) ? (
-        <button
-          aria-pressed={controller.transparentBackground}
-          className={styles.imageExportToggleRow}
-          onClick={() => controller.setTransparentBackground(!controller.transparentBackground)}
-          type="button"
-        >
-          <span
-            aria-hidden="true"
-            className={`${styles.imageExportCheckbox} ${controller.transparentBackground ? styles.imageExportCheckboxActive : ""}`}
-          >
-            {controller.transparentBackground ? <CheckIcon absoluteStrokeWidth size={12} strokeWidth={1.5} /> : null}
-          </span>
-          <strong>Transparent background</strong>
-        </button>
-      ) : null}
+      {/* Gate G-E: the dummy's "Transparent background" toggle row is held —
+          no engine support verified (2026-08-20). Restore verbatim if the
+          founder authorizes the §8 engine change. */}
       <div className={styles.imageExportPreviewSection}>
         <button
           aria-expanded={controller.previewOpen}
@@ -85,7 +71,7 @@ export function ImageExportMenu({ controller }: { controller: ImageExportControl
         {controller.previewOpen ? (
           <div
             aria-label={`${controller.format} export preview`}
-            className={`${styles.imageExportPreview} ${controller.transparentBackground ? styles.imageExportPreviewTransparent : ""}`}
+            className={styles.imageExportPreview}
             data-export-format={controller.format.toLowerCase()}
           >
             <div data-artifact-export-preview="ad" />

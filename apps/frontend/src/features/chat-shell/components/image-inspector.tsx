@@ -1,10 +1,11 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import type { ChatShellInspectorSelection } from "../model/chat-shell";
 import {
   useInspectorController,
   useInspectorLayerTree,
+  type HorizontalAlignment,
 } from "../hooks/use-inspector-controller";
 import {
   BackgroundFillControl,
@@ -17,7 +18,6 @@ import {
   InspectorLayerRow,
   InspectorSection,
   InspectorSelect,
-  InspectorTokenControl,
   RadiusControls,
 } from "./inspector-primitives";
 import styles from "./chat-shell.module.css";
@@ -26,22 +26,38 @@ import {
   isAdDummyInspectorSelection,
 } from "./ad-dummy-inspectors";
 
-const FONT_OPTIONS = ["Inter", "Satoshi Variable", "Season Serif", "DM Mono"] as const;
-const FONT_SIZE_OPTIONS = ["12", "13", "14", "16", "18", "20", "24", "32"] as const;
-const FONT_WEIGHT_OPTIONS = ["Regular", "Medium", "Semi Bold", "Bold"] as const;
-const FILL_MODES = ["Fit", "Fill", "Stretch", "Tile"] as const;
-const BUTTON_STYLE_OPTIONS = ["Primary", "Secondary", "Transparent", "Critical"] as const;
+// §2 delta (contract row 3): the font family list is prop-fed — the real
+// library/kit vocabulary arrives with hydration; the dummy's hardcoded
+// Satoshi/Season Serif/DM Mono entries are gone.
+const DEFAULT_FONT_OPTIONS = ["Inter"] as const;
+// §2 delta (contract row 2): the nine named weights replace the dummy's four.
+const FONT_WEIGHT_OPTIONS = [
+  "100 Thin",
+  "200 Extra Light",
+  "300 Light",
+  "400 Regular",
+  "500 Medium",
+  "600 Semi Bold",
+  "700 Bold",
+  "800 Extra Bold",
+  "900 Black",
+] as const;
+// §2 delta (contract row 4): Stretch/Tile are dropped; Crop arrives (its focal
+// control is Lane A, behind Gate G-C).
+const FILL_MODES = ["Fit", "Fill", "Crop"] as const;
+// §2 delta (contract row 1): the LinkedIn square's real pixels (1200x1200) and
+// a Custom entry that reveals W/H.
 const SIZE_PRESETS = [
-  "Linkedin square (1:1) - 1024x1024",
+  "Linkedin square (1:1) - 1200x1200",
   "Instagram portrait (4:5) - 1080x1350",
   "Story (9:16) - 1080x1920",
+  "Custom",
 ] as const;
 
 const AD_INSPECTOR_TITLES: Partial<
   Record<ChatShellInspectorSelection, string>
 > = {
   "auto-layout": "Auto layout",
-  button: "Button",
   canvas: "Canvas",
   ellipse: "Ellipse",
   group: "Group",
@@ -127,15 +143,17 @@ function TextAlignment({
   onVerticalChange,
   vertical,
 }: {
-  horizontal: "center" | "left" | "right";
-  onHorizontalChange: (value: "center" | "left" | "right") => void;
+  horizontal: HorizontalAlignment;
+  onHorizontalChange: (value: HorizontalAlignment) => void;
   onVerticalChange: (value: "bottom" | "middle" | "top") => void;
   vertical: "bottom" | "middle" | "top";
 }) {
+  // §2 delta (contract row 2): H-alignment gains a fourth Justify toggle.
   const horizontalOptions = [
     ["left", "align-left"],
     ["center", "align-center"],
     ["right", "align-right"],
+    ["justify", "align-justify"],
   ] as const;
   const verticalOptions = [
     ["top", "align-top"],
@@ -145,7 +163,7 @@ function TextAlignment({
 
   return (
     <div className={styles.alignmentGroups}>
-      <div aria-label="Horizontal alignment" className={styles.alignmentControl} role="group">
+      <div aria-label="Horizontal alignment" className={`${styles.alignmentControl} ${styles.alignmentControlQuad}`} role="group">
         {horizontalOptions.map(([value, icon]) => (
           <button aria-label={`Align ${value}`} aria-pressed={horizontal === value} className={horizontal === value ? styles.alignmentActive : ""} key={value} onClick={() => onHorizontalChange(value)} type="button">
             <InspectorIcon name={icon} size={12} />
@@ -199,22 +217,8 @@ function ArrangeControls({ onAction }: { onAction: (action: string) => void }) {
   );
 }
 
-function PaddingControls({
-  onChange,
-  values,
-}: {
-  onChange: (side: "bottom" | "left" | "right" | "top", value: string) => void;
-  values: Record<"bottom" | "left" | "right" | "top", string>;
-}) {
-  return (
-    <div className={styles.paddingGrid}>
-      <InspectorInput ariaLabel="Left padding" onChange={(value) => onChange("left", value)} prefix="L" value={values.left} />
-      <InspectorInput ariaLabel="Top padding" onChange={(value) => onChange("top", value)} prefix="T" value={values.top} />
-      <InspectorInput ariaLabel="Right padding" onChange={(value) => onChange("right", value)} prefix="R" value={values.right} />
-      <InspectorInput ariaLabel="Bottom padding" onChange={(value) => onChange("bottom", value)} prefix="B" value={values.bottom} />
-    </div>
-  );
-}
+// (`PaddingControls` lived here for the button schema's Layout section; both
+// went with the row-7 button-schema removal.)
 
 function Section({
   children,
@@ -235,20 +239,28 @@ function Section({
 }
 
 function AdTextInspector({
+  fontOptions,
   onSelectionChange,
 }: {
+  fontOptions: readonly string[];
   onSelectionChange: (selection: ChatShellInspectorSelection) => void;
 }) {
-  const controller = useInspectorController([], "text");
+  // The shared dummy default ("Semi Bold") is not one of the §2-row-2 named
+  // weights, so this schema opens on the matching nine-name value. The web
+  // inspector keeps its own four-name list and the untouched shared default.
+  const controller = useInspectorController([], "text", {
+    fontWeight: "600 Semi Bold",
+  });
   const { requestAction, setNestedValue, setValue, state, toggleSection } = controller;
 
   return (
     <>
       <Section id="typography" label="Typography" open={state.openSections.typography} toggle={() => toggleSection("typography")}>
         <InspectorField label="Color"><ColorControl color={state.textColor} onColorChange={(value) => setValue("textColor", value)} /></InspectorField>
-        <InspectorField label="Font"><InspectorSelect label="Font family" onChange={(value) => setValue("fontFamily", value)} options={FONT_OPTIONS} value={state.fontFamily} /></InspectorField>
+        <InspectorField label="Font"><InspectorSelect label="Font family" onChange={(value) => setValue("fontFamily", value)} options={fontOptions} value={state.fontFamily} /></InspectorField>
         <div className={styles.fieldGrid}>
-          <InspectorField label="Size"><InspectorSelect label="Font size" onChange={(value) => setValue("fontSize", value)} options={FONT_SIZE_OPTIONS} value={state.fontSize} /></InspectorField>
+          {/* §2 delta (contract row 2): the size select becomes a free number. */}
+          <InspectorField label="Size"><InspectorInput ariaLabel="Font size" onChange={(value) => setValue("fontSize", value)} value={state.fontSize} /></InspectorField>
           <InspectorField label="Weight"><InspectorSelect label="Font weight" onChange={(value) => setValue("fontWeight", value)} options={FONT_WEIGHT_OPTIONS} value={state.fontWeight} /></InspectorField>
         </div>
         <InspectorField label="Alignment"><TextAlignment horizontal={state.horizontalAlignment} onHorizontalChange={(value) => setValue("horizontalAlignment", value)} onVerticalChange={(value) => setValue("verticalAlignment", value)} vertical={state.verticalAlignment} /></InspectorField>
@@ -281,12 +293,29 @@ function AdCanvasInspector({
 }: {
   onSelectionChange: (selection: ChatShellInspectorSelection) => void;
 }) {
-  const controller = useInspectorController([], "canvas");
+  // The shared dummy default still names the pre-§2 pixel size, so this schema
+  // opens on the corrected preset string (row 1). The value is the same option,
+  // not a new one.
+  const controller = useInspectorController([], "canvas", {
+    sizePreset: SIZE_PRESETS[0],
+  });
   const { setValue, state, toggleSection } = controller;
+  // §2 delta (contract row 1): Custom reveals W/H (px only). Local draft state
+  // in this inert phase — the preset itself already rides the controller.
+  const [customWidth, setCustomWidth] = useState("1200");
+  const [customHeight, setCustomHeight] = useState("1200");
   return (
     <>
       <Section id="dimensions" label="Dimensions" open={state.openSections.dimensions} toggle={() => toggleSection("dimensions")}>
         <InspectorField label="Size"><InspectorSelect label="Canvas dimensions" onChange={(value) => setValue("sizePreset", value)} options={SIZE_PRESETS} value={state.sizePreset} /></InspectorField>
+        {state.sizePreset === "Custom" ? (
+          <InspectorField label="Custom size">
+            <div className={styles.fieldGrid}>
+              <InspectorInput ariaLabel="Custom width" onChange={setCustomWidth} prefix="W" value={customWidth} />
+              <InspectorInput ariaLabel="Custom height" onChange={setCustomHeight} prefix="H" value={customHeight} />
+            </div>
+          </InspectorField>
+        ) : null}
       </Section>
       <Section id="background" label="Background" open={state.openSections.background} toggle={() => toggleSection("background")}>
         <InspectorField label="Fill">
@@ -314,10 +343,8 @@ function AdImageInspector({
   const { setNestedValue, setValue, state, toggleSection } = controller;
   return (
     <>
-      <Section compact id="link" label="Link to" open={state.openSections.link} toggle={() => toggleSection("link")}>
-        <InspectorField label="URL"><InspectorInput ariaLabel="Image link URL" onChange={(value) => setValue("url", value)} value={state.url} /></InspectorField>
-        <label className={styles.checkboxRow}><input checked={state.openInNewTab} onChange={(event) => setValue("openInNewTab", event.target.checked)} type="checkbox" /><span>Open in a new tab</span></label>
-      </Section>
+      {/* §2 delta (contract row 7 / §5): the image "Link to" section is removed
+          — an ad image carries no href. */}
       <Section id="fill" label="Fill" open={state.openSections.fill} toggle={() => toggleSection("fill")}>
         <InspectorField label="Image"><InspectorImageUpload onFileSelect={(file) => controller.requestAction(`replace-image:${file.name}`)} src="/icons/chat-shell/inspector/web/image-preview.png" /></InspectorField>
         <InspectorField label="Mode"><InspectorSelect label="Image fill mode" onChange={(value) => setValue("fillMode", value)} options={FILL_MODES} value={state.fillMode} /></InspectorField>
@@ -332,38 +359,20 @@ function AdImageInspector({
   );
 }
 
-function AdButtonInspector({
-  onSelectionChange,
-}: {
-  onSelectionChange: (selection: ChatShellInspectorSelection) => void;
-}) {
-  const controller = useInspectorController([], "button");
-  const { setNestedValue, setValue, state, toggleSection } = controller;
-  return (
-    <>
-      <Section compact id="link" label="Link to" open={state.openSections.link} toggle={() => toggleSection("link")}>
-        <InspectorField label="URL"><InspectorInput ariaLabel="Button link URL" onChange={(value) => setValue("url", value)} value={state.url} /></InspectorField>
-        <label className={styles.checkboxRow}><input checked={state.openInNewTab} onChange={(event) => setValue("openInNewTab", event.target.checked)} type="checkbox" /><span>Open in a new tab</span></label>
-      </Section>
-      <Section id="style" label="Style" open={state.openSections.style} toggle={() => toggleSection("style")}>
-        <InspectorField label="Button type"><InspectorSelect label="Button type" onChange={(value) => setValue("buttonLabel", value)} options={BUTTON_STYLE_OPTIONS} value={state.buttonLabel} /></InspectorField>
-        <InspectorField label="Background color"><InspectorTokenControl label={state.tokenBackgroundColor} onClick={() => controller.requestAction("token-picker:button-background")} swatch="#00F59B" /></InspectorField>
-        <InspectorField label="Text color"><InspectorTokenControl label={state.tokenTextColor} onClick={() => controller.requestAction("token-picker:button-text")} swatch="#FFFFFF" /></InspectorField>
-      </Section>
-      <Section id="layout" label="Layout" open={state.openSections.layout} toggle={() => toggleSection("layout")}>
-        <InspectorField label="Padding"><PaddingControls onChange={(side, value) => setNestedValue("padding", side, value)} values={state.padding} /></InspectorField>
-      </Section>
-      <Section id="layers" label="Layers" open={state.openSections.layers} toggle={() => toggleSection("layers")}>
-        <AdLayers onSelectionChange={onSelectionChange} selected="button" />
-      </Section>
-    </>
-  );
-}
+// §2 delta (contract row 7 / §5): the button schema is hidden in v1 —
+// `AdButtonInspector`, its `BUTTON_STYLE_OPTIONS`, its own "Link to" section
+// and its padding controls are deleted. A `"button"` selection value survives
+// in `model/chat-shell.ts` (dummy truth) and falls through to the default
+// branch below until the model re-lift removes it.
 
 export function ImageInspector({
+  fontOptions = DEFAULT_FONT_OPTIONS,
   onSelectionChange,
   selection,
 }: {
+  /** §2 delta (contract row 3): the real font vocabulary, prop-fed. Absent
+   * keeps the one safe default until AD2.4's hydration supplies the kit's. */
+  fontOptions?: readonly string[];
   onSelectionChange: (selection: ChatShellInspectorSelection) => void;
   selection: ChatShellInspectorSelection;
 }) {
@@ -374,20 +383,21 @@ export function ImageInspector({
   return (
     <aside aria-label="Ad inspector" className={styles.inspector}>
       <div className={styles.inspectorRail}>
+        {/* §2 delta (contract row 7): no `onVisibilityToggle` is passed, so the
+            header renders no eye on any ad schema. */}
         <InspectorHeader
           elementActions={selection !== "canvas"}
           locked={dummySelection ? false : headerController.state.locked}
           onLockToggle={dummySelection ? undefined : () => headerController.setValue("locked", !headerController.state.locked)}
-          onVisibilityToggle={dummySelection ? undefined : () => headerController.setValue("visible", !headerController.state.visible)}
           title={title}
-          visible={dummySelection ? true : headerController.state.visible}
         />
         {selection === "canvas" ? <AdCanvasInspector onSelectionChange={onSelectionChange} /> : null}
-        {selection === "text" ? <AdTextInspector onSelectionChange={onSelectionChange} /> : null}
+        {selection === "text" ? <AdTextInspector fontOptions={fontOptions} onSelectionChange={onSelectionChange} /> : null}
         {selection === "image" ? <AdImageInspector onSelectionChange={onSelectionChange} /> : null}
-        {selection === "button" ? <AdButtonInspector onSelectionChange={onSelectionChange} /> : null}
         {dummySelection ? <AdDummyInspector onSelectionChange={onSelectionChange} selection={selection} /> : null}
-        {!(["auto-layout", "button", "canvas", "ellipse", "group", "image", "rectangle", "text"] as ChatShellInspectorSelection[]).includes(selection) ? <AdCanvasInspector onSelectionChange={onSelectionChange} /> : null}
+        {/* `"button"` is deliberately absent from this list: with its schema
+            hidden (row 7) it falls through to the canvas default. */}
+        {!(["auto-layout", "canvas", "ellipse", "group", "image", "rectangle", "text"] as ChatShellInspectorSelection[]).includes(selection) ? <AdCanvasInspector onSelectionChange={onSelectionChange} /> : null}
       </div>
     </aside>
   );

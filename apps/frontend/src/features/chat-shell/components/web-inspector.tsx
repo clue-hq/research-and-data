@@ -28,6 +28,7 @@ import type { ChatShellInspectorSelection } from "../model/chat-shell";
 import {
   useInspectorController,
   useInspectorLayerTree,
+  type HorizontalAlignment,
   type InspectorEventAddressing,
   type InspectorPresentationState,
 } from "../hooks/use-inspector-controller";
@@ -171,8 +172,11 @@ function TextAlignment({
   vertical,
   verticalHidden = false,
 }: {
-  horizontal: "center" | "left" | "right";
-  onHorizontalChange: (value: "center" | "left" | "right") => void;
+  // The ad surface's §2-row-2 Justify toggle widened the shared
+  // `HorizontalAlignment`; this annotation follows it. The web control's own
+  // three options — and everything it renders — are unchanged.
+  horizontal: HorizontalAlignment;
+  onHorizontalChange: (value: HorizontalAlignment) => void;
   onVerticalChange: (value: "bottom" | "middle" | "top") => void;
   vertical: "bottom" | "middle" | "top";
   /** W3.2 (ruling 8): the text schema hides vertical alignment. */

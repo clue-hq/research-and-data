@@ -18,7 +18,10 @@ export type InspectorSectionId =
   | "stroke"
   | "typography";
 
-export type HorizontalAlignment = "center" | "left" | "right";
+// `justify` is the ad text schema's §2-row-2 fourth toggle. The web inspector
+// still offers three (its own options list is unchanged), and the web write
+// adapter's `ALIGNMENT_VALUES` guard already refuses anything outside them.
+export type HorizontalAlignment = "center" | "justify" | "left" | "right";
 export type VerticalAlignment = "bottom" | "middle" | "top";
 export type InspectorDirection = "horizontal" | "vertical";
 export type InspectorLayoutMode = "Flex" | "Grid" | "Hide";

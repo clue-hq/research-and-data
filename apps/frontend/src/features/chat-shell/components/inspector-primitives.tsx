@@ -25,6 +25,10 @@ export type InspectorIconName =
   | "align-end-horizontal"
   | "align-end-vertical"
   | "align-horizontal-distribute-center"
+  // §2 delta (contract row 2): the ad text schema's fourth H-alignment toggle.
+  // The dummy set carries no justify glyph, so this one is authored in the
+  // existing align-* family's export style (AD0.4 ruling 3).
+  | "align-justify"
   | "align-left"
   | "align-middle"
   | "align-right"
@@ -127,15 +131,20 @@ export function InspectorHeader({
             >
               <InspectorIcon name="lock-open" size={12} />
             </button>
-            <button
-              aria-label={visible ? "Hide element" : "Show element"}
-              aria-pressed={!visible}
-              className={`${styles.inspectorIconButton} ${!visible ? styles.inspectorIconButtonActive : ""}`}
-              onClick={onVisibilityToggle}
-              type="button"
-            >
-              <InspectorIcon name="eye" size={12} />
-            </button>
+            {/* §2 delta (contract row 7): the ad schemas drop the header eye,
+                so the toggle renders only where a caller actually wires
+                visibility (the web inspector always does — unchanged there). */}
+            {onVisibilityToggle ? (
+              <button
+                aria-label={visible ? "Hide element" : "Show element"}
+                aria-pressed={!visible}
+                className={`${styles.inspectorIconButton} ${!visible ? styles.inspectorIconButtonActive : ""}`}
+                onClick={onVisibilityToggle}
+                type="button"
+              >
+                <InspectorIcon name="eye" size={12} />
+              </button>
+            ) : null}
           </>
         ) : null}
         <button
