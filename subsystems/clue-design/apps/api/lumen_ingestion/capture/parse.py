@@ -15,6 +15,11 @@ from urllib.parse import urljoin, urlparse
 import tinycss2
 from selectolax.parser import HTMLParser
 
+from .imgsrc import (
+    IMAGE_CANDIDATE_CAP,
+    background_image_urls,
+    image_source_ladder,
+)
 from .snapshot import SiteSnapshot
 
 # --- parsed pieces (internal, pre-asset-ingest) ---------------------------------
@@ -957,6 +962,29 @@ def _parse_dom(snapshot: SiteSnapshot, parsed: ParsedSite, base_url: str) -> Non
                 )
             )
 
+    # favicon → a FALLBACK mark. Recorded into `meta` since the first ingestion slice but
+    # never fetched, so a site with no apple-touch-icon had an empty mark slot even though
+    # it declared one. Appended AFTER apple-touch-icon deliberately: `normalizer.emit`
+    # fills `logo.mark` from the first mark, and a 180px touch icon beats a 32px favicon.
+    for node in tree.css("link[rel='icon'], link[rel='shortcut icon']"):
+        href = node.attributes.get("href")
+        if not href:
+            continue
+        url = _absolutize(base_url, href)
+        sha = _download_by_url(snapshot, url)
+        if sha is None:
+            continue  # not fetched (or the fetch failed) — an absent mark, never a fake one
+        parsed.logos.append(
+            ParsedAsset(
+                sha256=sha,
+                source_url=url,
+                kind="logo",
+                usage_hint="mark",
+                locator="dom :: favicon",
+            )
+        )
+        break
+
     # og:image is an IMAGE (kind og_image), not a logo.
     og_image = _meta_content(tree, "og:image")
     if og_image:
@@ -977,30 +1005,44 @@ def _parse_dom(snapshot: SiteSnapshot, parsed: ParsedSite, base_url: str) -> Non
 def _parse_images(snapshot: SiteSnapshot, tree, parsed: ParsedSite, base_url: str) -> None:
     candidates: list[tuple[float, int, ParsedAsset]] = []
     logo_urls = {logo.source_url for logo in parsed.logos}
+
+    def measure(sha: str | None) -> int:
+        if not sha:
+            return 0
+        data = snapshot.download_bytes(sha)
+        return len(data) if data else 0
+
     for node in tree.css("img"):
-        src = node.attributes.get("src")
-        if not src:
+        # THE SHARED LADDER. `static._collect_assets` enqueued exactly these URLs, so the
+        # first rung with bytes is the best rendition that actually arrived; if the widened
+        # request was refused we simply walk down to the bare `src` and are no worse off
+        # than the pre-2026-08-20 behaviour. Resolving anything else here would orphan every
+        # download and produce a kit with zero images — see `imgsrc`.
+        ladder = image_source_ladder(node, base_url)
+        if not ladder:
             continue
-        if src.startswith("data:"):
-            # Skip large data URIs; parse.py never inlines them.
-            if len(src) > 50 * 1024:
-                continue
-        url = _absolutize(base_url, src)
-        if url in logo_urls:
+        if any(url in logo_urls for url in ladder):
             continue
+        if ladder[-1].startswith("data:") and len(ladder[-1]) > 50 * 1024:
+            continue  # large data URI; parse.py never inlines them
         width = _int_attr(node, "width")
         height = _int_attr(node, "height")
         if width is not None and height is not None and width <= 4 and height <= 4:
             continue  # tracking pixel
-        sha = _download_by_url(snapshot, url)
-        file_size = 0
-        if sha:
-            data = snapshot.download_bytes(sha)
-            file_size = len(data) if data else 0
+        url, sha = ladder[-1], None
+        for candidate in ladder:
+            candidate_sha = _download_by_url(snapshot, candidate)
+            if candidate_sha:
+                url, sha = candidate, candidate_sha
+                break
+        file_size = measure(sha)
         # keep when it has size hints OR a fetched file ≥ 10 KB
         if not (width or height) and file_size < 10 * 1024 and sha is None:
             continue
         area = float((width or 0) * (height or 0))
+        # Provenance stays honest about WHICH rendition we hold: a chosen URL that is not
+        # the element's own `src` says so in the locator.
+        locator = "dom :: img" if url == ladder[-1] else "dom :: img :: hi-res rendition"
         candidates.append(
             (
                 area,
@@ -1012,14 +1054,38 @@ def _parse_images(snapshot: SiteSnapshot, tree, parsed: ParsedSite, base_url: st
                     kind_hint="photo",
                     width=width,
                     height=height,
-                    locator="dom :: img",
+                    locator=locator,
+                ),
+            )
+        )
+
+    # CSS background-image art (gradients, hero panels) — same shared chooser the collector
+    # used, so the bytes are already in the snapshot. No DOM size hints exist for these, so
+    # they rank by file size alone.
+    seen = {asset.source_url for _, _, asset in candidates} | logo_urls
+    for url in background_image_urls(tree, snapshot.stylesheets, base_url):
+        if url in seen:
+            continue
+        seen.add(url)
+        sha = _download_by_url(snapshot, url)
+        if sha is None:
+            continue  # never fetched — an absent image, never a fabricated one
+        candidates.append(
+            (
+                0.0,
+                measure(sha),
+                ParsedAsset(
+                    sha256=sha,
+                    source_url=url,
+                    kind="image",
+                    kind_hint="illustration",
+                    locator="dom :: css background-image",
                 ),
             )
         )
 
     candidates.sort(key=lambda item: (item[0], item[1]), reverse=True)
-    cap = 12
-    kept = candidates[:cap]
+    kept = candidates[:IMAGE_CANDIDATE_CAP]
     skipped = len(candidates) - len(kept)
     for _, _, asset in kept:
         parsed.images.append(asset)
@@ -1028,7 +1094,10 @@ def _parse_images(snapshot: SiteSnapshot, tree, parsed: ParsedSite, base_url: st
             {
                 "code": "LUMI0504",
                 "severity": "info",
-                "message": f"image candidate cap reached; skipped {skipped} image(s)",
+                "message": (
+                    f"image candidate cap of {IMAGE_CANDIDATE_CAP} reached; "
+                    f"skipped {skipped} image(s)"
+                ),
             }
         )
 

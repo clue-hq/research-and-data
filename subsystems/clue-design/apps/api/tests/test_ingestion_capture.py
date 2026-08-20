@@ -242,17 +242,20 @@ def test_parse_computed_samples_rendered() -> None:
 
 
 def test_image_cap_logic() -> None:
-    snapshot = load("insight_static")
-    # inject 15 tiny images to force the cap of 12
+    """The cap holds and announces itself. Raised 12 → 50 by founder order 2026-08-20;
+    the exact boundary behaviour is pinned in ``test_ingestion_image_sources.py``."""
+    from lumen_ingestion.capture.imgsrc import IMAGE_CANDIDATE_CAP
     from lumen_ingestion.capture.snapshot import SiteSnapshot
 
+    snapshot = load("insight_static")
     extra_imgs = "".join(
-        f'<img src="/img/x{i}.png" width="{100 + i}" height="{100 + i}">' for i in range(15)
+        f'<img src="/img/x{i}.png" width="{100 + i}" height="{100 + i}">'
+        for i in range(IMAGE_CANDIDATE_CAP + 5)
     )
     html = snapshot.html.replace("</main>", extra_imgs + "</main>")
     mutated = SiteSnapshot(**{**snapshot.model_dump(), "html": html})
     parsed = parse_site(mutated)
-    assert len(parsed.images) <= 12 + 1  # +1 tolerance for og_image
+    assert len(parsed.images) <= IMAGE_CANDIDATE_CAP + 1  # +1 tolerance for og_image
     assert any(d["code"] == "LUMI0504" for d in parsed.diagnostics)
 
 
