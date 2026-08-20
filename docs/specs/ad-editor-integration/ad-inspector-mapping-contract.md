@@ -26,10 +26,10 @@ is the single normative restatement; where wording differs, the founder's annota
 
 Sources it binds:
 - **Dummy surface:** `clue-hq/clue-frontend` branch `codex/chat-shell` — `c7f2bc5` **plus the
-  co-founder's 23-file ad-schema delta** (currently uncommitted at
-  `/Users/aryankeshri/Documents/clue-hq/clue-frontend`; per OQ-8 it will be committed, and the
-  AD0 lift pins byte-verification to that commit — record its hash here when it exists:
-  `_________`).
+  co-founder's 23-file ad-schema delta** (per OQ-8 it is now committed locally at
+  `/Users/aryankeshri/Documents/clue-hq/clue-frontend` as `32658ff` — "feat: add dummy ad
+  inspector variants", parent `c7f2bc5` — and the AD0 lift pins byte-verification to that
+  commit: `32658ff`).
 - **Engine/editor:** `subsystems/clue-design` scene editor + `lumen-core` (anchors in the
   inventory).
 
