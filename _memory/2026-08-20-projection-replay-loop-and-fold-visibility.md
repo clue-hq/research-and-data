@@ -122,6 +122,33 @@ Likely environmental to that DB or genuinely pre-existing on the branch after th
 directive 05:0x: do not chase failures unrelated to our changes. Whoever next needs a green full
 gate should triage these against the default dev DB first.
 
+## The v6 committee relaunch (05:38–05:41 IST) — two new facts
+
+Directive v6 confirmed (founder gate) → fresh job `3cc0a4f2` launched with `sumble_people` in
+committee scope, on the fixed fleet. Committee ops are **per-call fresh ids**
+(`new_committee_acquisition_operation_id()`, `sumble_entity_research_tools.py:510`) — verified
+before sending: four distinct ids across four jobs, zero cross-job replays — so a fresh job
+genuinely re-attempts committee (unlike the content-keyed account-gap ops).
+
+1. **Sumble people 402 is CREDIT ECONOMICS, not the key.** The cap-200 sweep reserved **1,709
+   provider units** (`committee_acquisition_operation` `cb393d9d…`: reserved 1709, charged 109,
+   `sumble_people_provider_rejected_http_402`) against a free tier holding ~500→391 credits. The
+   raw 3-credit probe succeeding ≠ the pipeline's 200×(1+attrs) request fitting. ~8.5 units per
+   candidate. Every 402'd attempt still charges ~109 units — never retry committee under a cap-200
+   directive on the free tier. **Founder decision 05:5x: committee cap 7 for the v7 relaunch.**
+2. **New defect (paused `3cc0a4f2` at 05:40:51): raw trigger escape on subset-field re-buy.**
+   `enrich_account([core.hq_location])` alone, when an earlier operation (7e29c0bf, cross-job
+   window) already acquired employee_count+hq_location: `find_account_gap_operation_for_fields`
+   matches by EXACT field-set, misses the owning op, the create path fires the per-field
+   window-uniqueness trigger → raw `asyncpg RaiseError: account-gap field already acquired in this
+   observation window` → `worker_error:DBAPIError` pause. NOT caused by tonight's two fixes —
+   pre-existing trigger, first reachable now that the upstream wedges are gone. Fix lane
+   (Opus, in flight): narrow-catch/pre-check → governed recoverable refusal steering the agent to
+   read the existing result; trigger stays as backstop; no blanket DBAPIError conversion.
+
+Sequence to finish: fix lands → review/commit → roll fleet → v7 relaunch message (cap 7, founder
+approves) → resume `3cc0a4f2` to settle honestly.
+
 ## Design thread this feeds (discussion earlier this session)
 
 Second instance in one night of the missing "fresh attempt after the cause changed" primitive
