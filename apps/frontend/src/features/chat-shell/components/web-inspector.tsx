@@ -25,7 +25,6 @@ import {
   type ThemeColorOption,
 } from "@/features/design-editor/adapter/theme-options";
 import type { ChatShellInspectorSelection } from "../model/chat-shell";
-import { CHAT_SHELL_INSPECTOR_SELECTIONS } from "../model/chat-shell";
 import {
   useInspectorController,
   useInspectorLayerTree,
@@ -65,7 +64,18 @@ const BUTTON_STYLE_OPTIONS = ["Primary", "Secondary", "Transparent"] as const;
 // hides rather than disables. The dummy's `InspectorDecoratedSelect` primitive
 // stays in `inspector-primitives.tsx` (presentation truth is not this task's to
 // delete); nothing in the web inspector renders it now.
-const INSPECTOR_TITLES: Record<ChatShellInspectorSelection, string> = {
+const WEB_INSPECTOR_SELECTIONS = [
+  "canvas",
+  "text",
+  "image",
+  "button",
+  "icon",
+  "container",
+  "section",
+] as const satisfies readonly ChatShellInspectorSelection[];
+type WebInspectorSelection = (typeof WEB_INSPECTOR_SELECTIONS)[number];
+
+const INSPECTOR_TITLES: Record<WebInspectorSelection, string> = {
   button: "Button",
   canvas: "Canvas",
   container: "Container",
@@ -74,7 +84,7 @@ const INSPECTOR_TITLES: Record<ChatShellInspectorSelection, string> = {
   section: "Section",
   text: "Text34",
 };
-const INSPECTOR_REVIEW_LABELS: Record<ChatShellInspectorSelection, string> = {
+const INSPECTOR_REVIEW_LABELS: Record<WebInspectorSelection, string> = {
   button: "Button",
   canvas: "Canvas",
   container: "Container",
@@ -1493,6 +1503,11 @@ export function WebInspector({
 }) {
   const inspectorRef = useRef<HTMLElement>(null);
   const [reviewMenuOpen, setReviewMenuOpen] = useState(false);
+  const webSelection: WebInspectorSelection = WEB_INSPECTOR_SELECTIONS.includes(
+    selection as WebInspectorSelection,
+  )
+    ? (selection as WebInspectorSelection)
+    : "canvas";
   const canvasController = useInspectorController([], "canvas", hydrated, addressing);
   const textController = useInspectorController(["link"], "text", hydrated, addressing);
   const imageController = useInspectorController(["link"], "image", hydrated, addressing);
@@ -1513,7 +1528,7 @@ export function WebInspector({
   const iconLayerTree = useInspectorLayerTree("icon", ["div1", "div2"], "icon");
   const containerLayerTree = useInspectorLayerTree("container", ["div1", "div2"], "container");
   const sectionLayerTree = useInspectorLayerTree("section", ["div1", "div2"], "section");
-  const controllers: Record<ChatShellInspectorSelection, InspectorController> = {
+  const controllers: Record<WebInspectorSelection, InspectorController> = {
     button: buttonController,
     canvas: canvasController,
     container: containerController,
@@ -1522,7 +1537,7 @@ export function WebInspector({
     section: sectionController,
     text: textController,
   };
-  const activeController = controllers[selection];
+  const activeController = controllers[webSelection];
 
   useEffect(() => {
     if (!reviewMenuOpen) return;
@@ -1547,10 +1562,10 @@ export function WebInspector({
   const reviewMenu = reviewMenuEnabled && reviewMenuOpen ? (
     <div aria-label="Preview inspector element types" className={styles.inspectorVariantMenu} role="menu">
       <span className={styles.inspectorVariantMenuLabel}>Element controls</span>
-      {CHAT_SHELL_INSPECTOR_SELECTIONS.map((variant) => (
+      {WEB_INSPECTOR_SELECTIONS.map((variant) => (
         <button
-          aria-checked={selection === variant}
-          className={selection === variant ? styles.inspectorVariantMenuItemActive : ""}
+          aria-checked={webSelection === variant}
+          className={webSelection === variant ? styles.inspectorVariantMenuItemActive : ""}
           key={variant}
           onClick={() => {
             onSelectionChange(variant);
@@ -1571,7 +1586,7 @@ export function WebInspector({
       <div className={styles.inspectorRail}>
         <InspectorHeader
           actionMenu={reviewMenu}
-          elementActions={selection !== "canvas"}
+          elementActions={webSelection !== "canvas"}
           locked={activeController.state.locked}
           moreActionsExpanded={reviewMenuEnabled ? reviewMenuOpen : undefined}
           moreActionsHasPopup={reviewMenuEnabled}
@@ -1581,7 +1596,7 @@ export function WebInspector({
             if (reviewMenuEnabled) setReviewMenuOpen((open) => !open);
           }}
           onVisibilityToggle={() => activeController.setValue("visible", !activeController.state.visible)}
-          title={INSPECTOR_TITLES[selection]}
+          title={INSPECTOR_TITLES[webSelection]}
           visible={activeController.state.visible}
         />
         {/* W3.2 floor pending the W3.3 founder gate: one inline line for the
@@ -1598,13 +1613,13 @@ export function WebInspector({
         ) : null}
         <ThemeColorsContext.Provider value={themeColors}>
           <DocumentLayersContext.Provider value={documentLayers}>
-            {selection === "canvas" ? <CanvasControls controller={canvasController} layerTree={canvasLayerTree} onSelectionChange={onSelectionChange} showLayers={showLayers} /> : null}
-            {selection === "text" ? <TextControls controller={textController} layerTree={textLayerTree} onSelectionChange={onSelectionChange} richTextRange={richTextRange} showLayers={showLayers} /> : null}
-            {selection === "image" ? <ImageControls controller={imageController} layerTree={imageLayerTree} onReplaceImage={onReplaceImage} onSelectionChange={onSelectionChange} showLayers={showLayers} /> : null}
-            {selection === "button" ? <ButtonControls controller={buttonController} layerTree={buttonLayerTree} onSelectionChange={onSelectionChange} showLayers={showLayers} /> : null}
-            {selection === "icon" ? <IconControls controller={iconController} layerTree={iconLayerTree} onSelectionChange={onSelectionChange} showLayers={showLayers} /> : null}
-            {selection === "container" ? <ContainerControls controller={containerController} customComponentForm={customComponentForm} layerTree={containerLayerTree} layoutOnly={layoutOnly} onSelectionChange={onSelectionChange} showLayers={showLayers} /> : null}
-            {selection === "section" ? <SectionControls controller={sectionController} layerTree={sectionLayerTree} onSelectionChange={onSelectionChange} showLayers={showLayers} /> : null}
+            {webSelection === "canvas" ? <CanvasControls controller={canvasController} layerTree={canvasLayerTree} onSelectionChange={onSelectionChange} showLayers={showLayers} /> : null}
+            {webSelection === "text" ? <TextControls controller={textController} layerTree={textLayerTree} onSelectionChange={onSelectionChange} richTextRange={richTextRange} showLayers={showLayers} /> : null}
+            {webSelection === "image" ? <ImageControls controller={imageController} layerTree={imageLayerTree} onReplaceImage={onReplaceImage} onSelectionChange={onSelectionChange} showLayers={showLayers} /> : null}
+            {webSelection === "button" ? <ButtonControls controller={buttonController} layerTree={buttonLayerTree} onSelectionChange={onSelectionChange} showLayers={showLayers} /> : null}
+            {webSelection === "icon" ? <IconControls controller={iconController} layerTree={iconLayerTree} onSelectionChange={onSelectionChange} showLayers={showLayers} /> : null}
+            {webSelection === "container" ? <ContainerControls controller={containerController} customComponentForm={customComponentForm} layerTree={containerLayerTree} layoutOnly={layoutOnly} onSelectionChange={onSelectionChange} showLayers={showLayers} /> : null}
+            {webSelection === "section" ? <SectionControls controller={sectionController} layerTree={sectionLayerTree} onSelectionChange={onSelectionChange} showLayers={showLayers} /> : null}
           </DocumentLayersContext.Provider>
         </ThemeColorsContext.Provider>
       </div>

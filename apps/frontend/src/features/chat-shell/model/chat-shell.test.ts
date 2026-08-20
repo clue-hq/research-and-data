@@ -11,12 +11,16 @@ import {
   imageExportSupportsTransparency,
 } from "./image-export";
 
-test("the Web Inspector exposes every production Figma selection type", () => {
+test("the chat shell accepts every production inspector selection type", () => {
   assert.deepEqual(CHAT_SHELL_INSPECTOR_SELECTIONS, [
     "canvas",
     "text",
     "image",
     "button",
+    "auto-layout",
+    "rectangle",
+    "ellipse",
+    "group",
     "icon",
     "container",
     "section",

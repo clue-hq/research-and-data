@@ -21,6 +21,10 @@ import {
 } from "./inspector-primitives";
 import styles from "./chat-shell.module.css";
 import { RadiusControls } from "./web-inspector";
+import {
+  AdDummyInspector,
+  isAdDummyInspectorSelection,
+} from "./ad-dummy-inspectors";
 
 const FONT_OPTIONS = ["Inter", "Satoshi Variable", "Season Serif", "DM Mono"] as const;
 const FONT_SIZE_OPTIONS = ["12", "13", "14", "16", "18", "20", "24", "32"] as const;
@@ -33,7 +37,27 @@ const SIZE_PRESETS = [
   "Story (9:16) - 1080x1920",
 ] as const;
 
-type AdSelectableLayer = "button" | "image" | "text";
+const AD_INSPECTOR_TITLES: Partial<
+  Record<ChatShellInspectorSelection, string>
+> = {
+  "auto-layout": "Auto layout",
+  button: "Button",
+  canvas: "Canvas",
+  ellipse: "Ellipse",
+  group: "Group",
+  image: "Image1",
+  rectangle: "Rectangle",
+  text: "Text34",
+};
+
+type AdSelectableLayer =
+  | "auto-layout"
+  | "button"
+  | "ellipse"
+  | "group"
+  | "image"
+  | "rectangle"
+  | "text";
 
 function AdLayers({
   onSelectionChange,
@@ -52,6 +76,12 @@ function AdLayers({
   return (
     <div className={styles.layerList}>
       <InspectorLayerRow
+        active={tree.activeLayer === "auto-layout"}
+        icon="layout-template"
+        label="Auto layout"
+        onClick={() => select("auto-layout", "auto-layout")}
+      />
+      <InspectorLayerRow
         active={tree.activeLayer === "text-primary"}
         icon="type"
         label="Text"
@@ -67,18 +97,23 @@ function AdLayers({
       <InspectorLayerRow
         expanded={tree.expandedLayers.group}
         expandable
-        icon="div"
+        active={tree.activeLayer === "group"}
+        icon="square-dashed"
         label="Group"
-        onClick={() => tree.toggleLayer("group")}
+        onClick={() => {
+          tree.selectLayer("group");
+          tree.toggleLayer("group");
+          onSelectionChange("group");
+        }}
       />
       {tree.expandedLayers.group ? (
         <>
           <InspectorLayerRow depth={1} icon="type" label="Text" onClick={() => select("group-text", "text")} />
-          <InspectorLayerRow depth={1} icon="rectangle" label="Rectangle" onClick={() => select("group-rectangle")} />
+          <InspectorLayerRow depth={1} icon="rectangle" label="Rectangle" onClick={() => select("group-rectangle", "rectangle")} />
         </>
       ) : null}
-      <InspectorLayerRow active={tree.activeLayer === "rectangle"} icon="rectangle" label="Rectangle" onClick={() => select("rectangle")} />
-      <InspectorLayerRow active={tree.activeLayer === "ellipse"} icon="ellipse" label="Ellipse" onClick={() => select("ellipse")} />
+      <InspectorLayerRow active={tree.activeLayer === "rectangle"} icon="rectangle" label="Rectangle" onClick={() => select("rectangle", "rectangle")} />
+      <InspectorLayerRow active={tree.activeLayer === "ellipse"} icon="ellipse" label="Ellipse" onClick={() => select("ellipse", "ellipse")} />
       <InspectorLayerRow active={tree.activeLayer === "image"} icon="image" label="Image" onClick={() => select("image", "image")} />
       <InspectorLayerRow active={tree.activeLayer === "image-secondary"} icon="image" label="Image" onClick={() => select("image-secondary", "image")} />
       <InspectorLayerRow active={tree.activeLayer === "button"} icon="rectangle" label="Button" onClick={() => select("button", "button")} />
@@ -333,24 +368,26 @@ export function ImageInspector({
   selection: ChatShellInspectorSelection;
 }) {
   const headerController = useInspectorController([], selection);
-  const title = selection === "canvas" ? "Canvas" : selection === "text" ? "Text34" : selection === "button" ? "Button" : "Image1";
+  const dummySelection = isAdDummyInspectorSelection(selection);
+  const title = AD_INSPECTOR_TITLES[selection] ?? "Canvas";
 
   return (
     <aside aria-label="Ad inspector" className={styles.inspector}>
       <div className={styles.inspectorRail}>
         <InspectorHeader
           elementActions={selection !== "canvas"}
-          locked={headerController.state.locked}
-          onLockToggle={() => headerController.setValue("locked", !headerController.state.locked)}
-          onVisibilityToggle={() => headerController.setValue("visible", !headerController.state.visible)}
+          locked={dummySelection ? false : headerController.state.locked}
+          onLockToggle={dummySelection ? undefined : () => headerController.setValue("locked", !headerController.state.locked)}
+          onVisibilityToggle={dummySelection ? undefined : () => headerController.setValue("visible", !headerController.state.visible)}
           title={title}
-          visible={headerController.state.visible}
+          visible={dummySelection ? true : headerController.state.visible}
         />
         {selection === "canvas" ? <AdCanvasInspector onSelectionChange={onSelectionChange} /> : null}
         {selection === "text" ? <AdTextInspector onSelectionChange={onSelectionChange} /> : null}
         {selection === "image" ? <AdImageInspector onSelectionChange={onSelectionChange} /> : null}
         {selection === "button" ? <AdButtonInspector onSelectionChange={onSelectionChange} /> : null}
-        {!(["button", "canvas", "image", "text"] as ChatShellInspectorSelection[]).includes(selection) ? <AdCanvasInspector onSelectionChange={onSelectionChange} /> : null}
+        {dummySelection ? <AdDummyInspector onSelectionChange={onSelectionChange} selection={selection} /> : null}
+        {!(["auto-layout", "button", "canvas", "ellipse", "group", "image", "rectangle", "text"] as ChatShellInspectorSelection[]).includes(selection) ? <AdCanvasInspector onSelectionChange={onSelectionChange} /> : null}
       </div>
     </aside>
   );

@@ -20,10 +20,18 @@ export type InspectorIconName =
   | "apple"
   | "align-bottom"
   | "align-center"
+  | "align-center-horizontal"
+  | "align-center-vertical"
+  | "align-end-horizontal"
+  | "align-end-vertical"
+  | "align-horizontal-distribute-center"
   | "align-left"
   | "align-middle"
   | "align-right"
+  | "align-start-horizontal"
+  | "align-start-vertical"
   | "align-top"
+  | "align-vertical-distribute-center"
   | "chevron-down"
   | "chevron-right"
   | "div"
@@ -31,8 +39,14 @@ export type InspectorIconName =
   | "ellipsis"
   | "eye"
   | "gap"
+  | "group"
   | "image"
   | "layer-ellipsis"
+  | "layer-back"
+  | "layer-down"
+  | "layer-front"
+  | "layer-up"
+  | "layout-template"
   | "lock-open"
   | "move-horizontal"
   | "move-vertical"
@@ -45,6 +59,8 @@ export type InspectorIconName =
   | "rectangle"
   | "scan"
   | "select-chevron"
+  | "square-dashed"
+  | "ungroup"
   | "type";
 
 export function InspectorIcon({
@@ -439,6 +455,7 @@ export function InspectorInput({
   onChange,
   onCommit,
   prefix,
+  readOnly = false,
   suffix,
   value,
 }: {
@@ -452,6 +469,7 @@ export function InspectorInput({
    * (per-keystroke `onChange` only); either way the DOM is unchanged. */
   onCommit?: () => void;
   prefix?: string;
+  readOnly?: boolean;
   suffix?: string;
   value: string;
 }) {
@@ -471,6 +489,7 @@ export function InspectorInput({
               }
             : undefined
         }
+        readOnly={readOnly}
         value={value}
       />
       {suffix ? <span className={styles.fieldPrefix}>{suffix}</span> : null}
@@ -528,6 +547,7 @@ function hsvToHex({ h, s, v }: HsvColor) {
 export function ColorControl({
   color = "#00F59B",
   none = false,
+  noneAriaLabel = "Color is none",
   onColorChange,
   onOpacityChange,
   onTokenChange,
@@ -537,6 +557,7 @@ export function ColorControl({
 }: {
   color?: string;
   none?: boolean;
+  noneAriaLabel?: string;
   onColorChange?: (color: string) => void;
   onOpacityChange?: (opacity: string) => void;
   /** W3.2 (R2): fired with the token LABEL on a theme-tab pick — the live
@@ -585,7 +606,7 @@ export function ColorControl({
     <span className={styles.colorControl} ref={colorControlRef}>
       {none ? (
         <button
-          aria-label="Stroke color is none"
+          aria-label={noneAriaLabel}
           className={`${styles.colorValue} ${styles.colorValueSingle}`}
           disabled
           type="button"
@@ -952,6 +973,7 @@ export function InspectorImageUpload({
 }
 
 export function InspectorLayerRow({
+  accented = false,
   active,
   depth = 0,
   expanded,
@@ -961,11 +983,12 @@ export function InspectorLayerRow({
   onClick,
   trailing = false,
 }: {
+  accented?: boolean;
   active?: boolean;
   depth?: number;
   expanded?: boolean;
   expandable?: boolean;
-  icon: Extract<InspectorIconName, "apple" | "div" | "ellipse" | "image" | "rectangle" | "type">;
+  icon: Extract<InspectorIconName, "apple" | "div" | "ellipse" | "image" | "layout-template" | "rectangle" | "square-dashed" | "type">;
   label: string;
   onClick?: () => void;
   trailing?: boolean;
@@ -980,7 +1003,7 @@ export function InspectorLayerRow({
 
   return (
     <button
-      className={`${styles.layerRow} ${depth ? styles.layerRowNested : ""} ${active ? styles.layerRowActive : ""}`}
+      className={`${styles.layerRow} ${depth ? styles.layerRowNested : ""} ${active ? styles.layerRowActive : ""} ${accented ? styles.layerRowAccented : ""}`}
       aria-expanded={expandable ? expanded : undefined}
       onClick={onClick}
       ref={rowRef}

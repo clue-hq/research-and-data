@@ -2566,6 +2566,65 @@
   box-shadow: 0 1px 2px rgb(0 0 0 / 7%);
 }
 
+.dummyInspectorStack {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+}
+
+.dummyInspectorPairGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+}
+
+.dummyInspectorPairGrid > * {
+  min-width: 0;
+}
+
+.dummyInspectorActionGrid {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  min-width: 0;
+}
+
+.dummyInspectorActionGrid button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  height: 34px;
+  padding: 8px;
+  border: 0.5px solid var(--chat-shell-border);
+  border-radius: 4px;
+  background: rgb(0 37 110 / 3%);
+}
+
+.dummyInspectorActionGrid button:hover,
+.dummyInspectorActionGrid button:focus-visible {
+  border-color: rgb(0 24 62 / 13%);
+  background: white;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 7%);
+}
+
+.dummyInspectorActionGrid button:focus-visible {
+  outline: 2px solid rgb(27 102 255 / 45%);
+  outline-offset: 2px;
+}
+
+.dummyInspectorAlignmentGroups {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+}
+
 .verticalAlignment {
   grid-template-columns: repeat(3, 1fr);
 }
@@ -2625,6 +2684,7 @@
 }
 
 .fieldPrefix {
+  flex: 0 0 auto;
   color: var(--chat-shell-subtle);
 }
 
@@ -2763,6 +2823,12 @@
 
 .layerRowActive {
   background: rgb(0 30 75 / 7%);
+}
+
+.layerRowAccented,
+.layerRowActive.layerRowAccented {
+  background: transparent;
+  color: var(--clue-ds-color-content-utility-brand-default, #007d83);
 }
 
 .layerRow[aria-expanded="false"] .inspectorIcon {
