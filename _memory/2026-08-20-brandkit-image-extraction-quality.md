@@ -109,6 +109,24 @@ the four `*-fallback_2x` at **2468x1038**, `DatavizStatic3x` 768x300 → **2304x
 **1632x1352**. The stored DB baseline (kit v6, approved) matches the "before" column exactly:
 9 x 296px, then 768, 860, 1242, 2048.
 
+### Through the shipped pipeline — kit v8, DRAFT
+
+`POST /brand-kits/ingest/website` on the restarted 8010 (job
+`ingest_8da461bedf9d4e4ea4403c1da0a84620`, succeeded 13:26 UTC) published
+**v8 as a DRAFT**. v6 remains the approved version; nothing was approved.
+
+`assets.images`: **13 → 48** (49 parsed, one pair collapsed by the content-addressed dedup —
+two Stripe merch thumbnails share bytes). Width histogram: `<300px` 7, `300–799` 10,
+`800–1499` 15, `1500–2047` 1, `>=2048` **15**. **Zero** images from the `?w=296` family
+remain; the seven sub-300px ones are genuinely small source assets (a 64x64 icon, a QR code,
+merch thumbnails) where the CDN clamped `w=2048` to the original — which is the intended,
+honest behaviour. Several came back **wider than the 2048 target** (`w=2460`, `2464`, `2468`,
+`2484`, `2784`, `2304`): those are the *widest srcset* rung winning, with the upgrade
+correctly declining to downgrade them.
+
+Everything else held: colours 42, typography 12, numbers 13, radii 10, spacing 22, stroke
+widths 8 — identical to v6/v7; shadows 3 → 4; brief present (11 keys, comparable size); fonts 1.
+
 Unplanned bonus: Stripe's JSON-LD-declared Organization logo is served from the same URL as
 its `link[rel=icon]`. That URL was never fetched before, so the highest-scoring primary logo
 candidate carried **no bytes** and the primary slot was filled by a lower-ranked candidate.
@@ -172,8 +190,33 @@ env -u CLUE_DATABASE_URL \
   .venv/bin/python -m pytest subsystems/clue-design/apps/api/tests subsystems/clue-design/apps/agent_runtime/tests -q
 ```
 
-Pre-existing red, proven at parent `2ebb3976` in the throwaway worktree:
-`test_agent_custom_components.py::test_compile_gate_and_page_local_repin_preserve_other_document`.
+**Green:** the whole ingestion set (capture / image_sources / routes / brief / geometry /
+normalizer / jobs / ui_api / describe / font_metrics / raster / deployment_config / uploads /
+pdf) — 250 passed, 4 skipped — and all 621 of `apps/agent_runtime/tests`. Baseline before any
+edit: 109 passed, 1 skipped on the required ingestion subset.
+
+**Red in the whole `apps/api/tests` suite — none of it mine, and the whole-suite numbers are
+confounded (see below).** 22 failures at HEAD. Twenty were re-run directly at parent
+`2ebb3976` in the throwaway worktree and fail identically there — pre-existing:
+`test_agent_custom_components` (1), `test_custom_component_compiler` (5),
+`test_custom_component_publish` (4), `test_custom_component_runtime` (7),
+`test_asset_custody` (2), `test_asset_store_serving` (1). The other two —
+`test_api.py::test_agent_turns_async_persists_result_and_terminal_event` and
+`test_design_toolbelt_documents.py::test_the_web_turn_worker_persists_through_the_governed_tool`
+— **pass at `2ebb3976` and pass at this wave's commit `a224b614`**, and fail only at HEAD,
+which carries the parallel image-generation lane's `dcd4d47a` / `209f4514` / `a5e6b832`. That
+lane was told.
+
+## THE SUITE TRAP — a running design API poisons `apps/api/tests`
+
+The design API on 8010 runs with `LUMEN_EMBEDDED_FLEET_WORKER=1`. Its worker leases
+`design_job` rows out of the **same** Postgres the tests write to, so it drains work the
+tests enqueue: with 8010 up the suite showed **34** failures, with it down **22**. This is
+the same class as the recorded "stale extra 801x listener poaches jobs" incident, except the
+poacher is the *canonical* server. **Run `apps/api/tests` with 8010 stopped**, and re-check
+that it is still stopped when the run ends — during this wave a sibling agent restarted 8010
+~20 seconds after I killed it (PID 70699, 13:53:35 UTC, PPID 1), which silently re-confounded
+a run I had labelled clean. `lsof -nP -iTCP:8010 -sTCP:LISTEN` before AND after.
 
 ## Traps hit
 
