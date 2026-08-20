@@ -386,7 +386,7 @@ export function ImageInspector({
         {/* §2 delta (contract row 7): no `onVisibilityToggle` is passed, so the
             header renders no eye on any ad schema. */}
         <InspectorHeader
-          elementActions={selection !== "canvas"}
+          elementActions={selection !== "canvas" && selection !== "button"}
           locked={dummySelection ? false : headerController.state.locked}
           onLockToggle={dummySelection ? undefined : () => headerController.setValue("locked", !headerController.state.locked)}
           title={title}

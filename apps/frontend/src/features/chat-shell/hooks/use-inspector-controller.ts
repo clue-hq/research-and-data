@@ -127,7 +127,8 @@ const DEFAULT_STATE: InspectorPresentationState = {
   position: { x: "123", y: "4354" },
   radius: { all: "0", bottomLeft: "4", bottomRight: "4", topLeft: "4", topRight: "4" },
   rotation: "0",
-  sizePreset: "Linkedin square (1:1) - 1024x1024",
+  // Contract §2.1: preset values corrected (1024x1024 was retired at ratification).
+  sizePreset: "Linkedin square (1:1) - 1200x1200",
   strokeColor: "none",
   strokeWidth: "1",
   textColor: "#00F59B",

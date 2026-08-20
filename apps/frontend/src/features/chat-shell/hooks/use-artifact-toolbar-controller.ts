@@ -8,7 +8,9 @@ export function useArtifactToolbarController() {
   const [activeTool, setActiveTool] = useState<ImageEditorTool>("pointer");
   const [device, setDevice] = useState<ArtifactPreviewDevice>("Desktop");
   const [deviceMenuOpen, setDeviceMenuOpen] = useState(false);
-  const [zoom, setZoom] = useState("23%");
+  // §2.5 interim default: nearest 5% step to the dummy's 23% so the widened
+  // menu opens with a checked item; superseded by §1.10 fit-on-open at AD2.8.
+  const [zoom, setZoom] = useState("25%");
   const deviceMenuRef = useRef<HTMLDivElement>(null);
   const zoomMenuRef = useRef<HTMLDivElement>(null);
   const [zoomMenuOpen, setZoomMenuOpen] = useState(false);
