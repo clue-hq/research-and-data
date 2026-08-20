@@ -1592,3 +1592,280 @@ def test_view_account_none_when_unpersonalized(tmp_path: Path):
     tools = _bare_tools(tmp_path)  # no account
     blocks = tools._view_content("account")
     assert "No target account" in blocks[0]["text"]
+
+
+# --- D1: asset(action="generate_image") on the web lane ---------------------
+#
+# This path had ZERO coverage and had never once succeeded: the stub request
+# sent `"brand_notes": None`, and `AssetGenerationConstraints.brand_notes` is a
+# `Vec<String>` behind `#[serde(default)]` — which fires on an ABSENT key, never
+# on an explicit null. Every call died with
+# `invalid type: null, expected a sequence`, so the web author got
+# `asset.image_failed` for every image it ever tried to generate.
+
+
+def test_generate_image_falls_back_to_the_stub_provider(tmp_path: Path, monkeypatch):
+    """No T2I model configured → the deterministic stub still produces a real,
+    registered asset. RED before the brand_notes fix (serde rejected the null)."""
+    monkeypatch.setattr(ws, "image_provider", None)
+    tools = _tools(tmp_path)
+
+    result = json.loads(tools.asset(action="generate_image", prompt="A calm hero field"))
+
+    assert result["status"] == "ok", result
+    asset_id = result["asset_id"]
+    assert asset_id in (tools.web_doc.get("assets") or {})
+    assert result["mode"] == "placeholder"
+
+
+def test_generate_image_request_never_sends_a_null_for_a_rust_vec(tmp_path: Path, monkeypatch):
+    """Shape guard on the stub request: every field the Rust side types as a
+    `Vec` must ride as a list (or be absent), never as an explicit `null` —
+    `#[serde(default)]` does not cover null."""
+    monkeypatch.setattr(ws, "image_provider", None)
+    tools = _tools(tmp_path)
+    captured: dict = {}
+
+    real = tools.core.generate_asset
+
+    def spy(**kwargs):
+        captured.update(kwargs)
+        return real(**kwargs)
+
+    monkeypatch.setattr(tools.core, "generate_asset", spy)
+    json.loads(tools.asset(action="generate_image", prompt="A calm hero field"))
+
+    constraints = captured["request"]["constraints"]
+    assert isinstance(constraints["brand_notes"], list), constraints
+    # No sibling in the request may be an explicit null for a Vec-typed field.
+    for key in ("brand_notes", "reference_asset_ids"):
+        assert constraints.get(key, []) is not None
+
+
+def test_generate_image_uses_the_configured_model_when_available(tmp_path: Path, monkeypatch):
+    """With a configured provider the real T2I result is ingested and registered,
+    and the reported mode/model name the model — not the placeholder."""
+    png = base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+    )
+
+    class _FakeProvider:
+        @staticmethod
+        def is_configured():
+            return True
+
+        @staticmethod
+        def generate(**kwargs):
+            captured.update(kwargs)
+            return ws_result
+
+    captured: dict = {}
+
+    class _Result:
+        image_bytes = png
+        mime_type = "image/png"
+        model = "google/gemini-3.1-flash-image"
+        provenance = {"created_by": "agent", "notes": []}
+        license = None
+
+    ws_result = _Result()
+    monkeypatch.setattr(ws, "image_provider", _FakeProvider)
+    tools = _tools(tmp_path)
+
+    result = json.loads(
+        tools.asset(action="generate_image", prompt="A calm hero field", aspect_ratio="16:9")
+    )
+
+    assert result["status"] == "ok", result
+    assert result["mode"] == "model"
+    assert result["model"] == "google/gemini-3.1-flash-image"
+    assert result["asset_id"] in (tools.web_doc.get("assets") or {})
+    # brand_notes rides as a LIST even when the caller has none to give.
+    assert isinstance(captured["brand_notes"], list)
+    assert captured["aspect_ratio"] == "16:9"
+
+
+def test_generate_image_records_a_diagnostic_when_the_model_fails(tmp_path: Path, monkeypatch):
+    """A real-provider failure degrades to the stub LOUDLY: the page still gets
+    an image, and the tool reports why the model did not serve it. Before the fix
+    this was a bare `except Exception: pass` — a silent swallow."""
+
+    class _BrokenProvider:
+        @staticmethod
+        def is_configured():
+            return True
+
+        @staticmethod
+        def generate(**kwargs):
+            raise RuntimeError("upstream 502")
+
+    monkeypatch.setattr(ws, "image_provider", _BrokenProvider)
+    tools = _tools(tmp_path)
+
+    result = json.loads(tools.asset(action="generate_image", prompt="A calm hero field"))
+
+    assert result["status"] == "ok", result
+    assert result["mode"] == "placeholder"
+    messages = " ".join(str(d.get("message", "")) for d in result.get("diagnostics") or [])
+    assert "placeholder" in messages.lower()
+    assert "RuntimeError" in messages or "502" in messages
+
+
+def _brand_kit_with_style(*, images: dict | None = None) -> dict:
+    return {
+        "id": "brand_kit_web_test",
+        "version": 1,
+        "name": "Acme",
+        "tokens": {
+            "colors": {
+                "surface.brand": {
+                    "value": {"default": {"kind": "hex", "value": "#231d40"}}
+                }
+            },
+            "typography": {},
+        },
+        "assets": {"fonts": {}, "logos": {}, "images": images or {}},
+        "constraints": {"tone": ["precise", "calm"], "imagery": ["No lifestyle stock"]},
+        "brief": {
+            "schema_version": 1,
+            "characterization": {
+                "words": ["precise", "product-led", "infrastructural"],
+                "support": "Every band is a product surface.",
+                "confidence": "high",
+            },
+        },
+    }
+
+
+def test_generated_imagery_is_conditioned_on_the_brand(tmp_path: Path, monkeypatch):
+    """The founder's actual complaint behind D2: generated imagery must look like
+    THIS brand's imagery. The kit's characterization, imagery rules, tone, and
+    palette ride every generation as style direction."""
+    captured: dict = {}
+
+    class _Provider:
+        @staticmethod
+        def is_configured():
+            return True
+
+        @staticmethod
+        def generate(**kwargs):
+            captured.update(kwargs)
+            raise RuntimeError("stop here — the request is what this test judges")
+
+    monkeypatch.setattr(ws, "image_provider", _Provider)
+    config = replace(
+        AgentRuntimeConfig.from_env(REPO_ROOT),
+        trace_dir=tmp_path / "workspace_root",
+        brand_kit=_brand_kit_with_style(),
+    )
+    from lumen_api.core import CoreClient
+
+    core = CoreClient(repo_root=REPO_ROOT)
+    seed = core.web_new_doc("doc_web_brand", "Test site", None)["web_doc"]
+    tools = LumenWebTools(config, "Build a page", initial_web_doc=seed)
+
+    json.loads(tools.asset(action="generate_image", prompt="A hero field"))
+
+    notes = captured["brand_notes"]
+    assert isinstance(notes, list) and notes
+    joined = " | ".join(notes)
+    assert "precise, product-led, infrastructural" in joined
+    assert "No lifestyle stock" in joined
+    assert "brand tone: precise, calm" in joined
+    assert "#231d40" in joined
+
+
+def test_brand_style_references_never_include_a_logo(tmp_path: Path):
+    """A logo passed as a STYLE reference gets drawn into the picture. Only the
+    kit's brand IMAGES may condition a generation."""
+    config = replace(
+        AgentRuntimeConfig.from_env(REPO_ROOT),
+        trace_dir=tmp_path / "workspace_root",
+        brand_kit=_brand_kit_with_style(),  # logos present, images empty
+        brand_kit_assets={"logo_asset": {"record": {"id": "logo_asset"}}},
+    )
+    tools = _bare_tools(tmp_path)
+    tools.config = config
+    references, labels = tools._brand_style_references()
+    assert references is None
+    assert labels == []
+
+
+def test_brand_style_references_skip_assets_whose_bytes_are_gone(tmp_path: Path):
+    """A kit published elsewhere is a normal state — degrade to a plain
+    text-conditioned generation, never an error."""
+    config = replace(
+        AgentRuntimeConfig.from_env(REPO_ROOT),
+        trace_dir=tmp_path / "workspace_root",
+        brand_kit=_brand_kit_with_style(
+            images={"hero": {"asset_id": "img_hero", "title": "Hero texture"}}
+        ),
+        brand_kit_assets={
+            "img_hero": {
+                "record": {
+                    "id": "img_hero",
+                    "media": {"digest": {"algorithm": "sha256", "value": "f" * 64}},
+                }
+            }
+        },
+    )
+    tools = _bare_tools(tmp_path)
+    tools.config = config
+    references, labels = tools._brand_style_references()
+    assert references is None
+    assert labels == []
+
+
+def test_brand_style_references_carry_the_kits_own_image_bytes(tmp_path: Path):
+    """The bonus the founder asked for: when the kit ships real brand imagery,
+    those pixels ride the generation as STYLE anchors."""
+    store_root = tmp_path / "asset-store"
+    digest = "a" * 64
+    blob = store_root / "sha256" / digest[:2] / digest
+    blob.parent.mkdir(parents=True, exist_ok=True)
+    blob.write_bytes(_TINY_PNG)
+
+    config = replace(
+        AgentRuntimeConfig.from_env(REPO_ROOT),
+        trace_dir=tmp_path / "workspace_root",
+        asset_store_root=store_root,
+        brand_kit=_brand_kit_with_style(
+            images={"hero": {"asset_id": "img_hero", "title": "Hero texture"}}
+        ),
+        brand_kit_assets={
+            "img_hero": {
+                "record": {
+                    "id": "img_hero",
+                    "media": {
+                        "mime_type": "image/png",
+                        "digest": {"algorithm": "sha256", "value": digest},
+                    },
+                }
+            }
+        },
+    )
+    tools = _bare_tools(tmp_path)
+    tools.config = config
+    references, labels = tools._brand_style_references()
+    assert references == [(_TINY_PNG, "image/png")]
+    assert labels == ["Hero texture"]
+
+
+def test_generate_image_reports_when_no_model_is_configured(tmp_path: Path, monkeypatch):
+    """The honest 'you are getting a placeholder because nothing is wired' note."""
+
+    class _UnconfiguredProvider:
+        @staticmethod
+        def is_configured():
+            return False
+
+    monkeypatch.setattr(ws, "image_provider", _UnconfiguredProvider)
+    tools = _tools(tmp_path)
+
+    result = json.loads(tools.asset(action="generate_image", prompt="A calm hero field"))
+
+    assert result["status"] == "ok", result
+    assert result["mode"] == "placeholder"
+    messages = " ".join(str(d.get("message", "")) for d in result.get("diagnostics") or [])
+    assert "IMAGE_MODEL" in messages

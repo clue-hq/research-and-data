@@ -55,12 +55,23 @@ from ..brand_brief import read_brief, render_reviewer_brief
 from ..brand_card import build_brand_card, render_brand_card_text
 from ..config import AgentRuntimeConfig
 from ..models.schemas import LumenRunTraceEvent, new_run_id
-from .substrate import _CoreHelperProxy
+from .substrate import _CoreHelperProxy, _image_warning, blob_path_for_digest
 from .view import _VISION_MANY_IMAGE_MAX_PX, _image_block, _text_block
 
 logger = get_logger("lumen_agent.tools.web_substrate")
 
 JsonObject = Dict[str, Any]
+
+# Bounds on the brand style direction appended to every generated-image prompt
+# (`_brand_image_notes`). This is direction, not the brand card — a prompt that
+# recites the whole kit stops being a prompt.
+_BRAND_NOTE_MAX_NOTES = 6
+_BRAND_NOTE_MAX_RULES = 3
+_BRAND_NOTE_MAX_CHARS = 200
+# How many of the kit's own brand IMAGES ride a generation as style references
+# (`_brand_style_references`). Two is enough to anchor a look; more is cost and
+# a muddier signal.
+_BRAND_REFERENCE_MAX = 2
 
 # The page every P0 WebDoc carries (a single "home" page at route "/"). Website
 # mode is single-page for now; the id is fixed so the tools never guess.
@@ -3090,23 +3101,39 @@ class LumenWebTools:
         """Produce one image AssetRecord: prefer the configured T2I model, fall
         back to the deterministic stub provider (same request shape and provider
         handling substrate.generate_image uses). Returns (record, meta,
-        diagnostics); record is None only on a hard stub failure."""
+        diagnostics); record is None only on a hard stub failure.
+
+        Both provider paths take `brand_notes` as a LIST, never None. The Rust
+        target types `AssetGenerationConstraints.brand_notes` as `Vec<String>`
+        behind `#[serde(default)]`, which fires on an ABSENT key and NOT on an
+        explicit null — a `None` here made every stub generation die with
+        `invalid type: null, expected a sequence`, which is why web pages shipped
+        with no generated imagery at all."""
         diagnostics: List[JsonObject] = []
         store_root = str(self.config.effective_asset_store_root)
+        brand_notes = self._brand_image_notes()
 
         # 1) Real text-to-image model, when configured.
         if image_provider is not None and image_provider.is_configured():
+            references, reference_labels = self._brand_style_references()
             try:
                 result = image_provider.generate(
                     prompt=prompt,
                     width=width,
                     height=height,
-                    brand_notes=None,
+                    brand_notes=brand_notes,
                     aspect_ratio=aspect_ratio,
                     transparent_background=transparent_background or None,
-                    reference_images=None,
+                    reference_images=references,
                     request_id=asset_id,
                 )
+                if reference_labels:
+                    # Honest provenance: which brand pixels conditioned the style.
+                    notes = result.provenance.setdefault("notes", [])
+                    notes.append(
+                        "brand-style-conditioned on "
+                        + ", ".join(reference_labels)
+                    )
                 ingest = self.core.ingest_asset(
                     store_root=store_root,
                     bytes_base64=base64.b64encode(result.image_bytes).decode("ascii"),
@@ -3122,8 +3149,45 @@ class LumenWebTools:
                 if ingest.get("ok"):
                     record = (ingest.get("asset") or {}).get("record") or {}
                     return record, {"mode": "model", "model": result.model}, diagnostics
-            except Exception:  # noqa: BLE001 - degrade to the stub, never crash the turn
-                pass
+                detail = (ingest.get("error") or {}).get("message", "unknown error")
+                diagnostics.append(
+                    _image_warning(
+                        "LUMA0710",
+                        f"generated image could not be ingested ({detail}); "
+                        "used a placeholder",
+                    )
+                )
+            except Exception as error:  # noqa: BLE001 - degrade to the stub, never crash the turn
+                # NEVER silent (this was a bare `except: pass`): a provider outage
+                # must reach the author as a diagnostic and the log as a warning,
+                # or "the page has no real imagery" looks like an authoring choice.
+                code = getattr(error, "code", error.__class__.__name__)
+                conditioning_note = (
+                    " (brand style conditioning lost)" if reference_labels else ""
+                )
+                logger.warning(
+                    "web text-to-image generation failed (%s: %s); using a "
+                    "placeholder for %s",
+                    code,
+                    error,
+                    asset_id,
+                    exc_info=True,
+                )
+                diagnostics.append(
+                    _image_warning(
+                        "LUMA0710",
+                        f"text-to-image model unavailable ({code}: {error}); used a "
+                        f"placeholder image{conditioning_note}",
+                    )
+                )
+        elif image_provider is not None:
+            diagnostics.append(
+                _image_warning(
+                    "LUMA0711",
+                    "text-to-image model is not configured (set IMAGE_MODEL_*); "
+                    "used a placeholder image",
+                )
+            )
 
         # 2) Deterministic stub fallback through the Rust provider registry.
         request = {
@@ -3136,7 +3200,8 @@ class LumenWebTools:
                 "width": width,
                 "height": height,
                 "transparent_background": transparent_background or None,
-                "brand_notes": None,
+                # A LIST, never None — see the docstring.
+                "brand_notes": brand_notes,
             },
         }
         try:
@@ -3152,6 +3217,92 @@ class LumenWebTools:
             return None, {"error": error.message}, diagnostics
         record = (response.get("asset") or {}).get("record") or {}
         return record, {"mode": "placeholder", "model": "stub-image-v0"}, diagnostics
+
+    def _brand_image_notes(self) -> List[str]:
+        """Short natural-language style direction from the attached kit, appended
+        to every generation prompt by the provider seam's `_compose_prompt`.
+
+        Generated imagery is supposed to look like it belongs to THIS brand; the
+        web lane previously sent no conditioning at all, so even a working model
+        would have produced brand-generic stock. Bounded and deduped — this is
+        style direction, not the brand card."""
+        card = self.brand_card or {}
+        notes: List[str] = []
+
+        brief = read_brief(self.config.brand_kit) or {}
+        words = (brief.get("characterization") or {}).get("words")
+        if isinstance(words, list):
+            characterization = ", ".join(
+                word.strip() for word in words if isinstance(word, str) and word.strip()
+            )
+            if characterization:
+                notes.append(characterization)
+
+        for rule in list(card.get("imagery_rules") or [])[:_BRAND_NOTE_MAX_RULES]:
+            if isinstance(rule, str) and rule.strip():
+                notes.append(rule.strip())
+
+        tone = [t.strip() for t in (card.get("tone") or []) if isinstance(t, str) and t.strip()]
+        if tone:
+            notes.append("brand tone: " + ", ".join(tone[:_BRAND_NOTE_MAX_RULES]))
+
+        # The card's roles are kit-token names (`surface.page`, `text.primary`),
+        # not Tailwind-ish aliases; `accent` is the card's own "most vivid brand
+        # color" field. Named explicitly so a rename fails a test, not silently.
+        roles = (card.get("color_roles") or {})
+        palette = [
+            value
+            for value in (
+                card.get("accent"),
+                roles.get("surface.brand"),
+                roles.get("surface.page"),
+                roles.get("text.primary"),
+            )
+            if isinstance(value, str) and value.strip()
+        ]
+        if palette:
+            notes.append("brand palette: " + ", ".join(dict.fromkeys(palette)))
+
+        deduped = list(dict.fromkeys(note[:_BRAND_NOTE_MAX_CHARS] for note in notes))
+        return deduped[:_BRAND_NOTE_MAX_NOTES]
+
+    def _brand_style_references(self) -> tuple[Optional[List[tuple]], List[str]]:
+        """Up to `_BRAND_REFERENCE_MAX` of the kit's own brand IMAGES as
+        (bytes, mime) style anchors for a generation, plus their labels.
+
+        Deliberately IMAGES only — never a logo. A logo passed as a style
+        reference gets drawn INTO the generated picture, which is a brand
+        failure, not brand fidelity. Missing blob bytes are skipped (a kit that
+        was published elsewhere is a normal state, not an error), so this always
+        degrades to a plain text-conditioned generation."""
+        kit = self.config.brand_kit or {}
+        images = ((kit.get("assets") or {}).get("images") or {})
+        manifest = self.config.brand_kit_assets or {}
+        if not isinstance(images, dict) or not images or not manifest:
+            return None, []
+        store_root = self.config.effective_asset_store_root
+        collected: List[tuple] = []
+        labels: List[str] = []
+        for image_key, image in sorted(images.items()):
+            if len(collected) >= _BRAND_REFERENCE_MAX:
+                break
+            if not isinstance(image, dict):
+                continue
+            entry = manifest.get(image.get("asset_id"))
+            record = (entry or {}).get("record") or {}
+            media = record.get("media") or {}
+            digest = (media.get("digest") or {}).get("value")
+            if not isinstance(digest, str) or not digest:
+                continue
+            path = blob_path_for_digest(store_root, digest)
+            if not path.is_file():
+                continue
+            try:
+                collected.append((path.read_bytes(), media.get("mime_type") or "image/png"))
+            except OSError:
+                continue
+            labels.append(str(image.get("title") or image_key))
+        return (collected or None), labels
 
     def _generate_image(
         self,
@@ -3179,7 +3330,14 @@ class LumenWebTools:
             origin="generate_image",
             label=resolved_label,
             alt=alt,
-            extra={"mode": meta.get("mode"), "model": meta.get("model")},
+            # A degrade to the placeholder is reported to the AUTHOR, not just to
+            # the log: the author is the only party that can decide whether a
+            # placeholder is shippable in this band.
+            extra={
+                "mode": meta.get("mode"),
+                "model": meta.get("model"),
+                "diagnostics": diagnostics or None,
+            },
         )
 
     def _use_brand_asset(
