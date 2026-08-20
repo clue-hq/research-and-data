@@ -149,6 +149,62 @@ genuinely re-attempts committee (unlike the content-keyed account-gap ops).
 Sequence to finish: fix lands → review/commit → roll fleet → v7 relaunch message (cap 7, founder
 approves) → resume `3cc0a4f2` to settle honestly.
 
+## Lane 2 amendment — the admitted case reads the RESULT, not the row (uncommitted, ~07:15)
+
+`15f27702` worked once live and armed the next wedge. Live (job 3cc0a4f2, 06:37:33): eea48931's
+resume replayed `7e29c0bf` with no result → served fresh → admitted result `c8be9969` built FROM
+the fresh projection. A second job then replays: recompute differs, a result now exists, and
+`15f27702` served the STORED row — still the pre-aa88e0b0 draft (append-only, never updated) — so
+the span guard killed the job with the 02:14 error again, raw `execution_failed`. **"A result was
+admitted for this operation" ≠ "the stored row is what was admitted"**, and after a
+never-admitted→fresh settle they diverge permanently.
+
+Ratified rule now in code: **an operation with an admitted result serves the projection its FIRST
+ADMITTED RESULT recorded.** Correct in both worlds — an old-code admission recorded the stored
+draft (c7d6da82's case, behaviour unchanged), a new-code admission recorded the fresh projection
+(tonight's case, and its spans passed the guard at admission, so the replay passes by
+construction). No admitted result → fresh, unchanged.
+
+Implementation (`sumble_entity_research_tools.py`): `_operation_result_admitted` is replaced by
+`_first_admitted_projection(conn, storage, *, operation_ref)` → `_AdmittedProjection(snapshot_ref,
+result)`. It reads the earliest `entity_research_result` for the operation_ref
+(`ORDER BY created_at, result_id LIMIT 1`) and reuses the established admitted-result reader
+primitives — `read_verified_artifact` + `content_address` vs `result_sha256`, then
+`PersistedResearchToolResult.model_validate_json` (the same three-step read as
+`EntityResearchResultStore._load_existing`, `read_result`, and the follow-up parent read; none of
+those three is callable from a provider action because each enforces the *asker's* job scope, so
+the minimal reader lives next to the branch). **Note for anyone re-reading the mandate:**
+`entity_research_result_evidence` stores only `evidence_span_sha256`, never the span text, so the
+rows alone cannot reconstruct a projection — the digest-pinned result artifact is the content and
+the rows are the index. Both are used: every reconstructed span must hash to an evidence row of
+that result, and an indexed (`value_ref`) field is rehydrated from the exact `value_artifact_key`
+its field row names (same shape as `read_result`'s rehydration). Account branch returns
+`result.fields` (plus a fail-closed check that they index the request's exact field set); committee
+branch returns `result.discovered_subjects`.
+
+Tests: `_wedge_a_stored_projection` gained a `first_write` action-type parameter; admissions now go
+through the REAL `EntityResearchResultStore.persist` (helper `_plant_governed_causation` plants the
+causation chain from the request's own ids and returns the observation `persist` admits against).
+- NEW `test_the_next_job_replays_the_fresh_projection_its_admitted_result_recorded` — the 06:37:33
+  shape. Red on `15f27702` with the literal live error `EntityResearchResultIntegrityError:
+  projected evidence span is absent from retained artifact` out of `_validate_fields`.
+- UPDATED (was `..._still_replays_its_stored_first_projection`) →
+  `test_an_admitted_result_replays_exactly_what_that_result_recorded`, now driven by
+  `_LegacyEvidenceRefAccountProjection` (a superseded composition that is *admissible*, so it can
+  be admitted through `persist`); asserts the served field is the admitted record and disjoint from
+  what today's `_EVIDENCE_NAMESPACE` would mint. Docstring states why the pin moved.
+- Committee: the no-result→fresh test stands. The committee ADMITTED path is not covered by a test
+  (a committee admission needs a governed `discover_buying_committee` request chain + lineage the
+  R5 acceptance suite owns); its only delta from the account path is which collection of the same
+  reconstructed result is returned, and that reconstruction is covered in both worlds by the
+  account tests.
+
+Verification (throwaway `clue_missoula_reproj`): provenance suite 6 passed; mandated regression
+`test_sumble_account_gap_window_reacquisition.py` + `test_sumble_account_gaps_s1.py` +
+`test_comprehensive_account_execution_db.py` 24 passed; extra `test_account_entity_research_r5_db`
++ `test_committee_agent_inference_acceptance_db` + `test_entity_research_tools_r4_db` 18 passed;
+ruff clean, mypy clean on the source. No commit.
+
 ## Design thread this feeds (discussion earlier this session)
 
 Second instance in one night of the missing "fresh attempt after the cause changed" primitive

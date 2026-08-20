@@ -8,7 +8,7 @@ from collections.abc import Awaitable, Callable, Mapping, Sequence
 from contextlib import AbstractAsyncContextManager
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Final, Protocol, cast
+from typing import Final, NamedTuple, Protocol, cast
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 from sqlalchemy import text
@@ -64,6 +64,7 @@ from clue_core import (
 )
 from clue_core.entity_research import (
     GovernedResearchToolRequest,
+    PersistedResearchToolResult,
     ResearchClaimDelta,
     ResearchDiscoveredSubjectProjection,
     ResearchEvidenceProjection,
@@ -91,30 +92,172 @@ from clue_research.profiling.committee import (
     discover_committee,
 )
 from clue_research.resolvers.sumble.people import PEOPLE_SOURCE_KEY
-from clue_storage import StorageBackend
+from clue_storage import StorageBackend, content_address, read_verified_artifact
 
 ConnFactory = Callable[[], AbstractAsyncContextManager[AsyncConnection]]
 _EVIDENCE_NAMESPACE = uuid5(NAMESPACE_URL, "clue:m8d:r5:sumble-account-evidence")
 
 
-async def _operation_result_admitted(conn: AsyncConnection, *, operation_ref: str) -> bool:
-    """Was any governed result for this provider operation ever ADMITTED to a job?
+class _AdmittedProjection(NamedTuple):
+    """What this provider operation's FIRST admitted result actually recorded."""
 
-    The distinction the projection replay turns on. A stored projection is *history* only once a
-    result carrying it reached a turn — that is what an ``entity_research_result`` row records, and
-    what downstream has consumed. A stored projection with no result row anywhere was shown to
-    nobody: it is a failed draft, not a fact about the past.
+    snapshot_ref: str
+    result: PersistedResearchToolResult
+
+
+async def _first_admitted_projection(
+    conn: AsyncConnection,
+    storage: StorageBackend,
+    *,
+    operation_ref: str,
+) -> _AdmittedProjection | None:
+    """The projection the operation's earliest ``entity_research_result`` admitted, or ``None``.
+
+    The distinction the projection replay turns on. A projection is *history* only once a result
+    carrying it reached a turn — that is what an ``entity_research_result`` row records, and what
+    downstream consumed. An operation with no result row anywhere was shown to nobody, so its
+    stored first draft is a failed draft, not a fact about the past.
+
+    "A result exists" is NOT the same question as "the stored projection row is what was admitted",
+    and live (job 3cc0a4f2, 06:37:33) they diverged permanently: operation 7e29c0bf's stored row
+    was the pre-aa88e0b0 defective draft, its first replay served the fresh recomputation because
+    nothing had been admitted yet, and the result admitted from THAT recomputation then made the
+    next job serve the stored draft again — straight back into the span guard. So the answer is
+    read from the admitted result itself, which is correct in both worlds: an old-code admission
+    recorded the stored draft (unchanged behaviour), a new-code admission recorded the fresh
+    projection, and either way the served spans are the ones that passed the anti-fabrication guard
+    at admission.
+
+    The admitted result's own fields/evidence rows are the index; their content lives in the result
+    artifact the row pins by digest (``entity_research_result_evidence`` keeps only the span's
+    sha256, never its text), so the artifact is read the way every other reader of an admitted
+    result reads it — ``read_verified_artifact`` + a ``content_address`` check against
+    ``result_sha256`` (``EntityResearchResultStore._load_existing`` / ``read_result`` / the
+    follow-up parent read) — and then reconciled against the durable rows: every served span must
+    hash to an evidence row of that result, and an indexed value is rehydrated from the exact value
+    artifact its field row names.
     """
 
-    return (
-        await conn.execute(
-            text(
-                "SELECT 1 FROM entity_research_result "
-                "WHERE provider_operation_ref=:operation_ref LIMIT 1"
-            ),
-            {"operation_ref": operation_ref},
+    row = (
+        (
+            await conn.execute(
+                text(
+                    """
+                    SELECT result_id, result_artifact_key, result_sha256, workspace_id,
+                           provider_snapshot_ref
+                    FROM entity_research_result
+                    WHERE provider_operation_ref=:operation_ref
+                    ORDER BY created_at, result_id
+                    LIMIT 1
+                    """
+                ),
+                {"operation_ref": operation_ref},
+            )
         )
-    ).first() is not None
+        .mappings()
+        .first()
+    )
+    if row is None:
+        return None
+    workspace_id = str(row["workspace_id"])
+    _, data = await read_verified_artifact(
+        conn,
+        storage,
+        storage_key=str(row["result_artifact_key"]),
+        workspace_id=workspace_id,
+    )
+    if content_address(data) != str(row["result_sha256"]):
+        raise EntityResearchResultIntegrityError(
+            "admitted result artifact differs from its durable digest"
+        )
+    result = PersistedResearchToolResult.model_validate_json(data)
+    admitted_evidence = {
+        (str(evidence["artifact_key"]), str(evidence["evidence_span_sha256"]))
+        for evidence in (
+            (
+                await conn.execute(
+                    text(
+                        "SELECT artifact_key, evidence_span_sha256 "
+                        "FROM entity_research_result_evidence WHERE result_id=:result_id"
+                    ),
+                    {"result_id": row["result_id"]},
+                )
+            )
+            .mappings()
+            .all()
+        )
+    }
+    value_keys = {
+        (cast(UUID, field["target_entity_id"]), str(field["field_key"])): str(
+            field["value_artifact_key"]
+        )
+        for field in (
+            (
+                await conn.execute(
+                    text(
+                        "SELECT target_entity_id, field_key, value_artifact_key "
+                        "FROM entity_research_result_field "
+                        "WHERE result_id=:result_id AND value_artifact_key IS NOT NULL"
+                    ),
+                    {"result_id": row["result_id"]},
+                )
+            )
+            .mappings()
+            .all()
+        )
+    }
+
+    async def restore(
+        fields: tuple[ResearchFieldResultProjection, ...], *, subject_entity_id: UUID
+    ) -> tuple[ResearchFieldResultProjection, ...]:
+        restored: list[ResearchFieldResultProjection] = []
+        for field in fields:
+            for evidence in field.evidence:
+                admitted = (
+                    evidence.artifact_ref.removeprefix("artifact:"),
+                    hashlib.sha256(evidence.evidence_span.encode()).hexdigest(),
+                )
+                if admitted not in admitted_evidence:
+                    raise EntityResearchResultIntegrityError(
+                        "admitted result artifact cites evidence its durable rows never recorded"
+                    )
+            value_key = value_keys.get((subject_entity_id, field.field_key))
+            if field.value_ref is None or value_key is None:
+                restored.append(field)
+                continue
+            _, value_data = await read_verified_artifact(
+                conn, storage, storage_key=value_key, workspace_id=workspace_id
+            )
+            payload = json.loads(value_data)
+            if payload.get("field_key") != field.field_key or payload.get(
+                "subject_entity_id"
+            ) != str(subject_entity_id):
+                raise EntityResearchResultIntegrityError(
+                    "indexed admitted value belongs to another subject or field"
+                )
+            restored.append(field.model_copy(update={"value": payload.get("value")}))
+        return tuple(restored)
+
+    subjects: list[ResearchDiscoveredSubjectProjection] = []
+    for subject in result.discovered_subjects:
+        subjects.append(
+            subject.model_copy(
+                update={
+                    "fields": await restore(
+                        subject.fields, subject_entity_id=subject.target_entity_id
+                    )
+                }
+            )
+        )
+    return _AdmittedProjection(
+        snapshot_ref=str(row["provider_snapshot_ref"]),
+        result=result.model_copy(
+            update={
+                "fields": await restore(result.fields, subject_entity_id=result.target_entity_id),
+                "discovered_subjects": tuple(subjects),
+            }
+        ),
+    )
 
 
 def _match_haystack(*values: object) -> str:
@@ -802,23 +945,23 @@ class SumbleAccountSemanticEnrichmentAction(EntityResearchProviderAction):
                 str(stored["provider_snapshot_ref"]) != snapshot_ref
                 or str(stored["normalized_result_artifact_key"]) != normalized_key
             )
-            # First write wins — for ADMITTED history, and only for it. The same lesson as the
-            # seal reader and the settlement fold: what a job was actually shown, and what
-            # downstream consumed, is validated against what was STORED, never recomputed under
-            # newer code. A projection-composition improvement (live: aa88e0b0's conflict-evidence
-            # fix) legitimately changes what today's code would project for a terminal operation
+            # First write wins — for ADMITTED history, and only for it, and what replays is what
+            # the ADMITTED RESULT recorded, never the stored projection row. The same lesson as
+            # the seal reader and the settlement fold: what a job was actually shown, and what
+            # downstream consumed, is served from durable history, never recomputed under newer
+            # code. A projection-composition improvement (live: aa88e0b0's conflict-evidence fix)
+            # legitimately changes what today's code would project for a terminal operation
             # recorded yesterday; refusing that replay suspended the job ("Sumble projection replay
-            # changed"). The stored normalized artifact is self-describing, so the immutable first
-            # projection is served instead.
+            # changed").
             #
-            # A stored projection whose operation carries NO ``entity_research_result`` anywhere is
-            # not history: no turn was ever shown it. It is a failed draft written under code that
-            # has since been fixed — live (job eea48931), the pre-aa88e0b0 draft published a
-            # conflict contender's evidence span, the span-fidelity guard refused it at 02:14, and
-            # serving that same draft back at 03:46 raised the identical refusal, so the job
-            # re-wedged on every resume. For that draft the immutable truth is the retained
-            # provider snapshot, and the only projection of it that can ever pass the guard is the
-            # fresh one recomputed above from the durable gap-ledger snapshots — so it is returned.
+            # An operation with NO ``entity_research_result`` anywhere has no admitted history: no
+            # turn was ever shown its stored first write, so that write is a failed draft, not a
+            # fact about the past. Live (job eea48931), the pre-aa88e0b0 draft published a conflict
+            # contender's evidence span, the span-fidelity guard refused it at 02:14, and serving
+            # that same draft back at 03:46 raised the identical refusal, so the job re-wedged on
+            # every resume. For that draft the immutable truth is the retained provider snapshot,
+            # and the only projection of it that can ever pass the guard is the fresh one
+            # recomputed above from the durable gap-ledger snapshots — so it is returned.
             # Supersession is by NON-ADOPTION: the projection table is append-only, so the refused
             # first draft stays exactly where it is as the audit record of what defective code
             # wrote, and the replay stays deterministic (same snapshot + same code = same fresh
@@ -829,21 +972,33 @@ class SumbleAccountSemanticEnrichmentAction(EntityResearchProviderAction):
             # existence-verifies it), the snapshot_ref both sides cite is content-derived from
             # the durable raw refs and therefore identical, and the fresh normalized artifact is
             # captured and subject-bound above — both normalizations survive in storage.
-            if replay_differs and await _operation_result_admitted(
-                conn, operation_ref=provider_operation.operation_ref
-            ):
-                stored_payload = json.loads(
-                    await self._storage.get(str(stored["normalized_result_artifact_key"]))
+            #
+            # That residual is exactly why the admitted case may NOT read the stored row: "a result
+            # was admitted for this operation" is not "the stored row is what was admitted", and
+            # live (job 3cc0a4f2, 06:37:33) the two diverged permanently — eea48931's resume served
+            # the fresh recomputation while nothing was admitted, the result admitted from it
+            # (c8be9969) recorded that fresh projection, the append-only row still held the
+            # defective draft, and the next job to replay the operation was handed the refused span
+            # straight back into the guard. ``_first_admitted_projection`` answers with the earliest
+            # admitted result's own record instead: an old-code admission recorded the stored draft
+            # (c7d6da82's case, behaviour unchanged), a new-code admission recorded the fresh
+            # projection, and either way every span served is one that already passed the guard.
+            admitted = (
+                await _first_admitted_projection(
+                    conn, self._storage, operation_ref=provider_operation.operation_ref
                 )
-                if stored_payload.get("contract") != "m8d-r5-sumble-account-projection-v1":
+                if replay_differs
+                else None
+            )
+            if admitted is not None:
+                if {field.field_key for field in admitted.result.fields} != set(request.field_keys):
+                    # Fail closed rather than serve a projection that cannot answer this request.
+                    # The gap ledger keys an operation by its exact field set, so this is
+                    # unreachable unless that invariant breaks.
                     raise EntityResearchResultIntegrityError(
-                        "stored Sumble projection carries an unknown contract"
+                        "admitted Sumble projection does not index this request's exact fields"
                     )
-                stored_projected = tuple(
-                    ResearchFieldResultProjection.model_validate(item)
-                    for item in stored_payload["fields"]
-                )
-                return str(stored["provider_snapshot_ref"]), stored_projected
+                return admitted.snapshot_ref, admitted.result.fields
         return snapshot_ref, projected
 
     def _field(
@@ -1658,28 +1813,24 @@ class SumbleCommitteeSemanticResearchAction(EntityResearchProviderAction):
                 != Decimal(str(values["settled_cost"]))
                 or serialize_value_json(stored["metadata_json"]) != values["metadata"]
             )
-            # Same first-write-wins rule as the account projection above, with the same boundary:
-            # an ADMITTED terminal operation's stored projection is history, and newer code must
-            # serve it rather than recompute it and refuse the difference — but a stored projection
-            # whose operation has no ``entity_research_result`` anywhere was shown to no turn, so it
-            # is a failed draft and the retained snapshot is the truth. That draft's replay returns
-            # the fresh recomputation instead; the append-only table keeps the first write at rest
-            # as audit (see the account branch for the live wedge this closes).
-            if replay_differs and await _operation_result_admitted(
-                conn, operation_ref=provider_operation.operation_ref
-            ):
-                stored_payload = json.loads(
-                    await self._storage.get(str(stored["normalized_result_artifact_key"]))
+            # Same rule as the account projection above, with the same two boundaries: an operation
+            # whose replay differs and that carries an admitted result serves what THAT RESULT
+            # recorded (its discovered subjects, evidence spans and all), never the stored
+            # projection row — the row and the admitted record diverge permanently once a
+            # never-admitted operation's first replay serves fresh (live job 3cc0a4f2, 06:37:33) —
+            # and an operation with no admitted result anywhere was shown to no turn, so its stored
+            # first write is a failed draft and the fresh recomputation is returned. The
+            # append-only table keeps the first write at rest as audit either way (see the account
+            # branch for the live wedge this closes).
+            admitted = (
+                await _first_admitted_projection(
+                    conn, self._storage, operation_ref=provider_operation.operation_ref
                 )
-                if stored_payload.get("contract") != "m8d-r5-sumble-office-committee-v1":
-                    raise EntityResearchResultIntegrityError(
-                        "stored Sumble committee projection carries an unknown contract"
-                    )
-                stored_subjects = tuple(
-                    ResearchDiscoveredSubjectProjection.model_validate(item)
-                    for item in stored_payload["members"]
-                )
-                return str(stored["provider_snapshot_ref"]), stored_subjects
+                if replay_differs
+                else None
+            )
+            if admitted is not None:
+                return admitted.snapshot_ref, admitted.result.discovered_subjects
         return snapshot_ref, tuple(subjects)
 
     @staticmethod

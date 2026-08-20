@@ -67,6 +67,7 @@ from clue_api.sumble_committee_acquisition import (
 )
 from clue_api.sumble_committee_source import SumbleCommitteeSource
 from clue_api.sumble_entity_research_tools import (
+    _EVIDENCE_NAMESPACE,
     SumbleAccountSemanticEnrichmentAction,
     SumbleCommitteeSemanticResearchAction,
     SumbleEntityResearchLineageReader,
@@ -505,27 +506,76 @@ class _PreFixAccountProjection(SumbleAccountSemanticEnrichmentAction):
         )
 
 
+class _LegacyEvidenceRefAccountProjection(SumbleAccountSemanticEnrichmentAction):
+    """A superseded composition that is *admissible*: only its evidence-ref minting differs.
+
+    The old-code-admission world c7d6da82 was written for. Its spans are the operation's own
+    retained provenance, so the anti-fabrication guard admits it — but current code no longer mints
+    those evidence refs, so a replay recomputes something different and lands in the same mismatch
+    branch as the defect-29 draft.
+    """
+
+    def _field(
+        self,
+        result: object,
+        *,
+        claims_by_id: Mapping[UUID, Mapping[str, object]],
+        provider_request_id: str,
+        operation_id: UUID,
+    ) -> ResearchFieldResultProjection:
+        projection = super()._field(
+            result,
+            claims_by_id=claims_by_id,
+            provider_request_id=provider_request_id,
+            operation_id=operation_id,
+        )
+        return projection.model_copy(
+            update={
+                "evidence": tuple(
+                    item.model_copy(
+                        update={
+                            "evidence_ref": (
+                                "research-evidence:"
+                                f"{uuid5(_LEGACY_EVIDENCE_NAMESPACE, item.evidence_ref)}"
+                            )
+                        }
+                    )
+                    for item in projection.evidence
+                )
+            }
+        )
+
+
 Observer = Callable[[ProviderOperationReservation], Awaitable[ProviderOperationObservation]]
 
 
 @dataclass(frozen=True)
 class _Wedge:
-    """The live wedge's first half: a defective projection stored, and never admitted anywhere."""
+    """The live wedge's first half: a superseded projection stored under code since replaced."""
 
     request: GovernedResearchToolRequest
+    account_id: EntityId
     observe: Observer
     action: SumbleAccountSemanticEnrichmentAction
     store: EntityResearchResultStore
     reader: SumbleEntityResearchLineageReader
-    defective: ExternalResearchProjectionDraft
+    first_write: ExternalResearchProjectionDraft
     stored_normalized_key: str
     operation_ref: str
 
 
 async def _wedge_a_stored_projection(
-    conn: AsyncConnection, storage: FsStorage, *, workspace_id: str
+    conn: AsyncConnection,
+    storage: FsStorage,
+    *,
+    workspace_id: str,
+    first_write: type[SumbleAccountSemanticEnrichmentAction] = _PreFixAccountProjection,
 ) -> _Wedge:
-    """Run one real Sumble enrichment under the superseded projection code and store its draft."""
+    """Run one real Sumble enrichment under superseded projection code and store its first draft.
+
+    ``first_write`` is the code that composed it: the defect-29 draft by default (evidence the span
+    guard can never admit), or any other superseded composition current code no longer reproduces.
+    """
 
     started, ready = await _seed_selected_high_tier_account(
         conn,
@@ -631,10 +681,10 @@ async def _wedge_a_stored_projection(
             created_at=datetime.now(UTC),
         )
 
-    (defective,) = await build(_PreFixAccountProjection).execute(
+    (stored_draft,) = await build(first_write).execute(
         request, before_dispatch=observe, settle_terminal=observe
     )
-    operation_ref = defective.operation.operation_ref
+    operation_ref = stored_draft.operation.operation_ref
     stored_normalized_key = str(
         (
             await conn.execute(
@@ -647,35 +697,38 @@ async def _wedge_a_stored_projection(
         ).scalar_one()
     )
     reader = SumbleEntityResearchLineageReader(
-        provider_kind=defective.operation.provider_kind,
+        provider_kind=stored_draft.operation.provider_kind,
         conn_factory=same_connection,
     )
     return _Wedge(
         request=request,
+        account_id=account_id,
         observe=observe,
         action=build(SumbleAccountSemanticEnrichmentAction),
         store=EntityResearchResultStore(
             storage=storage,
             conn_factory=same_connection,
-            lineage_readers={defective.operation.provider_kind: reader},
+            lineage_readers={stored_draft.operation.provider_kind: reader},
         ),
         reader=reader,
-        defective=defective,
+        first_write=stored_draft,
         stored_normalized_key=stored_normalized_key,
         operation_ref=operation_ref,
     )
 
 
-async def _admit_one_result(
-    conn: AsyncConnection, *, operation_ref: str, result_artifact_key: str
-) -> None:
-    """Write one admitted ``entity_research_result`` for ``operation_ref`` — the whole FK chain.
+async def _plant_governed_causation(
+    conn: AsyncConnection, request: GovernedResearchToolRequest, *, operation_ref: str
+) -> ProviderOperationObservation:
+    """Plant the run→job→turn→event→tool_request→observation chain ``request`` claims to have.
 
     The chain is written directly rather than driven through the governed tool invoker (which needs
-    a live agent turn, journal event and budget reservation): what is under test here is the
-    *existence* predicate over this row, and R4's own suite owns proving the writer. Every scope
-    value is read back off the real provider-operation row, because the tool-request and
-    observation authority triggers check exactly that identity.
+    a live agent runtime, journal and budget reservation), but everything downstream of it is the
+    real thing: the returned observation is what ``EntityResearchResultStore.persist`` admits a
+    result against, so the admitted result rows/artifact this suite reads back are written by
+    production code, not by the test. Every scope value is the request's own or is read off the
+    real provider-operation row, because the tool-request and observation authority triggers check
+    exactly that identity.
     """
 
     scope = (
@@ -693,8 +746,13 @@ async def _admit_one_result(
         .one()
     )
     ids = {
-        name: uuid4()
-        for name in ("run", "job", "turn", "execution", "event", "request", "observation", "result")
+        "run": request.research_run_id,
+        "job": request.job_id,
+        "turn": request.agent_turn_id,
+        "execution": request.agent_execution_id,
+        "request": request.tool_call_id,
+        "event": uuid4(),
+        "observation": uuid4(),
     }
     field_keys = [str(value) for value in scope["field_keys"]]
     authority = [
@@ -719,7 +777,7 @@ async def _admit_one_result(
         "project_run_id": str(scope["project_run_id"]),
         "checkpoint_thread_id": checkpoint,
         # The governed-request trigger checks the request against what the turn admitted.
-        "tool_names": ["enrich_account"],
+        "tool_names": [request.tool_name],
         "admitted_field_keys": field_keys,
         "admitted_source_keys": [str(scope["source_key"])],
         "field_source_authority": authority,
@@ -744,8 +802,8 @@ async def _admit_one_result(
         "field_keys": field_keys,
         "product_id": product_id,
         "operation_ref": operation_ref,
-        "artifact_key": result_artifact_key,
         "sha": "0" * 64,
+        "tool_input_sha256": request.tool_input_sha256,
         "checkpoint": checkpoint,
         "context": json.dumps(context),
         "authority": json.dumps(authority),
@@ -824,11 +882,16 @@ async def _admit_one_result(
             INSERT INTO entity_research_agent_event
                 (event_id, agent_turn_id, agent_execution_id, event_kind, tool_call_id, tool_name,
                  tool_version, tool_input_sha256, payload_json)
-            VALUES (:event_id, :turn_id, :execution_id, 'tool_started', 'defect-29-call',
-                    'enrich_account', 1, :sha, '{}'::jsonb)
+            VALUES (:event_id, :turn_id, :execution_id, 'tool_started', :raw_call, :tool_name,
+                    :tool_version, :tool_input_sha256, '{}'::jsonb)
             """
         ),
-        params,
+        {
+            **params,
+            "raw_call": f"defect-29-call:{request.tool_call_id}",
+            "tool_name": request.tool_name,
+            "tool_version": request.tool_version,
+        },
     )
     await conn.execute(
         text(
@@ -839,15 +902,24 @@ async def _admit_one_result(
                  workspace_id, project_id, product_id, project_run_id, tool_name, tool_version,
                  tool_input_sha256, field_plan_ref, source_plan_ref, field_keys, source_keys,
                  questions, budget_reservation_key, idempotency_key, field_source_authority)
-            VALUES (:request_id, :turn_id, :execution_id, :event_id, 'defect-29-call', :run_id,
+            VALUES (:request_id, :turn_id, :execution_id, :event_id, :raw_call, :run_id,
                     :job_id, 'account', :target_entity_id, :workspace_id, :project_id,
-                    :product_id, :project_run_id, 'enrich_account', 1, :sha,
-                    'field-plan:defect-29', 'source-plan:defect-29',
-                    CAST(:field_keys AS text[]), ARRAY[:source_key], ARRAY['what?'],
-                    'budget:defect-29', 'idempotency:defect-29', CAST(:authority AS jsonb))
+                    :product_id, :project_run_id, :tool_name, :tool_version, :tool_input_sha256,
+                    :field_plan_ref, :source_plan_ref,
+                    CAST(:field_keys AS text[]), ARRAY[:source_key], '{}'::text[],
+                    :budget_key, :idempotency_key, CAST(:authority AS jsonb))
             """
         ),
-        params,
+        {
+            **params,
+            "raw_call": f"defect-29-call:{request.tool_call_id}",
+            "tool_name": request.tool_name,
+            "tool_version": request.tool_version,
+            "field_plan_ref": request.field_plan_ref,
+            "source_plan_ref": request.source_plan_ref,
+            "budget_key": request.budget_reservation_key,
+            "idempotency_key": request.idempotency_key,
+        },
     )
     await conn.execute(
         text(
@@ -861,19 +933,13 @@ async def _admit_one_result(
         ),
         params,
     )
-    await conn.execute(
-        text(
-            """
-            INSERT INTO entity_research_result
-                (result_id, tool_request_id, provider_observation_id, workspace_id, subject_type,
-                 target_entity_id, result_artifact_key, result_sha256, delivery,
-                 requested_field_keys, provider_operation_ref, provider_snapshot_ref)
-            VALUES (:result_id, :request_id, :observation_id, :workspace_id, 'account',
-                    :target_entity_id, :artifact_key, :sha, 'inline_complete',
-                    CAST(:field_keys AS text[]), :operation_ref, 'snapshot:defect-29')
-            """
-        ),
-        params,
+    return ProviderOperationObservation(
+        observation_id=ids["observation"],
+        tool_request_id=request.tool_call_id,
+        operation_ref=operation_ref,
+        workspace_id=workspace_id,
+        disposition=ProviderObservationDisposition.REPLAY.value,
+        created_at=datetime.now(UTC),
     )
 
 
@@ -893,12 +959,12 @@ def test_a_never_admitted_stored_projection_is_recomputed_on_replay(tmp_path: Pa
             )
 
             # 02:14 — the first write is a draft that no guard can ever admit.
-            (defective_field,) = wedge.defective.fields
+            (defective_field,) = wedge.first_write.fields
             assert _LIVE_DESCRIBED_SPAN in {item.evidence_span for item in defective_field.evidence}
             defective_lineage = await wedge.reader.load(
                 request=wedge.request,
-                operation=wedge.defective.operation,
-                snapshot_ref=wedge.defective.snapshot_ref,
+                operation=wedge.first_write.operation,
+                snapshot_ref=wedge.first_write.snapshot_ref,
             )
             with pytest.raises(
                 EntityResearchResultIntegrityError,
@@ -907,7 +973,7 @@ def test_a_never_admitted_stored_projection_is_recomputed_on_replay(tmp_path: Pa
                 await wedge.store._validate_fields(
                     conn,
                     request=wedge.request,
-                    draft=wedge.defective,
+                    draft=wedge.first_write,
                     lineage=defective_lineage,
                 )
             # …so no result was ever admitted for this operation. That is the whole distinction.
@@ -968,35 +1034,133 @@ def test_a_never_admitted_stored_projection_is_recomputed_on_replay(tmp_path: Pa
     run_async(scenario())
 
 
-def test_an_admitted_result_still_replays_its_stored_first_projection(tmp_path: Path) -> None:
-    """The ``c7d6da82`` guarantee, kept: what a job was actually shown is served from the store.
+def test_an_admitted_result_replays_exactly_what_that_result_recorded(tmp_path: Path) -> None:
+    """The ``c7d6da82`` guarantee, kept — but pinned to the admitted RESULT, not the stored row.
 
-    Same stored draft, same difference from what today's code composes — but this operation carries
-    an admitted ``entity_research_result``, so the projection is admitted history and recomputing it
-    under newer code would rewrite what downstream already consumed.
+    The pin moved because the old one was falsified live at 06:37:33 (job 3cc0a4f2): "a result was
+    admitted for this operation" is not "the stored projection row is what was admitted", and once
+    a never-admitted operation's first replay serves fresh they diverge permanently. Here they do
+    NOT diverge — this is the world c7d6da82 was written for, an admission made from the stored
+    first write — so the observable outcome is unchanged: the replay serves that first write, and
+    the recomputation current code would have produced is not served.
     """
 
     async def scenario() -> None:
         storage = FsStorage(tmp_path / "artifacts")
         async with rollback_conn(seed_pack=True) as conn:
             wedge = await _wedge_a_stored_projection(
-                conn, storage, workspace_id="ws-defect-29-admitted"
-            )
-            await _admit_one_result(
                 conn,
-                operation_ref=wedge.operation_ref,
-                result_artifact_key=wedge.stored_normalized_key,
+                storage,
+                workspace_id="ws-defect-29-admitted",
+                first_write=_LegacyEvidenceRefAccountProjection,
             )
+            # The real admission of that first write, through the production result store.
+            observation = await _plant_governed_causation(
+                conn, wedge.request, operation_ref=wedge.operation_ref
+            )
+            admitted = await wedge.store.persist(
+                request=wedge.request, observation=observation, draft=wedge.first_write
+            )
+            assert admitted.fields == wedge.first_write.fields
 
+            second_job = _request(wedge.account_id)
             (replayed,) = await wedge.action.execute(
-                wedge.request, before_dispatch=wedge.observe, settle_terminal=wedge.observe
+                second_job, before_dispatch=wedge.observe, settle_terminal=wedge.observe
             )
             (served,) = replayed.fields
             assert served.field_key == _HQ
-            # Byte-for-byte the stored first write, foreign contender evidence and all.
-            assert served == wedge.defective.fields[0]
-            assert replayed.snapshot_ref == wedge.defective.snapshot_ref
-            assert _LIVE_DESCRIBED_SPAN in {item.evidence_span for item in served.evidence}
+            # Byte-for-byte what the admitted result recorded — which here IS the stored draft.
+            assert served == wedge.first_write.fields[0]
+            assert replayed.snapshot_ref == wedge.first_write.snapshot_ref
+            # …and not what today's composition would mint for the same durable snapshot.
+            operation_id = wedge.operation_ref.rsplit(":", 1)[-1]
+            recomputed_refs = {
+                f"research-evidence:{uuid5(_EVIDENCE_NAMESPACE, f'{operation_id}:{claim}')}"
+                for claim in (ref.removeprefix("claim:") for ref in served.claim_refs)
+            }
+            served_refs = {item.evidence_ref for item in served.evidence}
+            assert served_refs and served_refs.isdisjoint(recomputed_refs)
+
+    run_async(scenario())
+
+
+def test_the_next_job_replays_the_fresh_projection_its_admitted_result_recorded(
+    tmp_path: Path,
+) -> None:
+    """The 06:37:33 wedge (job 3cc0a4f2), which the first amendment armed rather than closed.
+
+    eea48931's resume replayed operation 7e29c0bf while nothing was admitted, was served the fresh
+    recomputation, and admitted result c8be9969 FROM it. The stored projection row is append-only,
+    so it still holds the pre-aa88e0b0 draft — and the next job to replay the same operation was
+    handed that draft back, straight into the span guard it had already failed twice. What replays
+    is what the first admitted result recorded, so the span guard admits it by construction: those
+    spans passed at admission.
+    """
+
+    async def scenario() -> None:
+        storage = FsStorage(tmp_path / "artifacts")
+        async with rollback_conn(seed_pack=True) as conn:
+            wedge = await _wedge_a_stored_projection(
+                conn, storage, workspace_id="ws-defect-29-armed"
+            )
+
+            # eea48931's resume: nothing admitted yet, so the draft is superseded by the fresh one.
+            (resumed,) = await wedge.action.execute(
+                wedge.request, before_dispatch=wedge.observe, settle_terminal=wedge.observe
+            )
+            assert {item.source_key for item in resumed.fields[0].evidence} == {
+                ORGANIZATIONS_SOURCE_KEY
+            }
+            observation = await _plant_governed_causation(
+                conn, wedge.request, operation_ref=wedge.operation_ref
+            )
+            admitted = await wedge.store.persist(
+                request=wedge.request, observation=observation, draft=resumed
+            )
+            assert admitted.fields == resumed.fields
+            # The append-only row still holds the draft the guard refused — that is the trap.
+            assert (
+                str(
+                    (
+                        await conn.execute(
+                            text(
+                                "SELECT normalized_result_artifact_key "
+                                "FROM entity_research_sumble_projection "
+                                "WHERE provider_operation_ref=:operation_ref"
+                            ),
+                            {"operation_ref": wedge.operation_ref},
+                        )
+                    ).scalar_one()
+                )
+                == wedge.stored_normalized_key
+            )
+            assert _json_contains_text(
+                await storage.get(wedge.stored_normalized_key), _LIVE_DESCRIBED_SPAN
+            )
+
+            # 06:37:33 — a second job replays the same terminal operation.
+            second_job = _request(wedge.account_id)
+            (served,) = await wedge.action.execute(
+                second_job, before_dispatch=wedge.observe, settle_terminal=wedge.observe
+            )
+            # The engine that killed job 3cc0a4f2 at 06:37:33 is the oracle: served the stored
+            # draft, this raises "projected evidence span is absent from retained artifact".
+            lineage = await wedge.reader.load(
+                request=second_job,
+                operation=served.operation,
+                snapshot_ref=served.snapshot_ref,
+            )
+            await wedge.store._validate_artifacts(conn, request=second_job, lineage=lineage)
+            await wedge.store._validate_fields(
+                conn, request=second_job, draft=served, lineage=lineage
+            )
+
+            (field,) = served.fields
+            assert field == admitted.fields[0]
+            assert _LIVE_DESCRIBED_SPAN not in {item.evidence_span for item in field.evidence}
+            for item in field.evidence:
+                cited = await storage.get(item.artifact_ref.removeprefix("artifact:"))
+                assert _json_contains_text(cited, item.evidence_span)
 
     run_async(scenario())
 
