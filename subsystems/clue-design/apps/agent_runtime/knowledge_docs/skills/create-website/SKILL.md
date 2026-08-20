@@ -57,9 +57,14 @@ node itself, so give it an `id` when later scoped edits need stable identity.
 The delivered website preserves only semantic rich-text markup — no editor
 attributes.
 
-Icon names: `circle dot square diamond triangle-up play star heart bolt check x
-plus minus arrow-right arrow-left arrow-up arrow-down shield lock key user
-layers pencil sparkles download chart-bar lightbulb`.
+**Icon names — the COMPLETE set.** `circle dot square diamond triangle-up play
+star heart bolt check x plus minus arrow-right arrow-left arrow-up arrow-down
+shield lock key user layers pencil sparkles download chart-bar lightbulb`.
+There is no globe, envelope, phone, or chevron. An unknown name is a hard
+error (LUMW0114) that rejects the WHOLE page — a single guessed icon in a
+footer discards every other section you wrote in that call. Use the nearest
+name that IS in the set, or drop the icon; never guess one to see if it
+exists.
 
 Not in the vocabulary (rejected with hints): `nav button main script
 style iframe table`, inline `style=` attributes, event handlers, `aria-*`

@@ -9,6 +9,23 @@ the ship bar is the review-website checklist instead of preflight.
 
 from __future__ import annotations
 
+# The complete curated icon vocabulary, mirroring `lumen_core::icons::ICONS`
+# (crates/lumen-core/src/icons.rs) in registry order.
+#
+# D3: an icon name outside this set is a HARD error (LUMW0114) that rejects the
+# WHOLE page — one `data-icon="globe"` in a footer threw away an otherwise
+# complete build, logo and all, and the smaller retries never restored it. The
+# list has always been in the create-website skill, but a skill is read once and
+# skimmed; the prompt is in context for every token the author emits, which is
+# where a closed vocabulary with a page-voiding penalty belongs. Drift from the
+# Rust registry fails `test_web_icon_vocabulary.py`.
+WEB_ICON_NAMES = (
+    "circle dot square diamond triangle-up play star heart bolt "
+    "check x plus minus "
+    "arrow-right arrow-left arrow-up arrow-down "
+    "shield lock key user layers pencil sparkles download chart-bar lightbulb"
+)
+
 
 def build_web_orchestrator_prompt(
     *,
@@ -215,6 +232,15 @@ THEME TOKENS you may use for every color-bearing class:
 {theme_token_names}
 (plus white, black, transparent, current — and never a raw hex or a stock
 Tailwind palette color; both are hard errors that reject the whole page)
+
+ICONS — `<i data-icon="NAME"></i>` accepts ONLY these names:
+{WEB_ICON_NAMES}
+This is the complete set; there is no globe, no envelope, no phone, no
+chevron. An unknown name is a hard error that rejects the WHOLE page — every
+other section you wrote in that call is discarded with it. When the concept
+you want is not in the list, use the nearest one that IS (a `dot` or a
+`check` reads fine as a list marker), or drop the icon and let the type
+carry the band. Never guess a name to see if it exists.
 
 WORKING RULES
 - Ground before authoring: use `fetch_page` for any public URL whose facts or
