@@ -1,0 +1,65 @@
+# Close-out: the seven-fix night (2026-08-20, ~03:00–07:30 IST)
+
+Session arc: founder's retry-after-remediation design question → strict review of the background
+session's `c7d6da82` → seven live defects found and fixed in one night, each red-proven, each
+verified in production within minutes of landing. Companion notes:
+`2026-08-20-projection-replay-loop-and-fold-visibility.md` (fixes 1–2 + amendments),
+`2026-08-20-account-gap-window-reacquisition.md` (fixes 3–4),
+`2026-08-20-channel2-raw-escape-foreign-read-refs.md` (fix 7),
+`2026-08-20-grok-account-run-results.md` (the original forensics).
+
+## The seven commits (local only, never pushed)
+
+| commit | fix | live proof |
+|---|---|---|
+| `5dd1b3f8` | fold releases pending/terminal whichever job filed it (4 readers; spend stays job-scoped) | eea48931 assess stopped refusing, 05:20 |
+| `15f27702` | never-admitted stored projection → serve fresh (first-write-wins = admitted history only) | eea48931 settled 28s after resume |
+| `2030de45` | same-window field re-buy → governed refusal, not raw P0001 escape | 3cc0a4f2 replay landed as refusal, 06:18 |
+| `b60824d4` | the already-acquired refusal names the owning op's exact field set (the one legal move); exact-set exemption NOT added — the starter rejoin runs before the pre-check (pinned by test) | Grok asked the exact set 7s after seeing it, 06:37/07:16 |
+| `6d72859a` | settlement-fold replay guard compares settled cost only, never filer identity | hiring_velocity replay clean, 06:36/07:16 |
+| `2540ffcc` | replay serves what the FIRST ADMITTED RESULT recorded (reconstructed from its digest-pinned artifact, span-hash-reconciled) — "a result exists" ≠ "the stored row was admitted" | hq_location exact-set replay admitted, 07:15/07:16 |
+| `cd15398d` | raw-escape audit: foreign result/evidence refs, evidence paging, 7 contact tools' validation, 2 unwrapped channel tools, contact guard — model-input species refuse recoverably; money/truth re-typed to stay suspending | the three killer reads replayed as refusals, 07:15:45 |
+
+## Final board
+
+- `eea48931` (v5): terminal / needs_review, 05:20 — 11-ish fields, honest gaps, committee 402-era gap.
+- `3cc0a4f2` (v6): terminal / **completed**, 07:15:17 — coverage closed clean.
+- `5b8898e3` (v7, committee cap 7): terminal / needs_review, 07:17:02 — the committee attempt at
+  06:22:52 was CORRECTLY COMPOSED (evidence_refs self-repair in 6s), reserved 72 units, and the
+  precursor `sumble_teams` call TIMED OUT (~10s = `DEFAULT_TIMEOUT_S`, no httpx line = never
+  completed) → `spend_outcome_unknown` quarantine → terminal attempt → honest empty committee.
+  NOT a defect: the ambiguous-post-dispatch taxonomy working as ratified. Teams answered normally
+  at 23:00 and 01:30, so the 10s ceiling is not systematically tight — transient stall.
+- `16e846d6`: still relaunch-only (Grok encrypted-reasoning checkpoint).
+- **Committee members still zero.** The one remaining move: a fresh v8 relaunch (cap 7, ~72
+  units, fresh per-job committee operation) + founder approval. Offered; founder undecided at
+  close.
+
+## Open items, deliberately parked
+
+1. **`EntityResearchFinalizationRejected` repair round** — model-authored but raised at
+   `entity_research_runtime.py:1252` AFTER the graph returns, outside every tool-rendering path.
+   Needs a repair-round mechanism, not a species change. (Audit agent's flag.)
+2. **Committee ADMITTED-path test fixture** — `2540ffcc`'s reconstruction is account-covered in
+   both worlds; the committee branch shares it but has no dedicated admitted fixture.
+3. **Retry-after-remediation design** — now FOUR instances in one night (402 fold after plan
+   upgrade; defective draft after code fix; window-acquired after conflict; unknown-spend
+   quarantine after timeout). Ratified direction stands: minimal governed fresh-attempt
+   (relaunch/epoch), never blanket retries. The v8 relaunch IS the pattern in practice.
+4. **Tunis fleet worker is DOWN** — my blanket `pkill -f clue_api.fleet_main` (~06:1x) killed it
+   alongside missoula's. No launch context found in tunis's `.context/`; left for the founder or
+   its own session to restart. Queued work there just waits (crash-safe by design).
+5. **56 pre-existing full-gate failures** recorded in the projection-replay note — byte-identical
+   at pre-fix HEAD, not tonight's lanes. Triage against the default dev DB someday.
+6. Sumble credits: founder reported 391 before the v7 attempt; the quarantined teams call recorded
+   0 charged — verify on the Sumble dashboard before trusting the number.
+
+## Process notes that held up
+
+- Every fix: red-proof re-run independently by the orchestrator (revert prod file, run test,
+  restore) except where imports made it impossible (window fix — accepted agent's captured red +
+  live proof). Fleet rolls only between drives, targeted PID kills after the pkill mistake.
+- The night's two ratified principles, now encoded in seven places: **first-write-wins protects
+  admitted history only** (and "admitted" means the result's own record, not a draft row), and
+  **model-input failures refuse recoverably; money/truth failures suspend** — the engine
+  disposes, it never quizzes, and it never dies on a model's typo.
