@@ -10,6 +10,7 @@ import {
   type SceneSchemaSelection,
 } from "../adapter/scene-hydrate";
 import { sceneLayerRows, type SceneLayerRow } from "../adapter/scene-layers";
+import { buildScenePalette, type ScenePalette } from "../adapter/scene-palette";
 import {
   nextSceneSelection,
   sceneExpansion,
@@ -321,9 +322,29 @@ export function useSceneEditingSession({
   // resolves to an empty library (and negatively caches it), and a kit fetch
   // that throws leaves the kit half empty — so the merge can only ever narrow
   // to `["Inter"]`, never crash the inspector.
+  //
+  // AD4.0 step 3 (§1.6): the SAME kit response also carries the colour
+  // palette, so `kitPalette` below is set from the one `fetchBrandKitDetail`
+  // the fonts already needed — never a second identical request.
   const brandKitId = scene?.meta.brand_kit?.id ?? null;
   const [libraryFamilies, setLibraryFamilies] = useState<string[]>([]);
   const [kitFamilies, setKitFamilies] = useState<string[]>([]);
+  // STAMPED with the kit it was fetched for and DERIVED against the current
+  // one, the discipline the scene, the selection, the zoom and the history all
+  // follow here. Without it, opening a second ad would keep offering the
+  // previous document's brand tokens until its own fetch landed — and the
+  // write path VALIDATES against this list, so a pick in that window would
+  // bind a token this document's kit may not define. (The `kitFamilies`
+  // sibling is not stamped; a stale font NAME is a weaker failure and is not
+  // this step's row, but it is the same shape and is recorded.)
+  const [kitPalette, setKitPalette] = useState<{
+    forBrandKitId: string;
+    palette: ScenePalette | null;
+  } | null>(null);
+  const palette =
+    brandKitId && kitPalette?.forBrandKitId === brandKitId
+      ? kitPalette.palette
+      : null;
   useEffect(() => {
     if (!enabled) return;
     let cancelled = false;
@@ -341,6 +362,23 @@ export function useSceneEditingSession({
       cancelled = true;
     };
   }, [enabled]);
+  // ONE kit fetch, TWO vocabularies (AD4.0 step 3).
+  //
+  // THE ROUTE, recorded here because the plan's own reference (`brandHub`)
+  // does not exist: `GET /brand-kits/{id}` → `brand_kit_json`, whose
+  // `tokens.font_faces` the fonts read and whose `tokens.colors` §1.6's
+  // pickers read. It goes through `designBffConfig()`, i.e. the authenticated
+  // `/api/clue/design` BFF — never browser→FastAPI, and never the headerless
+  // `design-public` passthrough, because `/brand-kits` requires the workspace
+  // header.
+  //
+  // TWO CAVEATS, both inherited from the font path rather than introduced:
+  //   • the route takes NO version, so it serves the kit's LATEST version
+  //     while `scene.meta.brand_kit` pins one (v6 pinned, v8 served on the
+  //     dev document at capture). The palette is therefore the kit as it is
+  //     today, not as the document was generated against.
+  //   • failure is silent by construction: a throw leaves the palette `null`
+  //     and every picker on the dummy's own list, exactly as it renders today.
   useEffect(() => {
     if (!brandKitId) return;
     let cancelled = false;
@@ -350,6 +388,10 @@ export function useSceneEditingSession({
         setKitFamilies(
           collectKitFontFaceRefs(detail).map((face) => face.family),
         );
+        setKitPalette({
+          forBrandKitId: brandKitId,
+          palette: buildScenePalette(detail),
+        });
       })
       .catch(() => undefined);
     return () => {
@@ -390,6 +432,9 @@ export function useSceneEditingSession({
   // by — an empty selection has no node id to gate on. `pageId` is the one the
   // canvas rendered and `hydrated` above read, so the write stays the exact
   // inverse of what the panel is showing.
+  // AD4.0 step 3: `palette` is what §1.6's token rows validate a picked label
+  // against — the panel offers it and the write gate re-checks it, so the two
+  // can never disagree about which tokens this document has.
   const writes = useSceneInspectorWrites({
     artifactId: activeArtifactId,
     canvasControls,
@@ -397,6 +442,7 @@ export function useSceneEditingSession({
     loadGeneration: liveHistory?.loadGeneration ?? 0,
     onReload: onWriteReload,
     pageId,
+    palette,
     primaryNodeId,
     redoDepth: liveHistory?.redoDepth ?? 0,
     scene,
@@ -457,6 +503,11 @@ export function useSceneEditingSession({
     onToggleLayer,
     onWriteReload,
     onZoomChange,
+    /** §1.6: the document's brand-kit colour palette, the way `fontOptions` is
+     * exposed beside it — offered by every colour picker in the ad inspector,
+     * and the vocabulary the token write rows validate against. `null` while
+     * no kit is attached, before its fetch lands, or after one that failed. */
+    palette,
     /** `[0]`, resolved against the live scene — what the inspector keys on. */
     primaryNodeId,
     /** AD3.3: the menu's Redo row disables off the DOCUMENT's real redo stack

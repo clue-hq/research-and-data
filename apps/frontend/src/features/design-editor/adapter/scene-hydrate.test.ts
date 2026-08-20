@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 import { it } from "node:test";
 import { fileURLToPath } from "node:url";
 import type { Scene } from "../engine/scene/contracts";
+import { adBrandKit } from "./__fixtures__/brand-kit-colors";
 import {
   AD_PAGE_ID,
   HARVESTED_AD_PAGE,
@@ -30,6 +31,7 @@ import {
   rootFrameId,
   sceneSelectionFor,
 } from "./scene-hydrate";
+import { buildScenePalette } from "./scene-palette";
 
 /** The dummy ad inspector's own source, read off disk: a `.tsx` cannot be
  * imported under this runner (`tsx --test`, no DOM), so the vocabulary guard
@@ -701,14 +703,16 @@ it("A15.2: a stop or angle edit is ONE commit, verbatim — it is not a mode swi
   ]);
 });
 
-it("A15.2: a stopless gradient → SOLID commits the swatch, which for that paint is `none`", () => {
+it("R3b: a stopless gradient → SOLID is REFUSED — there is no colour on screen to become", () => {
   // Unreachable from the control (2–6 stops) but storable, so the rule is
   // total: with no stop to read, the only other colour on screen is the
   // swatch's own — and `paintState` states `none` for a stopless gradient, so
-  // `none` is the ONLY value this fallback can be handed. (The first version
-  // of this test passed a hex here, which proved the `??` operator against a
-  // state hydration cannot produce.) The commit is then refused by
-  // `normalizeHex` and nothing is written — an inert control, never a guess.
+  // `none` is the ONLY value this fallback can be handed.
+  //
+  // Step 2 committed it anyway; `normalizeHex` then refused the write while
+  // the SELECT had already flipped to "Solid", leaving the panel claiming a
+  // solid over an artboard still rendering the gradient. Committing nothing
+  // keeps the two agreeing: no write, and no mode switch either.
   const stopless = { ...GRADIENT, stops: [] };
   assert.equal(
     hydrateSceneCanvasState(withRootFills([stoplessGradientFill()]), AD_PAGE_ID)
@@ -717,10 +721,7 @@ it("A15.2: a stopless gradient → SOLID commits the swatch, which for that pain
   );
   assert.deepEqual(
     backgroundFillCommits(stopless, { ...stopless, type: "solid" }, COLOR_NONE),
-    [
-      { property: "backgroundFill", value: { ...stopless, type: "solid" } },
-      { property: "backgroundColor", value: COLOR_NONE },
-    ],
+    [],
   );
 });
 
@@ -782,4 +783,115 @@ it("§1.1: any OTHER selected node hydrates as a node, with no page rows bolted 
   assert.equal(state?.sizePreset, undefined);
   assert.equal(state?.customWidth, undefined);
   assert.equal(state?.title, "Headline");
+});
+
+// ── R3b (AD4.0 step 3): a token swatch resolves where a hex is required ─────
+//
+// Step 2's review found the stuck state these close. A TOKEN-filled root frame
+// truthfully shows its token name as the swatch value, and `paintState` is
+// right to — but the gradient re-seed treats that value as a COLOUR, so
+// switching to a gradient produced stops of `$text.inverse`, which the write
+// adapter correctly refuses. The panel flipped to gradient mode showing
+// `$TEXT.INVERSE` stop rows over an artboard that was still token-filled, with
+// no way back short of a remount. With the palette in hand the token resolves
+// to the colour it really paints; without one, the switch is refused.
+
+/** The document's real brand vocabulary (`__fixtures__/brand-kit-colors`). */
+const AD_PALETTE = buildScenePalette(adBrandKit());
+
+/** What the panel is showing for the seeded ad's own token paint — read from
+ * the hydrator rather than restated, so this is the value the user sees. */
+function tokenSwatch(): string {
+  const state = hydrateSceneCanvasState(
+    withRootFills([...adTokenText().fills]),
+    AD_PAGE_ID,
+  );
+  assert.equal(state.backgroundColor, "$text.inverse");
+  return state.backgroundColor;
+}
+
+it("R3b: a TOKEN-filled frame → gradient seeds the stops with the colour the token paints", () => {
+  assert.deepEqual(
+    backgroundFillCommits(
+      SOLID,
+      { ...SOLID, type: "linear-gradient" },
+      tokenSwatch(),
+      AD_PALETTE,
+    ),
+    [
+      {
+        property: "backgroundFill",
+        value: {
+          angle: 0,
+          // `$text.inverse` is #FFFFFF in this kit. Stop positions and count
+          // ride through untouched, exactly as for a hex swatch.
+          stops: [
+            { color: "#FFFFFF", position: 0 },
+            { color: "#FFFFFF", position: 100 },
+          ],
+          type: "linear-gradient",
+        },
+      },
+    ],
+  );
+});
+
+it("R3b: a token the palette cannot resolve REFUSES the switch rather than seeding a name", () => {
+  // No palette at all (no kit attached, or a kit fetch that failed) and an
+  // unknown token are the same fact: nothing on screen states a colour this
+  // control can write, so the mode switch does not happen.
+  assert.deepEqual(
+    backgroundFillCommits(SOLID, { ...SOLID, type: "linear-gradient" }, tokenSwatch()),
+    [],
+  );
+  assert.deepEqual(
+    backgroundFillCommits(
+      SOLID,
+      { ...SOLID, type: "linear-gradient" },
+      "$text.nope",
+      AD_PALETTE,
+    ),
+    [],
+  );
+});
+
+it("R3b: a gradient of TOKEN stops → solid commits the colour its first stop paints", () => {
+  // The mirror case: `colorText` states a token stop as its name, so the
+  // outgoing first stop is not a hex either. Same resolution, same refusal.
+  const tokenStops: InspectorBackgroundFill = {
+    ...GRADIENT,
+    stops: [
+      { color: "$text.inverse", position: 0 },
+      { color: "$surface.brand", position: 100 },
+    ],
+  };
+  assert.deepEqual(
+    backgroundFillCommits(
+      tokenStops,
+      { ...tokenStops, type: "solid" },
+      "$text.inverse",
+      AD_PALETTE,
+    ),
+    [
+      { property: "backgroundFill", value: { ...tokenStops, type: "solid" } },
+      { property: "backgroundColor", value: "#FFFFFF" },
+    ],
+  );
+  assert.deepEqual(
+    backgroundFillCommits(tokenStops, { ...tokenStops, type: "solid" }, "$text.inverse"),
+    [],
+  );
+});
+
+it("R3b: a HEX swatch is unchanged by the palette — same commits, same casing", () => {
+  // The regression guard for every non-token document: resolution only ever
+  // fires on a value that names a token.
+  assert.deepEqual(
+    backgroundFillCommits(SOLID, { ...SOLID, type: "linear-gradient" }, "#2E7D32", AD_PALETTE),
+    backgroundFillCommits(SOLID, { ...SOLID, type: "linear-gradient" }, "#2E7D32"),
+  );
+  assert.deepEqual(
+    backgroundFillCommits(GRADIENT, { ...GRADIENT, type: "solid" }, "#2E7D32", AD_PALETTE),
+    backgroundFillCommits(GRADIENT, { ...GRADIENT, type: "solid" }, "#2E7D32"),
+  );
 });

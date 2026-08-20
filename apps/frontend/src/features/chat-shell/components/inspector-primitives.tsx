@@ -715,12 +715,26 @@ export function ColorControl({
   const [customColor, setCustomColor] = useState<HsvColor>(() => hexToHsv(color));
   const colorControlRef = useRef<HTMLSpanElement>(null);
 
-  const commitColor = (nextColor: string) => {
+  /** The control's OWN state moved to a colour it can hold, and the colour it
+   * moved to (or `null` when the value is not one — the hex field's mid-typing
+   * text, a theme value that is not a hex). Split out of `commitColor` by
+   * AD4.0 step 3 so a theme pick can move the swatch WITHOUT reporting a hex
+   * to the caller; the acceptance rule is unchanged and still lives in one
+   * place. */
+  const previewColor = (nextColor: string): string | null => {
     const normalized = nextColor.startsWith("#") ? nextColor : `#${nextColor}`;
-    if (/^#[0-9A-F]{6}$/i.test(normalized)) {
-      const upper = normalized.toUpperCase();
-      setDraftColor(upper);
-      setCustomColor(hexToHsv(upper));
+    if (!/^#[0-9A-F]{6}$/i.test(normalized)) {
+      return null;
+    }
+    const upper = normalized.toUpperCase();
+    setDraftColor(upper);
+    setCustomColor(hexToHsv(upper));
+    return upper;
+  };
+
+  const commitColor = (nextColor: string) => {
+    const upper = previewColor(nextColor);
+    if (upper !== null) {
       onColorChange?.(upper);
     }
   };
@@ -808,11 +822,29 @@ export function ColorControl({
                         className={styles.inspectorThemeColor}
                         key={option.label}
                         onClick={() => {
+                          // W3.2 (R2): a theme-tab pick reports the TOKEN
+                          // label — the live write path; the hex drives the
+                          // visual state only.
+                          //
+                          // AD4.0 step 3 makes that division TRUE for a lane
+                          // whose hex path also writes. On the website lane
+                          // `onColorChange`'s `textColor`/`backgroundColor`
+                          // events map to no operation (`adapter/apply.ts`
+                          // maps only the `token*` properties), so calling
+                          // both was free. §1.6 makes the ad lane's custom hex
+                          // a REAL write, so one theme pick would have
+                          // persisted TWO document versions — a solid hex,
+                          // then the token that replaces it — leaving an undo
+                          // step on a detached state the user never asked for.
+                          // A caller that takes tokens therefore gets the
+                          // token alone; the swatch's own draft state is still
+                          // moved, so the popover shows the pick either way.
+                          if (onTokenChange) {
+                            previewColor(option.value);
+                            onTokenChange(option.label);
+                            return;
+                          }
                           commitColor(option.value);
-                          // W3.2 (R2): a theme-tab pick also reports the
-                          // TOKEN label — the live write path; the hex
-                          // continues to drive the visual state only.
-                          onTokenChange?.(option.label);
                         }}
                         type="button"
                       >
@@ -942,11 +974,24 @@ export function BackgroundFillControl({
   fill,
   onFillChange,
   onSolidColorChange,
+  onTokenChange,
+  options,
   solidColor,
 }: {
   fill: InspectorBackgroundFill;
   onFillChange: (fill: InspectorBackgroundFill) => void;
   onSolidColorChange: (color: string) => void;
+  /** AD4.0 step 3 (§1.6): a brand pick on the SOLID swatch, reported as the
+   * token's label. The gradient stops deliberately do not take it — a stop has
+   * no token row in the write table, so a brand pick there commits the colour
+   * it paints, which is what this control has always done. */
+  onTokenChange?: (label: string) => void;
+  /** AD4.0 step 3 (§1.6): the document's brand palette, forwarded to BOTH
+   * nested pickers so every swatch in this section offers it. A data prop on a
+   * lifted presentation component — the W4.0 precedent — and nothing rendered
+   * changes: `ColorControl` already takes `options` and falls back to the
+   * dummy's fixture palette when it is absent or empty. */
+  options?: readonly ThemeColorOption[];
   solidColor: string;
 }) {
   // Ruling A7 (AD4.0 step 2): the angle and the stop positions COMMIT ON
@@ -1021,7 +1066,12 @@ export function BackgroundFillControl({
       />
 
       {fill.type === "solid" ? (
-        <ColorControl color={solidColor} onColorChange={onSolidColorChange} />
+        <ColorControl
+          color={solidColor}
+          onColorChange={onSolidColorChange}
+          onTokenChange={onTokenChange}
+          options={options}
+        />
       ) : (
         <>
           <div
@@ -1051,6 +1101,7 @@ export function BackgroundFillControl({
                 <ColorControl
                   color={stop.color}
                   onColorChange={(color) => updateStop(index, { color })}
+                  options={options}
                   showOpacity={false}
                 />
                 <InspectorInput

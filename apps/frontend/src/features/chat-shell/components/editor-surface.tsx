@@ -204,6 +204,7 @@ export function EditorSurface({
               onSelectLayer={sceneSession.onSelectLayer}
               onSelectionChange={controller.selectInspectorElement}
               onToggleLayer={sceneSession.onToggleLayer}
+              palette={sceneSession.palette}
               selectedIds={sceneSession.selectedIds}
               selection={inspectorSelection}
               suppressAutoLayoutSection={

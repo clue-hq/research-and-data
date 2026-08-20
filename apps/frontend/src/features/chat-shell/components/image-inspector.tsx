@@ -1,11 +1,16 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { createContext, useContext, useState, type ReactNode } from "react";
 import {
   backgroundFillCommits,
   customSizeForPreset,
   type SceneInspectorState,
 } from "@/features/design-editor/adapter/scene-hydrate";
+import {
+  scenePaletteColor,
+  type ScenePalette,
+} from "@/features/design-editor/adapter/scene-palette";
+import type { ThemeColorOption } from "@/features/design-editor/adapter/theme-options";
 import type { ChatShellInspectorSelection } from "../model/chat-shell";
 import {
   useInspectorController,
@@ -62,6 +67,99 @@ const SIZE_PRESETS = [
   "Story (9:16) - 1080x1920",
   "Custom",
 ] as const;
+
+/**
+ * AD4.0 step 3 (§1.6): the document's brand palette for every ColorControl in
+ * this panel, carried as data — the seam rule, presentation never fetches.
+ *
+ * A CONTEXT rather than a prop drilled through each schema, copying the
+ * website lane's `ThemeColorsContext` (`web-inspector.tsx`) for the same
+ * reason it exists there: the four schemas Lane B is about to bind then
+ * inherit the feed without touching this file again. `null` — the chats route
+ * before a document loads, a document with no attached kit, a kit fetch that
+ * failed — leaves every picker on the dummy's own palette, unchanged.
+ */
+const ScenePaletteContext = createContext<ScenePalette | null>(null);
+
+/** The palette itself, for the rows that must RESOLVE a token (§1.6/R3b). */
+function useScenePalette() {
+  return useContext(ScenePaletteContext);
+}
+
+/**
+ * What the pickers are OFFERED, or `undefined` when this document has no brand
+ * swatches to offer — which is also the signal that no token write may fire.
+ *
+ * The two are one question deliberately: with no options, `ColorControl` falls
+ * back to `INSPECTOR_THEME_COLORS` (the dummy's fixture palette), and a pick
+ * from THAT list names no token this document has. Passing `onTokenChange`
+ * alongside it would write `{kind:"token", token:"Primary"}` — a binding
+ * nothing can resolve. So callers below gate the token handler on this exact
+ * value, and `scene-apply.ts` refuses the label a second time at the write.
+ */
+function useScenePaletteOptions() {
+  const palette = useScenePalette();
+  return palette && palette.options.length > 0 ? palette.options : undefined;
+}
+
+/**
+ * §1.6: ONE colour row — what its swatch is showing, and the two handlers its
+ * two halves commit through. Every ad colour control goes through it, so the
+ * brand and custom paths cannot drift apart three times over.
+ *
+ * WHY IT HOLDS A LOCAL DRAFT. The controller's `token*` field is the WRITE
+ * channel, and a brand pick sets only that — `textColor` deliberately stays
+ * where it was, because `setValue` IS the dispatch and updating it too would
+ * fire a second, spurious hex write for one click (the same rule step 1 gave
+ * for the Custom W/H boxes). But the swatch reads its value from a PROP, so
+ * with nothing tracking the pick the trigger kept showing the previous colour
+ * while the artboard repainted with the new one — a panel stating a colour the
+ * document no longer has, which is the defect step 1 and step 2 each closed
+ * once already. This draft is what the row has shown since it mounted.
+ *
+ * WHICH VALUE WINS is "whichever was set last", because that is the fact the
+ * panel must state: a brand pick shows the token, and the custom hex that
+ * DETACHES it (§1.6's informed trade) clears the draft and shows the hex.
+ * With no pick yet, the hydrated value stands — which for a token-bound node
+ * is the token's own name.
+ *
+ * R3b: `color` then RESOLVES that value through the palette, because a token
+ * name is not a CSS colour — the chip painted nothing, the Custom tab's picker
+ * opened on black, and the picker could not mark the bound swatch as pressed.
+ * The name still stands when the palette cannot resolve it (no kit attached,
+ * an off-catalog token), which is step 2's truthful display, unchanged.
+ */
+function useAdColorRow({
+  hydratedValue,
+  onHex,
+  onToken,
+  paletteOptions,
+}: {
+  hydratedValue: string;
+  onHex: (hex: string) => void;
+  onToken: (label: string) => void;
+  paletteOptions: readonly ThemeColorOption[] | undefined;
+}) {
+  const palette = useScenePalette();
+  const [picked, setPicked] = useState("");
+  /** The swatch value this row is showing — a token name or a colour. */
+  const value = picked === "" ? hydratedValue : picked;
+  return {
+    color: scenePaletteColor(palette, value) ?? value,
+    onColorChange: (hex: string) => {
+      setPicked("");
+      onHex(hex);
+    },
+    // Absent options mean the picker is showing the DUMMY's fixture palette,
+    // whose labels name no token this document has — so no token handler is
+    // offered at all, and a pick from that list commits its colour instead.
+    onTokenChange: paletteOptions && ((label: string) => {
+      setPicked(label);
+      onToken(label);
+    }),
+    value,
+  };
+}
 
 /**
  * AD2.7: what a caller supplies to drive the ad inspector from a REAL scene
@@ -298,11 +396,30 @@ function AdTextInspector({
   const initial = { fontWeight: "600 Semi Bold", ...hydrated };
   const controller = useInspectorController([], "text", initial, addressing);
   const { requestAction, setNestedValue, setValue, state, toggleSection } = controller;
+  const paletteOptions = useScenePaletteOptions();
+  // §1.6: the two colour rows this schema owns. Brand swatches are offered
+  // FIRST — they ARE the Theme tab, the tab `ColorControl` opens on, with
+  // custom hex behind the second one — and a pick writes a token while a hex
+  // writes a literal and detaches the binding (the ratified, informed trade).
+  const colorRow = useAdColorRow({
+    hydratedValue: state.textColor,
+    onHex: (hex) => setValue("textColor", hex),
+    onToken: (label) => setValue("tokenTextColor", label),
+    paletteOptions,
+  });
+  // The same row on the stroke paint. `none` is a real hydrated value here (a
+  // strokeless node) and names no token, so it stands as it is.
+  const strokeRow = useAdColorRow({
+    hydratedValue: state.strokeColor,
+    onHex: (hex) => setValue("strokeColor", hex),
+    onToken: (label) => setValue("tokenStrokeColor", label),
+    paletteOptions,
+  });
 
   return (
     <>
       <Section id="typography" label="Typography" open={state.openSections.typography} toggle={() => toggleSection("typography")}>
-        <InspectorField label="Color"><ColorControl color={state.textColor} onColorChange={(value) => setValue("textColor", value)} /></InspectorField>
+        <InspectorField label="Color"><ColorControl color={colorRow.color} onColorChange={colorRow.onColorChange} onTokenChange={colorRow.onTokenChange} options={paletteOptions} /></InspectorField>
         <InspectorField label="Font"><InspectorSelect label="Font family" onChange={(value) => setValue("fontFamily", value)} options={fontOptions} value={state.fontFamily} /></InspectorField>
         <div className={styles.fieldGrid}>
           {/* §2 delta (contract row 2): the size select becomes a free number. */}
@@ -312,7 +429,7 @@ function AdTextInspector({
         <InspectorField label="Alignment"><TextAlignment horizontal={state.horizontalAlignment} onHorizontalChange={(value) => setValue("horizontalAlignment", value)} onVerticalChange={(value) => setValue("verticalAlignment", value)} vertical={state.verticalAlignment} /></InspectorField>
       </Section>
       <Section id="stroke" label="Stroke" open={state.openSections.stroke} toggle={() => toggleSection("stroke")}>
-        <InspectorField label="Color"><ColorControl color={state.strokeColor} onColorChange={(value) => setValue("strokeColor", value)} /></InspectorField>
+        <InspectorField label="Color"><ColorControl color={strokeRow.color} onColorChange={strokeRow.onColorChange} onTokenChange={strokeRow.onTokenChange} options={paletteOptions} /></InspectorField>
         <InspectorField label="Width"><InspectorInput ariaLabel="Stroke width" onChange={(value) => setValue("strokeWidth", value)} value={state.strokeWidth} /></InspectorField>
       </Section>
       <Section id="layout" label="Layout" open={state.openSections.layout} toggle={() => toggleSection("layout")}>
@@ -349,6 +466,19 @@ function AdCanvasInspector({
   const initial = { sizePreset: SIZE_PRESETS[0], ...hydrated };
   const controller = useInspectorController([], "canvas", initial, addressing);
   const { setValue, state, toggleSection } = controller;
+  const palette = useScenePalette();
+  const paletteOptions = useScenePaletteOptions();
+  // §1.6: the Background section's colour row, through the same hook the text
+  // and stroke rows use. Its `color` is what the solid swatch AND the gradient
+  // preview are drawn from (a token name is not a CSS colour, so a
+  // token-filled frame previewed as nothing), and its `value` is the raw
+  // swatch value a mode switch re-seeds from.
+  const backgroundRow = useAdColorRow({
+    hydratedValue: state.backgroundColor,
+    onHex: (hex) => setValue("backgroundColor", hex),
+    onToken: (label) => setValue("tokenBackgroundColor", label),
+    paletteOptions,
+  });
   // §2 delta (contract row 1): Custom reveals W/H (px only). AD4.0 binds the
   // pair to the write seam — they were the last designed ad control still
   // holding draft state and dispatching nothing at all.
@@ -411,14 +541,30 @@ function AdCanvasInspector({
   // to no operation by contract. This is not a general re-hydrate mechanism: it
   // is this section's own handler keeping its two controls consistent with the
   // writes it dispatches.
+  //
+  // R3b (step 3): the re-seed reads `backgroundRow.value` — the value the
+  // swatch is showing RIGHT NOW, including a brand token picked since mount,
+  // which `state.backgroundColor` does not carry (a token pick writes the
+  // `token*` field, by design). Seeding from the controller's field instead
+  // would re-introduce A15.2's own stale-seed defect one edit later.
+  //
+  // The PALETTE rides in too, because that value may be a token's NAME rather
+  // than a colour. `backgroundFillCommits` resolves it — and returns NO
+  // commits when it cannot, which refuses the mode switch outright instead of
+  // flipping the select over a write that can never land.
   const changeBackgroundFill = (next: InspectorBackgroundFill) => {
     for (const commit of backgroundFillCommits(
       state.backgroundFill,
       next,
-      state.backgroundColor,
+      backgroundRow.value,
+      palette,
     )) {
       if (commit.property === "backgroundColor") {
-        setValue("backgroundColor", commit.value);
+        // Through the ROW's own handler, not `setValue` directly: it is a
+        // colour landing on this swatch, so it must also clear any brand token
+        // picked since mount — or the swatch would go on showing a binding the
+        // switch just replaced.
+        backgroundRow.onColorChange(commit.value);
       } else {
         setValue("backgroundFill", commit.value);
       }
@@ -446,11 +592,19 @@ function AdCanvasInspector({
       </Section>
       <Section id="background" label="Background" open={state.openSections.background} toggle={() => toggleSection("background")}>
         <InspectorField label="Fill">
+          {/* §1.6: both of this control's pickers — the solid swatch and each
+              gradient stop — offer the document's brand palette. Only the
+              SOLID one writes a token: a gradient stop has no token row in the
+              write table, so a brand pick there commits the colour it paints
+              (`ColorStop.color` can hold a token, but nothing authors one
+              through this control, and §8 authorizes no new mapping). */}
           <BackgroundFillControl
             fill={state.backgroundFill}
             onFillChange={changeBackgroundFill}
-            onSolidColorChange={(value) => setValue("backgroundColor", value)}
-            solidColor={state.backgroundColor}
+            onSolidColorChange={backgroundRow.onColorChange}
+            onTokenChange={backgroundRow.onTokenChange}
+            options={paletteOptions}
+            solidColor={backgroundRow.color}
           />
         </InspectorField>
       </Section>
@@ -507,6 +661,7 @@ export function ImageInspector({
   hydrated,
   note = null,
   onSelectionChange,
+  palette = null,
   selection,
   suppressAutoLayoutSection = false,
   ...layers
@@ -520,6 +675,10 @@ export function ImageInspector({
   /** AD2.7: a transient informational note (the 409 quiet reload). */
   note?: string | null;
   onSelectionChange: (selection: ChatShellInspectorSelection) => void;
+  /** AD4.0 step 3 (§1.6): the document's brand-kit colour palette, offered by
+   * every colour picker in the panel. Absent keeps the dummy's own fixture
+   * palette and disables the token write path entirely. */
+  palette?: ScenePalette | null;
   selection: ChatShellInspectorSelection;
   /** AD2.4/OQ-1: a plain Frame renders the auto-layout schema WITHOUT its Auto
    * Layout section — the frame has no auto layout to state. */
@@ -542,36 +701,38 @@ export function ImageInspector({
   const schema = { addressing, hydrated, onSelectionChange, ...layers };
 
   return (
-    <aside aria-label="Ad inspector" className={styles.inspector}>
-      <div className={styles.inspectorRail}>
-        {/* §2 delta (contract row 7): no `onVisibilityToggle` is passed, so the
-            header renders no eye on any ad schema. */}
-        <InspectorHeader
-          elementActions={selection !== "canvas" && selection !== "button"}
-          locked={dummySelection ? false : headerController.state.locked}
-          onLockToggle={dummySelection ? undefined : () => headerController.setValue("locked", !headerController.state.locked)}
-          title={title}
-        />
-        {/* The web branch's own inline slot, verbatim: note (409 quiet reload)
-            then error (a refused edit / transport failure). */}
-        {note ? (
-          <p className={styles.inspectorStatusNote} role="status">
-            {note}
-          </p>
-        ) : null}
-        {error ? (
-          <p className={styles.inspectorStatusError} role="alert">
-            {error}
-          </p>
-        ) : null}
-        {selection === "canvas" ? <AdCanvasInspector {...schema} /> : null}
-        {selection === "text" ? <AdTextInspector fontOptions={fontOptions} {...schema} /> : null}
-        {selection === "image" ? <AdImageInspector {...schema} /> : null}
-        {dummySelection ? <AdDummyInspector onSelectionChange={onSelectionChange} selection={selection} suppressAutoLayoutSection={suppressAutoLayoutSection} {...layers} /> : null}
-        {/* `"button"` is deliberately absent from this list: with its schema
-            hidden (row 7) it falls through to the canvas default. */}
-        {!(["auto-layout", "canvas", "ellipse", "group", "image", "rectangle", "text"] as ChatShellInspectorSelection[]).includes(selection) ? <AdCanvasInspector {...schema} /> : null}
-      </div>
-    </aside>
+    <ScenePaletteContext.Provider value={palette}>
+      <aside aria-label="Ad inspector" className={styles.inspector}>
+        <div className={styles.inspectorRail}>
+          {/* §2 delta (contract row 7): no `onVisibilityToggle` is passed, so the
+              header renders no eye on any ad schema. */}
+          <InspectorHeader
+            elementActions={selection !== "canvas" && selection !== "button"}
+            locked={dummySelection ? false : headerController.state.locked}
+            onLockToggle={dummySelection ? undefined : () => headerController.setValue("locked", !headerController.state.locked)}
+            title={title}
+          />
+          {/* The web branch's own inline slot, verbatim: note (409 quiet reload)
+              then error (a refused edit / transport failure). */}
+          {note ? (
+            <p className={styles.inspectorStatusNote} role="status">
+              {note}
+            </p>
+          ) : null}
+          {error ? (
+            <p className={styles.inspectorStatusError} role="alert">
+              {error}
+            </p>
+          ) : null}
+          {selection === "canvas" ? <AdCanvasInspector {...schema} /> : null}
+          {selection === "text" ? <AdTextInspector fontOptions={fontOptions} {...schema} /> : null}
+          {selection === "image" ? <AdImageInspector {...schema} /> : null}
+          {dummySelection ? <AdDummyInspector onSelectionChange={onSelectionChange} selection={selection} suppressAutoLayoutSection={suppressAutoLayoutSection} {...layers} /> : null}
+          {/* `"button"` is deliberately absent from this list: with its schema
+              hidden (row 7) it falls through to the canvas default. */}
+          {!(["auto-layout", "canvas", "ellipse", "group", "image", "rectangle", "text"] as ChatShellInspectorSelection[]).includes(selection) ? <AdCanvasInspector {...schema} /> : null}
+        </div>
+      </aside>
+    </ScenePaletteContext.Provider>
   );
 }

@@ -35,6 +35,11 @@ import {
   pagePixelSize,
   rootFrameId,
 } from "./scene-hydrate";
+import {
+  normalizeHex,
+  scenePaletteToken,
+  type ScenePalette,
+} from "./scene-palette";
 
 /**
  * AD3.1: the pure write adapter for the SCENE (ad) lane — one inspector change
@@ -56,6 +61,14 @@ import {
  * the node signature. Same null contract, same voice; its own header states
  * its decisions. Step 1 built its size row (an `update_page`); step 2 its
  * Background row, which is an `update_node` on the page's ROOT FRAME.
+ *
+ * AD4.0 step 3 gives BOTH functions a `palette` parameter and every colour row
+ * a second, brand half (`tokenTextColor` / `tokenStrokeColor` /
+ * `tokenBackgroundColor`): §1.6 says a brand swatch writes a TOKEN binding
+ * while custom hex writes a literal, so each control now has a hex row and a
+ * token row that share their guards and differ only in the paint. The palette
+ * is what validates the label a pick reports; `scene-palette.ts` is that
+ * module and states the offer-and-resolve policy in full.
  *
  * Addressing (`selectionId` / `documentVersion` / "is this event for the node
  * I hold?") is the CALLER's gate, exactly as `hooks/use-inspector-writes.ts:78-89`
@@ -124,24 +137,6 @@ const VALIGN_VALUES: Record<string, VerticalAlign> = {
   middle: "center",
   top: "top",
 };
-
-/**
- * The ported hex normalization (`ColorSwatchControl.tsx:256-261`
- * `normalizeHexInput`): lowercase, `#rrggbb` accepted, `#rrggbbaa` truncated to
- * six digits. ONE deliberate divergence — upstream falls back to a silent
- * `#000000` for anything else; we return `null`, because a silent black is
- * exactly the kind of guess the null contract forbids.
- */
-function normalizeHex(raw: string): string | null {
-  const trimmed = raw.trim();
-  if (/^#[0-9a-fA-F]{6}$/.test(trimmed)) {
-    return trimmed.toLowerCase();
-  }
-  if (/^#[0-9a-fA-F]{8}$/.test(trimmed)) {
-    return trimmed.slice(0, 7).toLowerCase();
-  }
-  return null;
-}
 
 /**
  * The half of upstream's guard that binds EVERY fill control here: the panel
@@ -231,6 +226,32 @@ function solidHexFill(node: Node, hex: string): Fill {
   return paintFill(node, solidHexPaint(hex));
 }
 
+/**
+ * §1.6, the other half (AD4.0 step 3): the paint a BRAND SWATCH commits — a
+ * token binding rather than a burnt-in colour, so the element keeps following
+ * the kit.
+ *
+ * `label` is what `ColorControl` reports on a Theme-tab pick, and it is
+ * VALIDATED against the document's own palette before it can become a paint:
+ * `scenePaletteToken` returns `null` for a label this kit does not offer, and
+ * `null` here is no operation. That is what stops the dummy's fallback palette
+ * ("Primary", "Dark", …) from binding a real ad to a token nothing can
+ * resolve — the null contract, applied to the brand vocabulary.
+ *
+ * The token is written BARE. The kit's own keys are bare, upstream's writer
+ * takes the bare catalog name (`ColorSwatchControl.tsx:38-41` → `tokenFill`)
+ * and renders the `$` only as author-facing sugar, and the engine's resolver
+ * strips a leading `$` before lookup (`tokenColors.ts::resolveTokenColor`), so
+ * both spellings name one entry and the bare one is canonical.
+ */
+function tokenPaint(
+  palette: ScenePalette | null | undefined,
+  label: string,
+): Paint | null {
+  const token = scenePaletteToken(palette, label);
+  return token === null ? null : { kind: "token", token };
+}
+
 /** §1.2 row 7: the stroke shape, mirroring `RawStyleSection.tsx:139-153`
  * (`solidStroke`) — the existing paint id is reused, and a raw width write
  * clears any `width_token` exactly as upstream does. */
@@ -307,6 +328,11 @@ export function sceneChangeToOperation(
   detail: SceneChangeDetail,
   node: Node,
   scene: Scene,
+  /** AD4.0 step 3 / §1.6: the document's brand vocabulary, for the token rows
+   * only. Absent or `null` — no kit attached, a kit fetch that failed, any
+   * caller that has not threaded one — means no label can be validated, so no
+   * token write happens. Every other row ignores it. */
+  palette?: ScenePalette | null,
 ): Operation | null {
   const { property } = detail;
 
@@ -348,6 +374,21 @@ export function sceneChangeToOperation(
         return null;
       }
       return updateNodeFills(node, [solidHexFill(node, hex)]);
+    }
+
+    // ── §1.6: the same row's BRAND half — a Theme-tab pick ───────────────────
+    // Its guards are the hex row's, exactly: the kind condition is hydrate's
+    // (a text node's fill is `textColor`), and the gradient/multi-fill guard is
+    // the same single-swatch clobber rule. Only the paint differs.
+    case "tokenTextColor": {
+      if (!text || isGradientGuarded(node.fills)) {
+        return null;
+      }
+      const paint = tokenPaint(palette, value);
+      if (!paint) {
+        return null;
+      }
+      return updateNodeFills(node, [paintFill(node, paint)]);
     }
 
     // ── §1.2 row 2: Font family (§2 delta row 3 — the real vocabulary) ───────
@@ -431,6 +472,24 @@ export function sceneChangeToOperation(
       }
       return updateNodeStrokes(node, [
         strokeWith(node, { color: { kind: "hex", value: hex }, kind: "solid" }, width),
+      ]);
+    }
+    // ── §1.6: the stroke row's BRAND half ───────────────────────────────────
+    // Same shape as the hex branch above and for the same reasons: the
+    // existing width is kept (a strokeless node's is "0", which clears rather
+    // than minting a hairline the width field says it does not have), and the
+    // paint is the only thing that differs.
+    case "tokenStrokeColor": {
+      const paint = tokenPaint(palette, value);
+      if (!paint) {
+        return null;
+      }
+      const strokeWidthValue = node.strokes[0]?.width ?? 0;
+      if (strokeWidthValue <= 0) {
+        return updateNodeStrokes(node, []);
+      }
+      return updateNodeStrokes(node, [
+        strokeWith(node, paint, strokeWidthValue),
       ]);
     }
     case "strokeWidth": {
@@ -613,12 +672,20 @@ function backgroundFillsOperation(root: Node, paint: Paint): Operation | null {
  * `textMeasurementSignature`, which folds a node's measurement inputs into one
  * delimited key rather than deep-equalling them.
  *
- * CANONICAL, not literal: a hex compares LOWER-cased, because that is what
- * `normalizeHex` writes while a stored paint may carry any casing (`#0E0B2E`
- * in the real document) — `#0E0B2E` and `#0e0b2e` are the same colour, not a
- * new document version. Everything else compares as stored, so a token or an
- * oklch colour never reads as equal to the literal hex a write would put in
- * its place (detaching a binding IS a change).
+ * CANONICAL, not literal, on both of the spellings the stored bytes really
+ * carry:
+ *   • a hex compares LOWER-cased, because that is what `normalizeHex` writes
+ *     while a stored paint may carry any casing (`#0E0B2E` in the real
+ *     document) — `#0E0B2E` and `#0e0b2e` are the same colour, not a new
+ *     document version.
+ *   • a TOKEN compares without its author-facing `$` (AD4.0 step 3). The
+ *     seeded ad's own paints carry the sugar (`$text.inverse`) while the kit's
+ *     keys and the picker's writes are bare, and `resolveTokenColor` treats
+ *     them as one token — so re-picking the swatch a frame already wears must
+ *     not mint a version that changes only the sugar.
+ * Everything else compares as stored, so a token never reads as equal to the
+ * literal hex a write would put in its place (detaching a binding IS a
+ * change).
  */
 function paintKey(paint: Paint | undefined): string {
   if (!paint) {
@@ -628,7 +695,7 @@ function paintKey(paint: Paint | undefined): string {
     case "solid":
       return `solid|${colorKey(paint.color)}`;
     case "token":
-      return `token|${paint.token}`;
+      return `token|${tokenKey(paint.token)}`;
     case "linear_gradient":
       return `linear|${paint.angle}|${stopsKey(paint.stops)}`;
     case "radial_gradient":
@@ -647,10 +714,17 @@ function colorKey(color: Color): string {
     case "hex":
       return color.value.trim().toLowerCase();
     case "token":
-      return `$${color.token}`;
+      return `$${tokenKey(color.token)}`;
     case "oklch":
       return `oklch(${color.l},${color.c},${color.h},${color.alpha})`;
   }
+}
+
+/** A token name with the author-facing `$` folded away, so the two spellings
+ * of one binding compare equal (`resolveTokenColor`'s own rule). */
+function tokenKey(token: string): string {
+  const trimmed = token.trim();
+  return trimmed.startsWith("$") ? trimmed.slice(1) : trimmed;
 }
 
 /**
@@ -828,6 +902,9 @@ export function sceneCanvasChangeToOperation(
   detail: SceneChangeDetail,
   scene: Scene,
   pageId: PageId,
+  /** §1.6's brand vocabulary, for the Background token row only — the node
+   * function's parameter, with the same absent-means-no-token-write rule. */
+  palette?: ScenePalette | null,
 ): Operation | null {
   // A page the live scene does not carry is never a write — the same posture
   // the node path takes when the selection and the scene disagree.
@@ -921,6 +998,22 @@ export function sceneCanvasChangeToOperation(
       // `backgroundFillsOperation`) — one implementation of "write a hex fill
       // onto a node", not two.
       return backgroundFillsOperation(root, solidHexPaint(hex));
+    }
+
+    // ── §1.6: the Background swatch's BRAND half ────────────────────────────
+    // Shares `backgroundTarget`'s refusals (no root frame / locked /
+    // multi-fill) and `backgroundFillsOperation`'s no-change rule, so
+    // re-picking the token the frame already carries writes nothing.
+    case "tokenBackgroundColor": {
+      const root = backgroundTarget(scene, pageId);
+      if (!root) {
+        return null;
+      }
+      const paint = tokenPaint(palette, value);
+      if (!paint) {
+        return null;
+      }
+      return backgroundFillsOperation(root, paint);
     }
 
     default:

@@ -13,6 +13,7 @@ import type {
 } from "../engine/scene/contracts";
 import { nodePatch, pagePatch, set } from "../engine/scene/operations";
 import { normalizePageSize } from "../engine/scene/pageGeometry";
+import { adBrandKit } from "./__fixtures__/brand-kit-colors";
 import {
   AD_PAGE_ID,
   HARVESTED_AD_PAGE,
@@ -22,6 +23,7 @@ import {
   adRect,
   adTokenText,
 } from "./__fixtures__/scene-nodes";
+import { buildScenePalette, type ScenePalette } from "./scene-palette";
 import {
   COLOR_NONE,
   backgroundFillCommits,
@@ -68,13 +70,21 @@ function apply(
   property: string,
   value: unknown,
   scene: Scene = SCENE,
+  palette: ScenePalette | null = null,
 ): ReturnType<typeof sceneChangeToOperation> {
   return sceneChangeToOperation(
     { property, selectionId: node.id, value },
     node,
     scene,
+    palette,
   );
 }
+
+/** AD4.0 step 3: the document's REAL brand vocabulary — built from the kit the
+ * seeded ad is bound to (`__fixtures__/brand-kit-colors`). Passed only by the
+ * §1.6 token rows; every other row is handed `null`, which is also the state a
+ * document with no attached kit is in. */
+const AD_PALETTE = buildScenePalette(adBrandKit());
 
 /** The expected operation, built through the ENGINE's own patch builder: the
  * patch names the one field that is `set` and leaves every other field
@@ -600,6 +610,7 @@ function applyCanvas(
   value: unknown,
   scene: Scene = SCENE,
   pageId: PageId = AD_PAGE_ID,
+  palette: ScenePalette | null = null,
 ): ReturnType<typeof sceneCanvasChangeToOperation> {
   // `selectionId: null` is the honest canvas addressing — the caller's gate
   // proves it; the adapter holds no selection either way.
@@ -607,6 +618,7 @@ function applyCanvas(
     { property, selectionId: null, value },
     scene,
     pageId,
+    palette,
   );
 }
 
@@ -1322,5 +1334,218 @@ it("A15.2: a SOLID → gradient switch is one operation carrying the colour on s
         },
       ]),
     }),
+  );
+});
+
+// ══ §1.6 — a brand swatch writes a TOKEN (AD4.0 step 3) ════════════════════
+//
+// The other half of the row every colour control above already owns: a pick
+// from the Theme tab reports the token's LABEL, and the write binds the paint
+// to that brand token instead of burning in a hex. The label is validated
+// against the document's own palette, so a label the picker never rendered —
+// including the dummy's fixture palette when no kit is attached — is not a
+// write.
+
+it("§1.6 Color: a brand swatch binds the text fill to the TOKEN, keeping the paint id", () => {
+  assert.deepEqual(
+    apply(adPlainText(), "tokenTextColor", "text.inverse", SCENE, AD_PALETTE),
+    updateNode("text_proof_stat", {
+      fills: set([
+        { id: "paint_stat", paint: { kind: "token", token: "text.inverse" } },
+      ]),
+    }),
+  );
+});
+
+it("§1.6 Color: the token is written BARE — the `$` is author-facing sugar", () => {
+  // The seeded headline's stored token is `$text.inverse`, and upstream's own
+  // writer takes the catalog's bare name (`ColorSwatchControl.tsx:38-41` →
+  // `tokenFill`, whose token comes from `BrandTokenCatalog`) while rendering
+  // it as `$${token}`. The kit's keys are bare too, so bare is the canonical
+  // stored form and both spellings resolve to one entry.
+  const operation = apply(
+    adTokenText(),
+    "tokenTextColor",
+    "text.inverse",
+    SCENE,
+    AD_PALETTE,
+  );
+  assert.deepEqual(
+    operation,
+    updateNode("text_headline", {
+      fills: set([
+        { id: "paint_headline", paint: { kind: "token", token: "text.inverse" } },
+      ]),
+    }),
+  );
+});
+
+it("§1.6 ROUND TRIP on real data: token → hex detaches, hex → token re-binds", () => {
+  // `text_headline` really is token-filled (`$text.inverse`), so both legs run
+  // against the document as it is stored, not against a derived shape.
+  const detach = apply(adTokenText(), "textColor", "#123ABC");
+  assert.deepEqual(
+    detach,
+    updateNode("text_headline", {
+      fills: set([
+        {
+          id: "paint_headline",
+          paint: { color: { kind: "hex", value: "#123abc" }, kind: "solid" },
+        },
+      ]),
+    }),
+  );
+  // The detached node, exactly as the engine would hold it after that write —
+  // a DEEP copy, so the shared fixture is untouched.
+  const detached = clone(SCENE);
+  detached.nodes.text_headline.fills = [
+    { id: "paint_headline", paint: { color: { kind: "hex", value: "#123abc" }, kind: "solid" } },
+  ];
+  assert.deepEqual(
+    apply(
+      detached.nodes.text_headline,
+      "tokenTextColor",
+      "text.inverse",
+      detached,
+      AD_PALETTE,
+    ),
+    updateNode("text_headline", {
+      fills: set([
+        // The SAME paint id survives the whole round trip.
+        { id: "paint_headline", paint: { kind: "token", token: "text.inverse" } },
+      ]),
+    }),
+  );
+});
+
+it("§1.6 Color: a label this document's kit does not define is NOT a write", () => {
+  // The dummy's fixture palette (`INSPECTOR_THEME_COLORS`), which the control
+  // falls back to when no kit is attached. Writing `{kind:"token",
+  // token:"Primary"}` would bind the ad to a token nothing can resolve.
+  for (const label of ["Primary", "Dark", "Subtle"]) {
+    assert.equal(
+      apply(adPlainText(), "tokenTextColor", label, SCENE, AD_PALETTE),
+      null,
+      label,
+    );
+  }
+  // A ramp and the kit's legacy alias RESOLVE but are not offered, so no pick
+  // can have produced them either.
+  assert.equal(
+    apply(adPlainText(), "tokenTextColor", "palette.primary.600", SCENE, AD_PALETTE),
+    null,
+  );
+  assert.equal(
+    apply(adPlainText(), "tokenTextColor", "accent.primary", SCENE, AD_PALETTE),
+    null,
+  );
+  assert.equal(apply(adPlainText(), "tokenTextColor", "", SCENE, AD_PALETTE), null);
+  assert.equal(apply(adPlainText(), "tokenTextColor", 7, SCENE, AD_PALETTE), null);
+});
+
+it("§1.6 Color: with NO palette every token row refuses — nothing validates the label", () => {
+  assert.equal(apply(adPlainText(), "tokenTextColor", "text.inverse"), null);
+  assert.equal(apply(adAutoLayout(), "tokenStrokeColor", "border.brand"), null);
+  assert.equal(applyCanvas("tokenBackgroundColor", "text.inverse"), null);
+});
+
+it("§1.6 Color: the token row keeps the §1.2 guards — kind, gradient, multi-fill, lock", () => {
+  // The write's kind condition is hydrate's kind condition, so a rect's fill
+  // is `backgroundColor`'s and a token pick on it is not this row.
+  assert.equal(apply(adRect(), "tokenTextColor", "text.inverse", SCENE, AD_PALETTE), null);
+  const gradient = withNodeField("text_proof_stat", "fills", [...adRect().fills]);
+  assert.equal(
+    apply(gradient.node, "tokenTextColor", "text.inverse", gradient.scene, AD_PALETTE),
+    null,
+  );
+  const layered = withNodeField("text_proof_stat", "fills", [
+    ...adPlainText().fills,
+    ...adTokenText().fills,
+  ]);
+  assert.equal(
+    apply(layered.node, "tokenTextColor", "text.inverse", layered.scene, AD_PALETTE),
+    null,
+  );
+  const locked = withNodeField("text_proof_stat", "locked", true);
+  assert.equal(
+    apply(locked.node, "tokenTextColor", "text.inverse", locked.scene, AD_PALETTE),
+    null,
+  );
+});
+
+it("§1.6 Stroke: a brand swatch binds the stroke paint and keeps the width verbatim", () => {
+  assert.deepEqual(
+    apply(adAutoLayout(), "tokenStrokeColor", "border.brand", SCENE, AD_PALETTE),
+    updateNode("auto_row_copy", {
+      strokes: set([
+        {
+          id: "stroke_card",
+          paint: { kind: "token", token: "border.brand" },
+          width: 2,
+          width_token: null,
+        },
+      ]),
+    }),
+  );
+});
+
+it("§1.6 Stroke: on a STROKELESS node the resulting width is 0, which clears", () => {
+  // Identical to the hex row's rule, for the identical reason: a strokeless
+  // node hydrates its width as "0", and a zero-width stroke is not a stroke.
+  assert.deepEqual(
+    apply(adPlainText(), "tokenStrokeColor", "border.brand", SCENE, AD_PALETTE),
+    updateNode("text_proof_stat", { strokes: set([]) }),
+  );
+});
+
+it("§1.6 Background: a brand swatch binds the ROOT FRAME's fill to the token", () => {
+  assert.deepEqual(
+    applyCanvas("tokenBackgroundColor", "surface.brand", SCENE, AD_PAGE_ID, AD_PALETTE),
+    updateNode(AD_ROOT_FRAME_ID, {
+      fills: set([
+        { id: "paint_root_ink", paint: { kind: "token", token: "surface.brand" } },
+      ]),
+    }),
+  );
+});
+
+it("§1.6 Background: re-picking the token the frame ALREADY has writes nothing, `$` or not", () => {
+  // Standing ruling: a change that produces a Paint identical to the stored
+  // one is not a write. The two spellings of one token are the same binding —
+  // the harvested `$text.inverse` and the bare name the picker reports — so
+  // re-picking it must not mint a document version that changes only sugar.
+  const scene = withRootFills([...adTokenText().fills]);
+  assert.equal(
+    applyCanvas("tokenBackgroundColor", "text.inverse", scene, AD_PAGE_ID, AD_PALETTE),
+    null,
+  );
+  // A DIFFERENT token on the same frame is a real change, and keeps the id.
+  assert.deepEqual(
+    applyCanvas("tokenBackgroundColor", "surface.brand", scene, AD_PAGE_ID, AD_PALETTE),
+    updateNode(AD_ROOT_FRAME_ID, {
+      fills: set([
+        { id: "paint_headline", paint: { kind: "token", token: "surface.brand" } },
+      ]),
+    }),
+  );
+});
+
+it("§1.6 Background: the token row keeps the §1.1 refusals — no root, locked, multi-fill", () => {
+  const rootless = clone(SCENE);
+  rootless.pages[AD_PAGE_ID].children = [];
+  assert.equal(
+    applyCanvas("tokenBackgroundColor", "surface.brand", rootless, AD_PAGE_ID, AD_PALETTE),
+    null,
+  );
+  const locked = clone(SCENE);
+  locked.nodes[AD_ROOT_FRAME_ID].locked = true;
+  assert.equal(
+    applyCanvas("tokenBackgroundColor", "surface.brand", locked, AD_PAGE_ID, AD_PALETTE),
+    null,
+  );
+  const layered = withRootFills([...adFrame().fills, ...adRect().fills]);
+  assert.equal(
+    applyCanvas("tokenBackgroundColor", "surface.brand", layered, AD_PAGE_ID, AD_PALETTE),
+    null,
   );
 });

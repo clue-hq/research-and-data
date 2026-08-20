@@ -6,6 +6,7 @@ import {
   sceneChangeToOperation,
 } from "../adapter/scene-apply";
 import { rootFrameId } from "../adapter/scene-hydrate";
+import type { ScenePalette } from "../adapter/scene-palette";
 import type { SceneCanvasControls } from "../components/scene-artifact-canvas";
 import type { PageId, Scene } from "../engine/scene/contracts";
 import { getPage } from "../engine/scene/sceneQueries";
@@ -197,6 +198,7 @@ export function useSceneInspectorWrites({
   loadGeneration,
   onReload,
   pageId,
+  palette,
   primaryNodeId,
   redoDepth,
   scene,
@@ -218,6 +220,11 @@ export function useSceneInspectorWrites({
   /** AD4.0: the page the canvas is rendering (§5: one artboard), the very one
    * `hydrateSceneCanvasState` read. */
   pageId: PageId | null;
+  /** AD4.0 step 3 (§1.6): the document's brand vocabulary — what a token row's
+   * picked LABEL is validated against. `null` (no kit, a fetch that failed, a
+   * kit still in flight) means no token write can be validated, so none
+   * happens; the hex rows are untouched by it. */
+  palette: ScenePalette | null;
   /** The session's primary selection — `selectedIds[0]`, already resolved
    * against the live scene. */
   primaryNodeId: string | null;
@@ -241,6 +248,7 @@ export function useSceneInspectorWrites({
   const artifactIdRef = useRef(artifactId);
   const controlsRef = useRef(canvasControls);
   const pageIdRef = useRef(pageId);
+  const paletteRef = useRef(palette);
   const primaryNodeIdRef = useRef(primaryNodeId);
   const sceneRef = useRef(scene);
   useEffect(() => {
@@ -248,6 +256,7 @@ export function useSceneInspectorWrites({
     artifactIdRef.current = artifactId;
     controlsRef.current = canvasControls;
     pageIdRef.current = pageId;
+    paletteRef.current = palette;
     primaryNodeIdRef.current = primaryNodeId;
     sceneRef.current = scene;
   });
@@ -284,6 +293,7 @@ export function useSceneInspectorWrites({
           },
           canvas.scene,
           canvas.pageId,
+          paletteRef.current,
         );
         // The same null contract: an unmapped property or an unparseable value
         // produces no operation, and no operation is no write.
@@ -319,6 +329,7 @@ export function useSceneInspectorWrites({
         },
         node,
         live,
+        paletteRef.current,
       );
       // The AD3.1 null contract: an unmapped property, an unparseable value or
       // a locked node produces no operation, and no operation is no write.

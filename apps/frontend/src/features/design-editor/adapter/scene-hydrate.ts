@@ -17,6 +17,7 @@ import type {
 } from "../engine/scene/contracts";
 import { isNodePinned } from "../engine/scene/sceneQueries";
 import { oklchToHexCss } from "../engine/scene/tokenColors";
+import { paletteHex, type ScenePalette } from "./scene-palette";
 
 /**
  * AD2.4: the pure hydration adapter for the SCENE (ad) lane — this file IS the
@@ -299,29 +300,57 @@ export type BackgroundCommit =
  * carries no colour), so the pair collapses to a single write in the adapter —
  * proven by a test that runs both commits through it and counts operations.
  * Stop positions, counts and the angle ride through untouched.
+ *
+ * ── R3b (AD4.0 step 3): the swatch value may not be a COLOUR ──────────────
+ * Both re-seeds above read a value off the panel and commit it as a colour,
+ * and after step 2 that value is only *sometimes* a hex: a token paint states
+ * its `$name` (truthfully — `paintState`), and a fill-less frame states `none`.
+ * Committing those produced the review's stuck state — the select flipped to
+ * the new mode while the write adapter correctly refused stops of
+ * `$text.inverse`, leaving the panel claiming a gradient over a still-token-
+ * filled artboard, with no way back short of a remount.
+ *
+ * So each re-seed now goes through `paletteHex`: a hex verbatim, a brand token
+ * resolved through the document's kit, and `null` for anything else — and
+ * `null` returns NO COMMITS AT ALL, which refuses the mode switch itself
+ * (the select is driven by `state.backgroundFill`, so committing nothing
+ * leaves it where it was). Refusing beats fabricating, and beats flipping a
+ * control whose write cannot land.
+ *
+ * The switch a resolved token DOES allow detaches that token — a gradient is
+ * not a token binding — which is the same informed §1.6 trade a raw hex makes.
  */
 export function backgroundFillCommits(
   current: InspectorBackgroundFill,
   next: InspectorBackgroundFill,
   solidColor: string,
+  /** R3b: the document's brand vocabulary, for resolving a token swatch to the
+   * colour it paints. Absent — no kit, a fetch that failed — simply means a
+   * token cannot be resolved, and a switch that needs one is refused. */
+  palette?: ScenePalette | null,
 ): BackgroundCommit[] {
   if (next.type === current.type) {
     // A stop colour, a stop position, the angle — not a mode switch.
     return [{ property: "backgroundFill", value: next }];
   }
   if (next.type === "solid") {
+    // The outgoing gradient's first stop. A stopless gradient cannot come from
+    // this control (2–6 stops); if one ever arrives, the swatch's own value is
+    // the only other thing on screen, so nothing is invented.
+    const hex = paletteHex(palette, current.stops[0]?.color ?? solidColor);
+    if (hex === null) {
+      return [];
+    }
     return [
       { property: "backgroundFill", value: next },
-      {
-        property: "backgroundColor",
-        // The outgoing gradient's first stop. A stopless gradient cannot come
-        // from this control (2–6 stops); if one ever arrives, the swatch's own
-        // value is the only other thing on screen, so nothing is invented.
-        value: current.stops[0]?.color ?? solidColor,
-      },
+      { property: "backgroundColor", value: hex },
     ];
   }
   if (current.type === "solid") {
+    const hex = paletteHex(palette, solidColor);
+    if (hex === null) {
+      return [];
+    }
     return [
       {
         property: "backgroundFill",
@@ -329,7 +358,7 @@ export function backgroundFillCommits(
         // while solid there is exactly one colour on screen.
         value: {
           ...next,
-          stops: next.stops.map((stop) => ({ ...stop, color: solidColor })),
+          stops: next.stops.map((stop) => ({ ...stop, color: hex })),
         },
       },
     ];

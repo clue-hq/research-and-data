@@ -103,6 +103,15 @@ export interface InspectorPresentationState {
   /** W3.2 §2 addition (ruling 26): the line-spacing select. */
   lineSpacing: string;
   tokenBackgroundColor: string;
+  /** AD4.0 step 3 (§1.6): the brand token bound to the STROKE paint — the ad
+   * lane's Stroke swatch writes through it, exactly as the two fields above
+   * carry the text and background bindings. It is the third field this ad
+   * work has had to add to the dummy's model (ruling 14's "final home" rule;
+   * step 1 added `customWidth`/`customHeight` the same way), because the web
+   * lane has no stroke control and so authored no fixture for it — which is
+   * also why its default below is the honest empty string rather than one of
+   * the dummy's invented token labels. */
+  tokenStrokeColor: string;
   tokenTextColor: string;
   url: string;
   verticalAlignment: VerticalAlignment;
@@ -170,6 +179,7 @@ const DEFAULT_STATE: InspectorPresentationState = {
   textStyle: "Body",
   lineSpacing: "normal",
   tokenBackgroundColor: "White",
+  tokenStrokeColor: "",
   tokenTextColor: "Content",
   url: "",
   verticalAlignment: "top",
