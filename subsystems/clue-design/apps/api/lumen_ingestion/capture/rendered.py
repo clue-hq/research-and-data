@@ -18,7 +18,7 @@ from selectolax.parser import HTMLParser
 from .geometry import GEOMETRY_JS
 from .net import BoundedFetcher, FetchRequest, guard_url
 from .snapshot import Download, SiteSnapshot, Stylesheet, HTML_MAX_BYTES
-from .static import _collect_assets, _extract_meta
+from .static import _collect_assets, _extract_meta, fetch_imported_sheets
 
 # JS gathered in one page.evaluate: computed samples + custom props + stylesheets.
 _EVALUATE_JS = r"""
@@ -74,6 +74,48 @@ _EVALUATE_JS = r"""
   return {samples, props, sheets};
 }
 """
+
+
+async def collect_stylesheets(
+    sheet_records: list[dict], fetcher: BoundedFetcher
+) -> tuple[list[Stylesheet], list[dict]]:
+    """The rendered tier's stylesheets, from one ``document.styleSheets`` harvest.
+
+    Split out of :func:`fetch_rendered` so it is testable without a browser, and because since
+    the founder's 2026-08-20 always-render ruling it carries the static tier's ``@import``
+    follow as well: EVERY website ingestion now renders, so anything the static tier used to
+    contribute for a well-server-rendered site has to survive here or it is lost outright. The
+    CSSOM exposes an imported sheet only as the parent's one-line ``@import`` rule text, so
+    without :func:`fetch_imported_sheets` a brand whose ``@font-face`` or palette lives behind
+    an import would simply stop being read.
+
+    An inline record (``text`` present) is taken verbatim from the CSSOM — that is the rendered
+    tier's advantage over static, since it has the post-JS rules — and an ``href`` record is
+    fetched, both exactly as before.
+    """
+    stylesheets: list[Stylesheet] = []
+    diagnostics: list[dict] = []
+    href_requests: list[FetchRequest] = []
+    for index, sheet in enumerate(sheet_records):
+        if sheet.get("text") is not None:
+            stylesheets.append(Stylesheet(url=f"inline:{index}", text=sheet["text"]))
+        elif sheet.get("href"):
+            href_requests.append(FetchRequest(url=sheet["href"], kind="css"))
+    if href_requests:
+        results = await fetcher.fetch_many(href_requests)
+        for result in results:
+            diagnostics.extend(result.diagnostics)
+            if result.ok and result.body is not None:
+                stylesheets.append(
+                    Stylesheet(
+                        url=result.url, text=result.body.decode("utf-8", errors="replace")
+                    )
+                )
+
+    imported, import_diagnostics = await fetch_imported_sheets(stylesheets, fetcher)
+    stylesheets.extend(imported)
+    diagnostics.extend(import_diagnostics)
+    return stylesheets, diagnostics
 
 
 async def fetch_rendered(
@@ -149,22 +191,10 @@ async def fetch_rendered(
         )
     )
 
-    # Stylesheets: inline css inline, hrefs fetched concurrently via fetcher.
-    stylesheets: list[Stylesheet] = []
-    href_requests: list[FetchRequest] = []
-    for index, sheet in enumerate(data.get("sheets", [])):
-        if sheet.get("text") is not None:
-            stylesheets.append(Stylesheet(url=f"inline:{index}", text=sheet["text"]))
-        elif sheet.get("href"):
-            href_requests.append(FetchRequest(url=sheet["href"], kind="css"))
-    if href_requests:
-        results = await fetcher.fetch_many(href_requests)
-        for result in results:
-            diagnostics.extend(result.diagnostics)
-            if result.ok and result.body is not None:
-                stylesheets.append(
-                    Stylesheet(url=result.url, text=result.body.decode("utf-8", errors="replace"))
-                )
+    stylesheets, sheet_diagnostics = await collect_stylesheets(
+        data.get("sheets", []), fetcher
+    )
+    diagnostics.extend(sheet_diagnostics)
 
     # Reuse static's asset identification on the rendered DOM.
     tree = HTMLParser(html)

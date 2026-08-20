@@ -102,29 +102,52 @@ async def _collect_stylesheets(
                     )
                 )
 
-    # Scan fetched CSS for @import (one level deep) → concurrent fetch.
+    imported, import_diagnostics = await fetch_imported_sheets(sheets, fetcher)
+    sheets.extend(imported)
+    diagnostics.extend(import_diagnostics)
+
+    return sheets, diagnostics
+
+
+async def fetch_imported_sheets(
+    sheets: list[Stylesheet], fetcher: BoundedFetcher
+) -> tuple[list[Stylesheet], list[dict]]:
+    """Follow ONE level of ``@import`` out of already-collected stylesheets.
+
+    Shared with the rendered tier (``rendered.collect_stylesheets``) since the founder's
+    2026-08-20 always-render ruling: a brand whose palette or ``@font-face`` block arrives
+    through an ``@import`` used to be read by the static tier, and the rendered tier — which
+    reads ``document.styleSheets``, where an import appears only as its own one-line rule text —
+    would otherwise have silently stopped reading it the moment every ingestion started
+    rendering. One level only, and INLINE sheets are skipped, exactly as the static tier has
+    always done: a relative import inside an inline ``<style>`` has no sheet url to resolve
+    against, and deeper chains are unbounded fan-out.
+    """
     import_urls: list[str] = []
-    for sheet in list(sheets):
+    for sheet in sheets:
         if sheet.url.startswith("inline:"):
             continue
         for match in _IMPORT_RE.finditer(sheet.text):
             import_urls.append(urljoin(sheet.url, match.group(1)))
     import_urls = list(dict.fromkeys(import_urls))
-    if import_urls:
-        results = await fetcher.fetch_many(
-            [FetchRequest(url=u, kind="css") for u in import_urls]
-        )
-        for result in results:
-            diagnostics.extend(result.diagnostics)
-            if result.ok and result.body is not None:
-                sheets.append(
-                    Stylesheet(
-                        url=result.url,
-                        text=result.body.decode("utf-8", errors="replace"),
-                    )
-                )
+    if not import_urls:
+        return [], []
 
-    return sheets, diagnostics
+    imported: list[Stylesheet] = []
+    diagnostics: list[dict] = []
+    results = await fetcher.fetch_many(
+        [FetchRequest(url=u, kind="css") for u in import_urls]
+    )
+    for result in results:
+        diagnostics.extend(result.diagnostics)
+        if result.ok and result.body is not None:
+            imported.append(
+                Stylesheet(
+                    url=result.url,
+                    text=result.body.decode("utf-8", errors="replace"),
+                )
+            )
+    return imported, diagnostics
 
 
 async def _collect_assets(

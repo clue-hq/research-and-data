@@ -397,6 +397,11 @@ class IngestWebsiteRequest(BaseModel):
     url: str
     name: Optional[str] = None
     brand_kit_id: Optional[str] = None
+    #: REDUNDANT since the founder ruling of 2026-08-20, and kept only so existing callers do
+    #: not 422 on a field they still send. Website ingestion now always captures at the rendered
+    #: tier — the pipeline forces it (`lumen_ingestion.pipeline._ingest`), because "geometry
+    #: needs a live page by definition" and a client that forgets a flag must still get
+    #: geometry. Setting it True changes nothing; setting it False does NOT turn rendering off.
     force_render: bool = False
 
 

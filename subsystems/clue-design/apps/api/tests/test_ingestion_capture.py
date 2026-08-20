@@ -346,6 +346,57 @@ def test_static_capture_fetches_assets_concurrently() -> None:
     assert overlap["max"] >= 3  # assets overlapped, not serial
 
 
+def test_rendered_stylesheets_follow_one_level_of_import_like_static_does() -> None:
+    """The static tier's ``@import`` contribution survives the always-render ruling.
+
+    Website ingestion now ALWAYS renders (founder, 2026-08-20), so the static tier no longer
+    runs for a well-server-rendered site — and everything it used to contribute has to be
+    present on the rendered tier or it is silently lost. Assets, meta and inline CSS already
+    were (rendered reuses static's collectors on the post-JS DOM); one thing was not: static
+    follows one level of ``@import`` out of a fetched stylesheet, while the rendered tier read
+    ``document.styleSheets``, where an imported sheet appears only as the parent's one-line
+    ``@import`` rule. A brand whose ``@font-face`` block lives behind an import would have
+    stopped being read the day the ruling landed.
+
+    No browser: the harvest ``page.evaluate`` returns is a plain list of dicts, so the
+    stylesheet assembly is driven directly.
+    """
+    from lumen_ingestion.capture.rendered import collect_stylesheets
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/main.css":
+            return httpx.Response(
+                200, text='@import url("fonts.css");\nbody{color:#123456}'
+            )
+        if request.url.path == "/fonts.css":
+            return httpx.Response(
+                200,
+                text="@font-face{font-family:Brand;src:url(brand.woff2) format('woff2')}",
+            )
+        return httpx.Response(404)
+
+    transport = httpx.MockTransport(handler)
+
+    async def run() -> list:
+        async with httpx.AsyncClient(transport=transport) as client:
+            fetcher = BoundedFetcher(client)
+            return await collect_stylesheets(
+                [
+                    {"href": None, "text": ":root{--brand:#123456}"},
+                    {"href": "https://example.com/main.css", "text": None},
+                ],
+                fetcher,
+            )
+
+    sheets, _diagnostics = asyncio.run(asyncio.wait_for(run(), timeout=10.0))
+    urls = [sheet.url for sheet in sheets]
+    assert urls[0] == "inline:0"
+    assert "https://example.com/main.css" in urls
+    assert "https://example.com/fonts.css" in urls, urls
+    imported = next(s for s in sheets if s.url.endswith("fonts.css"))
+    assert "@font-face" in imported.text
+
+
 def test_capture_redirect_reguard_rejects_private() -> None:
     """A redirect to 127.0.0.1 is re-guarded and rejected mid-capture."""
 

@@ -777,11 +777,31 @@ def _ingest(
     job = store.require(job_id)
     request = job["request"]
     url = request["url"]
-    force_render = bool(request.get("force_render", False))
     requested_kit_id = request.get("brand_kit_id")
     requested_name = request.get("name")
 
-    outcome = asyncio.run(capture(url, reporter=reporter, force_render=force_render))
+    # FOUNDER RULING (2026-08-20): website ingestion ALWAYS captures at the RENDERED tier —
+    # "geometry needs a live page by definition". The brand's measured geometry (radii, stroke
+    # weights, shadows, spacing) and the design brief's screenshots exist ONLY on the rendered
+    # tier, and the static→rendered quality gate escalates on evidence POVERTY — so a site that
+    # server-renders well (stripe.com) never escalated, and every kit the UI's Re-extract
+    # published for it carried zero measured geometry and no brief.
+    #
+    # Enforced HERE, at the pipeline, and deliberately not at the route or in a client flag:
+    # every website ingestion — the HTTP route, the `design_ingest_website` tool, the platform
+    # proxy, a re-offered envelope replayed by a worker — passes through this one function, so a
+    # caller that sends no flag still gets geometry. `request["force_render"]` is consequently
+    # redundant and is no longer read (see `IngestWebsiteRequest.force_render`); the durable
+    # request row keeps recording whatever the caller sent, which is the honest thing for it to
+    # record. PDF and upload ingestion are untouched — there is no page to render.
+    #
+    # HONEST COST: rendering turns a ~10s static ingest into MINUTES (browser launch,
+    # networkidle wait, ten scroll steps, a full-page screenshot, the geometry probe — the live
+    # stripe.com walk measured ~3 minutes). That is affordable only because the job is offered
+    # and drained asynchronously by a fleet worker and the checklist row streams its stage and
+    # progress the whole time. If ingestion ever becomes synchronous again, this is the line
+    # that makes it unaffordable.
+    outcome = asyncio.run(capture(url, reporter=reporter, force_render=True))
     evidence = build_evidence(
         outcome, core=core, store_root=cache_dir, reporter=reporter
     )
