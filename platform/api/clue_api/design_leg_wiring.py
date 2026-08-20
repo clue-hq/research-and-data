@@ -431,17 +431,21 @@ async def project_design_documents(
 
     Fail-closed tenancy like every other design read: ``workspace_id`` is pinned on both
     the leg and the document (``design_leg.document_id`` carries no foreign key, so a leg
-    naming another tenant's document resolves to nothing), and ``scene`` documents are
-    excluded — the gallery serves web documents only. A document no leg names belongs to
-    no project and is listed nowhere.
+    naming another tenant's document resolves to nothing). A document no leg names belongs
+    to no project and is listed nowhere.
+
+    Kind-aware since AD2.1: **every** doc kind a leg names is served — ``web`` documents
+    and ``scene`` (ad) documents alike — and ``doc_kind`` rides along so the caller can
+    map it onto the wire's ``kind``. The earlier ``WHERE d.doc_kind = 'web'`` filter made
+    the rail structurally unable to reach an ad artifact (audit finding F1).
     """
 
     rows = (
         (
             await conn.execute(
                 text(
-                    "SELECT d.id, d.title, d.status, d.current_version, d.created_at,"
-                    " d.updated_at, origin.thread_id AS origin_thread_id"
+                    "SELECT d.id, d.title, d.status, d.doc_kind, d.current_version,"
+                    " d.created_at, d.updated_at, origin.thread_id AS origin_thread_id"
                     " FROM ("
                     "   SELECT DISTINCT ON (leg.document_id)"
                     "          leg.document_id, leg.thread_id"
@@ -455,7 +459,6 @@ async def project_design_documents(
                     " ) origin"
                     " JOIN design_document d"
                     "   ON d.id = origin.document_id AND d.workspace_id = :ws"
-                    " WHERE d.doc_kind = 'web'"
                     " ORDER BY d.updated_at DESC, d.id"
                 ),
                 {"ws": workspace_id, "project": project_id},

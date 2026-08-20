@@ -1009,11 +1009,13 @@ def build_chat_router(
         """The project's design-artifact feed — the gallery's list read (leg-derived v1).
 
         The document row carries a workspace, not a project, so the project binding is the
-        design **leg**: the documents named by the legs of this project's threads, web
-        documents only. A document no leg names belongs to no project and is not listed
-        (the ratified v1 gap). Like the single-artifact sibling below, the project and the
-        documents are workspace-scoped fail-closed reads, and the artifact id IS the
-        design-document id.
+        design **leg**: the documents named by the legs of this project's threads. A
+        document no leg names belongs to no project and is not listed (the ratified v1
+        gap). Like the single-artifact sibling below, the project and the documents are
+        workspace-scoped fail-closed reads, and the artifact id IS the design-document id.
+
+        Kind-aware since AD2.1: web documents and scene (ad) documents both list, each
+        carrying its own ``kind`` — the same mapping the single-artifact read applies.
         """
 
         _require(who, PERMISSION_PROJECT_READ)
@@ -1040,8 +1042,7 @@ def build_chat_router(
                     id=str(document["id"]),
                     project_id=project_id,
                     document_id=str(document["id"]),
-                    # Ruling 3: the query admits ``doc_kind = 'web'`` only.
-                    kind="web",
+                    kind="web" if document["doc_kind"] == "web" else "ad",
                     title=str(document["title"]),
                     status=str(document["status"]),
                     current_version_id=str(document["current_version"]),

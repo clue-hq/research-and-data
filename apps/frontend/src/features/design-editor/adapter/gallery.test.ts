@@ -47,6 +47,36 @@ test("a listed design artifact maps onto the gallery's website artifact", () => 
   assert.equal(artifact.originThreadId, "thread-9");
 });
 
+test("an ad artifact maps onto a canvas artifact with no collateral type", () => {
+  // AD2.1: the feed is kind-aware, so a scene document arrives as `kind: "ad"`.
+  // It becomes a `canvas` artifact — the type both editor mounts reconstruct
+  // `kind: "ad"` from (`source.type === "website" ? "web" : "ad"`), so the ad
+  // reaches the editor with zero mount changes. `collateralType` is left ABSENT
+  // rather than guessed: the document says it is an ad, never which channel.
+  const artifact = toProjectArtifact(listItem({ id: "doc-ad-1", kind: "ad" }), {
+    now: NOW,
+  });
+
+  assert.equal(artifact.type, "canvas");
+  assert.equal("collateralType" in artifact, false);
+  // The honest-empty card holds: no invented thumbnail for an ad either.
+  assert.equal(artifact.imagePath, undefined);
+  assert.doesNotThrow(() => ProjectArtifactSchema.parse(artifact));
+});
+
+test("a web artifact keeps its website mapping alongside ads", () => {
+  const web = toProjectArtifact(listItem(), { now: NOW });
+  const ad = toProjectArtifact(listItem({ id: "doc-ad-2", kind: "ad" }), { now: NOW });
+
+  assert.deepEqual(
+    [web, ad].map((artifact) => [artifact.type, artifact.collateralType]),
+    [
+      ["website", "microsite"],
+      ["canvas", undefined],
+    ],
+  );
+});
+
 test("real timestamps survive as the schema's UTC instants", () => {
   const artifact = toProjectArtifact(
     listItem({

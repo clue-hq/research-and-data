@@ -18,19 +18,28 @@ import type { DesignArtifactListItem } from "../model/artifact";
  *
  * Size, account and last-viewed are likewise unanswerable here; the gallery's
  * own `normalizeGalleryArtifact` supplies its defaults for them.
+ *
+ * AD2.1 made it kind-aware. A `web` document is a `website` artifact whose
+ * gallery collateral is a `microsite`; an `ad` (scene) document is a `canvas`
+ * artifact with `collateralType` ABSENT — the document knows it is an ad, never
+ * which channel, so guessing "linkedin-ad" here would paint fabricated
+ * vocabulary onto a real artifact. The mapping is also what carries the ad into
+ * the editor unchanged: both mounts reconstruct the kind as
+ * `source.type === "website" ? "web" : "ad"`, so `canvas` yields `"ad"`.
  */
 export function toProjectArtifact(
   item: DesignArtifactListItem,
   { now = new Date() }: { now?: Date } = {},
 ): ProjectArtifact {
+  const ad = item.kind === "ad";
   return ProjectArtifactSchema.parse({
-    collateralType: "microsite",
+    ...(ad ? {} : { collateralType: "microsite" }),
     createdAt: utcInstant(item.createdAt),
     editedLabel: editedLabelFor(item.updatedAt, now),
     id: item.id,
     originThreadId: item.originThreadId,
     title: item.title,
-    type: "website",
+    type: ad ? "canvas" : "website",
     updatedAt: utcInstant(item.updatedAt),
   });
 }

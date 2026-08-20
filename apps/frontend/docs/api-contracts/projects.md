@@ -1612,3 +1612,34 @@ and no fabricated account attribution (unattributed artifacts show no account ba
 2. **This read is replaced WHOLESALE when the real platform-artifact registry lands**
    (documents registered as platform artifacts with first-class project linkage). No
    incremental migration of the leg-derived query.
+
+#### Kind-aware feed — resolved contract (2026-08-20, AD2.1)
+
+**Supersedes the `doc_kind = 'web'` restriction above.** The feed now serves **every** doc
+kind a leg names, and `kind` on the wire is real rather than constant: a `web` document
+reports `kind: "web"`, a `scene` document reports `kind: "ad"` — the same expression the
+single-artifact read (`GET …/design-artifacts/{artifact_id}`) already applied. The old filter
+made the chats route structurally unable to reach an ad artifact (audit finding F1): the
+document existed, the leg named it, and the gallery dropped it. Nothing else about the read
+changed — the wire shape, the ordering (`updated_at DESC`), the workspace fail-closed posture,
+and the leg-derived project binding are untouched, and `doc_kind` itself is never leaked.
+
+**Resolved frontend mapping (`toProjectArtifact`):**
+
+| wire `kind` | `type` | `collateralType` | `imagePath` |
+| --- | --- | --- | --- |
+| `"web"` | `"website"` | `"microsite"` | absent |
+| `"ad"` | `"canvas"` | **absent** | absent |
+
+- `type: "canvas"` is what carries the ad into the editor with **zero mount changes** — both
+  mounts reconstruct the artifact kind as `source.type === "website" ? "web" : "ad"`.
+- `collateralType` is **omitted** for ads, not guessed. The document knows it is an ad; it does
+  not know which channel, and `linkedin-ad` / `meta-ad` are channel claims. Note the
+  consequence, unchanged by this task: the gallery's own `normalizeGalleryArtifact` still
+  defaults an absent collateral type on a `canvas` artifact to `linkedin-ad` (its
+  dummy-era fallback), so an ad card currently *labels* as "LinkedIn ad" and groups under
+  "Ads". Honest channel labelling for real ad documents needs a founder ruling on the
+  vocabulary and is deliberately out of AD2.1's scope.
+- **No thumbnail** — ruling 2 holds for ads exactly as for websites: the card frame renders
+  empty rather than showing placeholder artwork (the ratified honest empty card). `size`
+  falls to the gallery's `square` 1080×1080 default for canvas artifacts.
