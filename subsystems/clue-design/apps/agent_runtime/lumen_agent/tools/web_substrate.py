@@ -72,6 +72,37 @@ _BRAND_NOTE_MAX_CHARS = 200
 # (`_brand_style_references`). Two is enough to anchor a look; more is cost and
 # a muddier signal.
 _BRAND_REFERENCE_MAX = 2
+# The minimum LONG SIDE, in pixels, an image must have to serve as a style
+# anchor. A kit's image set is a harvest, not a curation: the approved v6 kit's
+# second-ranked resolvable image is 296x124, and the v8 draft carries a 64x64
+# icon and a QR code. Conditioning every generated hero on a thumbnail is worse
+# than conditioning on nothing — the model inherits its compression artifacts
+# and its subject. An image whose record carries NO raster dimensions does not
+# clear the floor either: unknown is not "good enough" for something that steers
+# every generation. FEWER anchors (or none) is the correct outcome; the picker
+# never backfills down the ranking to reach _BRAND_REFERENCE_MAX.
+_BRAND_REFERENCE_MIN_LONG_SIDE_PX = 512
+
+# The base URL an agent-run preview render resolves `<img data-asset=…>` against
+# when the runtime config names none. LAST RESORT ONLY — the real value is
+# `settings.asset_base_url` (LUMEN_API_ORIGIN), threaded through
+# `AgentRuntimeConfig.asset_base_url`.
+#
+# History, because this exact line cost a day: it used to read
+# `getattr(config, "asset_base_url", None)` OR a loopback URL on port 8000, with
+# a comment claiming "a config override wins if present (none today)".
+# There WAS no such config field, so `getattr` always returned None and the
+# hardcoded value always won — and nothing has listened on 8000 since the design
+# API moved to 8010. Every image the agent placed 404'd in its own preview
+# screenshots, so the agent stripped it and honestly reported that the supplied
+# assets "did not render in the constrained preview". The editor's render route
+# resolved the same assets correctly, so a surviving image would have displayed
+# fine for the user: the agent was blind to its own images working. Any future
+# edit here must keep the value CONFIGURED, and must keep the preflight below.
+_FALLBACK_ASSET_BASE_URL = "http://127.0.0.1:8010/asset-store"
+# Seconds allowed for the once-per-turn asset-origin preflight probe. Short: a
+# dead origin is a connection refusal (instant) and a live one is a loopback GET.
+_ASSET_PREFLIGHT_TIMEOUT_S = 5.0
 
 # The page every P0 WebDoc carries (a single "home" page at route "/"). Website
 # mode is single-page for now; the id is fixed so the tools never guess.
@@ -246,6 +277,45 @@ def _valid_font_weight(value: Any) -> bool:
 
 def _valid_font_style(value: Any) -> bool:
     return value in ("normal", "italic")
+
+
+def _brand_image_rank(item: tuple) -> tuple:
+    """Sort key over a kit `assets.images` entry that honours the ingestion
+    pipeline's own ranking instead of destroying it with a string sort.
+
+    Kit image keys are `img.{n}` where `n` counts up over an evidence list
+    already sorted best-first (`normalizer/emit.py::add_images` over
+    `_parse_images`, which sorts by area then file size, descending). So the
+    numeric suffix IS the quality order — but `sorted()` on the raw key gives
+    `img.1, img.10, img.11, …, img.2`, which is why the second style anchor was
+    always `img.10`. A key that does not parse as `img.<int>` sorts LAST (and
+    then alphabetically among its peers) rather than raising: a kit shape we do
+    not recognize must degrade, not crash a turn."""
+    key = item[0]
+    text = str(key)
+    prefix, _, suffix = text.rpartition(".")
+    if prefix == "img" and suffix.isdigit():
+        return (0, int(suffix), text)
+    return (1, 0, text)
+
+
+def _clears_style_reference_floor(record: JsonObject) -> bool:
+    """Whether an asset record's pixels are big enough to steer a generation.
+
+    Reads the engine `AssetRecord.raster` block (`pixel_width`/`pixel_height`,
+    both `u32` and always present together on a raster record). Absent or
+    unusable dimensions → **False**: a style anchor conditions every image the
+    page gets, so "we do not know how big this is" is not good enough."""
+    raster = record.get("raster") if isinstance(record, dict) else None
+    if not isinstance(raster, dict):
+        return False
+    sides = []
+    for field in ("pixel_width", "pixel_height"):
+        value = raster.get(field)
+        if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
+            return False
+        sides.append(value)
+    return max(sides) >= _BRAND_REFERENCE_MIN_LONG_SIDE_PX
 
 
 def _interactive_capture_plan(web_doc: JsonObject) -> JsonObject:
@@ -602,12 +672,19 @@ class LumenWebTools:
         self.account_card_text = (
             json.dumps(self.account_card, indent=2) if self.account_card else None
         )
-        # The base URL the rendered page resolves data-asset images against. The
-        # API serves the shared store at /asset-store; a config override wins if
-        # present (none today), else the pinned API origin.
-        self.asset_base_url = (
-            getattr(config, "asset_base_url", None)
-            or "http://127.0.0.1:8000/asset-store"
+        # The base URL the rendered page resolves data-asset images against.
+        # `config.asset_base_url` is the configured value (LUMEN_API_ORIGIN via
+        # AgentRuntimeConfig.from_env); the module fallback is the last resort
+        # for a hand-built config that names none. See _FALLBACK_ASSET_BASE_URL
+        # for why this line is the way it is.
+        self.asset_base_url = config.asset_base_url or _FALLBACK_ASSET_BASE_URL
+        # Preflight state: the resolved base is probed ONCE per turn, at the
+        # first preview render (_preflight_asset_base_url).
+        self._asset_base_url_preflighted = False
+        logger.info(
+            "web turn asset base url resolved to %s (source=%s)",
+            self.asset_base_url,
+            "config" if config.asset_base_url else "fallback",
         )
 
     # --- trace + errors -----------------------------------------------------
@@ -3274,7 +3351,24 @@ class LumenWebTools:
         reference gets drawn INTO the generated picture, which is a brand
         failure, not brand fidelity. Missing blob bytes are skipped (a kit that
         was published elsewhere is a normal state, not an error), so this always
-        degrades to a plain text-conditioned generation."""
+        degrades to a plain text-conditioned generation.
+
+        Two selection rules, both learned from the approved kits:
+
+        * **The kit's ordinal IS the ranking.** `normalizer/emit.py::add_images`
+          numbers images `img.{n}` over an evidence list already sorted by
+          (area, file size) DESCENDING — so `img.1` is the best image the
+          harvest found. This used to iterate `sorted(images.items())`, a STRING
+          sort, which orders `img.1, img.10, img.11, …, img.19, img.2` — so at
+          `_BRAND_REFERENCE_MAX = 2` the second anchor was always `img.10` and
+          `img.2` was unreachable. On the approved v6 kit that made a **296x124**
+          thumbnail half the style conditioning of every generated image.
+        * **A floor, not a fill.** Only images clearing
+          `_BRAND_REFERENCE_MIN_LONG_SIDE_PX` may anchor; the picker does not
+          walk further down the ranking to make up the count. Ordering alone is
+          not enough because unresolvable entries are skipped, which can still
+          surface junk from deep in the list.
+        """
         kit = self.config.brand_kit or {}
         images = ((kit.get("assets") or {}).get("images") or {})
         manifest = self.config.brand_kit_assets or {}
@@ -3283,13 +3377,15 @@ class LumenWebTools:
         store_root = self.config.effective_asset_store_root
         collected: List[tuple] = []
         labels: List[str] = []
-        for image_key, image in sorted(images.items()):
+        for image_key, image in sorted(images.items(), key=_brand_image_rank):
             if len(collected) >= _BRAND_REFERENCE_MAX:
                 break
             if not isinstance(image, dict):
                 continue
             entry = manifest.get(image.get("asset_id"))
             record = (entry or {}).get("record") or {}
+            if not _clears_style_reference_floor(record):
+                continue
             media = record.get("media") or {}
             digest = (media.get("digest") or {}).get("value")
             if not isinstance(digest, str) or not digest:
@@ -3686,6 +3782,110 @@ class LumenWebTools:
             )
         )
 
+    def _probe_digests(self) -> List[str]:
+        """Content digests this turn could resolve, best candidate first: the
+        document's own registered assets, then the kit manifest, the account
+        logo, and the workspace library. Deduped, and only the first few are
+        ever used — this feeds a reachability probe, not an inventory."""
+        digests: List[str] = []
+
+        def _take(record: Any) -> None:
+            if not isinstance(record, dict):
+                return
+            value = ((record.get("media") or {}).get("digest") or {}).get("value")
+            if isinstance(value, str) and re.fullmatch(r"[0-9a-f]{64}", value):
+                digests.append(value)
+
+        for record in (self.web_doc.get("assets") or {}).values():
+            _take(record)
+        for manifest in (
+            self.config.brand_kit_assets,
+            self.config.account_assets,
+            self.config.asset_library,
+        ):
+            if isinstance(manifest, dict):
+                for entry in manifest.values():
+                    _take((entry or {}).get("record") if isinstance(entry, dict) else None)
+        return list(dict.fromkeys(digests))
+
+    def _preflight_asset_base_url(self) -> None:
+        """Prove — once per turn, loudly — that `self.asset_base_url` actually
+        serves bytes, and record the verdict in the run trace.
+
+        This exists because a SILENTLY dead asset origin is indistinguishable,
+        from inside the loop, from a model that refuses to use imagery: the
+        agent places `<img data-asset=…>`, the preview renders 404s, the visual
+        reviewer sees broken images, and the agent correctly strips them and
+        reports that the assets "did not render". That failure mode cost a full
+        day and three wrong diagnoses. It must never be silent again.
+
+        Deliberately NON-FATAL: an unreachable origin degrades the turn's
+        imagery, it does not invalidate the page, and failing the turn here
+        would trade a visible degradation for an invisible outage. Warn, record,
+        continue."""
+        if self._asset_base_url_preflighted:
+            return
+        self._asset_base_url_preflighted = True
+
+        base = self.asset_base_url.rstrip("/")
+        payload: JsonObject = {
+            "asset_base_url": base,
+            "source": "config" if self.config.asset_base_url else "fallback",
+        }
+        digests = self._probe_digests()
+        if not digests:
+            payload["reachable"] = None
+            payload["reason"] = "no asset digest available to probe"
+            logger.info("asset origin preflight skipped for %s: nothing to probe", base)
+            self.record(
+                "orchestrator",
+                "asset_base_url_preflight",
+                output_summary=f"{base} — not probed (no asset digest in this turn yet)",
+                payload=payload,
+            )
+            return
+
+        digest = digests[0]
+        url = f"{base}/{digest}"
+        payload["probe_url"] = url
+        try:
+            response = httpx.get(url, timeout=_ASSET_PREFLIGHT_TIMEOUT_S)
+            payload["status_code"] = response.status_code
+            payload["reachable"] = response.status_code == 200
+        except Exception as error:  # noqa: BLE001 - a probe must never break a turn
+            payload["reachable"] = False
+            payload["reason"] = f"{error.__class__.__name__}: {error}"
+
+        if payload["reachable"]:
+            logger.info("asset origin preflight OK: %s -> 200", url)
+            self.record(
+                "orchestrator",
+                "asset_base_url_preflight",
+                output_summary=f"{base} serves assets (200 for {digest[:16]})",
+                payload=payload,
+            )
+            return
+
+        detail = payload.get("reason") or f"HTTP {payload.get('status_code')}"
+        logger.warning(
+            "ASSET ORIGIN UNREACHABLE: %s did not serve %s (%s). Every "
+            "<img data-asset=...> in this turn's preview screenshots will render "
+            "BROKEN, and the agent will strip the imagery it places. Set "
+            "LUMEN_API_ORIGIN to the design API's real origin.",
+            base,
+            digest,
+            detail,
+        )
+        self.record(
+            "orchestrator",
+            "asset_base_url_unreachable",
+            output_summary=(
+                f"{base} did not serve a known asset ({detail}) — preview "
+                "screenshots will show broken images for every placed asset"
+            ),
+            payload=payload,
+        )
+
     def render_web_preview(self) -> str:
         """Render the live document (editor mode) and capture full-page
         screenshots at 1440, 768, and 375 px, plus interactive STATE captures
@@ -3700,6 +3900,9 @@ class LumenWebTools:
         no helper call, no Playwright, no iteration bump — and the result
         carries `unchanged: true` so the orchestrator reuses its standing
         critique instead of re-reviewing byte-identical pixels."""
+        # Once per turn, before the first screenshot anyone will judge: prove the
+        # asset origin these previews resolve images against is actually alive.
+        self._preflight_asset_base_url()
         # A render call means control is back with the orchestrator: open a
         # fresh between-renders edit budget for the next author round.
         self._mutations_since_render = 0

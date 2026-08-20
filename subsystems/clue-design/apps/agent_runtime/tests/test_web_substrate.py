@@ -8,6 +8,7 @@ ingest only, no LLM or browser).
 from __future__ import annotations
 
 import base64
+import hashlib
 import io
 import json
 from dataclasses import replace
@@ -1841,6 +1842,7 @@ def test_brand_style_references_carry_the_kits_own_image_bytes(tmp_path: Path):
                         "mime_type": "image/png",
                         "digest": {"algorithm": "sha256", "value": digest},
                     },
+                    "raster": {"pixel_width": 2048, "pixel_height": 1024},
                 }
             }
         },
@@ -1850,6 +1852,176 @@ def test_brand_style_references_carry_the_kits_own_image_bytes(tmp_path: Path):
     references, labels = tools._brand_style_references()
     assert references == [(_TINY_PNG, "image/png")]
     assert labels == ["Hero texture"]
+
+
+# --- style-anchor selection: ordering and the resolution floor --------------
+#
+# Two defects found on the approved kits, 2026-08-20. Both silently degraded
+# every generated image on every page.
+
+
+def _style_image_entry(
+    tmp_path: Path, asset_id: str, *, width: int, height: int
+) -> tuple[Path, dict]:
+    """A kit image whose bytes really exist in a per-test store, so the picker
+    reaches its ordering/floor decisions instead of skipping on missing blobs."""
+    store_root = tmp_path / "asset-store"
+    digest = hashlib.sha256(asset_id.encode()).hexdigest()
+    blob = store_root / "sha256" / digest[:2] / digest
+    blob.parent.mkdir(parents=True, exist_ok=True)
+    blob.write_bytes(_TINY_PNG)
+    return store_root, {
+        "record": {
+            "id": asset_id,
+            "media": {
+                "mime_type": "image/png",
+                "digest": {"algorithm": "sha256", "value": digest},
+            },
+            "raster": {"pixel_width": width, "pixel_height": height},
+        }
+    }
+
+
+def test_a_kits_image_ordinal_is_read_numerically_not_alphabetically(tmp_path: Path):
+    """`img.{n}` is the ingestion pipeline's own quality ranking (emit.py numbers
+    an evidence list already sorted by area then file size, descending). A STRING
+    sort orders `img.1, img.10, img.11, … img.2`, so the second style anchor was
+    always `img.10` and `img.2` was unreachable at _BRAND_REFERENCE_MAX = 2.
+    On the approved v6 kit that made a 296x124 thumbnail half the conditioning of
+    every generated image."""
+    store_root = None
+    manifest: dict = {}
+    images: dict = {}
+    for ordinal in (1, 2, 10, 11):
+        asset_id = f"asset_{ordinal}"
+        store_root, entry = _style_image_entry(
+            tmp_path, asset_id, width=2048, height=1024
+        )
+        manifest[asset_id] = entry
+        images[f"img.{ordinal}"] = {"asset_id": asset_id, "title": f"Image {ordinal}"}
+
+    config = replace(
+        AgentRuntimeConfig.from_env(REPO_ROOT),
+        trace_dir=tmp_path / "workspace_root",
+        asset_store_root=store_root,
+        brand_kit=_brand_kit_with_style(images=images),
+        brand_kit_assets=manifest,
+    )
+    tools = _bare_tools(tmp_path)
+    tools.config = config
+
+    _, labels = tools._brand_style_references()
+
+    assert labels == ["Image 1", "Image 2"]
+
+
+def test_a_key_that_is_not_an_ordinal_sorts_last_rather_than_raising(tmp_path: Path):
+    """A kit shape we do not recognize must degrade, never crash a turn."""
+    store_root, ordinal_entry = _style_image_entry(
+        tmp_path, "asset_ordinal", width=2048, height=1024
+    )
+    _, odd_entry = _style_image_entry(tmp_path, "asset_odd", width=2048, height=1024)
+
+    config = replace(
+        AgentRuntimeConfig.from_env(REPO_ROOT),
+        trace_dir=tmp_path / "workspace_root",
+        asset_store_root=store_root,
+        brand_kit=_brand_kit_with_style(
+            images={
+                "hero-banner": {"asset_id": "asset_odd", "title": "Odd key"},
+                "img.9": {"asset_id": "asset_ordinal", "title": "Ranked"},
+            }
+        ),
+        brand_kit_assets={"asset_odd": odd_entry, "asset_ordinal": ordinal_entry},
+    )
+    tools = _bare_tools(tmp_path)
+    tools.config = config
+
+    _, labels = tools._brand_style_references()
+
+    assert labels == ["Ranked", "Odd key"]
+
+
+def test_a_low_resolution_image_may_not_anchor_a_generation(tmp_path: Path):
+    """Kit v8 carries a 64x64 icon and a QR code. Conditioning a hero on those is
+    worse than conditioning on nothing — and the picker must NOT backfill down
+    the ranking to reach _BRAND_REFERENCE_MAX."""
+    store_root, big = _style_image_entry(tmp_path, "asset_big", width=2048, height=1024)
+    _, icon = _style_image_entry(tmp_path, "asset_icon", width=64, height=64)
+    _, qr = _style_image_entry(tmp_path, "asset_qr", width=296, height=124)
+
+    config = replace(
+        AgentRuntimeConfig.from_env(REPO_ROOT),
+        trace_dir=tmp_path / "workspace_root",
+        asset_store_root=store_root,
+        brand_kit=_brand_kit_with_style(
+            images={
+                "img.1": {"asset_id": "asset_big", "title": "Hero"},
+                "img.2": {"asset_id": "asset_icon", "title": "Icon"},
+                "img.3": {"asset_id": "asset_qr", "title": "QR"},
+            }
+        ),
+        brand_kit_assets={"asset_big": big, "asset_icon": icon, "asset_qr": qr},
+    )
+    tools = _bare_tools(tmp_path)
+    tools.config = config
+
+    references, labels = tools._brand_style_references()
+
+    assert labels == ["Hero"]
+    assert references is not None and len(references) == 1
+
+
+def test_a_kit_of_only_thumbnails_yields_no_anchors_at_all(tmp_path: Path):
+    """Fewer anchors — or none — is the correct outcome; the generation then runs
+    plain text-conditioned, which is what the caller already handles."""
+    store_root, icon = _style_image_entry(tmp_path, "asset_icon", width=64, height=64)
+    _, qr = _style_image_entry(tmp_path, "asset_qr", width=296, height=124)
+
+    config = replace(
+        AgentRuntimeConfig.from_env(REPO_ROOT),
+        trace_dir=tmp_path / "workspace_root",
+        asset_store_root=store_root,
+        brand_kit=_brand_kit_with_style(
+            images={
+                "img.1": {"asset_id": "asset_icon", "title": "Icon"},
+                "img.2": {"asset_id": "asset_qr", "title": "QR"},
+            }
+        ),
+        brand_kit_assets={"asset_icon": icon, "asset_qr": qr},
+    )
+    tools = _bare_tools(tmp_path)
+    tools.config = config
+
+    references, labels = tools._brand_style_references()
+
+    assert references is None
+    assert labels == []
+
+
+def test_an_image_with_no_recorded_dimensions_does_not_clear_the_floor(tmp_path: Path):
+    """Unknown is not "good enough" for something that steers every generation."""
+    store_root, entry = _style_image_entry(
+        tmp_path, "asset_unknown", width=2048, height=1024
+    )
+    entry["record"].pop("raster")
+
+    config = replace(
+        AgentRuntimeConfig.from_env(REPO_ROOT),
+        trace_dir=tmp_path / "workspace_root",
+        asset_store_root=store_root,
+        brand_kit=_brand_kit_with_style(
+            images={"img.1": {"asset_id": "asset_unknown", "title": "Unknown"}}
+        ),
+        brand_kit_assets={"asset_unknown": entry},
+    )
+    tools = _bare_tools(tmp_path)
+    tools.config = config
+
+    references, labels = tools._brand_style_references()
+
+    assert references is None
+    assert labels == []
 
 
 def test_generate_image_reports_when_no_model_is_configured(tmp_path: Path, monkeypatch):

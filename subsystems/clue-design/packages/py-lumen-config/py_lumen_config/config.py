@@ -47,6 +47,21 @@ class Settings(BaseSettings):
 
     # --- Backend API (lumen_api) ---
     lumen_api_cors_origins: str = "http://127.0.0.1:3000,http://localhost:3000"
+    # The design API's OWN externally-reachable origin. Every HTTP request path
+    # derives asset URLs from `request.base_url` and never needs this; it exists
+    # for the ONE consumer that has no request to derive from — the deep agent's
+    # in-loop preview render, which runs inside the fleet worker and fetches
+    # every `<img data-asset=…>` from `{origin}/asset-store/{digest}` over the
+    # network (Playwright `set_content`, so a relative src cannot resolve).
+    #
+    # This setting exists because that value used to be HARDCODED in the agent
+    # runtime at `http://127.0.0.1:8000/asset-store` — a port nothing has
+    # listened on since the design API moved to 8010. Every image the agent
+    # placed rendered broken in its own screenshots, so the agent (correctly)
+    # stripped it and reported "the supplied assets did not render". Cost: a day
+    # and three "the model won't use images" misdiagnoses. The default below is
+    # the documented canonical dev stack; deployments set LUMEN_API_ORIGIN.
+    lumen_api_origin: str = "http://127.0.0.1:8010"
     # D4/R-D4-1: this is the ENGINE MATERIALIZATION CACHE root, not a store. Durable custody of
     # every design byte lives in platform storage (`clue_storage`); the Rust engine only ever
     # reads/writes a transient per-workspace mirror at
@@ -252,6 +267,16 @@ class Settings(BaseSettings):
             )
         return value
 
+    @field_validator("lumen_api_origin", mode="before")
+    @classmethod
+    def _normalize_api_origin(cls, value: object) -> object:
+        """Blank → the default (`VAR=` in a .env means unset); a trailing slash
+        is stripped so `{origin}/asset-store` never doubles up."""
+        if not isinstance(value, str):
+            return value
+        trimmed = value.strip().rstrip("/")
+        return trimmed or "http://127.0.0.1:8010"
+
     @field_validator("image_model_id", mode="before")
     @classmethod
     def _normalize_image_model_id(cls, value: object) -> object:
@@ -267,6 +292,17 @@ class Settings(BaseSettings):
     def cors_origins_list(self) -> list[str]:
         origins = [o.strip() for o in self.lumen_api_cors_origins.split(",") if o.strip()]
         return origins or ["http://127.0.0.1:3000"]
+
+    @property
+    def asset_base_url(self) -> str:
+        """The absolute base every `data-asset` image resolves against off-request:
+        `{LUMEN_API_ORIGIN}/asset-store`.
+
+        Derived rather than configured whole so an operator can never point the
+        origin at a real server and still get a wrong PATH — the `/asset-store`
+        suffix is the route's own, spelled here once (the request-bound paths in
+        `lumen_api.main` build the same string from `request.base_url`)."""
+        return f"{self.lumen_api_origin.rstrip('/')}/asset-store"
 
     @property
     def effective_asset_store_root(self) -> Path:

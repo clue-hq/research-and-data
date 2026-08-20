@@ -7724,6 +7724,20 @@ def run_web_agent_turn(
             # D4: generated imagery must land in (and export from) the request workspace's
             # engine cache, exactly as the scene path pins it.
             config = replace(config, asset_store_root=turn_cache_root)
+        # The agent's in-loop preview resolves every `<img data-asset=…>` against
+        # `config.asset_base_url`. Unlike the HTTP render route above (which derives it from
+        # `request.base_url`), this path has NO request: a web turn is leased fleet work and
+        # runs in a detached worker. So the value is CONFIGURED — `AgentRuntimeConfig.from_env`
+        # reads `settings.asset_base_url` (LUMEN_API_ORIGIN), and it is asserted here rather
+        # than re-derived so there is exactly one home for it. It used to be a hardcoded
+        # `http://127.0.0.1:8000/asset-store` inside the agent substrate, pointing at a port
+        # nothing has listened on since the design API moved to 8010 — which is why the agent
+        # saw broken images in its own screenshots and stripped every asset it placed.
+        if not config.asset_base_url:
+            raise ValueError(
+                "web turn has no asset_base_url — the agent's preview would render every "
+                "placed image broken. Set LUMEN_API_ORIGIN to the design API's origin."
+            )
         if asset_library is not None:
             config = replace(config, asset_library=asset_library)
         if custom_component_registry is not None:

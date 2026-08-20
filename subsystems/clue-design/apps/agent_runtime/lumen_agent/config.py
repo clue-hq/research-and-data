@@ -125,6 +125,20 @@ class AgentRuntimeConfig:
     # the API worker. The runtime receives methods, not database/store paths;
     # source is projected by value into the run's virtual filesystem while all
     # mutations go through CAS/compile-gated typed tools.
+    # The absolute base URL the agent's OWN in-loop preview render resolves
+    # `<img data-asset=…>` against — `{api origin}/asset-store`, so Playwright
+    # (which renders via `set_content`, with no asset server of its own) can
+    # actually fetch the pixels. Resolved from `settings.asset_base_url`
+    # (LUMEN_API_ORIGIN) in `from_env`.
+    #
+    # THIS FIELD DID NOT EXIST until 2026-08-20, and its absence was the root
+    # cause of "generated web pages never contain imagery": the substrate did
+    # `getattr(config, "asset_base_url", None) or "http://127.0.0.1:8000/…"`,
+    # which — with no such field — ALWAYS took the hardcoded fallback, and
+    # nothing has listened on 8000 since the design API moved to 8010. The agent
+    # placed images, saw them broken in its own screenshots, and stripped them.
+    # None → the substrate's last-resort fallback (see `_FALLBACK_ASSET_BASE_URL`).
+    asset_base_url: str | None = None
     custom_component_registry: Any | None = None
     custom_component_account_id: str | None = None
     custom_component_document_id: str | None = None
@@ -154,6 +168,7 @@ class AgentRuntimeConfig:
                 or (root / ".deepagent-workspace")
             ),
             asset_store_root=settings.lumen_agent_asset_store,
+            asset_base_url=settings.asset_base_url,
             agent_base_url=settings.lumen_agent_base_url or "https://openrouter.ai/api/v1",
             agent_api_key=settings.lumen_agent_api_key,
             agent_reasoning=settings.lumen_agent_reasoning,
