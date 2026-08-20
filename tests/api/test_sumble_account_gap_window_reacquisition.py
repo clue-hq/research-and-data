@@ -17,10 +17,11 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from pydantic import SecretStr
@@ -28,7 +29,11 @@ from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_api.entity_research_tools import EntityResearchGovernedRejection
+from clue_api.entity_research_tools import (
+    EntityResearchGovernedRejection,
+    ProviderOperationObservation,
+    ProviderOperationReservation,
+)
 from clue_api.sumble_account_gaps import (
     SumbleAccountGapCoordinator,
     SumbleAccountGapFieldAlreadyAcquired,
@@ -40,6 +45,7 @@ from clue_api.sumble_entity_research_tools import SumbleAccountSemanticEnrichmen
 from clue_core import (
     AccountGapFieldPlan,
     AccountGapOperation,
+    AccountGapOperationId,
     AccountGapOperationState,
     AccountGapSpendOutcome,
     ClaimId,
@@ -199,7 +205,12 @@ def test_same_window_reacquisition_of_a_bought_field_refuses_without_spend_or_st
             # rejection tool message, never a job suspension.
             assert isinstance(refusal.value, SumbleAccountGapNotEligible)
             assert _HQ in str(refusal.value)
-            assert "read" in str(refusal.value).lower()
+            # The refusal must name the OWNING operation's exact field set, because re-asking that
+            # exact set is the one legal move that makes this pair terminal (it replays, zero
+            # spend). Naming only the bought field left the live agent thrashing: it read state,
+            # re-asked subsets, and never discovered the exit.
+            assert f"[{_EMPLOYEE}, {_HQ}]" in str(refusal.value)
+            assert "replay" in str(refusal.value).lower()
 
             # A partly-overlapping set is refused whole — the agent re-asks for the remainder —
             # and the message names only the fields this window actually bought.
@@ -213,7 +224,10 @@ def test_same_window_reacquisition_of_a_bought_field_refuses_without_spend_or_st
                     allow_unbounded_tech=False,
                 )
             assert _HQ in str(mixed.value)
-            assert _INDUSTRY not in str(mixed.value)
+            assert f"[{_EMPLOYEE}, {_HQ}]" in str(mixed.value)
+            # ``core.industry`` is unbought, so it is never listed as already acquired — it only
+            # appears inside the owning set if that set contains it, which it does not.
+            assert f"acquired in this observation window: {_HQ} " in str(mixed.value)
 
             assert len(http.calls) == calls_after_first
             assert (
@@ -332,7 +346,12 @@ def test_durable_reservation_converts_only_the_window_trigger_and_re_raises_the_
 _SHA = "0" * 64
 
 
-def _hq_request(account_id: EntityId, *, label: str) -> GovernedResearchToolRequest:
+def _organizations_request(
+    account_id: EntityId,
+    *,
+    label: str,
+    field_keys: tuple[str, ...] = (_HQ,),
+) -> GovernedResearchToolRequest:
     return GovernedResearchToolRequest(
         research_run_id=uuid4(),
         job_id=uuid4(),
@@ -346,10 +365,11 @@ def _hq_request(account_id: EntityId, *, label: str) -> GovernedResearchToolRequ
         tool_input_sha256=_SHA,
         field_plan_ref=f"account-field-plan:{label}",
         source_plan_ref=f"effective-source-plans:{label}",
-        field_keys=(_HQ,),
+        field_keys=field_keys,
         source_keys=(ORGANIZATIONS_SOURCE_KEY,),
-        field_source_authority=(
-            FieldSourceAuthority(field_key=_HQ, source_keys=(ORGANIZATIONS_SOURCE_KEY,)),
+        field_source_authority=tuple(
+            FieldSourceAuthority(field_key=key, source_keys=(ORGANIZATIONS_SOURCE_KEY,))
+            for key in field_keys
         ),
         questions=("Where is this account headquartered?",),
         budget_reservation_key=f"{label}-budget",
@@ -414,7 +434,7 @@ def test_the_m8d_action_renders_a_recoverable_rejection_and_repeats_it_on_replay
             for label in ("first-call", "checkpoint-replay"):
                 with pytest.raises(EntityResearchGovernedRejection) as refusal:
                     await action.execute(  # type: ignore[arg-type]
-                        _hq_request(account_id, label=label),
+                        _organizations_request(account_id, label=label),
                         before_dispatch=never_dispatched,
                         settle_terminal=never_dispatched,
                     )
@@ -422,10 +442,162 @@ def test_the_m8d_action_renders_a_recoverable_rejection_and_repeats_it_on_replay
                 assert _HQ in refusal.value.detail
                 rendered = refusal.value.render()
                 assert '"recoverable":true' in rendered
-                assert "read the existing account research state" in rendered
+                # The exit must survive rendering + the 1000-char detail clamp: the model reads
+                # this string and nothing else.
+                assert f"[{_EMPLOYEE}, {_HQ}]" in rendered
+                assert "replay its durable outcome" in rendered
                 assert len(http.calls) == calls_after_first
                 assert (
                     await conn.execute(text("SELECT count(*) FROM account_gap_operation"))
                 ).scalar_one() == operations_after_first
+
+    run_async(scenario())
+
+
+async def _bind_provider_operation(
+    conn: AsyncConnection,
+    reservation: ProviderOperationReservation,
+) -> ProviderOperationObservation:
+    """The minimum of what production's causation store does before a dispatch.
+
+    ``_persist_projection`` FKs its projection to ``entity_research_provider_operation``, so the
+    owning call must leave that row behind exactly as ``bind_before_dispatch`` would; the
+    observation bookkeeping around it is not what this test is about.
+    """
+
+    await conn.execute(
+        text(
+            "INSERT INTO entity_research_provider_operation (operation_ref, provider_kind, "
+            "workspace_id, project_id, project_run_id, subject_type, target_entity_id, "
+            "source_key, field_keys, request_artifact_ref, reserved_at, dispatched_at) VALUES "
+            "(:operation_ref, :provider_kind, :workspace_id, :project_id, :project_run_id, "
+            ":subject_type, :target_entity_id, :source_key, :field_keys, :request_artifact_ref, "
+            ":reserved_at, :dispatched_at) ON CONFLICT (operation_ref) DO NOTHING"
+        ),
+        {
+            "operation_ref": reservation.operation_ref,
+            "provider_kind": reservation.provider_kind,
+            "workspace_id": reservation.workspace_id,
+            "project_id": reservation.project_id,
+            "project_run_id": reservation.project_run_id,
+            "subject_type": reservation.subject_type.value,
+            "target_entity_id": reservation.target_entity_id,
+            "source_key": reservation.source_key,
+            "field_keys": list(reservation.field_keys),
+            "request_artifact_ref": reservation.request_artifact_ref,
+            "reserved_at": reservation.reserved_at,
+            "dispatched_at": reservation.dispatched_at,
+        },
+    )
+    return ProviderOperationObservation(
+        observation_id=uuid4(),
+        tool_request_id=uuid4(),
+        operation_ref=reservation.operation_ref,
+        workspace_id=reservation.workspace_id,
+        disposition=reservation.observation_disposition.value,
+        created_at=datetime.now(UTC),
+    )
+
+
+def test_the_exact_owning_field_set_still_replays_and_settles_under_the_new_job(
+    tmp_path: Path,
+) -> None:
+    """The exit the refusal points at, proven end to end — this is the live wedge's repair.
+
+    ``core.hq_location`` settled ``conflict``/unsatisfied under an operation that bought it
+    together with ``core.employee_count``, so the pair stays OUTSTANDING for a later job and
+    ``assess_account_coverage`` cannot close while it is unattempted. Re-asking the owning
+    operation's *exact* field set rejoins it (``find_account_gap_operation_for_fields``) and
+    replays zero-spend, writing a result under the new job's own tool request — which is what
+    makes the pair terminal. The window pre-check must never stand in front of that: it lives in
+    ``compile_sumble_account_gap_preflight``, which the exact-set rejoin returns before reaching.
+
+    Tolerant of both projection-serving paths (equal recompute, or the stored projection served
+    because a recompute differs) — that admitted history is correct either way.
+    """
+
+    async def scenario() -> None:
+        workspace_id = "ws-gap-window-exact-set"
+        storage = FsStorage(tmp_path / "artifacts")
+        async with rollback_conn(seed_pack=True) as conn:
+            started, ready = await _seed_selected_high_tier_account(
+                conn, storage, workspace_id=workspace_id
+            )
+            account_id = EntityId(ready.account_id)
+
+            @asynccontextmanager
+            async def same_connection() -> AsyncIterator[AsyncConnection]:
+                yield conn
+
+            http = _HeadcountOnlySumbleHttp("insighthealth.ai")
+            starter = _starter(storage=storage, conn_factory=same_connection, http=http)
+            action = SumbleAccountSemanticEnrichmentAction(
+                starter=starter,
+                storage=storage,
+                conn_factory=same_connection,
+                workspace_id=workspace_id,
+                project_id=started.project_id,
+                project_run_id=ProjectRunId(started.project_run_id),
+                account_id=account_id,
+                field_expected_value_credits={_EMPLOYEE: Decimal(5), _HQ: Decimal(5)},
+                provider_credit_cap=3,
+            )
+
+            async def bind(reservation: ProviderOperationReservation) -> object:
+                return await _bind_provider_operation(conn, reservation)
+
+            # The owning job buys the pair.
+            owning_drafts = await action.execute(  # type: ignore[arg-type]
+                _organizations_request(account_id, label="owning-job", field_keys=(_EMPLOYEE, _HQ)),
+                before_dispatch=bind,
+                settle_terminal=bind,
+            )
+            assert len(owning_drafts) == 1
+            owning_ref = owning_drafts[0].operation.operation_ref
+            # The unsatisfied half: bought, terminal on the ledger, still no usable answer — the
+            # exact live shape that keeps the pair OUTSTANDING for the next job.
+            operation_id = AccountGapOperationId(UUID(owning_ref.rsplit(":", 1)[-1]))
+            settled = {
+                str(row.field_key): row.state.value
+                for row in await list_account_gap_field_results(
+                    conn, workspace_id=workspace_id, operation_id=operation_id
+                )
+            }
+            assert settled[_HQ] == "confirmed_missing"
+            calls_after_owning = len(http.calls)
+            operations_after_owning = (
+                await conn.execute(text("SELECT count(*) FROM account_gap_operation"))
+            ).scalar_one()
+
+            # A LATER job asking for the exact owning set is not refused: it replays zero-spend
+            # and lands its own result draft, which is what makes both pairs terminal.
+            async def never_dispatched(reservation: object) -> object:
+                raise AssertionError("replaying a settled operation must not dispatch")
+
+            replay_drafts = await action.execute(  # type: ignore[arg-type]
+                _organizations_request(account_id, label="later-job", field_keys=(_EMPLOYEE, _HQ)),
+                before_dispatch=never_dispatched,
+                settle_terminal=never_dispatched,
+            )
+            assert len(replay_drafts) == 1
+            assert replay_drafts[0].operation.operation_ref == owning_ref
+            assert set(replay_drafts[0].requested_field_keys) == {_EMPLOYEE, _HQ}
+            assert {str(item.field_key) for item in replay_drafts[0].fields} == {_EMPLOYEE, _HQ}
+            assert len(http.calls) == calls_after_owning
+            assert (
+                await conn.execute(text("SELECT count(*) FROM account_gap_operation"))
+            ).scalar_one() == operations_after_owning
+
+            # And the starter-level guarantee the above rides on, asserted directly.
+            replayed = await starter.start(
+                workspace_id=workspace_id,
+                project_run_id=ProjectRunId(started.project_run_id),
+                account_id=account_id,
+                field_expected_value_credits={_EMPLOYEE: Decimal(5), _HQ: Decimal(5)},
+                provider_credit_cap=3,
+                allow_unbounded_tech=False,
+            )
+            assert replayed.outcome is SumbleAccountGapOutcome.REPLAYED
+            assert len(http.calls) == calls_after_owning
 
     run_async(scenario())

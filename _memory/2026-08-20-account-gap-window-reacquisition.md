@@ -60,6 +60,38 @@ RED proof captured before the fix: `DBAPIError`, orig SQLSTATE `P0001`, exact tr
 failures on this branch, all unrelated: production-context S3, frontend bulk actions, lane D4/BD,
 projections app, toolbelt out-of-order matrix, fi2_62 bundle shrink).
 
+## Amendment (same day, after live evidence 06:18–06:20)
+
+The first refusal fired correctly but under-steered. Live journal for job `3cc0a4f2`:
+06:18:13 refusal → 06:18:34 the agent obediently called `read_account_research_state` → then
+06:19:04 / 06:19:07 / 06:19:30 / 06:20:54 it tried four more subsets, and 06:19:39
+`assess_account_coverage` refused: `coverage cannot close ... core.hq_location@sumble_organizations`.
+The pair was OUTSTANDING and, as far as the agent could tell, unattemptable.
+
+**The exit exists and was never blocked.** `SumbleAccountGapStarter.start` calls
+`find_account_gap_operation_for_fields` BEFORE `compile_sumble_account_gap_preflight`, so an
+exact-owning-set request rejoins and replays zero-spend and never reaches the pre-check. Proven by
+probe and now pinned by `test_the_exact_owning_field_set_still_replays_and_settles_under_the_new_job`
+(action level: the later job gets its own result draft, no dispatch, no new operation row). So the
+proposed "exempt the exact set inside compile" would have been dead code — NOT added.
+
+**What was actually missing was the signpost.** `account_gap_window_acquired_fields` →
+`account_gap_window_field_owners`, now returning each owning operation's WHOLE field set, and the
+refusal names it: *"This window's operations acquired exactly [core.employee_count,
+core.hq_location]; re-ask one of those exact field sets to replay its durable outcome at zero
+spend … Re-asking a subset or a different overlapping set can never succeed."* Asserted through
+`render()` so it survives the 1000-char detail clamp.
+
+## Not mine — the actual 06:20:59 job killer
+
+`{account.hiring_velocity_eng}` (its own exact owning set) DID rejoin and replay, then died on
+`EntityResearchResultIntegrityError: provider settlement replay differs from its immutable first
+fold` → `execution_failed`. `_fold_settled_spend` compared the fold's `research_run_id`/`job_id`,
+which necessarily differ on a cross-job replay of a content-keyed operation. That is being fixed
+concurrently by the **fold-visibility** session in `entity_research_tools.py` (its in-tree comment
+names this exact job and timestamp). I did not touch that file. My steering fix only pays off once
+that lands — otherwise it points the agent at a path that still suspends.
+
 ## Open / follow-ups
 
 - **Refusal-loop risk.** For a field that settled `confirmed_missing`, `read_account_research_state`

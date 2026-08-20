@@ -56,7 +56,7 @@ class AccountGapFieldWindowConflict(AccountGapRepositoryError):
     The S1 ``account_gap_field_no_overlap`` trigger is the anti-double-spend authority: one
     ``(workspace, account, field)`` may be bought once per observation window, and the window is
     per *project run*, not per job, deliberately. Callers pre-check
-    :func:`account_gap_window_acquired_fields` and refuse before compiling anything, so reaching
+    :func:`account_gap_window_field_owners` and refuse before compiling anything, so reaching
     this class means two creates raced past that read — and it is still a statement about the
     *request* ("that field is already bought; read the operation that owns it"), never about
     money or truth. It is therefore typed and model-repairable rather than a raw ``DBAPIError``
@@ -204,20 +204,27 @@ async def find_account_gap_operation_for_fields(
     return matches[0] if matches else None
 
 
-async def account_gap_window_acquired_fields(
+async def account_gap_window_field_owners(
     conn: AsyncConnection,
     *,
     workspace_id: str,
     account_id: object,
     observation_window: str,
     field_keys: Sequence[str],
-) -> tuple[str, ...]:
-    """Which of ``field_keys`` some operation already acquired in this observation window.
+) -> tuple[tuple[str, ...], ...]:
+    """The exact field set of every operation in this window that owns a requested field.
 
     The pre-check in front of the ``account_gap_field_no_overlap`` trigger. The trigger stays the
     authority (this read can be raced); it exists so the ordinary, entirely expected case — a
     later job in the same project run asking again for a field an earlier job already bought —
     is refused as a plain, zero-state request refusal instead of a raw database error.
+
+    It returns the owning operations' **whole** field sets, not just the overlap, because the
+    caller's refusal has to name them: re-asking an owning set *exactly* is what
+    :func:`find_account_gap_operation_for_fields` rejoins and replays zero-spend, and that replay
+    is the only way a later job makes an already-bought pair terminal for its own coverage. A
+    refusal that named only the overlap left the live agent (job ``3cc0a4f2``) with no discoverable
+    legal move: it re-read state, tried subsets, and wedged.
     """
 
     requested = set(field_keys)
@@ -226,7 +233,7 @@ async def account_gap_window_acquired_fields(
     rows = (
         await conn.execute(
             text(
-                "SELECT DISTINCT result.field_key FROM account_gap_field_result result "
+                "SELECT result.operation_id, result.field_key FROM account_gap_field_result result "
                 "JOIN account_gap_operation op ON op.id = result.operation_id "
                 "WHERE result.workspace_id=:workspace_id AND result.account_id=:account_id "
                 "AND op.observation_window=:window"
@@ -237,8 +244,11 @@ async def account_gap_window_acquired_fields(
                 "window": observation_window,
             },
         )
-    ).scalars()
-    return tuple(sorted(key for key in rows if key in requested))
+    ).all()
+    owned: dict[object, set[str]] = {}
+    for operation_id, field_key in rows:
+        owned.setdefault(operation_id, set()).add(field_key)
+    return tuple(sorted(tuple(sorted(fields)) for fields in owned.values() if fields & requested))
 
 
 async def get_account_gap_operation(
@@ -870,7 +880,7 @@ __all__ = [
     "AccountGapNotFound",
     "AccountGapReplayConflict",
     "AccountGapRepositoryError",
-    "account_gap_window_acquired_fields",
+    "account_gap_window_field_owners",
     "claim_account_gap_operation",
     "claim_account_gap_snapshot",
     "find_account_gap_operation",

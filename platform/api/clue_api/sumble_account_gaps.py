@@ -74,7 +74,7 @@ from clue_research.durable import (
     AccountGapReplayConflict,
     DiscoverySealConflict,
     ProjectRunStatus,
-    account_gap_window_acquired_fields,
+    account_gap_window_field_owners,
     bind_discovery_artifact_subject,
     capture_discovery_artifact,
     claim_account_gap_operation,
@@ -225,6 +225,32 @@ class SumbleAccountGapFieldAlreadyAcquired(SumbleAccountGapNotEligible):
     Re-buying it is never the repair — the ledger already holds that purchase's outcome, including
     an honest ``confirmed_missing`` or an unresolved ``conflict``.
     """
+
+
+def _already_acquired_detail(
+    *,
+    requested: Sequence[str],
+    owning_field_sets: Sequence[Sequence[str]],
+) -> str:
+    """Name the bought fields AND the exact set to re-ask, which is the only legal exit.
+
+    An already-bought pair stays OUTSTANDING for a later job until that job attempts it, and
+    ``assess_account_coverage`` refuses to close while anything is outstanding. The one attempt
+    that succeeds is re-asking an owning operation's *exact* field set: the starter rejoins it
+    before compiling anything and replays it zero-spend, landing a result under the new job's own
+    tool request. Live job ``3cc0a4f2`` proved that a refusal naming only the overlap is not
+    enough — the agent read state, tried three subsets, and never found this move.
+    """
+
+    acquired = sorted(set(requested) & {key for fields in owning_field_sets for key in fields})
+    sets = " or ".join(f"[{', '.join(fields)}]" for fields in owning_field_sets)
+    return (
+        f"already acquired in this observation window: {', '.join(acquired)} — that purchase is "
+        f"durable and cannot be repeated. This window's operations acquired exactly {sets}; "
+        "re-ask one of those exact field sets to replay its durable outcome at zero spend (that "
+        "is what makes the field terminal for coverage), or finalize with the honest gap. "
+        "Re-asking a subset or a different overlapping set can never succeed."
+    )
 
 
 class SumbleAccountGapOutcome(StrEnum):
@@ -523,19 +549,16 @@ async def compile_sumble_account_gap_preflight(
         # The refusal is whole-request even when only some fields overlap: dropping the bought
         # ones silently would change the field set the agent authorized, and the agent can simply
         # re-ask for the remainder. The message names exactly which fields to drop.
-        acquired = await account_gap_window_acquired_fields(
+        owners = await account_gap_window_field_owners(
             conn,
             workspace_id=workspace_id,
             account_id=account_id,
             observation_window=observation_window,
             field_keys=field_keys,
         )
-        if acquired:
+        if owners:
             raise SumbleAccountGapFieldAlreadyAcquired(
-                f"already acquired in this observation window: {', '.join(acquired)} — that "
-                "purchase is durable, so read the existing account research state for its "
-                "outcome instead of re-buying it; re-ask only for fields this window has not "
-                "bought, use another admitted source, or finalize with an honest gap"
+                _already_acquired_detail(requested=field_keys, owning_field_sets=owners)
             )
         for field_key in field_keys:
             source_key = _SOURCE_BY_FIELD[field_key]
@@ -715,8 +738,9 @@ class SumbleAccountGapCoordinator:
             # a raw DBAPIError suspend the job.
             raise SumbleAccountGapFieldAlreadyAcquired(
                 f"already acquired in this observation window: {conflict} — that purchase is "
-                "durable, so read the existing account research state for its outcome instead of "
-                "re-buying it"
+                "durable and cannot be repeated; re-ask the exact field set of the operation that "
+                "bought it to replay its durable outcome at zero spend, or finalize with the "
+                "honest gap"
             ) from conflict
         terminal = self._terminal_result(operation, replay=True)
         if terminal is not None:
