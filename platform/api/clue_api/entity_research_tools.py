@@ -1811,11 +1811,16 @@ class EntityResearchResultStore:
                 .mappings()
                 .one()
             )
-            if (
-                existing["research_run_id"] != request.research_run_id
-                or existing["job_id"] != request.job_id
-                or Decimal(existing["settled_cost_cents"]) != settled_cost_cents
-            ):
+            # The fold is the OPERATION's settlement; its run/job columns record who FILED it
+            # first (feeding that job's spend sums), not who may replay it. Operations are
+            # content-keyed and deliberately reused across jobs and research runs, so a replayer
+            # necessarily differs on both identity columns — comparing them made every cross-job
+            # replay of a settled operation an "integrity violation" (live: job 3cc0a4f2 died at
+            # 06:20:59 replaying 298f3dec's folded sumble_jobs operation; same disease as the
+            # fold-visibility fix in the pending/completeness readers, one layer deeper). The one
+            # comparison that IS integrity: the money fact. The same operation claiming a
+            # different settled cost on replay is a real truth violation and still suspends.
+            if Decimal(existing["settled_cost_cents"]) != settled_cost_cents:
                 raise EntityResearchResultIntegrityError(
                     "provider settlement replay differs from its immutable first fold"
                 )

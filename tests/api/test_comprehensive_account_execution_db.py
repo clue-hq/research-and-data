@@ -2394,3 +2394,104 @@ def test_a_historical_unrequestable_pair_is_exhausted_not_outstanding(tmp_path: 
             assert not completeness.complete
 
     run_async(scenario())
+
+
+def test_a_replaying_jobs_settlement_fold_projection_tolerates_the_first_filers_identity(
+    tmp_path: Path,
+) -> None:
+    """The fold-replay guard compares the money fact, never the asker's identity.
+
+    ``_fold_settled_spend`` writes the fold once (ON CONFLICT DO NOTHING) and, on replay,
+    re-reads and compares. Comparing ``research_run_id``/``job_id`` made every cross-job replay
+    of a settled operation an "integrity violation": live, job ``3cc0a4f2`` died at 06:20:59 on
+    2026-08-20 replaying job ``298f3dec``'s folded ``sumble_jobs`` operation — same disease as
+    the fold-visibility readers, one layer deeper. The run/job columns record who FILED the fold
+    (that job's spend attribution); the replayer legitimately differs on both. The one true
+    integrity comparison survives: the same operation claiming a *different settled cost* on
+    replay still raises.
+    """
+
+    async def scenario() -> None:
+        from types import SimpleNamespace
+
+        async with rollback_conn() as conn:
+            fixture = await _seed_discovered_account(
+                conn, FsStorage(tmp_path / "b8-fold-identity-artifacts")
+            )
+            action = _PendingEnrichAction(
+                conn_factory=_NestedConnFactory(conn),
+                workspace_id=fixture.workspace_id,
+                project_id=fixture.project_id,
+                project_run_id=fixture.project_run_id,
+                account_id=fixture.account_id,
+            )
+            drive = await _drive_comprehensive_run(
+                conn,
+                fixture=fixture,
+                tmp_path=tmp_path,
+                enrich_action=action,
+                expect_error=EntityResearchResultIntegrityError,
+            )
+            rows = await _operation_states(conn, job_id=drive.job_id)
+            operation_ref = str(rows[0]["operation_ref"])
+            await conn.execute(
+                text(
+                    """
+                    INSERT INTO entity_research_provider_settlement_fold
+                        (provider_operation_ref, research_run_id, job_id, settled_cost_cents)
+                    VALUES (:operation_ref, :run_id, :job_id, 4.5)
+                    """
+                ),
+                {
+                    "operation_ref": operation_ref,
+                    "run_id": drive.authorization.research_run_id,
+                    "job_id": drive.job_id,
+                },
+            )
+            replay = await _replay_the_operation_under_a_second_job(
+                conn, drive=drive, operation_ref=operation_ref
+            )
+            store = EntityResearchResultStore(
+                storage=FsStorage(tmp_path / "b8-fold-identity-store"),
+                conn_factory=_NestedConnFactory(conn),
+                enforce_budget=False,
+            )
+            # Only the two identity fields and the cost are read on the replay path, so the
+            # request stand-in carries exactly the replaying job's identity.
+            replaying_request = SimpleNamespace(
+                research_run_id=replay.research_run_id, job_id=replay.job_id
+            )
+            # Same operation, same settled cost, different run and job: a legitimate replay.
+            await store._fold_settled_spend(
+                conn,
+                request=replaying_request,  # type: ignore[arg-type]
+                provider_operation_ref=operation_ref,
+                settled_cost_cents=Decimal("4.5"),
+            )
+            # A different settled cost for the same operation is the real integrity violation.
+            with pytest.raises(EntityResearchResultIntegrityError):
+                await store._fold_settled_spend(
+                    conn,
+                    request=replaying_request,  # type: ignore[arg-type]
+                    provider_operation_ref=operation_ref,
+                    settled_cost_cents=Decimal("9.9"),
+                )
+            # The first filer's fold row is untouched: one row, original attribution, 4.5 cents.
+            fold = (
+                (
+                    await conn.execute(
+                        text(
+                            "SELECT research_run_id, job_id, settled_cost_cents "
+                            "FROM entity_research_provider_settlement_fold "
+                            "WHERE provider_operation_ref=:operation_ref"
+                        ),
+                        {"operation_ref": operation_ref},
+                    )
+                )
+                .mappings()
+                .one()
+            )
+            assert fold["job_id"] == drive.job_id
+            assert Decimal(fold["settled_cost_cents"]) == Decimal("4.5")
+
+    run_async(scenario())
