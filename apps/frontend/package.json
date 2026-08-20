@@ -17,6 +17,7 @@
     "prebuild": "node scripts/copy-design-vendor.mjs",
     "build": "next build --webpack",
     "start": "next start",
+    "pretest": "node scripts/copy-design-vendor.mjs",
     "test": "find src -name '*.test.ts' -print0 | xargs -0 tsx --test",
     "lint": "eslint"
   },
