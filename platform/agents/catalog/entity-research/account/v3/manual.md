@@ -256,7 +256,9 @@ An operation id (`sumble-account-operation:…`, `external-research-operation:�
 
 **Refusals.** `reference_type_rejected` — the message names the expected `research-result:<uuid>`
 shape; re-issue with the ref the tool result actually reported. `engine_authority_rejection:
-research result is outside the exact job` — it belongs to another job; use your own `result_refs`.
+research result is outside the exact job` — the uuid names no result *this* job produced; read
+only the `result_refs` of `read_account_research_state`, or proceed without it. A `claim:<uuid>`
+from the `existing_claims` block is **not** a result id: re-prefixing one killed a live job.
 
 **Invariant.** References are copied, never composed.
 
@@ -272,8 +274,11 @@ contested value). Never to browse.
 `max_bytes` 1..65536. Page with `offset`; do not re-read the same window.
 
 **Refusals.** `reference_type_rejected` — use a `research-evidence:<uuid>` ref from the evidence
-index, not a result, operation, claim or artifact id. `identical_read_loop` — the same window
-four times over: act on it.
+index, not a result, operation, claim or artifact id. `engine_authority_rejection: research
+evidence is outside the exact job` — the uuid names no evidence this job retained; take one from
+`inspect_account_evidence`. `evidence_page_rejected` — your `offset`/`max_bytes` window does not
+land on the retained bytes: page from the previous read's `next_offset`, or raise `max_bytes`.
+`identical_read_loop` — the same window four times over: act on it.
 
 **Invariant.** Read a span to ground one sentence, then stop.
 

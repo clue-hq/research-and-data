@@ -33,6 +33,7 @@ from clue_agents.entity_research_contracts import (
     canonical_sha256,
 )
 from clue_agents.entity_research_runtime import (
+    _ACTIVE_TOOL_EXECUTION,
     ActiveEntityResearchToolExecution,
     EntityResearchAgentFactory,
     EntityResearchAgentRuntime,
@@ -48,11 +49,10 @@ from clue_api.entity_research_runtime_wiring import (
     PostgresEntityResearchCheckpointers,
 )
 from clue_api.entity_research_tools import (
+    EntityResearchGovernedRejection,
     EntityResearchProviderCausationStore,
     EntityResearchProviderWait,
-    EntityResearchResultIntegrityError,
     EntityResearchResultStore,
-    EntityResearchToolAuthorityError,
     EntityResearchToolRequestStore,
     GovernedEntityResearchToolFactory,
     ProviderActionBinding,
@@ -103,6 +103,7 @@ from tests.agents.test_entity_research_runtime_r3 import (
     _proposal,
     _tool,
 )
+from tests.agents.test_entity_research_tools_r4 import _Action
 from tests.contact_research.test_c4_exa_contact_acquisition_materialization import (
     _FIELD,
     _payload,
@@ -595,7 +596,10 @@ def test_governed_exa_tool_persists_complete_result_causation_reads_and_replay(
                 offset = unicode_page.next_offset
             assert "".join(pieces).encode("utf-8") == evidence_bytes
             emoji_offset = evidence_bytes.index("🩺".encode())
-            with pytest.raises(EntityResearchResultIntegrityError, match="code-point boundary"):
+            # A paging argument the model got wrong (a mid-code-point offset, an offset past the
+            # end, a window too small for the next code point) is its own repairable mistake — the
+            # suspending integrity species is for retained bytes that are not what they claim.
+            with pytest.raises(EntityResearchGovernedRejection, match="code-point boundary"):
                 await result_store.read_evidence(
                     active=active,
                     request=ReadResearchEvidenceInput(
@@ -604,9 +608,29 @@ def test_governed_exa_tool_persists_complete_result_causation_reads_and_replay(
                         max_bytes=16,
                     ),
                 )
+            with pytest.raises(EntityResearchGovernedRejection, match="exceeds retained content"):
+                await result_store.read_evidence(
+                    active=active,
+                    request=ReadResearchEvidenceInput(
+                        evidence_ref=evidence_ref,
+                        offset=len(evidence_bytes) + 1,
+                        max_bytes=16,
+                    ),
+                )
+            with pytest.raises(EntityResearchGovernedRejection, match="page size is too small"):
+                await result_store.read_evidence(
+                    active=active,
+                    request=ReadResearchEvidenceInput(
+                        evidence_ref=evidence_ref,
+                        offset=emoji_offset,
+                        max_bytes=1,
+                    ),
+                )
 
             foreign = _context(ResearchSubjectType.CONTACT, EntityAgentRole.CONTACT)
-            with pytest.raises(EntityResearchToolAuthorityError, match="outside the exact job"):
+            # Still refused — the read authority is unchanged — but in the repairable species, so
+            # a model-typed foreign ref corrects the agent instead of failing its execution.
+            with pytest.raises(EntityResearchGovernedRejection, match="outside the exact job"):
                 await result_store.read_result(
                     active=active.__class__(
                         context=foreign,
@@ -1574,6 +1598,92 @@ def test_a_replaying_contact_job_sees_the_settlement_another_job_folded(tmp_path
                 settling.job_id: Decimal("3.25"),
                 replaying.job_id: Decimal("0"),
             }
+
+    from tests.db.conftest import run_async
+
+    run_async(scenario())
+
+
+def test_a_result_or_evidence_ref_outside_the_exact_job_refuses_recoverably(
+    tmp_path: Path,
+) -> None:
+    """Live 2026-08-20, job ``5b8898e3``: the account agent read three foreign refs and died.
+
+    The model had ``claim:<uuid>`` references in ``read_account_research_state``'s
+    ``existing_claims`` block and re-prefixed three of them as ``research-result:<uuid>``. The
+    prefix was right, so ``_model_supplied_uuid`` passed; the row lookup then missed and the raw
+    :class:`EntityResearchToolAuthorityError` escaped the shared read tool, failing the whole
+    execution. A model-supplied reference naming a row outside this job is R10 species 1 —
+    exactly the wrong-*type* reference converted in ``2d71e47f``, in its wrong-*job* variant.
+    """
+
+    async def scenario() -> None:
+        storage = FsStorage(tmp_path / "artifacts")
+        async with rollback_conn() as conn:
+            connection = _TransactionalTrackedConnFactory(conn)
+            results = EntityResearchResultStore(storage=storage, conn_factory=connection)
+            factory = GovernedEntityResearchToolFactory(
+                requests=EntityResearchToolRequestStore(
+                    conn_factory=connection,
+                    storage=storage,
+                ),
+                causation=EntityResearchProviderCausationStore(conn_factory=connection),
+                results=results,
+            )
+            context = _context(ResearchSubjectType.ACCOUNT, EntityAgentRole.ACCOUNT)
+            foreign_result_ref = f"research-result:{uuid4()}"
+            foreign_evidence_ref = f"research-evidence:{uuid4()}"
+            active = ActiveEntityResearchToolExecution(
+                context=context,
+                call=EntityResearchToolCall(
+                    tool_call_id="read-foreign-result",
+                    tool_name="read_research_result",
+                    tool_version=1,
+                    tool_input_sha256=canonical_sha256({"result_ref": foreign_result_ref}),
+                    arguments={"result_ref": foreign_result_ref},
+                ),
+                journal_event_ref=f"entity-agent-event:{uuid4()}",
+            )
+
+            with pytest.raises(EntityResearchGovernedRejection) as rejected_result:
+                await results.read_result(active=active, result_ref=foreign_result_ref)
+            payload = json.loads(rejected_result.value.render())
+            assert payload["error"] == "governed_research_rejection"
+            assert payload["recoverable"] is True
+            assert "outside the exact job" in payload["detail"]
+            # The refusal must name the two legal moves, or the agent repeats the read.
+            assert "read_account_research_state" in payload["detail"]
+
+            with pytest.raises(EntityResearchGovernedRejection) as rejected_evidence:
+                await results.read_evidence(
+                    active=active,
+                    request=ReadResearchEvidenceInput(
+                        evidence_ref=foreign_evidence_ref,
+                        max_bytes=128,
+                    ),
+                )
+            assert "outside the exact job" in rejected_evidence.value.detail
+
+            # The whole live path: the composed read tools render it as an error tool message
+            # instead of letting it escape and fail the execution.
+            _, read_result_tool, read_evidence_tool = factory.compose_facet(
+                subject_type=ResearchSubjectType.ACCOUNT,
+                provider_action=ProviderActionBinding(action=_Action(), version=1),
+            )
+            token = _ACTIVE_TOOL_EXECUTION.set(active)
+            try:
+                rendered_result = await read_result_tool.tool.ainvoke(
+                    {"result_ref": foreign_result_ref}
+                )
+                rendered_evidence = await read_evidence_tool.tool.ainvoke(
+                    {"evidence_ref": foreign_evidence_ref, "offset": 0, "max_bytes": 128}
+                )
+            finally:
+                _ACTIVE_TOOL_EXECUTION.reset(token)
+            for rendered in (rendered_result, rendered_evidence):
+                rendered_payload = json.loads(str(rendered))
+                assert rendered_payload["error"] == "governed_research_rejection"
+                assert rendered_payload["recoverable"] is True
 
     from tests.db.conftest import run_async
 

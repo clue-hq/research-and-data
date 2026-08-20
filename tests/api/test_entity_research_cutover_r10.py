@@ -15,6 +15,7 @@ from uuid import UUID, uuid4
 import pytest
 
 from clue_agents.account_entity_research import DiscoverBuyingCommitteeInput
+from clue_agents.entity_research_runtime import _ACTIVE_TOOL_EXECUTION
 from clue_api import account_entity_research_composition as composition
 from clue_api.entity_research_fleet_composition import (
     EntityResearchSubjectResolver,
@@ -283,6 +284,7 @@ _ACCOUNT_MANUAL_REFUSALS = (
     "provider_spend_unreconciled",
     "engine_authority_rejection",
     "reference_type_rejected",
+    "evidence_page_rejected",
     "request_authority_violation",
     "research_request_shape_rejected",
     "identical_read_loop",
@@ -337,3 +339,155 @@ def test_account_steering_version_moves_without_repinning_the_authorization_prof
         assert not (historical / "manual.md").exists()
     assert (_ACCOUNT_STEERING_ROOT / "manual.md").exists()
     assert not (_ACCOUNT_STEERING_ROOT / "profile.md").exists()
+
+
+class _RaisingChannelActions:
+    """A channel surface that fails exactly once per species, so the tool wiring is observable."""
+
+    def __init__(self, error: BaseException) -> None:
+        self._error = error
+
+    def admission(self, *, stage: str) -> None:
+        del stage
+        return None
+
+    async def reveal(self, *, active: object, request: object) -> object:
+        del active, request
+        raise self._error
+
+    async def validate(self, *, active: object, request: object) -> object:
+        del active, request
+        raise self._error
+
+
+class _NeverFacetDelegate:
+    async def delegate(self, *, active: object, request: object) -> object:
+        del active, request
+        raise AssertionError("the channel wiring test must not delegate a facet")
+
+
+def _contact_bindings(error: BaseException) -> dict[str, Any]:
+    from clue_api.contact_entity_research import (
+        ContactResearchStateStore,
+        contact_engine_tool_bindings,
+    )
+
+    return dict(
+        contact_engine_tool_bindings(
+            ContactResearchStateStore(conn_factory=cast(Any, None)),
+            facets=cast(Any, _NeverFacetDelegate()),
+            channels=cast(Any, _RaisingChannelActions(error)),
+        )
+    )
+
+
+def test_every_contact_engine_tool_repairs_a_malformed_model_argument() -> None:
+    """A wrong-shaped tool argument is species 1 on both axes — the contact axis had no handler.
+
+    Every account engine tool binds ``handle_validation_error``/``handle_tool_error``; not one
+    contact tool did, so a model that mistyped an argument raised a raw ``ValidationError`` out of
+    LangChain's own argument parsing and failed the whole contact execution. The two channel tools
+    additionally carried no ``handle_tool_error``, so nothing they raised could ever be rendered.
+    """
+
+    bindings = _contact_bindings(RuntimeError("unreachable"))
+    assert set(bindings) == {
+        "read_contact_research_state",
+        "inspect_contact_evidence",
+        "assess_contact_coverage",
+        "delegate_contact_facet",
+        "reveal_contact_channel",
+        "validate_contact_channel",
+        "finalize_contact_research",
+    }
+    for name, binding in bindings.items():
+        assert binding.tool.handle_validation_error, name
+        assert binding.tool.handle_tool_error, name
+
+
+def test_a_channel_tool_renders_a_model_input_refusal_and_still_suspends_on_integrity() -> None:
+    """The channel pair splits the two species instead of failing the job for both.
+
+    ``reveal``/``validate`` refuse a channel outside the selected permissions, and a validation
+    with no preceding acquisition, on model input — repairable. Their causation, cost-fold and
+    post-settlement reads are money and truth, and must keep suspending.
+    """
+
+    from clue_api.contact_entity_research import ContactResearchAuthorityError
+    from clue_api.entity_research_tools import EntityResearchResultIntegrityError
+
+    async def scenario() -> None:
+        token = _ACTIVE_TOOL_EXECUTION.set(cast(Any, object()))
+        try:
+            repairable = _contact_bindings(
+                ContactResearchAuthorityError(
+                    "channel action differs from the exact selected contact authority"
+                )
+            )
+            rendered = await repairable["reveal_contact_channel"].tool.ainvoke({"channel": "email"})
+            payload = json.loads(str(rendered))
+            assert payload["error"] == "governed_research_rejection"
+            assert payload["recoverable"] is True
+
+            suspending = _contact_bindings(
+                EntityResearchResultIntegrityError("channel cost fold replay changed settlement")
+            )
+            with pytest.raises(EntityResearchResultIntegrityError):
+                await suspending["validate_contact_channel"].tool.ainvoke({"channel": "email"})
+        finally:
+            _ACTIVE_TOOL_EXECUTION.reset(token)
+
+    asyncio.run(scenario())
+
+
+def test_the_contact_guard_refuses_a_bad_channel_and_a_zero_field_buy_recoverably() -> None:
+    """Two model-argument mistakes the contact guard turned into whole-job failures.
+
+    A ``channel`` the model invented reached ``ContactChannel(...)`` and raised a bare
+    ``ValueError`` — not an ``EntityResearchGovernedToolRefusal``, so the middleware could not
+    render it. And a zero-``field_keys`` provider call had no contact-lane equivalent of the
+    account guard's check, so it reached the provider action and died on the *suspending*
+    ``EntityResearchResultIntegrityError``. Both are R10 species 1.
+    """
+
+    from clue_agents.entity_research_contracts import (
+        EntityAgentRole,
+        EntityResearchToolCall,
+        canonical_sha256,
+    )
+    from clue_api.contact_entity_research import (
+        ContactResearchAuthorityError,
+        ContactResearchExecutionGuard,
+    )
+    from tests.agents.test_entity_research_runtime_r3 import _context
+
+    def call(name: str, arguments: dict[str, Any]) -> EntityResearchToolCall:
+        return EntityResearchToolCall(
+            tool_call_id=f"guard-{name}",
+            tool_name=name,
+            tool_version=1,
+            tool_input_sha256=canonical_sha256(arguments),
+            arguments=arguments,
+        )
+
+    async def scenario() -> None:
+        context = _context(ResearchSubjectType.CONTACT, EntityAgentRole.CONTACT)
+        # The conn factory is never reached: both refusals precede the coverage read.
+        guard = ContactResearchExecutionGuard(conn_factory=cast(Any, None))
+        with pytest.raises(ContactResearchAuthorityError, match="unknown channel"):
+            await guard.authorize_tool(
+                context=context,
+                call=call("reveal_contact_channel", {"channel": "carrier-pigeon"}),
+                journal_event_ref=f"entity-agent-event:{uuid4()}",
+            )
+        with pytest.raises(ContactResearchAuthorityError, match="at least one field"):
+            await guard.authorize_tool(
+                context=context,
+                call=call(
+                    "research_contact_deep",
+                    {"field_keys": [], "source_keys": ["exa_deep"]},
+                ),
+                journal_event_ref=f"entity-agent-event:{uuid4()}",
+            )
+
+    asyncio.run(scenario())

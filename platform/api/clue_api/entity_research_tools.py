@@ -416,6 +416,42 @@ def _prefixed_uuid(reference: str, prefix: str) -> UUID:
         raise EntityResearchResultIntegrityError(f"reference {reference!r} is malformed") from exc
 
 
+def _foreign_read_rejection(
+    *,
+    subject_type: ResearchSubjectType,
+    noun: str,
+    argument: str,
+    reference: str,
+) -> EntityResearchGovernedRejection:
+    """Refuse a model-supplied reference that resolves outside this exact job — recoverably.
+
+    Live 2026-08-20 (job ``5b8898e3``): the account agent took three ``claim:<uuid>`` references
+    out of ``read_account_research_state``'s ``existing_claims`` block and re-typed them as
+    ``research-result:<uuid>``. The prefix was right, so :func:`_model_supplied_uuid` admitted
+    them; the row lookup then matched nothing and the raw authority species escaped the shared
+    read tool, failing the whole execution three calls at once.
+
+    A reference the model typed is model output, and an out-of-job reference is the same species
+    as an out-of-*type* one (``2d71e47f``): repairable. The job authority itself is unchanged —
+    the read is still refused, and no foreign row is served — but the refusal returns to the agent
+    naming its two legal moves so it can correct the call or finalize honestly with the gap.
+    """
+
+    state_tool = (
+        "read_account_research_state"
+        if subject_type is ResearchSubjectType.ACCOUNT
+        else "read_contact_research_state"
+    )
+    return EntityResearchGovernedRejection(
+        "engine_authority_rejection",
+        f"research {noun} is outside the exact job: {argument} {reference!r} names no {noun} this "
+        f"job produced. Read only the references this job's own results reported (the "
+        f"`result_refs` / evidence index of {state_tool}); a `claim:` or operation id is never a "
+        f"read reference. If you cannot find it there, proceed without it and finalize honestly "
+        f"with the gap.",
+    )
+
+
 def _model_supplied_uuid(reference: str, prefix: str, *, argument: str) -> UUID:
     """Parse a reference the MODEL typed; a wrong type is its mistake, never job integrity.
 
@@ -2426,7 +2462,12 @@ class EntityResearchResultStore:
                 or row["parent_account_id"] != authorization.parent_account_id
                 or str(row["workspace_id"]) != str(authorization.workspace_id)
             ):
-                raise EntityResearchToolAuthorityError("research result is outside the exact job")
+                raise _foreign_read_rejection(
+                    subject_type=authorization.subject_type,
+                    noun="result",
+                    argument="result_ref",
+                    reference=result_ref,
+                )
             _, data = await read_verified_artifact(
                 conn,
                 self._storage,
@@ -2567,20 +2608,37 @@ class EntityResearchResultStore:
                 or row["target_entity_id"] != authorization.subject_entity_id
                 or str(row["workspace_id"]) != str(authorization.workspace_id)
             ):
-                raise EntityResearchToolAuthorityError("research evidence is outside the exact job")
+                raise _foreign_read_rejection(
+                    subject_type=authorization.subject_type,
+                    noun="evidence",
+                    argument="evidence_ref",
+                    reference=request.evidence_ref,
+                )
             _, data = await read_verified_artifact(
                 conn,
                 self._storage,
                 storage_key=str(row["artifact_key"]),
                 workspace_id=str(row["workspace_id"]),
             )
+        # ``offset`` and ``max_bytes`` are model-typed paging arguments, so a window that does not
+        # land on the retained bytes is the model's mistake, not the artifact's: refuse it
+        # recoverably and name the repair. The suspending species below stays for bytes that are
+        # not what the ledger says they are.
         if request.offset > len(data):
-            raise EntityResearchResultIntegrityError("evidence offset exceeds retained content")
+            raise EntityResearchGovernedRejection(
+                "evidence_page_rejected",
+                f"evidence offset exceeds retained content: offset {request.offset} is past the "
+                f"{len(data)} retained bytes. Page from the previous read's `next_offset`, or "
+                "stop reading — a page beyond the end carries nothing.",
+            )
         try:
             data[: request.offset].decode("utf-8", errors="strict")
         except UnicodeDecodeError as exc:
-            raise EntityResearchResultIntegrityError(
-                "evidence offset must be a UTF-8 code-point boundary"
+            raise EntityResearchGovernedRejection(
+                "evidence_page_rejected",
+                f"evidence offset must be a UTF-8 code-point boundary: offset {request.offset} "
+                "splits a multi-byte character. Use the `next_offset` the previous read reported "
+                "rather than an offset of your own.",
             ) from exc
         end = min(len(data), request.offset + request.max_bytes)
         while end > request.offset:
@@ -2597,8 +2655,11 @@ class EntityResearchResultStore:
             if request.offset == len(data):
                 content = ""
             else:
-                raise EntityResearchResultIntegrityError(
-                    "evidence page size is too small for the next UTF-8 code point"
+                raise EntityResearchGovernedRejection(
+                    "evidence_page_rejected",
+                    f"evidence page size is too small for the next UTF-8 code point: max_bytes "
+                    f"{request.max_bytes} cannot hold the character at offset {request.offset}. "
+                    "Re-issue the read with a larger `max_bytes` (up to 65536).",
                 )
         return ResearchEvidenceReadPage(
             evidence_ref=request.evidence_ref,

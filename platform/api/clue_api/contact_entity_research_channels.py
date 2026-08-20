@@ -23,6 +23,7 @@ from clue_api.contact_entity_research import (
     ContactResearchAuthorityError,
     ContactResearchStateStore,
 )
+from clue_api.entity_research_tools import EntityResearchResultIntegrityError
 from clue_core import (
     ContactChannel,
     ContactChannelOperation,
@@ -210,6 +211,14 @@ class GovernedContactChannelActions:
         active: ActiveEntityResearchToolExecution,
         request: ContactChannelToolInput,
     ) -> None:
+        """Refuse a channel the model chose outside its selected authority — recoverably.
+
+        The ``channel`` argument is model output, so both refusals below are R10 species 1 and
+        stay ``ContactResearchAuthorityError``, which the tool binding now renders as an error
+        tool message. The causation, cost-fold and post-settlement reads further down are money
+        and truth, so they raise the suspending integrity species instead.
+        """
+
         authorization = active.context.authorization
         if (
             authorization.subject_entity_id != self._intent.contact_entity_id
@@ -246,8 +255,11 @@ class GovernedContactChannelActions:
     ) -> None:
         authorization = active.context.authorization
         event_ref = active.journal_event_ref
+        # Causation is the ledger. A missing journal event or a replay that changed authority is
+        # tampering with the record of what was dispatched and paid for: it must suspend for an
+        # operator, never return to the model as something it can talk past.
         if not event_ref.startswith("entity-agent-event:"):
-            raise ContactResearchAuthorityError("channel tool lacks an exact journal event")
+            raise EntityResearchResultIntegrityError("channel tool lacks an exact journal event")
         event_id = UUID(event_ref.removeprefix("entity-agent-event:"))
         causation_id = uuid5(
             _CAUSATION_NAMESPACE,
@@ -332,7 +344,7 @@ class GovernedContactChannelActions:
             and disposition in {"joined", "replayed"}
         )
         if observed != expected and not same_resumed_cause:
-            raise ContactResearchAuthorityError("channel causation replay changed authority")
+            raise EntityResearchResultIntegrityError("channel causation replay changed authority")
 
     async def _fold_cost(
         self,
@@ -341,6 +353,13 @@ class GovernedContactChannelActions:
         operation: ContactChannelOperation,
         stage: str,
     ) -> None:
+        """Settle one channel stage's spend against the job and run budgets.
+
+        Every refusal in here is money: a settlement replay that changed, or a charge the job/run
+        budget cannot absorb. Unknown or unreconciled spend suspends (R10 species 2) — the model
+        may never be handed a refusal it could answer by spending again.
+        """
+
         cost = (
             operation.acquisition_cost_cents_charged
             if stage == "acquisition"
@@ -381,7 +400,7 @@ class GovernedContactChannelActions:
                     .one()
                 )
                 if Decimal(stored["cost_cents"]) != cost:
-                    raise ContactResearchAuthorityError(
+                    raise EntityResearchResultIntegrityError(
                         "channel cost fold replay changed settlement"
                     )
                 return
@@ -396,7 +415,7 @@ class GovernedContactChannelActions:
                 )
             ).scalar_one_or_none()
             if job_updated is None:
-                raise ContactResearchAuthorityError(
+                raise EntityResearchResultIntegrityError(
                     "settled channel cost exceeds the exact contact-job budget"
                 )
             run_updated = (
@@ -410,7 +429,7 @@ class GovernedContactChannelActions:
                 )
             ).scalar_one_or_none()
             if run_updated is None:
-                raise ContactResearchAuthorityError(
+                raise EntityResearchResultIntegrityError(
                     "settled channel cost exceeds the exact contact-run budget"
                 )
 
@@ -470,7 +489,9 @@ class GovernedContactChannelActions:
             None,
         )
         if row is None:
-            raise ContactResearchAuthorityError("channel result is absent from exact job state")
+            raise EntityResearchResultIntegrityError(
+                "channel result is absent from exact job state"
+            )
         return self._state._channel_projection(cast(Mapping[str, object], row))
 
 
