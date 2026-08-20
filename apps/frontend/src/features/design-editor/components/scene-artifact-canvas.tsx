@@ -148,7 +148,17 @@ function SceneDocumentCanvas({
   const fitted = useMemo<WorkspaceViewport | null>(
     () =>
       artboard
-        ? fitWorkspaceRectToViewport({ viewport: stageSize, rect: artboard.rect })
+        ? fitWorkspaceRectToViewport({
+            viewport: stageSize,
+            rect: artboard.rect,
+            // margin 0: the dummy's `.imageCanvas` card IS the artboard (its
+            // hairline border is the artboard edge), so the page fills it. The
+            // upstream default (128) exists for the standalone editor's
+            // infinite workspace, where the artboard floats in a dark shell —
+            // porting it here leaves a white ring inside the designed card.
+            // Contain-fit still letterboxes a non-square page in the square card.
+            margin: 0,
+          })
         : null,
     [artboard, stageSize],
   );
