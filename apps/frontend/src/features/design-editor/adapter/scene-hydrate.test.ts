@@ -20,6 +20,7 @@ import {
 import {
   CUSTOM_SIZE_PRESET,
   SIZE_PRESETS,
+  customSizeForPreset,
   hydrateSceneCanvasState,
   hydrateSceneInspectorState,
   rootFrameId,
@@ -427,6 +428,40 @@ it("§1.1: a PRESET-matching page hydrates its real W/H too — the Custom boxes
   assert.equal(story.sizePreset, "Story (9:16) - 1080x1920");
   assert.equal(story.customWidth, "1080");
   assert.equal(story.customHeight, "1920");
+});
+
+it("§1.1: a committed preset re-seeds the Custom W/H boxes with THAT preset's size", () => {
+  // AD4.0 review round 2, proven in the browser: a successful write does not
+  // remount the inspector, so when the SELECT resizes the page its two sibling
+  // boxes kept their mount-time seed — a page taken from Custom 1100x1600 to
+  // the LinkedIn square still offered 1100/1600. Same rule as the test above:
+  // a field may not display a number the document does not have.
+  assert.deepEqual(customSizeForPreset("Linkedin square (1:1) - 1200x1200"), {
+    height: "1200",
+    width: "1200",
+  });
+  assert.deepEqual(customSizeForPreset("Instagram portrait (4:5) - 1080x1350"), {
+    height: "1350",
+    width: "1080",
+  });
+  assert.deepEqual(customSizeForPreset("Story (9:16) - 1080x1920"), {
+    height: "1920",
+    width: "1080",
+  });
+});
+
+it("§1.1: a label that resizes nothing re-seeds nothing", () => {
+  // The same null contract the WRITE applies to the same input, off the same
+  // table: "Custom" names no size, and a label the select does not offer never
+  // reached the document, so neither box may be overwritten.
+  for (const label of [
+    CUSTOM_SIZE_PRESET,
+    "Linkedin square (1:1) - 1024x1024",
+    "linkedin_ad",
+    "",
+  ]) {
+    assert.equal(customSizeForPreset(label), null, label);
+  }
 });
 
 it("§1.1: the preset vocabulary is ONE list — the dummy's options are hydrate's labels plus Custom", () => {

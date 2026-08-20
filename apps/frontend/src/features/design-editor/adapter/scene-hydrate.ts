@@ -232,6 +232,35 @@ function numberText(value: number): string {
 }
 
 /**
+ * §1.1: what the Custom W/H boxes must READ once the size SELECT beside them
+ * has committed `label` — the same fact `hydrateSceneCanvasState` states for a
+ * loaded page, asked of a preset the user just picked instead.
+ *
+ * It exists because a successful write deliberately does not remount the
+ * inspector (§4 / the AD3.2 keying rule), so nothing re-hydrates those two
+ * boxes when their SIBLING control resizes the page: they would keep their
+ * mount-time seed and display a size the document no longer has (proven in the
+ * browser — a page taken from Custom 1100x1600 to the LinkedIn square still
+ * offered 1100/1600 when Custom was re-opened). Round 1's finding 2 rule
+ * applies unchanged: a field may not display a number the document does not
+ * have.
+ *
+ * `null` for "Custom" and for any label the select does not offer — those name
+ * no size and resize nothing, so there is nothing to re-seed. That is exactly
+ * the write adapter's own null contract for the same input, read off the same
+ * table.
+ */
+export function customSizeForPreset(
+  label: string,
+): { height: string; width: string } | null {
+  const preset = SIZE_PRESETS.find((candidate) => candidate.label === label);
+  if (!preset) {
+    return null;
+  }
+  return { height: numberText(preset.height), width: numberText(preset.width) };
+}
+
+/**
  * A `Color` as the picker's swatch value: hex verbatim (upper-cased, the
  * casing `ColorControl` itself commits), oklch converted through the engine's
  * own converter, and a color TOKEN kept as its `$name` — resolving that needs

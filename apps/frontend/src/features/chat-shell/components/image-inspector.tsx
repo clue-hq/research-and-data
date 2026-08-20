@@ -1,7 +1,10 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
-import type { SceneInspectorState } from "@/features/design-editor/adapter/scene-hydrate";
+import {
+  customSizeForPreset,
+  type SceneInspectorState,
+} from "@/features/design-editor/adapter/scene-hydrate";
 import type { ChatShellInspectorSelection } from "../model/chat-shell";
 import {
   useInspectorController,
@@ -358,22 +361,59 @@ function AdCanvasInspector({
   // is what the user sees while typing; only the commit reaches the seam.
   // (§1.2's Size box keeps its per-keystroke behaviour: a font size is not a
   // page resize, and changing it is not this step's row.)
-  const [drafts, setDrafts] = useState({
-    customHeight: state.customHeight,
-    customWidth: state.customWidth,
+  //
+  // The pair keeps BOTH the typed draft and the value last committed, because
+  // the second is what decides whether a blur is a write at all — and both must
+  // move when the SELECT beside them resizes the page. A successful write does
+  // not remount the inspector (§4 / the AD3.2 keying rule), so nothing else
+  // would: the boxes kept their mount-time seed and offered a size the document
+  // no longer had (proven in the browser: Custom 1100x1600 → pick the LinkedIn
+  // square → re-open Custom → still 1100/1600 against a 1200x1200 page). The
+  // re-seed is deliberately narrow — only the preset rows, the only writes that
+  // can resize the page today — and is NOT a general re-hydrate-on-write
+  // mechanism, which would fight §4.
+  //
+  // It re-seeds this local state rather than the controller's, because
+  // `setValue` IS the dispatch: routing the re-seed through it would fire a
+  // second, spurious `customWidth`/`customHeight` write for one user action.
+  // The controller's own fields stay what they are — the mount-time hydration
+  // seed these two are born from.
+  const [custom, setCustom] = useState(() => {
+    const seed = { height: state.customHeight, width: state.customWidth };
+    return { committed: seed, draft: seed };
   });
-  const commitCustomSize = (key: "customHeight" | "customWidth") => {
-    if (drafts[key] !== state[key]) setValue(key, drafts[key]);
+  const draftCustomSize = (axis: "height" | "width", value: string) =>
+    setCustom((current) => ({
+      ...current,
+      draft: { ...current.draft, [axis]: value },
+    }));
+  const commitCustomSize = (axis: "height" | "width") => {
+    // Read from this render's state and dispatch OUTSIDE the updater — a
+    // `setValue` inside one would be a side effect React is free to run twice.
+    const value = custom.draft[axis];
+    if (value === custom.committed[axis]) return;
+    setValue(axis === "width" ? "customWidth" : "customHeight", value);
+    setCustom((current) => ({
+      ...current,
+      committed: { ...current.committed, [axis]: value },
+    }));
+  };
+  const changeSizePreset = (label: string) => {
+    setValue("sizePreset", label);
+    // The picked preset IS the page's new size, so the boxes read it — "Custom"
+    // and any unoffered label resize nothing and re-seed nothing.
+    const resized = customSizeForPreset(label);
+    if (resized) setCustom({ committed: resized, draft: resized });
   };
   return (
     <>
       <Section id="dimensions" label="Dimensions" open={state.openSections.dimensions} toggle={() => toggleSection("dimensions")}>
-        <InspectorField label="Size"><InspectorSelect label="Canvas dimensions" onChange={(value) => setValue("sizePreset", value)} options={SIZE_PRESETS} value={state.sizePreset} /></InspectorField>
+        <InspectorField label="Size"><InspectorSelect label="Canvas dimensions" onChange={changeSizePreset} options={SIZE_PRESETS} value={state.sizePreset} /></InspectorField>
         {state.sizePreset === "Custom" ? (
           <InspectorField label="Custom size">
             <div className={styles.fieldGrid}>
-              <InspectorInput ariaLabel="Custom width" onChange={(value) => setDrafts((current) => ({ ...current, customWidth: value }))} onCommit={() => commitCustomSize("customWidth")} prefix="W" value={drafts.customWidth} />
-              <InspectorInput ariaLabel="Custom height" onChange={(value) => setDrafts((current) => ({ ...current, customHeight: value }))} onCommit={() => commitCustomSize("customHeight")} prefix="H" value={drafts.customHeight} />
+              <InspectorInput ariaLabel="Custom width" onChange={(value) => draftCustomSize("width", value)} onCommit={() => commitCustomSize("width")} prefix="W" value={custom.draft.width} />
+              <InspectorInput ariaLabel="Custom height" onChange={(value) => draftCustomSize("height", value)} onCommit={() => commitCustomSize("height")} prefix="H" value={custom.draft.height} />
             </div>
           </InspectorField>
         ) : null}

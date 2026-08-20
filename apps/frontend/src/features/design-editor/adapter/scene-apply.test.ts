@@ -5,6 +5,7 @@ import type {
   NodePatch,
   PageId,
   PagePatch,
+  PageSize,
   Scene,
   TextAlign,
   VerticalAlign,
@@ -616,7 +617,7 @@ function updatePage(pageId: string, patch: Partial<PagePatch>) {
  * Spelled out here rather than called, so these tests state the bytes they
  * expect instead of restating the implementation.
  */
-function pxPage(width: number, height: number) {
+function pxPage(width: number, height: number): PageSize {
   return {
     height,
     orientation: width > height ? "landscape" : "portrait",
@@ -745,10 +746,14 @@ it("§1.1 Custom W/H: a preserved dimension that is not a usable px number is RE
   }
   // The refusal is about the PRESERVED dimension only, so the broken axis is
   // still repairable by typing into it — the typed number replaces the value
-  // that could not be stated, and nothing is guessed.
+  // that could not be stated, and nothing is guessed. Both axes, symmetrically.
   assert.deepEqual(
     applyCanvas("customHeight", "1080", degeneratePage("height", 0)),
     updatePage(AD_PAGE_ID, { size: set(pxPage(1200, 1080)) }),
+  );
+  assert.deepEqual(
+    applyCanvas("customWidth", "1080", degeneratePage("width", 0)),
+    updatePage(AD_PAGE_ID, { size: set(pxPage(1080, 1200)) }),
   );
 });
 
