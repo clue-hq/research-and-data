@@ -365,6 +365,19 @@ def _build_embedded_fleet_worker(app: FastAPI) -> Any:
     Returns ``None`` when the switch is off, or when the fleet/handler imports are unavailable —
     the same degradation contract the agent runtime itself has: a machine missing the extras gets
     an API that serves everything except turns, never an import crash at startup.
+
+    **OPERATIONAL HAZARD — an embedded worker drains the WHOLE queue, not its own app's work
+    (diagnosed live 2026-08-19/20).** The queue is a shared Postgres table, and the worker leases
+    by work KIND, not by which process offered the job. So every design API pointed at one
+    database competes for the same design jobs, and the winner is whoever polls first (0.1s). A
+    developer machine that still has a hours-old design API running on another port therefore
+    executes today's jobs against yesterday's code — and because ingestion imports its capture
+    tiers lazily, that stale process happily served static ingests while failing every rendered
+    one at the import edge (`ImportError: cannot import name 'GeometryEvidence' from
+    'lumen_ingestion.evidence'`), from a process nobody was looking at. There is no code fence
+    for this today: before verifying anything through the UI, check that exactly ONE design API
+    with `LUMEN_EMBEDDED_FLEET_WORKER=1` is running against your database. A real fence (the
+    lease carrying the worker's code identity) belongs to the fleet, not here.
     """
     if not settings.lumen_embedded_fleet_worker:
         return None

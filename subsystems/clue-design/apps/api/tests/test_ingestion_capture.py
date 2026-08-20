@@ -64,6 +64,58 @@ def test_import_pulls_no_heavy_deps() -> None:
     assert "clean" in result.stdout
 
 
+def test_the_rendered_tier_imports_cleanly_in_a_worker_shaped_process() -> None:
+    """The forced-render import chain must resolve in the process shape a FLEET WORKER has.
+
+    The missing case (found live 2026-08-19): `lumen_ingestion.capture.rendered` and its
+    `geometry` probe are imported LAZILY, deep inside `capture_website`, so nothing — not this
+    suite, not process start-up — touched them until a rendered ingestion was already running.
+    A design API whose `lumen_ingestion.evidence` was loaded before the geometry module existed
+    therefore drained a forced-render job off the shared `design_job` queue and died 0.2s in
+    with `ImportError: cannot import name 'GeometryEvidence' from 'lumen_ingestion.evidence'`,
+    while the identical call succeeded in every fresh process. The root cause was a stale
+    sibling process, not a code defect — but NOTHING in the suite executed that import edge, so
+    a genuine circular import or a renamed symbol there would have shipped exactly as far.
+
+    A fresh interpreter is the only honest context: the shared test session has already
+    imported everything, so an in-process import proves nothing. The order mirrors the worker's
+    (`lumen_api.main` first — that is what `fleet_handler._execute` imports — then the capture
+    chain the job reaches later), and the identity assertions are what a half-old module graph
+    fails: `capture.geometry`'s `GeometryEvidence` MUST be the very object
+    `lumen_ingestion.evidence` defines.
+    """
+    import subprocess
+    import sys
+
+    script = (
+        "import sys;"
+        "import lumen_api.main;"  # the worker's entry module, imported first
+        "from lumen_ingestion.pipeline import _default_capture;"
+        "import lumen_ingestion.capture.rendered as rendered;"
+        "import lumen_ingestion.capture.geometry as geometry;"
+        "import lumen_ingestion.evidence as evidence;"
+        "assert geometry.GeometryEvidence is evidence.GeometryEvidence;"
+        "assert rendered.fetch_rendered is not None;"
+        "assert callable(_default_capture);"
+        # Rendering is now unconditional, so importing the rendered tier must stay as cheap as
+        # importing the static one: playwright is still resolved inside `fetch_rendered`.
+        "assert 'playwright' not in sys.modules;"
+        "print('worker-import-ok')"
+    )
+    api_root = Path(__file__).resolve().parents[1]
+    repo_root = Path(__file__).resolve().parents[3]
+    env = {**os.environ, "PYTHONPATH": os.pathsep.join([str(api_root), str(repo_root)])}
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        cwd=str(api_root),
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "worker-import-ok" in result.stdout
+
+
 # --------------------------------------------------------------------------- #
 # SSRF guard
 # --------------------------------------------------------------------------- #
