@@ -4,9 +4,11 @@ import {
   useEditorShellController,
   type EditorShellInitialState,
 } from "../hooks/use-editor-shell-controller";
+import { useSceneEditingSession } from "@/features/design-editor/hooks/use-scene-editing-session";
 import { useWebEditingSession } from "@/features/design-editor/hooks/use-web-editing-session";
 import type { ProjectArtifact } from "@/features/projects/model/project-workspace";
 import { ArtifactStage } from "./artifact-stage";
+import { ImageInspector } from "./image-inspector";
 import { WebInspector } from "./web-inspector";
 import styles from "./chat-shell.module.css";
 
@@ -67,24 +69,50 @@ export function EditorSurface({
   initial?: EditorShellInitialState;
 }) {
   const controller = useEditorShellController(initial);
+  // AD2.7: one session per LANE, each gated on the active tab's kind. React
+  // forbids a conditional hook, so both are always called and the kind rides
+  // in as `enabled` — the disabled one touches no transport at all (audit
+  // finding F3: before this, every ad load ran the web theme/document fetches
+  // and swallowed their 409s).
   const session = useWebEditingSession({
     activeArtifactId: controller.activeArtifactId,
     documentIds,
+    enabled: controller.artifactKind === "web",
   });
+  const sceneSession = useSceneEditingSession({
+    activeArtifactId: controller.activeArtifactId,
+    documentIds,
+    enabled: controller.artifactKind === "ad",
+  });
+  // Exactly one lane can be enabled, so this is the active document either way
+  // — the canvas branch inside the stage picks the surface by kind.
+  const activeDocumentId =
+    session.activeDocumentId ?? sceneSession.activeDocumentId;
 
-  // W2.3 (completing the W2 exit gate): while EDITING a real web document,
-  // the inspector docks beside the canvas — the dummy's own editing
-  // arrangement (ruling R6: the inspector replaces the conversation column;
-  // at this chat-less route that column is simply the dock) using the
-  // dummy's split grid template verbatim. Not editing → full-width stage,
-  // exactly as W0.4 shipped. Remounted per selected node so W2.2's hydrated
-  // values re-apply (the dummy's own schema-swap behavior).
-  const inspectorVisible =
+  // W2.3 (completing the W2 exit gate): while EDITING a real document, the
+  // inspector docks beside the canvas — the dummy's own editing arrangement
+  // (ruling R6: the inspector replaces the conversation column; at this
+  // chat-less route that column is simply the dock) using the dummy's split
+  // grid template verbatim. Not editing → full-width stage, exactly as W0.4
+  // shipped. Remounted per selected node so the hydrated values re-apply (the
+  // dummy's own schema-swap behavior).
+  //
+  // AD2.7 (audit finding F2): this used to demand `artifactKind === "web"`,
+  // so the ad inspector had no call site on this route at all and the ad
+  // editor was unreachable here. It is now kind-aware — the SAME dock markup,
+  // the SAME grid columns, one inspector per kind.
+  const webInspectorVisible =
     controller.editing &&
     controller.artifactKind === "web" &&
     session.activeDocumentId !== null;
+  const adInspectorVisible =
+    controller.editing &&
+    controller.artifactKind === "ad" &&
+    sceneSession.activeDocumentId !== null;
+  const inspectorVisible = webInspectorVisible || adInspectorVisible;
   const inspectorSelection =
     session.webSelection.selection?.schema.selection ??
+    sceneSession.selection?.selection ??
     controller.inspectorSelection;
 
   return (
@@ -99,15 +127,21 @@ export function EditorSurface({
       data-artifact-kind={controller.artifactKind ?? "none"}
       data-editing={controller.editing}
       data-project-id={controller.projectId}
-      data-selected-node={session.webSelection.selection?.node.id}
+      data-selected-node={
+        session.webSelection.selection?.node.id ??
+        sceneSession.primaryNodeId ??
+        undefined
+      }
       data-selected-schema={
         session.webSelection.selection
           ? `${session.webSelection.selection.schema.selection}${session.webSelection.selection.schema.layoutOnly ? ":layout-only" : ""}`
-          : undefined
+          : adInspectorVisible && sceneSession.selection
+            ? `${sceneSession.selection.selection}${sceneSession.selection.suppressAutoLayoutSection ? ":no-auto-layout" : ""}`
+            : undefined
       }
       data-surface={controller.surface}
     >
-      {inspectorVisible ? (
+      {webInspectorVisible ? (
         <div className={styles.chatBody}>
           <div className={styles.inspectorDock}>
             <WebInspector
@@ -139,12 +173,48 @@ export function EditorSurface({
           </div>
         </div>
       ) : null}
+      {adInspectorVisible ? (
+        <div className={styles.chatBody}>
+          {/* AD2.7 (F2): the SAME dock the web branch above uses — same
+              wrapper, same class, same grid column. Only the panel differs. */}
+          <div className={styles.inspectorDock}>
+            <ImageInspector
+              // Keyed on the SELECTED NODE only, exactly as the web branch is:
+              // hydration is initial-state-only by design (the controller reads
+              // `hydrated` in a lazy initializer), so a new selection must
+              // remount. Never keyed on a version/write token — that was the
+              // founder-observed defect on the web lane.
+              key={sceneSession.primaryNodeId ?? "canvas"}
+              addressing={sceneSession.addressing}
+              error={sceneSession.inspectorError}
+              fontOptions={sceneSession.fontOptions}
+              hydrated={sceneSession.hydrated}
+              layers={sceneSession.layerRows}
+              note={sceneSession.note}
+              onSelectLayer={sceneSession.onSelectLayer}
+              onSelectionChange={controller.selectInspectorElement}
+              onToggleLayer={sceneSession.onToggleLayer}
+              selectedIds={sceneSession.selectedIds}
+              selection={inspectorSelection}
+              suppressAutoLayoutSection={
+                sceneSession.selection?.suppressAutoLayoutSection
+              }
+            />
+          </div>
+        </div>
+      ) : null}
       <ArtifactStage
         activeArtifactId={controller.activeArtifactId}
-        activeDocumentId={session.activeDocumentId}
+        activeDocumentId={activeDocumentId}
         artifacts={artifacts ?? []}
         canvasControlsRef={session.canvasControls}
-        canvasReloadToken={session.reloadNonce}
+        canvasReloadToken={session.reloadNonce + sceneSession.reloadNonce}
+        onSceneChange={sceneSession.onSceneChange}
+        onSceneFitZoom={sceneSession.onFitZoom}
+        onSceneSelect={sceneSession.onSelectCanvas}
+        sceneCanvasControlsRef={sceneSession.canvasControls}
+        sceneSelectedNodeId={sceneSession.primaryNodeId}
+        sceneZoom={sceneSession.zoomOverride}
         artifactKind={controller.artifactKind}
         artifactMaximized={controller.artifactMaximized}
         artifactTitle={controller.artifactTitle}
@@ -156,10 +226,11 @@ export function EditorSurface({
         onRichTextCommit={session.onRichTextCommit}
         onRichTextSessionChange={session.onRichTextSessionChange}
         richTextBusy={session.writes.busy}
-        // W4.8a editing gate: the SAME condition that mounts the editing dock.
+        // W4.8a editing gate: the SAME condition that mounts the WEB editing
+        // dock (never the ad one — an ad has no in-canvas text session).
         // Outside editing the canvas cancels any session the bridge starts, so
         // a double-click on the read-only render changes nothing.
-        richTextEnabled={inspectorVisible}
+        richTextEnabled={webInspectorVisible}
         richTextTheme={session.theme}
         onOpenGalleryArtifact={(artifact) =>
           controller.openArtifact({

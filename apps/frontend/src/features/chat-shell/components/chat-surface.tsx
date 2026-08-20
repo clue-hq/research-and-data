@@ -10,6 +10,7 @@ import type {
   ProjectArtifact,
   ProjectWorkspace,
 } from "@/features/projects/model/project-workspace";
+import { useSceneEditingSession } from "@/features/design-editor/hooks/use-scene-editing-session";
 import { useWebEditingSession } from "@/features/design-editor/hooks/use-web-editing-session";
 import { useEditorShellController } from "../hooks/use-editor-shell-controller";
 import { artifactToAutoOpen } from "../model/artifact-auto-open";
@@ -96,10 +97,25 @@ export function ChatSurface({
   // (documents/selection/writes/rich-text/theme), keyed only on this mount's
   // own active tab and the page's id map — the hook never sees a shell
   // controller, so the two routes stay independent mounts of one machine.
+  // AD2.7: one session per LANE, each gated on this mount's own active tab
+  // kind. React forbids a conditional hook, so both are always called and the
+  // kind rides in as `enabled` — the disabled one touches no transport
+  // (audit finding F3: an ad tab used to run the web theme/document fetches
+  // and swallow their 409s).
   const session = useWebEditingSession({
     activeArtifactId: shell.activeArtifactId,
     documentIds,
+    enabled: shell.artifactKind === "web",
   });
+  const sceneSession = useSceneEditingSession({
+    activeArtifactId: shell.activeArtifactId,
+    documentIds,
+    enabled: shell.artifactKind === "ad",
+  });
+  // Exactly one lane can be enabled, so this is the active document either
+  // way — the stage's canvas branch picks the surface by kind.
+  const activeDocumentId =
+    session.activeDocumentId ?? sceneSession.activeDocumentId;
 
   const activeThread =
     chat.threads.find((thread) => thread.id === chat.activeThreadId) ?? null;
@@ -130,9 +146,13 @@ export function ChatSurface({
 
   // The artifact route's own fallback (editor-surface.tsx): a live canvas
   // selection names the schema to render; with nothing selected the inspector
-  // falls back to this mount's shell state (the ?selection= pane param).
+  // falls back to this mount's shell state (the ?selection= pane param). The
+  // two lanes are mutually exclusive (one `enabled` each), so at most one of
+  // the first two terms is ever non-null.
   const inspectorSelection =
-    session.webSelection.selection?.schema.selection ?? shell.inspectorSelection;
+    session.webSelection.selection?.schema.selection ??
+    sceneSession.selection?.selection ??
+    shell.inspectorSelection;
 
   // Chat-flow slice 5: the pane state writes back to the URL, so every state
   // the user reaches (rail open, surface, Edit, inspector schema) is a
@@ -176,13 +196,17 @@ export function ChatSurface({
     if (feedRevision === 0) return;
     router.refresh();
   }, [feedRevision, router]);
-  const reloadCanvas = session.onWriteReload;
+  const reloadWebCanvas = session.onWriteReload;
+  const reloadSceneCanvas = sceneSession.onWriteReload;
   useEffect(() => {
     if (canvasRevision === 0) return;
     // The SAME seam a committed inspector write uses — one reload mechanism,
-    // whether the version was advanced by hand or by the design agent.
-    reloadCanvas();
-  }, [canvasRevision, reloadCanvas]);
+    // whether the version was advanced by hand or by the design agent. Both
+    // lanes are bumped: the stage takes the SUM as its reload token, and the
+    // frame that fired names a document, not a kind.
+    reloadWebCanvas();
+    reloadSceneCanvas();
+  }, [canvasRevision, reloadSceneCanvas, reloadWebCanvas]);
 
   // Founder ruling F2 **(b)**, 2026-08-19 — superseding option (a) for v1: the
   // leg-born document opens ITSELF next to the Gallery, so the user watches the
@@ -253,11 +277,17 @@ export function ChatSurface({
       data-artifact-kind={shell.artifactKind ?? "none"}
       data-editing={editorVisible}
       data-project-id={projectId}
-      data-selected-node={session.webSelection.selection?.node.id}
+      data-selected-node={
+        session.webSelection.selection?.node.id ??
+        sceneSession.primaryNodeId ??
+        undefined
+      }
       data-selected-schema={
         session.webSelection.selection
           ? `${session.webSelection.selection.schema.selection}${session.webSelection.selection.schema.layoutOnly ? ":layout-only" : ""}`
-          : undefined
+          : dockContent === "ad-inspector" && sceneSession.selection
+            ? `${sceneSession.selection.selection}${sceneSession.selection.suppressAutoLayoutSection ? ":no-auto-layout" : ""}`
+            : undefined
       }
     >
       <section className={styles.chatPane}>
@@ -306,8 +336,25 @@ export function ChatSurface({
           {dockContent === "ad-inspector" ? (
             <div className={styles.inspectorDock}>
               <ImageInspector
+                // Keyed on the SELECTED NODE only, exactly as the web branch
+                // above: hydration is initial-state-only by design (the
+                // controller reads `hydrated` in a lazy initializer), so a new
+                // selection must remount. Never a version/write token.
+                key={sceneSession.primaryNodeId ?? "canvas"}
+                addressing={sceneSession.addressing}
+                error={sceneSession.inspectorError}
+                fontOptions={sceneSession.fontOptions}
+                hydrated={sceneSession.hydrated}
+                layers={sceneSession.layerRows}
+                note={sceneSession.note}
+                onSelectLayer={sceneSession.onSelectLayer}
                 onSelectionChange={shell.selectInspectorElement}
-                selection={shell.inspectorSelection}
+                onToggleLayer={sceneSession.onToggleLayer}
+                selectedIds={sceneSession.selectedIds}
+                selection={inspectorSelection}
+                suppressAutoLayoutSection={
+                  sceneSession.selection?.suppressAutoLayoutSection
+                }
               />
             </div>
           ) : null}
@@ -390,13 +437,19 @@ export function ChatSurface({
       </section>
       <ArtifactStage
         activeArtifactId={shell.activeArtifactId}
-        activeDocumentId={session.activeDocumentId}
+        activeDocumentId={activeDocumentId}
         artifacts={feedArtifacts}
         artifactKind={shell.artifactKind}
         artifactMaximized={shell.artifactMaximized}
         artifactTitle={shell.artifactTitle}
         canvasControlsRef={session.canvasControls}
-        canvasReloadToken={session.reloadNonce}
+        canvasReloadToken={session.reloadNonce + sceneSession.reloadNonce}
+        onSceneChange={sceneSession.onSceneChange}
+        onSceneFitZoom={sceneSession.onFitZoom}
+        onSceneSelect={sceneSession.onSelectCanvas}
+        sceneCanvasControlsRef={sceneSession.canvasControls}
+        sceneSelectedNodeId={sceneSession.primaryNodeId}
+        sceneZoom={sceneSession.zoomOverride}
         editing={shell.editing}
         onActivateArtifact={shell.activateArtifact}
         onCanvasSelect={session.webSelection.onSelect}

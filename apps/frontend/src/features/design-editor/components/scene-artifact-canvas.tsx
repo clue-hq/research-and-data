@@ -27,7 +27,7 @@ import {
   subscribeTextMeasurementStatus,
   textMeasurementStatusSnapshot,
 } from "../engine/scene/canvaskit/loadCanvasKit";
-import type { NodeId, Scene } from "../engine/scene/contracts";
+import type { NodeId, PageId, Scene } from "../engine/scene/contracts";
 import type { HitResult } from "../engine/scene/wasmEngine";
 import {
   defaultWorkspaceViewport,
@@ -117,13 +117,37 @@ export interface SceneArtifactCanvasProps {
   /** Mirrors the wasm stamp handshake upward, so the shell can refuse edits
    * and (post Gate G-D) explain why. */
   onEngineStatusChange?: (status: SceneEngineStatus) => void;
+  /**
+   * AD2.7: the RENDERED scene, mirrored up whenever it changes (load, reload
+   * token, the measure-then-inject relayout), tagged with the document it
+   * belongs to.
+   *
+   * This is what lets the shared editing session hydrate the inspector and
+   * build the layer tree without fetching a second copy of the document: the
+   * scene handed up here is the very one `hitTest` answers against, so a
+   * selection, its schema and its values can never come from three different
+   * snapshots. Fires with `null` while the document is loading or after a
+   * failed load.
+   */
+  onSceneChange?: (
+    scene: Scene | null,
+    pageId: PageId | null,
+    documentId: string,
+  ) => void;
+  /**
+   * AD2.7: the session's primary selection, once the shell owns it. Absent
+   * (`undefined`) leaves the canvas on its own AD2.5 selection state, which is
+   * what the standalone read path uses.
+   */
+  selectedNodeId?: NodeId | null;
   /** Fires on pointer-down with the node the press selected, or null when the
    * press cleared the selection (a click off the artboard, or a hit stack with
    * nothing representable in it). Never fires when the engine is unavailable —
    * a disabled engine refuses to answer rather than guessing.
    *
-   * The canvas owns the selection itself for now; AD2.7's editing session lifts
-   * it out so the inspector and the layer tree share one selection. */
+   * AD2.7 lifts the selection out into the editing session (which feeds it
+   * back through `selectedNodeId`), so the inspector, the layer tree and the
+   * canvas all read one selection. */
   onSelect?: (nodeId: NodeId | null) => void;
 }
 
@@ -140,13 +164,17 @@ function SceneDocumentCanvas({
   documentId,
   onEngineStatusChange,
   onFitZoom,
+  onSceneChange,
   onSelect,
   reloadToken = 0,
+  selectedNodeId,
   zoom = null,
 }: SceneArtifactCanvasProps) {
   const stageRef = useRef<HTMLDivElement | null>(null);
   const [stageSize, setStageSize] = useState({ width: 0, height: 0 });
-  const [selectedNodeId, setSelectedNodeId] = useState<NodeId | null>(null);
+  const [ownSelectedNodeId, setOwnSelectedNodeId] = useState<NodeId | null>(
+    null,
+  );
   const { engine, engineStatus, pageId, refresh, scene, tokenGeneration } =
     useSceneDocument(documentId, reloadToken);
 
@@ -270,10 +298,28 @@ function SceneDocumentCanvas({
     onSelectRef.current = onSelect;
   });
 
+  // AD2.7: the shell's selection wins when it owns one; the local state is the
+  // standalone read path's fallback (and keeps the diagnostic attribute honest
+  // for a canvas mounted with no session).
+  const activeSelectedNodeId =
+    selectedNodeId === undefined ? ownSelectedNodeId : selectedNodeId;
+
   const commitSelection = (nodeId: NodeId | null) => {
-    setSelectedNodeId(nodeId);
+    setOwnSelectedNodeId(nodeId);
     onSelectRef.current?.(nodeId);
   };
+
+  // AD2.7: hand the rendered scene up. A passive-ref effect (callback only, no
+  // state) so it can never fight the render, and keyed on the scene identity
+  // the draw loop is actually using — including the relaid one the C4
+  // measurement pass adopts.
+  const onSceneChangeRef = useRef(onSceneChange);
+  useEffect(() => {
+    onSceneChangeRef.current = onSceneChange;
+  });
+  useEffect(() => {
+    onSceneChangeRef.current?.(scene, pageId, documentId);
+  }, [documentId, pageId, scene]);
 
   /**
    * Press-selects, the gesture machine's own semantics (the source editor
@@ -342,7 +388,7 @@ function SceneDocumentCanvas({
         // approved visual (Gates G-A / G-D).
         dataEngine={engineStatus.engineDisabled ? "disabled" : "wasm"}
         dataMeasurement={measurementStatus}
-        dataSelectedNode={selectedNodeId ?? "none"}
+        dataSelectedNode={activeSelectedNodeId ?? "none"}
         viewport={viewport}
       />
       {/* The selection overlay mounts HERE, as an absolutely-positioned sibling

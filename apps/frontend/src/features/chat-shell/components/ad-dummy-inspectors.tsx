@@ -464,14 +464,21 @@ function LayersControls({
 export function AdDummyInspector({
   onSelectionChange,
   selection,
+  suppressAutoLayoutSection = false,
   ...binding
 }: AdLayersBinding & {
   onSelectionChange: (selection: ChatShellInspectorSelection) => void;
   selection: AdDummyInspectorSelection;
+  /** AD2.4/OQ-1: a plain Frame routes to this auto-layout schema but has no
+   * auto layout, so its Auto Layout section is absent (mapping contract §2:
+   * hidden = absent). Every other section still applies. */
+  suppressAutoLayoutSection?: boolean;
 }) {
   return (
     <>
-      {selection === "auto-layout" ? <AutoLayoutControls /> : null}
+      {selection === "auto-layout" && !suppressAutoLayoutSection ? (
+        <AutoLayoutControls />
+      ) : null}
       {selection === "auto-layout" || selection === "rectangle" ? (
         <ShapeControls radii />
       ) : null}

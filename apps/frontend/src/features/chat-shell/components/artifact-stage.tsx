@@ -12,6 +12,7 @@ import {
   type SceneCanvasControls,
 } from "@/features/design-editor/components/scene-artifact-canvas";
 import type { SceneEngineStatus } from "@/features/design-editor/hooks/use-scene-document";
+import type { PageId, Scene } from "@/features/design-editor/engine/scene/contracts";
 import type { WebSelection } from "@/features/design-editor/engine/webBridge";
 import type {
   RichTextDocument,
@@ -54,9 +55,13 @@ export function ArtifactStage({
   onOpenGalleryArtifact,
   onRenameArtifact,
   onRenameArtifactFor,
+  onSceneChange,
   onSceneEngineStatusChange,
   onSceneFitZoom,
+  onSceneSelect,
   sceneCanvasControlsRef,
+  sceneSelectedNodeId,
+  sceneZoom,
   onToggleMaximized,
   onTogglePanel,
   onToggleEditing,
@@ -103,15 +108,29 @@ export function ArtifactStage({
   onOpenGalleryArtifact: (artifact: GalleryArtifact) => void;
   onRenameArtifact: (title: string) => void;
   onRenameArtifactFor: (artifactId: string, title: string) => void;
+  /** AD2.7: the rendered ad scene, mirrored up for the shared editing
+   * session's hydration + layer tree (one document fetch, one engine). */
+  onSceneChange?: (
+    scene: Scene | null,
+    pageId: PageId | null,
+    documentId: string,
+  ) => void;
   /** AD2.3: the ad canvas's wasm stamp-handshake outcome, mirrored upward so
    * the shell can refuse edits (and, post Gate G-D, explain why). */
   onSceneEngineStatusChange?: (status: SceneEngineStatus) => void;
   /** AD2.3: the ad canvas's fit-on-open zoom, as one of the header menu's own
    * 5% steps (§1.10). AD2.8 binds it to the menu. */
   onSceneFitZoom?: (zoom: string) => void;
+  /** AD2.7: a press on the ad canvas resolved to the node it selects (§5's
+   * nearest representable ancestor), or null for a press on nothing. */
+  onSceneSelect?: (nodeId: string | null) => void;
   /** AD2.3: receives the mounted ad canvas's imperative controls (hit-testing
    * for AD2.5's selection, refresh, and the rendered scene). */
   sceneCanvasControlsRef?: RefObject<SceneCanvasControls | null>;
+  /** AD2.7: the session's primary selection, back down to the canvas. */
+  sceneSelectedNodeId?: string | null;
+  /** AD2.8/§1.10: the header menu's zoom. Null keeps the fit-on-open. */
+  sceneZoom?: string | null;
   onToggleMaximized: () => void;
   onTogglePanel: () => void;
   onToggleEditing: () => void;
@@ -190,7 +209,11 @@ export function ArtifactStage({
                     documentId={activeDocumentId}
                     onEngineStatusChange={onSceneEngineStatusChange}
                     onFitZoom={onSceneFitZoom}
+                    onSceneChange={onSceneChange}
+                    onSelect={onSceneSelect}
                     reloadToken={canvasReloadToken}
+                    selectedNodeId={sceneSelectedNodeId}
+                    zoom={sceneZoom}
                   />
                 ) : null}
               </div>
