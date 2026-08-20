@@ -1,7 +1,35 @@
 # Brand Design Brief & the Design-Craft Skill — Ratified Plan (the coherence mount)
 
-> **STATUS 2026-08-20 — RATIFIED SHAPE (founder, 2026-08-20 00:30–01:40 IST); slices not
-> yet dispatched.** The founder shared an external reference design-guidance file
+> **STATUS 2026-08-20 — COMPLETE, pending founder sign-off. All four slices landed and the
+> coherence walk passed live.** The craft skill was authored into the design runtime and
+> wired must-read on every web turn (slice 1); the brand's real geometry is now measured off
+> its own site instead of fabricated from a scale — on stripe.com, `website:`-provenanced
+> tokens went 17 → 45, `radius.button` 8px `derived:` → 4px measured, and the brand's real
+> shadows exist for the first time (slice 2); an ingestion agent writes a per-brand
+> `BrandBrief@1` onto the kit version, human-approved with it on `/brand-context` and given
+> a face as `design/Design.md` (slice 3); and generations now CONSUME both — the web brand
+> card carries the brief and the measured geometry under D2's 6,000-token cap, the visual
+> reviewer receives the review-relevant subset, and the leg pin freezes the brief version
+> with the kit (slice 4). The walk: Stripe kit v6 extracted and approved through the real
+> UI, one chat-driven generation (4m 49s, 3 author rounds, 1 reviewer round) whose brand card
+> provably carried the brief (4,063 of 6,000 tokens, untruncated), whose reviewer critique
+> cited "the brief's deep-navy statement-band requirement", whose buttons computed at the
+> measured `border-radius: 4px` where the pre-brief page computes 8px, and whose band
+> sequence reproduced the brief's "6 white : 1 dark statement : 1 muted footer" ratio exactly
+> — against a pre-brief Stripe page that opens on a full-bleed saturated violet hero the
+> brief now forbids. A briefless kit still renders yesterday's card byte for byte.
+> **Three findings for the founder, all recorded in
+> `_memory/2026-08-20-design-brief-slice4-acceptance.md`:** the UI's Re-extract button cannot
+> produce measured geometry or a brief for a well-server-rendered site (the capture never
+> escalates to the rendered tier and the request carries no `force_render`);
+> `LUMEN_INGESTION_BRIEF` defaults off and was missing from the launch recipe; and a
+> forced-render ingestion fails reproducibly inside the API's embedded fleet worker with an
+> `ImportError` that does not reproduce out of process. None is a slice-4 regression; all
+> three are ahead of the next brand onboarding.
+>
+> **Superseded status (kept for the record):** RATIFIED SHAPE (founder, 2026-08-20
+> 00:30–01:40 IST); slices not yet dispatched. The founder shared an external reference
+> design-guidance file
 > (preserved at `docs/specs/brand-design-brief/reference-external-design-guidance.md`)
 > whose agents produce highly brand-coherent microsites, and ruled: adopt its lessons via
 > a **two-layer split** — the brand-agnostic craft rules are authored ONCE by the
@@ -276,6 +304,33 @@ allocation constraints respected; reviewer critique cites the characterization.
 Counter-walk: a briefless kit (approved pre-brief) generates exactly as today.
 - Close-out: plan status header, `_memory/` record, founder walkthrough.
 - Commit: `feat(design): generations consume the brand brief — the coherence walk (close-out)`.
+
+
+
+> **Slice 4 OUTCOME (2026-08-20): DONE — the brief reaches the pixels** (commits `f2e584eb`
+> design + `ec096404` frontend; record `_memory/2026-08-20-design-brief-slice4-acceptance.md`,
+> screenshots `.playwright-mcp/brief-walk-*.png`). `build_brand_card(include_brief=True)`
+> renders the brief (the panel's own projection, mirrored) plus the measured geometry split
+> by provenance — `website:` tokens as brand facts, `derived:` ones labelled platform
+> defaults and never as brand facts — under D2's 6k cap with honest, named truncation;
+> `render_brand_card_text` splices the prose beside the card's JSON; the visual reviewer gets
+> the characterization + constraints + rhythm subset deterministically from the harness,
+> waking slice 1's dormant hooks; and a DB-gated test proves a leg pinned to kit version N
+> keeps designing against N's brief after N+1 is approved mid-conversation. D4 and
+> back-compat are byte-pinned: the scene card is untouched, and a briefless kit yields the
+> pre-slice-4 card — verified live against the brand card the founder's pre-brief Stripe run
+> actually materialized. **Live walk:** Stripe **v6** (28 measured geometry tokens, a real
+> brief) approved in the UI; one generation in **4m 49s** (3 author / 1 reviewer round)
+> whose materialized `brand_card.json` carries `creative_brief` at 4,063 of 6,000 tokens,
+> whose author brief quotes "controls radius 4px, cards 6px, no pills" and "one deep navy
+> (#0D1738) statement band", whose reviewer cited *"the brief's deep-navy statement-band
+> requirement"*, whose buttons compute `border-radius: 4px` (pre-brief page: 8px), and whose
+> bands reproduce the brief's 6-white : 1-dark : 1-muted ratio. The founder-ordered
+> breadcrumb fix shipped with it: `Design / Design.md`, derived from route state, no
+> filename table. **Three findings carried out of the walk** (UI re-extraction cannot reach
+> the rendered tier → no geometry/brief; `LUMEN_INGESTION_BRIEF` off by default and missing
+> from the recipe; forced-render ingestion `ImportError` inside the embedded fleet worker) —
+> all in the acceptance record, none a slice-4 regression, all ahead of the next onboarding.
 
 
 
