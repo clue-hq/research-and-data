@@ -658,6 +658,7 @@ class ProductionContactResearchChannelActions:
             entity_research_job_id=job.job_id,
             conn_factory=self._conn_factory,
             provider_concurrency_limit=(self._settings.entity_research_provider_concurrency_limit),
+            enforce_budget=self._settings.budget_controls_enabled,
         )
 
 
