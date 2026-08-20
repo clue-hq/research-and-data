@@ -1,0 +1,22 @@
+/*
+ * AD2.3: the canvas element, and nothing else.
+ *
+ * The artboard card's own chrome — its size, hairline border, radius,
+ * background and shadow — is the dummy's `.imageCanvas` rule in
+ * `chat-shell.module.css`, preserved untouched (contract §1.8): this surface
+ * simply fills the hole it already leaves. The stage is positioned only so
+ * AD2.5's selection overlay can mount as an absolutely-positioned sibling of
+ * the canvas without moving anything.
+ */
+
+.stage {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}

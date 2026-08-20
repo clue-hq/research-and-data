@@ -7,6 +7,11 @@ import {
   type WebArtifactCanvasControls,
   type WebRichTextSessionState,
 } from "@/features/design-editor/components/web-artifact-canvas";
+import {
+  SceneArtifactCanvas,
+  type SceneCanvasControls,
+} from "@/features/design-editor/components/scene-artifact-canvas";
+import type { SceneEngineStatus } from "@/features/design-editor/hooks/use-scene-document";
 import type { WebSelection } from "@/features/design-editor/engine/webBridge";
 import type {
   RichTextDocument,
@@ -49,6 +54,9 @@ export function ArtifactStage({
   onOpenGalleryArtifact,
   onRenameArtifact,
   onRenameArtifactFor,
+  onSceneEngineStatusChange,
+  onSceneFitZoom,
+  sceneCanvasControlsRef,
   onToggleMaximized,
   onTogglePanel,
   onToggleEditing,
@@ -95,6 +103,15 @@ export function ArtifactStage({
   onOpenGalleryArtifact: (artifact: GalleryArtifact) => void;
   onRenameArtifact: (title: string) => void;
   onRenameArtifactFor: (artifactId: string, title: string) => void;
+  /** AD2.3: the ad canvas's wasm stamp-handshake outcome, mirrored upward so
+   * the shell can refuse edits (and, post Gate G-D, explain why). */
+  onSceneEngineStatusChange?: (status: SceneEngineStatus) => void;
+  /** AD2.3: the ad canvas's fit-on-open zoom, as one of the header menu's own
+   * 5% steps (§1.10). AD2.8 binds it to the menu. */
+  onSceneFitZoom?: (zoom: string) => void;
+  /** AD2.3: receives the mounted ad canvas's imperative controls (hit-testing
+   * for AD2.5's selection, refresh, and the rendered scene). */
+  sceneCanvasControlsRef?: RefObject<SceneCanvasControls | null>;
   onToggleMaximized: () => void;
   onTogglePanel: () => void;
   onToggleEditing: () => void;
@@ -159,9 +176,24 @@ export function ArtifactStage({
               </div>
             ) : (
               <div
-                aria-label="Empty ad output canvas"
+                aria-label={
+                  activeDocumentId ? "Ad output canvas" : "Empty ad output canvas"
+                }
                 className={styles.imageCanvas}
-              />
+              >
+                {/* AD2.3: the real scene renders inside the dummy's artboard
+                 * card — same shape as the web branch above, and the card's
+                 * geometry is untouched (the canvas fills it). */}
+                {activeDocumentId ? (
+                  <SceneArtifactCanvas
+                    controlsRef={sceneCanvasControlsRef}
+                    documentId={activeDocumentId}
+                    onEngineStatusChange={onSceneEngineStatusChange}
+                    onFitZoom={onSceneFitZoom}
+                    reloadToken={canvasReloadToken}
+                  />
+                ) : null}
+              </div>
             )}
           </div>
         </>
