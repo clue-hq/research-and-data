@@ -1,6 +1,15 @@
-import { describe, expect, it, vi } from "../../__tests__/vitest-shim";
+import { afterEach, describe, expect, it, vi } from "../../__tests__/vitest-shim";
 import { minimalScene } from "./__fixtures__/minimalScene";
-import { groupEdit, mintGroupId, ungroupEdit } from "../structuredEdits";
+import {
+  applyStructuredEdit,
+  fetchHistory,
+  groupEdit,
+  mintGroupId,
+  redoDocument,
+  revertToCheckpoint,
+  ungroupEdit,
+  undoDocument
+} from "../structuredEdits";
 
 /**
  * Phase 4b arrange wire-shape smoke: these builders must emit exactly the
@@ -71,5 +80,54 @@ describe("group/ungroup structured-edit wire shape", () => {
         randomUUID.mockRestore();
       }
     });
+  });
+});
+
+// Added at AD1 final review (not upstream): every document-API function in this
+// module must route through an INJECTABLE transport. AD3/AD4 consumers reach the
+// design API only through the BFF, and the same-origin re-mount lives inside
+// designBffConfig()'s fetchImpl — a module-global `fetch` call would bypass it.
+describe("structuredEdits transports are injectable", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const jsonResponse = (body: unknown): Response =>
+    new Response(JSON.stringify(body), {
+      status: 200,
+      headers: { "content-type": "application/json" }
+    });
+
+  /** The global is stubbed to a hard failure: any module-global call fails loudly. */
+  function trapGlobalFetch() {
+    const trap = vi.fn(async () => {
+      throw new Error("structuredEdits must not call the module-global fetch");
+    });
+    vi.stubGlobal("fetch", trap);
+    return trap;
+  }
+
+  it("routes every document-API call through the injected fetchImpl", async () => {
+    const trap = trapGlobalFetch();
+    const injected = vi.fn(async () => jsonResponse({ envelopes: [], envelope: null }));
+    const transport = injected as unknown as typeof fetch;
+
+    await applyStructuredEdit("http://api.test", "doc_1", ungroupEdit("g1"), {
+      fetchImpl: transport
+    });
+    await fetchHistory("http://api.test", "doc_1", 50, transport);
+    await undoDocument("http://api.test", "doc_1", transport);
+    await redoDocument("http://api.test", "doc_1", transport);
+    await revertToCheckpoint("http://api.test", "doc_1", "cp_1", transport);
+
+    expect(injected.mock.calls).toHaveLength(5);
+    expect(trap.mock.calls).toHaveLength(0);
+    expect(injected.mock.calls.map((call) => String(call[0]))).toEqual([
+      "http://api.test/documents/doc_1/edits",
+      "http://api.test/documents/doc_1/history?limit=50",
+      "http://api.test/documents/doc_1/undo",
+      "http://api.test/documents/doc_1/redo",
+      "http://api.test/documents/doc_1/revert?checkpoint=cp_1"
+    ]);
   });
 });

@@ -340,4 +340,39 @@ describe("export runner profiles", () => {
     // 2d browser e2e caught exactly this as a 409 after Accept.
     expect(body.persist_preflight).toBe(false);
   });
+
+  // Added at AD1 final review (not upstream): the runner's transport must be
+  // INJECTABLE, not the module-global fetch. AD3/AD4 consumers reach the design
+  // API only through the BFF, and the same-origin re-mount lives inside
+  // designBffConfig()'s fetchImpl — a module-global call would bypass it.
+  it("routes the request through an injected fetchImpl, never the global", async () => {
+    const injected = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({ schema_version: 1, status: "ok", diagnostics: [], export: { artifacts: [] } }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        )
+    );
+    // The global is stubbed to a hard failure: if the module ever reaches for
+    // it instead of the injected transport, this test fails loudly.
+    const globalFetch = vi.fn(async () => {
+      throw new Error("the export runner must not call the module-global fetch");
+    });
+    vi.stubGlobal("fetch", globalFetch);
+
+    const runner = createApiExportRunner({
+      apiBaseUrl: "http://localhost:8000",
+      fetchImpl: injected as unknown as typeof fetch
+    });
+    const result = await runner({
+      scene: minimalScene,
+      profile: defaultEditorExportProfile(),
+      pageIds: ["page_a4"]
+    });
+
+    expect(result.status).toBe("ok");
+    expect(injected.mock.calls).toHaveLength(1);
+    expect(globalFetch.mock.calls).toHaveLength(0);
+    expect(String(injected.mock.calls[0][0])).toBe("http://localhost:8000/export-preview");
+  });
 });

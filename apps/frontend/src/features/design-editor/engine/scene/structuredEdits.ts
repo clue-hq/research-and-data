@@ -1,3 +1,4 @@
+import { defaultDesignFetch } from "../config";
 import type { Effect, Fill, Node, Operation, Scene, Stroke } from "./contracts";
 
 /**
@@ -190,6 +191,7 @@ export interface ApplyEditOptions {
   scope?: EditScope;
   baseVersion?: number;
   checkpoint?: string;
+  fetchImpl?: typeof fetch;
 }
 
 export interface EnvelopeSummary {
@@ -208,8 +210,9 @@ export async function applyStructuredEdit(
   edit: StructuredEdit,
   options: ApplyEditOptions = {}
 ): Promise<{ envelope: EnvelopeSummary | null; response: Record<string, unknown> }> {
-  // Workspace auth is the BFF's job — the browser never stamps headers.
-  const response = await fetch(`${apiBaseUrl}/documents/${documentId}/edits`, {
+  // Workspace auth is the BFF's job — defaults to the receiver-safe wrapper; callers inject designBffConfig()'s transport.
+  const fetchImpl = options.fetchImpl ?? defaultDesignFetch;
+  const response = await fetchImpl(`${apiBaseUrl}/documents/${documentId}/edits`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
@@ -244,10 +247,11 @@ export interface HistoryEnvelope extends EnvelopeSummary {
 export async function fetchHistory(
   apiBaseUrl: string,
   documentId: string,
-  limit = 50
+  limit = 50,
+  // Workspace auth is the BFF's job — defaults to the receiver-safe wrapper; callers inject designBffConfig()'s transport.
+  fetchImpl: typeof fetch = defaultDesignFetch
 ): Promise<HistoryEnvelope[]> {
-  // Workspace auth is the BFF's job — the browser never stamps headers.
-  const response = await fetch(
+  const response = await fetchImpl(
     `${apiBaseUrl}/documents/${documentId}/history?limit=${limit}`
   );
   if (!response.ok) {
@@ -261,9 +265,9 @@ async function postHistoryAction(
   apiBaseUrl: string,
   documentId: string,
   action: "undo" | "redo",
+  fetchImpl: typeof fetch
 ): Promise<Record<string, unknown>> {
-  // Workspace auth is the BFF's job — the browser never stamps headers.
-  const response = await fetch(`${apiBaseUrl}/documents/${documentId}/${action}`, {
+  const response = await fetchImpl(`${apiBaseUrl}/documents/${documentId}/${action}`, {
     method: "POST"
   });
   if (!response.ok) {
@@ -273,21 +277,32 @@ async function postHistoryAction(
   return (await response.json()) as Record<string, unknown>;
 }
 
-export function undoDocument(apiBaseUrl: string, documentId: string) {
-  return postHistoryAction(apiBaseUrl, documentId, "undo");
+export function undoDocument(
+  apiBaseUrl: string,
+  documentId: string,
+  // Workspace auth is the BFF's job — defaults to the receiver-safe wrapper; callers inject designBffConfig()'s transport.
+  fetchImpl: typeof fetch = defaultDesignFetch
+) {
+  return postHistoryAction(apiBaseUrl, documentId, "undo", fetchImpl);
 }
 
-export function redoDocument(apiBaseUrl: string, documentId: string) {
-  return postHistoryAction(apiBaseUrl, documentId, "redo");
+export function redoDocument(
+  apiBaseUrl: string,
+  documentId: string,
+  // Workspace auth is the BFF's job — defaults to the receiver-safe wrapper; callers inject designBffConfig()'s transport.
+  fetchImpl: typeof fetch = defaultDesignFetch
+) {
+  return postHistoryAction(apiBaseUrl, documentId, "redo", fetchImpl);
 }
 
 export async function revertToCheckpoint(
   apiBaseUrl: string,
   documentId: string,
-  checkpoint: string
+  checkpoint: string,
+  // Workspace auth is the BFF's job — defaults to the receiver-safe wrapper; callers inject designBffConfig()'s transport.
+  fetchImpl: typeof fetch = defaultDesignFetch
 ): Promise<Record<string, unknown>> {
-  // Workspace auth is the BFF's job — the browser never stamps headers.
-  const response = await fetch(
+  const response = await fetchImpl(
     `${apiBaseUrl}/documents/${documentId}/revert?checkpoint=${encodeURIComponent(checkpoint)}`,
     { method: "POST" }
   );

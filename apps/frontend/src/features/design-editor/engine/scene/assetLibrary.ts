@@ -27,7 +27,9 @@ export interface AssetUploadResult {
 
 export async function fetchAssets(
   apiBaseUrl: string,
-  query: AssetLibraryQuery = {}
+  query: AssetLibraryQuery = {},
+  // Workspace auth is the BFF's job — defaults to the receiver-safe wrapper; callers inject designBffConfig()'s transport.
+  fetchImpl: typeof fetch = defaultDesignFetch
 ): Promise<AssetRecord[]> {
   const url = new URL("/assets", apiBaseUrl);
   if (query.kind) {
@@ -45,8 +47,7 @@ export async function fetchAssets(
   if (query.offset !== undefined) {
     url.searchParams.set("offset", String(query.offset));
   }
-  // Workspace auth is the BFF's job — the browser never stamps headers.
-  const response = await fetch(url, { headers: { Accept: "application/json" } });
+  const response = await fetchImpl(url, { headers: { Accept: "application/json" } });
   if (!response.ok) {
     throw new Error(`Asset list failed with status ${response.status}`);
   }
@@ -57,7 +58,9 @@ export async function fetchAssets(
 export async function uploadAsset(
   apiBaseUrl: string,
   file: File,
-  fields: { label?: string; kind?: string; uploadedBy?: string; tags?: string } = {}
+  fields: { label?: string; kind?: string; uploadedBy?: string; tags?: string } = {},
+  // Workspace auth is the BFF's job — defaults to the receiver-safe wrapper; callers inject designBffConfig()'s transport.
+  fetchImpl: typeof fetch = defaultDesignFetch
 ): Promise<AssetUploadResult> {
   const form = new FormData();
   form.append("file", file);
@@ -73,8 +76,7 @@ export async function uploadAsset(
   if (fields.tags) {
     form.append("tags", fields.tags);
   }
-  // Workspace auth is the BFF's job — the browser never stamps headers.
-  const response = await fetch(new URL("/assets", apiBaseUrl), {
+  const response = await fetchImpl(new URL("/assets", apiBaseUrl), {
     method: "POST",
     body: form
   });
@@ -127,10 +129,11 @@ export const IMAGE_GEN_PROVIDER = "image-gen-v1";
  */
 export async function generateAsset(
   apiBaseUrl: string,
-  request: GenerateAssetRequest
+  request: GenerateAssetRequest,
+  // Workspace auth is the BFF's job — defaults to the receiver-safe wrapper; callers inject designBffConfig()'s transport.
+  fetchImpl: typeof fetch = defaultDesignFetch
 ): Promise<AssetGenerateResult> {
-  // Workspace auth is the BFF's job — the browser never stamps headers.
-  const response = await fetch(new URL("/assets/generate", apiBaseUrl), {
+  const response = await fetchImpl(new URL("/assets/generate", apiBaseUrl), {
     method: "POST",
     headers: { "Content-Type": "application/json", Accept: "application/json" },
     body: JSON.stringify({
@@ -186,10 +189,11 @@ export interface EditAssetRequest {
  */
 export async function editAsset(
   apiBaseUrl: string,
-  request: EditAssetRequest
+  request: EditAssetRequest,
+  // Workspace auth is the BFF's job — defaults to the receiver-safe wrapper; callers inject designBffConfig()'s transport.
+  fetchImpl: typeof fetch = defaultDesignFetch
 ): Promise<AssetGenerateResult> {
-  // Workspace auth is the BFF's job — the browser never stamps headers.
-  const response = await fetch(new URL("/assets/generate", apiBaseUrl), {
+  const response = await fetchImpl(new URL("/assets/generate", apiBaseUrl), {
     method: "POST",
     headers: { "Content-Type": "application/json", Accept: "application/json" },
     body: JSON.stringify({
@@ -289,6 +293,9 @@ export async function fetchAssetRecord(
 
 /** Content-addressed bytes URL (`/asset-store/{digest}`) — immutable,
  * cache-friendly, and independent of the asset REGISTRY. */
+// NOTE: apiBaseUrl must be an ORIGIN (new URL drops a path prefix). The platform's public
+// passthrough (DESIGN_PUBLIC_BFF_PREFIX) is a path prefix — consumers building passthrough URLs
+// must string-concat (the AD2.3 resolveAssetUrl pattern), never pass the prefix here.
 export function assetStoreBytesUrl(apiBaseUrl: string, digestValue: string): string {
   return new URL(`/asset-store/${digestValue}`, apiBaseUrl).toString();
 }

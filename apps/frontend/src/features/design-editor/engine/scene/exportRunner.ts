@@ -1,3 +1,4 @@
+import { defaultDesignFetch } from "../config";
 import type { Diagnostic, DiagnosticSubject, ExportProfile, Page, PageId, RasterScale, Scene } from "./contracts";
 
 export interface EditorExportRequest {
@@ -68,13 +69,18 @@ export type EditorExportRunner = (
 export interface ApiExportRunnerOptions {
   apiBaseUrl: string;
   documentId?: string;
+  fetchImpl?: typeof fetch;
 }
 
-export function createApiExportRunner({ apiBaseUrl, documentId: configuredDocumentId }: ApiExportRunnerOptions): EditorExportRunner {
+export function createApiExportRunner({
+  apiBaseUrl,
+  documentId: configuredDocumentId,
+  // Workspace auth is the BFF's job — defaults to the receiver-safe wrapper; callers inject designBffConfig()'s transport.
+  fetchImpl = defaultDesignFetch
+}: ApiExportRunnerOptions): EditorExportRunner {
   return async ({ scene, profile, pageIds, documentId }) => {
     const effectiveDocumentId = documentId ?? configuredDocumentId;
-    // Workspace auth is the BFF's job — the browser never stamps headers.
-    const response = await fetch(exportUrl(apiBaseUrl, effectiveDocumentId), {
+    const response = await fetchImpl(exportUrl(apiBaseUrl, effectiveDocumentId), {
       method: "POST",
       headers: {
         "content-type": "application/json"

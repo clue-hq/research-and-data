@@ -1,3 +1,6 @@
+// D7 DIVERGENCE — this is the slice's one deliberately non-verbatim module. The three Konva-only
+// exports (konvaFillProps / konvaStrokeProps / konvaShadowProps, upstream lines ~559-624) are
+// DELETED per founder ruling D7; an upstream re-sync must re-apply that deletion, not straight-copy.
 import type {
   AssetKind,
   AssetStatus,

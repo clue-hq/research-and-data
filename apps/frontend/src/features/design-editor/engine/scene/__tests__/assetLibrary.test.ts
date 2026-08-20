@@ -1,10 +1,14 @@
-import { describe, expect, it, vi } from "../../__tests__/vitest-shim";
+import { afterEach, describe, expect, it, vi } from "../../__tests__/vitest-shim";
 import type { AssetDigest, AssetRecord } from "../contracts";
 import {
+  editAsset,
   fetchAssetRecord,
+  fetchAssets,
+  generateAsset,
   publicAssetBytesUrl,
   publicAssetThumbnailUrl,
-  sceneAssetBytesUrl
+  sceneAssetBytesUrl,
+  uploadAsset
 } from "../assetLibrary";
 
 /**
@@ -135,5 +139,46 @@ describe("fetchAssetRecord", () => {
   it("throws on other failures", async () => {
     const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse(500, {}));
     await expect(fetchAssetRecord({ apiBaseUrl: BASE, fetchImpl }, "a")).rejects.toThrow("500");
+  });
+});
+
+// Added at AD1 final review (not upstream): the four registry/generation calls
+// must route through an INJECTABLE transport. AD3/AD4 consumers reach the design
+// API only through the BFF, and the same-origin re-mount lives inside
+// designBffConfig()'s fetchImpl — a module-global `fetch` call would bypass it.
+describe("assetLibrary transports are injectable", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("routes list/upload/generate/edit through the injected fetchImpl", async () => {
+    // The global is stubbed to a hard failure: any module-global call fails loudly.
+    const trap = vi.fn(async () => {
+      throw new Error("assetLibrary must not call the module-global fetch");
+    });
+    vi.stubGlobal("fetch", trap);
+
+    const injected = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ assets: [], asset: record(), deduplicated: false }), {
+          status: 200,
+          headers: { "content-type": "application/json" }
+        })
+    );
+    const transport = injected as unknown as typeof fetch;
+
+    await fetchAssets(BASE, { kind: "raster_image" }, transport);
+    await uploadAsset(BASE, new File(["x"], "x.png", { type: "image/png" }), {}, transport);
+    await generateAsset(BASE, { prompt: "a hero" }, transport);
+    await editAsset(BASE, { sourceAssetId: "asset_a", prompt: "remove bg" }, transport);
+
+    expect(injected.mock.calls).toHaveLength(4);
+    expect(trap.mock.calls).toHaveLength(0);
+    expect(injected.mock.calls.map((call) => String(call[0]))).toEqual([
+      `${BASE}/assets?kind=raster_image`,
+      `${BASE}/assets`,
+      `${BASE}/assets/generate`,
+      `${BASE}/assets/generate`
+    ]);
   });
 });
