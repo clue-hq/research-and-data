@@ -1,3 +1,4 @@
+import { defaultDesignFetch } from "../config";
 import type { AssetPlacement, AssetRecord, Diagnostic, NodeId, Operation, SlotId } from "./contracts";
 
 /**
@@ -271,8 +272,8 @@ export interface AssetRecordOptions {
  * resolver behind id-only `<img>` sites (kit JSON variants, stored logo
  * ids), which look up the record to learn its public digest. */
 export async function fetchAssetRecord(
-  // Workspace auth is the BFF's job — the browser never stamps headers.
-  { apiBaseUrl, fetchImpl = fetch }: AssetRecordOptions,
+  // Workspace auth is the BFF's job — defaults to the receiver-safe wrapper; callers inject designBffConfig()'s transport.
+  { apiBaseUrl, fetchImpl = defaultDesignFetch }: AssetRecordOptions,
   assetId: string
 ): Promise<AssetRecord | null> {
   const response = await fetchImpl(new URL(`/assets/${encodeURIComponent(assetId)}`, apiBaseUrl));

@@ -1,3 +1,4 @@
+import { defaultDesignFetch } from "../config";
 import type { Diagnostic, Operation, Scene } from "./contracts";
 
 /**
@@ -71,8 +72,8 @@ class ApiEditQueue implements EditQueuePort {
     // `this.fetchImpl(...)` rebinds `this` to the queue instance, and browser
     // fetch throws "Illegal invocation" off its Window. Unit tests always
     // inject fetchImpl, so only the real browser ever hit this.
-    // Workspace auth is the BFF's job — the browser never stamps headers.
-    this.fetchImpl = options.fetchImpl ?? fetch;
+    // Workspace auth is the BFF's job — defaults to the receiver-safe wrapper; callers inject designBffConfig()'s transport.
+    this.fetchImpl = options.fetchImpl ?? defaultDesignFetch;
   }
 
   enqueueOperations(operations: Operation[], options?: EnqueueOptions): void {

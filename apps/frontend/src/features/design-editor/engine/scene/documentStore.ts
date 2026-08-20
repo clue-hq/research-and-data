@@ -1,3 +1,4 @@
+import { defaultDesignFetch } from "../config";
 import type { BrandKitSummary, Operation, Scene } from "./contracts";
 import type { BrandKitDetailPayload } from "./tokenColors";
 
@@ -12,8 +13,9 @@ import type { BrandKitDetailPayload } from "./tokenColors";
  * `EditorApp initialScene`.
  *
  * Workspace auth is the BFF's job — the browser never stamps headers. Every
- * fetcher therefore defaults `fetchImpl = fetch`; production callers inject
- * the BFF transport (`designBffConfig()`), which carries the session.
+ * fetcher therefore defaults `fetchImpl = defaultDesignFetch` (the config
+ * seam's receiver-safe wrapper); production callers inject the BFF transport
+ * (`designBffConfig()`), which carries the session.
  */
 
 export interface DocumentStoreOptions {
@@ -37,8 +39,8 @@ export interface LoadedDocument {
 }
 
 export async function createDocument(
-  // Workspace auth is the BFF's job — the browser never stamps headers.
-  { apiBaseUrl, fetchImpl = fetch }: DocumentStoreOptions,
+  // Workspace auth is the BFF's job — defaults to the receiver-safe wrapper; callers inject designBffConfig()'s transport.
+  { apiBaseUrl, fetchImpl = defaultDesignFetch }: DocumentStoreOptions,
   scene: Scene
 ): Promise<CreatedDocument> {
   // Strip the local placeholder id so the server mints the real document id
@@ -80,8 +82,8 @@ export async function revertDocument(
   documentId: string,
   checkpoint: string
 ): Promise<RevertOutcome> {
-  // Workspace auth is the BFF's job — the browser never stamps headers.
-  const { apiBaseUrl, fetchImpl = fetch } = options;
+  // Workspace auth is the BFF's job — defaults to the receiver-safe wrapper; callers inject designBffConfig()'s transport.
+  const { apiBaseUrl, fetchImpl = defaultDesignFetch } = options;
   const url = new URL(`/documents/${encodeURIComponent(documentId)}/revert`, apiBaseUrl);
   url.searchParams.set("checkpoint", checkpoint);
   const response = await fetchImpl(url, { method: "POST" });
@@ -122,8 +124,8 @@ export async function revertDocument(
 }
 
 export async function fetchDocument(
-  // Workspace auth is the BFF's job — the browser never stamps headers.
-  { apiBaseUrl, fetchImpl = fetch }: DocumentStoreOptions,
+  // Workspace auth is the BFF's job — defaults to the receiver-safe wrapper; callers inject designBffConfig()'s transport.
+  { apiBaseUrl, fetchImpl = defaultDesignFetch }: DocumentStoreOptions,
   documentId: string
 ): Promise<LoadedDocument> {
   const response = await fetchImpl(
@@ -163,8 +165,8 @@ export async function fetchDocument(
  * list only gates the dropdown, not the canvas.
  */
 export async function fetchBrandKits(
-  // Workspace auth is the BFF's job — the browser never stamps headers.
-  { apiBaseUrl, fetchImpl = fetch }: DocumentStoreOptions
+  // Workspace auth is the BFF's job — defaults to the receiver-safe wrapper; callers inject designBffConfig()'s transport.
+  { apiBaseUrl, fetchImpl = defaultDesignFetch }: DocumentStoreOptions
 ): Promise<BrandKitSummary[]> {
   const response = await fetchImpl(new URL("/brand-kits", apiBaseUrl));
   if (!response.ok) {
@@ -183,8 +185,8 @@ export async function fetchBrandKits(
  * string-heuristic fallback) rather than block anything on it.
  */
 export async function fetchBrandKitDetail(
-  // Workspace auth is the BFF's job — the browser never stamps headers.
-  { apiBaseUrl, fetchImpl = fetch }: DocumentStoreOptions,
+  // Workspace auth is the BFF's job — defaults to the receiver-safe wrapper; callers inject designBffConfig()'s transport.
+  { apiBaseUrl, fetchImpl = defaultDesignFetch }: DocumentStoreOptions,
   brandKitId: string
 ): Promise<BrandKitDetailPayload | null> {
   const response = await fetchImpl(
@@ -211,8 +213,8 @@ export interface AcceptBakeResult {
 }
 
 export async function resolveAndFreezeScene(
-  // Workspace auth is the BFF's job — the browser never stamps headers.
-  { apiBaseUrl, fetchImpl = fetch }: DocumentStoreOptions,
+  // Workspace auth is the BFF's job — defaults to the receiver-safe wrapper; callers inject designBffConfig()'s transport.
+  { apiBaseUrl, fetchImpl = defaultDesignFetch }: DocumentStoreOptions,
   scene: Scene
 ): Promise<AcceptBakeResult | null> {
   const response = await fetchImpl(new URL("/preflight-preview", apiBaseUrl), {
@@ -245,8 +247,8 @@ export async function resolveAndFreezeScene(
 
 /** 2e: persist the document's standing agent instructions (blank clears). */
 export async function saveAgentInstructions(
-  // Workspace auth is the BFF's job — the browser never stamps headers.
-  { apiBaseUrl, fetchImpl = fetch }: DocumentStoreOptions,
+  // Workspace auth is the BFF's job — defaults to the receiver-safe wrapper; callers inject designBffConfig()'s transport.
+  { apiBaseUrl, fetchImpl = defaultDesignFetch }: DocumentStoreOptions,
   documentId: string,
   instructions: string | null
 ): Promise<string | null> {
@@ -268,8 +270,8 @@ export async function saveAgentInstructions(
 /** Persist the document's layout-managed-editing opt-out (see
  * LoadedDocument.layoutManagedEditing). Returns the persisted value. */
 export async function saveLayoutManagedEditing(
-  // Workspace auth is the BFF's job — the browser never stamps headers.
-  { apiBaseUrl, fetchImpl = fetch }: DocumentStoreOptions,
+  // Workspace auth is the BFF's job — defaults to the receiver-safe wrapper; callers inject designBffConfig()'s transport.
+  { apiBaseUrl, fetchImpl = defaultDesignFetch }: DocumentStoreOptions,
   documentId: string,
   enabled: boolean
 ): Promise<boolean> {
