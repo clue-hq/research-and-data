@@ -222,20 +222,19 @@ function ArrangeControls({ onAction }: { onAction: (action: string) => void }) {
 
 function Section({
   children,
-  compact = false,
   id,
   label,
   open,
   toggle,
 }: {
   children?: ReactNode;
-  compact?: boolean;
   id: Parameters<ReturnType<typeof useInspectorController>["toggleSection"]>[0];
   label: string;
   open: boolean;
   toggle: () => void;
 }) {
-  return <InspectorSection compact={compact} key={id} label={label} onOpenChange={toggle} open={open}>{children}</InspectorSection>;
+  // `compact` left with its only callers (the §2.7-removed "Link to" sections).
+  return <InspectorSection key={id} label={label} onOpenChange={toggle} open={open}>{children}</InspectorSection>;
 }
 
 function AdTextInspector({
@@ -293,9 +292,9 @@ function AdCanvasInspector({
 }: {
   onSelectionChange: (selection: ChatShellInspectorSelection) => void;
 }) {
-  // The shared dummy default still names the pre-§2 pixel size, so this schema
-  // opens on the corrected preset string (row 1). The value is the same option,
-  // not a new one.
+  // Pin the select to its own option list: the shared DEFAULT_STATE carries the
+  // same corrected §2.1 string today, but this override keeps the schema's value
+  // coupled to SIZE_PRESETS so a relabel can never orphan the <select>.
   const controller = useInspectorController([], "canvas", {
     sizePreset: SIZE_PRESETS[0],
   });
