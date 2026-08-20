@@ -336,11 +336,15 @@ export function ChatSurface({
           {dockContent === "ad-inspector" ? (
             <div className={styles.inspectorDock}>
               <ImageInspector
-                // Keyed on the SELECTED NODE only, exactly as the web branch
-                // above: hydration is initial-state-only by design (the
-                // controller reads `hydrated` in a lazy initializer), so a new
-                // selection must remount. Never a version/write token.
-                key={sceneSession.primaryNodeId ?? "canvas"}
+                // Keyed on the SELECTED NODE, exactly as the web branch above:
+                // hydration is initial-state-only by design (the controller
+                // reads `hydrated` in a lazy initializer), so a new selection
+                // must remount. Never a version/write token — AD3.2 writes do
+                // not remount. `inspectorGeneration` advances only when a
+                // RELOADED document has arrived, so the D10 note ("Document
+                // moved on — reloaded.") can never sit beside a field still
+                // showing the value the server refused.
+                key={`${sceneSession.primaryNodeId ?? "canvas"}:${sceneSession.inspectorGeneration}`}
                 addressing={sceneSession.addressing}
                 error={sceneSession.inspectorError}
                 fontOptions={sceneSession.fontOptions}
