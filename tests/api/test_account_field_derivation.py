@@ -9,18 +9,22 @@ method/tier/url/span, and is never labelled ``human``.
 
 from __future__ import annotations
 
+import hashlib
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from pathlib import Path
 from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy import text
+from sqlalchemy.exc import DBAPIError
 
 from clue_agents.account_entity_research import AssessAccountCoverageInput
 from clue_agents.contracts import ModelPolicy
 from clue_agents.entity_research_contracts import EntityResearchToolCall
 from clue_agents.entity_research_runtime import ActiveEntityResearchToolExecution
+from clue_api import account_field_derivation as derivation_module
 from clue_api.account_entity_research import AccountResearchStateStore
 from clue_api.account_entity_research_composition import (
     AccountResearchDefinitionResolver,
@@ -28,6 +32,7 @@ from clue_api.account_entity_research_composition import (
     account_research_profile_sha256,
 )
 from clue_api.account_field_derivation import (
+    DERIVATION_LINEAGE_UNPROVABLE,
     DERIVED_ACCOUNT_FIELD_SOURCES,
     AccountFieldDerivation,
     derive_account_fields,
@@ -756,3 +761,413 @@ def test_every_revenue_amount_lands_in_exactly_one_registered_band(
             assert claims[0].value_json == band
 
     run_async(scenario())
+
+
+# --- the live 2026-08-20 shape: deriving a band from Exa Deep evidence -------------------------
+#
+# ``core.revenue_band`` restates a governed ``core.annual_revenue`` claim. When that number came
+# from Exa Deep, the source claim carries the immutable external-research
+# operation/snapshot/request lineage the ``claim_validate_external_research_lineage`` trigger
+# (migration ``f9281fac77e1``) demands of every ``exa_deep`` claim. The derivation used to copy
+# only ``source_key`` + ``artifact_key``, so it minted a half-lineaged Exa claim the trigger
+# refused — and the raw ``DBAPIError`` escaped ``assess_account_coverage`` as ``execution_failed``
+# and paused a live account job.
+
+
+def _sha(seed: str) -> str:
+    return hashlib.sha256(seed.encode()).hexdigest()
+
+
+async def _seed_artifact(conn: Any, *, workspace_id: str, seed: str) -> str:
+    digest = _sha(seed)
+    storage_key = f"{workspace_id}/{digest}"
+    await conn.execute(
+        text(
+            "INSERT INTO artifact (storage_key, workspace_id, content_sha256, media_type, "
+            "size_bytes, source_key, source_url) "
+            "VALUES (:key, :ws, :sha, 'application/json', 64, 'exa_deep', :url) "
+            "ON CONFLICT (storage_key) DO NOTHING"
+        ),
+        {
+            "key": storage_key,
+            "ws": workspace_id,
+            "sha": digest,
+            "url": "https://exa.ai/deep/insight-health",
+        },
+    )
+    return storage_key
+
+
+async def _seed_exa_deep_source_claim(
+    conn: Any,
+    *,
+    workspace_id: str,
+    project_id: str,
+    project_run_id: ProjectRunId,
+    account_id: EntityId,
+    directive: Any,
+    icp_key: str,
+    icp_version: int,
+    field_key: str,
+    value: Any,
+) -> dict[str, str]:
+    """One real Exa Deep operation/snapshot/result chain plus the claim it grounds.
+
+    Every ref below is a genuine row: the trigger's own EXISTS join is what proves the seeding is
+    faithful, because the source claim cannot be inserted at all unless the chain is complete.
+    """
+
+    operation_id = uuid4()
+    snapshot_id = uuid4()
+    provider_request_id = "exa-req-" + _sha(f"{workspace_id}:{field_key}")[:24]
+    request_key = await _seed_artifact(conn, workspace_id=workspace_id, seed=f"req:{field_key}")
+    response_key = await _seed_artifact(conn, workspace_id=workspace_id, seed=f"res:{field_key}")
+    normalization_key = await _seed_artifact(
+        conn, workspace_id=workspace_id, seed=f"norm:{field_key}"
+    )
+    result_key = await _seed_artifact(conn, workspace_id=workspace_id, seed=f"item:{field_key}")
+    await conn.execute(
+        text(
+            """
+            INSERT INTO external_research_operation (
+                id, workspace_id, project_id, project_run_id, subject_kind, account_id,
+                icp_key, icp_version, research_directive_id, research_directive_version,
+                research_directive_sha256, source_key, observation_window, freshness_policy_ref,
+                freshness_seconds, request_fingerprint, wire_request_sha256, request_json,
+                state, spend_outcome, request_artifact_key, cost_cents_reserved,
+                provider_request_id, fresh_until, terminal_at, reuse_fingerprint
+            ) VALUES (
+                :id, :ws, :project, :run,
+                CAST('account' AS external_research_subject_kind), :account,
+                :icp_key, :icp_version, :directive_id, :directive_version,
+                :directive_sha, 'exa_deep', :window, 'freshness:account-deep-test-v1',
+                86400, :fingerprint, :wire_sha, CAST('{}' AS jsonb),
+                CAST('ready' AS external_research_operation_state),
+                CAST('provider_reported' AS external_research_spend_outcome),
+                :request_artifact, 0,
+                :provider_request_id, now() + interval '1 day', now(), :reuse
+            )
+            """
+        ),
+        {
+            "id": operation_id,
+            "ws": workspace_id,
+            "project": project_id,
+            "run": UUID(str(project_run_id)),
+            "account": UUID(str(account_id)),
+            "icp_key": icp_key,
+            "icp_version": icp_version,
+            "directive_id": UUID(str(directive.directive_id)),
+            "directive_version": directive.version,
+            "directive_sha": directive.canonical_json_sha256,
+            "window": f"window:{field_key}",
+            "fingerprint": _sha(f"fingerprint:{field_key}"),
+            "wire_sha": _sha(f"wire:{field_key}"),
+            "request_artifact": request_key,
+            "provider_request_id": provider_request_id,
+            "reuse": _sha(f"reuse:{field_key}"),
+        },
+    )
+    await conn.execute(
+        text(
+            """
+            INSERT INTO external_research_snapshot (
+                id, operation_id, workspace_id, account_id, source_key, request_fingerprint,
+                request_artifact_key, response_artifact_key, normalization_artifact_key,
+                provider_request_id, provider_reported_cost_cents, all_null, fresh_until,
+                subject_kind
+            ) VALUES (
+                :id, :operation, :ws, :account, 'exa_deep', :fingerprint,
+                :request_artifact, :response_artifact, :normalization_artifact,
+                :provider_request_id, 0, false, now() + interval '1 day',
+                CAST('account' AS external_research_subject_kind)
+            )
+            """
+        ),
+        {
+            "id": snapshot_id,
+            "operation": operation_id,
+            "ws": workspace_id,
+            "account": UUID(str(account_id)),
+            "fingerprint": _sha(f"fingerprint:{field_key}"),
+            "request_artifact": request_key,
+            "response_artifact": response_key,
+            "normalization_artifact": normalization_key,
+            "provider_request_id": provider_request_id,
+        },
+    )
+    await conn.execute(
+        text(
+            "INSERT INTO external_research_result_artifact (snapshot_id, workspace_id, ordinal, "
+            "artifact_key, source_url, source_title) "
+            "VALUES (:snapshot, :ws, 0, :artifact, :url, 'Insight Health AI')"
+        ),
+        {
+            "snapshot": snapshot_id,
+            "ws": workspace_id,
+            "artifact": result_key,
+            "url": "https://exa.ai/deep/insight-health",
+        },
+    )
+    lineage = {
+        "artifact_key": result_key,
+        "source_operation_ref": str(operation_id),
+        "source_snapshot_ref": str(snapshot_id),
+        "source_request_ref": provider_request_id,
+    }
+    claim = revalidate_with(
+        stamp_reuse(
+            account_claim(
+                entity_id=account_id,
+                field_key=field_key,
+                value_json=value,
+                source_tier=4,
+                extraction_method=ExtractionMethod.LLM_SYNTHESIS,
+                confidence=0.6,
+                run_id=RunId(project_run_id),
+                research_mode=ResearchMode.ACCOUNT_PROFILING,
+                source_url="https://exa.ai/deep/insight-health",
+                evidence_span="annual revenue is roughly $12.5M",
+            ),
+            workspace_id=workspace_id,
+        ),
+        source_key="exa_deep",
+        **lineage,
+    )
+    await insert_claim(conn, claim)
+    return lineage
+
+
+def _serve_unverified_tier4(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The pilot's live merge configuration, which is what made the failure reachable.
+
+    ``exa_deep`` is a tier-4 source and its claims are born ``unverified``; with the verification
+    toggle on, ``require_verified_tier4`` keeps them out of the merge entirely, so nothing is ever
+    derived over Exa evidence. The live run (and the BridgepointMD failure) runs with the toggle
+    off, exactly as here.
+    """
+
+    monkeypatch.setenv("CLUE_VERIFICATION_ENABLED", "false")
+
+
+async def _exa_deep_derivation_fixture(conn: Any, storage: FsStorage) -> dict[str, Any]:
+    await load_committee_pack(conn)
+    await load_client_knowledge_pack(conn)
+    await seed_source_manifests(conn)
+    fixture = await seed_insight_health_account_deep_fixture(conn, pages=_pages(), storage=storage)
+    workspace_id = fixture.discovery_fixture.workspace_id
+    _, account_spec = await confirmed_account_research_direction(
+        conn,
+        workspace_id=workspace_id,
+        project_id=fixture.discovery_fixture.project_id,
+        product_id=fixture.discovery_fixture.product_id,
+        account_id=fixture.selected_account_id,
+        icp_key=fixture.deep_icp_key,
+        icp_version=fixture.deep_icp_version,
+        field_keys=(_REVENUE, _BAND),
+        allowed_source_keys=("exa_deep",),
+    )
+    directive = account_spec.research_directive
+    assert directive is not None
+    # The fixture account already carries a governed revenue band. A second, disagreeing
+    # authoritative band opens a conflict, so that row is no longer governed evidence to reuse and
+    # the derivation actually runs — which is the code path the live failure took.
+    await _seed_source_claim(
+        conn,
+        workspace_id=workspace_id,
+        account_id=fixture.selected_account_id,
+        project_run_id=ProjectRunId(fixture.project_run_id),
+        field_key=_BAND,
+        value="1b_plus",
+    )
+    lineage = await _seed_exa_deep_source_claim(
+        conn,
+        workspace_id=workspace_id,
+        project_id=fixture.discovery_fixture.project_id,
+        project_run_id=ProjectRunId(fixture.project_run_id),
+        account_id=fixture.selected_account_id,
+        directive=directive,
+        icp_key=fixture.deep_icp_key,
+        icp_version=fixture.deep_icp_version,
+        field_key=_REVENUE,
+        value={
+            "amount": 12_500_000,
+            "currency": "USD",
+            "as_of": "2026-06-30",
+            "estimate_kind": "provider_estimate",
+        },
+    )
+    return {
+        "workspace_id": workspace_id,
+        "project_id": fixture.discovery_fixture.project_id,
+        "project_run_id": ProjectRunId(fixture.project_run_id),
+        "account_id": fixture.selected_account_id,
+        "lineage": lineage,
+    }
+
+
+def test_a_band_derived_from_exa_deep_evidence_carries_the_sources_whole_lineage(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The live BridgepointMD failure, exactly: derive ``core.revenue_band`` over an Exa number.
+
+    Before the fix this raised a raw ``asyncpg.exceptions.RaiseError`` ("exa_deep claims require
+    complete operation, snapshot, request, and result artifact lineage") out of ``insert_claim``.
+    The lineage was never missing — the source claim held all four refs and only three of them
+    were dropped on the way to the derived claim.
+    """
+
+    _serve_unverified_tier4(monkeypatch)
+
+    async def scenario() -> None:
+        storage = FsStorage(tmp_path / "exa-derivation")
+        async with rollback_conn() as conn:
+            seeded = await _exa_deep_derivation_fixture(conn, storage)
+            workspace_id = str(seeded["workspace_id"])
+            account_id = EntityId(seeded["account_id"])
+            outcomes = _by_field(
+                await derive_account_fields(
+                    conn,
+                    workspace_id=workspace_id,
+                    project_id=str(seeded["project_id"]),
+                    project_run_id=seeded["project_run_id"],
+                    account_entity_id=account_id,
+                    field_keys=(_BAND,),
+                )
+            )
+            assert outcomes[_BAND].reason == "derived"
+            assert outcomes[_BAND].claim_id is not None
+            band = [
+                item
+                for item in await claims_for(
+                    conn, account_id, _BAND, scope=WorkspaceScope.for_workspace(workspace_id)
+                )
+                if item.id == outcomes[_BAND].claim_id
+            ]
+            assert len(band) == 1
+            claim = band[0]
+            assert claim.value_json == "10m_50m"
+            assert claim.source_key == "exa_deep"
+            assert claim.provenance_kind is ClaimProvenanceKind.PLATFORM_INFERRED
+            # Exactly the source's lineage — restated, never invented.
+            lineage = seeded["lineage"]
+            assert claim.artifact_key == lineage["artifact_key"]
+            assert claim.source_operation_ref == lineage["source_operation_ref"]
+            assert claim.source_snapshot_ref == lineage["source_snapshot_ref"]
+            assert claim.source_request_ref == lineage["source_request_ref"]
+
+    run_async(scenario())
+
+
+class _FakeRaiseError(Exception):
+    """An asyncpg ``RaiseError`` stand-in: the plpgsql SQLSTATE plus the trigger's own text."""
+
+    sqlstate = "P0001"
+
+
+def _lineage_dbapi_error(message: str, *, sqlstate: str = "P0001") -> DBAPIError:
+    original = _FakeRaiseError(message)
+    original.sqlstate = sqlstate
+    return DBAPIError("INSERT INTO claim (...)", {}, original)
+
+
+def test_a_refused_lineage_degrades_to_an_honest_gap_instead_of_killing_the_job(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Defence in depth: the database refusing a derived claim must never escape raw.
+
+    With the stamping fixed this refusal is unreachable through the derivation path (the derived
+    claim reuses the source's already-proven chain), so the refusal is injected at the write. What
+    must hold is the disposition: no claim, no invented ref, a reasoned unresolved row, and a
+    transaction still usable by the coverage write that follows on the same connection.
+    """
+
+    _serve_unverified_tier4(monkeypatch)
+
+    async def scenario() -> None:
+        storage = FsStorage(tmp_path / "exa-derivation-refused")
+        async with rollback_conn() as conn:
+            seeded = await _exa_deep_derivation_fixture(conn, storage)
+            workspace_id = str(seeded["workspace_id"])
+            account_id = EntityId(seeded["account_id"])
+
+            async def refuse(*_args: object, **_kwargs: object) -> None:
+                raise _lineage_dbapi_error(
+                    "exa_deep claims require complete operation, snapshot, request, and result "
+                    "artifact lineage"
+                )
+
+            monkeypatch.setattr(derivation_module, "insert_claim", refuse)
+            outcomes = _by_field(
+                await derive_account_fields(
+                    conn,
+                    workspace_id=workspace_id,
+                    project_id=str(seeded["project_id"]),
+                    project_run_id=seeded["project_run_id"],
+                    account_entity_id=account_id,
+                    field_keys=(_BAND,),
+                )
+            )
+            assert outcomes[_BAND].claim_id is None
+            assert outcomes[_BAND].reason == DERIVATION_LINEAGE_UNPROVABLE
+            assert outcomes[_BAND].source_claim_id is not None
+            assert not [
+                item
+                for item in await claims_for(
+                    conn, account_id, _BAND, scope=WorkspaceScope.for_workspace(workspace_id)
+                )
+                if item.provenance_kind is ClaimProvenanceKind.PLATFORM_INFERRED
+            ]
+            # The savepoint kept the surrounding transaction alive: the caller (assess) keeps
+            # reading and writing coverage on this very connection after a refused derivation.
+            assert (await conn.execute(text("SELECT 1"))).scalar_one() == 1
+
+    run_async(scenario())
+
+
+def test_any_other_database_error_on_the_derived_write_still_propagates(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The conversion stays narrow: only the lineage trigger's own raise degrades."""
+
+    _serve_unverified_tier4(monkeypatch)
+
+    async def scenario() -> None:
+        storage = FsStorage(tmp_path / "exa-derivation-other")
+        async with rollback_conn() as conn:
+            seeded = await _exa_deep_derivation_fixture(conn, storage)
+
+            async def refuse(*_args: object, **_kwargs: object) -> None:
+                raise _lineage_dbapi_error(
+                    'new row violates check constraint "claim_workspace_scope"',
+                    sqlstate="23514",
+                )
+
+            monkeypatch.setattr(derivation_module, "insert_claim", refuse)
+            with pytest.raises(DBAPIError):
+                await derive_account_fields(
+                    conn,
+                    workspace_id=str(seeded["workspace_id"]),
+                    project_id=str(seeded["project_id"]),
+                    project_run_id=seeded["project_run_id"],
+                    account_entity_id=EntityId(seeded["account_id"]),
+                    field_keys=(_BAND,),
+                )
+
+    run_async(scenario())
+
+
+def test_the_matched_lineage_refusal_text_is_the_migrations_own_wording() -> None:
+    """The narrow match is verbatim, so a trigger reword must break this, not the pilot loop."""
+
+    migration = (
+        Path(__file__).resolve().parents[2]
+        / "alembic"
+        / "versions"
+        / "f9281fac77e1_harden_c2_atomic_reservation_and_exa_.py"
+    ).read_text()
+    collapsed = " ".join(migration.split())
+    for message in derivation_module._LINEAGE_REFUSAL_MESSAGES:
+        # The migration wraps its RAISE text across adjacent string literals; compare on the
+        # collapsed source with the literal seams removed.
+        assert " ".join(message.split()) in collapsed.replace("' '", "").replace("' ... '", "")

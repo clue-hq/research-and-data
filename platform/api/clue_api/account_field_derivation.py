@@ -11,7 +11,12 @@ Three rules this module exists to make un-restatable:
 * **Provenance (founder-ratified, absolute).** A derived claim carries
   ``ClaimProvenanceKind.PLATFORM_INFERRED`` and the *source claim's own*
   ``extraction_method`` / ``source_tier`` / ``source_url`` / ``evidence_span`` / ``artifact_key``
-  — the band's evidence is exactly the evidence of the number it restates. It is **never** written
+  **and its external-research operation/snapshot/request lineage** — the band's evidence is
+  exactly the evidence of the number it restates, down to the immutable provider snapshot that
+  produced it. Carrying ``source_key`` + ``artifact_key`` while dropping the three snapshot refs
+  used to mint a half-lineaged Exa claim that the ``claim_validate_external_research_lineage``
+  trigger (correctly) refuses; live on 2026-08-20 that raw ``DBAPIError`` escaped as
+  ``execution_failed`` and paused a running account job. It is **never** written
   as ``ExtractionMethod.HUMAN``: a platform rule is not a person. A source claim that *is* human
   asserted is therefore not derived from at all (it would either launder a human assertion into a
   machine method or write the forbidden one), and settles ``derivation_source_not_derivable``.
@@ -25,6 +30,9 @@ Three rules this module exists to make un-restatable:
 
 A field whose source claim is absent, stale, conflicted or evidence-less is **not** derived; it
 settles ``derivation_source_missing`` so the coverage ledger says why the profile row is empty.
+A write the database refuses because the restated lineage cannot be proven settles the same way
+(``derivation_lineage_unprovable``) rather than escaping: an unprovable band is an honest gap, and
+one mechanical write failure must never take a whole research job down with it.
 """
 
 from __future__ import annotations
@@ -36,6 +44,7 @@ from typing import Final
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, JsonValue
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_core import (
@@ -99,8 +108,35 @@ _REVENUE_BAND_CEILINGS: Final[tuple[Decimal | None, ...]] = (
 #: Why a derive-only field did not settle into a value.
 DERIVATION_SOURCE_MISSING: Final = "derivation_source_missing"
 DERIVATION_SOURCE_NOT_DERIVABLE: Final = "derivation_source_not_derivable"
+DERIVATION_LINEAGE_UNPROVABLE: Final = "derivation_lineage_unprovable"
 DERIVED: Final = "derived"
 EXISTING_CLAIM_FRESH: Final = "existing_claim_fresh"
+
+#: The exact ``RAISE EXCEPTION`` texts of ``claim_validate_external_research_lineage`` (migration
+#: ``f9281fac77e1``). Matched verbatim, together with the plpgsql ``raise_exception`` SQLSTATE, so
+#: the conversion below stays narrow: every other database error on the same INSERT — an integrity
+#: violation, a workspace-scope refusal, an immutability trigger — must keep propagating.
+_LINEAGE_REFUSAL_MESSAGES: Final = (
+    "exa_deep claims require complete operation, snapshot, request, and result artifact lineage",
+    "claim external research lineage does not match snapshot/result evidence",
+)
+_RAISE_EXCEPTION_SQLSTATE: Final = "P0001"
+
+
+def _is_lineage_refusal(error: DBAPIError) -> bool:
+    """Whether this INSERT failure is the lineage trigger refusing an unprovable derived claim."""
+
+    original = error.orig
+    if original is None:
+        return False
+    sqlstate = getattr(original, "sqlstate", None) or getattr(original, "pgcode", None)
+    if sqlstate is None:
+        cause = getattr(original, "__cause__", None)
+        sqlstate = getattr(cause, "sqlstate", None)
+    if sqlstate != _RAISE_EXCEPTION_SQLSTATE:
+        return False
+    text_of = str(original)
+    return any(message in text_of for message in _LINEAGE_REFUSAL_MESSAGES)
 
 
 class AccountFieldDerivationError(RuntimeError):
@@ -316,16 +352,42 @@ async def _derive_one(
         ),
         source_key=source.source_key,
         artifact_key=source.artifact_key,
+        # The band restates the number, so it restates the number's *whole* evidence chain — the
+        # immutable provider operation/snapshot/request that produced it, not just the result
+        # artifact. These are the source claim's own refs, never minted here: a source with no
+        # external-research lineage (a deterministic API, a scrape) derives a claim with none
+        # either, which is exactly what its evidence is.
+        source_operation_ref=source.source_operation_ref,
+        source_snapshot_ref=source.source_snapshot_ref,
+        source_request_ref=source.source_request_ref,
     )
+    try:
+        # A SAVEPOINT so a refused write cannot poison the surrounding transaction: this function
+        # settles several rows and the caller reads/writes coverage on the same connection.
+        async with conn.begin_nested():
+            claim_id = await insert_claim(conn, claim)
+    except DBAPIError as error:
+        if not _is_lineage_refusal(error):
+            raise
+        # The database proved this restatement's evidence chain cannot be verified. The honest
+        # answer is an empty, reasoned row — never an invented ref, and never a dead job: this
+        # settles like any other underivable source so coverage reports the gap and the account
+        # agent walks on to finalization. The trigger stays the authority and is untouched.
+        return AccountFieldDerivation(
+            field_key=field_key,
+            source_claim_id=source.id,
+            reason=DERIVATION_LINEAGE_UNPROVABLE,
+        )
     return AccountFieldDerivation(
         field_key=field_key,
-        claim_id=await insert_claim(conn, claim),
+        claim_id=claim_id,
         source_claim_id=source.id,
         reason=DERIVED,
     )
 
 
 __all__ = [
+    "DERIVATION_LINEAGE_UNPROVABLE",
     "DERIVATION_SOURCE_MISSING",
     "DERIVATION_SOURCE_NOT_DERIVABLE",
     "DERIVED",
