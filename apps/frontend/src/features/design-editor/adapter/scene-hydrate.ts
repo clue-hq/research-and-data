@@ -66,16 +66,18 @@ export const COLOR_NONE = "none";
  * `alignY` (§1.4's Auto Layout section), `title` (§1.0's header) and
  * `customWidth`/`customHeight` (§1.1's Custom preset) — recorded in the AD2.4
  * report as an extension of the same ruling, not a new decision.
+ *
+ * AD4.0 step 1 settles the first two of those: binding §1.1's Custom W/H
+ * inputs to the controller gave `customWidth`/`customHeight` a real state
+ * field, so they now live in `InspectorPresentationState` beside their
+ * siblings — the "final home" the ruling deferred — and have left this list.
+ * The rest are still AD4.B's to place.
  */
 export interface SceneInspectorExtraState {
   /** §1.4's Align X label (Start|Center|End|Space between|Stretch). */
   alignX?: string;
   /** §1.4's Align Y label. */
   alignY?: string;
-  /** §1.1: the Custom preset's height input, px. */
-  customHeight?: string;
-  /** §1.1: the Custom preset's width input, px. */
-  customWidth?: string;
   /** §1.4's Grow input. */
   grow?: string;
   /** §1.4/OQ-2: Fixed | Hug | Fill. */
@@ -206,8 +208,13 @@ const VALIGN_LABELS = {
 /** §2 row 1: the three ratified presets with their corrected sizes, matched on
  * SIZE NUMBERS (the labels mirror `image-inspector.tsx` `SIZE_PRESETS`). The
  * engine's own `PagePreset::LinkedinAd` is the 1200×627 banner, so a page's
- * stored `preset` field cannot answer this question — the numbers do. */
-const SIZE_PRESETS = [
+ * stored `preset` field cannot answer this question — the numbers do.
+ *
+ * Exported for the AD4.0 WRITE half (`scene-apply.ts`), which reads the table
+ * the other way (label → numbers). One table, not two: a relabel that orphaned
+ * the write while hydration kept matching is exactly the drift this file's
+ * "hydrate is the authority on every vocabulary" rule exists to prevent. */
+export const SIZE_PRESETS = [
   { height: 1200, label: "Linkedin square (1:1) - 1200x1200", width: 1200 },
   { height: 1350, label: "Instagram portrait (4:5) - 1080x1350", width: 1080 },
   { height: 1920, label: "Story (9:16) - 1080x1920", width: 1080 },
@@ -503,8 +510,13 @@ export function hydrateSceneCanvasState(
  * `output.raster`. The raster output is preferred (it is already integral px
  * and is what the artifact actually exports at), then the px source, and only
  * then the box itself.
+ *
+ * Exported for the AD4.0 write half: a Custom W/H edit changes ONE dimension
+ * and must keep the other exactly as displayed, so the write reads the size
+ * through this same function rather than off the raw `pt` box. Those two
+ * numbers differ whenever the raster rounded a fractional authored px.
  */
-function pagePixelSize(page: Page): { height: number; width: number } {
+export function pagePixelSize(page: Page): { height: number; width: number } {
   const raster = page.size.output?.raster;
   if (raster) {
     return { height: raster.height_px, width: raster.width_px };

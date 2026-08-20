@@ -1,9 +1,13 @@
 "use client";
 
 import { useEffect, useRef, type RefObject } from "react";
-import { sceneChangeToOperation } from "../adapter/scene-apply";
+import {
+  sceneCanvasChangeToOperation,
+  sceneChangeToOperation,
+} from "../adapter/scene-apply";
 import type { SceneCanvasControls } from "../components/scene-artifact-canvas";
-import type { Scene } from "../engine/scene/contracts";
+import type { PageId, Scene } from "../engine/scene/contracts";
+import { getPage } from "../engine/scene/sceneQueries";
 import {
   useSceneManualEdits,
   type SceneManualEdits,
@@ -48,23 +52,58 @@ import {
  * `addressing.documentVersion` therefore stays `null` on this lane — see the
  * comment at its construction site.
  *
- * One consequence to know before extending this: the gate requires a NON-NULL
- * primary selection, so the §1.1 canvas schema (an empty selection editing the
- * root frame's background) cannot write through it. That is correct today —
- * `scene-apply.ts` maps no canvas row yet — but the lane that adds those rows
- * must widen this gate deliberately, not discover it by accident.
+ * ── AD4.0: THE SECOND GATE, FOR §1.1's CANVAS ROWS ───────────────────────
+ * The gate above requires a NON-NULL primary selection, so the §1.1 canvas
+ * schema — an empty selection editing the PAGE — could never write through it.
+ * AD3.2 said the lane that added those rows "must widen this gate deliberately,
+ * not discover it by accident". This is that widening, and it is a SEPARATE
+ * branch: the node path below is untouched, still demanding everything it did.
+ *
+ * A canvas event states something positive rather than merely missing:
+ *
+ *   • `detail.selectionId` is exactly `null` — the controller HAS addressing
+ *     and that addressing says "no node is selected". An event carrying no
+ *     addressing at all (the dummy fixture path, `dispatchInspectorEvent` with
+ *     no third argument) leaves it `undefined` and is refused here, then
+ *     refused again by the node path's `typeof … !== "string"`.
+ *   • `detail.artifactId` is this session's ACTIVE artifact — the event comes
+ *     from a panel wired to the document this hook is armed for, not from one
+ *     still mounted for the tab the user just left.
+ *   • this session's own primary selection is `null` too, so the session and
+ *     the event agree that the CANVAS is what is selected.
+ *   • the live scene really carries the page the write will name — the same
+ *     "the write can never be aimed at something that is not there" rule the
+ *     node path applies to its node.
+ *
+ * What keeps the two LANES apart here is not the artifact id (the web session
+ * is handed the same `activeArtifactId`) but the same thing that keeps the
+ * undo/redo listeners apart: exactly one lane is `enabled`, so exactly one has
+ * a `documentId` and this effect is only armed for the ad one — and the web
+ * inspector is not even mounted while an ad artifact is active.
+ *
+ * The page id is the SESSION's (`firstPageId`, resolved by the canvas that
+ * rendered it), not a re-derivation here: `Scene.pages` is an unordered
+ * `Record` with no ordering field, so `Object.keys(...)[0]` would be a guess —
+ * and it must be the very page `hydrateSceneCanvasState` read, or the write
+ * would not be the inverse of what the panel is showing.
  */
 
 export function useSceneInspectorWrites({
+  artifactId,
   canvasControls,
   documentId,
   loadGeneration,
   onReload,
+  pageId,
   primaryNodeId,
   redoDepth,
   scene,
   undoDepth,
 }: {
+  /** AD4.0: the session's active artifact tab — the id its inspector stamps on
+   * every event as `addressing.artifactId`. The canvas gate below compares
+   * against it; the node gate has the selection id instead. */
+  artifactId: string | null;
   /** The mounted canvas's imperative seam (the live engine). */
   canvasControls: RefObject<SceneCanvasControls | null>;
   /** The active design document, or null when nothing is armed. */
@@ -74,6 +113,9 @@ export function useSceneInspectorWrites({
   loadGeneration?: number;
   /** The session's reload nonce bump. */
   onReload: () => void;
+  /** AD4.0: the page the canvas is rendering (§5: one artboard), the very one
+   * `hydrateSceneCanvasState` read. */
+  pageId: PageId | null;
   /** The session's primary selection — `selectedIds[0]`, already resolved
    * against the live scene. */
   primaryNodeId: string | null;
@@ -94,12 +136,16 @@ export function useSceneInspectorWrites({
   // Latest-value refs so the one listener reads current state without
   // re-arming (written passively, per this repo's react-hooks rules).
   const applyOpsRef = useRef(edits.applyOps);
+  const artifactIdRef = useRef(artifactId);
   const controlsRef = useRef(canvasControls);
+  const pageIdRef = useRef(pageId);
   const primaryNodeIdRef = useRef(primaryNodeId);
   const sceneRef = useRef(scene);
   useEffect(() => {
     applyOpsRef.current = edits.applyOps;
+    artifactIdRef.current = artifactId;
     controlsRef.current = canvasControls;
+    pageIdRef.current = pageId;
     primaryNodeIdRef.current = primaryNodeId;
     sceneRef.current = scene;
   });
@@ -115,6 +161,42 @@ export function useSceneInspectorWrites({
         value?: unknown;
       } | null;
       if (!detail || typeof detail.property !== "string") return;
+
+      // ── AD4.0 / §1.1: the CANVAS (page) rows ───────────────────────────
+      // Its own gate, reasoned out in the header above. `=== null` (not
+      // `!== "string"`) is the point: an addressed "nothing is selected", not
+      // an event that simply carries no addressing.
+      if (detail.selectionId === null) {
+        if (
+          typeof detail.artifactId !== "string" ||
+          detail.artifactId !== artifactIdRef.current
+        )
+          return;
+        // The session must agree the canvas is what is selected.
+        if (primaryNodeIdRef.current !== null) return;
+        const liveCanvas = sceneRef.current;
+        const livePageId = pageIdRef.current;
+        // The scene the engine is holding must really carry that page.
+        if (!liveCanvas || !livePageId || !getPage(liveCanvas, livePageId))
+          return;
+        if (!controlsRef.current.current) return;
+        const pageOperation = sceneCanvasChangeToOperation(
+          {
+            property: detail.property,
+            selectionId: null,
+            value: detail.value,
+          },
+          liveCanvas,
+          livePageId,
+        );
+        // The same null contract: an unmapped property or an unparseable value
+        // produces no operation, and no operation is no write.
+        if (!pageOperation) return;
+        applyOpsRef.current([pageOperation], `inspector: ${detail.property}`);
+        return;
+      }
+
+      // ── AD3.1/AD3.2: the node-addressed rows, unchanged ────────────────
       // Not addressable → not a write (the W3.1 null contract, ad-side).
       if (typeof detail.selectionId !== "string") return;
       // The event must be for the node this session actually holds. This is

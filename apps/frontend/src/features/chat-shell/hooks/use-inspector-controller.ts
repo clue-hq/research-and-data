@@ -42,6 +42,12 @@ export interface InspectorPresentationState {
   backgroundColor: string;
   backgroundFill: InspectorBackgroundFill;
   buttonLabel: string;
+  /** AD4.0 §1.1 row 1: the Custom size preset's H input (px). Ruling 14 parked
+   * this pair with no state field while the control was inert; binding it to
+   * the write seam is what gives it one. */
+  customHeight: string;
+  /** AD4.0 §1.1 row 1: the Custom size preset's W input (px). */
+  customWidth: string;
   direction: InspectorDirection;
   fillMode: string;
   fontFamily: string;
@@ -109,6 +115,10 @@ const DEFAULT_STATE: InspectorPresentationState = {
     type: "radial-gradient",
   },
   buttonLabel: "Primary",
+  // The dummy's own Custom W/H seeds, moved here verbatim from the local
+  // `useState` pair they used to live in (`image-inspector.tsx`).
+  customHeight: "1200",
+  customWidth: "1200",
   direction: "horizontal",
   fillMode: "Fit",
   fontFamily: "Inter",

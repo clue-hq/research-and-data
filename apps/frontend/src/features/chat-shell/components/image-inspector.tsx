@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import type { SceneInspectorState } from "@/features/design-editor/adapter/scene-hydrate";
 import type { ChatShellInspectorSelection } from "../model/chat-shell";
 import {
@@ -344,14 +344,14 @@ function AdCanvasInspector({
   const initial = { sizePreset: SIZE_PRESETS[0], ...hydrated };
   const controller = useInspectorController([], "canvas", initial, addressing);
   const { setValue, state, toggleSection } = controller;
-  // §2 delta (contract row 1): Custom reveals W/H (px only). Local draft state
-  // in this inert phase — the preset itself already rides the controller.
-  // AD2.4 hydrates the two inputs only when the page matches no preset, which
-  // is exactly when this pair is on screen.
-  const [customWidth, setCustomWidth] = useState(hydrated?.customWidth ?? "1200");
-  const [customHeight, setCustomHeight] = useState(
-    hydrated?.customHeight ?? "1200",
-  );
+  // §2 delta (contract row 1): Custom reveals W/H (px only). AD4.0 binds the
+  // pair to the controller — they were the last designed ad control still
+  // holding local draft state, so they dispatched nothing and could never
+  // write. They now seed and commit exactly like every sibling field (AD2.4
+  // hydrates them only when the page matches no preset, which is exactly when
+  // this pair is on screen), and, like §1.2's Size box, they fire per
+  // keystroke: `InspectorInput`'s blur/Enter `onCommit` is opt-in and no ad
+  // row opts in.
   return (
     <>
       <Section id="dimensions" label="Dimensions" open={state.openSections.dimensions} toggle={() => toggleSection("dimensions")}>
@@ -359,8 +359,8 @@ function AdCanvasInspector({
         {state.sizePreset === "Custom" ? (
           <InspectorField label="Custom size">
             <div className={styles.fieldGrid}>
-              <InspectorInput ariaLabel="Custom width" onChange={setCustomWidth} prefix="W" value={customWidth} />
-              <InspectorInput ariaLabel="Custom height" onChange={setCustomHeight} prefix="H" value={customHeight} />
+              <InspectorInput ariaLabel="Custom width" onChange={(value) => setValue("customWidth", value)} prefix="W" value={state.customWidth} />
+              <InspectorInput ariaLabel="Custom height" onChange={(value) => setValue("customHeight", value)} prefix="H" value={state.customHeight} />
             </div>
           </InspectorField>
         ) : null}

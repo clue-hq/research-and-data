@@ -380,11 +380,17 @@ export function useSceneEditingSession({
   // live engine through the canvas seam, then persists it on the edit queue;
   // the listener inside it is what turns an inspector event into an operation.
   // AD3.3: it also owns the two history steps, which is why the depths go in.
+  // AD4.0: `artifactId` and `pageId` are what §1.1's canvas rows are addressed
+  // by — an empty selection has no node id to gate on. `pageId` is the one the
+  // canvas rendered and `hydrated` above read, so the write stays the exact
+  // inverse of what the panel is showing.
   const writes = useSceneInspectorWrites({
+    artifactId: activeArtifactId,
     canvasControls,
     documentId: activeDocumentId,
     loadGeneration: liveHistory?.loadGeneration ?? 0,
     onReload: onWriteReload,
+    pageId,
     primaryNodeId,
     redoDepth: liveHistory?.redoDepth ?? 0,
     scene,

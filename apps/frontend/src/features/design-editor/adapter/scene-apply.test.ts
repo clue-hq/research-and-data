@@ -3,25 +3,36 @@ import { it } from "node:test";
 import type {
   Node,
   NodePatch,
+  PageId,
+  PagePatch,
   Scene,
   TextAlign,
   VerticalAlign,
 } from "../engine/scene/contracts";
-import { nodePatch, set } from "../engine/scene/operations";
+import { nodePatch, pagePatch, set } from "../engine/scene/operations";
+import { normalizePageSize } from "../engine/scene/pageGeometry";
 import {
+  AD_PAGE_ID,
   HARVESTED_AD_PAGE,
   adAutoLayout,
   adPlainText,
   adRect,
   adTokenText,
 } from "./__fixtures__/scene-nodes";
-import { COLOR_NONE } from "./scene-hydrate";
-import { sceneChangeToOperation } from "./scene-apply";
+import { COLOR_NONE, hydrateSceneCanvasState } from "./scene-hydrate";
+import {
+  sceneCanvasChangeToOperation,
+  sceneChangeToOperation,
+} from "./scene-apply";
 
 /**
  * AD3.1: this file IS the ad-inspector mapping contract's §1.2 (text schema)
  * write table — one `it` per control row, each citing its row, plus the null
  * contract's refusals. The twin of the website lane's `apply.test.ts`.
+ *
+ * AD4.0 step 1 adds §1.1's SIZE rows at the foot of the file. They exercise the
+ * second exported function (`sceneCanvasChangeToOperation`), because those rows
+ * target the PAGE and the canvas selection carries no node at all.
  *
  * Every case runs against AD2.2's harvested bytes
  * (`__fixtures__/scene-nodes`, document `doc_ad22linkedinsquare00000000001`)
@@ -540,8 +551,17 @@ it("null contract: an unknown property writes nothing", () => {
 it("null contract: rows owned by a LATER lane write nothing today", () => {
   // AD3.1 is the §1.2 text schema only. When the Layout/Shape/Auto-Layout
   // lanes extend this same switch they move these lines out of this test.
-  for (const property of ["opacity", "radius.all", "gap", "fillMode", "sizePreset"]) {
+  for (const property of ["opacity", "radius.all", "gap", "fillMode"]) {
     assert.equal(apply(adAutoLayout(), property, "4"), null, property);
+  }
+});
+
+it("null contract: the §1.1 CANVAS rows never write through the node function", () => {
+  // AD4.0 maps these — but on the PAGE, through the sibling function below.
+  // A node-addressed event carrying one of them is somebody else's row.
+  for (const property of ["sizePreset", "customWidth", "customHeight"]) {
+    assert.equal(apply(adAutoLayout(), property, "1080"), null, property);
+    assert.equal(apply(adPlainText(), property, "1080"), null, property);
   }
 });
 
@@ -555,5 +575,205 @@ it("null contract: a non-text node never reaches updateTextNode (which throws)",
   ]) {
     assert.equal(apply(adRect(), property, "left"), null, property);
     assert.equal(apply(adAutoLayout(), property, "16"), null, property);
+  }
+});
+
+// ══ §1.1 row 1 — the CANVAS (page) size preset + Custom W/H ═════════════════
+//
+// A second function, because these rows target a PAGE: the canvas selection is
+// the EMPTY selection, so there is no Node to hand an adapter. Same harvested
+// bytes, same null contract.
+
+function applyCanvas(
+  property: string,
+  value: unknown,
+  scene: Scene = SCENE,
+  pageId: PageId = AD_PAGE_ID,
+): ReturnType<typeof sceneCanvasChangeToOperation> {
+  // `selectionId: null` is the honest canvas addressing — the caller's gate
+  // proves it; the adapter holds no selection either way.
+  return sceneCanvasChangeToOperation(
+    { property, selectionId: null, value },
+    scene,
+    pageId,
+  );
+}
+
+/** The expected operation, through the ENGINE's own page-patch builder: only
+ * `size` is `set`, so a write that also touched the page's name, bleed, safe
+ * area or background would fail loudly. */
+function updatePage(pageId: string, patch: Partial<PagePatch>) {
+  return { kind: "update_page", page_id: pageId, patch: pagePatch(patch) };
+}
+
+/**
+ * The canonical page size the engine mints for an authored PX size — a `pt`
+ * layout box, the authored px on `source`, the export size on `output.raster`,
+ * `preset: "custom"`, and an orientation DERIVED from the numbers
+ * (`engine/scene/pageGeometry.ts::normalizePageSize`, the same helper the
+ * standalone editor's own custom-size write goes through).
+ *
+ * Spelled out here rather than called, so these tests state the bytes they
+ * expect instead of restating the implementation.
+ */
+function pxPage(width: number, height: number) {
+  return {
+    height,
+    orientation: width > height ? "landscape" : "portrait",
+    output: { raster: { height_px: height, width_px: width } },
+    preset: "custom",
+    source: { height, unit: "px", width },
+    unit: "pt",
+    width,
+  };
+}
+
+it("§1.1 Size preset: each of the three ratified labels writes its exact px size", () => {
+  const presets: [string, number, number][] = [
+    ["Linkedin square (1:1) - 1200x1200", 1200, 1200],
+    ["Instagram portrait (4:5) - 1080x1350", 1080, 1350],
+    ["Story (9:16) - 1080x1920", 1080, 1920],
+  ];
+  for (const [label, width, height] of presets) {
+    assert.deepEqual(
+      applyCanvas("sizePreset", label),
+      updatePage(AD_PAGE_ID, { size: set(pxPage(width, height)) }),
+      label,
+    );
+  }
+});
+
+it('§1.1 Size preset: "Custom" names no size — the W/H inputs carry it — so it writes nothing', () => {
+  assert.equal(applyCanvas("sizePreset", "Custom"), null);
+});
+
+it("§1.1 Size preset: a label the select does not offer writes nothing", () => {
+  for (const value of [
+    // §2.1's RETIRED LinkedIn value — a stale label must not resize the page.
+    "Linkedin square (1:1) - 1024x1024",
+    "Instagram portrait (4:5)",
+    "linkedin_ad",
+    "",
+  ]) {
+    assert.equal(applyCanvas("sizePreset", value), null, value);
+  }
+  assert.equal(applyCanvas("sizePreset", 1200), null);
+});
+
+it("§1.1 Custom W: the typed width keeps the HEIGHT the inspector is showing", () => {
+  // The harvested page displays 1200x1200 px (hydrate's `pagePixelSize` reads
+  // `output.raster` first), so a width edit must land 1080x1200.
+  assert.deepEqual(
+    applyCanvas("customWidth", "1080"),
+    updatePage(AD_PAGE_ID, { size: set(pxPage(1080, 1200)) }),
+  );
+});
+
+it("§1.1 Custom H: the typed height keeps the WIDTH the inspector is showing", () => {
+  assert.deepEqual(
+    applyCanvas("customHeight", "1920"),
+    updatePage(AD_PAGE_ID, { size: set(pxPage(1200, 1920)) }),
+  );
+});
+
+it("§1.1 Custom W/H: the preserved dimension is what the panel DISPLAYS, not the layout box", () => {
+  // UNCOVERED by the harvest, and the sharp edge of the px trap: a fractional
+  // authored px size is the one shape whose pt box and px raster differ (the
+  // raster rounds). This page is minted by the engine's own normalizer, so it
+  // is a real shape, not an invented one — its box is 628.4 while the panel
+  // shows 628, and the write must keep the number on screen.
+  const scene = clone(SCENE);
+  scene.pages[AD_PAGE_ID].size = normalizePageSize({
+    height: 628.4,
+    preset: "custom",
+    unit: "px",
+    width: 1200,
+  });
+  assert.equal(scene.pages[AD_PAGE_ID].size.height, 628.4);
+  assert.equal(hydrateSceneCanvasState(scene, AD_PAGE_ID).customHeight, "628");
+  assert.deepEqual(
+    applyCanvas("customWidth", "1080", scene),
+    updatePage(AD_PAGE_ID, { size: set(pxPage(1080, 628)) }),
+  );
+});
+
+it("§1.1 Custom W/H: a non-px page's unit never rides along — the write is always px-authored", () => {
+  // ONE field edited: the page's geometry unit. A `{...page.size}` spread would
+  // carry `mm` metadata beside px numbers; re-minting through the engine's own
+  // normalizer cannot.
+  const scene = clone(SCENE);
+  scene.pages[AD_PAGE_ID].size.unit = "mm";
+  assert.deepEqual(
+    applyCanvas("customHeight", "1350", scene),
+    updatePage(AD_PAGE_ID, { size: set(pxPage(1200, 1350)) }),
+  );
+});
+
+it("§1.1: orientation is RECOMPUTED from the written numbers, never spread from the old page", () => {
+  assert.equal(SCENE.pages[AD_PAGE_ID].size.orientation, "portrait");
+  const operation = applyCanvas("customWidth", "1920");
+  assert.ok(operation && operation.kind === "update_page");
+  const size = operation.patch.size;
+  assert.ok(size.kind === "set");
+  assert.equal(size.value.orientation, "landscape");
+  assert.equal(size.value.preset, "custom");
+  assert.equal(size.value.unit, "pt");
+});
+
+it("§1.1: the write is the exact inverse of hydrate — the written size re-hydrates as itself", () => {
+  // The plan's literal `{...page.size}` spread fails HERE: it would keep the
+  // harvested page's `source`/`output.raster` (1200x1200 px), and hydrate reads
+  // the raster first — so the select would snap straight back to LinkedIn
+  // square the moment the panel re-read the document.
+  const rehydrate = (operation: ReturnType<typeof applyCanvas>) => {
+    assert.ok(operation && operation.kind === "update_page");
+    const size = operation.patch.size;
+    assert.ok(size.kind === "set");
+    const written = clone(SCENE);
+    written.pages[AD_PAGE_ID].size = size.value;
+    return hydrateSceneCanvasState(written, AD_PAGE_ID);
+  };
+  assert.equal(
+    rehydrate(applyCanvas("sizePreset", "Story (9:16) - 1080x1920")).sizePreset,
+    "Story (9:16) - 1080x1920",
+  );
+  const custom = rehydrate(applyCanvas("customWidth", "1080"));
+  assert.equal(custom.sizePreset, "Custom");
+  assert.equal(custom.customWidth, "1080");
+  assert.equal(custom.customHeight, "1200");
+});
+
+it("§1.1 Custom W/H: NaN, below 1, empty and non-strings are refused", () => {
+  // Both inputs are free-text `InspectorInput`s firing per KEYSTROKE, exactly
+  // like §1.2's Size box, so "", "-" and "1e" are ordinary mid-edit events.
+  for (const value of ["abc", "0", "-1", "0.5", "", "  ", "-", "1e", "1e400"]) {
+    assert.equal(applyCanvas("customWidth", value), null, value);
+    assert.equal(applyCanvas("customHeight", value), null, value);
+  }
+  assert.equal(applyCanvas("customWidth", 1080), null);
+  assert.equal(applyCanvas("customHeight", Number.NaN), null);
+});
+
+it("§1.1 null contract: a page the live scene does not carry writes nothing", () => {
+  assert.equal(
+    applyCanvas("sizePreset", "Story (9:16) - 1080x1920", SCENE, "page_missing"),
+    null,
+  );
+  assert.equal(applyCanvas("customWidth", "1080", SCENE, "page_missing"), null);
+});
+
+it("§1.1 null contract: the canvas function maps only the SIZE rows today", () => {
+  // §1.1's Background rows are a later step of AD4.0 (they target the ROOT
+  // FRAME's fill, not the page), and every §1.2 row belongs to the node
+  // function. The header lock is a node row too — a page carries no lock.
+  for (const property of [
+    "backgroundColor",
+    "backgroundFill",
+    "locked",
+    "fontSize",
+    "position.x",
+    "notAProperty",
+  ]) {
+    assert.equal(applyCanvas(property, "12"), null, property);
   }
 });

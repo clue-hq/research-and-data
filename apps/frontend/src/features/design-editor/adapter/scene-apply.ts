@@ -2,6 +2,8 @@ import type {
   Fill,
   Node,
   Operation,
+  Page,
+  PageId,
   Rect,
   Scene,
   Stroke,
@@ -14,13 +16,16 @@ import {
   updateNodeLocked,
   updateNodeStrokes,
   updateNodeTransform,
+  updatePageSize,
   updateTextNode,
 } from "../engine/scene/operations";
+import { normalizePageSize } from "../engine/scene/pageGeometry";
 import {
+  getPage,
   isNodeDirectGeometryEditable,
   isNodePinned,
 } from "../engine/scene/sceneQueries";
-import { COLOR_NONE } from "./scene-hydrate";
+import { COLOR_NONE, SIZE_PRESETS, pagePixelSize } from "./scene-hydrate";
 
 /**
  * AD3.1: the pure write adapter for the SCENE (ad) lane — one inspector change
@@ -35,6 +40,11 @@ import { COLOR_NONE } from "./scene-hydrate";
  * NO operation. Never a guess, never a throw. AD3.1 implements the §1.2 TEXT
  * schema's rows plus the §1.0 header lock; every later lane extends this same
  * switch.
+ *
+ * AD4.0 adds a SECOND exported function, `sceneCanvasChangeToOperation`, at
+ * the foot of the file: §1.1's canvas rows target a `Page`, and the canvas
+ * selection carries no node at all, so they cannot ride the node signature.
+ * Same null contract, same voice; its own header states its decisions.
  *
  * Addressing (`selectionId` / `documentVersion` / "is this event for the node
  * I hold?") is the CALLER's gate, exactly as `hooks/use-inspector-writes.ts:78-89`
@@ -59,7 +69,10 @@ import { COLOR_NONE } from "./scene-hydrate";
 
 export interface SceneChangeDetail {
   property: string;
-  selectionId: string;
+  /** AD4.0: `null` on the §1.1 canvas rows — the canvas selection IS the empty
+   * selection, and the controller states that positively (an event carrying no
+   * addressing at all leaves this `undefined`, which is a different fact). */
+  selectionId: string | null;
   value: unknown;
 }
 
@@ -431,6 +444,132 @@ export function sceneChangeToOperation(
     default:
       // Everything else is a later lane's row (§1.1/§1.3/§1.4), inert (§3),
       // dropped (§5), or simply unmapped — no operation.
+      return null;
+  }
+}
+
+/**
+ * §1.1 row 1: the ONE page-size write, in the canonical form the engine mints
+ * for an authored PX size.
+ *
+ * `normalizePageSize` is the engine's own constructor (a verbatim upstream
+ * port, `engine/scene/pageGeometry.ts`) and is exactly what the standalone
+ * editor's custom W/H fields commit through
+ * (`DocumentPageSection.tsx:180-190` `customPageSize`). Using it settles the
+ * three fields the plan's `{...page.size}` spread would have carried over,
+ * and each answer is the engine's, not ours:
+ *
+ *   • `orientation` — RECOMPUTED from the numbers written
+ *     (`orientationForDimensions`). The engine does not derive it on apply
+ *     (`operations.rs::update_page` stores the `PageSize` verbatim) and the
+ *     editor's own Orientation field is a read-only render of `width > height`,
+ *     so a spread would leave a resized 1920×1200 page still claiming
+ *     `portrait`.
+ *   • `source` / `output` — REPLACED, not kept. This is the sharp end of the
+ *     px trap: hydrate's `pagePixelSize` reads `output.raster` FIRST, so a
+ *     spread that left the old raster on a resized page would make the
+ *     inspector re-read the OLD size — the select snapping back to the
+ *     previous preset while the canvas showed the new one.
+ *   • `unit` — the canonical `pt` box with the authored px on `source`, which
+ *     is what `is_canonical_page_size` (lumen-core `page_geometry.rs`) means
+ *     by canonical; a literal `unit: "px"` page is legacy geometry the engine
+ *     flags with LUMV0805.
+ *
+ * §1.1 is px-only (a `PageOutputSize.physical` a print page might carry is
+ * therefore not preserved — a page authored in px has no physical output, and
+ * the normalizer says so).
+ */
+function pxPageSizeOperation(
+  page: Page,
+  width: number,
+  height: number,
+): Operation {
+  return updatePageSize(
+    page,
+    normalizePageSize({ height, preset: "custom", unit: "px", width }),
+  );
+}
+
+/**
+ * §1.1: one canvas-schema inspector change → one `update_page`, or `null`.
+ *
+ * A SECOND function beside `sceneChangeToOperation`, not a branch inside it,
+ * because these rows target a `Page` and the canvas selection has no node at
+ * all — there is nothing to hand a node adapter. Same null contract, same
+ * house style, same file. AD4.0's later steps add §1.1's Background rows here
+ * (those target the ROOT FRAME's fill, so they are node writes reached from a
+ * page-addressed event — the asymmetry the file header already records).
+ *
+ * WHY NO LOCK GATE (§4, "lock gates every write path"): a `Page` carries no
+ * `locked` field (`contracts.ts:118-126`) and hydration never states one for
+ * the canvas schema (`hydrateSceneCanvasState` writes no `locked`), so there
+ * is no lock here to honour — refusing on the root frame's lock would be
+ * inventing a policy the contract does not have. §4 binds the NODE rows, which
+ * is where `sceneChangeToOperation` enforces it; the Background rows land on a
+ * node and will carry the gate for that reason.
+ *
+ * The preset table and the px conversion are both imported from
+ * `scene-hydrate.ts` rather than restated: this function must be the exact
+ * inverse of what the panel is showing, and hydrate is the authority on both.
+ */
+export function sceneCanvasChangeToOperation(
+  detail: SceneChangeDetail,
+  scene: Scene,
+  pageId: PageId,
+): Operation | null {
+  // A page the live scene does not carry is never a write — the same posture
+  // the node path takes when the selection and the scene disagree.
+  const page = getPage(scene, pageId);
+  if (!page) {
+    return null;
+  }
+
+  const value = typeof detail.value === "string" ? detail.value : null;
+  if (value === null) {
+    return null;
+  }
+
+  switch (detail.property) {
+    // ── §1.1 row 1: the size preset select ───────────────────────────────────
+    case "sizePreset": {
+      // The engine has no per-platform presets (its own `PagePreset` names A4,
+      // US Letter, the 1200×627 `linkedin_ad` banner, DL and custom), so the
+      // three ratified labels are CLIENT vocabulary and every one of them
+      // writes a custom size. "Custom" itself names no size — the W/H inputs
+      // below carry it — so it misses this table and writes nothing, exactly
+      // like a label the select does not offer.
+      const preset = SIZE_PRESETS.find(
+        (candidate) => candidate.label === value,
+      );
+      if (!preset) {
+        return null;
+      }
+      return pxPageSizeOperation(page, preset.width, preset.height);
+    }
+
+    // ── §1.1 row 1: the Custom W/H inputs (px only, min 1) ───────────────────
+    case "customWidth":
+    case "customHeight": {
+      const typed = finiteNumber(value);
+      // Min 1 is the contract's floor and the engine's (a non-positive page is
+      // LUMV0121); `normalizePageSize` would silently substitute 1 for a bad
+      // number, which is the guess the null contract forbids.
+      if (typed === null || typed < 1) {
+        return null;
+      }
+      // The UNTOUCHED dimension is read as PIXELS, through the very function
+      // that put it on screen — never off `page.size.width/height`, which is a
+      // `pt` box whose number can differ from the px the user is looking at
+      // (a fractional authored px rounds into `output.raster`).
+      const shown = pagePixelSize(page);
+      return detail.property === "customWidth"
+        ? pxPageSizeOperation(page, typed, shown.height)
+        : pxPageSizeOperation(page, shown.width, typed);
+    }
+
+    default:
+      // §1.1's Background rows (a later AD4.0 step), every §1.2 node row, and
+      // anything unmapped — no operation.
       return null;
   }
 }
