@@ -7,6 +7,11 @@ import {
  * origin; the proxy stamps the workspace header server-side. */
 export const DESIGN_API_BFF_PREFIX = "/api/clue/design";
 
+/** The headerless BFF mount for the design API's public, content-addressed
+ * `/asset-store/{digest}` bytes (AD1.7, founder ruling D8) — same origin, no
+ * workspace header, because that upstream route refuses one. */
+export const DESIGN_PUBLIC_BFF_PREFIX = "/api/clue/design-public";
+
 /**
  * W2.1: the engine's config for browser callers, routed through the BFF.
  *
