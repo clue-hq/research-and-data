@@ -31,6 +31,19 @@ The web-document editor (`apps/editor/src/app/web/*`) is **not** part of this co
 > `readOnly`/no-op with a single-option select — a pure visual spec (no state islands), unlike
 > the original four schemas' working local state.
 
+> **FOUNDER RULINGS 2026-08-20 (OQ-1…OQ-8, verbatim intent):**
+> **OQ-1** Plain Frame renders the auto-layout schema **minus** its Auto Layout section
+> (= Shape + Stroke + Layout + Arrange + Layers). **OQ-2** Width/Height mode ships all three
+> (Fixed/Hug/Fill); the "Width fixed"/"Height fixed" inputs appear **only in Fixed mode**;
+> fill-weight inputs stay out. **OQ-3** Opacity displays as % and converts to the engine's 0–1
+> at the seam. **OQ-4** The new Layout section does **NOT** extend to text/image/button.
+> **OQ-5** Editor semantics govern all Arrange controls on the new schemas — alignment (2+
+> nodes), distribution (3+), Group (2+ same-parent siblings) / Ungroup (single container),
+> ⌘G/⇧⌘G. **OQ-6** Group's missing Shape/Stroke sections are a deliberate hiding — confirmed.
+> **OQ-7** Standing rulings govern the new kinds' headers: lock real, eye omitted. **OQ-8**
+> The co-founder will commit/push the new dummy delta; the lift pins against that commit, and
+> the AD0 re-lift includes the trailing `web-inspector.tsx` delta.
+
 Legend used in the tables (factual, not a ruling):
 **HAS-BACKING** = the engine model can represent it · **EDITOR-HAS** = the MVP editor UI exposes
 it · **NO-BACKING** = no engine concept exists · **NO-SLOT** = the dummy has no designed place
