@@ -146,3 +146,13 @@ one, kind-gated).
   proved it: a temporary harness page mounting the real `ImageInspector` inside the real
   `.chatBody > .inspectorDock` at pinned widths (480/400/374). **The harness was deleted before
   the gate**, and the production build's route list carries no trace of it.
+
+## Addendum 2026-08-20 (late): AD1.1–AD1.5 complete (paused before AD1.6 by founder instruction)
+Commits 3d8ff650..933a4c8d. Vendor pipeline live (real wasm 813KB gz, stamp 7b992f8c6ec8); both
+bundler configs proven load-bearing (turbopack failure was real → resolveAlias remedy); 26 engine
+modules extracted (25 byte-identical + renderAdapter's D7 deletion-only pruning), 296 scene tests,
+suite 1187/1187, env reads zero (guard proven non-vacuous). Key rulings: 8 (renderDiagnostics/
+kitFonts/libraryFonts → AD1.6 — forward-import defects in the plan), 9 (wasm-gated tests → AD1.6),
+11 (tsconfig target ES2020), 12 (fetch defaults → defaultDesignFetch — receiver-unsafe bare fetch
+was a plan defect; class fully closed incl. wasmEngine:393). Ledger: .superpowers/sdd/
+2026-08-20-ad-editor-integration-execution-plan/progress.md. Dev server :3032 may still be running.
