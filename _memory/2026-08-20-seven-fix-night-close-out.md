@@ -91,3 +91,13 @@ DEFAULT (no office-placement veto; candidates never excluded/ambiguous on office
 relevance gates (current-employer, target functions) untouched. Historical strict scopes replay
 untouched; the new policy affects new operations only. Fix lane dispatched; after it lands:
 review → commit → fleet roll → v9 relaunch (cap 7) → the five-ambiguous class admits.
+
+## FINIS: the first committee member (v9, 2026-08-20 ~11:57 IST)
+
+After the gate retirement (`addc8364`), directive v9 (cap 7) → job `cd6a779e` → committee op
+succeeded (72 units; 231 credits remain) → **contact `fa1afe6b` admitted to coverage: Lenny
+Brunson, Divisional CIO at Millennium Physician Group, CXO / Information Technology, Fort Myers
+FL, persona technical_evaluator** — identity-resolved, persona-tagged, role-claim with rationale,
+organization-relationship provider-returned, full provenance. The platform's third required
+output exists for the first time. Job terminal/needs_review (1 of 7 candidates admitted; the
+rest fell on function gates — a wider cap fills more seats). Required-output pillar 3: live.
