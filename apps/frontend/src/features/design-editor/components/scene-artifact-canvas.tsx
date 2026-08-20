@@ -11,10 +11,19 @@ import {
 } from "react";
 import type { CanvasKit, Surface, TypefaceFontProvider } from "canvaskit-wasm";
 import {
+  SELECTION_HANDLE_CORNER_RADIUS,
+  SELECTION_HANDLE_FILL,
+  SELECTION_HANDLE_STROKE,
+  SELECTION_HANDLE_STROKE_WIDTH,
+  SELECTION_OUTLINE_COLOR,
+  SELECTION_OUTLINE_WIDTH,
   sceneArtboardModel,
   sceneAssetPassthroughUrl,
+  sceneSelectionOutline,
   sceneViewportModel,
+  selectionHandleRects,
   type SceneArtboardModel,
+  type SceneSelectionOutline,
 } from "../adapter/scene-canvas-view";
 import {
   representableHit,
@@ -69,15 +78,22 @@ import styles from "./scene-artifact-canvas.module.css";
  *   own Decision 5 — the selection overlay mounts as a sibling of the
  *   `<canvas>` inside `.stage`, so hover/selection never trigger a wasm redraw.
  *
- * AD2.5 adds the read path's last leg: pointer-down selects. **Selection STATE
- * only** — there is no outline and there are no handles, because the canvas
- * chrome visual is Gate G-A and G-A is open. Inventing an outline to "see it
- * working" is the same bar as inventing the §1.1 labels, so the marked
- * insertion point below stays empty and the selection is instead readable as
- * `data-scene-selected-node` on the canvas element (the same diagnostic-
- * attribute convention `data-scene-engine` already uses). The moment G-A
- * closes, the overlay is a sibling `<svg>` at that comment, fed by
- * `deriveSelectionChromeModel`'s `selectionBox`.
+ * AD2.5 adds the read path's last leg: pointer-down selects. Gate G-A then
+ * ratified the visual (founder, 2026-08-20 — Variant B), so the overlay AD2.5
+ * left as a marked empty insertion point is now a real sibling `<svg>`: a
+ * 1.5px indigo outline around the selected node's box, fed by
+ * `deriveSelectionChromeModel`'s `selectionBox` through `sceneSelectionOutline`.
+ * It is a SIBLING of the canvas, never a canvas draw — the source stage's own
+ * Decision 5 — so selection can never trigger a wasm redraw, and it is
+ * `pointer-events: none`, so every click still reaches the canvas beneath it.
+ *
+ * The ruling's four corner handles are **approved and deliberately not drawn**:
+ * a handle is a promise of drag-and-resize, and that behaviour is AD4's Lane C
+ * (there are no writes at all until AD3). A grabbable handle that does nothing
+ * is a fake affordance. The geometry and colors are encoded in the adapter and
+ * the renderer below is defaulted off — Lane C passes `handles` and changes
+ * nothing else. `data-scene-selected-node` stays on the canvas as the
+ * machine-readable assertion (AD2.5 finding 4, founder-confirmed).
  *
  * Still no write path: no operations, no edits. When the wasm stamp handshake
  * fails the scene still renders — from the server's own snapshot — and
@@ -290,6 +306,25 @@ function SceneDocumentCanvas({
   const activeSelectedNodeId =
     selectedNodeId === undefined ? ownSelectedNodeId : selectedNodeId;
 
+  // Gate G-A: the selection outline, DERIVED per render from the same artboard
+  // and the same viewport the draw loop transforms by — never stored, so a zoom
+  // change or a stage resize can never leave a stale box behind. The conversion
+  // itself lives in the adapter, where it is unit-tested (this component's
+  // internals cannot be: no DOM, no wasm in the runner).
+  const selectionOutline = useMemo(
+    () =>
+      artboard
+        ? sceneSelectionOutline({
+            artboard,
+            pageId,
+            scene,
+            selectedNodeId: activeSelectedNodeId,
+            viewport,
+          })
+        : null,
+    [activeSelectedNodeId, artboard, pageId, scene, viewport],
+  );
+
   const commitSelection = (nodeId: NodeId | null) => {
     setOwnSelectedNodeId(nodeId);
     onSelectRef.current?.(nodeId);
@@ -377,11 +412,80 @@ function SceneDocumentCanvas({
         dataSelectedNode={activeSelectedNodeId ?? "none"}
         viewport={viewport}
       />
-      {/* The selection overlay mounts HERE, as an absolutely-positioned sibling
-          of the canvas — deliberately empty until Gate G-A ratifies the outline
-          (and Lane C the handles). Selection state is live above; only its
-          visual is missing. */}
+      {/* The selection overlay: an absolutely-positioned sibling of the canvas
+          (never a canvas draw), so selection never triggers a wasm redraw. */}
+      <SelectionChrome outline={selectionOutline} />
     </div>
+  );
+}
+
+/**
+ * Gate G-A's approved selection chrome (Variant B).
+ *
+ * An SVG with no `viewBox`, so its user units ARE the stage's CSS px and the
+ * outline the adapter computed can be stroked verbatim. The stroke width is a
+ * screen constant, not a scaled one: the outline is chrome, and the viewport
+ * scales content only.
+ *
+ * Rotation is applied to a `<g>` about the box origin — the same pivot the draw
+ * loop rotates a node about — so the outline and (later) its handles turn
+ * together with one transform.
+ *
+ * `handles` is **G-A-approved geometry, enabled with Lane C** and therefore
+ * defaulted off: nothing passes it today, because drag-to-resize does not exist
+ * until AD4's Lane C and a grabbable handle that does nothing would be a fake
+ * affordance.
+ */
+function SelectionChrome({
+  handles = false,
+  outline,
+}: {
+  handles?: boolean;
+  outline: SceneSelectionOutline | null;
+}) {
+  // No selection → no element at all, not an empty overlay.
+  if (!outline) {
+    return null;
+  }
+  return (
+    <svg
+      aria-hidden="true"
+      className={styles.selectionChrome}
+      data-scene-selection-outline={outline.nodeId}
+    >
+      <g
+        transform={
+          outline.rotation
+            ? `rotate(${outline.rotation} ${outline.x} ${outline.y})`
+            : undefined
+        }
+      >
+        <rect
+          fill="none"
+          height={outline.height}
+          stroke={SELECTION_OUTLINE_COLOR}
+          strokeWidth={SELECTION_OUTLINE_WIDTH}
+          width={outline.width}
+          x={outline.x}
+          y={outline.y}
+        />
+        {handles
+          ? selectionHandleRects(outline).map((handle) => (
+              <rect
+                fill={SELECTION_HANDLE_FILL}
+                height={handle.size}
+                key={`${handle.x},${handle.y}`}
+                rx={SELECTION_HANDLE_CORNER_RADIUS}
+                stroke={SELECTION_HANDLE_STROKE}
+                strokeWidth={SELECTION_HANDLE_STROKE_WIDTH}
+                width={handle.size}
+                x={handle.x}
+                y={handle.y}
+              />
+            ))
+          : null}
+      </g>
+    </svg>
   );
 }
 

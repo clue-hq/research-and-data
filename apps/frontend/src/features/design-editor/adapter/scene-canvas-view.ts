@@ -13,10 +13,13 @@ import {
   type RenderPageDescriptor,
 } from "../engine/scene/renderAdapter";
 import { isNodePinned } from "../engine/scene/sceneQueries";
+import { deriveSelectionChromeModel } from "../engine/scene/selectionChrome";
+import type { Box } from "../engine/scene/transformerMath";
 import type { Rect } from "../engine/scene/workspaceLayout";
 import {
   clampWorkspaceZoom,
   fitWorkspaceRectToViewport,
+  workspaceRectToScreen,
   type ViewportSize,
   type WorkspaceViewport,
 } from "../engine/scene/workspaceViewport";
@@ -343,4 +346,188 @@ function pinnedDrawNodes(scene: Scene, page: Page): DrawNode[] {
   };
   page.children.forEach(walk);
   return out;
+}
+
+/* -------------------------------------------------------------------------
+ * Gate G-A — the selection outline (founder ruling, 2026-08-20: Variant B)
+ * ---------------------------------------------------------------------- */
+
+/**
+ * The approved selection stroke: a 1.5px indigo outline around the selected
+ * node's box (Variant B, `/tmp/ga-variant-B.png`).
+ *
+ * Screen-space constants, deliberately: the overlay is an SVG sibling of the
+ * canvas whose user units ARE stage CSS px, so the stroke stays 1.5px at every
+ * zoom — the outline is chrome, not content, and content is the only thing the
+ * viewport scales.
+ */
+export const SELECTION_OUTLINE_COLOR = "#4F46E5";
+export const SELECTION_OUTLINE_WIDTH = 1.5;
+
+/**
+ * The four corner handles of the same G-A ruling — **approved, not yet
+ * rendered.**
+ *
+ * Handles are a promise of drag-and-resize, and that behaviour is AD4's Lane C
+ * (the editor is read-only until AD3 arms the write path). A handle a user can
+ * grab that does nothing is a fake affordance, so the geometry and colors are
+ * encoded here and the renderer is defaulted OFF — Lane C turns it on by
+ * passing `handles` to the overlay, and changes nothing else.
+ */
+export const SELECTION_HANDLE_SIZE = 8;
+export const SELECTION_HANDLE_CORNER_RADIUS = 1;
+export const SELECTION_HANDLE_FILL = "#FFFFFF";
+export const SELECTION_HANDLE_STROKE = SELECTION_OUTLINE_COLOR;
+export const SELECTION_HANDLE_STROKE_WIDTH = 1.5;
+
+/** The selected node's box in STAGE CSS px — what the overlay strokes. */
+export interface SceneSelectionOutline {
+  nodeId: NodeId;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  /** Degrees, about the box origin (`x`,`y`) — the same pivot the draw loop
+   * rotates a node about (`drawDescriptors`: translate to the origin, then
+   * `rotate(rotation, 0, 0)`). */
+  rotation: number;
+}
+
+/**
+ * A selected node's box, in the stage's own CSS px.
+ *
+ * This is the exact inverse of AD2.5's input chain (`sceneHitPoint`), run
+ * backwards, and every step has a mirror there:
+ *
+ *   engine box (`computed.layout_bounds`, absolute page space, SCENE units)
+ *     → × `page.unitScale`                    scene units → descriptor px
+ *     → + the artboard's workspace origin      descriptor px → workspace
+ *     → `workspaceRectToScreen(rect, viewport)` undo pan + zoom
+ *
+ * The `unitScale` multiply is the same trap `sceneHitPoint`'s divide is:
+ * invisible on a `pt`/`px` page (unitScale 1, which the seeded ad is) and wrong
+ * by 96x on an `in` page. It is unit-tested against a non-identity unit.
+ *
+ * Derived per render from the SAME `WorkspaceViewport` the draw loop transforms
+ * by, never stored — so zoom changes and stage resizes cannot leave a stale box
+ * behind.
+ */
+export function selectionOutlineForBox({
+  artboard,
+  box,
+  nodeId,
+  rotation,
+  viewport,
+}: {
+  artboard: SceneArtboardModel;
+  /** Absolute page-space box in the engine's own units. */
+  box: Box;
+  nodeId: NodeId;
+  rotation: number;
+  viewport: WorkspaceViewport;
+}): SceneSelectionOutline | null {
+  const scale = artboard.page.unitScale;
+  if (
+    !Number.isFinite(box.x) ||
+    !Number.isFinite(box.y) ||
+    !Number.isFinite(box.width) ||
+    !Number.isFinite(box.height) ||
+    !isPositiveFinite(scale)
+  ) {
+    return null;
+  }
+  const screen = workspaceRectToScreen(
+    {
+      x: artboard.rect.x + box.x * scale,
+      y: artboard.rect.y + box.y * scale,
+      width: box.width * scale,
+      height: box.height * scale,
+    },
+    viewport,
+  );
+  return {
+    nodeId,
+    x: screen.x,
+    y: screen.y,
+    width: screen.width,
+    height: screen.height,
+    rotation: Number.isFinite(rotation) ? rotation : 0,
+  };
+}
+
+/**
+ * The outline for the current selection, or null when there is nothing to
+ * outline.
+ *
+ * The box is not re-derived here: `deriveSelectionChromeModel` is the engine's
+ * own selection-chrome oracle (the standalone editor's canvas reads the same
+ * model), so the platform overlay and the design subsystem can never disagree
+ * about what "the selected node's box" means.
+ *
+ * Null — no overlay element at all — in every honest empty case: no selection,
+ * a selected id the scene no longer carries, and a node with **no computed
+ * geometry** (`selectionBoxForNode` returns null). That last one matters: the
+ * stored scene carries `computed: null` on every node, and only the engine's
+ * relayout fills it in. With the engine live (the only state in which a canvas
+ * click can select anything at all — AD2.5) the geometry is there; without it
+ * there is no outline rather than a box guessed from `transform`, which for an
+ * auto-laid-out child would be drawn somewhere the node is not.
+ */
+export function sceneSelectionOutline({
+  artboard,
+  pageId,
+  scene,
+  selectedNodeId,
+  viewport,
+}: {
+  artboard: SceneArtboardModel | null;
+  pageId: PageId | null;
+  scene: Scene | null;
+  selectedNodeId: NodeId | null;
+  viewport: WorkspaceViewport;
+}): SceneSelectionOutline | null {
+  if (!scene || !artboard || !selectedNodeId) {
+    return null;
+  }
+  const { selectionBox } = deriveSelectionChromeModel(scene, {
+    activePageId: pageId,
+    selectedNodeId,
+  });
+  if (!selectionBox) {
+    return null;
+  }
+  return selectionOutlineForBox({
+    artboard,
+    box: selectionBox.box,
+    nodeId: selectionBox.nodeId,
+    rotation: selectionBox.rotation,
+    viewport,
+  });
+}
+
+/**
+ * The four corner handles for an outline, centred on its corners, in the
+ * outline's own PRE-rotation frame — the overlay rotates the outline and its
+ * handles together as one group, so a rotated selection's handles ride its
+ * corners without any second rotation here.
+ *
+ * G-A-approved geometry; **enabled with Lane C** (see the handle constants
+ * above for why it is not rendered yet).
+ */
+export function selectionHandleRects(
+  outline: SceneSelectionOutline,
+): Array<{ x: number; y: number; size: number }> {
+  const half = SELECTION_HANDLE_SIZE / 2;
+  const right = outline.x + outline.width;
+  const bottom = outline.y + outline.height;
+  return [
+    { x: outline.x, y: outline.y },
+    { x: right, y: outline.y },
+    { x: outline.x, y: bottom },
+    { x: right, y: bottom },
+  ].map((corner) => ({
+    x: corner.x - half,
+    y: corner.y - half,
+    size: SELECTION_HANDLE_SIZE,
+  }));
 }

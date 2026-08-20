@@ -5,15 +5,29 @@ import {
   HARVESTED_AD_PAGE,
 } from "./__fixtures__/scene-nodes";
 import {
+  SELECTION_HANDLE_CORNER_RADIUS,
+  SELECTION_HANDLE_FILL,
+  SELECTION_HANDLE_SIZE,
+  SELECTION_HANDLE_STROKE,
+  SELECTION_HANDLE_STROKE_WIDTH,
+  SELECTION_OUTLINE_COLOR,
+  SELECTION_OUTLINE_WIDTH,
   chosenZoomScale,
   sceneArtboardModel,
   sceneAssetPassthroughUrl,
+  sceneSelectionOutline,
   sceneViewportModel,
+  selectionHandleRects,
+  selectionOutlineForBox,
   snapZoomPercent,
   textMeasurementSignature,
 } from "./scene-canvas-view";
+import { sceneHitPoint } from "./scene-selection";
 import type { Scene } from "../engine/scene/contracts";
-import { workspaceToScreen } from "../engine/scene/workspaceViewport";
+import {
+  screenToWorkspace,
+  workspaceToScreen,
+} from "../engine/scene/workspaceViewport";
 
 const AD_ASSET_ID = "asset_ing_2b0928ca4f3a3c70";
 const AD_ASSET_DIGEST =
@@ -273,4 +287,254 @@ test("a pinned node is hoisted out of its parent and painted last", () => {
 test("an unknown page renders nothing rather than throwing", () => {
   assert.equal(sceneArtboardModel(HARVESTED_AD_PAGE, "page_gone"), null);
   assert.equal(sceneArtboardModel(HARVESTED_AD_PAGE, null), null);
+});
+
+/* -------------------------------------------------------------------------
+ * Gate G-A — the selection outline's geometry (founder ruling: Variant B)
+ * ---------------------------------------------------------------------- */
+
+/**
+ * The harvest carries `computed: null` on every node (that IS the at-rest
+ * truth), and the engine's relayout is what fills it in — so a test of the
+ * outline has to supply the geometry the relayout would.
+ *
+ * These are not invented boxes. `image_hero` is a fixed-size, absolutely
+ * positioned child of `frame_ad_root`, and the frame sits at the page origin,
+ * so its laid-out bounds in absolute page space are exactly its authored
+ * transform and size: (72, 452) 1056x676. The clone edits that one field on
+ * that one node — AD2.4/AD2.5's technique, so the node stays real.
+ */
+const HERO_BOUNDS = { x: 72, y: 452, width: 1056, height: 676 };
+
+function sceneWithLaidOutHero(rotation = 0): Scene {
+  const next = clone(HARVESTED_AD_PAGE);
+  next.nodes.image_hero.computed = {
+    layout_bounds: { ...HERO_BOUNDS },
+    render_bounds: { ...HERO_BOUNDS },
+  };
+  next.nodes.image_hero.transform.rotation = rotation;
+  return next;
+}
+
+function heroArtboard(scene: Scene) {
+  const artboard = sceneArtboardModel(scene, AD_PAGE_ID);
+  assert.ok(artboard);
+  return artboard;
+}
+
+test("the outline is the selected node's box in stage px at fit-on-open", () => {
+  const scene = sceneWithLaidOutHero();
+  const artboard = heroArtboard(scene);
+  // A 600x600 card fits the 1200x1200 page at exactly 0.5 with no pan, so the
+  // expected numbers are readable by hand rather than a restatement of the
+  // implementation.
+  const model = sceneViewportModel({
+    rect: artboard.rect,
+    stage: { width: 600, height: 600 },
+    zoom: null,
+  });
+  assert.equal(model.applied.zoom, 0.5);
+  assert.deepEqual(model.applied.pan, { x: 0, y: 0 });
+  assert.deepEqual(
+    sceneSelectionOutline({
+      artboard,
+      pageId: AD_PAGE_ID,
+      scene,
+      selectedNodeId: "image_hero",
+      viewport: model.applied,
+    }),
+    { nodeId: "image_hero", x: 36, y: 226, width: 528, height: 338, rotation: 0 },
+  );
+});
+
+test("the outline tracks zoom: doubling the zoom doubles the box", () => {
+  const scene = sceneWithLaidOutHero();
+  const artboard = heroArtboard(scene);
+  const outlineAt = (zoom: string) =>
+    sceneSelectionOutline({
+      artboard,
+      pageId: AD_PAGE_ID,
+      scene,
+      selectedNodeId: "image_hero",
+      viewport: sceneViewportModel({
+        rect: artboard.rect,
+        stage: { width: 600, height: 600 },
+        zoom,
+      }).applied,
+    });
+  const quarter = outlineAt("25%");
+  const half = outlineAt("50%");
+  assert.ok(quarter && half);
+  assert.equal(half.width, quarter.width * 2);
+  assert.equal(half.height, quarter.height * 2);
+  // Re-centering keeps the artboard centred in the card at every step, so the
+  // box moves as well as grows — a fixed box would be the bug this catches.
+  assert.notEqual(half.x, quarter.x);
+});
+
+test("the outline is the exact inverse of AD2.5's hit-test chain", () => {
+  const scene = sceneWithLaidOutHero();
+  const artboard = heroArtboard(scene);
+  const viewport = sceneViewportModel({
+    rect: artboard.rect,
+    stage: { width: 933, height: 741 },
+    zoom: "35%",
+  }).applied;
+  const outline = sceneSelectionOutline({
+    artboard,
+    pageId: AD_PAGE_ID,
+    scene,
+    selectedNodeId: "image_hero",
+    viewport,
+  });
+  assert.ok(outline);
+  // Press exactly on the outline's top-left corner: the point the engine would
+  // be asked about is the node's own box origin, in scene units.
+  const hit = sceneHitPoint(
+    screenToWorkspace({ x: outline.x, y: outline.y }, viewport),
+    artboard,
+  );
+  assert.ok(hit);
+  assert.ok(Math.abs(hit.x - HERO_BOUNDS.x) < 1e-9, `${hit.x}`);
+  assert.ok(Math.abs(hit.y - HERO_BOUNDS.y) < 1e-9, `${hit.y}`);
+});
+
+test("a non-identity page unit scales the box (the unitScale trap)", () => {
+  const scene = sceneWithLaidOutHero();
+  // One field: the page's unit. `in` is unitScale 96, so a box in scene units
+  // is 96x larger in descriptor px — the multiply this asserts is the mirror of
+  // `sceneHitPoint`'s divide.
+  scene.pages[AD_PAGE_ID].size.unit = "in";
+  const artboard = heroArtboard(scene);
+  assert.equal(artboard.page.unitScale, 96);
+  const outline = selectionOutlineForBox({
+    artboard,
+    box: { x: 1, y: 2, width: 3, height: 4 },
+    nodeId: "image_hero",
+    rotation: 0,
+    viewport: { zoom: 1, pan: { x: 0, y: 0 } },
+  });
+  assert.deepEqual(outline, {
+    nodeId: "image_hero",
+    x: 96,
+    y: 192,
+    width: 288,
+    height: 384,
+    rotation: 0,
+  });
+});
+
+test("a rotated node carries its rotation through to the overlay", () => {
+  const scene = sceneWithLaidOutHero(30);
+  const artboard = heroArtboard(scene);
+  const outline = sceneSelectionOutline({
+    artboard,
+    pageId: AD_PAGE_ID,
+    scene,
+    selectedNodeId: "image_hero",
+    viewport: { zoom: 1, pan: { x: 0, y: 0 } },
+  });
+  // The box is the UNROTATED laid-out box; the overlay rotates it about its
+  // own origin, which is the pivot the draw loop uses.
+  assert.deepEqual(outline, {
+    nodeId: "image_hero",
+    x: 72,
+    y: 452,
+    width: 1056,
+    height: 676,
+    rotation: 30,
+  });
+});
+
+test("a starved box outlines nothing rather than drawing NaN", () => {
+  const artboard = heroArtboard(sceneWithLaidOutHero());
+  assert.equal(
+    selectionOutlineForBox({
+      artboard,
+      box: { x: Number.NaN, y: 0, width: 10, height: 10 },
+      nodeId: "image_hero",
+      rotation: 0,
+      viewport: { zoom: 1, pan: { x: 0, y: 0 } },
+    }),
+    null,
+  );
+});
+
+test("nothing selected, or a node the scene lost, outlines nothing", () => {
+  const scene = sceneWithLaidOutHero();
+  const artboard = heroArtboard(scene);
+  const viewport = { zoom: 1, pan: { x: 0, y: 0 } };
+  assert.equal(
+    sceneSelectionOutline({
+      artboard,
+      pageId: AD_PAGE_ID,
+      scene,
+      selectedNodeId: null,
+      viewport,
+    }),
+    null,
+  );
+  assert.equal(
+    sceneSelectionOutline({
+      artboard,
+      pageId: AD_PAGE_ID,
+      scene,
+      selectedNodeId: "node_gone",
+      viewport,
+    }),
+    null,
+  );
+  assert.equal(
+    sceneSelectionOutline({
+      artboard: null,
+      pageId: AD_PAGE_ID,
+      scene,
+      selectedNodeId: "image_hero",
+      viewport,
+    }),
+    null,
+  );
+});
+
+test("a node with no laid-out geometry outlines nothing, never a guess", () => {
+  // The harvest as served: `computed` is null on every node. An outline drawn
+  // from `transform` would sit where an auto-laid-out child is NOT.
+  const artboard = heroArtboard(HARVESTED_AD_PAGE);
+  assert.equal(
+    sceneSelectionOutline({
+      artboard,
+      pageId: AD_PAGE_ID,
+      scene: HARVESTED_AD_PAGE,
+      selectedNodeId: "image_hero",
+      viewport: { zoom: 1, pan: { x: 0, y: 0 } },
+    }),
+    null,
+  );
+});
+
+test("G-A handles (Lane C): four 8x8 squares centred on the box corners", () => {
+  const outline = {
+    nodeId: "image_hero",
+    x: 100,
+    y: 200,
+    width: 40,
+    height: 20,
+    rotation: 0,
+  };
+  assert.deepEqual(selectionHandleRects(outline), [
+    { x: 96, y: 196, size: 8 },
+    { x: 136, y: 196, size: 8 },
+    { x: 96, y: 216, size: 8 },
+    { x: 136, y: 216, size: 8 },
+  ]);
+});
+
+test("G-A: the approved Variant B stroke is the one the overlay uses", () => {
+  assert.equal(SELECTION_OUTLINE_COLOR, "#4F46E5");
+  assert.equal(SELECTION_OUTLINE_WIDTH, 1.5);
+  assert.equal(SELECTION_HANDLE_SIZE, 8);
+  assert.equal(SELECTION_HANDLE_CORNER_RADIUS, 1);
+  assert.equal(SELECTION_HANDLE_FILL, "#FFFFFF");
+  assert.equal(SELECTION_HANDLE_STROKE, "#4F46E5");
+  assert.equal(SELECTION_HANDLE_STROKE_WIDTH, 1.5);
 });
