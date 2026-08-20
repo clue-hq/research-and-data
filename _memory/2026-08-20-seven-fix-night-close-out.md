@@ -101,3 +101,30 @@ FL, persona technical_evaluator** — identity-resolved, persona-tagged, role-cl
 organization-relationship provider-returned, full provenance. The platform's third required
 output exists for the first time. Job terminal/needs_review (1 of 7 candidates admitted; the
 rest fell on function gates — a wider cap fills more seats). Required-output pillar 3: live.
+
+## Founder rulings 2026-08-20 (~12:3x IST): committee formation is agent-judged, provider-grounded
+
+Three explicit rulings, overriding orchestrator counsel (counsel given and recorded; founder
+decided; pilot posture, revisit later versions):
+
+1. **Truth floor = provider-returned, nothing more.** A committee candidate returned by Sumble
+   (people OR teams rows) or Exa is admissible ground, period — founders have vetted these
+   providers. No additional hard mechanical blockers on provider-returned values "for now at
+   least; we will improvise on truth gates in future, but not now." Consequence: the admission
+   ladder's people-vs-teams source-key discrimination dies (teams rows are provider data too);
+   the function string-match dies; the agent proposes members from the grounded pool with
+   role + rationale. Provenance/evidence-span STAMPING stays (passive bookkeeping, DSAR spine,
+   never a blocker).
+2. **Spend caps exist but do not block, for now.** Provider credit-cap / unbounded-charge guards
+   flip to record-only in the pilot posture (log + exact accounting, never refuse). "It's like
+   making the same mistake again and again" — the 15-day lesson: gates before the loop.
+3. **Teach via prompt, including truth and money discipline.** Terra was a weaker model; Grok-4.6
+   and future models are smarter. No over-engineering; prompt emphasis over mechanical checks;
+   "if it won't work out we will improve it in a later version."
+
+Also ruled earlier in the thread: role inference moves INTO the per-account agent (the roles.py
+M8.3 leaf call retires from this path — same relocation pattern as the [C1×C6] coverage-evaluator
+backlog item); the deepagent must co-define the four committee personas (champion / economic
+buyer / technical evaluator / blocker) WITH THE USER before account research launches — strong
+steering emphasis, ratified plan carries personas/functions/levels, account agents copy and never
+invent.
