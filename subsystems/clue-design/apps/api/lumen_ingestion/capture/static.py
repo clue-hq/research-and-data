@@ -206,9 +206,13 @@ async def _collect_assets(
 
     # Images. The ladder (srcset / <picture><source> / CDN width upgrade / bare src) is the
     # SHARED chooser `parse._parse_images` walks — see `imgsrc` for why implementing it twice
-    # is the one way to lose every image. Enqueuing every rung roughly doubles the image
-    # fetch count at the 50-image cap; accepted, and bounded by the async fan-out
-    # (`net.DEFAULT_CONCURRENCY` = 8) with every byte cap and timeout unchanged.
+    # is the one way to lose every image. Enqueuing every rung multiplies the image fetch
+    # count — measured ~3x on stripe.com (50 → 149 downloads), since a srcset-heavy page
+    # spends all three rungs and only the first is ever used. Accepted, and bounded by the
+    # async fan-out (`net.DEFAULT_CONCURRENCY` = 8) with every byte cap and timeout
+    # unchanged. If that ever matters, the fix is a STAGED collector — fan out rung 1 for
+    # every image, then a second round for only those whose rung 1 failed — not a shorter
+    # ladder.
     for node in tree.css("img"):
         for url in image_source_ladder(node, base_url):
             add(url, "image")
