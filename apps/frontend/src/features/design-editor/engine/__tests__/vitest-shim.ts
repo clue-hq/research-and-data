@@ -123,7 +123,18 @@ export function expect(actual: unknown) {
         `expected ${String(actual)} <= ${bound}`,
       );
     },
+    /** Vitest semantics: passes when |actual - expected| < 10**-numDigits / 2. */
+    toBeCloseTo(expected: number, numDigits = 2) {
+      const tolerance = 10 ** -numDigits / 2;
+      assert.ok(
+        Math.abs((actual as number) - expected) < tolerance,
+        `expected ${String(actual)} to be within ${tolerance} of ${expected}`,
+      );
+    },
     not: {
+      toBe(expected: unknown) {
+        assert.notStrictEqual(actual, expected);
+      },
       toBeNull() {
         assert.notStrictEqual(actual, null);
       },
