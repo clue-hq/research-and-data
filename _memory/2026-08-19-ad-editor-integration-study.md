@@ -57,6 +57,26 @@ a 1200×628 vs 1200×627 off-by-one; export JPEG+transparency in dummy vs Svg/Pn
 contract; text-wrap UI-vs-model default divergence (`no_wrap`). Founder will annotate rulings
 over this inventory.
 
+## 2026-08-20 close-out: contract FROZEN
+The founder ruled everything across three passes (table annotations → OQ-1…8 → the final
+rulings message): tool palette out of v1; direct manipulation = select + drag-move +
+corner-resize (handles mockup-gated); color policy = brand-first + custom hex with detach note;
+Background edits the ROOT FRAME's fill; button schema hidden + both Link-to sections removed;
+image Mode = Fit/Fill/Crop + focal dot (mockup-gated) + in-inspector upload kept beside the AI
+suite; JPEG dropped v1; plain Frame = auto-layout schema minus its AutoLayout section; W/H
+modes Fixed/Hug/Fill (fixed inputs only in Fixed; no fill weights); opacity %↔0–1 at the seam;
+Layout section does NOT extend to text/image/button; editor semantics for all Arrange controls;
+group has no Shape/Stroke; lock real / eye omitted; **multi-select = MERGED panel (founder
+override — net-new designed UI, mockup-gated)**; single artboard 100%; canvas name label
+display-only; preset values corrected (LinkedIn square → 1200×1200), labels kept; fit-on-open
+zoom; versions flyout inert v1. All folded into
+**`docs/specs/ad-editor-integration/ad-inspector-mapping-contract.md` (v1, RATIFIED, FROZEN)**.
+Pending: the co-founder commits/pushes the 23-file dummy delta (contract has a blank for the
+pin hash); AD1 architecture rulings D7–D10 (recs on file); §8 has one conditional engine-change
+candidate (PNG transparency flag, verify first). One interpretation to flag to the founder:
+item-5 answer quoted only "remove both" (the Link sections) — button-schema hiding was the same
+block's other rec and is recorded as ratified; correct if unintended.
+
 ## Open / next
 - **All of D1–D12 await founder rulings** — D1 (on-canvas direct manipulation in v1) is the big
   scope call; D2 button semantics; D3 size presets; D5 gallery inclusion; D7 drop Konva; D8
