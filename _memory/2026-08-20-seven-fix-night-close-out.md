@@ -63,3 +63,21 @@ verified in production within minutes of landing. Companion notes:
   admitted history only** (and "admitted" means the result's own record, not a draft row), and
   **model-input failures refuse recoverably; money/truth failures suspend** — the engine
   disposes, it never quizzes, and it never dies on a model's typo.
+
+## Addendum: v8 — the first complete committee execution (2026-08-20 ~11:30 IST)
+
+Directive v8 (cap 7) confirmed 11:29:26 → job `4e1bc4fd` → committee operation `8500325f`
+succeeded end to end: teams 16 units, people 56 units (303 credits remain), operation `ready`,
+result `f482643e` admitted. **Outcome: 7 candidates → 2 excluded, 5 ambiguous, 0 admitted;
+`confirmed_empty_discovery=true`; job terminal/needs_review with 17/21 fields completed.** The
+`same_office_strict` gate could not evidence Fort Myers HQ placement for any candidate from
+profile values — fail-closed-to-review, exactly the Doc-D-era posture (office assignment is never
+guessed). TWO OPEN REVIEW ITEMS on coverage `9b14fee8…`: `committee_office_candidates_ambiguous`
+(the designed human path — founder confirms which of the 5 are real committee members) and
+`account_fields_unresolved`.
+
+Paths to actual members: (a) resolve the ambiguous-candidates review item (human confirmation —
+check what the review surface renders); (b) relaunch with a bigger cap for more explicit-evidence
+candidates (~8.5 units each, 303 remaining); (c) a looser match policy DOES NOT EXIST —
+`match_policy: Literal["same_office_strict"]` is the only value; loosening is a product/code
+decision, not a knob.
