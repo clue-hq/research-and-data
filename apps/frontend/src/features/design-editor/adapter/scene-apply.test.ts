@@ -1061,12 +1061,13 @@ it("§1.1 Background: a RADIAL gradient writes its stops and DROPS the angle (§
 });
 
 it('§1.1 Background: the fill object\'s "solid" type carries no colour, so it writes nothing', () => {
-  // The object has `angle` and `stops` and no colour field: in solid mode the
-  // control renders `solidColor` — the SIBLING `backgroundColor` state — and
-  // its stops are inert (`scene-hydrate.ts` `solidFill` says so, and
-  // `backgroundFillCss` proves it). Writing `stops[0]` would commit a colour
-  // the panel is not showing. The colour arrives on `backgroundColor`, which
-  // is the row that turns the background solid.
+  // The ruling is "write the swatch's current colour"; the event does not
+  // carry it (`onFillChange` is handed `{angle, stops, type}` and the swatch
+  // colour is a separate prop), and in the only case that reaches here the
+  // control is showing the dummy's `#00F59B` seed rather than a document
+  // colour. `stops[0]` is not it either — the stops are inert while solid.
+  // Both refusals, and the founder-facing gap they leave, are argued in full
+  // at `backgroundPaint`'s `solid` case.
   assert.equal(
     applyCanvas("backgroundFill", {
       angle: 0,

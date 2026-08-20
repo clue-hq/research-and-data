@@ -5,6 +5,7 @@ import {
   sceneCanvasChangeToOperation,
   sceneChangeToOperation,
 } from "../adapter/scene-apply";
+import { rootFrameId } from "../adapter/scene-hydrate";
 import type { SceneCanvasControls } from "../components/scene-artifact-canvas";
 import type { PageId, Scene } from "../engine/scene/contracts";
 import { getPage } from "../engine/scene/sceneQueries";
@@ -54,10 +55,10 @@ import {
  *
  * ── AD4.0: THE SECOND GATE, FOR §1.1's CANVAS ROWS ───────────────────────
  * The gate above requires a NON-NULL primary selection, so the §1.1 canvas
- * schema — an empty selection editing the PAGE — could never write through it.
+ * schema — an EMPTY selection editing the PAGE — could never write through it.
  * AD3.2 said the lane that added those rows "must widen this gate deliberately,
- * not discover it by accident". This is that widening, and it is a SEPARATE
- * branch: the node path below is untouched, still demanding everything it did.
+ * not discover it by accident". This is that widening; `canvasWriteTarget`
+ * below IS the gate, exported so it can be tested as the pure decision it is.
  *
  * A canvas event states something positive rather than merely missing:
  *
@@ -65,19 +66,46 @@ import {
  *     itself (`image-inspector.tsx`'s `AdCanvasInspector` stamps it, and every
  *     controller puts it on the wire, `use-inspector-controller.ts:196-213`).
  *     This is the fact stated directly rather than inferred from an absence.
- *   • `detail.selectionId` is exactly `null` — the controller HAS addressing
- *     and that addressing says "no node is selected". An event carrying no
- *     addressing at all (the dummy fixture path, `dispatchInspectorEvent` with
- *     no third argument) leaves it `undefined` and is refused here, then
- *     refused again by the node path's `typeof … !== "string"`.
  *   • `detail.artifactId` is this session's ACTIVE artifact — the event comes
  *     from a panel wired to the document this hook is armed for, not from one
  *     still mounted for the tab the user just left.
- *   • this session's own primary selection is `null` too, so the session and
- *     the event agree that the CANVAS is what is selected.
+ *   • `detail.selectionId` IS this session's primary selection — the same
+ *     assertion the node path makes, and the thing that keeps the two lanes'
+ *     listeners apart on one window. An event carrying no addressing at all
+ *     (the dummy fixture path, `dispatchInspectorEvent` with no third
+ *     argument) leaves it `undefined`, which is never equal to a session's
+ *     `string | null`, so it is refused here and again by the node path.
+ *   • that selection is one the canvas schema can legitimately be showing:
+ *     `null`, or the page's ROOT FRAME.
  *   • the live scene really carries the page the write will name — the same
  *     "the write can never be aimed at something that is not there" rule the
  *     node path applies to its node.
+ *
+ * ── AD4.0 step 2: WHY THE ROOT FRAME IS THE SECOND ENTRY STATE ───────────
+ * The step-1 gate keyed on `selectionId === null` alone, which is only ONE of
+ * the two ways the canvas schema reaches the screen. `sceneSelectionFor`
+ * routes the page's root frame to the CANVAS schema (`scene-hydrate.ts`; AD2.5
+ * proves it — "a hit on the root frame alone resolves to it (the canvas
+ * selection)"), so clicking the artboard background, or the "Ad artboard" row
+ * in Layers, renders the very same panel with `selectionId = <root frame id>`.
+ * Every §1.1 row was then routed to the NODE adapter, which maps none of them:
+ * browser-proven at review — picking a size preset with the artboard selected
+ * left the document at 1200x1200 while the select displayed the new size, a
+ * panel actively stating a size the document never got.
+ *
+ * Root frame ⇒ canvas schema is EXACTLY-ONE-WAY: `sceneSelectionFor` returns
+ * `"canvas"` for the root frame and for nothing else (every other frame gets
+ * the auto-layout schema, and no other kind can match), so a node id that is
+ * not the root frame never legitimately carries `selectionType: "canvas"` and
+ * is refused here.
+ *
+ * The two adapters still map DISJOINT property sets, so trying the canvas one
+ * first is deterministic — but a canvas-schema event is not always a canvas
+ * ROW: §1.0's lock lives in the header of every schema, so with the root frame
+ * selected a `locked` event arrives stamped `"canvas"` and belongs to the NODE
+ * path. An unmapped canvas event therefore FALLS THROUGH rather than being
+ * swallowed; with an empty selection the node path drops it on its own
+ * `typeof … !== "string"` check, exactly as before.
  *
  * What keeps the two LANES apart here is not the artifact id (the web session
  * is handed the same `activeArtifactId`) but the same thing that keeps the
@@ -91,6 +119,67 @@ import {
  * and it must be the very page `hydrateSceneCanvasState` read, or the write
  * would not be the inverse of what the panel is showing.
  */
+
+/** What the §1.1 canvas rows need to write: the live scene, the page they
+ * name, and the selection the event was raised under (`null` for the empty
+ * selection, the root frame's id when the artboard itself is selected). */
+export interface SceneCanvasWriteTarget {
+  pageId: PageId;
+  scene: Scene;
+  selectionId: string | null;
+}
+
+/**
+ * AD4.0 step 2: the canvas gate as a pure decision — `null` when this event is
+ * not a §1.1 canvas write for this session. The reasoning is the header block
+ * above; this function is where it is enforced, and the only reason it is
+ * exported is that a `useEffect` listener cannot be tested without a DOM while
+ * a pure function can (the `createReplaceImageHandler` precedent).
+ */
+export function canvasWriteTarget(
+  detail: {
+    artifactId?: unknown;
+    selectionId?: unknown;
+    selectionType?: unknown;
+  },
+  session: {
+    artifactId: string | null;
+    pageId: PageId | null;
+    primaryNodeId: string | null;
+    scene: Scene | null;
+  },
+): SceneCanvasWriteTarget | null {
+  // The raising schema names itself — no inference from an absence.
+  if (detail.selectionType !== "canvas") {
+    return null;
+  }
+  if (
+    typeof detail.artifactId !== "string" ||
+    detail.artifactId !== session.artifactId
+  ) {
+    return null;
+  }
+  // The event's selection IS the session's. `===` against a `string | null`
+  // covers both entry states at once and still refuses an unaddressed event
+  // (`undefined`), which is what step 1's `selectionId === null` was for.
+  const selectionId = session.primaryNodeId;
+  if (detail.selectionId !== selectionId) {
+    return null;
+  }
+  const { pageId, scene } = session;
+  // The scene the engine is holding must really carry that page.
+  if (!scene || !pageId || !getPage(scene, pageId)) {
+    return null;
+  }
+  // Empty selection, or the artboard itself. Any other node carrying
+  // `selectionType: "canvas"` (the §5 fallback schema, a stale panel) is not a
+  // canvas write — the panel would be showing that NODE's values while this
+  // wrote the page.
+  if (selectionId !== null && selectionId !== rootFrameId(scene, pageId)) {
+    return null;
+  }
+  return { pageId, scene, selectionId };
+}
 
 export function useSceneInspectorWrites({
   artifactId,
@@ -167,40 +256,36 @@ export function useSceneInspectorWrites({
       } | null;
       if (!detail || typeof detail.property !== "string") return;
 
-      // ── AD4.0 / §1.1: the CANVAS (page) rows ───────────────────────────
-      // Its own gate, reasoned out in the header above. `=== null` (not
-      // `!== "string"`) is the point: an addressed "nothing is selected", not
-      // an event that simply carries no addressing.
-      if (detail.selectionId === null) {
-        // The raising schema names itself — no inference from an absence.
-        if (detail.selectionType !== "canvas") return;
-        if (
-          typeof detail.artifactId !== "string" ||
-          detail.artifactId !== artifactIdRef.current
-        )
-          return;
-        // The session must agree the canvas is what is selected.
-        if (primaryNodeIdRef.current !== null) return;
-        const liveCanvas = sceneRef.current;
-        const livePageId = pageIdRef.current;
-        // The scene the engine is holding must really carry that page.
-        if (!liveCanvas || !livePageId || !getPage(liveCanvas, livePageId))
-          return;
-        if (!controlsRef.current.current) return;
-        const pageOperation = sceneCanvasChangeToOperation(
+      // ── AD4.0 / §1.1: the CANVAS (page + root frame) rows ──────────────
+      // The gate is `canvasWriteTarget`, reasoned out in the header above; it
+      // accepts BOTH entry states (empty selection, artboard selected).
+      const canvas = canvasWriteTarget(detail, {
+        artifactId: artifactIdRef.current,
+        pageId: pageIdRef.current,
+        primaryNodeId: primaryNodeIdRef.current,
+        scene: sceneRef.current,
+      });
+      if (canvas && controlsRef.current.current) {
+        const canvasOperation = sceneCanvasChangeToOperation(
           {
             property: detail.property,
-            selectionId: null,
+            selectionId: canvas.selectionId,
             value: detail.value,
           },
-          liveCanvas,
-          livePageId,
+          canvas.scene,
+          canvas.pageId,
         );
         // The same null contract: an unmapped property or an unparseable value
         // produces no operation, and no operation is no write.
-        if (!pageOperation) return;
-        applyOpsRef.current([pageOperation], `inspector: ${detail.property}`);
-        return;
+        if (canvasOperation) {
+          applyOpsRef.current([canvasOperation], `inspector: ${detail.property}`);
+          return;
+        }
+        // FALL THROUGH deliberately (not `return`): a canvas-schema event is
+        // not always a canvas ROW. §1.0's lock sits in every schema's header,
+        // so with the artboard selected a `locked` event arrives stamped
+        // `"canvas"` and is the NODE path's. With an empty selection there is
+        // no node and the check below drops it, exactly as before.
       }
 
       // ── AD3.1/AD3.2: the node-addressed rows, unchanged ────────────────

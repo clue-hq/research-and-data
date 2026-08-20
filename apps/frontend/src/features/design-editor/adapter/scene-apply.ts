@@ -80,9 +80,13 @@ import {
 
 export interface SceneChangeDetail {
   property: string;
-  /** AD4.0: `null` on the §1.1 canvas rows — the canvas selection IS the empty
-   * selection, and the controller states that positively (an event carrying no
-   * addressing at all leaves this `undefined`, which is a different fact). */
+  /** The selection the event was raised under, as the CALLER's gate proved it.
+   * On the §1.1 canvas rows that is `null` (the empty selection) OR the page's
+   * ROOT FRAME id — the two states that render the canvas schema
+   * (`canvasWriteTarget`). Either way this adapter never reads it: it is pure
+   * and holds no selection (the file header says why). An event carrying no
+   * addressing at all leaves it `undefined`, which is a different fact and
+   * never reaches here. */
   selectionId: string | null;
   value: unknown;
 }
@@ -681,15 +685,44 @@ function backgroundPaint(raw: unknown): Paint | null {
   const fill = raw as Partial<InspectorBackgroundFill>;
   switch (fill.type) {
     case "solid":
-      // DELIBERATE NON-WRITE. The fill object carries `angle` and `stops` and
-      // NO colour: in solid mode the control renders the sibling
-      // `solidColor` — `state.backgroundColor` — and its stops are inert
+      // DELIBERATE NON-WRITE, and the one place in this file where refusing is
+      // NOT the whole answer — it is a recorded gap. Read this before changing
+      // it.
+      //
+      // The RULING (orchestrator, on review of this step) is that a solid fill
+      // object should write THE SWATCH'S CURRENT COLOUR — what the panel is
+      // displaying — and that refusing is correct only if the control's state
+      // does not carry a usable one. It does not, on both counts:
+      //
+      //   1. THE EVENT DOES NOT CARRY IT. `BackgroundFillControl` hands
+      //      `onFillChange` the fill object alone — `{angle, stops, type}` —
+      //      and the swatch colour is a SEPARATE prop (`solidColor`, i.e. the
+      //      sibling `state.backgroundColor`) that never enters it; the
+      //      controller then dispatches that object verbatim
+      //      (`use-inspector-controller.ts` `setValue`). Nothing on the wire
+      //      states the colour, and this adapter is pure — it cannot read
+      //      controller state.
+      //   2. IN THE ONLY CASE THAT REACHES HERE, THAT STATE IS A FIXTURE. This
+      //      event fires from the fill-type SELECT, so the document's paint is
+      //      not solid — and hydrate deliberately states no `backgroundColor`
+      //      for a non-solid paint (only facts hydrate), leaving the shared
+      //      `DEFAULT_STATE` seed `#00F59B` on screen. Committing it would
+      //      write the dummy's green into a real ad: a fabrication, and worse
+      //      than `stops[0]`, which is at least a colour the document has.
+      //
+      // `stops[0]` is not the answer either: the stops are inert while solid
       // (`scene-hydrate.ts`'s `solidFill` says so; `backgroundFillCss` proves
-      // it by ignoring them). So `stops[0]` is not "the solid colour": on a
-      // gradient→solid switch it is the GRADIENT's first stop, which is not
-      // what the panel is showing. Committing it would be a guess, and the
-      // null contract forbids guesses. The colour reaches this adapter on the
-      // `backgroundColor` row, which is what turns the background solid.
+      // it by ignoring them), and on a gradient→solid switch `stops[0]` is the
+      // GRADIENT's first stop — again not what the panel is showing.
+      //
+      // So the colour arrives on the `backgroundColor` row instead, and
+      // picking "Solid" alone changes nothing until a colour is picked. The
+      // FOUNDER-FACING GAP that leaves (reported at this step's review): the
+      // fix belongs to the control/hydrate seam — either the controller puts
+      // the swatch colour on the `backgroundFill` event, or hydrate states a
+      // truthful swatch colour beside a non-solid paint (upstream's own
+      // `hexInputValue` shows `#000000`; the first stop is the other
+      // candidate) — and both are rulings, not this adapter's to take.
       return null;
     case "linear-gradient": {
       // The angle is stored verbatim as an `f64` and rotation is modular, so
