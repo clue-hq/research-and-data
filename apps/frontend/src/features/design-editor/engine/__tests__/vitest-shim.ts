@@ -11,19 +11,34 @@
  */
 import assert from "node:assert/strict";
 
-export { describe, it } from "node:test";
+export { afterEach, describe, it } from "node:test";
 
 const OBJECT_CONTAINING = Symbol("objectContaining");
+const CLOSE_TO = Symbol("closeTo");
 
 type ObjectContaining = { [OBJECT_CONTAINING]: Record<string, unknown> };
+type CloseTo = { [CLOSE_TO]: { expected: number; numDigits: number } };
 
 function isObjectContaining(value: unknown): value is ObjectContaining {
   return typeof value === "object" && value !== null && OBJECT_CONTAINING in value;
 }
 
+function isCloseTo(value: unknown): value is CloseTo {
+  return typeof value === "object" && value !== null && CLOSE_TO in value;
+}
+
+/** Vitest semantics: passes when |actual - expected| < 10**-numDigits / 2. */
+function closeToMatches(marker: CloseTo, actual: unknown): boolean {
+  const { expected, numDigits } = marker[CLOSE_TO];
+  return typeof actual === "number" && Math.abs(actual - expected) < 10 ** -numDigits / 2;
+}
+
 function isSubset(expected: unknown, actual: unknown): boolean {
   if (isObjectContaining(expected)) {
     return isSubset(expected[OBJECT_CONTAINING], actual);
+  }
+  if (isCloseTo(expected)) {
+    return closeToMatches(expected, actual);
   }
   if (expected === null || typeof expected !== "object") {
     try {
@@ -47,6 +62,9 @@ function isSubset(expected: unknown, actual: unknown): boolean {
 function deepMatch(expected: unknown, actual: unknown): boolean {
   if (isObjectContaining(expected)) {
     return isSubset(expected[OBJECT_CONTAINING], actual);
+  }
+  if (isCloseTo(expected)) {
+    return closeToMatches(expected, actual);
   }
   if (expected === null || typeof expected !== "object") {
     try {
@@ -87,6 +105,10 @@ expect.objectContaining = (subset: Record<string, unknown>): ObjectContaining =>
   [OBJECT_CONTAINING]: subset,
 });
 
+expect.closeTo = (expected: number, numDigits = 2): CloseTo => ({
+  [CLOSE_TO]: { expected, numDigits },
+});
+
 export function expect(actual: unknown) {
   return {
     toBe(expected: unknown) {
@@ -114,6 +136,12 @@ export function expect(actual: unknown) {
     toBeNull() {
       assert.strictEqual(actual, null);
     },
+    toBeUndefined() {
+      assert.strictEqual(actual, undefined);
+    },
+    toBeDefined() {
+      assert.notStrictEqual(actual, undefined);
+    },
     toHaveLength(length: number) {
       assert.strictEqual((actual as { length: number }).length, length);
     },
@@ -121,6 +149,18 @@ export function expect(actual: unknown) {
       assert.ok(
         (actual as number) <= bound,
         `expected ${String(actual)} <= ${bound}`,
+      );
+    },
+    toBeLessThan(bound: number) {
+      assert.ok(
+        (actual as number) < bound,
+        `expected ${String(actual)} < ${bound}`,
+      );
+    },
+    toBeGreaterThanOrEqual(bound: number) {
+      assert.ok(
+        (actual as number) >= bound,
+        `expected ${String(actual)} >= ${bound}`,
       );
     },
     /** Vitest semantics: passes when |actual - expected| < 10**-numDigits / 2. */
