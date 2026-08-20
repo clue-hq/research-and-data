@@ -266,9 +266,22 @@ export function useSceneEditingSession({
     forDocumentId: string;
     zoom: string;
   } | null>(null);
+  // AD2.10 adds a THIRD value, for display only: where the user's own pan/zoom
+  // gestures left the viewport. It outranks both of the above in the menu —
+  // after a pinch, neither the fit nor the last chosen step is where the canvas
+  // actually is — and it reaches the canvas never: the gesture already moved
+  // the viewport, so feeding a label back would re-derive and re-centre it.
+  const [gesture, setGesture] = useState<{
+    forDocumentId: string;
+    zoom: string;
+  } | null>(null);
   const onZoomChange = useCallback(
     (zoom: string) => {
       if (!activeDocumentId) return;
+      // An explicit choice is also the way BACK from a gesture: it re-centres
+      // the artboard, and the canvas clears its gesture viewport on the same
+      // change, so the two cannot disagree about which one is showing.
+      setGesture(null);
       setOverride({ forDocumentId: activeDocumentId, zoom });
     },
     [activeDocumentId],
@@ -280,6 +293,13 @@ export function useSceneEditingSession({
     },
     [activeDocumentId],
   );
+  const onGestureZoom = useCallback(
+    (zoom: string | null) => {
+      if (!activeDocumentId) return;
+      setGesture(zoom ? { forDocumentId: activeDocumentId, zoom } : null);
+    },
+    [activeDocumentId],
+  );
   const zoomOverride =
     activeDocumentId && override?.forDocumentId === activeDocumentId
       ? override.zoom
@@ -287,6 +307,10 @@ export function useSceneEditingSession({
   const fitZoom =
     activeDocumentId && fit?.forDocumentId === activeDocumentId
       ? fit.zoom
+      : null;
+  const gestureZoom =
+    activeDocumentId && gesture?.forDocumentId === activeDocumentId
+      ? gesture.zoom
       : null;
 
   // §2 row 3: the Font-family vocabulary. Both legs are best-effort and both
@@ -376,15 +400,17 @@ export function useSceneEditingSession({
     selection,
     undoDisabled: true,
     writes: NO_EDITS,
-    /** The zoom to DISPLAY in the header menu (§1.10) — the user's choice when
-     * there is one, else the snapped fit the canvas reported. The `"100%"`
-     * fallback covers the frames before the canvas has measured its card;
-     * nothing is drawn in them. */
-    zoom: zoomOverride ?? fitZoom ?? "100%",
+    /** The zoom to DISPLAY in the header menu (§1.10) — where a gesture left
+     * the viewport when there was one, else the user's choice, else the snapped
+     * fit the canvas reported. The `"100%"` fallback covers the frames before
+     * the canvas has measured its stage; nothing is drawn in them. */
+    zoom: gestureZoom ?? zoomOverride ?? fitZoom ?? "100%",
     /** The zoom to FEED the canvas: null means "fit the artboard EXACTLY" —
      * never the snapped label. */
     zoomOverride,
     /** The canvas's fit-on-open report. */
     onFitZoom,
+    /** AD2.10: the canvas's pan/wheel-gesture report (display only). */
+    onGestureZoom,
   };
 }

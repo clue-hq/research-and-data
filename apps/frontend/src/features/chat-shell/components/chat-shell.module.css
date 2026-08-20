@@ -1631,6 +1631,34 @@
   box-shadow: none;
 }
 
+/*
+ * AD2.10 (founder ruling, 2026-08-20): a MOUNTED ad canvas is an infinite
+ * workspace, so its stage is the viewport — no centring frame, no padding
+ * inset, and no scrollbars (the canvas pans itself). `.imageOutputStage` above
+ * is untouched and still governs the designed EMPTY state.
+ */
+.sceneOutputStage {
+  display: flex;
+  padding: 0;
+  overflow: hidden;
+  background: var(--chat-shell-page);
+}
+
+/* The mounted canvas's own box: it takes the whole stage (the workspace colour
+ * is the canvas's, painted by the engine — see `scene-artifact-canvas.module
+ * .css`). */
+.sceneStage {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+}
+
+/*
+ * The designed empty artboard card. Until AD2.10 this was also the container a
+ * live canvas rendered inside — the assumption ruling 17 was built on, and the
+ * reason an ad could never leave a 640px square. It now has exactly one role:
+ * the empty state, unchanged.
+ */
 .imageCanvas {
   width: min(76%, 640px);
   aspect-ratio: 1;

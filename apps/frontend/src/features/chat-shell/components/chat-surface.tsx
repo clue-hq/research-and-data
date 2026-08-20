@@ -446,6 +446,7 @@ export function ChatSurface({
         canvasReloadToken={session.reloadNonce + sceneSession.reloadNonce}
         onSceneChange={sceneSession.onSceneChange}
         onSceneFitZoom={sceneSession.onFitZoom}
+        onSceneGestureZoom={sceneSession.onGestureZoom}
         onSceneSelect={sceneSession.onSelectCanvas}
         onSceneZoomChange={sceneSession.onZoomChange}
         sceneCanvasControlsRef={sceneSession.canvasControls}

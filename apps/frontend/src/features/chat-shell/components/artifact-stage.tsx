@@ -58,6 +58,7 @@ export function ArtifactStage({
   onSceneChange,
   onSceneEngineStatusChange,
   onSceneFitZoom,
+  onSceneGestureZoom,
   onSceneSelect,
   onSceneZoomChange,
   sceneCanvasControlsRef,
@@ -123,6 +124,11 @@ export function ArtifactStage({
   /** AD2.3: the ad canvas's fit-on-open zoom, as one of the header menu's own
    * 5% steps (§1.10) — AD2.8 shows it in the menu until the user chooses. */
   onSceneFitZoom?: (zoom: string) => void;
+  /** AD2.10: where a pan/wheel gesture left the viewport — the header's zoom
+   * control displays this over both the fit and the chosen step, because after
+   * a pinch it is the only one of the three that is true. Null when the canvas
+   * falls back to the derived viewport. */
+  onSceneGestureZoom?: (zoom: string | null) => void;
   /** AD2.7: a press on the ad canvas resolved to the node it selects (§5's
    * nearest representable ancestor), or null for a press on nothing. */
   onSceneSelect?: (nodeId: string | null) => void;
@@ -155,6 +161,11 @@ export function ArtifactStage({
   undoDisabled?: boolean;
 }) {
   const showingArtifact = surface === "artifact" && artifactKind !== null;
+  // AD2.10: a mounted ad canvas owns the whole stage as its viewport; the
+  // designed empty state keeps the centred card.
+  const adStageClass = activeDocumentId
+    ? styles.sceneOutputStage
+    : styles.imageOutputStage;
 
   return (
     <section aria-label="Artifact workspace" className={styles.artifactWorkspace}>
@@ -184,7 +195,7 @@ export function ArtifactStage({
             undoDisabled={undoDisabled}
             zoom={sceneZoomLabel}
           />
-          <div className={`${styles.outputStage} ${artifactKind === "ad" ? styles.imageOutputStage : styles.webOutputStage}`}>
+          <div className={`${styles.outputStage} ${artifactKind === "ad" ? adStageClass : styles.webOutputStage}`}>
             {artifactKind === "web" ? (
               <div
                 aria-label={
@@ -208,30 +219,31 @@ export function ArtifactStage({
                   />
                 ) : null}
               </div>
+            ) : activeDocumentId ? (
+              /* AD2.10 (founder ruling, 2026-08-20): the mounted scene canvas
+               * IS the stage — an infinite workspace with the artboard floating
+               * on it — so it is no longer wrapped in the dummy's fixed
+               * `.imageCanvas` card, which could only ever show a 640px square
+               * of it. The card keeps the empty state below, unchanged. */
+              <div aria-label="Ad output canvas" className={styles.sceneStage}>
+                <SceneArtifactCanvas
+                  controlsRef={sceneCanvasControlsRef}
+                  documentId={activeDocumentId}
+                  onEngineStatusChange={onSceneEngineStatusChange}
+                  onFitZoom={onSceneFitZoom}
+                  onGestureZoom={onSceneGestureZoom}
+                  onSceneChange={onSceneChange}
+                  onSelect={onSceneSelect}
+                  reloadToken={canvasReloadToken}
+                  selectedNodeId={sceneSelectedNodeId}
+                  zoom={sceneZoomOverride}
+                />
+              </div>
             ) : (
               <div
-                aria-label={
-                  activeDocumentId ? "Ad output canvas" : "Empty ad output canvas"
-                }
+                aria-label="Empty ad output canvas"
                 className={styles.imageCanvas}
-              >
-                {/* AD2.3: the real scene renders inside the dummy's artboard
-                 * card — same shape as the web branch above, and the card's
-                 * geometry is untouched (the canvas fills it). */}
-                {activeDocumentId ? (
-                  <SceneArtifactCanvas
-                    controlsRef={sceneCanvasControlsRef}
-                    documentId={activeDocumentId}
-                    onEngineStatusChange={onSceneEngineStatusChange}
-                    onFitZoom={onSceneFitZoom}
-                    onSceneChange={onSceneChange}
-                    onSelect={onSceneSelect}
-                    reloadToken={canvasReloadToken}
-                    selectedNodeId={sceneSelectedNodeId}
-                    zoom={sceneZoomOverride}
-                  />
-                ) : null}
-              </div>
+              />
             )}
           </div>
         </>

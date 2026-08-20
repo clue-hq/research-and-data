@@ -11,16 +11,23 @@ import {
 } from "react";
 import type { CanvasKit, Surface, TypefaceFontProvider } from "canvaskit-wasm";
 import {
+  ARTBOARD_BORDER_COLOR,
+  ARTBOARD_SHADOW_COLOR,
   SELECTION_HANDLE_CORNER_RADIUS,
   SELECTION_HANDLE_FILL,
   SELECTION_HANDLE_STROKE,
   SELECTION_HANDLE_STROKE_WIDTH,
   SELECTION_OUTLINE_COLOR,
   SELECTION_OUTLINE_WIDTH,
+  WORKSPACE_CANVAS_FALLBACK,
+  artboardChromeGeometry,
+  formatZoomPercent,
   sceneArtboardModel,
   sceneAssetPassthroughUrl,
+  sceneDragPanViewport,
   sceneSelectionOutline,
   sceneViewportModel,
+  sceneWheelViewport,
   selectionHandleRects,
   type SceneArtboardModel,
   type SceneSelectionOutline,
@@ -29,7 +36,10 @@ import {
   representableHit,
   sceneHitPoint,
 } from "../adapter/scene-selection";
-import { drawDescriptorTree } from "../engine/scene/canvaskit/drawDescriptors";
+import {
+  drawDescriptorTree,
+  parseColor,
+} from "../engine/scene/canvaskit/drawDescriptors";
 import { CanvasKitImageCache } from "../engine/scene/canvaskit/imageCache";
 import {
   loadCanvasKit,
@@ -62,21 +72,34 @@ import styles from "./scene-artifact-canvas.module.css";
  * together), and a re-armed `matchMedia` resolution watcher because
  * `devicePixelRatio` can change with no size change at all.
  *
- * Three deliberate departures from the source stage:
+ * AD2.10 (founder ruling, 2026-08-20) makes the port faithful where AD2.3
+ * departed from it: **the stage is an infinite workspace and the artboard is a
+ * page floating on it, bounded by its own edges alone** — Figma's model,
+ * "nothing more and nothing less". The `<canvas>` is the whole neutral output
+ * area, not the dummy's `.imageCanvas` card; the workspace clears to
+ * `--bg-canvas`; the artboard carries a shadow and a hairline; and the viewport
+ * pans and wheel-zooms. This RETIRES ruling 17 (fit margin 0, "the card IS the
+ * artboard"), which made exactly one zoom level look right and left every other
+ * one either padded (below fit) or silently clipped with no way to reach the
+ * rest (above fit).
  *
- * - **One artboard.** The platform mounts a single document inside a fixed
- *   card, so the workspace's artboard grid, its active/inactive border and its
- *   name labels are gone. (§1.1's artifact-name label and W×H chip are
- *   ratified in the contract but the AD0.1 dummy delta carries no CSS for
- *   them — inventing that styling is barred, so they wait for Gate G-A's
- *   mockup sheet. Nothing here fakes them.)
- * - **No canvas backdrop.** The source clears to the workspace gray and paints
- *   a dark rounded shell behind each artboard; here the dummy's `.imageCanvas`
- *   card IS the artboard chrome (its hairline border, radius and shadow), so
- *   the surface clears to transparent and the designed card shows through.
+ * Two deliberate departures from the source stage remain:
+ *
+ * - **One artboard.** The platform mounts a single document, so the workspace's
+ *   artboard grid, its active/inactive border and its name labels are gone.
+ *   (§1.1's artifact-name label and W×H chip are ratified in the contract but
+ *   the AD0.1 dummy delta carries no CSS for them — inventing that styling is
+ *   barred, so they wait for Gate G-A's mockup sheet. Nothing here fakes them.)
  * - **Content only.** Selection chrome stays out of the canvas by the source's
  *   own Decision 5 — the selection overlay mounts as a sibling of the
  *   `<canvas>` inside `.stage`, so hover/selection never trigger a wasm redraw.
+ *
+ * And one re-valuing: the source's `drawArtboard` shell is an opaque `#151920`
+ * slab, legible behind a page on its DARK workspace and a hard black frame on
+ * our light one. The structure is ported (a shell behind the rect, content
+ * clipped to the page box, a border stroked on top); the shell is painted as a
+ * real blurred drop shadow and the border keeps the hairline colour the retired
+ * card drew. Both are screen-constant (`artboardChromeGeometry`).
  *
  * AD2.5 adds the read path's last leg: pointer-down selects. Gate G-A then
  * ratified the visual (founder, 2026-08-20 — Variant B), so the overlay AD2.5
@@ -137,6 +160,19 @@ export interface SceneArtifactCanvasProps {
   /** The fit-on-open zoom as one of the header menu's own 5% steps — what the
    * menu DISPLAYS while nothing has been chosen. */
   onFitZoom?: (zoom: string) => void;
+  /**
+   * AD2.10: the zoom a PAN/WHEEL gesture landed on, or null when the canvas
+   * falls back to the derived viewport (a fresh document, or an explicit menu
+   * choice).
+   *
+   * A separate channel from `onFitZoom` and from the menu's own choice because
+   * it outranks both for DISPLAY only: after a pinch the header must say where
+   * the viewport actually is, and where it actually is may be a percentage the
+   * 29-step menu does not offer (`formatZoomPercent`, not `snapZoomPercent`).
+   * It never feeds back into `zoom` — the gesture already moved the viewport,
+   * and re-deriving from a label would re-centre it and undo the pan.
+   */
+  onGestureZoom?: (zoom: string | null) => void;
   /** Mirrors the wasm stamp handshake upward, so the shell can refuse edits
    * and (post Gate G-D) explain why. */
   onEngineStatusChange?: (status: SceneEngineStatus) => void;
@@ -187,6 +223,7 @@ function SceneDocumentCanvas({
   documentId,
   onEngineStatusChange,
   onFitZoom,
+  onGestureZoom,
   onSceneChange,
   onSelect,
   reloadToken = 0,
@@ -231,8 +268,50 @@ function SceneDocumentCanvas({
         : null,
     [artboard, stageSize, zoom],
   );
+
+  // AD2.10: the one piece of viewport STATE — where the user's own pan/zoom
+  // gestures have taken the workspace. Null means "nowhere yet", and the
+  // derivation above governs; a gesture supersedes it until the next explicit
+  // choice.
+  //
+  // The reset is keyed on the page and the chosen zoom, deliberately NOT on the
+  // artboard or the stage size: a relayout (a text measurement landing, a write
+  // in AD3) or a panel toggle must not yank the workspace back to centre under
+  // someone who has panned. A menu choice must — that is what "re-centre on an
+  // explicit choice" means.
+  // The reset is React's own adjust-state-on-prop-change pattern (a render-time
+  // comparison against the last key), not an effect: an effect would paint one
+  // frame of the stale gesture viewport before snapping back.
+  const [gestureViewport, setGestureViewport] =
+    useState<WorkspaceViewport | null>(null);
+  const viewportKey = `${pageId ?? ""}|${zoom ?? ""}`;
+  const [lastViewportKey, setLastViewportKey] = useState(viewportKey);
+  if (lastViewportKey !== viewportKey) {
+    setLastViewportKey(viewportKey);
+    setGestureViewport(null);
+  }
+  const activeGestureViewport =
+    lastViewportKey === viewportKey ? gestureViewport : null;
+
   const viewport: WorkspaceViewport =
-    viewportModel?.applied ?? defaultWorkspaceViewport();
+    activeGestureViewport ??
+    viewportModel?.applied ??
+    defaultWorkspaceViewport();
+
+  // The header's zoom control, told where the viewport actually is after a
+  // gesture. Keyed on the LABEL, so a pure pan (same zoom) never re-renders the
+  // shell — a drag would otherwise push one state update per pointer move
+  // through the whole editing session.
+  const gestureZoomLabel = activeGestureViewport
+    ? formatZoomPercent(activeGestureViewport.zoom)
+    : null;
+  const onGestureZoomRef = useRef(onGestureZoom);
+  useEffect(() => {
+    onGestureZoomRef.current = onGestureZoom;
+  });
+  useEffect(() => {
+    onGestureZoomRef.current?.(gestureZoomLabel);
+  }, [gestureZoomLabel]);
 
   // Report the fit as a step the header menu actually offers — the FIT, always,
   // never the chosen zoom: this is the value the menu falls back to, so a
@@ -330,6 +409,155 @@ function SceneDocumentCanvas({
     onSelectRef.current?.(nodeId);
   };
 
+  /* ---------------------------------------------------------------------
+   * AD2.10 — the workspace gestures.
+   *
+   * Ported from the source canvas's own handlers (`CanvasKitCanvas.tsx`
+   * :968-1010): ⌘/Ctrl + wheel zooms at the pointer, a plain wheel pans (what a
+   * trackpad's two-finger scroll emits), and a held modifier turns a drag into a
+   * pan. The decisions themselves live in the adapter, where they are
+   * unit-tested; what is here is only the DOM plumbing.
+   * ------------------------------------------------------------------ */
+
+  // The gesture handlers are bound once and read their inputs through a ref, so
+  // no listener is re-attached mid-drag. What the ref carries is the DERIVED
+  // viewport (the fit or the chosen step) — the base a gesture starts from; the
+  // gesture's own position is read from the state updater instead, because two
+  // wheel events inside one frame would both see the same not-yet-committed ref
+  // and the second would discard the first.
+  const gestureInputsRef = useRef({
+    artboard,
+    stageSize,
+    baseViewport: viewportModel?.applied ?? viewport,
+  });
+  useEffect(() => {
+    gestureInputsRef.current = {
+      artboard,
+      stageSize,
+      baseViewport: viewportModel?.applied ?? viewport,
+    };
+  });
+
+  useEffect(() => {
+    const element = stageRef.current;
+    if (!element) {
+      return;
+    }
+    const handleWheel = (event: WheelEvent) => {
+      const current = gestureInputsRef.current;
+      if (!current.artboard) {
+        return;
+      }
+      // A NATIVE, non-passive listener rather than React's `onWheel`: React
+      // registers wheel at the root as PASSIVE, so `preventDefault` there is a
+      // no-op — ⌘+wheel would zoom the browser page over the top of the canvas
+      // and a two-finger scroll would scroll the shell instead of panning. The
+      // stage is a viewport, so it owns the gesture.
+      event.preventDefault();
+      const bounds = element.getBoundingClientRect();
+      // deltaMode 1 is LINES (Firefox with a mouse wheel): ~16px per line, or a
+      // notch would move the workspace by three pixels.
+      const lines = event.deltaMode === 1 ? 16 : 1;
+      const artboardRect = current.artboard.rect;
+      const delta = { x: event.deltaX * lines, y: event.deltaY * lines };
+      const point = {
+        x: event.clientX - bounds.left,
+        y: event.clientY - bounds.top,
+      };
+      const zoomGesture = event.ctrlKey || event.metaKey;
+      setGestureViewport((live) =>
+        sceneWheelViewport({
+          bounds: artboardRect,
+          delta,
+          point,
+          stage: current.stageSize,
+          viewport: live ?? current.baseViewport,
+          zoomGesture,
+        }),
+      );
+    };
+    element.addEventListener("wheel", handleWheel, { passive: false });
+    return () => element.removeEventListener("wheel", handleWheel);
+  }, []);
+
+  // Space-to-pan, the editor convention. Held space turns the whole stage into
+  // a hand tool; a plain press still selects (AD2.5), which is why this is a
+  // modifier and not a mode.
+  const [spaceHeld, setSpaceHeld] = useState(false);
+  useEffect(() => {
+    const typingTarget = (target: EventTarget | null) => {
+      if (!(target instanceof HTMLElement)) {
+        return false;
+      }
+      return (
+        target.isContentEditable ||
+        ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)
+      );
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.code !== "Space" || typingTarget(event.target)) {
+        return;
+      }
+      // Space would otherwise page-scroll the shell behind the stage.
+      event.preventDefault();
+      setSpaceHeld(true);
+    };
+    const onKeyUp = (event: KeyboardEvent) => {
+      if (event.code === "Space") {
+        setSpaceHeld(false);
+      }
+    };
+    // A window that loses focus mid-hold never delivers the keyup.
+    const onBlur = () => setSpaceHeld(false);
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+    window.addEventListener("blur", onBlur);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("blur", onBlur);
+    };
+  }, []);
+
+  const panDragRef = useRef<{
+    pointerId: number;
+    origin: { point: { x: number; y: number }; pan: { x: number; y: number } };
+  } | null>(null);
+  const [panning, setPanning] = useState(false);
+
+  const stagePoint = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const bounds = event.currentTarget.getBoundingClientRect();
+    return { x: event.clientX - bounds.left, y: event.clientY - bounds.top };
+  };
+
+  const handlePointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = panDragRef.current;
+    const current = gestureInputsRef.current;
+    if (!drag || drag.pointerId !== event.pointerId || !current.artboard) {
+      return;
+    }
+    const artboardRect = current.artboard.rect;
+    const point = stagePoint(event);
+    setGestureViewport((live) =>
+      sceneDragPanViewport({
+        bounds: artboardRect,
+        origin: drag.origin,
+        point,
+        stage: current.stageSize,
+        viewport: live ?? current.baseViewport,
+      }),
+    );
+  };
+
+  const endPanDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (panDragRef.current?.pointerId !== event.pointerId) {
+      return;
+    }
+    panDragRef.current = null;
+    setPanning(false);
+    event.currentTarget.releasePointerCapture?.(event.pointerId);
+  };
+
   // AD2.7: hand the rendered scene up. A passive-ref effect (callback only, no
   // state) so it can never fight the render, and keyed on the scene identity
   // the draw loop is actually using — including the relaid one the C4
@@ -362,6 +590,23 @@ function SceneDocumentCanvas({
    * in `sceneHitPoint`, where they are unit-tested against a non-identity unit.
    */
   const handlePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    // AD2.10: a held space or the middle button starts a PAN; a plain primary
+    // press still selects. Panning and selecting share the surface, so the
+    // discriminator is checked before anything else — and the pan needs no
+    // engine, so it works on a disabled-engine canvas too.
+    if (
+      gestureInputsRef.current.artboard &&
+      (spaceHeld || event.button === 1)
+    ) {
+      panDragRef.current = {
+        pointerId: event.pointerId,
+        origin: { point: stagePoint(event), pan: viewport.pan },
+      };
+      setPanning(true);
+      event.currentTarget.setPointerCapture?.(event.pointerId);
+      event.preventDefault();
+      return;
+    }
     // Secondary/middle buttons are not a selection gesture.
     if (event.button !== 0) {
       return;
@@ -397,8 +642,17 @@ function SceneDocumentCanvas({
 
   return (
     <div
-      className={styles.stage}
+      className={[
+        styles.stage,
+        panning ? styles.panning : "",
+        !panning && spaceHeld ? styles.pannable : "",
+      ]
+        .filter(Boolean)
+        .join(" ")}
+      onPointerCancel={endPanDrag}
       onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={endPanDrag}
       ref={stageRef}
     >
       <ArtboardSurface
@@ -547,32 +801,21 @@ function ArtboardSurface({
     canvas.save();
     const dpr = typeof devicePixelRatio === "number" ? devicePixelRatio : 1;
     canvas.scale(dpr, dpr);
-    // Transparent, not the source's workspace gray: the dummy's artboard card
-    // owns the backdrop (§1.1's card chrome is CSS, and stays CSS).
-    canvas.clear(ck.TRANSPARENT);
+    // AD2.10: the workspace — the source stage's own clear, reading the same
+    // `--bg-canvas` custom property. This is what makes the surface an infinite
+    // canvas rather than a hole in a card.
+    canvas.clear(workspaceCanvasColor(ck, canvasRef.current));
     if (current.artboard) {
       canvas.translate(current.viewport.pan.x, current.viewport.pan.y);
       canvas.scale(current.viewport.zoom, current.viewport.zoom);
-      canvas.save();
-      canvas.clipRect(
-        ck.LTRBRect(
-          0,
-          0,
-          current.artboard.page.width,
-          current.artboard.page.height,
-        ),
-        ck.ClipOp.Intersect,
-        true,
-      );
-      drawDescriptorTree(
+      drawArtboard(
         ck,
         canvas,
-        current.artboard.page,
-        current.artboard.nodes,
+        current.artboard,
+        current.viewport,
         fontRef.current,
         imagesRef.current,
       );
-      canvas.restore();
     }
     canvas.restore();
     surface.flush();
@@ -716,5 +959,101 @@ function ArtboardSurface({
       ref={canvasRef}
     />
   );
+}
+
+/**
+ * The workspace surface colour, ported verbatim from the source stage
+ * (`CanvasKitStage.workspaceCanvasColor`) with one improvement: the custom
+ * property is read from the CANVAS, not from `document.documentElement`, so a
+ * `--bg-canvas` defined anywhere up this subtree (the stage's own module CSS
+ * defines it, since the platform shell does not) is honoured and the painted
+ * pixels can never disagree with the CSS backdrop behind them.
+ */
+function workspaceCanvasColor(
+  ck: CanvasKit,
+  element: Element | null,
+): Float32Array {
+  const css =
+    element && typeof getComputedStyle === "function"
+      ? getComputedStyle(element).getPropertyValue("--bg-canvas").trim()
+      : "";
+  return (
+    parseColor(ck, css || WORKSPACE_CANVAS_FALLBACK) ??
+    ck.Color4f(0.961, 0.961, 0.961, 1)
+  );
+}
+
+/**
+ * One artboard on the workspace: shadow, content, edge.
+ *
+ * The order is the source's `drawArtboard` — shell behind, content clipped to
+ * the page box, border stroked on top — and the clip is the load-bearing part:
+ * it is what makes the artboard's own edges the ONLY boundary the page has, now
+ * that nothing else surrounds it. Overflowing content stops at the page edge;
+ * everything outside is workspace.
+ *
+ * Every Paint (and the MaskFilter) is deleted before returning: these are wasm
+ * heap objects, and the draw loop runs on every frame of a pan.
+ */
+function drawArtboard(
+  ck: CanvasKit,
+  canvas: ReturnType<Surface["getCanvas"]>,
+  artboard: SceneArtboardModel,
+  viewport: WorkspaceViewport,
+  fontProvider: TypefaceFontProvider | null,
+  images: CanvasKitImageCache | null,
+) {
+  const rect = artboard.rect;
+  const chrome = artboardChromeGeometry(rect, viewport.zoom);
+
+  const shadowPaint = new ck.Paint();
+  shadowPaint.setAntiAlias(true);
+  shadowPaint.setStyle(ck.PaintStyle.Fill);
+  shadowPaint.setColor(parseColor(ck, ARTBOARD_SHADOW_COLOR) ?? ck.BLACK);
+  const blur = ck.MaskFilter.MakeBlur(
+    ck.BlurStyle.Normal,
+    chrome.shadowSigma,
+    true,
+  );
+  shadowPaint.setMaskFilter(blur);
+  canvas.drawRect(
+    ck.LTRBRect(
+      chrome.shadow.x,
+      chrome.shadow.y,
+      chrome.shadow.x + chrome.shadow.width,
+      chrome.shadow.y + chrome.shadow.height,
+    ),
+    shadowPaint,
+  );
+  blur.delete();
+  shadowPaint.delete();
+
+  canvas.save();
+  canvas.translate(rect.x, rect.y);
+  canvas.clipRect(
+    ck.LTRBRect(0, 0, artboard.page.width, artboard.page.height),
+    ck.ClipOp.Intersect,
+    true,
+  );
+  drawDescriptorTree(
+    ck,
+    canvas,
+    artboard.page,
+    artboard.nodes,
+    fontProvider,
+    images,
+  );
+  canvas.restore();
+
+  const borderPaint = new ck.Paint();
+  borderPaint.setAntiAlias(true);
+  borderPaint.setStyle(ck.PaintStyle.Stroke);
+  borderPaint.setStrokeWidth(chrome.borderWidth);
+  borderPaint.setColor(parseColor(ck, ARTBOARD_BORDER_COLOR) ?? ck.BLACK);
+  canvas.drawRect(
+    ck.LTRBRect(rect.x, rect.y, rect.x + rect.width, rect.y + rect.height),
+    borderPaint,
+  );
+  borderPaint.delete();
 }
 

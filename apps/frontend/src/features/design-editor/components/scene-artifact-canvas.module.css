@@ -1,18 +1,43 @@
 /*
- * AD2.3: the canvas element, plus Gate G-A's selection overlay.
+ * AD2.3 / AD2.10: the canvas element, plus Gate G-A's selection overlay.
  *
- * The artboard card's own chrome — its size, hairline border, radius,
- * background and shadow — is the dummy's `.imageCanvas` rule in
- * `chat-shell.module.css`, preserved untouched (contract §1.8): this surface
- * simply fills the hole it already leaves. The stage is positioned only so the
- * selection overlay can mount as an absolutely-positioned sibling of the canvas
- * without moving anything.
+ * AD2.10 (founder ruling, 2026-08-20) makes the stage the VIEWPORT: it fills the
+ * whole neutral output area and the artboard is painted inside it at the current
+ * zoom, bounded by its own edges alone. The dummy's `.imageCanvas` card keeps
+ * its one remaining role — the designed EMPTY state — and is no longer a
+ * container for live content, which is what ruling 17 (now retired) assumed.
  */
 
 .stage {
   position: relative;
   width: 100%;
   height: 100%;
+  /*
+   * The workspace surface behind the artboard.
+   *
+   * The name is the design subsystem's own (`--bg-canvas`, its editor
+   * `tokens.css`), and the draw loop reads THIS property off the canvas to
+   * clear the surface with — so the painted pixels and this backdrop are one
+   * value, and a host that defines the property higher up wins for both. The
+   * platform shell defines no `--bg-canvas`, so the value here is the one in
+   * force; it is deliberately not `--clue-ds-color-bg-page` (#F8F9FB), which is
+   * indistinguishable from a white page.
+   */
+  --bg-canvas: #f5f5f5;
+
+  background: var(--bg-canvas);
+  overflow: hidden;
+  touch-action: none;
+}
+
+/* Space held: the stage is armed as a hand tool (a plain press still selects,
+ * so this is a modifier, not a mode). */
+.pannable {
+  cursor: grab;
+}
+
+.panning {
+  cursor: grabbing;
 }
 
 .canvas {
@@ -26,11 +51,11 @@
  *
  * Exactly co-extensive with the canvas (both fill the stage), so the overlay's
  * own px coordinate system is the canvas's own — the adapter's stage-px box
- * needs no further offset. `pointer-events: none` is load-bearing, not
- * defensive: selection is a canvas gesture, and an overlay that swallowed the
- * next press would make the outline unclickable-through the moment it appeared.
- * The default SVG clip stays on: chrome for content the card has scrolled past
- * must not paint over the surrounding shell.
+ * needs no further offset, at any zoom AND at any pan. `pointer-events: none`
+ * is load-bearing, not defensive: selection is a canvas gesture, and an overlay
+ * that swallowed the next press would make the outline unclickable-through the
+ * moment it appeared. The default SVG clip stays on: chrome for content panned
+ * off the viewport must not paint over the surrounding shell.
  */
 .selectionChrome {
   display: block;

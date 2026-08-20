@@ -17,12 +17,16 @@ import { deriveSelectionChromeModel } from "../engine/scene/selectionChrome";
 import type { Box } from "../engine/scene/transformerMath";
 import type { Rect } from "../engine/scene/workspaceLayout";
 import {
+  clampWorkspacePanToKeepVisible,
   clampWorkspaceZoom,
   fitWorkspaceRectToViewport,
+  panWorkspaceViewport,
   workspaceRectToScreen,
+  zoomWorkspaceViewportAtPoint,
   type ViewportSize,
   type WorkspaceViewport,
 } from "../engine/scene/workspaceViewport";
+import type { Point } from "../engine/scene/workspaceLayout";
 
 /**
  * AD2.3: every decision the scene canvas makes that is NOT a WebGL call.
@@ -94,20 +98,208 @@ export function chosenZoomScale(zoom: string | null | undefined): number | null 
 }
 
 /**
- * margin 0: the dummy's `.imageCanvas` card IS the artboard (its hairline
- * border is the artboard edge), so the page fills it edge-to-edge (AD2.3
- * review / ruling 17). The upstream default (128) exists for the standalone
- * editor's infinite workspace, where the artboard floats in a dark shell —
- * porting it here leaves a white ring inside the designed card. Contain-fit
- * still letterboxes a non-square page in the square card.
+ * AD2.10 (founder ruling, 2026-08-20) — **this retires ruling 17.**
+ *
+ * Ruling 17 set this to 0 because the dummy's `.imageCanvas` card was taken to
+ * BE the artboard: fill the card edge to edge and the ad looks right. It looked
+ * right at exactly one zoom. Above the fit the ad was drawn larger than the
+ * card's ~638px surface and silently clipped with no way to reach the rest;
+ * below it, leftover card showed around the ad as meaningless padding; and the
+ * card's `aspect-ratio: 1` made any non-square page wrong even at fit.
+ *
+ * The ruling: the stage is an infinite workspace (Figma's model) and the
+ * artboard is a page floating on it, bounded by its own edges alone. So the fit
+ * is a fit to the STAGE, and the margin is back — breathing room so the page
+ * does not touch the viewport edges, which is what makes it read as a tile on a
+ * surface rather than a letterbox. Half the source editor's 128 (its workspace
+ * holds a grid of artboards; ours holds one), i.e. 32px per edge.
  */
-export const ARTBOARD_FIT_MARGIN = 0;
+export const ARTBOARD_FIT_MARGIN = 64;
+
+/**
+ * The workspace surface behind the artboard.
+ *
+ * The value is the design subsystem's own `--bg-canvas`
+ * (`subsystems/clue-design/apps/editor/src/app/tokens.css`), read at draw time
+ * through the same custom-property lookup the source stage uses
+ * (`CanvasKitStage.workspaceCanvasColor`) so a host that defines the property
+ * wins; this constant is the fallback when nothing does — which is the platform
+ * shell today, so it is also the colour actually painted.
+ *
+ * Light, not dark: the platform shell is light. It has to be clearly separable
+ * from a white page, which `--clue-ds-color-bg-page` (#F8F9FB) is not.
+ */
+export const WORKSPACE_CANVAS_FALLBACK = "#f5f5f5";
+
+/**
+ * The artboard's own chrome — the only boundary the page has now that no card
+ * surrounds it.
+ *
+ * Ported in STRUCTURE from the source stage's `drawArtboard` (a shell painted
+ * behind the artboard rect, then the content clipped to the page box, then a
+ * border stroked on top), with the two colours re-valued for a light workspace:
+ * the source's opaque `#151920` slab is legible behind a page on its dark
+ * canvas and would read as a hard black frame on ours, so the shell is a blurred
+ * black wash — a real drop shadow (founder: the artboard carries a subtle
+ * shadow so it reads as a physical tile) — and the border keeps the hairline the
+ * retired `.imageCanvas` card drew, `--clue-ds-color-border-subtle`.
+ */
+export const ARTBOARD_SHADOW_COLOR = "rgba(15, 23, 42, 0.16)";
+export const ARTBOARD_SHADOW_BLUR_PX = 16;
+export const ARTBOARD_SHADOW_OFFSET_PX = 4;
+export const ARTBOARD_BORDER_COLOR = "#E6E9ED";
+export const ARTBOARD_BORDER_WIDTH_PX = 1;
+
+/** The artboard's chrome in WORKSPACE units, for the current zoom. */
+export interface ArtboardChromeGeometry {
+  /** The rect the shadow is painted over (the artboard, nudged down). */
+  shadow: Rect;
+  /** Blur sigma, in workspace units. */
+  shadowSigma: number;
+  /** Border stroke width, in workspace units. */
+  borderWidth: number;
+}
+
+/**
+ * The chrome, sized so it is CONSTANT ON SCREEN.
+ *
+ * The draw loop paints inside the viewport transform, so anything expressed in
+ * workspace units is multiplied by the zoom: a 16px blur would be 1.6px at 10%
+ * and 32px at 200%. Chrome is not content — the shadow and the hairline must
+ * look the same at every zoom — so every screen-px constant is divided by the
+ * zoom here. This is the same rule the selection overlay follows by being a
+ * screen-space sibling; the artboard cannot be, because it must sit UNDER the
+ * page's own pixels.
+ */
+export function artboardChromeGeometry(
+  rect: Rect,
+  zoom: number,
+): ArtboardChromeGeometry {
+  const scale = isPositiveFinite(zoom) ? clampWorkspaceZoom(zoom) : 1;
+  const offset = ARTBOARD_SHADOW_OFFSET_PX / scale;
+  return {
+    shadow: {
+      x: rect.x,
+      y: rect.y + offset,
+      width: rect.width,
+      height: rect.height,
+    },
+    shadowSigma: ARTBOARD_SHADOW_BLUR_PX / scale,
+    borderWidth: ARTBOARD_BORDER_WIDTH_PX / scale,
+  };
+}
+
+/**
+ * One wheel notch of zoom — the source stage's own step
+ * (`CanvasKitCanvas.tsx:977`: `current.zoom + (deltaY > 0 ? -0.08 : 0.08)`),
+ * ported rather than re-tuned.
+ */
+export const WHEEL_ZOOM_STEP = 0.08;
+
+/**
+ * A wheel event's effect on the viewport — the whole decision, in one tested
+ * place.
+ *
+ * Ported from the source canvas's `onWheel` (`CanvasKitCanvas.tsx:968-987`):
+ * ⌘/Ctrl + wheel zooms **at the pointer** (so the pixel under the cursor stays
+ * under it), a plain wheel — which is what a trackpad's two-finger scroll
+ * emits — pans by the inverse of the delta, and the pan is clamped so a slice
+ * of the artboard always stays on screen. Panning into an empty void is the one
+ * way an infinite canvas can lose a user, and the clamp is the source's answer
+ * to it.
+ */
+export function sceneWheelViewport({
+  bounds,
+  delta,
+  point,
+  stage,
+  viewport,
+  zoomGesture,
+}: {
+  /** The artboard rect — what the pan clamp keeps reachable. */
+  bounds: Rect;
+  delta: Point;
+  /** The pointer, in stage CSS px — the zoom anchor. */
+  point: Point;
+  stage: ViewportSize;
+  viewport: WorkspaceViewport;
+  /** ⌘/Ctrl held (or a pinch, which the browser reports as ctrl+wheel). */
+  zoomGesture: boolean;
+}): WorkspaceViewport {
+  if (zoomGesture) {
+    if (!Number.isFinite(delta.y) || delta.y === 0) {
+      return viewport;
+    }
+    return zoomWorkspaceViewportAtPoint(
+      viewport,
+      point,
+      viewport.zoom + (delta.y > 0 ? -WHEEL_ZOOM_STEP : WHEEL_ZOOM_STEP),
+    );
+  }
+  return clampWorkspacePanToKeepVisible(
+    panWorkspaceViewport(viewport, { x: -delta.x, y: -delta.y }),
+    bounds,
+    stage,
+  );
+}
+
+/**
+ * A drag-pan's effect on the viewport: the grabbed point follows the pointer.
+ *
+ * `origin` is the press — the pointer position and the pan at that instant — so
+ * the pan is recomputed from the ORIGIN on every move rather than accumulated
+ * per event; a dropped or coalesced move can then never leave the content
+ * drifting behind the cursor.
+ */
+export function sceneDragPanViewport({
+  bounds,
+  origin,
+  point,
+  stage,
+  viewport,
+}: {
+  bounds: Rect;
+  origin: { point: Point; pan: Point };
+  point: Point;
+  stage: ViewportSize;
+  viewport: WorkspaceViewport;
+}): WorkspaceViewport {
+  return clampWorkspacePanToKeepVisible(
+    {
+      zoom: viewport.zoom,
+      pan: {
+        x: origin.pan.x + (point.x - origin.point.x),
+        y: origin.pan.y + (point.y - origin.point.y),
+      },
+    },
+    bounds,
+    stage,
+  );
+}
+
+/**
+ * The zoom a gesture landed on, as a label for the header's zoom control.
+ *
+ * NOT `snapZoomPercent`: that one rounds to the menu's 5% steps and clamps into
+ * the menu's 10–150% range, which is right for the fit (the menu has to be able
+ * to check the item it displays) and wrong for a free gesture — a pinch to 172%
+ * is inside the ENGINE's clamp and must not be reported as "150%". So this
+ * rounds to a whole percent and clamps only where the engine does. At a
+ * percentage the menu happens to offer, the menu's checkmark lights up, which is
+ * accurate: that is where the viewport is.
+ */
+export function formatZoomPercent(zoom: number): string {
+  if (!Number.isFinite(zoom) || zoom <= 0) {
+    return `${MIN_ZOOM_PERCENT}%`;
+  }
+  return `${Math.round(clampWorkspaceZoom(zoom) * 100)}%`;
+}
 
 /** What the canvas draws with, and what the header menu says it is drawing. */
 export interface SceneViewportModel {
   /** The viewport the canvas actually applies. */
   applied: WorkspaceViewport;
-  /** The exact contain-fit for this card and this page box. */
+  /** The exact contain-fit for this stage and this page box. */
   fit: WorkspaceViewport;
   /** The fit as one of the menu's own 5% steps — a LABEL, not the applied
    * scale. */
@@ -120,12 +312,13 @@ export interface SceneViewportModel {
  * The two are deliberately NOT the same number:
  *
  * - **Fit-on-open (no choice yet).** The canvas applies the EXACT contain-fit
- *   (`0.4267…`), because that is what makes the ad fill the designed artboard
- *   card edge-to-edge (ruling 17). The header menu meanwhile shows
- *   `fitLabel` — the nearest step it actually offers (`"45%"`) — because the
- *   ratified menu has 29 items and no "Fit" entry, and inventing one is barred.
- *   So on open the label is an honest APPROXIMATION of the applied scale, and
- *   the gap is at most half a step (2.5%).
+ *   of the artboard to the STAGE, inset by `ARTBOARD_FIT_MARGIN` — an exact
+ *   scale (`0.4267…`), not a menu step, so the page lands where the geometry
+ *   says and not 2.5% off it. The header menu meanwhile shows `fitLabel` — the
+ *   nearest step it actually offers (`"45%"`) — because the ratified menu has 29
+ *   items and no "Fit" entry, and inventing one is barred. So on open the label
+ *   is an honest APPROXIMATION of the applied scale, and the gap is at most half
+ *   a step (2.5%).
  * - **After a choice.** The label and the transform are the same number: the
  *   canvas applies exactly the chosen step and the menu checks exactly that
  *   item. Picking the step the label already showed therefore does move the
@@ -133,13 +326,18 @@ export interface SceneViewportModel {
  *   bug.
  *
  * A chosen zoom re-centers with `fitWorkspaceRectToViewport`'s own pan math at
- * the chosen scale, so the artboard stays centered in the card at every zoom.
- * There is no pointer-anchored zoom (`zoomWorkspaceViewportAtPoint`) and no
- * panning: the dummy has no designed affordance for either, so above the fit
- * the page is simply clipped by the card, centered.
+ * the chosen scale, so picking a step always brings the artboard back to the
+ * middle of the stage.
+ *
+ * This is the viewport the canvas STARTS from, not the one it is stuck with:
+ * AD2.10 gives the stage pan and pointer-anchored wheel-zoom
+ * (`sceneWheelViewport` / `sceneDragPanViewport`), and a gesture supersedes this
+ * derivation until the next explicit choice. Above the fit the artboard is
+ * larger than the viewport and the parts off-screen are reached by panning —
+ * they are no longer unreachable, which was the whole defect AD2.10 repairs.
  *
  * A starved stage (zero-sized during the first layout pass) falls back to the
- * fit's own default viewport rather than panning the artboard off-card.
+ * fit's own default viewport rather than panning the artboard off-stage.
  */
 export function sceneViewportModel({
   rect,
