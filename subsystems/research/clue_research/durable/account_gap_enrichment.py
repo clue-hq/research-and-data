@@ -32,6 +32,10 @@ from clue_research.durable.provider_spend import (
     ProviderSpendGuardError,
     require_provider_spend_capacity,
 )
+from clue_research.durable.spend_posture import cap_refusal_is_enforced
+
+#: Attribution for the record-only spend-cap posture (founder ruling 2026-08-20).
+_SITE_GAP_RESERVATION: Final = "sumble_account_gap_reservation"
 
 
 class AccountGapRepositoryError(RuntimeError):
@@ -292,17 +296,50 @@ async def reserve_account_gap_operation(
 ) -> tuple[AccountGapOperation, bool]:
     """Reserve one bounded account-gap enrichment operation.
 
-    ``enforce_budget`` is the FI pilot budget-controls switch; it gates only the project-run
-    money check. This operation's own reserved-vs-cap invariants are consistency guards on
-    its immutable plan, not spend-vs-budget stops, so they hold in both modes.
+    ``enforce_budget`` is the FI pilot budget-controls switch. It gates the project-run money check
+    **and** — since the 2026-08-20 ruling that our own spend caps are record-only in the pilot
+    posture — this operation's three reserved-vs-cap comparisons. Each one is still computed and
+    announced (:mod:`clue_research.durable.spend_posture`); only the refusal goes inert. The
+    ledger's own invariants (``charged <= reserved``, the CHECKs) are untouched in both modes: an
+    operation that may be charged more reserves more, it does not compare less.
     """
 
     request = operation.request
-    if operation.provider_units_reserved > Decimal(request.provider_credit_cap):
+    if operation.provider_units_reserved > Decimal(
+        request.provider_credit_cap
+    ) and cap_refusal_is_enforced(
+        enforce_budget,
+        site=_SITE_GAP_RESERVATION,
+        reason="reserved_units_above_cap",
+        amounts={
+            "provider_units_reserved": operation.provider_units_reserved,
+            "provider_credit_cap": request.provider_credit_cap,
+        },
+    ):
         raise AccountGapBudgetExceeded("account-gap provider cap exceeded")
-    if operation.cost_cents_reserved > Decimal(request.money_budget_cap_cents):
+    if operation.cost_cents_reserved > Decimal(
+        request.money_budget_cap_cents
+    ) and cap_refusal_is_enforced(
+        enforce_budget,
+        site=_SITE_GAP_RESERVATION,
+        reason="reserved_cost_above_cap",
+        amounts={
+            "cost_cents_reserved": operation.cost_cents_reserved,
+            "money_budget_cap_cents": request.money_budget_cap_cents,
+        },
+    ):
         raise AccountGapBudgetExceeded("account-gap money cap exceeded")
-    if request.expected_value_credits < operation.provider_units_reserved:
+    if request.expected_value_credits < operation.provider_units_reserved and (
+        cap_refusal_is_enforced(
+            enforce_budget,
+            site=_SITE_GAP_RESERVATION,
+            reason="value_below_reserved_units",
+            amounts={
+                "expected_value_credits": request.expected_value_credits,
+                "provider_units_reserved": operation.provider_units_reserved,
+            },
+        )
+    ):
         raise AccountGapBudgetExceeded(
             "account-gap expected value does not justify the bounded credit reservation"
         )

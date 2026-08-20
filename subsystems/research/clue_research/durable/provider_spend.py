@@ -14,6 +14,7 @@ cannot both observe the same remaining capacity.
 from __future__ import annotations
 
 from decimal import Decimal
+from typing import Final
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
@@ -22,6 +23,10 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_core import CostCents, ProjectPhase, ProjectRunId
 from clue_research.durable.enums import ProjectRunStatus
+from clue_research.durable.spend_posture import cap_refusal_is_enforced
+
+#: Attribution for the record-only spend-cap posture (founder ruling 2026-08-20).
+_SITE_PROJECT_RUN_SPEND: Final = "project_run_provider_spend"
 
 
 class ProviderSpendGuardError(RuntimeError):
@@ -240,7 +245,24 @@ async def require_provider_spend_capacity(
     outstanding = Decimal(
         (await conn.execute(_OUTSTANDING_SQL, {"project_run_id": project_run_id})).scalar_one()
     )
-    if enforce_budget and cap is not None and spent + outstanding + proposed_cents > cap:
+    # Already record-only when controls are off (the FI pilot ruling, 2026-08-11); the 2026-08-20
+    # cap ruling only adds the announcement, so a skipped project-run stop is as visible as the
+    # per-provider ones it sits above.
+    if (
+        cap is not None
+        and spent + outstanding + proposed_cents > cap
+        and cap_refusal_is_enforced(
+            enforce_budget,
+            site=_SITE_PROJECT_RUN_SPEND,
+            reason="project_run_cap_exceeded",
+            amounts={
+                "spent_cents": spent,
+                "outstanding_cents": outstanding,
+                "proposed_cents": proposed_cents,
+                "budget_cap_cents": cap,
+            },
+        )
+    ):
         raise ProviderSpendBudgetExceeded(
             "provider reservation exceeds project-run cap: "
             f"spent={spent}, outstanding={outstanding}, proposed={proposed_cents}, cap={cap}"

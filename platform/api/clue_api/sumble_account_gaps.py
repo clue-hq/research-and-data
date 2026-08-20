@@ -98,6 +98,7 @@ from clue_research.durable.provider_spend import (
     ProviderSpendGuardError,
     require_provider_spend_capacity,
 )
+from clue_research.durable.spend_posture import cap_refusal_is_enforced
 from clue_research.identity import get_account, surviving_id
 from clue_research.resolvers.http import ProviderResponseError
 from clue_research.resolvers.sumble import (
@@ -126,6 +127,12 @@ SUMBLE_V9_CONTRACT_VERSION: Final = (
 )
 SUMBLE_ACCOUNT_GAP_FIELD_POLICY_VERSION: Final = "sumble-account-gaps-v1"
 SUMBLE_ACCOUNT_GAP_PRICING_VERSION: Final = "sumble-v9-credits-2026-08-03"
+
+#: Attribution for the record-only spend-cap posture (founder ruling 2026-08-20; see
+#: :mod:`clue_research.durable.spend_posture`). Two distinct sites because they fail at opposite
+#: ends of the money: the preflight one can still save a call, the dispatch one never can.
+_SITE_GAP_PREFLIGHT: Final = "sumble_account_gap_preflight"
+_SITE_GAP_DISPATCH: Final = "sumble_account_gap_dispatch"
 
 _EMPLOYEE = "core.employee_count"
 _DOMAIN = "core.primary_domain"
@@ -171,6 +178,25 @@ def _organization_request_fields(field_keys: Sequence[str]) -> tuple[str, ...]:
         for key in field_keys
         if _SOURCE_BY_FIELD.get(key) == ORGANIZATIONS_SOURCE_KEY and _requestable(key)
     )
+
+
+def _authorized_provider_credit_cap(
+    provider_credit_cap: int, *, bounded: int, enforce_budget: bool
+) -> int:
+    """The credit cap this request is actually reserved against.
+
+    Enforcing posture: the caller's cap, unchanged (a cap below the bounded worst case is refused
+    before this is ever consulted). Record-only posture (the 2026-08-20 ruling): the refusal is
+    skipped, so the call *will* go out and may be charged the full bounded maximum — the
+    reservation is therefore raised to that maximum rather than weakening the ledger's
+    ``charged <= reserved`` invariant. Pure and deterministic, because
+    :class:`SumbleAccountGapStarter` must reach the same number when it checks a replay's stored
+    authorization against the arguments it was handed again.
+    """
+
+    if enforce_budget or provider_credit_cap >= bounded:
+        return provider_credit_cap
+    return bounded
 
 
 class SumbleAccountGapError(RuntimeError):
@@ -649,12 +675,25 @@ async def compile_sumble_account_gap_preflight(
         account.primary_domain, field_keys=_organization_request_fields(field_keys)
     )
     bounded = organization_max + (policy.jobs_limit if _HIRING in field_keys else 0)
-    if provider_credit_cap < bounded:
+    if provider_credit_cap < bounded and cap_refusal_is_enforced(
+        enforce_budget,
+        site=_SITE_GAP_PREFLIGHT,
+        reason="cap_below_bounded_maximum",
+        amounts={"provider_credit_cap": provider_credit_cap, "bounded_maximum": bounded},
+    ):
         raise SumbleAccountGapEligibilityError(
             f"provider cap {provider_credit_cap} is below bounded request maximum {bounded}"
         )
+    authorized_cap = _authorized_provider_credit_cap(
+        provider_credit_cap, bounded=bounded, enforce_budget=enforce_budget
+    )
     expected = sum(values.values(), Decimal(0))
-    if expected < provider_credit_cap:
+    if expected < authorized_cap and cap_refusal_is_enforced(
+        enforce_budget,
+        site=_SITE_GAP_PREFLIGHT,
+        reason="value_below_authorized_cap",
+        amounts={"expected_value_credits": expected, "provider_credit_cap": authorized_cap},
+    ):
         raise SumbleAccountGapEligibilityError(
             "expected field value does not justify the authorized provider-credit cap"
         )
@@ -676,9 +715,9 @@ async def compile_sumble_account_gap_preflight(
         field_policy_version=policy.version,
         observation_window=observation_window,
         fields=tuple(field_plans),
-        provider_credit_cap=provider_credit_cap,
+        provider_credit_cap=authorized_cap,
         expected_value_credits=expected,
-        money_budget_cap_cents=Decimal(provider_credit_cap) * cents_per_credit,
+        money_budget_cap_cents=Decimal(authorized_cap) * cents_per_credit,
         allow_unbounded_tech=allow_unbounded_tech,
     )
     return SumbleAccountGapPreflight(
@@ -869,7 +908,20 @@ class SumbleAccountGapCoordinator:
             (Decimal(item.credits_used) for item in durable_snapshots.values()), Decimal(0)
         )
         cost = sum((item.cost_cents for item in durable_snapshots.values()), Decimal(0))
-        if charged > operation.request.provider_credit_cap:
+        # The money is already gone by the time this comparison can be made: ``/techs`` has no
+        # caller-side limit, so refusing here saves nothing and only destroys data we were billed
+        # for (it did exactly that live on 2026-08-19). Under the record-only posture the true
+        # charge is recorded and the operation is allowed to keep what it bought.
+        if charged > operation.request.provider_credit_cap and cap_refusal_is_enforced(
+            self._enforce_budget,
+            site=_SITE_GAP_DISPATCH,
+            reason="charge_above_authorized_cap",
+            amounts={
+                "provider_units_charged": charged,
+                "provider_credit_cap": operation.request.provider_credit_cap,
+                "cost_cents_charged": cost,
+            },
+        ):
             await self._fail_fields(operation, "sumble_unbounded_charge_exceeded_authorized_cap")
             receipt_key = await self._receipt(operation, durable_snapshots, claim_ids=())
             failed = operation.model_copy(
@@ -1650,9 +1702,24 @@ class SumbleAccountGapStarter:
             expected = sum(
                 (Decimal(value) for value in field_expected_value_credits.values()), Decimal(0)
             )
+            organization_body, organization_max = organization_request(
+                existing.request.primary_domain,
+                field_keys=_organization_request_fields(
+                    [str(item.field_key) for item in existing.request.fields]
+                ),
+            )
+            # The stored cap is the *authorized* one, which the record-only posture may have
+            # raised to the bounded worst case. Re-derive it the same way, or an exact replay of
+            # the caller's own arguments would read as a changed authorization.
+            authorized_cap = _authorized_provider_credit_cap(
+                provider_credit_cap,
+                bounded=organization_max
+                + (self._policy.jobs_limit if _HIRING in field_keys else 0),
+                enforce_budget=self._enforce_budget,
+            )
             if (
                 existing.request.project_run_id != project_run_id
-                or existing.request.provider_credit_cap != provider_credit_cap
+                or existing.request.provider_credit_cap != authorized_cap
                 or existing.request.expected_value_credits != expected
                 or {
                     str(item.field_key): item.expected_value_credits
@@ -1667,12 +1734,6 @@ class SumbleAccountGapStarter:
             terminal = self._coordinator._terminal_result(existing, replay=True)
             if terminal is not None:
                 return terminal
-            organization_body, organization_max = organization_request(
-                existing.request.primary_domain,
-                field_keys=_organization_request_fields(
-                    [str(item.field_key) for item in existing.request.fields]
-                ),
-            )
             return await self._coordinator.start(
                 SumbleAccountGapPreflight(
                     request=existing.request,

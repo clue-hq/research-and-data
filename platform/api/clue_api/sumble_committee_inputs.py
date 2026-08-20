@@ -414,6 +414,10 @@ class DurableSumbleCommitteeInputResolver:
             preflight=compile_sumble_committee_preflight(
                 request,
                 cents_per_credit=Decimal(self._settings.sumble_cents_per_credit),
+                # FI pilot budget-controls, same switch the coordinator and the durable
+                # reservation already read: with it off the wire plan's cost comparisons are
+                # recorded rather than refused (founder ruling 2026-08-20).
+                enforce_budget=self._settings.budget_controls_enabled,
             ),
             authorization=authorization,
             committee_plan=plan,
