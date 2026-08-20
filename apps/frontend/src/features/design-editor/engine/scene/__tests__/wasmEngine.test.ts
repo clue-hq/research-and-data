@@ -9,10 +9,10 @@ import { applySceneDelta, type SceneDelta } from "../wasmEngine";
  * Ported at AD1.5 — the PURE cases only.
  *
  * The upstream file's second block (`describe.skipIf(!wasmArtifactPresent)`,
- * "WasmEngine (real artifact)", 8 cases) needs the built wasm artifact and the
- * `src/test/wasmModule.ts` disk loader, neither of which exists in this slice
- * yet. Those cases port at AD1.6 alongside the node loader; nothing here is
- * weakened to make them pass in the meantime.
+ * "WasmEngine (real artifact)", 8 cases) needed the built wasm artifact and the
+ * `src/test/wasmModule.ts` disk loader, neither of which existed in the slice
+ * at AD1.5. Both landed at AD1.6: those 8 cases now live verbatim in the
+ * sibling `wasmEngine.artifact.test.ts`, gated on `wasmArtifactPresent`.
  */
 
 const baseScene = minimalSceneFixture as unknown as Scene;
