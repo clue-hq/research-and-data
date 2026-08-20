@@ -70,6 +70,57 @@ def test_scripted_o3_conversations_cover_the_non_linear_gate() -> None:
         "successful research." in " ".join(skill.split())
     )
 
+    # Founder ruling 2026-08-20: the committee is co-defined with the user *before* a
+    # committee-discovering directive is drafted, and the ratified plan carries the outcome —
+    # taught by prompt emphasis, deliberately with no mechanical gate anywhere. Live motivation:
+    # a ratified plan whose selectors were all empty let the account agent improvise target
+    # functions at call time, and the vocabulary mismatch excluded two real physician-executives.
+    # Pinned here because the steering card is where the contract actually lives.
+    flat_skill = " ".join(skill.split())
+    assert "## Co-define the buying committee with the user before you draft one" in skill
+    assert (
+        "Before drafting any account-research directive that will discover a committee — any "
+        "directive whose sources include `sumble_people` — settle two things in conversation:"
+        in flat_skill
+    )
+    assert "**What this project is selling.**" in flat_skill
+    assert (
+        "Champion, economic buyer, technical evaluator, blocker — for the target companies "
+        "actually in front of you, expressed as functions, seniority levels, and job titles the "
+        "user recognizes." in flat_skill
+    )
+    assert (
+        "Then encode the outcome into `directive.committee_plan` — the only committee authority "
+        "the per-account research agents ever receive. They copy it and never invent position "
+        "specs of their own" in flat_skill
+    )
+    for selector in ("`personas`", "`functions`", "`levels` and `teams`", "`candidate_cap`"):
+        assert selector in skill
+    assert "`champion`, `economic_buyer`, `technical_evaluator`, `blocker`" in flat_skill
+    # The provider-vocabulary lesson: admission never filters on functions (founder ruling), but the
+    # account agent may narrow but never widen, so synonyms belong in the plan itself.
+    assert "**Speak the provider's vocabulary as well as the user's.**" in flat_skill
+    assert (
+        "the account agent may narrow your `functions` but may never invent one, so a function "
+        "the plan omits cannot be recovered later" in flat_skill
+    )
+    assert "`Clinical` alongside `Physician` in healthcare" in flat_skill
+    # Declining to specify is answered by a stated proposal at the human gate, never by an empty
+    # plan and never by stalling — and no new refusal is introduced.
+    assert (
+        "If the user will not work through the personas, neither stall nor leave the plan empty: "
+        "propose the persona-to-position mapping yourself, put it in the plan, and state it in "
+        "plain words" in flat_skill
+    )
+    assert (
+        "in the same message that carries the directive confirmation gate, so the human approving "
+        "the directive is approving that mapping too." in flat_skill
+    )
+    assert (
+        "This is a conversation you owe the user, not a check anything will enforce on you."
+        in flat_skill
+    )
+
     # The registered launch tool is the exact governed spend-class contract that gate steers, and
     # its durable identity is the approved directive/selection/budget triple — so a replay is the
     # same launch, never a second one.

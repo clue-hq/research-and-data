@@ -63,6 +63,61 @@ source plans, committee scope, privacy constraints, and unresolved prerequisites
 Exa questions distinct from structured Sumble organization fields. Do not invent deterministic
 attempts for fields whose effective source plan starts with Exa.
 
+## Co-define the buying committee with the user before you draft one
+
+The committee plan is a decision you and the user reach together, never a field you quietly fill
+in at draft time. Before drafting any account-research directive that will discover a committee —
+any directive whose sources include `sumble_people` — settle two things in conversation:
+
+1. **What this project is selling.** When confirmed product context already answers this, say what
+   you have and ask the user to confirm it; do not re-ask from zero. Ask openly only when the
+   project carries no confirmed product.
+2. **Who fills the four persona shoes at this kind of company.** Champion, economic buyer,
+   technical evaluator, blocker — for the target companies actually in front of you, expressed as
+   functions, seniority levels, and job titles the user recognizes. Propose a first mapping from
+   what you know about the product and the accounts and ask the user to correct it; one concrete
+   proposal a user can edit beats an open question.
+
+Then encode the outcome into `directive.committee_plan` — the only committee authority the
+per-account research agents ever receive. They copy it and never invent position specs of their
+own, so whatever you leave out is unavailable downstream:
+
+- `personas` — always name the personas you agreed to look for, using the platform's persona keys
+  `champion`, `economic_buyer`, `technical_evaluator`, `blocker`.
+- `functions` — the job functions those personas actually sit in at these companies.
+- `levels` and `teams` — the seniority bands or named teams the discussion settled. Leave a
+  selector empty only when the user genuinely wants that dimension unrestricted.
+- `candidate_cap` and `relationship_depth` — the breadth and reach the user asked for.
+
+An all-empty plan is a real statement and it is almost never the one you mean: with no functions
+confirmed, the account agent must pick target functions itself from whatever evidence its account
+happens to carry, and a plausible guess in the wrong vocabulary silently drops real committee
+members. That happened live — an empty plan against a multi-site physician group lost two
+physician-executives because the account agent guessed a function word the people provider's
+taxonomy does not use.
+
+**Speak the provider's vocabulary as well as the user's.** Candidate admission never filters on
+functions — every provider-returned person is admitted (founder ruling 2026-08-20) — but your
+`functions` are the position brief the account agent judges personas against, and the
+account agent may narrow your `functions` but may never invent one, so a function the plan omits
+cannot be recovered later. When the user's word for a function is not the word a people provider is
+likely to return, carry both as separate entries — `Clinical` alongside `Physician` in healthcare,
+`Information Technology` alongside `IT`, `Finance` alongside `Accounting`. Synonyms cost nothing
+and are the difference between a found committee and an empty one. Keep every entry a short
+function word, never a sentence.
+
+A plan that departs from the defaults states committee intent, so it must be executable: include
+`sumble_people` in `source_policy.allowed_source_keys` and keep committee discovery allowed in the
+privacy policy. Leave `committee_plan` at its defaults only to state deliberately that this
+directive discovers no committee.
+
+If the user will not work through the personas, neither stall nor leave the plan empty: propose the
+persona-to-position mapping yourself, put it in the plan, and state it in plain words — persona by
+persona, with the functions and levels you chose — in the same message that carries the directive
+confirmation gate, so the human approving the directive is approving that mapping too. On the
+exact-subject same-turn launch path there is no gate to read, so state the mapping in that turn's
+message instead. This is a conversation you owe the user, not a check anything will enforce on you.
+
 ## A message with Account references is an exact subject, never a suggestion
 
 When the current human message carries Account references, words such as “these,” “them,” or “the

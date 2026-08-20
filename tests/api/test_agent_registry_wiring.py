@@ -75,8 +75,11 @@ def test_registry_resolves_exact_reviewed_profiles_and_stable_manifests(
         # account-deep-steering at v7: a normal full-profile request now compiles deterministically
         # to the fixed 21-field account profile instead of the v6 skill's three qualitative fields.
         # v38 (Slice B browser-gate repair) re-pins the draft tool at @5 (omittable
-        # `directive.field_keys`) and account-deep-steering at v8.
-        AgentRole.HEAD_OF_ABM: ("6ce7b34f805ebbbfd3fab4ac74e59edc413815872340b8714d5fdeeacb262025"),
+        # `directive.field_keys`) and account-deep-steering at v8, and re-pins the amended v8 sha
+        # after the committee co-definition section (founder ruling 2026-08-20: the deepagent
+        # settles product and the four persona positions with the user before drafting a
+        # committee-discovering directive, and the plan carries the outcome).
+        AgentRole.HEAD_OF_ABM: ("95cc75ac25cdd64c528898c731fabb50899820d36c6c51fa15bd7e0223303764"),
         AgentRole.RESEARCH: "23cff2335bb82e0549ee0c830316968971146e8b90c8d2090447ee0ed92eed6f",
         AgentRole.CONTENT_DRAFTER: (
             "8985c13ead086350d952f76e6d3c0ed3f4162cc92de290f8dd7edd7fcab44cbf"
