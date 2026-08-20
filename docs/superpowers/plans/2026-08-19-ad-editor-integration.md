@@ -1,6 +1,12 @@
 # Ad-design (scene) editor integration — plan of action
 
-**Status: DRAFT — awaiting founder review of the decision register (§5) before any phase starts.**
+**Status 2026-08-20: SUPERSEDED for execution.** All twelve §5 decisions are closed and the
+contract is frozen; the task-level execution plan is
+**`2026-08-20-ad-editor-integration-execution-plan.md`** — implementers work from that document.
+This one remains the study record (§1 findings, §2 gap register, §3 laws, §5 decision register,
+§6 traps, §7 out-of-scope) and is no longer the source of phase scope.
+
+**Original status line: DRAFT — awaiting founder review of the decision register (§5) before any phase starts.**
 Date: 2026-08-19. Branch context: `integration/frontend-design-part-iv-v2` (W0–W5 website-editor
 integration COMPLETE; chat-flow integration COMPLETE; genweb slices 0–2 landed).
 
