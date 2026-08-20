@@ -12,7 +12,11 @@ import type {
   ReactNode,
 } from "react";
 import type { ThemeColorOption } from "@/features/design-editor/adapter/theme-options";
-import type { InspectorBackgroundFill, InspectorFillType } from "../hooks/use-inspector-controller";
+import {
+  commitInspectorNumber,
+  type InspectorBackgroundFill,
+  type InspectorFillType,
+} from "../hooks/use-inspector-controller";
 import {
   INSPECTOR_THEME_COLORS,
   resolveInspectorThemeColors,
@@ -631,6 +635,15 @@ function clamp(value: number, min: number, max: number) {
 
 function hexToHsv(hex: string): HsvColor {
   const normalized = hex.replace("#", "").padEnd(6, "0").slice(0, 6);
+  // A value that is not a hex — the `none` sentinel, or a brand token's
+  // `$name`, which A16 put on swatches users open often — parses to NaN, and
+  // the picker then rendered `NaN%` into the plane's thumb and the hue slider.
+  // Nothing chose that; a colour the picker cannot place starts at black,
+  // which is defined, and the first drag replaces it. (Pre-existing: the
+  // stroke row has hydrated token names since AD2.4.)
+  if (!/^[0-9a-fA-F]{6}$/.test(normalized)) {
+    return { h: 0, s: 0, v: 0 };
+  }
   const red = Number.parseInt(normalized.slice(0, 2), 16) / 255;
   const green = Number.parseInt(normalized.slice(2, 4), 16) / 255;
   const blue = Number.parseInt(normalized.slice(4, 6), 16) / 255;
@@ -936,6 +949,37 @@ export function BackgroundFillControl({
   onSolidColorChange: (color: string) => void;
   solidColor: string;
 }) {
+  // Ruling A7 (AD4.0 step 2): the angle and the stop positions COMMIT ON
+  // BLUR/ENTER, not per keystroke — the same model, and the same defect, that
+  // step 1 settled for the Custom W/H boxes. Typing `137` into a cleared angle
+  // box used to persist four document versions and four undo steps, the first
+  // of them a spurious `angle: 0`.
+  //
+  // ONE draft is enough for both fields: only one input can hold focus, and
+  // `onCommit` fires on blur before the next field can change. The draft is
+  // what the user sees while typing; only the commit reaches `onFillChange`.
+  // Markup, classes, labels and layout are untouched — this is the same
+  // data/behaviour-prop binding `InspectorInput` already ships for W/H.
+  const [draft, setDraft] = useState<{ field: string; value: string } | null>(null);
+  const draftValue = (field: string, committed: number) =>
+    draft?.field === field ? draft.value : String(committed);
+  const commitDraft = (
+    field: string,
+    max: number,
+    write: (value: number) => void,
+  ) => {
+    const typed = draft?.field === field ? draft.value : null;
+    setDraft(null);
+    if (typed === null) {
+      return;
+    }
+    // `null` is mid-edit text ("", "-", "1e"): nothing to commit, and the field
+    // falls back to what the document says rather than to a guessed 0.
+    const value = commitInspectorNumber(typed, max);
+    if (value !== null) {
+      write(value);
+    }
+  };
   const updateStop = (index: number, update: Partial<InspectorBackgroundFill["stops"][number]>) => {
     onFillChange({
       ...fill,
@@ -991,9 +1035,12 @@ export function BackgroundFillControl({
               <span>Angle</span>
               <InspectorInput
                 ariaLabel="Gradient angle"
-                onChange={(value) => onFillChange({ ...fill, angle: clamp(Number(value) || 0, 0, 360) })}
+                onChange={(value) => setDraft({ field: "angle", value })}
+                onCommit={() =>
+                  commitDraft("angle", 360, (angle) => onFillChange({ ...fill, angle }))
+                }
                 suffix="°"
-                value={String(fill.angle)}
+                value={draftValue("angle", fill.angle)}
               />
             </label>
           ) : null}
@@ -1009,9 +1056,14 @@ export function BackgroundFillControl({
                 <InspectorInput
                   ariaLabel={`Gradient stop ${index + 1} position`}
                   className={styles.backgroundGradientPosition}
-                  onChange={(value) => updateStop(index, { position: clamp(Number(value) || 0, 0, 100) })}
+                  onChange={(value) => setDraft({ field: `stop-${index}`, value })}
+                  onCommit={() =>
+                    commitDraft(`stop-${index}`, 100, (position) =>
+                      updateStop(index, { position }),
+                    )
+                  }
                   suffix="%"
-                  value={String(stop.position)}
+                  value={draftValue(`stop-${index}`, stop.position)}
                 />
                 <button
                   aria-label={`Remove gradient stop ${index + 1}`}

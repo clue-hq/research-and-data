@@ -99,13 +99,22 @@ import {
  * not the root frame never legitimately carries `selectionType: "canvas"` and
  * is refused here.
  *
- * The two adapters still map DISJOINT property sets, so trying the canvas one
- * first is deterministic — but a canvas-schema event is not always a canvas
- * ROW: §1.0's lock lives in the header of every schema, so with the root frame
- * selected a `locked` event arrives stamped `"canvas"` and belongs to the NODE
- * path. An unmapped canvas event therefore FALLS THROUGH rather than being
- * swallowed; with an empty selection the node path drops it on its own
- * `typeof … !== "string"` check, exactly as before.
+ * A canvas event that this gate accepts is therefore ANSWERED HERE and nowhere
+ * else: mapped or refused, the listener returns. It briefly fell through to
+ * the node path instead, on the theory that §1.0's lock could arrive stamped
+ * `"canvas"` — it cannot. `InspectorHeader` renders the lock button only
+ * inside `elementActions` (`inspector-primitives.tsx`), and
+ * `image-inspector.tsx` passes `elementActions={selection !== "canvas" && …}`,
+ * so NEITHER entry state renders a lock at all. The fall-through protected
+ * nothing and cost something real: a refused canvas event retried against
+ * `sceneChangeToOperation` with the ROOT FRAME as its node, where
+ * `strokeColor`, `strokeWidth`, `position.x/y` and `rotation` are mapped with
+ * no kind guard — so a future canvas row that happened to reuse one of those
+ * names would have written the artboard after the canvas adapter deliberately
+ * refused it. (§1.0's lock row consequently has NO surface on the canvas
+ * schema: the artboard cannot be locked or unlocked from the panel. That is
+ * the dummy's own composition and is recorded as a founder-facing gap, not
+ * worked around here.)
  *
  * What keeps the two LANES apart here is not the artifact id (the web session
  * is handed the same `activeArtifactId`) but the same thing that keeps the
@@ -265,7 +274,8 @@ export function useSceneInspectorWrites({
         primaryNodeId: primaryNodeIdRef.current,
         scene: sceneRef.current,
       });
-      if (canvas && controlsRef.current.current) {
+      if (canvas) {
+        if (!controlsRef.current.current) return;
         const canvasOperation = sceneCanvasChangeToOperation(
           {
             property: detail.property,
@@ -277,15 +287,9 @@ export function useSceneInspectorWrites({
         );
         // The same null contract: an unmapped property or an unparseable value
         // produces no operation, and no operation is no write.
-        if (canvasOperation) {
-          applyOpsRef.current([canvasOperation], `inspector: ${detail.property}`);
-          return;
-        }
-        // FALL THROUGH deliberately (not `return`): a canvas-schema event is
-        // not always a canvas ROW. §1.0's lock sits in every schema's header,
-        // so with the artboard selected a `locked` event arrives stamped
-        // `"canvas"` and is the NODE path's. With an empty selection there is
-        // no node and the check below drops it, exactly as before.
+        if (!canvasOperation) return;
+        applyOpsRef.current([canvasOperation], `inspector: ${detail.property}`);
+        return;
       }
 
       // ── AD3.1/AD3.2: the node-addressed rows, unchanged ────────────────

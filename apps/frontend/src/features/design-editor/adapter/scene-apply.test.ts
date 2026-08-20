@@ -838,12 +838,18 @@ it("§1.1 null contract: the canvas function maps the SIZE and BACKGROUND rows o
 // what the fill-type select and the gradient editor commit).
 
 /** The harvested scene with the ROOT FRAME's fills replaced — one field, the
- * one these rows read and write. */
+ * one these rows read and write.
+ *
+ * The fills are DEEP-copied: callers hand it paints lifted off other harvested
+ * nodes (`adRect().fills`), and a shallow copy would alias the frozen
+ * fixture's own objects — `rootRadialGradient` below edits the paint it is
+ * given, which would otherwise rewrite `HARVESTED_AD_PAGE` for every later
+ * test in the file. */
 function withRootFills(fills: Node["fills"]): Scene {
   const scene = clone(SCENE);
   const root = scene.nodes[AD_ROOT_FRAME_ID];
   assert.ok(root, "fixture root frame missing");
-  root.fills = fills;
+  root.fills = JSON.parse(JSON.stringify(fills)) as Node["fills"];
   return scene;
 }
 

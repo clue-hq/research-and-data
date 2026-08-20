@@ -7,6 +7,7 @@ import {
 import {
   AD_PAGE_ID,
   HARVESTED_AD_PAGE,
+  adAutoLayout,
   adFrame,
 } from "../adapter/__fixtures__/scene-nodes";
 import type { Scene } from "../engine/scene/contracts";
@@ -96,32 +97,68 @@ it("§1.1: both entry states write a SIZE row and a BACKGROUND row alike", () =>
   }
 });
 
-it("§1.0: a canvas-stamped LOCK event is a NODE row — which is why an unmapped canvas event falls through", () => {
-  // The header's lock toggle is rendered for every schema INCLUDING the canvas
-  // one (`image-inspector.tsx` passes `onLockToggle` unless the schema is a
-  // static dummy), and its controller stamps `selectionType: "canvas"`. So
-  // with the artboard selected the gate accepts the event — it does not look
-  // at the property — the canvas adapter maps nothing (a Page has no lock),
-  // and the listener must fall through to the node path, which DOES map it.
-  // Returning instead would silently kill the artboard's lock toggle.
+it("§1.1: a canvas event this gate accepts is ANSWERED here — a refusal is not retried as a node row", () => {
+  // The listener returns whether the canvas adapter maps the event or refuses
+  // it. It briefly fell through to the node path on the theory that §1.0's
+  // lock could arrive stamped "canvas"; it cannot — `InspectorHeader` renders
+  // the lock only inside `elementActions`, and `image-inspector.tsx` passes
+  // `elementActions={selection !== "canvas" && …}`, so no lock button exists in
+  // either entry state (pinned by the source guard in `scene-hydrate.test.ts`).
+  //
+  // The fall-through was not merely useless: the node adapter maps
+  // `strokeColor` / `strokeWidth` / `position.*` / `rotation` for EVERY kind,
+  // so a refused canvas event retried there would have written the ROOT FRAME
+  // — the artboard — after the canvas adapter deliberately said no. This pins
+  // both halves: the canvas adapter refuses these, and the node adapter would
+  // NOT have.
   const target = canvasWriteTarget(event(AD_ROOT_FRAME_ID), session(AD_ROOT_FRAME_ID));
   assert.ok(target, "the gate accepts it");
-  assert.equal(
-    sceneCanvasChangeToOperation(
-      { property: "locked", selectionId: target.selectionId, value: true },
-      target.scene,
-      target.pageId,
-    ),
-    null,
-    "no canvas operation",
-  );
-  assert.equal(
+  const canvasRefuses = ([property, value]: readonly [string, unknown]) =>
+    assert.equal(
+      sceneCanvasChangeToOperation(
+        { property, selectionId: target.selectionId, value },
+        target.scene,
+        target.pageId,
+      ),
+      null,
+      `canvas: ${property}`,
+    );
+  const nodeWouldWrite = ([property, value]: readonly [string, unknown]) =>
+    assert.ok(
+      sceneChangeToOperation(
+        { property, selectionId: AD_ROOT_FRAME_ID, value },
+        adFrame(),
+        SCENE,
+      ),
+      `node: ${property}`,
+    );
+  for (const row of [
+    ["locked", true],
+    ["strokeColor", "#FF00AA"],
+    ["position.x", "40"],
+    ["rotation", "12"],
+  ] as const) {
+    canvasRefuses(row);
+    // What the retry WOULD have done, and why returning is the fix: each of
+    // these maps on the root frame node, with no kind guard between them and
+    // the artboard.
+    nodeWouldWrite(row);
+  }
+  // `strokeWidth` is the one that happens to refuse on THIS artboard — not
+  // because the row is guarded, but because the harvested frame carries no
+  // stroke to keep the colour of (AD3.1's own refusal). Give it one and it
+  // writes too, which is the point: nothing about the node path knows the
+  // event came from the canvas schema.
+  canvasRefuses(["strokeWidth", "4"]);
+  const stroked = clone(SCENE);
+  stroked.nodes[AD_ROOT_FRAME_ID].strokes = [...adAutoLayout().strokes];
+  assert.ok(
     sceneChangeToOperation(
-      { property: "locked", selectionId: AD_ROOT_FRAME_ID, value: true },
-      adFrame(),
-      SCENE,
-    )?.kind,
-    "update_node",
+      { property: "strokeWidth", selectionId: AD_ROOT_FRAME_ID, value: "4" },
+      stroked.nodes[AD_ROOT_FRAME_ID],
+      stroked,
+    ),
+    "node: strokeWidth",
   );
 });
 

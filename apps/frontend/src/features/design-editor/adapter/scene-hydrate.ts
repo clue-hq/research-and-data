@@ -377,28 +377,26 @@ function solidFill(hex: string): InspectorBackgroundFill {
 const NONE_FILL: InspectorBackgroundFill = solidFill("#000000");
 
 interface PaintState {
-  /** The hex swatch, when the paint has one. */
-  color?: string;
   fill: InspectorBackgroundFill;
   /**
-   * Ruling A15.1 (2026-08-21): what a SINGLE swatch must display for this
-   * paint — always a fact the document carries, never a fixture.
+   * Rulings A15.1 / A16 (2026-08-21): what a SINGLE swatch must display for
+   * this paint — always a fact the document carries, never a fixture.
    *
-   * `color` is stated only for a paint that IS a solid hex, which left the
-   * Background swatch showing the shared `DEFAULT_STATE` seed (`#00F59B`)
-   * beside a gradient. Browser-proven defect: with a radial gradient on the
-   * frame, picking "Solid" showed the select saying "Solid", the swatch saying
-   * a colour from two edits earlier, and the artboard rendering the gradient —
-   * three answers at once. A gradient's FIRST STOP is the truthful answer (and
-   * the exact inverse of `solidFill` below, which already seeds a gradient's
-   * stops from the solid colour so a mode switch "starts from what is on
-   * screen"); a token paint states its `$name`, exactly as the stroke row
-   * already does.
+   * There used to be a `color` field stated only for a paint that IS a solid
+   * hex, which left every swatch beside a gradient or a token showing the
+   * shared `DEFAULT_STATE` seed (`#00F59B`). Browser-proven: with a radial
+   * gradient on the frame, picking "Solid" showed the select saying "Solid",
+   * the swatch saying a colour from two edits earlier, and the artboard
+   * rendering the gradient — three answers at once. A gradient's FIRST STOP is
+   * the truthful answer (and the exact inverse of `solidFill` below, which
+   * already seeds a gradient's stops from the solid colour so a mode switch
+   * "starts from what is on screen"); a token paint states its `$name`, which
+   * is what the stroke row already did.
    *
-   * Only the two §1.1/§1.6 BACKGROUND consumers read this. `textColor` and
-   * `strokeColor` keep reading `color`/`token`: the text swatch's write is
-   * gradient-GUARDED (AD3.1), so showing a colour it would then refuse to edit
-   * is a different question, and not this ruling's.
+   * A16 pointed every single-swatch row here — background, text and stroke —
+   * so `color` had no readers left and is gone. `token` stays: it feeds the
+   * separate `tokenTextColor`/`tokenBackgroundColor` fields, which are a
+   * different question from what the swatch displays.
    */
   swatch: string;
   /** The token NAME, when the paint is token-bound. */
@@ -409,12 +407,12 @@ interface PaintState {
  * stop positions are the engine's 0–1 as the control's 0–100 percent. */
 function paintState(paint: Paint | undefined): PaintState {
   if (!paint) {
-    return { color: COLOR_NONE, fill: NONE_FILL, swatch: COLOR_NONE };
+    return { fill: NONE_FILL, swatch: COLOR_NONE };
   }
   switch (paint.kind) {
     case "solid": {
       const hex = colorText(paint.color);
-      return { color: hex, fill: solidFill(hex), swatch: hex };
+      return { fill: solidFill(hex), swatch: hex };
     }
     case "token":
       return { fill: NONE_FILL, swatch: paint.token, token: paint.token };

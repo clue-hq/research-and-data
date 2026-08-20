@@ -38,6 +38,31 @@ export interface InspectorBackgroundFill {
   type: InspectorFillType;
 }
 
+/**
+ * Ruling A7, applied to the gradient editor's numeric fields (AD4.0 step 2):
+ * what one of them commits on blur/Enter — the clamped number, or `null` for
+ * text that states no number at all.
+ *
+ * Those fields used to write per KEYSTROKE: clearing the angle box and typing
+ * `137` persisted four document versions and four undo steps, one of them a
+ * spurious `angle: 0` the user never intended (the old inline
+ * `clamp(Number(value) || 0, …)` turned "" and "abc" into 0). `null` is the
+ * honest answer for mid-edit text — "", "-", "1e" — and commits nothing, so
+ * the field falls back to the value the document has instead of inventing one.
+ * The clamp itself is unchanged: it is the dummy's own range for that field.
+ */
+export function commitInspectorNumber(raw: string, max: number): number | null {
+  const trimmed = raw.trim();
+  if (trimmed === "") {
+    return null;
+  }
+  const parsed = Number(trimmed);
+  if (!Number.isFinite(parsed)) {
+    return null;
+  }
+  return Math.min(max, Math.max(0, parsed));
+}
+
 export interface InspectorPresentationState {
   backgroundColor: string;
   backgroundFill: InspectorBackgroundFill;

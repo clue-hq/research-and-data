@@ -19,6 +19,7 @@ import {
 } from "./__fixtures__/scene-nodes";
 import type { InspectorBackgroundFill } from "@/features/chat-shell/hooks/use-inspector-controller";
 import {
+  COLOR_NONE,
   CUSTOM_SIZE_PRESET,
   SIZE_PRESETS,
   backgroundFillCommits,
@@ -700,25 +701,53 @@ it("A15.2: a stop or angle edit is ONE commit, verbatim — it is not a mode swi
   ]);
 });
 
-it("A15.2: a stopless gradient → SOLID falls back to the swatch, inventing nothing", () => {
+it("A15.2: a stopless gradient → SOLID commits the swatch, which for that paint is `none`", () => {
   // Unreachable from the control (2–6 stops) but storable, so the rule is
   // total: with no stop to read, the only other colour on screen is the
-  // swatch's own.
+  // swatch's own — and `paintState` states `none` for a stopless gradient, so
+  // `none` is the ONLY value this fallback can be handed. (The first version
+  // of this test passed a hex here, which proved the `??` operator against a
+  // state hydration cannot produce.) The commit is then refused by
+  // `normalizeHex` and nothing is written — an inert control, never a guess.
   const stopless = { ...GRADIENT, stops: [] };
+  assert.equal(
+    hydrateSceneCanvasState(withRootFills([stoplessGradientFill()]), AD_PAGE_ID)
+      .backgroundColor,
+    COLOR_NONE,
+  );
   assert.deepEqual(
-    backgroundFillCommits(stopless, { ...stopless, type: "solid" }, "#2E7D32"),
+    backgroundFillCommits(stopless, { ...stopless, type: "solid" }, COLOR_NONE),
     [
       { property: "backgroundFill", value: { ...stopless, type: "solid" } },
-      { property: "backgroundColor", value: "#2E7D32" },
+      { property: "backgroundColor", value: COLOR_NONE },
     ],
   );
 });
 
+/** The harvested gradient paint with its stops emptied — the stored shape the
+ * test above hydrates from, derived rather than hand-authored. */
+function stoplessGradientFill() {
+  const [fill] = adRect().fills;
+  const paint = fill.paint;
+  assert.equal(paint.kind, "linear_gradient");
+  return {
+    ...fill,
+    paint: { ...paint, stops: [] } as typeof paint,
+  };
+}
+
 /** The harvested scene with the ROOT FRAME's fills replaced — the one field
- * §1.1's Background row reads. */
+ * §1.1's Background row reads.
+ *
+ * The fills are DEEP-copied: callers hand it paints lifted off other harvested
+ * nodes (`adRect().fills`), and a shallow copy would alias the frozen fixture's
+ * own objects — a derived scene that then edits one paint would rewrite
+ * `HARVESTED_AD_PAGE` for every later test in the file. */
 function withRootFills(fills: Scene["nodes"][string]["fills"]): Scene {
   const scene = clone(SCENE);
-  scene.nodes[AD_ROOT_FRAME_ID].fills = fills;
+  scene.nodes[AD_ROOT_FRAME_ID].fills = JSON.parse(
+    JSON.stringify(fills),
+  ) as Scene["nodes"][string]["fills"];
   return scene;
 }
 
