@@ -114,7 +114,11 @@ export interface SceneSchemaSelection {
  * Background edits (founder ruling; the page-background property is NOT the
  * edit target). Null when the page is unknown or its children open on
  * something other than a frame, in which case the Background is the
- * ColorControl none state and its writes are no-ops. */
+ * ColorControl none state and its writes are no-ops.
+ *
+ * Also the AD4.0 WRITE half's answer to "which node do I write?"
+ * (`scene-apply.ts::backgroundTarget` calls this rather than restating it):
+ * the write must land on the very node the panel read. */
 export function rootFrameId(scene: Scene, pageId: PageId): NodeId | null {
   const page = scene.pages[pageId];
   if (!page) {

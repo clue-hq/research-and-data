@@ -492,5 +492,78 @@ it("§1.1: the canvas Background is the ROOT FRAME's fill, not the page backgrou
 it("§1.1: with no root frame the Background falls back to the none state", () => {
   const rootless = clone(SCENE);
   rootless.pages[AD_PAGE_ID].children = [];
-  assert.equal(hydrateSceneCanvasState(rootless, AD_PAGE_ID).backgroundColor, "none");
+  const state = hydrateSceneCanvasState(rootless, AD_PAGE_ID);
+  assert.equal(state.backgroundColor, "none");
+  // The honest empty state, whole: the fill control's own solid default, and
+  // no token claim. Its writes are no-ops (the AD4.0 null contract).
+  assert.deepEqual(state.backgroundFill, {
+    angle: 0,
+    stops: [
+      { color: "#000000", position: 0 },
+      { color: "#000000", position: 100 },
+    ],
+    type: "solid",
+  });
+  assert.equal(state.tokenBackgroundColor, undefined);
 });
+
+it("§1.1: a LINEAR gradient root frame hydrates its angle and its stops as percents", () => {
+  // The harvested 3-stop gradient from `rect_accent_bar` (angle 90, engine
+  // positions 0 / 0.5 / 1), moved onto the root frame — one field, a real
+  // paint. The harvest has no gradient-filled FRAME of its own.
+  assert.deepEqual(
+    hydrateSceneCanvasState(withRootFills([...adRect().fills]), AD_PAGE_ID)
+      .backgroundFill,
+    {
+      angle: 90,
+      stops: [
+        { color: "#533AFD", position: 0 },
+        { color: "#8B5CF6", position: 50 },
+        { color: "#EA2261", position: 100 },
+      ],
+      type: "linear-gradient",
+    },
+  );
+});
+
+it("§1.1: a RADIAL gradient root frame hydrates angle 0 — the engine stores none", () => {
+  // `Paint::RadialGradient { stops }` has no angle field, so the control's
+  // (always-present) angle reads 0. The same harvested stops, with the one
+  // field the two paint kinds differ by edited.
+  const scene = withRootFills([...adRect().fills]);
+  const paint = scene.nodes[AD_ROOT_FRAME_ID].fills[0].paint;
+  assert.equal(paint.kind, "linear_gradient");
+  scene.nodes[AD_ROOT_FRAME_ID].fills[0].paint = {
+    kind: "radial_gradient",
+    stops: paint.kind === "linear_gradient" ? paint.stops : [],
+  };
+  assert.deepEqual(hydrateSceneCanvasState(scene, AD_PAGE_ID).backgroundFill, {
+    angle: 0,
+    stops: [
+      { color: "#533AFD", position: 0 },
+      { color: "#8B5CF6", position: 50 },
+      { color: "#EA2261", position: 100 },
+    ],
+    type: "radial-gradient",
+  });
+});
+
+it("§1.1: a TOKEN-filled root frame hydrates its token name, and states no hex", () => {
+  // The harvested `$text.inverse` token paint on the root frame. The token
+  // name is the fact; a hex would be invented, so `backgroundColor` is left
+  // unstated and the caller's default stands.
+  const state = hydrateSceneCanvasState(
+    withRootFills([...adTokenText().fills]),
+    AD_PAGE_ID,
+  );
+  assert.equal(state.tokenBackgroundColor, "$text.inverse");
+  assert.equal(state.backgroundColor, undefined);
+});
+
+/** The harvested scene with the ROOT FRAME's fills replaced — the one field
+ * §1.1's Background row reads. */
+function withRootFills(fills: Scene["nodes"][string]["fills"]): Scene {
+  const scene = clone(SCENE);
+  scene.nodes[AD_ROOT_FRAME_ID].fills = fills;
+  return scene;
+}

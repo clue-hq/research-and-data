@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { it } from "node:test";
+import type { InspectorBackgroundFill } from "@/features/chat-shell/hooks/use-inspector-controller";
 import type {
   Node,
   NodePatch,
@@ -16,6 +17,7 @@ import {
   AD_PAGE_ID,
   HARVESTED_AD_PAGE,
   adAutoLayout,
+  adFrame,
   adPlainText,
   adRect,
   adTokenText,
@@ -33,7 +35,9 @@ import {
  *
  * AD4.0 step 1 adds §1.1's SIZE rows at the foot of the file. They exercise the
  * second exported function (`sceneCanvasChangeToOperation`), because those rows
- * target the PAGE and the canvas selection carries no node at all.
+ * target the PAGE and the canvas selection carries no node at all. Step 2 adds
+ * §1.1's BACKGROUND rows after them — the same function, but landing on the
+ * page's ROOT FRAME (the founder ruling), so they assert `update_node`.
  *
  * Every case runs against AD2.2's harvested bytes
  * (`__fixtures__/scene-nodes`, document `doc_ad22linkedinsquare00000000001`)
@@ -48,6 +52,8 @@ import {
  */
 
 const SCENE = HARVESTED_AD_PAGE;
+/** The page's root frame — the node §1.1's Background rows write. */
+const AD_ROOT_FRAME_ID = "frame_ad_root";
 
 function clone(scene: Scene): Scene {
   return JSON.parse(JSON.stringify(scene)) as Scene;
@@ -810,18 +816,433 @@ it("§1.1 null contract: a page the live scene does not carry writes nothing", (
   assert.equal(applyCanvas("customWidth", "1080", SCENE, "page_missing"), null);
 });
 
-it("§1.1 null contract: the canvas function maps only the SIZE rows today", () => {
-  // §1.1's Background rows are a later step of AD4.0 (they target the ROOT
-  // FRAME's fill, not the page), and every §1.2 row belongs to the node
-  // function. The header lock is a node row too — a page carries no lock.
-  for (const property of [
-    "backgroundColor",
-    "backgroundFill",
-    "locked",
-    "fontSize",
-    "position.x",
-    "notAProperty",
-  ]) {
+it("§1.1 null contract: the canvas function maps the SIZE and BACKGROUND rows only", () => {
+  // §1.1 has exactly two rows. Every §1.2 row belongs to the node function,
+  // and the header lock is a node row too — a page carries no lock.
+  for (const property of ["locked", "fontSize", "position.x", "notAProperty"]) {
     assert.equal(applyCanvas(property, "12"), null, property);
   }
 });
+
+// ══ §1.1 row 2 — the CANVAS Background (the ROOT FRAME's fills) ═════════════
+//
+// The founder ruling: the Background control edits the root frame's fill, NOT
+// the page's own `background` property. So these rows are raised by a
+// page-addressed event and land on a NODE — the asymmetry `scene-apply.ts`'s
+// header records. Two properties serve the one row: `backgroundColor` (the
+// solid swatch's hex) and `backgroundFill` (the whole fill object, which is
+// what the fill-type select and the gradient editor commit).
+
+/** The harvested scene with the ROOT FRAME's fills replaced — one field, the
+ * one these rows read and write. */
+function withRootFills(fills: Node["fills"]): Scene {
+  const scene = clone(SCENE);
+  const root = scene.nodes[AD_ROOT_FRAME_ID];
+  assert.ok(root, "fixture root frame missing");
+  root.fills = fills;
+  return scene;
+}
+
+/** The harvested LINEAR gradient (`rect_accent_bar`'s real 3-stop paint, angle
+ * 90) moved onto the root frame — never an invented paint. */
+function rootLinearGradient(): Scene {
+  return withRootFills([...adRect().fills]);
+}
+
+/** The same harvested gradient as a RADIAL one: the harvest has no radial
+ * paint (a real ad had no plausible one), so the one field the two kinds
+ * differ by is edited — `radial_gradient` carries no `angle`. */
+function rootRadialGradient(): Scene {
+  const scene = rootLinearGradient();
+  const paint = scene.nodes[AD_ROOT_FRAME_ID].fills[0].paint;
+  assert.equal(paint.kind, "linear_gradient");
+  scene.nodes[AD_ROOT_FRAME_ID].fills[0].paint = {
+    kind: "radial_gradient",
+    stops: paint.kind === "linear_gradient" ? paint.stops : [],
+  };
+  return scene;
+}
+
+/** The gradient above as the CONTROL states it — the exact object
+ * `hydrateSceneCanvasState` produces for it, so these tests drive the write
+ * with what the panel is actually holding. */
+function harvestedGradientState(scene: Scene): InspectorBackgroundFill {
+  const fill = hydrateSceneCanvasState(scene, AD_PAGE_ID).backgroundFill;
+  assert.ok(fill, "the canvas state always states a background fill");
+  return fill;
+}
+
+it("§1.1 Background: a hex writes ONE solid fill on the ROOT FRAME, reusing its paint id", () => {
+  // The PAGE is untouched — `background` stays the empty array the harvest
+  // carries — and the write names the frame, not the page.
+  assert.deepEqual(SCENE.pages[AD_PAGE_ID].background, []);
+  assert.deepEqual(
+    applyCanvas("backgroundColor", "#FF00AA"),
+    updateNode(AD_ROOT_FRAME_ID, {
+      fills: set([
+        {
+          id: "paint_root_ink",
+          paint: { color: { kind: "hex", value: "#ff00aa" }, kind: "solid" },
+        },
+      ]),
+    }),
+  );
+});
+
+it("§1.1 Background: a root frame with no fill mints the editor's own paint id", () => {
+  assert.deepEqual(
+    applyCanvas("backgroundColor", "#FF00AA", withRootFills([])),
+    updateNode(AD_ROOT_FRAME_ID, {
+      fills: set([
+        {
+          id: "paint_frame_ad_root_fill",
+          paint: { color: { kind: "hex", value: "#ff00aa" }, kind: "solid" },
+        },
+      ]),
+    }),
+  );
+});
+
+it("§1.6: a raw hex on a TOKEN-bound root frame detaches the brand binding", () => {
+  // The harvested `$text.inverse` token paint, moved onto the root frame. Same
+  // ratified trade the §1.2 Color row makes, on the canvas schema.
+  const scene = withRootFills([...adTokenText().fills]);
+  assert.deepEqual(
+    applyCanvas("backgroundColor", "#123ABC", scene),
+    updateNode(AD_ROOT_FRAME_ID, {
+      fills: set([
+        {
+          id: "paint_headline",
+          paint: { color: { kind: "hex", value: "#123abc" }, kind: "solid" },
+        },
+      ]),
+    }),
+  );
+});
+
+it("§1.1 Background: with NO root frame nothing is written (AD2.4's null contract)", () => {
+  const rootless = clone(SCENE);
+  rootless.pages[AD_PAGE_ID].children = [];
+  assert.equal(applyCanvas("backgroundColor", "#FF00AA", rootless), null);
+  assert.equal(
+    applyCanvas(
+      "backgroundFill",
+      harvestedGradientState(rootLinearGradient()),
+      rootless,
+    ),
+    null,
+  );
+});
+
+it("§4: a LOCKED root frame refuses both Background rows", () => {
+  // "Lock gates every write path". The size rows have no lock to honour (a
+  // Page carries none); these land on a node, which does.
+  const locked = clone(SCENE);
+  locked.nodes[AD_ROOT_FRAME_ID].locked = true;
+  assert.equal(applyCanvas("backgroundColor", "#FF00AA", locked), null);
+  const gradient = clone(rootLinearGradient());
+  gradient.nodes[AD_ROOT_FRAME_ID].locked = true;
+  assert.equal(
+    applyCanvas("backgroundFill", { ...harvestedGradientState(gradient), angle: 12 }, gradient),
+    null,
+  );
+});
+
+it("§1.1 Background: anything that is not a hex is refused rather than guessed black", () => {
+  for (const value of ["", "  ", "#FFF", "rebeccapurple", "00F59B"]) {
+    assert.equal(applyCanvas("backgroundColor", value), null, value);
+  }
+  assert.equal(applyCanvas("backgroundColor", 16711680), null);
+});
+
+it('§1.1 Background: the "none" sentinel is refused — this control cannot raise it', () => {
+  // `ColorControl` commits through `commitColor`, which fires `onColorChange`
+  // ONLY for /^#[0-9A-F]{6}$/i (`inspector-primitives.tsx`), and its `none`
+  // prop (a DISABLED swatch) is never passed by `BackgroundFillControl`. So
+  // there is no clear-the-fills branch to build: the sentinel cannot reach
+  // this seam, and an event carrying it is not from this control.
+  assert.equal(applyCanvas("backgroundColor", COLOR_NONE), null);
+});
+
+it("§1.6 guard: a MULTI-LAYER fill is not writable through either Background row", () => {
+  // The panel shows ONE fill and every write replaces the whole array, so a
+  // second layer would be destroyed by a control that never showed it — the
+  // upstream `isGradientGuarded` rationale, which holds here unchanged.
+  const scene = withRootFills([...adFrame().fills, ...adRect().fills]);
+  assert.equal(applyCanvas("backgroundColor", "#FF00AA", scene), null);
+  assert.equal(
+    applyCanvas("backgroundFill", { ...harvestedGradientState(scene), angle: 12 }, scene),
+    null,
+  );
+});
+
+it("§1.6 guard: a GRADIENT root frame IS writable through the swatch — the select made it explicit", () => {
+  // DELIBERATE DIVERGENCE from the §1.2 Color row's gradient guard, and the
+  // reason is the control: `textColor` is a bare swatch that cannot show a
+  // gradient at all, so a write there would clobber one the user never saw.
+  // The Background control has a FILL-TYPE SELECT above the swatch, and the
+  // swatch is only rendered while that select says "Solid"
+  // (`inspector-primitives.tsx` `BackgroundFillControl`) — so reaching this
+  // row means the user asked for a solid on purpose. Refusing would dead-end
+  // the gradient→solid transition, because the type select itself commits no
+  // colour (see the `type: "solid"` row below).
+  assert.deepEqual(
+    applyCanvas("backgroundColor", "#FF00AA", rootLinearGradient()),
+    updateNode(AD_ROOT_FRAME_ID, {
+      fills: set([
+        {
+          id: "paint_accent_bar",
+          paint: { color: { kind: "hex", value: "#ff00aa" }, kind: "solid" },
+        },
+      ]),
+    }),
+  );
+});
+
+it("§1.1 Background: a LINEAR gradient writes angle + the engine's 0–1 stop positions", () => {
+  assert.deepEqual(
+    applyCanvas("backgroundFill", {
+      angle: 90,
+      stops: [
+        { color: "#533AFD", position: 0 },
+        { color: "#8B5CF6", position: 25 },
+        { color: "#EA2261", position: 100 },
+      ],
+      type: "linear-gradient",
+    }),
+    updateNode(AD_ROOT_FRAME_ID, {
+      fills: set([
+        {
+          id: "paint_root_ink",
+          paint: {
+            angle: 90,
+            kind: "linear_gradient",
+            stops: [
+              { color: { kind: "hex", value: "#533afd" }, position: 0 },
+              { color: { kind: "hex", value: "#8b5cf6" }, position: 0.25 },
+              { color: { kind: "hex", value: "#ea2261" }, position: 1 },
+            ],
+          },
+        },
+      ]),
+    }),
+  );
+});
+
+it("§1.1 Background: a RADIAL gradient writes its stops and DROPS the angle (§5 loss)", () => {
+  // `Paint::RadialGradient { stops }` has no angle field (`contracts.ts`, and
+  // `scene.rs:1203-1206` upstream). §8 authorizes no engine change, so the
+  // angle the dummy's object always carries is dropped here — and the row
+  // below proves the drop cannot become a phantom write.
+  assert.deepEqual(
+    applyCanvas("backgroundFill", {
+      angle: 217,
+      stops: [
+        { color: "#533AFD", position: 0 },
+        { color: "#EA2261", position: 100 },
+      ],
+      type: "radial-gradient",
+    }),
+    updateNode(AD_ROOT_FRAME_ID, {
+      fills: set([
+        {
+          id: "paint_root_ink",
+          paint: {
+            kind: "radial_gradient",
+            stops: [
+              { color: { kind: "hex", value: "#533afd" }, position: 0 },
+              { color: { kind: "hex", value: "#ea2261" }, position: 1 },
+            ],
+          },
+        },
+      ]),
+    }),
+  );
+});
+
+it('§1.1 Background: the fill object\'s "solid" type carries no colour, so it writes nothing', () => {
+  // The object has `angle` and `stops` and no colour field: in solid mode the
+  // control renders `solidColor` — the SIBLING `backgroundColor` state — and
+  // its stops are inert (`scene-hydrate.ts` `solidFill` says so, and
+  // `backgroundFillCss` proves it). Writing `stops[0]` would commit a colour
+  // the panel is not showing. The colour arrives on `backgroundColor`, which
+  // is the row that turns the background solid.
+  assert.equal(
+    applyCanvas("backgroundFill", {
+      angle: 0,
+      stops: [
+        { color: "#533AFD", position: 0 },
+        { color: "#EA2261", position: 100 },
+      ],
+      type: "solid",
+    }),
+    null,
+  );
+});
+
+it("§1.1 Background: the gradient stop count is the dummy's own 2–6 ceiling", () => {
+  // The engine's floor is ONE stop (`dsl.rs` LUMD0239/LUMD0240) and it sets no
+  // maximum; the DUMMY is the stricter authority here — its Add button is
+  // `disabled` at 6 stops and every Remove is `disabled` at 2
+  // (`inspector-primitives.tsx` `BackgroundFillControl`), which is the plan's
+  // "2–6 stops". A list outside that range did not come from this control.
+  const stop = (position: number) => ({ color: "#533AFD", position });
+  const gradient = (count: number) => ({
+    angle: 90,
+    stops: Array.from({ length: count }, (_, index) => stop(index * 5)),
+    type: "linear-gradient" as const,
+  });
+  for (const count of [0, 1, 7, 12]) {
+    assert.equal(applyCanvas("backgroundFill", gradient(count)), null, `${count}`);
+  }
+  for (const count of [2, 3, 6]) {
+    assert.ok(applyCanvas("backgroundFill", gradient(count)), `${count}`);
+  }
+});
+
+it("§1.1 Background: ONE unmappable stop colour refuses the WHOLE write", () => {
+  // Including the shape a token-bound stop hydrates as: `colorText` states a
+  // token color as its `$name`, which is not a hex — so an angle drag on a
+  // brand-bound gradient refuses rather than silently detaching every stop
+  // (§1.6 licenses detaching on a raw COLOUR write, which this is not).
+  for (const bad of ["$text.inverse", "none", "#FFF", "", 16711680, null]) {
+    assert.equal(
+      applyCanvas("backgroundFill", {
+        angle: 90,
+        stops: [
+          { color: "#533AFD", position: 0 },
+          { color: bad, position: 100 },
+        ],
+        type: "linear-gradient",
+      }),
+      null,
+      String(bad),
+    );
+  }
+});
+
+it("§1.1 Background: a stop position outside 0–100% is refused, never clamped", () => {
+  // The renderer CLAMPS a stop into 0–1 (`lumen-skia/src/render.rs:1875`) —
+  // a silent substitution, which is exactly what the null contract forbids —
+  // and the control's own input clamps to 0–100 before it ever commits, so an
+  // out-of-range position did not come from this control.
+  for (const position of [-1, 101, Number.NaN, Number.POSITIVE_INFINITY, "50"]) {
+    assert.equal(
+      applyCanvas("backgroundFill", {
+        angle: 90,
+        stops: [
+          { color: "#533AFD", position: 0 },
+          { color: "#EA2261", position },
+        ],
+        type: "linear-gradient",
+      }),
+      null,
+      String(position),
+    );
+  }
+});
+
+it("§1.1 Background: a non-finite linear ANGLE is refused; a radial ignores the angle entirely", () => {
+  const linear = (angle: unknown) => ({
+    angle,
+    stops: [
+      { color: "#533AFD", position: 0 },
+      { color: "#EA2261", position: 100 },
+    ],
+    type: "linear-gradient",
+  });
+  for (const angle of [Number.NaN, Number.POSITIVE_INFINITY, "90", null]) {
+    assert.equal(applyCanvas("backgroundFill", linear(angle)), null, String(angle));
+  }
+  // A finite angle outside the control's 0–360 clamp is still WRITTEN: the
+  // engine stores `angle: f64` verbatim and rotation is modular, so nothing is
+  // substituted and nothing is guessed (unlike a clamped position).
+  assert.ok(applyCanvas("backgroundFill", linear(-45)), "-45");
+  assert.ok(
+    applyCanvas("backgroundFill", { ...linear(Number.NaN), type: "radial-gradient" }),
+    "radial ignores NaN",
+  );
+});
+
+it("§1.1 Background: a value that is not a fill object writes nothing", () => {
+  for (const value of [null, "#FF00AA", 42, [], { type: "conic-gradient" }, {}]) {
+    assert.equal(applyCanvas("backgroundFill", value), null, JSON.stringify(value));
+  }
+});
+
+it("§1.1 Background: a mapped paint identical to the one already stored is NOT a write", () => {
+  // The dummy's fill object ALWAYS carries an angle; `radial_gradient` cannot
+  // store one. Without this rule, dragging the angle control on a radial fill
+  // would persist a document version per drag tick whose paint is byte-for-
+  // byte what was already there.
+  const scene = rootRadialGradient();
+  const shown = harvestedGradientState(scene);
+  assert.equal(shown.type, "radial-gradient");
+  assert.equal(applyCanvas("backgroundFill", { ...shown, angle: 217 }, scene), null);
+  assert.equal(applyCanvas("backgroundFill", shown, scene), null);
+  // A real change to the same fill still writes.
+  assert.ok(
+    applyCanvas(
+      "backgroundFill",
+      { ...shown, stops: [...shown.stops.slice(0, -1), { color: "#FFFFFF", position: 100 }] },
+      scene,
+    ),
+    "a changed stop still writes",
+  );
+});
+
+it("§1.1 Background: re-committing the colour the frame already has is NOT a write", () => {
+  // `ColorControl` commits on blur whether or not the hex changed, and the
+  // comparison is on the CANONICAL paint — the harvested `#0E0B2E` and the
+  // control's upper-cased `#0E0B2E` are the same colour, not a document
+  // version.
+  assert.equal(applyCanvas("backgroundColor", "#0E0B2E"), null);
+  assert.equal(applyCanvas("backgroundColor", "#0e0b2e"), null);
+  assert.ok(applyCanvas("backgroundColor", "#0E0B2F"), "a different colour writes");
+});
+
+it("§1.1 Background: the linear round trip preserves the angle and every stop", () => {
+  // hydrate(apply(x)) === x, on the exact object the control holds.
+  const scene = clone(SCENE);
+  const shown: InspectorBackgroundFill = {
+    angle: 137,
+    stops: [
+      { color: "#533AFD", position: 0 },
+      { color: "#8B5CF6", position: 25 },
+      { color: "#EA2261", position: 100 },
+    ],
+    type: "linear-gradient",
+  };
+  assert.deepEqual(harvestedGradientState(rehydrateBackground(scene, shown)), shown);
+});
+
+it("§1.1 Background: the radial round trip loses EXACTLY the angle, and nothing else", () => {
+  // The recorded §5 loss, pinned: the angle reverts to 0 on the next reload
+  // (the engine has no field for it, and §8 authorizes no engine change), the
+  // stops and the type survive intact.
+  const shown: InspectorBackgroundFill = {
+    angle: 217,
+    stops: [
+      { color: "#533AFD", position: 0 },
+      { color: "#EA2261", position: 60 },
+    ],
+    type: "radial-gradient",
+  };
+  assert.deepEqual(harvestedGradientState(rehydrateBackground(clone(SCENE), shown)), {
+    ...shown,
+    angle: 0,
+  });
+});
+
+/** The scene as it stands AFTER the Background write the control's state asks
+ * for — the operation applied to the root frame by hand, because these tests
+ * hold no engine. */
+function rehydrateBackground(scene: Scene, fill: InspectorBackgroundFill): Scene {
+  const operation = applyCanvas("backgroundFill", fill, scene);
+  assert.ok(operation && operation.kind === "update_node", "the write is a node update");
+  const fills = operation.patch.fills;
+  assert.ok(fills.kind === "set", "the patch sets fills");
+  const written = clone(scene);
+  written.nodes[AD_ROOT_FRAME_ID].fills = fills.value;
+  return written;
+}
