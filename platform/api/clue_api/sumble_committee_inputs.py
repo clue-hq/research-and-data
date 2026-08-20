@@ -17,8 +17,11 @@ from clue_api.sumble_committee_acquisition import (
     compile_sumble_committee_preflight,
 )
 from clue_api.sumble_committee_preparation import (
+    COMMITTEE_PROVIDER_IDENTITY_ABSENT,
+    COMMITTEE_PROVIDER_ORGANIZATION_UNMATCHED,
     SumbleCommitteePreparationError,
     SumbleCommitteePreparationInputs,
+    SumbleCommitteeProviderIdentityUnavailable,
 )
 from clue_config import Settings
 from clue_core import (
@@ -297,9 +300,14 @@ class DurableSumbleCommitteeInputResolver:
                     and operation.response_artifact_key is not None
                 )
                 if not organization_candidates:
-                    raise SumbleCommitteePreparationError(
+                    # World fact, not a model mistake and not an authority breach: no Sumble
+                    # Organizations response for this account exists anywhere in durable state, so
+                    # the committee axis cannot be bought. Recoverable — see
+                    # ``SumbleCommitteeProviderIdentityUnavailable``.
+                    raise SumbleCommitteeProviderIdentityUnavailable(
+                        COMMITTEE_PROVIDER_IDENTITY_ABSENT,
                         "ready Sumble organization identity is absent from account and "
-                        "sealed-discovery enrichment"
+                        "sealed-discovery enrichment",
                     )
                 discovery_operation = max(
                     organization_candidates,
@@ -327,11 +335,19 @@ class DurableSumbleCommitteeInputResolver:
 
         payload = json.loads(response_bytes)
         if not isinstance(payload, dict):
+            # Truth species and deliberately NOT converted: the artifact is digest-verified, so a
+            # non-object payload means our own capture wrote something no Sumble response can be.
             raise SumbleCommitteePreparationError("Sumble organization snapshot is malformed")
         organization_id = matched_organization_id(payload)
         if organization_id is None:
-            raise SumbleCommitteePreparationError(
-                "Sumble organization snapshot has no exact matched organization"
+            # The live ``dc86340f`` failure. Sumble's organization index has no exact match for
+            # this account (a small Chicago physician group); every later committee call keys on
+            # that id, so the axis is unbuyable — for this account, permanently. Same species as
+            # the provider 402 that already folds terminally: the account settles with an honest
+            # committee gap instead of the job dying on a raw escape.
+            raise SumbleCommitteeProviderIdentityUnavailable(
+                COMMITTEE_PROVIDER_ORGANIZATION_UNMATCHED,
+                "Sumble organization snapshot has no exact matched organization",
             )
 
         plan = effective.committee_plan

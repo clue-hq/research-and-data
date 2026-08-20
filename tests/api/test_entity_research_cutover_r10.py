@@ -282,6 +282,8 @@ _ACCOUNT_MANUAL_REFUSALS = (
     "provider_terminally_unproductive",
     "provider_rejected",
     "provider_spend_unreconciled",
+    "committee_provider_organization_unmatched",
+    "committee_provider_identity_absent",
     "engine_authority_rejection",
     "reference_type_rejected",
     "evidence_page_rejected",

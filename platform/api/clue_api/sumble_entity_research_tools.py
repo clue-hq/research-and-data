@@ -45,7 +45,11 @@ from clue_api.sumble_committee_acquisition import (
     SumbleCommitteeOutcome,
     SumbleCommitteePreflight,
 )
-from clue_api.sumble_committee_preparation import SumbleCommitteePreparationInputs
+from clue_api.sumble_committee_preparation import (
+    COMMITTEE_PROVIDER_ORGANIZATION_UNMATCHED,
+    SumbleCommitteePreparationInputs,
+    SumbleCommitteeProviderIdentityUnavailable,
+)
 from clue_api.sumble_committee_source import SumbleCommitteeSource
 from clue_core import (
     AccountGapFieldResult,
@@ -132,6 +136,33 @@ def _hq_office_values(value: object) -> Mapping[str, str]:
         if isinstance(item, str) and item.strip():
             office[scope_key] = item.strip()
     return office
+
+
+def _committee_unavailable_detail(error: SumbleCommitteeProviderIdentityUnavailable) -> str:
+    """Tell the agent the axis is closed and name its one remaining move.
+
+    The manual's loop rule is the whole point: a refusal that only states a fact invites the agent
+    to re-send the identical call until the round budget dies (live jobs ``5d9dfe7b``/``16e846d6``
+    did exactly that on a different committee refusal). This one says the attempt is durable and
+    terminal, so the next call is coverage.
+    """
+
+    if error.code == COMMITTEE_PROVIDER_ORGANIZATION_UNMATCHED:
+        cause = (
+            "the committee provider's organization index has no exact match for this account, so "
+            "no committee call can be made for it"
+        )
+    else:
+        cause = (
+            "no committee-provider organization identity exists for this account in any durable "
+            "response, so no committee call can be made for it"
+        )
+    return (
+        f"{cause} ({error.detail}). Nothing was spent and nothing is pending. This attempt is "
+        "recorded and the committee axis is now terminal: the committee for this account is an "
+        "honest gap. Do not call discover_buying_committee again - call assess_account_coverage "
+        "and finalize."
+    )
 
 
 def _incomplete_scope_rejection(error: ValidationError) -> EntityResearchGovernedRejection:
@@ -1351,7 +1382,22 @@ class SumbleCommitteeSemanticResearchAction(EntityResearchProviderAction):
     ) -> Sequence[ExternalResearchProjectionDraft]:
         active = current_entity_research_tool_execution()
         semantic = DiscoverBuyingCommitteeInput.model_validate(active.call.arguments)
-        preflight, committee_plan = await self._resolve_inputs()
+        try:
+            preflight, committee_plan = await self._resolve_inputs()
+        except SumbleCommitteeProviderIdentityUnavailable as unavailable:
+            # World fact, not model input and not job integrity: the provider's organization index
+            # cannot serve this account, so no committee call is possible for it — ever, for the
+            # unmatched case. Record the zero-cost terminal attempt, then refuse recoverably. The
+            # live ``dc86340f`` shape (Greater Chicago, 2026-08-20 21:36:47) raised this raw and
+            # killed the drive with ``execution_failed``.
+            await self._record_committee_axis_unavailable(
+                request=request,
+                workspace_id=active.context.authorization.workspace_id,
+                error=unavailable,
+            )
+            raise EntityResearchGovernedRejection(
+                unavailable.code, _committee_unavailable_detail(unavailable)
+            ) from unavailable
         durable = preflight.request
         async with self._conn_factory() as conn:
             # The engine composes what it already knows (scope id, account, office, evidence) so
@@ -1562,6 +1608,56 @@ class SumbleCommitteeSemanticResearchAction(EntityResearchProviderAction):
             source_plan=(PEOPLE_SOURCE_KEY,),
             budget_cap_cents=budget_cap_cents,
             role_inference="agent_deferred",
+        )
+
+    async def _record_committee_axis_unavailable(
+        self,
+        *,
+        request: GovernedResearchToolRequest,
+        workspace_id: str,
+        error: SumbleCommitteeProviderIdentityUnavailable,
+    ) -> None:
+        """Record this exact committee call as a real, zero-cost, terminal attempt.
+
+        There is deliberately no provider operation here: the refusal happens before any
+        reservation, so nothing was dispatched, nothing charged, and there is no settlement to
+        fold. Stamping a dispatch to reuse the fold machinery would fabricate an attempt the
+        provider never received — the one thing the settlement contract refuses. So the attempt is
+        recorded on its own terms, keyed on the journalled tool request (which exists only because
+        the agent really made this call under this job's authority), and
+        ``read_account_research_execution_completeness`` reads it as the committee axis's terminal
+        disposition. Idempotent: a checkpoint replay of the same tool call re-records nothing.
+        """
+
+        async with self._conn_factory() as conn:
+            await conn.execute(
+                text(
+                    """
+                    INSERT INTO entity_research_account_committee_unavailable
+                        (tool_request_id, research_run_id, job_id, workspace_id,
+                         account_entity_id, source_keys, reason_code, detail)
+                    VALUES (:tool_request_id, :run_id, :job_id, :workspace_id, :account_id,
+                            :source_keys, :reason_code, :detail)
+                    ON CONFLICT (tool_request_id) DO NOTHING
+                    """
+                ),
+                {
+                    "tool_request_id": request.tool_call_id,
+                    "run_id": request.research_run_id,
+                    "job_id": request.job_id,
+                    "workspace_id": workspace_id,
+                    "account_id": request.target_entity_id,
+                    "source_keys": list(request.source_keys),
+                    "reason_code": error.code,
+                    "detail": error.detail,
+                },
+            )
+        log.info(
+            "committee axis is unbuyable for this account",
+            job_id=str(request.job_id),
+            account_entity_id=str(request.target_entity_id),
+            reason_code=error.code,
+            source_keys=list(request.source_keys),
         )
 
     async def _resolve_inputs(

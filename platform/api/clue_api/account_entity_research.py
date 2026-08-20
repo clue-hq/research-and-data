@@ -235,6 +235,68 @@ class AccountResearchExecutionCompleteness(BaseModel):
         return ", ".join(parts)
 
 
+async def committee_axis_unavailable_source_keys(
+    conn: AsyncConnection, *, job_id: UUID
+) -> frozenset[str]:
+    """The committee sources this job durably attempted and found the provider cannot serve.
+
+    The committee twin of a settlement fold, for the one case that has no operation to fold: the
+    provider's organization index carries no exact match for the account (live ``dc86340f``,
+    "Greater Chicago Specialty Physicians LLC"), or no organization response for it exists at all.
+    Both refusals happen *before* any reservation, so nothing was dispatched and nothing charged —
+    there is no operation row and never will be. The engine records the refused tool call instead
+    (``entity_research_account_committee_unavailable``, one row per journalled call), and that row
+    is what makes the axis terminal here.
+
+    This is an attempt in exactly the sense the settlement contract means: the agent really called
+    the tool, under this job's authority, and the engine really established from durable state
+    that the provider cannot be asked. It is never a *result* — a successful committee call still
+    takes precedence — and it never counts toward a field/source pair (a committee operation
+    carries no field keys).
+    """
+
+    return frozenset(
+        str(value)
+        for value in (
+            (
+                await conn.execute(
+                    text(
+                        "SELECT DISTINCT unnest(source_keys) FROM "
+                        "entity_research_account_committee_unavailable WHERE job_id=:job_id"
+                    ),
+                    {"job_id": job_id},
+                )
+            )
+            .scalars()
+            .all()
+        )
+    )
+
+
+async def committee_axis_unavailable_reasons(
+    conn: AsyncConnection, *, job_id: UUID
+) -> tuple[str, ...]:
+    """The distinct world-fact reason codes behind this job's terminal committee attempts."""
+
+    return tuple(
+        str(value)
+        for value in (
+            (
+                await conn.execute(
+                    text(
+                        "SELECT DISTINCT reason_code FROM "
+                        "entity_research_account_committee_unavailable "
+                        "WHERE job_id=:job_id ORDER BY 1"
+                    ),
+                    {"job_id": job_id},
+                )
+            )
+            .scalars()
+            .all()
+        )
+    )
+
+
 async def read_account_research_execution_completeness(
     conn: AsyncConnection, *, authorization: EntityResearchJobAuthorization
 ) -> AccountResearchExecutionCompleteness:
@@ -419,7 +481,7 @@ async def read_account_research_execution_completeness(
         str(row["source_key"])
         for row in terminal_rows
         if str(row["tool_name"]) == "discover_buying_committee"
-    )
+    ) | await committee_axis_unavailable_source_keys(conn, job_id=authorization.job_id)
     committee_result_exists = bool(
         (
             await conn.execute(
@@ -1208,6 +1270,9 @@ class AccountResearchStateStore:
                 scope_count=scope_count,
                 ambiguous_count=ambiguous_count,
                 confirmed_empty_count=confirmed_empty_count,
+                provider_unavailable_reasons=await committee_axis_unavailable_reasons(
+                    conn, job_id=authorization.job_id
+                ),
             )
             member_claim_ids = await self._committee_member_claim_ids(
                 conn,
@@ -1715,10 +1780,17 @@ class AccountResearchStateStore:
         scope_count: int,
         ambiguous_count: int,
         confirmed_empty_count: int,
+        provider_unavailable_reasons: tuple[str, ...] = (),
     ) -> tuple[str, tuple[str, ...]]:
         if not committee_requested:
             return "complete", ()
         if result_count == 0:
+            # ``committee_not_researched`` is true but mute. When the axis went terminal because
+            # the provider cannot serve this account at all, the ledger says which world fact it
+            # was, so the review surface shows a reviewer the difference between "nobody tried"
+            # and "the provider has no such organization".
+            if provider_unavailable_reasons:
+                return "needs_review", provider_unavailable_reasons
             return "needs_review", ("committee_not_researched",)
         if scope_count != result_count:
             return "needs_review", ("committee_scope_missing_or_ambiguous",)
@@ -2355,6 +2427,8 @@ __all__ = [
     "AccountResearchStateStore",
     "account_engine_tool_bindings",
     "born_complete_account_field_keys",
+    "committee_axis_unavailable_reasons",
+    "committee_axis_unavailable_source_keys",
     "derivable_account_profile_fields",
     "existing_account_claims",
     "non_acquisition_account_profile_fields",

@@ -231,6 +231,16 @@ cover is routed to review, not admitted.
 - `provider_rejected` — the committee source terminally refused (live: a Sumble plan returning 402
   on `/people`). The committee axis is settled; the committee is honestly empty. Proceed to
   coverage; never retry that source.
+- `committee_provider_organization_unmatched` — the provider's organization index has no exact
+  match for this account, so there is no organization to enumerate people from (live: a small
+  Chicago physician group). Nothing was spent. The axis is **already terminal** — the engine
+  recorded the attempt for you. Call `assess_account_coverage` next; the committee is an honest
+  gap and no argument you change can make this account exist in that index.
+- `committee_provider_identity_absent` — no organization response for this account exists in any
+  durable state yet, so the same thing is true right now. Also already terminal, also zero spend:
+  go to coverage. (If an admitted structured field is still outstanding, `enrich_account` may
+  establish the identity, and a later committee call would then supersede this gap — but never
+  re-send the identical committee call first.)
 
 **Invariant.** One declared buying unit, one admitted source, one attempt — an empty committee
 after a real attempt is a result, not a failure. And a candidate the provider returned is real
