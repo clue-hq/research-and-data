@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from decimal import Decimal
+from typing import Final
 
 from pydantic import TypeAdapter
 from sqlalchemy import text
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_core import (
@@ -45,6 +48,46 @@ class AccountGapReplayConflict(AccountGapRepositoryError):
 
 class AccountGapBudgetExceeded(AccountGapRepositoryError):
     pass
+
+
+class AccountGapFieldWindowConflict(AccountGapRepositoryError):
+    """This account's field was already acquired by another operation in the same window.
+
+    The S1 ``account_gap_field_no_overlap`` trigger is the anti-double-spend authority: one
+    ``(workspace, account, field)`` may be bought once per observation window, and the window is
+    per *project run*, not per job, deliberately. Callers pre-check
+    :func:`account_gap_window_acquired_fields` and refuse before compiling anything, so reaching
+    this class means two creates raced past that read — and it is still a statement about the
+    *request* ("that field is already bought; read the operation that owns it"), never about
+    money or truth. It is therefore typed and model-repairable rather than a raw ``DBAPIError``
+    escaping as a job-killing ``execution_failed``, which is exactly what live job ``3cc0a4f2``
+    did on 2026-08-20.
+    """
+
+    def __init__(self, message: str, *, fields: tuple[str, ...] = ()) -> None:
+        super().__init__(message)
+        self.fields = fields
+
+
+#: The exact ``RAISE EXCEPTION`` text of ``account_gap_reject_overlapping_field`` (migration
+#: ``bd0b7e62a2b4``). Matched verbatim, together with the plpgsql ``raise_exception`` SQLSTATE, so
+#: the conversion below stays narrow: every other database error on the same statement — an
+#: integrity violation, a lineage mismatch, unknown spend — must keep propagating and suspending.
+_FIELD_WINDOW_ACQUIRED_MESSAGE: Final = (
+    "account-gap field already acquired in this observation window"
+)
+_RAISE_EXCEPTION_SQLSTATE: Final = "P0001"
+
+
+def _is_field_window_conflict(error: DBAPIError) -> bool:
+    original = error.orig
+    if original is None:
+        return False
+    sqlstate = getattr(original, "sqlstate", None) or getattr(original, "pgcode", None)
+    if sqlstate is None:
+        cause = getattr(original, "__cause__", None)
+        sqlstate = getattr(cause, "sqlstate", None)
+    return sqlstate == _RAISE_EXCEPTION_SQLSTATE and _FIELD_WINDOW_ACQUIRED_MESSAGE in str(original)
 
 
 _REQUEST_ADAPTER = TypeAdapter(AccountGapRequest)
@@ -159,6 +202,43 @@ async def find_account_gap_operation_for_fields(
     if len(matches) > 1:
         raise AccountGapReplayConflict("multiple same-window account-gap operations for field set")
     return matches[0] if matches else None
+
+
+async def account_gap_window_acquired_fields(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    account_id: object,
+    observation_window: str,
+    field_keys: Sequence[str],
+) -> tuple[str, ...]:
+    """Which of ``field_keys`` some operation already acquired in this observation window.
+
+    The pre-check in front of the ``account_gap_field_no_overlap`` trigger. The trigger stays the
+    authority (this read can be raced); it exists so the ordinary, entirely expected case — a
+    later job in the same project run asking again for a field an earlier job already bought —
+    is refused as a plain, zero-state request refusal instead of a raw database error.
+    """
+
+    requested = set(field_keys)
+    if not requested:
+        return ()
+    rows = (
+        await conn.execute(
+            text(
+                "SELECT DISTINCT result.field_key FROM account_gap_field_result result "
+                "JOIN account_gap_operation op ON op.id = result.operation_id "
+                "WHERE result.workspace_id=:workspace_id AND result.account_id=:account_id "
+                "AND op.observation_window=:window"
+            ),
+            {
+                "workspace_id": workspace_id,
+                "account_id": account_id,
+                "window": observation_window,
+            },
+        )
+    ).scalars()
+    return tuple(sorted(key for key in rows if key in requested))
 
 
 async def get_account_gap_operation(
@@ -329,25 +409,40 @@ async def reserve_account_gap_operation(
             },
         )
     for plan in request.fields:
-        await conn.execute(
-            text(
-                "INSERT INTO account_gap_field_result (operation_id, workspace_id, account_id, "
-                "field_key, source_key, selection_reason, expected_value_credits, basis_claim_ids, "
-                "state, reason_code) VALUES (:operation_id, :workspace_id, :account_id, "
-                ":field_key, :source_key, :reason, :expected, CAST(:basis AS jsonb), 'pending', "
-                "'awaiting_sumble_snapshot')"
-            ),
-            {
-                "operation_id": stored.operation_id,
-                "workspace_id": request.workspace_id,
-                "account_id": request.account_id,
-                "field_key": str(plan.field_key),
-                "source_key": plan.source_key,
-                "reason": plan.reason.value,
-                "expected": plan.expected_value_credits,
-                "basis": serialize_value_json([str(value) for value in plan.basis_claim_ids]),
-            },
-        )
+        try:
+            await conn.execute(
+                text(
+                    "INSERT INTO account_gap_field_result (operation_id, workspace_id, "
+                    "account_id, field_key, source_key, selection_reason, expected_value_credits, "
+                    "basis_claim_ids, state, reason_code) VALUES (:operation_id, :workspace_id, "
+                    ":account_id, :field_key, :source_key, :reason, :expected, "
+                    "CAST(:basis AS jsonb), 'pending', 'awaiting_sumble_snapshot')"
+                ),
+                {
+                    "operation_id": stored.operation_id,
+                    "workspace_id": request.workspace_id,
+                    "account_id": request.account_id,
+                    "field_key": str(plan.field_key),
+                    "source_key": plan.source_key,
+                    "reason": plan.reason.value,
+                    "expected": plan.expected_value_credits,
+                    "basis": serialize_value_json([str(value) for value in plan.basis_claim_ids]),
+                },
+            )
+        except DBAPIError as error:
+            # Narrow on purpose: only ``account_gap_field_no_overlap``'s own raise becomes the
+            # typed, model-repairable conflict. Anything else — a lineage mismatch, an integrity
+            # violation — keeps propagating, because that boundary is what stops a real
+            # money-or-truth failure from being talked past as an ordinary refused turn. The
+            # caller owns the transaction, so raising here rolls the whole reservation back:
+            # zero operation row, zero snapshots, zero spend.
+            if not _is_field_window_conflict(error):
+                raise
+            raise AccountGapFieldWindowConflict(
+                f"{plan.field_key} was already acquired for this account in observation window "
+                f"{request.observation_window}",
+                fields=(str(plan.field_key),),
+            ) from error
     return stored, True
 
 
@@ -771,9 +866,11 @@ def terminal_now() -> datetime:
 
 __all__ = [
     "AccountGapBudgetExceeded",
+    "AccountGapFieldWindowConflict",
     "AccountGapNotFound",
     "AccountGapReplayConflict",
     "AccountGapRepositoryError",
+    "account_gap_window_acquired_fields",
     "claim_account_gap_operation",
     "claim_account_gap_snapshot",
     "find_account_gap_operation",

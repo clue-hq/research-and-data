@@ -33,6 +33,7 @@ from clue_api.entity_research_tools import (
     ProviderResultLineageReader,
 )
 from clue_api.sumble_account_gaps import (
+    SumbleAccountGapFieldAlreadyAcquired,
     SumbleAccountGapNotEligible,
     SumbleAccountGapOutcome,
     SumbleAccountGapStarter,
@@ -486,6 +487,16 @@ class SumbleAccountSemanticEnrichmentAction(EntityResearchProviderAction):
                 before_dispatch=bind_sumble_before_dispatch,
                 entity_research_job_id=self._entity_research_job_id,
             )
+        except SumbleAccountGapFieldAlreadyAcquired as exc:
+            # The same species, refused one rung earlier: this window already bought the field for
+            # this account, so no purchase is possible and none was attempted.  Its own code,
+            # because the repair differs from §6.3(b)'s — there is a durable operation holding the
+            # answer (which may itself be an honest ``confirmed_missing`` or an unresolved
+            # ``conflict``), and the agent must read it rather than re-ask for it.
+            raise EntityResearchGovernedRejection(
+                "account_gap_field_already_acquired",
+                f"Sumble account enrichment cannot re-buy this account's field: {exc}",
+            ) from exc
         except SumbleAccountGapNotEligible as exc:
             # FI-2 §6.3(b), and *only* §6.3(b): the ladder found the field already confidently and
             # freshly answered.  The preflight refuses before any operation row or dispatch, so

@@ -69,10 +69,12 @@ from clue_research.discovery_scoring.tiering import (
     TIER_FIELD,
 )
 from clue_research.durable import (
+    AccountGapFieldWindowConflict,
     AccountGapNotFound,
     AccountGapReplayConflict,
     DiscoverySealConflict,
     ProjectRunStatus,
+    account_gap_window_acquired_fields,
     bind_discovery_artifact_subject,
     capture_discovery_artifact,
     claim_account_gap_operation,
@@ -201,6 +203,27 @@ class SumbleAccountGapFieldsUnrequestable(SumbleAccountGapNotEligible):
     an organization credit for a call whose whole field set the action cannot even ask about would
     buy nothing. A request that mixes requestable and unrequestable fields is **not** refused: it
     proceeds for what it can buy and settles the rest as ``confirmed_missing``.
+    """
+
+
+class SumbleAccountGapFieldAlreadyAcquired(SumbleAccountGapNotEligible):
+    """This window already bought these fields for this account, so there is nothing to re-buy.
+
+    The observation window is per *project run*, not per job — that is the anti-double-spend rule,
+    and cross-job reuse inside a run is the point of it. The durable
+    ``account_gap_field_no_overlap`` trigger enforces one purchase per
+    ``(workspace, account, field, window)``; ``find_account_gap_operation_for_fields`` only rejoins
+    an *exactly equal* field set, so a later job asking for a strict subset (or any overlapping
+    set) of an earlier job's fields used to walk past the rejoin and straight into that trigger.
+    Live on 2026-08-20, job ``3cc0a4f2`` asked for ``core.hq_location`` alone after job
+    ``eea48931`` had bought ``core.employee_count`` + ``core.hq_location`` together: the raw
+    ``DBAPIError`` escaped as ``execution_failed`` and paused the whole job.
+
+    It is a statement about the *request*, so it is the model-repairable species: the agent reads
+    the answer the owning operation already produced (``read_account_research_state`` serves the
+    claim), drops the field, chooses another admitted source, or finalizes with an honest gap.
+    Re-buying it is never the repair — the ledger already holds that purchase's outcome, including
+    an honest ``confirmed_missing`` or an unresolved ``conflict``.
     """
 
 
@@ -490,6 +513,30 @@ async def compile_sumble_account_gap_preflight(
                 "Sumble account-gap enrichment answers project-neutral world facts only; "
                 f"declared project-relative: {', '.join(relative)}"
             )
+        # Pre-check the durable anti-double-spend rule *before* compiling a request that the
+        # ``account_gap_field_no_overlap`` trigger would refuse with a raw database error. The
+        # trigger stays the authority (this read can be raced, and the reservation converts its
+        # own raise); this exists so the ordinary case — a later job in the same project run
+        # asking again for a field an earlier job already bought, which the exact-field-set rejoin
+        # cannot serve — is a plain governed refusal instead of a suspended job.
+        #
+        # The refusal is whole-request even when only some fields overlap: dropping the bought
+        # ones silently would change the field set the agent authorized, and the agent can simply
+        # re-ask for the remainder. The message names exactly which fields to drop.
+        acquired = await account_gap_window_acquired_fields(
+            conn,
+            workspace_id=workspace_id,
+            account_id=account_id,
+            observation_window=observation_window,
+            field_keys=field_keys,
+        )
+        if acquired:
+            raise SumbleAccountGapFieldAlreadyAcquired(
+                f"already acquired in this observation window: {', '.join(acquired)} — that "
+                "purchase is durable, so read the existing account research state for its "
+                "outcome instead of re-buying it; re-ask only for fields this window has not "
+                "bought, use another admitted source, or finalize with an honest gap"
+            )
         for field_key in field_keys:
             source_key = _SOURCE_BY_FIELD[field_key]
             if not _requestable(field_key):
@@ -659,7 +706,18 @@ class SumbleAccountGapCoordinator:
         *,
         before_dispatch: Callable[[AccountGapOperation], Awaitable[None]] | None = None,
     ) -> SumbleAccountGapResult:
-        operation, _created = await self._reserve(preflight)
+        try:
+            operation, _created = await self._reserve(preflight)
+        except AccountGapFieldWindowConflict as conflict:
+            # The pre-check lost a race with a concurrent create (or a caller reached the
+            # coordinator without one). The reservation transaction rolled back, so this is still
+            # zero-spend and zero-state; keep it the model-repairable species rather than letting
+            # a raw DBAPIError suspend the job.
+            raise SumbleAccountGapFieldAlreadyAcquired(
+                f"already acquired in this observation window: {conflict} — that purchase is "
+                "durable, so read the existing account research state for its outcome instead of "
+                "re-buying it"
+            ) from conflict
         terminal = self._terminal_result(operation, replay=True)
         if terminal is not None:
             return terminal
@@ -1655,6 +1713,7 @@ __all__ = [
     "SumbleAccountGapCoordinator",
     "SumbleAccountGapEligibilityError",
     "SumbleAccountGapError",
+    "SumbleAccountGapFieldAlreadyAcquired",
     "SumbleAccountGapFieldsUnrequestable",
     "SumbleAccountGapNotEligible",
     "SumbleAccountGapOutcome",
