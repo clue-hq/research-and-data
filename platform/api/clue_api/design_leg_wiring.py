@@ -445,7 +445,12 @@ async def project_design_documents(
             await conn.execute(
                 text(
                     "SELECT d.id, d.title, d.status, d.doc_kind, d.current_version,"
-                    " d.created_at, d.updated_at, origin.thread_id AS origin_thread_id"
+                    " d.created_at, d.updated_at, origin.thread_id AS origin_thread_id,"
+                    # G-H: the card's own facts, read from the document instead of
+                    # guessed downstream. Both are NULL when the document does not
+                    # record them — the caller states nothing rather than inventing.
+                    " d.scene #>> '{meta,artifact_type}' AS artifact_type,"
+                    " d.scene #>> '{pages}' AS pages_json"
                     " FROM ("
                     "   SELECT DISTINCT ON (leg.document_id)"
                     "          leg.document_id, leg.thread_id"
@@ -468,6 +473,55 @@ async def project_design_documents(
         .all()
     )
     return tuple(dict(row) for row in rows)
+
+
+def document_page_pixels(pages_json: str | None) -> tuple[int, int] | None:
+    """The document's own page size in PIXELS, or ``None`` when it has none.
+
+    G-H: the gallery card used to state a hardcoded ``1080x1080`` for every
+    design artifact. The document knows its real size, so the feed carries it
+    and a card with no page states nothing at all.
+
+    The engine stores a page canonically (``unit`` may be ``pt`` after an
+    authored ``px`` page is normalized), so the pixel truth is read in the same
+    precedence the editor's own resolver uses: the raster output it would
+    export, else the authored source when that was already px, else the
+    canonical box. A malformed scene yields ``None`` — never a guess.
+    """
+
+    if not pages_json:
+        return None
+    try:
+        pages = json.loads(pages_json)
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(pages, dict):
+        return None
+    # Insertion order is the scene's own page order; v1 ads are single-page and
+    # the rail shows one size, so the first page is the document's size.
+    page = next((value for value in pages.values() if isinstance(value, dict)), None)
+    size = page.get("size") if page else None
+    if not isinstance(size, dict):
+        return None
+
+    output = size.get("output")
+    raster = output.get("raster") if isinstance(output, dict) else None
+    if isinstance(raster, dict):
+        width, height = raster.get("width_px"), raster.get("height_px")
+        if isinstance(width, (int, float)) and isinstance(height, (int, float)):
+            return int(width), int(height)
+
+    source = size.get("source")
+    if isinstance(source, dict) and source.get("unit") == "px":
+        width, height = source.get("width"), source.get("height")
+        if isinstance(width, (int, float)) and isinstance(height, (int, float)):
+            return int(width), int(height)
+
+    if size.get("unit") == "px":
+        width, height = size.get("width"), size.get("height")
+        if isinstance(width, (int, float)) and isinstance(height, (int, float)):
+            return int(width), int(height)
+    return None
 
 
 def _canonical_json(value: object) -> bytes:

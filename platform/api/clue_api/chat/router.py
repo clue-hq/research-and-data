@@ -26,7 +26,7 @@ demarcation registry §2.2, and doing it here would mean editing another lane's 
 from __future__ import annotations
 
 import re
-from collections.abc import Awaitable, Callable, Coroutine
+from collections.abc import Awaitable, Callable, Coroutine, Mapping
 from typing import Annotated, Any, Literal
 from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
@@ -141,7 +141,11 @@ from clue_api.chat.schemas import (
 )
 from clue_api.chat.turn_events import TurnEventType, emit_turn_event
 from clue_api.conversation_capture import persist_user_turn, project_client_entity_id
-from clue_api.design_leg_wiring import design_legs_for_threads, project_design_documents
+from clue_api.design_leg_wiring import (
+    design_legs_for_threads,
+    document_page_pixels,
+    project_design_documents,
+)
 from clue_api.stage0_icp_gate import IcpGateSubjectError, exact_icp_gate_subject
 from clue_api.stage0_project_scope import resolve_stage0_project_scope_for_project
 from clue_api.thread_store import create_thread, get_thread, thread_id_for_operation
@@ -224,6 +228,38 @@ _HOME_SUGGESTIONS = (
 
 def _framed(*parts: str) -> str:
     return "".join(f"{len(part)}:{part}" for part in parts)
+
+
+def _design_artifact_list_item(
+    project_id: str, document: Mapping[str, Any]
+) -> DesignArtifactListItemWire:
+    """One gallery row, carrying only what the document itself records.
+
+    G-H (founder ruling 2026-08-20): the client used to guess a card's channel
+    and size — every design artifact claimed to be a 1080x1080 LinkedIn ad.
+    Neither is a safe default ("we are not necessarily always making ads"), so
+    the document's own artifact type and page size ride the wire and a document
+    that records neither yields ``None`` for both. A card then says nothing
+    rather than something false; its name is its identity.
+    """
+
+    pixels = document_page_pixels(document.get("pages_json"))
+    artifact_type = document.get("artifact_type")
+    return DesignArtifactListItemWire(
+        id=str(document["id"]),
+        project_id=project_id,
+        document_id=str(document["id"]),
+        kind="web" if document["doc_kind"] == "web" else "ad",
+        title=str(document["title"]),
+        status=str(document["status"]),
+        current_version_id=str(document["current_version"]),
+        created_at=document["created_at"].isoformat(),
+        updated_at=document["updated_at"].isoformat(),
+        origin_thread_id=str(document["origin_thread_id"]),
+        artifact_type=str(artifact_type) if artifact_type else None,
+        width_px=pixels[0] if pixels else None,
+        height_px=pixels[1] if pixels else None,
+    )
 
 
 def _home_project_id(*, workspace_id: str, idempotency_key: str) -> str:
@@ -1037,21 +1073,7 @@ def build_chat_router(
                 project_id=project_id,
             )
         return DesignArtifactListResponse(
-            data=tuple(
-                DesignArtifactListItemWire(
-                    id=str(document["id"]),
-                    project_id=project_id,
-                    document_id=str(document["id"]),
-                    kind="web" if document["doc_kind"] == "web" else "ad",
-                    title=str(document["title"]),
-                    status=str(document["status"]),
-                    current_version_id=str(document["current_version"]),
-                    created_at=document["created_at"].isoformat(),
-                    updated_at=document["updated_at"].isoformat(),
-                    origin_thread_id=str(document["origin_thread_id"]),
-                )
-                for document in documents
-            )
+            data=tuple(_design_artifact_list_item(project_id, document) for document in documents)
         )
 
     @router.get("/projects/{project_id}/design-artifacts/{artifact_id}")

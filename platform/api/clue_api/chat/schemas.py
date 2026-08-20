@@ -590,6 +590,12 @@ class DesignArtifactListItemWire(DesignArtifactWire):
     created_at: str
     updated_at: str
     origin_thread_id: str
+    # G-H: the card's own facts, carried from the document rather than guessed
+    # by the client. Both are absent when the document does not record them —
+    # a card then states nothing instead of inventing a channel or a size.
+    artifact_type: str | None = None
+    width_px: int | None = None
+    height_px: int | None = None
 
 
 class DesignArtifactListResponse(_Wire):
