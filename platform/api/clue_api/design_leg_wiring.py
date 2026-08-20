@@ -449,8 +449,8 @@ async def project_design_documents(
                     # G-H: the card's own facts, read from the document instead of
                     # guessed downstream. Both are NULL when the document does not
                     # record them — the caller states nothing rather than inventing.
-                    " d.scene #>> '{meta,artifact_type}' AS artifact_type,"
-                    " d.scene #>> '{pages}' AS pages_json"
+                    " d.current_scene_json #>> '{meta,artifact_type}' AS artifact_type,"
+                    " d.current_scene_json #>> '{pages}' AS pages_json"
                     " FROM ("
                     "   SELECT DISTINCT ON (leg.document_id)"
                     "          leg.document_id, leg.thread_id"
