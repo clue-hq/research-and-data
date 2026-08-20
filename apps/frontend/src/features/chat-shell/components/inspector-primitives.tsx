@@ -497,6 +497,118 @@ export function InspectorInput({
   );
 }
 
+type RadiusCorner = "all" | "bottomLeft" | "bottomRight" | "topLeft" | "topRight";
+type RadiusValues = Record<RadiusCorner, string>;
+
+/** W4.2 (ruling R-B1): only a numeric commit writes (`N` → `rounded-[Npx]`) —
+ * and under founder ruling F2 that all-corners write also clears the per-corner
+ * overrides, which is what the corner fields mirror below. An empty commit
+ * clears the all-corners family only; a named scale value the field displays
+ * verbatim (`lg`) is no write at all, so nothing is mirrored for it either. */
+const NUMERIC_RADIUS = /^\d+$/;
+
+/** W4.2 (ruling R-B2): the five radius fields adopt the ratified R3 commit
+ * model — typed values draft locally and COMMIT on blur/Enter, so the write
+ * path never sees a per-keystroke event. Behavioral only: same DOM, classes,
+ * icons and aria-labels as the dummy ships. */
+export function RadiusControls({
+  onApplyAll,
+  onChange,
+  values,
+}: {
+  /** W4.2/F2 (the web image schema): the all-corners commit — ONE `radius.all`
+   * change, `clearsCorners` true when that write also clears the four corner
+   * overrides. Absent (the scene/ad image inspector, whose radius is dummy
+   * state and carries no F2 ruling) keeps the dummy's fan-out-to-four
+   * behaviour for the scan button. */
+  onApplyAll?: (value: string, clearsCorners: boolean) => void;
+  onChange: (corner: RadiusCorner, value: string) => void;
+  values: RadiusValues;
+}) {
+  const [drafts, setDrafts] = useState<RadiusValues>(values);
+  const setDraft = (corner: RadiusCorner, value: string) =>
+    setDrafts((current) => ({ ...current, [corner]: value }));
+
+  const commitAll = (value: string) => {
+    if (!onApplyAll) {
+      onChange("all", value);
+      return;
+    }
+    const clearsCorners = NUMERIC_RADIUS.test(value.trim());
+    onApplyAll(value, clearsCorners);
+    if (clearsCorners) {
+      setDrafts((current) => ({
+        ...current,
+        bottomLeft: "",
+        bottomRight: "",
+        topLeft: "",
+        topRight: "",
+      }));
+    }
+  };
+
+  const applyAll = () => {
+    if (!onApplyAll) {
+      // The dummy's own meaning, kept for the scene inspector.
+      (["topLeft", "topRight", "bottomLeft", "bottomRight"] as const).forEach((corner) =>
+        onChange(corner, values.all),
+      );
+      return;
+    }
+    // F2: the scan button's meaning IS the all-corners write, so it commits
+    // the all field's current draft even when unchanged — but an empty draft
+    // would clear the radius rather than apply one, so it is a no-op.
+    if (drafts.all.trim() === "") return;
+    commitAll(drafts.all);
+  };
+
+  return (
+    <>
+      <div className={styles.radiusMainRow}>
+        <InspectorInput
+          ariaLabel="All corner radius"
+          className={styles.radiusValue}
+          leading={<InspectorIcon name="radius-all" size={16} />}
+          onChange={(value) => setDraft("all", value)}
+          onCommit={() => {
+            if (drafts.all !== values.all) commitAll(drafts.all);
+          }}
+          value={drafts.all}
+        />
+        <button aria-label="Apply radius to all corners" className={styles.scanButton} onClick={applyAll} type="button">
+          <InspectorIcon name="radius-scan" size={12} />
+        </button>
+      </div>
+      <div className={styles.cornerRadiusGrid}>
+        {([
+          ["topLeft", "radius-top-left"],
+          ["topRight", "radius-top-right"],
+          ["bottomLeft", "radius-bottom-left"],
+          ["bottomRight", "radius-bottom-right"],
+        ] as const).map(([corner, icon]) => {
+          const commit = () => {
+            if (drafts[corner] !== values[corner]) onChange(corner, drafts[corner]);
+          };
+          return (
+            <span className={`${styles.inspectorControl} ${styles.inspectorInputControl} ${styles.cornerRadiusField}`} key={corner}>
+              <InspectorIcon name={icon} size={16} />
+              <input
+                aria-label={`${corner} radius`}
+                onBlur={commit}
+                onChange={(event) => setDraft(corner, event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") commit();
+                }}
+                value={drafts[corner]}
+              />
+            </span>
+          );
+        })}
+      </div>
+    </>
+  );
+}
+
 type HsvColor = { h: number; s: number; v: number };
 
 function clamp(value: number, min: number, max: number) {

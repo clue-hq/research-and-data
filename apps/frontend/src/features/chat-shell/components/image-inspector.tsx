@@ -18,9 +18,9 @@ import {
   InspectorSection,
   InspectorSelect,
   InspectorTokenControl,
+  RadiusControls,
 } from "./inspector-primitives";
 import styles from "./chat-shell.module.css";
-import { RadiusControls } from "./web-inspector";
 import {
   AdDummyInspector,
   isAdDummyInspectorSelection,
