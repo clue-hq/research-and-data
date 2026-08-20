@@ -155,6 +155,38 @@ widened is now read not only by generated microsites but by the T2I path as well
 296px-thumbnail defect would have been anchoring every generated image to a 296px reference.
 Worth remembering before anyone considers narrowing the harvest for cost.
 
+### Latent defect found while checking that adjacency — NOT FIXED, not this lane
+
+`img-tools` asked whether the two references actually surface high-resolution renditions.
+They do **now**, but by luck, not by design. Verified chain:
+
+- `normalizer/emit.py::add_images` assigns `img.{index}` sequentially over `evidence.images`,
+  and `parse._parse_images` sorts its candidates by `(area, file_size)` **descending** before
+  emitting. So the ordinal `img.N` sequence IS a quality ranking, best first (`img.1` is the
+  og:image, appended by `_parse_dom` ahead of the sorted block).
+- `web_substrate.py:3286` picks with `for image_key, image in sorted(images.items())` — a
+  **lexicographic** sort over `img.1 … img.48`. Lexicographic order is
+  `img.1, img.10, img.11, …, img.19, img.2, …`, so with `_BRAND_REFERENCE_MAX = 2` it takes
+  **`img.1` and `img.10`** — never `img.2`, the actual second-best.
+
+Live consequence, measured on the real kit:
+
+| kit | `img.1` | `img.10` |
+|---|---|---|
+| **v6 (currently APPROVED)** | 2048x1024 | **296x124** |
+| v8 (this wave's draft) | 2048x1024 | 2468x1038 |
+
+So on the approved kit, half the style conditioning for every generated page was a 296px
+thumbnail. This wave repaired that **incidentally** — by deleting every thumbnail from the
+harvest — but the lexicographic sort is untouched and will resurface on any site with
+genuinely small assets. v8 itself carries seven sub-300px images (a 64x64 icon, a QR code,
+merch thumbs); none happened to land on a low-lex key, which is luck.
+
+Fix is a numeric/natural sort key at `web_substrate.py:3286` so the picker honours the
+ranking `emit` already built. **Deliberately not applied here** — it is the web lane's file,
+outside this wave's ordered scope, and the founder reviews diffs inline. Surfaced to the
+founder and to `img-tools` instead.
+
 Second cost consequence, downstream of this wave and **not** something it changed: the
 describe stage runs one vision completion per asset, so 13 → 49 images is ~4x the
 description spend and wall-clock per website ingestion (stripe.com: ~53 vision calls,
@@ -212,9 +244,24 @@ down before and after**: still 20, same list. `test_agent_custom_components` (1)
 `test_custom_component_compiler` (5), `test_custom_component_publish` (4),
 `test_custom_component_runtime` (7), `test_asset_custody` (2), `test_asset_store_serving` (1).
 The cause is a **missing local node toolchain**, not code rot: the constrained compiler worker
-returns `CCI0002 … Cannot find package 'typescript'` → `transient_error`, and the dependent
-serving assertions then see 503/404. `npm install` in `subsystems/clue-design` is the likely
-fix; not this wave's to make.
+returns `CCI0002 … Cannot find package 'typescript'` → `transient_error` (emitted by
+`custom_component_compiler.py::_infrastructure_result`, which stamps
+`"category": "infrastructure"` — the code is telling you it is environment, not source), and
+the dependent serving assertions then see 503/404.
+
+**The fix, verified by exact test — not `npm install` in `subsystems/clue-design`, which has
+no `package.json` and no lockfile at all and would simply error:**
+
+```
+cd subsystems/clue-design/apps/custom-component-compiler && npm ci
+```
+
+`custom_component_compiler.py:39-45` resolves the worker to
+`parents[3]/apps/custom-component-compiler/compiler.mjs`; that directory owns the
+`package.json` pinning `"typescript": "5.8.3"` and a `package-lock.json`, and its
+`node_modules` is absent. `npm ci` (not `install`) because the lockfile is present and the
+version pinned. Not this wave's to make. Thanks to `img-tools` for catching that my first
+location would have sent the next reader down a dead end.
 
 **(b) 2 that were MY bisect error — contention, not a regression. Corrected 2026-08-20 after
 `img-tools` pushed back, and they were right.**
