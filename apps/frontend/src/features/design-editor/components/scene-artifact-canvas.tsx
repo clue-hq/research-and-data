@@ -6,6 +6,7 @@ import {
   useRef,
   useState,
   useSyncExternalStore,
+  type PointerEvent as ReactPointerEvent,
   type RefObject,
 } from "react";
 import type { CanvasKit, Surface, TypefaceFontProvider } from "canvaskit-wasm";
@@ -15,6 +16,10 @@ import {
   snapZoomPercent,
   type SceneArtboardModel,
 } from "../adapter/scene-canvas-view";
+import {
+  representableHit,
+  sceneHitPoint,
+} from "../adapter/scene-selection";
 import { drawDescriptorTree } from "../engine/scene/canvaskit/drawDescriptors";
 import { CanvasKitImageCache } from "../engine/scene/canvaskit/imageCache";
 import {
@@ -22,11 +27,12 @@ import {
   subscribeTextMeasurementStatus,
   textMeasurementStatusSnapshot,
 } from "../engine/scene/canvaskit/loadCanvasKit";
-import type { Scene } from "../engine/scene/contracts";
+import type { NodeId, Scene } from "../engine/scene/contracts";
 import type { HitResult } from "../engine/scene/wasmEngine";
 import {
   defaultWorkspaceViewport,
   fitWorkspaceRectToViewport,
+  screenToWorkspace,
   type WorkspaceViewport,
 } from "../engine/scene/workspaceViewport";
 import {
@@ -61,14 +67,25 @@ import styles from "./scene-artifact-canvas.module.css";
  *   card IS the artboard chrome (its hairline border, radius and shadow), so
  *   the surface clears to transparent and the designed card shows through.
  * - **Content only.** Selection chrome stays out of the canvas by the source's
- *   own Decision 5 — AD2.5 mounts its SVG overlay as a sibling of the
+ *   own Decision 5 — the selection overlay mounts as a sibling of the
  *   `<canvas>` inside `.stage`, so hover/selection never trigger a wasm redraw.
  *
- * Read-only by construction: no pointer handlers, no operations, no write
- * path. When the wasm stamp handshake fails the scene still renders — from the
- * server's own snapshot — and `engineDisabled` rides upward (Gate G-D owns the
- * banner wording; until it lands the console diagnostic in `useSceneDocument`
- * is the honest signal).
+ * AD2.5 adds the read path's last leg: pointer-down selects. **Selection STATE
+ * only** — there is no outline and there are no handles, because the canvas
+ * chrome visual is Gate G-A and G-A is open. Inventing an outline to "see it
+ * working" is the same bar as inventing the §1.1 labels, so the marked
+ * insertion point below stays empty and the selection is instead readable as
+ * `data-scene-selected-node` on the canvas element (the same diagnostic-
+ * attribute convention `data-scene-engine` already uses). The moment G-A
+ * closes, the overlay is a sibling `<svg>` at that comment, fed by
+ * `deriveSelectionChromeModel`'s `selectionBox`.
+ *
+ * Still no write path: no operations, no edits. When the wasm stamp handshake
+ * fails the scene still renders — from the server's own snapshot — and
+ * `engineDisabled` rides upward (Gate G-D owns the banner wording; until it
+ * lands the console diagnostic in `useSceneDocument` is the honest signal). A
+ * click in that state is a **no-op**: with no engine there is no hit test, and
+ * a guess from descriptors would be a selection the engine never agreed to.
  */
 
 export interface SceneCanvasControls {
@@ -100,6 +117,14 @@ export interface SceneArtifactCanvasProps {
   /** Mirrors the wasm stamp handshake upward, so the shell can refuse edits
    * and (post Gate G-D) explain why. */
   onEngineStatusChange?: (status: SceneEngineStatus) => void;
+  /** Fires on pointer-down with the node the press selected, or null when the
+   * press cleared the selection (a click off the artboard, or a hit stack with
+   * nothing representable in it). Never fires when the engine is unavailable —
+   * a disabled engine refuses to answer rather than guessing.
+   *
+   * The canvas owns the selection itself for now; AD2.7's editing session lifts
+   * it out so the inspector and the layer tree share one selection. */
+  onSelect?: (nodeId: NodeId | null) => void;
 }
 
 export function SceneArtifactCanvas(props: SceneArtifactCanvasProps) {
@@ -115,11 +140,13 @@ function SceneDocumentCanvas({
   documentId,
   onEngineStatusChange,
   onFitZoom,
+  onSelect,
   reloadToken = 0,
   zoom = null,
 }: SceneArtifactCanvasProps) {
   const stageRef = useRef<HTMLDivElement | null>(null);
   const [stageSize, setStageSize] = useState({ width: 0, height: 0 });
+  const [selectedNodeId, setSelectedNodeId] = useState<NodeId | null>(null);
   const { engine, engineStatus, pageId, refresh, scene, tokenGeneration } =
     useSceneDocument(documentId, reloadToken);
 
@@ -215,33 +242,113 @@ function SceneDocumentCanvas({
     return () => observer.disconnect();
   }, []);
 
-  useEffect(() => {
-    if (!controlsRef) {
-      return;
-    }
-    controlsRef.current = {
+  // One controls object, used BOTH by the pointer handler below and by the
+  // shell through `controlsRef` — so the press path calls the same declared
+  // seam an outside caller would, and a change to hit-testing cannot leave the
+  // two disagreeing.
+  const controls = useMemo<SceneCanvasControls>(
+    () => ({
       hitTest: (x, y) =>
         engine && pageId ? engine.hitTest(pageId, x, y) : null,
       refresh,
       sceneSnapshot: () => scene,
-    };
+    }),
+    [engine, pageId, refresh, scene],
+  );
+  useEffect(() => {
+    if (!controlsRef) {
+      return;
+    }
+    controlsRef.current = controls;
     return () => {
       controlsRef.current = null;
     };
-  }, [controlsRef, engine, pageId, refresh, scene]);
+  }, [controls, controlsRef]);
+
+  const onSelectRef = useRef(onSelect);
+  useEffect(() => {
+    onSelectRef.current = onSelect;
+  });
+
+  const commitSelection = (nodeId: NodeId | null) => {
+    setSelectedNodeId(nodeId);
+    onSelectRef.current?.(nodeId);
+  };
+
+  /**
+   * Press-selects, the gesture machine's own semantics (the source editor
+   * resolves its press target on pointer-down, not on click).
+   *
+   * The coordinate chain is `CanvasKitCanvas.tsx:589-617` collapsed to one
+   * artboard, and every step matters:
+   *
+   *   pointer screen offset within the stage
+   *     → `screenToWorkspace(point, viewport)`      undo pan + zoom
+   *     → minus the artboard's workspace origin     artboard-local descriptor px
+   *     → `descriptorToScene(local, unitScale)`     the engine's own units
+   *     → `controls.hitTest(x, y)`                  bottom-to-top hit stack
+   *     → `representableHit(stack, scene, pageId)`  §5's nearest schema-bearing node
+   *
+   * The last two conversions are the trap: `hitTest` takes SCENE units, not
+   * descriptor px, and the two are identical on a `pt`/`px` page (this ad), so
+   * a missing division is invisible here and wrong everywhere else. Both live
+   * in `sceneHitPoint`, where they are unit-tested against a non-identity unit.
+   */
+  const handlePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    // Secondary/middle buttons are not a selection gesture.
+    if (event.button !== 0) {
+      return;
+    }
+    const element = stageRef.current;
+    // No engine → no hit test → NO selection change. A descriptor-space guess
+    // would be a selection the engine never agreed to, and the write path that
+    // follows in AD2.7 would act on it.
+    if (!element || !artboard || !scene || engineStatus.engineDisabled) {
+      return;
+    }
+    const bounds = element.getBoundingClientRect();
+    const workspacePoint = screenToWorkspace(
+      { x: event.clientX - bounds.left, y: event.clientY - bounds.top },
+      viewport,
+    );
+    const scenePoint = sceneHitPoint(workspacePoint, artboard);
+    if (!scenePoint) {
+      // Off the artboard entirely: clear, deliberately (not a no-op — the user
+      // pressed somewhere with nothing in it).
+      commitSelection(null);
+      return;
+    }
+    const result = controls.hitTest(scenePoint.x, scenePoint.y);
+    if (!result) {
+      return;
+    }
+    // `HitResult.stack` is bottom-to-top and its last member IS `hit` (the
+    // engine's `hit_test` is literally `hit_stack(..).pop()`), so the stack
+    // alone is the complete answer.
+    commitSelection(representableHit(result.stack, scene, pageId));
+  };
 
   return (
-    <div className={styles.stage} ref={stageRef}>
+    <div
+      className={styles.stage}
+      onPointerDown={handlePointerDown}
+      ref={stageRef}
+    >
       <ArtboardSurface
         artboard={artboard}
         assets={scene?.assets}
         // Test/diagnostic hooks, not chrome: the honest engine + text
-        // measurement state, readable without a banner (Gate G-D).
+        // measurement state and the current selection, all readable without any
+        // approved visual (Gates G-A / G-D).
         dataEngine={engineStatus.engineDisabled ? "disabled" : "wasm"}
         dataMeasurement={measurementStatus}
+        dataSelectedNode={selectedNodeId ?? "none"}
         viewport={viewport}
       />
-      {/* AD2.5 mounts its selection overlay here, as a sibling of the canvas. */}
+      {/* The selection overlay mounts HERE, as an absolutely-positioned sibling
+          of the canvas — deliberately empty until Gate G-A ratifies the outline
+          (and Lane C the handles). Selection state is live above; only its
+          visual is missing. */}
     </div>
   );
 }
@@ -255,12 +362,14 @@ function ArtboardSurface({
   assets,
   dataEngine,
   dataMeasurement,
+  dataSelectedNode,
   viewport,
 }: {
   artboard: SceneArtboardModel | null;
   assets: Scene["assets"] | undefined;
   dataEngine: string;
   dataMeasurement: string;
+  dataSelectedNode: string;
   viewport: WorkspaceViewport;
 }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -466,6 +575,7 @@ function ArtboardSurface({
     <canvas
       className={styles.canvas}
       data-scene-engine={dataEngine}
+      data-scene-selected-node={dataSelectedNode}
       data-scene-text-measurement={dataMeasurement}
       ref={canvasRef}
     />
