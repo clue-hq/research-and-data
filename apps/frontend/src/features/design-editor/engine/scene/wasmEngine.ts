@@ -15,6 +15,7 @@ import type {
   TextSpan
 } from "./contracts";
 import type { StructuredEdit } from "./structuredEdits";
+import { defaultDesignFetch } from "../config";
 
 /**
  * Track E (browser WASM core): the optimistic editing engine.
@@ -389,8 +390,9 @@ export async function activateWasmCore(
 ): Promise<WasmCoreActivation> {
   const loadModule =
     options.moduleLoader ?? (() => loadWasmModule({ baseUrl: options.wasmBaseUrl }));
-  // Workspace auth is the BFF's job — the browser never stamps headers.
-  const fetchImpl = options.fetchImpl ?? fetch;
+  // Workspace auth is the BFF's job — defaults to the receiver-safe wrapper;
+  // callers inject designBffConfig()'s transport.
+  const fetchImpl = options.fetchImpl ?? defaultDesignFetch;
   const apiBaseUrl = options.apiBaseUrl;
 
   const module = await loadModule();
