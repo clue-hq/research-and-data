@@ -81,3 +81,13 @@ check what the review surface renders); (b) relaunch with a bigger cap for more 
 candidates (~8.5 units each, 303 remaining); (c) a looser match policy DOES NOT EXIST —
 `match_policy: Literal["same_office_strict"]` is the only value; loosening is a product/code
 decision, not a knob.
+
+## Founder ruling 2026-08-20 (~11:50 IST): same-office gate retired for now
+
+"Remove the same-office gate for now — retire that policy." Implementation direction (this
+session): reversible policy flip, not deletion — new `match_policy: "company_wide"` becomes the
+DEFAULT (no office-placement veto; candidates never excluded/ambiguous on office geography);
+`same_office_strict` stays in the schema, byte-identical when explicitly selected. Identity and
+relevance gates (current-employer, target functions) untouched. Historical strict scopes replay
+untouched; the new policy affects new operations only. Fix lane dispatched; after it lands:
+review → commit → fleet roll → v9 relaunch (cap 7) → the five-ambiguous class admits.
