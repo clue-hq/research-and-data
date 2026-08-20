@@ -200,16 +200,19 @@ function strokeWith(
  * discarded by the solver and the typed value would snap back on the next
  * hydrate.
  *
- * A pinned node with no resolvable box gets NO write (AD3.1 ruling): there is
- * nothing truthful to patch. NOTE — this is the one place this adapter is not
- * a strict inverse of hydration, which falls back to `node.transform` for a
- * boxless pin (as does upstream's `emitPosition`); the refusal is the
- * conservative direction and is pinned by its own test.
+ * A pinned node with NO resolvable box falls back to the transform, because
+ * that is what hydration displays for it (`scene-hydrate.ts:350-356` — the box
+ * first, then `node.transform`) and what upstream's `emitPosition` writes for
+ * it (`ObjectSection.tsx:93-99`, which falls through to `emitTransform`).
+ * Refusing instead would leave the user editing a field that shows a real
+ * number and silently does nothing — a worse failure than the write the two
+ * precedents agree on.
  *
  * When the box comes from `computed.layout_bounds` rather than a stored
  * `absolute_box`, the engine builder additionally bakes the box's size as
- * Fixed (`operations.ts:107-125`) — deliberate upstream behaviour: giving a
- * boxless pin its first box also defines its size.
+ * Fixed (`operations.ts:107-125`) — deliberate upstream behaviour (same code,
+ * same inputs, same result there): giving a boxless pin its first box also
+ * defines its size.
  */
 function positionOperation(
   node: Node,
@@ -220,12 +223,10 @@ function positionOperation(
   if (!isNodeDirectGeometryEditable(scene, node.id)) {
     return null;
   }
-  if (isNodePinned(scene, node.id)) {
-    const box: Rect | null =
-      node.absolute_box ?? node.computed?.layout_bounds ?? null;
-    if (!box) {
-      return null;
-    }
+  const box: Rect | null = isNodePinned(scene, node.id)
+    ? (node.absolute_box ?? node.computed?.layout_bounds ?? null)
+    : null;
+  if (box) {
     return updateNodeAbsoluteBox(
       node,
       axis === "x" ? { ...box, x: value } : { ...box, y: value },

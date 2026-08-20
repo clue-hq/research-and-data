@@ -446,15 +446,23 @@ it("§1.2 Position: a PINNED node writes its absolute_box, not its transform", (
   );
 });
 
-it("§1.2 Position: a PINNED node with no resolvable box is refused", () => {
+it("§1.2 Position: a PINNED node with no resolvable box writes its transform", () => {
   // Exactly one field edited. `computed` is null on every harvested node, so
-  // this pin has no box at all — nothing truthful to patch.
+  // this pin has no box at all — and the inspector is SHOWING `transform.x`
+  // for it (`scene-hydrate.ts:350-356` falls back to the transform), so the
+  // write must land there too. Upstream agrees: `ObjectSection.tsx`'s
+  // `emitPosition` falls through to `emitTransform` in exactly this state.
   const { node, scene } = withNodeField(
     "rect_accent_bar",
     "position_mode",
     "absolute",
   );
-  assert.equal(apply(node, "position.x", "180", scene), null);
+  assert.deepEqual(
+    apply(node, "position.x", "180", scene),
+    updateNode("rect_accent_bar", {
+      transform: set({ ...adRect().transform, x: 180 }),
+    }),
+  );
 });
 
 // ══ §1.2 row 8 — Rotation (transform, pass-through) ═════════════════════════

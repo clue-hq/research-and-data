@@ -24,7 +24,7 @@ const ACTIVE: SceneEngineStatus = {
 
 function disabled(
   reason: SceneEngineStatus["reason"],
-  detail: string,
+  detail: string | null,
 ): SceneEngineStatus {
   return { engineDisabled: true, reason, detail };
 }
