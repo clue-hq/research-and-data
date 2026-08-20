@@ -5,7 +5,12 @@ import { Popover } from "@base-ui/react/popover";
 import { Select } from "@base-ui/react/select";
 import { MinusIcon, PlusIcon } from "lucide-react";
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
-import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactNode } from "react";
+import type {
+  CSSProperties,
+  MouseEvent as ReactMouseEvent,
+  PointerEvent as ReactPointerEvent,
+  ReactNode,
+} from "react";
 import type { ThemeColorOption } from "@/features/design-editor/adapter/theme-options";
 import type { InspectorBackgroundFill, InspectorFillType } from "../hooks/use-inspector-controller";
 import {
@@ -1111,7 +1116,11 @@ export function InspectorLayerRow({
   expandable?: boolean;
   icon: Extract<InspectorIconName, "apple" | "div" | "ellipse" | "image" | "layout-template" | "rectangle" | "square-dashed" | "type">;
   label: string;
-  onClick?: () => void;
+  /** AD2.6: type-only widening (the handler is still passed straight to the
+   * button, so nothing rendered changes). §1.7's additive multi-select needs
+   * the click's shift/⌘ modifiers, and every existing zero-argument caller
+   * stays assignable. */
+  onClick?: (event: ReactMouseEvent<HTMLButtonElement>) => void;
   trailing?: boolean;
 }) {
   const rowRef = useRef<HTMLButtonElement>(null);

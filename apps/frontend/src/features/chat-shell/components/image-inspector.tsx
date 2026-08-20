@@ -23,7 +23,9 @@ import {
 import styles from "./chat-shell.module.css";
 import {
   AdDummyInspector,
+  AdSceneLayers,
   isAdDummyInspectorSelection,
+  type AdLayersBinding,
 } from "./ad-dummy-inspectors";
 
 // §2 delta (contract row 3): the font family list is prop-fed — the real
@@ -76,9 +78,11 @@ type AdSelectableLayer =
   | "text";
 
 function AdLayers({
+  layers,
   onSelectionChange,
   selected,
-}: {
+  ...binding
+}: AdLayersBinding & {
   onSelectionChange: (selection: ChatShellInspectorSelection) => void;
   selected: ChatShellInspectorSelection;
 }) {
@@ -88,6 +92,13 @@ function AdLayers({
     tree.selectLayer(layer);
     if (selection) onSelectionChange(selection);
   };
+
+  // AD2.6: the real scene tree replaces the fixture rows below, using the same
+  // `InspectorLayerRow` primitive with the same props. The fixture branch stays
+  // as the dummy shipped it and is what renders until AD2.7 feeds `layers`.
+  if (layers) {
+    return <AdSceneLayers layers={layers} {...binding} />;
+  }
 
   return (
     <div className={styles.layerList}>
@@ -240,7 +251,8 @@ function Section({
 function AdTextInspector({
   fontOptions,
   onSelectionChange,
-}: {
+  ...binding
+}: AdLayersBinding & {
   fontOptions: readonly string[];
   onSelectionChange: (selection: ChatShellInspectorSelection) => void;
 }) {
@@ -281,7 +293,7 @@ function AdTextInspector({
         <ArrangeControls onAction={(action) => requestAction(`arrange:${action}`)} />
       </Section>
       <Section id="layers" label="Layers" open={state.openSections.layers} toggle={() => toggleSection("layers")}>
-        <AdLayers onSelectionChange={onSelectionChange} selected="text" />
+        <AdLayers onSelectionChange={onSelectionChange} selected="text" {...binding} />
       </Section>
     </>
   );
@@ -289,7 +301,8 @@ function AdTextInspector({
 
 function AdCanvasInspector({
   onSelectionChange,
-}: {
+  ...binding
+}: AdLayersBinding & {
   onSelectionChange: (selection: ChatShellInspectorSelection) => void;
 }) {
   // Pin the select to its own option list: the shared DEFAULT_STATE carries the
@@ -327,7 +340,7 @@ function AdCanvasInspector({
         </InspectorField>
       </Section>
       <Section id="layers" label="Layers" open={state.openSections.layers} toggle={() => toggleSection("layers")}>
-        <AdLayers onSelectionChange={onSelectionChange} selected="canvas" />
+        <AdLayers onSelectionChange={onSelectionChange} selected="canvas" {...binding} />
       </Section>
     </>
   );
@@ -335,7 +348,8 @@ function AdCanvasInspector({
 
 function AdImageInspector({
   onSelectionChange,
-}: {
+  ...binding
+}: AdLayersBinding & {
   onSelectionChange: (selection: ChatShellInspectorSelection) => void;
 }) {
   const controller = useInspectorController([], "image");
@@ -352,7 +366,7 @@ function AdImageInspector({
         <InspectorField label="Radius"><RadiusControls onChange={(corner, value) => setNestedValue("radius", corner, value)} values={state.radius} /></InspectorField>
       </Section>
       <Section id="layers" label="Layers" open={state.openSections.layers} toggle={() => toggleSection("layers")}>
-        <AdLayers onSelectionChange={onSelectionChange} selected="image" />
+        <AdLayers onSelectionChange={onSelectionChange} selected="image" {...binding} />
       </Section>
     </>
   );
@@ -368,7 +382,8 @@ export function ImageInspector({
   fontOptions = DEFAULT_FONT_OPTIONS,
   onSelectionChange,
   selection,
-}: {
+  ...binding
+}: AdLayersBinding & {
   /** §2 delta (contract row 3): the real font vocabulary, prop-fed. Absent
    * keeps the one safe default until AD2.4's hydration supplies the kit's. */
   fontOptions?: readonly string[];
@@ -390,13 +405,13 @@ export function ImageInspector({
           onLockToggle={dummySelection ? undefined : () => headerController.setValue("locked", !headerController.state.locked)}
           title={title}
         />
-        {selection === "canvas" ? <AdCanvasInspector onSelectionChange={onSelectionChange} /> : null}
-        {selection === "text" ? <AdTextInspector fontOptions={fontOptions} onSelectionChange={onSelectionChange} /> : null}
-        {selection === "image" ? <AdImageInspector onSelectionChange={onSelectionChange} /> : null}
-        {dummySelection ? <AdDummyInspector onSelectionChange={onSelectionChange} selection={selection} /> : null}
+        {selection === "canvas" ? <AdCanvasInspector onSelectionChange={onSelectionChange} {...binding} /> : null}
+        {selection === "text" ? <AdTextInspector fontOptions={fontOptions} onSelectionChange={onSelectionChange} {...binding} /> : null}
+        {selection === "image" ? <AdImageInspector onSelectionChange={onSelectionChange} {...binding} /> : null}
+        {dummySelection ? <AdDummyInspector onSelectionChange={onSelectionChange} selection={selection} {...binding} /> : null}
         {/* `"button"` is deliberately absent from this list: with its schema
             hidden (row 7) it falls through to the canvas default. */}
-        {!(["auto-layout", "canvas", "ellipse", "group", "image", "rectangle", "text"] as ChatShellInspectorSelection[]).includes(selection) ? <AdCanvasInspector onSelectionChange={onSelectionChange} /> : null}
+        {!(["auto-layout", "canvas", "ellipse", "group", "image", "rectangle", "text"] as ChatShellInspectorSelection[]).includes(selection) ? <AdCanvasInspector onSelectionChange={onSelectionChange} {...binding} /> : null}
       </div>
     </aside>
   );

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
+import type { SceneLayerRow } from "@/features/design-editor/adapter/scene-layers";
 import type { ChatShellInspectorSelection } from "../model/chat-shell";
 import {
   ColorControl,
@@ -335,13 +336,110 @@ const LAYER_ROWS: Record<
   ],
 };
 
+/**
+ * AD2.6: what a caller supplies to drive the Layers panel from the REAL scene
+ * instead of the dummy's fixture rows. Every field is optional and absent means
+ * "keep the fixture tree", so the panel is unchanged until AD2.7 binds the
+ * session (the AD0.4 `fontOptions?` precedent).
+ *
+ * It lives in this file, not in `image-inspector.tsx`, only because the import
+ * already runs this way (image-inspector → ad-dummy-inspectors) and the reverse
+ * would be a cycle.
+ */
+export interface AdLayersBinding {
+  /** The real rows, already expansion-filtered by `sceneLayerRows`. */
+  layers?: readonly SceneLayerRow[];
+  /** A click on a selectable row. `additive` is the §1.7 shift/⌘ modifier —
+   * the caller accumulates ids; this panel never owns the selection. */
+  onSelectLayer?: (nodeId: string, additive: boolean) => void;
+  /** A click on a container row's chevron area (the whole row, as the dummy's
+   * own group row does it). The caller owns the expansion set that produced
+   * `layers` — the dummy's `useInspectorLayerTree` — so the toggle goes back to
+   * it rather than forking a second source of truth here. */
+  onToggleLayer?: (nodeId: string) => void;
+  /** The whole additive selection; `[0]` is the primary (§1.8: the inspector
+   * renders the primary's schema). Membership drives the row's active/accented
+   * treatment. */
+  selectedIds?: readonly string[];
+}
+
+/**
+ * AD2.6: the real scene tree, rendered with the dummy's own `InspectorLayerRow`
+ * — same primitive, same props, same class names as the fixture rows it
+ * replaces. Only the data source changed.
+ *
+ * §1.7's `accented` active treatment marks every member of the additive
+ * selection (not just the primary); auto-scroll-to-primary is the primitive's
+ * own `scrollIntoView` on `active`. A row whose node has no v1 schema (§5's
+ * line / vector / instance) renders with no click handler at all — a dead
+ * click, not a hidden layer.
+ *
+ * `row.fillSwatch` is deliberately NOT rendered: §1.7 asks for a fill chip on
+ * Rect/Ellipse rows, but `InspectorLayerRow` has no swatch slot and inventing
+ * one is founder-gated chrome (the dummy is presentation truth). The value is
+ * computed and carried so the chip is a markup change and nothing more when the
+ * row design lands.
+ */
+export function AdSceneLayers({
+  layers = [],
+  onSelectLayer,
+  onToggleLayer,
+  selectedIds = [],
+}: AdLayersBinding) {
+  return (
+    <div className={styles.layerList}>
+      {layers.map((row) => {
+        const active = selectedIds.includes(row.nodeId);
+        const clickable = row.selectable || row.expandable;
+        return (
+          <InspectorLayerRow
+            accented={active}
+            active={active}
+            depth={row.depth}
+            expandable={row.expandable}
+            expanded={row.expandable ? row.expanded : undefined}
+            icon={row.icon}
+            key={row.nodeId}
+            label={row.label}
+            onClick={
+              clickable
+                ? (event) => {
+                    if (row.expandable) onToggleLayer?.(row.nodeId);
+                    if (row.selectable) {
+                      onSelectLayer?.(
+                        row.nodeId,
+                        event.shiftKey || event.metaKey || event.ctrlKey,
+                      );
+                    }
+                  }
+                : undefined
+            }
+          />
+        );
+      })}
+    </div>
+  );
+}
+
 function LayersControls({
+  layers,
   onSelectionChange,
   selection,
-}: {
+  ...binding
+}: AdLayersBinding & {
   onSelectionChange: (selection: ChatShellInspectorSelection) => void;
   selection: AdDummyInspectorSelection;
 }) {
+  // AD2.6: the real tree replaces the per-schema fixture rows below; the
+  // fixture branch is untouched and still renders until AD2.7 feeds `layers`.
+  if (layers) {
+    return (
+      <DummySection label="Layers">
+        <AdSceneLayers layers={layers} {...binding} />
+      </DummySection>
+    );
+  }
+
   return (
     <DummySection label="Layers">
       <div className={styles.layerList}>
@@ -366,7 +464,8 @@ function LayersControls({
 export function AdDummyInspector({
   onSelectionChange,
   selection,
-}: {
+  ...binding
+}: AdLayersBinding & {
   onSelectionChange: (selection: ChatShellInspectorSelection) => void;
   selection: AdDummyInspectorSelection;
 }) {
@@ -383,6 +482,7 @@ export function AdDummyInspector({
       <LayersControls
         onSelectionChange={onSelectionChange}
         selection={selection}
+        {...binding}
       />
     </>
   );
