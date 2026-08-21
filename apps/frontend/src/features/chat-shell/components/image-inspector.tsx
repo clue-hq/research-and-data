@@ -717,7 +717,9 @@ function AdImageAiRows({ imageAi }: { imageAi: SceneImageAiBinding }) {
       {/* Upstream renders the edit block only when there is a real, ready
           source asset to edit (`canEdit`), and so does this — the alternative
           would be a permanently dead pair of buttons over a node with no
-          pixels. When the block is missing, the status line below says why. */}
+          pixels. When the block is missing over a NOT-READY asset, the status
+          line below says why; over a LOCKED one, §4's silent-refusal posture
+          says nothing, as it does for every other control on this panel. */}
       {canEdit ? (
         <>
           <InspectorField label="Edit image">
@@ -728,9 +730,7 @@ function AdImageAiRows({ imageAi }: { imageAi: SceneImageAiBinding }) {
               value={instruction}
             />
           </InspectorField>
-          {candidate ? (
-            <AdImageCandidateReview candidate={candidate} imageAi={imageAi} />
-          ) : editing ? (
+          {candidate ? null : editing ? (
             // While an edit is in flight the two buttons are REPLACED by the
             // pending primary rather than disabled in place: `Remove
             // background` is a secondary, and the shell authored no disabled
@@ -758,6 +758,22 @@ function AdImageAiRows({ imageAi }: { imageAi: SceneImageAiBinding }) {
             </div>
           )}
         </>
+      ) : null}
+      {/* THE REVIEW IS A SIBLING OF THE EDIT BLOCK, NOT A CHILD — upstream's own
+          structure (`ImageInspectorSection.tsx:253-297` vs `:299-349`), and the
+          reason is exactly what nesting cost at review: `canEdit` folds in §4's
+          lock, so locking the node while a candidate was staged removed
+          Before/After, Accept, Reject and Save-as-new with nothing on screen to
+          say where a paid result had gone. Accept still refuses while the node
+          is locked — the refusal is the WRITE's, silent like every other on this
+          lane — and unlocking makes it land, which is only true because the
+          review outlived the lock. */}
+      {candidate ? (
+        <AdImageCandidateReview
+          candidate={candidate}
+          imageAi={imageAi}
+          onClearInstruction={() => setInstruction("")}
+        />
       ) : null}
       {savedNotice ? (
         <p className={styles.inspectorStatusNote} role="status">
@@ -805,9 +821,16 @@ function AdImageAiRows({ imageAi }: { imageAi: SceneImageAiBinding }) {
 function AdImageCandidateReview({
   candidate,
   imageAi,
+  onClearInstruction,
 }: {
   candidate: NonNullable<SceneImageAiBinding["candidate"]>;
   imageAi: SceneImageAiBinding;
+  /** Upstream clears the instruction on Accept and on Save as new, and not on
+   * Reject (`ImageInspectorSection.tsx:159,178` vs `:165-168`) — because after
+   * either of those the instruction has been ANSWERED, and leaving it in the box
+   * puts a paid re-run of the edit that was just applied one click away. Reject
+   * keeps it, which is the whole point of rejecting: try again, adjusted. */
+  onClearInstruction: () => void;
 }) {
   return (
     <>
@@ -822,7 +845,10 @@ function AdImageCandidateReview({
       <div className={styles.fieldGrid}>
         <button
           className={styles.sharePrimaryButtonWide}
-          onClick={imageAi.onAccept}
+          onClick={() => {
+            imageAi.onAccept();
+            onClearInstruction();
+          }}
           type="button"
         >
           Accept
@@ -837,7 +863,10 @@ function AdImageCandidateReview({
       </div>
       <button
         className={styles.shareSecondaryButton}
-        onClick={imageAi.onSaveCandidateAsNew}
+        onClick={() => {
+          imageAi.onSaveCandidateAsNew();
+          onClearInstruction();
+        }}
         type="button"
       >
         Save as new
@@ -885,26 +914,44 @@ function AdImageInspector({
     addressing,
   );
   const { setNestedValue, setValue, state, toggleSection } = controller;
-  // §1.3 row 2 (Alt text): the draft the box shows, beside the value the
-  // DOCUMENT has. Both move together, in one state object, so they cannot
-  // drift — the `RadiusControls` `committed`/`draft` shape (ruling A27).
+  // §1.3 row 2 (Alt text): THREE values in one state object, so they cannot
+  // drift — the `RadiusControls` `committed`/`draft` shape (ruling A27), with
+  // one field it does not need.
   //
-  // The document half is the LIVE hydrated value (which recomputes on every
-  // scene mirror-up, including the optimistic apply's), not the controller's
-  // mount-time seed, and re-seeding the draft when it changes is what keeps
-  // this box honest about a SIBLING control's write: Replace image overwrites
-  // `asset_placement.alt_text` with the new asset's label, so without this the
-  // box would go on describing the picture that just left. Same technique
-  // step 2's review used for the Fill thumbnail — React's
-  // adjust-state-on-prop-change, a render-time comparison, never an effect
-  // (which would render one stale frame and is barred by this repo's lint).
+  //  • `draft`     — what the box is showing.
+  //  • `committed` — what this panel believes the document holds. The dirty
+  //                  check reads THIS and never the live prop, which is
+  //                  `RadiusControls`' own discipline (`inspector-primitives.tsx`,
+  //                  ruling A27) and the reason the field exists.
+  //  • `seen`      — the last hydrated value this component reacted to. It is
+  //                  what makes the re-seed below fire on a SIBLING write and
+  //                  not on our own.
+  //
+  // THE RE-SEED IS WHY THE PROP IS READ AT ALL. Replace image overwrites
+  // `asset_placement.alt_text`, so without it the box would go on describing
+  // the picture that just left. React's adjust-state-on-prop-change (a
+  // render-time comparison, never an effect, which would render one stale frame
+  // and is barred by this repo's lint), the technique step 2's review used for
+  // the Fill thumbnail.
+  //
+  // AND `seen` IS WHY IT DOES NOT SNAP BACK. The optimistic apply mirrors up
+  // through a passive effect, so for a render or two after a commit the live
+  // prop still holds the PRE-write text. Comparing the re-seed against
+  // `committed` (which the commit just moved) would fire it against that stale
+  // value and flash the old description; comparing against `seen` — which only
+  // a genuinely new prop moves — does not.
   const documentAltText = hydrated?.altText ?? state.altText;
   const [altText, setAltText] = useState(() => ({
-    document: documentAltText,
+    committed: documentAltText,
     draft: documentAltText,
+    seen: documentAltText,
   }));
-  if (altText.document !== documentAltText) {
-    setAltText({ document: documentAltText, draft: documentAltText });
+  if (altText.seen !== documentAltText) {
+    setAltText({
+      committed: documentAltText,
+      draft: documentAltText,
+      seen: documentAltText,
+    });
   }
   const commitAltText = () => {
     // A29: a commit against a LOCKED node records nothing, because §4 refuses
@@ -912,10 +959,11 @@ function AdImageInspector({
     // the panel's record of the document does not move.
     if (locked) return;
     // A write that changes nothing is not a write. The comparison is against
-    // the document, which is also exactly what the adapter compares
-    // (`effectiveAltText`), so the two can never disagree about what "changed".
-    if (altText.draft !== altText.document) setValue("altText", altText.draft);
-    setAltText((current) => ({ ...current, document: current.draft }));
+    // what this panel believes the document holds, which is also exactly what
+    // the adapter compares (`effectiveAltText`), so the two can never disagree
+    // about what "changed".
+    if (altText.draft !== altText.committed) setValue("altText", altText.draft);
+    setAltText((current) => ({ ...current, committed: current.draft }));
   };
   return (
     <>

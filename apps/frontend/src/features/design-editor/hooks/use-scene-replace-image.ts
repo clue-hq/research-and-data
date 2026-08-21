@@ -74,6 +74,13 @@ export interface SceneReplaceImageDeps {
   canApply: () => boolean;
   /** Clears both inline slots. A new pick supersedes what the last one said. */
   clearMessages: () => void;
+  /** The document the pick was aimed at. Compared after the upload beside the
+   * node id, because node ids are per-document and the seed script writes
+   * template slugs (`image_hero`) — two ads routinely carry the same one, so a
+   * node-only guard let an artifact tab switched mid-upload write into an ad the
+   * user never touched. (AD4.A step 3 review; the AI suite had the identical gap
+   * and both were closed in one change.) */
+  documentId: string | null;
   /** The session's PRIMARY selection, resolved against the live scene. */
   node: Node | null;
   /** Sets the inspector's existing inline error line. */
@@ -112,6 +119,10 @@ export function createSceneReplaceImageHandler(
     }
     const before = readDeps();
     const target = before.node;
+    const documentId = before.documentId;
+    if (!documentId) {
+      throw new SceneReplaceImageRefused("no document is armed");
+    }
     // Not an image selection, or §4's lock — REFUSED BEFORE THE TRANSPORT. An
     // upload that mints an asset and then cannot place it is a half write: a
     // registry row nothing references.
@@ -147,7 +158,13 @@ export function createSceneReplaceImageHandler(
     }
 
     const after = readDeps();
-    if (!after.node || after.node.id !== target.id) {
+    // BOTH HALVES — the same node id in a DIFFERENT document is a different
+    // node (the `documentId` dep says why).
+    if (
+      !after.node ||
+      after.node.id !== target.id ||
+      after.documentId !== documentId
+    ) {
       throw new SceneReplaceImageRefused("the selection moved during the upload");
     }
     if (!sceneImageReplacementTarget(after.node)) {
@@ -170,6 +187,7 @@ export function useSceneReplaceImage(options: {
   applyOps: (operations: Operation[], intent?: string) => boolean;
   canApply: () => boolean;
   clearMessages: () => void;
+  documentId: string | null;
   node: Node | null;
   onError: (message: string) => void;
   /** Injectable for tests; the platform's BFF upload by default. */
@@ -179,6 +197,7 @@ export function useSceneReplaceImage(options: {
     applyOps,
     canApply,
     clearMessages,
+    documentId,
     node,
     onError,
     upload = uploadWebAsset,
@@ -190,6 +209,7 @@ export function useSceneReplaceImage(options: {
     applyOps,
     canApply,
     clearMessages,
+    documentId,
     node,
     onError,
     upload,
@@ -199,6 +219,7 @@ export function useSceneReplaceImage(options: {
       applyOps,
       canApply,
       clearMessages,
+      documentId,
       node,
       onError,
       upload,

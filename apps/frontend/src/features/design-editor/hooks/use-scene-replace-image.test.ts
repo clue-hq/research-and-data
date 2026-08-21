@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  AD_DOCUMENT_ID,
   HARVESTED_AD_PAGE,
   adImage,
   adTokenText,
@@ -87,6 +88,7 @@ function harness({
       cleared += 1;
       errors.length = 0;
     },
+    documentId: AD_DOCUMENT_ID as string | null,
     node,
     onError: (message: string) => errors.push(message),
     upload: (candidate: File) => {
@@ -352,4 +354,33 @@ test("FIX 3: a pick the pre-transport gate refuses changes nothing at all, messa
   await assert.rejects(handler(pngFile()));
 
   assert.equal(clearCount(), 0, "a complete non-event does not touch the slots");
+});
+
+test("AD4.A step 3 review: an upload that lands after the ARTIFACT TAB changed writes nothing", () => {
+  // The twin of the AI suite's blocker, closed in the same change: this guard
+  // compared the node id alone, and the harvest's ids are template slugs
+  // (`image_hero`), so two ads routinely carry the same one. A tab switched
+  // mid-upload wrote a real version into an ad the user never touched.
+  const held = deferred<AssetRecord>();
+  const state = harness({ upload: () => held.promise });
+
+  const pending = state.handler(pngFile());
+  assert.equal(state.uploads.length, 1, "the upload is in flight");
+  // Same node id, different document.
+  state.deps.documentId = "doc_a_second_ad_00000000000000";
+  held.resolve(RECORD);
+
+  return assert
+    .rejects(pending)
+    .then(() => assert.equal(state.applied.length, 0, "nothing lands in the other ad"));
+});
+
+test("AD4.A step 3 review: a pick with no document armed never reaches the transport", async () => {
+  const state = harness();
+  state.deps.documentId = null;
+
+  await assert.rejects(state.handler(pngFile()));
+
+  assert.equal(state.uploads.length, 0, "nothing is minted with nothing to write to");
+  assert.equal(state.applied.length, 0);
 });

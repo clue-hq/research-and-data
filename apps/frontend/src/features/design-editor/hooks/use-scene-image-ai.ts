@@ -72,11 +72,22 @@ export interface SceneImageCandidate {
   record: AssetRecord;
 }
 
+/** What a Save-as-new confirmed — STAMPED exactly like the candidate it
+ * describes. A notice is a statement about one picture on one node, so it must
+ * be derived against the current selection rather than returned unconditionally:
+ * unstamped, "Saved … to the asset library." followed the user onto the next
+ * image and described something that had never happened there. */
+export interface SceneImageSavedNotice {
+  forDocumentId: string;
+  forNodeId: string;
+  message: string;
+}
+
 export interface SceneImageAiState {
   candidate: SceneImageCandidate | null;
   editing: boolean;
   generating: boolean;
-  savedNotice: string | null;
+  savedNotice: SceneImageSavedNotice | null;
 }
 
 export interface SceneImageAiDeps {
@@ -135,10 +146,16 @@ function failureMessage(cause: unknown): string {
  *
  * THE SECOND READ IS NOT DEFENSIVE PADDING. A generation takes seconds, and
  * `applyOps` writes to whatever document is armed at the moment it is called —
- * so a selection that moved (or an artifact tab that changed) between the click
- * and the response would land the picture on a node the user is no longer
- * looking at, or in another ad entirely. It also re-asks §4's lock, which can
- * be turned on from the panel header while the model is working.
+ * so a selection that moved between the click and the response would land the
+ * picture on a node the user is no longer looking at. It also re-asks §4's
+ * lock, which can be turned on from the panel header while the model is
+ * working.
+ *
+ * AND IT COMPARES THE DOCUMENT, NOT JUST THE NODE. Node ids are per-document
+ * and the seed script writes template slugs (`image_hero`), so two ads
+ * routinely carry the same id — a tab switch mid-generation passed a node-only
+ * guard and wrote a real version, and a real undo step, into an ad the user
+ * never touched. Every post-await gate on this lane asks both halves.
  */
 export function createSceneImageAiRunner(
   readDeps: () => SceneImageAiDeps,
@@ -161,17 +178,25 @@ export function createSceneImageAiRunner(
     }
     const before = readDeps();
     const target = before.node;
+    const documentId = before.documentId;
     // Not an image selection, or §4's lock, or nothing armed — REFUSED BEFORE
     // THE SPEND. A generation that mints an asset the editor cannot place is a
     // half write: a registry row nothing references, paid for.
-    if (!target || !sceneImageReplacementTarget(target) || !before.canApply()) {
+    if (
+      !target ||
+      !documentId ||
+      !sceneImageReplacementTarget(target) ||
+      !before.canApply()
+    ) {
       return;
     }
     // A new attempt supersedes what the last one said. Cleared HERE rather than
     // at entry so a click the gate refuses remains the complete non-event every
     // other §4 refusal on this lane is, messages included.
     before.clearMessages();
-    set({ generating: true });
+    // A generate supersedes a save notice the same way an edit does: it
+    // describes a picture this node is about to stop carrying.
+    set({ generating: true, savedNotice: null });
     let record: AssetRecord;
     try {
       record = await before.generate({
@@ -188,7 +213,13 @@ export function createSceneImageAiRunner(
     }
 
     const after = readDeps();
-    if (!after.node || after.node.id !== target.id) {
+    // BOTH HALVES: the same node id in a DIFFERENT document is a different
+    // node (the header above says why), so the document is compared too.
+    if (
+      !after.node ||
+      after.node.id !== target.id ||
+      after.documentId !== documentId
+    ) {
       return;
     }
     // The adapter re-asks §4's lock and answers "is this a write at all" — the
@@ -309,7 +340,11 @@ export function createSceneImageAiRunner(
       }
       set({
         candidate: null,
-        savedNotice: `Saved ${staged.record.label || staged.record.id} to the asset library.`,
+        savedNotice: {
+          forDocumentId: staged.forDocumentId,
+          forNodeId: staged.forNodeId,
+          message: `Saved ${staged.record.label || staged.record.id} to the asset library.`,
+        },
       });
     },
   };
@@ -405,11 +440,13 @@ export function useSceneImageAi(options: {
   // when it changes — the discipline the session already applies to its scene,
   // its selection and its palette. A transient loading gap therefore cannot
   // discard a paid result, and coming back to the node restores the review.
+  const forThisNode = (stamped: { forDocumentId: string; forNodeId: string }) =>
+    stamped.forDocumentId === documentId && stamped.forNodeId === node?.id;
   const staged =
-    state.candidate &&
-    state.candidate.forDocumentId === documentId &&
-    state.candidate.forNodeId === node?.id
-      ? state.candidate.record
+    state.candidate && forThisNode(state.candidate) ? state.candidate.record : null;
+  const savedNotice =
+    state.savedNotice && forThisNode(state.savedNotice)
+      ? state.savedNotice.message
       : null;
 
   const beforeSrc = node && scene ? sceneImageBeforeSrc(node, scene) : null;
@@ -430,7 +467,7 @@ export function useSceneImageAi(options: {
       onRejectCandidate,
       onRemoveBackground,
       onSaveCandidateAsNew,
-      savedNotice: state.savedNotice,
+      savedNotice,
       statusLine,
     }),
     [
@@ -443,10 +480,10 @@ export function useSceneImageAi(options: {
       onRejectCandidate,
       onRemoveBackground,
       onSaveCandidateAsNew,
+      savedNotice,
       staged,
       state.editing,
       state.generating,
-      state.savedNotice,
       statusLine,
     ],
   );

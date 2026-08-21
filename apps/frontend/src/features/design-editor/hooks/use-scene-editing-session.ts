@@ -461,6 +461,7 @@ export function useSceneEditingSession({
     applyOps: writes.applyOps,
     canApply: writes.canApply,
     clearMessages: writes.clearMessages,
+    documentId: activeDocumentId,
     node: primaryNode ?? null,
     onError: writes.reportError,
   });
@@ -475,7 +476,7 @@ export function useSceneEditingSession({
   // source asset's `status` out of the scene's own registry, and the document
   // id is what a staged candidate is stamped with so it can never be accepted
   // into another ad.
-  const imageAi = useSceneImageAi({
+  const imageAiBinding = useSceneImageAi({
     applyOps: writes.applyOps,
     canApply: writes.canApply,
     clearMessages: writes.clearMessages,
@@ -484,6 +485,14 @@ export function useSceneEditingSession({
     onError: writes.reportError,
     scene,
   });
+  // AD4.A step 3 review: the rows are OFFERED only when there is a real
+  // document to write to. Both ad call sites pass this unconditionally and the
+  // hook always returns a binding, so without this gate the AI controls render
+  // on the pre-load path — including the fixture layer tree's "Image" row,
+  // which opens the image schema before any scene exists — as a live-looking
+  // Generate button whose every click is refused in silence. That is this
+  // lane's signature defect, and the honest answer is not to offer the control.
+  const imageAi = activeDocumentId && scene ? imageAiBinding : undefined;
 
   // W3.1's triple, ad-side. `documentVersion` stays NULL here, permanently and
   // deliberately (AD3.2 ruling): the edit queue owns `base_version` internally
@@ -512,7 +521,9 @@ export function useSceneEditingSession({
     fontOptions,
     hydrated,
     /** §1.3 row 2: the inspector's AI image suite — what the four flows are
-     * showing and the six callbacks they commit through. */
+     * showing and the six callbacks they commit through. `undefined` until a
+     * document is actually loaded, which is what keeps the rows off the
+     * pre-load and fixture paths. */
     imageAi,
     /**
      * AD3.2 review: what the inspector's remount key carries beside the node

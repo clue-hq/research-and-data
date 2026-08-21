@@ -309,12 +309,49 @@ const CHAT_SHELL_STYLESHEET = readFileSync(
   "utf8",
 );
 
-it("THE COMPOSITION RULE: the ad inspector invents NO css class — every one it names already exists", () => {
+/** The EXACT set of classes the three AI components are allowed to name — the
+ * category-2 and category-3 entries of this slice's composition enumeration,
+ * and nothing else. An allowlist rather than an exists-in-the-stylesheet check,
+ * because the weaker form passes the moment somebody adds a rule AND uses it,
+ * which is precisely the move the phase's never-invent-UI law forbids. Growing
+ * this list is a deliberate act with a reviewer attached. */
+const AI_SUITE_ALLOWED_CLASSES = [
+  "fieldGrid",
+  "imageReplaceField",
+  "inspectorStatusNote",
+  "sharePrimaryButtonWide",
+  "shareSecondaryButton",
+];
+
+it("THE COMPOSITION RULE: the AI suite names ONLY the classes its enumeration justified", () => {
   // The single most important rule in this phase: the dummy UI is presentation
   // truth and ceiling. The AI suite is the first surface the dummy designed
-  // none of, so this guard makes "no new CSS" mechanical rather than a promise
-  // — a `styles.imageAiPanel` added tomorrow fails here, because the
-  // stylesheet has no `.imageAiPanel` to match.
+  // none of, so this guard makes "no new CSS" mechanical rather than a promise.
+  const bodies = ["AdImageAiRows", "AdImageCandidateReview", "AdImageReviewTile"]
+    .map((name) => {
+      const body = new RegExp(`function ${name}\\([\\s\\S]*?\\n}\\n`).exec(
+        AD_INSPECTOR_SOURCE,
+      );
+      assert.ok(body, `image-inspector.tsx no longer defines ${name}`);
+      return body[0];
+    })
+    .join("\n");
+  const used = [
+    ...new Set(
+      [...bodies.matchAll(/\bstyles\.([A-Za-z0-9_]+)/g)].map((match) => match[1]),
+    ),
+  ].sort();
+  assert.deepEqual(
+    used,
+    AI_SUITE_ALLOWED_CLASSES,
+    "the AI suite names a class its enumeration did not justify (or stopped using one)",
+  );
+});
+
+it("THE COMPOSITION RULE: every class the whole ad panel names already exists in the stylesheet", () => {
+  // The weaker, wider guard — it cannot catch an invented class that was also
+  // authored, which the allowlist above does, but it does catch a typo or a
+  // member deleted out from under the panel across all seven schemas.
   const used = new Set(
     [...AD_INSPECTOR_SOURCE.matchAll(/\bstyles\.([A-Za-z0-9_]+)/g)].map(
       (match) => match[1],
@@ -371,8 +408,9 @@ it("§4 / A29: the alt-text commit records NOTHING against a locked node", () =>
   );
   assert.ok(commit, "image-inspector.tsx no longer defines commitAltText");
   assert.match(commit[0], /if \(locked\) return;/);
-  // And a write that changes nothing is not a write.
-  assert.match(commit[0], /altText\.draft !== altText\.document/);
+  // And a write that changes nothing is not a write — compared against what
+  // this panel believes the document holds, never against the live prop.
+  assert.match(commit[0], /altText\.draft !== altText\.committed/);
 });
 
 it("§1.3: the alt-text box re-seeds from the LIVE document, so a Replace cannot leave it stale", () => {
@@ -383,9 +421,52 @@ it("§1.3: the alt-text box re-seeds from the LIVE document, so a Replace cannot
     AD_INSPECTOR_SOURCE,
     /const documentAltText = hydrated\?\.altText \?\? state\.altText;/,
   );
-  assert.match(
+  // REVIEW FIX: the re-seed fires against `seen` — the last hydrated value this
+  // component reacted to — and NOT against the record the commit just moved.
+  // The optimistic apply mirrors up through a passive effect, so for a render
+  // or two after a commit the live prop still holds the PRE-write text;
+  // comparing against the record would fire the re-seed against that stale
+  // value and flash the old description back into the box.
+  assert.match(AD_INSPECTOR_SOURCE, /if \(altText\.seen !== documentAltText\) \{/);
+  assert.ok(
+    !/altText\.committed !== documentAltText/.test(AD_INSPECTOR_SOURCE),
+    "the re-seed must not compare the panel's record against the live prop",
+  );
+});
+
+it("REVIEW: the candidate review is a SIBLING of the edit block, so a lock cannot vanish it", () => {
+  // `canEdit` folds in §4's lock, so nesting the review inside it removed
+  // Before/After, Accept, Reject and Save-as-new the moment the header lock was
+  // clicked — a paid result taken off the screen with nothing to say where it
+  // went. Upstream renders the two as siblings for this exact reason.
+  const rows = /function AdImageAiRows\([\s\S]*?\n}\n/.exec(AD_INSPECTOR_SOURCE);
+  assert.ok(rows, "image-inspector.tsx no longer defines AdImageAiRows");
+  const canEditBlock = rows[0].slice(
+    rows[0].indexOf("{canEdit ? ("),
+    rows[0].indexOf("{candidate ? ("),
+  );
+  assert.ok(
+    canEditBlock.length > 0,
+    "the canEdit block no longer precedes the review",
+  );
+  assert.ok(
+    !canEditBlock.includes("AdImageCandidateReview"),
+    "the review must not be nested inside the canEdit block",
+  );
+  assert.match(rows[0], /\{candidate \? \(\s*<AdImageCandidateReview/);
+});
+
+it("REVIEW: Accept and Save as new clear the instruction; Reject deliberately keeps it", () => {
+  const review = /function AdImageCandidateReview\([\s\S]*?\n}\n/.exec(
     AD_INSPECTOR_SOURCE,
-    /if \(altText\.document !== documentAltText\) \{/,
+  );
+  assert.ok(review, "image-inspector.tsx no longer defines AdImageCandidateReview");
+  const clears = review[0].match(/onClearInstruction\(\);/g) ?? [];
+  assert.equal(clears.length, 2, "exactly Accept and Save as new clear it");
+  const rejectButton = review[0].slice(review[0].indexOf("onRejectCandidate"));
+  assert.ok(
+    !rejectButton.slice(0, 120).includes("onClearInstruction"),
+    "Reject keeps the instruction — trying again, adjusted, is the point of rejecting",
   );
 });
 
@@ -436,4 +517,25 @@ it("§1.3 Review: BOTH tiles render, captioned Before and After (the ruling of 2
   const grids = review[0].match(/styles\.fieldGrid/g) ?? [];
   assert.equal(grids.length, 2, "one grid for the tiles, one for the button pair");
   assert.match(review[0], /Save as new/);
+});
+
+it("REVIEW: the AI rows are OFFERED only when there is a real document to write to", () => {
+  // Both ad call sites pass `imageAi` unconditionally and the hook always
+  // returns a binding, so without this gate the rows render on the pre-load
+  // path — including the fixture layer tree's "Image" row, which opens this
+  // schema before any scene exists — as a live-looking Generate button whose
+  // every click is refused in silence. That is this lane's signature defect.
+  const session = readFileSync(
+    join(
+      dirname(fileURLToPath(import.meta.url)),
+      "../hooks/use-scene-editing-session.ts",
+    ),
+    "utf8",
+  );
+  assert.match(
+    session,
+    /const imageAi = activeDocumentId && scene \? imageAiBinding : undefined;/,
+  );
+  // And the panel still treats an absent binding as "render nothing".
+  assert.match(AD_INSPECTOR_SOURCE, /\{imageAi \? <AdImageAiRows imageAi=\{imageAi\} \/> : null\}/);
 });

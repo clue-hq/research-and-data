@@ -561,7 +561,10 @@ test("accept: an unarmed write path refuses and keeps the candidate", async () =
   state.runner.accept();
 
   assert.equal(state.applied.length, 0);
-  assert.ok(state.state().candidate);
+  assert.ok(
+    state.state().candidate,
+    "an unarmed accept keeps the paid result staged",
+  );
 });
 
 test("reject: zero scene mutations, and the review is over", async () => {
@@ -581,18 +584,62 @@ test("save as new: zero scene mutations, and the notice names the asset that was
 
   assert.equal(state.applied.length, 0);
   assert.equal(state.state().candidate, null);
-  assert.equal(
-    state.state().savedNotice,
-    "Saved a calm clinic reception to the asset library.",
-  );
+  assert.deepEqual(state.state().savedNotice, {
+    forDocumentId: AD_DOCUMENT_ID,
+    forNodeId: "image_hero",
+    // REVIEW FIX: STAMPED like the candidate it describes. Unstamped it
+    // followed the user onto the next image and stated something that had
+    // never happened there.
+    message: "Saved a calm clinic reception to the asset library.",
+  });
 });
 
 test("a new edit clears the last save notice — it no longer describes anything current", async () => {
   const state = await staged();
   state.runner.saveAsNew();
-  assert.ok(state.state().savedNotice);
+  assert.ok(state.state().savedNotice, "save as new set a notice");
 
   await state.runner.edit("make the sky warmer");
+
+  assert.equal(state.state().savedNotice, null);
+});
+
+// ══ Review fixes ════════════════════════════════════════════════════════════
+
+test("BLOCKER: a generation that resolves after the ARTIFACT TAB changed writes nothing", async () => {
+  // The repro: generate on doc A's `image_hero`, switch tabs to doc B, select
+  // doc B's `image_hero` — the harvest's ids are template slugs, so two ads
+  // routinely carry the same one — and a node-id-only guard passed, writing a
+  // real version and a real undo step into an ad the user never touched.
+  const held = deferred<AssetRecord>();
+  const state = harness({ generate: () => held.promise });
+
+  const pending = state.runner.generate("a calm clinic reception");
+  assert.equal(state.generations.length, 1, "the generation is in flight");
+  // Same node id, different document.
+  state.deps.documentId = "doc_a_second_ad_00000000000000";
+  held.resolve(record());
+  await pending;
+
+  assert.equal(state.applied.length, 0, "nothing lands in the other ad");
+});
+
+test("BLOCKER: a generation with no document armed never reaches the model", async () => {
+  const state = harness();
+  state.deps.documentId = null;
+
+  await state.runner.generate("a calm clinic reception");
+
+  assert.equal(state.generations.length, 0, "nothing is minted with nothing to write to");
+  assert.equal(state.applied.length, 0);
+});
+
+test("a generate supersedes a save notice — it describes a picture about to leave", async () => {
+  const state = await staged();
+  state.runner.saveAsNew();
+  assert.ok(state.state().savedNotice, "save as new set a notice");
+
+  await state.runner.generate("a calm clinic reception");
 
   assert.equal(state.state().savedNotice, null);
 });
