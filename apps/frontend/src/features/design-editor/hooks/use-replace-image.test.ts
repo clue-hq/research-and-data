@@ -67,17 +67,22 @@ function harness({
   const applied: { operations: WebOperation[]; intent?: string }[] = [];
   const errors: string[] = [];
   const uploads: File[] = [];
-  const handler = createReplaceImageHandler(() => ({
-    applyOps: (operations, intent) => applied.push({ operations, intent }),
+  // ONE mutable deps object rather than a fresh one per read, so a case can
+  // move the document (or the selection) while an upload is in flight — the
+  // same shape the ad lane's two hooks are tested through.
+  const deps = {
+    applyOps: (operations: WebOperation[], intent?: string) =>
+      applied.push({ operations, intent }),
     document: loadedDocument(assets),
-    onError: (message) => errors.push(message),
+    onError: (message: string) => errors.push(message),
     selection: nodeId === null ? null : selectionOf(nodeId),
     upload: (candidate: File) => {
       uploads.push(candidate);
       return upload(candidate);
     },
-  }));
-  return { applied, errors, handler, uploads };
+  };
+  const handler = createReplaceImageHandler(() => deps);
+  return { applied, deps, errors, handler, uploads };
 }
 
 test("a fresh asset applies upsert_asset then replace_asset in one batch", async () => {
@@ -177,4 +182,40 @@ test("a second file is ignored while the first upload is still in flight", async
     ["first.png", "third.png"],
   );
   pending[1](RECORD);
+});
+
+test("AD4.A step 3 review: an upload that lands after the DOCUMENT changed writes nothing", async () => {
+  // The same data-integrity defect the ad lane's blocker named, in shipped
+  // lane-B code: `applyOps` is bound to the document loaded when this handler
+  // captured it, so a user who moved to another document mid-upload had the
+  // batch written into the one they LEFT, keyed on a base version that had
+  // since moved to the one they were in.
+  let release!: (record: AssetRecord) => void;
+  const held = new Promise<AssetRecord>((settle) => {
+    release = settle;
+  });
+  const state = harness({ upload: () => held });
+
+  const pending = state.handler(file());
+  assert.equal(state.uploads.length, 1, "the upload is in flight");
+  state.deps.document = {
+    ...state.deps.document,
+    documentId: "doc_2",
+  } as typeof state.deps.document;
+  release(RECORD);
+  await pending;
+
+  assert.equal(state.applied.length, 0, "nothing lands in the other document");
+  assert.deepEqual(state.errors, [], "and it is a silent refusal, not a failure");
+});
+
+test("AD4.A step 3 review: the guard is inert while the document stays put", async () => {
+  // The passing path is byte-for-byte what it always was — the guard only
+  // decides whether the write happens.
+  const state = harness();
+
+  await state.handler(file());
+
+  assert.equal(state.applied.length, 1);
+  assert.equal(state.applied[0].intent, "replace_image");
 });
