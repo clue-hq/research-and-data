@@ -23,6 +23,7 @@ import { fetchBrandKitDetail } from "../engine/scene/documentStore";
 import { collectKitFontFaceRefs } from "../engine/scene/kitFonts";
 import { fetchFontLibrary } from "../engine/scene/libraryFonts";
 import type { SceneDocumentHistory } from "./use-scene-document";
+import { useSceneImageAi } from "./use-scene-image-ai";
 import { useSceneInspectorWrites } from "./use-scene-inspector-writes";
 import { useSceneReplaceImage } from "./use-scene-replace-image";
 
@@ -464,6 +465,26 @@ export function useSceneEditingSession({
     onError: writes.reportError,
   });
 
+  // AD4.A step 3 (§1.3 row 2): the AI image suite — generate / edit / remove
+  // background / candidate review. Same seam as Replace image above and for the
+  // same reasons: the LIVE node (§4's lock and the node's own asset are facts
+  // about the document, and the write must still be aimed correctly seconds
+  // later), the same pre-spend gate, and the same one inline error slot.
+  //
+  // It also takes the SCENE, which the upload does not: the edit gate reads the
+  // source asset's `status` out of the scene's own registry, and the document
+  // id is what a staged candidate is stamped with so it can never be accepted
+  // into another ad.
+  const imageAi = useSceneImageAi({
+    applyOps: writes.applyOps,
+    canApply: writes.canApply,
+    clearMessages: writes.clearMessages,
+    documentId: activeDocumentId,
+    node: primaryNode ?? null,
+    onError: writes.reportError,
+    scene,
+  });
+
   // W3.1's triple, ad-side. `documentVersion` stays NULL here, permanently and
   // deliberately (AD3.2 ruling): the edit queue owns `base_version` internally
   // (`editQueue.ts:110-113,152`), so a copy stamped on an inspector event would
@@ -490,6 +511,9 @@ export function useSceneEditingSession({
     canvasControls,
     fontOptions,
     hydrated,
+    /** §1.3 row 2: the inspector's AI image suite — what the four flows are
+     * showing and the six callbacks they commit through. */
+    imageAi,
     /**
      * AD3.2 review: what the inspector's remount key carries beside the node
      * id. It advances ONLY when a reloaded document has actually arrived (the

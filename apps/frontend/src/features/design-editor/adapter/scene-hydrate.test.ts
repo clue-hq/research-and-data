@@ -1163,3 +1163,46 @@ it("FIX 2: the Fill preview reads the LIVE hydrated value, not the mount-frozen 
   assert.match(upload[0], /src=\{hydrated\?\.imagePreviewSrc \?\? state\.imagePreviewSrc\}/);
   assert.match(upload[0], /onFileSelect=\{onReplaceImage\}/);
 });
+
+// ══ AD4.A step 3 / §1.3 row 2 — Alt text ════════════════════════════════════
+
+it("§1.3 Alt text: an image states the description its PLACEMENT carries", () => {
+  assert.equal(
+    hydrateSceneInspectorState(adImage(), HARVESTED_AD_PAGE).altText,
+    "Brand gradient backdrop",
+  );
+});
+
+it("§1.3 Alt text: with no stored alt_text the node's OWN `alt` is stated", () => {
+  // Upstream's `placement.alt_text ?? node.kind.alt ?? ""` — two genuinely
+  // different fields, read in that order. UNCOVERED by the harvest, whose
+  // image carries both.
+  const scene = clone(HARVESTED_AD_PAGE);
+  const node = scene.nodes.image_hero;
+  assert.ok(node, "fixture node image_hero missing");
+  delete node.asset_placement?.alt_text;
+  assert.equal(
+    hydrateSceneInspectorState(node, scene).altText,
+    "Brand gradient backdrop",
+  );
+});
+
+it("§1.3 Alt text: an image with NO description at all states the honest empty string", () => {
+  const scene = clone(HARVESTED_AD_PAGE);
+  const node = scene.nodes.image_hero;
+  assert.ok(node, "fixture node image_hero missing");
+  delete node.asset_placement;
+  if (node.kind.kind === "image") node.kind.alt = null;
+  assert.equal(hydrateSceneInspectorState(node, scene).altText, "");
+});
+
+it("§1.3 Alt text: a NON-image node hydrates no description — the row is image-only", () => {
+  assert.ok(
+    !("altText" in hydrateSceneInspectorState(adTokenText(), HARVESTED_AD_PAGE)),
+    "a text node has no image alt text",
+  );
+  assert.ok(
+    !("altText" in hydrateSceneInspectorState(adRect(), HARVESTED_AD_PAGE)),
+    "a rectangle has no image alt text",
+  );
+});

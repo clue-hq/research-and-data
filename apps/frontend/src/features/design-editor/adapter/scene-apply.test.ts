@@ -41,8 +41,8 @@ import {
 import {
   sceneCanvasChangeToOperation,
   sceneChangeToOperation,
+  sceneImagePlacementOperations,
   sceneImageReplacementTarget,
-  sceneReplaceImageOperations,
 } from "./scene-apply";
 
 /**
@@ -2398,19 +2398,21 @@ function uploadedRecord(
   };
 }
 
-it("§1.3 Replace image: the pair is upsert THEN place, and the alt text is the asset's own label", () => {
+it("§1.3 Replace image: the pair is upsert THEN place, and the WHOLE stored placement rides forward", () => {
+  // ALT-TEXT RULING (2026-08-21): step 2 shipped this row overwriting the alt
+  // text with the new asset's label. Step 3 adds an Alt-text control, which
+  // makes that text user-authored accessibility content — so an upload no
+  // longer renames a person's description to a filename.
   const record = uploadedRecord();
-  const operations = sceneReplaceImageOperations(adImage(), record);
+  const operations = sceneImagePlacementOperations(adImage(), record);
   assert.deepEqual(operations, [
     { asset: record, kind: "upsert_asset" },
     {
       asset_id: "asset_upload_new",
       kind: "place_asset_in_node",
       node_id: "image_hero",
-      // The stored placement rides forward — only the alt text, which
-      // described the OLD picture, is replaced.
       placement: {
-        alt_text: "hero-v2.png",
+        alt_text: "Brand gradient backdrop",
         fit: "cover",
         focal_point: { x: 0.5, y: 0.42 },
         preserve_transparency: false,
@@ -2424,7 +2426,7 @@ it("§1.3 Replace image: an image with NO placement gets the alt text and nothin
   const node = scene.nodes.image_hero;
   assert.ok(node, "fixture node image_hero missing");
   delete node.asset_placement;
-  const operations = sceneReplaceImageOperations(node, uploadedRecord());
+  const operations = sceneImagePlacementOperations(node, uploadedRecord());
   assert.ok(operations, "a placement-less image still takes a replacement");
   assert.deepEqual(operations[1], {
     asset_id: "asset_upload_new",
@@ -2440,7 +2442,7 @@ it("§1.3 Replace image: the SAME asset with the same placement is not a write",
   // The design API deduplicates by content, so re-picking the file the node
   // already carries mints the record it already has.
   assert.equal(
-    sceneReplaceImageOperations(
+    sceneImagePlacementOperations(
       adImage(),
       uploadedRecord({
         id: "asset_ing_2b0928ca4f3a3c70",
@@ -2451,16 +2453,51 @@ it("§1.3 Replace image: the SAME asset with the same placement is not a write",
   );
 });
 
-it("§1.3 Replace image: the same asset under a DIFFERENT label is a write — the alt text moves", () => {
-  const operations = sceneReplaceImageOperations(
-    adImage(),
-    uploadedRecord({ id: "asset_ing_2b0928ca4f3a3c70", label: "renamed.jpg" }),
+it("ALT-TEXT RULING: the same asset under a DIFFERENT label is NOT a write — a filename does not rename a description", () => {
+  assert.equal(
+    sceneImagePlacementOperations(
+      adImage(),
+      uploadedRecord({ id: "asset_ing_2b0928ca4f3a3c70", label: "renamed.jpg" }),
+    ),
+    null,
+    "the stored description wins, so nothing about this node changed",
   );
-  assert.ok(operations, "a new alt text is a real change");
-  assert.deepEqual(
-    (operations[1] as { placement: AssetPlacement }).placement.alt_text,
-    "renamed.jpg",
-  );
+});
+
+it("ALT-TEXT RULING: an authored description survives a replace, a generate and an accept alike", () => {
+  // One function, three flows — the whole point of the ruling. A NEW asset is
+  // a real write on every path, and the description rides through each of them.
+  for (const record of [
+    uploadedRecord(),
+    generatedRecord(),
+    generatedRecord({ id: "asset_gen_edited", label: "make the sky warmer" }),
+  ]) {
+    const operations = sceneImagePlacementOperations(adImage(), record);
+    assert.ok(operations, `a new asset ${record.id} is a write`);
+    assert.equal(
+      (operations[1] as { placement: AssetPlacement }).placement.alt_text,
+      "Brand gradient backdrop",
+      `the authored description survived ${record.id}`,
+    );
+  }
+});
+
+it("ALT-TEXT RULING: an image with NO description takes the record's label — the other direction", () => {
+  const scene = clone(SCENE);
+  const node = scene.nodes.image_hero;
+  assert.ok(node, "fixture node image_hero missing");
+  delete node.asset_placement?.alt_text;
+  for (const [record, expected] of [
+    [uploadedRecord(), "hero-v2.png"],
+    [generatedRecord(), "a calm clinic reception, soft light"],
+  ] as const) {
+    const operations = sceneImagePlacementOperations(node, record);
+    assert.ok(operations, `a new asset ${record.id} is a write`);
+    assert.equal(
+      (operations[1] as { placement: AssetPlacement }).placement.alt_text,
+      expected,
+    );
+  }
 });
 
 it("§1.3 Replace image: a LOCKED image refuses (§4), and so does a non-image node", () => {
@@ -2468,22 +2505,23 @@ it("§1.3 Replace image: a LOCKED image refuses (§4), and so does a non-image n
   const locked = scene.nodes.image_hero;
   assert.ok(locked, "fixture node image_hero missing");
   locked.locked = true;
-  assert.equal(sceneReplaceImageOperations(locked, uploadedRecord()), null);
+  assert.equal(sceneImagePlacementOperations(locked, uploadedRecord()), null);
   assert.equal(sceneImageReplacementTarget(locked), null);
-  assert.equal(sceneReplaceImageOperations(adTokenText(), uploadedRecord()), null);
+  assert.equal(sceneImagePlacementOperations(adTokenText(), uploadedRecord()), null);
   assert.equal(sceneImageReplacementTarget(adTokenText()), null);
   // The unlocked harvested image is the positive control for both.
   assert.ok(sceneImageReplacementTarget(adImage()), "an unlocked image accepts one");
 });
 
-it("FIX 4: the produced placement differs from the stored one in the ALT TEXT and nothing else", () => {
+it("FIX 4 / A32: the produced placement differs from the stored one in the ALT TEXT and nothing else", () => {
   // This is the invariant the reduced no-op guard rests on: the placement is
-  // built as `{...stored, alt_text}`, so alt text is the only field that can
+  // built as `{...stored, alt_text}`, so alt text is the only field that CAN
   // differ, and a guard comparing the other three would have three branches
   // that can never be false. A caller that ever builds it another way must
-  // widen `sameAltText` again — which is why the invariant is pinned here.
+  // widen `sameAltText` again — which is why the invariant is pinned here, for
+  // the one function all three placement flows now share.
   const stored = heroPlacement();
-  const operations = sceneReplaceImageOperations(adImage(), uploadedRecord());
+  const operations = sceneImagePlacementOperations(adImage(), uploadedRecord());
   assert.ok(operations, "the harvested image takes a replacement");
   const { placement } = operations[1] as { placement: AssetPlacement };
   assert.deepEqual(
@@ -2491,5 +2529,193 @@ it("FIX 4: the produced placement differs from the stored one in the ALT TEXT an
     stored,
     "every field except the alt text is the stored one, verbatim",
   );
-  assert.notEqual(placement.alt_text, stored.alt_text);
+  // Under the alt-text ruling this node's description also rides forward, so
+  // the produced placement IS the stored one — the guard is live only for a
+  // node with no description of its own (the test above).
+  assert.equal(placement.alt_text, stored.alt_text);
+});
+
+// ══ AD4.A / §1.3 row 2 — Alt text ═══════════════════════════════════════════
+//
+// The one MANUAL row of the AI suite: upstream has no alt-text generator, so
+// this is an ordinary `asset_placement` patch through the ordinary property
+// seam, and its only subtlety is what "unchanged" means — the field displays
+// `asset_placement.alt_text ?? ImageNode.alt ?? ""`, so the no-change guard has
+// to ask the same question hydration answers.
+
+it("§1.3 Alt text: a new description patches `asset_placement.alt_text` and nothing else", () => {
+  assert.deepEqual(
+    apply(adImage(), "altText", "Clinic reception at golden hour"),
+    updateNode("image_hero", {
+      asset_placement: set({
+        ...heroPlacement(),
+        alt_text: "Clinic reception at golden hour",
+      }),
+    }),
+  );
+});
+
+it("§1.3 Alt text: re-committing the description the node already has is NOT a write", () => {
+  assert.equal(apply(adImage(), "altText", "Brand gradient backdrop"), null);
+});
+
+it("§1.3 Alt text: CLEARING a description is a real write — an empty alt is a decorative image", () => {
+  const operations = apply(adImage(), "altText", "");
+  assert.deepEqual(
+    operations,
+    updateNode("image_hero", {
+      asset_placement: set({ ...heroPlacement(), alt_text: "" }),
+    }),
+  );
+});
+
+it("§1.3 Alt text: with no stored alt_text the node's OWN `alt` is what counts as unchanged", () => {
+  // The field displays `ImageNode.alt` when the placement carries none
+  // (upstream's `placement.alt_text ?? node.kind.alt ?? ""`), so committing
+  // that same text must not mint a document version that states nothing new.
+  const scene = clone(SCENE);
+  const node = scene.nodes.image_hero;
+  assert.ok(node, "fixture node image_hero missing");
+  delete node.asset_placement?.alt_text;
+  assert.equal(
+    apply(node, "altText", "Brand gradient backdrop", scene),
+    null,
+    "the node's own alt is what the box was showing",
+  );
+  const changed = apply(node, "altText", "Something else", scene);
+  assert.ok(changed, "a different description IS a change");
+});
+
+it("§1.3 Alt text: an image with NO placement mints one, exactly as the Mode row does", () => {
+  const scene = clone(SCENE);
+  const node = scene.nodes.image_hero;
+  assert.ok(node, "fixture node image_hero missing");
+  delete node.asset_placement;
+  assert.deepEqual(
+    apply(node, "altText", "A new description", scene),
+    updateNode("image_hero", {
+      asset_placement: set({ alt_text: "A new description" }),
+    }),
+  );
+});
+
+it("§1.3 Alt text: a NON-image node writes nothing — the row is image-only, like Mode", () => {
+  assert.equal(apply(adTokenText(), "altText", "anything"), null);
+  assert.equal(apply(adRect(), "altText", "anything"), null);
+  assert.equal(apply(adAutoLayout(), "altText", "anything"), null);
+});
+
+it("§1.3 Alt text: a LOCKED image writes nothing (§4), and a non-string value is refused", () => {
+  const { node } = withNodeField("image_hero", "locked", true);
+  assert.equal(apply(node, "altText", "anything"), null);
+  assert.equal(apply(adImage(), "altText", 42), null);
+  assert.equal(apply(adImage(), "altText", null), null);
+});
+
+// ══ AD4.A / §1.3 row 2 — the AI suite's document change ══════════════════════
+//
+// Generate and candidate-Accept apply the SAME canonical pair as the upload
+// (the plan's own words), through the same engine builder — the only
+// difference is which alt text the placement carries, and that difference is
+// the whole reason there are two functions rather than one.
+
+/** A record `/assets/generate` could have minted. */
+function generatedRecord(overrides: Partial<AssetRecord> = {}): AssetRecord {
+  return {
+    id: "asset_gen_new",
+    kind: "raster_image",
+    label: "a calm clinic reception, soft light",
+    source: { kind: "generated", model: "image-gen-v1", request_id: null },
+    status: "ready",
+    ...overrides,
+  };
+}
+
+it("§1.3 Generate: the pair is upsert THEN place, into the SAME node", () => {
+  const record = generatedRecord();
+  const operations = sceneImagePlacementOperations(adImage(), record);
+  assert.ok(operations, "the harvested image takes a generated picture");
+  assert.deepEqual(
+    operations.map((operation) => operation.kind),
+    ["upsert_asset", "place_asset_in_node"],
+    "the order is load-bearing: place_asset_in_node looks the record up first",
+  );
+  assert.deepEqual(operations[0], { asset: record, kind: "upsert_asset" });
+  assert.equal(
+    (operations[1] as { node_id: string }).node_id,
+    "image_hero",
+    "a regenerate replaces the picture, never the node",
+  );
+});
+
+it("§1.3 Generate: the stored placement rides forward INCLUDING the user's alt text", () => {
+  // Upstream's own behaviour (`currentPlacement` carries `alt_text` forward and
+  // only `withDefaultAlt` fills a missing one), and since the 2026-08-21 ruling
+  // it is every placement flow's behaviour on this lane.
+  const operations = sceneImagePlacementOperations(adImage(), generatedRecord());
+  assert.ok(operations, "the harvested image takes a generated picture");
+  assert.deepEqual(
+    (operations[1] as { placement: AssetPlacement }).placement,
+    heroPlacement(),
+    "fit, focal point, transparency AND alt text are the stored ones",
+  );
+});
+
+it("§1.3 Generate: an image with NO alt text falls back to the asset's own label", () => {
+  const scene = clone(SCENE);
+  const node = scene.nodes.image_hero;
+  assert.ok(node, "fixture node image_hero missing");
+  delete node.asset_placement?.alt_text;
+  const operations = sceneImagePlacementOperations(node, generatedRecord());
+  assert.ok(operations, "a description-less image still takes a generated picture");
+  assert.equal(
+    (operations[1] as { placement: AssetPlacement }).placement.alt_text,
+    "a calm clinic reception, soft light",
+  );
+});
+
+it("§1.3 Generate: an image with NO placement mints nothing beyond the alt text", () => {
+  // Not upstream's `currentPlacement` defaults (`fit: "cover"`, focal 0.5/0.5):
+  // an absent fit IS `contain` on this lane (`effectiveImageFit`), so minting
+  // `cover` would silently change the picture the user is looking at.
+  const scene = clone(SCENE);
+  const node = scene.nodes.image_hero;
+  assert.ok(node, "fixture node image_hero missing");
+  delete node.asset_placement;
+  const operations = sceneImagePlacementOperations(node, generatedRecord());
+  assert.ok(operations, "a placement-less image still takes a generated picture");
+  assert.deepEqual((operations[1] as { placement: AssetPlacement }).placement, {
+    alt_text: "a calm clinic reception, soft light",
+  });
+});
+
+it("§1.3 Generate: the SAME asset the node already carries is NOT a write", () => {
+  // Reachable in one gesture: `POST /assets/generate` keys a generation cache
+  // on the prompt + model + size, so re-running an identical prompt returns
+  // the very asset the node is already showing (`deduplicated: true`).
+  assert.equal(
+    sceneImagePlacementOperations(
+      adImage(),
+      generatedRecord({ id: "asset_ing_2b0928ca4f3a3c70" }),
+    ),
+    null,
+  );
+});
+
+it("§4: a LOCKED image refuses a generated picture, and so does a non-image node", () => {
+  const { node } = withNodeField("image_hero", "locked", true);
+  assert.equal(sceneImagePlacementOperations(node, generatedRecord()), null);
+  assert.equal(sceneImagePlacementOperations(adTokenText(), generatedRecord()), null);
+});
+
+it("A32: the generated placement differs from the stored one in the ALT TEXT and nothing else", () => {
+  // The same invariant `sameAltText` rests on, re-pinned for the second caller
+  // the guard's own comment names. `place_asset_in_node` REPLACES the whole
+  // placement, so if this ever stops holding the no-op guard must widen with
+  // it — and this test is what fails when it does.
+  const stored = heroPlacement();
+  const operations = sceneImagePlacementOperations(adImage(), generatedRecord());
+  assert.ok(operations, "the harvested image takes a generated picture");
+  const { placement } = operations[1] as { placement: AssetPlacement };
+  assert.deepEqual({ ...placement, alt_text: stored.alt_text }, stored);
 });

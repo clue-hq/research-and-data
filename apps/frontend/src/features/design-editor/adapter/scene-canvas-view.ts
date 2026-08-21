@@ -405,7 +405,34 @@ export function sceneAssetPassthroughUrl(
   assets: Record<string, AssetRecord> | undefined,
   assetId: string,
 ): string | null {
-  const digest = assets?.[assetId]?.media?.digest;
+  return digestPassthroughUrl(assets?.[assetId]?.media?.digest);
+}
+
+/**
+ * AD4.A step 3: the same passthrough for a record the scene does NOT carry —
+ * the AI suite's staged candidate, which is a real, registered asset but is not
+ * in `scene.assets` until an Accept upserts it.
+ *
+ * It prefers the THUMBNAIL digest where the one above cannot: the engine's own
+ * `publicAssetThumbnailUrl` states that policy ("the API stamps it at the DTO
+ * boundary"), and this record comes straight off `POST /assets/generate`, which
+ * is exactly that boundary. `GET /documents/{id}` serves no thumbnail digest,
+ * which is why the scene-map resolver above never looks. Same fallback either
+ * way: no usable digest ⇒ null ⇒ an honestly blank tile, never a fetch that can
+ * only fail.
+ */
+export function assetRecordPassthroughUrl(
+  record: AssetRecord | null | undefined,
+): string | null {
+  return (
+    digestPassthroughUrl(record?.media?.thumbnail?.digest) ??
+    digestPassthroughUrl(record?.media?.digest)
+  );
+}
+
+function digestPassthroughUrl(
+  digest: { algorithm?: string; value?: string } | null | undefined,
+): string | null {
   if (
     !digest ||
     digest.algorithm !== "sha256" ||

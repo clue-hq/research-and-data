@@ -102,14 +102,18 @@ import {
  * async, multi-step and carries no `property`/`value` pair, so it cannot ride
  * this seam at all.
  *
- * AD4.A step 2 adds §1.3's REPLACE-IMAGE decision as two more exports at the
- * foot of the node function — `sceneImageReplacementTarget` (may this node take
- * one?) and `sceneReplaceImageOperations` (which operations, or none). They are
- * not `switch` cases for the same reason: the upload carries a minted
+ * AD4.A step 2 adds §1.3's PLACEMENT decision as two more exports at the foot
+ * of the node function — `sceneImageReplacementTarget` (may this node take a
+ * picture?) and `sceneImagePlacementOperations` (which operations, or none).
+ * They are not `switch` cases for the same reason: a placement carries a minted
  * `AssetRecord`, not a `property`/`value` pair, so it reaches this adapter from
- * the hook (`hooks/use-scene-replace-image.ts`) rather than from an inspector
- * event. Everything that is a DECISION still lives here, with its §1.3
- * siblings; only the transport lives in the hook.
+ * a hook (`use-scene-replace-image.ts`, `use-scene-image-ai.ts`) rather than
+ * from an inspector event. Everything that is a DECISION still lives here, with
+ * its §1.3 siblings; only the transport lives in the hooks.
+ *
+ * AD4.A step 3 adds §1.3's ALT TEXT case to the switch, and folds Generate and
+ * candidate-Accept into that same placement function — three flows, one rule
+ * (the coordinator's alt-text ruling, stated in full at its site).
  *
  * WHICH ROWS CARRY A KIND GUARD is decided by one rule: **the write's kind
  * condition is exactly hydrate's kind condition**, so the two stay inverses.
@@ -202,6 +206,26 @@ function effectiveImageFit(placement: AssetPlacement | null | undefined): ImageF
 }
 
 /**
+ * §1.3 Alt text (AD4.A step 3): the description the box is SHOWING, which is
+ * what its no-change guard compares against.
+ *
+ * Two fields can carry it and upstream reads both, in this order:
+ * `asset_placement.alt_text ?? ImageNode.alt ?? ""`
+ * (`ImageInspectorSection.tsx:61`). They are genuinely different facts —
+ * `ImageNode.alt` is the node's own authored description and the placement's is
+ * the one a placement stamped — so a node with no `alt_text` legitimately
+ * displays its `alt`, and re-committing that text must mint no document
+ * version. Hydration states the same expression, so the two stay inverses.
+ */
+function effectiveAltText(node: Node): string {
+  const stored = node.asset_placement?.alt_text;
+  if (typeof stored === "string") {
+    return stored;
+  }
+  return (node.kind.kind === "image" ? node.kind.alt : null) ?? "";
+}
+
+/**
  * §1.3 Replace image: is the placement this write would produce the one the
  * node ALREADY carries? The standing "a change that changes nothing is not a
  * write" rule (`sameCorner`, `sameStroke`), applied to the upload row — where
@@ -210,13 +234,13 @@ function effectiveImageFit(placement: AssetPlacement | null | undefined): ImageF
  * already points at.
  *
  * ONE FIELD IS COMPARED, and this is the invariant that makes that enough:
- * `sceneReplaceImageOperations` builds the next placement as
- * `{...node.asset_placement, alt_text: record.label}`, so every other field is
- * identical to the stored one BY CONSTRUCTION and a four-field comparison
- * (which is what this was) reads as load-bearing while three of its branches
- * can never be false. **A caller that ever builds the placement any other way —
- * the AI suite's candidate-accept applies the same pair — must widen this
- * again.** Absent and `null` fold together, for `sameStroke`'s reason exactly:
+ * `sceneImagePlacementOperations` builds the next placement as
+ * `{...node.asset_placement, alt_text}`, so every other field is identical to
+ * the stored one BY CONSTRUCTION and a four-field comparison (which is what
+ * this was) reads as load-bearing while three of its branches can never be
+ * false. It is the ONE function all three placement flows go through — upload,
+ * Generate and candidate-Accept — so **a caller that ever builds the placement
+ * any other way must widen this again.** Absent and `null` fold together, for `sameStroke`'s reason exactly:
  * every field of `AssetPlacement` is optional (`contracts.ts:446`) and the
  * stored bytes omit the ones they do not use.
  */
@@ -774,6 +798,40 @@ export function sceneChangeToOperation(
       };
     }
 
+    // ── §1.3 row 2: Alt text (AD4.A step 3) ──────────────────────────────────
+    // The AI suite's one MANUAL row: upstream has no alt-text generator (a
+    // repo-wide grep finds `alt_text` only in its image inspector, the contract
+    // types and `withDefaultAlt`), so this is an ordinary `asset_placement`
+    // patch through the ordinary property seam.
+    //
+    // KIND GUARD: image only, the file header's standing rule — hydrate states
+    // `altText` for an image node and for nothing else.
+    case "altText": {
+      if (node.kind.kind !== "image") {
+        return null;
+      }
+      // A non-string is not a description. Unlike every numeric row there is
+      // nothing to parse: the box's own text IS the value, and "" is a real
+      // one (a decorative image is correctly described by no text at all), so
+      // it is accepted rather than folded into "unchanged".
+      if (typeof value !== "string") {
+        return null;
+      }
+      if (effectiveAltText(node) === value) {
+        return null;
+      }
+      // A placement-less image MINTS one, exactly as the Mode row above does
+      // and for the same reason: refusing would leave the box showing a
+      // description the document never took.
+      return {
+        kind: "update_node",
+        node_id: node.id,
+        patch: nodePatch({
+          asset_placement: set({ ...node.asset_placement, alt_text: value }),
+        }),
+      };
+    }
+
     // ── §1.3 row 2: Radius — the `all` box and the four corners (AD4.A) ──────
     // NO KIND GUARD, for the same reason the stroke and geometry rows have
     // none: hydrate's radius mapping is one path for every kind
@@ -823,12 +881,14 @@ export function sceneChangeToOperation(
  * §1.3 row 1 (Replace image) / §4: the node a replacement may land on — its
  * `ImageNode`, or `null` when this row is not offered for it.
  *
- * ONE rule, TWO call sites, which is why it is a function rather than an inline
- * pair of checks. `use-scene-replace-image.ts` asks it BEFORE the upload,
- * because an upload that mints an asset and then cannot place it is a half
- * write — a registry row nothing references — and `sceneReplaceImageOperations`
- * asks it again AFTER, because the selection can be locked while the upload is
- * in flight. Duplicating the condition would let the two drift.
+ * ONE rule, MANY call sites, which is why it is a function rather than an
+ * inline pair of checks. Every flow that spends to mint a picture asks it
+ * BEFORE the transport (`use-scene-replace-image.ts`'s upload,
+ * `use-scene-image-ai.ts`'s generate and edit), because minting an asset that
+ * then cannot be placed is a half write — a registry row nothing references,
+ * paid for — and `sceneImagePlacementOperations` asks it again AFTER, because
+ * the selection can be locked while the call is in flight. Duplicating the
+ * condition would let them drift.
  *
  * The kind guard is hydrate's, the file header's standing rule: `imagePreviewSrc`
  * and `fillMode` are stated for an image node and for nothing else
@@ -843,8 +903,20 @@ export function sceneImageReplacementTarget(node: Node): ImageNode | null {
 }
 
 /**
- * §1.3 row 1: the document change behind Replace image — the canonical
+ * §1.3: the document change behind EVERY way a picture reaches an image node —
+ * Replace image (upload), Generate, and candidate Accept. The canonical
  * `upsert_asset` + `place_asset_in_node` pair, or `null` for no write.
+ *
+ * ONE FUNCTION FOR THREE FLOWS, per the coordinator's ruling of 2026-08-21.
+ * Step 2 shipped the upload row overwriting `alt_text` with the new asset's
+ * label (the plan's own line, written before an Alt-text control existed); step
+ * 3 adds that control, which makes alt text USER-AUTHORED ACCESSIBILITY
+ * CONTENT — and silently replacing a person's description with
+ * `ad4a-upload-test.png` on the next image swap is the defect this lane has
+ * been closing all phase, in its most damaging form. Upstream's own regenerate
+ * carries it forward (`currentPlacement`), and two paths disagreeing about a
+ * user's content is worse than touching a shipped row, so all three now share
+ * this one rule.
  *
  * THE PAIR AND ITS ORDER ARE THE ENGINE'S, never rebuilt here:
  * `buildNodePlacementOperations` (`engine/scene/assetLibrary.ts`, a verbatim
@@ -865,12 +937,12 @@ export function sceneImageReplacementTarget(node: Node): ImageNode | null {
  * `contain` (`effectiveImageFit`, with the exporter/rasterizer evidence), so
  * minting one would silently change the picture.
  *
- * THE ALT TEXT IS THE NEW ASSET'S LABEL (the plan's rule), because the stored
- * one described the picture that just left. Passed explicitly rather than left
- * to `withDefaultAlt`'s `?? record.label`, so the value this function compares
- * against the node is the value it writes.
+ * A32: because the placement is built as `{...stored, alt_text}`, every other
+ * field is identical to the stored one BY CONSTRUCTION — which is exactly the
+ * invariant `sameAltText` rests on. A caller that ever mints a field here must
+ * widen that guard with it; the invariant is pinned by its own test.
  */
-export function sceneReplaceImageOperations(
+export function sceneImagePlacementOperations(
   node: Node,
   record: AssetRecord,
 ): Operation[] | null {
@@ -878,15 +950,19 @@ export function sceneReplaceImageOperations(
   if (!image) {
     return null;
   }
-  // Everything the node stores rides forward; the alt text is then OVERWRITTEN,
-  // because the stored one described the picture that just left.
   const placement: AssetPlacement = {
     ...node.asset_placement,
-    alt_text: record.label,
+    // THE ALT TEXT CARRIES FORWARD, and falls back to the asset's own label
+    // only for a node that has none. Passed explicitly rather than left to
+    // `withDefaultAlt`'s `?? record.label`, so the value the guard below
+    // compares is the value that gets written.
+    alt_text: node.asset_placement?.alt_text ?? record.label,
   };
-  // A change that changes nothing is not a write: the deduplicated upload
-  // handed back the record this node already points at, under a placement it
-  // already holds, so there is no document version to mint.
+  // A change that changes nothing is not a write. Reachable in one gesture on
+  // every path: `POST /assets` deduplicates by content, and `/assets/generate`
+  // keys a generation cache on prompt + model + size, so re-picking the same
+  // file — or re-running the same prompt — hands back the record this node
+  // already points at, under a placement it already holds.
   if (image.asset_id === record.id && sameAltText(node.asset_placement, placement)) {
     return null;
   }

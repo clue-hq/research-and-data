@@ -64,6 +64,14 @@ export function commitInspectorNumber(raw: string, max: number): number | null {
 }
 
 export interface InspectorPresentationState {
+  /** AD4.A step 3 (§1.3 row 2): the image's alt text — the AI suite's one
+   * manual row. The fourth field this ad work has had to add to the dummy's
+   * model under ruling 14's "final home" rule (step 1 added
+   * `customWidth`/`customHeight`, step 3 of AD4.0 added `tokenStrokeColor`),
+   * because the dummy's image schema shipped no such control and so authored
+   * no fixture for it — which is why its default below is the honest empty
+   * string rather than an invented description. */
+  altText: string;
   backgroundColor: string;
   backgroundFill: InspectorBackgroundFill;
   buttonLabel: string;
@@ -137,6 +145,7 @@ const DEFAULT_OPEN_SECTIONS: Record<InspectorSectionId, boolean> = {
 };
 
 const DEFAULT_STATE: InspectorPresentationState = {
+  altText: "",
   backgroundColor: "#00F59B",
   backgroundFill: {
     angle: 0,

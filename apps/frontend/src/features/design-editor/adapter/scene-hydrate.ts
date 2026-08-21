@@ -787,6 +787,21 @@ export function hydrateSceneInspectorState(
     // image: an honest placeholder beats a src that can only 404.
     const preview = sceneAssetPassthroughUrl(scene.assets, node.kind.asset_id);
     if (preview) state.imagePreviewSrc = preview;
+    // §1.3 row 2 (AD4.A step 3): the Alt-text box. TWO fields can carry the
+    // description and upstream reads both, in this order —
+    // `asset_placement.alt_text ?? ImageNode.alt ?? ""`
+    // (`ImageInspectorSection.tsx:61`). They are genuinely different facts: the
+    // node's `alt` is its own authored description and the placement's is the
+    // one a placement stamped, so an image with no `alt_text` legitimately
+    // displays its `alt`. `scene-apply.ts::effectiveAltText` states the same
+    // expression, which is what makes re-committing the displayed text a
+    // no-op rather than a document version stating nothing new.
+    //
+    // ASSIGNED UNCONDITIONALLY, unlike `fillMode` and the preview above: the
+    // empty string is a REAL value here (a decorative image is correctly
+    // described by no text), so leaving the field absent would let the shared
+    // default stand over a node whose description really is empty.
+    state.altText = node.asset_placement?.alt_text ?? node.kind.alt ?? "";
   }
 
   // §1.4 Auto Layout. Direction/wrap live on the node KIND; gap/grow/padding/

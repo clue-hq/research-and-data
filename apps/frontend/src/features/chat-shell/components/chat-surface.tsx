@@ -349,6 +349,7 @@ export function ChatSurface({
                 error={sceneSession.inspectorError}
                 fontOptions={sceneSession.fontOptions}
                 hydrated={sceneSession.hydrated}
+                imageAi={sceneSession.imageAi}
                 layers={sceneSession.layerRows}
                 note={sceneSession.note}
                 onReplaceImage={sceneSession.onReplaceImage}

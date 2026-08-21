@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { createContext, useContext, useState, type ReactNode } from "react";
 import {
   backgroundFillCommits,
@@ -8,6 +9,7 @@ import {
   mintedStrokeWidth,
   type SceneInspectorState,
 } from "@/features/design-editor/adapter/scene-hydrate";
+import type { SceneImageAiBinding } from "@/features/design-editor/adapter/scene-image-ai";
 import {
   scenePaletteColor,
   type ScenePalette,
@@ -654,14 +656,225 @@ function AdCanvasInspector({
   );
 }
 
+/**
+ * AD4.A step 3 (§1.3 row 2): the MVP editor's AI image suite, restyled in this
+ * shell's own primitives and classes. Composition only — every control here is
+ * an existing primitive or an existing class in the role it already plays:
+ *
+ *  • the two free-text fields are `InspectorField` + `InspectorInput`, exactly
+ *    like every other typed row in this panel;
+ *  • the action buttons are the shell's own authored button pair
+ *    (`.sharePrimaryButtonWide` / `.shareSecondaryButton`, from the artifact
+ *    share menu) — BORROWED, because the inspector has no labelled action
+ *    button of its own: `.inspectorActionGrid` is an icon grid with 4- and
+ *    6-column templates and 27px transparent pills, which a two- or
+ *    three-text-button row cannot ride. The primary is the one button in this
+ *    shell with an authored `:disabled` treatment, which this surface needs
+ *    three times over (empty prompt, in flight, and the pending label) and
+ *    which the A19 family forbids inventing;
+ *  • the pairs sit in `.fieldGrid`, the inspector's own two-up row;
+ *  • the candidate tile is `.imageReplaceField`, the Fill row's own image tile
+ *    two rows above — a bordered box with a centred caption pill;
+ *  • the two note lines are `.inspectorStatusNote`, the inspector's own note
+ *    line, and every FAILURE goes to the panel's existing error slot instead
+ *    (`writes.reportError`), never a second failure surface.
+ *
+ * No icons: upstream's buttons carry lucide glyphs, but this panel's icon
+ * vocabulary is `InspectorIcon`'s local file list, so lucide inside it would be
+ * new visual vocabulary rather than a borrow. Every string is upstream's own.
+ *
+ * The prompt and instruction are LOCAL DRAFTS consumed by a button press, so no
+ * keystroke is ever a write; the staged candidate deliberately lives OUTSIDE
+ * this component (in the session hook) because the panel remounts on every
+ * reload, and a paid model result must not be thrown away by one.
+ */
+function AdImageAiRows({ imageAi }: { imageAi: SceneImageAiBinding }) {
+  const [prompt, setPrompt] = useState("");
+  const [instruction, setInstruction] = useState("");
+  const { candidate, canEdit, editing, generating, hasImage, savedNotice, statusLine } =
+    imageAi;
+  return (
+    <>
+      <InspectorField label={hasImage ? "Regenerate" : "Generate image"}>
+        <InspectorInput
+          ariaLabel="Image prompt"
+          onChange={setPrompt}
+          placeholder="e.g. editorial photo of a calm clinic reception, soft light, no text"
+          value={prompt}
+        />
+      </InspectorField>
+      {/* The pending label IS the status: `.sharePrimaryButtonWide:disabled`
+          is the shell's authored waiting treatment (`cursor: wait`), and the
+          share menu's own primary uses it the same way ("Publishing…"). */}
+      <button
+        className={styles.sharePrimaryButtonWide}
+        disabled={generating || prompt.trim() === ""}
+        onClick={() => imageAi.onGenerate(prompt)}
+        type="button"
+      >
+        {generating ? "Generating…" : hasImage ? "Regenerate" : "Generate"}
+      </button>
+      {/* Upstream renders the edit block only when there is a real, ready
+          source asset to edit (`canEdit`), and so does this — the alternative
+          would be a permanently dead pair of buttons over a node with no
+          pixels. When the block is missing, the status line below says why. */}
+      {canEdit ? (
+        <>
+          <InspectorField label="Edit image">
+            <InspectorInput
+              ariaLabel="Image edit instruction"
+              onChange={setInstruction}
+              placeholder="e.g. make the sky warmer, remove the person on the left"
+              value={instruction}
+            />
+          </InspectorField>
+          {candidate ? (
+            <AdImageCandidateReview candidate={candidate} imageAi={imageAi} />
+          ) : editing ? (
+            // While an edit is in flight the two buttons are REPLACED by the
+            // pending primary rather than disabled in place: `Remove
+            // background` is a secondary, and the shell authored no disabled
+            // treatment for one, so a disabled secondary would look live.
+            <button className={styles.sharePrimaryButtonWide} disabled type="button">
+              Applying edit…
+            </button>
+          ) : (
+            <div className={styles.fieldGrid}>
+              <button
+                className={styles.sharePrimaryButtonWide}
+                disabled={instruction.trim() === ""}
+                onClick={() => imageAi.onEdit(instruction)}
+                type="button"
+              >
+                Edit
+              </button>
+              <button
+                className={styles.shareSecondaryButton}
+                onClick={imageAi.onRemoveBackground}
+                type="button"
+              >
+                Remove background
+              </button>
+            </div>
+          )}
+        </>
+      ) : null}
+      {savedNotice ? (
+        <p className={styles.inspectorStatusNote} role="status">
+          {savedNotice}
+        </p>
+      ) : null}
+      {/* The asset status line — silent for a ready asset, because the Fill
+          thumbnail above already shows the picture. It speaks in the two states
+          nothing else states, which are also the two that explain a missing
+          Edit block (`sceneImageStatusLine`). */}
+      {statusLine ? (
+        <p className={styles.inspectorStatusNote}>{statusLine}</p>
+      ) : null}
+    </>
+  );
+}
+
+/**
+ * §1.3 Review: the Before/After comparison an edit produces, and the three
+ * answers to it.
+ *
+ * BOTH TILES, side by side, per the coordinator's ruling. The leaner reading
+ * was that the Fill thumbnail two rows above already shows the current asset,
+ * so a Before tile duplicates it — but §1.3's row names the control
+ * ("Before/After candidate review"), and a comparison whose two halves are
+ * separated by two form fields is a candidate preview beside a coincidence, not
+ * a comparison. While the review is open, showing the picture twice IS the
+ * point: this is what you have, this is what you would get.
+ *
+ * The tile is `.imageReplaceField` — the Fill row's own image tile, one section
+ * up — and the caption pill it styles carries the two words instead of "Replace
+ * image". Its 20% scrim exists to keep that pill readable and applies equally to
+ * both halves, so it darkens the comparison without biasing it.
+ *
+ * NEITHER TILE FALLS BACK TO THE DUMMY'S STOCK PNG. `beforeSrc` is the node's
+ * own asset resolved through the public passthrough, or null — a stranger's
+ * photograph labelled "Before" would not be a wrong thumbnail, it would be a
+ * wrong ANSWER to the question this panel is asking.
+ *
+ * Accept applies the same `[upsert_asset, place_asset_in_node]` pair as a
+ * generate (one batch, one undo step, the placement carried forward); Reject
+ * and Save as new make ZERO scene changes. The candidate is already a
+ * registered asset either way — the API persisted it when it generated it.
+ */
+function AdImageCandidateReview({
+  candidate,
+  imageAi,
+}: {
+  candidate: NonNullable<SceneImageAiBinding["candidate"]>;
+  imageAi: SceneImageAiBinding;
+}) {
+  return (
+    <>
+      <div className={styles.fieldGrid}>
+        <AdImageReviewTile caption="Before" src={imageAi.beforeSrc} />
+        <AdImageReviewTile caption="After" src={candidate.previewSrc} />
+      </div>
+      {/* TWO buttons in the two-up row and the third full width beneath it,
+          rather than a three-column cram: `.fieldGrid` is a fixed
+          `repeat(2, minmax(0, 1fr))`, and "Save as new" does not fit a third of
+          a 248px column without truncating. */}
+      <div className={styles.fieldGrid}>
+        <button
+          className={styles.sharePrimaryButtonWide}
+          onClick={imageAi.onAccept}
+          type="button"
+        >
+          Accept
+        </button>
+        <button
+          className={styles.shareSecondaryButton}
+          onClick={imageAi.onRejectCandidate}
+          type="button"
+        >
+          Reject
+        </button>
+      </div>
+      <button
+        className={styles.shareSecondaryButton}
+        onClick={imageAi.onSaveCandidateAsNew}
+        type="button"
+      >
+        Save as new
+      </button>
+    </>
+  );
+}
+
+/** One half of the comparison. `alt=""` on both: the caption beside the image
+ * already names which half this is, and the pictures themselves are the
+ * comparison — a screen reader reading a generated description here would
+ * announce the very thing under review as though it were settled. */
+function AdImageReviewTile({
+  caption,
+  src,
+}: {
+  caption: string;
+  src: string | null;
+}) {
+  return (
+    <div className={styles.imageReplaceField}>
+      {src ? <Image alt="" fill sizes="124px" src={src} unoptimized /> : null}
+      <span>{caption}</span>
+    </div>
+  );
+}
+
 function AdImageInspector({
   addressing,
   hydrated,
+  imageAi,
   locked = false,
   onReplaceImage,
   onSelectionChange,
   ...binding
 }: AdSchemaBinding & {
+  imageAi?: SceneImageAiBinding;
   onReplaceImage?: (file: File) => void | Promise<void>;
   onSelectionChange: (selection: ChatShellInspectorSelection) => void;
 }) {
@@ -672,6 +885,38 @@ function AdImageInspector({
     addressing,
   );
   const { setNestedValue, setValue, state, toggleSection } = controller;
+  // §1.3 row 2 (Alt text): the draft the box shows, beside the value the
+  // DOCUMENT has. Both move together, in one state object, so they cannot
+  // drift — the `RadiusControls` `committed`/`draft` shape (ruling A27).
+  //
+  // The document half is the LIVE hydrated value (which recomputes on every
+  // scene mirror-up, including the optimistic apply's), not the controller's
+  // mount-time seed, and re-seeding the draft when it changes is what keeps
+  // this box honest about a SIBLING control's write: Replace image overwrites
+  // `asset_placement.alt_text` with the new asset's label, so without this the
+  // box would go on describing the picture that just left. Same technique
+  // step 2's review used for the Fill thumbnail — React's
+  // adjust-state-on-prop-change, a render-time comparison, never an effect
+  // (which would render one stale frame and is barred by this repo's lint).
+  const documentAltText = hydrated?.altText ?? state.altText;
+  const [altText, setAltText] = useState(() => ({
+    document: documentAltText,
+    draft: documentAltText,
+  }));
+  if (altText.document !== documentAltText) {
+    setAltText({ document: documentAltText, draft: documentAltText });
+  }
+  const commitAltText = () => {
+    // A29: a commit against a LOCKED node records nothing, because §4 refuses
+    // the write — the box keeps what was typed (the ratified A19 posture) and
+    // the panel's record of the document does not move.
+    if (locked) return;
+    // A write that changes nothing is not a write. The comparison is against
+    // the document, which is also exactly what the adapter compares
+    // (`effectiveAltText`), so the two can never disagree about what "changed".
+    if (altText.draft !== altText.document) setValue("altText", altText.draft);
+    setAltText((current) => ({ ...current, document: current.draft }));
+  };
   return (
     <>
       {/* §2 delta (contract row 7 / §5): the image "Link to" section is removed
@@ -696,6 +941,25 @@ function AdImageInspector({
             changes. */}
         <InspectorField label="Image"><InspectorImageUpload onFileSelect={onReplaceImage} src={hydrated?.imagePreviewSrc ?? state.imagePreviewSrc} /></InspectorField>
         <InspectorField label="Mode"><InspectorSelect label="Image fill mode" onChange={(value) => setValue("fillMode", value)} options={FILL_MODES} value={state.fillMode} /></InspectorField>
+        {/* §1.3 row 2 (AD4.A step 3): Alt text — the AI suite's one MANUAL
+            row. Upstream has no alt-text generator, so this is an ordinary
+            `asset_placement` write through the ordinary property seam, and it
+            COMMITS ON BLUR/ENTER (`onCommit`), never per keystroke: a
+            per-keystroke description would persist one document version and one
+            undo step per letter. Upstream's own placeholder. */}
+        <InspectorField label="Alt text">
+          <InspectorInput
+            ariaLabel="Image alt text"
+            onChange={(value) => setAltText((current) => ({ ...current, draft: value }))}
+            onCommit={commitAltText}
+            placeholder="Describe the image"
+            value={altText.draft}
+          />
+        </InspectorField>
+        {/* §1.3 row 2: the AI suite. Absent (the dummy fixture path, and any
+            selection with no live scene behind it) the rows do not render at
+            all, which is exactly what this schema shipped as. */}
+        {imageAi ? <AdImageAiRows imageAi={imageAi} /> : null}
       </Section>
       <Section id="shape" label="Shape" open={state.openSections.shape} toggle={() => toggleSection("shape")}>
         {/* A29: the lock rides in as data — a commit against a locked node
@@ -720,6 +984,7 @@ export function ImageInspector({
   error = null,
   fontOptions = DEFAULT_FONT_OPTIONS,
   hydrated,
+  imageAi,
   note = null,
   onReplaceImage,
   onSelectionChange,
@@ -734,6 +999,10 @@ export function ImageInspector({
   /** §2 delta (contract row 3): the real font vocabulary, prop-fed. Absent
    * keeps the one safe default until AD2.4's hydration supplies the kit's. */
   fontOptions?: readonly string[];
+  /** §1.3 row 2 (AD4.A step 3): the session's AI image suite — what the four
+   * flows are showing and the six callbacks they commit through. Absent (the
+   * dummy fixture path) renders no AI rows at all. */
+  imageAi?: SceneImageAiBinding;
   /** AD2.7: a transient informational note (the 409 quiet reload). */
   note?: string | null;
   /** §1.3 row 1 (AD4.A step 2): the session's Replace-image flow — upload the
@@ -808,9 +1077,9 @@ export function ImageInspector({
           ) : null}
           {selection === "canvas" ? <AdCanvasInspector {...schema} /> : null}
           {selection === "text" ? <AdTextInspector fontOptions={fontOptions} {...schema} /> : null}
-          {/* `onReplaceImage` goes to THIS schema alone — the row is §1.3's —
-              the way `fontOptions` goes only to the text schema. */}
-          {selection === "image" ? <AdImageInspector onReplaceImage={onReplaceImage} {...schema} /> : null}
+          {/* `onReplaceImage` and `imageAi` go to THIS schema alone — the rows
+              are §1.3's — the way `fontOptions` goes only to the text schema. */}
+          {selection === "image" ? <AdImageInspector imageAi={imageAi} onReplaceImage={onReplaceImage} {...schema} /> : null}
           {dummySelection ? <AdDummyInspector onSelectionChange={onSelectionChange} selection={selection} suppressAutoLayoutSection={suppressAutoLayoutSection} {...layers} /> : null}
           {/* `"button"` is deliberately absent from this list: with its schema
               hidden (row 7) it falls through to the canvas default. */}

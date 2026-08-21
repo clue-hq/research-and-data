@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useRef } from "react";
 import {
+  sceneImagePlacementOperations,
   sceneImageReplacementTarget,
-  sceneReplaceImageOperations,
 } from "../adapter/scene-apply";
 import { uploadWebAsset } from "../data/assets";
 import type { AssetRecord, Node, Operation } from "../engine/scene/contracts";
@@ -22,8 +22,10 @@ import type { AssetRecord, Node, Operation } from "../engine/scene/contracts";
  * (`clue:inspector-action`, which nothing listens for) now fires this.
  *
  * WHAT IS AND IS NOT HERE. Every DECISION is the adapter's
- * (`sceneImageReplacementTarget` / `sceneReplaceImageOperations` in
- * `scene-apply.ts`, beside §1.3's other rows) and every operation is the
+ * (`sceneImageReplacementTarget` / `sceneImagePlacementOperations` in
+ * `scene-apply.ts`, beside §1.3's other rows — the ONE placement rule the AI
+ * suite's Generate and Accept share, so an alt text a user authored survives
+ * every way a new picture reaches this node) and every operation is the
  * engine's (`buildNodePlacementOperations`); this file owns only the
  * sequencing — gate, upload, re-gate, hand off — and the two things that are
  * genuinely stateful about it: the re-entrancy guard and the latest-value deps.
@@ -151,7 +153,7 @@ export function createSceneReplaceImageHandler(
     if (!sceneImageReplacementTarget(after.node)) {
       throw new SceneReplaceImageRefused("the node was locked during the upload");
     }
-    const operations = sceneReplaceImageOperations(after.node, record);
+    const operations = sceneImagePlacementOperations(after.node, record);
     // A change that changes nothing is not a write — the deduplicated upload
     // handed back the picture this node already carries. Not a failure either:
     // the document really does hold it, so the preview stays.

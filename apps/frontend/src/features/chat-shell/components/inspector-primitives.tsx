@@ -470,6 +470,7 @@ export function InspectorInput({
   leading,
   onChange,
   onCommit,
+  placeholder,
   prefix,
   readOnly = false,
   suffix,
@@ -484,6 +485,13 @@ export function InspectorInput({
    * field becomes a write. Omitted leaves the field exactly as it shipped
    * (per-keystroke `onChange` only); either way the DOM is unchanged. */
   onCommit?: () => void;
+  /** AD4.A step 3 (§1.3 row 2): the native hint. Additive and inert for every
+   * existing caller (the same shape as `onCommit`'s W4.2 addition), and it
+   * exists because the AI suite's two free-text fields are the first controls
+   * in this panel that ask for a SENTENCE rather than a number — upstream ships
+   * a placeholder on both, and porting its words is the alternative to
+   * authoring an empty box with no hint at all. */
+  placeholder?: string;
   prefix?: string;
   readOnly?: boolean;
   suffix?: string;
@@ -505,6 +513,7 @@ export function InspectorInput({
               }
             : undefined
         }
+        placeholder={placeholder}
         readOnly={readOnly}
         value={value}
       />
