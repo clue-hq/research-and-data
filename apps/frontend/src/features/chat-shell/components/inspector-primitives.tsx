@@ -523,15 +523,67 @@ type RadiusValues = Record<RadiusCorner, string>;
  * verbatim (`lg`) is no write at all, so nothing is mirrored for it either. */
 const NUMERIC_RADIUS = /^\d+$/;
 
+/**
+ * RULING A29 (review): what the `all` box reads once one CORNER has moved — the
+ * SCENE lane's rule, which is hydrate's own, by name.
+ *
+ * `scene-hydrate.ts` derives `all` from the four corners: "the uniform value,
+ * or empty when the corners differ (no single number is true)". `all` is not a
+ * stored field there, so after a single-corner commit the box must re-derive or
+ * it states a number the document does not have — and worse, the dirty check
+ * then swallows the edit that would put it right. Browser-shaped repro: on a
+ * uniformly-5 node, typing 9 into top-left makes the document `{9,5,5,5}`
+ * (hydrate: `all` is `""`) while the box still reads 5; the user who types 5
+ * into All to restore it is refused as unchanged, and only the scan button
+ * still works — applying whatever stale number the box is showing.
+ *
+ * The WEB lane does NOT share this rule and is deliberately excluded at the one
+ * call site: there `all` is its own Tailwind class (`rounded-[Npx]`), parsed
+ * independently of the four corner classes (`design-editor/adapter/hydrate.ts:259-266`),
+ * and a node legitimately carries `rounded-[8px]` beside a `rounded-tl-[2px]`
+ * override. Deriving there would erase a real class from the panel. The two
+ * lanes' `all` are different facts, so one rule cannot serve both — the same
+ * split A28 made for the mirror.
+ */
+function uniformRadius(corners: RadiusValues): string {
+  const { bottomLeft, bottomRight, topLeft, topRight } = corners;
+  return topLeft === topRight &&
+    topRight === bottomRight &&
+    bottomRight === bottomLeft
+    ? topLeft
+    : "";
+}
+
 /** W4.2 (ruling R-B2): the five radius fields adopt the ratified R3 commit
  * model — typed values draft locally and COMMIT on blur/Enter, so the write
  * path never sees a per-keystroke event. Behavioral only: same DOM, classes,
  * icons and aria-labels as the dummy ships. */
 export function RadiusControls({
+  locked = false,
   onApplyAll,
   onChange,
   values,
 }: {
+  /** RULING A29 (review): the selected node's LOCK, as data — the one refusal
+   * this component can actually know.
+   *
+   * Every other refusal belongs to the adapter and stays there, but the lock is
+   * different in kind: it gates every write path (§4) and it is the one whose
+   * outcome the panel must reflect. Without it the scene branch below asked only
+   * "would this text write?", never "did the write LAND?", so on a locked node a
+   * commit re-stated all five boxes and their `committed` snapshot over a
+   * document the adapter had refused to touch — a five-field lie that only
+   * reselecting the node could clear, and A27's trap re-opened behind the lock
+   * (after unlocking, the same number compared equal and committed nothing).
+   *
+   * Default `false` keeps every existing caller — the web inspector and the
+   * unbound dummy schemas — exactly as it was. Markup, classes and labels are
+   * untouched: this changes what a commit RECORDS, not what is rendered. (A
+   * disabled treatment for locked controls is upstream's own posture
+   * — `disabled={selectedNode.locked}` throughout `RawStyleSection` — and is a
+   * founder ruling, not this slice's; the report says what the primitives can
+   * already support.) */
+  locked?: boolean;
   /** W4.2/F2 (the web image schema): the all-corners commit — ONE `radius.all`
    * change, `clearsCorners` true when that write also clears the four corner
    * overrides.
@@ -590,6 +642,13 @@ export function RadiusControls({
     setRadius({ committed: next, draft: next });
 
   const commitAll = (value: string) => {
+    // A29: a locked node refuses every write (§4), so a commit against one
+    // records NOTHING — not the mirror, and not `committed` either. Recording it
+    // would leave the boxes stating a document the adapter never wrote, and
+    // would swallow the same edit again once the node is unlocked.
+    if (locked) {
+      return;
+    }
     // BOTH lanes: an all-corners write REPLACES what the four corner fields are
     // stating, so both re-state them — but under DIFFERENT conditions, because
     // they are different questions (RULING A28). They were one condition until
@@ -694,16 +753,30 @@ export function RadiusControls({
           ["bottomRight", "radius-bottom-right"],
         ] as const).map(([corner, icon]) => {
           const commit = () => {
+            // A29: nothing a locked node refuses may be recorded (see
+            // `commitAll`).
+            if (locked) return;
             // Read this render's draft and dispatch OUTSIDE the updater — a
             // `onChange` inside one would be a side effect React is free to run
             // twice (the `commitCustomSize` rule, AD4.0 step 1).
             const typed = radius.draft[corner];
             if (typed === radius.committed[corner]) return;
             onChange(corner, typed);
-            setRadius((current) => ({
-              ...current,
-              committed: { ...current.committed, [corner]: typed },
-            }));
+            setRadius((current) => {
+              const committed = { ...current.committed, [corner]: typed };
+              // WEB lane: `all` is its own class and is not derived from the
+              // corners, so it keeps what it had (see `uniformRadius`).
+              if (onApplyAll) {
+                return { ...current, committed };
+              }
+              // SCENE lane: `all` IS the four corners, so it re-derives — in
+              // both halves, keeping A27's lockstep.
+              const all = uniformRadius(committed);
+              return {
+                committed: { ...committed, all },
+                draft: { ...current.draft, all },
+              };
+            });
           };
           return (
             <span className={`${styles.inspectorControl} ${styles.inspectorInputControl} ${styles.cornerRadiusField}`} key={corner}>

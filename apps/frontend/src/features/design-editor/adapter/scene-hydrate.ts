@@ -92,6 +92,31 @@ export function finiteNumber(raw: string): number | null {
   return Number.isFinite(value) ? value : null;
 }
 
+/**
+ * A vocabulary lookup that cannot INHERIT — every `Record` lookup in this lane
+ * goes through it.
+ *
+ * `TABLE[key]` finds `Object.prototype`'s own members for a key like
+ * `constructor`, `toString` or `valueOf`: a FUNCTION, which is `!== undefined`,
+ * so a `=== undefined` guard passes and the row proceeds with a value its
+ * vocabulary does not contain. On the write side that reaches the engine as
+ * `fit: <Function>`, which `JSON.stringify` drops — silently CLEARING the field
+ * a label outside the vocabulary was supposed to leave alone. On the read side
+ * it puts a function into inspector state.
+ *
+ * Neither is reachable from the selects, which offer only their own options —
+ * but a stored document is JSON and its strings are not checked by the compile-
+ * time unions these tables are keyed on, and the null contract is not a
+ * function of what the UI happens to offer. One helper rather than a guard per
+ * site, because Lane B adds several more of these tables.
+ */
+export function vocabulary<Value>(
+  table: Readonly<Record<string, Value>>,
+  key: string,
+): Value | undefined {
+  return Object.hasOwn(table, key) ? table[key] : undefined;
+}
+
 /** `fields.tsx:174` `roundForEditor`, ported at the two sites upstream applies
  * it: the stroke width it stores, and the corner radius (through
  * `normalizeCornerRadius`). It lives HERE for `finiteNumber`'s own reason — the
@@ -295,7 +320,7 @@ export function sceneSelectionFor(
 /** §2 row 2: the nine named weights, exactly as the ad text schema lists them
  * (`components/image-inspector.tsx` `FONT_WEIGHT_OPTIONS`). A weight outside
  * the ramp has no option to select, so it is omitted rather than invented. */
-const FONT_WEIGHT_LABELS: Record<number, string> = {
+const FONT_WEIGHT_LABELS: Record<string, string> = {
   100: "100 Thin",
   200: "200 Extra Light",
   300: "300 Light",
@@ -725,18 +750,25 @@ export function hydrateSceneInspectorState(
     const text = node.kind;
     state.fontFamily = text.font_family;
     state.fontSize = numberText(text.font_size);
-    const weight = FONT_WEIGHT_LABELS[text.font_weight];
+    const weight = vocabulary(FONT_WEIGHT_LABELS, String(text.font_weight));
     if (weight) state.fontWeight = weight;
     // §1.2 row 5: `TextAlign` passes straight through — the ad schema's fourth
     // toggle IS `justify` (§2 row 2), so nothing is dropped at this seam.
     state.horizontalAlignment = text.align;
-    state.verticalAlignment = VALIGN_LABELS[text.valign ?? "top"];
+    // A stored `valign` outside the engine's own three is not a fact, so it
+    // states nothing and the caller's default stands. Assigning the `undefined`
+    // that `vocabulary` returns would be WORSE than not assigning: the state is
+    // merged with a spread, where an explicit `undefined` key beats the default
+    // rather than falling back to it.
+    const valign = vocabulary(VALIGN_LABELS, text.valign ?? "top");
+    if (valign) state.verticalAlignment = valign;
   }
 
   // §1.3 Image mode.
   if (node.kind.kind === "image") {
     const fit = node.asset_placement?.fit;
-    if (fit) state.fillMode = IMAGE_FIT_LABELS[fit];
+    const mode = fit ? vocabulary(IMAGE_FIT_LABELS, fit) : undefined;
+    if (mode) state.fillMode = mode;
   }
 
   // §1.4 Auto Layout. Direction/wrap live on the node KIND; gap/grow/padding/
@@ -756,8 +788,16 @@ export function hydrateSceneInspectorState(
       right: numberText(right),
       top: numberText(top),
     };
-    if (layout.align_x) state.alignX = LAYOUT_ANCHOR_LABELS[layout.align_x];
-    if (layout.align_y) state.alignY = LAYOUT_ANCHOR_LABELS[layout.align_y];
+    // Same rule as the valign above: an anchor outside the engine's five states
+    // nothing rather than an `undefined` that would beat the default.
+    const alignX = layout.align_x
+      ? vocabulary(LAYOUT_ANCHOR_LABELS, layout.align_x)
+      : undefined;
+    if (alignX) state.alignX = alignX;
+    const alignY = layout.align_y
+      ? vocabulary(LAYOUT_ANCHOR_LABELS, layout.align_y)
+      : undefined;
+    if (alignY) state.alignY = alignY;
   }
 
   return state;

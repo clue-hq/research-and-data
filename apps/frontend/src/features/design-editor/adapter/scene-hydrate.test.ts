@@ -446,6 +446,49 @@ it("§1.3 Radius: a corner TOKEN does not change what the five boxes read", () =
   });
 });
 
+it("only facts hydrate: a stored value that names an Object.prototype member states NOTHING", () => {
+  // The read side has the same inherited-lookup hole as the write side, and it
+  // is reachable from DATA rather than from a select: the label tables are keyed
+  // on compile-time unions, but a stored document is JSON, so `fit:
+  // "constructor"` would put a FUNCTION into inspector state (and, through the
+  // spread that merges hydration over the defaults, an explicit `undefined`
+  // would beat the default rather than fall back to it — which is why these
+  // omit rather than assign).
+  for (const key of ["constructor", "toString", "valueOf", "hasOwnProperty"]) {
+    const image = { ...clone(SCENE).nodes.image_hero };
+    image.asset_placement = { ...adImage().asset_placement, fit: key as never };
+    assert.equal(
+      hydrateSceneInspectorState(image, SCENE).fillMode,
+      undefined,
+      `fit ${key}`,
+    );
+
+    const text = { ...clone(SCENE).nodes.text_headline };
+    text.kind = { ...adTokenText().kind, valign: key as never } as Node["kind"];
+    assert.equal(
+      hydrateSceneInspectorState(text, SCENE).verticalAlignment,
+      undefined,
+      `valign ${key}`,
+    );
+
+    const row = { ...clone(SCENE).nodes.auto_row_copy };
+    row.layout = { ...adAutoLayout().layout!, align_x: key as never };
+    assert.equal(
+      hydrateSceneInspectorState(row, SCENE).alignX,
+      undefined,
+      `align_x ${key}`,
+    );
+
+    const weighted = { ...clone(SCENE).nodes.text_headline };
+    weighted.kind = { ...adTokenText().kind, font_weight: key as never } as Node["kind"];
+    assert.equal(
+      hydrateSceneInspectorState(weighted, SCENE).fontWeight,
+      undefined,
+      `font_weight ${key}`,
+    );
+  }
+});
+
 it("RULING A28: `radiusCommit` IS the radius row's acceptance rule, and its text is what a box must read", () => {
   // ONE rule with two callers: `scene-apply.ts`'s `radius.*` row takes the
   // number, `RadiusControls`'s scene branch takes the text. They cannot

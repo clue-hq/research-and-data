@@ -184,6 +184,10 @@ interface AdHydrationBinding {
    * Its `documentVersion` is null until AD3 wires the scene write path — the
    * W3.1 null contract, i.e. "not addressable", i.e. no write can fire. */
   addressing?: InspectorEventAddressing;
+  /** RULING A29: the selected node's LIVE lock (the header controller's, not a
+   * schema's mount-time seed), for the controls whose local state must not
+   * record a write §4 refuses. */
+  locked?: boolean;
   /** The selected node's real values (or the page's, for the canvas schema),
    * merged over the dummy defaults at mount. Initial state only: the caller
    * remounts this panel per selection (`key={primaryNodeId ?? "canvas"}`), the
@@ -653,6 +657,7 @@ function AdCanvasInspector({
 function AdImageInspector({
   addressing,
   hydrated,
+  locked = false,
   onSelectionChange,
   ...binding
 }: AdSchemaBinding & {
@@ -674,7 +679,9 @@ function AdImageInspector({
         <InspectorField label="Mode"><InspectorSelect label="Image fill mode" onChange={(value) => setValue("fillMode", value)} options={FILL_MODES} value={state.fillMode} /></InspectorField>
       </Section>
       <Section id="shape" label="Shape" open={state.openSections.shape} toggle={() => toggleSection("shape")}>
-        <InspectorField label="Radius"><RadiusControls onChange={(corner, value) => setNestedValue("radius", corner, value)} values={state.radius} /></InspectorField>
+        {/* A29: the lock rides in as data — a commit against a locked node
+            records nothing, because §4 refused the write. */}
+        <InspectorField label="Radius"><RadiusControls locked={locked} onChange={(corner, value) => setNestedValue("radius", corner, value)} values={state.radius} /></InspectorField>
       </Section>
       <Section id="layers" label="Layers" open={state.openSections.layers} toggle={() => toggleSection("layers")}>
         <AdLayers onSelectionChange={onSelectionChange} selected="image" {...binding} />
@@ -733,7 +740,21 @@ export function ImageInspector({
   // values; the four static ones (auto-layout / rectangle / ellipse / group)
   // have no state fields to take them — ruling 14, AD4.B's to bind — so they
   // get the layer binding and the header's real title, and nothing else.
-  const schema = { addressing, hydrated, onSelectionChange, ...layers };
+  //
+  // RULING A29: `locked` rides down as data, from the HEADER's controller
+  // rather than each schema's own. The lock button writes through
+  // `headerController` (below), and a successful write deliberately does not
+  // remount the panel (§4 / the AD3.2 keying rule) — so a schema's own
+  // `state.locked`, seeded once at mount, would still say `false` a click after
+  // the user locked the node, which is exactly when a control must stop
+  // recording writes the adapter is refusing.
+  const schema = {
+    addressing,
+    hydrated,
+    locked: dummySelection ? false : headerController.state.locked,
+    onSelectionChange,
+    ...layers,
+  };
 
   return (
     <ScenePaletteContext.Provider value={palette}>

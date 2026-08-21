@@ -34,6 +34,7 @@ import {
   COLOR_NONE,
   backgroundFillCommits,
   hydrateSceneCanvasState,
+  hydrateSceneInspectorState,
 } from "./scene-hydrate";
 import {
   sceneCanvasChangeToOperation,
@@ -2101,6 +2102,136 @@ it("RULING A27: after an all-commit, re-typing a corner's PRE-commit number stil
         token: null,
       }),
     }),
+  );
+});
+
+it("null contract: a key inherited from Object.prototype is not a vocabulary entry", () => {
+  // `TABLE[key]` finds `Object.prototype`'s own members for these labels — a
+  // FUNCTION, which is `!== undefined`, so a `=== undefined` guard passes and
+  // the row emits `fit: <Function>` / `font_weight: <Function>`. `JSON.stringify`
+  // then DROPS that key, so a label outside the vocabulary would silently CLEAR
+  // the field it was supposed to leave alone. Not reachable from the selects,
+  // which offer only their own options — but a stored document is JSON and the
+  // null contract is not a function of what the UI happens to offer.
+  // `vocabulary()` (scene-hydrate.ts) closes every one of these lookups at once.
+  const { node: fixedText, scene: fixedScene } = fixedHeightText();
+  for (const key of [
+    "constructor",
+    "toString",
+    "valueOf",
+    "hasOwnProperty",
+    "isPrototypeOf",
+    "__proto__",
+  ]) {
+    assert.equal(apply(adImage(), "fillMode", key), null, `fillMode ${key}`);
+    assert.equal(apply(adPlainText(), "fontWeight", key), null, `fontWeight ${key}`);
+    assert.equal(
+      apply(fixedText, "verticalAlignment", key, fixedScene),
+      null,
+      `verticalAlignment ${key}`,
+    );
+  }
+});
+
+it("RULING A29: a commit against a LOCKED node records NOTHING in the panel either", () => {
+  // The adapter has always refused a locked node (§4, proven above). What it
+  // could not do is stop the PANEL from recording that refused write: the
+  // radius control asked only "would this text write?", never "did it LAND?",
+  // so on a locked node a commit re-stated all five boxes and their `committed`
+  // snapshot over a document nothing had touched. Two clicks reproduced it —
+  // select the image, click the header lock, type 24 into All — and because no
+  // write happened, `inspectorGeneration` never moved, so only reselecting the
+  // node cleared the lie. It also re-opened A27's trap behind the lock: after
+  // unlocking, re-typing 24 compared equal to `committed` and committed nothing.
+  const source = readFileSync(
+    join(
+      dirname(fileURLToPath(import.meta.url)),
+      "../../chat-shell/components/inspector-primitives.tsx",
+    ),
+    "utf8",
+  );
+  const body = source.slice(
+    source.indexOf("export function RadiusControls"),
+    source.indexOf("type HsvColor"),
+  );
+  assert.ok(body.includes("locked = false,"), "RadiusControls must take the lock as data");
+  const commitAll = body.indexOf("const commitAll");
+  const cornerCommit = body.indexOf("const commit = () => {");
+  assert.ok(commitAll >= 0 && cornerCommit > commitAll, "both commit paths not found");
+  assert.ok(
+    body.slice(commitAll, commitAll + 400).includes("if (locked)"),
+    "the all-corners commit must record nothing on a locked node",
+  );
+  assert.ok(
+    body.slice(cornerCommit, cornerCommit + 400).includes("if (locked) return;"),
+    "a corner commit must record nothing on a locked node either — same trap",
+  );
+
+  // And the wiring: the lock that rides down is the HEADER controller's live
+  // one, not a schema's mount-time seed. A successful write does not remount the
+  // panel (§4 / the AD3.2 keying rule), so a seeded copy would still read
+  // `false` one click after the user locked the node.
+  const inspector = readFileSync(
+    join(
+      dirname(fileURLToPath(import.meta.url)),
+      "../../chat-shell/components/image-inspector.tsx",
+    ),
+    "utf8",
+  );
+  assert.ok(
+    inspector.includes("locked: dummySelection ? false : headerController.state.locked,"),
+    "the ad schemas must receive the header controller's LIVE lock",
+  );
+  assert.ok(
+    inspector.includes("<RadiusControls locked={locked}"),
+    "the image schema must pass that lock to RadiusControls",
+  );
+});
+
+it("RULING A29: after a single-corner commit the `all` box re-derives — hydrate's own rule", () => {
+  // `all` is not a stored field in the SCENE lane: hydration derives it from the
+  // four corners, "the uniform value, or empty when the corners differ". So a
+  // corner commit changes what `all` must read, and leaving it made the box
+  // state a number the document does not have — then the dirty check swallowed
+  // the very edit that would have put it right (type 5 into All to restore a
+  // uniform 5: `draft.all === committed.all`, no commit at all), leaving only
+  // the scan button, which applies whatever stale number the box is showing.
+  //
+  // The RULE is hydrate's and is asserted there, on the real document: a node at
+  // {9,5,5,5} states `all: ""`.
+  const { node } = withNodeField("rect_accent_bar", "corner", {
+    bottom_left: 5,
+    bottom_right: 5,
+    top_left: 9,
+    top_right: 5,
+  });
+  assert.equal(hydrateSceneInspectorState(node, SCENE).radius?.all, "");
+  assert.equal(hydrateSceneInspectorState(adRect(), SCENE).radius?.all, "5");
+
+  // The component now mirrors exactly that, in the SCENE lane only. The WEB
+  // lane's `all` is its OWN Tailwind class (`rounded-[Npx]`), parsed
+  // independently of the four corner classes (`adapter/hydrate.ts:259-266`), so
+  // deriving there would erase a real class from the panel — the two lanes'
+  // `all` are different facts, and the split is at the one call site.
+  const source = readFileSync(
+    join(
+      dirname(fileURLToPath(import.meta.url)),
+      "../../chat-shell/components/inspector-primitives.tsx",
+    ),
+    "utf8",
+  );
+  const cornerCommit = source.slice(
+    source.indexOf("const commit = () => {"),
+    source.indexOf("return (", source.indexOf("const commit = () => {")),
+  );
+  assert.ok(
+    cornerCommit.includes("if (onApplyAll) {") &&
+      cornerCommit.includes("return { ...current, committed };"),
+    "the web lane's `all` must be left exactly as it was",
+  );
+  assert.ok(
+    cornerCommit.includes("uniformRadius(committed)"),
+    "the scene lane's `all` must re-derive from the four committed corners",
   );
 });
 

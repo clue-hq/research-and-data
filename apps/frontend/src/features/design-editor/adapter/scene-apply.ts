@@ -44,6 +44,7 @@ import {
   radiusCommit,
   rootFrameId,
   roundForEditor,
+  vocabulary,
 } from "./scene-hydrate";
 import {
   normalizeHex,
@@ -562,7 +563,7 @@ export function sceneChangeToOperation(
       if (!text) {
         return null;
       }
-      const weight = FONT_WEIGHT_VALUES[value];
+      const weight = vocabulary(FONT_WEIGHT_VALUES, value);
       if (weight === undefined) {
         return null;
       }
@@ -587,7 +588,7 @@ export function sceneChangeToOperation(
       if (node.size.height.kind === "hug") {
         return null;
       }
-      const valign = VALIGN_VALUES[value];
+      const valign = vocabulary(VALIGN_VALUES, value);
       if (valign === undefined) {
         return null;
       }
@@ -712,7 +713,7 @@ export function sceneChangeToOperation(
       if (node.kind.kind !== "image") {
         return null;
       }
-      const fit = IMAGE_FIT_VALUES[value];
+      const fit = vocabulary(IMAGE_FIT_VALUES, value);
       if (fit === undefined) {
         return null;
       }
