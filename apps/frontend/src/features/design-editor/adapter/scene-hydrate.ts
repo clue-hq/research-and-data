@@ -92,6 +92,55 @@ export function finiteNumber(raw: string): number | null {
   return Number.isFinite(value) ? value : null;
 }
 
+/** `fields.tsx:174` `roundForEditor`, ported at the two sites upstream applies
+ * it: the stroke width it stores, and the corner radius (through
+ * `normalizeCornerRadius`). It lives HERE for `finiteNumber`'s own reason — the
+ * PANEL needs the identical number (`radiusCommitText` below), and scene-apply
+ * already imports this file, so importing back would close a cycle. */
+export function roundForEditor(value: number): number {
+  return Math.round(value * 1000) / 1000;
+}
+
+/**
+ * §1.3 Radius / RULING A28: the number a radius commit WRITES for this text, or
+ * `null` when it writes nothing.
+ *
+ * ONE rule, two callers, and that is the whole point of it existing:
+ * `scene-apply.ts`'s `radius.*` row takes the number, and `RadiusControls`'s
+ * scene branch takes `radiusCommitText` below to decide whether the four corner
+ * boxes must re-state themselves — so the mirror and the write cannot disagree
+ * about what a commit does. They did: the mirror used to ask the dummy's
+ * integer regex (`NUMERIC_RADIUS`, `^\d+$`), so a fractional radius wrote all
+ * four corners while the boxes went on showing the old numbers, and every
+ * re-type of one of those numbers compared equal and was swallowed
+ * (browser-proven — it blocked restoring a document by hand).
+ *
+ * The rule is `finiteNumber`'s, plus §1.3's refusal of a negative radius
+ * (upstream folds one to 0; the null contract refuses instead — `scene-apply.ts`
+ * says why), plus upstream's own rounding.
+ */
+export function radiusCommit(raw: string): number | null {
+  const typed = finiteNumber(raw);
+  return typed === null || typed < 0 ? null : roundForEditor(typed);
+}
+
+/**
+ * A28: the TEXT a radius field must read once its commit has landed — the
+ * canonical spelling of the number the document now holds, or `null` when the
+ * commit wrote nothing and nothing may be re-stated.
+ *
+ * It is `numberText` of the written number, i.e. EXACTLY what
+ * `hydrateSceneInspectorState` would state for that corner on the next read, so
+ * the mirrored panel and a re-hydrated one cannot differ. That is stronger than
+ * echoing the user's own text back: `007` and `12.3456789` are accepted commits
+ * whose documents hold `7` and `12.346`, and a box repeating the typed spelling
+ * would be stating a number the document does not have.
+ */
+export function radiusCommitText(raw: string): string | null {
+  const written = radiusCommit(raw);
+  return written === null ? null : numberText(written);
+}
+
 /**
  * A9: the WIDTH the Stroke row must read once a colour has landed on it —
  * `"1"` when the row was showing no stroke at all, `null` when it was not (the

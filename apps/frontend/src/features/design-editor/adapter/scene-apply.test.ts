@@ -2103,3 +2103,85 @@ it("RULING A27: after an all-commit, re-typing a corner's PRE-commit number stil
     }),
   );
 });
+
+it("RULING A28: a FRACTIONAL all-commit mirrors both halves, so the re-type after it still writes", () => {
+  // The last known instance of the panel-lie class, browser-proven: a scan of
+  // 12.5 wrote all four corners (v74) while the boxes still read 24.5/32/96/32,
+  // because the mirror asked the dummy's INTEGER regex (`NUMERIC_RADIUS`) while
+  // the write asked the adapter's finite-positive rule. `committed` did not
+  // move either, so every re-type of one of those numbers compared equal and
+  // was swallowed — the A27 trap, behind the decimal point.
+  const source = readFileSync(
+    join(
+      dirname(fileURLToPath(import.meta.url)),
+      "../../chat-shell/components/inspector-primitives.tsx",
+    ),
+    "utf8",
+  );
+  const body = source.slice(
+    source.indexOf("export function RadiusControls"),
+    source.indexOf("type HsvColor"),
+  );
+  // The two branches, sliced at the marker that separates them. Both offsets
+  // are asserted BEFORE slicing, so a rename fails here with a message rather
+  // than silently testing an empty string.
+  const sceneStart = body.indexOf("if (!onApplyAll) {", body.indexOf("const commitAll"));
+  const webStart = body.indexOf("const clearsCorners");
+  assert.ok(sceneStart >= 0, "commitAll's scene branch not found");
+  assert.ok(webStart > sceneStart, "commitAll's F2 branch not found after it");
+  const sceneBranch = body.slice(sceneStart, webStart);
+  const webBranch = body.slice(webStart);
+
+  // The SCENE branch asks the ADAPTER, never the dummy's regex.
+  assert.ok(
+    sceneBranch.includes("radiusCommitText(value)"),
+    "the scene lane's mirror must ask the adapter's own rule",
+  );
+  assert.ok(
+    !sceneBranch.includes("NUMERIC_RADIUS"),
+    "the scene lane's mirror must NOT use the web lane's integer regex",
+  );
+  // The WEB lane's `clearsCorners` is untouched — same predicate, same argument.
+  assert.ok(
+    webBranch.includes("NUMERIC_RADIUS.test(value.trim())") &&
+      webBranch.includes("onApplyAll(value, clearsCorners)"),
+    "F2's clearsCorners must still be the integer regex, passed to onApplyAll",
+  );
+  assert.ok(
+    !webBranch.includes("radiusCommitText"),
+    "the web lane must not adopt the scene lane's rule",
+  );
+
+  // Why the split was needed at all, stated as the one-line fact it is: the
+  // gate the mirror used to share with F2 refuses the value the write accepts.
+  // (`radiusCommit`/`radiusCommitText`'s own vocabulary is proven in
+  // `scene-hydrate.test.ts`; this is only the disagreement that caused it.)
+  assert.equal(/^\d+$/.test("12.5"), false, "the old shared gate refused 12.5");
+  assert.ok(apply(adImage(), "radius.all", "12.5"), "the write accepts 12.5");
+
+  // And the adapter half of the repro: the document at all-corners-12.5, a
+  // re-type of `image_hero`'s pre-scan bottom-left, still a write.
+  const { node, scene } = withNodeField("image_hero", "corner", {
+    bottom_left: 12.5,
+    bottom_right: 12.5,
+    top_left: 12.5,
+    top_right: 12.5,
+  });
+  assert.deepEqual(
+    apply(node, "radius.all", "12.5", scene),
+    null,
+    "re-committing the value the document already holds is still not a write",
+  );
+  assert.deepEqual(
+    apply(node, "radius.bottomLeft", "96", scene),
+    updateNode("image_hero", {
+      corner: set({
+        bottom_left: 96,
+        bottom_right: 12.5,
+        top_left: 12.5,
+        top_right: 12.5,
+        token: null,
+      }),
+    }),
+  );
+});

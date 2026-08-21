@@ -30,6 +30,8 @@ import {
   hydrateSceneSelectionState,
   mintedStrokeColor,
   mintedStrokeWidth,
+  radiusCommit,
+  radiusCommitText,
   rootFrameId,
   sceneSelectionFor,
 } from "./scene-hydrate";
@@ -442,6 +444,35 @@ it("§1.3 Radius: a corner TOKEN does not change what the five boxes read", () =
     topLeft: "32",
     topRight: "32",
   });
+});
+
+it("RULING A28: `radiusCommit` IS the radius row's acceptance rule, and its text is what a box must read", () => {
+  // ONE rule with two callers: `scene-apply.ts`'s `radius.*` row takes the
+  // number, `RadiusControls`'s scene branch takes the text. They cannot
+  // disagree about what a commit does, which is the whole reason it is here
+  // rather than restated in the component.
+  for (const refused of ["", " ", "abc", "-1", "-0.5", "1e", "24px", "NaN", "Infinity"]) {
+    assert.equal(radiusCommit(refused), null, JSON.stringify(refused));
+    assert.equal(radiusCommitText(refused), null, JSON.stringify(refused));
+  }
+  // Accepted, and CANONICAL: the text is what the document will hold, not the
+  // spelling the user typed — `numberText` of the written number, i.e. exactly
+  // what hydration states for that corner on the next read.
+  const written: [string, number, string][] = [
+    ["24", 24, "24"],
+    ["12.5", 12.5, "12.5"],
+    ["0", 0, "0"],
+    ["007", 7, "7"],
+    ["1e2", 100, "100"],
+    [" 8 ", 8, "8"],
+    // Upstream's own rounding (`roundForEditor`), applied by the same rule the
+    // write applies, so the box cannot state a precision the document lost.
+    ["12.3456789", 12.346, "12.346"],
+  ];
+  for (const [raw, value, text] of written) {
+    assert.equal(radiusCommit(raw), value, raw);
+    assert.equal(radiusCommitText(raw), text, raw);
+  }
 });
 
 it("§1.3 Radius: an unrounded node reads the honest 0 — and no node reads an ABSENT corner", () => {

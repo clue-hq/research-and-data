@@ -41,7 +41,9 @@ import {
   SIZE_PRESETS,
   finiteNumber,
   pagePixelSize,
+  radiusCommit,
   rootFrameId,
+  roundForEditor,
 } from "./scene-hydrate";
 import {
   normalizeHex,
@@ -279,11 +281,6 @@ function isGradientGuarded(fills: Fill[]): boolean {
   return paint ? paint.kind !== "solid" && paint.kind !== "token" : false;
 }
 
-/** `fields.tsx:174` `roundForEditor`, ported at the one site upstream applies
- * it: the stroke width it stores. */
-function roundForEditor(value: number): number {
-  return Math.round(value * 1000) / 1000;
-}
 
 /**
  * The single fill layer any of these controls commits. The paint id is the
@@ -748,18 +745,22 @@ export function sceneChangeToOperation(
     case "radius.bottomRight":
     case "radius.topLeft":
     case "radius.topRight": {
-      const typed = finiteNumber(value);
-      // Upstream SUBSTITUTES here — `normalizeCornerRadius` folds a negative or
-      // non-finite value to 0 (`RawStyleSection.tsx:181-183`) — because its
-      // field is an `<input type="number" min="0">` that cannot produce one.
-      // The ad's field is free text, so the same fold would be a silent guess;
-      // §1.2's stroke width settles this the same way, by refusing.
-      if (typed === null || typed < 0) {
+      // RULING A28: the acceptance rule and the rounding are `radiusCommit`'s,
+      // in `scene-hydrate.ts`, because the PANEL asks the same question — "did
+      // this commit write anything, and what?" — to decide whether the four
+      // corner boxes must re-state themselves. One rule, so the mirror and the
+      // write cannot disagree.
+      //
+      // Upstream SUBSTITUTES where this refuses — `normalizeCornerRadius` folds
+      // a negative or non-finite value to 0 (`RawStyleSection.tsx:181-183`) —
+      // because its field is an `<input type="number" min="0">` that cannot
+      // produce one. The ad's field is free text, so the same fold would be a
+      // silent guess; §1.2's stroke width settles this the same way.
+      const radius = radiusCommit(value);
+      if (radius === null) {
         return null;
       }
-      // `roundForEditor` IS upstream's own rounding, applied at the one site
-      // upstream applies it to a radius.
-      const corner = cornerWith(node.corner, property, roundForEditor(typed));
+      const corner = cornerWith(node.corner, property, radius);
       if (sameCorner(node.corner, corner)) {
         return null;
       }

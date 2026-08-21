@@ -11,6 +11,7 @@ import type {
   PointerEvent as ReactPointerEvent,
   ReactNode,
 } from "react";
+import { radiusCommitText } from "@/features/design-editor/adapter/scene-hydrate";
 import type { ThemeColorOption } from "@/features/design-editor/adapter/theme-options";
 import {
   commitInspectorNumber,
@@ -583,48 +584,71 @@ export function RadiusControls({
       draft: { ...current.draft, [corner]: value },
     }));
 
+  /** Every radius field re-states itself after a commit that moved it — both
+   * halves at once (A27's lockstep), which is free in one state object. */
+  const restate = (next: RadiusValues) =>
+    setRadius({ committed: next, draft: next });
+
   const commitAll = (value: string) => {
     // BOTH lanes: an all-corners write REPLACES what the four corner fields are
-    // stating, so both re-seed them under ONE condition and differ only in what
-    // they re-seed to. R-B1's rule decides that condition — only a plain number
-    // commits, so anything else clears nothing there and sets nothing here.
-    const numeric = NUMERIC_RADIUS.test(value.trim());
-    // AD4.A / RULING A26: the SCENE lane's all-write SETS all four corners
-    // (`scene-apply.ts`'s `radius.*` row writes the whole `CornerRadii`); the
-    // web lane's CLEARS the per-corner overrides (F2). One line, both meanings.
-    const corners = onApplyAll ? "" : value;
-    if (onApplyAll) {
-      onApplyAll(value, numeric);
-    } else {
+    // stating, so both re-state them — but under DIFFERENT conditions, because
+    // they are different questions (RULING A28). They were one condition until
+    // a fractional radius wrote all four corners while the boxes kept the old
+    // numbers.
+    if (!onApplyAll) {
+      // ── The SCENE lane ────────────────────────────────────────────────────
+      // The question is "did this commit produce a WRITE?", which is the
+      // adapter's own rule — imported, never restated here, so the mirror and
+      // the write can never diverge again. `radiusCommitText` answers with the
+      // canonical text of the number the document now holds (`007` → `7`), so
+      // the boxes state exactly what a re-hydrate would state.
       onChange("all", value);
-    }
-    if (!numeric) {
-      // Nothing reached the corners, so nothing about them moves — only this
-      // field's own committed text.
-      setRadius((current) => ({
-        ...current,
-        committed: { ...current.committed, all: value },
-      }));
+      const written = radiusCommitText(value);
+      if (written === null) {
+        // Nothing was written, so nothing may be re-stated — only this field's
+        // own committed text moves, which is what keeps a re-blur quiet.
+        setRadius((current) => ({
+          ...current,
+          committed: { ...current.committed, all: value },
+        }));
+        return;
+      }
+      // The scene lane's all-write SETS all four corners (`scene-apply.ts`
+      // writes the whole `CornerRadii`), so every one of the five fields now
+      // reads that one number.
+      restate({
+        all: written,
+        bottomLeft: written,
+        bottomRight: written,
+        topLeft: written,
+        topRight: written,
+      });
       return;
     }
+    // ── The WEB lane (F2), untouched ─────────────────────────────────────────
+    // Its question is "does this write CLEAR the per-corner overrides?", which
+    // is R-B1's integer rule and is not this lane's to move.
+    const clearsCorners = NUMERIC_RADIUS.test(value.trim());
+    onApplyAll(value, clearsCorners);
     setRadius((current) => ({
-      committed: {
-        all: value,
-        bottomLeft: corners,
-        bottomRight: corners,
-        topLeft: corners,
-        topRight: corners,
-      },
-      // A27: `committed` moves with the drafts, in the same update, so the two
-      // cannot drift. `all`'s draft is already this value — every caller passes
-      // the draft itself.
-      draft: {
-        ...current.draft,
-        bottomLeft: corners,
-        bottomRight: corners,
-        topLeft: corners,
-        topRight: corners,
-      },
+      committed: clearsCorners
+        ? {
+            all: value,
+            bottomLeft: "",
+            bottomRight: "",
+            topLeft: "",
+            topRight: "",
+          }
+        : { ...current.committed, all: value },
+      draft: clearsCorners
+        ? {
+            ...current.draft,
+            bottomLeft: "",
+            bottomRight: "",
+            topLeft: "",
+            topRight: "",
+          }
+        : current.draft,
     }));
   };
 
