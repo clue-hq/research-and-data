@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { it } from "node:test";
 import type { InspectorBackgroundFill } from "@/features/chat-shell/hooks/use-inspector-controller";
 import type {
+  AssetPlacement,
   Node,
   NodePatch,
   PageId,
@@ -18,7 +19,9 @@ import {
   AD_PAGE_ID,
   HARVESTED_AD_PAGE,
   adAutoLayout,
+  adEllipse,
   adFrame,
+  adImage,
   adPlainText,
   adRect,
   adTokenText,
@@ -617,7 +620,10 @@ it("null contract: an unknown property writes nothing", () => {
 it("null contract: rows owned by a LATER lane write nothing today", () => {
   // AD3.1 is the §1.2 text schema only. When the Layout/Shape/Auto-Layout
   // lanes extend this same switch they move these lines out of this test.
-  for (const property of ["opacity", "radius.all", "gap", "fillMode"]) {
+  // AD4.A took `radius.*` and `fillMode` out of it — §1.3's two rows are
+  // mapped now, and their own cases below cover them (the radius row is
+  // deliberately kind-agnostic, so it WRITES on this very node).
+  for (const property of ["opacity", "gap"]) {
     assert.equal(apply(adAutoLayout(), property, "4"), null, property);
   }
 });
@@ -1711,4 +1717,256 @@ it("FIX 4: the token fold strips `$` and NOTHING else — no trimming the engine
       ]),
     }),
   );
+});
+
+// ══ AD4.A / §1.3 row 1 — Mode (Fit | Fill | Crop) ═══════════════════════════
+//
+// The harvested `image_hero` carries `fit: "cover"` (the dummy's "Fill") and a
+// real focal point, which is what makes the preserve-everything-else assertions
+// worth making: Gate G-C ships NO focal control, so the focal point can only
+// ride along untouched or be silently destroyed.
+
+/** The harvested image's whole stored placement, deep-copied. */
+function heroPlacement(): AssetPlacement {
+  return JSON.parse(JSON.stringify(adImage().asset_placement)) as AssetPlacement;
+}
+
+it("§1.3 Mode: `Fit` writes `contain` and preserves every other placement field", () => {
+  assert.deepEqual(
+    apply(adImage(), "fillMode", "Fit"),
+    updateNode("image_hero", {
+      asset_placement: set({ ...heroPlacement(), fit: "contain" }),
+    }),
+  );
+});
+
+it("§1.3 Mode: `Crop` writes `crop` and the node's FOCAL POINT rides along untouched (G-C)", () => {
+  // The whole point of the row under G-C, which ships no focal control: the
+  // seeded focal point is 0.5/0.42 and the crop window is computed FROM it
+  // (`lumen-export/src/svg.rs::focal_crop_geometry`), so a write that dropped
+  // it would recentre the image the moment the user chose Crop. `heroPlacement`
+  // is the node's whole stored placement, so this asserts the preservation of
+  // every field, not just that one.
+  assert.deepEqual(
+    apply(adImage(), "fillMode", "Crop"),
+    updateNode("image_hero", {
+      asset_placement: set({ ...heroPlacement(), fit: "crop" }),
+    }),
+  );
+});
+
+it("§1.3 Mode: `Fill` on a `cover` image writes NOTHING — a change that changes nothing is not a write", () => {
+  assert.equal(apply(adImage(), "fillMode", "Fill"), null);
+});
+
+it("§1.3 Mode: an image with NO asset_placement MINTS one rather than refusing", () => {
+  // UNCOVERED by the harvest: `image_hero` carries a full placement.
+  // `asset_placement` is `Option` + `skip_serializing_if` in the core, so its
+  // absence is a real stored shape.
+  //
+  // Upstream's own image inspector reads `node.asset_placement ?? {}` and
+  // emits `{...placement, fit}` (`ImageInspectorSection.tsx:80-87,198-210`), so
+  // minting is the LIFT and refusing would be the divergence — and refusing
+  // would leave the select showing a mode the document never got (the standing
+  // "a control may not display a value the document does not have" rule).
+  const { node, scene } = withNodeField("image_hero", "asset_placement", undefined);
+  assert.deepEqual(
+    apply(node, "fillMode", "Crop", scene),
+    updateNode("image_hero", { asset_placement: set({ fit: "crop" }) }),
+  );
+});
+
+it("§1.3 Mode: `Fit` on a placement-less image writes nothing — absent fit IS `contain`", () => {
+  // `Some(Contain) | None => "xMidYMid meet"` (`lumen-export/src/svg.rs:1759-1770`),
+  // and the rasterizer's `(_, Some(ratio))` arm agrees — so such a node already
+  // renders exactly what "Fit" asks for. (Unreachable from the select, which is
+  // already showing "Fit" for it and fires no change event when the same option
+  // is re-picked; the guard is stated because the row's rule is "compare against
+  // the fit the node effectively has", not "against a stored key".)
+  const { node, scene } = withNodeField("image_hero", "asset_placement", undefined);
+  assert.equal(apply(node, "fillMode", "Fit", scene), null);
+});
+
+it("§1.3 Mode: a NON-IMAGE node writes nothing — the write's kind guard is hydrate's", () => {
+  // `scene-hydrate.ts` states `fillMode` for an image node and nothing else, so
+  // accepting it for a text or a rect would write a property that node does not
+  // hydrate (the file header's standing rule).
+  assert.equal(apply(adPlainText(), "fillMode", "Fill"), null);
+  assert.equal(apply(adRect(), "fillMode", "Fill"), null);
+  assert.equal(apply(adFrame(), "fillMode", "Fill"), null);
+});
+
+it("§1.3 Mode: a label outside the three, and a non-string value, write nothing", () => {
+  for (const label of ["Stretch", "Tile", "cover", "fill", "", "FIT"]) {
+    assert.equal(apply(adImage(), "fillMode", label), null, label);
+  }
+  assert.equal(apply(adImage(), "fillMode", 1), null, "a number is not a label");
+});
+
+it("§1.3 Mode: a LOCKED image writes nothing (§4)", () => {
+  const { node, scene } = withNodeField("image_hero", "locked", true);
+  assert.equal(apply(node, "fillMode", "Fit", scene), null);
+});
+
+// ══ AD4.A / §1.3 row 2 — Radius (all + four corners) ════════════════════════
+//
+// The corner-order trap, precisely: the TS/Rust struct order is TL, TR, BR, BL
+// while the stored bytes read TL, TR, BL, BR. Both sides serialize BY FIELD
+// NAME, so key order cannot break correctness on its own — but any positional
+// thinking (a tuple, an array, `Object.values`) transposes BR and BL silently.
+// The harvested image is the one node that fails loudly: BL 96, BR 32.
+
+it("§1.3 Radius: ONE corner is written and the other three are untouched — the BR/BL trap", () => {
+  // `image_hero` is the node that fails LOUDLY on a transposition: it is the
+  // asymmetric one (BL 96, BR 32), so a positional build — a tuple, an array,
+  // an `Object.values()` — would move the 96 into `bottom_right` and leave
+  // `bottom_left` holding the 24 this write aimed at the other corner. Only
+  // `bottom_right` may move here, and `bottom_left` must still read 96.
+  assert.deepEqual(
+    apply(adImage(), "radius.bottomRight", "24"),
+    updateNode("image_hero", {
+      corner: set({
+        bottom_left: 96,
+        bottom_right: 24,
+        top_left: 32,
+        top_right: 32,
+        token: null,
+      }),
+    }),
+  );
+});
+
+it("§1.3 Radius: each named corner writes its OWN field", () => {
+  const base = { bottom_left: 96, bottom_right: 32, top_left: 32, top_right: 32 };
+  const cases = [
+    ["radius.topLeft", { ...base, top_left: 7 }],
+    ["radius.topRight", { ...base, top_right: 7 }],
+    ["radius.bottomLeft", { ...base, bottom_left: 7 }],
+    ["radius.bottomRight", { ...base, bottom_right: 7 }],
+  ] as const;
+  for (const [property, expected] of cases) {
+    assert.deepEqual(
+      apply(adImage(), property, "7"),
+      updateNode("image_hero", { corner: set({ ...expected, token: null }) }),
+      property,
+    );
+  }
+});
+
+it("§1.3 Radius: `all` writes all four corners in one operation", () => {
+  assert.deepEqual(
+    apply(adImage(), "radius.all", "12"),
+    updateNode("image_hero", {
+      corner: set({
+        bottom_left: 12,
+        bottom_right: 12,
+        top_left: 12,
+        top_right: 12,
+        token: null,
+      }),
+    }),
+  );
+});
+
+it("§1.3 Radius: a raw write CLEARS `corner.token` (§4), and clearing it is itself a change", () => {
+  // UNCOVERED by the harvest: no harvested node is radius-token-bound. One
+  // field of a DEEP copy carries the real corners plus a token.
+  const { node, scene } = withNodeField("image_hero", "corner", {
+    bottom_left: 96,
+    bottom_right: 32,
+    top_left: 32,
+    top_right: 32,
+    token: "radius.card",
+  });
+  // The same four numbers the node already has — but the write would DETACH
+  // its token, and the renderer prefers a resolved token over the numbers
+  // (`renderAdapter.ts:270-301`), so this is a real change, not a no-op. The
+  // exact shape of `sameStroke`'s `width_token` rule.
+  assert.deepEqual(
+    apply(node, "radius.bottomRight", "32", scene),
+    updateNode("image_hero", {
+      corner: set({
+        bottom_left: 96,
+        bottom_right: 32,
+        top_left: 32,
+        top_right: 32,
+        token: null,
+      }),
+    }),
+  );
+});
+
+it("§1.3 Radius: a corner that already holds the typed number writes nothing", () => {
+  // The fan-out rule: the ad schema passes no `onApplyAll`, so ONE all-corners
+  // gesture dispatches several corner events, and every corner that already
+  // held that value would otherwise mint an empty document version and an
+  // empty undo step. `rect_accent_bar` is uniform at 5, so all five properties
+  // are no-ops on it.
+  for (const property of [
+    "radius.all",
+    "radius.bottomLeft",
+    "radius.bottomRight",
+    "radius.topLeft",
+    "radius.topRight",
+  ]) {
+    assert.equal(apply(adRect(), property, "5"), null, property);
+  }
+  // On the ASYMMETRIC image, only the corner that matches is a no-op.
+  assert.equal(apply(adImage(), "radius.bottomRight", "32"), null, "BR already 32");
+  assert.ok(apply(adImage(), "radius.bottomLeft", "32"), "BL is 96, so 32 is a change");
+});
+
+it("§1.3 Radius: an unparseable or NEGATIVE value writes nothing, and is never clamped", () => {
+  // Upstream SUBSTITUTES here (`normalizeCornerRadius` folds a negative and a
+  // non-finite to 0, `RawStyleSection.tsx:181-183`) because its field is an
+  // `<input type="number" min="0">` that cannot produce one. The ad's field is
+  // free text, so the same substitution would be a silent guess — the null
+  // contract's own case, settled the way §1.2's stroke width settles it.
+  for (const value of ["", " ", "-1", "abc", "1e", "24px", "NaN"]) {
+    assert.equal(apply(adImage(), "radius.all", value), null, JSON.stringify(value));
+  }
+  assert.equal(apply(adImage(), "radius.all", 12), null, "a number is not a typed field");
+});
+
+it("§1.3 Radius: a fractional radius is rounded the way the editor rounds, not refused", () => {
+  // `roundForEditor` is upstream's own (`fields.tsx:174`), applied at the one
+  // site upstream applies it to a radius (`normalizeCornerRadius`).
+  assert.deepEqual(
+    apply(adImage(), "radius.all", "12.34567"),
+    updateNode("image_hero", {
+      corner: set({
+        bottom_left: 12.346,
+        bottom_right: 12.346,
+        top_left: 12.346,
+        top_right: 12.346,
+        token: null,
+      }),
+    }),
+  );
+});
+
+it("§1.3 Radius: the row is KIND-AGNOSTIC — hydrate's radius mapping has no kind guard either", () => {
+  // Lane B's rectangle and auto-layout schemas reach this same code path; the
+  // standing rule is that the write's kind condition IS hydrate's, and
+  // hydrate reads `node.corner` for every kind.
+  assert.deepEqual(
+    apply(adAutoLayout(), "radius.topLeft", "4"),
+    updateNode("auto_row_copy", {
+      corner: set({
+        bottom_left: 96,
+        bottom_right: 32,
+        top_left: 4,
+        top_right: 32,
+        token: null,
+      }),
+    }),
+  );
+  assert.ok(apply(adEllipse(), "radius.all", "9"), "an ellipse writes too");
+});
+
+it("§1.3 Radius: a LOCKED node writes nothing (§4)", () => {
+  const { node, scene } = withNodeField("image_hero", "locked", true);
+  for (const property of ["radius.all", "radius.topLeft"]) {
+    assert.equal(apply(node, property, "8", scene), null, property);
+  }
 });

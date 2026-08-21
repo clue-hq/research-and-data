@@ -377,6 +377,90 @@ it("§1.3: four equal corners fill the `all` box", () => {
   });
 });
 
+// ── AD4.A: the two §1.3 rows the WRITE half binds (`scene-apply.ts`) ────────
+//
+// The read side existed before the write did; these prove it over the whole
+// vocabulary rather than the one value the harvest happens to carry, because
+// the write is now the exact inverse of it. Derived cases DEEP-COPY first: the
+// fixture accessors hand out live references into the shared frozen
+// `HARVESTED_AD_PAGE`, which every test file in the run imports as one module.
+
+/** The harvested image with ONE field of a DEEP copy replaced. */
+function imageWith(patch: Partial<Node>): Node {
+  return { ...clone(SCENE).nodes.image_hero, ...patch };
+}
+
+it("§1.3 Mode: all three engine behaviours read as the dummy's three labels", () => {
+  // `cover` is the harvest's own; the other two are the same real node with
+  // one field changed. The dummy offers exactly these three (`FILL_MODES`).
+  assert.equal(hydrateSceneInspectorState(adImage(), SCENE).fillMode, "Fill");
+  assert.equal(
+    hydrateSceneInspectorState(
+      imageWith({ asset_placement: { ...adImage().asset_placement, fit: "contain" } }),
+      SCENE,
+    ).fillMode,
+    "Fit",
+  );
+  assert.equal(
+    hydrateSceneInspectorState(
+      imageWith({ asset_placement: { ...adImage().asset_placement, fit: "crop" } }),
+      SCENE,
+    ).fillMode,
+    "Crop",
+  );
+});
+
+it("§1.3 Mode: an image with NO asset_placement states no mode, and the dummy's own default is the truth", () => {
+  // `asset_placement` is `Option` + `skip_serializing_if` in the core
+  // (`lumen-core/src/scene.rs:291`), so a placement-less image really is
+  // absent on the wire. Only facts hydrate, so nothing is stated — and the
+  // shared default that then stands (`DEFAULT_STATE.fillMode === "Fit"`) is
+  // exactly what such a node RENDERS: the exporter maps `Some(Contain) | None`
+  // onto the same `xMidYMid meet` (`lumen-export/src/svg.rs:1759-1770`), and
+  // the rasterizer's `(_, Some(ratio))` arm agrees. The write half refuses a
+  // "Fit" pick on such a node for that same reason.
+  const node = imageWith({});
+  delete node.asset_placement;
+  assert.equal(hydrateSceneInspectorState(node, SCENE).fillMode, undefined);
+});
+
+it("§1.3 Radius: a corner TOKEN does not change what the five boxes read", () => {
+  // UNCOVERED by the harvest: no harvested node carries `corner.token`. The
+  // panel states the stored NUMBERS either way — upstream's own Radius fields
+  // read `selectedNode.corner.top_left` and never the token
+  // (`RawStyleSection.tsx:56-96`), and it is the same posture the stroke row
+  // takes with `width_token`. RECORDED GAP: the renderer PREFERS a resolved
+  // token over the four numbers (`renderAdapter.ts:270-301`), so a token-bound
+  // node can paint a radius these boxes do not show; resolving it needs the
+  // kit's radii, which `ScenePalette` (colours only) does not carry.
+  const node = imageWith({});
+  node.corner = { ...node.corner, token: "radius.card" };
+  assert.deepEqual(hydrateSceneInspectorState(node, SCENE).radius, {
+    all: "",
+    bottomLeft: "96",
+    bottomRight: "32",
+    topLeft: "32",
+    topRight: "32",
+  });
+});
+
+it("§1.3 Radius: an unrounded node reads the honest 0 — and no node reads an ABSENT corner", () => {
+  // `corner` is REQUIRED on both sides of the wire — `pub corner: CornerRadii`
+  // with no `#[serde(default)]` (`lumen-core/src/scene.rs:284`) and
+  // non-optional in `contracts.ts:176` — so "no radius" is four zeroes, never
+  // a missing block, and hydration carries no absent-corner branch to test.
+  for (const node of Object.values(SCENE.nodes)) {
+    assert.ok(node.corner, `harvested node ${node.id} carries no corner block`);
+  }
+  assert.deepEqual(hydrateSceneInspectorState(adGroup(), SCENE).radius, {
+    all: "0",
+    bottomLeft: "0",
+    bottomRight: "0",
+    topLeft: "0",
+    topRight: "0",
+  });
+});
+
 // ── §1.4 Auto Layout section ───────────────────────────────────────────────
 
 it("§1.4: direction `row` is the dummy's horizontal; wrap reads the node kind", () => {

@@ -1,8 +1,11 @@
 import type { InspectorBackgroundFill } from "@/features/chat-shell/hooks/use-inspector-controller";
 import type {
+  AssetPlacement,
   Color,
   ColorStop,
+  CornerRadii,
   Fill,
+  ImageFitMode,
   Node,
   Operation,
   Page,
@@ -15,6 +18,8 @@ import type {
   VerticalAlign,
 } from "../engine/scene/contracts";
 import {
+  nodePatch,
+  set,
   updateNodeAbsoluteBox,
   updateNodeFills,
   updateNodeLocked,
@@ -82,16 +87,29 @@ import {
  * node.id` assertion inside the adapter would have had to be special-cased
  * away the moment step 2 landed.
  *
+ * AD4.A adds §1.3's two pure-adapter IMAGE rows to the node function: the
+ * Fit/Fill/Crop mode (an `asset_placement` patch) and the corner radius (a
+ * `corner` patch that clears the radius token). Both build their `update_node`
+ * inline through `nodePatch`, because `engine/scene/operations.ts` is a
+ * verbatim upstream port with no `updateNodeCorner`/`updateNodeAssetPlacement`
+ * builder and this lane does not edit it. Upload and the AI suite are NOT here:
+ * they are async, multi-step and carry no `property`/`value` pair, so they
+ * cannot ride this seam at all.
+ *
  * WHICH ROWS CARRY A KIND GUARD is decided by one rule: **the write's kind
  * condition is exactly hydrate's kind condition**, so the two stay inverses.
  *   • typography + `textColor` → text only. `scene-hydrate.ts:378-386` routes a
  *     text node's fill to `textColor` and every other kind's to
  *     `backgroundColor`, so accepting `textColor` for a rect would write a
  *     property that node does not hydrate.
- *   • stroke / position / rotation / lock → every kind, because hydrate's
- *     stroke and geometry mappings are one path for every kind
- *     (`scene-hydrate.ts:348-401`). Same posture as the web lane's radius row,
- *     which likewise refuses to invent a kind guard the mapping does not have.
+ *   • `fillMode` → image only, because hydrate states it for an image node and
+ *     for nothing else (`scene-hydrate.ts:687-691`).
+ *   • stroke / position / rotation / lock / RADIUS → every kind, because
+ *     hydrate's stroke, geometry and corner mappings are one path for every
+ *     kind (`scene-hydrate.ts:348-401`, `:660-672`). Same posture as the web
+ *     lane's radius row, which likewise refuses to invent a kind guard the
+ *     mapping does not have — and it is what lets Lane B's rectangle and
+ *     auto-layout schemas inherit the radius row rather than restate it.
  */
 
 export interface SceneChangeDetail {
@@ -140,6 +158,91 @@ const VALIGN_VALUES: Record<string, VerticalAlign> = {
   middle: "center",
   top: "top",
 };
+
+/** §1.3 Mode (AD4.A): the inverse of `scene-hydrate.ts`'s `IMAGE_FIT_LABELS` —
+ * the three labels the dummy's select offers (`FILL_MODES`), and nothing else.
+ * The engine's own words (`cover`, `contain`) are not in that vocabulary and
+ * are therefore not accepted, exactly as `VALIGN_VALUES` refuses `center`. */
+const IMAGE_FIT_VALUES: Record<string, ImageFitMode> = {
+  Crop: "crop",
+  Fill: "cover",
+  Fit: "contain",
+};
+
+/**
+ * §1.3 Mode: the fit a node EFFECTIVELY has, which is what the no-change guard
+ * compares against — not the stored key.
+ *
+ * An absent `fit` is `contain` exactly, on both renderers: the exporter maps
+ * `Some(Contain) | None` onto the same `xMidYMid meet`
+ * (`lumen-export/src/svg.rs::image_preserve_aspect_ratio`) and the rasterizer's
+ * `(_, Some(ratio))` letterbox arm takes both (`lumen-skia/src/render.rs`).
+ * The panel says the same thing — hydrate states no mode for a placement-less
+ * image, so the shared `Fit` default stands — so "Fit" on such a node is a
+ * gesture that changes neither the pixels nor the panel, and minting a
+ * placement for it would be a document version that states nothing new.
+ */
+function effectiveImageFit(placement: AssetPlacement | null | undefined): ImageFitMode {
+  return placement?.fit ?? "contain";
+}
+
+/**
+ * §1.3 Radius: the four corners this write commits — one named corner replaced
+ * (or all four, for `radius.all`), with `token` CLEARED (§4: "a raw radius
+ * write clears `corner.token`", which is upstream's own `cornerWith` /
+ * `cornerWithAll` rule, `RawStyleSection.tsx:155-174`).
+ *
+ * EVERY FIELD IS NAMED ON BOTH SIDES, deliberately. The TS/Rust struct order is
+ * TL, TR, BR, BL while the stored bytes read TL, TR, BL, BR (`scene.rs:1284`
+ * vs the harvested `image_hero`), so both sides serialize by field NAME and key
+ * order cannot break correctness on its own — but a tuple, an array or an
+ * `Object.values()` here would transpose BR and BL silently and render subtly
+ * wrong. There is no positional form of this function to get wrong.
+ */
+function cornerWith(
+  existing: CornerRadii,
+  property: string,
+  radius: number,
+): CornerRadii {
+  const all = property === "radius.all";
+  return {
+    bottom_left:
+      all || property === "radius.bottomLeft" ? radius : existing.bottom_left,
+    bottom_right:
+      all || property === "radius.bottomRight" ? radius : existing.bottom_right,
+    top_left: all || property === "radius.topLeft" ? radius : existing.top_left,
+    top_right:
+      all || property === "radius.topRight" ? radius : existing.top_right,
+    token: null,
+  };
+}
+
+/**
+ * §1.3 Radius: is the corner this write would produce the one the node ALREADY
+ * carries? The standing "a change that changes nothing is not a write" rule
+ * (`backgroundFillsOperation`, `sameStroke`), applied to the radius row — where
+ * it matters most, because the ad schema passes `RadiusControls` no
+ * `onApplyAll` and one all-corners gesture therefore dispatches SEVERAL corner
+ * events, each of which would otherwise mint an empty document version and an
+ * empty undo step for a corner that already held that number.
+ *
+ * The TOKEN is part of the comparison, for `sameStroke`'s reason exactly:
+ * `cornerWith` always clears it, so the same four numbers over a token-bound
+ * corner is a real change — and one that shows, since the renderer PREFERS a
+ * resolved radius token over the four numbers
+ * (`engine/scene/renderAdapter.ts:270-301`). Absent and `null` are folded to
+ * the one fact they both state (the field is optional and the real stored bytes
+ * omit it), or every untokened corner would look changed and defeat the guard.
+ */
+function sameCorner(existing: CornerRadii, next: CornerRadii): boolean {
+  return (
+    existing.bottom_left === next.bottom_left &&
+    existing.bottom_right === next.bottom_right &&
+    existing.top_left === next.top_left &&
+    existing.top_right === next.top_right &&
+    (existing.token ?? null) === (next.token ?? null)
+  );
+}
 
 /**
  * The half of upstream's guard that binds EVERY fill control here: the panel
@@ -597,9 +700,81 @@ export function sceneChangeToOperation(
       return updateNodeTransform(node, { ...node.transform, rotation });
     }
 
+    // ── §1.3 row 1: Mode — Fit / Fill / Crop (AD4.A) ─────────────────────────
+    // KIND GUARD: image only, because `scene-hydrate.ts:687-691` states
+    // `fillMode` for an image node and for nothing else — the file header's
+    // standing rule that the write's kind condition IS hydrate's.
+    //
+    // GATE G-C: Crop is selectable and writes `fit: "crop"`; the focal-point
+    // control is §6 mockup-gated chrome that does not exist, so the node's
+    // stored focal point simply RIDES ALONG in the spread below. That is not
+    // incidental — the crop window is computed FROM the focal point
+    // (`lumen-export/src/svg.rs::focal_crop_geometry`), so dropping it would
+    // recentre the image the moment the user chose Crop.
+    case "fillMode": {
+      if (node.kind.kind !== "image") {
+        return null;
+      }
+      const fit = IMAGE_FIT_VALUES[value];
+      if (fit === undefined) {
+        return null;
+      }
+      const placement = node.asset_placement;
+      if (effectiveImageFit(placement) === fit) {
+        return null;
+      }
+      // A placement-less image MINTS one rather than refusing — ruling A9's
+      // posture, and here it is upstream's literal behaviour: its own image
+      // inspector reads `node.asset_placement ?? {}` and emits
+      // `{...placement, fit}` (`ImageInspectorSection.tsx:80-87,198-210`), so
+      // minting is the LIFT and refusing would be the divergence. Refusing
+      // would also leave the Mode select showing a mode the document never
+      // got. Every field of `AssetPlacement` is optional (`contracts.ts:446`),
+      // so `{fit}` alone is a complete, valid placement.
+      return {
+        kind: "update_node",
+        node_id: node.id,
+        patch: nodePatch({ asset_placement: set({ ...placement, fit }) }),
+      };
+    }
+
+    // ── §1.3 row 2: Radius — the `all` box and the four corners (AD4.A) ──────
+    // NO KIND GUARD, for the same reason the stroke and geometry rows have
+    // none: hydrate's radius mapping is one path for every kind
+    // (`scene-hydrate.ts:660-672`), so Lane B's rectangle and auto-layout
+    // schemas reach this row without a second implementation.
+    case "radius.all":
+    case "radius.bottomLeft":
+    case "radius.bottomRight":
+    case "radius.topLeft":
+    case "radius.topRight": {
+      const typed = finiteNumber(value);
+      // Upstream SUBSTITUTES here — `normalizeCornerRadius` folds a negative or
+      // non-finite value to 0 (`RawStyleSection.tsx:181-183`) — because its
+      // field is an `<input type="number" min="0">` that cannot produce one.
+      // The ad's field is free text, so the same fold would be a silent guess;
+      // §1.2's stroke width settles this the same way, by refusing.
+      if (typed === null || typed < 0) {
+        return null;
+      }
+      // `roundForEditor` IS upstream's own rounding, applied at the one site
+      // upstream applies it to a radius.
+      const corner = cornerWith(node.corner, property, roundForEditor(typed));
+      if (sameCorner(node.corner, corner)) {
+        return null;
+      }
+      return {
+        kind: "update_node",
+        node_id: node.id,
+        patch: nodePatch({ corner: set(corner) }),
+      };
+    }
+
     default:
-      // Everything else is a later lane's row (§1.1/§1.3/§1.4), inert (§3),
-      // dropped (§5), or simply unmapped — no operation.
+      // Everything else is a later lane's row (§1.1/§1.4), inert (§3), dropped
+      // (§5), or simply unmapped — no operation. §1.3's REMAINING rows (Replace
+      // image, the AI suite) are not among them: they never reach this seam at
+      // all, because they carry no `property`/`value` pair.
       return null;
   }
 }
