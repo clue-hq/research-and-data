@@ -763,18 +763,52 @@ export function RadiusControls({
             if (typed === radius.committed[corner]) return;
             onChange(corner, typed);
             setRadius((current) => {
-              const committed = { ...current.committed, [corner]: typed };
-              // WEB lane: `all` is its own class and is not derived from the
-              // corners, so it keeps what it had (see `uniformRadius`).
+              // WEB lane: the raw text, and `all` is its own class and is not
+              // derived from the corners, so it keeps what it had (see
+              // `uniformRadius`). Unchanged since A27.
               if (onApplyAll) {
-                return { ...current, committed };
+                return {
+                  ...current,
+                  committed: { ...current.committed, [corner]: typed },
+                };
               }
+              // SCENE lane / RULING A31: store what the WRITE PRODUCED, not what
+              // was typed. `uniformRadius` compares these four as STRINGS, so a
+              // raw `5.0` (or `007`, or ` 5 `) on a uniformly-5 node wrote a
+              // correctly uniform document — `radiusCommit` canonicalizes on the
+              // way out — while the derived `all` saw `"5.0" !== "5"` and blanked
+              // the box. Canonicalizing here closes that gap and its root cause
+              // in one line, because these two now speak the same spelling as
+              // hydrate.
+              const written = radiusCommitText(typed);
+              if (written === null) {
+                // REFUSED: the document did not move, so nothing else may. Only
+                // this field's own committed text advances — which keeps a
+                // re-blur quiet, and must NOT be blanked or A27's trap reopens
+                // from the other side. (The box keeps the refused text until
+                // reselection: the ratified `commitCustomSize` posture, recorded
+                // with the A19 family.) Re-deriving `all` here would have blanked
+                // it over a document nothing had written.
+                return {
+                  ...current,
+                  committed: { ...current.committed, [corner]: typed },
+                };
+              }
+              const committed = { ...current.committed, [corner]: written };
               // SCENE lane: `all` IS the four corners, so it re-derives — in
               // both halves, keeping A27's lockstep.
               const all = uniformRadius(committed);
               return {
                 committed: { ...committed, all },
-                draft: { ...current.draft, all },
+                // The box reads what the document GOT, which is the same
+                // canonical text `restate` already writes into these four on an
+                // all-commit (A28) — one behaviour, not two. On Enter that
+                // rewrites the field under the cursor, which is what a numeric
+                // field does; on blur the cursor has already left. The
+                // alternative leaves the box stating a spelling the document
+                // does not have AND re-dispatching a refused write on every
+                // re-blur.
+                draft: { ...current.draft, [corner]: written, all },
               };
             });
           };

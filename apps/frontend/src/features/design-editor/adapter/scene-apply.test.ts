@@ -35,6 +35,7 @@ import {
   backgroundFillCommits,
   hydrateSceneCanvasState,
   hydrateSceneInspectorState,
+  radiusCommitText,
 } from "./scene-hydrate";
 import {
   sceneCanvasChangeToOperation,
@@ -2226,12 +2227,61 @@ it("RULING A29: after a single-corner commit the `all` box re-derives — hydrat
   );
   assert.ok(
     cornerCommit.includes("if (onApplyAll) {") &&
-      cornerCommit.includes("return { ...current, committed };"),
-    "the web lane's `all` must be left exactly as it was",
+      cornerCommit.includes("committed: { ...current.committed, [corner]: typed },"),
+    "the web lane must store the RAW text and leave `all` exactly as it was",
   );
   assert.ok(
     cornerCommit.includes("uniformRadius(committed)"),
     "the scene lane's `all` must re-derive from the four committed corners",
+  );
+});
+
+it("RULING A31: a corner stores what the WRITE produced, so `5.0` on a uniform node keeps All at `5`", () => {
+  // The last gap in the A26→A31 chain, and it was A29's own derivation that
+  // opened it: `commit` stored the RAW typed text while `uniformRadius` compares
+  // the four committed corners as STRINGS. So typing `5.0` into one corner of a
+  // uniformly-5 node wrote a correctly uniform document — `radiusCommit`
+  // canonicalizes on the way out — while the All box saw `"5.0" !== "5"` and
+  // blanked. Panel-only and self-healing on reselect, but the same class.
+  //
+  // Link 1: the two now speak one spelling, which is hydrate's own.
+  assert.equal(radiusCommitText("5.0"), "5");
+  assert.equal(radiusCommitText("007"), "7");
+  assert.equal(radiusCommitText(" 5 "), "5");
+  // Link 2: so the document really is untouched by that commit — it already
+  // holds 5 in every corner, and `sameCorner` says so.
+  assert.equal(
+    apply(adRect(), "radius.topLeft", "5.0"),
+    null,
+    "`5.0` over a stored 5 writes nothing",
+  );
+  // Link 3: the component stores that canonical text, so the four stay equal
+  // and `uniformRadius` still reads `5`.
+  const source = readFileSync(
+    join(
+      dirname(fileURLToPath(import.meta.url)),
+      "../../chat-shell/components/inspector-primitives.tsx",
+    ),
+    "utf8",
+  );
+  const cornerCommit = source.slice(
+    source.indexOf("const commit = () => {"),
+    source.indexOf("return (", source.indexOf("const commit = () => {")),
+  );
+  assert.ok(
+    cornerCommit.includes("const written = radiusCommitText(typed);"),
+    "a corner must store what the write produced, not what was typed",
+  );
+  assert.ok(
+    cornerCommit.includes("[corner]: written"),
+    "the canonical text is what lands in `committed`",
+  );
+  // A REFUSED commit must not blank `committed[corner]` (A27's trap from the
+  // other side), and must not re-derive `all` over a document nothing wrote.
+  assert.ok(
+    cornerCommit.includes("if (written === null) {") &&
+      cornerCommit.includes("committed: { ...current.committed, [corner]: typed },"),
+    "a refused commit keeps its own text and moves nothing else",
   );
 });
 
@@ -2258,10 +2308,16 @@ it("RULING A28: a FRACTIONAL all-commit mirrors both halves, so the re-type afte
   // than silently testing an empty string.
   const sceneStart = body.indexOf("if (!onApplyAll) {", body.indexOf("const commitAll"));
   const webStart = body.indexOf("const clearsCorners");
+  // BOUNDED at `applyAll`, so this reads `commitAll`'s F2 branch and not the
+  // corner commit further down (whose own scene branch legitimately uses the
+  // adapter's rule — A31). Every offset is asserted before slicing, so a rename
+  // fails here with a message rather than silently testing the wrong region.
+  const webEnd = body.indexOf("const applyAll");
   assert.ok(sceneStart >= 0, "commitAll's scene branch not found");
   assert.ok(webStart > sceneStart, "commitAll's F2 branch not found after it");
+  assert.ok(webEnd > webStart, "applyAll not found after commitAll");
   const sceneBranch = body.slice(sceneStart, webStart);
-  const webBranch = body.slice(webStart);
+  const webBranch = body.slice(webStart, webEnd);
 
   // The SCENE branch asks the ADAPTER, never the dummy's regex.
   assert.ok(
