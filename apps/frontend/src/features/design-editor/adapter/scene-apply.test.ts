@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { it } from "node:test";
+import { fileURLToPath } from "node:url";
 import type { InspectorBackgroundFill } from "@/features/chat-shell/hooks/use-inspector-controller";
 import type {
   AssetPlacement,
@@ -1969,4 +1972,67 @@ it("§1.3 Radius: a LOCKED node writes nothing (§4)", () => {
   for (const property of ["radius.all", "radius.topLeft"]) {
     assert.equal(apply(node, property, "8", scene), null, property);
   }
+});
+
+it("RULING A26: the scan button is ONE all-corners write, never four corner writes", () => {
+  // The clobber this replaces: the scan button used to fire four synchronous
+  // `onChange(corner, values.all)` calls, and the write listener's scene is a
+  // passive-effect ref over React state — so all four events read the SAME
+  // pre-burst node while every radius operation writes the whole `CornerRadii`.
+  // The fourth clobbered the first three. On the seeded ad's 32/32/96/32 image
+  // a scan of 24 landed 32/32/96/24: one corner moved, four undo steps.
+  //
+  // Half one, the component: the scan button now dispatches through
+  // `commitAll`, which fires a single `radius.all`. Read off disk because a
+  // `.tsx` cannot be imported under this runner (`tsx --test`, no DOM) — the
+  // technique `scene-hydrate.test.ts`'s vocabulary guard already uses.
+  const source = readFileSync(
+    join(
+      dirname(fileURLToPath(import.meta.url)),
+      "../../chat-shell/components/inspector-primitives.tsx",
+    ),
+    "utf8",
+  );
+  const applyAll = source.slice(
+    source.indexOf("const applyAll = () => {"),
+    source.indexOf("\n  };", source.indexOf("const applyAll = () => {")),
+  );
+  assert.ok(applyAll.length > 0, "applyAll not found in inspector-primitives.tsx");
+  assert.ok(
+    applyAll.includes("commitAll(drafts.all)"),
+    "the scan button must commit through commitAll",
+  );
+  for (const corner of ["topLeft", "topRight", "bottomLeft", "bottomRight"]) {
+    assert.ok(
+      !applyAll.includes(corner),
+      `the scan button must not fan out to ${corner} — four events cannot compose into one document`,
+    );
+  }
+
+  // Half two, the adapter: that one event writes all four corners at once.
+  assert.deepEqual(
+    apply(adImage(), "radius.all", "24"),
+    updateNode("image_hero", {
+      corner: set({
+        bottom_left: 24,
+        bottom_right: 24,
+        top_left: 24,
+        top_right: 24,
+        token: null,
+      }),
+    }),
+  );
+  // Stated as the defect it replaces, so a regression cannot read as a pass:
+  // the clobber's own result is NOT what this row produces.
+  assert.notDeepEqual(
+    (apply(adImage(), "radius.all", "24") as { patch: NodePatch }).patch.corner,
+    set({
+      bottom_left: 96,
+      bottom_right: 24,
+      top_left: 32,
+      top_right: 32,
+      token: null,
+    }),
+    "the fourth fan-out operation's result must not be what a scan produces",
+  );
 });

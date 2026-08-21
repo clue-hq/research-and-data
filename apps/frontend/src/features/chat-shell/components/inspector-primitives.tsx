@@ -533,9 +533,15 @@ export function RadiusControls({
 }: {
   /** W4.2/F2 (the web image schema): the all-corners commit — ONE `radius.all`
    * change, `clearsCorners` true when that write also clears the four corner
-   * overrides. Absent (the scene/ad image inspector, whose radius is dummy
-   * state and carries no F2 ruling) keeps the dummy's fan-out-to-four
-   * behaviour for the scan button. */
+   * overrides.
+   *
+   * Absent is the SCENE (ad) image inspector, whose `radius.all` is bound to a
+   * real write that sets all four corners (AD4.A, `scene-apply.ts`). It dispatches
+   * through `onChange("all", …)` instead, which is one event either way —
+   * ruling A26 retired the fan-out-to-four this branch used to do, because four
+   * events could not compose into one document (see `applyAll`). The two lanes
+   * now differ only in WHICH call carries the all-write and in what the four
+   * corner fields read afterwards. */
   onApplyAll?: (value: string, clearsCorners: boolean) => void;
   onChange: (corner: RadiusCorner, value: string) => void;
   values: RadiusValues;
@@ -545,13 +551,32 @@ export function RadiusControls({
     setDrafts((current) => ({ ...current, [corner]: value }));
 
   const commitAll = (value: string) => {
+    // BOTH lanes: an all-corners write REPLACES what the four corner fields are
+    // stating, so both re-seed them under ONE condition and differ only in what
+    // they re-seed to. R-B1's rule decides that condition — only a plain number
+    // commits, so anything else clears nothing here and sets nothing there.
+    const numeric = NUMERIC_RADIUS.test(value.trim());
     if (!onApplyAll) {
       onChange("all", value);
+      // AD4.A / RULING A26: the SCENE lane's all-write SETS all four corners
+      // (`scene-apply.ts`'s `radius.*` row writes the whole `CornerRadii`), so
+      // the honest local update is to state that number — where the F2 branch
+      // below empties them, because a web all-write clears the per-corner
+      // overrides instead. Without this the four boxes go on stating the
+      // numbers the document held before the write.
+      if (numeric) {
+        setDrafts((current) => ({
+          ...current,
+          bottomLeft: value,
+          bottomRight: value,
+          topLeft: value,
+          topRight: value,
+        }));
+      }
       return;
     }
-    const clearsCorners = NUMERIC_RADIUS.test(value.trim());
-    onApplyAll(value, clearsCorners);
-    if (clearsCorners) {
+    onApplyAll(value, numeric);
+    if (numeric) {
       setDrafts((current) => ({
         ...current,
         bottomLeft: "",
@@ -563,16 +588,18 @@ export function RadiusControls({
   };
 
   const applyAll = () => {
-    if (!onApplyAll) {
-      // The dummy's own meaning, kept for the scene inspector.
-      (["topLeft", "topRight", "bottomLeft", "bottomRight"] as const).forEach((corner) =>
-        onChange(corner, values.all),
-      );
-      return;
-    }
-    // F2: the scan button's meaning IS the all-corners write, so it commits
-    // the all field's current draft even when unchanged — but an empty draft
-    // would clear the radius rather than apply one, so it is a no-op.
+    // The scan button's meaning IS the all-corners write, in BOTH lanes, so it
+    // commits the all field's current draft even when unchanged — but an empty
+    // draft would clear the radius rather than apply one, so it is a no-op.
+    //
+    // RULING A26 retired the scene lane's fan-out-to-four here. Those four
+    // synchronous `onChange(corner, …)` calls each dispatched their own event,
+    // and the write listener's scene is a passive-effect ref over React state
+    // (`use-scene-inspector-writes.ts`), so all four read the SAME pre-burst
+    // node — while every radius operation writes the whole `CornerRadii`. The
+    // fourth clobbered the first three: a scan of 24 over the seeded ad's
+    // 32/32/96/32 image landed 32/32/96/24, one corner, four undo steps.
+    // `commitAll` already forks correctly, so this needs no branch of its own.
     if (drafts.all.trim() === "") return;
     commitAll(drafts.all);
   };
