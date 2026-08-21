@@ -31,7 +31,10 @@ import {
 } from "../engine/scene/sceneQueries";
 import {
   COLOR_NONE,
+  MINTED_STROKE_HEX,
+  MINTED_STROKE_WIDTH,
   SIZE_PRESETS,
+  finiteNumber,
   pagePixelSize,
   rootFrameId,
 } from "./scene-hydrate";
@@ -173,23 +176,6 @@ function isGradientGuarded(fills: Fill[]): boolean {
   return paint ? paint.kind !== "solid" && paint.kind !== "token" : false;
 }
 
-/**
- * A typed field's number, or `null`. The ad inspector's numeric fields are
- * free-text `InspectorInput`s firing per KEYSTROKE (`image-inspector.tsx:304`),
- * so "", "-" and "1e" are ordinary intermediate events, not commits: an empty
- * field is mid-edit, never a request to write 0 (JS's `Number("") === 0` would
- * say otherwise). Upstream's `NumberField` does not need this — it is an
- * `<input type="number">` and never sees the intermediate text.
- */
-function finiteNumber(raw: string): number | null {
-  const trimmed = raw.trim();
-  if (trimmed === "") {
-    return null;
-  }
-  const value = Number(trimmed);
-  return Number.isFinite(value) ? value : null;
-}
-
 /** `fields.tsx:174` `roundForEditor`, ported at the one site upstream applies
  * it: the stroke width it stores. */
 function roundForEditor(value: number): number {
@@ -266,6 +252,58 @@ function strokeWith(
     width: roundForEditor(width),
     width_token: null,
   };
+}
+
+/**
+ * RULING A9 (standing): the Stroke row MINTS a stroke on a strokeless node,
+ * using upstream's own two defaults rather than refusing.
+ *
+ * AD3.1 refused both directions — it read a strokeless node's width as the 0
+ * the panel displays (so a colour pick cleared) and would not invent a colour
+ * for a width (so a width write was dropped). That left §1.2's ratified Stroke
+ * row permanently dead on exactly the kinds where strokes are common, and
+ * Lane B's rect/ellipse schemas need it. §1.5's "editor semantics govern
+ * everywhere" makes adopting the standalone editor's constants a LIFT, not an
+ * invention; refusing was the divergence.
+ *
+ *   • width — `RawStyleSection.tsx:38`:
+ *     `solidStroke(node, hex, node.strokes[0]?.width ?? 1)`.
+ *   • colour — `RawStyleSection.tsx:52`, `solidStroke(node,
+ *     hexInputValueFromStroke(node), value)`, whose no-stroke return is
+ *     `#256c70` (`RawStyleSection.tsx:185-191`).
+ *
+ * Both apply to the hex and the token halves of the row alike, or it is
+ * coherent in only one of them.
+ *
+ * The two constants live in `scene-hydrate.ts` beside the rest of the row's
+ * vocabulary, because the PANEL needs the same pair: a stroke row still
+ * reading "none / 0" over a node this write just gave a 1px teal stroke would
+ * be the panel lying about the document.
+ */
+
+/**
+ * FIX 1 (review): is the stroke this write would produce the one the node
+ * ALREADY carries? The `backgroundFillsOperation` rule — "a change that
+ * changes nothing is not a write" — applied to the §1.6 stroke row.
+ *
+ * The WHOLE stroke is compared, not just its paint: `strokeWith` always writes
+ * `width_token: null` (upstream's rule), so an identical paint over a
+ * width-token-bound stroke is a real change and must not be dropped.
+ *
+ * `width_token` is OPTIONAL on the contract (`contracts.ts:522`) and the real
+ * stored bytes omit it entirely — the harvested `auto_row_copy` stroke has no
+ * such key — so absent and `null` are folded to the one fact they both state:
+ * this stroke has no width token. Comparing them literally would have made
+ * every real stroke look changed and defeated the guard.
+ */
+function sameStroke(existing: Stroke | undefined, next: Stroke): boolean {
+  return (
+    existing !== undefined &&
+    existing.id === next.id &&
+    existing.width === next.width &&
+    (existing.width_token ?? null) === (next.width_token ?? null) &&
+    paintKey(existing.paint) === paintKey(next.paint)
+  );
 }
 
 /**
@@ -388,6 +426,14 @@ export function sceneChangeToOperation(
       if (!paint) {
         return null;
       }
+      // FIX 1 (review): the same no-change rule the Background row has always
+      // had. Re-picking the swatch this node already wears — which the picker
+      // shows as PRESSED, because its resolved colour matches — must not mint
+      // a document version, and on the seeded headline it would have changed
+      // only the stored `$` sugar. `paintKey` folds that spelling away.
+      if (paintKey(node.fills[0]?.paint) === paintKey(paint)) {
+        return null;
+      }
       return updateNodeFills(node, [paintFill(node, paint)]);
     }
 
@@ -460,13 +506,11 @@ export function sceneChangeToOperation(
       if (hex === null) {
         return null;
       }
-      // Keep the existing width. A strokeless node hydrates its width as "0"
-      // (`scene-hydrate.ts:398-400`) — the truthful reading of "the existing
-      // width" — and a zero-width stroke is not a stroke, so it clears.
-      // DIVERGENCE from `RawStyleSection.tsx:38`, which defaults the width to
-      // 1 and would mint a hairline the inspector's own width field says the
-      // node does not have.
-      const width = node.strokes[0]?.width ?? 0;
+      // Keep the existing width; with NO stroke at all, MINT one at upstream's
+      // default (ruling A9, stated at `MINTED_STROKE_WIDTH`). A stored
+      // ZERO-width stroke still clears — the width field truthfully shows 0
+      // for it, and a zero-width stroke is not a stroke.
+      const width = node.strokes[0]?.width ?? MINTED_STROKE_WIDTH;
       if (width <= 0) {
         return updateNodeStrokes(node, []);
       }
@@ -475,22 +519,25 @@ export function sceneChangeToOperation(
       ]);
     }
     // ── §1.6: the stroke row's BRAND half ───────────────────────────────────
-    // Same shape as the hex branch above and for the same reasons: the
-    // existing width is kept (a strokeless node's is "0", which clears rather
-    // than minting a hairline the width field says it does not have), and the
-    // paint is the only thing that differs.
+    // Same shape as the hex branch above and for the same reasons — ruling A9's
+    // minted width included, so the row behaves the same however the colour was
+    // chosen. Only the paint differs.
     case "tokenStrokeColor": {
       const paint = tokenPaint(palette, value);
       if (!paint) {
         return null;
       }
-      const strokeWidthValue = node.strokes[0]?.width ?? 0;
+      const strokeWidthValue = node.strokes[0]?.width ?? MINTED_STROKE_WIDTH;
       if (strokeWidthValue <= 0) {
         return updateNodeStrokes(node, []);
       }
-      return updateNodeStrokes(node, [
-        strokeWith(node, paint, strokeWidthValue),
-      ]);
+      const stroke = strokeWith(node, paint, strokeWidthValue);
+      // FIX 1 (review): re-picking the token this stroke already wears is not
+      // a write. The whole stroke is compared — see `sameStroke`.
+      if (sameStroke(node.strokes[0], stroke)) {
+        return null;
+      }
+      return updateNodeStrokes(node, [stroke]);
     }
     case "strokeWidth": {
       const width = finiteNumber(value);
@@ -501,17 +548,24 @@ export function sceneChangeToOperation(
         return updateNodeStrokes(node, []);
       }
       const existing = node.strokes[0];
-      // No existing stroke ⇒ no colour to keep, and inventing one is a guess
-      // (upstream's `hexInputValueFromStroke` falls back to a hardcoded
-      // `#256c70`, `RawStyleSection.tsx:185-191`). Refuse instead.
-      if (!existing) {
-        return null;
-      }
       // The stored paint rides along VERBATIM: a width edit is not a colour
       // edit, so it must not detach a token-bound stroke (§1.6 binds raw
-      // COLOUR writes). This too diverges from upstream's rebuild-as-solid.
+      // COLOUR writes). That diverges from upstream, which rebuilds the stroke
+      // as a solid through `hexInputValueFromStroke` and so silently detaches.
+      //
+      // With NO stroke there is no paint to keep, and ruling A9 settles what
+      // happens: MINT upstream's own default colour (`MINTED_STROKE_HEX`)
+      // rather than refuse. AD3.1 refused here, which left a width typed on a
+      // strokeless node doing nothing at all.
       return updateNodeStrokes(node, [
-        strokeWith(node, existing.paint, width),
+        strokeWith(
+          node,
+          existing?.paint ?? {
+            color: { kind: "hex", value: MINTED_STROKE_HEX },
+            kind: "solid",
+          },
+          width,
+        ),
       ]);
     }
 
@@ -720,11 +774,20 @@ function colorKey(color: Color): string {
   }
 }
 
-/** A token name with the author-facing `$` folded away, so the two spellings
- * of one binding compare equal (`resolveTokenColor`'s own rule). */
+/**
+ * A token name with the author-facing `$` folded away, so the two spellings of
+ * one binding compare equal.
+ *
+ * It folds `$` and NOTHING ELSE — deliberately identical to
+ * `tokenColors.ts::resolveTokenColor`, which strips a leading `$` and looks the
+ * rest up verbatim. FIX 4 (review): this used to `trim()` too, which made two
+ * values the ENGINE treats differently compare equal here — a paint stored as
+ * `" surface.brand"` resolves to nothing, and folding the space would have read
+ * a pick of the real `surface.brand` as a no-op, leaving that document
+ * unrepairable from the panel.
+ */
 function tokenKey(token: string): string {
-  const trimmed = token.trim();
-  return trimmed.startsWith("$") ? trimmed.slice(1) : trimmed;
+  return token.startsWith("$") ? token.slice(1) : token;
 }
 
 /**

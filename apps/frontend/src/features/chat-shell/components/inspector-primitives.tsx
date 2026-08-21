@@ -17,10 +17,7 @@ import {
   type InspectorBackgroundFill,
   type InspectorFillType,
 } from "../hooks/use-inspector-controller";
-import {
-  INSPECTOR_THEME_COLORS,
-  resolveInspectorThemeColors,
-} from "../model/inspector-theme-colors";
+import { resolveInspectorThemeColors } from "../model/inspector-theme-colors";
 import styles from "./chat-shell.module.css";
 
 const INSPECTOR_ICON_ROOT = "/icons/chat-shell/inspector";
@@ -685,6 +682,7 @@ function hsvToHex({ h, s, v }: HsvColor) {
 
 export function ColorControl({
   color = "#00F59B",
+  fixtureFallback = true,
   none = false,
   noneAriaLabel = "Color is none",
   onColorChange,
@@ -695,6 +693,12 @@ export function ColorControl({
   showOpacity = true,
 }: {
   color?: string;
+  /** RULING A23: `false` says `options` is the whole truth — with no palette
+   * the Theme tab renders NOTHING rather than the dummy's six fixture colours,
+   * which on a live write path are a fabrication the user can commit. The ad
+   * lane passes it; the web lane keeps the default, so nothing it shows
+   * changes (`model/inspector-theme-colors.ts` states why it is a parameter). */
+  fixtureFallback?: boolean;
   none?: boolean;
   noneAriaLabel?: string;
   onColorChange?: (color: string) => void;
@@ -709,7 +713,7 @@ export function ColorControl({
   options?: readonly ThemeColorOption[];
   showOpacity?: boolean;
 }) {
-  const themeColors = resolveInspectorThemeColors(options);
+  const themeColors = resolveInspectorThemeColors(options, fixtureFallback);
   const [draftColor, setDraftColor] = useState(color.toUpperCase());
   const [pickerMode, setPickerMode] = useState<"custom" | "theme">("theme");
   const [customColor, setCustomColor] = useState<HsvColor>(() => hexToHsv(color));
@@ -910,10 +914,17 @@ export function ColorControl({
                   />
                 </label>
                 <div aria-label="Recent colors" className={styles.inspectorColorSwatches} role="group">
-                  {/* The hex footer's recent-colors strip belongs to the §3-inert
-                      custom path (it commits a hex, never a token) and keeps the
-                      dummy's fixture swatches. */}
-                  {INSPECTOR_THEME_COLORS.slice(0, 4).map((option) => (
+                  {/* RULING A21 (2026-08-21): the strip's EXISTENCE is dummy
+                      truth and stays, but its CONTENTS are now the palette's
+                      first four rather than four hardcoded fixture colours —
+                      it commits a real hex on a live write path, so inside the
+                      one control §1.6 governs it was offering off-brand
+                      colours the document has never seen. `themeColors` is
+                      already "the palette, else the fixture, else (A23)
+                      nothing", so the whole rule is that one expression.
+                      (The "Recent" LABEL is wrong either way; relabelling is
+                      founder copy and is on the founder's list, not here.) */}
+                  {themeColors.slice(0, 4).map((option) => (
                     <button
                       aria-label={`Use color ${option.value}`}
                       aria-pressed={color.toUpperCase() === option.value}
@@ -972,6 +983,7 @@ function backgroundFillCss(fill: InspectorBackgroundFill, solidColor: string) {
 
 export function BackgroundFillControl({
   fill,
+  fixtureFallback = true,
   onFillChange,
   onSolidColorChange,
   onTokenChange,
@@ -979,6 +991,9 @@ export function BackgroundFillControl({
   solidColor,
 }: {
   fill: InspectorBackgroundFill;
+  /** RULING A23, forwarded to both nested pickers with `options` — this
+   * section's swatches must not offer a fixture palette either. */
+  fixtureFallback?: boolean;
   onFillChange: (fill: InspectorBackgroundFill) => void;
   onSolidColorChange: (color: string) => void;
   /** AD4.0 step 3 (§1.6): a brand pick on the SOLID swatch, reported as the
@@ -1068,6 +1083,7 @@ export function BackgroundFillControl({
       {fill.type === "solid" ? (
         <ColorControl
           color={solidColor}
+          fixtureFallback={fixtureFallback}
           onColorChange={onSolidColorChange}
           onTokenChange={onTokenChange}
           options={options}
@@ -1100,6 +1116,7 @@ export function BackgroundFillControl({
               <div className={styles.backgroundGradientStop} key={`${index}-${stop.color}`}>
                 <ColorControl
                   color={stop.color}
+                  fixtureFallback={fixtureFallback}
                   onColorChange={(color) => updateStop(index, { color })}
                   options={options}
                   showOpacity={false}

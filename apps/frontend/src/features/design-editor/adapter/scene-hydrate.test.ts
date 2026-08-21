@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { it } from "node:test";
 import { fileURLToPath } from "node:url";
-import type { Scene } from "../engine/scene/contracts";
+import type { Node, Scene } from "../engine/scene/contracts";
 import { adBrandKit } from "./__fixtures__/brand-kit-colors";
 import {
   AD_PAGE_ID,
@@ -28,6 +28,8 @@ import {
   hydrateSceneCanvasState,
   hydrateSceneInspectorState,
   hydrateSceneSelectionState,
+  mintedStrokeColor,
+  mintedStrokeWidth,
   rootFrameId,
   sceneSelectionFor,
 } from "./scene-hydrate";
@@ -894,4 +896,61 @@ it("R3b: a HEX swatch is unchanged by the palette — same commits, same casing"
     backgroundFillCommits(GRADIENT, { ...GRADIENT, type: "solid" }, "#2E7D32", AD_PALETTE),
     backgroundFillCommits(GRADIENT, { ...GRADIENT, type: "solid" }, "#2E7D32"),
   );
+});
+
+// ── RULING A9 (review) — the Stroke row's two fields move together ──────────
+//
+// A9 makes a colour or a width MINT a stroke on a node that has none, so the
+// field the user did not touch must stop stating the old "no stroke" fact. A
+// successful write does not remount the inspector, so nothing else re-reads
+// them — the same sibling-re-seed rule step 1 settled for the Custom W/H boxes.
+
+/** The stroke COLOUR one node hydrates, asserted rather than defaulted: every
+ * `SceneInspectorState` field is optional, and a `?? ""` here would quietly
+ * pass the day the stroke mapping stopped stating one. */
+function statedStrokeColor(node: Node, scene: Scene = SCENE): string {
+  const state = hydrateSceneInspectorState(node, scene);
+  const color = state.strokeColor;
+  assert.ok(color !== undefined, `${node.id} hydrates no strokeColor`);
+  return color;
+}
+
+it("A9: after a colour lands on a STROKELESS row, the width box reads the minted 1", () => {
+  // The row a strokeless node hydrates — read from the hydrator, not restated.
+  const state = hydrateSceneInspectorState(adPlainText(), SCENE);
+  assert.equal(state.strokeColor, COLOR_NONE);
+  assert.equal(state.strokeWidth, "0");
+  assert.equal(mintedStrokeWidth(statedStrokeColor(adPlainText())), "1");
+});
+
+it("A9: a row that already HAS a stroke re-seeds nothing — the write keeps its width", () => {
+  assert.equal(hydrateSceneInspectorState(adAutoLayout(), SCENE).strokeWidth, "2");
+  assert.equal(mintedStrokeWidth(statedStrokeColor(adAutoLayout())), null);
+  // A stored ZERO-width stroke is the case that must not be mistaken for a
+  // strokeless one: the write CLEARS it, so the row re-seeds nothing. Its
+  // hydrated colour is the paint's, never `none`, which is what tells them
+  // apart. Derived by DEEP-copying the harvest and editing one field.
+  const zeroWidth = clone(SCENE);
+  zeroWidth.nodes.auto_row_copy.strokes[0].width = 0;
+  const zeroNode = zeroWidth.nodes.auto_row_copy;
+  assert.equal(
+    hydrateSceneInspectorState(zeroNode, zeroWidth).strokeWidth,
+    "0",
+  );
+  const zeroColor = statedStrokeColor(zeroNode, zeroWidth);
+  assert.notEqual(zeroColor, COLOR_NONE);
+  assert.equal(mintedStrokeWidth(zeroColor), null);
+});
+
+it("A9 mirror: after a width lands on a COLOURLESS row, the swatch reads the minted teal", () => {
+  const bare = statedStrokeColor(adPlainText());
+  assert.equal(mintedStrokeColor(bare, "4"), "#256c70");
+  // A width that clears or is refused mints nothing, exactly as the write does
+  // nothing with it.
+  for (const width of ["0", "", "  ", "abc", "-2"]) {
+    assert.equal(mintedStrokeColor(bare, width), null, width);
+  }
+  // A row that already has a colour keeps it — a width edit is not a colour
+  // edit, and the write carries the stored paint through verbatim.
+  assert.equal(mintedStrokeColor(statedStrokeColor(adAutoLayout()), "4"), null);
 });

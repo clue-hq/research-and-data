@@ -367,10 +367,38 @@ it("§1.2 Stroke colour: the `none` sentinel clears the strokes", () => {
   );
 });
 
-it("§1.2 Stroke colour: on a STROKELESS node the resulting width is 0, which clears", () => {
+it("A9: a colour on a STROKELESS node MINTS a stroke at upstream's default width", () => {
+  // Ruling A9 (standing) replaces AD3.1's refusal. AD3.1 read a strokeless
+  // node's width as the 0 the panel displays and cleared, which left §1.2's
+  // ratified Stroke row permanently dead on exactly the kinds where strokes
+  // are common. §1.5's "editor semantics govern everywhere" makes upstream's
+  // own default the lift: `RawStyleSection.tsx:38` commits
+  // `solidStroke(node, hex, node.strokes[0]?.width ?? 1)`.
   assert.deepEqual(
     apply(adPlainText(), "strokeColor", "#FF0000"),
-    updateNode("text_proof_stat", { strokes: set([]) }),
+    updateNode("text_proof_stat", {
+      strokes: set([
+        {
+          id: "paint_text_proof_stat_stroke",
+          paint: { color: { kind: "hex", value: "#ff0000" }, kind: "solid" },
+          width: 1,
+          width_token: null,
+        },
+      ]),
+    }),
+  );
+});
+
+it("A9: a stored ZERO-width stroke still clears — the panel says the node has none", () => {
+  // The minting rule is about a node with NO stroke. A stored zero-width one
+  // is a stroke the width field truthfully shows as 0, and a zero-width stroke
+  // is not a stroke, so this keeps AD3.1's clear.
+  const { node, scene } = withNodeField("auto_row_copy", "strokes", [
+    { ...adAutoLayout().strokes[0], width: 0 },
+  ]);
+  assert.deepEqual(
+    apply(node, "strokeColor", "#FF0000", scene),
+    updateNode("auto_row_copy", { strokes: set([]) }),
   );
 });
 
@@ -411,8 +439,25 @@ it("§1.2 Stroke width: a negative, unparseable or empty width is refused", () =
   }
 });
 
-it("§1.2 Stroke width: a STROKELESS node is refused — the colour would have to be invented", () => {
-  assert.equal(apply(adPlainText(), "strokeWidth", "4"), null);
+it("A9: a width on a COLOURLESS node mints upstream's own default stroke colour", () => {
+  // The other direction of the same ruling. AD3.1 refused rather than "mint
+  // upstream's hardcoded teal"; A9 rules that adopting the constant IS the
+  // lift and refusing is the divergence. `RawStyleSection.tsx:52` commits
+  // `solidStroke(node, hexInputValueFromStroke(node), value)`, whose
+  // no-stroke return is `#256c70` (`:185-191`).
+  assert.deepEqual(
+    apply(adPlainText(), "strokeWidth", "4"),
+    updateNode("text_proof_stat", {
+      strokes: set([
+        {
+          id: "paint_text_proof_stat_stroke",
+          paint: { color: { kind: "hex", value: "#256c70" }, kind: "solid" },
+          width: 4,
+          width_token: null,
+        },
+      ]),
+    }),
+  );
 });
 
 // ══ §1.2 row 8 — Position X/Y (transform; pinned → absolute_box) ════════════
@@ -1358,23 +1403,21 @@ it("§1.6 Color: a brand swatch binds the text fill to the TOKEN, keeping the pa
 });
 
 it("§1.6 Color: the token is written BARE — the `$` is author-facing sugar", () => {
-  // The seeded headline's stored token is `$text.inverse`, and upstream's own
-  // writer takes the catalog's bare name (`ColorSwatchControl.tsx:38-41` →
-  // `tokenFill`, whose token comes from `BrandTokenCatalog`) while rendering
-  // it as `$${token}`. The kit's keys are bare too, so bare is the canonical
-  // stored form and both spellings resolve to one entry.
-  const operation = apply(
-    adTokenText(),
-    "tokenTextColor",
-    "text.inverse",
-    SCENE,
-    AD_PALETTE,
-  );
+  // Upstream's own writer takes the catalog's bare name
+  // (`ColorSwatchControl.tsx:38-41` → `tokenFill`, whose token comes from
+  // `BrandTokenCatalog`) while rendering it as `$${token}`. The kit's keys are
+  // bare too, so bare is the canonical stored form and both spellings resolve
+  // to one entry.
+  //
+  // Proven on the seeded headline, whose stored fill really is the sugared
+  // `$text.inverse`, by picking a DIFFERENT token: the `$` is not carried over
+  // from the paint being replaced. (Re-picking `text.inverse` itself is the
+  // no-op FIX 1 covers, which is the same fold seen from the other side.)
   assert.deepEqual(
-    operation,
+    apply(adTokenText(), "tokenTextColor", "surface.card", SCENE, AD_PALETTE),
     updateNode("text_headline", {
       fills: set([
-        { id: "paint_headline", paint: { kind: "token", token: "text.inverse" } },
+        { id: "paint_headline", paint: { kind: "token", token: "surface.card" } },
       ]),
     }),
   );
@@ -1489,12 +1532,21 @@ it("§1.6 Stroke: a brand swatch binds the stroke paint and keeps the width verb
   );
 });
 
-it("§1.6 Stroke: on a STROKELESS node the resulting width is 0, which clears", () => {
-  // Identical to the hex row's rule, for the identical reason: a strokeless
-  // node hydrates its width as "0", and a zero-width stroke is not a stroke.
+it("A9: a brand swatch on a STROKELESS node mints the same default width", () => {
+  // Identical to the hex row's rule, for the identical reason — A9 applies to
+  // both halves of the Stroke row, or the row is coherent in only one of them.
   assert.deepEqual(
     apply(adPlainText(), "tokenStrokeColor", "border.brand", SCENE, AD_PALETTE),
-    updateNode("text_proof_stat", { strokes: set([]) }),
+    updateNode("text_proof_stat", {
+      strokes: set([
+        {
+          id: "paint_text_proof_stat_stroke",
+          paint: { kind: "token", token: "border.brand" },
+          width: 1,
+          width_token: null,
+        },
+      ]),
+    }),
   );
 });
 
@@ -1547,5 +1599,116 @@ it("§1.6 Background: the token row keeps the §1.1 refusals — no root, locked
   assert.equal(
     applyCanvas("tokenBackgroundColor", "surface.brand", layered, AD_PAGE_ID, AD_PALETTE),
     null,
+  );
+});
+
+// ══ FIX 1 (review) — the no-op guarantee binds ALL THREE token rows ═════════
+//
+// Step 3 shipped it on the Background row only (`backgroundFillsOperation`),
+// so re-picking the swatch a TEXT node or a STROKE already wears minted a
+// document version — and on the seeded headline it changed nothing but the
+// `$` sugar, with the picker already showing that swatch as pressed. The
+// `$`-folding `paintKey` was there; the two node rows just never asked it.
+
+it("FIX 1: re-picking the token a TEXT node already wears writes nothing, `$` or not", () => {
+  // `text_headline`'s stored fill is `{kind:"token", token:"$text.inverse"}`
+  // and the picker reports the bare name — one binding, two spellings.
+  assert.equal(
+    apply(adTokenText(), "tokenTextColor", "text.inverse", SCENE, AD_PALETTE),
+    null,
+  );
+  // A DIFFERENT token is a real change and still writes, keeping the paint id.
+  assert.deepEqual(
+    apply(adTokenText(), "tokenTextColor", "surface.brand", SCENE, AD_PALETTE),
+    updateNode("text_headline", {
+      fills: set([
+        { id: "paint_headline", paint: { kind: "token", token: "surface.brand" } },
+      ]),
+    }),
+  );
+});
+
+it("FIX 1: a token pick over a HEX fill is a change — detaching is never a no-op", () => {
+  assert.deepEqual(
+    apply(adPlainText(), "tokenTextColor", "text.inverse", SCENE, AD_PALETTE),
+    updateNode("text_proof_stat", {
+      fills: set([
+        { id: "paint_stat", paint: { kind: "token", token: "text.inverse" } },
+      ]),
+    }),
+  );
+});
+
+it("FIX 1: re-picking the token a STROKE already wears writes nothing", () => {
+  // UNCOVERED by the harvest: no harvested stroke is token-bound. One field of
+  // a DEEP copy carries the harvested stroke with a token paint, so the
+  // comparison runs against otherwise-real bytes.
+  const { node, scene } = withNodeField("auto_row_copy", "strokes", [
+    { ...adAutoLayout().strokes[0], paint: { kind: "token", token: "$border.brand" } },
+  ]);
+  assert.equal(
+    apply(node, "tokenStrokeColor", "border.brand", scene, AD_PALETTE),
+    null,
+  );
+  assert.deepEqual(
+    apply(node, "tokenStrokeColor", "border.subtle", scene, AD_PALETTE),
+    updateNode("auto_row_copy", {
+      strokes: set([
+        {
+          id: "stroke_card",
+          paint: { kind: "token", token: "border.subtle" },
+          width: 2,
+          width_token: null,
+        },
+      ]),
+    }),
+  );
+});
+
+it("FIX 1: a stroke whose WIDTH TOKEN the write would clear is still a change", () => {
+  // `strokeWith` always writes `width_token: null` (upstream's own rule on a
+  // raw width edit), so an identical paint over a width-token-bound stroke is
+  // NOT an identical stroke — the comparison is the whole stroke, not just its
+  // paint, or this write would be silently dropped.
+  const { node, scene } = withNodeField("auto_row_copy", "strokes", [
+    {
+      ...adAutoLayout().strokes[0],
+      paint: { kind: "token", token: "border.brand" },
+      width_token: "stroke.width.hairline",
+    },
+  ]);
+  assert.deepEqual(
+    apply(node, "tokenStrokeColor", "border.brand", scene, AD_PALETTE),
+    updateNode("auto_row_copy", {
+      strokes: set([
+        {
+          id: "stroke_card",
+          paint: { kind: "token", token: "border.brand" },
+          width: 2,
+          width_token: null,
+        },
+      ]),
+    }),
+  );
+});
+
+// ══ FIX 4 (review) — the `$` fold matches the engine's, exactly ════════════
+
+it("FIX 4: the token fold strips `$` and NOTHING else — no trimming the engine does not do", () => {
+  // `resolveTokenColor` strips a leading `$` and looks the name up verbatim,
+  // so `" surface.brand"` is a DIFFERENT (and unresolvable) token to the
+  // engine. Folding whitespace here would have made the two compare equal and
+  // left such a document unrepairable: picking the real token would be read as
+  // a no-op and write nothing.
+  const { node, scene } = withNodeField("text_proof_stat", "fills", [
+    { id: "paint_stat", paint: { kind: "token", token: " surface.brand" } },
+  ]);
+  assert.deepEqual(
+    apply(node, "tokenTextColor", "surface.brand", scene, AD_PALETTE),
+    updateNode("text_proof_stat", {
+      fills: set([
+        { id: "paint_stat", paint: { kind: "token", token: "surface.brand" } },
+      ]),
+    }),
   );
 });

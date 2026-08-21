@@ -20,9 +20,27 @@ export const INSPECTOR_THEME_COLORS: readonly ThemeColorOption[] = [
  * (the chats route, the other schemas' controls, a document whose theme fetch
  * returned nothing) renders exactly as it does today. An EMPTY supplied list
  * falls back too: an empty Theme tab is a worse answer than the dummy's.
+ *
+ * RULING A23 (2026-08-21) qualifies that last sentence for a caller that IS
+ * wired to a real palette source. The fixture exists because there was no data
+ * source; once there is one, its absence must read as absence — six invented
+ * colours in a live picker are not a better answer, they are a fabrication,
+ * and the ad lane's custom-hex path commits them for real. `fixtureFallback:
+ * false` is how such a caller says "this list is the whole truth".
+ *
+ * It is a PARAMETER rather than a change of the rule because
+ * `INSPECTOR_THEME_COLORS` also serves the WEB lane's fallback, which is
+ * unchanged: `use-web-editing-session.ts` memoizes `buildThemeColorOptions`,
+ * which returns `[]` for a document with no theme, so flipping the empty-list
+ * rule outright would have emptied the web inspector's picker too. Every web
+ * call takes the default; only the ad lane opts out.
  */
 export function resolveInspectorThemeColors(
   options: readonly ThemeColorOption[] | undefined,
+  fixtureFallback = true,
 ): readonly ThemeColorOption[] {
-  return options && options.length > 0 ? options : INSPECTOR_THEME_COLORS;
+  if (options && options.length > 0) {
+    return options;
+  }
+  return fixtureFallback ? INSPECTOR_THEME_COLORS : [];
 }

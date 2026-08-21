@@ -53,6 +53,77 @@ import { paletteHex, type ScenePalette } from "./scene-palette";
 export const COLOR_NONE = "none";
 
 /**
+ * RULING A9 (2026-08-21): the stroke a colour or a width commit MINTS on a
+ * node that has none — upstream's own two defaults. The WRITE is where the
+ * ruling is stated in full (`scene-apply.ts`, with both upstream citations);
+ * the pair lives HERE because the panel needs the identical numbers.
+ *
+ * A9 makes the Stroke row's two fields move TOGETHER: a colour on a strokeless
+ * node gives the document a 1px stroke, and a width on one gives it a teal
+ * paint. A successful write does not remount the inspector (§4 / the AD3.2
+ * keying rule), so nothing else would re-read them — the row would go on
+ * saying "none / 0" over a node that now visibly has a stroke, which is the
+ * "a field may not display a value the document does not have" rule this
+ * lane's reviews have already applied twice. `mintedStrokeDisplay` is the one
+ * decision both halves re-seed from.
+ */
+export const MINTED_STROKE_WIDTH = 1;
+export const MINTED_STROKE_HEX = "#256c70";
+
+/**
+ * A typed field's number, or `null`. The ad inspector's numeric fields are
+ * free-text `InspectorInput`s firing per KEYSTROKE, so "", "-" and "1e" are
+ * ordinary intermediate events, not commits: an empty field is mid-edit, never
+ * a request to write 0 (JS's `Number("") === 0` would say otherwise).
+ * Upstream's `NumberField` does not need this — it is an `<input
+ * type="number">` and never sees the intermediate text.
+ *
+ * It lives beside `numberText` (its inverse) rather than in `scene-apply.ts`,
+ * which is where it was written: A9 gave the panel a second caller, and
+ * scene-apply already imports this file, so importing back would close a
+ * cycle. The function itself is unchanged.
+ */
+export function finiteNumber(raw: string): number | null {
+  const trimmed = raw.trim();
+  if (trimmed === "") {
+    return null;
+  }
+  const value = Number(trimmed);
+  return Number.isFinite(value) ? value : null;
+}
+
+/**
+ * A9: the WIDTH the Stroke row must read once a colour has landed on it —
+ * `"1"` when the row was showing no stroke at all, `null` when it was not (the
+ * node already has a stroke, so the write keeps that width).
+ *
+ * The condition is the ROW's displayed colour, which is exactly the write's
+ * condition seen from the panel: hydration states `none` for a node with no
+ * stroke and the paint's own colour for one with any stroke, including a
+ * stored zero-width stroke — which the write CLEARS rather than mints, and
+ * whose colour is therefore correctly not `none`. The width box's own text is
+ * deliberately not consulted: the write does not consult it either.
+ */
+export function mintedStrokeWidth(color: string): string | null {
+  return color === COLOR_NONE ? numberText(MINTED_STROKE_WIDTH) : null;
+}
+
+/**
+ * A9, the mirror: the COLOUR the Stroke row must read once a width has landed
+ * on it — upstream's default when the row was showing no stroke and the typed
+ * width really mints one, `null` otherwise.
+ *
+ * The width IS consulted here, because this direction's write depends on it: a
+ * `0` clears and an unparseable one is refused, and neither mints a colour.
+ */
+export function mintedStrokeColor(color: string, width: string): string | null {
+  const typed = finiteNumber(width);
+  return color === COLOR_NONE && typed !== null && typed > 0
+    ? MINTED_STROKE_HEX
+    : null;
+}
+
+/**
  * Ruling 14 (2026-08-20): `InspectorPresentationState` has no fields for the
  * co-founder's new ad schemas — the AD0.1 delta shipped them as static
  * scaffolding and never touched `use-inspector-controller.ts`. These are the

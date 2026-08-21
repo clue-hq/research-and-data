@@ -4,6 +4,8 @@ import { createContext, useContext, useState, type ReactNode } from "react";
 import {
   backgroundFillCommits,
   customSizeForPreset,
+  mintedStrokeColor,
+  mintedStrokeWidth,
   type SceneInspectorState,
 } from "@/features/design-editor/adapter/scene-hydrate";
 import {
@@ -141,22 +143,27 @@ function useAdColorRow({
   paletteOptions: readonly ThemeColorOption[] | undefined;
 }) {
   const palette = useScenePalette();
-  const [picked, setPicked] = useState("");
+  const [shown, setShown] = useState("");
   /** The swatch value this row is showing — a token name or a colour. */
-  const value = picked === "" ? hydratedValue : picked;
+  const value = shown === "" ? hydratedValue : shown;
   return {
     color: scenePaletteColor(palette, value) ?? value,
     onColorChange: (hex: string) => {
-      setPicked("");
+      setShown(hex);
       onHex(hex);
     },
     // Absent options mean the picker is showing the DUMMY's fixture palette,
     // whose labels name no token this document has — so no token handler is
-    // offered at all, and a pick from that list commits its colour instead.
+    // offered at all (under A23 that tab is empty, so there is nothing to pick
+    // either), and the Custom tab commits its hex as it always has.
     onTokenChange: paletteOptions && ((label: string) => {
-      setPicked(label);
+      setShown(label);
       onToken(label);
     }),
+    /** A9: a SIBLING control's write can change what this row must show — a
+     * width typed on a strokeless node mints a colour. This is how that
+     * sibling states it, without a dispatch of its own. */
+    setShown,
     value,
   };
 }
@@ -409,17 +416,44 @@ function AdTextInspector({
   });
   // The same row on the stroke paint. `none` is a real hydrated value here (a
   // strokeless node) and names no token, so it stands as it is.
+  //
+  // RULING A9 makes this row's two fields move TOGETHER, so each half re-seeds
+  // the other's display — the sibling rule step 1 settled for the Custom W/H
+  // boxes (`customSizeForPreset`), applied to the row A9 has just made live on
+  // strokeless nodes. Both decisions are the adapter's (`mintedStrokeWidth` /
+  // `mintedStrokeColor`), never restated here, and both re-seed LOCAL state:
+  // routing them through `setValue` would fire a second, spurious write for
+  // one user action.
+  const [strokeWidth, setStrokeWidth] = useState(state.strokeWidth);
+  // Reads `strokeRow.value` BEFORE committing: the question is what the row was
+  // showing when the write decided, which is the same fact the write read off
+  // the node. (`strokeRow` is declared just below — these run at event time,
+  // long after it is bound.)
+  const commitStrokeColor = (commit: () => void) => {
+    const minted = mintedStrokeWidth(strokeRow.value);
+    commit();
+    if (minted !== null) setStrokeWidth(minted);
+  };
   const strokeRow = useAdColorRow({
     hydratedValue: state.strokeColor,
-    onHex: (hex) => setValue("strokeColor", hex),
-    onToken: (label) => setValue("tokenStrokeColor", label),
+    onHex: (hex) => commitStrokeColor(() => setValue("strokeColor", hex)),
+    onToken: (label) =>
+      commitStrokeColor(() => setValue("tokenStrokeColor", label)),
     paletteOptions,
   });
+  const changeStrokeWidth = (value: string) => {
+    setStrokeWidth(value);
+    setValue("strokeWidth", value);
+    // A9's mirror: a width on a node with no stroke mints upstream's default
+    // colour, so the swatch beside it must stop saying none.
+    const minted = mintedStrokeColor(strokeRow.value, value);
+    if (minted !== null) strokeRow.setShown(minted);
+  };
 
   return (
     <>
       <Section id="typography" label="Typography" open={state.openSections.typography} toggle={() => toggleSection("typography")}>
-        <InspectorField label="Color"><ColorControl color={colorRow.color} onColorChange={colorRow.onColorChange} onTokenChange={colorRow.onTokenChange} options={paletteOptions} /></InspectorField>
+        <InspectorField label="Color"><ColorControl color={colorRow.color} fixtureFallback={false} onColorChange={colorRow.onColorChange} onTokenChange={colorRow.onTokenChange} options={paletteOptions} /></InspectorField>
         <InspectorField label="Font"><InspectorSelect label="Font family" onChange={(value) => setValue("fontFamily", value)} options={fontOptions} value={state.fontFamily} /></InspectorField>
         <div className={styles.fieldGrid}>
           {/* §2 delta (contract row 2): the size select becomes a free number. */}
@@ -429,8 +463,8 @@ function AdTextInspector({
         <InspectorField label="Alignment"><TextAlignment horizontal={state.horizontalAlignment} onHorizontalChange={(value) => setValue("horizontalAlignment", value)} onVerticalChange={(value) => setValue("verticalAlignment", value)} vertical={state.verticalAlignment} /></InspectorField>
       </Section>
       <Section id="stroke" label="Stroke" open={state.openSections.stroke} toggle={() => toggleSection("stroke")}>
-        <InspectorField label="Color"><ColorControl color={strokeRow.color} onColorChange={strokeRow.onColorChange} onTokenChange={strokeRow.onTokenChange} options={paletteOptions} /></InspectorField>
-        <InspectorField label="Width"><InspectorInput ariaLabel="Stroke width" onChange={(value) => setValue("strokeWidth", value)} value={state.strokeWidth} /></InspectorField>
+        <InspectorField label="Color"><ColorControl color={strokeRow.color} fixtureFallback={false} onColorChange={strokeRow.onColorChange} onTokenChange={strokeRow.onTokenChange} options={paletteOptions} /></InspectorField>
+        <InspectorField label="Width"><InspectorInput ariaLabel="Stroke width" onChange={changeStrokeWidth} value={strokeWidth} /></InspectorField>
       </Section>
       <Section id="layout" label="Layout" open={state.openSections.layout} toggle={() => toggleSection("layout")}>
         <InspectorField label="Position">
@@ -600,6 +634,7 @@ function AdCanvasInspector({
               through this control, and §8 authorizes no new mapping). */}
           <BackgroundFillControl
             fill={state.backgroundFill}
+            fixtureFallback={false}
             onFillChange={changeBackgroundFill}
             onSolidColorChange={backgroundRow.onColorChange}
             onTokenChange={backgroundRow.onTokenChange}
