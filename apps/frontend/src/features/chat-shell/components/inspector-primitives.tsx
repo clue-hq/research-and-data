@@ -546,45 +546,86 @@ export function RadiusControls({
   onChange: (corner: RadiusCorner, value: string) => void;
   values: RadiusValues;
 }) {
-  const [drafts, setDrafts] = useState<RadiusValues>(values);
+  /**
+   * RULING A27: the five fields keep BOTH the text being typed and the value
+   * each field last COMMITTED — in ONE state object, because the second is what
+   * decides whether a blur is a write at all, and a shape that let them drift
+   * apart would just relocate the trap below. The `AdCanvasInspector` Custom
+   * W/H pair (AD4.0 step 1) is the same shape for the same reason.
+   *
+   * THE DIRTY CHECK READS `committed`, NEVER THE `values` PROP.
+   *
+   *   • In the WEB lane the two are identical by construction, verified against
+   *     the code: the only writers of `state.radius` are `setNestedValue` and
+   *     `setRadiusAll` (`use-inspector-controller.ts:260-336`), and the web
+   *     inspector dispatches both exclusively from this component
+   *     (`web-inspector.tsx:893`). Each commit below sets `committed` to
+   *     exactly what the controller is about to hold — a corner to its typed
+   *     value, F2's clearing all-write to `{all, four: ""}` — and a remount
+   *     re-seeds both halves from the fresh prop. The check gives the same
+   *     answers there as it always did.
+   *   • In the SCENE lane they deliberately differ, and that difference is the
+   *     whole point. An ad all-corners commit writes all four corners to the
+   *     DOCUMENT but dispatches one `radius.all`, so the controller's four
+   *     corner entries stay where they were. Comparing against those made every
+   *     re-type of a corner's pre-commit number compare EQUAL and commit
+   *     nothing, while the box kept the number the user typed — a silent no-op
+   *     and a lying field at once. Browser-proven at the A26 review, where it
+   *     blocked restoring the seeded document's own corners by hand.
+   */
+  const [radius, setRadius] = useState(() => ({
+    committed: values,
+    draft: values,
+  }));
   const setDraft = (corner: RadiusCorner, value: string) =>
-    setDrafts((current) => ({ ...current, [corner]: value }));
+    setRadius((current) => ({
+      ...current,
+      draft: { ...current.draft, [corner]: value },
+    }));
 
   const commitAll = (value: string) => {
     // BOTH lanes: an all-corners write REPLACES what the four corner fields are
     // stating, so both re-seed them under ONE condition and differ only in what
     // they re-seed to. R-B1's rule decides that condition — only a plain number
-    // commits, so anything else clears nothing here and sets nothing there.
+    // commits, so anything else clears nothing there and sets nothing here.
     const numeric = NUMERIC_RADIUS.test(value.trim());
-    if (!onApplyAll) {
+    // AD4.A / RULING A26: the SCENE lane's all-write SETS all four corners
+    // (`scene-apply.ts`'s `radius.*` row writes the whole `CornerRadii`); the
+    // web lane's CLEARS the per-corner overrides (F2). One line, both meanings.
+    const corners = onApplyAll ? "" : value;
+    if (onApplyAll) {
+      onApplyAll(value, numeric);
+    } else {
       onChange("all", value);
-      // AD4.A / RULING A26: the SCENE lane's all-write SETS all four corners
-      // (`scene-apply.ts`'s `radius.*` row writes the whole `CornerRadii`), so
-      // the honest local update is to state that number — where the F2 branch
-      // below empties them, because a web all-write clears the per-corner
-      // overrides instead. Without this the four boxes go on stating the
-      // numbers the document held before the write.
-      if (numeric) {
-        setDrafts((current) => ({
-          ...current,
-          bottomLeft: value,
-          bottomRight: value,
-          topLeft: value,
-          topRight: value,
-        }));
-      }
+    }
+    if (!numeric) {
+      // Nothing reached the corners, so nothing about them moves — only this
+      // field's own committed text.
+      setRadius((current) => ({
+        ...current,
+        committed: { ...current.committed, all: value },
+      }));
       return;
     }
-    onApplyAll(value, numeric);
-    if (numeric) {
-      setDrafts((current) => ({
-        ...current,
-        bottomLeft: "",
-        bottomRight: "",
-        topLeft: "",
-        topRight: "",
-      }));
-    }
+    setRadius((current) => ({
+      committed: {
+        all: value,
+        bottomLeft: corners,
+        bottomRight: corners,
+        topLeft: corners,
+        topRight: corners,
+      },
+      // A27: `committed` moves with the drafts, in the same update, so the two
+      // cannot drift. `all`'s draft is already this value — every caller passes
+      // the draft itself.
+      draft: {
+        ...current.draft,
+        bottomLeft: corners,
+        bottomRight: corners,
+        topLeft: corners,
+        topRight: corners,
+      },
+    }));
   };
 
   const applyAll = () => {
@@ -600,8 +641,8 @@ export function RadiusControls({
     // fourth clobbered the first three: a scan of 24 over the seeded ad's
     // 32/32/96/32 image landed 32/32/96/24, one corner, four undo steps.
     // `commitAll` already forks correctly, so this needs no branch of its own.
-    if (drafts.all.trim() === "") return;
-    commitAll(drafts.all);
+    if (radius.draft.all.trim() === "") return;
+    commitAll(radius.draft.all);
   };
 
   return (
@@ -613,9 +654,9 @@ export function RadiusControls({
           leading={<InspectorIcon name="radius-all" size={16} />}
           onChange={(value) => setDraft("all", value)}
           onCommit={() => {
-            if (drafts.all !== values.all) commitAll(drafts.all);
+            if (radius.draft.all !== radius.committed.all) commitAll(radius.draft.all);
           }}
-          value={drafts.all}
+          value={radius.draft.all}
         />
         <button aria-label="Apply radius to all corners" className={styles.scanButton} onClick={applyAll} type="button">
           <InspectorIcon name="radius-scan" size={12} />
@@ -629,7 +670,16 @@ export function RadiusControls({
           ["bottomRight", "radius-bottom-right"],
         ] as const).map(([corner, icon]) => {
           const commit = () => {
-            if (drafts[corner] !== values[corner]) onChange(corner, drafts[corner]);
+            // Read this render's draft and dispatch OUTSIDE the updater — a
+            // `onChange` inside one would be a side effect React is free to run
+            // twice (the `commitCustomSize` rule, AD4.0 step 1).
+            const typed = radius.draft[corner];
+            if (typed === radius.committed[corner]) return;
+            onChange(corner, typed);
+            setRadius((current) => ({
+              ...current,
+              committed: { ...current.committed, [corner]: typed },
+            }));
           };
           return (
             <span className={`${styles.inspectorControl} ${styles.inspectorInputControl} ${styles.cornerRadiusField}`} key={corner}>
@@ -641,7 +691,7 @@ export function RadiusControls({
                 onKeyDown={(event) => {
                   if (event.key === "Enter") commit();
                 }}
-                value={drafts[corner]}
+                value={radius.draft[corner]}
               />
             </span>
           );

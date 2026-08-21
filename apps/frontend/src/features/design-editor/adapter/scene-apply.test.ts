@@ -1999,8 +1999,8 @@ it("RULING A26: the scan button is ONE all-corners write, never four corner writ
   );
   assert.ok(applyAll.length > 0, "applyAll not found in inspector-primitives.tsx");
   assert.ok(
-    applyAll.includes("commitAll(drafts.all)"),
-    "the scan button must commit through commitAll",
+    applyAll.includes("commitAll(radius.draft.all)"),
+    "the scan button must commit the all field's DRAFT through commitAll",
   );
   for (const corner of ["topLeft", "topRight", "bottomLeft", "bottomRight"]) {
     assert.ok(
@@ -2034,5 +2034,72 @@ it("RULING A26: the scan button is ONE all-corners write, never four corner writ
       token: null,
     }),
     "the fourth fan-out operation's result must not be what a scan produces",
+  );
+});
+
+it("RULING A27: after an all-commit, re-typing a corner's PRE-commit number still writes", () => {
+  // The trap this closes, browser-proven at the A26 review: with the document
+  // at all-corners-24, typing 96 into bottom-left left the BOX reading 96 and
+  // the DOCUMENT reading 24 — a silent no-op and a lying field at once — and it
+  // blocked restoring the seeded document's own corners (32/32/96/32) by hand,
+  // because every one of those numbers was exactly what the controller still
+  // held. The cause was the corner fields' dirty check comparing the draft
+  // against the `values` PROP (the controller's `state.radius`), which an ad
+  // all-write does not move: it dispatches one `radius.all`, so the four corner
+  // entries stay where they were.
+  //
+  // Half one, the component: that check now reads a local `committed` snapshot,
+  // which DOES move with every commit. Read off disk for the reason the A26
+  // guard above states.
+  const source = readFileSync(
+    join(
+      dirname(fileURLToPath(import.meta.url)),
+      "../../chat-shell/components/inspector-primitives.tsx",
+    ),
+    "utf8",
+  );
+  const body = source.slice(
+    source.indexOf("export function RadiusControls"),
+    source.indexOf("type HsvColor"),
+  );
+  assert.ok(body.length > 0, "RadiusControls not found in inspector-primitives.tsx");
+  assert.ok(
+    body.includes("committed: values"),
+    "the committed snapshot must still be SEEDED from the values prop at mount",
+  );
+  assert.ok(
+    body.includes("radius.committed[corner]"),
+    "a corner's dirty check must compare against the committed snapshot",
+  );
+  assert.ok(
+    !body.includes("values[corner]"),
+    "a corner's dirty check must NOT compare against the values prop — an ad all-write does not move it",
+  );
+  assert.ok(
+    !body.includes("values.all"),
+    "the all field's dirty check must NOT compare against the values prop either",
+  );
+
+  // Half two, the adapter: the write path really does accept that re-type once
+  // the component stops swallowing it. The scene is the document AS IT IS after
+  // an all-commit of 24, and 96 is `image_hero`'s own pre-commit bottom-left —
+  // the exact repro.
+  const { node, scene } = withNodeField("image_hero", "corner", {
+    bottom_left: 24,
+    bottom_right: 24,
+    top_left: 24,
+    top_right: 24,
+  });
+  assert.deepEqual(
+    apply(node, "radius.bottomLeft", "96", scene),
+    updateNode("image_hero", {
+      corner: set({
+        bottom_left: 96,
+        bottom_right: 24,
+        top_left: 24,
+        top_right: 24,
+        token: null,
+      }),
+    }),
   );
 });
