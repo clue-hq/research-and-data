@@ -73,8 +73,15 @@ import {
 
 export interface SceneManualEdits {
   /** Apply a batch locally and persist it. No-op on an empty batch, on a
-   * disabled engine, and on an engine-rejected batch. */
-  applyOps: (operations: Operation[], intent?: string) => void;
+   * disabled engine, and on an engine-rejected batch.
+   *
+   * AD4.A step 2: it REPORTS whether the batch was taken. The event-driven
+   * property rows ignore the answer — they have already gated themselves and a
+   * refusal has already said so in the slots below — but the Replace-image flow
+   * cannot: its panel control is holding a local preview of the picked file, so
+   * "the engine refused this batch" is the difference between a preview that
+   * states the document and one that lies about it. */
+  applyOps: (operations: Operation[], intent?: string) => boolean;
   /** AD3.3: one server history step. No-op while another step is in flight and
    * when no document is armed; the result arrives as a reload. */
   undo: () => void;
@@ -301,13 +308,13 @@ export function useSceneManualEdits(
   const applyOps = useCallback(
     (operations: Operation[]) => {
       if (operations.length === 0) {
-        return;
+        return false;
       }
       const forDocumentId = documentIdRef.current;
       const controls = controlsHolderRef.current.current;
       // Not armed: no document, or no mounted canvas to apply through.
       if (!forDocumentId || !controls) {
-        return;
+        return false;
       }
       const outcome = controls.applyOperations(operations);
       // The engine is unavailable (D9 read-only). Nothing was applied, so
@@ -315,7 +322,7 @@ export function useSceneManualEdits(
       // canvas's own G-D banner already explains the read-only state, and a
       // second message about it would be new failure UI.
       if (!outcome) {
-        return;
+        return false;
       }
       if (!outcome.accepted) {
         // The engine refused the batch and changed nothing. Its own words go
@@ -326,7 +333,7 @@ export function useSceneManualEdits(
             outcome.diagnostics[0]?.message ??
             SCENE_WRITE_FALLBACK_ERROR,
         );
-        return;
+        return false;
       }
       lastSceneRef.current = outcome.scene;
       setNote(null);
@@ -364,6 +371,10 @@ export function useSceneManualEdits(
         syncBusy();
       };
       void queue.idle().then(settle, settle);
+      // The engine took it and it is queued. NOT "the server accepted it" —
+      // that answer arrives asynchronously through `onReconcile`, which owns
+      // the reload and both message slots.
+      return true;
     },
     [ensureQueue, syncBusy],
   );

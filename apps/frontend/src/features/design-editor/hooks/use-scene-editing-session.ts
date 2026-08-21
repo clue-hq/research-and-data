@@ -24,6 +24,7 @@ import { collectKitFontFaceRefs } from "../engine/scene/kitFonts";
 import { fetchFontLibrary } from "../engine/scene/libraryFonts";
 import type { SceneDocumentHistory } from "./use-scene-document";
 import { useSceneInspectorWrites } from "./use-scene-inspector-writes";
+import { useSceneReplaceImage } from "./use-scene-replace-image";
 
 /**
  * AD2.7: the ad (scene) editing session — the twin of
@@ -449,6 +450,18 @@ export function useSceneEditingSession({
     undoDepth: liveHistory?.undoDepth ?? 0,
   });
 
+  // AD4.A step 2 (§1.3 row 1): the Replace-image flow. It takes the LIVE
+  // primary node rather than the hydrated state, because §4's lock and the
+  // node's own asset are facts about the document, not about the panel — and
+  // because the write must still be aimed correctly when the upload lands
+  // seconds later. Its failures use the SAME inline error slot every other
+  // write on this lane uses (`reportError`), never new failure UI.
+  const onReplaceImage = useSceneReplaceImage({
+    applyOps: writes.applyOps,
+    node: primaryNode ?? null,
+    onError: writes.reportError,
+  });
+
   // W3.1's triple, ad-side. `documentVersion` stays NULL here, permanently and
   // deliberately (AD3.2 ruling): the edit queue owns `base_version` internally
   // (`editQueue.ts:110-113,152`), so a copy stamped on an inspector event would
@@ -497,6 +510,9 @@ export function useSceneEditingSession({
     note: writes.note,
     /** AD3.3: receives the canvas's loaded undo/redo depths. */
     onHistoryChange,
+    /** §1.3 row 1: the inspector's Replace-image handler — the file the user
+     * picked becomes an asset and lands in the selected image node. */
+    onReplaceImage,
     onSceneChange,
     onSelectCanvas,
     onSelectLayer,

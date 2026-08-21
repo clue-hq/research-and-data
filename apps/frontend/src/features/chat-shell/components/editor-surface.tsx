@@ -201,6 +201,7 @@ export function EditorSurface({
               hydrated={sceneSession.hydrated}
               layers={sceneSession.layerRows}
               note={sceneSession.note}
+              onReplaceImage={sceneSession.onReplaceImage}
               onSelectLayer={sceneSession.onSelectLayer}
               onSelectionChange={controller.selectInspectorElement}
               onToggleLayer={sceneSession.onToggleLayer}

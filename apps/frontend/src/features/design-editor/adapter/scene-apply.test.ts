@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import type { InspectorBackgroundFill } from "@/features/chat-shell/hooks/use-inspector-controller";
 import type {
   AssetPlacement,
+  AssetRecord,
   Node,
   NodePatch,
   PageId,
@@ -40,6 +41,8 @@ import {
 import {
   sceneCanvasChangeToOperation,
   sceneChangeToOperation,
+  sceneImageReplacementTarget,
+  sceneReplaceImageOperations,
 } from "./scene-apply";
 
 /**
@@ -2371,4 +2374,104 @@ it("RULING A28: a FRACTIONAL all-commit mirrors both halves, so the re-type afte
       }),
     }),
   );
+});
+
+// ══ AD4.A / §1.3 row 1 — Replace image (upload → the canonical pair) ═════════
+//
+// The upload itself is transport (`hooks/use-scene-replace-image.ts`); THIS is
+// the pure half — given the node the panel is showing and the record the upload
+// minted, which operations does the document get, and when is it no write at
+// all. The pair and its order are the engine's own
+// (`buildNodePlacementOperations`), never rebuilt here.
+
+/** A record the upload could have minted — a NEW asset, not the harvest's. */
+function uploadedRecord(
+  overrides: Partial<AssetRecord> = {},
+): AssetRecord {
+  return {
+    id: "asset_upload_new",
+    kind: "raster_image",
+    label: "hero-v2.png",
+    source: { kind: "uploaded", filename: "hero-v2.png", uploaded_by: null },
+    status: "ready",
+    ...overrides,
+  };
+}
+
+it("§1.3 Replace image: the pair is upsert THEN place, and the alt text is the asset's own label", () => {
+  const record = uploadedRecord();
+  const operations = sceneReplaceImageOperations(adImage(), record);
+  assert.deepEqual(operations, [
+    { asset: record, kind: "upsert_asset" },
+    {
+      asset_id: "asset_upload_new",
+      kind: "place_asset_in_node",
+      node_id: "image_hero",
+      // The stored placement rides forward — only the alt text, which
+      // described the OLD picture, is replaced.
+      placement: {
+        alt_text: "hero-v2.png",
+        fit: "cover",
+        focal_point: { x: 0.5, y: 0.42 },
+        preserve_transparency: false,
+      },
+    },
+  ]);
+});
+
+it("§1.3 Replace image: an image with NO placement gets the alt text and nothing invented", () => {
+  const scene = clone(SCENE);
+  const node = scene.nodes.image_hero;
+  assert.ok(node, "fixture node image_hero missing");
+  delete node.asset_placement;
+  const operations = sceneReplaceImageOperations(node, uploadedRecord());
+  assert.ok(operations, "a placement-less image still takes a replacement");
+  assert.deepEqual(operations[1], {
+    asset_id: "asset_upload_new",
+    kind: "place_asset_in_node",
+    node_id: "image_hero",
+    // NOT upstream's `fit: "cover"` default: an absent fit IS `contain` here
+    // (`effectiveImageFit`), so minting one would change the picture.
+    placement: { alt_text: "hero-v2.png" },
+  });
+});
+
+it("§1.3 Replace image: the SAME asset with the same placement is not a write", () => {
+  // The design API deduplicates by content, so re-picking the file the node
+  // already carries mints the record it already has.
+  assert.equal(
+    sceneReplaceImageOperations(
+      adImage(),
+      uploadedRecord({
+        id: "asset_ing_2b0928ca4f3a3c70",
+        label: "Brand gradient backdrop",
+      }),
+    ),
+    null,
+  );
+});
+
+it("§1.3 Replace image: the same asset under a DIFFERENT label is a write — the alt text moves", () => {
+  const operations = sceneReplaceImageOperations(
+    adImage(),
+    uploadedRecord({ id: "asset_ing_2b0928ca4f3a3c70", label: "renamed.jpg" }),
+  );
+  assert.ok(operations, "a new alt text is a real change");
+  assert.deepEqual(
+    (operations[1] as { placement: AssetPlacement }).placement.alt_text,
+    "renamed.jpg",
+  );
+});
+
+it("§1.3 Replace image: a LOCKED image refuses (§4), and so does a non-image node", () => {
+  const scene = clone(SCENE);
+  const locked = scene.nodes.image_hero;
+  assert.ok(locked, "fixture node image_hero missing");
+  locked.locked = true;
+  assert.equal(sceneReplaceImageOperations(locked, uploadedRecord()), null);
+  assert.equal(sceneImageReplacementTarget(locked), null);
+  assert.equal(sceneReplaceImageOperations(adTokenText(), uploadedRecord()), null);
+  assert.equal(sceneImageReplacementTarget(adTokenText()), null);
+  // The unlocked harvested image is the positive control for both.
+  assert.ok(sceneImageReplacementTarget(adImage()), "an unlocked image accepts one");
 });

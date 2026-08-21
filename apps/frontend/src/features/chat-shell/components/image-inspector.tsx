@@ -658,9 +658,11 @@ function AdImageInspector({
   addressing,
   hydrated,
   locked = false,
+  onReplaceImage,
   onSelectionChange,
   ...binding
 }: AdSchemaBinding & {
+  onReplaceImage?: (file: File) => void | Promise<void>;
   onSelectionChange: (selection: ChatShellInspectorSelection) => void;
 }) {
   const controller = useInspectorController(
@@ -675,7 +677,16 @@ function AdImageInspector({
       {/* §2 delta (contract row 7 / §5): the image "Link to" section is removed
           — an ad image carries no href. */}
       <Section id="fill" label="Fill" open={state.openSections.fill} toggle={() => toggleSection("fill")}>
-        <InspectorField label="Image"><InspectorImageUpload onFileSelect={(file) => controller.requestAction(`replace-image:${file.name}`)} src="/icons/chat-shell/inspector/web/image-preview.png" /></InspectorField>
+        {/* §1.3 row 1 (AD4.A step 2): the file picker is REAL. `onFileSelect`
+            used to be `requestAction("replace-image:…")`, which fires
+            `clue:inspector-action` — an event nothing in the write path listens
+            for — so a picked file swapped a local preview and changed nothing.
+            The upload cannot live here (components may not import `data/` or
+            the engine), so it arrives as a prop from the session; with no
+            handler the dummy keeps its local-preview-only behaviour, never the
+            old dead end. The preview `src` is the node's OWN asset
+            (`scene-hydrate.ts`), falling back to the dummy's stock png. */}
+        <InspectorField label="Image"><InspectorImageUpload onFileSelect={onReplaceImage} src={state.imagePreviewSrc} /></InspectorField>
         <InspectorField label="Mode"><InspectorSelect label="Image fill mode" onChange={(value) => setValue("fillMode", value)} options={FILL_MODES} value={state.fillMode} /></InspectorField>
       </Section>
       <Section id="shape" label="Shape" open={state.openSections.shape} toggle={() => toggleSection("shape")}>
@@ -702,6 +713,7 @@ export function ImageInspector({
   fontOptions = DEFAULT_FONT_OPTIONS,
   hydrated,
   note = null,
+  onReplaceImage,
   onSelectionChange,
   palette = null,
   selection,
@@ -716,6 +728,12 @@ export function ImageInspector({
   fontOptions?: readonly string[];
   /** AD2.7: a transient informational note (the 409 quiet reload). */
   note?: string | null;
+  /** §1.3 row 1 (AD4.A step 2): the session's Replace-image flow — upload the
+   * picked file, then place it in the selected node. Absent (the dummy fixture
+   * path) keeps the control's local-preview-only behaviour. A rejection means
+   * the document did not take the file, and the control puts its preview back;
+   * anything the user should read about is already in `error`. */
+  onReplaceImage?: (file: File) => void | Promise<void>;
   onSelectionChange: (selection: ChatShellInspectorSelection) => void;
   /** AD4.0 step 3 (§1.6): the document's brand-kit colour palette, offered by
    * every colour picker in the panel. Absent keeps the dummy's own fixture
@@ -782,7 +800,9 @@ export function ImageInspector({
           ) : null}
           {selection === "canvas" ? <AdCanvasInspector {...schema} /> : null}
           {selection === "text" ? <AdTextInspector fontOptions={fontOptions} {...schema} /> : null}
-          {selection === "image" ? <AdImageInspector {...schema} /> : null}
+          {/* `onReplaceImage` goes to THIS schema alone — the row is §1.3's —
+              the way `fontOptions` goes only to the text schema. */}
+          {selection === "image" ? <AdImageInspector onReplaceImage={onReplaceImage} {...schema} /> : null}
           {dummySelection ? <AdDummyInspector onSelectionChange={onSelectionChange} selection={selection} suppressAutoLayoutSection={suppressAutoLayoutSection} {...layers} /> : null}
           {/* `"button"` is deliberately absent from this list: with its schema
               hidden (row 7) it falls through to the canvas default. */}

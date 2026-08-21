@@ -1,11 +1,13 @@
 import type { InspectorBackgroundFill } from "@/features/chat-shell/hooks/use-inspector-controller";
 import type {
   AssetPlacement,
+  AssetRecord,
   Color,
   ColorStop,
   CornerRadii,
   Fill,
   ImageFitMode,
+  ImageNode,
   Node,
   Operation,
   Page,
@@ -17,6 +19,7 @@ import type {
   TextAlign,
   VerticalAlign,
 } from "../engine/scene/contracts";
+import { buildNodePlacementOperations } from "../engine/scene/assetLibrary";
 import {
   nodePatch,
   set,
@@ -95,9 +98,18 @@ import {
  * `corner` patch that clears the radius token). Both build their `update_node`
  * inline through `nodePatch`, because `engine/scene/operations.ts` is a
  * verbatim upstream port with no `updateNodeCorner`/`updateNodeAssetPlacement`
- * builder and this lane does not edit it. Upload and the AI suite are NOT here:
- * they are async, multi-step and carry no `property`/`value` pair, so they
- * cannot ride this seam at all.
+ * builder and this lane does not edit it. The AI suite is NOT here: it is
+ * async, multi-step and carries no `property`/`value` pair, so it cannot ride
+ * this seam at all.
+ *
+ * AD4.A step 2 adds §1.3's REPLACE-IMAGE decision as two more exports at the
+ * foot of the node function — `sceneImageReplacementTarget` (may this node take
+ * one?) and `sceneReplaceImageOperations` (which operations, or none). They are
+ * not `switch` cases for the same reason: the upload carries a minted
+ * `AssetRecord`, not a `property`/`value` pair, so it reaches this adapter from
+ * the hook (`hooks/use-scene-replace-image.ts`) rather than from an inspector
+ * event. Everything that is a DECISION still lives here, with its §1.3
+ * siblings; only the transport lives in the hook.
  *
  * WHICH ROWS CARRY A KIND GUARD is decided by one rule: **the write's kind
  * condition is exactly hydrate's kind condition**, so the two stay inverses.
@@ -187,6 +199,37 @@ const IMAGE_FIT_VALUES: Record<string, ImageFitMode> = {
  */
 function effectiveImageFit(placement: AssetPlacement | null | undefined): ImageFitMode {
   return placement?.fit ?? "contain";
+}
+
+/**
+ * §1.3 Replace image: is the placement this write would produce the one the
+ * node ALREADY carries? The standing "a change that changes nothing is not a
+ * write" rule (`sameCorner`, `sameStroke`), applied to the upload row — where
+ * it is reachable in one gesture, because `POST /assets` deduplicates by
+ * content, so re-picking the file already in the node mints the record the node
+ * already points at.
+ *
+ * Absent and `null` are folded to the one fact they both state, for
+ * `sameStroke`'s reason exactly: every field of `AssetPlacement` is optional
+ * (`contracts.ts:446`) and the harvested bytes omit the ones they do not use,
+ * so comparing them literally would make every real placement look changed and
+ * defeat the guard. The focal point is compared BY COORDINATE for the same
+ * reason `cornerWith` names every field: it is a nested object, and reference
+ * equality would say "changed" for two identical points.
+ */
+function samePlacement(
+  existing: AssetPlacement | null | undefined,
+  next: AssetPlacement,
+): boolean {
+  const current = existing ?? {};
+  return (
+    (current.fit ?? null) === (next.fit ?? null) &&
+    (current.alt_text ?? null) === (next.alt_text ?? null) &&
+    (current.preserve_transparency ?? null) ===
+      (next.preserve_transparency ?? null) &&
+    (current.focal_point?.x ?? null) === (next.focal_point?.x ?? null) &&
+    (current.focal_point?.y ?? null) === (next.focal_point?.y ?? null)
+  );
 }
 
 /**
@@ -779,6 +822,80 @@ export function sceneChangeToOperation(
       // all, because they carry no `property`/`value` pair.
       return null;
   }
+}
+
+/**
+ * §1.3 row 1 (Replace image) / §4: the node a replacement may land on — its
+ * `ImageNode`, or `null` when this row is not offered for it.
+ *
+ * ONE rule, TWO call sites, which is why it is a function rather than an inline
+ * pair of checks. `use-scene-replace-image.ts` asks it BEFORE the upload,
+ * because an upload that mints an asset and then cannot place it is a half
+ * write — a registry row nothing references — and `sceneReplaceImageOperations`
+ * asks it again AFTER, because the selection can be locked while the upload is
+ * in flight. Duplicating the condition would let the two drift.
+ *
+ * The kind guard is hydrate's, the file header's standing rule: `imagePreviewSrc`
+ * and `fillMode` are stated for an image node and for nothing else
+ * (`scene-hydrate.ts`). The lock is §4, the same gate `sceneChangeToOperation`
+ * applies to every property row.
+ */
+export function sceneImageReplacementTarget(node: Node): ImageNode | null {
+  if (node.kind.kind !== "image" || node.locked) {
+    return null;
+  }
+  return node.kind;
+}
+
+/**
+ * §1.3 row 1: the document change behind Replace image — the canonical
+ * `upsert_asset` + `place_asset_in_node` pair, or `null` for no write.
+ *
+ * THE PAIR AND ITS ORDER ARE THE ENGINE'S, never rebuilt here:
+ * `buildNodePlacementOperations` (`engine/scene/assetLibrary.ts`, a verbatim
+ * upstream port) returns exactly those two, in that order, and the order is
+ * load-bearing rather than stylistic — `Scene::place_asset_in_node` looks the
+ * record up in `scene.assets` first and fails `op.asset_missing` when it is not
+ * there (`lumen-core/src/operations.rs:666-671`). One batch, so the two land as
+ * ONE undo step and the canvas repaints once.
+ *
+ * THE PLACEMENT CARRIES FORWARD. `place_asset_in_node` REPLACES the node's
+ * whole `asset_placement` (`operations.rs:691`), so a bare `{alt_text}` — what
+ * the plan's line reads as on its own — would drop the fit and the focal point:
+ * the Mode select beside this control would go on saying "Fill" over a node the
+ * upload had just reset to the absent-fit default, and the crop would recentre.
+ * Upstream carries the same two fields forward for the same reason
+ * (`ImageInspectorSection.tsx::currentPlacement`), though it also DEFAULTS a
+ * missing fit to `cover`; this does not, because on this lane an absent fit IS
+ * `contain` (`effectiveImageFit`, with the exporter/rasterizer evidence), so
+ * minting one would silently change the picture.
+ *
+ * THE ALT TEXT IS THE NEW ASSET'S LABEL (the plan's rule), because the stored
+ * one described the picture that just left. Passed explicitly rather than left
+ * to `withDefaultAlt`'s `?? record.label`, so the value this function compares
+ * against the node is the value it writes.
+ */
+export function sceneReplaceImageOperations(
+  node: Node,
+  record: AssetRecord,
+): Operation[] | null {
+  const image = sceneImageReplacementTarget(node);
+  if (!image) {
+    return null;
+  }
+  // Everything the node stores rides forward; the alt text is then OVERWRITTEN,
+  // because the stored one described the picture that just left.
+  const placement: AssetPlacement = {
+    ...node.asset_placement,
+    alt_text: record.label,
+  };
+  // A change that changes nothing is not a write: the deduplicated upload
+  // handed back the record this node already points at, under a placement it
+  // already holds, so there is no document version to mint.
+  if (image.asset_id === record.id && samePlacement(node.asset_placement, placement)) {
+    return null;
+  }
+  return buildNodePlacementOperations(record, node.id, placement);
 }
 
 /**

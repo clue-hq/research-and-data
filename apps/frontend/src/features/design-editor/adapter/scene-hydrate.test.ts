@@ -1112,3 +1112,41 @@ it("A9 mirror: after a width lands on a COLOURLESS row, the swatch reads the min
   // edit, and the write carries the stored paint through verbatim.
   assert.equal(mintedStrokeColor(statedStrokeColor(adAutoLayout()), "4"), null);
 });
+
+// ══ AD4.A step 2 / §1.3 row 1 — the Fill section's preview ══════════════════
+
+it("§1.3 Replace image: the preview states THIS node's asset, not the dummy's stock png", () => {
+  const state = hydrateSceneInspectorState(adImage(), HARVESTED_AD_PAGE);
+  // The canvas's own resolver — the public, content-addressed passthrough the
+  // artboard paints from, so the two can never show different bytes.
+  assert.equal(
+    state.imagePreviewSrc,
+    "/api/clue/design-public/asset-store/2b0928ca4f3a3c70c5c2fed22996f0428da219c953a14e71567b73c1d8af937a",
+  );
+});
+
+it("§1.3 Replace image: an unresolvable asset states NOTHING, so the dummy default stands", () => {
+  // UNCOVERED by the harvest (its one asset resolves): the scene is cloned and
+  // exactly one field — the asset's digest — is dropped.
+  const scene = clone(HARVESTED_AD_PAGE);
+  const asset = scene.assets?.asset_ing_2b0928ca4f3a3c70;
+  assert.ok(asset, "fixture asset missing");
+  asset.media = { ...asset.media, digest: null };
+  const node = scene.nodes.image_hero;
+  assert.ok(node, "fixture node image_hero missing");
+  assert.ok(
+    !("imagePreviewSrc" in hydrateSceneInspectorState(node, scene)),
+    "an unresolvable asset hydrates no preview at all",
+  );
+});
+
+it("§1.3 Replace image: a NON-image node hydrates no preview — the row is image-only", () => {
+  assert.ok(
+    !("imagePreviewSrc" in hydrateSceneInspectorState(adTokenText(), HARVESTED_AD_PAGE)),
+    "a text node has no image preview",
+  );
+  assert.ok(
+    !("imagePreviewSrc" in hydrateSceneInspectorState(adRect(), HARVESTED_AD_PAGE)),
+    "a rectangle has no image preview",
+  );
+});

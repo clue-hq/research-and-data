@@ -1373,19 +1373,37 @@ export function InspectorImageUpload({
   onFileSelect,
   src,
 }: {
-  onFileSelect?: (file: File) => void;
+  /** AD4.A step 2: a handler may REPORT that the document did not take the
+   * file, by returning a promise that rejects — the preview then goes back to
+   * what the panel was showing. A `void` handler (the dummy fixture path, and
+   * the website lane's own, which swallows its failures into the inspector's
+   * error slot) behaves exactly as it always has. */
+  onFileSelect?: (file: File) => void | Promise<void>;
   src: string;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [previewSrc, setPreviewSrc] = useState(src);
 
   const selectFile = (file: File) => {
+    // What the panel is showing RIGHT NOW — the node's own asset, or the
+    // picture a previous pick put there. A refused upload must land back on it:
+    // a preview of an image the document does not have is the panel lying about
+    // the document, and the file picker is the one control that changes its own
+    // display before any write has happened.
+    const restore = previewSrc;
+    let refused = false;
     const reader = new FileReader();
     reader.addEventListener("load", () => {
+      // The read can finish AFTER the refusal (a locked node refuses before the
+      // transport, in the same tick), so the outcome wins over the preview.
+      if (refused) return;
       if (typeof reader.result === "string") setPreviewSrc(reader.result);
     });
     reader.readAsDataURL(file);
-    onFileSelect?.(file);
+    void Promise.resolve(onFileSelect?.(file)).catch(() => {
+      refused = true;
+      setPreviewSrc(restore);
+    });
   };
 
   return (

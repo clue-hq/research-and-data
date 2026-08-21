@@ -17,6 +17,7 @@ import type {
 } from "../engine/scene/contracts";
 import { isNodePinned } from "../engine/scene/sceneQueries";
 import { oklchToHexCss } from "../engine/scene/tokenColors";
+import { sceneAssetPassthroughUrl } from "./scene-canvas-view";
 import { paletteHex, type ScenePalette } from "./scene-palette";
 
 /**
@@ -769,6 +770,23 @@ export function hydrateSceneInspectorState(
     const fit = node.asset_placement?.fit;
     const mode = fit ? vocabulary(IMAGE_FIT_LABELS, fit) : undefined;
     if (mode) state.fillMode = mode;
+    // §1.3 row 1 (AD4.A step 2): the Fill section's thumbnail shows THIS node's
+    // own asset — the website lane's ruling R-B5 (`adapter/hydrate.ts:299-305`),
+    // ad-side, and the same rule as every other control on this panel: a
+    // control may not display something the document does not have. The dummy's
+    // stock png was showing a stranger's photograph on every real ad image, and
+    // it is also what a FAILED upload has to fall back to, so binding it is
+    // part of making the upload row honest rather than a separate polish.
+    //
+    // The URL is the CANVAS's own resolver (`sceneAssetPassthroughUrl`) — the
+    // public, content-addressed `/asset-store/{digest}` passthrough the
+    // artboard already paints from — so the thumbnail and the artboard can
+    // never disagree about which bytes this node carries, and no second route
+    // is introduced. An asset with no usable digest resolves to null and keeps
+    // the dummy default, exactly as the web lane keeps it for an asset-less
+    // image: an honest placeholder beats a src that can only 404.
+    const preview = sceneAssetPassthroughUrl(scene.assets, node.kind.asset_id);
+    if (preview) state.imagePreviewSrc = preview;
   }
 
   // §1.4 Auto Layout. Direction/wrap live on the node KIND; gap/grow/padding/
