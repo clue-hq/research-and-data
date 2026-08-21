@@ -114,12 +114,18 @@ export interface SceneImageAiDeps {
 }
 
 export interface SceneImageAiRunner {
-  accept: () => void;
+  /** `true` only when the candidate actually landed (or was genuinely already
+   * the document's picture). Every refusal returns `false` — the panel needs to
+   * know, because a refusal must touch NOTHING, including the instruction draft
+   * the user typed. */
+  accept: () => boolean;
   edit: (instruction: string) => Promise<void>;
   generate: (prompt: string) => Promise<void>;
   reject: () => void;
   removeBackground: () => Promise<void>;
-  saveAsNew: () => void;
+  /** `true` when a candidate was actually confirmed; `false` when there was
+   * none to confirm. Same reason as `accept`. */
+  saveAsNew: () => boolean;
 }
 
 /** Intent labels, for signature parity with the write path's other callers.
@@ -295,7 +301,7 @@ export function createSceneImageAiRunner(
     accept: () => {
       const staged = state.candidate;
       if (!staged) {
-        return;
+        return false;
       }
       const deps = readDeps();
       // THE RULE THIS SLICE EXISTS TO KEEP: a candidate is placed on the node it
@@ -305,13 +311,13 @@ export function createSceneImageAiRunner(
         deps.node.id !== staged.forNodeId ||
         deps.documentId !== staged.forDocumentId
       ) {
-        return;
+        return false;
       }
       // §4 and the armed check are asked BEFORE anything is cleared, because a
       // refused write must not update the panel's record of the document — the
       // candidate stays staged so the user can unlock and try again.
       if (!sceneImageReplacementTarget(deps.node) || !deps.canApply()) {
-        return;
+        return false;
       }
       deps.clearMessages();
       const operations = sceneImagePlacementOperations(deps.node, staged.record);
@@ -319,9 +325,10 @@ export function createSceneImageAiRunner(
       // already carries): the document really does hold that picture, so the
       // review is genuinely over.
       if (operations && !deps.applyOps(operations, ACCEPT_INTENT)) {
-        return;
+        return false;
       }
       set({ candidate: null, savedNotice: null });
+      return true;
     },
     edit: (instruction: string) => runEdit(instruction),
     generate,
@@ -336,7 +343,7 @@ export function createSceneImageAiRunner(
     saveAsNew: () => {
       const staged = state.candidate;
       if (!staged) {
-        return;
+        return false;
       }
       set({
         candidate: null,
@@ -346,6 +353,7 @@ export function createSceneImageAiRunner(
           message: `Saved ${staged.record.label || staged.record.id} to the asset library.`,
         },
       });
+      return true;
     },
   };
 }

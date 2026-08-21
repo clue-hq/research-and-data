@@ -503,7 +503,7 @@ async function staged() {
 test("accept: the candidate swaps in through the SAME pair, carrying the placement forward", async () => {
   const state = await staged();
 
-  state.runner.accept();
+  assert.equal(state.runner.accept(), true, "an accept that landed says so");
 
   assert.equal(state.applied.length, 1, "one batch, so one undo step");
   assert.deepEqual(
@@ -526,7 +526,7 @@ test("accept: a candidate is NEVER placed on a different node than the one it wa
   const state = await staged();
   state.deps.node = adTokenText();
 
-  state.runner.accept();
+  assert.equal(state.runner.accept(), false, "and it reports the refusal");
 
   assert.equal(state.applied.length, 0);
   assert.ok(state.state().candidate, "and the paid result is kept, not discarded");
@@ -642,4 +642,53 @@ test("a generate supersedes a save notice — it describes a picture about to le
   await state.runner.generate("a calm clinic reception");
 
   assert.equal(state.state().savedNotice, null);
+});
+
+test("RE-REVIEW: every refused accept REPORTS the refusal, so the panel clears nothing", async () => {
+  // The panel keys the instruction draft's clearing on this boolean. Each case
+  // below also keeps the candidate — the two facts are one fact: a refusal
+  // touches nothing.
+  const engineRefused = harness({ accepted: false });
+  await engineRefused.runner.edit("make the sky warmer");
+  assert.equal(engineRefused.runner.accept(), false, "a CAS/engine refusal");
+  assert.ok(engineRefused.state().candidate, "and the candidate survives it");
+
+  const unarmed = await staged();
+  unarmed.live.armed = false;
+  assert.equal(unarmed.runner.accept(), false, "an unarmed write path");
+  assert.ok(unarmed.state().candidate, "and the candidate survives it");
+
+  const locked = await staged();
+  locked.deps.node = heroWith((node) => {
+    node.locked = true;
+  });
+  assert.equal(locked.runner.accept(), false, "a node locked since the edit");
+  assert.ok(locked.state().candidate, "and the candidate survives it");
+
+  const none = harness();
+  assert.equal(none.runner.accept(), false, "and nothing staged is not a landing");
+  assert.equal(none.runner.saveAsNew(), false, "nor is a save with nothing to save");
+});
+
+test("RE-REVIEW: the genuine NO-OP accept reports true — the document really does hold it", async () => {
+  // The edit handed back the asset the node already carries, so no operation is
+  // produced and the review is genuinely over. Clearing the instruction here is
+  // correct: the question has been answered.
+  const state = harness({
+    edit: async () => record({ id: "asset_ing_2b0928ca4f3a3c70" }),
+  });
+  await state.runner.edit("make the sky warmer");
+
+  assert.equal(state.runner.accept(), true);
+
+  assert.equal(state.applied.length, 0, "and it wrote nothing");
+  assert.equal(state.state().candidate, null, "and the review is over");
+});
+
+test("save as new reports true when it confirmed a candidate", async () => {
+  const state = await staged();
+
+  assert.equal(state.runner.saveAsNew(), true);
+
+  assert.ok(state.state().savedNotice, "and it left the notice behind");
 });

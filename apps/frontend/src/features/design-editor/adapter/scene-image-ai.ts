@@ -90,12 +90,17 @@ export interface SceneImageAiBinding {
   /** Whether the node already carries a picture — the one thing that changes
    * the Generate button's own word (upstream's `hasImage`). */
   hasImage: boolean;
-  onAccept: () => void;
+  /** Applies the candidate. Returns `true` ONLY when it actually landed —
+   * every refusal (a locked node, an unarmed engine, a CAS-refused batch)
+   * returns `false`, because a refusal must touch nothing the panel holds,
+   * including a draft the user typed. */
+  onAccept: () => boolean;
   onEdit: (instruction: string) => void;
   onGenerate: (prompt: string) => void;
   onRejectCandidate: () => void;
   onRemoveBackground: () => void;
-  onSaveCandidateAsNew: () => void;
+  /** Confirms the candidate. `true` when there was one to confirm. */
+  onSaveCandidateAsNew: () => boolean;
   /** What a Save-as-new confirmed, until the next attempt supersedes it. */
   savedNotice: string | null;
   /** The asset status line, or null — which is most of the time

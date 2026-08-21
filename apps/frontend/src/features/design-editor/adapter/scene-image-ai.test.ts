@@ -470,6 +470,26 @@ it("REVIEW: Accept and Save as new clear the instruction; Reject deliberately ke
   );
 });
 
+it("RE-REVIEW: the instruction is cleared only when the action LANDED, never on a refusal", () => {
+  // `onAccept` refuses silently over a locked node, an unarmed engine or a
+  // CAS-refused batch — and those are exactly the cases that KEEP the candidate
+  // for a retry, so clearing unconditionally emptied a box the user had typed
+  // into for a write that never happened. A refusal touches nothing.
+  const review = /function AdImageCandidateReview\([\s\S]*?\n}\n/.exec(
+    AD_INSPECTOR_SOURCE,
+  );
+  assert.ok(review, "image-inspector.tsx no longer defines AdImageCandidateReview");
+  assert.match(review[0], /if \(imageAi\.onAccept\(\)\) onClearInstruction\(\);/);
+  assert.match(
+    review[0],
+    /if \(imageAi\.onSaveCandidateAsNew\(\)\) onClearInstruction\(\);/,
+  );
+  assert.ok(
+    !/imageAi\.onAccept\(\);/.test(review[0]),
+    "the accept outcome must never be discarded",
+  );
+});
+
 it("§1.3: the two spend buttons are DISABLED with nothing typed and while one is in flight", () => {
   const rows = /function AdImageAiRows\([\s\S]*?\n}\n/.exec(AD_INSPECTOR_SOURCE);
   assert.ok(rows, "image-inspector.tsx no longer defines AdImageAiRows");

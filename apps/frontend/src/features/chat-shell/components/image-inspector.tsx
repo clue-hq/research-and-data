@@ -829,7 +829,13 @@ function AdImageCandidateReview({
    * Reject (`ImageInspectorSection.tsx:159,178` vs `:165-168`) — because after
    * either of those the instruction has been ANSWERED, and leaving it in the box
    * puts a paid re-run of the edit that was just applied one click away. Reject
-   * keeps it, which is the whole point of rejecting: try again, adjusted. */
+   * keeps it, which is the whole point of rejecting: try again, adjusted.
+   *
+   * CALLED ONLY WHEN THE ACTION LANDED. `onAccept` refuses silently over a
+   * locked node, an unarmed engine or a CAS-refused batch, and those are exactly
+   * the cases that KEEP the candidate for a retry — so clearing unconditionally
+   * emptied a box the user had typed into for a write that never happened. This
+   * lane's fifth discipline in its own small way: a refusal touches nothing. */
   onClearInstruction: () => void;
 }) {
   return (
@@ -846,8 +852,7 @@ function AdImageCandidateReview({
         <button
           className={styles.sharePrimaryButtonWide}
           onClick={() => {
-            imageAi.onAccept();
-            onClearInstruction();
+            if (imageAi.onAccept()) onClearInstruction();
           }}
           type="button"
         >
@@ -864,8 +869,7 @@ function AdImageCandidateReview({
       <button
         className={styles.shareSecondaryButton}
         onClick={() => {
-          imageAi.onSaveCandidateAsNew();
-          onClearInstruction();
+          if (imageAi.onSaveCandidateAsNew()) onClearInstruction();
         }}
         type="button"
       >
