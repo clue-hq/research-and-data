@@ -1384,6 +1384,31 @@ export function InspectorImageUpload({
   const inputRef = useRef<HTMLInputElement>(null);
   const [previewSrc, setPreviewSrc] = useState(src);
 
+  // AD4.A step 2 review (FIX 2): the DOCUMENT's own asset outranks whatever
+  // this control put on screen. `src` is a fact about the selected node, so a
+  // NEW value means the node now carries a different picture and the local
+  // preview — a data: URL of a file the user picked a moment ago — is stale.
+  //
+  // Without this, one sequence froze the thumbnail on the old image: a reload
+  // landing INSIDE the upload window (a CAS conflict on an earlier edit)
+  // remounts the panel, the new mount seeds `previewSrc` from the pre-upload
+  // asset, and the upload then lands with nothing left to update it — the
+  // artboard repainting with the new picture beside a thumbnail still showing
+  // the old one.
+  //
+  // React's own adjust-state-on-prop-change (a render-time comparison, the
+  // pattern `use-scene-manual-edits.ts` and `scene-artifact-canvas.tsx` already
+  // use), never an effect: an effect would render one frame of the stale value
+  // first, and this repo's react-hooks lint bars set-state in an effect. It is
+  // NOT a general re-hydrate mechanism — it tracks exactly one string, and an
+  // unchanged `src` (the website lane, whose value is mount-frozen, and the
+  // dummy fixture path) never triggers it.
+  const [lastSrc, setLastSrc] = useState(src);
+  if (lastSrc !== src) {
+    setLastSrc(src);
+    setPreviewSrc(src);
+  }
+
   const selectFile = (file: File) => {
     // What the panel is showing RIGHT NOW — the node's own asset, or the
     // picture a previous pick put there. A refused upload must land back on it:

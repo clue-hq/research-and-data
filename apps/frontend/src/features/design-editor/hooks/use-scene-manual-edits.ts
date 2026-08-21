@@ -82,6 +82,21 @@ export interface SceneManualEdits {
    * "the engine refused this batch" is the difference between a preview that
    * states the document and one that lies about it. */
   applyOps: (operations: Operation[], intent?: string) => boolean;
+  /**
+   * AD4.A step 2 review (FIX 1): could a batch land right now — an armed
+   * document, a mounted canvas, and a live engine?
+   *
+   * `applyOps` answers the same question, but only by trying, and TWO of its
+   * three `false` branches say nothing at all: "not armed" and "the engine is
+   * unavailable" (D9 read-only, silent on purpose because the canvas's own G-D
+   * banner already explains it — the justification that covers the third
+   * branch, an engine-REJECTED batch, does not cover these two, which never
+   * reach the engine's words). That silence is correct for a write that costs
+   * nothing to attempt and wrong for one that SPENDS first: the Replace-image
+   * flow uploads the file, minting a real asset row, before it has an operation
+   * to apply. Asked up front, the refusal costs nothing and strands nothing.
+   */
+  canApply: () => boolean;
   /** AD3.3: one server history step. No-op while another step is in flight and
    * when no document is armed; the result arrives as a reload. */
   undo: () => void;
@@ -305,6 +320,12 @@ export function useSceneManualEdits(
     [],
   );
 
+  /** The two silent refusals of `applyOps` below, asked without applying. */
+  const canApply = useCallback(() => {
+    const controls = controlsHolderRef.current.current;
+    return Boolean(documentIdRef.current && controls?.canApply());
+  }, []);
+
   const applyOps = useCallback(
     (operations: Operation[]) => {
       if (operations.length === 0) {
@@ -473,6 +494,7 @@ export function useSceneManualEdits(
   return {
     applyOps,
     busy,
+    canApply,
     clearMessages,
     error,
     note,

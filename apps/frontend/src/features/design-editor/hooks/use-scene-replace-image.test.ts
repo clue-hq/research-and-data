@@ -64,20 +64,28 @@ function pngFile(name = "hero-v2.png"): File {
 
 function harness({
   accepted = true,
+  armed = true,
   node = adImage() as Node | null,
   upload = async () => RECORD,
 }: {
   accepted?: boolean;
+  armed?: boolean;
   node?: Node | null;
   upload?: (file: File) => Promise<AssetRecord>;
 } = {}) {
   const applied: { intent?: string; operations: Operation[] }[] = [];
   const errors: string[] = [];
   const uploads: File[] = [];
+  let cleared = 0;
   const deps = {
     applyOps: (operations: Operation[], intent?: string) => {
       applied.push({ intent, operations });
       return accepted;
+    },
+    canApply: () => armed,
+    clearMessages: () => {
+      cleared += 1;
+      errors.length = 0;
     },
     node,
     onError: (message: string) => errors.push(message),
@@ -87,7 +95,14 @@ function harness({
     },
   };
   const handler = createSceneReplaceImageHandler(() => deps);
-  return { applied, deps, errors, handler, uploads };
+  return {
+    applied,
+    clearCount: () => cleared,
+    deps,
+    errors,
+    handler,
+    uploads,
+  };
 }
 
 test("the picked file is uploaded and the canonical pair reaches the one write path", async () => {
@@ -270,4 +285,71 @@ test("the gate re-arms after a refusal — one bad pick does not wedge the contr
   await handler(pngFile());
 
   assert.equal(applied.length, 1);
+});
+
+// ══ Review fixes ════════════════════════════════════════════════════════════
+
+test("FIX 1: a write path that is NOT ARMED refuses before the transport", async () => {
+  // The reachable state: CanvasKit fails to activate (D9 read-only), the scene
+  // still loads and the layer tree still selects, so the Replace-image button
+  // is live over an engine that can apply nothing. `applyOps` would refuse
+  // SILENTLY — so an upload here would mint a real asset registry row behind an
+  // empty error slot, which is exactly the half write §4's gate exists to stop.
+  const { applied, errors, handler, uploads } = harness({ armed: false });
+
+  await assert.rejects(handler(pngFile()));
+
+  assert.equal(uploads.length, 0, "no asset is minted when nothing can land");
+  assert.equal(applied.length, 0);
+  // Silent, like the lock: the canvas's own read-only banner already explains
+  // this state and a second message would be new failure UI.
+  assert.deepEqual(errors, []);
+});
+
+test("FIX 1: the armed check is asked BEFORE the upload, not after it", async () => {
+  // Ordering, not just outcome: an armed-at-pick / not-armed-at-apply run is
+  // the only one allowed to reach the transport.
+  const held = deferred<AssetRecord>();
+  const state = harness({ upload: () => held.promise });
+
+  const pending = state.handler(pngFile());
+  assert.equal(state.uploads.length, 1, "an armed pick does reach the transport");
+  held.resolve(RECORD);
+  await pending;
+  assert.equal(state.applied.length, 1);
+});
+
+test("FIX 3: a new attempt clears the slot, so a stale refusal cannot outlive it", async () => {
+  const state = harness({
+    upload: async () => {
+      throw new Error("asset payload exceeds the limit");
+    },
+  });
+
+  await assert.rejects(state.handler(pngFile()));
+  assert.deepEqual(state.errors, ["asset payload exceeds the limit"]);
+
+  // The user re-picks the file the node already carries: a NO-OP, which never
+  // touches `applyOps` and so never used to clear anything.
+  state.deps.upload = async () => ({
+    ...RECORD,
+    id: "asset_ing_2b0928ca4f3a3c70",
+    label: "Brand gradient backdrop",
+  });
+  await state.handler(pngFile());
+
+  assert.deepEqual(state.errors, [], "the 413 no longer describes anything true");
+  assert.equal(state.applied.length, 0, "and it is still not a write");
+});
+
+test("FIX 3: a pick the pre-transport gate refuses changes nothing at all, messages included", async () => {
+  const { clearCount, handler } = harness({
+    node: heroWith((node) => {
+      node.locked = true;
+    }),
+  });
+
+  await assert.rejects(handler(pngFile()));
+
+  assert.equal(clearCount(), 0, "a complete non-event does not touch the slots");
 });

@@ -148,6 +148,20 @@ export interface SceneCanvasControls {
    * rather than thrown: the caller shows the engine's own message.
    */
   applyOperations(operations: Operation[]): EngineApplyOutcome | null;
+  /**
+   * AD4.A step 2: could a batch land right now — i.e. is the live engine
+   * available? False is exactly the state in which `applyOperations` returns
+   * `null` (D9 read-only).
+   *
+   * It exists because that refusal is DELIBERATELY SILENT (the canvas's own
+   * G-D banner explains the read-only state and a second message would be new
+   * failure UI), which is fine for a write that costs nothing to attempt and
+   * wrong for one that SPENDS something first: the Replace-image flow uploads
+   * the picked file — minting a real asset registry row — before it has any
+   * operation to apply. Asking here lets that flow refuse before the spend
+   * instead of stranding an orphan asset behind a silent no-op.
+   */
+  canApply(): boolean;
   /** Point→node hit-test in absolute PAGE space (scene units), straight from
    * the engine. Null when the engine is unavailable — a disabled engine
    * refuses to answer rather than guessing from descriptors (AD2.5 consumes
@@ -433,6 +447,9 @@ function SceneDocumentCanvas({
         }
         return outcome;
       },
+      // The same condition `applyOperations` refuses on, asked without
+      // applying anything.
+      canApply: () => Boolean(engine),
       hitTest: (x, y) =>
         engine && pageId ? engine.hitTest(pageId, x, y) : null,
       refresh,

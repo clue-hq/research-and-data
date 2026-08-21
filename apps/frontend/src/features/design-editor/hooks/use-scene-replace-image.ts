@@ -63,9 +63,15 @@ export class SceneReplaceImageRefused extends Error {
 
 export interface SceneReplaceImageDeps {
   /** The manual-edits controller's one write path (optimistic apply → CAS
-   * queue). `false` means the engine refused the batch or nothing is armed —
-   * it has already said so in the error slot. */
+   * queue). `false` means the batch did not land; when it is an engine
+   * REJECTION the controller has already put the engine's words in the error
+   * slot, and the two branches that say nothing are pre-empted by `canApply`. */
   applyOps: (operations: Operation[], intent?: string) => boolean;
+  /** FIX 1: is the write path armed and the engine live? Asked BEFORE the
+   * upload, because a refusal after it strands a minted asset. */
+  canApply: () => boolean;
+  /** Clears both inline slots. A new pick supersedes what the last one said. */
+  clearMessages: () => void;
   /** The session's PRIMARY selection, resolved against the live scene. */
   node: Node | null;
   /** Sets the inspector's existing inline error line. */
@@ -110,6 +116,21 @@ export function createSceneReplaceImageHandler(
     if (!target || !sceneImageReplacementTarget(target)) {
       throw new SceneReplaceImageRefused("this selection takes no image");
     }
+    // FIX 1 (review): the same rule applied to the OTHER half of "can this land
+    // at all". Nothing armed, or no live engine (D9 read-only) — states in which
+    // `applyOps` refuses SILENTLY, so a post-upload refusal would leave a minted
+    // asset behind an empty error slot. Reachable: CanvasKit fails to activate,
+    // the scene still loads and the layer tree still selects, so the button is
+    // live over an engine that can apply nothing.
+    if (!before.canApply()) {
+      throw new SceneReplaceImageRefused("the write path is not armed");
+    }
+    // A new attempt supersedes what the last one said — a refusal about a file
+    // the user has already replaced is no longer true. Cleared HERE rather than
+    // at entry so a pick this gate refuses (a locked node, a dead engine)
+    // remains the complete non-event every other §4 refusal on this lane is,
+    // messages included.
+    before.clearMessages();
 
     inFlight = true;
     let record: AssetRecord;
@@ -145,23 +166,41 @@ export function createSceneReplaceImageHandler(
 
 export function useSceneReplaceImage(options: {
   applyOps: (operations: Operation[], intent?: string) => boolean;
+  canApply: () => boolean;
+  clearMessages: () => void;
   node: Node | null;
   onError: (message: string) => void;
   /** Injectable for tests; the platform's BFF upload by default. */
   upload?: (file: File) => Promise<AssetRecord>;
 }): (file: File) => Promise<void> {
-  const { applyOps, node, onError, upload = uploadWebAsset } = options;
+  const {
+    applyOps,
+    canApply,
+    clearMessages,
+    node,
+    onError,
+    upload = uploadWebAsset,
+  } = options;
   // Latest-value ref so the handler keeps one identity while always reading
   // current props (written in a passive effect, per this repo's react-hooks
   // rules — the same adaptation every other hook on this lane made).
   const depsRef = useRef<SceneReplaceImageDeps>({
     applyOps,
+    canApply,
+    clearMessages,
     node,
     onError,
     upload,
   });
   useEffect(() => {
-    depsRef.current = { applyOps, node, onError, upload };
+    depsRef.current = {
+      applyOps,
+      canApply,
+      clearMessages,
+      node,
+      onError,
+      upload,
+    };
   });
 
   // Built on first use rather than during render: the runner closes over the

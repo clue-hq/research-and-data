@@ -458,6 +458,8 @@ export function useSceneEditingSession({
   // write on this lane uses (`reportError`), never new failure UI.
   const onReplaceImage = useSceneReplaceImage({
     applyOps: writes.applyOps,
+    canApply: writes.canApply,
+    clearMessages: writes.clearMessages,
     node: primaryNode ?? null,
     onError: writes.reportError,
   });

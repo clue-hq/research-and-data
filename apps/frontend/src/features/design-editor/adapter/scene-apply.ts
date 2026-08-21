@@ -209,27 +209,22 @@ function effectiveImageFit(placement: AssetPlacement | null | undefined): ImageF
  * content, so re-picking the file already in the node mints the record the node
  * already points at.
  *
- * Absent and `null` are folded to the one fact they both state, for
- * `sameStroke`'s reason exactly: every field of `AssetPlacement` is optional
- * (`contracts.ts:446`) and the harvested bytes omit the ones they do not use,
- * so comparing them literally would make every real placement look changed and
- * defeat the guard. The focal point is compared BY COORDINATE for the same
- * reason `cornerWith` names every field: it is a nested object, and reference
- * equality would say "changed" for two identical points.
+ * ONE FIELD IS COMPARED, and this is the invariant that makes that enough:
+ * `sceneReplaceImageOperations` builds the next placement as
+ * `{...node.asset_placement, alt_text: record.label}`, so every other field is
+ * identical to the stored one BY CONSTRUCTION and a four-field comparison
+ * (which is what this was) reads as load-bearing while three of its branches
+ * can never be false. **A caller that ever builds the placement any other way —
+ * the AI suite's candidate-accept applies the same pair — must widen this
+ * again.** Absent and `null` fold together, for `sameStroke`'s reason exactly:
+ * every field of `AssetPlacement` is optional (`contracts.ts:446`) and the
+ * stored bytes omit the ones they do not use.
  */
-function samePlacement(
+function sameAltText(
   existing: AssetPlacement | null | undefined,
   next: AssetPlacement,
 ): boolean {
-  const current = existing ?? {};
-  return (
-    (current.fit ?? null) === (next.fit ?? null) &&
-    (current.alt_text ?? null) === (next.alt_text ?? null) &&
-    (current.preserve_transparency ?? null) ===
-      (next.preserve_transparency ?? null) &&
-    (current.focal_point?.x ?? null) === (next.focal_point?.x ?? null) &&
-    (current.focal_point?.y ?? null) === (next.focal_point?.y ?? null)
-  );
+  return (existing?.alt_text ?? null) === (next.alt_text ?? null);
 }
 
 /**
@@ -892,7 +887,7 @@ export function sceneReplaceImageOperations(
   // A change that changes nothing is not a write: the deduplicated upload
   // handed back the record this node already points at, under a placement it
   // already holds, so there is no document version to mint.
-  if (image.asset_id === record.id && samePlacement(node.asset_placement, placement)) {
+  if (image.asset_id === record.id && sameAltText(node.asset_placement, placement)) {
     return null;
   }
   return buildNodePlacementOperations(record, node.id, placement);

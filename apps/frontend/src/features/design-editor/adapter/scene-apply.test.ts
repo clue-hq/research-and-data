@@ -2475,3 +2475,21 @@ it("§1.3 Replace image: a LOCKED image refuses (§4), and so does a non-image n
   // The unlocked harvested image is the positive control for both.
   assert.ok(sceneImageReplacementTarget(adImage()), "an unlocked image accepts one");
 });
+
+it("FIX 4: the produced placement differs from the stored one in the ALT TEXT and nothing else", () => {
+  // This is the invariant the reduced no-op guard rests on: the placement is
+  // built as `{...stored, alt_text}`, so alt text is the only field that can
+  // differ, and a guard comparing the other three would have three branches
+  // that can never be false. A caller that ever builds it another way must
+  // widen `sameAltText` again — which is why the invariant is pinned here.
+  const stored = heroPlacement();
+  const operations = sceneReplaceImageOperations(adImage(), uploadedRecord());
+  assert.ok(operations, "the harvested image takes a replacement");
+  const { placement } = operations[1] as { placement: AssetPlacement };
+  assert.deepEqual(
+    { ...placement, alt_text: stored.alt_text },
+    stored,
+    "every field except the alt text is the stored one, verbatim",
+  );
+  assert.notEqual(placement.alt_text, stored.alt_text);
+});

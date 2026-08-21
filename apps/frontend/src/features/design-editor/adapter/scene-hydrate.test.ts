@@ -1150,3 +1150,16 @@ it("§1.3 Replace image: a NON-image node hydrates no preview — the row is ima
     "a rectangle has no image preview",
   );
 });
+
+it("FIX 2: the Fill preview reads the LIVE hydrated value, not the mount-frozen state", () => {
+  // A `.tsx` cannot be imported under this runner, so the binding is pinned
+  // against the dummy's own source text — the technique this file already uses
+  // for the SIZE_PRESETS vocabulary. The fact being pinned: the controller
+  // seeds `state.imagePreviewSrc` ONCE at mount, so a placement that lands
+  // after a mid-upload reload has already remounted the panel would leave the
+  // thumbnail on the previous asset while the artboard shows the new one.
+  const upload = /<InspectorImageUpload[\s\S]*?\/>/.exec(AD_INSPECTOR_SOURCE);
+  assert.ok(upload, "image-inspector.tsx no longer renders InspectorImageUpload");
+  assert.match(upload[0], /src=\{hydrated\?\.imagePreviewSrc \?\? state\.imagePreviewSrc\}/);
+  assert.match(upload[0], /onFileSelect=\{onReplaceImage\}/);
+});

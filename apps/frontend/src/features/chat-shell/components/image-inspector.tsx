@@ -684,9 +684,17 @@ function AdImageInspector({
             The upload cannot live here (components may not import `data/` or
             the engine), so it arrives as a prop from the session; with no
             handler the dummy keeps its local-preview-only behaviour, never the
-            old dead end. The preview `src` is the node's OWN asset
-            (`scene-hydrate.ts`), falling back to the dummy's stock png. */}
-        <InspectorField label="Image"><InspectorImageUpload onFileSelect={onReplaceImage} src={state.imagePreviewSrc} /></InspectorField>
+            old dead end.
+
+            The preview `src` is the node's OWN asset (`scene-hydrate.ts`),
+            falling back to the dummy's stock png. It reads the LIVE `hydrated`
+            prop rather than `state.imagePreviewSrc`, which the controller seeds
+            once at mount: a placement that lands after a mid-upload reload has
+            already remounted this panel would otherwise leave the thumbnail on
+            the previous asset while the artboard repainted with the new one
+            (review FIX 2). `InspectorImageUpload` follows the value when it
+            changes. */}
+        <InspectorField label="Image"><InspectorImageUpload onFileSelect={onReplaceImage} src={hydrated?.imagePreviewSrc ?? state.imagePreviewSrc} /></InspectorField>
         <InspectorField label="Mode"><InspectorSelect label="Image fill mode" onChange={(value) => setValue("fillMode", value)} options={FILL_MODES} value={state.fillMode} /></InspectorField>
       </Section>
       <Section id="shape" label="Shape" open={state.openSections.shape} toggle={() => toggleSection("shape")}>
