@@ -718,9 +718,9 @@ Lane discipline: AD4.0 lands on the branch first; lanes A–D then run in parall
 
 **Files:** Modify: `scene-artifact-canvas.tsx` (gesture host + handles overlay)
 
-- [ ] **Step 1:** Host the extracted `gestureReducer`: pointer-down builds `PressTarget` (`handleAtPoint` first against the selection box, else hit node with box+rotation from `deriveSelectionChromeModel`); move/up feed the reducer; `drag`/`resize` actions preview via the overlay and on `committed: true` emit `dragActionToOperations` / `resizeActionToOperation` (managed-layout nodes refuse per the editor's rule — the machine's host omits handles for them via `showResizeHandles`). **v1 scope exactly** (§1.9): drag-move + corner-resize; no rotate handle, no marquee, no Delete, no nudge, no double-click text (all §7).
-- [ ] **Step 2:** Handles render per the G-A-approved chrome. Escape cancels a live gesture (reducer up-with-no-commit); ⌘Z after a committed gesture undoes (AD3.3 path).
-- [ ] **Step 3:** Browser proof (drag persists, resize respects aspect-lock with Shift, locked node drags nothing) + gate + commit.
+- [x] **Step 1:** Host the extracted `gestureReducer`: pointer-down builds `PressTarget` (`handleAtPoint` first against the selection box, else hit node with box+rotation from `deriveSelectionChromeModel`); move/up feed the reducer; `drag`/`resize` actions preview via the overlay and on `committed: true` emit `dragActionToOperations` / `resizeActionToOperation` (managed-layout nodes refuse per the editor's rule — the machine's host omits handles for them via `showResizeHandles`). **v1 scope exactly** (§1.9): drag-move + corner-resize; no rotate handle, no marquee, no Delete, no nudge, no double-click text (all §7).
+- [x] **Step 2:** Handles render per the G-A-approved chrome. Escape cancels a live gesture (reducer up-with-no-commit); ⌘Z after a committed gesture undoes (AD3.3 path).
+- [x] **Step 3:** Browser proof (drag persists, resize respects aspect-lock with Shift, locked node drags nothing) + gate + commit.
 
 ### Task AD4.D (lane): Export binding
 
