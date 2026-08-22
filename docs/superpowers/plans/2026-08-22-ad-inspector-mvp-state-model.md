@@ -12,6 +12,8 @@
 
 ---
 
+
+
 ## Global Constraints
 
 Copied from the parent plan's inherited laws. Every task's requirements implicitly include these.
@@ -19,15 +21,19 @@ Copied from the parent plan's inherited laws. Every task's requirements implicit
 - **Dummy UI is presentation truth and ceiling.** No new visible chrome, classes, icons, or copy. This slice changes *state ownership*, never markup — every task's diff should be reviewable as "same DOM, different data flow" (the two exceptions are additive optional props on existing primitives, which render nothing by themselves).
 - **Process:** Opus implements; the orchestrating session reviews every diff inline; TDD on pure modules; browser proof + local commit per task; **never push**; **no AI attribution in commits** (no `Co-Authored-By: Claude`, no "Generated with" footers).
 - **Gates per task:** `cd apps/frontend && npm run design-system:build && npm test && npm run lint && npm run build`. Root `make check` at slice close (Task 9).
-- **Test runner is `find src -name '*.test.ts' | xargs tsx --test`** — no `.test.tsx`, no DOM renderer. Hook/component logic that needs testing lives in pure decision modules.
-- **Components never import `data/` or the engine** (eslint `no-restricted-imports` enforces); adapters may import data-layer constants.
+- **Test runner is** `find src -name '*.test.ts' | xargs tsx --test` — no `.test.tsx`, no DOM renderer. Hook/component logic that needs testing lives in pure decision modules.
+- **Components never import** `data/` **or the engine** (eslint `no-restricted-imports` enforces); adapters may import data-layer constants.
 - **Never key-remount the inspector on a document version / write token** (parent-plan trap #8 / contract §4). This slice *strengthens* that rule: by its end the only remount key is the selected node id.
-- **Frontend only.** Zero Python, zero `subsystems/`, zero edits to the verbatim `engine/scene/**` ports.
+- **Frontend only.** Zero Python, zero `subsystems/`, zero edits to the verbatim `engine/scene/`** ports.
 - Browser proofs run against the real stack (`:3033` web / `:8032` platform API / `:8010` design API), verifying claims against the design API's own document JSON, never only against the UI that wrote it. The seeded ad document is restored node-identical after every proof (the AD4 discipline).
 
 ---
 
+
+
 ## Design record (the spec this plan implements)
+
+
 
 ### The defect
 
@@ -62,6 +68,8 @@ Why this is flicker-free on the ad lane and NOT automatically portable to the we
 - **A36/A40** (both review tiles; review outlives the lock) — untouched.
 - **The §1.6 token policy** (brand pick writes a token, custom hex detaches) — untouched at the write adapter; only the *display* path simplifies.
 
+
+
 ### Rulings superseded by this slice (each was a correct patch for the state model this slice removes)
 
 | Ruling / mechanism | Where it lives today | What replaces it |
@@ -83,11 +91,15 @@ The ad text schema's **Font size**, **Stroke width**, **Position X/Y**, and **Ro
 
 ### Founder-gate register
 
-| Gate | What | Blocks | Owner action |
-|---|---|---|---|
+
+| Gate    | What                                                                                                                                                                                                                                                                                      | Blocks                                                                                                                                   | Owner action                                                                                                   |
+| ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
 | **G-H** | The disabled treatment for locked/read-only fields — adopting upstream's `disabled={selectedNode.locked}` posture using the shell's one authored `:disabled` treatment (`.sharePrimaryButtonWide:disabled`, opacity 0.45 + `cursor: wait`; a field variant needs a founder-approved look) | **Task 10 only.** Tasks 1–9 do not depend on it: under live derivation a refused interaction is already honest (the display never moves) | Orchestrator produces browser screenshots of a locked node's fields with the proposed treatment; founder rules |
 
+
 ---
+
+
 
 ## File map (what changes by the end)
 
@@ -114,12 +126,16 @@ Deliberately **not** touched: `web-inspector.tsx`, `use-web-editing-session.ts`,
 
 ---
 
+
+
 ### Task 1: Synchronous accepted-scene mirror
 
 **Files:**
+
 - Modify: `apps/frontend/src/features/design-editor/components/scene-artifact-canvas.tsx:433-459` (the `controls` memo)
 
 **Interfaces:**
+
 - Consumes: the existing `onSceneChangeRef` (`scene-artifact-canvas.tsx:658-661`), `outcome.scene` from `engine.applyOperations`, the component's `pageId` state and `documentId` prop.
 - Produces: after an **accepted** `applyOperations`, the session's `onSceneChange(scene, pageId, documentId)` has already run **inside the same synchronous call** — so any `setState` the caller performs in the same event handler batches with the session's `setLoaded`, and `hydrated` is current on the very next render. The passive-effect mirror stays (it still owns the load/reload paths and the relaid-scene adoption); its later re-fire with the final rendered scene is an idempotent `setLoaded`.
 
@@ -176,13 +192,17 @@ scenes; its later re-fire is an idempotent setLoaded."
 
 ---
 
+
+
 ### Task 2: Controller live-hydration mode
 
 **Files:**
+
 - Modify: `apps/frontend/src/features/chat-shell/hooks/use-inspector-controller.ts`
 - Test: `apps/frontend/src/features/chat-shell/hooks/inspector-live-state.test.ts` (create)
 
 **Interfaces:**
+
 - Consumes: nothing new — the existing `hydrated?: Partial<InspectorPresentationState>` parameter, which callers already rebuild per render from the live scene.
 - Produces (later tasks rely on these exact names):
   - `export interface InspectorControllerOptions { liveHydration?: boolean }` — new optional 5th parameter of `useInspectorController`.
@@ -295,14 +315,18 @@ document values. Default behavior unchanged; no caller opts in yet."
 
 ---
 
+
+
 ### Task 3: Self-drafting `InspectorInput` + the pure draft module
 
 **Files:**
+
 - Create: `apps/frontend/src/features/chat-shell/components/inspector-field-draft.ts`
 - Test: `apps/frontend/src/features/chat-shell/components/inspector-field-draft.test.ts`
 - Modify: `apps/frontend/src/features/chat-shell/components/inspector-primitives.tsx:467-523` (`InspectorInput`)
 
 **Interfaces:**
+
 - Produces (later tasks rely on these exact names):
   - `export function fieldDisplay(draft: string | null, value: string): string` — `draft ?? value`.
   - `export function fieldCommit(draft: string | null, value: string): string | null` — the value to write, or `null` when there is no draft or the draft equals the document value (the A27 dirty check, made structural: the comparison target is the **live** document value, which cannot be stale under live hydration).
@@ -334,7 +358,7 @@ test("a commit is the draft, unless there is nothing new to say", () => {
 
 - [ ] **Step 2: Run to verify failure** → FAIL (module missing).
 - [ ] **Step 3: Implement the module** (two functions, doc comments stating the invariant: "the comparison target is the live document value — under live hydration it cannot be stale, which is what retires A27's committed snapshots").
-- [ ] **Step 4: Extend `InspectorInput`.**
+- [ ] **Step 4: Extend** `InspectorInput`**.**
 
 ```tsx
 export function InspectorInput({
@@ -421,14 +445,18 @@ onCommit protocols unchanged."
 
 ---
 
+
+
 ### Task 4: Flip the ad panel to live hydration (flag only — no band-aid removal yet)
 
 **Files:**
+
 - Modify: `apps/frontend/src/features/chat-shell/components/image-inspector.tsx` (the four `useInspectorController` call sites: header `:1076`, text `:410`, canvas `:507`, image `:914`)
 
 **Interfaces:**
+
 - Consumes: Task 2's `InspectorControllerOptions`; Task 1's in-batch hydration.
-- Produces: every bound ad schema's `state` is live-composed. The existing band-aid local states (`shown`, `custom`, `altText`, `strokeWidth`) still sit **above** the controller and keep their current displays — this task changes behavior only where controls read `state.*` directly, and only in one direction: a **refused** write can no longer stick (the select/toggle snaps to the document because it never left it). Accepted writes display identically (the value now arrives via hydration in the same batch instead of via the local echo).
+- Produces: every bound ad schema's `state` is live-composed. The existing band-aid local states (`shown`, `custom`, `altText`, `strokeWidth`) still sit **above** the controller and keep their current displays — this task changes behavior only where controls read `state.`* directly, and only in one direction: a **refused** write can no longer stick (the select/toggle snaps to the document because it never left it). Accepted writes display identically (the value now arrives via hydration in the same batch instead of via the local echo).
 
 **Why flag-first:** it is the smallest reviewable step that closes the whole "refused write leaves the panel lying" family at once, and it proves the composition under every already-shipped control before any deletion. A reviewer can reject a band-aid removal without rejecting the model flip.
 
@@ -467,13 +495,17 @@ in the next three tasks."
 
 ---
 
+
+
 ### Task 5: Canvas schema cleanup (Custom W/H triple, preset re-seed)
 
 **Files:**
+
 - Modify: `apps/frontend/src/features/chat-shell/components/image-inspector.tsx` (`AdCanvasInspector`, `:494-657`)
 - Modify: `apps/frontend/src/features/design-editor/adapter/scene-hydrate.ts` + `scene-hydrate.test.ts` (only if `customSizeForPreset` is orphaned — Step 3)
 
 **Interfaces:**
+
 - Consumes: Task 3's `onCommitValue`; Task 4's live `state.customWidth`/`state.customHeight`/`state.sizePreset` (hydrate **always** states them — `hydrateSceneCanvasState`, `scene-hydrate.ts:882-905`).
 - Produces: `AdCanvasInspector` with one small UI-only state: `const [customChosen, setCustomChosen] = useState(false)` — the "Custom" entry names no document size, so choosing it is a **view choice**, the one legitimate schema-local UI fact here.
 
@@ -486,7 +518,7 @@ in the next three tasks."
             <InspectorInput ariaLabel="Custom height" onCommitValue={(value) => setValue("customHeight", value)} prefix="H" value={state.customHeight} />
 ```
 
-  - The preset select:
+- The preset select:
 
 ```tsx
   // AD4.R: "Custom" is a VIEW choice, not a document fact — it names no size,
@@ -506,7 +538,10 @@ in the next three tasks."
   };
 ```
 
-    Render `value={shownPreset}` on the select and gate the W/H row on `shownPreset === "Custom"`.
+```
+Render `value={shownPreset}` on the select and gate the W/H row on `shownPreset === "Custom"`.
+```
+
 - [ ] **Step 2: Full gate.**
 - [ ] **Step 3: Orphan check.** `grep -rn "customSizeForPreset" apps/frontend/src` — if the only remaining references are its definition and its tests, delete the function and its `scene-hydrate.test.ts` cases (its doc comment says it exists solely for the re-seed this task removed). If anything else consumes it, leave it and note the consumer in the commit message.
 - [ ] **Step 4: Browser proof** (each item verified against the document JSON, both canvas entry states — empty selection AND artboard selected):
@@ -530,14 +565,18 @@ nothing."
 
 ---
 
+
+
 ### Task 6: Color rows + text schema cleanup (`shown`, stroke mirrors, per-keystroke writes)
 
 **Files:**
+
 - Modify: `apps/frontend/src/features/chat-shell/components/image-inspector.tsx` (`useAdColorRow` `:136-171`, `AdTextInspector` `:394-492`)
 
 **Interfaces:**
+
 - Consumes: live `state.textColor` / `state.strokeColor` / `state.strokeWidth` / `state.backgroundColor` (Task 4), the in-batch mirror (Task 1), `onCommitValue` (Task 3).
-- Produces: `useAdColorRow` shrinks to `{ color, onColorChange, onTokenChange, value }` — **no `shown` state, no `setShown` export**. Its `value` IS `hydratedValue` (live). Callers that used `setShown` (the stroke mint mirror) are deleted in the same diff, so the file never has a dangling consumer.
+- Produces: `useAdColorRow` shrinks to `{ color, onColorChange, onTokenChange, value }` — **no** `shown` **state, no** `setShown` **export**. Its `value` IS `hydratedValue` (live). Callers that used `setShown` (the stroke mint mirror) are deleted in the same diff, so the file never has a dangling consumer.
 
 - [ ] **Step 1: Implement.**
   - `useAdColorRow`: delete `shown`/`setShown`; `value = hydratedValue`; handlers dispatch only:
@@ -589,13 +628,17 @@ per-keystroke' note; one intent is now one document version)."
 
 ---
 
+
+
 ### Task 7: Image schema cleanup (alt-text triple, `RadiusControls` scene branch)
 
 **Files:**
+
 - Modify: `apps/frontend/src/features/chat-shell/components/image-inspector.tsx` (`AdImageInspector`, `:901-1026`)
 - Modify: `apps/frontend/src/features/chat-shell/components/inspector-primitives.tsx` (`RadiusControls`, `:570-780`)
 
 **Interfaces:**
+
 - Consumes: live `state.altText` / `state.radius` / `state.imagePreviewSrc`, `fieldCommit`/`fieldDisplay` (Task 3).
 - Produces: `RadiusControls` gains no new props and loses none; its **scene branch** (`onApplyAll` absent) re-bases on live `values` with per-field drafts; the **web branch** (`onApplyAll` present) is byte-for-byte untouched, `committed` snapshot and all — the web lane still runs the mount-seeded model until its own migration.
 
@@ -616,8 +659,10 @@ per-keystroke' note; one intent is now one document version)."
 ```
 
   The sibling re-seed the triple existed for (Replace image overwrites `asset_placement.alt_text`) is now free: the box reads live state, and an unfocused box has no draft to go stale.
-  - Also collapse the preview special-case: `src={state.imagePreviewSrc}` replaces `src={hydrated?.imagePreviewSrc ?? state.imagePreviewSrc}` (`:994`) — live state IS the hydrated value now; update the comment to say the primitive follows the live value.
-- [ ] **Step 2: `RadiusControls` scene branch.** Keep the component's props and the web branch untouched. Re-shape the internals so the two lanes' state is explicit:
+
+- Also collapse the preview special-case: `src={state.imagePreviewSrc}` replaces `src={hydrated?.imagePreviewSrc ?? state.imagePreviewSrc}` (`:994`) — live state IS the hydrated value now; update the comment to say the primitive follows the live value.
+
+- [ ] **Step 2:** `RadiusControls` **scene branch.** Keep the component's props and the web branch untouched. Re-shape the internals so the two lanes' state is explicit:
 
 ```tsx
   // WEB lane (onApplyAll present): the mount-seeded model, unchanged — its
@@ -650,6 +695,7 @@ per-keystroke' note; one intent is now one document version)."
 ```
 
   Wire the five `InspectorInput`s and the scan button through `scene ? sceneShown/sceneCommit/sceneApplyAll : <existing draft/commitAll/applyAll>`. Delete the scene-lane arms of `commitAll`/`applyAll`/`restate` and the now-web-only `uniformRadius` mirror usage (`uniformRadius` itself: `grep -rn "uniformRadius" apps/frontend/src` — if the component was its only consumer, delete it; hydrate has its own derivation). Import `fieldCommit`/`fieldDisplay` from `./inspector-field-draft`.
+
 - [ ] **Step 3: Full gate.** Expected: green after updating any `inspector-primitives`-adjacent assertions (none known — the component has no direct tests; the pure logic now lives in the tested draft module).
 - [ ] **Step 4: Browser proof** — the walk that was **impossible** before AD4.A's five fix rounds, now structural:
   1. Seeded corners 32/32/96/32: scan `24` → all four land 24 in one version (`{24,24,24,24}` in the JSON).
@@ -672,13 +718,17 @@ a component mirror. Web branch of RadiusControls untouched."
 
 ---
 
+
+
 ### Task 8: Retire the `inspectorGeneration` remount machinery
 
 **Files:**
+
 - Modify: `apps/frontend/src/features/design-editor/hooks/use-scene-editing-session.ts:106-139,517-545`
 - Modify: `apps/frontend/src/features/chat-shell/components/editor-surface.tsx:181-197`
 
 **Interfaces:**
+
 - Consumes: Tasks 4–7 (every ad field derives live — the remount has nothing left to resynchronize).
 - Produces: `useSceneEditingSession` no longer returns `inspectorGeneration`; `onWriteReload` is a bare nonce bump; the ad inspector's key is `sceneSession.primaryNodeId ?? "canvas"` — selection changes remain the only remount, exactly the web precedent and contract §4's strongest form.
 
@@ -704,9 +754,12 @@ selection change — contract §4 in its strongest form."
 
 ---
 
+
+
 ### Task 9: Regression battery, records, and slice close
 
 **Files:**
+
 - Modify: `docs/superpowers/plans/2026-08-20-ad-editor-integration-execution-plan.md` (the Phase AD4 lane-discipline preamble, `:663-665`)
 - Create: `_memory/2026-08-22-ad4r-mvp-state-model.md`
 
@@ -737,7 +790,7 @@ selection change — contract §4 in its strongest form."
 > patterns are RETIRED — do not reintroduce them in new rows.
 ```
 
-- [ ] **Step 4: `_memory` close-out** (`_memory/2026-08-22-ad4r-mvp-state-model.md`): what changed and why (the founder ruling), the rulings-superseded table (copy from this plan's §Design record), the disclosed commit-model change, the verification evidence (gate results + the eight-scenario sweep), and **two recorded follow-ups**: (a) **web-lane migration** — the controller's mount mode is now legacy; the web inspector has the same latent defect class (browser-proven during AD4: the W4.2 radius resync, the alt-text overwrite, node-id-only guards), but its writes are async HTTP, so its migration needs either optimistic hydration or a draft-until-arrival rule before `liveHydration` can flip there — it is NOT a mechanical copy of AD4.R; (b) **G-H disabled treatment** — Task 10, pending the founder ruling.
+- [ ] **Step 4:** `_memory` **close-out** (`_memory/2026-08-22-ad4r-mvp-state-model.md`): what changed and why (the founder ruling), the rulings-superseded table (copy from this plan's §Design record), the disclosed commit-model change, the verification evidence (gate results + the eight-scenario sweep), and **two recorded follow-ups**: (a) **web-lane migration** — the controller's mount mode is now legacy; the web inspector has the same latent defect class (browser-proven during AD4: the W4.2 radius resync, the alt-text overwrite, node-id-only guards), but its writes are async HTTP, so its migration needs either optimistic hydration or a draft-until-arrival rule before `liveHydration` can flip there — it is NOT a mechanical copy of AD4.R; (b) **G-H disabled treatment** — Task 10, pending the founder ruling.
 - [ ] **Step 5: Commit.**
 
 ```bash
@@ -752,18 +805,38 @@ disabled-treatment gate."
 
 ---
 
-### Task 10 (GATED on G-H — skip until the founder rules): `disabled={locked}` at the source
+
+
+### Task 10 — G-H RULED 2026-08-22: `disabled` at the source, for locked nodes AND in-flight agent turns
+
+> **Founder ruling (2026-08-22):** the proposed treatment is approved (the shell's authored
+> `:disabled` opacity 0.45 applied to fields via one modifier class — mockups
+> `/tmp/ad4r-gh-locked-{today,proposed}.png`), **and the scope extends beyond locked nodes**:
+> *"we cannot let humans change any value when the agents are at work with designing."* While an
+> agent turn is actively running on the thread, the human's inspector must be disabled — prevention
+> at the source, not CAS cleanup after.
+>
+> **Scope ruling (controller, from the scout):** the gate is a design **turn in flight**, NOT "leg
+> open" — a leg stays open across turns, and interleaved manual edits *between* turns are the
+> ratified genweb feature that must survive. The in-flight signal (thread running / `threadBusy`
+> from `use-project-chat-controller.ts`'s turn-queue state) exists on the **chats route** only;
+> v1 gates that route. The **artifact route** has no live turn stream today — it keeps the D10 CAS
+> reconciliation as its net (proven at T8), and a document-scoped agent-busy signal (plausibly off
+> the run_event SSE) is the recorded follow-up that would close it.
 
 **Files:**
-- Modify: `apps/frontend/src/features/chat-shell/components/inspector-primitives.tsx` (`InspectorInput`, `InspectorSelect`, `ColorControl`, `RadiusControls` — a `disabled?: boolean` prop each), `image-inspector.tsx` (pass `disabled={locked}` per control)
 
-This closes the prevent-vs-refuse family the MVP closes with `disabled={selectedNode.locked}` (`RawStyleSection.tsx`, throughout). It is **presentation** — the field primitives have no `disabled` prop and the shell has exactly one authored `:disabled` treatment — so it ships only after the founder approves the look on real screenshots (the G-D precedent: propose from the browser, founder picks).
+- Modify: `apps/frontend/src/features/chat-shell/components/inspector-primitives.tsx` (`InspectorInput`, `InspectorSelect`, `ColorControl`, `BackgroundFillControl`, `RadiusControls`, `InspectorImageUpload` — a `disabled?: boolean` prop each) + `chat-shell.module.css` (ONE modifier class, the ruled 0.45 treatment), `image-inspector.tsx` (accept `inspectorDisabled?: boolean`; pass `disabled={locked || inspectorDisabled}` at every bound control incl. the AI-suite and upload buttons), `chat-surface.tsx` (derive + pass the thread-running flag), `editor-surface.tsx` (omit — no signal on the artifact route yet, documented at the prop)
 
-- [ ] **Step 1:** Produce the mockups: the image schema on a locked node with the proposed treatment (the `.sharePrimaryButtonWide:disabled` opacity applied to fields via one new modifier class — this is founder-ordered chrome if approved, the §2-delta precedent). Present; wait for the ruling.
-- [ ] **Step 2 (post-ruling):** Add the `disabled` prop to the four primitives (native `disabled` attribute + the approved class; no behavior change when absent); pass `disabled={locked}` at every bound ad control; keep the dispatch-side `locked` guards (belt and suspenders, the adapter's refusal remains the authority).
-- [ ] **Step 3:** Browser proof (locked node: controls visibly disabled, nothing dispatches; unlocked: all live), gate, commit: `feat(ad-editor): AD4.R-10 locked controls disable at the source (G-H ruled)`.
+This closes the prevent-vs-refuse family the MVP closes with `disabled={selectedNode.locked}` (`RawStyleSection.tsx`, throughout), extended per the ruling to the agent-turn window.
+
+- [x] **Step 1:** Mockups produced; founder ruled (see above).
+- [ ] **Step 2:** Add the `disabled` prop to the primitives (native `disabled` attribute + the approved class; zero behavior change when absent — the web inspector passes nothing); thread `inspectorDisabled` from the chats route's thread-running state; pass `disabled={locked || inspectorDisabled}` at every bound ad control; keep the dispatch-side `locked` guards (belt and suspenders — the adapter's refusal remains the authority; the disable is UI-level prevention).
+- [ ] **Step 3:** Browser proof (locked node: controls visibly disabled at 0.45, nothing dispatches; unlocked: all live; a running design turn on the chats route disables the panel for the turn's duration and re-enables at its end), gate, commit: `feat(ad-editor): AD4.R-10 inspector disables at the source (G-H ruled: locked nodes + in-flight agent turns)`.
 
 ---
+
+
 
 ## Execution order & review notes
 
@@ -775,3 +848,4 @@ T1 (sync mirror) ─► T2 (controller mode) ─► T3 (draft input) ─► T4 (
 - T1–T3 are individually inert/safe and independently revertible; T4 is the behavioral pivot and the diff a reviewer should read hardest; T5–T7 are deletions whose safety T4 already proved; T8 depends on all of T4–T7.
 - Every task: fresh Opus implementer, reviewer on the diff (constraints block: "hunt for a control that still records a document value locally"), browser proof driven by the orchestrator, scoped re-review of every fix round — the AD4 regime unchanged.
 - **The key sentence for every implementer and reviewer:** *keep three physical layers, but only the accepted scene owns document values — the canvas and the inspector are both projections of it, and a local copy of a document value is a defect even when it currently displays the right number.*
+
