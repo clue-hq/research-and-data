@@ -358,6 +358,34 @@ const LAYOUT_ANCHOR_LABELS = {
   stretch: "Stretch",
 } satisfies Record<LayoutAnchor, string>;
 
+/**
+ * §1.4 Auto Layout: the label ONE align axis reads — always a label, never
+ * `undefined` (ruling L10, extended).
+ *
+ * `align_x`/`align_y` are OPTIONAL in the wire format (`contracts.ts:470-471`),
+ * so an anchor can arrive absent (or, from a malformed payload, unusable). The
+ * Align X/Y selects are BOUND rows, and the AD4.R rule for a bound row is that
+ * hydration states it for every selection that displays it: leaving it absent
+ * lets `DEFAULT_STATE`'s scaffolding seeds ("Space between"/"Center" — anchors
+ * the dummy invented, which no document ever said) stand over a real node.
+ *
+ * The fallback is the engine's own `defaultLayoutProps()` anchor for that axis,
+ * which is exactly what the write half's `scene-apply.ts::storedAnchor` carries
+ * for an absent one — so the displayed anchor and the anchor a commit restates
+ * for the untouched axis cannot disagree.
+ *
+ * `vocabulary` still does the refusing: a garbled or prototype-inherited key is
+ * never SERVED as a label, it just resolves to the honest default instead of
+ * leaving the row unstated.
+ */
+function anchorLabel(
+  stored: LayoutAnchor | undefined,
+  axis: "align_x" | "align_y",
+): string {
+  const label = stored ? vocabulary(LAYOUT_ANCHOR_LABELS, stored) : undefined;
+  return label ?? LAYOUT_ANCHOR_LABELS[defaultLayoutProps()[axis] ?? "start"];
+}
+
 /** §1.2 row 6: the engine's `VerticalAlign` in the dummy's vocabulary. */
 const VALIGN_LABELS = {
   bottom: "bottom",
@@ -856,16 +884,16 @@ export function hydrateSceneInspectorState(
       right: numberText(right),
       top: numberText(top),
     };
-    // Same rule as the valign above: an anchor outside the engine's five states
-    // nothing rather than an `undefined` that would beat the default.
-    const alignX = layout.align_x
-      ? vocabulary(LAYOUT_ANCHOR_LABELS, layout.align_x)
-      : undefined;
-    if (alignX) state.alignX = alignX;
-    const alignY = layout.align_y
-      ? vocabulary(LAYOUT_ANCHOR_LABELS, layout.align_y)
-      : undefined;
-    if (alignY) state.alignY = alignY;
+    // UNCONDITIONAL, unlike the valign row above — and for the same reason the
+    // four rows above it are: these are BOUND rows on a section that renders
+    // for every auto-layout node, while `align_x`/`align_y` are optional in the
+    // wire format. A conditional assignment left an omitted (or garbled) anchor
+    // displaying `DEFAULT_STATE`'s "Space between"/"Center" while a commit on
+    // the OTHER axis restated this one as `start` — display and write
+    // disagreeing about the same node. `anchorLabel` states the engine default
+    // the write half already carries, so they cannot.
+    state.alignX = anchorLabel(layout.align_x, "align_x");
+    state.alignY = anchorLabel(layout.align_y, "align_y");
   }
 
   return state;

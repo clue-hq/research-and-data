@@ -529,11 +529,16 @@ it("only facts hydrate: a stored value that names an Object.prototype member sta
       `valign ${key}`,
     );
 
+    // The align row differs from its three neighbours here, deliberately: it is
+    // a BOUND row on a section that renders for every auto-layout node, so it
+    // states the engine's default rather than nothing (see the L10 cases
+    // below). The prototype key is still never SERVED as a label — which is
+    // what this loop guards — it just resolves to "Start".
     const row = { ...clone(SCENE).nodes.auto_row_copy };
     row.layout = { ...adAutoLayout().layout!, align_x: key as never };
     assert.equal(
       hydrateSceneInspectorState(row, SCENE).alignX,
-      undefined,
+      "Start",
       `align_x ${key}`,
     );
 
@@ -670,6 +675,47 @@ it("§1.4/L10: an AUTO-LAYOUT node with no `Node.layout` states the engine's own
   // Direction/wrap live on the node KIND and were already unconditional there.
   assert.equal(state.direction, "horizontal");
   assert.equal(state.wrap, false);
+});
+
+it("§1.4/L10: a layout that OMITS an anchor still states one — the same `start` the write half carries", () => {
+  // The review finding this case exists for: `align_x`/`align_y` are optional
+  // in the wire format (`contracts.ts:470-471`), so a node can carry a real
+  // `Node.layout` — gap, padding, grow all present — and no anchors. While the
+  // assignment was conditional, that node displayed `DEFAULT_STATE`'s invented
+  // "Space between"/"Center" while `scene-apply.ts::storedAnchor` restated the
+  // untouched axis as `start` on the very next commit: the panel and the
+  // document disagreeing about the same node. Both halves now read the
+  // engine's `defaultLayoutProps()`, so they cannot.
+  const scene = clone(SCENE);
+  const node = scene.nodes.auto_row_copy;
+  assert.ok(node.layout, "fixture precondition: the node carries a layout");
+  delete node.layout.align_x;
+  delete node.layout.align_y;
+  const state = hydrateSceneInspectorState(node, scene);
+  assert.equal(state.alignX, "Start");
+  assert.equal(state.alignY, "Start");
+  // The layout's OTHER members are untouched by the fallback — this is an
+  // anchor rule, not a whole-layout reset.
+  assert.equal(state.gap, "32");
+  assert.deepEqual(state.padding, {
+    bottom: "40",
+    left: "44",
+    right: "44",
+    top: "40",
+  });
+
+  // A garbled anchor (unreachable through the type system; reachable from a
+  // malformed payload) resolves the same way rather than leaving the bound row
+  // unstated — `vocabulary` refuses the value, the row still states one.
+  const garbled = clone(SCENE);
+  const other = garbled.nodes.auto_row_copy;
+  if (other.layout) {
+    other.layout.align_x = "middle" as never;
+    other.layout.align_y = "justify" as never;
+  }
+  const garbledState = hydrateSceneInspectorState(other, garbled);
+  assert.equal(garbledState.alignX, "Start");
+  assert.equal(garbledState.alignY, "Start");
 });
 
 // ── §1.1 Canvas schema ─────────────────────────────────────────────────────
