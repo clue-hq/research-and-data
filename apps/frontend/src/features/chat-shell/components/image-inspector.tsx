@@ -190,10 +190,22 @@ interface AdHydrationBinding {
    * schema's mount-time seed), for the controls whose local state must not
    * record a write §4 refuses. */
   locked?: boolean;
-  /** The selected node's real values (or the page's, for the canvas schema),
-   * merged over the dummy defaults at mount. Initial state only: the caller
-   * remounts this panel per selection (`key={primaryNodeId ?? "canvas"}`), the
-   * same discipline the web branch uses. */
+  /** The selected node's real values (or the page's, for the canvas schema).
+   *
+   * AD4.R: this prop is read PER RENDER, not once at mount. Every ad controller
+   * passes `{ liveHydration: hydrated != null }`, so its `state` is composed as
+   * `{...uiState, ...hydrated}` on each render (`openSections` excepted — the
+   * panel owns those): the accepted scene owns every key hydration carries, and
+   * a document change re-derives them all. That is what makes a refused write
+   * unable to stick — the control never left the document's value.
+   *
+   * Absent/null (the dummy fixture path) keeps the original contract exactly:
+   * the values merge over the dummy defaults at mount and the local state owns
+   * them thereafter.
+   *
+   * Selection changes still REMOUNT the panel (`key={primaryNodeId ?? "canvas"}`,
+   * the discipline the web branch uses) — not for hydration, which no longer
+   * needs it, but to reset the UI state the document does not own. */
   hydrated?: SceneInspectorState | null;
 }
 
@@ -953,12 +965,20 @@ function AdImageInspector({
   // and is barred by this repo's lint), the technique step 2's review used for
   // the Fill thumbnail.
   //
-  // AND `seen` IS WHY IT DOES NOT SNAP BACK. The optimistic apply mirrors up
-  // through a passive effect, so for a render or two after a commit the live
-  // prop still holds the PRE-write text. Comparing the re-seed against
-  // `committed` (which the commit just moved) would fire it against that stale
-  // value and flash the old description; comparing against `seen` — which only
-  // a genuinely new prop moves — does not.
+  // AND `seen` IS WHY IT DOES NOT SNAP BACK — though the timing it was written
+  // against has since changed. AD4.R-1 (`scene-artifact-canvas.tsx`) made an
+  // ACCEPTED apply mirror the new scene up SYNCHRONOUSLY, in the same call
+  // stack, so on the apply path the live prop now moves in the same React batch
+  // as the commit: there is no longer a render or two where it still holds the
+  // PRE-write text. On that path `seen` is belt-and-suspenders. It stays
+  // load-bearing for the arrivals that are still asynchronous — the passive
+  // effect below still owns load / reload / the relaid C4 scene — where
+  // comparing the re-seed against `committed` (which the commit just moved)
+  // would fire against a stale value and flash the old description, while
+  // comparing against `seen` — which only a genuinely new prop moves — does not.
+  //
+  // LIFESPAN: this whole triple is scheduled for deletion in AD4.R Task 7, once
+  // the box derives from the live prop directly like the rest of the panel.
   const documentAltText = hydrated?.altText ?? state.altText;
   const [altText, setAltText] = useState(() => ({
     committed: documentAltText,
