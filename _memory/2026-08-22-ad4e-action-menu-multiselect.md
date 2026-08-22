@@ -59,3 +59,26 @@ promotes next (image schema appeared). Zero editor-era console errors. Server st
 - `use-scene-editing-session.ts` is source-text-PINNED by scene-image-ai.test.ts:581 — lanes
   editing it must run the guard-pin grep first (AD4.R protocol).
 - Duplicate/Archive/Delete still dispatch into the void (§7, unchanged, by contract).
+
+---
+
+## Merged into the integration branch (2026-08-23)
+
+Merge commit on `integration/frontend-design-part-iv-v4` (parents: the Lane D merge close-out
+`b9f9a0fe` + AD4.E tip `eca4d42b`), local only, nothing pushed. **Zero conflicts** — git
+auto-merged both overlap files (`use-scene-inspector-writes.ts`: AD4.E's extracted
+`adActionRequest` landed beside the B/C-9-era edits, listener region verified coherent by read;
+the plan doc's checkbox ticks). Note the branch name: `integration/frontend-design-part-iv-v7`
+was the ndjamena workspace's local branch (no remote ref) — unlike the empty v5 case, it carried
+the actual lane work.
+
+Gates: combined suite **1979/1979, 0 fail, 0 skipped** (1970 + AD4.E's 9 — exactly additive; the
+repo-walk no-version-select-listener guard and the layers/multi-select source pins all hold
+against the B+C+C-9+HUG-FREEZE+D tree); lint 0 errors (3 pre-existing warnings); build clean;
+tsc baseline exactly 84; root `make check` = exactly the five documented pre-existing reds,
+zero new.
+
+Carried forward unchanged: R3 (artifact-rename persistence is client-only — founder-visible
+residual), the deliberate non-pin on `primaryNodeId = selectedIds[0]` (Lane B's Arrange tests +
+AD5.1 are the nets), and the Versions guard's designed trip-wire (binding real history will
+deliberately break it — rewrite consciously, not a flake).
