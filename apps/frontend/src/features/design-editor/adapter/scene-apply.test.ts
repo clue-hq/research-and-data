@@ -30,6 +30,7 @@ import {
   adAutoLayout,
   adEllipse,
   adFrame,
+  adGroup,
   adImage,
   adPlainText,
   adRect,
@@ -1050,6 +1051,214 @@ it("§1.4 Auto Layout: a NON-auto-layout node writes nothing on every Auto Layou
   }
 });
 
+// ══ §1.4 Shape — Fill (the NODE's own fill, §1.6 policy) ════════════════════
+//
+// AD4.B step 3. The same two properties §1.1's Background rows carry, but
+// addressed at the SELECTED NODE rather than the page's root frame — which is
+// exactly what hydrate already states for every non-text kind
+// (`scene-hydrate.ts`'s fill branch: text → `textColor`, everything else →
+// `backgroundColor`). The write's kind condition is therefore hydrate's, the
+// file header's standing rule, and the two rows share §1.1's own helpers
+// (`backgroundFillsOperation` → `paintKey` + `paintFill`) rather than restating
+// the policy a third time.
+//
+// OQ-6: the GROUP schema renders neither a Shape nor a Stroke section, so no
+// group fill row exists in the panel. That is a PRESENTATION fact and it is
+// deliberately not re-stated as an adapter refusal: hydrate states a group's
+// fill like every other non-text kind, and a kind guard here that hydrate does
+// not have is the drift the standing rule exists to prevent.
+
+it("§1.4 Shape Fill: a hex writes ONE solid fill and reuses the paint id the node already carries", () => {
+  assert.deepEqual(
+    apply(adEllipse(), "backgroundColor", "#FF00AA"),
+    updateNode("ellipse_proof_dot", {
+      fills: set([
+        {
+          id: "paint_dot",
+          paint: { color: { kind: "hex", value: "#ff00aa" }, kind: "solid" },
+        },
+      ]),
+    }),
+  );
+});
+
+it("§1.4 Shape Fill: a node with NO fill mints the editor's own paint id", () => {
+  // `group_proof` is the harvest's own fill-less node — real bytes, no derived
+  // fixture needed. It is a GROUP, whose panel renders no Shape section at all
+  // (OQ-6); the row still maps, because hydrate states its fill and the write's
+  // kind condition is hydrate's. The panel hiding a control is not the adapter's
+  // business, exactly as the kind-agnostic radius row already establishes.
+  assert.deepEqual(
+    apply(adGroup(), "backgroundColor", "#FF00AA"),
+    updateNode("group_proof", {
+      fills: set([
+        {
+          id: "paint_group_proof_fill",
+          paint: { color: { kind: "hex", value: "#ff00aa" }, kind: "solid" },
+        },
+      ]),
+    }),
+  );
+});
+
+it("§1.4 Shape Fill: the `none` sentinel CLEARS the fills — §1.2's stroke row, fill-side", () => {
+  // Unlike §1.1's canvas Background (whose swatch lives under a fill-type
+  // select and can therefore never raise the sentinel), this row is a BARE
+  // swatch on a kind whose honest fill-less state hydrate spells `none`
+  // (`paintState`). Committing that state means the node has no fill.
+  assert.deepEqual(
+    apply(adEllipse(), "backgroundColor", COLOR_NONE),
+    updateNode("ellipse_proof_dot", { fills: set([]) }),
+  );
+});
+
+it("§1.6 guard: a GRADIENT-filled node is not writable through the single swatch", () => {
+  // `rect_accent_bar` is the harvest's real 3-stop linear gradient. A bare
+  // swatch cannot SHOW a gradient, so a solid write here would destroy one the
+  // user never saw — the §1.2 Color row's rule, and the reason §1.1's
+  // Background swatch is exempt (a fill-type select made that switch explicit)
+  // does not apply to this row.
+  assert.equal(apply(adRect(), "backgroundColor", "#FF00AA"), null);
+  assert.equal(apply(adRect(), "backgroundColor", COLOR_NONE), null);
+  assert.equal(
+    apply(adRect(), "tokenBackgroundColor", "surface.brand", SCENE, AD_PALETTE),
+    null,
+  );
+});
+
+it("§1.6 guard: a MULTI-LAYER fill is not writable through either Shape Fill row", () => {
+  const { node, scene } = withNodeField("ellipse_proof_dot", "fills", [
+    ...adEllipse().fills,
+    ...adFrame().fills,
+  ]);
+  assert.equal(apply(node, "backgroundColor", "#FF00AA", scene), null);
+  assert.equal(
+    apply(node, "tokenBackgroundColor", "surface.brand", scene, AD_PALETTE),
+    null,
+  );
+});
+
+it("§1.4 Shape Fill: a TEXT node is refused — hydrate routes ITS fill to textColor", () => {
+  // The exact inverse of the §1.2 Color row's "a NON-text node is refused".
+  // Together the two say the fill of any node is writable through exactly one
+  // property, so no schema can address a fill the panel is not showing.
+  assert.equal(apply(adPlainText(), "backgroundColor", "#FF00AA"), null);
+  assert.equal(apply(adTokenText(), "backgroundColor", "#FF00AA"), null);
+  assert.equal(
+    apply(adPlainText(), "tokenBackgroundColor", "surface.brand", SCENE, AD_PALETTE),
+    null,
+  );
+});
+
+it("§1.4 Shape Fill: anything that is not a hex or the sentinel is refused, never guessed black", () => {
+  for (const value of ["", "  ", "#FFF", "rebeccapurple", "00F59B"]) {
+    assert.equal(apply(adEllipse(), "backgroundColor", value), null, value);
+  }
+  assert.equal(apply(adEllipse(), "backgroundColor", 16711680), null);
+});
+
+it("§1.6 Shape Fill: a brand swatch binds the node's fill to the TOKEN, keeping the paint id", () => {
+  assert.deepEqual(
+    apply(adEllipse(), "tokenBackgroundColor", "surface.brand", SCENE, AD_PALETTE),
+    updateNode("ellipse_proof_dot", {
+      fills: set([
+        { id: "paint_dot", paint: { kind: "token", token: "surface.brand" } },
+      ]),
+    }),
+  );
+});
+
+it("§1.6 Shape Fill: a label the kit does not define, and NO palette at all, write nothing", () => {
+  assert.equal(
+    apply(adEllipse(), "tokenBackgroundColor", "not.a.token", SCENE, AD_PALETTE),
+    null,
+  );
+  assert.equal(apply(adEllipse(), "tokenBackgroundColor", "surface.brand"), null);
+});
+
+it("§1.6 Shape Fill: re-committing the paint the node ALREADY wears is NOT a write", () => {
+  // `backgroundFillsOperation`'s standing rule, inherited whole: `ColorControl`
+  // re-commits its hex on blur whether or not it moved, so without this guard
+  // opening and closing the picker would mint a document version and an undo
+  // step that change nothing. `paintKey` folds the two spellings of one token
+  // (`$text.inverse` and the bare name the picker reports) onto one identity.
+  assert.equal(apply(adEllipse(), "backgroundColor", "#EA2261"), null);
+  const { node, scene } = withNodeField("ellipse_proof_dot", "fills", [
+    ...adTokenText().fills,
+  ]);
+  assert.equal(
+    apply(node, "tokenBackgroundColor", "text.inverse", scene, AD_PALETTE),
+    null,
+  );
+  // A DIFFERENT token on the same node is a real change, and keeps the id.
+  assert.deepEqual(
+    apply(node, "tokenBackgroundColor", "surface.brand", scene, AD_PALETTE),
+    updateNode("ellipse_proof_dot", {
+      fills: set([
+        { id: "paint_headline", paint: { kind: "token", token: "surface.brand" } },
+      ]),
+    }),
+  );
+});
+
+it("§4: a LOCKED node refuses both Shape Fill rows", () => {
+  const { node, scene } = withNodeField("ellipse_proof_dot", "locked", true);
+  assert.equal(apply(node, "backgroundColor", "#FF00AA", scene), null);
+  assert.equal(apply(node, "backgroundColor", COLOR_NONE, scene), null);
+  assert.equal(
+    apply(node, "tokenBackgroundColor", "surface.brand", scene, AD_PALETTE),
+    null,
+  );
+});
+
+// ══ §1.4 Shape/Stroke — the rows AD4.B step 3 only had to BIND ══════════════
+
+it("§1.4 Shape/Stroke: the newly bound schemas reach the EXISTING radius and stroke rows", () => {
+  // The radius and stroke rows carry NO kind guard, deliberately (the file
+  // header says so), precisely so the rect / ellipse / auto-layout schemas
+  // inherit them rather than needing a second implementation. Step 3 binds the
+  // controls; this is the proof the events they now raise land.
+  assert.deepEqual(
+    apply(adRect(), "radius.all", "8"),
+    updateNode("rect_accent_bar", {
+      corner: set({
+        bottom_left: 8,
+        bottom_right: 8,
+        top_left: 8,
+        top_right: 8,
+        token: null,
+      }),
+    }),
+  );
+  assert.deepEqual(
+    apply(adAutoLayout(), "strokeWidth", "3"),
+    updateNode("auto_row_copy", {
+      strokes: set([
+        {
+          id: "stroke_card",
+          paint: { color: { kind: "hex", value: "#2E2470" }, kind: "solid" },
+          width: 3,
+          width_token: null,
+        },
+      ]),
+    }),
+  );
+  // A9 on an ellipse: a colour on a strokeless node mints upstream's width.
+  assert.deepEqual(
+    apply(adEllipse(), "strokeColor", "#FF00AA"),
+    updateNode("ellipse_proof_dot", {
+      strokes: set([
+        {
+          id: "paint_ellipse_proof_dot_stroke",
+          paint: { color: { kind: "hex", value: "#ff00aa" }, kind: "solid" },
+          width: 1,
+          width_token: null,
+        },
+      ]),
+    }),
+  );
+});
+
 // ══ §1.0 header — Lock (and the lock gate over every other row) ═════════════
 
 it("§1.0 Lock: a boolean writes Node.locked", () => {
@@ -1133,17 +1342,17 @@ it("null contract: rows owned by a LATER lane write nothing today", () => {
   // AD4.A took `radius.*` and `fillMode` out of it — §1.3's two rows are
   // mapped now, and their own cases below cover them (the radius row is
   // deliberately kind-agnostic, so it WRITES on this very node). AD4.B step 1
-  // took `opacity` out for the same reason (§1.4's Layout section), and step 2
-  // took `gap` and its Auto Layout siblings.
+  // took `opacity` out for the same reason (§1.4's Layout section), step 2
+  // took `gap` and its Auto Layout siblings, and step 3 took
+  // `backgroundColor`/`tokenBackgroundColor` — the Shape section's Fill row,
+  // node-addressed (their own cases are above).
   //
-  // What is LEFT is the Shape/Stroke sections' colour rows on a NODE: §1.1's
-  // canvas function maps `backgroundColor`/`backgroundFill`/
-  // `tokenBackgroundColor` on the page's root frame, but the four ad schemas'
-  // own Fill swatch is still the static scaffolding, so a node-addressed event
-  // carrying one of them is nobody's row yet.
-  for (const property of ["backgroundColor", "tokenBackgroundColor"]) {
-    assert.equal(apply(adAutoLayout(), property, "#FF00AA"), null, property);
-    assert.equal(apply(adRect(), property, "#FF00AA"), null, property);
+  // What is LEFT is `backgroundFill`, the fill-TYPE select. §1.1's canvas
+  // function maps it on the page's root frame, but no ad NODE schema offers a
+  // fill-type control at all (§1.4's Shape section is one bare swatch), so a
+  // node-addressed event carrying it is nobody's row.
+  for (const node of [adAutoLayout(), adRect(), adEllipse()]) {
+    assert.equal(apply(node, "backgroundFill", { type: "solid" }), null, node.id);
   }
 });
 

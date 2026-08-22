@@ -130,6 +130,12 @@ import {
  *     text node's fill to `textColor` and every other kind's to
  *     `backgroundColor`, so accepting `textColor` for a rect would write a
  *     property that node does not hydrate.
+ *   • §1.4's SHAPE FILL rows (`backgroundColor` / `tokenBackgroundColor`, node
+ *     -addressed — AD4.B step 3) → every NON-text kind, the exact complement of
+ *     the line above and read off the same hydrate branch. That includes the
+ *     GROUP, whose panel renders no Shape section at all (OQ-6): hiding a
+ *     control is a presentation decision, and a kind guard here that hydrate
+ *     does not have would be the very drift this rule prevents.
  *   • `fillMode` → image only, because hydrate states it for an image node and
  *     for nothing else (`scene-hydrate.ts:687-691`).
  *   • §1.4's AUTO LAYOUT rows (direction / wrap / gap / grow / padding / align)
@@ -723,6 +729,68 @@ export function sceneChangeToOperation(
         return null;
       }
       return updateNodeFills(node, [paintFill(node, paint)]);
+    }
+
+    // ── §1.4 Shape: Fill — the NON-text fill, both halves (AD4.B step 3) ─────
+    //
+    // The SAME two properties §1.1's Background rows carry, addressed at the
+    // selected NODE instead of the page's root frame, because that is exactly
+    // what hydrate states: its fill branch routes a text node's paint to
+    // `textColor` and EVERY OTHER KIND's to `backgroundColor` (+
+    // `tokenBackgroundColor`). So the kind condition here is `!text` — the
+    // file header's standing rule that the write's kind condition IS
+    // hydrate's, and the precise complement of the two rows above.
+    //
+    // OQ-6: the GROUP schema renders neither a Shape nor a Stroke section, so
+    // the panel raises no fill event for a group. That is a presentation fact
+    // and is deliberately NOT restated as a refusal here — hydrate states a
+    // group's fill like any other non-text kind, and a kind guard the adapter
+    // has and hydrate does not is exactly the drift the standing rule exists
+    // to prevent (the kind-agnostic radius row already settled this shape).
+    //
+    // THE GUARDS ARE §1.2's COLOR ROW's, not §1.1's Background row's, because
+    // this control is a BARE swatch: no fill-type select sits above it, so a
+    // gradient or a multi-layer fill is one the user cannot see and a solid
+    // write would silently destroy. `backgroundTarget`'s comment states the
+    // asymmetry from the other side.
+    case "backgroundColor": {
+      if (text || isGradientGuarded(node.fills)) {
+        return null;
+      }
+      // The `none` sentinel is `scene-hydrate.ts`'s own (`COLOR_NONE`), the
+      // honest "this node has no fill" state a fill-less node hydrates as —
+      // committing it means clearing the fills, exactly as §1.2's stroke row
+      // clears the strokes. §1.1's canvas Background has no such branch, and
+      // the difference is real rather than an inconsistency: its swatch renders
+      // only while its fill-type select says "Solid", so the sentinel cannot
+      // reach that seam, while THIS row's swatch is the whole control.
+      if (value === COLOR_NONE) {
+        return updateNodeFills(node, []);
+      }
+      const hex = normalizeHex(value);
+      if (hex === null) {
+        return null;
+      }
+      // §1.6, node-side: a raw hex DETACHES a token-bound fill — the ratified
+      // trade. Through `backgroundFillsOperation` so the paint, the paint id
+      // and the no-change rule are §1.1's, stated once: `ColorControl`
+      // re-commits its hex on blur whether or not it moved, so without the
+      // guard opening and closing the picker would mint a document version and
+      // an undo step that change nothing.
+      return backgroundFillsOperation(node, solidHexPaint(hex));
+    }
+
+    // ── §1.6: the Shape Fill row's BRAND half ────────────────────────────────
+    // Its guards are the hex row's exactly; only the paint differs.
+    case "tokenBackgroundColor": {
+      if (text || isGradientGuarded(node.fills)) {
+        return null;
+      }
+      const paint = tokenPaint(palette, value);
+      if (!paint) {
+        return null;
+      }
+      return backgroundFillsOperation(node, paint);
     }
 
     // ── §1.2 row 2: Font family (§2 delta row 3 — the real vocabulary) ───────
@@ -1367,8 +1435,8 @@ function backgroundTarget(scene: Scene, pageId: PageId): Node | null {
 }
 
 /**
- * §1.1 row 2: the fills write both Background rows end in — or `null` when the
- * mapped paint is the one the frame ALREADY carries.
+ * §1.1 row 2 / §1.4 Shape: the fills write every SHAPE-fill row ends in — or
+ * `null` when the mapped paint is the one the node ALREADY carries.
  *
  * A change that changes nothing is not a write. It matters most on a RADIAL
  * gradient: the dummy's fill object always carries an `angle` and
@@ -1376,13 +1444,19 @@ function backgroundTarget(scene: Scene, pageId: PageId): Node | null {
  * change), so every tick of an angle drag maps to a paint identical to the
  * stored one — a document version per tick that changes nothing. The same is
  * true of `ColorControl`, which re-commits its hex on blur whether or not it
- * changed. The scope is this row: the §1.2 rows keep AD3.1's behaviour.
+ * changed.
+ *
+ * It was written for §1.1's two canvas Background rows and takes any NODE, so
+ * AD4.B step 3's node-addressed Fill rows share it whole rather than restating
+ * the paint, the paint-id and the no-change rules a third time — the parameter
+ * is `node` now for that reason (it was `root`). The §1.2 TEXT rows keep
+ * AD3.1's behaviour and stay out of it deliberately.
  */
-function backgroundFillsOperation(root: Node, paint: Paint): Operation | null {
-  if (paintKey(root.fills[0]?.paint) === paintKey(paint)) {
+function backgroundFillsOperation(node: Node, paint: Paint): Operation | null {
+  if (paintKey(node.fills[0]?.paint) === paintKey(paint)) {
     return null;
   }
-  return updateNodeFills(root, [paintFill(root, paint)]);
+  return updateNodeFills(node, [paintFill(node, paint)]);
 }
 
 /**

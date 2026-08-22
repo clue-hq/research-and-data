@@ -22,6 +22,13 @@ import {
   InspectorSelect,
 } from "./inspector-primitives";
 import styles from "./chat-shell.module.css";
+// AD4.B step 3 (§1.6): the ONE colour row every ad picker goes through, and
+// the palette it is offered. It lives in its own module rather than in
+// `image-inspector.tsx` where it was written, because importing from there
+// would be a cycle (that file imports this one) — `AdLayersBinding`'s reason
+// exactly. The provider still wraps the whole panel from `image-inspector.tsx`,
+// so these schemas inherit the palette through context with no new props.
+import { useAdColorRow, useScenePaletteOptions } from "./inspector-color-row";
 
 export const AD_DUMMY_INSPECTOR_SELECTIONS = [
   "auto-layout",
@@ -44,8 +51,10 @@ export function isAdDummyInspectorSelection(
 const STATIC_ZERO = "0";
 // (`STATIC_SIZE` — the scaffolding's invented `100` — left with AD4.B step 1's
 // Layout section: its W/H and fixed-size boxes read the document now, and the
-// same number survives as `DEFAULT_STATE`'s seed for the fixture path.)
-const NO_CHANGE = () => {};
+// same number survives as `DEFAULT_STATE`'s seed for the fixture path.
+// `NO_CHANGE` and `StaticInput` left with step 3: the Shape radii and the
+// Stroke width were the last read-only boxes in this file, and every control
+// outside the Arrange section now commits for real.)
 /** The ad scaffolding's own Pad T/R/B/L values — all `STATIC_ZERO` — for the
  * FIXTURE path only. See `AdDummyInspector`'s `initial` below. */
 const FIXTURE_PADDING = {
@@ -162,29 +171,9 @@ function DummySection({
   );
 }
 
-function StaticInput({
-  ariaLabel,
-  prefix,
-  value = STATIC_ZERO,
-}: {
-  ariaLabel: string;
-  prefix: string;
-  value?: string;
-}) {
-  return (
-    <InspectorInput
-      ariaLabel={ariaLabel}
-      onChange={NO_CHANGE}
-      prefix={prefix}
-      readOnly
-      value={value}
-    />
-  );
-}
-
 // (`StaticSelect` — the one-option, `NO_CHANGE` select — left with AD4.B step
-// 2: the Auto Layout section held every select in this file, and its four are
-// bound now. The remaining static controls are all inputs.)
+// 2: the Auto Layout section held every select in this file, and its four were
+// bound then. `StaticInput` followed with step 3, which bound the last of them.)
 
 /**
  * §1.4 Auto Layout / OQ-2 — the Direction select's two DISPLAY labels.
@@ -297,32 +286,86 @@ function AutoLayoutControls({
   );
 }
 
-function ShapeControls({ radii, ...section }: DummySectionBinding & { radii: boolean }) {
+/**
+ * §1.4 Shape — AD4.B step 3's bound section: the Fill swatch, and the five
+ * radius boxes on the kinds that have corners.
+ *
+ * FILL goes through the panel's ONE colour row (`useAdColorRow`), so this
+ * swatch behaves exactly as the text schema's Color and the canvas schema's
+ * Background do: brand swatches are offered FIRST (they ARE the Theme tab,
+ * which is the tab `ColorControl` opens on), a brand pick writes a TOKEN
+ * (`tokenBackgroundColor`), and a custom hex writes a literal and detaches the
+ * binding — §1.6's ratified, informed trade. `fixtureFallback={false}` (ruling
+ * A23) keeps the dummy's six invented swatches off a live write path.
+ *
+ * A node whose fill is a GRADIENT displays the derivation hydrate already
+ * makes for it (its first stop), and every commit against it is refused at the
+ * adapter — a bare swatch cannot show a gradient, so a solid write would
+ * destroy one the user never saw. The "this leaves your brand palette" note
+ * chrome is Gate G-B and is deliberately NOT invented here.
+ *
+ * RADII render for the rectangle and auto-layout schemas only (the `radii`
+ * prop routes it, and the ellipse schema has a Shape section without them —
+ * §1.4). They are five plain boxes rather than the `RadiusControls` primitive
+ * because that is the markup the co-founder authored for these schemas, and
+ * the dummy is presentation truth. The apply rows they commit through already
+ * exist and carry no kind guard, exactly so these schemas inherit them.
+ */
+function ShapeControls({
+  controller,
+  inert,
+  radii,
+  ...section
+}: DummySectionBinding & {
+  controller: AdInspectorController;
+  inert: boolean;
+  radii: boolean;
+}) {
+  const { setNestedValue, setRadiusAll, setValue, state } = controller;
+  const paletteOptions = useScenePaletteOptions();
+  const fillRow = useAdColorRow({
+    hydratedValue: state.backgroundColor,
+    onHex: (hex) => setValue("backgroundColor", hex),
+    onToken: (label) => setValue("tokenBackgroundColor", label),
+    paletteOptions,
+  });
   return (
     <DummySection label="Shape" {...section}>
       <div className={styles.dummyInspectorStack}>
         <InspectorField label="Fill">
-          <ColorControl none noneAriaLabel="Fill is none" showOpacity={false} />
+          <ColorControl color={fillRow.color} disabled={inert} fixtureFallback={false} onColorChange={fillRow.onColorChange} onTokenChange={fillRow.onTokenChange} options={paletteOptions} showOpacity={false} />
         </InspectorField>
         {radii ? (
           <>
             <InspectorField label="Radius all">
-              <StaticInput ariaLabel="All corner radius" prefix="R" />
+              {/* The controller's own one-event `radius.all` — ONE dispatch
+                  that writes all four corners, never four. `state.radius.all`
+                  is hydrate's uniform value (or "" when the corners differ),
+                  so an empty box is the honest "these corners are not one
+                  radius" rather than a zero the node does not have — which is
+                  also why an empty commit is dropped here instead of
+                  dispatching a value the adapter would refuse anyway. The
+                  `true` says an all-corners commit RESTATES the four corners;
+                  it is read on the fixture path alone (under live hydration
+                  the document answers), where leaving the corner boxes on
+                  their old numbers would have the section stating two
+                  different radii at once. */}
+              <InspectorInput ariaLabel="All corner radius" disabled={inert} onCommitValue={(value) => { if (value.trim() === "") return; setRadiusAll(value, true); }} prefix="R" value={state.radius.all} />
             </InspectorField>
             <div className={styles.dummyInspectorPairGrid}>
               <InspectorField label="Radius TL">
-                <StaticInput ariaLabel="Top left radius" prefix="TL" />
+                <InspectorInput ariaLabel="Top left radius" disabled={inert} onCommitValue={(value) => setNestedValue("radius", "topLeft", value)} prefix="TL" value={state.radius.topLeft} />
               </InspectorField>
               <InspectorField label="Radius TR">
-                <StaticInput ariaLabel="Top right radius" prefix="TR" />
+                <InspectorInput ariaLabel="Top right radius" disabled={inert} onCommitValue={(value) => setNestedValue("radius", "topRight", value)} prefix="TR" value={state.radius.topRight} />
               </InspectorField>
             </div>
             <div className={styles.dummyInspectorPairGrid}>
               <InspectorField label="Radius BR">
-                <StaticInput ariaLabel="Bottom right radius" prefix="BR" />
+                <InspectorInput ariaLabel="Bottom right radius" disabled={inert} onCommitValue={(value) => setNestedValue("radius", "bottomRight", value)} prefix="BR" value={state.radius.bottomRight} />
               </InspectorField>
               <InspectorField label="Radius BL">
-                <StaticInput ariaLabel="Bottom left radius" prefix="BL" />
+                <InspectorInput ariaLabel="Bottom left radius" disabled={inert} onCommitValue={(value) => setNestedValue("radius", "bottomLeft", value)} prefix="BL" value={state.radius.bottomLeft} />
               </InspectorField>
             </div>
           </>
@@ -332,15 +375,44 @@ function ShapeControls({ radii, ...section }: DummySectionBinding & { radii: boo
   );
 }
 
-function StrokeControls(section: DummySectionBinding) {
+/**
+ * §1.4 Stroke — AD4.B step 3's bound section, rendered for every schema except
+ * the group (the scaffolding already omits it there — OQ-6).
+ *
+ * The same colour row again, on the stroke paint, and the same two apply rows
+ * the text and image schemas already use — including RULING A9, which makes
+ * the two fields move TOGETHER: a colour on a strokeless node mints upstream's
+ * default width, a width on a colourless one mints upstream's default colour,
+ * and a width of exactly 0 clears the stroke. Under live hydration both halves
+ * simply read the minted scene back, so the panel never has to mirror a mint.
+ *
+ * `none` is a real hydrated value here (a strokeless node) and names no token,
+ * so it stands as it is — the swatch shows the document's own honest state.
+ */
+function StrokeControls({
+  controller,
+  inert,
+  ...section
+}: DummySectionBinding & {
+  controller: AdInspectorController;
+  inert: boolean;
+}) {
+  const { setValue, state } = controller;
+  const paletteOptions = useScenePaletteOptions();
+  const strokeRow = useAdColorRow({
+    hydratedValue: state.strokeColor,
+    onHex: (hex) => setValue("strokeColor", hex),
+    onToken: (label) => setValue("tokenStrokeColor", label),
+    paletteOptions,
+  });
   return (
     <DummySection label="Stroke" {...section}>
       <div className={styles.dummyInspectorStack}>
         <InspectorField label="Color">
-          <ColorControl none noneAriaLabel="Stroke color is none" showOpacity={false} />
+          <ColorControl color={strokeRow.color} disabled={inert} fixtureFallback={false} onColorChange={strokeRow.onColorChange} onTokenChange={strokeRow.onTokenChange} options={paletteOptions} showOpacity={false} />
         </InspectorField>
         <InspectorField label="Width">
-          <StaticInput ariaLabel="Stroke width" prefix="W" value="1" />
+          <InspectorInput ariaLabel="Stroke width" disabled={inert} onCommitValue={(value) => setValue("strokeWidth", value)} prefix="W" value={state.strokeWidth} />
         </InspectorField>
       </div>
     </DummySection>
@@ -745,11 +817,20 @@ export function AdDummyInspector({
       {selection === "auto-layout" && !suppressAutoLayoutSection ? (
         <AutoLayoutControls controller={controller} inert={inert} {...section("alignment")} />
       ) : null}
+      {/* OQ-6: the GROUP schema renders NEITHER a Shape nor a Stroke section —
+          the scaffolding omits them and step 3 keeps it that way. The adapter
+          still maps both rows for a group (its kind condition is hydrate's, and
+          hydrate states a group's fill and stroke like any other kind); hiding
+          a control is this panel's decision, not the write seam's. */}
       {selection === "auto-layout" || selection === "rectangle" ? (
-        <ShapeControls radii {...section("shape")} />
+        <ShapeControls controller={controller} inert={inert} radii {...section("shape")} />
       ) : null}
-      {selection === "ellipse" ? <ShapeControls radii={false} {...section("shape")} /> : null}
-      {selection !== "group" ? <StrokeControls {...section("stroke")} /> : null}
+      {selection === "ellipse" ? (
+        <ShapeControls controller={controller} inert={inert} radii={false} {...section("shape")} />
+      ) : null}
+      {selection !== "group" ? (
+        <StrokeControls controller={controller} inert={inert} {...section("stroke")} />
+      ) : null}
       <LayoutControls controller={controller} inert={inert} {...section("layout")} />
       <ArrangeControls groupActions={selection === "group"} {...section("arrange")} />
       <LayersControls
