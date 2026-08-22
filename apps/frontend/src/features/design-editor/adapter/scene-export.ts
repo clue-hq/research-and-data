@@ -3,6 +3,7 @@ import {
   IMAGE_EXPORT_SCALES,
   imageExportSupportsScale,
   type ImageExportFormat,
+  type ImageExportPreviewRenderMode,
   type ImageExportScale,
 } from "@/features/chat-shell/model/image-export";
 import type { ExportProfile, Scene } from "../engine/scene/contracts";
@@ -248,24 +249,59 @@ export interface SceneExportPreviewCache {
 }
 
 /**
- * Whether the preview region's `<img>` can actually display this payload.
+ * PORTED, not imported, from the standalone editor's
+ * `subsystems/clue-design/apps/editor/src/components/ExportPreviewSurface.tsx`
+ * (`ArtifactPreview`, lines 64–77): it branches `artifact.format === "pdf"` to
+ * an `<iframe src={data_url}>` and sends every other format to an `<img>`.
+ * Nothing here may import from `subsystems/`, so the branch is mirrored. Same
+ * reason upstream has it: `<img src="data:application/pdf,…">` is a
+ * broken-image glyph in every browser, and a browser's own PDF viewer is what
+ * renders a PDF in a frame.
  *
- * The region renders the export's `data_url` as an image (§1.11), and two of
- * the three formats are images — but the PDF profile's deliverable is a PDF,
- * and `<img src="data:application/pdf,…">` is a broken-image glyph in every
- * browser. That is exactly the defect this lane exists to avoid: the panel
- * showing something that is not true of the artifact.
- *
- * Decided from the payload's OWN declared media type rather than from the
- * requested format, deliberately — the engine, not this file, decides what
- * comes back for a `pdf_intent: "preview"` profile, and this stays correct
- * whichever it is. A payload no `<img>` can render is treated exactly like a
- * pending or a failed one: the designed empty region, and no announcement
- * (ruling R-D14). The export itself still ran and is still cached; the download
- * leg delivers that same PDF as a file perfectly well.
+ * ONE deviation from upstream, deliberate: upstream branches on the ARTIFACT's
+ * declared `format`, this branches on the payload's OWN declared media type.
+ * The engine, not this file, decides what actually comes back for a
+ * `pdf_intent: "preview"` profile, and reading the payload stays correct
+ * whichever it is. It also gives the honest third arm upstream has no need for:
+ * a payload that is neither an image nor a PDF renders NOTHING — treated
+ * exactly like a pending or a failed one, the designed empty region with no
+ * announcement (ruling R-D14) — rather than a broken element. The export still
+ * ran and is still cached either way, and the download leg delivers those same
+ * bytes as a file perfectly well.
  */
-export function isPreviewableDataUrl(dataUrl: string): boolean {
-  return /^data:image\//i.test(dataUrl);
+export function previewRenderMode(dataUrl: string): ImageExportPreviewRenderMode | null {
+  if (/^data:image\//i.test(dataUrl)) {
+    return "img";
+  }
+  if (/^data:application\/pdf[;,]/i.test(dataUrl)) {
+    return "iframe";
+  }
+  return null;
+}
+
+/**
+ * Whether something anchored to a `(document, scene)` pair is still anchored to
+ * the LIVE one — the R-D13 identity comparison, in one place.
+ *
+ * Written once because three separate mechanisms depend on agreeing about it
+ * exactly: the cache lookup, the cache store, and the preview leg's in-flight
+ * registry. If any one of them compared anchors differently the others' safety
+ * would be silently void — an in-flight guard that disagrees with the cache is
+ * how a request for a moved-on scene gets swallowed by an export that is
+ * already destined for the discard path.
+ */
+export function previewAnchorsMatch<
+  Anchored extends { forDocumentId: string; forScene: Scene },
+>(
+  anchored: Anchored | null,
+  documentId: string,
+  scene: Scene,
+): anchored is Anchored {
+  return (
+    anchored !== null &&
+    anchored.forDocumentId === documentId &&
+    anchored.forScene === scene
+  );
 }
 
 /**
@@ -289,7 +325,7 @@ export function previewCacheLookup(
   scene: Scene,
   key: string,
 ): string | null {
-  if (!cache || cache.forDocumentId !== documentId || cache.forScene !== scene) {
+  if (!previewAnchorsMatch(cache, documentId, scene)) {
     return null;
   }
   return cache.entries.get(key) ?? null;
@@ -311,10 +347,7 @@ export function previewCacheStore(
   key: string,
   dataUrl: string,
 ): SceneExportPreviewCache {
-  const carried =
-    cache && cache.forDocumentId === documentId && cache.forScene === scene
-      ? cache.entries
-      : null;
+  const carried = previewAnchorsMatch(cache, documentId, scene) ? cache.entries : null;
   const entries = new Map(carried ?? []);
   entries.set(key, dataUrl);
   return { forDocumentId: documentId, forScene: scene, entries };

@@ -466,7 +466,7 @@ export function ChatSurface({
         artifactTitle={shell.artifactTitle}
         canvasControlsRef={session.canvasControls}
         canvasReloadToken={session.reloadNonce + sceneSession.reloadNonce}
-        exportPreviewDataUrl={sceneSession.exportPreviewDataUrl}
+        exportPreview={sceneSession.exportPreview}
         exportStatus={sceneSession.exportStatus}
         onRequestExportPreview={sceneSession.requestExportPreview}
         onSceneChange={sceneSession.onSceneChange}

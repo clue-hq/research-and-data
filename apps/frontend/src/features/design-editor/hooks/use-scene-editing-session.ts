@@ -493,7 +493,7 @@ export function useSceneEditingSession({
   // scene it reads. The fallback title is `null` — the DETAIL's title is the
   // primary source and the image menu always sends one (the tab's own title,
   // as the header renders it).
-  const { exportPreviewDataUrl, exportStatus, requestExportPreview } = useSceneExport({
+  const { exportPreview, exportStatus, requestExportPreview } = useSceneExport({
     documentId: activeDocumentId,
     pageId,
     scene,
@@ -525,10 +525,11 @@ export function useSceneEditingSession({
     addressing,
     canvasControls,
     /** AD4.D step 3 (§1.11): the render the export menu's designed preview
-     * region shows, or `null` when there is nothing true to show — including
-     * when the document has moved past the scene the render was made from
-     * (ruling R-D13). Stamped and derived like everything else here. */
-    exportPreviewDataUrl,
+     * region shows and the element that hosts it, or `null` when there is
+     * nothing true to show — including when the document has moved past the
+     * scene the render was made from (ruling R-D13). Stamped and derived like
+     * everything else here. */
+    exportPreview,
     /** §1.11: what the last export attempt did — the line the export menu's
      * `aria-live` span announces, over the controller's own optimistic
      * "requested" one. `null` until an export has been asked for FOR THIS

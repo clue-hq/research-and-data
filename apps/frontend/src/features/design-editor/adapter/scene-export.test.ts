@@ -5,11 +5,12 @@ import type { EditorExportResult } from "../engine/scene/exportRunner";
 import { HARVESTED_AD_PAGE } from "./__fixtures__/scene-nodes";
 import {
   exportFilename,
-  isPreviewableDataUrl,
   parseSceneExportRequest,
+  previewAnchorsMatch,
   previewCacheKey,
   previewCacheLookup,
   previewCacheStore,
+  previewRenderMode,
   sceneExportProfile,
   sceneExportResultMessage,
   sceneExportScaleMultiplier,
@@ -465,21 +466,39 @@ it("a second entry under the same anchors joins the first — the key space is 3
   assert.equal(first.entries.size, 1);
 });
 
-// ── AD4.D step 3: what the preview region's <img> can actually display ─────
+// ── AD4.D step 3: how the preview region renders each payload ─────────────
 
-it("a raster and a vector render are both displayable in the preview region", () => {
-  assert.equal(isPreviewableDataUrl("data:image/png;base64,AAA"), true);
-  assert.equal(isPreviewableDataUrl("data:image/svg+xml;base64,AAA"), true);
-  assert.equal(isPreviewableDataUrl("DATA:IMAGE/PNG;base64,AAA"), true);
+it("a raster and a vector render both go in an <img>", () => {
+  assert.equal(previewRenderMode("data:image/png;base64,AAA"), "img");
+  assert.equal(previewRenderMode("data:image/svg+xml;base64,AAA"), "img");
+  assert.equal(previewRenderMode("DATA:IMAGE/PNG;base64,AAA"), "img");
 });
 
-it("a payload no <img> can render is not displayable — the designed empty region beats a broken-image glyph", () => {
-  // The PDF profile's own deliverable, if the engine hands one back: an
-  // `<img src="data:application/pdf,...">` is a broken image in every browser.
-  assert.equal(isPreviewableDataUrl("data:application/pdf;base64,AAA"), false);
-  assert.equal(isPreviewableDataUrl("data:application/octet-stream,AAA"), false);
-  assert.equal(isPreviewableDataUrl("data:text/plain,hello"), false);
+it("a PDF goes in an <iframe>, mirroring the standalone editor's own branch", () => {
+  // `ExportPreviewSurface.tsx:64-71` branches on `format === "pdf"` for exactly
+  // this reason: `<img src="data:application/pdf,...">` is a broken-image glyph.
+  assert.equal(previewRenderMode("data:application/pdf;base64,AAA"), "iframe");
+  assert.equal(previewRenderMode("DATA:APPLICATION/PDF;base64,AAA"), "iframe");
+});
+
+it("anything else renders nothing — the designed empty region beats a broken element", () => {
+  assert.equal(previewRenderMode("data:application/octet-stream,AAA"), null);
+  assert.equal(previewRenderMode("data:text/plain,hello"), null);
   // Not a data URL at all — nothing this lane produces, refused anyway.
-  assert.equal(isPreviewableDataUrl("https://example.com/a.png"), false);
-  assert.equal(isPreviewableDataUrl(""), false);
+  assert.equal(previewRenderMode("https://example.com/a.png"), null);
+  assert.equal(previewRenderMode(""), null);
+});
+
+// ── AD4.D step 3: the shared anchor comparison ────────────────────────────
+
+it("anchors match only for the same document AND the same scene object", () => {
+  const anchored = { forDocumentId: "doc-1", forScene: HARVESTED_AD_PAGE };
+  assert.equal(previewAnchorsMatch(anchored, "doc-1", HARVESTED_AD_PAGE), true);
+  assert.equal(previewAnchorsMatch(anchored, "doc-2", HARVESTED_AD_PAGE), false);
+  // R-D13: a structurally identical relaid scene is a DIFFERENT anchor.
+  assert.equal(previewAnchorsMatch(anchored, "doc-1", RELAID_AD_PAGE), false);
+});
+
+it("nothing anchored matches nothing", () => {
+  assert.equal(previewAnchorsMatch(null, "doc-1", HARVESTED_AD_PAGE), false);
 });

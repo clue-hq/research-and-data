@@ -224,7 +224,7 @@ export function EditorSurface({
         artifacts={artifacts ?? []}
         canvasControlsRef={session.canvasControls}
         canvasReloadToken={session.reloadNonce + sceneSession.reloadNonce}
-        exportPreviewDataUrl={sceneSession.exportPreviewDataUrl}
+        exportPreview={sceneSession.exportPreview}
         exportStatus={sceneSession.exportStatus}
         onRequestExportPreview={sceneSession.requestExportPreview}
         onSceneChange={sceneSession.onSceneChange}

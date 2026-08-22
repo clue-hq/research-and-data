@@ -10,6 +10,7 @@ import {
   IMAGE_EXPORT_SCALES,
   imageExportSupportsScale,
   type ImageExportFormat,
+  type ImageExportPreview,
   type ImageExportScale,
 } from "../model/image-export";
 import styles from "./chat-shell.module.css";
@@ -50,19 +51,20 @@ function ExportChoice<Value extends string>({
 
 export function ImageExportMenu({
   controller,
-  exportPreviewDataUrl,
+  exportPreview,
   exportStatus,
   onRequestExportPreview,
 }: {
   controller: ImageExportControllerState;
-  /** AD4.D step 3 (§1.11): the ad session's render of the CURRENT settings, to
-   * show inside the designed preview region. Already decided upstream — the
-   * session hands this a value only while it is true of the live document, the
-   * live scene and the selected `(format, scale)`, so there is no staleness for
-   * this component to reason about. `null`/absent leaves the designed empty
+  /** AD4.D step 3 (§1.11): the ad session's render of the CURRENT settings and
+   * the element that hosts it. Both decisions are made upstream — the session
+   * hands this a value only while it is true of the live document, the live
+   * scene and the selected `(format, scale)`, and only when one of the two
+   * elements can actually show it — so there is no staleness and no format
+   * sniffing for this component to do. `null`/absent leaves the designed empty
    * region exactly as it renders today, which IS the pending, failed and
    * fixture state (ruling R-D14). */
-  exportPreviewDataUrl?: string | null;
+  exportPreview?: ImageExportPreview | null;
   /** AD4.D step 2: what the ad session's export listener says the request
    * actually DID — in flight, downloaded, or refused in the engine's own
    * words. It outranks the controller's optimistic "…export requested" line,
@@ -111,16 +113,26 @@ export function ImageExportMenu({
             className={styles.imageExportPreview}
             data-export-format={controller.format.toLowerCase()}
           >
-            {/* §1.11: the designed hook hosts the real render. An EMPTY alt —
-                the region itself is already labelled "<format> export preview"
-                above, so an alt would announce the same thing twice. */}
+            {/* §1.11: the designed hook hosts the real render. Two elements,
+                mirroring the standalone editor's own branch
+                (`ExportPreviewSurface.tsx:64-77`): a PDF is shown by the
+                browser's PDF viewer in a frame, everything else is an image.
+                Which one is a prop, never a test on the payload here. */}
             <div data-artifact-export-preview="ad">
-              {exportPreviewDataUrl ? (
-                // A data URL already in memory, not a served asset — there is
-                // nothing for `next/image` to fetch or optimize. The house
-                // suppression, as every other raw `<img>` in this app carries.
+              {exportPreview?.mode === "img" ? (
+                // An EMPTY alt: the region is already labelled "<format> export
+                // preview" above, so an alt would announce the same thing twice.
+                // A data URL already in memory is not a served asset either —
+                // nothing for `next/image` to fetch, hence the house suppression
+                // every other raw `<img>` in this app carries.
                 // eslint-disable-next-line @next/next/no-img-element
-                <img alt="" src={exportPreviewDataUrl} />
+                <img alt="" src={exportPreview.dataUrl} />
+              ) : null}
+              {exportPreview?.mode === "iframe" ? (
+                // A frame is its own document, so unlike the img it needs its
+                // own accessible name — the parent's label does not carry into
+                // it. Upstream titles it the same way.
+                <iframe src={exportPreview.dataUrl} title="Export preview" />
               ) : null}
             </div>
             <span>{controller.format} preview</span>

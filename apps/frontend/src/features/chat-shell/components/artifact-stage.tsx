@@ -4,6 +4,7 @@ import type {
 } from "../model/chat-shell";
 import type {
   ImageExportFormat,
+  ImageExportPreview,
   ImageExportScale,
 } from "../model/image-export";
 import {
@@ -50,7 +51,7 @@ export function ArtifactStage({
   artifactMaximized,
   artifactTitle,
   editing,
-  exportPreviewDataUrl,
+  exportPreview,
   exportStatus,
   onActivateArtifact,
   onCanvasSelect,
@@ -105,9 +106,9 @@ export function ArtifactStage({
   artifactTitle: string;
   editing: boolean;
   /** AD4.D step 3 (§1.11): the ad editing session's render for the export
-   * menu's designed preview region. Absent leaves that region the designed
-   * empty state it is today. */
-  exportPreviewDataUrl?: string | null;
+   * menu's designed preview region, with the element that hosts it. Absent
+   * leaves that region the designed empty state it is today. */
+  exportPreview?: ImageExportPreview | null;
   /** AD4.D step 2 (§1.11): the ad editing session's export outcome, on its way
    * to the export menu's `aria-live` line. Absent leaves the menu announcing
    * its controller's own optimistic line, exactly as it does today. */
@@ -217,7 +218,7 @@ export function ArtifactStage({
         <>
           <ArtifactHeader
             editing={editing}
-            exportPreviewDataUrl={exportPreviewDataUrl}
+            exportPreview={exportPreview}
             exportStatus={exportStatus}
             kind={artifactKind}
             onEdit={onToggleEditing}

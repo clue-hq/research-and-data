@@ -836,11 +836,16 @@
    box and the region would show the ad's top-left corner, cropped by the
    ancestor's `overflow: hidden`. Fitted to the designed box instead, letterboxed
    and centred, so the preview is the whole ad at every format and scale. The
-   AD0.4 `.toolbarMenuScrollable` precedent for a contract-ordered CSS delta. */
-.imageExportPreview > div img {
+   `border: 0` is for the PDF frame, which otherwise draws a second inset border
+   inside the designed one. Both elements in one rule, as the standalone editor
+   sizes its own two (`app/styles.css:1183-1193`). The AD0.4
+   `.toolbarMenuScrollable` precedent for a contract-ordered CSS delta. */
+.imageExportPreview > div img,
+.imageExportPreview > div iframe {
   display: block;
   width: 100%;
   height: 100%;
+  border: 0;
   object-fit: contain;
 }
 

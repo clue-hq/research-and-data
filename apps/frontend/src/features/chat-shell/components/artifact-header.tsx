@@ -12,7 +12,11 @@ import {
 } from "lucide-react";
 import type { KeyboardEvent } from "react";
 import type { ChatShellArtifactKind } from "../model/chat-shell";
-import type { ImageExportFormat, ImageExportScale } from "../model/image-export";
+import type {
+  ImageExportFormat,
+  ImageExportPreview,
+  ImageExportScale,
+} from "../model/image-export";
 import { useArtifactActionMenuController } from "../hooks/use-artifact-action-menu-controller";
 import { useArtifactSharingController } from "../hooks/use-artifact-sharing-controller";
 import { useArtifactTabController } from "../hooks/use-artifact-tab-controller";
@@ -39,7 +43,7 @@ const ZOOM_LEVELS = Array.from({ length: 29 }, (_, index) => `${10 + index * 5}%
 
 export function ArtifactHeader({
   editing,
-  exportPreviewDataUrl,
+  exportPreview,
   exportStatus,
   kind,
   onEdit,
@@ -53,8 +57,9 @@ export function ArtifactHeader({
 }: {
   editing: boolean;
   /** AD4.D step 3: the ad session's render for the export menu's designed
-   * preview region. Absent on every other path. */
-  exportPreviewDataUrl?: string | null;
+   * preview region, with the element that hosts it. Absent on every other
+   * path. */
+  exportPreview?: ImageExportPreview | null;
   /** AD4.D step 2: the ad session's export outcome, for the export menu's
    * `aria-live` line. Absent on every other path. */
   exportStatus?: string | null;
@@ -298,7 +303,7 @@ export function ArtifactHeader({
               <DownloadIcon absoluteStrokeWidth aria-hidden="true" size={13} strokeWidth={1.5} />
               Export
             </button>
-            {imageExportController.menuOpen ? <ImageExportMenu controller={imageExportController} exportPreviewDataUrl={exportPreviewDataUrl} exportStatus={exportStatus} onRequestExportPreview={onRequestExportPreview} /> : null}
+            {imageExportController.menuOpen ? <ImageExportMenu controller={imageExportController} exportPreview={exportPreview} exportStatus={exportStatus} onRequestExportPreview={onRequestExportPreview} /> : null}
           </div>
         ) : (
           <div className={styles.toolbarMenuAnchor} ref={sharingMenuRef}>

@@ -1,14 +1,19 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { ImageExportFormat, ImageExportScale } from "@/features/chat-shell/model/image-export";
+import type {
+  ImageExportFormat,
+  ImageExportPreview,
+  ImageExportScale,
+} from "@/features/chat-shell/model/image-export";
 import {
   exportFilename,
-  isPreviewableDataUrl,
   parseSceneExportRequest,
+  previewAnchorsMatch,
   previewCacheKey,
   previewCacheLookup,
   previewCacheStore,
+  previewRenderMode,
   sceneExportProfile,
   sceneExportResultMessage,
   sceneExportScaleMultiplier,
@@ -156,13 +161,15 @@ export function useSceneExport({
    * moment the user pressed Export. */
   title: string | null;
 }): {
-  /** §1.11: the render to show in the designed preview region, or `null` when
-   * there is nothing TRUE to show — no request yet, one in flight, one that
-   * failed, one whose scene or document the session has since moved past, or
-   * one an `<img>` cannot display. Every one of those is the SAME picture on
-   * screen (the dummy's designed empty region, ruling R-D14), so the menu needs
-   * no way to tell them apart and is deliberately handed none. */
-  exportPreviewDataUrl: string | null;
+  /** §1.11: the render to show in the designed preview region, paired with the
+   * element that hosts it, or `null` when there is nothing TRUE to show — no
+   * request yet, one in flight, one that failed, one whose scene or document the
+   * session has since moved past, or a payload neither element can display.
+   * Every one of those is the SAME picture on screen (the dummy's designed empty
+   * region, ruling R-D14), so the menu needs no way to tell them apart and is
+   * deliberately handed none. The two travel as ONE value so "a URL with no way
+   * to render it" is not a state anything downstream can be handed. */
+  exportPreview: ImageExportPreview | null;
   exportStatus: string | null;
   /** §1.11: show the preview region at these settings — called when it opens
    * and on every format/scale change while it is open. */
@@ -243,21 +250,38 @@ export function useSceneExport({
   // coming), while a request for a DIFFERENT key runs — the user flipping
   // format while a render is outstanding must get the format they flipped to,
   // not silence. Bounded by the key space (3 formats x 4 scales).
-  const previewInFlightRef = useRef<Set<string>>(new Set());
+  //
+  // ANCHORED to the same `(document, scene)` pair as the cache (review finding
+  // 1), and this is load-bearing rather than symmetry for its own sake. Keyed on
+  // `"FORMAT:scale"` alone, the guard swallowed the one request that most needed
+  // to run: with a PNG@2x export in flight against scene S1, a write mirrors up
+  // S2, the user reopens the region — the cache correctly misses, but the guard
+  // saw `"PNG:2"` in flight and returned, so nothing re-requested, while the S1
+  // export it deferred to was already destined for the discard path below. The
+  // region then sat blank with no export pending. An export started against
+  // moved-on anchors can satisfy nobody, so it must not be something a live
+  // request can coalesce onto.
+  const previewInFlightRef = useRef<{
+    forDocumentId: string;
+    forScene: Scene;
+    keys: Set<string>;
+  } | null>(null);
 
   // DERIVED, like every other stamped value here. `null` unless the render is of
   // this document, of the live scene object, AND of the settings the menu is
   // showing — which is what makes "the document moved on" and "the user flipped
   // format" both resolve to the designed empty region rather than to a picture
-  // that is no longer the answer to anything. The last clause is the fourth way
-  // there is nothing true to show: a payload the region's `<img>` cannot render.
-  const exportPreviewDataUrl =
+  // that is no longer the answer to anything. The render MODE is resolved in the
+  // same breath, so the fourth way there is nothing true to show — a payload
+  // neither element can host — lands in the same `null`.
+  const previewMode = preview ? previewRenderMode(preview.dataUrl) : null;
+  const exportPreview =
     preview &&
+    previewMode &&
     preview.forDocumentId === documentId &&
     preview.forScene === scene &&
-    preview.forKey === requestedKey &&
-    isPreviewableDataUrl(preview.dataUrl)
-      ? preview.dataUrl
+    preview.forKey === requestedKey
+      ? { dataUrl: preview.dataUrl, mode: previewMode }
       : null;
 
   const requestExportPreview = useCallback(
@@ -289,7 +313,23 @@ export function useSceneExport({
         });
         return;
       }
-      if (previewInFlightRef.current.has(key)) return;
+      // A GENERATION per anchor pair. When the anchors move, the outstanding
+      // exports keep running (nothing can cancel a fetch already sent) but they
+      // are left behind in the old generation, so they neither block nor are
+      // blocked by requests against the live scene. Each closure below holds a
+      // reference to the generation it registered in, so a doomed export's
+      // `finally` retires its OWN key and can never clear the live generation's
+      // entry for the same key.
+      let inFlight = previewInFlightRef.current;
+      if (!previewAnchorsMatch(inFlight, armedDocumentId, armedScene)) {
+        inFlight = {
+          forDocumentId: armedDocumentId,
+          forScene: armedScene,
+          keys: new Set(),
+        };
+        previewInFlightRef.current = inFlight;
+      }
+      if (inFlight.keys.has(key)) return;
 
       void (async () => {
         // Same shape as the download leg's: raised before the first `await` (an
@@ -297,7 +337,7 @@ export function useSceneExport({
         // same tick still coalesces) and cleared in `finally`, so a throw from
         // `designBffConfig` or `createApiExportRunner` cannot wedge the key
         // permanently un-previewable.
-        previewInFlightRef.current.add(key);
+        inFlight.keys.add(key);
         try {
           const config = designBffConfig();
           const runExport = createApiExportRunner({
@@ -365,7 +405,7 @@ export function useSceneExport({
           }
           report(cause instanceof Error ? cause.message : String(cause));
         } finally {
-          previewInFlightRef.current.delete(key);
+          inFlight.keys.delete(key);
         }
       })();
     },
@@ -482,5 +522,5 @@ export function useSceneExport({
       window.removeEventListener("clue:artifact-export-request", onExportRequest);
   }, [report]);
 
-  return { exportPreviewDataUrl, exportStatus, requestExportPreview };
+  return { exportPreview, exportStatus, requestExportPreview };
 }
