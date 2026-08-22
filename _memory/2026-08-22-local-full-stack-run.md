@@ -80,9 +80,35 @@ self-provisions its own workspace instead and would need a membership row added.
   root (the durability-unit check the runbook asks for).
 - Not verified: an authenticated browser pass (needs the founder's Clerk credentials).
 
+## Fix applied after first browser pass — Accounts "needs support"
+
+The Accounts screen rendered the `contract_error` recovery card ("The Account service returned a
+response this version of Clue cannot safely use", reference `b6bc4ac4…`). Root cause, read off the
+API log rather than guessed: `GET /frontend/v1/accounts?limit=20&page=1` → **404**, because
+`frontend_read_enabled` defaults `False` and the `/frontend/v1` router was therefore never mounted.
+
+The frontend is behaving exactly as designed. `accounts.repository.ts` deliberately passes no
+`recordNotFoundAllowed` ("any 404 here is a misconfiguration and must surface as one"), and
+`accounts-read-result.ts::recoveryForTransportError` maps a 404 — no matching code, not 401/403/
+408/429/5xx — to `contract_error`. A missing router reads as a contract breach, which is right.
+
+**Fix:** appended `CLUE_FRONTEND_READ_ENABLED=true` to the run worktree's `.env` and restarted
+`projections_main`. `/openapi.json` now serves 14 `/frontend/v1` paths (accounts list/detail/
+activity/evidence, contacts, bulk capabilities + actions, health); unauthenticated
+`GET /frontend/v1/accounts` answers **403**, not 404, proving the route exists and enforces auth.
+The target workspace holds 12 `account_entity` rows, so the screen has real data.
+
+Note the contact email-lookup routes mount with this flag but still refuse:
+`CLUE_FRONTEND_CONTACT_EMAIL_LOOKUP_ENABLED` is separate and stays off (slice F).
+
 ## Follow-ups
 
-- Decide whether this session should run `CLUE_PRODUCT_PATH=integration_pilot`.
+- Decide whether this session should run `CLUE_PRODUCT_PATH=integration_pilot`. It sets
+  `frontend_read_enabled` (now set explicitly), Exa account-deep, Sumble committee acquisition,
+  and turns `verification_enabled`/`budget_controls_enabled` **off**. Caution: an explicit `.env`
+  line beats the overlay in both directions, so the supplied file's explicit
+  `CLUE_VERIFICATION_ENABLED=true` would hold verification ON against the pilot posture — those
+  lines must be deleted, not just left alone, to actually get the pilot path.
 - `clue_winnipeg` was created this session as the winnipeg workspace's own database (empty,
   migrated to this branch's head `5d7ab295742b`) and is what this workspace's `.env` points at.
   Keep it for branch-local work, or drop it — the running stack does not use it.
