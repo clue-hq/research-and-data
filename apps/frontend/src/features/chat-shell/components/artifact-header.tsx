@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import type { KeyboardEvent } from "react";
 import type { ChatShellArtifactKind } from "../model/chat-shell";
+import type { ImageExportFormat, ImageExportScale } from "../model/image-export";
 import { useArtifactActionMenuController } from "../hooks/use-artifact-action-menu-controller";
 import { useArtifactSharingController } from "../hooks/use-artifact-sharing-controller";
 import { useArtifactTabController } from "../hooks/use-artifact-tab-controller";
@@ -38,10 +39,12 @@ const ZOOM_LEVELS = Array.from({ length: 29 }, (_, index) => `${10 + index * 5}%
 
 export function ArtifactHeader({
   editing,
+  exportPreviewDataUrl,
   exportStatus,
   kind,
   onEdit,
   onRename,
+  onRequestExportPreview,
   onZoomChange,
   redoDisabled,
   title,
@@ -49,12 +52,21 @@ export function ArtifactHeader({
   zoom,
 }: {
   editing: boolean;
+  /** AD4.D step 3: the ad session's render for the export menu's designed
+   * preview region. Absent on every other path. */
+  exportPreviewDataUrl?: string | null;
   /** AD4.D step 2: the ad session's export outcome, for the export menu's
    * `aria-live` line. Absent on every other path. */
   exportStatus?: string | null;
   kind: ChatShellArtifactKind;
   onEdit: () => void;
   onRename: (title: string) => void;
+  /** AD4.D step 3: the export menu's request for a preview at the settings it
+   * is currently showing. Absent on every other path. */
+  onRequestExportPreview?: (
+    format: ImageExportFormat,
+    scale: ImageExportScale,
+  ) => void;
   /** AD2.8: a zoom the user picked from the menu, reported to the ad editing
    * session — which owns the value and hands it back through `zoom`. The WEB
    * branch below renders the device menu instead and never touches either. */
@@ -286,7 +298,7 @@ export function ArtifactHeader({
               <DownloadIcon absoluteStrokeWidth aria-hidden="true" size={13} strokeWidth={1.5} />
               Export
             </button>
-            {imageExportController.menuOpen ? <ImageExportMenu controller={imageExportController} exportStatus={exportStatus} /> : null}
+            {imageExportController.menuOpen ? <ImageExportMenu controller={imageExportController} exportPreviewDataUrl={exportPreviewDataUrl} exportStatus={exportStatus} onRequestExportPreview={onRequestExportPreview} /> : null}
           </div>
         ) : (
           <div className={styles.toolbarMenuAnchor} ref={sharingMenuRef}>

@@ -493,7 +493,7 @@ export function useSceneEditingSession({
   // scene it reads. The fallback title is `null` — the DETAIL's title is the
   // primary source and the image menu always sends one (the tab's own title,
   // as the header renders it).
-  const { exportStatus } = useSceneExport({
+  const { exportPreviewDataUrl, exportStatus, requestExportPreview } = useSceneExport({
     documentId: activeDocumentId,
     pageId,
     scene,
@@ -524,6 +524,11 @@ export function useSceneEditingSession({
     activeDocumentId,
     addressing,
     canvasControls,
+    /** AD4.D step 3 (§1.11): the render the export menu's designed preview
+     * region shows, or `null` when there is nothing true to show — including
+     * when the document has moved past the scene the render was made from
+     * (ruling R-D13). Stamped and derived like everything else here. */
+    exportPreviewDataUrl,
     /** §1.11: what the last export attempt did — the line the export menu's
      * `aria-live` span announces, over the controller's own optimistic
      * "requested" one. `null` until an export has been asked for FOR THIS
@@ -568,6 +573,10 @@ export function useSceneEditingSession({
      * means the step would do nothing, so the row is not offered. */
     redoDisabled: writes.redoDisabled,
     reloadNonce,
+    /** AD4.D step 3: the preview region, opened or re-pointed at another
+     * `(format, scale)`. Answered from a per-scene cache when it can be, and
+     * with a fresh export when it cannot. */
+    requestExportPreview,
     selectedIds,
     selection,
     /** AD3.3: likewise the Undo row. Both stay disabled until a document has

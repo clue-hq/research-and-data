@@ -1,10 +1,11 @@
 import {
   IMAGE_EXPORT_FORMATS,
   IMAGE_EXPORT_SCALES,
+  imageExportSupportsScale,
   type ImageExportFormat,
   type ImageExportScale,
 } from "@/features/chat-shell/model/image-export";
-import type { ExportProfile } from "../engine/scene/contracts";
+import type { ExportProfile, Scene } from "../engine/scene/contracts";
 import type { EditorExportResult } from "../engine/scene/exportRunner";
 
 /**
@@ -129,6 +130,25 @@ export interface SceneExportRequest {
 const SCALE_MULTIPLIERS = [1, 2, 3, 4] as const;
 
 /**
+ * The menu's scale label as the raster multiplier `sceneExportProfile` takes.
+ *
+ * One function, two callers, deliberately: the download listener reaches it
+ * through `parseSceneExportRequest` (an untrusted event detail) and the preview
+ * leg calls it directly with the menu's own typed value. If the two ever mapped
+ * differently, a preview would be cached under a key whose download rasterizes
+ * at another size — the same picture at two resolutions, silently.
+ *
+ * Anything absent or unrecognized is 1x rather than a refusal: scale is a
+ * PNG-only parameter (`imageExportSupportsScale`), so the two formats that carry
+ * none are the menu's ordinary shape, and `sceneExportProfile` ignores the
+ * argument for them anyway.
+ */
+export function sceneExportScaleMultiplier(scale: unknown): 1 | 2 | 3 | 4 {
+  const index = IMAGE_EXPORT_SCALES.indexOf(scale as ImageExportScale);
+  return index === -1 ? 1 : SCALE_MULTIPLIERS[index];
+}
+
+/**
  * The listener's gate, as a pure decision: `null` means "not this lane's
  * export", and the listener returns silently — the same `clue:artifact-export-request`
  * name is dispatched by the image-export menu
@@ -142,10 +162,9 @@ const SCALE_MULTIPLIERS = [1, 2, 3, 4] as const;
  * with `kind: "ad"` — returns `undefined` at runtime and would be posted to the
  * export endpoint as a profile-shaped hole. Nothing downstream re-checks it.
  *
- * A scale that is absent or unrecognized is 1x rather than a refusal: scale is a
- * PNG-only parameter (`imageExportSupportsScale`), so the two formats that carry
- * none are the menu's ordinary shape, and `sceneExportProfile` ignores the
- * argument for them anyway.
+ * The scale is read by the shared `sceneExportScaleMultiplier`, which is where
+ * the "absent or unrecognized is 1x, not a refusal" reasoning lives — the same
+ * mapping the preview leg uses, so the two can never disagree.
  */
 export function parseSceneExportRequest(detail: unknown): SceneExportRequest | null {
   if (typeof detail !== "object" || detail === null) {
@@ -166,10 +185,9 @@ export function parseSceneExportRequest(detail: unknown): SceneExportRequest | n
   if (!IMAGE_EXPORT_FORMATS.includes(format as ImageExportFormat)) {
     return null;
   }
-  const scaleIndex = IMAGE_EXPORT_SCALES.indexOf(scale as ImageExportScale);
   return {
     format: format as ImageExportFormat,
-    scale: scaleIndex === -1 ? 1 : SCALE_MULTIPLIERS[scaleIndex],
+    scale: sceneExportScaleMultiplier(scale),
     title: typeof title === "string" && title.length > 0 ? title : null,
   };
 }
@@ -195,4 +213,109 @@ export function sceneExportResultMessage(
     return first.message;
   }
   return `${format} export failed`;
+}
+
+/**
+ * AD4.D step 3 (§1.11): the export preview's `(format, scale)` cache, as a
+ * plain value with pure decisions over it.
+ *
+ * ── WHAT MAKES A CACHED RENDER STILL TRUE (ruling R-D13) ────────────────────
+ * The plan says "cache until the document version changes". The cache's anchor
+ * is the session's LIVE SCENE OBJECT IDENTITY, which is the strict proxy for
+ * that: the engine mirrors a NEW scene object up on every accepted write, every
+ * reload and every agent turn, so `cachedScene !== currentScene` is true
+ * whenever the version moved. It is deliberately stricter than a version
+ * comparison — a same-version reload also invalidates, costing one extra export
+ * and never showing a stale picture. The scene is an IDENTITY ANCHOR and is
+ * never inspected; nothing here reads a field off it.
+ *
+ * That strictness is the whole point. This is the AD4.R MVP state model's rule
+ * for React-held state: the accepted engine scene owns document truth, and a
+ * cached preview is operation feedback keyed on that truth. An image of a scene
+ * the document no longer holds must never be served.
+ *
+ * No eviction cap: the key space is 3 formats x 4 scales, and every entry dies
+ * with its scene anyway.
+ */
+export interface SceneExportPreviewCache {
+  /** The document the entries were rendered for. */
+  forDocumentId: string;
+  /** The scene object the entries were rendered from — an identity anchor, read
+   * with `!==` and nothing else. */
+  forScene: Scene;
+  /** `previewCacheKey(...)` → the render's `data_url`. */
+  entries: ReadonlyMap<string, string>;
+}
+
+/**
+ * Whether the preview region's `<img>` can actually display this payload.
+ *
+ * The region renders the export's `data_url` as an image (§1.11), and two of
+ * the three formats are images — but the PDF profile's deliverable is a PDF,
+ * and `<img src="data:application/pdf,…">` is a broken-image glyph in every
+ * browser. That is exactly the defect this lane exists to avoid: the panel
+ * showing something that is not true of the artifact.
+ *
+ * Decided from the payload's OWN declared media type rather than from the
+ * requested format, deliberately — the engine, not this file, decides what
+ * comes back for a `pdf_intent: "preview"` profile, and this stays correct
+ * whichever it is. A payload no `<img>` can render is treated exactly like a
+ * pending or a failed one: the designed empty region, and no announcement
+ * (ruling R-D14). The export itself still ran and is still cached; the download
+ * leg delivers that same PDF as a file perfectly well.
+ */
+export function isPreviewableDataUrl(dataUrl: string): boolean {
+  return /^data:image\//i.test(dataUrl);
+}
+
+/**
+ * The cache key for one preview render.
+ *
+ * SVG and PDF key at scale 1 whatever the menu's scale says, because their
+ * profiles do not vary by scale (`sceneExportProfile` ignores the argument for
+ * them, as D1 pinned) — so flipping 2x→4x while the format is SVG must be a
+ * cache HIT, not a second identical export. The menu keeps its scale selection
+ * across a format flip, so this case is ordinary, not exotic.
+ */
+export function previewCacheKey(format: ImageExportFormat, scale: 1 | 2 | 3 | 4): string {
+  return `${format}:${imageExportSupportsScale(format) ? scale : 1}`;
+}
+
+/** The cached render for `key`, or `null` when there is none that is still true
+ * of this document and this scene. */
+export function previewCacheLookup(
+  cache: SceneExportPreviewCache | null,
+  documentId: string,
+  scene: Scene,
+  key: string,
+): string | null {
+  if (!cache || cache.forDocumentId !== documentId || cache.forScene !== scene) {
+    return null;
+  }
+  return cache.entries.get(key) ?? null;
+}
+
+/**
+ * The cache with `key` → `dataUrl` added.
+ *
+ * When either anchor has moved the whole cache is REPLACED — a fresh entries map
+ * under the new anchors — rather than extended. Keeping the old entries around
+ * "in case the user goes back" would mean holding renders of a superseded scene,
+ * which is precisely the thing that must never be served; and a superseded scene
+ * object is not coming back (the engine mirrors up a new one each time).
+ */
+export function previewCacheStore(
+  cache: SceneExportPreviewCache | null,
+  documentId: string,
+  scene: Scene,
+  key: string,
+  dataUrl: string,
+): SceneExportPreviewCache {
+  const carried =
+    cache && cache.forDocumentId === documentId && cache.forScene === scene
+      ? cache.entries
+      : null;
+  const entries = new Map(carried ?? []);
+  entries.set(key, dataUrl);
+  return { forDocumentId: documentId, forScene: scene, entries };
 }

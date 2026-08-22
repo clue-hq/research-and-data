@@ -1,12 +1,18 @@
 import assert from "node:assert/strict";
 import { it } from "node:test";
-import type { Diagnostic } from "../engine/scene/contracts";
+import type { Diagnostic, Scene } from "../engine/scene/contracts";
 import type { EditorExportResult } from "../engine/scene/exportRunner";
+import { HARVESTED_AD_PAGE } from "./__fixtures__/scene-nodes";
 import {
   exportFilename,
+  isPreviewableDataUrl,
   parseSceneExportRequest,
+  previewCacheKey,
+  previewCacheLookup,
+  previewCacheStore,
   sceneExportProfile,
   sceneExportResultMessage,
+  sceneExportScaleMultiplier,
 } from "./scene-export";
 
 it("§1.11: the PNG profile rasterizes at the requested scale, dpi 96, without embedded fonts", () => {
@@ -266,4 +272,214 @@ it("a failure whose first diagnostic is blank falls back rather than saying noth
     ),
     "PNG export failed",
   );
+});
+
+// ── AD4.D step 3: the scale mapping, shared with the request parse ─────────
+
+it("the menu's scale labels map to the profile's raster multiplier", () => {
+  assert.equal(sceneExportScaleMultiplier("1x"), 1);
+  assert.equal(sceneExportScaleMultiplier("2x"), 2);
+  assert.equal(sceneExportScaleMultiplier("3x"), 3);
+  assert.equal(sceneExportScaleMultiplier("4x"), 4);
+});
+
+it("an absent or unrecognized scale is 1x, exactly as the request parse reads it", () => {
+  assert.equal(sceneExportScaleMultiplier(undefined), 1);
+  assert.equal(sceneExportScaleMultiplier("8x"), 1);
+  assert.equal(sceneExportScaleMultiplier(2), 1);
+  // The preview leg and the download listener must never disagree about what
+  // the menu asked for — same input, same multiplier.
+  assert.equal(
+    sceneExportScaleMultiplier("3x"),
+    parseSceneExportRequest({ format: "PNG", kind: "ad", scale: "3x" })?.scale,
+  );
+});
+
+// ── AD4.D step 3: the (format, scale) preview cache ────────────────────────
+
+/** A SECOND scene value that is structurally identical to the first. The cache
+ * anchors on OBJECT IDENTITY (ruling R-D13) — the engine mirrors a new scene
+ * object up on every accepted write — so this must invalidate even though a
+ * deep comparison would call it the same document. */
+const RELAID_AD_PAGE: Scene = { ...HARVESTED_AD_PAGE };
+
+it("§1.11: PNG preview keys are distinct per scale", () => {
+  const keys = new Set([
+    previewCacheKey("PNG", 1),
+    previewCacheKey("PNG", 2),
+    previewCacheKey("PNG", 3),
+    previewCacheKey("PNG", 4),
+  ]);
+  assert.equal(keys.size, 4);
+});
+
+it("§1.11: SVG and PDF key at scale 1 whatever the scale says — their profiles do not vary by scale, so a scale flip must not re-export", () => {
+  assert.equal(previewCacheKey("SVG", 4), previewCacheKey("SVG", 1));
+  assert.equal(previewCacheKey("PDF", 3), previewCacheKey("PDF", 1));
+  // …and the three formats never collide with each other.
+  assert.notEqual(previewCacheKey("SVG", 1), previewCacheKey("PDF", 1));
+  assert.notEqual(previewCacheKey("SVG", 1), previewCacheKey("PNG", 1));
+});
+
+it("a stored entry is served back for the same document, scene and key", () => {
+  const cache = previewCacheStore(
+    null,
+    "doc-1",
+    HARVESTED_AD_PAGE,
+    previewCacheKey("PNG", 2),
+    "data:image/png;base64,AAA",
+  );
+  assert.equal(
+    previewCacheLookup(cache, "doc-1", HARVESTED_AD_PAGE, previewCacheKey("PNG", 2)),
+    "data:image/png;base64,AAA",
+  );
+});
+
+it("an empty cache serves nothing", () => {
+  assert.equal(
+    previewCacheLookup(null, "doc-1", HARVESTED_AD_PAGE, previewCacheKey("PNG", 1)),
+    null,
+  );
+});
+
+it("another (format, scale) misses rather than serving the wrong render", () => {
+  const cache = previewCacheStore(
+    null,
+    "doc-1",
+    HARVESTED_AD_PAGE,
+    previewCacheKey("PNG", 2),
+    "data:image/png;base64,AAA",
+  );
+  assert.equal(
+    previewCacheLookup(cache, "doc-1", HARVESTED_AD_PAGE, previewCacheKey("PNG", 4)),
+    null,
+  );
+  assert.equal(
+    previewCacheLookup(cache, "doc-1", HARVESTED_AD_PAGE, previewCacheKey("SVG", 2)),
+    null,
+  );
+});
+
+it("R-D13: a new scene object invalidates every entry — the document moved", () => {
+  const cache = previewCacheStore(
+    null,
+    "doc-1",
+    HARVESTED_AD_PAGE,
+    previewCacheKey("PNG", 2),
+    "data:image/png;base64,AAA",
+  );
+  assert.equal(
+    previewCacheLookup(cache, "doc-1", RELAID_AD_PAGE, previewCacheKey("PNG", 2)),
+    null,
+  );
+});
+
+it("another document's cache is never served to this one", () => {
+  const cache = previewCacheStore(
+    null,
+    "doc-1",
+    HARVESTED_AD_PAGE,
+    previewCacheKey("PNG", 2),
+    "data:image/png;base64,AAA",
+  );
+  assert.equal(
+    previewCacheLookup(cache, "doc-2", HARVESTED_AD_PAGE, previewCacheKey("PNG", 2)),
+    null,
+  );
+});
+
+it("storing under a moved scene starts a fresh map rather than accumulating stale renders", () => {
+  const first = previewCacheStore(
+    null,
+    "doc-1",
+    HARVESTED_AD_PAGE,
+    previewCacheKey("PNG", 2),
+    "data:image/png;base64,OLD",
+  );
+  const second = previewCacheStore(
+    first,
+    "doc-1",
+    RELAID_AD_PAGE,
+    previewCacheKey("SVG", 1),
+    "data:image/svg+xml,NEW",
+  );
+  assert.equal(second.entries.size, 1);
+  assert.equal(
+    previewCacheLookup(second, "doc-1", RELAID_AD_PAGE, previewCacheKey("PNG", 2)),
+    null,
+  );
+  assert.equal(
+    previewCacheLookup(second, "doc-1", RELAID_AD_PAGE, previewCacheKey("SVG", 1)),
+    "data:image/svg+xml,NEW",
+  );
+});
+
+it("storing under a moved document starts a fresh map too", () => {
+  const first = previewCacheStore(
+    null,
+    "doc-1",
+    HARVESTED_AD_PAGE,
+    previewCacheKey("PNG", 2),
+    "data:image/png;base64,OLD",
+  );
+  const second = previewCacheStore(
+    first,
+    "doc-2",
+    HARVESTED_AD_PAGE,
+    previewCacheKey("PNG", 2),
+    "data:image/png;base64,NEW",
+  );
+  assert.equal(second.entries.size, 1);
+  assert.equal(second.forDocumentId, "doc-2");
+  assert.equal(
+    previewCacheLookup(second, "doc-2", HARVESTED_AD_PAGE, previewCacheKey("PNG", 2)),
+    "data:image/png;base64,NEW",
+  );
+});
+
+it("a second entry under the same anchors joins the first — the key space is 3 formats x 4 scales, so nothing is evicted", () => {
+  const first = previewCacheStore(
+    null,
+    "doc-1",
+    HARVESTED_AD_PAGE,
+    previewCacheKey("PNG", 2),
+    "data:image/png;base64,TWO",
+  );
+  const second = previewCacheStore(
+    first,
+    "doc-1",
+    HARVESTED_AD_PAGE,
+    previewCacheKey("PNG", 4),
+    "data:image/png;base64,FOUR",
+  );
+  assert.equal(second.entries.size, 2);
+  assert.equal(
+    previewCacheLookup(second, "doc-1", HARVESTED_AD_PAGE, previewCacheKey("PNG", 2)),
+    "data:image/png;base64,TWO",
+  );
+  assert.equal(
+    previewCacheLookup(second, "doc-1", HARVESTED_AD_PAGE, previewCacheKey("PNG", 4)),
+    "data:image/png;base64,FOUR",
+  );
+  // The value handed in is never mutated — a store returns a new cache.
+  assert.equal(first.entries.size, 1);
+});
+
+// ── AD4.D step 3: what the preview region's <img> can actually display ─────
+
+it("a raster and a vector render are both displayable in the preview region", () => {
+  assert.equal(isPreviewableDataUrl("data:image/png;base64,AAA"), true);
+  assert.equal(isPreviewableDataUrl("data:image/svg+xml;base64,AAA"), true);
+  assert.equal(isPreviewableDataUrl("DATA:IMAGE/PNG;base64,AAA"), true);
+});
+
+it("a payload no <img> can render is not displayable — the designed empty region beats a broken-image glyph", () => {
+  // The PDF profile's own deliverable, if the engine hands one back: an
+  // `<img src="data:application/pdf,...">` is a broken image in every browser.
+  assert.equal(isPreviewableDataUrl("data:application/pdf;base64,AAA"), false);
+  assert.equal(isPreviewableDataUrl("data:application/octet-stream,AAA"), false);
+  assert.equal(isPreviewableDataUrl("data:text/plain,hello"), false);
+  // Not a data URL at all — nothing this lane produces, refused anyway.
+  assert.equal(isPreviewableDataUrl("https://example.com/a.png"), false);
+  assert.equal(isPreviewableDataUrl(""), false);
 });

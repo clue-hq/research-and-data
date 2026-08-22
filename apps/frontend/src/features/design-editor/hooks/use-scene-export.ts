@@ -1,11 +1,18 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { ImageExportFormat, ImageExportScale } from "@/features/chat-shell/model/image-export";
 import {
   exportFilename,
+  isPreviewableDataUrl,
   parseSceneExportRequest,
+  previewCacheKey,
+  previewCacheLookup,
+  previewCacheStore,
   sceneExportProfile,
   sceneExportResultMessage,
+  sceneExportScaleMultiplier,
+  type SceneExportPreviewCache,
 } from "../adapter/scene-export";
 import { designBffConfig } from "../data/design-bff";
 import type { PageId, Scene } from "../engine/scene/contracts";
@@ -42,11 +49,25 @@ import { createApiExportRunner } from "../engine/scene/exportRunner";
  * queue's back). This file must never send a `persist_preflight` of its own;
  * the flag is verified there, not duplicated here.
  *
+ * ── AD4.D STEP 3: THE PREVIEW LEG ──────────────────────────────────────────
+ * The menu's collapsible preview region runs the SAME export at the SAME
+ * settings and shows the returned image (§1.11 — the designed hook hosts the
+ * real render). It is a second, independent leg of the same hook rather than a
+ * hook of its own, because it shares every input the download leg reads (the
+ * document, the page, the live scene) and the one status line they both speak
+ * through. What it does NOT share is the single-flight flag: a download in
+ * progress must not swallow a preview request, or opening the region while a
+ * 4x PNG downloads would show nothing and say nothing.
+ *
  * ── WHAT IS STATE HERE, AND WHY IT IS ALLOWED ──────────────────────────────
  * The AD4.R MVP state model: the accepted engine scene owns document truth and
  * React holds only UI facts. `exportStatus` is operation feedback — what the
  * last export attempt did — which is a UI fact and nothing else. It claims
- * nothing about the document, and the export writes nothing to it.
+ * nothing about the document, and the export writes nothing to it. The preview
+ * (and its cache) is the same species: a picture OF a scene, keyed on that
+ * scene's identity, never a source of truth about it. Every one of them is
+ * STAMPED with what produced it and DERIVED against what is live now, so a
+ * render can go stale but can never be mistaken for current.
  */
 
 /**
@@ -134,7 +155,19 @@ export function useSceneExport({
    * menu's shape). The DETAIL's title wins — it is what the tab said at the
    * moment the user pressed Export. */
   title: string | null;
-}): { exportStatus: string | null } {
+}): {
+  /** §1.11: the render to show in the designed preview region, or `null` when
+   * there is nothing TRUE to show — no request yet, one in flight, one that
+   * failed, one whose scene or document the session has since moved past, or
+   * one an `<img>` cannot display. Every one of those is the SAME picture on
+   * screen (the dummy's designed empty region, ruling R-D14), so the menu needs
+   * no way to tell them apart and is deliberately handed none. */
+  exportPreviewDataUrl: string | null;
+  exportStatus: string | null;
+  /** §1.11: show the preview region at these settings — called when it opens
+   * and on every format/scale change while it is open. */
+  requestExportPreview: (format: ImageExportFormat, scale: ImageExportScale) => void;
+} {
   // STAMPED with the document it is about and DERIVED against the current one —
   // the discipline the scene, the selection, the zoom, the history and the
   // palette all follow in `use-scene-editing-session.ts`, and for the same
@@ -166,10 +199,166 @@ export function useSceneExport({
     titleRef.current = title;
   });
 
+  /** One place to write a status, so every message is stamped with the document
+   * it is about. Stamped with the LIVE id rather than the one the operation
+   * armed against: a refusal or an outcome is addressed to whoever is looking
+   * now. Both legs report through it — a preview failure and a download failure
+   * are the same line in the same span (ruling R-D14: the region itself stays
+   * the honest empty state and says nothing on its own). */
+  const report = useCallback((message: string) => {
+    setStatus({ forDocumentId: documentIdRef.current, message });
+  }, []);
+
   // Ruling R-D6: one export at a time, and a second request is REFUSED rather
   // than queued. A ref, not state, because the answer must be true the instant
   // the second event arrives — a re-render later is too late.
   const inFlightRef = useRef(false);
+
+  // ── The preview leg's own state ───────────────────────────────────────────
+  // The render, stamped with everything that has to still be true for it to be
+  // shown: the document, the scene OBJECT (ruling R-D13's identity anchor), and
+  // the `(format, scale)` key it was rendered at.
+  const [preview, setPreview] = useState<{
+    forDocumentId: string;
+    forScene: Scene;
+    forKey: string;
+    dataUrl: string;
+  } | null>(null);
+  // What the menu is asking to see RIGHT NOW, set synchronously by
+  // `requestExportPreview`. Without it, flipping PNG→SVG would keep the PNG on
+  // screen until the SVG came back — an image labelled as a format it is not.
+  const [requestedKey, setRequestedKey] = useState<string | null>(null);
+
+  // Every render this scene has already produced, so reopening the region or
+  // flipping back to a format the user already looked at costs nothing. A ref:
+  // it is read inside the request and is never itself rendered, so writing it
+  // must not schedule one.
+  const previewCacheRef = useRef<SceneExportPreviewCache | null>(null);
+  // Coalescing, not refusal: the keys whose export is in flight. A second
+  // request for the SAME key while it runs is a no-op (the answer is already
+  // coming), while a request for a DIFFERENT key runs — the user flipping
+  // format while a render is outstanding must get the format they flipped to,
+  // not silence. Bounded by the key space (3 formats x 4 scales).
+  const previewInFlightRef = useRef<Set<string>>(new Set());
+
+  // DERIVED, like every other stamped value here. `null` unless the render is of
+  // this document, of the live scene object, AND of the settings the menu is
+  // showing — which is what makes "the document moved on" and "the user flipped
+  // format" both resolve to the designed empty region rather than to a picture
+  // that is no longer the answer to anything. The last clause is the fourth way
+  // there is nothing true to show: a payload the region's `<img>` cannot render.
+  const exportPreviewDataUrl =
+    preview &&
+    preview.forDocumentId === documentId &&
+    preview.forScene === scene &&
+    preview.forKey === requestedKey &&
+    isPreviewableDataUrl(preview.dataUrl)
+      ? preview.dataUrl
+      : null;
+
+  const requestExportPreview = useCallback(
+    (format: ImageExportFormat, scale: ImageExportScale) => {
+      const armedDocumentId = documentIdRef.current;
+      const armedScene = sceneRef.current;
+      const key = previewCacheKey(format, sceneExportScaleMultiplier(scale));
+      // Nothing to render yet. Silent, unlike the download's refusal: the user
+      // pressed nothing — the region opened, or the format changed — so there
+      // is no action to report the outcome of, and the empty region already
+      // says what there is to say.
+      if (!armedDocumentId || !armedScene) return;
+
+      setRequestedKey(key);
+
+      const cached = previewCacheLookup(
+        previewCacheRef.current,
+        armedDocumentId,
+        armedScene,
+        key,
+      );
+      if (cached !== null) {
+        setPreview({
+          forDocumentId: armedDocumentId,
+          forScene: armedScene,
+          forKey: key,
+          dataUrl: cached,
+        });
+        return;
+      }
+      if (previewInFlightRef.current.has(key)) return;
+
+      void (async () => {
+        // Same shape as the download leg's: raised before the first `await` (an
+        // async body runs synchronously to there, so a duplicate request in the
+        // same tick still coalesces) and cleared in `finally`, so a throw from
+        // `designBffConfig` or `createApiExportRunner` cannot wedge the key
+        // permanently un-previewable.
+        previewInFlightRef.current.add(key);
+        try {
+          const config = designBffConfig();
+          const runExport = createApiExportRunner({
+            apiBaseUrl: config.apiBaseUrl,
+            documentId: armedDocumentId,
+            fetchImpl: config.fetchImpl,
+          });
+          const result = await runExport({
+            scene: armedScene,
+            profile: sceneExportProfile(format, sceneExportScaleMultiplier(scale)),
+            pageIds: pageIdRef.current ? [pageIdRef.current] : [],
+            documentId: armedDocumentId,
+          });
+          // Post-await revalidation, and it is the whole reason this leg is safe:
+          // an export takes seconds, in which the user can switch artifacts and
+          // the agent or the inspector can commit a write that mirrors up a NEW
+          // scene. A render of a scene the document no longer holds is not shown
+          // and — the part that matters — not CACHED either, or it would be
+          // served again later under an anchor it was never true of.
+          if (
+            documentIdRef.current !== armedDocumentId ||
+            sceneRef.current !== armedScene
+          ) {
+            return;
+          }
+          if (result.status !== "ok") {
+            report(sceneExportResultMessage(format, result));
+            return;
+          }
+          // §1.11 exports ONE artboard, so `artifacts[0]` is the deliverable.
+          const dataUrl = result.artifacts[0]?.data_url ?? null;
+          if (!dataUrl) {
+            report(`${format} export returned no file`);
+            return;
+          }
+          previewCacheRef.current = previewCacheStore(
+            previewCacheRef.current,
+            armedDocumentId,
+            armedScene,
+            key,
+            dataUrl,
+          );
+          // Stored and stamped even if the menu has since moved to another
+          // format: the render is true of its own key, so it is worth keeping,
+          // and the derivation above is what decides whether it is on screen.
+          setPreview({
+            forDocumentId: armedDocumentId,
+            forScene: armedScene,
+            forKey: key,
+            dataUrl,
+          });
+        } catch (cause) {
+          if (
+            documentIdRef.current !== armedDocumentId ||
+            sceneRef.current !== armedScene
+          ) {
+            return;
+          }
+          report(cause instanceof Error ? cause.message : String(cause));
+        } finally {
+          previewInFlightRef.current.delete(key);
+        }
+      })();
+    },
+    [report],
+  );
 
   // ARMED UNCONDITIONALLY, and deliberately not on `documentId` (review fix,
   // finding 1). Arming on it made the "No document to export" refusal below
@@ -180,13 +369,11 @@ export function useSceneExport({
   // is precisely what R-D7 exists to prevent. Every live value already rides a
   // ref, so there is nothing for the effect to depend on: it arms once per
   // mount and the guards inside answer for whatever state the session is in.
+  // (`report` is the one name in the dependency list, and it is a
+  // `useCallback([])` — permanently the same function, so this is still an
+  // arms-once effect. It was hoisted out of the body at step 3 so the preview
+  // leg speaks through the same stamped status line.)
   useEffect(() => {
-    /** One place to write a status, so every message is stamped with the
-     * document it is about. Stamped with the LIVE id rather than the armed one:
-     * a refusal or an outcome is addressed to whoever is looking now. */
-    const report = (message: string) =>
-      setStatus({ forDocumentId: documentIdRef.current, message });
-
     const onExportRequest = (event: Event) => {
       const request = parseSceneExportRequest((event as CustomEvent).detail);
       // Not this lane's export (another artifact kind, the sharing menu's ZIP).
@@ -281,7 +468,7 @@ export function useSceneExport({
     window.addEventListener("clue:artifact-export-request", onExportRequest);
     return () =>
       window.removeEventListener("clue:artifact-export-request", onExportRequest);
-  }, []);
+  }, [report]);
 
-  return { exportStatus };
+  return { exportPreviewDataUrl, exportStatus, requestExportPreview };
 }
