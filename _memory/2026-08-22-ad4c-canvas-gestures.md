@@ -176,7 +176,9 @@ nodes are unaffected (origin (0,0)).
 **The close-out note above was wrong** to call F9 "invisible on the harvested
 ad". `frame_ad_root` is at the page origin, but `group_proof` is a GROUP — not
 layout-managed — so `text_proof_stat`/`ellipse_proof_dot` are directly editable
-today and take the generic branch under a parent solved at ~(116, 112). That is
+today and take the generic branch under a parent whose true computed origin is
+~page (780, 149) (headline-first row; live-verified parent-relative (708, 77) via the
+freeze bake — the tests inject a representative simpler origin, stated as such). That is
 the founder's repro exactly. Root CLAUDE.md's F9 bullet is corrected and marked
 resolved for the platform copy.
 

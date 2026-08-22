@@ -807,11 +807,15 @@ describe("snap guides (visualization)", () => {
  * The harvested ad's proof-point group with solved geometry injected. Every
  * fixture node ships `computed: null` (the honest at-rest state — the engine
  * never persists geometry back onto a stored scene), so any test that reads
- * solved positions injects it. The numbers are the real solve: the copy row
- * sits at (72, 72) with 44/40 padding, putting `group_proof` at (116, 112),
- * and each child's page box is its parent-relative transform plus that
- * origin — `text_proof_stat` (44, 24) -> (160, 136), `ellipse_proof_dot`
- * (0, 40) -> (116, 152).
+ * solved positions injects it. The injected origin is REPRESENTATIVE, not the
+ * engine's true solve: the row's stack layout places the 632-wide headline
+ * (plus gap 32) before the group, so the real engine puts `group_proof` at
+ * ~page (780, 149) — live-verified via the freeze bake, parent-relative
+ * (708, 77). This fixture injects the simpler non-zero origin (116, 112) —
+ * row (72, 72) + 44/40 padding, as if the group came first — which exercises
+ * the same rebase arithmetic: each child's page box is its parent-relative
+ * transform plus that origin — `text_proof_stat` (44, 24) -> (160, 136),
+ * `ellipse_proof_dot` (0, 40) -> (116, 152).
  */
 function nestedGroupScene(): Scene {
   const scene = JSON.parse(JSON.stringify(HARVESTED_AD_PAGE)) as Scene;
