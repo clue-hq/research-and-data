@@ -2,6 +2,11 @@ import type {
   ChatShellArtifactKind,
   ChatShellOpenArtifact,
 } from "../model/chat-shell";
+import type {
+  ImageExportFormat,
+  ImageExportPreview,
+  ImageExportScale,
+} from "../model/image-export";
 import {
   WebArtifactCanvas,
   type WebArtifactCanvasControls,
@@ -50,8 +55,11 @@ export function ArtifactStage({
   artifactMaximized,
   artifactTitle,
   editing,
+  exportPreview,
+  exportStatus,
   onActivateArtifact,
   onCanvasSelect,
+  onRequestExportPreview,
   onRichTextCommit,
   onRichTextSessionChange,
   richTextBusy,
@@ -104,7 +112,21 @@ export function ArtifactStage({
   artifactMaximized: boolean;
   artifactTitle: string;
   editing: boolean;
+  /** AD4.D step 3 (§1.11): the ad editing session's render for the export
+   * menu's designed preview region, with the element that hosts it. Absent
+   * leaves that region the designed empty state it is today. */
+  exportPreview?: ImageExportPreview | null;
+  /** AD4.D step 2 (§1.11): the ad editing session's export outcome, on its way
+   * to the export menu's `aria-live` line. Absent leaves the menu announcing
+   * its controller's own optimistic line, exactly as it does today. */
+  exportStatus?: string | null;
   onActivateArtifact: (artifactId: string) => void;
+  /** AD4.D step 3: the export menu asking the ad session to render the settings
+   * it is showing. Absent keeps the menu's preview effect inert. */
+  onRequestExportPreview?: (
+    format: ImageExportFormat,
+    scale: ImageExportScale,
+  ) => void;
   /** W2.2: nonce-validated selection events from the web canvas bridge. */
   onCanvasSelect?: (selection: WebSelection | null) => void;
   /** W4.8a: a text node's in-iframe rich-text session committed. */
@@ -218,9 +240,12 @@ export function ArtifactStage({
         <>
           <ArtifactHeader
             editing={editing}
+            exportPreview={exportPreview}
+            exportStatus={exportStatus}
             kind={artifactKind}
             onEdit={onToggleEditing}
             onRename={onRenameArtifact}
+            onRequestExportPreview={onRequestExportPreview}
             onZoomChange={onSceneZoomChange}
             redoDisabled={redoDisabled}
             title={artifactTitle}

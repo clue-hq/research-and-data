@@ -24,6 +24,7 @@ import { collectKitFontFaceRefs } from "../engine/scene/kitFonts";
 import { fetchFontLibrary } from "../engine/scene/libraryFonts";
 import { useSceneArrange } from "./use-scene-arrange";
 import type { SceneDocumentHistory } from "./use-scene-document";
+import { useSceneExport } from "./use-scene-export";
 import { useSceneImageAi } from "./use-scene-image-ai";
 import { useSceneInspectorWrites } from "./use-scene-inspector-writes";
 import { useSceneReplaceImage } from "./use-scene-replace-image";
@@ -515,6 +516,25 @@ export function useSceneEditingSession({
   // otherwise, and keeps the absent-binding path the dummy's own.)
   const arrange = activeDocumentId && scene ? arrangeBinding : undefined;
 
+  // AD4.D step 2 (§1.11): the export menu's request, answered. It sits beside
+  // the write hooks rather than inside them because an export is a READ (ruling
+  // R-D3): it goes to its own endpoint with `persist_preflight: false`, takes no
+  // `applyOps` and no lock, and so shares nothing with the write path but the
+  // scene it reads. The fallback title is `null` — the DETAIL's title is the
+  // primary source and the image menu always sends one (the tab's own title,
+  // as the header renders it).
+  const { exportPreview, exportStatus, requestExportPreview } = useSceneExport({
+    // R-D19: an export reads the server's PERSISTED copy, so it has to wait for
+    // this document's optimistic writes to land or it renders the pre-edit
+    // document. Same drain a history step takes, for the same reason — the
+    // write controller owns the queue, so it owns the answer.
+    awaitWritesSettled: writes.awaitWritesSettled,
+    documentId: activeDocumentId,
+    pageId,
+    scene,
+    title: null,
+  });
+
   // W3.1's triple, ad-side. `documentVersion` stays NULL here, permanently and
   // deliberately (AD3.2 ruling): the edit queue owns `base_version` internally
   // (`editQueue.ts:110-113,152`), so a copy stamped on an inspector event would
@@ -543,6 +563,19 @@ export function useSceneEditingSession({
      * takes, which is what keeps the buttons inert on the fixture path. */
     arrange,
     canvasControls,
+    /** AD4.D step 3 (§1.11): the render the export menu's designed preview
+     * region shows and the element that hosts it, or `null` when there is
+     * nothing true to show — including when the document has moved past the
+     * scene the render was made from (ruling R-D13). Stamped and derived like
+     * everything else here. */
+    exportPreview,
+    /** §1.11: what the last export attempt did — the line the export menu's
+     * `aria-live` span announces, over the controller's own optimistic
+     * "requested" one. `null` until an export has been asked for FOR THIS
+     * document — it is stamped and derived like everything else here, so
+     * switching artifacts never inherits the previous ad's outcome. Operation
+     * feedback only, never a claim about the document. */
+    exportStatus,
     fontOptions,
     hydrated,
     /** §1.3 row 2: the inspector's AI image suite — what the four flows are
@@ -580,6 +613,10 @@ export function useSceneEditingSession({
      * means the step would do nothing, so the row is not offered. */
     redoDisabled: writes.redoDisabled,
     reloadNonce,
+    /** AD4.D step 3: the preview region, opened or re-pointed at another
+     * `(format, scale)`. Answered from a per-scene cache when it can be, and
+     * with a fresh export when it cannot. */
+    requestExportPreview,
     selectedIds,
     selection,
     /** AD3.3: likewise the Undo row. Both stay disabled until a document has

@@ -143,6 +143,17 @@ export interface SceneManualEdits {
    * server's own words; nothing new is invented for it.
    */
   applyEdit: (edit: StructuredEdit) => void;
+  /**
+   * AD4.D final review (ruling R-D19): resolves once this document's queued
+   * write batches have been persisted.
+   *
+   * For readers of the SERVER's copy of the document, which this lane's
+   * optimistic local scene deliberately runs ahead of. The export legs are the
+   * first such reader outside this file; `runHistory` performs the same drain
+   * inline as a second WRITER. The wait is bounded and cannot hang on a halted
+   * queue — the proof is at the implementation.
+   */
+  awaitWritesSettled: (documentId: string) => Promise<void>;
   /** AD3.3: one server history step. No-op while another step is in flight and
    * when no document is armed; the result arrives as a reload. */
   undo: () => void;
@@ -491,6 +502,52 @@ export function useSceneManualEdits(
   );
 
   /**
+   * AD4.D final review (ruling R-D19): resolve once this document's queued
+   * write batches have been processed — the same drain `runHistory` does below,
+   * offered to the OTHER second reader of the persisted document, the export
+   * legs.
+   *
+   * Why they need it: this lane is optimistic. `applyOperations` mirrors the
+   * accepted scene up synchronously while the queue persists on a chained
+   * promise, and `createApiExportRunner` given a documentId does not send a
+   * scene — the server renders its PERSISTED copy. So for one round trip after
+   * every edit, an export renders the pre-edit document. Waiting is ordering,
+   * not blocking, exactly as it is for a history step.
+   *
+   * ── WHY THIS WAIT IS BOUNDED (the halt trap) ───────────────────────────────
+   * The queue HALTS on any rejection until `resync()`, so "wait for the queue"
+   * has to be proven not to wait forever. It cannot:
+   *  1. Every `enqueueOperations` attaches its own `.catch()` to the chain
+   *     (`editQueue.ts:86-94`), which absorbs the rejection into a
+   *     `request_failed` reconcile event and RESOLVES. A `!response.ok` returns
+   *     normally after halting. So `this.chain` always settles FULFILLED, and
+   *     `idle()` is `chain.then(...)`.
+   *  2. Once halted, `enqueueOperations` returns before touching the chain
+   *     (`editQueue.ts:80-82`), so a halted queue cannot grow a new tail.
+   *  3. `idle()` captures the chain AT CALL TIME, so batches queued while we
+   *     wait cannot extend our wait — continuous typing cannot starve it.
+   * The queue's own suite proves 1 for both failure kinds: its "recovers the
+   * server scene when a batch is rejected" and "reports request failures and
+   * stops persisting" cases both `await queue.idle()` and would hang otherwise.
+   * The residual bound is therefore ONE in-flight batch's HTTP round trip —
+   * the same exposure the export's own fetch already carries. No timeout is
+   * layered on top deliberately: a timeout would resume mid-persist and
+   * re-open the very race this closes.
+   */
+  const awaitWritesSettled = useCallback(async (forDocumentId: string): Promise<void> => {
+    const pending = queueRef.current;
+    // A queue for another document says nothing about this one's persistence,
+    // and no queue at all means nothing was ever written — both are quiescent.
+    if (!pending || pending.documentId !== forDocumentId) {
+      return;
+    }
+    // Belt-and-braces, mirroring `runHistory`'s `drained.catch`: the chain
+    // swallows its own errors today, and a failure to persist must not also
+    // block the read.
+    await pending.queue.idle().catch(() => undefined);
+  }, []);
+
+  /**
    * AD3.3: one server-side DOCUMENT STEP — a history step, or (AD4.B step 4) a
    * structured edit. Lifted from the website lane's `runHistory`
    * (`use-web-manual-edits.ts:170-199`) with this lane's two additions, and
@@ -646,6 +703,9 @@ export function useSceneManualEdits(
   return {
     applyEdit,
     applyOps,
+    /** R-D19: resolves when this document's queued writes have been persisted —
+     * what a reader of the SERVER's copy (the export legs) must wait for. */
+    awaitWritesSettled,
     busy,
     canApply,
     clearMessages,

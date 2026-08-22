@@ -830,6 +830,25 @@
   background: rgb(255 255 255 / 72%);
 }
 
+/* AD4.D step 3, contract §1.11 ("the designed hook hosts the real render"):
+   the export arrives at the ARTBOARD's pixel size — 1200x1200 for a LinkedIn
+   square, doubled again at 2x — so bare it would render at 1:1 inside a ~128px
+   box and the region would show the ad's top-left corner, cropped by the
+   ancestor's `overflow: hidden`. Fitted to the designed box instead, letterboxed
+   and centred, so the preview is the whole ad at every format and scale. The
+   `border: 0` is for the PDF frame, which otherwise draws a second inset border
+   inside the designed one. Both elements in one rule, as the standalone editor
+   sizes its own two (`app/styles.css:1183-1193`). The AD0.4
+   `.toolbarMenuScrollable` precedent for a contract-ordered CSS delta. */
+.imageExportPreview > div img,
+.imageExportPreview > div iframe {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  object-fit: contain;
+}
+
 .imageExportPreview > span {
   position: relative;
   z-index: 1;
