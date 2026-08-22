@@ -814,7 +814,10 @@ disabled-treatment gate."
 > `/tmp/ad4r-gh-locked-{today,proposed}.png`), **and the scope extends beyond locked nodes**:
 > *"we cannot let humans change any value when the agents are at work with designing."* While an
 > agent turn is actively running on the thread, the human's inspector must be disabled — prevention
-> at the source, not CAS cleanup after.
+> at the source, not CAS cleanup after. **Clarified by the founder same day:** the human keeps
+> DIRECTING the agent mid-turn — chat stays fully live; only *operations through the inspector
+> controls* are blocked (write controls, the lock, uploads, the AI suite). Navigation — selection,
+> layer expand/collapse, section toggles, zoom — stays enabled: those are reads, not operations.
 >
 > **Scope ruling (controller, from the scout):** the gate is a design **turn in flight**, NOT "leg
 > open" — a leg stays open across turns, and interleaved manual edits *between* turns are the
