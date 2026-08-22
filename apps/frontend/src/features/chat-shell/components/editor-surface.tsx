@@ -179,22 +179,12 @@ export function EditorSurface({
               wrapper, same class, same grid column. Only the panel differs. */}
           <div className={styles.inspectorDock}>
             <ImageInspector
-              // Keyed on the SELECTED NODE, exactly as the web branch is:
-              // hydration is initial-state-only by design (the controller reads
-              // `hydrated` in a lazy initializer), so a new selection must
-              // remount. Never keyed on a version/write token — that was the
-              // founder-observed defect on the web lane, and AD3.2 writes
-              // deliberately do NOT bump the nonce.
-              //
-              // `inspectorGeneration` IS in the key: it advances only when a
-              // reloaded document has ARRIVED (a CAS conflict, later an agent
-              // turn). Without it the D10 note says "Document moved on —
-              // reloaded." while the field the user just typed into still shows
-              // the value the server refused — the note contradicting the panel
-              // beside it. Keying on the reload NONCE does not work: it advances
-              // when the reload is REQUESTED, so the remount re-reads the
-              // optimistic scene that is still on screen (browser-proven).
-              key={`${sceneSession.primaryNodeId ?? "canvas"}:${sceneSession.inspectorGeneration}`}
+              // Keyed on the SELECTED NODE only, exactly as the web branch is.
+              // Values need no remount to resynchronize — every bound field
+              // derives from live hydrated state (AD4.R); remounting resets UI
+              // facts (open sections, drafts), which is right exactly when the
+              // selection changes.
+              key={sceneSession.primaryNodeId ?? "canvas"}
               addressing={sceneSession.addressing}
               error={sceneSession.inspectorError}
               fontOptions={sceneSession.fontOptions}

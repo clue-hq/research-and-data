@@ -45,14 +45,21 @@ import type { AssetRecord, Node, Operation, Scene } from "../engine/scene/contra
  * the picture they already have, and the Before/After review is the point.
  *
  * WHY THE STATE LIVES HERE RATHER THAN IN THE PANEL. The inspector is remounted
- * per selection AND whenever a reloaded document arrives (`key={nodeId}:
- * {inspectorGeneration}`), so a candidate held in the component would be thrown
- * away by a CAS conflict landing mid-review — a paid model call silently
- * discarded, which is the fourth discipline exactly. Held here it survives the
- * reload; it is STAMPED with the document and node it was made from, so a
- * selection change hides it instead (and `accept` refuses outright), which is
- * the rule that matters most in this slice: a candidate must never be accepted
- * onto a different node than the one it was made from.
+ * per selection (`key={nodeId}`), so a candidate held in the component would be
+ * thrown away by any panel lifecycle event — a paid model call silently
+ * discarded, which is the fourth discipline exactly. A result someone paid for
+ * must outlive the panel showing it. Held here it does; it is STAMPED with the
+ * document and node it was made from, so a selection change hides it instead
+ * (and `accept` refuses outright), which is the rule that matters most in this
+ * slice: a candidate must never be accepted onto a different node than the one
+ * it was made from.
+ *
+ * AD4.R-8: reload-remounts are gone. The panel used to remount whenever a
+ * reloaded document arrived too, so a CAS conflict landing mid-review was the
+ * sharp edge this hook was written against; now every bound field derives from
+ * live hydrated state and a reload remounts nothing. The reasoning above is
+ * unchanged and the hazard is strictly smaller — a mid-review reload no longer
+ * disturbs the candidate at all.
  *
  * REFUSALS RESOLVE, they do not reject — the one deliberate divergence from the
  * upload hook, whose rejection is what puts `InspectorImageUpload`'s local

@@ -104,16 +104,9 @@ export function useSceneEditingSession({
   // a design-agent turn) bumps it and the canvas refetches into the same
   // mounted surface — no keyed remount, no flash.
   const [reloadNonce, setReloadNonce] = useState(0);
-  // AD3.2 review: a reload is REQUESTED here but only ARRIVES one fetch later,
-  // and the inspector must re-read its fields from the scene that arrives —
-  // never from the optimistic one still on screen when the request went out.
-  // See `inspectorGeneration` below.
-  const reloadPendingRef = useRef(false);
-  const [inspectorGeneration, setInspectorGeneration] = useState(0);
-  const onWriteReload = useCallback(() => {
-    reloadPendingRef.current = true;
-    setReloadNonce((nonce) => nonce + 1);
-  }, []);
+  // AD4.R: a reloaded scene reaches the panel by derivation — the fields read
+  // live hydrated state — so no remount escort is needed.
+  const onWriteReload = useCallback(() => setReloadNonce((nonce) => nonce + 1), []);
 
   const canvasControls = useRef<SceneCanvasControls | null>(null);
 
@@ -125,15 +118,6 @@ export function useSceneEditingSession({
   const onSceneChange = useCallback(
     (scene: Scene | null, pageId: PageId | null, documentId: string) => {
       setLoaded(scene ? { forDocumentId: documentId, pageId, scene } : null);
-      // The authoritative scene a requested reload was waiting for has landed:
-      // bump the generation the inspector is keyed on, so its fields re-read
-      // the document instead of keeping what the user typed. Only here, and
-      // only once per reload — a successful write must NOT remount the panel
-      // (that was the founder-observed defect on the web lane).
-      if (scene && reloadPendingRef.current) {
-        reloadPendingRef.current = false;
-        setInspectorGeneration((generation) => generation + 1);
-      }
     },
     [],
   );
@@ -525,19 +509,6 @@ export function useSceneEditingSession({
      * document is actually loaded, which is what keeps the rows off the
      * pre-load and fixture paths. */
     imageAi,
-    /**
-     * AD3.2 review: what the inspector's remount key carries beside the node
-     * id. It advances ONLY when a reloaded document has actually arrived (the
-     * `onSceneChange` above), which is exactly when the panel's fields must
-     * stop showing what the user typed and start showing what the server has.
-     *
-     * Not the reload NONCE: that advances when the reload is requested, and a
-     * remount then re-reads the optimistic scene still on screen — proven in
-     * the browser, where a refused edit kept its value beside a note saying the
-     * document had reloaded. And not a write token: remounting on every write
-     * is the founder-observed defect the web lane's key comment names.
-     */
-    inspectorGeneration,
     /** One inline slot, write errors only — the rich-text and link-href rungs
      * the website lane resolves above them have no ad equivalent (an ad has no
      * in-canvas text session and no hrefs), so the controller's error IS the
