@@ -15,7 +15,11 @@ import type {
   SceneDocumentHistory,
   SceneEngineStatus,
 } from "@/features/design-editor/hooks/use-scene-document";
-import type { PageId, Scene } from "@/features/design-editor/engine/scene/contracts";
+import type {
+  Operation,
+  PageId,
+  Scene,
+} from "@/features/design-editor/engine/scene/contracts";
 import type { WebSelection } from "@/features/design-editor/engine/webBridge";
 import type {
   RichTextDocument,
@@ -63,9 +67,11 @@ export function ArtifactStage({
   onSceneFitZoom,
   onSceneHistoryChange,
   onSceneGestureZoom,
+  onSceneOperations,
   onSceneSelect,
   onSceneZoomChange,
   sceneCanvasControlsRef,
+  sceneGestureDisabled,
   sceneSelectedNodeId,
   sceneZoomLabel,
   sceneZoomOverride,
@@ -139,6 +145,10 @@ export function ArtifactStage({
    * a pinch it is the only one of the three that is true. Null when the canvas
    * falls back to the derived viewport. */
   onSceneGestureZoom?: (zoom: string | null) => void;
+  /** AD4.C / Ruling C-3: a committed canvas gesture's operations, on their way
+   * to the ad session's own `applyOps` — the SAME write path the inspector
+   * commits through, so a drag lands as one atomic batch and one undo frame. */
+  onSceneOperations?: (operations: Operation[], intent?: string) => boolean;
   /** AD2.7: a press on the ad canvas resolved to the node it selects (§5's
    * nearest representable ancestor), or null for a press on nothing. */
   onSceneSelect?: (nodeId: string | null) => void;
@@ -147,6 +157,11 @@ export function ArtifactStage({
   /** AD2.3: receives the mounted ad canvas's imperative controls (hit-testing
    * for AD2.5's selection, refresh, and the rendered scene). */
   sceneCanvasControlsRef?: RefObject<SceneCanvasControls | null>;
+  /** AD4.C / GATE G-H: an agent turn is in flight, so on-canvas drag and
+   * resize are off and the corner handles are not drawn. Selection stays live.
+   * Passed by the chats route only — the artifact route has no turn stream to
+   * read (the same posture as `inspectorDisabled` there). */
+  sceneGestureDisabled?: boolean;
   /** AD2.7: the session's primary selection, back down to the canvas. */
   sceneSelectedNodeId?: string | null;
   /**
@@ -239,10 +254,12 @@ export function ArtifactStage({
                 <SceneArtifactCanvas
                   controlsRef={sceneCanvasControlsRef}
                   documentId={activeDocumentId}
+                  gestureDisabled={sceneGestureDisabled}
                   onEngineStatusChange={onSceneEngineStatusChange}
                   onFitZoom={onSceneFitZoom}
                   onGestureZoom={onSceneGestureZoom}
                   onHistoryChange={onSceneHistoryChange}
+                  onOperations={onSceneOperations}
                   onSceneChange={onSceneChange}
                   onSelect={onSceneSelect}
                   reloadToken={canvasReloadToken}

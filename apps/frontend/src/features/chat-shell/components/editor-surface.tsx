@@ -228,9 +228,19 @@ export function EditorSurface({
         onSceneFitZoom={sceneSession.onFitZoom}
         onSceneGestureZoom={sceneSession.onGestureZoom}
         onSceneHistoryChange={sceneSession.onHistoryChange}
+        // AD4.C / Ruling C-3: committed canvas gestures ride the session's own
+        // `applyOps`, the same write path this route's inspector uses.
+        onSceneOperations={sceneSession.writes.applyOps}
         onSceneSelect={sceneSession.onSelectCanvas}
         onSceneZoomChange={sceneSession.onZoomChange}
         sceneCanvasControlsRef={sceneSession.canvasControls}
+        // AD4.C / GATE G-H: `sceneGestureDisabled` is deliberately NOT passed
+        // here, for exactly the reason `inspectorDisabled` is not (above) — the
+        // ruled in-flight gate reads the chat controller's `threadBusy`, and
+        // this route has no live turn stream to read. Its net stays the D10 CAS
+        // reconciliation, and the recorded follow-up (a document-scoped
+        // agent-busy signal off the run_event SSE) would close this gap and
+        // that one together.
         sceneSelectedNodeId={sceneSession.primaryNodeId}
         sceneZoomLabel={sceneSession.zoom}
         sceneZoomOverride={sceneSession.zoomOverride}
