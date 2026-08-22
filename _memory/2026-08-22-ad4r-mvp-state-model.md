@@ -25,14 +25,15 @@ drafts.**
    pure module `inspector-field-draft.ts`.
 4. `70d0668a` + `57b7f621` — all four ad controller instances flip to live hydration (fixture path
    stays mount-mode); refused writes can no longer stick anywhere `state.*` is read directly.
-5. `db3a486c` — canvas schema: the Custom-W/H committed/draft/seen triple, the preset re-seed and
+5. `db3a486c` — canvas schema: the Custom-W/H committed/draft pair, the preset re-seed and
    `customSizeForPreset` deleted; "Custom" survives as the one honest UI-only view choice
    (`customChosen`).
 6. `4d8af158` — `useAdColorRow.shown`, the stroke mint display mirrors and the local `strokeWidth`
    deleted; Font size / Stroke width / Position X/Y / Rotation move to commit-on-blur/Enter.
 7. `82a36279` + `b702d293` — the alt-text committed/draft/seen triple deleted; `RadiusControls`'
-   scene lane re-based on live values with per-field drafts (web lane byte-identical apart from one
-   commented TS-narrowing line); 8 source-text ruling guards rewritten to pin the new mechanism
+   scene lane re-based on live values with per-field drafts (web lane BEHAVIORALLY identical — its
+   functions untouched apart from one commented TS-narrowing line, though the shared render sites
+   gained the scene/web ternary); 8 source-text ruling guards rewritten to pin the new mechanism
    (rewrite-never-delete; adapter halves + web-lane assertions untouched; mutation-tested).
 8. `e74265da` — `inspectorGeneration` + `reloadPendingRef` retired; BOTH mounts (artifact route +
    chats route) key the inspector on the node id alone (contract §4's strongest form).

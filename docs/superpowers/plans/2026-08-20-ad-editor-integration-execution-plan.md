@@ -672,7 +672,10 @@ Lane discipline: AD4.0 lands on the branch first; lanes A–D then run in parall
 > `inspectorGeneration` remount is retired on BOTH mounts. **Binding rules for
 > Lanes B–E:** bind every new row as `value={state.x}` + dispatch-only commit
 > (never a local copy, never a post-commit mirror, never a mount-seeded
-> snapshot); typed fields use `onCommitValue`; UI-only view choices (the
+> snapshot), **and hydrate must state that key for every selection the schema
+> serves** — under live derivation a key hydrate omits is frozen at the mount
+> seed, so an accepted write to it would be invisible (the old defect class,
+> mirrored); typed fields use `onCommitValue`; UI-only view choices (the
 > canvas schema's "Custom" preset selection) are the only legitimate
 > schema-local state. The A26/A27/A28/A31-style mirror patterns are RETIRED —
 > do not reintroduce them in new rows; the source-text guards in

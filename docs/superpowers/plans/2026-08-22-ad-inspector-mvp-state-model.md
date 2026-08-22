@@ -66,7 +66,7 @@ Why this is flicker-free on the ad lane and NOT automatically portable to the we
 
 | Ruling / mechanism | Where it lives today | What replaces it |
 |---|---|---|
-| A27 — dirty check against a `committed` snapshot | `RadiusControls` (`inspector-primitives.tsx:611-641`), alt text (`image-inspector.tsx:921-971`), Custom W/H (`image-inspector.tsx:534-572`) | Compare the draft against the **live document value** (`values`/`state` prop, now live) — `fieldCommit` in Task 3 |
+| A27 — dirty check against a `committed` snapshot | `RadiusControls` (`inspector-primitives.tsx:611-641`), alt text (`image-inspector.tsx:921-971`), Custom W/H (`image-inspector.tsx:534-572`) | Compare the draft against the **live document value** (`values`/`state` prop, now live) — `fieldCommit` in Task 3. *(Scene lane only: `RadiusControls`' WEB branch keeps its committed snapshot until the web lane's own migration.)* |
 | A26/A28 — post-commit restate mirrors (`restate`, `uniformRadius` re-derive) | `RadiusControls` scene branch | Deleted; hydrate already derives `all`, and the live values prop re-states everything in the same batch |
 | A29's *recording* half — "a locked commit records nothing" | `RadiusControls.commitAll`, `commitAltText` | Structural: nothing records anything anymore. The `locked` guard survives only to skip a doomed dispatch |
 | A15.2's display-commit re-seeds + `useAdColorRow.shown` | `image-inspector.tsx:136-171,595-612` | Display derives from live `hydrated`; the pure `backgroundFillCommits` decision stays as the write chooser |
@@ -75,7 +75,7 @@ Why this is flicker-free on the ad lane and NOT automatically portable to the we
 | The alt-text `committed/draft/seen` triple | `image-inspector.tsx:947-971` | The self-drafting input over live `state.altText` |
 | A31 — refused-typed-text retention + canonical restate (`radiusCommitText` in the corner commit) *(row added at T7, per its review)* | `RadiusControls` scene branch | Deleted; a refused commit clears the draft and the display reverts to the live document value (this plan's field-behavior table); `radiusCommitText` survives adapter/test-side only |
 | FIX 2 — the Fill preview's `hydrated?.imagePreviewSrc ?? state.imagePreviewSrc` out-ranking *(row added at T7)* | `image-inspector.tsx` | Collapsed to `src={state.imagePreviewSrc}` — live composition makes the two arms identical (hydrate omits absent keys), so the guarantee is structural |
-| `inspectorGeneration` + `reloadPendingRef` remount-on-reload-arrival | `use-scene-editing-session.ts:106-139`, `editor-surface.tsx:181-197` | Live derivation — a reloaded scene changes `hydrated`, and every unfocused field re-reads it with no remount |
+| `inspectorGeneration` + `reloadPendingRef` remount-on-reload-arrival | `use-scene-editing-session.ts:106-139`, `editor-surface.tsx:181-197`, **and the chats-route twin at `chat-surface.tsx:347`** (found at T8's grep gate) | Live derivation — a reloaded scene changes `hydrated`, and every unfocused field re-reads it with no remount; both mounts moved together |
 
 ### Disclosed behavior change (founder-RATIFIED 2026-08-22)
 
@@ -108,7 +108,9 @@ docs/superpowers/plans/2026-08-20-ad-editor-integration-execution-plan.md   MODI
 _memory/2026-08-22-ad4r-mvp-state-model.md               CREATE  T9
 ```
 
-Deliberately **not** touched: `web-inspector.tsx`, `use-web-editing-session.ts`, `use-inspector-writes.ts` (web lane), `scene-apply.ts` (the write adapter is correct and is the other half of the §1 contract), `use-scene-inspector-writes.ts`, `use-scene-manual-edits.ts`, `use-scene-image-ai.ts`, `use-scene-replace-image.ts`, everything under `engine/scene/**`.
+**File-map amendments recorded at execution** (each ruled mid-task; the ledger and `_memory` close-out carry the rulings): `chat-surface.tsx` MODIFY T8 (the chats-route twin mount, missing from this map — plan defect #2); `scene-apply.test.ts` / `scene-image-ai.test.ts` / `scene-hydrate.test.ts` MODIFY T7 (8 source-text ruling guards rewritten to pin the live-derivation mechanism — plan defect #1; "no direct tests" below was wrong); `use-scene-image-ai.ts` MODIFY T8 (comment-only: its remount-premise doc block).
+
+Deliberately **not** touched: `web-inspector.tsx`, `use-web-editing-session.ts`, `use-inspector-writes.ts` (web lane), `scene-apply.ts` (the write adapter is correct and is the other half of the §1 contract), `use-scene-inspector-writes.ts`, `use-scene-manual-edits.ts`, `use-scene-replace-image.ts`, everything under `engine/scene/**`.
 
 ---
 
