@@ -457,6 +457,69 @@ it("§1.5 · L19 enablement: FREEHAND children of a Free container are commit-re
   assert.ok(alignNodesOperations(free, [...pair], "left").length > 0);
 });
 
+it("§1.5 · L19 REVIVAL (C-9 panel parity): a FREEZE gives the row's children back their align and distribute", () => {
+  // L19 disabled these buttons honestly: pre-freeze, `auto_row_copy`'s children
+  // are solver-managed, the commit can express nothing for them, and a live
+  // Align button would be the dishonest enablement §1.5 forbids.
+  //
+  // C-9 (founder) changes the INPUT rather than the gate: a human geometry
+  // commit — a canvas grab (Lane C) or now a panel row (this slice) — freezes
+  // the document's layout first, and `build_freeze_layout` sets the container's
+  // `layout_mode` to "free" while preserving every other layout member verbatim
+  // (`editing.rs:1968-1976`). That is exactly the one-field derived fixture the
+  // FREEHAND case above builds. So the very capability L19 disabled comes back
+  // on its own, with no change to L19's rule: the members really are
+  // commit-reachable now.
+  const pair = ["text_headline", "group_proof"];
+  assert.equal(arrangeEnablement(SCENE, pair).align, false);
+
+  const stack = SCENE.nodes.auto_row_copy!;
+  let frozen = withNodeField("auto_row_copy", "layout", {
+    ...stack.layout!,
+    layout_mode: "free",
+  });
+  // A third member for the distribute floor, moved into the row the way the
+  // Layers tree would: `rect_accent_bar` leaves the plain frame and joins the
+  // container, so all three are children of the SAME frozen container. (The
+  // sole-child case above sets `children` the same way.)
+  frozen = withNodeField(
+    "auto_row_copy",
+    "children",
+    ["text_headline", "group_proof", "rect_accent_bar"],
+    frozen,
+  );
+  frozen = withNodeField(
+    AD_ROOT_FRAME_ID,
+    "children",
+    ["auto_row_copy", "line_divider", "image_hero"],
+    frozen,
+  );
+  // Uneven on both axes, so align-left and distribute-vertical each have a
+  // node to move and an empty batch could only mean an unreachable commit.
+  frozen = withGeometry(frozen, {
+    auto_row_copy: boxed(0, 0, 400, 300),
+    group_proof: boxed(60, 140),
+    rect_accent_bar: boxed(30, 230),
+    text_headline: boxed(20, 40),
+  });
+
+  // Two members: align comes back, distribute still waits for its own floor.
+  assert.equal(arrangeEnablement(frozen, pair).align, true);
+  assert.equal(arrangeEnablement(frozen, pair).distribute, false);
+
+  // Three: both. The engine's gate and L19's reachability conjunction agree.
+  const trio = [...pair, "rect_accent_bar"];
+  assert.equal(canAlignNodes(frozen, trio), true);
+  assert.equal(canDistributeNodes(frozen, trio), true);
+  assert.equal(arrangeEnablement(frozen, trio).align, true);
+  assert.equal(arrangeEnablement(frozen, trio).distribute, true);
+
+  // Enabled means the batch is non-empty — the L19 defect was enablement that
+  // could commit nothing, so the revival has to prove the commit, not the flag.
+  assert.ok(alignNodesOperations(frozen, [...trio], "left").length > 0);
+  assert.ok(distributeNodesOperations(frozen, [...trio], "vertical").length > 0);
+});
+
 it("§1.5 enablement: a LOCKED member refuses align and distribute for the whole set", () => {
   // Pinned, so reachability is not what is doing the refusing here — the lock
   // is (the engine's `isNodeDirectGeometryEditable` refuses a locked node).

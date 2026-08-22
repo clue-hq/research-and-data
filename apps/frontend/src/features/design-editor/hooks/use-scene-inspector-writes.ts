@@ -5,11 +5,14 @@ import {
   sceneCanvasChangeToOperation,
   sceneChangeToOperation,
 } from "../adapter/scene-apply";
+import { freezeOperationsToPersist } from "../adapter/scene-gestures";
 import { rootFrameId } from "../adapter/scene-hydrate";
 import type { ScenePalette } from "../adapter/scene-palette";
+import { panelWriteIntent } from "../adapter/scene-panel-freeze";
 import type { SceneCanvasControls } from "../components/scene-artifact-canvas";
-import type { PageId, Scene } from "../engine/scene/contracts";
+import type { Node, PageId, Scene } from "../engine/scene/contracts";
 import { getPage } from "../engine/scene/sceneQueries";
+import { freezeLayoutEdit } from "../engine/scene/structuredEdits";
 import {
   useSceneManualEdits,
   type SceneManualEdits,
@@ -249,6 +252,11 @@ export function useSceneInspectorWrites({
   const controlsRef = useRef(canvasControls);
   const pageIdRef = useRef(pageId);
   const paletteRef = useRef(palette);
+  // C-9 panel parity: the persist-ONLY seam, for the freeze the panel fires.
+  // It is `applyOps` minus the apply, because `applyStructuredEdit` has already
+  // applied the freeze to the engine — routing its batch through `applyOps`
+  // would apply it twice.
+  const persistAppliedOpsRef = useRef(edits.persistAppliedOps);
   const primaryNodeIdRef = useRef(primaryNodeId);
   const sceneRef = useRef(scene);
   useEffect(() => {
@@ -257,6 +265,7 @@ export function useSceneInspectorWrites({
     controlsRef.current = canvasControls;
     pageIdRef.current = pageId;
     paletteRef.current = palette;
+    persistAppliedOpsRef.current = edits.persistAppliedOps;
     primaryNodeIdRef.current = primaryNodeId;
     sceneRef.current = scene;
   });
@@ -320,15 +329,71 @@ export function useSceneInspectorWrites({
       // Armed: a mounted canvas to apply through. (`applyOps` re-checks both
       // this and the document id — it is the one write path and cannot depend
       // on a caller having gated first.)
-      if (!controlsRef.current.current) return;
+      const controls = controlsRef.current.current;
+      if (!controls) return;
+
+      // ── C-9 (founder): the PANEL's half of freeze-on-grab ────────────────
+      // A human editing a node is never refused by auto-layout. Lane C gave
+      // the canvas that physics; this gives it to a geometry row typed in the
+      // panel. `panelWriteIntent` is the whole decision (and asks the CANVAS's
+      // own `isNodeFreezableOnGesture`, never a second opinion); the sequence
+      // below is the canvas host's `freezeLayoutForPress`, mirrored exactly.
+      //
+      // DISCLOSED BEHAVIOUR CHANGE, by the founder's own words for this slice:
+      // Width/Height on a managed child are not refused today (Ruling L12) —
+      // they write, and the solver re-flows the siblings. After this, the
+      // freeze lands first and nothing but the edited node moves.
+      //
+      // `"refuse"` (a geometry row on a LOCKED node) deliberately falls
+      // through to the ordinary path rather than returning here: that path
+      // already refuses it at `scene-apply.ts:667` and stays the single
+      // authority on what writes. The only thing this branch changes is
+      // whether a freeze fires first.
+      const intent = panelWriteIntent(live, detail.selectionId, detail.property);
+      let writeNode: Node = node;
+      let writeScene: Scene = live;
+      if (intent === "freeze-then-write") {
+        const outcome = controls.applyStructuredEdit(freezeLayoutEdit());
+        const frozen = freezeOperationsToPersist(outcome);
+        if (outcome && frozen.length > 0) {
+          // Persist WITHOUT re-applying, and seed the queue's divergence check
+          // from `outcome.scene` — the POST-freeze scene the engine returned,
+          // never `sceneRef.current`, which is still the pre-freeze one inside
+          // this same tick (the ref is written in a PASSIVE effect, so React
+          // has not re-rendered yet). Persisted whether or not THIS node was
+          // freed: the operations are already in the engine, and whatever they
+          // freed must reach the server or the two diverge on the next drain.
+          persistAppliedOpsRef.current(frozen, outcome.scene);
+        }
+        const post = outcome?.scene ?? null;
+        // Ask the NODE on the post-freeze scene, never the size of the batch
+        // (`build_freeze_layout` skips LOCKED containers while still freeing
+        // every other Stack, so a non-empty batch does not mean this node was
+        // freed — the c81cd209 rule). A node still solver-owned here is the
+        // locked-container case: refuse honestly rather than write nothing.
+        if (!post) return;
+        const freed = panelWriteIntent(post, detail.selectionId, detail.property);
+        if (freed !== "write") return;
+        const frozenNode = post.nodes[detail.selectionId];
+        if (!frozenNode) return;
+        // The operation MUST be rebuilt from the post-freeze node: the freeze
+        // BAKES each managed child's transform to its solved parent-relative
+        // offset (`editing.rs:1888-1938`), and both `positionOperation` and the
+        // rotation arm spread `node.transform`. Rebuilding from the pre-freeze
+        // node — whose stored transform is (0,0) on the harvested ad while its
+        // true offset is ~(708,77) — would teleport the untouched axis.
+        writeNode = frozenNode;
+        writeScene = post;
+      }
+
       const operation = sceneChangeToOperation(
         {
           property: detail.property,
           selectionId: detail.selectionId,
           value: detail.value,
         },
-        node,
-        live,
+        writeNode,
+        writeScene,
         paletteRef.current,
       );
       // The AD3.1 null contract: an unmapped property, an unparseable value or
