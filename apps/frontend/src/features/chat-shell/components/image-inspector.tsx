@@ -253,20 +253,32 @@ function ArrangeControls({
     ["Align bottom", "align-bottom", "bottom"],
   ] as const satisfies readonly (readonly [string, InspectorIconName, AlignMode])[];
 
+  // The G-H-approved disabled treatment (`.inspectorControlDisabled`, the
+  // sheet's own 0.45) reused verbatim — no rule is authored here. WHICH ELEMENT
+  // WEARS IT is the whole decision: the panel-level `disabled` dims the GRID
+  // (its frame is part of the same statement, and every button inside is off
+  // anyway — the T10 behaviour, unchanged); a button that only THIS SELECTION
+  // cannot use wears it alone. The two are mutually exclusive by construction,
+  // so they can never stack into an opacity nobody authored.
+  const dim = (off: boolean) =>
+    off && !disabled ? styles.inspectorControlDisabled : "";
+
   return (
     <>
       <InspectorField label="Layer">
         <div className={`${styles.inspectorActionGrid} ${styles.inspectorActionGridFour} ${disabled ? styles.inspectorControlDisabled : ""}`}>
-          {layerActions.map(([label, icon, action]) => (
-            <button aria-label={label} disabled={disabled || (arrange ? !arrange.enablement.zOrder[action] : false)} key={label} onClick={() => (arrange ? arrange.zOrder(action) : onAction(label))} type="button"><InspectorIcon name={icon} size={12} /></button>
-          ))}
+          {layerActions.map(([label, icon, action]) => {
+            const off = disabled || (arrange ? !arrange.enablement.zOrder[action] : false);
+            return <button aria-label={label} className={dim(off)} disabled={off} key={label} onClick={() => (arrange ? arrange.zOrder(action) : onAction(label))} type="button"><InspectorIcon name={icon} size={12} /></button>;
+          })}
         </div>
       </InspectorField>
       <InspectorField label="Alignment">
         <div className={`${styles.inspectorActionGrid} ${styles.inspectorActionGridSix} ${disabled ? styles.inspectorControlDisabled : ""}`}>
-          {alignmentActions.map(([label, icon, mode]) => (
-            <button aria-label={label} disabled={disabled || (arrange ? !arrange.enablement.align : false)} key={label} onClick={() => (arrange ? arrange.align(mode) : onAction(label))} type="button"><InspectorIcon name={icon} size={12} /></button>
-          ))}
+          {alignmentActions.map(([label, icon, mode]) => {
+            const off = disabled || (arrange ? !arrange.enablement.align : false);
+            return <button aria-label={label} className={dim(off)} disabled={off} key={label} onClick={() => (arrange ? arrange.align(mode) : onAction(label))} type="button"><InspectorIcon name={icon} size={12} /></button>;
+          })}
         </div>
       </InspectorField>
     </>

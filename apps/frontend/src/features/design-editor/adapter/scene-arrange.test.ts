@@ -377,13 +377,33 @@ it("§1.5 enablement: ungroup is a SINGLE unlocked container", () => {
     canUngroupNode(SCENE, "group_proof"),
   );
   assert.equal(arrangeEnablement(SCENE, ["auto_row_copy"]).ungroup, true);
-  assert.equal(arrangeEnablement(SCENE, [AD_ROOT_FRAME_ID]).ungroup, true);
   // A leaf is not a container.
   assert.equal(arrangeEnablement(SCENE, ["rect_accent_bar"]).ungroup, false);
   assert.equal(arrangeEnablement(SCENE, ["text_headline"]).ungroup, false);
   // Two selected containers are not "a single container".
   assert.equal(
     arrangeEnablement(SCENE, ["group_proof", "auto_row_copy"]).ungroup,
+    false,
+  );
+});
+
+it("§1.5 enablement: the page's ROOT FRAME refuses ungroup (dissolving the artboard)", () => {
+  // The engine's own gate says yes — the artboard IS a container — so this
+  // refusal is ours, and it has to exist: ⇧⌘G on a selected artboard would
+  // DISSOLVE it, scattering its children across the page and leaving a document
+  // with no frame. The panel cannot reach it (the artboard renders the canvas
+  // schema), but the keyboard reaches every schema.
+  assert.equal(canUngroupNode(SCENE, AD_ROOT_FRAME_ID), true);
+  assert.equal(arrangeEnablement(SCENE, [AD_ROOT_FRAME_ID]).ungroup, false);
+  // …and the refusal is about THE ARTBOARD, not about page-parented containers
+  // as a class: a second top-level container still ungroups. (Same control the
+  // z-order root-frame case uses, so the two verbs cannot drift apart.)
+  const twoPageChildren = clone(SCENE);
+  twoPageChildren.pages[AD_PAGE_ID]!.children = [AD_ROOT_FRAME_ID, "group_proof"];
+  twoPageChildren.nodes.auto_row_copy!.children = ["text_headline"];
+  assert.equal(arrangeEnablement(twoPageChildren, ["group_proof"]).ungroup, true);
+  assert.equal(
+    arrangeEnablement(twoPageChildren, [AD_ROOT_FRAME_ID]).ungroup,
     false,
   );
 });

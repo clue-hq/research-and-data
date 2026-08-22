@@ -593,6 +593,13 @@ const GROUP_ACTIONS = [
  * `onAction` ABSENT is the fixture/dummy path: the buttons render exactly as
  * they shipped — no handler, and `enabled` left saying yes, so nothing dims on
  * a panel that was never going to write.
+ *
+ * A disabled button also SAYS SO: it wears the G-H-approved
+ * `.inspectorControlDisabled` (the sheet's own 0.45), the same treatment every
+ * other disabled inspector control already carries — reused, never re-authored.
+ * This grid paints nothing of its own (its buttons carry the border and fill),
+ * so the modifier rides each button rather than the wrapper, exactly as the
+ * layer rows' lock/visibility buttons already do.
  */
 function DummyIconButtons<Action extends string>({
   actions,
@@ -612,17 +619,21 @@ function DummyIconButtons<Action extends string>({
       className={styles.dummyInspectorActionGrid}
       style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}
     >
-      {actions.map(([label, icon, action]) => (
-        <button
-          aria-label={label}
-          disabled={inert || !enabled(action)}
-          key={label}
-          onClick={onAction ? () => onAction(action) : undefined}
-          type="button"
-        >
-          <InspectorIcon name={icon} size={14} />
-        </button>
-      ))}
+      {actions.map(([label, icon, action]) => {
+        const off = inert || !enabled(action);
+        return (
+          <button
+            aria-label={label}
+            className={off ? styles.inspectorControlDisabled : ""}
+            disabled={off}
+            key={label}
+            onClick={onAction ? () => onAction(action) : undefined}
+            type="button"
+          >
+            <InspectorIcon name={icon} size={14} />
+          </button>
+        );
+      })}
     </div>
   );
 }

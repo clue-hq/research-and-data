@@ -68,7 +68,8 @@ export interface ArrangeEnablement {
   /** `canGroupNodes`: 2+ unlocked, unique, same-parent, non-solver-managed. */
   group: boolean;
   /** A SINGLE selected id that `canUngroupNode` accepts (an unlocked
-   * container). Two containers are not "a single container". */
+   * container), EXCEPT the page's own root frame. Two containers are not "a
+   * single container". */
   ungroup: boolean;
 }
 
@@ -79,6 +80,23 @@ const NOTHING: ArrangeEnablement = {
   ungroup: false,
   zOrder: { back: false, backward: false, forward: false, front: false },
 };
+
+/**
+ * Is this node the page's own root frame — the artboard?
+ *
+ * The artboard is not a layer: §5 gives the page exactly one root frame, and
+ * every structural verb the Arrange section offers is meaningless (z-order) or
+ * destructive (ungroup — it would DISSOLVE the artboard into the page, leaving
+ * a page of loose nodes) when aimed at it. The check is the page's OWN root
+ * frame rather than "parented by a page", so a hypothetical second top-level
+ * node — which this document does not have today — is still a normal layer.
+ *
+ * ONE predicate for both refusals deliberately: z-order and ungroup were
+ * disagreeing about the artboard, and a shared statement cannot drift.
+ */
+function isPageRootFrame(scene: Scene, nodeId: NodeId, parent: ParentRef): boolean {
+  return parent.kind === "page" && rootFrameId(scene, parent.id) === nodeId;
+}
 
 /** Where a z-order step would put the node: its own parent, and the insertion
  * index in the post-detach sibling list. `null` is the whole refusal set — an
@@ -98,15 +116,9 @@ function zOrderTarget(
   if (!parentInfo) {
     return null;
   }
-  // The artboard is not a layer in anyone's stack: §5 gives the page exactly
-  // one root frame, and reordering it against its own page means nothing. The
-  // check is the page's OWN root frame (not "parented by a page"), so a second
-  // top-level node — which this document does not have today — would still
-  // reorder normally.
-  if (
-    parentInfo.parent.kind === "page" &&
-    rootFrameId(scene, parentInfo.parent.id) === nodeId
-  ) {
+  // The artboard is not a layer in anyone's stack: reordering it against its
+  // own page means nothing.
+  if (isPageRootFrame(scene, nodeId, parentInfo.parent)) {
     return null;
   }
   const { index, siblings } = parentInfo;
@@ -145,6 +157,32 @@ export function zOrderOperation(
 }
 
 /**
+ * Ungroup: exactly one id, `canUngroupNode` accepts it, and it is NOT the
+ * page's root frame.
+ *
+ * The engine's gate answers "is this a container?", which the artboard truly
+ * is — so on its own it says yes, and ⇧⌘G on a selected artboard would dissolve
+ * it, scattering its children across the page and leaving the document with no
+ * frame. The panel cannot reach that state (the artboard renders the canvas
+ * schema), but the keyboard can, and the refusal belongs where every consumer
+ * inherits it rather than in one caller.
+ *
+ * An unresolvable parent refuses too: we cannot prove such a node is not the
+ * artboard, and fail-closed is the posture the z-order side already takes.
+ */
+function ungroupEnabled(scene: Scene, ids: readonly string[]): boolean {
+  if (ids.length !== 1) {
+    return false;
+  }
+  const id = ids[0]!;
+  if (!canUngroupNode(scene, id)) {
+    return false;
+  }
+  const parentInfo = parentInfoForNode(scene, id);
+  return parentInfo !== null && !isPageRootFrame(scene, id, parentInfo.parent);
+}
+
+/**
  * What the Arrange section may offer for this selection.
  *
  * `scene` is nullable because the session's is: before a document loads there
@@ -164,7 +202,7 @@ export function arrangeEnablement(
     align: canAlignNodes(scene, ids),
     distribute: canDistributeNodes(scene, ids),
     group: canGroupNodes(scene, ids),
-    ungroup: ids.length === 1 && canUngroupNode(scene, ids[0]!),
+    ungroup: ungroupEnabled(scene, ids),
     zOrder: {
       back: primary !== null && zOrderTarget(scene, primary, "back") !== null,
       backward:
