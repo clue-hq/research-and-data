@@ -1,14 +1,10 @@
 "use client";
 
 import Image from "next/image";
-import { createContext, useContext, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { backgroundFillCommits } from "@/features/design-editor/adapter/scene-hydrate";
 import type { SceneImageAiBinding } from "@/features/design-editor/adapter/scene-image-ai";
-import {
-  scenePaletteColor,
-  type ScenePalette,
-} from "@/features/design-editor/adapter/scene-palette";
-import type { ThemeColorOption } from "@/features/design-editor/adapter/theme-options";
+import type { ScenePalette } from "@/features/design-editor/adapter/scene-palette";
 import type { ChatShellInspectorSelection } from "../model/chat-shell";
 import {
   useInspectorController,
@@ -30,6 +26,16 @@ import {
   RadiusControls,
 } from "./inspector-primitives";
 import styles from "./chat-shell.module.css";
+// AD4.B step 3: the §1.6 colour machinery this file used to declare, moved to
+// its own module so `ad-dummy-inspectors.tsx` can use the same row (importing
+// it from here would be a cycle). A pure move — every call site below is
+// unchanged, and the provider still wraps the whole panel from this file.
+import {
+  ScenePaletteContext,
+  useAdColorRow,
+  useScenePalette,
+  useScenePaletteOptions,
+} from "./inspector-color-row";
 import {
   AdDummyInspector,
   AdSceneLayers,
@@ -65,81 +71,6 @@ const SIZE_PRESETS = [
   "Story (9:16) - 1080x1920",
   "Custom",
 ] as const;
-
-/**
- * AD4.0 step 3 (§1.6): the document's brand palette for every ColorControl in
- * this panel, carried as data — the seam rule, presentation never fetches.
- *
- * A CONTEXT rather than a prop drilled through each schema, copying the
- * website lane's `ThemeColorsContext` (`web-inspector.tsx`) for the same
- * reason it exists there: the four schemas Lane B is about to bind then
- * inherit the feed without touching this file again. `null` — the chats route
- * before a document loads, a document with no attached kit, a kit fetch that
- * failed — leaves every picker on the dummy's own palette, unchanged.
- */
-const ScenePaletteContext = createContext<ScenePalette | null>(null);
-
-/** The palette itself, for the rows that must RESOLVE a token (§1.6/R3b). */
-function useScenePalette() {
-  return useContext(ScenePaletteContext);
-}
-
-/**
- * What the pickers are OFFERED, or `undefined` when this document has no brand
- * swatches to offer — which is also the signal that no token write may fire.
- *
- * The two are one question deliberately: with no options, `ColorControl` falls
- * back to `INSPECTOR_THEME_COLORS` (the dummy's fixture palette), and a pick
- * from THAT list names no token this document has. Passing `onTokenChange`
- * alongside it would write `{kind:"token", token:"Primary"}` — a binding
- * nothing can resolve. So callers below gate the token handler on this exact
- * value, and `scene-apply.ts` refuses the label a second time at the write.
- */
-function useScenePaletteOptions() {
-  const palette = useScenePalette();
-  return palette && palette.options.length > 0 ? palette.options : undefined;
-}
-
-/**
- * §1.6: ONE colour row — what its swatch is showing, and the two handlers its
- * two halves commit through. Every ad colour control goes through it, so the
- * brand and custom paths cannot drift apart three times over.
- *
- * R3b: `color` RESOLVES that value through the palette, because a token name is
- * not a CSS colour — the chip painted nothing, the Custom tab's picker opened
- * on black, and the picker could not mark the bound swatch as pressed. The
- * name still stands when the palette cannot resolve it (no kit attached, an
- * off-catalog token), which is step 2's truthful display, unchanged.
- */
-function useAdColorRow({
-  hydratedValue,
-  onHex,
-  onToken,
-  paletteOptions,
-}: {
-  hydratedValue: string;
-  onHex: (hex: string) => void;
-  onToken: (label: string) => void;
-  paletteOptions: readonly ThemeColorOption[] | undefined;
-}) {
-  const palette = useScenePalette();
-  // AD4.R: the row shows the DOCUMENT's value — a token name or a colour —
-  // which under live hydration is current in the same batch as the write it
-  // dispatched (a brand pick surfaces as the token's name, a detaching hex as
-  // the hex, a refused write as the unmoved old value). The 'shown' draft this
-  // hook carried was the mount-seeded model's patch for exactly that gap.
-  const value = hydratedValue;
-  return {
-    color: scenePaletteColor(palette, value) ?? value,
-    onColorChange: onHex,
-    // Absent options mean the picker is showing the DUMMY's fixture palette,
-    // whose labels name no token this document has — so no token handler is
-    // offered at all (under A23 that tab is empty, so there is nothing to pick
-    // either), and the Custom tab commits its hex as it always has.
-    onTokenChange: paletteOptions && onToken,
-    value,
-  };
-}
 
 type AdSchemaBinding = AdLayersBinding & AdHydrationBinding;
 
