@@ -230,6 +230,7 @@ export function EditorSurface({
         onSceneHistoryChange={sceneSession.onHistoryChange}
         // AD4.C / Ruling C-3: committed canvas gestures ride the session's own
         // `applyOps`, the same write path this route's inspector uses.
+        onSceneAppliedOperations={sceneSession.writes.persistAppliedOps}
         onSceneOperations={sceneSession.writes.applyOps}
         onSceneSelect={sceneSession.onSelectCanvas}
         onSceneZoomChange={sceneSession.onZoomChange}

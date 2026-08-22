@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { NodeId, Scene } from "../engine/scene/contracts";
+import type { NodeId, Operation, Scene } from "../engine/scene/contracts";
 import {
   dragActionToOperations,
   handleAtPoint,
@@ -27,12 +27,14 @@ import {
   EMPTY_SCENE_PRESS,
   SCENE_PAGE_ORIGIN,
   cornerHandleAtPoint,
+  freezeOperationsToPersist,
   sceneDescriptorPoint,
   sceneGestureEffect,
   scenePressHandleTarget,
   scenePressModifiers,
   scenePressNodeTarget,
   sceneSelectionHandlesVisible,
+  shouldFreezeLayoutOnPress,
 } from "./scene-gestures";
 
 /**
@@ -64,6 +66,25 @@ const HERO_BOTTOM_RIGHT = {
   x: HERO_BOUNDS.x + HERO_BOUNDS.width,
   y: HERO_BOUNDS.y + HERO_BOUNDS.height,
 };
+
+/** The headline's laid-out box inside the copy row — the box a managed press
+ * starts from, and (zero-motion freeze) the box it still starts from after. */
+const HEADLINE_BOX = { x: 44, y: 40, width: 600, height: 120 };
+
+/**
+ * `text_headline` is a child of the `auto_row_copy` auto-layout row, so it is
+ * solver-managed and non-freehand: the C-9 freezable class exactly. Laid out,
+ * because an unsolved node has no box to move and never arms for its own
+ * separate reason.
+ */
+function managedHeadlineScene(): Scene {
+  const scene = clone(HARVESTED_AD_PAGE);
+  scene.nodes.text_headline.computed = {
+    layout_bounds: { ...HEADLINE_BOX },
+    render_bounds: { ...HEADLINE_BOX },
+  };
+  return scene;
+}
 
 function sceneWithLaidOutHero(): Scene {
   const next = clone(HARVESTED_AD_PAGE);
@@ -317,14 +338,30 @@ test("Ruling C-5: a LOCKED node still SELECTS, but the press can never drag", ()
   );
 });
 
-test("Ruling C-5: a layout-MANAGED child selects but cannot drag either", () => {
+// INVERTED by AD4.C-3 (founder ruling C-9). This case used to assert that a
+// layout-managed child "selects but cannot drag either". The founder, testing
+// live, ruled that wrong: the agent works in auto-layout, the human does not
+// know what auto-layout is, and a human drag must never be refused by it. The
+// press now ARMS — `shouldFreezeLayoutOnPress` below fires the zero-motion
+// freeze first, which makes the same node directly editable for the same
+// press's commit.
+test("Ruling C-9: a layout-MANAGED child selects AND arms — the grab freezes the layout", () => {
   // `text_headline` is a child of the `auto_row_copy` auto-layout row.
-  const scene = clone(HARVESTED_AD_PAGE);
-  const bounds = { x: 44, y: 40, width: 600, height: 120 };
-  scene.nodes.text_headline.computed = {
-    layout_bounds: { ...bounds },
-    render_bounds: { ...bounds },
-  };
+  const scene = managedHeadlineScene();
+  const press = scenePressNodeTarget({
+    artboard: artboardFor(scene),
+    gesturesEnabled: true,
+    nodeId: "text_headline",
+    pageId: AD_PAGE_ID,
+    scene,
+  });
+  assert.equal(press.target.kind, "node");
+  assert.equal(press.armed, true);
+});
+
+test("Ruling C-9: a LOCKED layout-managed child still selects and never arms", () => {
+  const scene = managedHeadlineScene();
+  scene.nodes.text_headline.locked = true;
   const press = scenePressNodeTarget({
     artboard: artboardFor(scene),
     gesturesEnabled: true,
@@ -334,6 +371,206 @@ test("Ruling C-5: a layout-MANAGED child selects but cannot drag either", () => 
   });
   assert.equal(press.target.kind, "node");
   assert.equal(press.armed, false);
+});
+
+test("G-H: a managed child does not arm mid-turn (the freeze it needs is a write)", () => {
+  const scene = managedHeadlineScene();
+  const press = scenePressNodeTarget({
+    artboard: artboardFor(scene),
+    gesturesEnabled: false,
+    nodeId: "text_headline",
+    pageId: AD_PAGE_ID,
+    scene,
+  });
+  assert.equal(press.armed, false);
+});
+
+/* -------------------------------------------------------------------------
+ * C-9 / C-10 / C-12 — the freeze-on-grab decisions
+ * ---------------------------------------------------------------------- */
+
+test("C-9: a press on a managed NODE freezes the layout before the gesture starts", () => {
+  const scene = managedHeadlineScene();
+  assert.equal(
+    shouldFreezeLayoutOnPress({
+      gesturesEnabled: true,
+      scene,
+      target: {
+        kind: "node",
+        nodeId: "text_headline",
+        box: HEADLINE_BOX,
+        rotation: 0,
+      },
+    }),
+    true,
+  );
+});
+
+test("C-9: a corner press on a MANAGED selection now grabs the handle", () => {
+  // `scenePressHandleTarget` gates every grab on the same `showResizeHandles`
+  // oracle the overlay draws from, so widening the chrome makes the drawn
+  // handle grabbable with no second decision — which is exactly why C-10 must
+  // freeze on a handle press as well as a node press.
+  const scene = managedHeadlineScene();
+  const artboard = artboardFor(scene);
+  const target = scenePressHandleTarget({
+    artboard,
+    gesturesEnabled: true,
+    pageId: AD_PAGE_ID,
+    point: sceneDescriptorPoint(
+      { x: HEADLINE_BOX.x + HEADLINE_BOX.width, y: HEADLINE_BOX.y + HEADLINE_BOX.height },
+      artboard,
+    ),
+    scene,
+    selectedNodeId: "text_headline",
+    zoom: 1,
+  });
+  assert.equal(target?.kind, "handle");
+  assert.equal(target?.nodeId, "text_headline");
+});
+
+test("C-10: a press on a managed node's HANDLE freezes too", () => {
+  // Upstream guards on `node` alone; it never draws handles on a managed node.
+  // This platform does (C-9), and a handle that grabs then commits nothing is
+  // the exact defect C-5 exists to prevent.
+  const scene = managedHeadlineScene();
+  assert.equal(
+    shouldFreezeLayoutOnPress({
+      gesturesEnabled: true,
+      scene,
+      target: {
+        kind: "handle",
+        nodeId: "text_headline",
+        handle: "bottom-right",
+        box: HEADLINE_BOX,
+        rotation: 0,
+      },
+    }),
+    true,
+  );
+});
+
+test("no freeze for a LOCKED node — the predicate is an allow-list, not 'not editable'", () => {
+  const scene = managedHeadlineScene();
+  scene.nodes.text_headline.locked = true;
+  assert.equal(
+    shouldFreezeLayoutOnPress({
+      gesturesEnabled: true,
+      scene,
+      target: {
+        kind: "node",
+        nodeId: "text_headline",
+        box: HEADLINE_BOX,
+        rotation: 0,
+      },
+    }),
+    false,
+  );
+});
+
+test("the managed child of a LOCKED CONTAINER still asks for a freeze it cannot get", () => {
+  // The finding this pins (AD4.C-3 R3): `isNodeFreezableOnGesture` inspects the
+  // NODE, not its parent's lock, so it answers true here — while the engine's
+  // `build_freeze_layout` skips locked containers and produces an empty batch
+  // (`wasmEngine.artifact.test.ts`: "freeze_layout leaves a LOCKED container
+  // alone"). The two together would be C-5's exact defect — grab, preview,
+  // commit nothing — so the HOST refuses to arm when a freeze it asked for
+  // delivers no operations. This case is the reason that guard exists; if this
+  // assertion ever flips to false, the guard becomes dead code rather than
+  // wrong.
+  const scene = managedHeadlineScene();
+  scene.nodes.auto_row_copy.locked = true;
+  assert.equal(
+    shouldFreezeLayoutOnPress({
+      gesturesEnabled: true,
+      scene,
+      target: {
+        kind: "node",
+        nodeId: "text_headline",
+        box: HEADLINE_BOX,
+        rotation: 0,
+      },
+    }),
+    true,
+  );
+  // …and an empty outcome persists nothing, which is what the host reads as
+  // "this press cannot act".
+  assert.deepEqual(
+    freezeOperationsToPersist({ accepted: true, operations: [] }),
+    [],
+  );
+});
+
+test("no freeze for an ALREADY-editable node — there is nothing to gain", () => {
+  const scene = sceneWithLaidOutHero();
+  assert.equal(
+    shouldFreezeLayoutOnPress({
+      gesturesEnabled: true,
+      scene,
+      target: nodeTargetFor(scene),
+    }),
+    false,
+  );
+});
+
+test("no freeze for a press on nothing", () => {
+  assert.equal(
+    shouldFreezeLayoutOnPress({
+      gesturesEnabled: true,
+      scene: managedHeadlineScene(),
+      target: EMPTY_SCENE_PRESS.target,
+    }),
+    false,
+  );
+});
+
+test("G-H: no freeze fires mid-turn, because a freeze is a write", () => {
+  const scene = managedHeadlineScene();
+  assert.equal(
+    shouldFreezeLayoutOnPress({
+      gesturesEnabled: false,
+      scene,
+      target: {
+        kind: "node",
+        nodeId: "text_headline",
+        box: HEADLINE_BOX,
+        rotation: 0,
+      },
+    }),
+    false,
+  );
+});
+
+test("C-12: an accepted freeze persists EXACTLY the operations the engine already applied", () => {
+  const operations = [
+    { kind: "update_node", node_id: "auto_row_copy", patch: {} },
+  ] as unknown as Operation[];
+  assert.deepEqual(
+    freezeOperationsToPersist({ accepted: true, operations }),
+    operations,
+  );
+});
+
+test("C-12: the idempotent already-frozen outcome persists NOTHING", () => {
+  // An empty batch is what `freeze_layout` answers once no Stack container is
+  // left — and what the design API's edits route 422s on.
+  assert.deepEqual(
+    freezeOperationsToPersist({ accepted: true, operations: [] }),
+    [],
+  );
+});
+
+test("C-12: a rejected freeze, and a freeze on a dead engine, persist NOTHING", () => {
+  assert.deepEqual(
+    freezeOperationsToPersist({
+      accepted: false,
+      operations: [
+        { kind: "update_node", node_id: "auto_row_copy", patch: {} },
+      ] as unknown as Operation[],
+    }),
+    [],
+  );
+  assert.deepEqual(freezeOperationsToPersist(null), []);
 });
 
 test("a node with no laid-out geometry selects but cannot drag", () => {
@@ -892,7 +1129,12 @@ test("R6: no handles with no selection, a disabled engine, or G-H in flight", ()
   assert.equal(visible({ gestureDisabled: true }), false);
 });
 
-test("R6: a locked or layout-managed selection is outlined, never handled", () => {
+// REWRITTEN by AD4.C-3 (founder ruling C-9, ledgered C-13). The LOCKED half is
+// byte-identical — a lock is a lock, and no freeze can free it. The
+// layout-managed half asserted the rule the founder overturned: a managed node
+// now DOES get handles, because the grab freezes the layout before the gesture
+// starts and the same press then drags freely.
+test("R6: a LOCKED selection is outlined, never handled", () => {
   const locked = sceneWithLaidOutHero();
   locked.nodes.image_hero.locked = true;
   assert.equal(
@@ -905,10 +1147,41 @@ test("R6: a locked or layout-managed selection is outlined, never handled", () =
     }),
     false,
   );
+});
+
+test("C-9: a layout-MANAGED selection IS handled — the grab freezes the layout first", () => {
   assert.equal(
     sceneSelectionHandlesVisible({
       engineDisabled: false,
       gestureDisabled: false,
+      pageId: AD_PAGE_ID,
+      scene: HARVESTED_AD_PAGE,
+      selectedNodeId: "text_headline",
+    }),
+    true,
+  );
+});
+
+test("C-9: a LOCKED layout-managed selection is still refused (a freeze cannot free it)", () => {
+  const scene = clone(HARVESTED_AD_PAGE);
+  scene.nodes.text_headline.locked = true;
+  assert.equal(
+    sceneSelectionHandlesVisible({
+      engineDisabled: false,
+      gestureDisabled: false,
+      pageId: AD_PAGE_ID,
+      scene,
+      selectedNodeId: "text_headline",
+    }),
+    false,
+  );
+});
+
+test("G-H still hides a freezable node's handles mid-turn — a freeze is a write", () => {
+  assert.equal(
+    sceneSelectionHandlesVisible({
+      engineDisabled: false,
+      gestureDisabled: true,
       pageId: AD_PAGE_ID,
       scene: HARVESTED_AD_PAGE,
       selectedNodeId: "text_headline",

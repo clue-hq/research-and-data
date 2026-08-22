@@ -9,7 +9,11 @@ import type {
   Modifiers,
   PressTarget,
 } from "../engine/scene/gestureMachine";
-import { getNode, isNodeDirectGeometryEditable } from "../engine/scene/sceneQueries";
+import {
+  getNode,
+  isNodeDirectGeometryEditable,
+  isNodeFreezableOnGesture,
+} from "../engine/scene/sceneQueries";
 import { deriveSelectionChromeModel } from "../engine/scene/selectionChrome";
 import {
   handlePoint,
@@ -309,16 +313,95 @@ export function scenePressNodeTarget({
       box,
       rotation: selectionBox?.rotation ?? 0,
     },
-    // Ruling C-5: locked and layout-managed nodes select and never move. The
-    // operation builders refuse them too (`canvasOperations.ts:85-87,296-299`)
-    // — silently, which is exactly why the refusal is ALSO made here: a press
-    // that cannot commit must not preview either, or the ad appears to move
-    // and then snaps back with nothing said.
+    // Ruling C-5: a node whose press cannot commit must not preview either, or
+    // the ad appears to move and then snaps back with nothing said. LOCKED
+    // nodes are that case and stay refused here.
+    //
+    // Ruling C-9 narrows it to LOCKED alone. A layout-MANAGED node is no
+    // longer refused: the human's press freezes the document's auto-layout
+    // first (zero-motion, silent — `shouldFreezeLayoutOnPress` below), which
+    // makes the very same node directly editable, so by the time the drag
+    // commits the builders take it. Arming against the PRE-freeze scene is
+    // correct and is what upstream does: the freeze moves nothing, so the box
+    // this press starts from is numerically identical either side of it.
     armed:
       gesturesEnabled &&
       Boolean(selectionBox) &&
-      isNodeDirectGeometryEditable(scene, nodeId),
+      (isNodeDirectGeometryEditable(scene, nodeId) ||
+        isNodeFreezableOnGesture(scene, nodeId)),
   };
+}
+
+/**
+ * Ruling C-9 (handoff-absolute freeze-on-grab): must this press bake the
+ * document's auto-layout to free placement BEFORE the gesture starts?
+ *
+ * The agent works in auto-layout; the human does not know what auto-layout is
+ * and must never be refused by it. Upstream's MVP editor answers this by
+ * firing a whole-document `freeze_layout` structured edit on the pointer-down
+ * that grabs a solver-owned node, then letting the SAME press continue as a
+ * free drag (`CanvasKitCanvas.tsx:1056-1076`). The edit is zero-motion (every
+ * child is baked to the position it already solved at) and idempotent (an
+ * empty operation batch once nothing is left to freeze), so firing it on a
+ * click that never becomes a drag costs nothing and changes nothing.
+ *
+ * `isNodeFreezableOnGesture` is an explicit allow-list — "blocked for NO
+ * reason other than solver ownership" — so this refuses a locked node, a
+ * node that is already directly editable (nothing to gain), and a press on
+ * nothing.
+ *
+ * Ruling C-10: BOTH `node` and `handle` targets freeze. Upstream guards on
+ * `node` alone, which is safe only because upstream never draws handles on a
+ * managed node; this platform does (C-9 widened `showResizeHandles`), and a
+ * drawn handle that grabs and then silently commits nothing is exactly the
+ * defect class C-5 exists to prevent.
+ *
+ * `gesturesEnabled` is the G-H gate, and it belongs here for a stronger reason
+ * than symmetry: a freeze is a WRITE. While an agent turn is in flight no
+ * write of the human's may land, so mid-turn no freeze fires and managed nodes
+ * keep the select-only behaviour they had before this ruling.
+ */
+export function shouldFreezeLayoutOnPress({
+  gesturesEnabled,
+  scene,
+  target,
+}: {
+  gesturesEnabled: boolean;
+  scene: Scene;
+  target: PressTarget;
+}): boolean {
+  if (!gesturesEnabled) {
+    return false;
+  }
+  if (target.kind !== "node" && target.kind !== "handle") {
+    return false;
+  }
+  return isNodeFreezableOnGesture(scene, target.nodeId);
+}
+
+/**
+ * Ruling C-12: what a freeze outcome hands to the PERSIST path — and nothing
+ * else.
+ *
+ * The engine has ALREADY applied these operations (`applyStructuredEdit` is
+ * apply-and-report, not a plan), so they must reach the edit queue WITHOUT
+ * being applied a second time — never through the ordinary `applyOps` write
+ * path, which applies first. Persisting them as one plain operation batch is
+ * also what makes the freeze its own undo frame, upstream parity: one ⌘Z
+ * undoes the drag, a second restores auto-layout.
+ *
+ * An empty batch is the idempotent already-frozen case, and it is dropped
+ * here rather than at the queue: a document that is already free has nothing
+ * to persist, and the design API's own edits route answers an empty batch
+ * with a 422.
+ */
+export function freezeOperationsToPersist(
+  outcome: { accepted: boolean; operations: Operation[] } | null,
+): Operation[] {
+  if (!outcome || !outcome.accepted) {
+    return [];
+  }
+  return outcome.operations;
 }
 
 /** What the host does with one reduced `GestureAction`. */

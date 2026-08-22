@@ -474,6 +474,7 @@ export function ChatSurface({
         // path the inspector's rows do — the session's `applyOps` (optimistic
         // engine apply → repaint → edit-queue persist), so a drag is one
         // atomic batch, one undo frame, and ⌘Z needs nothing new.
+        onSceneAppliedOperations={sceneSession.writes.persistAppliedOps}
         onSceneOperations={sceneSession.writes.applyOps}
         onSceneSelect={sceneSession.onSelectCanvas}
         onSceneZoomChange={sceneSession.onZoomChange}

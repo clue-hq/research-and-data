@@ -37,12 +37,14 @@ import {
 } from "../adapter/scene-canvas-view";
 import {
   EMPTY_SCENE_PRESS,
+  freezeOperationsToPersist,
   sceneDescriptorPoint,
   sceneGestureEffect,
   scenePressHandleTarget,
   scenePressModifiers,
   scenePressNodeTarget,
   sceneSelectionHandlesVisible,
+  shouldFreezeLayoutOnPress,
 } from "../adapter/scene-gestures";
 import {
   representableHit,
@@ -67,7 +69,15 @@ import {
   textMeasurementStatusSnapshot,
 } from "../engine/scene/canvaskit/loadCanvasKit";
 import type { NodeId, Operation, PageId, Scene } from "../engine/scene/contracts";
-import type { EngineApplyOutcome, HitResult } from "../engine/scene/wasmEngine";
+import {
+  freezeLayoutEdit,
+  type StructuredEdit,
+} from "../engine/scene/structuredEdits";
+import type {
+  EngineApplyOutcome,
+  EngineStructuredEditOutcome,
+  HitResult,
+} from "../engine/scene/wasmEngine";
 import {
   defaultWorkspaceViewport,
   screenToWorkspace,
@@ -179,6 +189,22 @@ export interface SceneCanvasControls {
    */
   applyOperations(operations: Operation[]): EngineApplyOutcome | null;
   /**
+   * AD4.C-3 / ruling C-12: apply ONE structured edit to the live engine and
+   * repaint — the same optimistic half as `applyOperations` above, for the one
+   * write the canvas issues that is not a plain operation batch: the
+   * freeze-on-grab (`freezeLayoutEdit()`).
+   *
+   * It returns the outcome because the outcome carries the batch: the engine
+   * has ALREADY applied these operations, and they still have to be persisted.
+   * That is why the caller must hand `outcome.operations` to the
+   * persist-already-applied seam and never to `applyOps` — the ordinary write
+   * path would apply them a second time.
+   *
+   * Null when the engine is unavailable (D9 read-only), same as
+   * `applyOperations`: nothing was applied, so nothing may be persisted.
+   */
+  applyStructuredEdit(edit: StructuredEdit): EngineStructuredEditOutcome | null;
+  /**
    * AD4.A step 2: could a batch land right now — i.e. is the live engine
    * available? False is exactly the state in which `applyOperations` returns
    * `null` (D9 read-only).
@@ -240,6 +266,24 @@ export interface SceneArtifactCanvasProps {
    * one) means no gesture is ever committed — the preview simply drops.
    */
   onOperations?: (operations: Operation[], intent?: string) => boolean;
+  /**
+   * AD4.C-3 / Ruling C-12: persist operations the engine has ALREADY applied.
+   *
+   * A deliberate SIBLING of `onOperations` rather than a flag on it, because
+   * the two carry opposite contracts — `onOperations` means "apply this, then
+   * persist it", this means "persist only; the apply already happened" — and
+   * conflating them behind one callback would make a wiring slip silently
+   * DOUBLE-APPLY the batch. One caller: the freeze-on-grab, whose operations
+   * come back from `controls.applyStructuredEdit`.
+   *
+   * The freeze lands as its own plain operation batch, so it is also its own
+   * undo frame (upstream parity): one ⌘Z after a freed drag undoes the drag, a
+   * second restores auto-layout.
+   *
+   * Absent means the freeze applies locally and is never persisted — the same
+   * posture `onOperations` takes on the standalone read path.
+   */
+  onAppliedOperations?: (operations: Operation[], scene: Scene) => boolean;
   /** Receives the canvas's imperative controls while mounted. */
   controlsRef?: RefObject<SceneCanvasControls | null>;
   /** Bump to refetch the document into the same mounted canvas (the website
@@ -354,6 +398,7 @@ function SceneDocumentCanvas({
   controlsRef,
   documentId,
   gestureDisabled = false,
+  onAppliedOperations,
   onEngineStatusChange,
   onFitZoom,
   onGestureZoom,
@@ -570,6 +615,21 @@ function SceneDocumentCanvas({
           // fires afterwards with the final rendered (possibly relaid) scene;
           // that second setLoaded is idempotent. This is the MVP editor's own
           // shape: EditorApp installs result.scene in the accept path.
+          onSceneChangeRef.current?.(outcome.scene, pageId, documentId);
+        }
+        return outcome;
+      },
+      applyStructuredEdit: (edit) => {
+        if (!engine) {
+          return null;
+        }
+        const outcome = engine.applyStructuredEdit(edit);
+        // Identical accept path to `applyOperations` above, and for the
+        // identical reasons: repaint, and mirror the accepted scene up
+        // SYNCHRONOUSLY so the press that fired this sees the post-freeze
+        // document on its very next render.
+        if (outcome.accepted) {
+          refresh();
           onSceneChangeRef.current?.(outcome.scene, pageId, documentId);
         }
         return outcome;
@@ -829,6 +889,76 @@ function SceneDocumentCanvas({
     applyGestureAction(reduced.action);
   };
 
+  /**
+   * Ruling C-9 (founder): a human dragging on this canvas is NEVER refused by
+   * auto-layout. The agent works in auto-layout; the human does not know what
+   * auto-layout is. So the first grab of a solver-owned node bakes the whole
+   * document's layout to free placement — silently, moving nothing — and the
+   * SAME press then continues as an ordinary free drag.
+   *
+   * Everything about the ordering is load-bearing, and all of it is upstream's
+   * (`CanvasKitCanvas.tsx:1056-1076`):
+   *
+   *  • BEFORE `beginPress`. The press target was resolved against the
+   *    pre-freeze scene, and that is correct: the freeze is zero-motion, so
+   *    the box this gesture starts from is numerically identical either side
+   *    of it (proven against the real engine in `wasmEngine.artifact.test.ts`).
+   *    By the time the drag commits, React has re-rendered on the post-freeze
+   *    scene and the operation builders take the node.
+   *  • Fire-and-forget on a click that never drags. The edit is idempotent —
+   *    an empty batch once nothing is left to freeze — so the cost of a
+   *    needless freeze is one no-op, which is upstream's own posture.
+   *  • Persist WITHOUT re-applying. `applyStructuredEdit` already applied
+   *    these operations to the engine; `onAppliedOperations` is the seam that
+   *    only enqueues them. Routing them through `onOperations` would apply the
+   *    batch twice.
+   *
+   * The `engineDisabled` guard is inherited from `handlePointerDown`'s own
+   * early return (a freeze needs solved geometry, which a dead engine has
+   * none of), and G-H rides in `shouldFreezeLayoutOnPress`'s `gesturesEnabled`
+   * — a freeze is a write, so mid-turn none fires and managed nodes keep
+   * today's select-only behaviour.
+   *
+   * RETURNS whether this press may go on to arm, which is not always true —
+   * see the locked-CONTAINER case below.
+   */
+  const freezeLayoutForPress = (target: PressTarget): boolean => {
+    if (!scene || !shouldFreezeLayoutOnPress({
+      gesturesEnabled: !gestureDisabled,
+      scene,
+      target,
+    })) {
+      // No freeze needed, so nothing here can block the press. Whether it arms
+      // is entirely the caller's own (pre-computed) answer.
+      return true;
+    }
+    const outcome = controls.applyStructuredEdit(freezeLayoutEdit());
+    const operations = freezeOperationsToPersist(outcome);
+    if (operations.length === 0) {
+      // A freeze WAS needed and delivered nothing, so this node is still
+      // solver-owned and its drag would commit nothing. The reachable case is
+      // a managed child of a LOCKED container: `isNodeFreezableOnGesture` says
+      // "blocked only by solver ownership" (it inspects the node, not its
+      // parent's lock) while `build_freeze_layout` skips locked containers
+      // — verified both sides, and pinned in `wasmEngine.artifact.test.ts`.
+      // Refusing to arm is Ruling C-5 applied to the freeze: a press that
+      // cannot commit must not preview, or the ad appears to move and then
+      // snaps back with nothing said.
+      //
+      // (The idempotent already-frozen no-op cannot reach here: a node in an
+      // already-free container is directly editable, so it never asked for a
+      // freeze in the first place.)
+      return false;
+    }
+    // `outcome.scene` — the POST-freeze scene, not `controls.sceneSnapshot()`
+    // (which answers from this render's closure and is still the pre-freeze
+    // one until React re-renders). The queue seeds its divergence check from
+    // this, so handing it the pre-freeze scene would fake a divergence against
+    // the document the server is about to be told about.
+    onAppliedOperations?.(operations, outcome?.scene ?? scene);
+    return true;
+  };
+
   /** Begin a press: arm (or refuse to arm) the gesture, then let the reducer
    * resolve the selection it implies. */
   const beginPress = (
@@ -1063,7 +1193,9 @@ function SceneDocumentCanvas({
       zoom: viewport.zoom,
     });
     if (handleTarget) {
-      beginPress(event, point, handleTarget, true);
+      // A drawn handle is only grabbable if the press can actually act: the
+      // freeze (when one is needed) must have landed.
+      beginPress(event, point, handleTarget, freezeLayoutForPress(handleTarget));
       return;
     }
     const scenePoint = sceneHitPoint(workspacePoint, artboard);
@@ -1089,7 +1221,12 @@ function SceneDocumentCanvas({
       pageId,
       scene,
     });
-    beginPress(event, point, press.target, press.armed);
+    // `press.armed` was resolved against the PRE-freeze scene, which is right
+    // for the ordinary case (the freeze is zero-motion, so the box is the same
+    // either side of it) and one case short: a node the freeze could not
+    // actually free must not arm after all.
+    const freed = freezeLayoutForPress(press.target);
+    beginPress(event, point, press.target, press.armed && freed);
   };
 
   return (

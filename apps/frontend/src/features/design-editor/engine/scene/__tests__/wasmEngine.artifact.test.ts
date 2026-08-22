@@ -162,4 +162,88 @@ describe.skipIf(!wasmArtifactPresent)("WasmEngine (real artifact)", () => {
     expect(undo.accepted).toBe(true);
     expect(undo.scene).toEqual(original);
   });
+
+  /* --------------------------------------------------------------------
+   * AD4.C-3 / ruling C-9 — the freeze the human's first grab fires.
+   *
+   * Asked of the REAL vendored engine rather than a fake, because every
+   * property the host depends on is the engine's, not the port's: that the
+   * edit is accepted at all, that it moves nothing, that it yields a plain
+   * operation batch to persist, and that a second one is empty. If any of
+   * these were false, freeze-on-grab would displace the ad on first touch.
+   * ----------------------------------------------------------------- */
+
+  /** The minimal scene with its text node re-parented under a Stack
+   * auto-layout container — the class `freeze_layout` acts on. */
+  function stackManagedScene(): Scene {
+    const scene = cloneScene(baseScene);
+    const child = scene.nodes.node_contact_name;
+    scene.nodes.node_stack = {
+      ...child,
+      id: "node_stack",
+      name: "Stack",
+      kind: { kind: "auto_layout", direction: "column", wrap: false },
+      layout: { gap: 8, grow: 0, padding: [12, 12, 12, 12], layout_mode: "stack" },
+      children: ["node_contact_name"],
+    } as (typeof scene.nodes)[string];
+    scene.pages.page_a4.children = ["node_stack"];
+    return scene;
+  }
+
+  function solvedBoxes(scene: Scene): Record<string, unknown> {
+    return Object.fromEntries(
+      Object.values(scene.nodes).map((node) => [
+        node.id,
+        node.computed ? { ...node.computed.layout_bounds } : null,
+      ]),
+    );
+  }
+
+  it("freeze_layout bakes a Stack container to free placement and moves nothing", async () => {
+    const module = await loadWasmModuleFromDisk();
+    const engine = new WasmEngine(module, stackManagedScene());
+    const before = solvedBoxes(engine.scene);
+
+    const outcome = engine.applyStructuredEdit({ kind: "freeze_layout" });
+
+    expect(outcome.accepted).toBe(true);
+    // A plain operation batch — what the host persists WITHOUT re-applying.
+    expect(outcome.operations.length).toBeGreaterThan(0);
+    // The container is no longer solver-owned, which is the whole point: the
+    // very same press that fired this can now drag its child freely.
+    expect(engine.scene.nodes.node_stack.layout?.layout_mode).toBe("free");
+    // ZERO-MOTION. The gesture machine captures its start box at press-time
+    // and never re-reads the scene, so a freeze that moved anything would make
+    // the pre-freeze and post-freeze geometry disagree mid-drag.
+    expect(solvedBoxes(engine.scene)).toEqual(before);
+  });
+
+  it("a second freeze_layout is an accepted no-op with nothing to persist", async () => {
+    const module = await loadWasmModuleFromDisk();
+    const engine = new WasmEngine(module, stackManagedScene());
+    expect(engine.applyStructuredEdit({ kind: "freeze_layout" }).accepted).toBe(true);
+
+    // Idempotent: this is what every press after the first one produces, and
+    // it is why the host drops an empty batch instead of persisting it (the
+    // design API's edits route answers an empty batch with a 422).
+    const second = engine.applyStructuredEdit({ kind: "freeze_layout" });
+    expect(second.accepted).toBe(true);
+    expect(second.operations).toEqual([]);
+  });
+
+  it("freeze_layout leaves a LOCKED container alone", async () => {
+    const module = await loadWasmModuleFromDisk();
+    const scene = stackManagedScene();
+    scene.nodes.node_stack.locked = true;
+    const engine = new WasmEngine(module, scene);
+
+    const outcome = engine.applyStructuredEdit({ kind: "freeze_layout" });
+
+    expect(outcome.accepted).toBe(true);
+    expect(outcome.operations).toEqual([]);
+    // Still solver-owned. (The engine round-trips an unfrozen container with
+    // the key absent, which reads as the "stack" default — the assertion that
+    // carries meaning is that it is not "free".)
+    expect(engine.scene.nodes.node_stack.layout?.layout_mode ?? "stack").toBe("stack");
+  });
 });

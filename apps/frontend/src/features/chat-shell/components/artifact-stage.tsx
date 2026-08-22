@@ -67,6 +67,7 @@ export function ArtifactStage({
   onSceneFitZoom,
   onSceneHistoryChange,
   onSceneGestureZoom,
+  onSceneAppliedOperations,
   onSceneOperations,
   onSceneSelect,
   onSceneZoomChange,
@@ -149,6 +150,12 @@ export function ArtifactStage({
    * to the ad session's own `applyOps` — the SAME write path the inspector
    * commits through, so a drag lands as one atomic batch and one undo frame. */
   onSceneOperations?: (operations: Operation[], intent?: string) => boolean;
+  /** AD4.C-3 / Ruling C-12: operations the ad canvas's engine has ALREADY
+   * applied (the freeze-on-grab), on their way to the session's persist-only
+   * seam. A deliberate sibling of `onSceneOperations` rather than a flag on it:
+   * routing an already-applied batch through the ordinary write path would
+   * apply it twice. */
+  onSceneAppliedOperations?: (operations: Operation[], scene: Scene) => boolean;
   /** AD2.7: a press on the ad canvas resolved to the node it selects (§5's
    * nearest representable ancestor), or null for a press on nothing. */
   onSceneSelect?: (nodeId: string | null) => void;
@@ -259,6 +266,7 @@ export function ArtifactStage({
                   onFitZoom={onSceneFitZoom}
                   onGestureZoom={onSceneGestureZoom}
                   onHistoryChange={onSceneHistoryChange}
+                  onAppliedOperations={onSceneAppliedOperations}
                   onOperations={onSceneOperations}
                   onSceneChange={onSceneChange}
                   onSelect={onSceneSelect}
