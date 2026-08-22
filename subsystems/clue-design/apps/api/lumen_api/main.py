@@ -281,11 +281,19 @@ def conflicted_agent_turn_response(
     the executor owns the persist, "the document moved under me" is a real terminal outcome that
     is neither a success nor a runtime failure, and the human needs to be told which two versions
     disagreed. Direct editor turns never reach it — they propose, and the editor's own route
-    commits under its own CAS."""
+    commits under its own CAS.
+
+    The two versions are named in the PROSE, not only in the structured keys, because the two
+    surfaces that show this to a human read prose: the editor's panel renders ``summary``, and
+    the platform's chat thread renders ``stop_reason`` and nothing else (the scene branch of
+    ``_assistant_summary`` in ``design_leg_wiring``). A version-less sentence there reaches a
+    marketer as a bare "Design turn conflicted." — technically true and practically useless, and
+    it fails to tell them the one thing that stops them panicking: their own edit survived."""
 
     message = (
-        "This design changed while the AI turn was running. Your newer edits "
-        "were preserved; run the instruction again from the current version."
+        f"This design moved from version {base_version} to version {current_version} while "
+        "the AI turn was running, so the turn's changes were not applied. Your newer edits "
+        "were preserved — send the instruction again to design against the current version."
     )
     return {
         **failed_agent_turn_response(
@@ -297,6 +305,9 @@ def conflicted_agent_turn_response(
             ),
         ),
         "status": "conflicted",
+        # The platform's scene summarizer reads ONLY this key for its sentence; the scene result
+        # shape has no other prose slot it consumes.
+        "stop_reason": message,
         "base_version": base_version,
         "current_version": current_version,
     }

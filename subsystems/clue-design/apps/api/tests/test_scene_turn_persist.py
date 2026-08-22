@@ -163,6 +163,25 @@ def proposing_runner(operations: list, received: dict | None = None):
 LEG_BRIEF = "Build the Harbor & Sage launch ad: bold headline, product shot, booking CTA."
 
 
+def _assert_conflict_is_legible(response: dict, *, moved_from: int, moved_to: int) -> None:
+    """A conflict a human can act on: both versions named, and the reassurance that their own
+    edit survived.
+
+    Asserted on BOTH prose slots, because two different surfaces read two different keys:
+    `summary` is what the design editor's own run panel shows, and `stop_reason` is the only
+    key the platform's scene summarizer (`_assistant_summary`, design_leg_wiring) renders into
+    the project chat thread. `failed_agent_turn_response` leaves `stop_reason` None, so a
+    conflict built naively from it is contentless on the platform side by construction.
+    """
+
+    for field in ("summary", "stop_reason"):
+        text = response[field]
+        assert isinstance(text, str) and text.strip(), f"{field} is empty"
+        assert f"version {moved_from}" in text, f"{field} does not name the base version"
+        assert f"version {moved_to}" in text, f"{field} does not name the current version"
+        assert "preserved" in text, f"{field} does not say the human's edit survived"
+
+
 def _leg_config(document: dict, base_version: int, prompt: str = "Go ahead.") -> dict:
     return {
         "request": {
@@ -271,6 +290,11 @@ def test_a_leg_scene_turn_on_a_moved_document_conflicts_before_the_runner(
     assert response["diagnostics"][0]["code"] == "agent_turn.version_conflict"
     assert response["base_version"] == 0
     assert response["current_version"] == 1
+    # The platform's scene summarizer renders `stop_reason` into the chat thread and nothing
+    # else, so a conflict that leaves it None reaches the marketer as a contentless "Design
+    # turn conflicted." Both user-facing strings must name BOTH versions and say the edit
+    # survived — the two facts a human needs to know what just happened.
+    _assert_conflict_is_legible(response, moved_from=0, moved_to=1)
     # The human's edit survived, and the trio was never asked to spend a token.
     stored = store.require_document(document["id"])
     assert stored["current_version"] == 1
@@ -310,6 +334,9 @@ def test_a_leg_scene_turn_that_loses_the_race_mid_run_conflicts_at_the_write(
     assert status == "failed"
     assert response["status"] == "conflicted"
     assert (response["base_version"], response["current_version"]) == (0, 1)
+    # The late (CAS-race) conflict is exactly as legible as the early one — same builder, so a
+    # marketer cannot tell which of the two windows they lost, and does not need to.
+    _assert_conflict_is_legible(response, moved_from=0, moved_to=1)
     stored = store.require_document(document["id"])
     assert stored["current_version"] == 1
     assert stored["scene"]["meta"]["title"] == "Human Title"

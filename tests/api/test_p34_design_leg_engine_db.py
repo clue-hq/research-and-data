@@ -43,6 +43,7 @@ from clue_api.conversation_capture import persist_user_turn
 from clue_api.design_leg_tools import DESIGN_DELEGATION_BUNDLE_MEDIA_TYPE
 from clue_api.design_leg_wiring import (
     DesignLegTurnRunner,
+    _assistant_summary,
     design_leg_run_id,
     load_design_leg_history,
     load_head_of_abm_history,
@@ -420,6 +421,45 @@ async def _pin_document(
         conn, workspace_id=seeds["workspace_id"], leg_id=seeds["leg"]["id"]
     )
     return document
+
+
+def test_a_conflicted_scene_result_summarizes_with_the_versions_it_names() -> None:
+    """The consuming half of the design side's ``conflicted_agent_turn_response``.
+
+    A scene result's ``stop_reason`` is the ONLY prose ``_assistant_summary`` renders, so this
+    pins that a CAS-loss result arrives legible rather than as a bare "Design turn conflicted."
+
+    Honest scope note: today this summarizer is NOT reached for a conflict. The design executor
+    reports a conflicted turn with design-run status ``failed``, and ``run_leg_turn`` short-
+    circuits any non-``succeeded`` run into ``_fail_turn``, which deliberately manufactures NO
+    assistant message — so the thread currently records nothing at all for a lost race. That is
+    a real gap, and it is the visible-loop owner's (Task 6/7) to close, by routing a conflicted
+    run to a rendered message instead of the generic failure. This test pins the renderer's end
+    of the contract so that change is a routing change and not a re-derivation."""
+
+    summary = _assistant_summary(
+        {
+            "status": "failed",
+            "run_id": "run_conflicted",
+            "result": {
+                "schema_version": 1,
+                "status": "conflicted",
+                "summary": "This design moved from version 3 to version 4 …",
+                "stop_reason": (
+                    "This design moved from version 3 to version 4 while the AI turn was "
+                    "running, so the turn's changes were not applied. Your newer edits were "
+                    "preserved — send the instruction again to design against the current "
+                    "version."
+                ),
+                "base_version": 3,
+                "current_version": 4,
+            },
+        }
+    )
+    assert summary != "Design turn conflicted."
+    assert summary.startswith("Design turn conflicted: ")
+    assert "version 3" in summary and "version 4" in summary
+    assert "preserved" in summary
 
 
 def test_a_scene_leg_envelope_carries_the_documents_base_version(
