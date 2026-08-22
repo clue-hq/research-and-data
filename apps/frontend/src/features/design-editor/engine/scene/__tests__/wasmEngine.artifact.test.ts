@@ -219,6 +219,48 @@ describe.skipIf(!wasmArtifactPresent)("WasmEngine (real artifact)", () => {
     expect(solvedBoxes(engine.scene)).toEqual(before);
   });
 
+  /** The Story-ad shape that contracted live (2026-08-22): a PADDED Stack
+   * container whose own height is HUG, under a plain page parent (no frozen
+   * parent bakes it). Pre-fix the engine left the container's Hug alone and
+   * Free-mode hug dropped the padding — the card visibly shrank by its
+   * bottom inset on the human's first grab. The engine now bakes the
+   * container's OWN Hug dims to Fixed at the solved extent, so this asserts
+   * the full zero-motion contract through the real vendored build. */
+  function paddedHugScene(): Scene {
+    const scene = stackManagedScene();
+    const stack = scene.nodes.node_stack;
+    stack.size = { width: { kind: "fixed", value: 400 }, height: { kind: "hug" } };
+    stack.layout = { gap: 8, grow: 0, padding: [40, 44, 40, 44], layout_mode: "stack" };
+    return scene;
+  }
+
+  it("freeze_layout bakes a padded hug container's own dims — the padded box survives", async () => {
+    const module = await loadWasmModuleFromDisk();
+    const engine = new WasmEngine(module, paddedHugScene());
+    const before = solvedBoxes(engine.scene);
+    const containerBefore = engine.scene.nodes.node_stack.computed?.layout_bounds;
+    expect(containerBefore).not.toBeNull();
+
+    const outcome = engine.applyStructuredEdit({ kind: "freeze_layout" });
+
+    expect(outcome.accepted).toBe(true);
+    expect(engine.scene.nodes.node_stack.layout?.layout_mode).toBe("free");
+    // The container's own Hug height baked to Fixed at the solved extent…
+    expect(engine.scene.nodes.node_stack.size.height).toEqual({
+      kind: "fixed",
+      value: containerBefore?.height,
+    });
+    // …its authored Fixed width kept its value…
+    expect(engine.scene.nodes.node_stack.size.width).toEqual({ kind: "fixed", value: 400 });
+    // …and NOTHING moved: the padded box is byte-identical post-freeze.
+    expect(solvedBoxes(engine.scene)).toEqual(before);
+
+    // The inverse restores Hug (the undo that un-freezes restores the solve).
+    const undo = engine.applyOperations(outcome.inverseOperations ?? []);
+    expect(undo.accepted).toBe(true);
+    expect(undo.scene.nodes.node_stack.size.height).toEqual({ kind: "hug" });
+  });
+
   it("a second freeze_layout is an accepted no-op with nothing to persist", async () => {
     const module = await loadWasmModuleFromDisk();
     const engine = new WasmEngine(module, stackManagedScene());

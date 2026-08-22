@@ -9,9 +9,10 @@ import { finiteNumber } from "./scene-hydrate";
  * is a marketer. Auto-layout is the AGENT's tool, and a human manipulating a
  * node must never be refused by the solver. On the canvas the answer is
  * freeze-on-grab — the press bakes the document's layout to free placement
- * (idempotent; zero-motion is the engine's INTENT and is proven only for a
- * fixed-size container — see the closing paragraph) and the very same gesture
- * continues as a free drag.
+ * (idempotent and zero-motion: the engine bakes children AND the container's
+ * own Hug dims to their solved extents — the padded-hug case is pinned by
+ * `wasmEngine.artifact.test.ts` and lumen-core's `freehand_ops` suite) and
+ * the very same gesture continues as a free drag.
  *
  * This module is that same physics for the PANEL, and it is deliberately only
  * the DECISION: the hook owns the sequence (freeze → persist → rebuild the
@@ -41,10 +42,11 @@ import { finiteNumber } from "./scene-hydrate";
  *    position of that node or any surrounding nodes should not change"). It is
  *    a disclosed behaviour change, not a repair of a dead path.
  *
- * WHAT IS NOT HERE. The engine's zero-motion guarantee for a HUG-height
- * container is unproven (the wasm fixture's container is fixed-size; the ad's
- * `auto_row_copy` is width-fixed / height-hug), so nothing in this slice claims
- * it. The claim made here is only about which rows freeze first.
+ * WHAT IS NOT HERE. The freeze sequence itself — this module only decides
+ * WHICH commits freeze first; the hook owns the transport. (The hug-height
+ * zero-motion gap this paragraph used to disclaim was closed engine-side on
+ * 2026-08-23: the freeze bakes the container's own Hug dims, tested at both
+ * the Rust and vendored-wasm layers.)
  */
 
 /**
