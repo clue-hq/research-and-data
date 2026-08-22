@@ -1,7 +1,17 @@
 # Brand Geometry Tokens in the Web Class Grammar — Ratified Plan (the enforcement mount)
 
-> **STATUS 2026-08-20 — REGISTERED; awaiting founder ratification of H1–H4, then
-> slice-by-slice dispatch.** Charter: the founder's enforcement question ("we already
+> **STATUS 2026-08-22 — RATIFIED (H1–H4 + G2 slice) by the founder, with two binding
+> carve-outs; slice-by-slice dispatch on founder order.** The carve-outs: (1) **no
+> new human-facing diagnostics** — the H2 phase-2 finding ships at Advice severity,
+> reaches the agent via tool-result diagnostics and the trace only, and is excluded
+> from every editor/brand-context UI surface; (2) **no hard blockers** — H2 phase 3
+> (the strict `LUMB0806`-style hard error and its per-kit flag) is REMOVED from
+> scope, not deferred. H1, H3, H4 ratified as proposed. This plan is Wave 3 of the
+> master plan `docs/superpowers/plans/2026-08-22-design-quality-waves.md`, which
+> also registers slice G5 (a web-lane retokenizer following the scene precedent).
+>
+> *(Superseded original status 2026-08-20: REGISTERED; awaiting founder ratification
+> of H1–H4.)* Charter: the founder's enforcement question ("we already
 > have a natural system for color tokens and typographic tokens — can we make brand
 > tokens for stroke width, corner radius, and the other brand-geometry things? It's
 > the token system itself that makes the quality 10× better for the agents, right?")
@@ -122,8 +132,12 @@ finding (phase-2 posture per H2).
 Live walk: a generation on the approved Stripe kit authored WITH the utilities —
 DOM-verify the computed values equal the measured tokens; then flip one kit token
 version and confirm the page re-renders geometry from the pin (the color-law parity
-proof). Ship the ingest WARNING (H2 phase 2). Close-out: plan header, memory,
-walkthrough. Phase 3 (hard lint) stays a registered, founder-gated follow-up.
+proof). Ship the ingest finding (H2 phase 2) **per the 2026-08-22 carve-outs: Advice
+severity, agent-facing only (tool-result diagnostics + trace), excluded from every
+human-facing UI surface, and never able to reject anything.** Close-out: plan
+header, memory, walkthrough. ~~Phase 3 (hard lint) stays a registered,
+founder-gated follow-up.~~ **[SUPERSEDED 2026-08-22: phase 3 is removed from scope
+by founder carve-out — not built, not flag-gated.]**
 
 ## 5. Constraints & traps
 
