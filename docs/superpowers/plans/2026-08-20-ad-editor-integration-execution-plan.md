@@ -664,6 +664,24 @@ Wiring rules (each is a ratified posture):
 
 Lane discipline: AD4.0 lands on the branch first; lanes A–D then run in parallel worktrees (the W4 pattern), each extending `scene-apply.ts`'s switch + `scene-hydrate.ts` rows with fixture-proven TDD and a browser proof. Every lane task cites its contract row in tests.
 
+> **AD4.R (2026-08-22, founder-ordered) landed between Lane A and Lane B** —
+> `docs/superpowers/plans/2026-08-22-ad-inspector-mvp-state-model.md`. The ad
+> inspector now runs the MVP state model: bound controls derive from live
+> hydrated state (`liveHydration`), typed fields are self-drafting
+> (`onCommitValue`), the accepted scene mirrors up synchronously, and the
+> `inspectorGeneration` remount is retired on BOTH mounts. **Binding rules for
+> Lanes B–E:** bind every new row as `value={state.x}` + dispatch-only commit
+> (never a local copy, never a post-commit mirror, never a mount-seeded
+> snapshot); typed fields use `onCommitValue`; UI-only view choices (the
+> canvas schema's "Custom" preset selection) are the only legitimate
+> schema-local state. The A26/A27/A28/A31-style mirror patterns are RETIRED —
+> do not reintroduce them in new rows; the source-text guards in
+> `scene-apply.test.ts` / `scene-image-ai.test.ts` / `scene-hydrate.test.ts`
+> now pin the live-derivation mechanism and fail on any reintroduction.
+> Disclosed behavior changes (founder-ratified): Font size, Stroke width,
+> Position X/Y and Rotation commit on blur/Enter; a refused commit reverts the
+> field to the document value (the old keep-refused-text posture is retired).
+
 ### Task AD4.0 (trunk): Canvas schema + color-policy substrate
 
 **Files:** Modify: `scene-apply.ts`/`scene-hydrate.ts` (+tests), `image-inspector.tsx` (canvas schema binding), `inspector-primitives.tsx` (`ColorControl` brand-options feed), `use-scene-editing-session.ts` (brand palette fetch)
