@@ -19,6 +19,7 @@ import {
   type InspectorFillType,
 } from "../hooks/use-inspector-controller";
 import { resolveInspectorThemeColors } from "../model/inspector-theme-colors";
+import { fieldCommit, fieldDisplay } from "./inspector-field-draft";
 import styles from "./chat-shell.module.css";
 
 const INSPECTOR_ICON_ROOT = "/icons/chat-shell/inspector";
@@ -470,6 +471,7 @@ export function InspectorInput({
   leading,
   onChange,
   onCommit,
+  onCommitValue,
   placeholder,
   prefix,
   readOnly = false,
@@ -479,12 +481,26 @@ export function InspectorInput({
   ariaLabel: string;
   className?: string;
   leading?: ReactNode;
-  onChange: (value: string) => void;
+  /** Optional once `onCommitValue` exists: a self-drafting field needs no
+   * per-keystroke channel. Every existing caller keeps passing it. */
+  onChange?: (value: string) => void;
   /** W4.2 (the ratified R3 commit model): when supplied, the caller drafts the
    * typed value locally and this fires on blur/Enter — the one moment a typed
    * field becomes a write. Omitted leaves the field exactly as it shipped
    * (per-keystroke `onChange` only); either way the DOM is unchanged. */
   onCommit?: () => void;
+  /**
+   * AD4.R (the MVP state model): when supplied, the input drafts locally while
+   * being typed in and commits ONCE on blur/Enter — `fieldCommit` suppresses
+   * the no-op re-type, and the draft clears on commit either way. `value` must
+   * then be the LIVE document value (the live-hydrated controller state): the
+   * accepted write lands in the same React batch (the Task-1 mirror), so the
+   * cleared draft reveals the just-written value with no frame in between; a
+   * refused write reveals the unchanged one, which is the honest display.
+   * Mutually exclusive with `onCommit` (the caller-managed draft protocol) —
+   * supplying both is a programming error and `onCommitValue` wins.
+   */
+  onCommitValue?: (value: string) => void;
   /** AD4.A step 3 (§1.3 row 2): the native hint. Additive and inert for every
    * existing caller (the same shape as `onCommit`'s W4.2 addition), and it
    * exists because the AI suite's two free-text fields are the first controls
@@ -497,6 +513,14 @@ export function InspectorInput({
   suffix?: string;
   value: string;
 }) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const selfDrafting = onCommitValue !== undefined;
+  const shown = selfDrafting ? fieldDisplay(draft, value) : value;
+  const commitSelf = () => {
+    const commit = fieldCommit(draft, value);
+    setDraft(null);
+    if (commit !== null) onCommitValue?.(commit);
+  };
   return (
     <span className={`${styles.inspectorControl} ${styles.inspectorInputControl} ${className ?? ""}`}>
       {leading}
@@ -504,18 +528,25 @@ export function InspectorInput({
       <input
         aria-label={ariaLabel}
         inputMode="text"
-        onBlur={onCommit ? () => onCommit() : undefined}
-        onChange={(event) => onChange(event.target.value)}
+        onBlur={selfDrafting ? commitSelf : onCommit ? () => onCommit() : undefined}
+        onChange={(event) => {
+          if (selfDrafting) setDraft(event.target.value);
+          onChange?.(event.target.value);
+        }}
         onKeyDown={
-          onCommit
+          selfDrafting
             ? (event) => {
-                if (event.key === "Enter") onCommit();
+                if (event.key === "Enter") commitSelf();
               }
-            : undefined
+            : onCommit
+              ? (event) => {
+                  if (event.key === "Enter") onCommit();
+                }
+              : undefined
         }
         placeholder={placeholder}
         readOnly={readOnly}
-        value={value}
+        value={shown}
       />
       {suffix ? <span className={styles.fieldPrefix}>{suffix}</span> : null}
     </span>
