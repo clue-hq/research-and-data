@@ -66,9 +66,32 @@ drafts.**
 
 ## Open / follow-ups
 
-- **T10 (G-H) parked, founder gate:** `disabled={locked}` at the source needs a ruled visual
-  treatment; mockups to be produced from the browser. Until then, refusal honesty covers locked
-  nodes (display never lies; interaction is refused silently per §4).
+- **T10 (G-H) SHIPPED 2026-08-22, correct-base reimplementation `c31ddf96`** (a first attempt was
+  accidentally built against a rewound pre-slice checkout and discarded — see the incident below).
+  Founder approved the 0.45 treatment AND extended it: no human operations through the inspector
+  while an agent turn runs. Gate = turn-in-flight (never leg-open; interleaving between turns
+  survives); chats route only (`chat.threadBusy`, read-only); chat side status quo by ruling;
+  navigation stays live; the header lock disables mid-turn but a LOCKED node keeps its unlock
+  enabled. Three T7-era pins rewritten as strict supersets now also pinning the G-H gating; four
+  collisions engineered around byte-exact. Proven live on the correct build: locked half (0.45 +
+  native disabled + unlock carve-out + re-enable) and mid-turn half (operations gated incl. radius,
+  nav live, composer status quo) against a real running thread. Residuals: secondaries
+  inert-but-undimmed (A19); AI primaries' `:disabled` inherits `cursor: wait` (reads as "working"
+  during someone else's turn — founder-visible); popover hex-draft mutation unguarded (both commits
+  refuse); locked ROOT FRAME's Background controls look live and get refused (pre-existing);
+  artifact route ungated pending a document-scoped agent-busy signal (D10 CAS remains its net).
+- **INCIDENT (2026-08-22, resolved):** mid-session, a checkpoint-restore from a second agent
+  session rewound branch AND worktree to the pre-slice state; T10's first attempt was built on that
+  wrong base (the tell: 1750 tests vs the slice's 1754). Founder ruled: restore + redo. Branch
+  reset to the slice tip, G-H docs cherry-picked, T10 redone with a mandatory base-attestation
+  protocol (HEAD hash + marker facts + test count verified by the subagent before work and by the
+  controller after — now standing practice, saved to persistent agent memory). The wrong-base
+  implementation is preserved on branch `rescue/t10-g-h-work` for reference; safe to delete.
+- **Environment findings (founder attention):** the dev stack's turn drain runs only from the
+  missoula workspace's fleet worker and left a production turn queued (0 attempts) on
+  thr_ad210_story_portrait — turn 212c9adc, still queued (it served as the live threadBusy source
+  for the mid-turn proof; clear it when the drain is fixed). The design API on :8010 died
+  mid-session and was relaunched via the sanctioned /tmp/slice4-relaunch-8010.sh.
 - **Web lane migration** — its own future slice: same latent defect class, but async HTTP writes
   need optimistic hydration or a draft-until-arrival rule before `liveHydration` can flip there.
   NOT a mechanical copy of AD4.R.

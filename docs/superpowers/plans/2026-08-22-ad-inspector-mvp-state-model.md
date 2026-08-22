@@ -836,8 +836,8 @@ disabled-treatment gate."
 This closes the prevent-vs-refuse family the MVP closes with `disabled={selectedNode.locked}` (`RawStyleSection.tsx`, throughout), extended per the ruling to the agent-turn window.
 
 - [x] **Step 1:** Mockups produced; founder ruled (see above).
-- [ ] **Step 2:** Add the `disabled` prop to the primitives (native `disabled` attribute + the approved class; zero behavior change when absent — the web inspector passes nothing); thread `inspectorDisabled` from the chats route's thread-running state; pass `disabled={locked || inspectorDisabled}` at every bound ad control; keep the dispatch-side `locked` guards (belt and suspenders — the adapter's refusal remains the authority; the disable is UI-level prevention).
-- [ ] **Step 3:** Browser proof (locked node: controls visibly disabled at 0.45, nothing dispatches; unlocked: all live; a running design turn on the chats route disables the panel for the turn's duration and re-enables at its end), gate, commit: `feat(ad-editor): AD4.R-10 inspector disables at the source (G-H ruled: locked nodes + in-flight agent turns)`.
+- [x] **Step 2:** Add the `disabled` prop to the primitives (native `disabled` attribute + the approved class; zero behavior change when absent — the web inspector passes nothing); thread `inspectorDisabled` from the chats route's thread-running state; pass `disabled={locked || inspectorDisabled}` at every bound ad control; keep the dispatch-side `locked` guards (belt and suspenders — the adapter's refusal remains the authority; the disable is UI-level prevention).
+- [x] **Step 3:** Browser proof (locked node: controls visibly disabled at 0.45, nothing dispatches; unlocked: all live; a running design turn on the chats route disables the panel for the turn's duration and re-enables at its end), gate, commit: `feat(ad-editor): AD4.R-10 inspector disables at the source (G-H ruled: locked nodes + in-flight agent turns)`.
 
 ---
 
