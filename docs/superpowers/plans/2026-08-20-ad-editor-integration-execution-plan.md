@@ -736,9 +736,9 @@ Lane discipline: AD4.0 lands on the branch first; lanes A–D then run in parall
 
 **Files:** Modify: `artifact-header.tsx`/action-menu component (ad branch), session hook
 
-- [ ] **Step 1:** Rename → the platform tab-rename seam (already exists in the shell — bind, don't build); Undo/Redo rows dispatch `clue:artifact-action-request` with `kind:"ad"` (AD3.3 listens); Versions flyout stays present-and-inert (§3) — add the provable-inert test (clicking a version row changes nothing: no event listener attached).
-- [ ] **Step 2:** Multi-select final state per amendment 2: additive selection in layers; inspector = first-selected schema; Arrange consumes the set. Verify no "merged panel" remnants leak into props.
-- [ ] **Step 3:** Gate + commit.
+- [x] **Step 1:** Rename → the platform tab-rename seam (already exists in the shell — bind, don't build); Undo/Redo rows dispatch `clue:artifact-action-request` with `kind:"ad"` (AD3.3 listens); Versions flyout stays present-and-inert (§3) — add the provable-inert test (clicking a version row changes nothing: no event listener attached). *(Landed 2026-08-22, commits `c9850b79`+`e2191d2f`: all found-wired — the menu is kind-agnostic and the header stamps `kind:"ad"`; the listener's decision extracted to pure `adActionRequest` and tested; "provable-inert" ruled document-inert per contract §3 — the guard proves `clue:artifact-version-select` has zero listeners repo-wide and pins the row wiring both directions; the version rows keep their lifted local radio. Browser-proven write-free: a version click fired zero network requests, document byte-identical. Residual: artifact rename is client reducer state only — no persistence; §7 family.)*
+- [x] **Step 2:** Multi-select final state per amendment 2: additive selection in layers; inspector = first-selected schema; Arrange consumes the set. Verify no "merged panel" remnants leak into props. *(Verified + guard-pinned: additive shift/⌘/ctrl wiring and whole-set highlight pinned; merged-panel negative pinned; no remnants found. "Arrange consumes the set" is Lane B's deliverable (AD4.B step 4) — the `selectedIds`/`[0]`-primary surface it consumes is verified stable. Browser-proven: accumulate holds the first-selected schema; removing the primary promotes the next.)*
+- [x] **Step 3:** Gate + commit. *(1754 → 1763 pass / 0 fail, lint 0 errors, build clean.)*
 
 ---
 
