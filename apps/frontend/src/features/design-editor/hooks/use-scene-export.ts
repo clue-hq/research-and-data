@@ -22,13 +22,16 @@ import { createApiExportRunner } from "../engine/scene/exportRunner";
  * downloads (the standing ruling: a direct download, no new chrome).
  *
  * ── WHY THE LISTENER LOOKS LIKE `use-scene-inspector-writes.ts` ─────────────
- * Same discipline, for the same reason: the effect arms on `documentId` ONLY
- * and every other live value rides a ref, so a re-render mid-export never
- * re-arms the listener (which would drop the request the user just made) and
- * the handler always reads the CURRENT scene rather than the one it closed over.
- * The `kind !== "ad"` guard inside `parseSceneExportRequest` is what keeps the
- * two lanes' listeners apart on one window, exactly as the action-menu
- * listener's is.
+ * Same ref discipline, for the same reason: every live value rides a ref, so a
+ * re-render mid-export never re-arms the listener (which would drop the request
+ * the user just made) and the handler always reads the CURRENT scene rather
+ * than the one it closed over. It goes one step FURTHER than that sibling and
+ * arms with NO dependency at all — a write hook can be inert before a document
+ * loads, but an export request that arrives then still has to be answered
+ * (honestly, with a refusal) rather than fall on no listener; the reasoning is
+ * at the effect. The `kind !== "ad"` guard inside `parseSceneExportRequest` is
+ * what keeps the two lanes' listeners apart on one window, exactly as the
+ * action-menu listener's is.
  *
  * ── EXPORT IS A READ (ruling R-D3 / Gate G-H) ──────────────────────────────
  * Exports are NOT gated on the agent-turn flag and touch no `threadBusy`
@@ -115,7 +118,9 @@ export function useSceneExport({
   scene,
   title,
 }: {
-  /** The active design document — the only value this listener arms on. */
+  /** The active design document. The listener does NOT arm on it — see the
+   * unconditional arming below — but every status is STAMPED with it, so one
+   * artifact's outcome can never be announced under another's. */
   documentId: string | null;
   /** The page the canvas is rendering (§5: one artboard). The export names it
    * explicitly rather than exporting every page the document happens to hold. */
@@ -130,7 +135,22 @@ export function useSceneExport({
    * moment the user pressed Export. */
   title: string | null;
 }): { exportStatus: string | null } {
-  const [exportStatus, setExportStatus] = useState<string | null>(null);
+  // STAMPED with the document it is about and DERIVED against the current one —
+  // the discipline the scene, the selection, the zoom, the history and the
+  // palette all follow in `use-scene-editing-session.ts`, and for the same
+  // reason. Without the stamp, switching artifacts after an export re-mounts
+  // the menu's `aria-live` span still holding the PREVIOUS ad's "PNG exported",
+  // which then outranks the controller's line forever (the menu reads
+  // `exportStatus ?? controller.statusMessage`) — a finished operation
+  // announced about a document it never touched. Derivation rather than a
+  // clearing effect, because this repo's react-hooks rules forbid setting state
+  // from an effect.
+  const [status, setStatus] = useState<{
+    forDocumentId: string | null;
+    message: string;
+  } | null>(null);
+  const exportStatus =
+    status && status.forDocumentId === documentId ? status.message : null;
 
   // Latest-value refs so the one listener reads current state without re-arming
   // (written passively, per this repo's react-hooks rules) — the
@@ -151,8 +171,22 @@ export function useSceneExport({
   // the second event arrives — a re-render later is too late.
   const inFlightRef = useRef(false);
 
+  // ARMED UNCONDITIONALLY, and deliberately not on `documentId` (review fix,
+  // finding 1). Arming on it made the "No document to export" refusal below
+  // dead code for the one case it names: during the pre-load window there was
+  // no listener at all, so pressing Export produced no export AND no refusal,
+  // leaving the span announcing the controller's optimistic "PNG export
+  // requested at 1x" — an announcement of something that did not happen, which
+  // is precisely what R-D7 exists to prevent. Every live value already rides a
+  // ref, so there is nothing for the effect to depend on: it arms once per
+  // mount and the guards inside answer for whatever state the session is in.
   useEffect(() => {
-    if (!documentId) return;
+    /** One place to write a status, so every message is stamped with the
+     * document it is about. Stamped with the LIVE id rather than the armed one:
+     * a refusal or an outcome is addressed to whoever is looking now. */
+    const report = (message: string) =>
+      setStatus({ forDocumentId: documentIdRef.current, message });
+
     const onExportRequest = (event: Event) => {
       const request = parseSceneExportRequest((event as CustomEvent).detail);
       // Not this lane's export (another artifact kind, the sharing menu's ZIP).
@@ -161,40 +195,49 @@ export function useSceneExport({
 
       const armedDocumentId = documentIdRef.current;
       const armedScene = sceneRef.current;
-      // The empty-artboard state has nothing to export. Refused out loud rather
-      // than by a status line that never changes.
+      // Nothing loaded yet, or the empty-artboard state: there is nothing to
+      // export. Refused out loud rather than by a status line that never
+      // changes.
       if (!armedDocumentId || !armedScene) {
-        setExportStatus("No document to export");
+        report("No document to export");
         return;
       }
       if (inFlightRef.current) {
-        setExportStatus("Export already in progress");
+        report("Export already in progress");
         return;
       }
-      inFlightRef.current = true;
       // Ruling R-D7: set SYNCHRONOUSLY, in the same event the controller sets
       // its own optimistic "…export requested" line — this one is threaded into
       // the span over that one, so it must already be the newer fact when the
       // menu re-renders.
-      setExportStatus(`Exporting ${request.format}…`);
+      report(`Exporting ${request.format}…`);
 
       const armedPageId = pageIdRef.current;
-      const filename = exportFilename(
-        request.title ?? titleRef.current ?? "",
-        request.format,
-      );
-      // Captured per call, never at module scope: `designBffConfig()` reads
-      // `window.location.origin`. Traffic goes through the authenticated BFF —
-      // never browser→FastAPI.
-      const config = designBffConfig();
-      const runExport = createApiExportRunner({
-        apiBaseUrl: config.apiBaseUrl,
-        documentId: armedDocumentId,
-        fetchImpl: config.fetchImpl,
-      });
 
       void (async () => {
+        // EVERYTHING that can throw is inside the try, so the `finally` always
+        // clears the single-flight flag (review fix, finding 3). The flag is
+        // raised here rather than before the call: an async function body runs
+        // synchronously up to its first `await`, so it is already true by the
+        // time this listener returns and a second request still cannot slip
+        // past the guard above — but a throw from `exportFilename`,
+        // `designBffConfig` or `createApiExportRunner` can no longer wedge it
+        // raised forever.
+        inFlightRef.current = true;
         try {
+          const filename = exportFilename(
+            request.title ?? titleRef.current ?? "",
+            request.format,
+          );
+          // Captured per call, never at module scope: `designBffConfig()` reads
+          // `window.location.origin`. Traffic goes through the authenticated
+          // BFF — never browser→FastAPI.
+          const config = designBffConfig();
+          const runExport = createApiExportRunner({
+            apiBaseUrl: config.apiBaseUrl,
+            documentId: armedDocumentId,
+            fetchImpl: config.fetchImpl,
+          });
           const result = await runExport({
             scene: armedScene,
             profile: sceneExportProfile(request.format, request.scale),
@@ -206,11 +249,11 @@ export function useSceneExport({
           // not something they asked for, so it is dropped rather than
           // downloaded.
           if (documentIdRef.current !== armedDocumentId) {
-            setExportStatus("Export cancelled — document changed");
+            report("Export cancelled — document changed");
             return;
           }
           if (result.status !== "ok") {
-            setExportStatus(sceneExportResultMessage(request.format, result));
+            report(sceneExportResultMessage(request.format, result));
             return;
           }
           // §1.11 exports ONE artboard, so `artifacts[0]` is the deliverable.
@@ -218,18 +261,18 @@ export function useSceneExport({
             // An "ok" carrying no bytes is not a success the user can use, and
             // announcing one would be this lane's signature defect: the panel
             // stating something that did not happen.
-            setExportStatus(`${request.format} export returned no file`);
+            report(`${request.format} export returned no file`);
             return;
           }
-          setExportStatus(sceneExportResultMessage(request.format, result));
+          report(sceneExportResultMessage(request.format, result));
         } catch (cause) {
           // A transport throw (the runner's non-2xx, an offline fetch) is the
           // user's answer too — never an unhandled rejection.
           if (documentIdRef.current !== armedDocumentId) {
-            setExportStatus("Export cancelled — document changed");
+            report("Export cancelled — document changed");
             return;
           }
-          setExportStatus(cause instanceof Error ? cause.message : String(cause));
+          report(cause instanceof Error ? cause.message : String(cause));
         } finally {
           inFlightRef.current = false;
         }
@@ -238,7 +281,7 @@ export function useSceneExport({
     window.addEventListener("clue:artifact-export-request", onExportRequest);
     return () =>
       window.removeEventListener("clue:artifact-export-request", onExportRequest);
-  }, [documentId]);
+  }, []);
 
   return { exportStatus };
 }

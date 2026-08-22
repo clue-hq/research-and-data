@@ -526,7 +526,9 @@ export function useSceneEditingSession({
     canvasControls,
     /** §1.11: what the last export attempt did — the line the export menu's
      * `aria-live` span announces, over the controller's own optimistic
-     * "requested" one. `null` until an export has been asked for; operation
+     * "requested" one. `null` until an export has been asked for FOR THIS
+     * document — it is stamped and derived like everything else here, so
+     * switching artifacts never inherits the previous ad's outcome. Operation
      * feedback only, never a claim about the document. */
     exportStatus,
     fontOptions,
