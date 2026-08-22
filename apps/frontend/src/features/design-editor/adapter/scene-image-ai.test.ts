@@ -519,8 +519,15 @@ it("RE-REVIEW: the instruction is cleared only when the action LANDED, never on 
 it("§1.3: the two spend buttons are DISABLED with nothing typed and while one is in flight", () => {
   const rows = /function AdImageAiRows\([\s\S]*?\n}\n/.exec(AD_INSPECTOR_SOURCE);
   assert.ok(rows, "image-inspector.tsx no longer defines AdImageAiRows");
-  assert.match(rows[0], /disabled=\{generating \|\| prompt\.trim\(\) === ""\}/);
-  assert.match(rows[0], /disabled=\{instruction\.trim\(\) === ""\}/);
+  // AD4.R-10 / GATE G-H (founder-ruled 2026-08-22, this plan's Task 10;
+  // controller-authorized pin rewrite, T7 precedent, correct-base
+  // reimplementation): both literals now carry a THIRD condition — the panel's
+  // agent-turn gate ("we cannot let humans change any value when the agents are
+  // at work with designing"). The pin moved WITH the code rather than being
+  // loosened, so it is now strictly stronger: dropping the G-H flag out of
+  // either button fails the build exactly as dropping the original two would.
+  assert.match(rows[0], /disabled=\{disabled \|\| generating \|\| prompt\.trim\(\) === ""\}/);
+  assert.match(rows[0], /disabled=\{disabled \|\| instruction\.trim\(\) === ""\}/);
   // The pending label is the status, on the one button class in this shell
   // with an authored disabled treatment.
   assert.match(rows[0], /\{generating \? "Generating…"/);
@@ -583,5 +590,14 @@ it("REVIEW: the AI rows are OFFERED only when there is a real document to write 
     /const imageAi = activeDocumentId && scene \? imageAiBinding : undefined;/,
   );
   // And the panel still treats an absent binding as "render nothing".
-  assert.match(AD_INSPECTOR_SOURCE, /\{imageAi \? <AdImageAiRows imageAi=\{imageAi\} \/> : null\}/);
+  //
+  // AD4.R-10 / GATE G-H (founder-ruled 2026-08-22, this plan's Task 10;
+  // controller-authorized pin rewrite, T7 precedent, correct-base
+  // reimplementation): the render literal gained the agent-turn gate, passed as
+  // an ordinary prop — `inert` is the image schema's `locked ||
+  // inspectorDisabled`. Reading it from a context here purely to leave this pin
+  // untouched was considered and REJECTED as guard-gaming: it would make the AI
+  // suite the one part of the panel that learns the flag differently. So the pin
+  // moved instead, and it now also proves the AI rows are gated.
+  assert.match(AD_INSPECTOR_SOURCE, /\{imageAi \? <AdImageAiRows disabled=\{inert\} imageAi=\{imageAi\} \/> : null\}/);
 });

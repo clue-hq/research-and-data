@@ -178,6 +178,18 @@ export function EditorSurface({
           {/* AD2.7 (F2): the SAME dock the web branch above uses — same
               wrapper, same class, same grid column. Only the panel differs. */}
           <div className={styles.inspectorDock}>
+            {/* AD4.R-10 / GATE G-H: `inspectorDisabled` is deliberately NOT
+                passed here, so this route behaves exactly as it did. The ruled
+                in-flight gate reads the chat controller's `threadBusy`, and the
+                artifact route has no live turn stream to read — it is the
+                document open on its own, with no thread beside it. Its net
+                against an agent write landing under the user's hands stays the
+                D10 CAS reconciliation (the document version moves, the write is
+                refused, the panel reloads and says so — proven at T8). RECORDED
+                FOLLOW-UP: a DOCUMENT-scoped agent-busy signal (plausibly off the
+                run_event SSE, which this route already has a reason to watch)
+                would close the gap; inventing a second, thread-shaped source
+                here would not. */}
             <ImageInspector
               // Keyed on the SELECTED NODE only, exactly as the web branch is.
               // Values need no remount to resynchronize — every bound field

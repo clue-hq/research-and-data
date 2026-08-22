@@ -102,6 +102,7 @@ export function InspectorIcon({
 
 export function InspectorHeader({
   actionMenu,
+  disabled = false,
   elementActions = true,
   locked = false,
   moreActionsExpanded,
@@ -113,6 +114,16 @@ export function InspectorHeader({
   visible = true,
 }: {
   actionMenu?: ReactNode;
+  /** AD4.R-10 (G-H): the lock and visibility toggles are OPERATIONS on the
+   * document, so they go dark with the rest of the panel while an agent turn is
+   * in flight. Absent (the web inspector, the dummy fixture path) is `false`,
+   * i.e. exactly what this header has always rendered.
+   *
+   * DELIBERATELY NOT FOLDED TOGETHER WITH `locked`: locking is the one write
+   * whose own outcome this button states, so a locked node must keep an ENABLED
+   * lock button or the user could never unlock it. The ellipsis is untouched
+   * either way — it opens a menu, and G-H gates operations, not navigation. */
+  disabled?: boolean;
   elementActions?: boolean;
   locked?: boolean;
   moreActionsExpanded?: boolean;
@@ -132,7 +143,8 @@ export function InspectorHeader({
             <button
               aria-label={locked ? "Unlock element" : "Lock element"}
               aria-pressed={locked}
-              className={`${styles.inspectorIconButton} ${locked ? styles.inspectorIconButtonActive : ""}`}
+              className={`${styles.inspectorIconButton} ${locked ? styles.inspectorIconButtonActive : ""} ${disabled ? styles.inspectorControlDisabled : ""}`}
+              disabled={disabled}
               onClick={onLockToggle}
               type="button"
             >
@@ -145,7 +157,8 @@ export function InspectorHeader({
               <button
                 aria-label={visible ? "Hide element" : "Show element"}
                 aria-pressed={!visible}
-                className={`${styles.inspectorIconButton} ${!visible ? styles.inspectorIconButtonActive : ""}`}
+                className={`${styles.inspectorIconButton} ${!visible ? styles.inspectorIconButtonActive : ""} ${disabled ? styles.inspectorControlDisabled : ""}`}
+                disabled={disabled}
                 onClick={onVisibilityToggle}
                 type="button"
               >
@@ -267,11 +280,19 @@ export function InspectorControl({
 }
 
 export function InspectorSelect({
+  disabled = false,
   label,
   onChange,
   options,
   value,
 }: {
+  /** AD4.R-10 (G-H): this select may not produce a document operation — a
+   * locked node, or an agent turn in flight. Absent is `false`, so every
+   * existing caller (the web inspector, the dummy fixture path) renders and
+   * behaves exactly as it always has. The refusal is stated TWICE on purpose:
+   * `Select.Root` closes the popup path, and the guard in `onValueChange` means
+   * even a programmatic value change cannot dispatch a write. */
+  disabled?: boolean;
   label: string;
   onChange: (value: string) => void;
   options: readonly string[];
@@ -281,15 +302,17 @@ export function InspectorSelect({
 
   return (
     <Select.Root
+      disabled={disabled}
       items={items}
       onValueChange={(nextValue) => {
+        if (disabled) return;
         if (typeof nextValue === "string") onChange(nextValue);
       }}
       value={value}
     >
       <Select.Trigger
         aria-label={label}
-        className={`${styles.inspectorControl} ${styles.inspectorSelectControl}`}
+        className={`${styles.inspectorControl} ${styles.inspectorSelectControl} ${disabled ? styles.inspectorControlDisabled : ""}`}
       >
         <Select.Value className={styles.inspectorSelectValue} />
         <Select.Icon className={styles.inputChevron}>
@@ -467,6 +490,7 @@ export function InspectorTokenControl({
 export function InspectorInput({
   ariaLabel,
   className,
+  disabled = false,
   leading,
   onChange,
   onCommit,
@@ -479,6 +503,21 @@ export function InspectorInput({
 }: {
   ariaLabel: string;
   className?: string;
+  /** AD4.R-10 (G-H): this field may not produce a document operation — a locked
+   * node, or an agent turn in flight. Absent is `false`: every existing caller
+   * is byte-for-byte unchanged.
+   *
+   * DISTINCT FROM `readOnly`, which is a display posture (the value is real but
+   * this panel does not author it) and carries no treatment. This one says the
+   * write path is closed right now, and it is what the G-H opacity states.
+   *
+   * BOTH the draft and the commit are guarded, in both protocols. A natively
+   * disabled input fires no blur/keydown of its own, but a PROGRAMMATIC blur —
+   * a focused field whose panel disables underneath it — is exactly the shape
+   * that would slip a write through. Refusing here means a field that goes dark
+   * mid-edit holds a draft it cannot commit, which is the point of the ruling:
+   * the refusal touches nothing, so the typed text survives the turn. */
+  disabled?: boolean;
   leading?: ReactNode;
   /** Optional once `onCommitValue` exists: a self-drafting field needs no
    * per-keystroke channel. Every existing caller keeps passing it. */
@@ -516,19 +555,36 @@ export function InspectorInput({
   const selfDrafting = onCommitValue !== undefined;
   const shown = selfDrafting ? fieldDisplay(draft, value) : value;
   const commitSelf = () => {
+    // G-H (AD4.R-10): ABOVE the draft clear. A refused commit must touch
+    // nothing at all — clearing the draft would throw away text the user typed
+    // for a write that never happened, which is the same "a refusal touches
+    // nothing" posture the AI suite's instruction box keeps.
+    if (disabled) return;
     const commit = fieldCommit(draft, value);
     setDraft(null);
     if (commit !== null) onCommitValue?.(commit);
   };
+  /** The caller-draft protocol's commit (W4.2), behind the same refusal. */
+  const commitCaller = onCommit
+    ? () => {
+        if (disabled) return;
+        onCommit();
+      }
+    : undefined;
   return (
-    <span className={`${styles.inspectorControl} ${styles.inspectorInputControl} ${className ?? ""}`}>
+    <span className={`${styles.inspectorControl} ${styles.inspectorInputControl} ${className ?? ""} ${disabled ? styles.inspectorControlDisabled : ""}`}>
       {leading}
       {prefix ? <span className={styles.fieldPrefix}>{prefix}</span> : null}
       <input
         aria-label={ariaLabel}
+        disabled={disabled}
         inputMode="text"
-        onBlur={selfDrafting ? commitSelf : onCommit ? () => onCommit() : undefined}
+        onBlur={selfDrafting ? commitSelf : commitCaller ? () => commitCaller() : undefined}
         onChange={(event) => {
+          // A disabled field may not mutate its own draft either: the draft is
+          // what a later blur would commit, so a write refused at the commit
+          // but accepted into the draft is the same write, one moment later.
+          if (disabled) return;
           if (selfDrafting) setDraft(event.target.value);
           onChange?.(event.target.value);
         }}
@@ -537,9 +593,9 @@ export function InspectorInput({
             ? (event) => {
                 if (event.key === "Enter") commitSelf();
               }
-            : onCommit
+            : commitCaller
               ? (event) => {
-                  if (event.key === "Enter") onCommit();
+                  if (event.key === "Enter") commitCaller();
                 }
               : undefined
         }
@@ -591,11 +647,20 @@ const NUMERIC_RADIUS = /^\d+$/;
  * path never sees a per-keystroke event. Behavioral only: same DOM, classes,
  * icons and aria-labels as the dummy ships. */
 export function RadiusControls({
+  disabled = false,
   locked = false,
   onApplyAll,
   onChange,
   values,
 }: {
+  /** AD4.R-10 (G-H): an agent turn is in flight, so none of these five fields
+   * may produce a document operation. It COMPOSES with `locked` rather than
+   * replacing it — `locked` is a fact about the NODE and A29 owns what a commit
+   * against one records; this is a fact about the moment. Absent is `false`, so
+   * the web lane (which passes neither) renders and behaves byte-for-byte as it
+   * always has, and a locked ad node now simply looks as refused as it already
+   * behaved. */
+  disabled?: boolean;
   /** RULING A29 (review): the selected node's LOCK, as data — the one refusal
    * this component can actually know.
    *
@@ -743,10 +808,17 @@ export function RadiusControls({
     // is free to run twice (the AD4.0 step-1 commit-on-blur rule).
     const commit = fieldCommit(drafts[corner] ?? null, values[corner]);
     setDrafts((current) => ({ ...current, [corner]: undefined }));
-    // A29's surviving half: a locked node refuses every write (§4), so a commit
-    // against one skips the doomed dispatch. Honesty no longer depends on it —
-    // nothing is recorded locally, and dropping the draft re-states the
-    // document — it only spares the adapter a refusal.
+    // G-H (AD4.R-10): the in-flight agent turn, on the same terms as the lock.
+    // Its own line, BELOW the draft drop and beside rather than inside the
+    // guard below — this lane's ratified posture is clear-before-refuse (a
+    // refused scan that kept typed text was the latent defect A26/A29 closed),
+    // so a refusal here re-states the document rather than holding text.
+    // DELIBERATELY THE OPPOSITE of `BackgroundFillControl.commitDraft`, whose
+    // ruled posture is keep-the-text: each lane follows its own ratified,
+    // test-pinned rule and neither should be "fixed" to match the other.
+    // The fields are natively disabled, so this is the programmatic-blur
+    // backstop.
+    if (disabled) return;
     if (commit === null || locked) return;
     onChange(corner, commit);
   };
@@ -770,9 +842,18 @@ export function RadiusControls({
     // would leave the box stating a number the document does not have — the
     // panel-lie class this whole task exists to close.
     setDrafts((current) => ({ ...current, all: undefined }));
+    // G-H (AD4.R-10), below the drop for the same reason `sceneCommit` puts it
+    // there — this lane clears first and refuses second.
+    if (disabled) return;
     if (value.trim() === "" || locked) return;
     onChange("all", value);
   };
+
+  // G-H (AD4.R-10): what the five fields and the scan button LOOK like and
+  // whether they accept a pointer at all. One expression so no control in this
+  // component can drift from another — the lock and the in-flight window are
+  // two reasons for one state.
+  const inert = disabled || locked;
 
   return (
     <>
@@ -780,6 +861,7 @@ export function RadiusControls({
         <InspectorInput
           ariaLabel="All corner radius"
           className={styles.radiusValue}
+          disabled={inert}
           leading={<InspectorIcon name="radius-all" size={16} />}
           onChange={(value) =>
             scene
@@ -795,7 +877,7 @@ export function RadiusControls({
           }}
           value={scene ? sceneShown("all") : radius.draft.all}
         />
-        <button aria-label="Apply radius to all corners" className={styles.scanButton} onClick={scene ? sceneApplyAll : applyAll} type="button">
+        <button aria-label="Apply radius to all corners" className={`${styles.scanButton} ${inert ? styles.inspectorControlDisabled : ""}`} disabled={inert} onClick={scene ? sceneApplyAll : applyAll} type="button">
           <InspectorIcon name="radius-scan" size={12} />
         </button>
       </div>
@@ -833,10 +915,11 @@ export function RadiusControls({
             }));
           };
           return (
-            <span className={`${styles.inspectorControl} ${styles.inspectorInputControl} ${styles.cornerRadiusField}`} key={corner}>
+            <span className={`${styles.inspectorControl} ${styles.inspectorInputControl} ${styles.cornerRadiusField} ${inert ? styles.inspectorControlDisabled : ""}`} key={corner}>
               <InspectorIcon name={icon} size={16} />
               <input
                 aria-label={`${corner} radius`}
+                disabled={inert}
                 onBlur={scene ? () => sceneCommit(corner) : commit}
                 onChange={(event) =>
                   scene
@@ -919,6 +1002,7 @@ function hsvToHex({ h, s, v }: HsvColor) {
 
 export function ColorControl({
   color = "#00F59B",
+  disabled = false,
   fixtureFallback = true,
   none = false,
   noneAriaLabel = "Color is none",
@@ -930,6 +1014,18 @@ export function ColorControl({
   showOpacity = true,
 }: {
   color?: string;
+  /** AD4.R-10 (G-H): the swatch may not produce a document operation — a locked
+   * node, or an agent turn in flight. Absent is `false` (the web lane, the
+   * dummy fixture path), unchanged.
+   *
+   * The picker cannot be OPENED rather than opening dead: every write this
+   * control makes happens inside the popover (a theme pick, the hex field, the
+   * plane, the hue slider, the recent strip), so disabling the trigger closes
+   * all of them at once — and a picker you can open but cannot commit from is a
+   * worse lie than one that visibly will not open. The three commits below are
+   * guarded ANYWAY, because a popover that was already open when the flag
+   * flipped survives the flip (see `commitColor`). */
+  disabled?: boolean;
   /** RULING A23: `false` says `options` is the whole truth — with no palette
    * the Theme tab renders NOTHING rather than the dummy's six fixture colours,
    * which on a live write path are a fabrication the user can commit. The ad
@@ -973,7 +1069,26 @@ export function ColorControl({
     return upper;
   };
 
+  /**
+   * G-H (AD4.R-10): every write this control makes is funnelled through the
+   * three commit paths below, and each one refuses while the control is
+   * disabled.
+   *
+   * WHY THE TRIGGER GUARD IS NOT ENOUGH. Disabling `Popover.Trigger` stops the
+   * picker being OPENED, but a popover that was ALREADY OPEN when the flag
+   * flipped — an agent turn starting while the marketer has the swatch open,
+   * the ordinary case — survives the flip, and every control inside it (the
+   * theme swatches, the hex field, the saturation plane, the hue slider, the
+   * recent strip) would go on writing. Refusing at the commits closes all of
+   * them at once without new popover-state plumbing, which is why closing the
+   * popover on flip is deliberately NOT done here.
+   *
+   * THE LOCAL PREVIEW IS REFUSED TOO, not just the callback: `previewColor`
+   * moves this control's own swatch, and moving it over a document the write
+   * path refused is the panel-lie class this whole slice exists to close.
+   */
   const commitColor = (nextColor: string) => {
+    if (disabled) return;
     const upper = previewColor(nextColor);
     if (upper !== null) {
       onColorChange?.(upper);
@@ -981,6 +1096,7 @@ export function ColorControl({
   };
 
   const commitCustomColor = (nextColor: HsvColor) => {
+    if (disabled) return;
     const nextHex = hsvToHex(nextColor);
     setCustomColor(nextColor);
     setDraftColor(nextHex);
@@ -997,7 +1113,10 @@ export function ColorControl({
   };
 
   return (
-    <span className={styles.colorControl} ref={colorControlRef}>
+    <span
+      className={`${styles.colorControl} ${disabled ? styles.inspectorControlDisabled : ""}`}
+      ref={colorControlRef}
+    >
       {none ? (
         <button
           aria-label={noneAriaLabel}
@@ -1020,6 +1139,7 @@ export function ColorControl({
           <Popover.Trigger
             aria-label={`Choose color ${color}`}
             className={`${styles.colorValue} ${!showOpacity ? styles.colorValueSingle : ""}`}
+            disabled={disabled}
           >
             <span className={styles.colorSwatch} style={{ background: color }} />
             <span>{color.toUpperCase()}</span>
@@ -1080,6 +1200,13 @@ export function ColorControl({
                           // A caller that takes tokens therefore gets the
                           // token alone; the swatch's own draft state is still
                           // moved, so the popover shows the pick either way.
+                          //
+                          // G-H (AD4.R-10): the token branch is the one write
+                          // path that does NOT run through `commitColor`, so it
+                          // carries the refusal itself — an already-open
+                          // popover outlives the flag flip (see `commitColor`),
+                          // and this is the branch the ad lane actually takes.
+                          if (disabled) return;
                           if (onTokenChange) {
                             previewColor(option.value);
                             onTokenChange(option.label);
@@ -1182,7 +1309,11 @@ export function ColorControl({
         <span className={`${styles.opacityValue} ${styles.inspectorInputControl}`}>
           <input
             aria-label="Color opacity"
-            onChange={(event) => onOpacityChange?.(event.target.value)}
+            disabled={disabled}
+            onChange={(event) => {
+              if (disabled) return;
+              onOpacityChange?.(event.target.value);
+            }}
             value={opacity}
           />
         </span>
@@ -1219,6 +1350,7 @@ function backgroundFillCss(fill: InspectorBackgroundFill, solidColor: string) {
 }
 
 export function BackgroundFillControl({
+  disabled = false,
   fill,
   fixtureFallback = true,
   onFillChange,
@@ -1227,6 +1359,12 @@ export function BackgroundFillControl({
   options,
   solidColor,
 }: {
+  /** AD4.R-10 (G-H): forwarded to every control this section owns — the mode
+   * select, both nested pickers, the angle and stop-position fields, and the
+   * add/remove stop buttons. Absent is `false`, so the web lane is unchanged.
+   * The gradient PREVIEW is not a control and keeps its full opacity: it states
+   * the document, and the document is not what went dark. */
+  disabled?: boolean;
   fill: InspectorBackgroundFill;
   /** RULING A23, forwarded to both nested pickers with `options` — this
    * section's swatches must not offer a fixture palette either. */
@@ -1266,6 +1404,18 @@ export function BackgroundFillControl({
     write: (value: number) => void,
   ) => {
     const typed = draft?.field === field ? draft.value : null;
+    // G-H (AD4.R-10): the fields are natively disabled, so this is the
+    // programmatic-blur backstop — and IT MUST SIT ABOVE `setDraft(null)`.
+    // Clearing the draft is itself a change the user did not ask for: a refused
+    // commit that also wiped the typed text would throw the angle/position away
+    // and snap the box back to the document. This lane's ruled posture is
+    // keep-the-text, DELIBERATELY THE OPPOSITE of `RadiusControls`' scene lane
+    // (clear-before-refuse, F4-pinned there because a locked scan holding typed
+    // text was a latent defect). Each follows its own ratified rule; neither
+    // should be "fixed" to match the other.
+    if (disabled) {
+      return;
+    }
     setDraft(null);
     if (typed === null) {
       return;
@@ -1278,6 +1428,7 @@ export function BackgroundFillControl({
     }
   };
   const updateStop = (index: number, update: Partial<InspectorBackgroundFill["stops"][number]>) => {
+    if (disabled) return;
     onFillChange({
       ...fill,
       stops: fill.stops.map((stop, stopIndex) => stopIndex === index ? { ...stop, ...update } : stop),
@@ -1285,6 +1436,7 @@ export function BackgroundFillControl({
   };
 
   const addStop = () => {
+    if (disabled) return;
     if (fill.stops.length >= 6) return;
     const sorted = [...fill.stops].sort((left, right) => left.position - right.position);
     let largestGapIndex = 0;
@@ -1311,6 +1463,7 @@ export function BackgroundFillControl({
   return (
     <div className={styles.backgroundFillControl}>
       <InspectorSelect
+        disabled={disabled}
         label="Background fill type"
         onChange={(label) => onFillChange({ ...fill, type: BACKGROUND_FILL_TYPES[label as keyof typeof BACKGROUND_FILL_TYPES] })}
         options={BACKGROUND_FILL_LABELS}
@@ -1320,6 +1473,7 @@ export function BackgroundFillControl({
       {fill.type === "solid" ? (
         <ColorControl
           color={solidColor}
+          disabled={disabled}
           fixtureFallback={fixtureFallback}
           onColorChange={onSolidColorChange}
           onTokenChange={onTokenChange}
@@ -1336,12 +1490,18 @@ export function BackgroundFillControl({
           {fill.type === "linear-gradient" ? (
             <label className={styles.backgroundGradientAngle}>
               <span>Angle</span>
+              {/* `disabled` is deliberately NOT in alphabetical position here:
+                  the A7 wiring guard (`inspector-commit-model.test.ts`) pins
+                  this field's `ariaLabel → onChange → onCommit` shape as proof
+                  the angle commits on blur rather than per keystroke, and that
+                  guard is worth more than the ordering convention. */}
               <InspectorInput
                 ariaLabel="Gradient angle"
                 onChange={(value) => setDraft({ field: "angle", value })}
                 onCommit={() =>
                   commitDraft("angle", 360, (angle) => onFillChange({ ...fill, angle }))
                 }
+                disabled={disabled}
                 suffix="°"
                 value={draftValue("angle", fill.angle)}
               />
@@ -1353,6 +1513,7 @@ export function BackgroundFillControl({
               <div className={styles.backgroundGradientStop} key={`${index}-${stop.color}`}>
                 <ColorControl
                   color={stop.color}
+                  disabled={disabled}
                   fixtureFallback={fixtureFallback}
                   onColorChange={(color) => updateStop(index, { color })}
                   options={options}
@@ -1361,6 +1522,7 @@ export function BackgroundFillControl({
                 <InspectorInput
                   ariaLabel={`Gradient stop ${index + 1} position`}
                   className={styles.backgroundGradientPosition}
+                  disabled={disabled}
                   onChange={(value) => setDraft({ field: `stop-${index}`, value })}
                   onCommit={() =>
                     commitDraft(`stop-${index}`, 100, (position) =>
@@ -1373,7 +1535,7 @@ export function BackgroundFillControl({
                 <button
                   aria-label={`Remove gradient stop ${index + 1}`}
                   className={styles.backgroundGradientRemove}
-                  disabled={fill.stops.length <= 2}
+                  disabled={disabled || fill.stops.length <= 2}
                   onClick={() => onFillChange({ ...fill, stops: fill.stops.filter((_, stopIndex) => stopIndex !== index) })}
                   type="button"
                 >
@@ -1385,7 +1547,7 @@ export function BackgroundFillControl({
 
           <button
             className={styles.backgroundGradientAdd}
-            disabled={fill.stops.length >= 6}
+            disabled={disabled || fill.stops.length >= 6}
             onClick={addStop}
             type="button"
           >
@@ -1399,9 +1561,16 @@ export function BackgroundFillControl({
 }
 
 export function InspectorImageUpload({
+  disabled = false,
   onFileSelect,
   src,
 }: {
+  /** AD4.R-10 (G-H): Replace image is an OPERATION — a locked node, or an agent
+   * turn in flight, may not start one. Absent is `false` (the web lane, the
+   * dummy fixture path), unchanged. The tile still shows the node's picture at
+   * the ruled opacity: it is the panel's statement of the document, and a
+   * blanked thumbnail would be a different (and false) statement. */
+  disabled?: boolean;
   /** AD4.A step 2: a handler may REPORT that the document did not take the
    * file, by returning a promise that rejects — the preview then goes back to
    * what the panel was showing. A `void` handler (the dummy fixture path, and
@@ -1439,6 +1608,10 @@ export function InspectorImageUpload({
   }
 
   const selectFile = (file: File) => {
+    // G-H (AD4.R-10): the picker cannot be opened while this control is
+    // disabled, so this is the backstop for a file event that arrives any other
+    // way — a preview swap is itself a claim about the document.
+    if (disabled) return;
     // What the panel is showing RIGHT NOW — the node's own asset, or the
     // picture a previous pick put there. A refused upload must land back on it:
     // a preview of an image the document does not have is the panel lying about
@@ -1464,7 +1637,8 @@ export function InspectorImageUpload({
     <>
       <button
         aria-label="Replace image"
-        className={styles.imageReplaceField}
+        className={`${styles.imageReplaceField} ${disabled ? styles.inspectorControlDisabled : ""}`}
+        disabled={disabled}
         onClick={() => inputRef.current?.click()}
         type="button"
       >
@@ -1486,6 +1660,7 @@ export function InspectorImageUpload({
       <input
         accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml"
         className={styles.visuallyHiddenInput}
+        disabled={disabled}
         onChange={(event) => {
           const file = event.target.files?.[0];
           if (file) selectFile(file);

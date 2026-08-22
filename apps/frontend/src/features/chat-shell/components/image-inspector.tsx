@@ -160,6 +160,23 @@ interface AdHydrationBinding {
    * Its `documentVersion` is null until AD3 wires the scene write path — the
    * W3.1 null contract, i.e. "not addressable", i.e. no write can fire. */
   addressing?: InspectorEventAddressing;
+  /** AD4.R-10 / GATE G-H (founder-ruled 2026-08-22): an agent turn is in flight
+   * on this thread, so the human may not operate this panel — "we cannot let
+   * humans change any value when the agents are at work with designing".
+   *
+   * PREVENTION AT THE SOURCE, which is what makes it different in kind from
+   * every other refusal on this lane: the adapter's silent no and the D10 CAS
+   * reconciliation both act AFTER an interaction; this one means the
+   * interaction never happens.
+   *
+   * It gates OPERATIONS ONLY (the founder's own scope, 2026-08-22): every value
+   * control, the header lock, Replace image and the AI suite. Layer selection,
+   * layer expansion, section open/close and zoom read and navigate — they
+   * produce no document operation, so they stay live. The flag reaches nothing
+   * outside this panel: the chat side of the shell (composer, sending, gates,
+   * queueing) is not a consumer, and whatever it does during a running turn
+   * today is exactly what it goes on doing. */
+  inspectorDisabled?: boolean;
   /** RULING A29: the selected node's lock, routed from the HEADER controller —
    * the one that owns the lock button's write — so all four schemas read ONE
    * statement of it. Since AD4.R-4 every schema's own `state.locked` is live
@@ -281,11 +298,15 @@ function AdLayers({
 }
 
 function TextAlignment({
+  disabled = false,
   horizontal,
   onHorizontalChange,
   onVerticalChange,
   vertical,
 }: {
+  /** G-H (AD4.R-10): these seven toggles are value controls — each one writes an
+   * alignment — so they go dark with the rest of the panel. */
+  disabled?: boolean;
   horizontal: HorizontalAlignment;
   onHorizontalChange: (value: HorizontalAlignment) => void;
   onVerticalChange: (value: "bottom" | "middle" | "top") => void;
@@ -306,16 +327,16 @@ function TextAlignment({
 
   return (
     <div className={styles.alignmentGroups}>
-      <div aria-label="Horizontal alignment" className={`${styles.alignmentControl} ${styles.alignmentControlQuad}`} role="group">
+      <div aria-label="Horizontal alignment" className={`${styles.alignmentControl} ${styles.alignmentControlQuad} ${disabled ? styles.inspectorControlDisabled : ""}`} role="group">
         {horizontalOptions.map(([value, icon]) => (
-          <button aria-label={`Align ${value}`} aria-pressed={horizontal === value} className={horizontal === value ? styles.alignmentActive : ""} key={value} onClick={() => onHorizontalChange(value)} type="button">
+          <button aria-label={`Align ${value}`} aria-pressed={horizontal === value} className={horizontal === value ? styles.alignmentActive : ""} disabled={disabled} key={value} onClick={() => onHorizontalChange(value)} type="button">
             <InspectorIcon name={icon} size={12} />
           </button>
         ))}
       </div>
-      <div aria-label="Vertical alignment" className={`${styles.alignmentControl} ${styles.verticalAlignment}`} role="group">
+      <div aria-label="Vertical alignment" className={`${styles.alignmentControl} ${styles.verticalAlignment} ${disabled ? styles.inspectorControlDisabled : ""}`} role="group">
         {verticalOptions.map(([value, icon]) => (
-          <button aria-label={`Align ${value}`} aria-pressed={vertical === value} className={vertical === value ? styles.alignmentActive : ""} key={value} onClick={() => onVerticalChange(value)} type="button">
+          <button aria-label={`Align ${value}`} aria-pressed={vertical === value} className={vertical === value ? styles.alignmentActive : ""} disabled={disabled} key={value} onClick={() => onVerticalChange(value)} type="button">
             <InspectorIcon name={icon} size={12} />
           </button>
         ))}
@@ -324,7 +345,16 @@ function TextAlignment({
   );
 }
 
-function ArrangeControls({ onAction }: { onAction: (action: string) => void }) {
+/** G-H (AD4.R-10): layer order and alignment actions are OPERATIONS on the
+ * document (not navigation), so the whole grid goes dark while the panel is
+ * disabled. */
+function ArrangeControls({
+  disabled = false,
+  onAction,
+}: {
+  disabled?: boolean;
+  onAction: (action: string) => void;
+}) {
   const layerActions = [
     ["Bring to front", "align-top"],
     ["Bring forward", "align-middle"],
@@ -343,16 +373,16 @@ function ArrangeControls({ onAction }: { onAction: (action: string) => void }) {
   return (
     <>
       <InspectorField label="Layer">
-        <div className={`${styles.inspectorActionGrid} ${styles.inspectorActionGridFour}`}>
+        <div className={`${styles.inspectorActionGrid} ${styles.inspectorActionGridFour} ${disabled ? styles.inspectorControlDisabled : ""}`}>
           {layerActions.map(([label, icon]) => (
-            <button aria-label={label} key={label} onClick={() => onAction(label)} type="button"><InspectorIcon name={icon} size={12} /></button>
+            <button aria-label={label} disabled={disabled} key={label} onClick={() => onAction(label)} type="button"><InspectorIcon name={icon} size={12} /></button>
           ))}
         </div>
       </InspectorField>
       <InspectorField label="Alignment">
-        <div className={`${styles.inspectorActionGrid} ${styles.inspectorActionGridSix}`}>
+        <div className={`${styles.inspectorActionGrid} ${styles.inspectorActionGridSix} ${disabled ? styles.inspectorControlDisabled : ""}`}>
           {alignmentActions.map(([label, icon]) => (
-            <button aria-label={label} key={label} onClick={() => onAction(label)} type="button"><InspectorIcon name={icon} size={12} /></button>
+            <button aria-label={label} disabled={disabled} key={label} onClick={() => onAction(label)} type="button"><InspectorIcon name={icon} size={12} /></button>
           ))}
         </div>
       </InspectorField>
@@ -384,12 +414,19 @@ function AdTextInspector({
   addressing,
   fontOptions,
   hydrated,
+  inspectorDisabled = false,
+  locked = false,
   onSelectionChange,
   ...binding
 }: AdSchemaBinding & {
   fontOptions: readonly string[];
   onSelectionChange: (selection: ChatShellInspectorSelection) => void;
 }) {
+  // G-H (AD4.R-10): one expression for every write control in this schema — the
+  // node's own lock (upstream's `disabled={selectedNode.locked}` posture) OR the
+  // in-flight agent turn. The Layers section below is navigation and takes
+  // neither.
+  const inert = locked || inspectorDisabled;
   // The shared dummy default ("Semi Bold") is not one of the §2-row-2 named
   // weights, so this schema opens on the matching nine-name value. The web
   // inspector keeps its own four-name list and the untouched shared default.
@@ -440,30 +477,30 @@ function AdTextInspector({
   return (
     <>
       <Section id="typography" label="Typography" open={state.openSections.typography} toggle={() => toggleSection("typography")}>
-        <InspectorField label="Color"><ColorControl color={colorRow.color} fixtureFallback={false} onColorChange={colorRow.onColorChange} onTokenChange={colorRow.onTokenChange} options={paletteOptions} /></InspectorField>
-        <InspectorField label="Font"><InspectorSelect label="Font family" onChange={(value) => setValue("fontFamily", value)} options={fontOptions} value={state.fontFamily} /></InspectorField>
+        <InspectorField label="Color"><ColorControl color={colorRow.color} disabled={inert} fixtureFallback={false} onColorChange={colorRow.onColorChange} onTokenChange={colorRow.onTokenChange} options={paletteOptions} /></InspectorField>
+        <InspectorField label="Font"><InspectorSelect disabled={inert} label="Font family" onChange={(value) => setValue("fontFamily", value)} options={fontOptions} value={state.fontFamily} /></InspectorField>
         <div className={styles.fieldGrid}>
           {/* §2 delta (contract row 2): the size select becomes a free number. */}
-          <InspectorField label="Size"><InspectorInput ariaLabel="Font size" onCommitValue={(value) => setValue("fontSize", value)} value={state.fontSize} /></InspectorField>
-          <InspectorField label="Weight"><InspectorSelect label="Font weight" onChange={(value) => setValue("fontWeight", value)} options={FONT_WEIGHT_OPTIONS} value={state.fontWeight} /></InspectorField>
+          <InspectorField label="Size"><InspectorInput ariaLabel="Font size" disabled={inert} onCommitValue={(value) => setValue("fontSize", value)} value={state.fontSize} /></InspectorField>
+          <InspectorField label="Weight"><InspectorSelect disabled={inert} label="Font weight" onChange={(value) => setValue("fontWeight", value)} options={FONT_WEIGHT_OPTIONS} value={state.fontWeight} /></InspectorField>
         </div>
-        <InspectorField label="Alignment"><TextAlignment horizontal={state.horizontalAlignment} onHorizontalChange={(value) => setValue("horizontalAlignment", value)} onVerticalChange={(value) => setValue("verticalAlignment", value)} vertical={state.verticalAlignment} /></InspectorField>
+        <InspectorField label="Alignment"><TextAlignment disabled={inert} horizontal={state.horizontalAlignment} onHorizontalChange={(value) => setValue("horizontalAlignment", value)} onVerticalChange={(value) => setValue("verticalAlignment", value)} vertical={state.verticalAlignment} /></InspectorField>
       </Section>
       <Section id="stroke" label="Stroke" open={state.openSections.stroke} toggle={() => toggleSection("stroke")}>
-        <InspectorField label="Color"><ColorControl color={strokeRow.color} fixtureFallback={false} onColorChange={strokeRow.onColorChange} onTokenChange={strokeRow.onTokenChange} options={paletteOptions} /></InspectorField>
-        <InspectorField label="Width"><InspectorInput ariaLabel="Stroke width" onCommitValue={(value) => setValue("strokeWidth", value)} value={state.strokeWidth} /></InspectorField>
+        <InspectorField label="Color"><ColorControl color={strokeRow.color} disabled={inert} fixtureFallback={false} onColorChange={strokeRow.onColorChange} onTokenChange={strokeRow.onTokenChange} options={paletteOptions} /></InspectorField>
+        <InspectorField label="Width"><InspectorInput ariaLabel="Stroke width" disabled={inert} onCommitValue={(value) => setValue("strokeWidth", value)} value={state.strokeWidth} /></InspectorField>
       </Section>
       <Section id="layout" label="Layout" open={state.openSections.layout} toggle={() => toggleSection("layout")}>
         <InspectorField label="Position">
           <div className={styles.fieldGrid}>
-            <InspectorInput ariaLabel="X position" onCommitValue={(value) => setNestedValue("position", "x", value)} prefix="X" value={state.position.x} />
-            <InspectorInput ariaLabel="Y position" onCommitValue={(value) => setNestedValue("position", "y", value)} prefix="Y" value={state.position.y} />
+            <InspectorInput ariaLabel="X position" disabled={inert} onCommitValue={(value) => setNestedValue("position", "x", value)} prefix="X" value={state.position.x} />
+            <InspectorInput ariaLabel="Y position" disabled={inert} onCommitValue={(value) => setNestedValue("position", "y", value)} prefix="Y" value={state.position.y} />
           </div>
         </InspectorField>
-        <InspectorField label="Rotation"><InspectorInput ariaLabel="Rotation" onCommitValue={(value) => setValue("rotation", value)} suffix="°" value={state.rotation} /></InspectorField>
+        <InspectorField label="Rotation"><InspectorInput ariaLabel="Rotation" disabled={inert} onCommitValue={(value) => setValue("rotation", value)} suffix="°" value={state.rotation} /></InspectorField>
       </Section>
       <Section id="arrange" label="Arrange" open={state.openSections.arrange} toggle={() => toggleSection("arrange")}>
-        <ArrangeControls onAction={(action) => requestAction(`arrange:${action}`)} />
+        <ArrangeControls disabled={inert} onAction={(action) => requestAction(`arrange:${action}`)} />
       </Section>
       <Section id="layers" label="Layers" open={state.openSections.layers} toggle={() => toggleSection("layers")}>
         <AdLayers onSelectionChange={onSelectionChange} selected="text" {...binding} />
@@ -475,11 +512,16 @@ function AdTextInspector({
 function AdCanvasInspector({
   addressing,
   hydrated,
+  inspectorDisabled = false,
   onSelectionChange,
   ...binding
 }: AdSchemaBinding & {
   onSelectionChange: (selection: ChatShellInspectorSelection) => void;
 }) {
+  // G-H (AD4.R-10): this schema addresses the PAGE, which has no node lock —
+  // the header renders no lock button here at all (`elementActions` is false for
+  // `canvas`), so the in-flight agent turn is this schema's only refusal, and
+  // its controls gate on that flag alone rather than on an `inert` pair.
   // Pin the select to its own option list: the shared DEFAULT_STATE carries the
   // same corrected §2.1 string today, but this override keeps the schema's value
   // coupled to SIZE_PRESETS so a relabel can never orphan the <select>. A real
@@ -561,12 +603,12 @@ function AdCanvasInspector({
   return (
     <>
       <Section id="dimensions" label="Dimensions" open={state.openSections.dimensions} toggle={() => toggleSection("dimensions")}>
-        <InspectorField label="Size"><InspectorSelect label="Canvas dimensions" onChange={changeSizePreset} options={SIZE_PRESETS} value={shownPreset} /></InspectorField>
+        <InspectorField label="Size"><InspectorSelect disabled={inspectorDisabled} label="Canvas dimensions" onChange={changeSizePreset} options={SIZE_PRESETS} value={shownPreset} /></InspectorField>
         {shownPreset === "Custom" ? (
           <InspectorField label="Custom size">
             <div className={styles.fieldGrid}>
-              <InspectorInput ariaLabel="Custom width" onCommitValue={(value) => setValue("customWidth", value)} prefix="W" value={state.customWidth} />
-              <InspectorInput ariaLabel="Custom height" onCommitValue={(value) => setValue("customHeight", value)} prefix="H" value={state.customHeight} />
+              <InspectorInput ariaLabel="Custom width" disabled={inspectorDisabled} onCommitValue={(value) => setValue("customWidth", value)} prefix="W" value={state.customWidth} />
+              <InspectorInput ariaLabel="Custom height" disabled={inspectorDisabled} onCommitValue={(value) => setValue("customHeight", value)} prefix="H" value={state.customHeight} />
             </div>
           </InspectorField>
         ) : null}
@@ -580,6 +622,7 @@ function AdCanvasInspector({
               (`ColorStop.color` can hold a token, but nothing authors one
               through this control, and §8 authorizes no new mapping). */}
           <BackgroundFillControl
+            disabled={inspectorDisabled}
             fill={state.backgroundFill}
             fixtureFallback={false}
             onFillChange={changeBackgroundFill}
@@ -629,7 +672,18 @@ function AdCanvasInspector({
  * this component (in the session hook) because the panel remounts on every
  * reload, and a paid model result must not be thrown away by one.
  */
-function AdImageAiRows({ imageAi }: { imageAi: SceneImageAiBinding }) {
+function AdImageAiRows({
+  disabled,
+  imageAi,
+}: {
+  /** G-H (AD4.R-10): the whole suite is spend — every button here starts a paid
+   * model run or writes its result — so a locked node or an in-flight agent turn
+   * closes all of it. Required (not defaulted): the only caller is the ad image
+   * schema, and a suite that silently defaulted to enabled is exactly the defect
+   * this gate exists to prevent. */
+  disabled: boolean;
+  imageAi: SceneImageAiBinding;
+}) {
   const [prompt, setPrompt] = useState("");
   const [instruction, setInstruction] = useState("");
   const { candidate, canEdit, editing, generating, hasImage, savedNotice, statusLine } =
@@ -639,6 +693,7 @@ function AdImageAiRows({ imageAi }: { imageAi: SceneImageAiBinding }) {
       <InspectorField label={hasImage ? "Regenerate" : "Generate image"}>
         <InspectorInput
           ariaLabel="Image prompt"
+          disabled={disabled}
           onChange={setPrompt}
           placeholder="e.g. editorial photo of a calm clinic reception, soft light, no text"
           value={prompt}
@@ -649,7 +704,7 @@ function AdImageAiRows({ imageAi }: { imageAi: SceneImageAiBinding }) {
           share menu's own primary uses it the same way ("Publishing…"). */}
       <button
         className={styles.sharePrimaryButtonWide}
-        disabled={generating || prompt.trim() === ""}
+        disabled={disabled || generating || prompt.trim() === ""}
         onClick={() => imageAi.onGenerate(prompt)}
         type="button"
       >
@@ -666,6 +721,7 @@ function AdImageAiRows({ imageAi }: { imageAi: SceneImageAiBinding }) {
           <InspectorField label="Edit image">
             <InspectorInput
               ariaLabel="Image edit instruction"
+              disabled={disabled}
               onChange={setInstruction}
               placeholder="e.g. make the sky warmer, remove the person on the left"
               value={instruction}
@@ -683,14 +739,27 @@ function AdImageAiRows({ imageAi }: { imageAi: SceneImageAiBinding }) {
             <div className={styles.fieldGrid}>
               <button
                 className={styles.sharePrimaryButtonWide}
-                disabled={instruction.trim() === ""}
+                disabled={disabled || instruction.trim() === ""}
                 onClick={() => imageAi.onEdit(instruction)}
                 type="button"
               >
                 Edit
               </button>
+              {/* G-H RESIDUAL — ACCEPTED (controller, 2026-08-22), recorded
+                  rather than papered over. The shell authored NO disabled
+                  treatment for a secondary button (the reason the in-flight
+                  branch above REPLACES this pair instead of disabling it), and
+                  the class G-H approved is for FIELDS. Inventing a
+                  secondary-button treatment here is exactly what the A19
+                  never-invent-UI discipline forbids, so it was not done.
+                  Consequence: `Remove background` (and `Reject` / `Save as new`
+                  in the review below) are genuinely inert while an agent turn
+                  runs, but do not dim. The OPERATION is prevented, which is the
+                  founder's ruling; how a disabled secondary should LOOK is
+                  founder-visible design and copy for a later pass. */}
               <button
                 className={styles.shareSecondaryButton}
+                disabled={disabled}
                 onClick={imageAi.onRemoveBackground}
                 type="button"
               >
@@ -712,6 +781,7 @@ function AdImageAiRows({ imageAi }: { imageAi: SceneImageAiBinding }) {
       {candidate ? (
         <AdImageCandidateReview
           candidate={candidate}
+          disabled={disabled}
           imageAi={imageAi}
           onClearInstruction={() => setInstruction("")}
         />
@@ -761,10 +831,18 @@ function AdImageAiRows({ imageAi }: { imageAi: SceneImageAiBinding }) {
  */
 function AdImageCandidateReview({
   candidate,
+  disabled,
   imageAi,
   onClearInstruction,
 }: {
   candidate: NonNullable<SceneImageAiBinding["candidate"]>;
+  /** G-H (AD4.R-10): all three answers are operations — Accept and Save as new
+   * write, and Reject discards a staged (paid) result — so all three are refused
+   * while an agent turn is in flight. The comparison itself stays fully visible
+   * and fully readable: it is a statement about what is on offer, and the ruling
+   * gates operating, not looking. Reject and Save as new carry the accepted A19
+   * residual noted at `AdImageAiRows` — inert, not dimmed. */
+  disabled: boolean;
   imageAi: SceneImageAiBinding;
   /** Upstream clears the instruction on Accept and on Save as new, and not on
    * Reject (`ImageInspectorSection.tsx:159,178` vs `:165-168`) — because after
@@ -792,6 +870,7 @@ function AdImageCandidateReview({
       <div className={styles.fieldGrid}>
         <button
           className={styles.sharePrimaryButtonWide}
+          disabled={disabled}
           onClick={() => {
             if (imageAi.onAccept()) onClearInstruction();
           }}
@@ -801,6 +880,7 @@ function AdImageCandidateReview({
         </button>
         <button
           className={styles.shareSecondaryButton}
+          disabled={disabled}
           onClick={imageAi.onRejectCandidate}
           type="button"
         >
@@ -809,6 +889,7 @@ function AdImageCandidateReview({
       </div>
       <button
         className={styles.shareSecondaryButton}
+        disabled={disabled}
         onClick={() => {
           if (imageAi.onSaveCandidateAsNew()) onClearInstruction();
         }}
@@ -843,6 +924,7 @@ function AdImageInspector({
   addressing,
   hydrated,
   imageAi,
+  inspectorDisabled = false,
   locked = false,
   onReplaceImage,
   onSelectionChange,
@@ -861,6 +943,11 @@ function AdImageInspector({
     { liveHydration: hydrated != null },
   );
   const { setNestedValue, setValue, state, toggleSection } = controller;
+  // G-H (AD4.R-10): this schema's two refusals in one expression — the node's
+  // own lock (upstream's `disabled={selectedNode.locked}` posture) and the
+  // in-flight agent turn. `RadiusControls` composes the same pair itself, so it
+  // still takes them as the two separate facts they are (see its call below).
+  const inert = locked || inspectorDisabled;
   // §1.3 row 2 (Alt text) — AD4.R-7: the `committed`/`draft`/`seen` TRIPLE that
   // stood here is retired. The box is now a self-drafting projection of
   // `state.altText`, which live hydration (Task 4) makes the document's own
@@ -911,8 +998,8 @@ function AdImageInspector({
             landing after a mid-upload reload still repaints the thumbnail,
             because `InspectorImageUpload` follows the live value when it
             changes. */}
-        <InspectorField label="Image"><InspectorImageUpload onFileSelect={onReplaceImage} src={state.imagePreviewSrc} /></InspectorField>
-        <InspectorField label="Mode"><InspectorSelect label="Image fill mode" onChange={(value) => setValue("fillMode", value)} options={FILL_MODES} value={state.fillMode} /></InspectorField>
+        <InspectorField label="Image"><InspectorImageUpload disabled={inert} onFileSelect={onReplaceImage} src={state.imagePreviewSrc} /></InspectorField>
+        <InspectorField label="Mode"><InspectorSelect disabled={inert} label="Image fill mode" onChange={(value) => setValue("fillMode", value)} options={FILL_MODES} value={state.fillMode} /></InspectorField>
         {/* §1.3 row 2 (AD4.A step 3): Alt text — the AI suite's one MANUAL
             row. Upstream has no alt-text generator, so this is an ordinary
             `asset_placement` write through the ordinary property seam, and it
@@ -922,10 +1009,18 @@ function AdImageInspector({
         <InspectorField label="Alt text">
           <InspectorInput
             ariaLabel="Image alt text"
+            disabled={inert}
             // A29's surviving half: a locked node's commit skips the doomed
             // dispatch. Honesty no longer depends on it — nothing records
             // locally — it only spares the adapter a refusal.
-            onCommitValue={(value) => { if (!locked) setValue("altText", value); }}
+            //
+            // G-H (AD4.R-10) rides as its OWN line above it rather than
+            // widening the condition: the A29 guard
+            // (`scene-image-ai.test.ts`) pins `if (!locked) setValue("altText",
+            // value);` verbatim as the proof a locked node records nothing, and
+            // that pin is worth keeping literal. The field is natively disabled,
+            // so this is the programmatic-blur backstop.
+            onCommitValue={(value) => { if (inspectorDisabled) return; if (!locked) setValue("altText", value); }}
             placeholder="Describe the image"
             value={state.altText}
           />
@@ -933,12 +1028,21 @@ function AdImageInspector({
         {/* §1.3 row 2: the AI suite. Absent (the dummy fixture path, and any
             selection with no live scene behind it) the rows do not render at
             all, which is exactly what this schema shipped as. */}
-        {imageAi ? <AdImageAiRows imageAi={imageAi} /> : null}
+        {imageAi ? <AdImageAiRows disabled={inert} imageAi={imageAi} /> : null}
       </Section>
       <Section id="shape" label="Shape" open={state.openSections.shape} toggle={() => toggleSection("shape")}>
         {/* A29: the lock rides in as data — a commit against a locked node
-            records nothing, because §4 refused the write. */}
-        <InspectorField label="Radius"><RadiusControls locked={locked} onChange={(corner, value) => setNestedValue("radius", corner, value)} values={state.radius} /></InspectorField>
+            records nothing, because §4 refused the write. G-H (AD4.R-10) sends
+            the in-flight turn down BESIDE it, as the second, separate fact it
+            is: `RadiusControls` composes the two itself (`disabled || locked`),
+            so `inspectorDisabled` goes in here, never `inert`, or the lock would
+            be counted twice and the primitive's own contract bypassed.
+            `disabled` is deliberately out of alphabetical order and AFTER
+            `locked`: the A29 guard (`scene-apply.test.ts`) pins
+            `<RadiusControls locked={locked}` as a PREFIX — the proof this schema
+            passes the header's LIVE lock — and that pin is worth more than the
+            ordering convention. */}
+        <InspectorField label="Radius"><RadiusControls locked={locked} disabled={inspectorDisabled} onChange={(corner, value) => setNestedValue("radius", corner, value)} values={state.radius} /></InspectorField>
       </Section>
       <Section id="layers" label="Layers" open={state.openSections.layers} toggle={() => toggleSection("layers")}>
         <AdLayers onSelectionChange={onSelectionChange} selected="image" {...binding} />
@@ -959,6 +1063,7 @@ export function ImageInspector({
   fontOptions = DEFAULT_FONT_OPTIONS,
   hydrated,
   imageAi,
+  inspectorDisabled = false,
   note = null,
   onReplaceImage,
   onSelectionChange,
@@ -977,6 +1082,19 @@ export function ImageInspector({
    * flows are showing and the six callbacks they commit through. Absent (the
    * dummy fixture path) renders no AI rows at all. */
   imageAi?: SceneImageAiBinding;
+  /** AD4.R-10 / GATE G-H: the panel's write controls are closed because an agent
+   * turn is in flight (see `AdHydrationBinding` for the ruling and the
+   * operations-only scope).
+   *
+   * THE CHATS ROUTE PASSES IT; THE ARTIFACT ROUTE DOES NOT, and absent is
+   * `false` — today's behaviour, byte for byte, on that route and on the dummy
+   * fixture path. That asymmetry is deliberate and recorded: the in-flight
+   * signal is the chat controller's `threadBusy`, and the artifact route has no
+   * live turn stream to read it from. Its net there stays the D10 CAS
+   * reconciliation (refuse-then-reload after the fact, proven at T8); a
+   * DOCUMENT-scoped agent-busy signal — plausibly off the run_event SSE — is the
+   * recorded follow-up that would close it. */
+  inspectorDisabled?: boolean;
   /** AD2.7: a transient informational note (the 409 quiet reload). */
   note?: string | null;
   /** §1.3 row 1 (AD4.A step 2): the session's Replace-image flow — upload the
@@ -1027,6 +1145,7 @@ export function ImageInspector({
   const schema = {
     addressing,
     hydrated,
+    inspectorDisabled,
     locked: dummySelection ? false : headerController.state.locked,
     onSelectionChange,
     ...layers,
@@ -1039,6 +1158,10 @@ export function ImageInspector({
           {/* §2 delta (contract row 7): no `onVisibilityToggle` is passed, so the
               header renders no eye on any ad schema. */}
           <InspectorHeader
+            // G-H (AD4.R-10): `inspectorDisabled` ALONE, never the node lock —
+            // locking is the one operation whose own outcome this button states,
+            // so a locked node must keep an enabled way back out.
+            disabled={inspectorDisabled}
             elementActions={selection !== "canvas" && selection !== "button"}
             locked={dummySelection ? false : headerController.state.locked}
             onLockToggle={dummySelection ? undefined : () => headerController.setValue("locked", !headerController.state.locked)}

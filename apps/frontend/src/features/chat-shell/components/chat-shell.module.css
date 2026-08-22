@@ -1926,6 +1926,30 @@
   background: white;
 }
 
+/* AD4.R-10 / GATE G-H (founder-ruled 2026-08-22): the ONE disabled treatment
+ * for an inspector write control — a locked node's fields, and every write
+ * control on the panel while an agent turn is in flight ("we cannot let humans
+ * change any value when the agents are at work with designing").
+ *
+ * FOUNDER-ORDERED CHROME, the §2-delta precedent: the dummy designed no
+ * disabled FIELD, so this is authored rather than lifted — and it is authored
+ * from the sheet's OWN `:disabled` vocabulary rather than invented. The value is
+ * the sheet's existing one (`.backgroundGradientRemove:disabled` /
+ * `.backgroundGradientAdd:disabled`, further down this file, are 0.45 — the
+ * inspector's own disabled buttons), so a disabled field reads exactly as
+ * disabled as the disabled controls it sits beside.
+ *
+ * OPACITY ONLY. No cursor vocabulary is introduced: a natively `disabled`
+ * input/button already suppresses the pointer cursor, and `cursor: wait` (the
+ * share menu's in-flight primary, `.sharePrimaryButtonWide:disabled`) means
+ * "this button is working", which is not what a field the agent has taken over
+ * is saying. The modifier rides the control's WRAPPER, never the control
+ * itself, because `.colorValue:disabled` already authors `opacity: 1` for the
+ * `none` swatch and would outrank a plain class on that element. */
+.inspectorControlDisabled {
+  opacity: 0.45;
+}
+
 .inspectorInputControl input,
 .opacityValue input {
   width: 100%;

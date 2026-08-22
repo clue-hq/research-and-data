@@ -347,6 +347,24 @@ export function ChatSurface({
                 fontOptions={sceneSession.fontOptions}
                 hydrated={sceneSession.hydrated}
                 imageAi={sceneSession.imageAi}
+                // AD4.R-10 / GATE G-H (founder-ruled 2026-08-22): while an
+                // agent turn is in flight on THIS thread, the human may not
+                // operate the inspector — "we cannot let humans change any
+                // value when the agents are at work with designing".
+                //
+                // `chat.threadBusy` is the controller's own already-public fact
+                // (`selectTurnQueueState`: a running turn, or one queued behind
+                // it), the same one the conversation view reads for its busy
+                // affordance. Nothing new is derived and nothing is written
+                // back: this is a READ of the chat controller, so no chat-side
+                // behaviour — composer, sending, gates, queueing, mid-turn
+                // steering — can move because of this line, in either
+                // direction (the founder's chat-status-quo addendum).
+                //
+                // The gate is a TURN in flight, not an open design leg: a leg
+                // stays open across turns, and interleaved manual edits BETWEEN
+                // turns are the ratified genweb feature this must not touch.
+                inspectorDisabled={chat.threadBusy}
                 layers={sceneSession.layerRows}
                 note={sceneSession.note}
                 onReplaceImage={sceneSession.onReplaceImage}
