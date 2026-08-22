@@ -426,6 +426,15 @@ function SceneDocumentCanvas({
     return () => observer.disconnect();
   }, []);
 
+  // AD2.7: hand the rendered scene up. A passive-ref effect (callback only, no
+  // state) so it can never fight the render, and keyed on the scene identity
+  // the draw loop is actually using — including the relaid one the C4
+  // measurement pass adopts.
+  const onSceneChangeRef = useRef(onSceneChange);
+  useEffect(() => {
+    onSceneChangeRef.current = onSceneChange;
+  });
+
   // One controls object, used BOTH by the pointer handler below and by the
   // shell through `controlsRef` — so the press path calls the same declared
   // seam an outside caller would, and a change to hit-testing cannot leave the
@@ -444,6 +453,15 @@ function SceneDocumentCanvas({
         // batch changed nothing, so it repaints nothing.
         if (outcome.accepted) {
           refresh();
+          // AD4.R: the accepted scene ALSO mirrors up synchronously, so a
+          // commit handler's own setState and the session's scene adoption land
+          // in one React batch — the inspector's live-derived fields re-read
+          // the post-write document on the very next render, with no frame in
+          // between showing the pre-write value. The passive effect below still
+          // fires afterwards with the final rendered (possibly relaid) scene;
+          // that second setLoaded is idempotent. This is the MVP editor's own
+          // shape: EditorApp installs result.scene in the accept path.
+          onSceneChangeRef.current?.(outcome.scene, pageId, documentId);
         }
         return outcome;
       },
@@ -455,7 +473,7 @@ function SceneDocumentCanvas({
       refresh,
       sceneSnapshot: () => scene,
     }),
-    [engine, pageId, refresh, scene],
+    [documentId, engine, pageId, refresh, scene],
   );
   useEffect(() => {
     if (!controlsRef) {
@@ -651,14 +669,6 @@ function SceneDocumentCanvas({
     event.currentTarget.releasePointerCapture?.(event.pointerId);
   };
 
-  // AD2.7: hand the rendered scene up. A passive-ref effect (callback only, no
-  // state) so it can never fight the render, and keyed on the scene identity
-  // the draw loop is actually using — including the relaid one the C4
-  // measurement pass adopts.
-  const onSceneChangeRef = useRef(onSceneChange);
-  useEffect(() => {
-    onSceneChangeRef.current = onSceneChange;
-  });
   useEffect(() => {
     onSceneChangeRef.current?.(scene, pageId, documentId);
   }, [documentId, pageId, scene]);
