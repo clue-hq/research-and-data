@@ -227,7 +227,11 @@ export function useSceneExport({
   // What the menu is asking to see RIGHT NOW, set synchronously by
   // `requestExportPreview`. Without it, flipping PNG→SVG would keep the PNG on
   // screen until the SVG came back — an image labelled as a format it is not.
+  // Mirrored onto a ref at the same instant because a resolving export has to
+  // read it from inside its own closure, where the state value is the one
+  // captured at request time.
   const [requestedKey, setRequestedKey] = useState<string | null>(null);
+  const requestedKeyRef = useRef<string | null>(null);
 
   // Every render this scene has already produced, so reopening the region or
   // flipping back to a format the user already looked at costs nothing. A ref:
@@ -267,6 +271,7 @@ export function useSceneExport({
       // says what there is to say.
       if (!armedDocumentId || !armedScene) return;
 
+      requestedKeyRef.current = key;
       setRequestedKey(key);
 
       const cached = previewCacheLookup(
@@ -335,9 +340,16 @@ export function useSceneExport({
             key,
             dataUrl,
           );
-          // Stored and stamped even if the menu has since moved to another
-          // format: the render is true of its own key, so it is worth keeping,
-          // and the derivation above is what decides whether it is on screen.
+          // CACHED unconditionally above, DISPLAYED only if it is still what the
+          // menu is asking for. The two concurrent-export orderings are why this
+          // is a guard and not just the derivation: flip PNG→SVG while the PNG
+          // runs and both exports are live, so whichever resolves LAST would
+          // otherwise take the one preview slot. Without this the late SVG
+          // overwrites a correct, on-screen PNG and the region blanks out — not
+          // a stale image (the derivation still refuses to draw it), but a right
+          // one disappearing for no reason the user can see. The SVG is in the
+          // cache either way, so flipping to it is instant.
+          if (requestedKeyRef.current !== key) return;
           setPreview({
             forDocumentId: armedDocumentId,
             forScene: armedScene,
