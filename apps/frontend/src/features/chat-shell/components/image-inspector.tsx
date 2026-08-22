@@ -407,7 +407,16 @@ function AdTextInspector({
   // A hydrated weight is a real one and wins; a node whose weight is off the
   // nine-name ramp hydrates none (AD2.4) and keeps this default.
   const initial = { fontWeight: "600 Semi Bold", ...hydrated };
-  const controller = useInspectorController([], "text", initial, addressing);
+  const controller = useInspectorController([], "text", initial, addressing, {
+    // AD4.R: live only when a real scene is behind the panel — the dummy
+    // fixture path (no hydration) stays the interactive mock it shipped as.
+    // The flag reads the `hydrated` PROP, never `initial`, which is always
+    // non-null because it carries this schema's own default. `initial` is
+    // rebuilt from the live prop every render, so it is the live merge source
+    // too: the schema-default key rides along and wins only when hydration
+    // does not carry it — today's mount semantics, extended to every render.
+    liveHydration: hydrated != null,
+  });
   const { requestAction, setNestedValue, setValue, state, toggleSection } = controller;
   const paletteOptions = useScenePaletteOptions();
   // §1.6: the two colour rows this schema owns. Brand swatches are offered
@@ -504,7 +513,11 @@ function AdCanvasInspector({
   // coupled to SIZE_PRESETS so a relabel can never orphan the <select>. A real
   // page hydrates its own preset (or "Custom") over it.
   const initial = { sizePreset: SIZE_PRESETS[0], ...hydrated };
-  const controller = useInspectorController([], "canvas", initial, addressing);
+  const controller = useInspectorController([], "canvas", initial, addressing, {
+    // AD4.R live hydration, keyed on the `hydrated` prop — see the text
+    // schema's controller for why the flag reads the prop and not `initial`.
+    liveHydration: hydrated != null,
+  });
   const { setValue, state, toggleSection } = controller;
   const palette = useScenePalette();
   const paletteOptions = useScenePaletteOptions();
@@ -916,6 +929,8 @@ function AdImageInspector({
     "image",
     hydrated ?? undefined,
     addressing,
+    // AD4.R live hydration — see the text schema's controller.
+    { liveHydration: hydrated != null },
   );
   const { setNestedValue, setValue, state, toggleSection } = controller;
   // §1.3 row 2 (Alt text): THREE values in one state object, so they cannot
@@ -1078,6 +1093,8 @@ export function ImageInspector({
     selection,
     hydrated ?? undefined,
     addressing,
+    // AD4.R live hydration — see the text schema's controller.
+    { liveHydration: hydrated != null },
   );
   const dummySelection = isAdDummyInspectorSelection(selection);
   // §1.0: the real node's own name when there is one; the dummy's fixture
