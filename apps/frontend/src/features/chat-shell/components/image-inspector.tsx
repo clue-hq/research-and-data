@@ -4,8 +4,6 @@ import Image from "next/image";
 import { createContext, useContext, useState, type ReactNode } from "react";
 import {
   backgroundFillCommits,
-  mintedStrokeColor,
-  mintedStrokeWidth,
   type SceneInspectorState,
 } from "@/features/design-editor/adapter/scene-hydrate";
 import type { SceneImageAiBinding } from "@/features/design-editor/adapter/scene-image-ai";
@@ -110,27 +108,11 @@ function useScenePaletteOptions() {
  * two halves commit through. Every ad colour control goes through it, so the
  * brand and custom paths cannot drift apart three times over.
  *
- * WHY IT HOLDS A LOCAL DRAFT. The controller's `token*` field is the WRITE
- * channel, and a brand pick sets only that — `textColor` deliberately stays
- * where it was, because `setValue` IS the dispatch and updating it too would
- * fire a second, spurious hex write for one click (the same rule step 1 gave
- * for the Custom W/H boxes). But the swatch reads its value from a PROP, so
- * with nothing tracking the pick the trigger kept showing the previous colour
- * while the artboard repainted with the new one — a panel stating a colour the
- * document no longer has, which is the defect step 1 and step 2 each closed
- * once already. This draft is what the row has shown since it mounted.
- *
- * WHICH VALUE WINS is "whichever was set last", because that is the fact the
- * panel must state: a brand pick shows the token, and the custom hex that
- * DETACHES it (§1.6's informed trade) clears the draft and shows the hex.
- * With no pick yet, the hydrated value stands — which for a token-bound node
- * is the token's own name.
- *
- * R3b: `color` then RESOLVES that value through the palette, because a token
- * name is not a CSS colour — the chip painted nothing, the Custom tab's picker
- * opened on black, and the picker could not mark the bound swatch as pressed.
- * The name still stands when the palette cannot resolve it (no kit attached,
- * an off-catalog token), which is step 2's truthful display, unchanged.
+ * R3b: `color` RESOLVES that value through the palette, because a token name is
+ * not a CSS colour — the chip painted nothing, the Custom tab's picker opened
+ * on black, and the picker could not mark the bound swatch as pressed. The
+ * name still stands when the palette cannot resolve it (no kit attached, an
+ * off-catalog token), which is step 2's truthful display, unchanged.
  */
 function useAdColorRow({
   hydratedValue,
@@ -144,27 +126,20 @@ function useAdColorRow({
   paletteOptions: readonly ThemeColorOption[] | undefined;
 }) {
   const palette = useScenePalette();
-  const [shown, setShown] = useState("");
-  /** The swatch value this row is showing — a token name or a colour. */
-  const value = shown === "" ? hydratedValue : shown;
+  // AD4.R: the row shows the DOCUMENT's value — a token name or a colour —
+  // which under live hydration is current in the same batch as the write it
+  // dispatched (a brand pick surfaces as the token's name, a detaching hex as
+  // the hex, a refused write as the unmoved old value). The 'shown' draft this
+  // hook carried was the mount-seeded model's patch for exactly that gap.
+  const value = hydratedValue;
   return {
     color: scenePaletteColor(palette, value) ?? value,
-    onColorChange: (hex: string) => {
-      setShown(hex);
-      onHex(hex);
-    },
+    onColorChange: onHex,
     // Absent options mean the picker is showing the DUMMY's fixture palette,
     // whose labels name no token this document has — so no token handler is
     // offered at all (under A23 that tab is empty, so there is nothing to pick
     // either), and the Custom tab commits its hex as it always has.
-    onTokenChange: paletteOptions && ((label: string) => {
-      setShown(label);
-      onToken(label);
-    }),
-    /** A9: a SIBLING control's write can change what this row must show — a
-     * width typed on a strokeless node mints a colour. This is how that
-     * sibling states it, without a dispatch of its own. */
-    setShown,
+    onTokenChange: paletteOptions && onToken,
     value,
   };
 }
@@ -443,40 +418,21 @@ function AdTextInspector({
   // The same row on the stroke paint. `none` is a real hydrated value here (a
   // strokeless node) and names no token, so it stands as it is.
   //
-  // RULING A9 makes this row's two fields move TOGETHER, so each half re-seeds
-  // the other's display — the sibling rule step 1 settled for the Custom W/H
-  // boxes (a re-seed since retired in AD4.R-5, when those boxes became live
-  // fields over the hydrated page size), applied to the row A9 has just made
-  // live on strokeless nodes. Both decisions are the adapter's
-  // (`mintedStrokeWidth` /
-  // `mintedStrokeColor`), never restated here, and both re-seed LOCAL state:
-  // routing them through `setValue` would fire a second, spurious write for
-  // one user action.
-  const [strokeWidth, setStrokeWidth] = useState(state.strokeWidth);
-  // Reads `strokeRow.value` BEFORE committing: the question is what the row was
-  // showing when the write decided, which is the same fact the write read off
-  // the node. (`strokeRow` is declared just below — these run at event time,
-  // long after it is bound.)
-  const commitStrokeColor = (commit: () => void) => {
-    const minted = mintedStrokeWidth(strokeRow.value);
-    commit();
-    if (minted !== null) setStrokeWidth(minted);
-  };
+  // RULING A9 makes this row's two fields move TOGETHER — a colour on a
+  // strokeless node mints a width, a width on one mints a colour — and under
+  // live hydration BOTH halves simply read the minted scene back: the write is
+  // the single statement of the mint (`scene-apply.ts`, which owns the two
+  // numbers), and the accepted document re-derives `state.strokeColor` /
+  // `state.strokeWidth` in the same batch. The display mirrors this schema used
+  // to keep (a local width copy re-seeded from `mintedStrokeWidth`, a `setShown`
+  // push from `mintedStrokeColor`) were the mount-seeded model's patch for a gap
+  // that no longer exists.
   const strokeRow = useAdColorRow({
     hydratedValue: state.strokeColor,
-    onHex: (hex) => commitStrokeColor(() => setValue("strokeColor", hex)),
-    onToken: (label) =>
-      commitStrokeColor(() => setValue("tokenStrokeColor", label)),
+    onHex: (hex) => setValue("strokeColor", hex),
+    onToken: (label) => setValue("tokenStrokeColor", label),
     paletteOptions,
   });
-  const changeStrokeWidth = (value: string) => {
-    setStrokeWidth(value);
-    setValue("strokeWidth", value);
-    // A9's mirror: a width on a node with no stroke mints upstream's default
-    // colour, so the swatch beside it must stop saying none.
-    const minted = mintedStrokeColor(strokeRow.value, value);
-    if (minted !== null) strokeRow.setShown(minted);
-  };
 
   return (
     <>
@@ -485,23 +441,23 @@ function AdTextInspector({
         <InspectorField label="Font"><InspectorSelect label="Font family" onChange={(value) => setValue("fontFamily", value)} options={fontOptions} value={state.fontFamily} /></InspectorField>
         <div className={styles.fieldGrid}>
           {/* §2 delta (contract row 2): the size select becomes a free number. */}
-          <InspectorField label="Size"><InspectorInput ariaLabel="Font size" onChange={(value) => setValue("fontSize", value)} value={state.fontSize} /></InspectorField>
+          <InspectorField label="Size"><InspectorInput ariaLabel="Font size" onCommitValue={(value) => setValue("fontSize", value)} value={state.fontSize} /></InspectorField>
           <InspectorField label="Weight"><InspectorSelect label="Font weight" onChange={(value) => setValue("fontWeight", value)} options={FONT_WEIGHT_OPTIONS} value={state.fontWeight} /></InspectorField>
         </div>
         <InspectorField label="Alignment"><TextAlignment horizontal={state.horizontalAlignment} onHorizontalChange={(value) => setValue("horizontalAlignment", value)} onVerticalChange={(value) => setValue("verticalAlignment", value)} vertical={state.verticalAlignment} /></InspectorField>
       </Section>
       <Section id="stroke" label="Stroke" open={state.openSections.stroke} toggle={() => toggleSection("stroke")}>
         <InspectorField label="Color"><ColorControl color={strokeRow.color} fixtureFallback={false} onColorChange={strokeRow.onColorChange} onTokenChange={strokeRow.onTokenChange} options={paletteOptions} /></InspectorField>
-        <InspectorField label="Width"><InspectorInput ariaLabel="Stroke width" onChange={changeStrokeWidth} value={strokeWidth} /></InspectorField>
+        <InspectorField label="Width"><InspectorInput ariaLabel="Stroke width" onCommitValue={(value) => setValue("strokeWidth", value)} value={state.strokeWidth} /></InspectorField>
       </Section>
       <Section id="layout" label="Layout" open={state.openSections.layout} toggle={() => toggleSection("layout")}>
         <InspectorField label="Position">
           <div className={styles.fieldGrid}>
-            <InspectorInput ariaLabel="X position" onChange={(value) => setNestedValue("position", "x", value)} prefix="X" value={state.position.x} />
-            <InspectorInput ariaLabel="Y position" onChange={(value) => setNestedValue("position", "y", value)} prefix="Y" value={state.position.y} />
+            <InspectorInput ariaLabel="X position" onCommitValue={(value) => setNestedValue("position", "x", value)} prefix="X" value={state.position.x} />
+            <InspectorInput ariaLabel="Y position" onCommitValue={(value) => setNestedValue("position", "y", value)} prefix="Y" value={state.position.y} />
           </div>
         </InspectorField>
-        <InspectorField label="Rotation"><InspectorInput ariaLabel="Rotation" onChange={(value) => setValue("rotation", value)} suffix="°" value={state.rotation} /></InspectorField>
+        <InspectorField label="Rotation"><InspectorInput ariaLabel="Rotation" onCommitValue={(value) => setValue("rotation", value)} suffix="°" value={state.rotation} /></InspectorField>
       </Section>
       <Section id="arrange" label="Arrange" open={state.openSections.arrange} toggle={() => toggleSection("arrange")}>
         <ArrangeControls onAction={(action) => requestAction(`arrange:${action}`)} />
@@ -538,7 +494,7 @@ function AdCanvasInspector({
   // and stroke rows use. Its `color` is what the solid swatch AND the gradient
   // preview are drawn from (a token name is not a CSS colour, so a
   // token-filled frame previewed as nothing), and its `value` is the raw
-  // swatch value a mode switch re-seeds from.
+  // swatch value — the document's own — a mode switch decides from.
   const backgroundRow = useAdColorRow({
     hydratedValue: state.backgroundColor,
     onHex: (hex) => setValue("backgroundColor", hex),
@@ -557,11 +513,11 @@ function AdCanvasInspector({
   // is this section's own handler keeping its two controls consistent with the
   // writes it dispatches.
   //
-  // R3b (step 3): the re-seed reads `backgroundRow.value` — the value the
-  // swatch is showing RIGHT NOW, including a brand token picked since mount,
-  // which `state.backgroundColor` does not carry (a token pick writes the
-  // `token*` field, by design). Seeding from the controller's field instead
-  // would re-introduce A15.2's own stale-seed defect one edit later.
+  // R3b (step 3): the seed reads `backgroundRow.value` — the value the swatch
+  // is showing RIGHT NOW, which under live hydration IS the document's own
+  // background (AD4.R-6 retired the row's draft). That is the exact fact the
+  // write adapter reads off the node, so the switch decides against the
+  // document rather than against a panel-local copy of it.
   //
   // The PALETTE rides in too, because that value may be a token's NAME rather
   // than a colour. `backgroundFillCommits` resolves it — and returns NO
@@ -575,10 +531,9 @@ function AdCanvasInspector({
       palette,
     )) {
       if (commit.property === "backgroundColor") {
-        // Through the ROW's own handler, not `setValue` directly: it is a
-        // colour landing on this swatch, so it must also clear any brand token
-        // picked since mount — or the swatch would go on showing a binding the
-        // switch just replaced.
+        // Through the ROW's own handler, not `setValue` directly: this is the
+        // row's colour half, and the row is the one place that says what a
+        // colour landing on this swatch dispatches.
         backgroundRow.onColorChange(commit.value);
       } else {
         setValue("backgroundFill", commit.value);
