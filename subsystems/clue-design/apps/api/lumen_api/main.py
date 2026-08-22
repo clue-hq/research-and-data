@@ -272,6 +272,36 @@ def failed_agent_turn_response(code: str, message: str, detail: str) -> JsonObje
     }
 
 
+def conflicted_agent_turn_response(
+    base_version: int, current_version: int
+) -> JsonObject:
+    """Terminal result for a LEG scene turn that lost its version race (genad Task 5).
+
+    The scene twin of ``conflicted_web_turn_response``, and it exists for the same reason: once
+    the executor owns the persist, "the document moved under me" is a real terminal outcome that
+    is neither a success nor a runtime failure, and the human needs to be told which two versions
+    disagreed. Direct editor turns never reach it — they propose, and the editor's own route
+    commits under its own CAS."""
+
+    message = (
+        "This design changed while the AI turn was running. Your newer edits "
+        "were preserved; run the instruction again from the current version."
+    )
+    return {
+        **failed_agent_turn_response(
+            "agent_turn.version_conflict",
+            message,
+            (
+                f"The turn started at version {base_version}; the stored "
+                f"document is now version {current_version}."
+            ),
+        ),
+        "status": "conflicted",
+        "base_version": base_version,
+        "current_version": current_version,
+    }
+
+
 def with_web_turn_failure_diagnostic(response: JsonObject) -> JsonObject:
     """Guarantee a non-applied website turn carries its reason as a real diagnostic.
 
@@ -7906,12 +7936,24 @@ def execute_agent_turn_job(
 ) -> Tuple[str, JsonObject, str, JsonObject]:
     """One scene-mode turn, executed from its frozen envelope.
 
-    ``store`` is unused here and used heavily by the web executor: the two share a signature so
-    the handler can select one by kind and call it identically. ``lease_generation`` (D7) is part
-    of that shared signature for the same reason — the scene path makes no governed tool calls of
-    its own, so it has nothing to fence with it.
+    A LEG turn (genad Task 5) OWNS its persist, exactly as the web executor has since D6: the
+    proposal is replayed against the stored document and committed under the leg block's frozen
+    ``document_base_version``, so a turn that took minutes can never silently clobber a human
+    edit made while it ran. A DIRECT editor turn carries no ``leg`` block, keeps proposing, and
+    its result envelope stays byte-identical — the editor still owns that commit through
+    ``POST /documents/{id}/operations``.
+
+    ``lease_generation`` (D7) fences the governed tool invocation that persist makes, exactly as
+    it fences the web executor's.
     """
+    run_subject = DesignRunSubject(
+        run_id=envelope.run_id, lease_generation=lease_generation
+    )
     payload = AgentTurnPreviewRequest.model_validate(envelope.config.get("request") or {})
+    # G9: the USER's own words, captured BEFORE the leg prompt render below composes the brief
+    # and the history into them. This is the human-facing ``intent`` on the durable edit
+    # envelope, so it must never become the rendered brief block.
+    user_message = payload.prompt
     # An explicit None means "resolved: this turn has no references" — distinct from the
     # _REFERENCES_UNRESOLVED sentinel, which would make the runner resolve them a second time.
     reference_assets = envelope.config.get("reference_assets")
@@ -7972,9 +8014,30 @@ def execute_agent_turn_job(
             }
         )
 
+    # --- genad Task 5: is this turn's proposal ours to commit? ---------------------------------
+    # ALL of: a leg block, a pinned document, and the leg's frozen CAS base. A direct editor turn
+    # fails the first; a legacy (AD4.R-era) document-less leg fails the second and third. A
+    # missing ``document_base_version`` is read as "preview-only", never as version zero — a
+    # fabricated base would CAS against whatever happens to sit at the head and clobber it.
+    document_id = payload.document_id
+    base_version = leg_block.get("document_base_version") if isinstance(leg_block, dict) else None
+    leg_persist = bool(leg_block) and bool(document_id) and base_version is not None
+
     override = host.agent_turn_runner
     root = repo_root()
+    workspace_id = envelope.workspace_id
     try:
+        doc: Optional[JsonObject] = None
+        if leg_persist:
+            # The web executor's early-out, verbatim in spirit: a turn that already lost the
+            # race comes back conflicted BEFORE the trio spends a token. The governed write
+            # below still carries ``expected_base_version`` for the race window after this read.
+            doc = store.require_document(document_id)
+            if doc["current_version"] != base_version:
+                conflicted = conflicted_agent_turn_response(
+                    base_version, doc["current_version"]
+                )
+                return "failed", conflicted, "result", {"status": conflicted["status"]}
         if override is not None:
             response = override(payload, root)
         else:
@@ -7992,7 +8055,35 @@ def execute_agent_turn_job(
                 thread_id=envelope.checkpoint_thread_id,
                 resolved_brand_kit=resolved_brand_kit,
             )
-        status = "failed" if response.get("status") in ("failed", "error") else "succeeded"
+        operations = response.get("operations")
+        if (
+            doc is not None  # set together with leg_persist, above
+            and response.get("status") == "proposed"
+            and isinstance(operations, list)
+            and operations
+        ):
+            # A proposal with nothing in it (a pure clarification, a failed run) is a real
+            # outcome with nothing to commit, and falls straight through this branch.
+            response = _persist_leg_scene_proposal(
+                response,
+                doc=doc,
+                operations=operations,
+                document_id=str(document_id),
+                base_version=int(base_version),
+                host=host,
+                store=store,
+                run_subject=run_subject,
+                workspace_id=workspace_id,
+                run_id=envelope.run_id,
+                intent=user_message,
+            )
+        # ``conflicted`` is minted ONLY by the leg-persist path above; a direct editor turn can
+        # never produce it, so this mapping stays byte-identical for non-leg turns.
+        status = (
+            "failed"
+            if response.get("status") in ("failed", "error", "conflicted")
+            else "succeeded"
+        )
         return status, response, "result", {"status": response.get("status")}
     except Exception as error:  # pragma: no cover - defensive; the runner already folds failures
         failed = failed_agent_turn_response(
@@ -8001,6 +8092,88 @@ def execute_agent_turn_job(
             str(error),
         )
         return "failed", failed, "error", {"message": str(error)}
+
+
+def _persist_leg_scene_proposal(
+    response: JsonObject,
+    *,
+    doc: JsonObject,
+    operations: List[JsonObject],
+    document_id: str,
+    base_version: int,
+    host: Any,
+    store: HybridRepository,
+    run_subject: DesignRunSubject,
+    workspace_id: str,
+    run_id: str,
+    intent: str,
+) -> JsonObject:
+    """Commit ONE leg scene turn's proposal, or refuse honestly. Never both, never neither.
+
+    Exactly one durable write happens here, and only on the path where the engine reproduced the
+    agent's own operation history against the stored scene.
+    """
+
+    try:
+        # The agent's operation history is a CLAIM until the engine reproduces it HERE, against
+        # the scene we are about to overwrite. This is a precondition on trusting it, not a
+        # formality: an unreplayable history would otherwise be committed as a scene nobody can
+        # undo, and the inverse operations the checkpoint needs come out of this same call.
+        applied = _turn_core(host).apply_operations(doc["scene"], operations)
+    except CoreError as error:
+        return failed_agent_turn_response(
+            "agent_turn.operations_replay_failed",
+            "The AI turn's operations could not be replayed.",
+            error.message,
+        )
+    if has_error_diagnostics(applied.get("diagnostics") or []):
+        return failed_agent_turn_response(
+            "agent_turn.operations_replay_failed",
+            "The AI turn's operations could not be replayed.",
+            "The engine reported errors replaying the turn's operations; "
+            "the proposal was not committed.",
+        )
+    # D4 backstop — see PUT /scene: this is an ACCEPT seam, and a turn that generated imagery
+    # mid-run holds those bytes only in the engine's wipeable cache until now. Custody first, so
+    # the registry can never outlive the bytes it points at.
+    register_scene_asset_backstop(
+        _turn_blob_store(host, workspace_id),
+        _host_engine_cache_root(host, workspace_id),
+        applied["scene"],
+    )
+    try:
+        # The SAME governed write the /documents/{id}/operations route makes, with
+        # ``actor="agent"`` on the invocation (REQ-20 parity) and the leg's frozen base as the
+        # CAS that closes the window the early check above cannot.
+        _turn_design_tools(host, run_subject).invoke(
+            "design_apply_operations",
+            {
+                "document_id": document_id,
+                "scene": applied["scene"],
+                "diagnostics": applied.get("diagnostics", []),
+                "operations": operations,
+                "source": "agent",
+                "actor_kind": "agent",
+                "actor_id": run_id,
+                "envelope": {
+                    # The USER's words, never the composed runtime prompt (G9).
+                    "intent": intent[:120],
+                    "checkpoint_label": "Design turn",
+                    "inverse_operations": (applied.get("edit") or {}).get(
+                        "inverse_operations"
+                    ),
+                },
+                "expected_base_version": base_version,
+            },
+            workspace_id=workspace_id,
+            actor="agent",
+            actor_id=run_id,
+        )
+    except WebDocumentVersionConflict as conflict:
+        # The race window between the early check and this write — the DAL's row-locked CAS is
+        # what actually decides it, and losing is an honest terminal outcome, not a crash.
+        return conflicted_agent_turn_response(conflict.expected, conflict.current)
+    return {**response, "current_version": store.require_document(document_id)["current_version"]}
 
 
 def execute_web_turn_job(
