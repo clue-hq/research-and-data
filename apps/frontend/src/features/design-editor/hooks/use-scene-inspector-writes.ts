@@ -349,7 +349,18 @@ export function useSceneInspectorWrites({
       // already refuses it at `scene-apply.ts:667` and stays the single
       // authority on what writes. The only thing this branch changes is
       // whether a freeze fires first.
-      const intent = panelWriteIntent(live, detail.selectionId, detail.property);
+      // The VALUE is part of the decision: a freeze is a document-wide write
+      // (every unlocked Stack → Free), persisted and undoable, so it may not
+      // fire for a commit `sceneChangeToOperation` is about to answer with
+      // `null` — a typo in X, or a Width below the adapter's floor of 1, would
+      // otherwise convert the whole document and burn an undo step with no
+      // write, no motion and no message.
+      const intent = panelWriteIntent(
+        live,
+        detail.selectionId,
+        detail.property,
+        detail.value,
+      );
       let writeNode: Node = node;
       let writeScene: Scene = live;
       if (intent === "freeze-then-write") {
@@ -372,7 +383,12 @@ export function useSceneInspectorWrites({
         // freed — the c81cd209 rule). A node still solver-owned here is the
         // locked-container case: refuse honestly rather than write nothing.
         if (!post) return;
-        const freed = panelWriteIntent(post, detail.selectionId, detail.property);
+        const freed = panelWriteIntent(
+          post,
+          detail.selectionId,
+          detail.property,
+          detail.value,
+        );
         if (freed !== "write") return;
         const frozenNode = post.nodes[detail.selectionId];
         if (!frozenNode) return;

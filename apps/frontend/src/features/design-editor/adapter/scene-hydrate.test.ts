@@ -277,6 +277,107 @@ it("§1.4: a pinned node's Position X/Y read its absolute_box, not its transform
   });
 });
 
+/** A solved page-space box on a node the harvest never laid out — the
+ * `scene-arrange.test.ts` `withGeometry` recipe, so a "what does the panel show
+ * once the renderer has solved this page" case is still harvested bytes plus
+ * one field. */
+function withSolvedBoxes(
+  boxes: Readonly<Record<string, { x: number; y: number; width: number; height: number }>>,
+  base: Scene = SCENE,
+): Scene {
+  const scene = clone(base);
+  for (const [nodeId, box] of Object.entries(boxes)) {
+    const node = scene.nodes[nodeId];
+    assert.ok(node, `fixture node ${nodeId} missing`);
+    node.computed = { layout_bounds: { ...box }, render_bounds: { ...box } };
+  }
+  return scene;
+}
+
+it("§1.4/C-9 (Ruling C9-P2): a SOLVER-MANAGED child's Position X/Y state its SOLVED parent-relative offset, not the stored (0,0)", () => {
+  // AD4.R — display and write must agree. A managed child's stored transform is
+  // a dead number (the harvest's `text_headline`/`group_proof` are both (0,0));
+  // the solver places it, and the C-9 freeze BAKES that solved offset onto the
+  // transform (`editing.rs:1906-1910`: child solved box − container solved box)
+  // before the panel's write lands. Showing the stored (0,0) while the first
+  // commit writes into the baked frame would move the node ~700px in a space
+  // the panel never showed. So the row states the offset the freeze will bake.
+  const solved = withSolvedBoxes({
+    auto_row_copy: { height: 296, width: 1056, x: 72, y: 72 },
+    group_proof: { height: 40, width: 220, x: 780, y: 149 },
+    text_headline: { height: 120, width: 640, x: 72, y: 72 },
+  });
+  assert.deepEqual(
+    hydrateSceneInspectorState(solved.nodes.text_headline, solved).position,
+    { x: "0", y: "0" },
+  );
+  // The one that lies today: stored (0,0), solved offset (708, 77) — the exact
+  // pair Lane C live-verified (`_memory/2026-08-22-ad4c-canvas-gestures.md`).
+  assert.deepEqual(solved.nodes.group_proof.transform.x, 0);
+  assert.deepEqual(
+    hydrateSceneInspectorState(solved.nodes.group_proof, solved).position,
+    { x: "708", y: "77" },
+  );
+});
+
+it("§1.4/C-9: a node the solver does NOT own keeps reading its transform, solved or not", () => {
+  // The change is scoped to the `isNodeFreezableOnGesture` class exactly — the
+  // same predicate the canvas grab and `panelWriteIntent` ask. A plain frame's
+  // child owns its transform whether or not the page has been laid out, and a
+  // freehand child of a FROZEN container owns it too (that transform IS the
+  // baked offset), so neither may be re-derived from the solve.
+  const solved = withSolvedBoxes({
+    frame_ad_root: { height: 1080, width: 1080, x: 0, y: 0 },
+    rect_accent_bar: { height: 8, width: 320, x: 500, y: 600 },
+  });
+  assert.deepEqual(
+    hydrateSceneInspectorState(solved.nodes.rect_accent_bar, solved).position,
+    { x: "72", y: "368" },
+  );
+  const free = clone(solved);
+  free.nodes.auto_row_copy.layout = {
+    ...free.nodes.auto_row_copy.layout!,
+    layout_mode: "free",
+  };
+  free.nodes.auto_row_copy.computed = {
+    layout_bounds: { height: 296, width: 1056, x: 72, y: 72 },
+    render_bounds: { height: 296, width: 1056, x: 72, y: 72 },
+  };
+  free.nodes.group_proof.computed = {
+    layout_bounds: { height: 40, width: 220, x: 780, y: 149 },
+    render_bounds: { height: 40, width: 220, x: 780, y: 149 },
+  };
+  free.nodes.group_proof.transform = {
+    ...free.nodes.group_proof.transform,
+    x: 708,
+    y: 77,
+  };
+  assert.deepEqual(
+    hydrateSceneInspectorState(free.nodes.group_proof, free).position,
+    { x: "708", y: "77" },
+  );
+});
+
+it("§1.4/C-9: with NO solve to read, a managed child falls back to the stored transform", () => {
+  // The harvest itself: `computed` is null on every stored node, so a panel
+  // opened before the renderer has solved the page has nothing better to state
+  // than the transform — the pre-C-9 behaviour, unchanged. Same for a solved
+  // child whose CONTAINER is unsolved: the difference would be page space, not
+  // parent space, which is not the number the freeze bakes.
+  assert.equal(SCENE.nodes.group_proof.computed, null);
+  assert.deepEqual(
+    hydrateSceneInspectorState(adGroup(), SCENE).position,
+    { x: "0", y: "0" },
+  );
+  const childOnly = withSolvedBoxes({
+    group_proof: { height: 40, width: 220, x: 780, y: 149 },
+  });
+  assert.deepEqual(
+    hydrateSceneInspectorState(childOnly.nodes.group_proof, childOnly).position,
+    { x: "0", y: "0" },
+  );
+});
+
 it("§1.4: Rotation reads transform.rotation", () => {
   assert.equal(hydrateSceneInspectorState(adImage(), SCENE).rotation, "0");
 });

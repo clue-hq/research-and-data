@@ -46,6 +46,11 @@ const GEOMETRY = [
   "height",
 ] as const;
 
+/** A committed value EVERY geometry row accepts — parseable and above the W/H
+ * floor of 1 — so the cases below vary the node and the property only. The
+ * value's own gate has its own section. */
+const VALUE = "64";
+
 function clone(scene: Scene): Scene {
   return JSON.parse(JSON.stringify(scene)) as Scene;
 }
@@ -85,12 +90,12 @@ function frozen(base: Scene = SCENE): Scene {
 it("C-9 panel: every geometry row on a SOLVER-MANAGED node freezes first, then writes", () => {
   for (const property of GEOMETRY) {
     assert.equal(
-      panelWriteIntent(SCENE, MANAGED, property),
+      panelWriteIntent(SCENE, MANAGED, property, VALUE),
       "freeze-then-write",
       `${MANAGED} / ${property}`,
     );
     assert.equal(
-      panelWriteIntent(SCENE, MANAGED_GROUP, property),
+      panelWriteIntent(SCENE, MANAGED_GROUP, property, VALUE),
       "freeze-then-write",
       `${MANAGED_GROUP} / ${property}`,
     );
@@ -105,22 +110,22 @@ it("C-9 panel: W/H is in the set by founder ruling — a DISCLOSED behaviour cha
   // write — and the solver then re-flows its siblings under the user's cursor.
   // C-9 replaces that with the same freeze-first physics, so after the freeze
   // nothing but the edited node moves.
-  assert.equal(panelWriteIntent(SCENE, MANAGED, "width"), "freeze-then-write");
-  assert.equal(panelWriteIntent(SCENE, MANAGED, "height"), "freeze-then-write");
+  assert.equal(panelWriteIntent(SCENE, MANAGED, "width", "64"), "freeze-then-write");
+  assert.equal(panelWriteIntent(SCENE, MANAGED, "height", "64"), "freeze-then-write");
   assert.deepEqual([...PANEL_GEOMETRY_PROPERTIES].sort(), [...GEOMETRY].sort());
 });
 
 it("C-9 panel: an UNMANAGED node keeps today's path exactly — no freeze for a node with nothing to gain", () => {
   for (const property of GEOMETRY) {
     assert.equal(
-      panelWriteIntent(SCENE, UNMANAGED, property),
+      panelWriteIntent(SCENE, UNMANAGED, property, VALUE),
       "write",
       `${UNMANAGED} / ${property}`,
     );
   }
   // The artboard and its container siblings are page/frame children too.
-  assert.equal(panelWriteIntent(SCENE, "frame_ad_root", "position.x"), "write");
-  assert.equal(panelWriteIntent(SCENE, CONTAINER, "width"), "write");
+  assert.equal(panelWriteIntent(SCENE, "frame_ad_root", "position.x", "10"), "write");
+  assert.equal(panelWriteIntent(SCENE, CONTAINER, "width", "64"), "write");
 });
 
 it("C-9 panel: a NON-GEOMETRY row is never this slice's business, on any node", () => {
@@ -128,7 +133,7 @@ it("C-9 panel: a NON-GEOMETRY row is never this slice's business, on any node", 
   // managed node and must not start firing freezes for it.
   for (const property of ["fillColor", "opacity", "fontSize", "text", "gap"]) {
     assert.equal(
-      panelWriteIntent(SCENE, MANAGED, property),
+      panelWriteIntent(SCENE, MANAGED, property, VALUE),
       "write",
       `${MANAGED} / ${property}`,
     );
@@ -143,12 +148,12 @@ it("C-9 panel: the LOCK still gates geometry — a freeze never fires for a lock
   const lockedPlain = withNodeField(UNMANAGED, "locked", true);
   for (const property of GEOMETRY) {
     assert.equal(
-      panelWriteIntent(lockedManaged, MANAGED, property),
+      panelWriteIntent(lockedManaged, MANAGED, property, VALUE),
       "refuse",
       `locked managed / ${property}`,
     );
     assert.equal(
-      panelWriteIntent(lockedPlain, UNMANAGED, property),
+      panelWriteIntent(lockedPlain, UNMANAGED, property, VALUE),
       "refuse",
       `locked plain / ${property}`,
     );
@@ -161,13 +166,13 @@ it("C-9 panel: §1.0's LOCK ROW is not geometry — a locked node can still be u
   // locked. Ordering the property test ahead of the lock test is what keeps
   // that true here.
   const lockedManaged = withNodeField(MANAGED, "locked", true);
-  assert.equal(panelWriteIntent(lockedManaged, MANAGED, "locked"), "write");
-  assert.equal(panelWriteIntent(lockedManaged, MANAGED, "fillColor"), "write");
+  assert.equal(panelWriteIntent(lockedManaged, MANAGED, "locked", true), "write");
+  assert.equal(panelWriteIntent(lockedManaged, MANAGED, "fillColor", "#FF0000"), "write");
 });
 
 it("C-9 panel: a node the scene does not carry refuses geometry rather than freezing the document for it", () => {
-  assert.equal(panelWriteIntent(SCENE, "node_does_not_exist", "width"), "refuse");
-  assert.equal(panelWriteIntent(SCENE, null, "position.x"), "refuse");
+  assert.equal(panelWriteIntent(SCENE, "node_does_not_exist", "width", "64"), "refuse");
+  assert.equal(panelWriteIntent(SCENE, null, "position.x", "10"), "refuse");
 });
 
 // ── The post-freeze re-ask (the hook's second question) ─────────────────────
@@ -181,7 +186,7 @@ it("C-9 panel: on the POST-FREEZE scene the same row is a plain WRITE — the fr
   const free = frozen();
   for (const property of GEOMETRY) {
     assert.equal(
-      panelWriteIntent(free, MANAGED, property),
+      panelWriteIntent(free, MANAGED, property, VALUE),
       "write",
       `frozen / ${property}`,
     );
@@ -197,15 +202,89 @@ it("C-9 panel: a managed child of a LOCKED CONTAINER still asks for a freeze it 
   // write. That is the canvas's "refuse to arm", one surface over.
   const lockedContainer = withNodeField(CONTAINER, "locked", true);
   assert.equal(
-    panelWriteIntent(lockedContainer, MANAGED, "position.x"),
+    panelWriteIntent(lockedContainer, MANAGED, "position.x", "10"),
     "freeze-then-write",
   );
   // The freeze cannot free it, so the re-ask on the (unchanged) post-freeze
   // scene is not "write" — no operation is built and nothing is claimed.
   assert.notEqual(
-    panelWriteIntent(lockedContainer, MANAGED, "position.x"),
+    panelWriteIntent(lockedContainer, MANAGED, "position.x", "10"),
     "write",
   );
+});
+
+// ── The value gate: a freeze only for a write that will really happen ──────
+
+it("C-9 panel: an UNPARSEABLE geometry value never freezes the document — the write would produce nothing", () => {
+  // The freeze is a DOCUMENT-WIDE write (every unlocked Stack becomes Free),
+  // it persists a server batch and it burns an undo step. Firing it for a
+  // commit the adapter is going to answer with `null` costs the user all of
+  // that for no write, no motion and no message. `sceneChangeToOperation`'s own
+  // rules decide it: a non-string value, then `finiteNumber` (`scene-apply.ts`
+  // `case "position.x"` / `"rotation"`), so those rules are asked FIRST here.
+  for (const property of GEOMETRY) {
+    for (const value of ["abc", "", "   ", "12px", "NaN", 10, null, undefined]) {
+      assert.equal(
+        panelWriteIntent(SCENE, MANAGED, property, value),
+        "refuse",
+        `${property} / ${JSON.stringify(value ?? null)}`,
+      );
+    }
+  }
+  // And for NO node in the document — the hook fires the freeze on exactly one
+  // answer, so "never `freeze-then-write`" IS "no freeze, nothing persisted,
+  // no undo step", which is the whole claim.
+  for (const nodeId of Object.keys(SCENE.nodes)) {
+    for (const property of GEOMETRY) {
+      assert.notEqual(
+        panelWriteIntent(SCENE, nodeId, property, "abc"),
+        "freeze-then-write",
+        `${nodeId} / ${property}`,
+      );
+    }
+  }
+});
+
+it("C-9 panel: W/H below the adapter's floor of 1 never freezes either", () => {
+  // `scene-apply.ts:983-986` refuses `size < 1` outright (the ad's size fields
+  // are free text, so the MVP's `min={1}` is a refusal here). X/Y and Rotation
+  // have no floor: 0 and negatives are real positions.
+  for (const value of ["0", "0.5", "-4"]) {
+    assert.equal(panelWriteIntent(SCENE, MANAGED, "width", value), "refuse", value);
+    assert.equal(panelWriteIntent(SCENE, MANAGED, "height", value), "refuse", value);
+  }
+  for (const value of ["0", "-4", "1e3"]) {
+    assert.equal(
+      panelWriteIntent(SCENE, MANAGED, "position.x", value),
+      "freeze-then-write",
+      value,
+    );
+    assert.equal(
+      panelWriteIntent(SCENE, MANAGED, "rotation", value),
+      "freeze-then-write",
+      value,
+    );
+  }
+  assert.equal(panelWriteIntent(SCENE, MANAGED, "width", "1"), "freeze-then-write");
+});
+
+it("C-9 panel: a PARSEABLE value on a managed node still freezes then writes — the gate only drops the dead commits", () => {
+  for (const property of GEOMETRY) {
+    assert.equal(
+      panelWriteIntent(SCENE, MANAGED, property, "10"),
+      "freeze-then-write",
+      property,
+    );
+  }
+});
+
+it("C-9 panel: the value gate is GEOMETRY-only — a non-geometry row is still not this slice's business", () => {
+  // `locked` commits a BOOLEAN and the paint/type rows carry their own value
+  // rules; none of them is refused by the solver, so none of them may be
+  // filtered — or fire a freeze — here.
+  assert.equal(panelWriteIntent(SCENE, MANAGED, "locked", true), "write");
+  assert.equal(panelWriteIntent(SCENE, MANAGED, "fillColor", "not-a-number"), "write");
+  assert.equal(panelWriteIntent(SCENE, MANAGED, "gap", "abc"), "write");
 });
 
 // ── The predicate is the canvas's, never a second opinion ──────────────────
@@ -216,7 +295,7 @@ it("C-9 panel: freeze-then-write is EXACTLY the canvas's own predicate, not a re
   // gains or loses a case upstream, both surfaces move together.
   for (const nodeId of Object.keys(SCENE.nodes)) {
     assert.equal(
-      panelWriteIntent(SCENE, nodeId, "position.x") === "freeze-then-write",
+      panelWriteIntent(SCENE, nodeId, "position.x", "10") === "freeze-then-write",
       isNodeFreezableOnGesture(SCENE, nodeId),
       nodeId,
     );

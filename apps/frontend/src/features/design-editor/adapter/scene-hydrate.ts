@@ -17,7 +17,12 @@ import type {
   Scene,
 } from "../engine/scene/contracts";
 import { defaultLayoutProps } from "../engine/scene/operations";
-import { isNodePinned } from "../engine/scene/sceneQueries";
+import {
+  isNodeFreezableOnGesture,
+  isNodePinned,
+  nodePageSpaceBox,
+  parentInfoForNode,
+} from "../engine/scene/sceneQueries";
 import { oklchToHexCss } from "../engine/scene/tokenColors";
 import { sceneAssetPassthroughUrl } from "./scene-canvas-view";
 import { paletteHex, type ScenePalette } from "./scene-palette";
@@ -41,7 +46,10 @@ import { paletteHex, type ScenePalette } from "./scene-palette";
  *     renderer and never persists geometry back. Position X/Y therefore read
  *     `transform` (a PINNED node reads its page-space `absolute_box`, mirroring
  *     the design editor's own `ObjectSection` `pinnedBox` rule), never a stored
- *     computed box.
+ *     computed box. RULING C9-P2 adds one exception, and only where the LIVE
+ *     scene has been solved: a SOLVER-MANAGED node states its solved
+ *     parent-relative offset (`solvedManagedOffset`), because that is the frame
+ *     the C-9 freeze bakes and therefore the frame its write lands in.
  *   • `CornerRadii`'s field order is TL, TR, **BR, BL** while the serialized
  *     key order is TL, TR, BL, BR — the radius mapping reads fields by name.
  *
@@ -682,6 +690,50 @@ function dimensionState(
 }
 
 /**
+ * RULING C9-P2 / AD4.R — the number a SOLVER-MANAGED node's Position X/Y row
+ * must state: its SOLVED offset inside its container, or `null` when the page
+ * carries no solve to read.
+ *
+ * A managed child's stored `transform` is a dead number — the solver places it,
+ * and the harvest's own `text_headline`/`group_proof` both sit at (0,0) while
+ * the laid-out row puts them elsewhere. That was harmless while the panel
+ * refused every geometry write on such a node; C-9 makes the write LAND, and it
+ * lands in the frame the freeze bakes — `child solved box − container solved
+ * box` (`editing.rs:1906-1910`), which is what this returns. Displaying the
+ * stored (0,0) while committing into the baked frame would move the node by its
+ * whole solved offset (~708px on the harvested ad) in a space the panel never
+ * showed: display and write would disagree, which AD4.R forbids.
+ *
+ * Both boxes are required. The child's comes from `nodePageSpaceBox` (the same
+ * solved geometry the canvas drag reads); the container's is read explicitly
+ * rather than through `parentComputedOrigin`, whose (0,0)-for-an-unsolved-parent
+ * answer would silently turn a page-space box into a "parent-relative" offset.
+ * With either missing, the caller keeps the stored transform — the honest
+ * pre-C-9 display for a page the renderer has not solved yet.
+ *
+ * No rounding: the bake subtracts raw solved coordinates, so the row states the
+ * exact number the freeze will write.
+ */
+function solvedManagedOffset(
+  scene: Scene,
+  node: Node,
+): { x: number; y: number } | null {
+  const box = nodePageSpaceBox(scene, node.id);
+  if (!box) {
+    return null;
+  }
+  const parentInfo = parentInfoForNode(scene, node.id);
+  if (!parentInfo || parentInfo.parent.kind !== "node") {
+    return null;
+  }
+  const container = scene.nodes[parentInfo.parent.id]?.computed?.layout_bounds;
+  if (!container) {
+    return null;
+  }
+  return { x: box.x - container.x, y: box.y - container.y };
+}
+
+/**
  * Hydrate the dummy ad inspector's state from one selected scene node.
  *
  * Every schema's values are hydrated for every node — the same rule the
@@ -707,9 +759,18 @@ export function hydrateSceneInspectorState(
   const pinnedBox = isNodePinned(scene, node.id)
     ? (node.absolute_box ?? node.computed?.layout_bounds ?? null)
     : null;
+  // RULING C9-P2: a node the SOLVER places (the `isNodeFreezableOnGesture`
+  // class — the very predicate `panelWriteIntent` and the canvas grab ask, so
+  // the display can never disagree with which nodes freeze-then-write) states
+  // the solved offset the C-9 freeze bakes, not its dead stored transform.
+  // Null when the page carries no solve: the pre-C-9 transform display stands.
+  const managedOffset = isNodeFreezableOnGesture(scene, node.id)
+    ? solvedManagedOffset(scene, node)
+    : null;
+  const positionBox = pinnedBox ?? managedOffset;
   state.position = {
-    x: numberText(pinnedBox ? pinnedBox.x : node.transform.x),
-    y: numberText(pinnedBox ? pinnedBox.y : node.transform.y),
+    x: numberText(positionBox ? positionBox.x : node.transform.x),
+    y: numberText(positionBox ? positionBox.y : node.transform.y),
   };
   state.rotation = numberText(node.transform.rotation);
   // OQ-3: the engine's 0–1 is displayed as a percent.

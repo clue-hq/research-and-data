@@ -1,5 +1,6 @@
 import type { NodeId, Scene } from "../engine/scene/contracts";
 import { isNodeFreezableOnGesture } from "../engine/scene/sceneQueries";
+import { finiteNumber } from "./scene-hydrate";
 
 /**
  * C-9 PANEL PARITY — what the inspector panel must do with one geometry commit.
@@ -8,7 +9,9 @@ import { isNodeFreezableOnGesture } from "../engine/scene/sceneQueries";
  * is a marketer. Auto-layout is the AGENT's tool, and a human manipulating a
  * node must never be refused by the solver. On the canvas the answer is
  * freeze-on-grab — the press bakes the document's layout to free placement
- * (zero-motion, idempotent) and the very same gesture continues as a free drag.
+ * (idempotent; zero-motion is the engine's INTENT and is proven only for a
+ * fixed-size container — see the closing paragraph) and the very same gesture
+ * continues as a free drag.
  *
  * This module is that same physics for the PANEL, and it is deliberately only
  * the DECISION: the hook owns the sequence (freeze → persist → rebuild the
@@ -24,9 +27,12 @@ import { isNodeFreezableOnGesture } from "../engine/scene/sceneQueries";
  *  • Position X/Y and Rotation are refused outright on a solver-managed node —
  *    `positionOperation` (`scene-apply.ts:615`) and the rotation arm (`:943`)
  *    both return `null` behind `isNodeDirectGeometryEditable`. The panel draws
- *    no disabled state for them (`scene-hydrate.ts:702-714` states the rows
+ *    no disabled state for them (`scene-hydrate.ts` states the rows
  *    unconditionally), so the input accepts the number and the write silently
- *    evaporates — the AD4 signature defect.
+ *    evaporates — the AD4 signature defect. Its display half is Ruling C9-P2,
+ *    fixed in `scene-hydrate.ts`'s `solvedManagedOffset`: the row now states
+ *    the SOLVED parent-relative offset — the frame the freeze bakes and the
+ *    write therefore lands in — instead of the dead stored transform.
  *  • Width/Height are NOT refused: Ruling L12 leaves that arm ungated
  *    (`scene-apply.ts:970-998`), the engine accepts the size patch, and the
  *    next relayout re-solves the Stack — so the edited node takes its size and
@@ -63,10 +69,40 @@ export const PANEL_GEOMETRY_PROPERTIES: ReadonlySet<string> = new Set([
  * the freeze returned.
  * `"write"` — today's path, untouched: build the operation and apply it.
  * `"refuse"` — no write is possible (a locked node's geometry, a node the
- * scene does not carry). The ordinary path already answers these with `null`;
- * saying so here keeps a freeze from firing for a write that cannot land.
+ * scene does not carry, a value the adapter would not parse). The ordinary path
+ * already answers these with `null`; saying so here keeps a freeze from firing
+ * for a write that cannot land.
  */
 export type PanelWriteIntent = "freeze-then-write" | "write" | "refuse";
+
+/**
+ * Whether the COMMITTED VALUE is one `sceneChangeToOperation` would actually
+ * turn into a geometry operation — asked before any freeze fires.
+ *
+ * The freeze is a document-wide write: it converts every unlocked Stack to
+ * Free, persists a batch to the server and burns an undo step. Firing it for a
+ * commit the adapter is going to answer with `null` spends all of that for no
+ * write, no motion and no message — so the adapter's OWN value rules are
+ * mirrored here, and only here, ahead of the decision:
+ *   • the value must be a string (`scene-apply.ts:688` coerces anything else to
+ *     `null` and returns), and `finiteNumber` (imported, not re-implemented)
+ *     must parse it — the `case "position.x"`/`"rotation"` guards;
+ *   • width/height additionally refuse anything below 1 (`scene-apply.ts:983`:
+ *     the ad's size fields are free text, so the MVP's `min={1}` is a refusal
+ *     rather than a browser-enforced minimum).
+ * These are duplicated deliberately and minimally — the adapter stays the sole
+ * authority on what WRITES; this only decides what is worth freezing for.
+ */
+function geometryValueWritable(property: string, value: unknown): boolean {
+  if (typeof value !== "string") {
+    return false;
+  }
+  const parsed = finiteNumber(value);
+  if (parsed === null) {
+    return false;
+  }
+  return property === "width" || property === "height" ? parsed >= 1 : true;
+}
 
 /**
  * One panel property change → what the write path should do about the solver.
@@ -88,6 +124,10 @@ export function panelWriteIntent(
   scene: Scene,
   nodeId: NodeId | null,
   property: string,
+  /** The committed value, exactly as the event carries it (`unknown`, like
+   * `SceneChangeDetail.value`). Geometry rows are decided against it: a freeze
+   * fires only where a real write follows. */
+  value: unknown,
 ): PanelWriteIntent {
   // Not a row the solver has an opinion about → nothing here applies.
   if (!PANEL_GEOMETRY_PROPERTIES.has(property)) {
@@ -107,6 +147,16 @@ export function panelWriteIntent(
   // all. (`isNodeFreezableOnGesture` refuses a locked node too; stating it
   // here is what makes the refusal legible rather than a fall-through.)
   if (node.locked) {
+    return "refuse";
+  }
+  // A value the adapter would refuse produces no operation on ANY node, so
+  // there is nothing for a freeze to enable — and a document-wide freeze for a
+  // typo (`abc` in X, `0` in Width) would convert every Stack in the document,
+  // persist a batch and burn an undo step with nothing to show for it. Said as
+  // `"refuse"` because that is the truth about the commit; the hook lets it
+  // fall through to the ordinary path, which answers `null` exactly as before,
+  // so no non-managed row changes behaviour.
+  if (!geometryValueWritable(property, value)) {
     return "refuse";
   }
   return isNodeFreezableOnGesture(scene, nodeId) ? "freeze-then-write" : "write";
