@@ -764,8 +764,13 @@ export function RadiusControls({
     // 32/32/96/32 image landed 32/32/96/24, one write, four undo steps. One
     // event is still the rule here.
     const value = sceneShown("all");
-    if (value.trim() === "" || locked) return;
+    // Dropping the draft is UNCONDITIONAL, exactly as in `sceneCommit`: it is
+    // what makes the box re-state the document on a scan that dispatched
+    // nothing. On a locked node the write is refused, so keeping the typed text
+    // would leave the box stating a number the document does not have — the
+    // panel-lie class this whole task exists to close.
     setDrafts((current) => ({ ...current, all: undefined }));
+    if (value.trim() === "" || locked) return;
     onChange("all", value);
   };
 

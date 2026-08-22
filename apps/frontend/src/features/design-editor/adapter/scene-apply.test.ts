@@ -2082,6 +2082,14 @@ it("RULING A27: after an all-commit, re-typing a corner's PRE-commit number stil
     body.includes("radius.committed[corner]"),
     "a corner's dirty check must compare against the committed snapshot",
   );
+  // The web ALL box's dirty check (`radius.draft.all !== radius.committed.all`)
+  // is pinned by nothing else, and its negative survives Task 7 untouched: the
+  // scene lane reads `values[corner]` (never `values.all`, even for `all`, which
+  // it reaches as a corner key), so this still means what it always meant.
+  assert.ok(
+    !body.includes("values.all"),
+    "the all field's dirty check must NOT compare against the values prop either",
+  );
 
   // THE SCENE LANE — A27's premise is GONE. It was "an ad all-write does not
   // move the values prop", which was true only while that prop was a mount-time
@@ -2275,6 +2283,52 @@ it("RULING A29: after a single-corner commit the `all` box re-derives — hydrat
       `the scene lane must carry no post-commit mirror — found ${mirror}`,
     );
   }
+
+  // ── §4 / A29 and A26, FOR THE SCENE LANE ────────────────────────────────────
+  // Both rulings' component halves are asserted elsewhere against `commitAll` /
+  // `commit` / `applyAll` — the three functions the scene lane no longer calls.
+  // Those guards are correct and stay untouched, but they leave this lane's
+  // lock and its one-event scan pinned by NOTHING, so both are pinned here.
+  //
+  // A29 (§4): a locked node refuses every write, so a commit against one must
+  // skip the doomed dispatch. Pinned as the guard expression actually written,
+  // not merely the word, so weakening it to a no-op still fails.
+  assert.ok(
+    sceneArm.includes("if (commit === null || locked) return;"),
+    "the scene lane's corner commit must skip the dispatch on a locked node",
+  );
+  const sceneApplyAll = source.slice(
+    source.indexOf("const sceneApplyAll = () => {"),
+    source.indexOf("return (", source.indexOf("const sceneApplyAll")),
+  );
+  assert.ok(sceneApplyAll.length > 0, "the scene lane's scan handler not found");
+  assert.ok(
+    sceneApplyAll.includes('if (value.trim() === "" || locked) return;'),
+    "the scene lane's scan must dispatch nothing on a locked node",
+  );
+  // A26: ONE event. Four synchronous per-corner dispatches cannot compose into
+  // one document — each reads the same pre-burst node, so the fourth clobbers
+  // the first three (a scan of 24 over the seeded ad's 32/32/96/32 image landed
+  // 32/32/96/24: one corner moved, four undo steps). Same negative shape the
+  // A26 guard uses on the web lane's `applyAll`.
+  for (const corner of ["topLeft", "topRight", "bottomLeft", "bottomRight"]) {
+    assert.ok(
+      !sceneApplyAll.includes(corner),
+      `the scene lane's scan must not fan out to ${corner} — four events cannot compose into one document`,
+    );
+  }
+  assert.ok(
+    sceneApplyAll.includes('onChange("all", value)'),
+    "the scene lane's scan must dispatch the single all-corners write",
+  );
+  // And the draft drop is UNCONDITIONAL — before the guard, as in `sceneCommit`.
+  // Otherwise a refused scan leaves the box stating a number the document does
+  // not have, which is the panel-lie class this task closes.
+  assert.ok(
+    sceneApplyAll.indexOf("setDrafts(") <
+      sceneApplyAll.indexOf('if (value.trim() === "" || locked) return;'),
+    "the scene lane's scan must drop the draft before deciding whether to dispatch",
+  );
 });
 
 it("RULING A31: a corner stores what the WRITE produced, so `5.0` on a uniform node keeps All at `5`", () => {

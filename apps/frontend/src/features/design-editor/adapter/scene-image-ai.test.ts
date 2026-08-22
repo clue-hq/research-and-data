@@ -392,10 +392,14 @@ it("§1.3 Alt text: the box COMMITS on blur/Enter, never per keystroke", () => {
   // per-keystroke description would persist one document version and one undo
   // step per letter typed.
   //
-  // AD4.R Task 7 moved the DRAFT into the primitive without moving the
-  // discipline: `onCommitValue` (`inspector-field-draft.ts`) is fired by
-  // `InspectorInput` on blur/Enter only, and hands back the text it has been
-  // holding. So the schema still never sees a keystroke — it no longer even has
+  // This discipline is PRESERVED, not superseded — it appears in no row of the
+  // plan's §"Rulings superseded"
+  // (`docs/superpowers/plans/2026-08-22-ad-inspector-mvp-state-model.md`),
+  // unlike A27/A28/A29's mirror/A31/FIX 2. AD4.R Task 7 moved the DRAFT into the
+  // primitive without moving the CONTRACT: `onCommitValue`
+  // (`inspector-field-draft.ts`) is fired by `InspectorInput` on blur/Enter
+  // only, and hands back the text it has been holding. Only the carrier moved.
+  // So the schema still never sees a keystroke — it no longer even has
   // somewhere to put one.
   const field = /<InspectorInput\s+ariaLabel="Image alt text"[\s\S]*?\/>/.exec(
     AD_INSPECTOR_SOURCE,
