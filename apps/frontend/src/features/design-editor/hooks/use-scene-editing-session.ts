@@ -23,6 +23,7 @@ import { fetchBrandKitDetail } from "../engine/scene/documentStore";
 import { collectKitFontFaceRefs } from "../engine/scene/kitFonts";
 import { fetchFontLibrary } from "../engine/scene/libraryFonts";
 import type { SceneDocumentHistory } from "./use-scene-document";
+import { useSceneExport } from "./use-scene-export";
 import { useSceneImageAi } from "./use-scene-image-ai";
 import { useSceneInspectorWrites } from "./use-scene-inspector-writes";
 import { useSceneReplaceImage } from "./use-scene-replace-image";
@@ -485,6 +486,20 @@ export function useSceneEditingSession({
   // lane's signature defect, and the honest answer is not to offer the control.
   const imageAi = activeDocumentId && scene ? imageAiBinding : undefined;
 
+  // AD4.D step 2 (§1.11): the export menu's request, answered. It sits beside
+  // the write hooks rather than inside them because an export is a READ (ruling
+  // R-D3): it goes to its own endpoint with `persist_preflight: false`, takes no
+  // `applyOps` and no lock, and so shares nothing with the write path but the
+  // scene it reads. The fallback title is `null` — the DETAIL's title is the
+  // primary source and the image menu always sends one (the tab's own title,
+  // as the header renders it).
+  const { exportStatus } = useSceneExport({
+    documentId: activeDocumentId,
+    pageId,
+    scene,
+    title: null,
+  });
+
   // W3.1's triple, ad-side. `documentVersion` stays NULL here, permanently and
   // deliberately (AD3.2 ruling): the edit queue owns `base_version` internally
   // (`editQueue.ts:110-113,152`), so a copy stamped on an inspector event would
@@ -509,6 +524,11 @@ export function useSceneEditingSession({
     activeDocumentId,
     addressing,
     canvasControls,
+    /** §1.11: what the last export attempt did — the line the export menu's
+     * `aria-live` span announces, over the controller's own optimistic
+     * "requested" one. `null` until an export has been asked for; operation
+     * feedback only, never a claim about the document. */
+    exportStatus,
     fontOptions,
     hydrated,
     /** §1.3 row 2: the inspector's AI image suite — what the four flows are

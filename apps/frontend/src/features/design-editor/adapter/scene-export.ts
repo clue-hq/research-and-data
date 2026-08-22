@@ -1,5 +1,11 @@
-import type { ImageExportFormat } from "@/features/chat-shell/model/image-export";
+import {
+  IMAGE_EXPORT_FORMATS,
+  IMAGE_EXPORT_SCALES,
+  type ImageExportFormat,
+  type ImageExportScale,
+} from "@/features/chat-shell/model/image-export";
 import type { ExportProfile } from "../engine/scene/contracts";
+import type { EditorExportResult } from "../engine/scene/exportRunner";
 
 /**
  * AD4.D step 1: the pure export adapter for the SCENE (ad) lane — the menu's
@@ -102,4 +108,91 @@ export function exportFilename(title: string, format: ImageExportFormat): string
       .trim() || FILENAME_FALLBACK;
 
   return `${sanitized}.${format.toLowerCase()}`;
+}
+
+/**
+ * AD4.D step 2: what a `clue:artifact-export-request` event says, once it has
+ * been established that it is a SCENE export at all.
+ */
+export interface SceneExportRequest {
+  format: ImageExportFormat;
+  /** The raster multiplier `sceneExportProfile` takes — 1 unless the detail
+   * carried one of the menu's own `1x`–`4x` labels. */
+  scale: 1 | 2 | 3 | 4;
+  /** The requester's own title for the download, or null when it sent none
+   * (the sharing menu's shape) — the listener supplies its fallback. */
+  title: string | null;
+}
+
+/** `"1x"` → `1`. The menu's scale vocabulary is `Nx` for a single digit, so the
+ * index into `IMAGE_EXPORT_SCALES` IS the multiplier minus one. */
+const SCALE_MULTIPLIERS = [1, 2, 3, 4] as const;
+
+/**
+ * The listener's gate, as a pure decision: `null` means "not this lane's
+ * export", and the listener returns silently — the same `clue:artifact-export-request`
+ * name is dispatched by the image-export menu
+ * (`use-image-export-controller.ts:39`, `{format, kind, scale?, title}`) AND by
+ * the sharing menu (`use-artifact-sharing-controller.ts:181`, `{format: "ZIP" |
+ * "PDF", kind}`), so both shapes reach every listener on the window.
+ *
+ * The FORMAT guard is load-bearing, not defensive padding (D1 review
+ * carry-forward): `sceneExportProfile` is a total switch over the three menu
+ * formats, so an unvalidated `"ZIP"` — which the sharing menu really does send
+ * with `kind: "ad"` — returns `undefined` at runtime and would be posted to the
+ * export endpoint as a profile-shaped hole. Nothing downstream re-checks it.
+ *
+ * A scale that is absent or unrecognized is 1x rather than a refusal: scale is a
+ * PNG-only parameter (`imageExportSupportsScale`), so the two formats that carry
+ * none are the menu's ordinary shape, and `sceneExportProfile` ignores the
+ * argument for them anyway.
+ */
+export function parseSceneExportRequest(detail: unknown): SceneExportRequest | null {
+  if (typeof detail !== "object" || detail === null) {
+    return null;
+  }
+  const { format, kind, scale, title } = detail as {
+    format?: unknown;
+    kind?: unknown;
+    scale?: unknown;
+    title?: unknown;
+  };
+  // The kind guard is what keeps the two lanes' listeners apart on one window,
+  // exactly as it does for the action-menu requests
+  // (`use-scene-inspector-writes.ts`).
+  if (kind !== "ad") {
+    return null;
+  }
+  if (!IMAGE_EXPORT_FORMATS.includes(format as ImageExportFormat)) {
+    return null;
+  }
+  const scaleIndex = IMAGE_EXPORT_SCALES.indexOf(scale as ImageExportScale);
+  return {
+    format: format as ImageExportFormat,
+    scale: scaleIndex === -1 ? 1 : SCALE_MULTIPLIERS[scaleIndex],
+    title: typeof title === "string" && title.length > 0 ? title : null,
+  };
+}
+
+/**
+ * The one line the menu's `aria-live` span reads when an export finishes.
+ *
+ * A failure speaks in the ENGINE's words — the first diagnostic's `message` —
+ * because a generic "export failed" hides the one fact the user can act on (a
+ * raster budget exceeded at 4x, a missing font). The generic line is the
+ * fallback for a failure that arrived carrying nothing sayable: a blank message
+ * would announce an empty status, which reads as no failure at all.
+ */
+export function sceneExportResultMessage(
+  format: ImageExportFormat,
+  result: EditorExportResult,
+): string {
+  if (result.status === "ok") {
+    return `${format} exported`;
+  }
+  const first = result.diagnostics[0];
+  if (first && first.message.trim() !== "") {
+    return first.message;
+  }
+  return `${format} export failed`;
 }

@@ -38,6 +38,7 @@ const ZOOM_LEVELS = Array.from({ length: 29 }, (_, index) => `${10 + index * 5}%
 
 export function ArtifactHeader({
   editing,
+  exportStatus,
   kind,
   onEdit,
   onRename,
@@ -48,6 +49,9 @@ export function ArtifactHeader({
   zoom,
 }: {
   editing: boolean;
+  /** AD4.D step 2: the ad session's export outcome, for the export menu's
+   * `aria-live` line. Absent on every other path. */
+  exportStatus?: string | null;
   kind: ChatShellArtifactKind;
   onEdit: () => void;
   onRename: (title: string) => void;
@@ -282,7 +286,7 @@ export function ArtifactHeader({
               <DownloadIcon absoluteStrokeWidth aria-hidden="true" size={13} strokeWidth={1.5} />
               Export
             </button>
-            {imageExportController.menuOpen ? <ImageExportMenu controller={imageExportController} /> : null}
+            {imageExportController.menuOpen ? <ImageExportMenu controller={imageExportController} exportStatus={exportStatus} /> : null}
           </div>
         ) : (
           <div className={styles.toolbarMenuAnchor} ref={sharingMenuRef}>

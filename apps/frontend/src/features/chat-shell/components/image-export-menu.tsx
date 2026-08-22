@@ -45,7 +45,18 @@ function ExportChoice<Value extends string>({
   );
 }
 
-export function ImageExportMenu({ controller }: { controller: ImageExportControllerState }) {
+export function ImageExportMenu({
+  controller,
+  exportStatus,
+}: {
+  controller: ImageExportControllerState;
+  /** AD4.D step 2: what the ad session's export listener says the request
+   * actually DID — in flight, downloaded, or refused in the engine's own
+   * words. It outranks the controller's optimistic "…export requested" line,
+   * which is true only until the listener answers. Absent (the fixture path,
+   * a web artifact) leaves the controller's line exactly as it renders today. */
+  exportStatus?: string | null;
+}) {
   return (
     <div aria-label="Export image output" className={styles.imageExportMenu} role="dialog">
       <div className={styles.imageExportHeading}>
@@ -83,7 +94,7 @@ export function ImageExportMenu({ controller }: { controller: ImageExportControl
         <span>Export {controller.format}</span>
         <DownloadIcon aria-hidden="true" className={styles.imageExportDownloadIcon} size={13} strokeWidth={1.5} />
       </button>
-      <span aria-live="polite" className={styles.srOnly}>{controller.statusMessage}</span>
+      <span aria-live="polite" className={styles.srOnly}>{exportStatus ?? controller.statusMessage}</span>
     </div>
   );
 }

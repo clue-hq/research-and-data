@@ -46,6 +46,7 @@ export function ArtifactStage({
   artifactMaximized,
   artifactTitle,
   editing,
+  exportStatus,
   onActivateArtifact,
   onCanvasSelect,
   onRichTextCommit,
@@ -97,6 +98,10 @@ export function ArtifactStage({
   artifactMaximized: boolean;
   artifactTitle: string;
   editing: boolean;
+  /** AD4.D step 2 (§1.11): the ad editing session's export outcome, on its way
+   * to the export menu's `aria-live` line. Absent leaves the menu announcing
+   * its controller's own optimistic line, exactly as it does today. */
+  exportStatus?: string | null;
   onActivateArtifact: (artifactId: string) => void;
   /** W2.2: nonce-validated selection events from the web canvas bridge. */
   onCanvasSelect?: (selection: WebSelection | null) => void;
@@ -196,6 +201,7 @@ export function ArtifactStage({
         <>
           <ArtifactHeader
             editing={editing}
+            exportStatus={exportStatus}
             kind={artifactKind}
             onEdit={onToggleEditing}
             onRename={onRenameArtifact}

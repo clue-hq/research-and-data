@@ -224,6 +224,7 @@ export function EditorSurface({
         artifacts={artifacts ?? []}
         canvasControlsRef={session.canvasControls}
         canvasReloadToken={session.reloadNonce + sceneSession.reloadNonce}
+        exportStatus={sceneSession.exportStatus}
         onSceneChange={sceneSession.onSceneChange}
         onSceneFitZoom={sceneSession.onFitZoom}
         onSceneGestureZoom={sceneSession.onGestureZoom}
