@@ -1,4 +1,5 @@
 import { describe, expect, it } from "../../__tests__/vitest-shim";
+import { HARVESTED_AD_PAGE } from "../../../adapter/__fixtures__/scene-nodes";
 import { minimalScene } from "./__fixtures__/minimalScene";
 import type { Operation, Scene } from "../contracts";
 import { canvasDragOperation, canvasResizeOperation, dragSnapGuides, resizeSnapGuides } from "../canvasOperations";
@@ -704,7 +705,134 @@ describe("snap guides (visualization)", () => {
       })
     ).toEqual([]);
   });
+
+  // ---------------------------------------------------------------------
+  // F9 — the generic (non-pinned, non-freehand) branches commit a transform
+  // that is PARENT-relative. Before AD4.C-3 they wrote the page-space
+  // position straight into it with no rebase, so any editable node under a
+  // parent whose solved origin is not (0,0) was displaced by exactly that
+  // origin (partially masked by `clampNodeTransformToParentBounds` into "the
+  // node jams toward the parent's far edge"). Reproduced on the harvested ad
+  // itself: `group_proof` is a GROUP, so its children are directly editable
+  // today and take this branch.
+  // ---------------------------------------------------------------------
+
+  it("commits a drag on a group child in PARENT space, not page space", () => {
+    const scene = nestedGroupScene();
+    const node = scene.nodes.text_proof_stat;
+
+    // Page-space target (316, 137); the parent group solves at (116, 112),
+    // so the parent-relative answer is (200, 25). No guide is within the 6pt
+    // threshold of either axis, and both coordinates sit inside the parent's
+    // clamp range, so the rebase is the only thing under test.
+    const operation = canvasDragOperation({
+      scene,
+      node,
+      page: scene.pages.page_linkedin_square,
+      pageOrigin: { x: 0, y: 0 },
+      canvasX: 316,
+      canvasY: 137
+    });
+
+    expect(operation).toMatchObject({ kind: "update_node", node_id: "text_proof_stat" });
+    expect((operation as Extract<Operation, { kind: "update_node" }>).patch.transform).toEqual({
+      kind: "set",
+      // The pre-fix answer was { x: 316, y: 68 } — the page-space x written
+      // verbatim, and the page-space y clamped against the 104pt-tall parent.
+      value: { ...node.transform, x: 200, y: 25 }
+    });
+  });
+
+  it("commits a resize on a group child in PARENT space, not page space", () => {
+    const scene = nestedGroupScene();
+    const node = scene.nodes.ellipse_proof_dot;
+
+    // Same geometry story as the drag: page-space (316, 127) under a parent
+    // solved at (116, 112) is parent-relative (200, 15); the 24pt dot scales
+    // to 48x48. No guide engages on either axis or extent.
+    const operation = canvasResizeOperation({
+      scene,
+      node,
+      page: scene.pages.page_linkedin_square,
+      pageOrigin: { x: 0, y: 0 },
+      transform: {
+        canvasX: 316,
+        canvasY: 127,
+        rotation: 0,
+        scaleX: 2,
+        scaleY: 2
+      }
+    });
+
+    expect(operation).toMatchObject({ kind: "update_node", node_id: "ellipse_proof_dot" });
+    const patch = (operation as Extract<Operation, { kind: "update_node" }>).patch;
+    expect(patch.transform).toEqual({
+      kind: "set",
+      // The pre-fix answer was { x: 316, y: 56 } — page-space x verbatim, y
+      // clamped against the parent's 104pt height.
+      value: { ...node.transform, x: 200, y: 15, rotation: 0 }
+    });
+    expect(patch.size).toEqual({
+      kind: "set",
+      value: {
+        width: { kind: "fixed", value: 48 },
+        height: { kind: "fixed", value: 48 }
+      }
+    });
+  });
+
+  it("reports drag guides for a group child against the parent frame the commit uses", () => {
+    const scene = nestedGroupScene();
+
+    // Parent-relative y = 16 puts the 36pt-tall text box's trailing edge on
+    // the parent's 52pt midline guide — the guide the commit actually snaps
+    // to, so the readout must be computed in the same (parent) frame.
+    const guides = dragSnapGuides({
+      scene,
+      node: scene.nodes.text_proof_stat,
+      page: scene.pages.page_linkedin_square,
+      pageOrigin: { x: 0, y: 0 },
+      canvasX: 316,
+      canvasY: 112 + 16
+    });
+
+    // Guide lines always span the full artboard on the cross axis (page
+    // width for a "y" guide), independent of the parent frame the position
+    // is measured in.
+    expect(guides).toEqual([{ axis: "y", position: 52, from: 0, to: 1200 }]);
+  });
 });
+
+/**
+ * The harvested ad's proof-point group with solved geometry injected. Every
+ * fixture node ships `computed: null` (the honest at-rest state — the engine
+ * never persists geometry back onto a stored scene), so any test that reads
+ * solved positions injects it. The injected origin is REPRESENTATIVE, not the
+ * engine's true solve: the row's stack layout places the 632-wide headline
+ * (plus gap 32) before the group, so the real engine puts `group_proof` at
+ * ~page (780, 149) — live-verified via the freeze bake, parent-relative
+ * (708, 77). This fixture injects the simpler non-zero origin (116, 112) —
+ * row (72, 72) + 44/40 padding, as if the group came first — which exercises
+ * the same rebase arithmetic: each child's page box is its parent-relative
+ * transform plus that origin — `text_proof_stat` (44, 24) -> (160, 136),
+ * `ellipse_proof_dot` (0, 40) -> (116, 152).
+ */
+function nestedGroupScene(): Scene {
+  const scene = JSON.parse(JSON.stringify(HARVESTED_AD_PAGE)) as Scene;
+  scene.nodes.group_proof.computed = {
+    layout_bounds: { x: 116, y: 112, width: 968, height: 104 },
+    render_bounds: { x: 116, y: 112, width: 968, height: 104 }
+  };
+  scene.nodes.text_proof_stat.computed = {
+    layout_bounds: { x: 160, y: 136, width: 256, height: 36 },
+    render_bounds: { x: 160, y: 136, width: 256, height: 36 }
+  };
+  scene.nodes.ellipse_proof_dot.computed = {
+    layout_bounds: { x: 116, y: 152, width: 24, height: 24 },
+    render_bounds: { x: 116, y: 152, width: 24, height: 24 }
+  };
+  return scene;
+}
 
 function customPixelScene(): Scene {
   const scene = JSON.parse(JSON.stringify(minimalScene)) as Scene;

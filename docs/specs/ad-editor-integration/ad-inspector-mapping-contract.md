@@ -214,7 +214,9 @@ line-height, letter-spacing, max-lines, wrap, direction, case, paragraph-spacing
 italic/underline/strike, truncate) · Line/Vector/Instance schemas (2026-08-19 ruling stands).
 
 ## §6 — Mockup-gated new chrome (build ONLY after founder approves visuals)
-1. Selection outline + move/resize handles (§1.9).
+1. Selection outline + move/resize handles (§1.9). — **SHIPPED (AD4.C, 2026-08-22):** G-A ruled
+   Variant B (commit `9c31bbcc`); outline shipped at AD2.5, the four corner handles +
+   drag/corner-resize shipped in this lane.
 2. The "leaves your brand palette" custom-color note (§1.6).
 3. The crop focal-point dot (§1.3).
 4. Export print-extras options in dummy style, demonstrated in the browser (§1.11).

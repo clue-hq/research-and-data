@@ -5,7 +5,14 @@ import {
   isCanvasDirectGeometryEditable,
   type SelectionRect
 } from "./canvasSelection";
-import { getNode, isNodeReorderableOnGesture, nodeDisplayName, pageIdForNode, slotsForNode } from "./sceneQueries";
+import {
+  getNode,
+  isNodeFreezableOnGesture,
+  isNodeReorderableOnGesture,
+  nodeDisplayName,
+  pageIdForNode,
+  slotsForNode
+} from "./sceneQueries";
 import type { Box } from "./transformerMath";
 
 export type SelectedObjectKind =
@@ -81,6 +88,13 @@ export function deriveSelectionChromeModel(scene: Scene, options: SelectionChrom
     Boolean(options.layoutManagedEditing) && selectedNode
       ? isNodeReorderableOnGesture(scene, selectedNode.id)
       : false;
+  // Ruling C-9 (handoff-absolute freeze-on-grab): a node blocked ONLY by
+  // solver ownership is grabbable — the press freezes the layout first. The
+  // predicate is an explicit allow-list and already excludes locked nodes, so
+  // a locked managed child stays refused end to end.
+  const freezableOnGesture = selectedNode
+    ? isNodeFreezableOnGesture(scene, selectedNode.id)
+    : false;
 
   return {
     activePageId: options.activePageId,
@@ -95,8 +109,14 @@ export function deriveSelectionChromeModel(scene: Scene, options: SelectionChrom
     containerLabel: containerGeometry ? `${containerGeometry.label} · ${containerGeometry.children.length} inside` : null,
     showHandles,
     // The rotate handle never turns on beyond `showHandles`; resize handles
-    // additionally turn on for a layout-managed-editing reorderable child.
-    showResizeHandles: showHandles || managedResizable,
+    // additionally turn on for a layout-managed-editing reorderable child, and
+    // — ruling C-9 — for a node whose ONLY blocker is solver ownership. A
+    // human dragging on this canvas is never refused by auto-layout: the first
+    // grab freezes the document's layout (zero-motion, silent) and the same
+    // press continues as a free drag, so the handles must be offered before
+    // that freeze has happened. `showHandles` deliberately stays false — it is
+    // "already directly editable", which this node is not yet.
+    showResizeHandles: showHandles || managedResizable || freezableOnGesture,
     showRotateHandle: showHandles,
     disabledReason,
     slotBindings,

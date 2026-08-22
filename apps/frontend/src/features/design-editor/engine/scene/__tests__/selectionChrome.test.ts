@@ -102,8 +102,29 @@ describe("selection chrome model", () => {
   });
 
   describe("4c-C managed gestures: showResizeHandles / showRotateHandle", () => {
-    it("keeps both off for a managed Stack child when layoutManagedEditing is unset (byte-identical default mode)", () => {
+    // REWRITTEN by AD4.C-3 (founder ruling C-9, ledgered C-13). This case used
+    // to assert `showResizeHandles === false` for a managed Stack child with
+    // `layoutManagedEditing` unset — the "managed nodes refuse" rule the
+    // founder overturned while testing live. A human dragging on this canvas is
+    // never refused by auto-layout: the grab freezes the layout first, so the
+    // resize handles are offered BEFORE that freeze. `showHandles` and
+    // `showRotateHandle` are unchanged and still false, which is the whole
+    // difference between "already directly editable" and "freezable on grab".
+    it("turns resize handles on for a freezable managed Stack child, with no layoutManagedEditing (ruling C-9)", () => {
       const managedScene = autoLayoutManagedScene();
+      const model = deriveSelectionChromeModel(managedScene, {
+        activePageId: "page_a4",
+        selectedNodeId: "node_contact_name"
+      });
+
+      expect(model.showHandles).toBe(false);
+      expect(model.showResizeHandles).toBe(true);
+      expect(model.showRotateHandle).toBe(false);
+    });
+
+    it("keeps every handle off for a LOCKED managed child — a freeze cannot free it", () => {
+      const managedScene = autoLayoutManagedScene();
+      managedScene.nodes.node_contact_name.locked = true;
       const model = deriveSelectionChromeModel(managedScene, {
         activePageId: "page_a4",
         selectedNodeId: "node_contact_name"
@@ -112,6 +133,7 @@ describe("selection chrome model", () => {
       expect(model.showHandles).toBe(false);
       expect(model.showResizeHandles).toBe(false);
       expect(model.showRotateHandle).toBe(false);
+      expect(model.disabledReason).toMatch(/locked/i);
     });
 
     it("turns on resize handles (not rotate) for a reorderable managed Stack child when layoutManagedEditing is true", () => {

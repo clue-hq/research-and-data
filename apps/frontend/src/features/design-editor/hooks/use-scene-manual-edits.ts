@@ -87,6 +87,26 @@ export interface SceneManualEdits {
    * states the document and one that lies about it. */
   applyOps: (operations: Operation[], intent?: string) => boolean;
   /**
+   * AD4.C-3 / ruling C-12: persist operations the engine has ALREADY applied.
+   *
+   * The canvas's freeze-on-grab is the one write on this lane that does not
+   * start life as a batch: `engine.applyStructuredEdit(freezeLayoutEdit())`
+   * applies it and hands back the operations it performed. Those operations
+   * must still reach the server, but they must NOT be applied a second time —
+   * so this is `applyOps` with its first step removed, and everything after it
+   * (the remembered scene, the history delta, the queue, the busy accounting)
+   * identical.
+   *
+   * `scene` is the POST-apply scene the engine returned. It seeds the queue's
+   * drain-time divergence check, exactly as `outcome.scene` does for a normal
+   * write.
+   *
+   * Never call this with operations nobody has applied — the local engine and
+   * the server would diverge on the next drain, which is precisely the failure
+   * the optimistic ordering exists to avoid.
+   */
+  persistAppliedOps: (operations: Operation[], scene: Scene) => boolean;
+  /**
    * AD4.A step 2 review (FIX 1): could a batch land right now — an armed
    * document, a mounted canvas, and a live engine?
    *
@@ -346,6 +366,58 @@ export function useSceneManualEdits(
     [],
   );
 
+  /**
+   * Everything a write does AFTER the engine has accepted it: remember the
+   * scene, record the history step, hand the batch to the queue, and account
+   * for it in `busy`.
+   *
+   * Extracted at AD4.C-3 because there are now TWO ways a batch reaches this
+   * point — an inspector edit that this controller applied (`applyOps`), and
+   * the canvas's freeze-on-grab, which the engine had already applied before
+   * the controller ever saw it (`persistAppliedOps`). The step they do not
+   * share is the apply; every step below it must stay identical, so it lives
+   * in one place rather than being written twice.
+   */
+  const enqueueApplied = useCallback(
+    (forDocumentId: string, operations: Operation[], scene: Scene) => {
+      lastSceneRef.current = scene;
+      // AD3.3: the batch the engine accepted is the batch that gets persisted,
+      // so from here the document has one more undoable step and no redo stack.
+      // Recorded at the hand-off rather than at the server's ack because every
+      // path where the server does NOT take it — a rejection, a divergence, a
+      // failed request — ends in `onReconcile`, which reloads; and a reload
+      // replaces this count with the server's own depths. A miscount cannot
+      // outlive the fetch that corrects it.
+      setDelta(afterWrite);
+      // The callers' `intent` argument (the interface accepts one, for
+      // signature parity with the web lane) stops HERE, deliberately: the only
+      // label `EnqueueOptions` carries is `checkpoint`, and upstream
+      // checkpoints are the Compare/Revert anchors for agent TURNS. Stamping
+      // one per inspector keystroke would bury that history under hundreds of
+      // labels nobody can revert to. The queue takes no `intent` of its own
+      // (`editQueue.ts:120-128` sends operations/actor/source/base_version),
+      // so there is nothing else honest to do with it.
+      const queue = ensureQueue(forDocumentId, scene);
+      queue.enqueueOperations(operations);
+      // `busy` REPORTS the in-flight batch; it does not gate the next one. The
+      // queue is ordered and the local apply already landed, so blocking here
+      // would drop a keystroke rather than delay it — the opposite of the web
+      // lane, whose single-flight gate exists because it has no local engine.
+      pendingRef.current += 1;
+      syncBusy();
+      // Settled on BOTH outcomes: the queue's chain swallows its own errors
+      // (they arrive as `request_failed` reconcile events instead), but a
+      // one-sided `.then` here would leave `busy` stuck true — and raise an
+      // unhandled rejection — if that ever stopped being true.
+      const settle = () => {
+        pendingRef.current -= 1;
+        syncBusy();
+      };
+      void queue.idle().then(settle, settle);
+    },
+    [ensureQueue, syncBusy],
+  );
+
   /** The two silent refusals of `applyOps` below, asked without applying. */
   const canApply = useCallback(() => {
     const controls = controlsHolderRef.current.current;
@@ -382,48 +454,40 @@ export function useSceneManualEdits(
         );
         return false;
       }
-      lastSceneRef.current = outcome.scene;
       setNote(null);
       setError(null);
-      // AD3.3: the batch the engine accepted is the batch that gets persisted,
-      // so from here the document has one more undoable step and no redo stack.
-      // Recorded at the hand-off rather than at the server's ack because every
-      // path where the server does NOT take it — a rejection, a divergence, a
-      // failed request — ends in `onReconcile`, which reloads; and a reload
-      // replaces this count with the server's own depths. A miscount cannot
-      // outlive the fetch that corrects it.
-      setDelta(afterWrite);
-      // The callers' `intent` argument (the interface accepts one, for
-      // signature parity with the web lane) stops HERE, deliberately: the only
-      // label `EnqueueOptions` carries is `checkpoint`, and upstream
-      // checkpoints are the Compare/Revert anchors for agent TURNS. Stamping
-      // one per inspector keystroke would bury that history under hundreds of
-      // labels nobody can revert to. The queue takes no `intent` of its own
-      // (`editQueue.ts:120-128` sends operations/actor/source/base_version),
-      // so there is nothing else honest to do with it.
-      const queue = ensureQueue(forDocumentId, outcome.scene);
-      queue.enqueueOperations(operations);
-      // `busy` REPORTS the in-flight batch; it does not gate the next one. The
-      // queue is ordered and the local apply already landed, so blocking here
-      // would drop a keystroke rather than delay it — the opposite of the web
-      // lane, whose single-flight gate exists because it has no local engine.
-      pendingRef.current += 1;
-      syncBusy();
-      // Settled on BOTH outcomes: the queue's chain swallows its own errors
-      // (they arrive as `request_failed` reconcile events instead), but a
-      // one-sided `.then` here would leave `busy` stuck true — and raise an
-      // unhandled rejection — if that ever stopped being true.
-      const settle = () => {
-        pendingRef.current -= 1;
-        syncBusy();
-      };
-      void queue.idle().then(settle, settle);
+      enqueueApplied(forDocumentId, operations, outcome.scene);
       // The engine took it and it is queued. NOT "the server accepted it" —
       // that answer arrives asynchronously through `onReconcile`, which owns
       // the reload and both message slots.
       return true;
     },
-    [ensureQueue, syncBusy],
+    [enqueueApplied],
+  );
+
+  /**
+   * AD4.C-3 / ruling C-12: the canvas's freeze-on-grab, whose operations the
+   * engine has already applied. Everything below the apply is shared with
+   * `applyOps` (see `enqueueApplied`); the two differences are deliberate:
+   *
+   *  • it does not apply anything — doing so would apply the batch twice;
+   *  • it does not touch the two message slots. A freeze is a silent
+   *    consequence of the user grabbing something, not a write they asked for,
+   *    so it must not wipe an inspector error they are still reading.
+   */
+  const persistAppliedOps = useCallback(
+    (operations: Operation[], scene: Scene) => {
+      if (operations.length === 0) {
+        return false;
+      }
+      const forDocumentId = documentIdRef.current;
+      if (!forDocumentId) {
+        return false;
+      }
+      enqueueApplied(forDocumentId, operations, scene);
+      return true;
+    },
+    [enqueueApplied],
   );
 
   /**
@@ -587,6 +651,7 @@ export function useSceneManualEdits(
     clearMessages,
     error,
     note,
+    persistAppliedOps,
     redo,
     redoDisabled: depths.redo === 0,
     reportError,

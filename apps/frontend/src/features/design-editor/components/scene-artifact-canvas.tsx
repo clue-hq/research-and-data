@@ -32,12 +32,33 @@ import {
   sceneWheelViewport,
   selectionHandleRects,
   type SceneArtboardModel,
+  type ScenePreview,
   type SceneSelectionOutline,
 } from "../adapter/scene-canvas-view";
+import {
+  EMPTY_SCENE_PRESS,
+  freezeOperationsToPersist,
+  pressArmedAfterFreeze,
+  sceneDescriptorPoint,
+  sceneGestureEffect,
+  scenePressHandleTarget,
+  scenePressModifiers,
+  scenePressNodeTarget,
+  sceneSelectionHandlesVisible,
+  shouldFreezeLayoutOnPress,
+} from "../adapter/scene-gestures";
 import {
   representableHit,
   sceneHitPoint,
 } from "../adapter/scene-selection";
+import {
+  gestureReducer,
+  initialGestureState,
+  type GestureAction,
+  type GestureEvent,
+  type GestureState,
+  type PressTarget,
+} from "../engine/scene/gestureMachine";
 import {
   drawDescriptorTree,
   parseColor,
@@ -49,7 +70,15 @@ import {
   textMeasurementStatusSnapshot,
 } from "../engine/scene/canvaskit/loadCanvasKit";
 import type { NodeId, Operation, PageId, Scene } from "../engine/scene/contracts";
-import type { EngineApplyOutcome, HitResult } from "../engine/scene/wasmEngine";
+import {
+  freezeLayoutEdit,
+  type StructuredEdit,
+} from "../engine/scene/structuredEdits";
+import type {
+  EngineApplyOutcome,
+  EngineStructuredEditOutcome,
+  HitResult,
+} from "../engine/scene/wasmEngine";
 import {
   defaultWorkspaceViewport,
   screenToWorkspace,
@@ -113,13 +142,25 @@ import styles from "./scene-artifact-canvas.module.css";
  * Decision 5 — so selection can never trigger a wasm redraw, and it is
  * `pointer-events: none`, so every click still reaches the canvas beneath it.
  *
- * The ruling's four corner handles are **approved and deliberately not drawn**:
- * a handle is a promise of drag-and-resize, and that behaviour is AD4's Lane C
- * (there are no writes at all until AD3). A grabbable handle that does nothing
- * is a fake affordance. The geometry and colors are encoded in the adapter and
- * the renderer below is defaulted off — Lane C passes `handles` and changes
- * nothing else. `data-scene-selected-node` stays on the canvas as the
- * machine-readable assertion (AD2.5 finding 4, founder-confirmed).
+ * The ruling's four corner handles waited for the behaviour they promise — a
+ * grabbable handle that does nothing is a fake affordance — and **AD4.C is
+ * that behaviour**, so they are drawn now: the overlay below is passed
+ * `handles` and nothing else about it changed. `data-scene-selected-node`
+ * stays on the canvas as the machine-readable assertion (AD2.5 finding 4,
+ * founder-confirmed).
+ *
+ * AD4.C also adds the write half of the pointer (§1.9's v1 scope exactly:
+ * drag-to-move and CORNER resize, no rotate, no marquee, no nudge, no
+ * double-click text). The decisions are pure and live in
+ * `adapter/scene-gestures.ts`, over the design subsystem's own shared
+ * machinery — `gestureReducer`, the transformer math, and the existing
+ * operation builders — so the geometry rules are ported, never re-derived.
+ * What is here is the DOM plumbing plus two state holders: the machine in a
+ * ref, and the in-flight preview in one `useState`. A gesture never touches
+ * the scene; it commits through `onOperations` (Ruling C-3), which is the
+ * inspector's own AD3.2 write path, so one gesture is one atomic batch and one
+ * undo frame — and ⌘Z therefore needs no new code at all (AD3.3's listener
+ * already covers the server-owned history).
  *
  * AD3.2 adds the ONE seam the write path needs: `applyOperations` on the
  * controls below, which hands a batch to the live engine and repaints. The
@@ -149,6 +190,22 @@ export interface SceneCanvasControls {
    */
   applyOperations(operations: Operation[]): EngineApplyOutcome | null;
   /**
+   * AD4.C-3 / ruling C-12: apply ONE structured edit to the live engine and
+   * repaint — the same optimistic half as `applyOperations` above, for the one
+   * write the canvas issues that is not a plain operation batch: the
+   * freeze-on-grab (`freezeLayoutEdit()`).
+   *
+   * It returns the outcome because the outcome carries the batch: the engine
+   * has ALREADY applied these operations, and they still have to be persisted.
+   * That is why the caller must hand `outcome.operations` to the
+   * persist-already-applied seam and never to `applyOps` — the ordinary write
+   * path would apply them a second time.
+   *
+   * Null when the engine is unavailable (D9 read-only), same as
+   * `applyOperations`: nothing was applied, so nothing may be persisted.
+   */
+  applyStructuredEdit(edit: StructuredEdit): EngineStructuredEditOutcome | null;
+  /**
    * AD4.A step 2: could a batch land right now — i.e. is the live engine
    * available? False is exactly the state in which `applyOperations` returns
    * `null` (D9 read-only).
@@ -177,6 +234,57 @@ export interface SceneCanvasControls {
 export interface SceneArtifactCanvasProps {
   /** The design document to render. */
   documentId: string;
+  /**
+   * AD4.C / Ruling C-4 — GATE G-H, canvas-side: while an agent turn is in
+   * flight the human's DIRECT MANIPULATION is off. No drag or resize gesture
+   * starts (a press still selects, exactly as it does on a locked node) and the
+   * corner handles are not drawn, because a handle is a promise the canvas
+   * cannot keep while the gate holds.
+   *
+   * Selection stays live on purpose: looking at the document — and at what is
+   * selected in it — is not changing it, which is the whole of what G-H forbids
+   * ("we cannot let humans change any value when the agents are at work").
+   *
+   * The chats route passes `chat.threadBusy`, the same source the inspector's
+   * `inspectorDisabled` reads. The artifact route deliberately passes nothing —
+   * it has no live turn stream to read, and its net stays the D10 CAS
+   * reconciliation (see the comment at that call site).
+   */
+  gestureDisabled?: boolean;
+  /**
+   * AD4.C / Ruling C-3: a committed canvas gesture's operations, handed to the
+   * shell's write path — `use-scene-manual-edits.ts`'s `applyOps`, the SAME one
+   * every inspector row commits through (optimistic engine apply → repaint →
+   * edit-queue persist).
+   *
+   * One committed gesture is ONE call with the whole batch, so it lands as one
+   * atomic edit and therefore ONE undo frame — a drag of a container carries
+   * its pinned descendants in that same batch. The canvas never calls its own
+   * `applyOperations` for a gesture: that seam applies to the live engine and
+   * persists NOTHING, so a write through it would be lost on the next load.
+   *
+   * Absent (the standalone read path, and the ad canvas before a session mounts
+   * one) means no gesture is ever committed — the preview simply drops.
+   */
+  onOperations?: (operations: Operation[], intent?: string) => boolean;
+  /**
+   * AD4.C-3 / Ruling C-12: persist operations the engine has ALREADY applied.
+   *
+   * A deliberate SIBLING of `onOperations` rather than a flag on it, because
+   * the two carry opposite contracts — `onOperations` means "apply this, then
+   * persist it", this means "persist only; the apply already happened" — and
+   * conflating them behind one callback would make a wiring slip silently
+   * DOUBLE-APPLY the batch. One caller: the freeze-on-grab, whose operations
+   * come back from `controls.applyStructuredEdit`.
+   *
+   * The freeze lands as its own plain operation batch, so it is also its own
+   * undo frame (upstream parity): one ⌘Z after a freed drag undoes the drag, a
+   * second restores auto-layout.
+   *
+   * Absent means the freeze applies locally and is never persisted — the same
+   * posture `onOperations` takes on the standalone read path.
+   */
+  onAppliedOperations?: (operations: Operation[], scene: Scene) => boolean;
   /** Receives the canvas's imperative controls while mounted. */
   controlsRef?: RefObject<SceneCanvasControls | null>;
   /** Bump to refetch the document into the same mounted canvas (the website
@@ -269,13 +377,34 @@ export function SceneArtifactCanvas(props: SceneArtifactCanvasProps) {
   return <SceneDocumentCanvas key={props.documentId} {...props} />;
 }
 
+/**
+ * Is this key event someone TYPING? The canvas's keyboard shortcuts (space to
+ * pan, AD4.C's Escape) never reach into a focused field — an inspector input
+ * owns its own Space and its own Escape.
+ *
+ * Module-level because two listeners need it; it was inline in the space-pan
+ * effect until AD4.C's Escape wanted the same rule rather than a second copy.
+ */
+function typingTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) {
+    return false;
+  }
+  return (
+    target.isContentEditable ||
+    ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)
+  );
+}
+
 function SceneDocumentCanvas({
   controlsRef,
   documentId,
+  gestureDisabled = false,
+  onAppliedOperations,
   onEngineStatusChange,
   onFitZoom,
   onGestureZoom,
   onHistoryChange,
+  onOperations,
   onSceneChange,
   onSelect,
   reloadToken = 0,
@@ -308,13 +437,41 @@ function SceneDocumentCanvas({
     textMeasurementStatusSnapshot,
   );
 
+  /* ---------------------------------------------------------------------
+   * AD4.C — direct manipulation (drag-move + corner-resize).
+   *
+   * Two pieces of state, and the split is the whole design:
+   *
+   *  • the GESTURE MACHINE lives in a ref. It is the source editor's own
+   *    pattern (`CanvasKitCanvas.tsx:189,755-761`) and it is not laziness: a
+   *    pointer move must not queue a React render just to advance a state
+   *    machine, and the reducer is pure, so a ref holds it exactly as well.
+   *  • the PREVIEW is the one piece of React state, because it is the only
+   *    thing that has to reach the screen — as a render-time descriptor
+   *    override and overlay geometry, never a scene mutation (AD4.R: the
+   *    engine's scene owns the document's values). Dropping it repaints the
+   *    document's own truth, which is what makes Escape and pointer-cancel
+   *    free.
+   *
+   * `gestureArmedRef` is the C-5/R5 gate, held at the SOURCE: moves are
+   * dispatched only while it is true, so a press that may not drag (locked,
+   * layout-managed, no laid-out box, or an in-flight agent turn) can never
+   * promote into a gesture — and an empty press, which is never armed, can
+   * never become a marquee (§1.9).
+   * ------------------------------------------------------------------ */
+  const gestureRef = useRef<GestureState>(initialGestureState);
+  const gestureArmedRef = useRef(false);
+  const [preview, setPreview] = useState<ScenePreview | null>(null);
+
   // The descriptor tree the draw loop walks. `tokenGeneration` is a real dep:
   // descriptors read the renderAdapter's module-level kit maps, which arrive
-  // after the first paint.
+  // after the first paint. AD4.C adds `preview`: a gesture in flight rebuilds
+  // the tree with the dragged node's box substituted, which is how the moving
+  // pixels reach the canvas without the scene being touched.
   const artboard = useMemo(
-    () => (scene ? sceneArtboardModel(scene, pageId) : null),
+    () => (scene ? sceneArtboardModel(scene, pageId, preview) : null),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- tokenGeneration
-    [scene, pageId, tokenGeneration],
+    [scene, pageId, preview, tokenGeneration],
   );
 
   // Fit-on-open (§1.10) is a pure function of the card's size and the page
@@ -463,6 +620,21 @@ function SceneDocumentCanvas({
         }
         return outcome;
       },
+      applyStructuredEdit: (edit) => {
+        if (!engine) {
+          return null;
+        }
+        const outcome = engine.applyStructuredEdit(edit);
+        // Identical accept path to `applyOperations` above, and for the
+        // identical reasons: repaint, and mirror the accepted scene up
+        // SYNCHRONOUSLY so the press that fired this sees the post-freeze
+        // document on its very next render.
+        if (outcome.accepted) {
+          refresh();
+          onSceneChangeRef.current?.(outcome.scene, pageId, documentId);
+        }
+        return outcome;
+      },
       // The same condition `applyOperations` refuses on, asked without
       // applying anything.
       canApply: () => Boolean(engine),
@@ -505,12 +677,38 @@ function SceneDocumentCanvas({
         ? sceneSelectionOutline({
             artboard,
             pageId,
+            // AD4.C: while a gesture runs the chrome tracks the LIVE box, so
+            // the outline (and its handles) move with the previewed pixels
+            // rather than sitting at the pre-drag position.
+            preview,
             scene,
             selectedNodeId: activeSelectedNodeId,
             viewport,
           })
         : null,
-    [activeSelectedNodeId, artboard, pageId, scene, viewport],
+    [activeSelectedNodeId, artboard, pageId, preview, scene, viewport],
+  );
+
+  // AD4.C step 2 (Gate G-A): the four approved corner handles, drawn at last —
+  // exactly when the document, the engine and the G-H gate all allow the drag
+  // they promise. The outline itself is unconditional; only the grab affordance
+  // is gated.
+  const selectionHandles = useMemo(
+    () =>
+      sceneSelectionHandlesVisible({
+        engineDisabled: engineStatus.engineDisabled,
+        gestureDisabled,
+        pageId,
+        scene,
+        selectedNodeId: activeSelectedNodeId,
+      }),
+    [
+      activeSelectedNodeId,
+      engineStatus.engineDisabled,
+      gestureDisabled,
+      pageId,
+      scene,
+    ],
   );
 
   const commitSelection = (nodeId: NodeId | null) => {
@@ -594,15 +792,6 @@ function SceneDocumentCanvas({
   // modifier and not a mode.
   const [spaceHeld, setSpaceHeld] = useState(false);
   useEffect(() => {
-    const typingTarget = (target: EventTarget | null) => {
-      if (!(target instanceof HTMLElement)) {
-        return false;
-      }
-      return (
-        target.isContentEditable ||
-        ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)
-      );
-    };
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.code !== "Space" || typingTarget(event.target)) {
         return;
@@ -639,23 +828,209 @@ function SceneDocumentCanvas({
     return { x: event.clientX - bounds.left, y: event.clientY - bounds.top };
   };
 
+  /* ---------------------------------------------------------------------
+   * AD4.C — the gesture host: three lines of plumbing over pure decisions.
+   * ------------------------------------------------------------------ */
+
+  /** The press, in artboard-local descriptor px — the space the gesture
+   * machine, the transformer math and the operation builders all speak. */
+  const descriptorPoint = (event: ReactPointerEvent<HTMLDivElement>) =>
+    artboard
+      ? sceneDescriptorPoint(screenToWorkspace(stagePoint(event), viewport), artboard)
+      : null;
+
+  const modifiersOf = (event: ReactPointerEvent<HTMLDivElement>) => ({
+    // Shift is the reducer's own aspect lock on a corner resize; meta rides
+    // along as the machine defines it. Neither reaches the selection — Ruling
+    // C-8 drops `additive`, because multi-select is not this task's.
+    shift: event.shiftKey,
+    meta: event.metaKey || event.ctrlKey,
+  });
+
+  /** Ruling C-2: the hard reset. The reducer has no cancel event — every `up`
+   * from a live gesture commits — so a cancelled gesture is undone by throwing
+   * the machine and the preview away, which is the source editor's own answer
+   * (`CanvasKitCanvas.tsx:1155-1164`). Nothing was written, so nothing is
+   * undone: the artboard simply repaints at the document's truth. */
+  const resetGesture = () => {
+    gestureRef.current = initialGestureState;
+    gestureArmedRef.current = false;
+    setPreview(null);
+  };
+
+  const applyGestureAction = (action: GestureAction) => {
+    if (!scene) {
+      return;
+    }
+    const effect = sceneGestureEffect(action, scene, pageId);
+    switch (effect.kind) {
+      case "select":
+        commitSelection(effect.nodeId);
+        break;
+      case "preview":
+        setPreview(effect.preview);
+        break;
+      case "commit":
+        setPreview(null);
+        // A write that changes nothing is not a write: the builders answer
+        // with an empty batch for a node they refuse, and an empty batch is
+        // not handed to the write path at all.
+        if (effect.operations.length > 0) {
+          onOperations?.(effect.operations, effect.intent);
+        }
+        break;
+      case "none":
+        break;
+    }
+  };
+
+  const dispatchGesture = (event: GestureEvent) => {
+    const reduced = gestureReducer(gestureRef.current, event);
+    gestureRef.current = reduced.state;
+    applyGestureAction(reduced.action);
+  };
+
+  /**
+   * Ruling C-9 (founder): a human dragging on this canvas is NEVER refused by
+   * auto-layout. The agent works in auto-layout; the human does not know what
+   * auto-layout is. So the first grab of a solver-owned node bakes the whole
+   * document's layout to free placement — silently, moving nothing — and the
+   * SAME press then continues as an ordinary free drag.
+   *
+   * Everything about the ordering is load-bearing, and all of it is upstream's
+   * (`CanvasKitCanvas.tsx:1056-1076`):
+   *
+   *  • BEFORE `beginPress`. The press target was resolved against the
+   *    pre-freeze scene, and that is correct: the freeze is zero-motion, so
+   *    the box this gesture starts from is numerically identical either side
+   *    of it (proven against the real engine in `wasmEngine.artifact.test.ts`).
+   *    By the time the drag commits, React has re-rendered on the post-freeze
+   *    scene and the operation builders take the node.
+   *  • Fire-and-forget on a click that never drags. The edit is idempotent —
+   *    an empty batch once nothing is left to freeze — so the cost of a
+   *    needless freeze is one no-op, which is upstream's own posture.
+   *  • Persist WITHOUT re-applying. `applyStructuredEdit` already applied
+   *    these operations to the engine; `onAppliedOperations` is the seam that
+   *    only enqueues them. Routing them through `onOperations` would apply the
+   *    batch twice.
+   *
+   * The `engineDisabled` guard is inherited from `handlePointerDown`'s own
+   * early return (a freeze needs solved geometry, which a dead engine has
+   * none of), and G-H rides in `shouldFreezeLayoutOnPress`'s `gesturesEnabled`
+   * — a freeze is a write, so mid-turn none fires and managed nodes keep
+   * today's select-only behaviour.
+   *
+   * RETURNS whether this press may go on to arm, which is not always true —
+   * see the locked-CONTAINER case below.
+   */
+  const freezeLayoutForPress = (target: PressTarget): boolean => {
+    if (!scene || !shouldFreezeLayoutOnPress({
+      gesturesEnabled: !gestureDisabled,
+      scene,
+      target,
+    })) {
+      // No freeze needed, so nothing here can block the press. Whether it arms
+      // is entirely the caller's own (pre-computed) answer.
+      return true;
+    }
+    const outcome = controls.applyStructuredEdit(freezeLayoutEdit());
+    const operations = freezeOperationsToPersist(outcome);
+    if (outcome && operations.length > 0) {
+      // Persisted whether or not the PRESSED node was freed: these operations
+      // are already in the engine, and whatever they freed has to reach the
+      // server or the local scene and the document diverge on the next drain.
+      //
+      // `outcome.scene` — the POST-freeze scene, not `controls.sceneSnapshot()`
+      // (which answers from this render's closure and is still the pre-freeze
+      // one until React re-renders). The queue seeds its divergence check from
+      // this, so handing it the pre-freeze scene would fake a divergence
+      // against the document the server is about to be told about.
+      onAppliedOperations?.(operations, outcome.scene);
+    }
+    // Ruling C-5 applied to the freeze: a press that cannot commit must not
+    // preview. Asked of the NODE against the post-freeze scene rather than
+    // inferred from the batch being empty — `build_freeze_layout` skips only
+    // LOCKED containers and still frees every other Stack, so a non-empty
+    // batch does NOT mean this node was freed (pinned against the real engine
+    // in `wasmEngine.artifact.test.ts`, two-Stack fixture).
+    return pressArmedAfterFreeze(outcome?.scene ?? null, target);
+  };
+
+  /** Begin a press: arm (or refuse to arm) the gesture, then let the reducer
+   * resolve the selection it implies. */
+  const beginPress = (
+    event: ReactPointerEvent<HTMLDivElement>,
+    point: { x: number; y: number },
+    target: PressTarget,
+    armed: boolean,
+  ) => {
+    gestureArmedRef.current = armed;
+    if (armed) {
+      // Only a press that can actually become a gesture captures the pointer —
+      // so a drag that leaves the stage keeps arriving, while a plain select
+      // press behaves exactly as it did before this task. Best-effort: capture
+      // throws for a pointer the browser has already released.
+      try {
+        event.currentTarget.setPointerCapture?.(event.pointerId);
+      } catch {
+        // Ignored deliberately (the source host does the same).
+      }
+    }
+    dispatchGesture({
+      kind: "down",
+      point,
+      target,
+      // Not the raw modifiers: an EMPTY press carries none, so a press on
+      // nothing clears the selection unconditionally — AD2.5's own behaviour,
+      // which the reducer would otherwise preserve-on-additive (multi-select is
+      // AD4.E's). Reasoned out at `scenePressModifiers`.
+      modifiers: scenePressModifiers(target, modifiersOf(event)),
+    });
+    if (!armed) {
+      // …and then straight back to rest. An unarmed press has no follow-up —
+      // moves are ignored and its `up` reduces to nothing — so the machine has
+      // no reason to hold `pressed`, and holding it was not free: capture is
+      // taken only for an ARMED press, so an unarmed one released off the stage
+      // never gets its `pointerup` and would strand `pressed` until the next
+      // press anywhere on the canvas. A machine stranded non-idle is exactly
+      // what would stop the window Escape listener below being inert — it would
+      // swallow the next Escape anywhere in the app. The press keeps its
+      // selection; only the leftover state goes.
+      gestureRef.current = initialGestureState;
+    }
+  };
+
   const handlePointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
     const drag = panDragRef.current;
     const current = gestureInputsRef.current;
-    if (!drag || drag.pointerId !== event.pointerId || !current.artboard) {
+    if (drag) {
+      if (drag.pointerId !== event.pointerId || !current.artboard) {
+        return;
+      }
+      const artboardRect = current.artboard.rect;
+      const point = stagePoint(event);
+      setGestureViewport((live) =>
+        sceneDragPanViewport({
+          bounds: artboardRect,
+          origin: drag.origin,
+          point,
+          stage: current.stageSize,
+          viewport: live ?? current.baseViewport,
+        }),
+      );
       return;
     }
-    const artboardRect = current.artboard.rect;
-    const point = stagePoint(event);
-    setGestureViewport((live) =>
-      sceneDragPanViewport({
-        bounds: artboardRect,
-        origin: drag.origin,
-        point,
-        stage: current.stageSize,
-        viewport: live ?? current.baseViewport,
-      }),
-    );
+    // AD4.C: the pan owns the surface first (above); what is left is direct
+    // manipulation. An unarmed press never gets here, which is what keeps a
+    // locked node still, an empty press out of marquee, and G-H honoured.
+    if (!gestureArmedRef.current || gestureRef.current.kind === "idle") {
+      return;
+    }
+    const point = descriptorPoint(event);
+    if (!point) {
+      return;
+    }
+    dispatchGesture({ kind: "move", point, modifiers: modifiersOf(event) });
   };
 
   const endPanDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -666,6 +1041,67 @@ function SceneDocumentCanvas({
     setPanning(false);
     event.currentTarget.releasePointerCapture?.(event.pointerId);
   };
+
+  const handlePointerUp = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const panned = panDragRef.current?.pointerId === event.pointerId;
+    endPanDrag(event);
+    if (panned) {
+      return;
+    }
+    if (gestureRef.current.kind !== "idle") {
+      const point = descriptorPoint(event);
+      // The reducer commits on `up` and returns to idle.
+      if (point) {
+        dispatchGesture({ kind: "up", point, modifiers: modifiersOf(event) });
+      }
+    }
+    // UNCONDITIONALLY, whatever that `up` resolved to. The preview is cleared
+    // by the `commit` arm, and two reachable paths never reach it while still
+    // ending the gesture: no descriptor point at all (a failed reload landing
+    // mid-drag), and a committed action whose node or page has left the scene
+    // (an agent turn regenerating the document mid-drag), which resolves to
+    // `none`. Leaving the preview behind there was unrescuable — the machine
+    // is idle by then, so Escape's own guard refuses to fire — so the machine
+    // and the preview go back to rest together, always.
+    resetGesture();
+  };
+
+  const handlePointerCancel = (event: ReactPointerEvent<HTMLDivElement>) => {
+    endPanDrag(event);
+    resetGesture();
+  };
+
+  // Ruling C-2: Escape cancels a live gesture. Registered once and inert
+  // otherwise — an Escape with no gesture running reaches whatever else wants
+  // it (this canvas has never cleared a selection on Escape, and this task does
+  // not add that).
+  //
+  // The guard is ARMED **and** non-idle, not non-idle alone: this is a global
+  // key handler, so its inertness must not rest on a state machine that a
+  // missed `pointerup` could leave dirty. Only an armed gesture has anything to
+  // cancel, and after `beginPress`/`handlePointerUp` above, armed and non-idle
+  // are the same condition — the second half is belt-and-braces on a handler
+  // that can `preventDefault` a key the whole app shares.
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (
+        event.key !== "Escape" ||
+        !gestureArmedRef.current ||
+        gestureRef.current.kind === "idle"
+      ) {
+        return;
+      }
+      // The same guard the space-pan listener uses: Escape inside an inspector
+      // field is that field's, never the canvas's.
+      if (typingTarget(event.target)) {
+        return;
+      }
+      event.preventDefault();
+      resetGesture();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
 
   // AD2.7: hand the rendered scene up. A passive-ref effect (callback only, no
   // state) so it can never fight the render, and keyed on the scene identity
@@ -736,11 +1172,36 @@ function SceneDocumentCanvas({
       { x: event.clientX - bounds.left, y: event.clientY - bounds.top },
       viewport,
     );
+    const point = sceneDescriptorPoint(workspacePoint, artboard);
+    // AD4.C step 1: a HANDLE GRAB on the current selection outranks the hit
+    // test — the source host's own order (`CanvasKitCanvas.tsx:587-615`).
+    // A corner handle straddles its node's edge, so resolving the hit first
+    // would make the bottom-right handle select whatever is behind it instead
+    // of starting a resize. It is also why this runs before `sceneHitPoint`'s
+    // bounds check: a handle on a node at the page edge sits half off the
+    // artboard, and pressing it is a resize, not a press on nothing.
+    const handleTarget = scenePressHandleTarget({
+      artboard,
+      gesturesEnabled: !gestureDisabled,
+      pageId,
+      point,
+      scene,
+      selectedNodeId: activeSelectedNodeId,
+      zoom: viewport.zoom,
+    });
+    if (handleTarget) {
+      // A drawn handle is only grabbable if the press can actually act: the
+      // freeze (when one is needed) must have landed.
+      beginPress(event, point, handleTarget, freezeLayoutForPress(handleTarget));
+      return;
+    }
     const scenePoint = sceneHitPoint(workspacePoint, artboard);
     if (!scenePoint) {
       // Off the artboard entirely: clear, deliberately (not a no-op — the user
-      // pressed somewhere with nothing in it).
-      commitSelection(null);
+      // pressed somewhere with nothing in it). The empty press reduces to
+      // exactly that selection, and is never armed, so it cannot become a
+      // marquee (§1.9).
+      beginPress(event, point, EMPTY_SCENE_PRESS.target, EMPTY_SCENE_PRESS.armed);
       return;
     }
     const result = controls.hitTest(scenePoint.x, scenePoint.y);
@@ -750,7 +1211,19 @@ function SceneDocumentCanvas({
     // `HitResult.stack` is bottom-to-top and its last member IS `hit` (the
     // engine's `hit_test` is literally `hit_stack(..).pop()`), so the stack
     // alone is the complete answer.
-    commitSelection(representableHit(result.stack, scene, pageId));
+    const press = scenePressNodeTarget({
+      artboard,
+      gesturesEnabled: !gestureDisabled,
+      nodeId: representableHit(result.stack, scene, pageId),
+      pageId,
+      scene,
+    });
+    // `press.armed` was resolved against the PRE-freeze scene, which is right
+    // for the ordinary case (the freeze is zero-motion, so the box is the same
+    // either side of it) and one case short: a node the freeze could not
+    // actually free must not arm after all.
+    const freed = freezeLayoutForPress(press.target);
+    beginPress(event, point, press.target, press.armed && freed);
   };
 
   return (
@@ -762,10 +1235,10 @@ function SceneDocumentCanvas({
       ]
         .filter(Boolean)
         .join(" ")}
-      onPointerCancel={endPanDrag}
+      onPointerCancel={handlePointerCancel}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
-      onPointerUp={endPanDrag}
+      onPointerUp={handlePointerUp}
       ref={stageRef}
     >
       <ArtboardSurface
@@ -780,8 +1253,10 @@ function SceneDocumentCanvas({
         viewport={viewport}
       />
       {/* The selection overlay: an absolutely-positioned sibling of the canvas
-          (never a canvas draw), so selection never triggers a wasm redraw. */}
-      <SelectionChrome outline={selectionOutline} />
+          (never a canvas draw), so selection never triggers a wasm redraw.
+          AD4.C turns G-A's four corner handles on — the one thing Lane C was
+          asked to pass, and nothing else about the overlay changes. */}
+      <SelectionChrome handles={selectionHandles} outline={selectionOutline} />
       {/* Gate G-D: the two engine-forced states, said out loud. */}
       <SceneEngineBanners
         engineStatus={engineStatus}
@@ -880,9 +1355,10 @@ function SceneEngineBanners({
  * loop rotates a node about — so the outline and (later) its handles turn
  * together with one transform.
  *
- * `handles` is **G-A-approved geometry, enabled with Lane C** and therefore
- * defaulted off: nothing passes it today, because drag-to-resize does not exist
- * until AD4's Lane C and a grabbable handle that does nothing would be a fake
+ * `handles` is G-A-approved geometry, **enabled by AD4.C** — the canvas passes
+ * it exactly when the selection can actually be resized (an editable node, a
+ * live engine, and no in-flight agent turn). It keeps its `false` default so a
+ * caller that has no drag behaviour behind it still cannot draw a fake
  * affordance.
  */
 function SelectionChrome({

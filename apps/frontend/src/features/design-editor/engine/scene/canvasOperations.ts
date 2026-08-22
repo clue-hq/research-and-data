@@ -141,10 +141,18 @@ export function canvasDragOperations({
     ];
   }
 
+  // Flow child of a non-Free parent: `node.transform` is PARENT-relative, so
+  // the page-space drag position is rebased into the parent's frame before
+  // anything else touches it — the same rebase the freehand branch above
+  // does, just applied first here because this branch's guides
+  // (`guidesForNodeParent`) and its clamp (`clampNodeTransformToParentBounds`)
+  // are ALSO expressed in the parent's frame. Page-parented nodes are
+  // unaffected: `parentComputedOrigin` is (0,0) for them.
+  const origin = parentComputedOrigin(scene, node.id);
   const rawTransform = {
     ...node.transform,
-    x: pageX,
-    y: pageY
+    x: pageX - origin.x,
+    y: pageY - origin.y
   };
   const nextTransform = clampNodeTransformToParentBounds(
     scene,
@@ -226,7 +234,10 @@ export function dragSnapGuides({
     return guides;
   }
 
-  const rawTransform = { ...node.transform, x: pageX, y: pageY };
+  // Parent-frame rebase, matching the commit path above so the guide a host
+  // draws is the guide the commit actually snaps to.
+  const origin = parentComputedOrigin(scene, node.id);
+  const rawTransform = { ...node.transform, x: pageX - origin.x, y: pageY - origin.y };
   snapTransformToGuides(
     {
       scene,
@@ -376,11 +387,18 @@ export function canvasResizeOperation({
       }
     );
   }
+  // Flow child of a non-Free parent: `node.transform` is PARENT-relative, so
+  // rebase the page-space candidate into the parent's frame before snapping
+  // and clamping — both of which are themselves parent-frame (see the drag
+  // builder's matching comment). Page-parented nodes get a (0,0) origin and
+  // are unaffected. Done here rather than on `nextTransform` above because
+  // the freehand branch needs that value in PAGE space.
+  const origin = parentComputedOrigin(scene, node.id);
   const snapped = snapTransformAndSizeToGuides({
     scene,
     node,
     page,
-    transform: nextTransform,
+    transform: { ...nextTransform, x: nextTransform.x - origin.x, y: nextTransform.y - origin.y },
     size: rawSize
   });
   const nextSize = clampNodeSizeToParentBounds(scene, node, snapped.size);
@@ -455,12 +473,14 @@ export function resizeSnapGuides({
     width: sceneUnitFromCanvas(nextWidth, page),
     height: sceneUnitFromCanvas(nextHeight, page)
   };
+  // Parent-frame rebase, matching `canvasResizeOperation`'s generic branch.
+  const origin = parentComputedOrigin(scene, node.id);
   snapTransformAndSizeToGuides(
     {
       scene,
       node,
       page,
-      transform: nextTransform,
+      transform: { ...nextTransform, x: nextTransform.x - origin.x, y: nextTransform.y - origin.y },
       size: rawSize
     },
     (guide) => guides.push(guide)

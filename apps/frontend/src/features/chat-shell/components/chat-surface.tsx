@@ -471,9 +471,21 @@ export function ChatSurface({
         onSceneFitZoom={sceneSession.onFitZoom}
         onSceneGestureZoom={sceneSession.onGestureZoom}
         onSceneHistoryChange={sceneSession.onHistoryChange}
+        // AD4.C / Ruling C-3: a committed canvas gesture rides the SAME write
+        // path the inspector's rows do — the session's `applyOps` (optimistic
+        // engine apply → repaint → edit-queue persist), so a drag is one
+        // atomic batch, one undo frame, and ⌘Z needs nothing new.
+        onSceneAppliedOperations={sceneSession.writes.persistAppliedOps}
+        onSceneOperations={sceneSession.writes.applyOps}
         onSceneSelect={sceneSession.onSelectCanvas}
         onSceneZoomChange={sceneSession.onZoomChange}
         sceneCanvasControlsRef={sceneSession.canvasControls}
+        // AD4.C / Ruling C-4 — GATE G-H, the canvas half of the same ruling
+        // `inspectorDisabled` above implements, off the same already-public
+        // fact: while a turn is in flight on THIS thread the human may not
+        // change values, so drag and resize are off and the handles go with
+        // them. Selection stays live — looking is not changing.
+        sceneGestureDisabled={chat.threadBusy}
         sceneSelectedNodeId={sceneSession.primaryNodeId}
         sceneZoomLabel={sceneSession.zoom}
         sceneZoomOverride={sceneSession.zoomOverride}
