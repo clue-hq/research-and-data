@@ -27,6 +27,7 @@ import {
   arrangeEnablement,
   arrangeShortcut,
   zOrderOperation,
+  zOrderShortcut,
   type ZOrderAction,
 } from "./scene-arrange";
 
@@ -620,4 +621,172 @@ it("§1.5 shortcut: a typing target keeps its own ⌘G — the SAME skip rules a
     ),
     "group",
   );
+});
+
+/* ── ⌘] / ⌘[ / ⌥⌘] / ⌥⌘[ (contract §1.5's z-order shortcuts) ─────────────── */
+
+/** Build a bracket event the way a real macOS browser reports it.
+ *
+ * THIS HELPER IS THE POINT OF THE WHOLE SET. On a US layout ⌥ REWRITES `key`:
+ * ⌥] is "‘" (U+2018) and ⌥[ is "“" (U+201C) — the character the layout
+ * produces — while `code` stays the PHYSICAL key. A keymap written against
+ * `key` (as the MVP editor's `keyboardArrangeAction`
+ * (`subsystems/clue-design/apps/editor/src/engine/editorKeyboard.ts:55-60`,
+ * READ-ONLY) is) therefore matches ⌘]/⌘[ and silently never matches
+ * ⌥⌘]/⌥⌘[. Every case below states the `key` a real event would carry, so a
+ * regression back to key-matching fails here rather than in a founder's hands.
+ */
+function bracketEvent(
+  physical: "BracketLeft" | "BracketRight",
+  modifiers: { alt?: boolean; ctrl?: boolean; meta?: boolean; shift?: boolean },
+): {
+  altKey: boolean;
+  code: string;
+  ctrlKey: boolean;
+  key: string;
+  metaKey: boolean;
+  shiftKey: boolean;
+} {
+  const alt = modifiers.alt ?? false;
+  const shift = modifiers.shift ?? false;
+  const plain = physical === "BracketRight" ? "]" : "[";
+  const shifted = physical === "BracketRight" ? "}" : "{";
+  const optioned = physical === "BracketRight" ? "‘" : "“";
+  const optionShifted = physical === "BracketRight" ? "’" : "”";
+  return {
+    altKey: alt,
+    code: physical,
+    ctrlKey: modifiers.ctrl ?? false,
+    key: alt ? (shift ? optionShifted : optioned) : shift ? shifted : plain,
+    metaKey: modifiers.meta ?? false,
+    shiftKey: shift,
+  };
+}
+
+it("§1.5 shortcut: ⌘] forward, ⌘[ backward, ⌥⌘] to front, ⌥⌘[ to back", () => {
+  assert.equal(
+    zOrderShortcut(bracketEvent("BracketRight", { meta: true }), null),
+    "forward",
+  );
+  assert.equal(
+    zOrderShortcut(bracketEvent("BracketLeft", { meta: true }), null),
+    "backward",
+  );
+  // ⌥ held: `key` is now a curly quote, so ONLY a `code` match can still see
+  // the bracket. This pair is the one the contract row would otherwise lose.
+  assert.equal(
+    zOrderShortcut(bracketEvent("BracketRight", { alt: true, meta: true }), null),
+    "front",
+  );
+  assert.equal(
+    zOrderShortcut(bracketEvent("BracketLeft", { alt: true, meta: true }), null),
+    "back",
+  );
+  // Ctrl is the same key on a PC — the ⌘G pair's own rule.
+  assert.equal(
+    zOrderShortcut(bracketEvent("BracketRight", { ctrl: true }), null),
+    "forward",
+  );
+  assert.equal(
+    zOrderShortcut(bracketEvent("BracketLeft", { alt: true, ctrl: true }), null),
+    "back",
+  );
+});
+
+it("§1.5 shortcut: a bracket with no modifier, with ⇧, or another key is not ours", () => {
+  // No ⌘/Ctrl: a bare bracket is typing, not arranging.
+  assert.equal(zOrderShortcut(bracketEvent("BracketRight", {}), null), null);
+  // ⇧⌘] / ⇧⌘[ are the BROWSER's next/previous tab on macOS and the contract
+  // names only the four unshifted combos, so they stay the browser's.
+  assert.equal(
+    zOrderShortcut(bracketEvent("BracketRight", { meta: true, shift: true }), null),
+    null,
+  );
+  assert.equal(
+    zOrderShortcut(
+      bracketEvent("BracketLeft", { alt: true, meta: true, shift: true }),
+      null,
+    ),
+    null,
+  );
+  // ⌘G is the other function's; this one must not claim it.
+  assert.equal(
+    zOrderShortcut(
+      { altKey: false, code: "KeyG", ctrlKey: false, key: "g", metaKey: true, shiftKey: false },
+      null,
+    ),
+    null,
+  );
+});
+
+it("§1.5 shortcut: an unmodified bracket still matches by `key` on a non-US layout", () => {
+  // `code` is the physical key, so on a layout where the bracket does NOT sit
+  // on BracketLeft/BracketRight the `key` half carries ⌘]/⌘[. (The ⌥ pair
+  // cannot be rescued this way — ⌥ rewrites `key` — which is why `code` is the
+  // primary match and this is only the fallback.)
+  assert.equal(
+    zOrderShortcut(
+      { altKey: false, code: "Digit9", ctrlKey: false, key: "]", metaKey: true, shiftKey: false },
+      null,
+    ),
+    "forward",
+  );
+  assert.equal(
+    zOrderShortcut(
+      { altKey: false, code: "Digit8", ctrlKey: false, key: "[", metaKey: true, shiftKey: false },
+      null,
+    ),
+    "backward",
+  );
+});
+
+it("§1.5 shortcut: a typing target keeps its own ⌘] — the SAME skip rules as ⌘G", () => {
+  for (const target of [
+    { isContentEditable: true, tagName: "DIV" },
+    { isContentEditable: false, tagName: "INPUT" },
+    { isContentEditable: false, tagName: "TEXTAREA" },
+  ]) {
+    assert.equal(
+      zOrderShortcut(bracketEvent("BracketRight", { meta: true }), target),
+      null,
+      target.tagName,
+    );
+    assert.equal(
+      zOrderShortcut(bracketEvent("BracketLeft", { alt: true, meta: true }), target),
+      null,
+      target.tagName,
+    );
+  }
+  assert.equal(
+    zOrderShortcut(bracketEvent("BracketRight", { meta: true }), {
+      isContentEditable: false,
+      tagName: "BUTTON",
+    }),
+    "forward",
+  );
+});
+
+it("§1.5 shortcut: every mapped combo names a REAL z-order action", () => {
+  // The four intents are the same vocabulary the buttons and `zOrderOperation`
+  // use, so a keypress can only ask for a step the section already offers.
+  const mapped: ZOrderAction[] = [
+    zOrderShortcut(bracketEvent("BracketRight", { meta: true }), null)!,
+    zOrderShortcut(bracketEvent("BracketLeft", { meta: true }), null)!,
+    zOrderShortcut(bracketEvent("BracketRight", { alt: true, meta: true }), null)!,
+    zOrderShortcut(bracketEvent("BracketLeft", { alt: true, meta: true }), null)!,
+  ];
+  const enablement = arrangeEnablement(SCENE, ["rect_accent_bar"]);
+  for (const action of mapped) {
+    assert.equal(
+      typeof enablement.zOrder[action],
+      "boolean",
+      `${action} must be one of the section's four z-order flags`,
+    );
+    assert.equal(
+      zOrderOperation(SCENE, "rect_accent_bar", action)?.kind,
+      "move_node",
+      `${action} must build the same operation the button builds`,
+    );
+  }
+  assert.deepEqual(new Set(mapped).size, 4, "the four combos must not collide");
 });

@@ -2955,6 +2955,95 @@ it("RULING A29: a commit against a LOCKED node records NOTHING in the panel eith
   );
 });
 
+/**
+ * Source text with COMMENTS removed, so a prose MENTION of a hook is never
+ * mistaken for a hook CALL. Block comments first, then line comments (the `:`
+ * lookbehind spares a `https://`). Only used by the pin below, whose own
+ * non-vacuity assertions prove the strip did not eat the code.
+ */
+function sourceWithoutComments(source: string): string {
+  return source
+    .replace(/\/\*[\s\S]*?\*\//g, "\n")
+    .replace(/(^|[^:])\/\/.*$/gm, "$1");
+}
+
+it("RULING L20: the four bound ad schemas hold NO state of their own", () => {
+  // WHAT THIS GUARDS. AD4.R's state model says a bound control owns nothing:
+  // every value it shows is a live projection of the document (`state.x` /
+  // `values`), and every commit is a dispatch. The mechanical way that rule
+  // dies is a control acquiring a LOCAL MIRROR or a MOUNT SEED —
+  // `const [local, setLocal] = useState(props.value)` and then `value={local}`
+  // — after which the panel shows the mirror and the document's answer arrives
+  // a render late, or never (a successful write does not remount the panel:
+  // §4 / the AD3.2 keying rule). Both shapes need a React state hook FIRST, so
+  // the cheap pin is: no `useState`, no `useRef`, in the two files carrying the
+  // four schemas AD4.B bound. Their ~40 rows had no guard of their own — the
+  // rest of the AD4.R net reads `image-inspector.tsx` (`scene-hydrate.test.ts`,
+  // `scene-image-ai.test.ts`) and `inspector-primitives.tsx` (A26/A27/A28/A31
+  // above) only.
+  //
+  // COMMENTS ARE STRIPPED FIRST, and that is not a convenience: the file's own
+  // prose names the hook it RETIRED ("`DummySection`'s own `useState(true)` …
+  // onto the controller"). A raw string count would fail on the sentence that
+  // documents the fix, so this pin reads the CODE and leaves the record alone.
+  //
+  // HOW TO AMEND THIS, LEGITIMATELY. Not every hook here would be a mirror: a
+  // genuinely UI-ONLY piece of state the document does not own is allowed by
+  // AD4.R — the lane's own precedent is `openSections`, which
+  // `composeInspectorState` explicitly excludes from the live merge. Adding one
+  // is a CONSCIOUS amendment, in this order: put it on the controller if the
+  // panel already states that kind of thing there (which is exactly what AD4.B
+  // step 1 did with the section open/closed state), and only if it truly cannot
+  // live there, narrow this pin to name the ONE allowed site and say — citing
+  // AD4.R — which document value it is not mirroring. Deleting the pin, or
+  // widening it to "a useState here is fine", is the edit that must not happen.
+  const here = dirname(fileURLToPath(import.meta.url));
+  const files = [
+    {
+      // The four bound schemas themselves.
+      anchors: ["export function AdDummyInspector", "onCommitValue"],
+      name: "ad-dummy-inspectors.tsx",
+      reactImport: 'import type { ReactNode } from "react";',
+    },
+    {
+      // The palette/colour-row seam those schemas share (AD4.B step 3's move).
+      anchors: ["export function useAdColorRow"],
+      name: "inspector-color-row.ts",
+      reactImport: 'import { createContext, useContext } from "react";',
+    },
+  ];
+  for (const file of files) {
+    const raw = readFileSync(
+      join(here, "../../chat-shell/components/", file.name),
+      "utf8",
+    );
+    const code = sourceWithoutComments(raw);
+    // Non-vacuity: a broken strip that returned "" would satisfy every
+    // `includes` below for the wrong reason.
+    for (const anchor of file.anchors) {
+      assert.ok(code.includes(anchor), `${file.name}: strip ate ${anchor}`);
+    }
+    for (const hook of ["useState", "useRef"]) {
+      assert.equal(
+        code.includes(hook),
+        false,
+        `${file.name} must hold no ${hook}: a bound row showing a local mirror or a mount seed would need one first (AD4.R — see this test's comment before adding UI-only state)`,
+      );
+    }
+    // The other door, closed: a state hook has to be IMPORTED before it can be
+    // called, so the file's single react import is pinned verbatim too.
+    assert.equal(
+      raw.split('from "react"').length - 1,
+      1,
+      `${file.name} must import from react exactly once`,
+    );
+    assert.ok(
+      raw.includes(file.reactImport),
+      `${file.name}'s react import must stay ${file.reactImport}`,
+    );
+  }
+});
+
 it("RULING A29: after a single-corner commit the `all` box re-derives — hydrate's own rule", () => {
   // `all` is not a stored field in the SCENE lane: hydration derives it from the
   // four corners, "the uniform value, or empty when the corners differ". So a

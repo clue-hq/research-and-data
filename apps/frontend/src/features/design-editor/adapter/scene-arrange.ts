@@ -289,13 +289,84 @@ export function arrangeShortcut(
   if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "g") {
     return null;
   }
-  if (
-    target &&
-    (target.isContentEditable ||
-      target.tagName === "INPUT" ||
-      target.tagName === "TEXTAREA")
-  ) {
+  if (isTypingTarget(target)) {
     return null;
   }
   return event.shiftKey ? "ungroup" : "group";
+}
+
+/**
+ * The typing-target skip, stated ONCE for both keymaps below — the ⌘Z
+ * handler's rule verbatim (`use-scene-inspector-writes.ts:379-387`): a focused
+ * input, textarea or contenteditable keeps its own shortcuts. Shared rather
+ * than repeated so the two shortcut functions cannot drift on which targets
+ * are "typing".
+ */
+function isTypingTarget(
+  target: { isContentEditable: boolean; tagName: string } | null,
+): boolean {
+  return (
+    target !== null &&
+    (target.isContentEditable ||
+      target.tagName === "INPUT" ||
+      target.tagName === "TEXTAREA")
+  );
+}
+
+/**
+ * §1.5's z-order shortcuts — ⌘] forward · ⌘[ backward · ⌥⌘] to front ·
+ * ⌥⌘[ to back — decided as a pure function of the event, the `arrangeShortcut`
+ * sibling above and for the same reason (the runner is `tsx --test` over `.ts`
+ * only, so the hook itself is never component-tested; everything with a rule
+ * lives here).
+ *
+ * ── WHY `code` AND NOT `key` (the whole reason this is not a one-liner) ────
+ * `KeyboardEvent.key` is the CHARACTER the layout produces, and ⌥ changes it:
+ * on a US layout ⌥] is "‘" (U+2018) and ⌥[ is "“" (U+201C). `KeyboardEvent.code`
+ * is the PHYSICAL key and is unaffected by any modifier. So a keymap written
+ * against `key` matches ⌘]/⌘[ and can never match ⌥⌘]/⌥⌘[ — which is exactly
+ * what the MVP editor's `keyboardArrangeAction` does
+ * (`subsystems/clue-design/apps/editor/src/engine/editorKeyboard.ts:44-60`,
+ * READ-ONLY: `if (key === "]") return event.altKey ? "to_front" : "forward"`).
+ * The SEMANTICS here are that precedent's, unchanged; the key IDENTITY is
+ * corrected. `key` is kept only as a fallback for the unmodified pair, so a
+ * layout that puts the bracket on some other physical key still gets ⌘]/⌘[
+ * (the ⌥ pair cannot be rescued that way, by the same rewrite).
+ *
+ * ── WHY ⇧ DISQUALIFIES (a deliberate divergence from the precedent) ───────
+ * The contract names four combos, all unshifted, and ⇧⌘]/⇧⌘[ are the macOS
+ * browser's next/previous tab. Claiming them would `preventDefault` a browser
+ * shortcut the contract never asked for, so a shifted bracket is simply not
+ * ours. (The MVP editor ignores ⇧ here; it also never reaches a browser tab
+ * strip.)
+ *
+ * `null` means "not ours", which is also what tells the caller NOT to
+ * `preventDefault`: an edge-disabled step is a NON-EVENT (the caller checks
+ * enablement), so at the bottom of the stack ⌘[ falls through to whatever the
+ * browser does with it — the same posture a refused ⌘G takes with Find Again.
+ */
+export function zOrderShortcut(
+  event: {
+    altKey: boolean;
+    code: string;
+    ctrlKey: boolean;
+    key: string;
+    metaKey: boolean;
+    shiftKey: boolean;
+  },
+  target: { isContentEditable: boolean; tagName: string } | null,
+): ZOrderAction | null {
+  if (!(event.metaKey || event.ctrlKey) || event.shiftKey) {
+    return null;
+  }
+  if (isTypingTarget(target)) {
+    return null;
+  }
+  if (event.code === "BracketRight" || event.key === "]") {
+    return event.altKey ? "front" : "forward";
+  }
+  if (event.code === "BracketLeft" || event.key === "[") {
+    return event.altKey ? "back" : "backward";
+  }
+  return null;
 }

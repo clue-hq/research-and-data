@@ -5,6 +5,7 @@ import {
   arrangeEnablement,
   arrangeShortcut,
   zOrderOperation,
+  zOrderShortcut,
   type ArrangeEnablement,
   type ZOrderAction,
 } from "../adapter/scene-arrange";
@@ -51,7 +52,8 @@ import {
  * `canAlignNodes`/`canDistributeNodes`/`canGroupNodes`/`canUngroupNode` and
  * builds the z-order `move_node` through `moveNodeToParent`). This file owns
  * only the sequencing and the keymap — and the keymap's rules are pure too
- * (`arrangeShortcut`), so what is left here is genuinely untestable-by-design
+ * (`arrangeShortcut` for ⌘G/⇧⌘G, `zOrderShortcut` for ⌘]/⌘[/⌥⌘]/⌥⌘[), so what
+ * is left here is genuinely untestable-by-design
  * React plumbing rather than logic hiding in a hook.
  *
  * ── THE SELECTION SOURCE ─────────────────────────────────────────────────
@@ -128,6 +130,24 @@ function commitArrange(
   deps.applyOps(operations, ARRANGE_INTENT);
 }
 
+/**
+ * §1.5: one z-order step for the PRIMARY node — z-order is a single node's
+ * position in its own sibling stack, and the enablement flags are computed for
+ * it. Module-level (like `runGroup`/`runUngroup`) because BOTH the button
+ * callback and the keymap run it, and neither may own a second copy of the
+ * "which node, is it enabled" rule.
+ */
+function runZOrder(deps: SceneArrangeDeps, action: ZOrderAction): void {
+  const primary = deps.selectedIds[0];
+  if (!primary || !deps.enablement.zOrder[action]) {
+    return;
+  }
+  commitArrange(deps, (live) => {
+    const operation = zOrderOperation(live, primary, action);
+    return operation ? [operation] : [];
+  });
+}
+
 /** §1.5: group the selection into a fresh container. */
 function runGroup(deps: SceneArrangeDeps): void {
   if (!deps.enablement.group || !deps.scene) {
@@ -158,8 +178,9 @@ function runUngroup(deps: SceneArrangeDeps): void {
 
 export function useSceneArrange(
   options: Omit<SceneArrangeDeps, "enablement"> & {
-    /** The active design document; the ⌘G/⇧⌘G effect arms on it, exactly as
-     * the ⌘Z pair does (`use-scene-inspector-writes.ts:360`). */
+    /** The active design document; the §1.5 keymap effect (⌘G/⇧⌘G and
+     * ⌘]/⌘[/⌥⌘]/⌥⌘[) arms on it, exactly as the ⌘Z pair does
+     * (`use-scene-inspector-writes.ts:360`). */
     documentId: string | null;
   },
 ): SceneArrangeBinding {
@@ -219,36 +240,42 @@ export function useSceneArrange(
     );
   }, []);
 
-  const zOrder = useCallback((action: ZOrderAction) => {
-    const deps = depsRef.current;
-    // The PRIMARY node alone — z-order is a single node's position in its own
-    // sibling stack, and the enablement flags above are computed for it.
-    const primary = deps.selectedIds[0];
-    if (!primary || !deps.enablement.zOrder[action]) return;
-    commitArrange(deps, (live) => {
-      const operation = zOrderOperation(live, primary, action);
-      return operation ? [operation] : [];
-    });
-  }, []);
+  const zOrder = useCallback(
+    (action: ZOrderAction) => runZOrder(depsRef.current, action),
+    [],
+  );
 
   const group = useCallback(() => runGroup(depsRef.current), []);
   const ungroup = useCallback(() => runUngroup(depsRef.current), []);
 
-  // ⌘G / ⇧⌘G. Same placement rule as ⌘Z/⇧⌘Z: armed on the document, torn down
-  // with it, and skipping the same typing targets so a focused inspector field
-  // keeps whatever its own ⌘G does. `preventDefault` fires ONLY for a shortcut
-  // this lane handles — the browser's Find Again must survive every other ⌘G on
-  // the window, including one aimed at an action the panel is refusing.
+  // §1.5's whole keymap: ⌘G / ⇧⌘G (group / ungroup) and ⌘] / ⌘[ / ⌥⌘] / ⌥⌘[
+  // (forward / backward / to front / to back). Same placement rule as ⌘Z/⇧⌘Z:
+  // armed on the document, torn down with it, and skipping the same typing
+  // targets so a focused inspector field keeps whatever its own ⌘] does.
+  //
+  // BOTH halves are gated on the SAME `enablement` the buttons consult, and a
+  // step the section is not offering is a NON-EVENT: no dispatch, and no
+  // `preventDefault` either, so the browser keeps whatever it does with that
+  // combo (Find Again for ⌘G; history navigation for ⌘[/⌘] — a node already at
+  // the bottom of its stack therefore lets ⌘[ reach the browser, the same
+  // trade the shipped ⌘G pair already makes).
   useEffect(() => {
     if (!documentId) return;
     const onKeyDown = (event: KeyboardEvent) => {
-      const intent = arrangeShortcut(event, event.target as HTMLElement | null);
-      if (!intent) return;
+      const target = event.target as HTMLElement | null;
       const deps = depsRef.current;
-      if (!deps.enablement[intent]) return;
+      const intent = arrangeShortcut(event, target);
+      if (intent) {
+        if (!deps.enablement[intent]) return;
+        event.preventDefault();
+        if (intent === "group") runGroup(deps);
+        else runUngroup(deps);
+        return;
+      }
+      const action = zOrderShortcut(event, target);
+      if (!action || !deps.enablement.zOrder[action]) return;
       event.preventDefault();
-      if (intent === "group") runGroup(deps);
-      else runUngroup(deps);
+      runZOrder(deps, action);
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
