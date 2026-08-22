@@ -36,6 +36,10 @@ __all__ = [
 ]
 
 C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
+    # v38 (genad): v37 with the delegation entry at ``open_design_leg@3`` and prompt v6 — chat ad
+    # creation. The prompt teaches the same handover at a different shape: infer the ad's format
+    # from the ask, STATE the choice so the user can correct it, and do not block on a
+    # confirmation before opening the leg.
     # v37 (genweb slice 2): v36 with the delegation entry at ``open_design_leg@2`` and prompt v5
     # — the design-delegation teaching. The tool's own description remains the contract; the
     # prompt only says WHEN to hand the thread over and what the handover costs (the user's next
@@ -45,7 +49,7 @@ C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
     # as PD-part3 P3.4's v24, re-versioned onto the v35 chain at the integration merge). v35
     # preserves the frozen v34 surface and gives Account-focused turns the exact pinned
     # field/source vocabulary needed to launch profiling without model-invented field keys.
-    AgentRole.HEAD_OF_ABM: "v37",
+    AgentRole.HEAD_OF_ABM: "v38",
     AgentRole.RESEARCH: "v7",
     AgentRole.CONTENT_DRAFTER: "v5",
     AgentRole.REVIEWER: "v5",

@@ -89,6 +89,9 @@ __all__ = [
 #: same rule. The trial surface withholds it too, so the shared ceiling again grants the trial
 #: nothing.
 CONVERSATION_RECIPE_KEY = "recipe0-stage0"
+# Revision 18 (genad) re-pins the delegation entry at ``open_design_leg@3`` — the same tool again,
+# promoted so a document-less ``doc_kind='scene'`` open can BIRTH its ad document at a named
+# format. Revision 17 stays the exact replay input for turns already pinned to it.
 # Revision 17 (genweb slice 2) re-pins the delegation entry at ``open_design_leg@2`` — the same
 # tool, promoted so a document-less open can BIRTH its web document. The slot pins an exact
 # address, so the promotion needs its own revision; revision 16 stays the exact replay input for
@@ -98,7 +101,7 @@ CONVERSATION_RECIPE_KEY = "recipe0-stage0"
 # Revision 14 keeps the current-message Account launch path usable after discovery by admitting
 # the two read-only account-research tools already exposed by the promoted profile/skill. Revision
 # 13 remains the exact replay input for turns that were already pinned to it.
-CONVERSATION_RECIPE_VERSION = 17
+CONVERSATION_RECIPE_VERSION = 18
 
 #: Finalization ``domain_refs`` object types that render as a §3.4 ``plan`` part. Deliberately a
 #: closed set: an unknown object type is *not* projected, because a card whose contents the surface

@@ -56,11 +56,12 @@ RECIPE_0_TOOL_ADDRESSES: tuple[str, ...] = (
     "launch_selected_account_research@1",
     "read_account_research_run@1",
     # PD-part3 P3.4 (added in recipe0-stage0@16 on this lineage): the design delegation entry,
-    # promoted to @2 in @17 (genweb slice 2 — a document-less open births the web document).
-    # Opening a leg is still a durable write with no spend and no dispatch; the birth adds one
-    # governed create keyed on the same replay identity as the leg, so a retried delegation
-    # converges on one leg and one document rather than minting twins.
-    "open_design_leg@2",
+    # promoted to @2 in @17 (genweb slice 2 — a document-less open births the web document) and
+    # to @3 in @18 (genad — a document-less ``doc_kind='scene'`` open births the ad document at a
+    # named format). Opening a leg is still a durable write with no spend and no dispatch; each
+    # birth is one governed create keyed on the same replay identity as the leg, so a retried
+    # delegation converges on one leg and one document rather than minting twins.
+    "open_design_leg@3",
 )
 
 RECIPE_1_TOOL_ADDRESSES: tuple[str, ...] = (

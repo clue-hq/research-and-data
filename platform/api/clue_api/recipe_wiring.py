@@ -76,6 +76,10 @@ SYSTEM_RECIPE_FILENAMES: tuple[str, ...] = (
     # leg-open). The C5 slot pins an exact tool ADDRESS, so promoting the tool without a new
     # revision would make plan validation refuse the very tool the profile now grants.
     "recipe0-stage0-v17.json",
+    # genad: the delegation entry becomes ``open_design_leg@3`` (a ``doc_kind='scene'`` open now
+    # births the ad document too). Same exact-address rule as v17 — the slot would refuse the tool
+    # the profile grants without its own revision.
+    "recipe0-stage0-v18.json",
     "recipe1-classic-v1.json",
     "recipe1-classic-v2.json",
 )
