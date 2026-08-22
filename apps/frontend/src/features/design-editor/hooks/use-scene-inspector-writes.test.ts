@@ -11,7 +11,7 @@ import {
   adFrame,
 } from "../adapter/__fixtures__/scene-nodes";
 import type { Scene } from "../engine/scene/contracts";
-import { canvasWriteTarget } from "./use-scene-inspector-writes";
+import { adActionRequest, canvasWriteTarget } from "./use-scene-inspector-writes";
 
 /**
  * AD4.0 step 2: the §1.1 canvas gate. It is tested as the pure decision it is
@@ -254,4 +254,42 @@ it("§1.1 gate: with NO root frame the empty selection still writes, and no node
     ),
     null,
   );
+});
+
+// ── AD4.E: the action-menu request decision (§1.9 / §1.12) ──────────────────
+//
+// The Undo/Redo rows reach this lane as one `clue:artifact-action-request`
+// event carrying `{action, kind}`. The listener's whole decision is pure, so —
+// following `canvasWriteTarget`'s precedent above (a `useEffect` body cannot be
+// exercised without a DOM) — it is exported and tested as `adActionRequest`.
+//
+// The kind guard is the load-bearing half: ONE window carries both lanes'
+// listeners, so a web artifact's Undo must never reach the ad document.
+
+it("§1.9: an ad Undo/Redo request is the history step it names", () => {
+  assert.equal(adActionRequest({ action: "undo", kind: "ad" }), "undo");
+  assert.equal(adActionRequest({ action: "redo", kind: "ad" }), "redo");
+});
+
+it("§1.9: another lane's request is not this lane's history step", () => {
+  assert.equal(adActionRequest({ action: "undo", kind: "web" }), null);
+  assert.equal(adActionRequest({ action: "redo", kind: "web" }), null);
+  // No kind at all is not an ad request either — the guard is positive.
+  assert.equal(adActionRequest({ action: "undo" }), null);
+});
+
+it("§1.12: the §7 rows dispatch into the void, not into history", () => {
+  // Duplicate/Archive/Delete share the dispatch and stamp `kind:"ad"`; they
+  // are platform-artifact semantics and must move no document history.
+  for (const action of ["duplicate", "archive", "delete", "versions", "rename"]) {
+    assert.equal(adActionRequest({ action, kind: "ad" }), null, action);
+  }
+});
+
+it("§1.9: a malformed detail decides nothing", () => {
+  assert.equal(adActionRequest(null), null);
+  assert.equal(adActionRequest(undefined), null);
+  assert.equal(adActionRequest("undo"), null);
+  assert.equal(adActionRequest({ action: 3, kind: "ad" }), null);
+  assert.equal(adActionRequest({}), null);
 });
