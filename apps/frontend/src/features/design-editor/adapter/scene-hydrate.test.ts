@@ -1116,16 +1116,29 @@ it("§1.3 Replace image: a NON-image node hydrates no preview — the row is ima
   );
 });
 
-it("FIX 2: the Fill preview reads the LIVE hydrated value, not the mount-frozen state", () => {
+it("FIX 2: the Fill preview reads the LIVE document value", () => {
   // A `.tsx` cannot be imported under this runner, so the binding is pinned
   // against the dummy's own source text — the technique this file already uses
-  // for the SIZE_PRESETS vocabulary. The fact being pinned: the controller
-  // seeds `state.imagePreviewSrc` ONCE at mount, so a placement that lands
-  // after a mid-upload reload has already remounted the panel would leave the
-  // thumbnail on the previous asset while the artboard shows the new one.
+  // for the SIZE_PRESETS vocabulary.
+  //
+  // FIX 2's original form read the `hydrated` PROP over the state
+  // (`hydrated?.imagePreviewSrc ?? state.imagePreviewSrc`), because the
+  // controller seeded `state.imagePreviewSrc` ONCE at mount: a placement
+  // landing after a mid-upload reload had already remounted the panel would
+  // otherwise leave the thumbnail on the previous asset while the artboard
+  // showed the new one.
+  //
+  // AD4.R Task 7 collapsed that special case (plan
+  // `docs/superpowers/plans/2026-08-22-ad-inspector-mvp-state-model.md`,
+  // §"Rulings superseded"). Its premise — mount-frozen controller state — died
+  // with AD4.R Task 4's live hydration: `state.imagePreviewSrc` now IS the
+  // hydrated value, re-derived every render, so there is no longer a
+  // mount-frozen copy for the prop to have to out-rank. The FACT this test
+  // guards is unchanged and now structural rather than patched: the preview
+  // states the document's asset, not a stale one.
   const upload = /<InspectorImageUpload[\s\S]*?\/>/.exec(AD_INSPECTOR_SOURCE);
   assert.ok(upload, "image-inspector.tsx no longer renders InspectorImageUpload");
-  assert.match(upload[0], /src=\{hydrated\?\.imagePreviewSrc \?\? state\.imagePreviewSrc\}/);
+  assert.match(upload[0], /src=\{state\.imagePreviewSrc\}/);
   assert.match(upload[0], /onFileSelect=\{onReplaceImage\}/);
 });
 

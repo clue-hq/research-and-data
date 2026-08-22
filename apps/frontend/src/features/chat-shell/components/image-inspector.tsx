@@ -858,65 +858,32 @@ function AdImageInspector({
     { liveHydration: hydrated != null },
   );
   const { setNestedValue, setValue, state, toggleSection } = controller;
-  // §1.3 row 2 (Alt text): THREE values in one state object, so they cannot
-  // drift — the `RadiusControls` `committed`/`draft` shape (ruling A27), with
-  // one field it does not need.
+  // §1.3 row 2 (Alt text) — AD4.R-7: the `committed`/`draft`/`seen` TRIPLE that
+  // stood here is retired. The box is now a self-drafting projection of
+  // `state.altText`, which live hydration (Task 4) makes the document's own
+  // text rather than a mount-time copy of it.
   //
-  //  • `draft`     — what the box is showing.
-  //  • `committed` — what this panel believes the document holds. The dirty
-  //                  check reads THIS and never the live prop, which is
-  //                  `RadiusControls`' own discipline (`inspector-primitives.tsx`,
-  //                  ruling A27) and the reason the field exists.
-  //  • `seen`      — the last hydrated value this component reacted to. It is
-  //                  what makes the re-seed below fire on a SIBLING write and
-  //                  not on our own.
+  // Each of the triple's three jobs is now done by something else, or is gone:
   //
-  // THE RE-SEED IS WHY THE PROP IS READ AT ALL. Replace image overwrites
-  // `asset_placement.alt_text`, so without it the box would go on describing
-  // the picture that just left. React's adjust-state-on-prop-change (a
-  // render-time comparison, never an effect, which would render one stale frame
-  // and is barred by this repo's lint), the technique step 2's review used for
-  // the Fill thumbnail.
-  //
-  // AND `seen` IS WHY IT DOES NOT SNAP BACK — though the timing it was written
-  // against has since changed. AD4.R-1 (`scene-artifact-canvas.tsx`) made an
-  // ACCEPTED apply mirror the new scene up SYNCHRONOUSLY, in the same call
-  // stack, so on the apply path the live prop now moves in the same React batch
-  // as the commit: there is no longer a render or two where it still holds the
-  // PRE-write text. On that path `seen` is belt-and-suspenders. It stays
-  // load-bearing for the arrivals that are still asynchronous — the passive
-  // effect below still owns load / reload / the relaid C4 scene — where
-  // comparing the re-seed against `committed` (which the commit just moved)
-  // would fire against a stale value and flash the old description, while
-  // comparing against `seen` — which only a genuinely new prop moves — does not.
-  //
-  // LIFESPAN: this whole triple is scheduled for deletion in AD4.R Task 7, once
-  // the box derives from the live prop directly like the rest of the panel.
-  const documentAltText = hydrated?.altText ?? state.altText;
-  const [altText, setAltText] = useState(() => ({
-    committed: documentAltText,
-    draft: documentAltText,
-    seen: documentAltText,
-  }));
-  if (altText.seen !== documentAltText) {
-    setAltText({
-      committed: documentAltText,
-      draft: documentAltText,
-      seen: documentAltText,
-    });
-  }
-  const commitAltText = () => {
-    // A29: a commit against a LOCKED node records nothing, because §4 refuses
-    // the write — the box keeps what was typed (the ratified A19 posture) and
-    // the panel's record of the document does not move.
-    if (locked) return;
-    // A write that changes nothing is not a write. The comparison is against
-    // what this panel believes the document holds, which is also exactly what
-    // the adapter compares (`effectiveAltText`), so the two can never disagree
-    // about what "changed".
-    if (altText.draft !== altText.committed) setValue("altText", altText.draft);
-    setAltText((current) => ({ ...current, committed: current.draft }));
-  };
+  //  • `draft`     — moved INSIDE the primitive. `onCommitValue` (Task 3) makes
+  //                  `InspectorInput` hold its own edit-in-progress and hand
+  //                  back the text on blur/Enter, so the schema never stores a
+  //                  keystroke. The row still COMMITS ON BLUR/ENTER, never per
+  //                  keystroke: a per-keystroke description would persist one
+  //                  document version and one undo step per letter.
+  //  • `committed` — deleted. It existed because the dirty check could not trust
+  //                  the `values`-prop equivalent (ruling A27's premise). Under
+  //                  live derivation the prop IS the document, so the check the
+  //                  primitive runs compares against the document itself — one
+  //                  fewer copy that can disagree with it.
+  //  • `seen`      — deleted with the re-seed it guarded. The re-seed existed
+  //                  for the SIBLING write (Replace image overwrites
+  //                  `asset_placement.alt_text`, so a stale box would go on
+  //                  describing the picture that just left). That is now free:
+  //                  an unfocused box reads live state every render, and a
+  //                  focused one has a draft the user is actively typing. The
+  //                  mirror-timing hazard `seen` was written against died with
+  //                  AD4.R-1's synchronous scene mirror.
   return (
     <>
       {/* §2 delta (contract row 7 / §5): the image "Link to" section is removed
@@ -932,28 +899,32 @@ function AdImageInspector({
             old dead end.
 
             The preview `src` is the node's OWN asset (`scene-hydrate.ts`),
-            falling back to the dummy's stock png. It reads the LIVE `hydrated`
-            prop rather than `state.imagePreviewSrc`, which the controller seeds
-            once at mount: a placement that lands after a mid-upload reload has
-            already remounted this panel would otherwise leave the thumbnail on
-            the previous asset while the artboard repainted with the new one
-            (review FIX 2). `InspectorImageUpload` follows the value when it
+            falling back to the dummy's stock png. AD4.R-7: it reads
+            `state.imagePreviewSrc` plainly, because under live hydration
+            (Task 4) that IS the hydrated value — the controller no longer seeds
+            a mount-time copy for the prop to have to out-rank. The special-case
+            that read `hydrated` directly (review FIX 2, against the old
+            seeded-once state) is therefore collapsed, not lost: a placement
+            landing after a mid-upload reload still repaints the thumbnail,
+            because `InspectorImageUpload` follows the live value when it
             changes. */}
-        <InspectorField label="Image"><InspectorImageUpload onFileSelect={onReplaceImage} src={hydrated?.imagePreviewSrc ?? state.imagePreviewSrc} /></InspectorField>
+        <InspectorField label="Image"><InspectorImageUpload onFileSelect={onReplaceImage} src={state.imagePreviewSrc} /></InspectorField>
         <InspectorField label="Mode"><InspectorSelect label="Image fill mode" onChange={(value) => setValue("fillMode", value)} options={FILL_MODES} value={state.fillMode} /></InspectorField>
         {/* §1.3 row 2 (AD4.A step 3): Alt text — the AI suite's one MANUAL
             row. Upstream has no alt-text generator, so this is an ordinary
             `asset_placement` write through the ordinary property seam, and it
-            COMMITS ON BLUR/ENTER (`onCommit`), never per keystroke: a
+            COMMITS ON BLUR/ENTER (`onCommitValue`), never per keystroke: a
             per-keystroke description would persist one document version and one
             undo step per letter. Upstream's own placeholder. */}
         <InspectorField label="Alt text">
           <InspectorInput
             ariaLabel="Image alt text"
-            onChange={(value) => setAltText((current) => ({ ...current, draft: value }))}
-            onCommit={commitAltText}
+            // A29's surviving half: a locked node's commit skips the doomed
+            // dispatch. Honesty no longer depends on it — nothing records
+            // locally — it only spares the adapter a refusal.
+            onCommitValue={(value) => { if (!locked) setValue("altText", value); }}
             placeholder="Describe the image"
-            value={altText.draft}
+            value={state.altText}
           />
         </InspectorField>
         {/* §1.3 row 2: the AI suite. Absent (the dummy fixture path, and any

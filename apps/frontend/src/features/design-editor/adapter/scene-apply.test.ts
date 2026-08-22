@@ -2053,9 +2053,11 @@ it("RULING A27: after an all-commit, re-typing a corner's PRE-commit number stil
   // all-write does not move: it dispatches one `radius.all`, so the four corner
   // entries stay where they were.
   //
-  // Half one, the component: that check now reads a local `committed` snapshot,
-  // which DOES move with every commit. Read off disk for the reason the A26
-  // guard above states.
+  // Half one, the component — and since AD4.R Task 7 the answer is DIFFERENT
+  // PER LANE, because A27's premise only ever held on one of them (plan
+  // `docs/superpowers/plans/2026-08-22-ad-inspector-mvp-state-model.md`,
+  // §"Rulings superseded"). Read off disk for the reason the A26 guard above
+  // states.
   const source = readFileSync(
     join(
       dirname(fileURLToPath(import.meta.url)),
@@ -2068,6 +2070,10 @@ it("RULING A27: after an all-commit, re-typing a corner's PRE-commit number stil
     source.indexOf("type HsvColor"),
   );
   assert.ok(body.length > 0, "RadiusControls not found in inspector-primitives.tsx");
+
+  // THE WEB LANE — A27 exactly as ratified, and untouched by Task 7. The web
+  // inspector still seeds `state.radius` once at mount, so the local snapshot
+  // is still the only thing there that knows what the document holds.
   assert.ok(
     body.includes("committed: values"),
     "the committed snapshot must still be SEEDED from the values prop at mount",
@@ -2076,13 +2082,20 @@ it("RULING A27: after an all-commit, re-typing a corner's PRE-commit number stil
     body.includes("radius.committed[corner]"),
     "a corner's dirty check must compare against the committed snapshot",
   );
+
+  // THE SCENE LANE — A27's premise is GONE. It was "an ad all-write does not
+  // move the values prop", which was true only while that prop was a mount-time
+  // copy of the document. Live hydration (Task 4) makes it the document itself,
+  // moving in the same batch as the write, so comparing against it is not
+  // merely safe — it is the one comparison that cannot go stale. The snapshot
+  // that stood in for it is therefore deleted here, not merely bypassed.
   assert.ok(
-    !body.includes("values[corner]"),
-    "a corner's dirty check must NOT compare against the values prop — an ad all-write does not move it",
+    body.includes("fieldCommit(drafts[corner] ?? null, values[corner])"),
+    "the scene lane's dirty check must compare the draft against the LIVE document value",
   );
   assert.ok(
-    !body.includes("values.all"),
-    "the all field's dirty check must NOT compare against the values prop either",
+    body.includes("fieldDisplay(drafts[corner] ?? null, values[corner])"),
+    "the scene lane's boxes must project the LIVE document value",
   );
 
   // Half two, the adapter: the write path really does accept that re-type once
@@ -2212,11 +2225,21 @@ it("RULING A29: after a single-corner commit the `all` box re-derives — hydrat
   assert.equal(hydrateSceneInspectorState(node, SCENE).radius?.all, "");
   assert.equal(hydrateSceneInspectorState(adRect(), SCENE).radius?.all, "5");
 
-  // The component now mirrors exactly that, in the SCENE lane only. The WEB
-  // lane's `all` is its OWN Tailwind class (`rounded-[Npx]`), parsed
+  // AD4.R Task 7 (plan
+  // `docs/superpowers/plans/2026-08-22-ad-inspector-mvp-state-model.md`,
+  // §"Rulings superseded") retired the component MIRROR that used to reproduce
+  // that rule locally (`uniformRadius` over the four committed corners). The
+  // rule itself is untouched and is asserted above, on the real document —
+  // what changed is who answers it. The scene lane's boxes are now projections
+  // of the live `values` prop, so the derived `all` arrives from hydrate in the
+  // same batch as the corner that moved: a mirror cannot lag it, because there
+  // is no mirror.
+  //
+  // The WEB lane's `all` is its OWN Tailwind class (`rounded-[Npx]`), parsed
   // independently of the four corner classes (`adapter/hydrate.ts:259-266`), so
   // deriving there would erase a real class from the panel — the two lanes'
-  // `all` are different facts, and the split is at the one call site.
+  // `all` are different facts, and that split is why the web lane keeps its
+  // mount-seeded model.
   const source = readFileSync(
     join(
       dirname(fileURLToPath(import.meta.url)),
@@ -2228,15 +2251,30 @@ it("RULING A29: after a single-corner commit the `all` box re-derives — hydrat
     source.indexOf("const commit = () => {"),
     source.indexOf("return (", source.indexOf("const commit = () => {")),
   );
+  // The WEB lane's corner commit, unchanged: the raw text, and `all` keeps what
+  // it had.
   assert.ok(
-    cornerCommit.includes("if (onApplyAll) {") &&
-      cornerCommit.includes("committed: { ...current.committed, [corner]: typed },"),
+    cornerCommit.includes("committed: { ...current.committed, [corner]: typed },"),
     "the web lane must store the RAW text and leave `all` exactly as it was",
   );
-  assert.ok(
-    cornerCommit.includes("uniformRadius(committed)"),
-    "the scene lane's `all` must re-derive from the four committed corners",
+  // The SCENE lane carries NO mirror. Pinned positively AND negatively, so that
+  // re-introducing any of the retired ones — not merely the one deleted here —
+  // fails loudly.
+  const sceneArm = source.slice(
+    source.indexOf("const sceneCommit = (corner: RadiusCorner) => {"),
+    source.indexOf("return (", source.indexOf("const sceneCommit")),
   );
+  assert.ok(sceneArm.length > 0, "the scene lane's commit not found");
+  assert.ok(
+    sceneArm.includes("fieldCommit("),
+    "the scene lane must commit through the shared pure dirty check",
+  );
+  for (const mirror of ["uniformRadius(", "radiusCommitText(", "committed", "setRadius("]) {
+    assert.ok(
+      !sceneArm.includes(mirror),
+      `the scene lane must carry no post-commit mirror — found ${mirror}`,
+    );
+  }
 });
 
 it("RULING A31: a corner stores what the WRITE produced, so `5.0` on a uniform node keeps All at `5`", () => {
@@ -2258,8 +2296,18 @@ it("RULING A31: a corner stores what the WRITE produced, so `5.0` on a uniform n
     null,
     "`5.0` over a stored 5 writes nothing",
   );
-  // Link 3: the component stores that canonical text, so the four stay equal
-  // and `uniformRadius` still reads `5`.
+  // Link 3 — AD4.R Task 7 (plan
+  // `docs/superpowers/plans/2026-08-22-ad-inspector-mvp-state-model.md`,
+  // §"Rulings superseded"). A31's fix was to store the canonical text the WRITE
+  // produced, so the component's own string comparison of the four corners
+  // would keep agreeing with hydrate's. Task 7 removed the disagreement's only
+  // possible surface instead: the scene lane stores NO typed text at all, so
+  // there is nothing left to spell differently from the document. Both halves
+  // of the mismatch are gone — the stored copy AND the local re-derivation.
+  //
+  // Links 1 and 2 above are the adapter's, and stand unchanged: they are why a
+  // `5.0` commit is honestly no write, which is what the panel now simply
+  // displays rather than has to reproduce.
   const source = readFileSync(
     join(
       dirname(fileURLToPath(import.meta.url)),
@@ -2267,24 +2315,29 @@ it("RULING A31: a corner stores what the WRITE produced, so `5.0` on a uniform n
     ),
     "utf8",
   );
+  const body = source.slice(
+    source.indexOf("export function RadiusControls"),
+    source.indexOf("type HsvColor"),
+  );
+  assert.ok(body.length > 0, "RadiusControls not found in inspector-primitives.tsx");
+  assert.ok(
+    !body.includes("radiusCommitText"),
+    "the scene lane must not re-acquire a canonicalizing mirror — hydrate owns the spelling",
+  );
+  assert.ok(
+    !body.includes("uniformRadius"),
+    "the scene lane must not re-acquire a local `all` derivation — hydrate owns it",
+  );
+  // The WEB lane's corner commit still stores the raw typed text against its own
+  // snapshot, which is A27 as ratified and is not this ruling's to move.
   const cornerCommit = source.slice(
     source.indexOf("const commit = () => {"),
     source.indexOf("return (", source.indexOf("const commit = () => {")),
   );
   assert.ok(
-    cornerCommit.includes("const written = radiusCommitText(typed);"),
-    "a corner must store what the write produced, not what was typed",
-  );
-  assert.ok(
-    cornerCommit.includes("[corner]: written"),
-    "the canonical text is what lands in `committed`",
-  );
-  // A REFUSED commit must not blank `committed[corner]` (A27's trap from the
-  // other side), and must not re-derive `all` over a document nothing wrote.
-  assert.ok(
-    cornerCommit.includes("if (written === null) {") &&
+    cornerCommit.includes("if (typed === radius.committed[corner]) return;") &&
       cornerCommit.includes("committed: { ...current.committed, [corner]: typed },"),
-    "a refused commit keeps its own text and moves nothing else",
+    "the web lane keeps its own text against its own snapshot",
   );
 });
 
@@ -2306,31 +2359,34 @@ it("RULING A28: a FRACTIONAL all-commit mirrors both halves, so the re-type afte
     source.indexOf("export function RadiusControls"),
     source.indexOf("type HsvColor"),
   );
-  // The two branches, sliced at the marker that separates them. Both offsets
-  // are asserted BEFORE slicing, so a rename fails here with a message rather
-  // than silently testing an empty string.
-  const sceneStart = body.indexOf("if (!onApplyAll) {", body.indexOf("const commitAll"));
+  // AD4.R Task 7 (plan
+  // `docs/superpowers/plans/2026-08-22-ad-inspector-mvp-state-model.md`,
+  // §"Rulings superseded") deleted the SCENE arm this ruling split off. A28
+  // existed because ONE post-commit mirror could not serve two lanes: the web
+  // lane's integer `clearsCorners` question refused the very values (12.5) the
+  // scene lane's write accepted, so the scene boxes kept the old numbers and
+  // `committed` did not move — A27's trap, behind the decimal point. The scene
+  // lane now has no mirror to split: its boxes project the live document, which
+  // moves in the same batch as the write, at the write's own spelling.
+  //
+  // So the ruling's surviving obligation is the WEB half — and it matters MORE
+  // now, because it is what pins the branch this task left untouched.
   const webStart = body.indexOf("const clearsCorners");
-  // BOUNDED at `applyAll`, so this reads `commitAll`'s F2 branch and not the
-  // corner commit further down (whose own scene branch legitimately uses the
-  // adapter's rule — A31). Every offset is asserted before slicing, so a rename
-  // fails here with a message rather than silently testing the wrong region.
+  // BOUNDED at `applyAll`, so this reads `commitAll`'s F2 branch only. Every
+  // offset is asserted before slicing, so a rename fails here with a message
+  // rather than silently testing an empty string.
   const webEnd = body.indexOf("const applyAll");
-  assert.ok(sceneStart >= 0, "commitAll's scene branch not found");
-  assert.ok(webStart > sceneStart, "commitAll's F2 branch not found after it");
+  assert.ok(webStart >= 0, "commitAll's F2 branch not found");
   assert.ok(webEnd > webStart, "applyAll not found after commitAll");
-  const sceneBranch = body.slice(sceneStart, webStart);
   const webBranch = body.slice(webStart, webEnd);
 
-  // The SCENE branch asks the ADAPTER, never the dummy's regex.
+  // The scene lane carries no mirror at all — the strongest form of "it does not
+  // use the wrong rule", and the one that cannot rot as the rules change.
   assert.ok(
-    sceneBranch.includes("radiusCommitText(value)"),
-    "the scene lane's mirror must ask the adapter's own rule",
+    !body.includes("const restate"),
+    "the retired post-commit restate must not come back",
   );
-  assert.ok(
-    !sceneBranch.includes("NUMERIC_RADIUS"),
-    "the scene lane's mirror must NOT use the web lane's integer regex",
-  );
+
   // The WEB lane's `clearsCorners` is untouched — same predicate, same argument.
   assert.ok(
     webBranch.includes("NUMERIC_RADIUS.test(value.trim())") &&

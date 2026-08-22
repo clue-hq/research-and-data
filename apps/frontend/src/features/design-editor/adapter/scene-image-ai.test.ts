@@ -391,47 +391,69 @@ it("§1.3 Alt text: the box COMMITS on blur/Enter, never per keystroke", () => {
   // The first of the five disciplines this lane paid for in blood: a
   // per-keystroke description would persist one document version and one undo
   // step per letter typed.
+  //
+  // AD4.R Task 7 moved the DRAFT into the primitive without moving the
+  // discipline: `onCommitValue` (`inspector-field-draft.ts`) is fired by
+  // `InspectorInput` on blur/Enter only, and hands back the text it has been
+  // holding. So the schema still never sees a keystroke — it no longer even has
+  // somewhere to put one.
   const field = /<InspectorInput\s+ariaLabel="Image alt text"[\s\S]*?\/>/.exec(
     AD_INSPECTOR_SOURCE,
   );
   assert.ok(field, "image-inspector.tsx no longer renders the alt-text field");
-  assert.match(field[0], /onCommit=\{commitAltText\}/);
+  assert.match(field[0], /onCommitValue=\{\(value\) =>/);
   assert.ok(
-    !/onChange=\{\(value\) => setValue\("altText"/.test(field[0]),
-    "the keystroke handler must draft locally, never dispatch",
+    !/onChange=/.test(field[0]),
+    "the keystroke handler must draft inside the primitive, never dispatch",
   );
 });
 
 it("§4 / A29: the alt-text commit records NOTHING against a locked node", () => {
-  const commit = /const commitAltText = \(\) => \{[\s\S]*?\n  \};/.exec(
+  // A29's SURVIVING half. Its other half — "and the panel's record of the
+  // document does not move" — was retired in AD4.R Task 7 with the record
+  // itself (plan `docs/superpowers/plans/2026-08-22-ad-inspector-mvp-state-model.md`,
+  // §"Rulings superseded"): there is no local `committed` to falsify any more,
+  // so a refused write cannot be recorded even in principle. What is left is
+  // the cheap half — skipping a dispatch §4 would refuse anyway.
+  const field = /<InspectorInput\s+ariaLabel="Image alt text"[\s\S]*?\/>/.exec(
     AD_INSPECTOR_SOURCE,
   );
-  assert.ok(commit, "image-inspector.tsx no longer defines commitAltText");
-  assert.match(commit[0], /if \(locked\) return;/);
-  // And a write that changes nothing is not a write — compared against what
-  // this panel believes the document holds, never against the live prop.
-  assert.match(commit[0], /altText\.draft !== altText\.committed/);
+  assert.ok(field, "image-inspector.tsx no longer renders the alt-text field");
+  assert.match(field[0], /if \(!locked\) setValue\("altText", value\);/);
+  // And the dirty check — "a write that changes nothing is not a write" — is
+  // now `fieldCommit`'s, compared against the LIVE document value rather than
+  // against a panel-local copy of it. The primitive owns it, so this row cannot
+  // hold a second opinion about what "changed" means.
+  assert.ok(
+    !/altText\.committed/.test(AD_INSPECTOR_SOURCE),
+    "the retired committed snapshot must not come back",
+  );
 });
 
-it("§1.3: the alt-text box re-seeds from the LIVE document, so a Replace cannot leave it stale", () => {
+it("§1.3: the alt-text box reads the LIVE document, so a Replace cannot leave it stale", () => {
   // Replace image overwrites `asset_placement.alt_text` with the new asset's
-  // label, so without this the box would go on describing the picture that just
-  // left — a control displaying a value the document does not have.
+  // label, so a stale box would go on describing the picture that just left — a
+  // control displaying a value the document does not have.
+  //
+  // AD4.R Task 7 (plan §"Rulings superseded") retired the machinery that used
+  // to prevent that: a `committed`/`draft`/`seen` triple plus a render-time
+  // re-seed comparison against `seen`. The guarantee is now STRUCTURAL rather
+  // than patched — the box renders `state.altText`, which live hydration makes
+  // the document's own text, so an unfocused box cannot be showing anything
+  // else. (`seen` also guarded a mirror-timing hazard that AD4.R-1's
+  // synchronous scene mirror had already killed.)
   assert.match(
     AD_INSPECTOR_SOURCE,
-    /const documentAltText = hydrated\?\.altText \?\? state\.altText;/,
+    /<InspectorInput\s+ariaLabel="Image alt text"[\s\S]*?value=\{state\.altText\}/,
   );
-  // REVIEW FIX: the re-seed fires against `seen` — the last hydrated value this
-  // component reacted to — and NOT against the record the commit just moved.
-  // The optimistic apply mirrors up through a passive effect, so for a render
-  // or two after a commit the live prop still holds the PRE-write text;
-  // comparing against the record would fire the re-seed against that stale
-  // value and flash the old description back into the box.
-  assert.match(AD_INSPECTOR_SOURCE, /if \(altText\.seen !== documentAltText\) \{/);
-  assert.ok(
-    !/altText\.committed !== documentAltText/.test(AD_INSPECTOR_SOURCE),
-    "the re-seed must not compare the panel's record against the live prop",
-  );
+  // None of the three may return: each was a copy of the document that could
+  // disagree with it.
+  for (const retired of ["documentAltText", "altText.seen", "altText.draft"]) {
+    assert.ok(
+      !AD_INSPECTOR_SOURCE.includes(retired),
+      `the retired alt-text ${retired} must not come back`,
+    );
+  }
 });
 
 it("REVIEW: the candidate review is a SIBLING of the edit block, so a lock cannot vanish it", () => {

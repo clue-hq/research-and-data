@@ -11,7 +11,6 @@ import type {
   PointerEvent as ReactPointerEvent,
   ReactNode,
 } from "react";
-import { radiusCommitText } from "@/features/design-editor/adapter/scene-hydrate";
 import type { ThemeColorOption } from "@/features/design-editor/adapter/theme-options";
 import {
   commitInspectorNumber,
@@ -564,35 +563,28 @@ type RadiusValues = Record<RadiusCorner, string>;
 const NUMERIC_RADIUS = /^\d+$/;
 
 /**
- * RULING A29 (review): what the `all` box reads once one CORNER has moved — the
- * SCENE lane's rule, which is hydrate's own, by name.
+ * RULING A29's `uniformRadius` derivation — RETIRED in AD4.R Task 7 (see
+ * `docs/superpowers/plans/2026-08-22-ad-inspector-mvp-state-model.md`,
+ * §"Rulings superseded").
  *
- * `scene-hydrate.ts` derives `all` from the four corners: "the uniform value,
- * or empty when the corners differ (no single number is true)". `all` is not a
- * stored field there, so after a single-corner commit the box must re-derive or
- * it states a number the document does not have — and worse, the dirty check
- * then swallows the edit that would put it right. Browser-shaped repro: on a
- * uniformly-5 node, typing 9 into top-left makes the document `{9,5,5,5}`
- * (hydrate: `all` is `""`) while the box still reads 5; the user who types 5
- * into All to restore it is refused as unchanged, and only the scan button
- * still works — applying whatever stale number the box is showing.
+ * A29 asked: what does the `all` box read once one CORNER has moved? In the
+ * SCENE lane `all` is not a stored field — `scene-hydrate.ts` derives it from
+ * the four corners ("the uniform value, or empty when the corners differ"). So
+ * a component holding its own copy of the five boxes had to re-derive `all`
+ * after every corner commit, or state a number the document does not have.
  *
- * The WEB lane does NOT share this rule and is deliberately excluded at the one
- * call site: there `all` is its own Tailwind class (`rounded-[Npx]`), parsed
- * independently of the four corner classes (`design-editor/adapter/hydrate.ts:259-266`),
- * and a node legitimately carries `rounded-[8px]` beside a `rounded-tl-[2px]`
- * override. Deriving there would erase a real class from the panel. The two
- * lanes' `all` are different facts, so one rule cannot serve both — the same
- * split A28 made for the mirror.
+ * That copy is gone. The scene lane's five boxes are now projections of the
+ * LIVE `values` prop, so the derived `all` arrives from hydrate itself, in the
+ * same batch as the corner that moved — the mirror it replaces cannot lag or
+ * disagree with it, because there is nothing left to disagree.
+ *
+ * The lane split A29 recorded still stands and still matters, which is why the
+ * WEB lane keeps its mount-seeded model below: there `all` is its own Tailwind
+ * class (`rounded-[Npx]`), parsed independently of the four corner classes
+ * (`design-editor/adapter/hydrate.ts:259-266`), and a node legitimately carries
+ * `rounded-[8px]` beside a `rounded-tl-[2px]` override. Deriving there would
+ * erase a real class from the panel. The two lanes' `all` are different facts.
  */
-function uniformRadius(corners: RadiusValues): string {
-  const { bottomLeft, bottomRight, topLeft, topRight } = corners;
-  return topLeft === topRight &&
-    topRight === bottomRight &&
-    bottomRight === bottomLeft
-    ? topLeft
-    : "";
-}
 
 /** W4.2 (ruling R-B2): the five radius fields adopt the ratified R3 commit
  * model — typed values draft locally and COMMIT on blur/Enter, so the write
@@ -640,31 +632,31 @@ export function RadiusControls({
   values: RadiusValues;
 }) {
   /**
-   * RULING A27: the five fields keep BOTH the text being typed and the value
-   * each field last COMMITTED — in ONE state object, because the second is what
-   * decides whether a blur is a write at all, and a shape that let them drift
-   * apart would just relocate the trap below. The `AdCanvasInspector` Custom
-   * W/H pair (AD4.0 step 1) is the same shape for the same reason.
+   * TWO LANES, TWO STATE MODELS — and the split is the whole of this component.
    *
-   * THE DIRTY CHECK READS `committed`, NEVER THE `values` PROP.
+   * WEB lane (`onApplyAll` PRESENT): the mount-seeded model, unchanged. Its
+   * `committed`/`draft` snapshot (ruling A27) stays exactly as it was until the
+   * web lane runs its own live-hydration migration; the web inspector still
+   * seeds `state.radius` once at mount, so the snapshot is the only thing there
+   * that knows what the document holds.
    *
-   *   • In the WEB lane the two are identical by construction, verified against
-   *     the code: the only writers of `state.radius` are `setNestedValue` and
-   *     `setRadiusAll` (`use-inspector-controller.ts:260-336`), and the web
-   *     inspector dispatches both exclusively from this component
-   *     (`web-inspector.tsx:893`). Each commit below sets `committed` to
-   *     exactly what the controller is about to hold — a corner to its typed
-   *     value, F2's clearing all-write to `{all, four: ""}` — and a remount
-   *     re-seeds both halves from the fresh prop. The check gives the same
-   *     answers there as it always did.
-   *   • In the SCENE lane they deliberately differ, and that difference is the
-   *     whole point. An ad all-corners commit writes all four corners to the
-   *     DOCUMENT but dispatches one `radius.all`, so the controller's four
-   *     corner entries stay where they were. Comparing against those made every
-   *     re-type of a corner's pre-commit number compare EQUAL and commit
-   *     nothing, while the box kept the number the user typed — a silent no-op
-   *     and a lying field at once. Browser-proven at the A26 review, where it
-   *     blocked restoring the seeded document's own corners by hand.
+   * SCENE lane (`onApplyAll` ABSENT, AD4.R Task 7): `values` is LIVE — the ad
+   * panel's live-hydrated state — so the five fields are self-drafting
+   * projections of it: a draft while being typed, a dirty check against the
+   * document itself (`fieldCommit`), and NO post-commit mirrors. The document's
+   * own corners, including the derived `all`, arrive through hydration in the
+   * same batch as the write.
+   *
+   * RULING A27, superseded for the scene lane only (plan §"Rulings
+   * superseded"): its premise was that the dirty check could not read the
+   * `values` prop, because an ad all-corners commit writes all four corners to
+   * the DOCUMENT while dispatching one `radius.all` — so the controller's four
+   * corner entries stayed where they were, every re-type of a corner's
+   * pre-commit number compared EQUAL and committed nothing, and the box kept a
+   * number the document did not have. Live hydration removes the premise: the
+   * prop now moves with the document, so comparing against it is not merely
+   * safe, it is the only comparison that cannot go stale. The WEB lane's
+   * premise is untouched, so its snapshot is untouched.
    */
   const [radius, setRadius] = useState(() => ({
     committed: values,
@@ -676,11 +668,18 @@ export function RadiusControls({
       draft: { ...current.draft, [corner]: value },
     }));
 
-  /** Every radius field re-states itself after a commit that moved it — both
-   * halves at once (A27's lockstep), which is free in one state object. */
-  const restate = (next: RadiusValues) =>
-    setRadius({ committed: next, draft: next });
-
+  /** ── The WEB lane's all-corners commit (F2), untouched ────────────────────
+   *
+   * RULING A28's scene arm lived here and is RETIRED in AD4.R Task 7 (plan
+   * §"Rulings superseded"). A28 split one post-commit mirror into two, because
+   * the two lanes were asking different questions of the same commit: the web
+   * lane's "does this write CLEAR the per-corner overrides?" (R-B1's integer
+   * rule) versus the scene lane's "did this commit produce a WRITE, and with
+   * what canonical spelling?" (the adapter's own commit rule, so a fractional
+   * all-commit could not leave the four boxes reading the old numbers, and so
+   * the mirror could not disagree with the write). The scene lane no
+   * longer asks: it does not mirror at all, so it cannot mirror wrongly. Only
+   * the web lane's question — and its answer — remain, exactly as ratified. */
   const commitAll = (value: string) => {
     // A29: a locked node refuses every write (§4), so a commit against one
     // records NOTHING — not the mirror, and not `committed` either. Recording it
@@ -689,44 +688,12 @@ export function RadiusControls({
     if (locked) {
       return;
     }
-    // BOTH lanes: an all-corners write REPLACES what the four corner fields are
-    // stating, so both re-state them — but under DIFFERENT conditions, because
-    // they are different questions (RULING A28). They were one condition until
-    // a fractional radius wrote all four corners while the boxes kept the old
-    // numbers.
-    if (!onApplyAll) {
-      // ── The SCENE lane ────────────────────────────────────────────────────
-      // The question is "did this commit produce a WRITE?", which is the
-      // adapter's own rule — imported, never restated here, so the mirror and
-      // the write can never diverge again. `radiusCommitText` answers with the
-      // canonical text of the number the document now holds (`007` → `7`), so
-      // the boxes state exactly what a re-hydrate would state.
-      onChange("all", value);
-      const written = radiusCommitText(value);
-      if (written === null) {
-        // Nothing was written, so nothing may be re-stated — only this field's
-        // own committed text moves, which is what keeps a re-blur quiet.
-        setRadius((current) => ({
-          ...current,
-          committed: { ...current.committed, all: value },
-        }));
-        return;
-      }
-      // The scene lane's all-write SETS all four corners (`scene-apply.ts`
-      // writes the whole `CornerRadii`), so every one of the five fields now
-      // reads that one number.
-      restate({
-        all: written,
-        bottomLeft: written,
-        bottomRight: written,
-        topLeft: written,
-        topRight: written,
-      });
-      return;
-    }
-    // ── The WEB lane (F2), untouched ─────────────────────────────────────────
-    // Its question is "does this write CLEAR the per-corner overrides?", which
-    // is R-B1's integer rule and is not this lane's to move.
+    // TS NARROWING ONLY, not a behaviour branch — the scene lane never reaches
+    // `commitAll` (it commits through `sceneCommit` / `sceneApplyAll`, and both
+    // callers below are already behind `scene`), so this is unreachable by
+    // construction. It exists because deleting the scene arm removed the
+    // `if (!onApplyAll) {…}` that used to narrow `onApplyAll` for the call.
+    if (!onApplyAll) return;
     const clearsCorners = NUMERIC_RADIUS.test(value.trim());
     onApplyAll(value, clearsCorners);
     setRadius((current) => ({
@@ -751,21 +718,55 @@ export function RadiusControls({
     }));
   };
 
+  /** The WEB lane's scan button. Its meaning IS the all-corners write, so it
+   * commits the all field's current draft even when unchanged — but an empty
+   * draft would clear the radius rather than apply one, so it is a no-op. */
   const applyAll = () => {
-    // The scan button's meaning IS the all-corners write, in BOTH lanes, so it
-    // commits the all field's current draft even when unchanged — but an empty
-    // draft would clear the radius rather than apply one, so it is a no-op.
+    if (radius.draft.all.trim() === "") return;
+    commitAll(radius.draft.all);
+  };
+
+  // ── The SCENE lane (AD4.R Task 7) ─────────────────────────────────────────
+  // Five self-drafting projections of the live `values` prop. There is no
+  // `committed` here and no post-commit mirror of any kind: what the boxes read
+  // after a write is what hydration says the document now holds.
+  const scene = !onApplyAll;
+  const [drafts, setDrafts] = useState<
+    Partial<Record<RadiusCorner, string | undefined>>
+  >({});
+  const sceneShown = (corner: RadiusCorner) =>
+    fieldDisplay(drafts[corner] ?? null, values[corner]);
+  const sceneCommit = (corner: RadiusCorner) => {
+    // The dirty check compares the draft against the LIVE document value, so it
+    // cannot go stale the way A27's snapshot could. Dispatch happens OUTSIDE
+    // the state updater — an `onChange` inside one would be a side effect React
+    // is free to run twice (the AD4.0 step-1 commit-on-blur rule).
+    const commit = fieldCommit(drafts[corner] ?? null, values[corner]);
+    setDrafts((current) => ({ ...current, [corner]: undefined }));
+    // A29's surviving half: a locked node refuses every write (§4), so a commit
+    // against one skips the doomed dispatch. Honesty no longer depends on it —
+    // nothing is recorded locally, and dropping the draft re-states the
+    // document — it only spares the adapter a refusal.
+    if (commit === null || locked) return;
+    onChange(corner, commit);
+  };
+  const sceneApplyAll = () => {
+    // The scan button's meaning IS the all-corners write (both lanes' ruling),
+    // so it commits the shown value even when unchanged — but an empty value
+    // would clear rather than apply, so it is a no-op.
     //
-    // RULING A26 retired the scene lane's fan-out-to-four here. Those four
-    // synchronous `onChange(corner, …)` calls each dispatched their own event,
-    // and the write listener's scene is a passive-effect ref over React state
+    // RULING A26 retired this lane's fan-out-to-four. Those four synchronous
+    // per-corner `onChange` calls each dispatched their own event, and the
+    // write listener's scene is a passive-effect ref over React state
     // (`use-scene-inspector-writes.ts`), so all four read the SAME pre-burst
     // node — while every radius operation writes the whole `CornerRadii`. The
     // fourth clobbered the first three: a scan of 24 over the seeded ad's
-    // 32/32/96/32 image landed 32/32/96/24, one corner, four undo steps.
-    // `commitAll` already forks correctly, so this needs no branch of its own.
-    if (radius.draft.all.trim() === "") return;
-    commitAll(radius.draft.all);
+    // 32/32/96/32 image landed 32/32/96/24, one write, four undo steps. One
+    // event is still the rule here.
+    const value = sceneShown("all");
+    if (value.trim() === "" || locked) return;
+    setDrafts((current) => ({ ...current, all: undefined }));
+    onChange("all", value);
   };
 
   return (
@@ -775,13 +776,21 @@ export function RadiusControls({
           ariaLabel="All corner radius"
           className={styles.radiusValue}
           leading={<InspectorIcon name="radius-all" size={16} />}
-          onChange={(value) => setDraft("all", value)}
+          onChange={(value) =>
+            scene
+              ? setDrafts((current) => ({ ...current, all: value }))
+              : setDraft("all", value)
+          }
           onCommit={() => {
+            if (scene) {
+              sceneCommit("all");
+              return;
+            }
             if (radius.draft.all !== radius.committed.all) commitAll(radius.draft.all);
           }}
-          value={radius.draft.all}
+          value={scene ? sceneShown("all") : radius.draft.all}
         />
-        <button aria-label="Apply radius to all corners" className={styles.scanButton} onClick={applyAll} type="button">
+        <button aria-label="Apply radius to all corners" className={styles.scanButton} onClick={scene ? sceneApplyAll : applyAll} type="button">
           <InspectorIcon name="radius-scan" size={12} />
         </button>
       </div>
@@ -792,77 +801,52 @@ export function RadiusControls({
           ["bottomLeft", "radius-bottom-left"],
           ["bottomRight", "radius-bottom-right"],
         ] as const).map(([corner, icon]) => {
+          // The WEB lane's corner commit, unchanged. RULING A31's canonicalizing
+          // mirror lived in its scene arm and is RETIRED in AD4.R Task 7 (plan
+          // §"Rulings superseded"): A31 stored what the WRITE produced rather
+          // than what was typed, because a raw `5.0` on a uniformly-5 node wrote
+          // a correctly uniform document while the component's own string
+          // comparison of the four corners saw `"5.0" !== "5"` and blanked the
+          // derived `all`. Nothing in this lane stores typed text any more —
+          // hydrate supplies the spelling AND the derivation — so the mismatch
+          // has no surface left to occur on.
           const commit = () => {
             // A29: nothing a locked node refuses may be recorded (see
             // `commitAll`).
             if (locked) return;
             // Read this render's draft and dispatch OUTSIDE the updater — a
             // `onChange` inside one would be a side effect React is free to run
-            // twice (the `commitCustomSize` rule, AD4.0 step 1).
+            // twice (the AD4.0 step-1 commit-on-blur rule).
             const typed = radius.draft[corner];
             if (typed === radius.committed[corner]) return;
             onChange(corner, typed);
-            setRadius((current) => {
-              // WEB lane: the raw text, and `all` is its own class and is not
-              // derived from the corners, so it keeps what it had (see
-              // `uniformRadius`). Unchanged since A27.
-              if (onApplyAll) {
-                return {
-                  ...current,
-                  committed: { ...current.committed, [corner]: typed },
-                };
-              }
-              // SCENE lane / RULING A31: store what the WRITE PRODUCED, not what
-              // was typed. `uniformRadius` compares these four as STRINGS, so a
-              // raw `5.0` (or `007`, or ` 5 `) on a uniformly-5 node wrote a
-              // correctly uniform document — `radiusCommit` canonicalizes on the
-              // way out — while the derived `all` saw `"5.0" !== "5"` and blanked
-              // the box. Canonicalizing here closes that gap and its root cause
-              // in one line, because these two now speak the same spelling as
-              // hydrate.
-              const written = radiusCommitText(typed);
-              if (written === null) {
-                // REFUSED: the document did not move, so nothing else may. Only
-                // this field's own committed text advances — which keeps a
-                // re-blur quiet, and must NOT be blanked or A27's trap reopens
-                // from the other side. (The box keeps the refused text until
-                // reselection: the ratified `commitCustomSize` posture, recorded
-                // with the A19 family.) Re-deriving `all` here would have blanked
-                // it over a document nothing had written.
-                return {
-                  ...current,
-                  committed: { ...current.committed, [corner]: typed },
-                };
-              }
-              const committed = { ...current.committed, [corner]: written };
-              // SCENE lane: `all` IS the four corners, so it re-derives — in
-              // both halves, keeping A27's lockstep.
-              const all = uniformRadius(committed);
-              return {
-                committed: { ...committed, all },
-                // The box reads what the document GOT, which is the same
-                // canonical text `restate` already writes into these four on an
-                // all-commit (A28) — one behaviour, not two. On Enter that
-                // rewrites the field under the cursor, which is what a numeric
-                // field does; on blur the cursor has already left. The
-                // alternative leaves the box stating a spelling the document
-                // does not have AND re-dispatching a refused write on every
-                // re-blur.
-                draft: { ...current.draft, [corner]: written, all },
-              };
-            });
+            // The raw text, and `all` is its own class and is not derived from
+            // the corners, so it keeps what it had. Unchanged since A27.
+            setRadius((current) => ({
+              ...current,
+              committed: { ...current.committed, [corner]: typed },
+            }));
           };
           return (
             <span className={`${styles.inspectorControl} ${styles.inspectorInputControl} ${styles.cornerRadiusField}`} key={corner}>
               <InspectorIcon name={icon} size={16} />
               <input
                 aria-label={`${corner} radius`}
-                onBlur={commit}
-                onChange={(event) => setDraft(corner, event.target.value)}
+                onBlur={scene ? () => sceneCommit(corner) : commit}
+                onChange={(event) =>
+                  scene
+                    ? setDrafts((current) => ({
+                        ...current,
+                        [corner]: event.target.value,
+                      }))
+                    : setDraft(corner, event.target.value)
+                }
                 onKeyDown={(event) => {
-                  if (event.key === "Enter") commit();
+                  if (event.key !== "Enter") return;
+                  if (scene) sceneCommit(corner);
+                  else commit();
                 }}
-                value={radius.draft[corner]}
+                value={scene ? sceneShown(corner) : radius.draft[corner]}
               />
             </span>
           );
