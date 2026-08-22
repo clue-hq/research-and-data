@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import type { ChatShellInspectorSelection } from "../model/chat-shell";
 
 export type InspectorSectionId =
@@ -144,7 +144,7 @@ const DEFAULT_OPEN_SECTIONS: Record<InspectorSectionId, boolean> = {
   typography: true,
 };
 
-const DEFAULT_STATE: InspectorPresentationState = {
+export const DEFAULT_STATE: InspectorPresentationState = {
   altText: "",
   backgroundColor: "#00F59B",
   backgroundFill: {
@@ -225,6 +225,34 @@ export function dispatchInspectorEvent(
   );
 }
 
+export interface InspectorControllerOptions {
+  /**
+   * AD4.R: the MVP state model. When true, the returned `state` is composed
+   * PER RENDER as `{...uiState, ...hydrated}` (openSections excepted — those
+   * are UI facts the panel owns), and every value setter dispatches its write
+   * event WITHOUT recording the value locally: the document answers through
+   * the next hydration, which on the ad lane arrives in the same React batch
+   * (the Task-1 synchronous mirror). False (the default) is the original
+   * mount-seeded behavior, byte-for-byte — the web inspector and the dummy
+   * fixture paths run on it unchanged, pending the web lane's own migration.
+   */
+  liveHydration?: boolean;
+}
+
+/**
+ * The pure per-render composition behind `liveHydration`. `hydrated` — the
+ * accepted scene's own values — wins every key it carries, EXCEPT
+ * `openSections`, which is a UI fact the panel owns and hydration never
+ * controls.
+ */
+export function composeInspectorState(
+  uiState: InspectorPresentationState,
+  hydrated: Partial<InspectorPresentationState> | undefined,
+): InspectorPresentationState {
+  if (!hydrated) return uiState;
+  return { ...uiState, ...hydrated, openSections: uiState.openSections };
+}
+
 export function useInspectorController(
   collapsedSections: InspectorSectionId[] = [],
   selectionType: ChatShellInspectorSelection = "canvas",
@@ -236,8 +264,11 @@ export function useInspectorController(
   hydrated?: Partial<InspectorPresentationState>,
   // W3.1: write addressing stamped onto every dispatched event detail.
   addressing?: InspectorEventAddressing,
+  // AD4.R: opt-in live hydration. Off by default — nothing below changes.
+  options?: InspectorControllerOptions,
 ) {
-  const [state, setState] = useState<InspectorPresentationState>(() => ({
+  const live = options?.liveHydration === true;
+  const [uiState, setUiState] = useState<InspectorPresentationState>(() => ({
       ...DEFAULT_STATE,
       ...hydrated,
       openSections: {
@@ -247,12 +278,21 @@ export function useInspectorController(
     },
   }));
 
+  // Default mode returns the locally recorded state untouched; live mode
+  // re-derives it from the caller's per-render `hydrated` snapshot.
+  const state = useMemo(
+    () => (live ? composeInspectorState(uiState, hydrated) : uiState),
+    [hydrated, live, uiState],
+  );
+
   const setValue = useCallback(
     <Key extends keyof InspectorPresentationState>(
       key: Key,
       value: InspectorPresentationState[Key],
     ) => {
-      setState((current) => ({ ...current, [key]: value }));
+      if (!live) {
+        setUiState((current) => ({ ...current, [key]: value }));
+      }
       dispatchInspectorEvent(
         "clue:inspector-property-change",
         {
@@ -263,7 +303,7 @@ export function useInspectorController(
         addressing,
       );
     },
-    [addressing, selectionType],
+    [addressing, live, selectionType],
   );
 
   const setNestedValue = useCallback(
@@ -272,10 +312,12 @@ export function useInspectorController(
       nestedKey: keyof InspectorPresentationState[Key],
       value: string,
     ) => {
-      setState((current) => ({
-        ...current,
-        [key]: { ...current[key], [nestedKey]: value },
-      }));
+      if (!live) {
+        setUiState((current) => ({
+          ...current,
+          [key]: { ...current[key], [nestedKey]: value },
+        }));
+      }
       dispatchInspectorEvent(
         "clue:inspector-property-change",
         {
@@ -286,7 +328,7 @@ export function useInspectorController(
         addressing,
       );
     },
-    [addressing, selectionType],
+    [addressing, live, selectionType],
   );
 
   // W3.2 (R3): the two-axis padding path — one committed axis value updates
@@ -294,13 +336,15 @@ export function useInspectorController(
   // write adapter's vocabulary). Used by the axis-collapsed padding boxes.
   const setPaddingAxis = useCallback(
     (axis: "x" | "y", value: string) => {
-      setState((current) => ({
-        ...current,
-        padding:
-          axis === "x"
-            ? { ...current.padding, left: value, right: value }
-            : { ...current.padding, bottom: value, top: value },
-      }));
+      if (!live) {
+        setUiState((current) => ({
+          ...current,
+          padding:
+            axis === "x"
+              ? { ...current.padding, left: value, right: value }
+              : { ...current.padding, bottom: value, top: value },
+        }));
+      }
       dispatchInspectorEvent(
         "clue:inspector-property-change",
         {
@@ -311,7 +355,7 @@ export function useInspectorController(
         addressing,
       );
     },
-    [addressing, selectionType],
+    [addressing, live, selectionType],
   );
 
   // W4.2 (founder ruling F2, 2026-08-18): the all-corners radius commit. ONE
@@ -322,18 +366,20 @@ export function useInspectorController(
   // also lose three of them to the one-in-flight write discipline.
   const setRadiusAll = useCallback(
     (value: string, clearCorners: boolean) => {
-      setState((current) => ({
-        ...current,
-        radius: clearCorners
-          ? {
-              all: value,
-              bottomLeft: "",
-              bottomRight: "",
-              topLeft: "",
-              topRight: "",
-            }
-          : { ...current.radius, all: value },
-      }));
+      if (!live) {
+        setUiState((current) => ({
+          ...current,
+          radius: clearCorners
+            ? {
+                all: value,
+                bottomLeft: "",
+                bottomRight: "",
+                topLeft: "",
+                topRight: "",
+              }
+            : { ...current.radius, all: value },
+        }));
+      }
       dispatchInspectorEvent(
         "clue:inspector-property-change",
         {
@@ -344,11 +390,11 @@ export function useInspectorController(
         addressing,
       );
     },
-    [addressing, selectionType],
+    [addressing, live, selectionType],
   );
 
   const toggleSection = useCallback((section: InspectorSectionId) => {
-    setState((current) => {
+    setUiState((current) => {
       const open = !current.openSections[section];
       dispatchInspectorEvent(
         "clue:inspector-section-toggle",
