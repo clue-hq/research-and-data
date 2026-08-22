@@ -105,3 +105,35 @@ plan — it closes the plan's own unreconciled race).
 **Merge coordination:** zero file overlap with Lane B (adapter/panel) — Lane D's scene-apply/
 scene-hydrate are untouched; Lane C shares only `use-scene-editing-session.ts` returns consumed by
 `artifact-stage.tsx` props (additive on both sides). Whichever lands second rebases trivially.
+
+---
+
+## Merged into the integration branch (2026-08-23)
+
+Merge commit `14413cd1` on `integration/frontend-design-part-iv-v4` (parents: the HUG-FREEZE
+close-out `bb8603a2` + Lane D tip `868307e8`), local only, nothing pushed. Two real conflicts,
+both additive-in-the-same-slot, resolved by keeping both sides:
+
+- `use-scene-manual-edits.ts` — Lane B/C-9's `applyEdit` + `persistAppliedOps` alongside Lane D's
+  `awaitWritesSettled` (interface + implementation). Lane D's copy of the old `runHistory` doc
+  header was superseded by HEAD's generalized `runDocumentStep` header (the function Lane D's
+  drain comment references still performs the same inline drain). `QueueHandle` shape
+  (`.documentId`/`.queue`) verified unchanged, so `awaitWritesSettled`'s reads hold.
+- `use-scene-editing-session.ts` — the AD4.B arrange binding alongside the AD4.D `useSceneExport`
+  hook; both ride the session return (verified: `arrange`, `exportPreview`, `exportStatus`,
+  `requestExportPreview` all present).
+
+Auto-merged prop threading verified by grep: export props flow session → chat-surface AND
+editor-surface → artifact-stage → artifact-header → image-export-menu.
+
+Gates: combined frontend suite **1970/1970, 0 fail, 0 skipped** (1919 on HEAD + Lane D's 51 —
+exactly additive); lint 0 errors (3 pre-existing warnings); build clean; tsc baseline exactly 84
+lines, none in merged files; root `make check` = exactly the five documented pre-existing reds
+(3× pilot_budget, 1× unified_agent_gate_migration, 1× o3_account_deep), zero new.
+
+Not re-proven here: a live-browser export walk on the merged tree (Lane D's own browser proofs
+ran on its worktree at :3030). The R-D19 quiescence gate + Lane C's freeze transport co-exist in
+`use-scene-manual-edits.ts` and the combined suite exercises both, but a manual export-after-edit
+walk on :3033 is the cheap remaining confidence step. Lane D's founder items (PDF-iframe real-
+browser glance, caption pill copy, preview blank-until-reopen, scale-scrub debounce) carry over
+unchanged.
