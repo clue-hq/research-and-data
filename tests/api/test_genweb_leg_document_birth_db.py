@@ -458,11 +458,17 @@ def test_a_document_less_open_without_a_doc_kind_is_refused(
     run_async(scenario())
 
 
-def test_scene_document_creation_is_refused(
+def test_scene_document_creation_births_since_genad(
     tmp_path: Path,
     migrated_db: bool,  # noqa: F811
 ) -> None:
-    """v1 scope (§8 item 8): the ad flow stays editor-first — a scene leg needs a document."""
+    """Replaces ``test_scene_document_creation_is_refused`` — the v1 editor-first ruling was
+    reversed 2026-08-23 (genad ruling 1). A document-less scene open now requires a format
+    and births; the format-less refusal is pinned in ``test_genad_leg_document_birth_db``.
+
+    What survives here is the closest assertion to the old pin: a scene open that names no
+    format still creates NOTHING — the refusal moved from "scenes cannot be born" to "an ad
+    must say what size it is"."""
 
     if not migrated_db:
         pytest.skip("database not reachable")
@@ -472,7 +478,7 @@ def test_scene_document_creation_is_refused(
             seeds = await _seed_conversation(conn, storage_root=tmp_path, label="scene")
             with pytest.raises(PreconditionFailed) as failure:
                 await _open(seeds, doc_kind="scene")
-            assert "design_leg_scene_creation_unsupported" in str(failure.value)
+            assert "design_leg_ad_format_required" in str(failure.value)
             assert await _no_leg_and_no_document(conn, seeds)
 
     run_async(scenario())
