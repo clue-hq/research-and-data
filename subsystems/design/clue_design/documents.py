@@ -86,6 +86,29 @@ async def _stamp_approved_brand_kit_at_birth(
     return stamped
 
 
+async def _stamp_approved_brand_kit_at_scene_birth(
+    conn: AsyncConnection, *, workspace_id: str, scene: JsonObject
+) -> JsonObject:
+    """Default a NEW scene (ad) document to the workspace brand's latest approved kit.
+
+    The scene mirror of ``_stamp_approved_brand_kit_at_birth``: create-time only, the
+    caller's explicit ``meta.brand_kit`` is authoritative, and no approved kit (or the
+    fail-closed multi-brand case inside ``latest_approved_brand_kit_ref``) leaves the
+    scene untouched — un-branded, honestly. Ratified 2026-08-23 (genad ruling 1).
+    """
+    meta = scene.get("meta")
+    if not isinstance(meta, dict):
+        return scene
+    if meta.get("brand_kit") is not None:
+        return scene
+    brand_kit_ref = await _brand.latest_approved_brand_kit_ref(conn, workspace_id=workspace_id)
+    if brand_kit_ref is None:
+        return scene
+    stamped = copy.deepcopy(scene)
+    stamped["meta"]["brand_kit"] = brand_kit_ref
+    return stamped
+
+
 def scene_status(scene: JsonObject) -> str:
     status = scene.get("meta", {}).get("status", {})
     if isinstance(status, dict):
@@ -177,6 +200,9 @@ async def create_document(
         status = "draft"
         brand_ref = (scene.get("theme") or {}).get("brand_kit")
     else:
+        scene = await _stamp_approved_brand_kit_at_scene_birth(
+            conn, workspace_id=workspace_id, scene=scene
+        )
         document_id = str(scene["meta"]["id"])
         title = str(scene["meta"]["title"])
         status = scene_status(scene)
