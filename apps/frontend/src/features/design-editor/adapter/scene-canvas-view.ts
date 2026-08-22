@@ -500,14 +500,41 @@ export interface SceneArtboardModel {
 }
 
 /**
+ * AD4.C: one node's live gesture geometry — a DESCRIPTOR-space box (the space
+ * the gesture machine and the operation builders speak), for the duration of a
+ * drag or a resize.
+ *
+ * It is a render-time override and nothing else. The engine's scene owns the
+ * document's values (AD4.R), so a gesture in flight writes nowhere: the
+ * descriptor tree below is rebuilt with this box substituted, the overlay
+ * outlines the same box, and dropping it repaints the document's own truth.
+ */
+export interface ScenePreview {
+  nodeId: NodeId;
+  box: Box;
+  /** Degrees. Unchanged by v1's two gestures (§1.9: no rotate handle), so it
+   * is the node's own rotation — carried so the override is complete. */
+  rotation: number;
+}
+
+/**
  * Build the descriptor tree for one page of a scene.
  *
  * Returns null when the page is not in the scene (a document whose pages
  * changed under a stale page id renders nothing rather than throwing).
+ *
+ * AD4.C restores the one thing this builder dropped when it was lifted from
+ * the source canvas: the in-gesture `preview` override
+ * (`CanvasKitCanvas.tsx:373-388`), which was "a write-path concern" until the
+ * write path existed. It is applied HERE, at descriptor-build time, for the
+ * same reason it is upstream — the draw loop then needs no gesture awareness at
+ * all, and the previewed node is drawn by exactly the code that draws every
+ * other node.
  */
 export function sceneArtboardModel(
   scene: Scene,
   pageId: PageId | null,
+  preview: ScenePreview | null = null,
 ): SceneArtboardModel | null {
   const page = pageId ? scene.pages[pageId] : null;
   if (!page) {
@@ -516,14 +543,14 @@ export function sceneArtboardModel(
   const descriptor = pageDescriptor(page);
   const inFlow = page.children
     .filter((nodeId) => !isNodePinned(scene, nodeId))
-    .map((nodeId) => buildDrawNode(scene, page, nodeId, null))
+    .map((nodeId) => buildDrawNode(scene, page, nodeId, null, preview))
     .filter((node): node is DrawNode => node !== null);
   return {
     page: descriptor,
     // Pinned nodes are skipped inline and hoisted here, painted last (above
     // in-flow content) from their page-space computed box — the engine's own
     // `pinned_paint_pass` order.
-    nodes: [...inFlow, ...pinnedDrawNodes(scene, page)],
+    nodes: [...inFlow, ...pinnedDrawNodes(scene, page, preview)],
     rect: { x: 0, y: 0, width: descriptor.width, height: descriptor.height },
   };
 }
@@ -533,12 +560,25 @@ function buildDrawNode(
   page: Page,
   nodeId: NodeId,
   parentComputedOrigin: { x: number; y: number } | null,
+  preview: ScenePreview | null,
 ): DrawNode | null {
   const node = scene.nodes[nodeId];
   if (!node) {
     return null;
   }
   const descriptor = nodeDescriptor(scene, node, page, parentComputedOrigin);
+  if (preview && preview.nodeId === nodeId) {
+    // The preview box is page-ABSOLUTE descriptor px; a descriptor's x/y are
+    // PARENT-relative (`nodeDescriptor` subtracts the parent's computed
+    // origin), so the same offset comes back off here — in descriptor px,
+    // which is why it is scaled. Upstream's own arithmetic.
+    const scale = pageDescriptor(page).unitScale;
+    descriptor.x = preview.box.x - (parentComputedOrigin?.x ?? 0) * scale;
+    descriptor.y = preview.box.y - (parentComputedOrigin?.y ?? 0) * scale;
+    descriptor.width = preview.box.width;
+    descriptor.height = preview.box.height;
+    descriptor.rotation = preview.rotation;
+  }
   const childOrigin = node.computed
     ? {
         x: node.computed.layout_bounds.x,
@@ -549,12 +589,16 @@ function buildDrawNode(
     descriptor,
     children: node.children
       .filter((childId) => !isNodePinned(scene, childId))
-      .map((childId) => buildDrawNode(scene, page, childId, childOrigin))
+      .map((childId) => buildDrawNode(scene, page, childId, childOrigin, preview))
       .filter((child): child is DrawNode => child !== null),
   };
 }
 
-function pinnedDrawNodes(scene: Scene, page: Page): DrawNode[] {
+function pinnedDrawNodes(
+  scene: Scene,
+  page: Page,
+  preview: ScenePreview | null,
+): DrawNode[] {
   const out: DrawNode[] = [];
   const walk = (nodeId: NodeId) => {
     const node = scene.nodes[nodeId];
@@ -562,7 +606,7 @@ function pinnedDrawNodes(scene: Scene, page: Page): DrawNode[] {
       return;
     }
     if (isNodePinned(scene, nodeId)) {
-      const built = buildDrawNode(scene, page, nodeId, null);
+      const built = buildDrawNode(scene, page, nodeId, null, preview);
       if (built) {
         out.push(built);
       }
@@ -701,18 +745,37 @@ export function selectionOutlineForBox({
 export function sceneSelectionOutline({
   artboard,
   pageId,
+  preview,
   scene,
   selectedNodeId,
   viewport,
 }: {
   artboard: SceneArtboardModel | null;
   pageId: PageId | null;
+  /** AD4.C: a gesture in flight on THIS node — the outline (and its handles)
+   * follow the live box, so the chrome and the previewed pixels move together
+   * as one thing. Upstream's own `selectionBox` memo
+   * (`CanvasKitCanvas.tsx:462-464`). A preview for another node is ignored. */
+  preview?: ScenePreview | null;
   scene: Scene | null;
   selectedNodeId: NodeId | null;
   viewport: WorkspaceViewport;
 }): SceneSelectionOutline | null {
   if (!scene || !artboard || !selectedNodeId) {
     return null;
+  }
+  if (preview && preview.nodeId === selectedNodeId) {
+    // The preview box is descriptor px and `selectionOutlineForBox` takes
+    // scene units (it applies the `unitScale` multiply itself), so the one
+    // conversion happens here rather than the box being carried in two spaces.
+    const scale = artboard.page.unitScale;
+    return selectionOutlineForBox({
+      artboard,
+      box: sceneBoxFromDescriptor(preview.box, scale),
+      nodeId: preview.nodeId,
+      rotation: preview.rotation,
+      viewport,
+    });
   }
   const { selectionBox } = deriveSelectionChromeModel(scene, {
     activePageId: pageId,
@@ -739,6 +802,18 @@ export function sceneSelectionOutline({
  * G-A-approved geometry; **enabled with Lane C** (see the handle constants
  * above for why it is not rendered yet).
  */
+/** A descriptor-px box back in the scene units `selectionOutlineForBox` takes
+ * — the inverse of its own `unitScale` multiply, for a gesture's live box. */
+function sceneBoxFromDescriptor(box: Box, unitScale: number): Box {
+  const scale = isPositiveFinite(unitScale) ? unitScale : 1;
+  return {
+    x: box.x / scale,
+    y: box.y / scale,
+    width: box.width / scale,
+    height: box.height / scale,
+  };
+}
+
 export function selectionHandleRects(
   outline: SceneSelectionOutline,
 ): Array<{ x: number; y: number; size: number }> {

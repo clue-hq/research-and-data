@@ -1,0 +1,398 @@
+import {
+  dragActionToOperations,
+  handleAtPoint,
+  resizeActionToOperation,
+} from "../engine/scene/canvaskitGestures";
+import type { NodeId, Operation, PageId, Scene } from "../engine/scene/contracts";
+import type { GestureAction, PressTarget } from "../engine/scene/gestureMachine";
+import { getNode, isNodeDirectGeometryEditable } from "../engine/scene/sceneQueries";
+import { deriveSelectionChromeModel } from "../engine/scene/selectionChrome";
+import type { Box, Point, ResizeHandle } from "../engine/scene/transformerMath";
+import type { SceneArtboardModel, ScenePreview } from "./scene-canvas-view";
+
+/**
+ * AD4.C: every decision on-canvas direct manipulation makes that is NOT a DOM
+ * event or a WebGL call — the twin of AD2.5's `scene-selection.ts` for the
+ * WRITE half of the pointer.
+ *
+ * The component around this file owns pointer events and a CanvasKit surface,
+ * so (as everywhere on this lane) what could be a function IS one, here,
+ * proven against AD2.2's harvested bytes. The host below it is thin: it
+ * converts a pointer event into a workspace point, asks this file what the
+ * press grabbed, feeds the pure `gestureReducer`, and applies the effect this
+ * file resolves for each action it gets back.
+ *
+ * ── THREE SPACES, AND WHICH ONE EACH THING SPEAKS ────────────────────────
+ * `canvaskitGestures.ts` names them, and the whole file is about not mixing
+ * them up:
+ *
+ *   • **stage px** — the pointer's offset inside the stage div, and the units
+ *     the G-A selection overlay is stroked in. Pan and zoom live here.
+ *   • **descriptor px** — canvas px at zoom 1 (= scene units x the page's
+ *     `unitScale`). The gesture machine, the transformer math, the operation
+ *     builders and the draw descriptors ALL work here, so this is the space
+ *     every `PressTarget` box and every preview box below is in.
+ *   • **scene units** — the engine's own `computed` coordinates, which
+ *     `engine.hitTest` takes and which `deriveSelectionChromeModel` answers in.
+ *
+ * The two conversions are `workspace point - artboard origin` (stage→
+ * descriptor, once the viewport is undone) and `x unitScale` (scene→
+ * descriptor). Both are invisible on the seeded `pt` page (unitScale 1) and
+ * wrong by 96x on an `in` one, which is why both are unit-tested against a
+ * non-identity unit — the same trap AD2.5's divide and G-A's multiply are.
+ *
+ * ── WHAT V1 IS (§1.9) ────────────────────────────────────────────────────
+ * Drag-to-move and CORNER resize, and nothing else: no rotate handle, no
+ * marquee, no drag-reorder of managed children, no managed resize. Those are
+ * all reachable in the shared machinery this file drives, so each one is
+ * refused HERE, deliberately and by name, rather than left to chance.
+ */
+
+/**
+ * The artboard's origin in descriptor space.
+ *
+ * The platform mounts ONE artboard, and `sceneArtboardModel` places it at the
+ * workspace origin (`rect: {x: 0, y: 0, …}`) — where the upstream editor has a
+ * placement grid of pages, each with its own offset. So the page origin the
+ * operation builders take is the zero point, and the descriptor boxes below are
+ * page-local already.
+ *
+ * It is not a decorative zero: `canvasDragOperations`/`canvasResizeOperation`
+ * subtract exactly this value back off (`canvasOperations.ts:88-89`) after
+ * `dragActionToOperations` adds it on (`canvaskitGestures.ts:94-95`), so any
+ * other value would cancel out identically. Zero is the honest one.
+ */
+export const SCENE_PAGE_ORIGIN: Point = { x: 0, y: 0 };
+
+/**
+ * Ruling C-6: v1 accepts the FOUR CORNERS and nothing else.
+ *
+ * `handleAtPoint` answers with any of the eight resize handles or `"rotate"`,
+ * because the upstream overlay draws all nine. The G-A ruling drew four
+ * corners, so an edge or rotate answer here is not a handle at all — the press
+ * falls through to the node hit-test underneath it, which is what a press
+ * inside the box means anyway.
+ */
+export const CORNER_RESIZE_HANDLES: ResizeHandle[] = [
+  "top-left",
+  "top-right",
+  "bottom-left",
+  "bottom-right",
+];
+
+/** What a press grabbed, plus whether a MOVE may promote it into a gesture. */
+export interface SceneGesturePress {
+  target: PressTarget;
+  /**
+   * Ruling C-5 / R5, enforced at the SOURCE rather than at the commit: the
+   * host dispatches `move` events only while this is true, so a press that
+   * may not drag never reaches `beginGesture` at all — no preview, no
+   * committed action, nothing to filter out later. The press itself still
+   * reduces to a `select`, so a locked node, a layout-managed child and a
+   * press made while an agent turn is in flight all stay selectable.
+   *
+   * It is also what keeps the marquee out of v1: an empty press is never
+   * armed, so the reducer's `empty → marquee` promotion (`gestureMachine.ts`
+   * `beginGesture`) has no way to fire, and click-on-empty keeps its AD2.5
+   * meaning — clear the selection.
+   */
+  armed: boolean;
+}
+
+/** A press on nothing: AD2.5's clear-selection, and never a gesture. */
+export const EMPTY_SCENE_PRESS: SceneGesturePress = {
+  target: { kind: "empty" },
+  armed: false,
+};
+
+/**
+ * A workspace-space pointer point in artboard-local DESCRIPTOR px.
+ *
+ * The first half of AD2.5's chain (`sceneHitPoint`), stopped one step early —
+ * before the `unitScale` divide that takes it into the engine's units. That is
+ * the space the gesture machine and the operation builders speak, so it is the
+ * space the reducer's origin, its move points and every box below are in.
+ *
+ * Deliberately NOT bounds-checked, where `sceneHitPoint` is: a selection box
+ * at the page edge carries handles centred ON that edge, so half of a corner
+ * handle's grab radius lies outside the artboard and a press there is a real
+ * resize, not a press on nothing. The bounds check belongs to the NODE path,
+ * which still runs through `sceneHitPoint` unchanged.
+ */
+export function sceneDescriptorPoint(
+  workspacePoint: Point,
+  artboard: SceneArtboardModel,
+): Point {
+  return {
+    x: workspacePoint.x - artboard.rect.x,
+    y: workspacePoint.y - artboard.rect.y,
+  };
+}
+
+/**
+ * The corner handle this press is grabbing on the CURRENT selection, or null.
+ *
+ * Asked FIRST, before the hit test — the upstream host's own order
+ * (`CanvasKitCanvas.tsx:587-615`): a handle sits half outside its node's box,
+ * over whatever is behind it, so resolving the hit first would make the
+ * bottom-right handle of a node select the frame under it instead of resizing.
+ *
+ * Gated on the chrome model's `showResizeHandles`, which is the same predicate
+ * the overlay renders handles from — so a press can only ever grab a handle
+ * that is actually drawn. `layoutManagedEditing` is deliberately never passed
+ * (§1.9: no managed resize in v1), which leaves `showResizeHandles` equal to
+ * `showHandles`, i.e. `isNodeDirectGeometryEditable`.
+ *
+ * The grab radius is `HANDLE_HIT_RADIUS` in SCREEN px. `handleAtPoint` divides
+ * it by the scale between its point space and the screen — and because
+ * descriptor px ARE workspace units here (`sceneArtboardModel`'s rect is the
+ * page box in descriptor px, and the viewport is what maps workspace→screen),
+ * that scale is exactly `viewport.zoom`, with `unitScale` already folded into
+ * the box. Both are tested.
+ */
+export function scenePressHandleTarget({
+  artboard,
+  gesturesEnabled,
+  pageId,
+  point,
+  scene,
+  selectedNodeId,
+  zoom,
+}: {
+  artboard: SceneArtboardModel;
+  /** R5: false while the G-H gate holds — no handles, so nothing to grab. */
+  gesturesEnabled: boolean;
+  pageId: PageId | null;
+  /** The press, in artboard-local descriptor px. */
+  point: Point;
+  scene: Scene;
+  selectedNodeId: NodeId | null;
+  /** The viewport's zoom — what makes the grab radius screen-constant. */
+  zoom: number;
+}): PressTarget | null {
+  if (!gesturesEnabled || !selectedNodeId) {
+    return null;
+  }
+  const { selectionBox, showResizeHandles } = deriveSelectionChromeModel(scene, {
+    activePageId: pageId,
+    selectedNodeId,
+  });
+  if (!selectionBox || !showResizeHandles) {
+    return null;
+  }
+  const box = descriptorBox(selectionBox.box, artboard.page.unitScale);
+  const handle = handleAtPoint(point, box, selectionBox.rotation, zoom);
+  if (handle === null || !CORNER_RESIZE_HANDLES.includes(handle as ResizeHandle)) {
+    // Ruling C-6: "rotate" and the four edge handles are not v1 targets.
+    return null;
+  }
+  return {
+    kind: "handle",
+    nodeId: selectionBox.nodeId,
+    handle: handle as ResizeHandle,
+    box,
+    rotation: selectionBox.rotation,
+  };
+}
+
+/**
+ * The press target for the node a hit test resolved to (§5's representable
+ * ancestor), and whether it may be dragged.
+ *
+ * The box is the HIT node's own laid-out box, read through the same
+ * `deriveSelectionChromeModel` oracle the overlay reads the SELECTED node's
+ * from — so the geometry the drag starts from and the geometry the outline
+ * draws can never be derived two different ways. A node the engine has not laid
+ * out yet has no box at all; it still selects (AD2.5's behaviour, and the
+ * harvest's honest at-rest state is `computed: null` on every node), but there
+ * is nothing to move, so the press is not armed.
+ */
+export function scenePressNodeTarget({
+  artboard,
+  gesturesEnabled,
+  nodeId,
+  pageId,
+  scene,
+}: {
+  artboard: SceneArtboardModel;
+  gesturesEnabled: boolean;
+  nodeId: NodeId | null;
+  pageId: PageId | null;
+  scene: Scene;
+}): SceneGesturePress {
+  if (!nodeId || !scene.nodes[nodeId]) {
+    return EMPTY_SCENE_PRESS;
+  }
+  const { selectionBox } = deriveSelectionChromeModel(scene, {
+    activePageId: pageId,
+    selectedNodeId: nodeId,
+  });
+  const box = selectionBox
+    ? descriptorBox(selectionBox.box, artboard.page.unitScale)
+    : { x: 0, y: 0, width: 0, height: 0 };
+  return {
+    target: {
+      kind: "node",
+      nodeId,
+      box,
+      rotation: selectionBox?.rotation ?? 0,
+    },
+    // Ruling C-5: locked and layout-managed nodes select and never move. The
+    // operation builders refuse them too (`canvasOperations.ts:85-87,296-299`)
+    // — silently, which is exactly why the refusal is ALSO made here: a press
+    // that cannot commit must not preview either, or the ad appears to move
+    // and then snaps back with nothing said.
+    armed:
+      gesturesEnabled &&
+      Boolean(selectionBox) &&
+      isNodeDirectGeometryEditable(scene, nodeId),
+  };
+}
+
+/** What the host does with one reduced `GestureAction`. */
+export type SceneGestureEffect =
+  | { kind: "none" }
+  /** Ruling C-8: `additive` is dropped — multi-select is not this task's. */
+  | { kind: "select"; nodeId: NodeId | null }
+  /** A live, uncommitted gesture: a render-time override, never a write. */
+  | { kind: "preview"; preview: ScenePreview | null }
+  /** The gesture ended: drop the preview, then write these (if any). */
+  | { kind: "commit"; operations: Operation[]; intent: string };
+
+/**
+ * The action the reducer returned, resolved into the one thing the host does.
+ *
+ * The whole of AD4.C's R2 in one pure function, so the host holds no policy:
+ *
+ *  • `select` → the canvas's existing `commitSelection`.
+ *  • an uncommitted `drag`/`resize` → the preview override. The document scene
+ *    is NEVER touched by a gesture in flight (AD4.R: the engine scene owns
+ *    document values), so Escape or a pointer-cancel is just "drop the
+ *    preview" and the artboard repaints at the document's own truth.
+ *  • a committed `drag`/`resize` → the EXISTING operation builders, which is
+ *    the whole point of the shared machinery: the geometry rules (guide
+ *    snapping, parent-bounds clamping, pinned-descendant carry, the
+ *    scale-factor resize) are the design subsystem's, not re-derived here.
+ *
+ * `rotate` and `marquee` are unreachable in v1 by construction — no rotate
+ * target is ever built (Ruling C-6) and an empty press is never armed, so the
+ * reducer's marquee promotion cannot fire — and are refused here as the second
+ * lock on the same door.
+ *
+ * An empty `operations` array is a real answer, not a failure: it is what the
+ * builders return for a node they refuse. The host must not call the write path
+ * with it — a write that changes nothing is not a write.
+ */
+export function sceneGestureEffect(
+  action: GestureAction,
+  scene: Scene,
+  pageId: PageId | null,
+): SceneGestureEffect {
+  if (action.kind === "select") {
+    return { kind: "select", nodeId: action.nodeId };
+  }
+  if (action.kind !== "drag" && action.kind !== "resize") {
+    // "none", and the two v1 refuses to reach: "rotate" and "marquee".
+    return { kind: "none" };
+  }
+  const page = pageId ? scene.pages[pageId] : null;
+  const node = getNode(scene, action.nodeId);
+  if (!page || !node) {
+    return { kind: "none" };
+  }
+  // Rotation is not a v1 gesture, so it is the node's own, unchanged — the
+  // same value upstream reads off the render descriptor.
+  const rotation = node.transform.rotation;
+  if (!action.committed) {
+    return {
+      kind: "preview",
+      preview: { nodeId: action.nodeId, box: action.box, rotation },
+    };
+  }
+  if (action.kind === "drag") {
+    return {
+      kind: "commit",
+      operations: dragActionToOperations(
+        action.box,
+        scene,
+        node,
+        page,
+        SCENE_PAGE_ORIGIN,
+      ),
+      intent: SCENE_DRAG_INTENT,
+    };
+  }
+  const operation = resizeActionToOperation(
+    action.box,
+    rotation,
+    scene,
+    node,
+    page,
+    SCENE_PAGE_ORIGIN,
+    // §1.9: `allowManagedResize` stays false — no managed resize in v1.
+  );
+  return {
+    kind: "commit",
+    operations: operation ? [operation] : [],
+    intent: SCENE_RESIZE_INTENT,
+  };
+}
+
+/**
+ * The write labels, following the lane's own convention: the intent names the
+ * SURFACE the edit came from (`"inspector: <property>"` at
+ * `use-scene-inspector-writes.ts:301,337`), so a canvas gesture says canvas.
+ */
+export const SCENE_DRAG_INTENT = "canvas: drag";
+export const SCENE_RESIZE_INTENT = "canvas: resize";
+
+/**
+ * Whether the G-A corner handles are offered for the current selection.
+ *
+ * Three conditions, and each says something different:
+ *
+ *  • the chrome model's `showResizeHandles` — the DOCUMENT's answer (a locked
+ *    or layout-managed node cannot be dragged, so a handle on it would be a
+ *    fake affordance; that is the same reason the handles waited for this task
+ *    at all);
+ *  • `!engineDisabled` — with no engine there is no hit test, no apply and no
+ *    selection change (AD2.5/G-D), so nothing a handle promises can happen;
+ *  • `!gestureDisabled` — Gate G-H: while an agent turn is in flight the
+ *    human's direct manipulation is off, so the affordance goes with it.
+ *
+ * The OUTLINE is unaffected by all three: a locked node, a read-only canvas and
+ * an in-flight turn all still show the user what is selected.
+ */
+export function sceneSelectionHandlesVisible({
+  engineDisabled,
+  gestureDisabled,
+  pageId,
+  scene,
+  selectedNodeId,
+}: {
+  engineDisabled: boolean;
+  gestureDisabled: boolean;
+  pageId: PageId | null;
+  scene: Scene | null;
+  selectedNodeId: NodeId | null;
+}): boolean {
+  if (!scene || !selectedNodeId || engineDisabled || gestureDisabled) {
+    return false;
+  }
+  return deriveSelectionChromeModel(scene, {
+    activePageId: pageId,
+    selectedNodeId,
+  }).showResizeHandles;
+}
+
+/** A scene-unit box in descriptor px — G-A's own multiply
+ * (`selectionOutlineForBox`), applied to a box rather than a rect. */
+function descriptorBox(box: Box, unitScale: number): Box {
+  const scale = Number.isFinite(unitScale) && unitScale > 0 ? unitScale : 1;
+  return {
+    x: box.x * scale,
+    y: box.y * scale,
+    width: box.width * scale,
+    height: box.height * scale,
+  };
+}
