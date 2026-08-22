@@ -4,7 +4,6 @@ import Image from "next/image";
 import { createContext, useContext, useState, type ReactNode } from "react";
 import {
   backgroundFillCommits,
-  customSizeForPreset,
   mintedStrokeColor,
   mintedStrokeWidth,
   type SceneInspectorState,
@@ -446,8 +445,10 @@ function AdTextInspector({
   //
   // RULING A9 makes this row's two fields move TOGETHER, so each half re-seeds
   // the other's display — the sibling rule step 1 settled for the Custom W/H
-  // boxes (`customSizeForPreset`), applied to the row A9 has just made live on
-  // strokeless nodes. Both decisions are the adapter's (`mintedStrokeWidth` /
+  // boxes (a re-seed since retired in AD4.R-5, when those boxes became live
+  // fields over the hydrated page size), applied to the row A9 has just made
+  // live on strokeless nodes. Both decisions are the adapter's
+  // (`mintedStrokeWidth` /
   // `mintedStrokeColor`), never restated here, and both re-seed LOCAL state:
   // routing them through `setValue` would fire a second, spurious write for
   // one user action.
@@ -544,61 +545,10 @@ function AdCanvasInspector({
     onToken: (label) => setValue("tokenBackgroundColor", label),
     paletteOptions,
   });
-  // §2 delta (contract row 1): Custom reveals W/H (px only). AD4.0 binds the
-  // pair to the write seam — they were the last designed ad control still
-  // holding draft state and dispatching nothing at all.
-  //
-  // They COMMIT ON BLUR/ENTER, not per keystroke (`InspectorInput`'s opt-in
-  // `onCommit`, the W4.2 ratified commit model). This is upstream parity, not
-  // a local preference: the standalone editor's own page W/H fields are
-  // `NumberField`s committing the same way (`DocumentPageSection.tsx:105-118`).
-  // Per keystroke, typing "108" persisted THREE document versions and left the
-  // page at 108px wide — proven in the browser at review — so one digit typed
-  // before switching tabs would durably resize the ad to 1px. The draft below
-  // is what the user sees while typing; only the commit reaches the seam.
-  // (§1.2's Size box keeps its per-keystroke behaviour: a font size is not a
-  // page resize, and changing it is not this step's row.)
-  //
-  // The pair keeps BOTH the typed draft and the value last committed, because
-  // the second is what decides whether a blur is a write at all — and both must
-  // move when the SELECT beside them resizes the page. A successful write does
-  // not remount the inspector (§4 / the AD3.2 keying rule), so nothing else
-  // would: the boxes kept their mount-time seed and offered a size the document
-  // no longer had (proven in the browser: Custom 1100x1600 → pick the LinkedIn
-  // square → re-open Custom → still 1100/1600 against a 1200x1200 page). The
-  // re-seed is deliberately narrow — only the preset rows, the only writes that
-  // can resize the page today — and is NOT a general re-hydrate-on-write
-  // mechanism, which would fight §4.
-  //
-  // It re-seeds this local state rather than the controller's, because
-  // `setValue` IS the dispatch: routing the re-seed through it would fire a
-  // second, spurious `customWidth`/`customHeight` write for one user action.
-  // The controller's own fields stay what they are — the mount-time hydration
-  // seed these two are born from.
-  const [custom, setCustom] = useState(() => {
-    const seed = { height: state.customHeight, width: state.customWidth };
-    return { committed: seed, draft: seed };
-  });
-  const draftCustomSize = (axis: "height" | "width", value: string) =>
-    setCustom((current) => ({
-      ...current,
-      draft: { ...current.draft, [axis]: value },
-    }));
-  const commitCustomSize = (axis: "height" | "width") => {
-    // Read from this render's state and dispatch OUTSIDE the updater — a
-    // `setValue` inside one would be a side effect React is free to run twice.
-    const value = custom.draft[axis];
-    if (value === custom.committed[axis]) return;
-    setValue(axis === "width" ? "customWidth" : "customHeight", value);
-    setCustom((current) => ({
-      ...current,
-      committed: { ...current.committed, [axis]: value },
-    }));
-  };
   // §1.1 row 2 / Ruling A15.2: the Background fill control's one handler. The
   // DECISION is pure and lives in the adapter (`backgroundFillCommits`, which
   // states the two browser-proven defects it fixes); this is only the dispatch,
-  // exactly as `changeSizePreset` below is only the dispatch plus its re-seed.
+  // exactly as `changeSizePreset` below is only the dispatch.
   //
   // A mode switch to Solid returns TWO commits — the type (so the control
   // renders the swatch) and the colour (the row that actually carries one) —
@@ -635,22 +585,30 @@ function AdCanvasInspector({
       }
     }
   };
+  // AD4.R: "Custom" is a VIEW choice, not a document fact — it names no size,
+  // writes nothing, and only reveals the W/H boxes (which read the live page
+  // size hydrate always states). Everything else the select shows is the
+  // document's own preset match. Picking a real preset dispatches the write
+  // and drops the view choice; the document answers through hydration.
+  const [customChosen, setCustomChosen] = useState(false);
+  const shownPreset = customChosen ? "Custom" : state.sizePreset;
   const changeSizePreset = (label: string) => {
+    if (label === "Custom") {
+      setCustomChosen(true);
+      return;
+    }
+    setCustomChosen(false);
     setValue("sizePreset", label);
-    // The picked preset IS the page's new size, so the boxes read it — "Custom"
-    // and any unoffered label resize nothing and re-seed nothing.
-    const resized = customSizeForPreset(label);
-    if (resized) setCustom({ committed: resized, draft: resized });
   };
   return (
     <>
       <Section id="dimensions" label="Dimensions" open={state.openSections.dimensions} toggle={() => toggleSection("dimensions")}>
-        <InspectorField label="Size"><InspectorSelect label="Canvas dimensions" onChange={changeSizePreset} options={SIZE_PRESETS} value={state.sizePreset} /></InspectorField>
-        {state.sizePreset === "Custom" ? (
+        <InspectorField label="Size"><InspectorSelect label="Canvas dimensions" onChange={changeSizePreset} options={SIZE_PRESETS} value={shownPreset} /></InspectorField>
+        {shownPreset === "Custom" ? (
           <InspectorField label="Custom size">
             <div className={styles.fieldGrid}>
-              <InspectorInput ariaLabel="Custom width" onChange={(value) => draftCustomSize("width", value)} onCommit={() => commitCustomSize("width")} prefix="W" value={custom.draft.width} />
-              <InspectorInput ariaLabel="Custom height" onChange={(value) => draftCustomSize("height", value)} onCommit={() => commitCustomSize("height")} prefix="H" value={custom.draft.height} />
+              <InspectorInput ariaLabel="Custom width" onCommitValue={(value) => setValue("customWidth", value)} prefix="W" value={state.customWidth} />
+              <InspectorInput ariaLabel="Custom height" onCommitValue={(value) => setValue("customHeight", value)} prefix="H" value={state.customHeight} />
             </div>
           </InspectorField>
         ) : null}

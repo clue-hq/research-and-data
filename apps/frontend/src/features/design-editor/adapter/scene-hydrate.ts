@@ -382,35 +382,6 @@ function numberText(value: number): string {
   return Number.isFinite(value) ? String(value) : "";
 }
 
-/**
- * §1.1: what the Custom W/H boxes must READ once the size SELECT beside them
- * has committed `label` — the same fact `hydrateSceneCanvasState` states for a
- * loaded page, asked of a preset the user just picked instead.
- *
- * It exists because a successful write deliberately does not remount the
- * inspector (§4 / the AD3.2 keying rule), so nothing re-hydrates those two
- * boxes when their SIBLING control resizes the page: they would keep their
- * mount-time seed and display a size the document no longer has (proven in the
- * browser — a page taken from Custom 1100x1600 to the LinkedIn square still
- * offered 1100/1600 when Custom was re-opened). Round 1's finding 2 rule
- * applies unchanged: a field may not display a number the document does not
- * have.
- *
- * `null` for "Custom" and for any label the select does not offer — those name
- * no size and resize nothing, so there is nothing to re-seed. That is exactly
- * the write adapter's own null contract for the same input, read off the same
- * table.
- */
-export function customSizeForPreset(
-  label: string,
-): { height: string; width: string } | null {
-  const preset = SIZE_PRESETS.find((candidate) => candidate.label === label);
-  if (!preset) {
-    return null;
-  }
-  return { height: numberText(preset.height), width: numberText(preset.width) };
-}
-
 /** Ruling A15.2: ONE commit the Background section makes — the property and
  * the value, exactly as `useInspectorController.setValue` takes them. */
 export type BackgroundCommit =
@@ -420,8 +391,7 @@ export type BackgroundCommit =
 /**
  * §1.1 row 2 / Ruling A15.2: what ONE change of the Background fill control
  * commits — the whole handler's decision, pure, so the component holds none of
- * it (the `customSizeForPreset` precedent from AD4.0 step 1, which likewise
- * dispatches AND keeps a sibling control honest inside one handler).
+ * it: one handler that dispatches AND keeps a sibling control honest.
  *
  * Two browser-proven defects live here, and they are one bug: the fill OBJECT
  * in controller state is seeded once at mount and does not track the writes
