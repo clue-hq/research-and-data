@@ -63,6 +63,19 @@ const FIXTURE_PADDING = {
   right: STATIC_ZERO,
   top: STATIC_ZERO,
 };
+/** The ad scaffolding's own Radius all/TL/TR/BR/BL values — all `STATIC_ZERO`,
+ * exactly what its five `StaticInput`s rendered before step 3 bound them — for
+ * the FIXTURE path only, same as `FIXTURE_PADDING`. The shared `DEFAULT_STATE`
+ * seeds the WEB dummy's `all: "0"` beside corners of `"4"`, which would make
+ * this section state two different radii at once. See `AdDummyInspector`'s
+ * `initial` below. */
+const FIXTURE_RADIUS = {
+  all: STATIC_ZERO,
+  bottomLeft: STATIC_ZERO,
+  bottomRight: STATIC_ZERO,
+  topLeft: STATIC_ZERO,
+  topRight: STATIC_ZERO,
+};
 
 /**
  * AD4.B step 1: what a caller supplies to drive an ad schema from a REAL scene
@@ -788,16 +801,23 @@ export function AdDummyInspector({
   // rebuilt from the live prop every render, which is what makes it the live
   // merge source too.
   //
-  // AD4.B step 2 needs exactly TWO of them, and only for the FIXTURE path: the
-  // Auto Layout section's Wrap and Pad boxes read `wrap`/`padding`, two keys the
-  // web lane authored long before this panel existed, so `DEFAULT_STATE` seeds
-  // them with the WEB dummy's values (`true`, `4/8/8/4`) rather than the ad
-  // scaffolding's ("No wrap", zeros). Restating them here keeps the mock
-  // rendering what it rendered before AND leaves the shared defaults — and so
-  // the web inspector — untouched. On a real node they are never seen: ruling
-  // L10 makes hydration state both for every auto-layout node, and `hydrated`
-  // spreads last.
-  const initial = { padding: FIXTURE_PADDING, wrap: false, ...hydrated };
+  // AD4.B steps 2 and 3 need exactly THREE of them, and only for the FIXTURE
+  // path: the Auto Layout section's Wrap and Pad boxes read `wrap`/`padding`
+  // and the Shape section's five boxes read `radius`, keys the web lane
+  // authored long before this panel existed, so `DEFAULT_STATE` seeds them with
+  // the WEB dummy's values (`true`, `4/8/8/4`, `all: "0"` beside corners of
+  // `"4"`) rather than the ad scaffolding's ("No wrap", zeros, zeros).
+  // Restating them here keeps the mock rendering what it rendered before AND
+  // leaves the shared defaults — and so the web inspector — untouched. On a
+  // real node they are never seen: ruling L10 makes hydration state wrap and
+  // padding for every auto-layout node and `scene-hydrate` states all five
+  // radius keys as one object, and `hydrated` spreads last.
+  const initial = {
+    padding: FIXTURE_PADDING,
+    radius: FIXTURE_RADIUS,
+    wrap: false,
+    ...hydrated,
+  };
   const controller = useInspectorController([], selection, initial, addressing, {
     // AD4.R: live only when a real scene is behind the panel — the dummy
     // fixture path (no hydration) stays the interactive mock it shipped as.
