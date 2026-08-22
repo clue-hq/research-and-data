@@ -1858,9 +1858,16 @@ pub fn build_convert_container_layout(
     let mut operations = Vec::new();
     let mut touched = vec![EditTargetRef::Node(node_id.clone())];
 
-    if layout_mode == LayoutMode::Free {
-        free_container_operations(scene, node, &node_id, &mut operations, &mut touched)?;
-    }
+    // Leaving the solve bakes the container's own Hug dims alongside its
+    // children (see `baked_container_size`); returning to Stack changes no
+    // sizes — the solver re-owns them.
+    let size = if layout_mode == LayoutMode::Free {
+        let container_bounds =
+            free_container_operations(scene, node, &node_id, &mut operations, &mut touched)?;
+        baked_container_size(node, &container_bounds)
+    } else {
+        FieldPatch::Unchanged
+    };
 
     operations.push(Operation::UpdateNode {
         node_id: node_id.clone(),
@@ -1869,6 +1876,7 @@ pub fn build_convert_container_layout(
                 layout_mode,
                 ..current_props
             }),
+            size,
             computed: OptionalFieldPatch::Clear,
             ..NodePatch::default()
         },
@@ -1891,7 +1899,7 @@ fn free_container_operations(
     node_id: &NodeId,
     operations: &mut Vec<Operation>,
     touched: &mut Vec<EditTargetRef>,
-) -> Result<(), EditError> {
+) -> Result<Rect, EditError> {
     let container_bounds = solved_bounds(node, node_id, "freeing")?;
     for child_id in &node.children {
         let Some(child) = scene.nodes.get(child_id) else {
@@ -1936,7 +1944,37 @@ fn free_container_operations(
             touched.push(EditTargetRef::Node(child_id.clone()));
         }
     }
-    Ok(())
+    Ok(container_bounds)
+}
+
+/// The container's OWN size patch for a Stack→Free conversion. A `Hug`
+/// dimension means different things on the two sides: the Stack solve hugs
+/// content PLUS padding, while the Free path natural-sizes from child
+/// extents alone — so a padded hug container visibly contracts the moment
+/// it is frozen (the Story-ad live-proof lost exactly its bottom padding,
+/// and an EMPTY padded container collapses to 0×0). Hug therefore bakes to
+/// Fixed at the solved extent, the same trade `bake_dimension` makes for a
+/// child. Fixed keeps its authored value; `Fill` is left alone because the
+/// Free path still resolves it against the parent (it does not move) and
+/// baking it would change tracking behavior; `Token` keeps its binding —
+/// the brand pass rewrites resolvable dimension tokens to Fixed before
+/// layout ever runs, so a token surviving here is the already-LUMV-warned
+/// unresolved case, and severing brand governance to steady a broken
+/// binding is the worse trade.
+fn baked_container_size(node: &Node, container_bounds: &Rect) -> FieldPatch<SizeSpec> {
+    let bake = |dimension: &Dimension, solved: f64| match dimension {
+        Dimension::Hug => Dimension::Fixed(solved),
+        other => other.clone(),
+    };
+    let baked = SizeSpec {
+        width: bake(&node.size.width, container_bounds.width),
+        height: bake(&node.size.height, container_bounds.height),
+    };
+    if baked == node.size {
+        FieldPatch::Unchanged
+    } else {
+        FieldPatch::Set(baked)
+    }
 }
 
 /// Handoff-absolute (Moda model, MODA-EDITOR-PLAN §2): once the agent's turn
@@ -1963,7 +2001,8 @@ pub fn build_freeze_layout(scene: &Scene) -> Result<EditBatch, EditError> {
             continue;
         }
 
-        free_container_operations(scene, node, node_id, &mut operations, &mut touched)?;
+        let container_bounds =
+            free_container_operations(scene, node, node_id, &mut operations, &mut touched)?;
         operations.push(Operation::UpdateNode {
             node_id: node_id.clone(),
             patch: NodePatch {
@@ -1971,6 +2010,9 @@ pub fn build_freeze_layout(scene: &Scene) -> Result<EditBatch, EditError> {
                     layout_mode: LayoutMode::Free,
                     ..current_props
                 }),
+                // The container's own Hug dims bake with its children —
+                // zero-motion includes the container's padded box itself.
+                size: baked_container_size(node, &container_bounds),
                 computed: OptionalFieldPatch::Clear,
                 ..NodePatch::default()
             },
