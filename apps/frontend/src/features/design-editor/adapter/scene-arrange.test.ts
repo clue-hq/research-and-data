@@ -1,12 +1,18 @@
 import assert from "node:assert/strict";
 import { it } from "node:test";
-import type { Node, Scene } from "../engine/scene/contracts";
+import type { Node, Rect, Scene } from "../engine/scene/contracts";
 import { moveNodeToParent } from "../engine/scene/operations";
+import {
+  alignDistributeCommitOperation,
+  alignNodesOperations,
+  distributeNodesOperations,
+} from "../engine/scene/alignDistribute";
 import {
   canAlignNodes,
   canDistributeNodes,
   canGroupNodes,
   canUngroupNode,
+  nodePageSpaceBox,
 } from "../engine/scene/sceneQueries";
 import {
   loadWasmModuleFromDisk,
@@ -61,16 +67,43 @@ function clone(scene: Scene): Scene {
 
 /** A clone of the harvested scene with ONE field of one node replaced — the
  * AD2.4/AD2.5 derived-fixture technique (`scene-apply.test.ts`'s
- * `withNodeField`), so a locked/relocated case is still harvested bytes. */
+ * `withNodeField`), so a locked/relocated case is still harvested bytes.
+ * `base` lets the L19 cases below stack several one-field edits into a single
+ * derived scene without ever hand-writing a node. */
 function withNodeField<Field extends keyof Node>(
   nodeId: string,
   field: Field,
   value: Node[Field],
+  base: Scene = SCENE,
 ): Scene {
-  const scene = clone(SCENE);
+  const scene = clone(base);
   const node = scene.nodes[nodeId];
   assert.ok(node, `fixture node ${nodeId} missing`);
   node[field] = value;
+  return scene;
+}
+
+/** A page-space box for a node the solver never laid out, so the harvested
+ * fixture can answer `nodePageSpaceBox` (which reads `computed.layout_bounds`,
+ * or `absolute_box` for a pinned node). Real ad geometry, stacked so the three
+ * boxes genuinely differ on both axes and align/distribute have work to do. */
+function boxed(x: number, y: number, width = 120, height = 40): Rect {
+  return { x, y, width, height };
+}
+
+function withGeometry(
+  base: Scene,
+  boxes: Readonly<Record<string, Rect>>,
+): Scene {
+  let scene = base;
+  for (const [nodeId, box] of Object.entries(boxes)) {
+    scene = withNodeField(
+      nodeId,
+      "computed",
+      { layout_bounds: { ...box }, render_bounds: { ...box } },
+      scene,
+    );
+  }
   return scene;
 }
 
@@ -302,27 +335,147 @@ it("§1.5 enablement: no scene enables nothing", () => {
 
 /* ── enablement: align / distribute ──────────────────────────────────────── */
 
-it("§1.5 enablement: align needs 2+, distribute needs 3+, and both defer to the ENGINE's own gate", () => {
-  const two = ["rect_accent_bar", "line_divider"];
-  const three = [...two, "image_hero"];
-  assert.equal(arrangeEnablement(SCENE, ["rect_accent_bar"]).align, false);
-  assert.equal(arrangeEnablement(SCENE, two).align, true);
-  assert.equal(arrangeEnablement(SCENE, two).distribute, false);
-  assert.equal(arrangeEnablement(SCENE, three).distribute, true);
-  // The gate is never re-implemented — these ARE `canAlignNodes` /
-  // `canDistributeNodes`, so a rule change upstream moves the buttons.
-  assert.equal(arrangeEnablement(SCENE, three).align, canAlignNodes(SCENE, three));
-  assert.equal(
-    arrangeEnablement(SCENE, three).distribute,
-    canDistributeNodes(SCENE, three),
+/** The stack's three leaf siblings — the selection the browser proof used. */
+const THREE = ["rect_accent_bar", "line_divider", "image_hero"];
+const TWO = ["rect_accent_bar", "line_divider"];
+
+/** The same three siblings PINNED (`position_mode: "absolute"` + a real
+ * `absolute_box`), which is the first of the two shapes
+ * `alignDistributeCommitOperation` can express. Still harvested bytes: three
+ * stacked one-field edits, no hand-written node. */
+function pinnedTrio(): Scene {
+  let scene = SCENE;
+  // Deliberately uneven on BOTH axes, so align-left and distribute-vertical
+  // each genuinely have a node to move.
+  const boxes: Record<string, Rect> = {
+    image_hero: boxed(70, 300),
+    line_divider: boxed(40, 180),
+    rect_accent_bar: boxed(10, 100),
+  };
+  for (const [nodeId, box] of Object.entries(boxes)) {
+    scene = withNodeField(nodeId, "position_mode", "absolute", scene);
+    scene = withNodeField(nodeId, "absolute_box", box, scene);
+  }
+  return scene;
+}
+
+/**
+ * RULING L19 — the defect the live browser proof caught, pinned.
+ *
+ * DELIBERATE FLIP. Before L19 this case asserted `align === true` on `TWO` and
+ * `distribute === true` on `THREE` — the engine's gate, taken at its word. It
+ * is now FALSE, and the old assertions are gone on purpose rather than by
+ * accident: they described enablement that could not commit.
+ *
+ * THE REFUSAL IS OURS, NOT THE ENGINE'S — the first two assertions say so out
+ * loud (the same pattern the root-frame ungroup case uses).
+ */
+it("§1.5 · L19 enablement: children of a PLAIN FRAME refuse align and distribute — the commit can write nothing for them", () => {
+  // The engine's own gates say YES: these are unlocked, not solver-managed, so
+  // `isNodeDirectGeometryEditable` is true for every one of them.
+  assert.equal(canAlignNodes(SCENE, TWO), true);
+  assert.equal(canDistributeNodes(SCENE, THREE), true);
+
+  // …but `alignDistributeCommitOperation` has exactly two branches — pinned
+  // (`absolute_box`) and freehand (`transform`) — and the seeded artboard is a
+  // PLAIN `frame` whose children carry no `position_mode`, so every member
+  // falls off the end of that function and it returns null. Proven on a
+  // derived fixture that DOES have resolvable boxes, so the empty batch below
+  // can only be the null commit and not "never laid out":
+  const laidOut = withGeometry(SCENE, {
+    image_hero: boxed(70, 300),
+    line_divider: boxed(40, 200),
+    rect_accent_bar: boxed(10, 100),
+  });
+  for (const id of THREE) {
+    const node = laidOut.nodes[id]!;
+    const box = nodePageSpaceBox(laidOut, id);
+    assert.ok(box, `${id} should have a resolvable box in this fixture`);
+    assert.equal(
+      alignDistributeCommitOperation(laidOut, node, box),
+      null,
+      `${id} is neither pinned nor freehand, so the commit writes nothing`,
+    );
+  }
+  assert.deepEqual(alignNodesOperations(laidOut, [...THREE], "left"), []);
+  assert.deepEqual(distributeNodesOperations(laidOut, [...THREE], "horizontal"), []);
+
+  // So the buttons must be OFF. Enabling them is the dishonest enablement §1.5
+  // forbids: the live proof clicked "Align top" and got no request, no new
+  // version and no error — the click simply vanished.
+  assert.equal(arrangeEnablement(SCENE, TWO).align, false);
+  assert.equal(arrangeEnablement(SCENE, THREE).align, false);
+  assert.equal(arrangeEnablement(SCENE, THREE).distribute, false);
+  // The same holds once geometry exists — commit-reachability is about the
+  // node's SHAPE, not about whether it has been laid out.
+  assert.equal(arrangeEnablement(laidOut, THREE).align, false);
+  assert.equal(arrangeEnablement(laidOut, THREE).distribute, false);
+});
+
+it("§1.5 · L19 enablement: PINNED members are commit-reachable — align at 2+, distribute at 3+, and the ops are real", () => {
+  const pinned = pinnedTrio();
+  // The count floors, restated on a selection that can actually commit.
+  assert.equal(arrangeEnablement(pinned, ["rect_accent_bar"]).align, false);
+  assert.equal(arrangeEnablement(pinned, TWO).align, true);
+  assert.equal(arrangeEnablement(pinned, TWO).distribute, false);
+  assert.equal(arrangeEnablement(pinned, THREE).align, true);
+  assert.equal(arrangeEnablement(pinned, THREE).distribute, true);
+  // The engine's gate is still the necessary half — never re-implemented, only
+  // ANDed with reachability.
+  assert.equal(canAlignNodes(pinned, THREE), true);
+  assert.equal(canDistributeNodes(pinned, THREE), true);
+  // End-to-end reachability: enabled means the batch is non-empty.
+  assert.ok(alignNodesOperations(pinned, [...THREE], "left").length > 0);
+  assert.ok(
+    distributeNodesOperations(pinned, [...THREE], "vertical").length > 0,
   );
 });
 
+it("§1.5 · L19 enablement: FREEHAND children of a Free container are commit-reachable too", () => {
+  // The commit's second branch. `auto_row_copy` is an auto_layout whose
+  // `layout_mode` is unset (Stack) in the harvested bytes — its children are
+  // solver-managed and the engine's own gate refuses them. Flip that ONE field
+  // to "free" and they become freehand: the human owns their transforms, the
+  // engine's gate opens, and the commit can express the move.
+  const stack = SCENE.nodes.auto_row_copy!;
+  const pair = ["text_headline", "group_proof"];
+  assert.equal(canAlignNodes(SCENE, pair), false);
+  assert.equal(arrangeEnablement(SCENE, pair).align, false);
+
+  let free = withNodeField("auto_row_copy", "layout", {
+    ...stack.layout!,
+    layout_mode: "free",
+  });
+  free = withGeometry(free, {
+    auto_row_copy: boxed(0, 0, 400, 300),
+    group_proof: boxed(60, 140),
+    text_headline: boxed(20, 40),
+  });
+  assert.equal(canAlignNodes(free, pair), true);
+  assert.equal(arrangeEnablement(free, pair).align, true);
+  assert.ok(alignNodesOperations(free, [...pair], "left").length > 0);
+});
+
 it("§1.5 enablement: a LOCKED member refuses align and distribute for the whole set", () => {
-  const locked = withNodeField("line_divider", "locked", true);
-  const three = ["rect_accent_bar", "line_divider", "image_hero"];
-  assert.equal(arrangeEnablement(locked, three).align, false);
-  assert.equal(arrangeEnablement(locked, three).distribute, false);
+  // Pinned, so reachability is not what is doing the refusing here — the lock
+  // is (the engine's `isNodeDirectGeometryEditable` refuses a locked node).
+  const locked = withNodeField("line_divider", "locked", true, pinnedTrio());
+  assert.equal(arrangeEnablement(locked, THREE).align, false);
+  assert.equal(arrangeEnablement(locked, THREE).distribute, false);
+});
+
+it("§1.5 · L19 enablement: ONE unreachable member is enough to refuse the whole set", () => {
+  // Two pinned siblings and one plain-frame child: the engine's gate says yes
+  // to all three, but the batch would move only two of them — a partial align
+  // is not the align the button promises.
+  let mixed = withNodeField("rect_accent_bar", "position_mode", "absolute");
+  mixed = withNodeField("rect_accent_bar", "absolute_box", boxed(10, 100), mixed);
+  mixed = withNodeField("line_divider", "position_mode", "absolute", mixed);
+  mixed = withNodeField("line_divider", "absolute_box", boxed(40, 200), mixed);
+  assert.equal(canAlignNodes(mixed, THREE), true);
+  assert.equal(arrangeEnablement(mixed, TWO).align, true);
+  assert.equal(arrangeEnablement(mixed, THREE).align, false);
+  assert.equal(arrangeEnablement(mixed, THREE).distribute, false);
 });
 
 it("§1.5 enablement: solver-managed Stack children align to nothing", () => {

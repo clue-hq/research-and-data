@@ -6,6 +6,8 @@ import {
   canDistributeNodes,
   canGroupNodes,
   canUngroupNode,
+  isNodeFreehand,
+  isNodePinned,
   parentInfoForNode,
 } from "../engine/scene/sceneQueries";
 
@@ -52,6 +54,31 @@ import {
  * `zOrder` flags are literally "does `zOrderOperation` produce an operation",
  * so a button can never be offered for a step that would write nothing (or
  * hidden from one that would).
+ *
+ * ── RULING L19: ALIGN/DISTRIBUTE ALSO NEED COMMIT-REACHABILITY ────────────
+ * The engine's `canAlignNodes`/`canDistributeNodes` and the engine's own
+ * COMMIT are not the same predicate, and the gap is visible in the shipped
+ * document. The gates ask `isNodeDirectGeometryEditable`, which says yes for
+ * any unlocked node that is not solver-managed — including every child of a
+ * PLAIN `frame`. But `alignDistributeCommitOperation`
+ * (`engine/scene/alignDistribute.ts:140-157`) can only express a move two
+ * ways: `position_mode === "absolute"` → an `absolute_box` update, or
+ * `isNodeFreehand` → a `transform` update. A plain-frame child is NEITHER, so
+ * the commit returns `null` for it and `alignNodesOperations` yields an EMPTY
+ * batch. That is exactly the seeded ad: the artboard is a plain `frame` and
+ * none of its four children carries a `position_mode`, so the live browser
+ * proof found six Alignment buttons and two Distribution buttons ENABLED that
+ * committed zero operations — no request, no version, no error. §1.5 says
+ * buttons disable honestly, so that enablement was a lie.
+ *
+ * The fix here is ADDITIVE and stays on the enablement side: on top of the
+ * engine's gates, every member must also be commit-reachable —
+ * `isNodePinned(scene, id) || isNodeFreehand(scene, id)`, both IMPORTED from
+ * `sceneQueries` so the "which shapes can commit" rule is still stated in one
+ * place upstream and never re-derived here. The ENGINE IS READ-ONLY on this
+ * lane: its gate/commit inconsistency is recorded for the founder, not fixed.
+ * If the engine later teaches the commit a third shape (or tightens its own
+ * gates), this composition loosens with it rather than against it.
  */
 
 export type ZOrderAction = "front" | "forward" | "backward" | "back";
@@ -61,9 +88,12 @@ export interface ArrangeEnablement {
    * relevant edge of the stack, for a locked node, for the page's root frame,
    * and whenever the node or its parent cannot be resolved. */
   zOrder: Record<ZOrderAction, boolean>;
-  /** `canAlignNodes`: 2+ nodes, every one direct-geometry-editable. */
+  /** `canAlignNodes` (2+ nodes, every one direct-geometry-editable) AND every
+   * member commit-reachable — RULING L19. Without the second half a plain-frame
+   * child enables a button that writes nothing. */
   align: boolean;
-  /** `canDistributeNodes`: the same per-node rule at a floor of 3. */
+  /** `canDistributeNodes` (the same per-node rule at a floor of 3) AND the same
+   * L19 commit-reachability. */
   distribute: boolean;
   /** `canGroupNodes`: 2+ unlocked, unique, same-parent, non-solver-managed. */
   group: boolean;
@@ -183,6 +213,24 @@ function ungroupEnabled(scene: Scene, ids: readonly string[]): boolean {
 }
 
 /**
+ * RULING L19: can the align/distribute COMMIT actually express a move for this
+ * node? `alignDistributeCommitOperation` has exactly two branches — a pinned
+ * node commits an `absolute_box`, a freehand node commits a `transform` — and
+ * returns `null` for anything else, so a node outside both shapes silently
+ * contributes no operation to the batch.
+ *
+ * Both predicates are the ENGINE's (`isNodePinned` / `isNodeFreehand`, imported
+ * from `sceneQueries`), named in the same order the commit tests them, so this
+ * reads as a mirror of the branch set rather than a second opinion about it.
+ * (`isNodeFreehand` already subsumes `isNodePinned`; the pinned half is stated
+ * anyway because the commit states it, and a future divergence upstream should
+ * show up here as a change, not as silence.)
+ */
+function isCommitReachableForAlign(scene: Scene, nodeId: NodeId): boolean {
+  return isNodePinned(scene, nodeId) || isNodeFreehand(scene, nodeId);
+}
+
+/**
  * What the Arrange section may offer for this selection.
  *
  * `scene` is nullable because the session's is: before a document loads there
@@ -198,9 +246,12 @@ export function arrangeEnablement(
   }
   const primary = selectedIds[0] ?? null;
   const ids = [...selectedIds];
+  // L19: the engine's gate is necessary but not sufficient — every member must
+  // also be a shape the align/distribute commit can express.
+  const commitReachable = ids.every((id) => isCommitReachableForAlign(scene, id));
   return {
-    align: canAlignNodes(scene, ids),
-    distribute: canDistributeNodes(scene, ids),
+    align: commitReachable && canAlignNodes(scene, ids),
+    distribute: commitReachable && canDistributeNodes(scene, ids),
     group: canGroupNodes(scene, ids),
     ungroup: ungroupEnabled(scene, ids),
     zOrder: {
