@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 import type { Node, Scene } from "../engine/scene/contracts";
 import {
   AD_PAGE_ID,
@@ -170,4 +173,69 @@ test("font options lead with Inter and dedupe keeping library order", () => {
 
 test("both fetches empty still yields the one safe option", () => {
   assert.deepEqual(sceneFontOptions([], []), ["Inter"]);
+});
+
+/**
+ * AD4.E step 2 — the multi-select CLOSURE guard. `nextSceneSelection`'s rule is
+ * proven above; what this pins is that the rule is actually reachable, and that
+ * amendment 2's deferral held.
+ *
+ * §1.7: "additive multi-select (shift/⌘-click)" — the modifier the panel saw is
+ * what the layers row reports, so the pure rule is never handed a hardcoded
+ * `false`. §1.8 (amendment 2): with N selected the inspector shows the
+ * FIRST-selected element's schema and the merged panel — common sections with
+ * per-field "Mixed" presentation — is deferred to §7, so no mixed-value
+ * vocabulary may leak into the ad inspector's props.
+ *
+ * A `.tsx` cannot be imported under this runner (`tsx --test`, no DOM), so the
+ * component is read off disk — `scene-hydrate.test.ts`'s technique.
+ */
+const AD_LAYERS_SOURCE = readFileSync(
+  join(
+    dirname(fileURLToPath(import.meta.url)),
+    "../../chat-shell/components/ad-dummy-inspectors.tsx",
+  ),
+  "utf8",
+);
+
+test("§1.7: a layers row reports the modifier it saw, and every member stays lit", () => {
+  const body = AD_LAYERS_SOURCE.slice(
+    AD_LAYERS_SOURCE.indexOf("export function AdSceneLayers"),
+    AD_LAYERS_SOURCE.indexOf("function LayersControls"),
+  );
+  assert.ok(body.length > 0, "AdSceneLayers not found in ad-dummy-inspectors.tsx");
+
+  // All three modifiers, because "shift/⌘-click" on a trackpad Mac is also
+  // ctrl-click on the same build shipped to Windows.
+  assert.ok(
+    body.includes("event.shiftKey || event.metaKey || event.ctrlKey"),
+    "the row must pass the real modifier state to onSelectLayer",
+  );
+  const call = body.indexOf("onSelectLayer?.(");
+  assert.ok(call >= 0, "the row must call onSelectLayer");
+  assert.ok(
+    body
+      .slice(call, body.indexOf(")", body.indexOf("ctrlKey", call)))
+      .includes("row.nodeId"),
+    "onSelectLayer takes the row's node id and that modifier, in that order",
+  );
+
+  // The highlight is the WHOLE set, not just the primary — otherwise an
+  // additive selection would be invisible and §1.7 unusable.
+  assert.ok(
+    body.includes("selectedIds.includes(row.nodeId)"),
+    "every selected member must render as selected, not only the primary",
+  );
+});
+
+test("§1.8: the deferred merged panel leaks no mixed-value vocabulary into ad props", () => {
+  // Amendment 2 ships the first-selected schema, whole. A `Mixed` sentinel or a
+  // `commonSections` prop appearing here would mean the §7 panel had started
+  // arriving piecemeal.
+  for (const remnant of ["Mixed", "mixedValue", "commonSections", "mergedPanel"]) {
+    assert.ok(
+      !AD_LAYERS_SOURCE.includes(remnant),
+      `the ad inspector props must not carry "${remnant}" — §1.8 defers it to §7`,
+    );
+  }
 });

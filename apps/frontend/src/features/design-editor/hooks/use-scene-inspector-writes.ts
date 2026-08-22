@@ -194,6 +194,27 @@ export function canvasWriteTarget(
   return { pageId, scene, selectionId };
 }
 
+/**
+ * AD4.E (§1.9 / §1.12): the action-menu request decision as a pure function —
+ * which history step, if any, a `clue:artifact-action-request` detail asks this
+ * lane to take. Exported for the reason `canvasWriteTarget` above is: a
+ * `useEffect` listener cannot be exercised without a DOM, a pure function can.
+ *
+ * Two refusals, both deliberate. The KIND guard keeps the two lanes' listeners
+ * apart on one window — the header stamps the active artifact's kind onto every
+ * request (`use-artifact-action-menu-controller.ts:42-52`), so a web artifact's
+ * Undo can never reach the ad document. The ACTION guard keeps §7's rows
+ * (Duplicate / Archive / Delete, which share the same dispatch and are not yet
+ * backed) out of document history.
+ */
+export function adActionRequest(detail: unknown): "undo" | "redo" | null {
+  if (typeof detail !== "object" || detail === null) return null;
+  const { action, kind } = detail as { action?: unknown; kind?: unknown };
+  if (kind !== "ad") return null;
+  if (action === "undo" || action === "redo") return action;
+  return null;
+}
+
 export function useSceneInspectorWrites({
   artifactId,
   canvasControls,
@@ -441,17 +462,13 @@ export function useSceneInspectorWrites({
   useEffect(() => {
     if (!documentId) return;
     const onAction = (event: Event) => {
-      const detail = (event as CustomEvent).detail as {
-        action?: unknown;
-        kind?: unknown;
-      } | null;
-      // The kind guard is what keeps the two lanes' listeners apart on one
-      // window — the header stamps the active artifact's kind onto every
-      // request (`artifact-header.tsx:78`), so a web artifact's Undo can never
-      // reach the ad document, and vice versa.
-      if (detail?.kind !== "ad") return;
-      if (detail.action === "undo") undoRef.current();
-      if (detail.action === "redo") redoRef.current();
+      // AD4.E: the whole decision — the kind guard that keeps the two lanes'
+      // listeners apart on one window, and the action guard that keeps §7's
+      // unbacked rows out of history — lives in `adActionRequest` above, where
+      // it can be tested without a DOM. This listener only performs it.
+      const step = adActionRequest((event as CustomEvent).detail);
+      if (step === "undo") undoRef.current();
+      if (step === "redo") redoRef.current();
     };
     const onKeyDown = (event: KeyboardEvent) => {
       if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "z")
