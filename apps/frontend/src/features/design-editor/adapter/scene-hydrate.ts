@@ -16,6 +16,7 @@ import type {
   Paint,
   Scene,
 } from "../engine/scene/contracts";
+import { defaultLayoutProps } from "../engine/scene/operations";
 import { isNodePinned } from "../engine/scene/sceneQueries";
 import { oklchToHexCss } from "../engine/scene/tokenColors";
 import { sceneAssetPassthroughUrl } from "./scene-canvas-view";
@@ -826,8 +827,26 @@ export function hydrateSceneInspectorState(
     state.direction = node.kind.direction === "row" ? "horizontal" : "vertical";
     state.wrap = node.kind.wrap;
   }
-  if (node.layout) {
-    const layout = node.layout;
+  // RULING L10 (AD4.B step 2): for an AUTO-LAYOUT node these five rows are
+  // stated unconditionally — the AD4.R "state every bound key for every
+  // selection" rule, which the Layout section above already follows. The Auto
+  // Layout section renders for every `auto_layout` node (OQ-1 suppresses it for
+  // a plain Frame, and no other schema carries it), while `Node.layout` is
+  // genuinely optional in the wire format; a node that carries none really does
+  // lay out at the engine's own `defaultLayoutProps()`, so those are the honest
+  // values rather than an absence that lets `DEFAULT_STATE`'s scaffolding seeds
+  // ("Space between"/"Center") stand over a real document.
+  //
+  // The engine's builder is called rather than restated, for the reason the
+  // write half needs too: `updateAutoLayoutAlignment` seeds `node.layout ??
+  // defaultLayoutProps()`, so the panel and the engine cannot disagree about
+  // what a layout-less auto-layout node lays out as.
+  //
+  // Every OTHER kind is unchanged — it hydrates these rows only when it really
+  // carries a layout, and no schema of its own displays them.
+  const layout =
+    node.layout ?? (node.kind.kind === "auto_layout" ? defaultLayoutProps() : null);
+  if (layout) {
     state.gap = numberText(layout.gap);
     state.grow = numberText(layout.grow);
     const [top, right, bottom, left] = layout.padding;

@@ -6,6 +6,7 @@ import type { SceneLayerRow } from "@/features/design-editor/adapter/scene-layer
 import type { ChatShellInspectorSelection } from "../model/chat-shell";
 import {
   useInspectorController,
+  type InspectorDirection,
   type InspectorEventAddressing,
   type InspectorSectionId,
   type InspectorSizeMode,
@@ -45,6 +46,14 @@ const STATIC_ZERO = "0";
 // Layout section: its W/H and fixed-size boxes read the document now, and the
 // same number survives as `DEFAULT_STATE`'s seed for the fixture path.)
 const NO_CHANGE = () => {};
+/** The ad scaffolding's own Pad T/R/B/L values — all `STATIC_ZERO` — for the
+ * FIXTURE path only. See `AdDummyInspector`'s `initial` below. */
+const FIXTURE_PADDING = {
+  bottom: STATIC_ZERO,
+  left: STATIC_ZERO,
+  right: STATIC_ZERO,
+  top: STATIC_ZERO,
+};
 
 /**
  * AD4.B step 1: what a caller supplies to drive an ad schema from a REAL scene
@@ -173,65 +182,114 @@ function StaticInput({
   );
 }
 
-function StaticSelect({
-  ariaLabel,
-  value,
-}: {
-  ariaLabel: string;
-  value: string;
-}) {
-  return (
-    <InspectorSelect
-      label={ariaLabel}
-      onChange={NO_CHANGE}
-      options={[value]}
-      value={value}
-    />
-  );
+// (`StaticSelect` — the one-option, `NO_CHANGE` select — left with AD4.B step
+// 2: the Auto Layout section held every select in this file, and its four are
+// bound now. The remaining static controls are all inputs.)
+
+/**
+ * §1.4 Auto Layout / OQ-2 — the Direction select's two DISPLAY labels.
+ *
+ * They are the co-founder's ("Row"/"Column"), and the state key's own
+ * vocabulary is `InspectorDirection` ("horizontal"/"vertical"), so the mapping
+ * lives here — the panel side — and the STATE word is what crosses the write
+ * seam. `scene-apply.ts` refuses an off-vocabulary word a second time, where a
+ * stored document (JSON, unchecked by these compile-time unions) could reach.
+ */
+const DIRECTION_OPTIONS = ["Row", "Column"] as const;
+const DIRECTION_LABELS = {
+  horizontal: "Row",
+  vertical: "Column",
+} as const satisfies Record<InspectorDirection, (typeof DIRECTION_OPTIONS)[number]>;
+
+function directionValue(label: string): InspectorDirection | null {
+  return label === "Row" ? "horizontal" : label === "Column" ? "vertical" : null;
 }
 
-function AutoLayoutControls(section: DummySectionBinding) {
+/** §1.4 Auto Layout — the Wrap select's two labels over a BOOLEAN state key.
+ * The mapping is the panel's for `direction`'s reason exactly, and the write
+ * adapter takes the boolean ahead of its string coercion (the §1.0 lock's
+ * posture, and the web lane's own Wrap row). */
+const WRAP_OPTIONS = ["No wrap", "Wrap"] as const;
+
+/** §1.4 Auto Layout — the Align X/Y selects' five labels. ONE statement of the
+ * vocabulary the adapter inverts (`scene-hydrate.ts`'s `LAYOUT_ANCHOR_LABELS`
+ * → `scene-apply.ts`'s `LAYOUT_ANCHOR_VALUES`); an anchor absent from this list
+ * cannot be picked, and one absent from the adapter's cannot be written. */
+const LAYOUT_ANCHOR_OPTIONS = [
+  "Start",
+  "Center",
+  "End",
+  "Space between",
+  "Stretch",
+] as const;
+
+/**
+ * §1.4 Auto Layout — AD4.B step 2's bound section.
+ *
+ * Same rules as `LayoutControls` below: live `state`, dispatch-only setters,
+ * typed boxes commit on blur/Enter and selects on change, everything gated on
+ * `inert`. The markup is the co-founder's, unchanged — same fields, same
+ * labels, same classes; only the values and the handlers are real.
+ *
+ * The section renders for the AUTO-LAYOUT kind alone (OQ-1's plain Frame
+ * suppresses it upstream), which is exactly the kind hydrate states these rows
+ * for and the kind `scene-apply.ts` accepts them from — so no control here can
+ * be shown over a node whose write would be refused.
+ *
+ * §1.4/OQ-2: gap/padding TOKENS and fill WEIGHTS stay off this surface. They
+ * are not dropped by a numeric commit either — the write spreads what the node
+ * holds — so a binding no control here can restate survives a Gap edit.
+ */
+function AutoLayoutControls({
+  controller,
+  inert,
+  ...section
+}: DummySectionBinding & {
+  controller: AdInspectorController;
+  inert: boolean;
+}) {
+  const { setNestedValue, setValue, state } = controller;
   return (
     <DummySection label="Auto Layout" {...section}>
       <div className={styles.dummyInspectorStack}>
         <div className={styles.dummyInspectorPairGrid}>
           <InspectorField label="Direction">
-            <StaticSelect ariaLabel="Auto layout direction" value="Row" />
+            <InspectorSelect disabled={inert} label="Auto layout direction" onChange={(value) => { const direction = directionValue(value); if (direction) setValue("direction", direction); }} options={DIRECTION_OPTIONS} value={DIRECTION_LABELS[state.direction]} />
           </InspectorField>
           <InspectorField label="Wrap">
-            <StaticSelect ariaLabel="Auto layout wrap" value="No wrap" />
+            <InspectorSelect disabled={inert} label="Auto layout wrap" onChange={(value) => setValue("wrap", value === "Wrap")} options={WRAP_OPTIONS} value={state.wrap ? "Wrap" : "No wrap"} />
           </InspectorField>
         </div>
         <div className={styles.dummyInspectorPairGrid}>
           <InspectorField label="Gap">
-            <StaticInput ariaLabel="Auto layout gap" prefix="G" />
+            <InspectorInput ariaLabel="Auto layout gap" disabled={inert} onCommitValue={(value) => setValue("gap", value)} prefix="G" value={state.gap} />
           </InspectorField>
           <InspectorField label="Grow">
-            <StaticInput ariaLabel="Auto layout grow" prefix="+" />
+            <InspectorInput ariaLabel="Auto layout grow" disabled={inert} onCommitValue={(value) => setValue("grow", value)} prefix="+" value={state.grow} />
           </InspectorField>
         </div>
         <div className={styles.dummyInspectorPairGrid}>
           <InspectorField label="Pad T">
-            <StaticInput ariaLabel="Top padding" prefix="T" />
+            <InspectorInput ariaLabel="Top padding" disabled={inert} onCommitValue={(value) => setNestedValue("padding", "top", value)} prefix="T" value={state.padding.top} />
           </InspectorField>
           <InspectorField label="Pad R">
-            <StaticInput ariaLabel="Right padding" prefix="R" />
+            <InspectorInput ariaLabel="Right padding" disabled={inert} onCommitValue={(value) => setNestedValue("padding", "right", value)} prefix="R" value={state.padding.right} />
           </InspectorField>
         </div>
         <div className={styles.dummyInspectorPairGrid}>
           <InspectorField label="Pad B">
-            <StaticInput ariaLabel="Bottom padding" prefix="B" />
+            <InspectorInput ariaLabel="Bottom padding" disabled={inert} onCommitValue={(value) => setNestedValue("padding", "bottom", value)} prefix="B" value={state.padding.bottom} />
           </InspectorField>
           <InspectorField label="Pad L">
-            <StaticInput ariaLabel="Left padding" prefix="L" />
+            <InspectorInput ariaLabel="Left padding" disabled={inert} onCommitValue={(value) => setNestedValue("padding", "left", value)} prefix="L" value={state.padding.left} />
           </InspectorField>
         </div>
         <div className={styles.dummyInspectorPairGrid}>
           <InspectorField label="Align X">
-            <StaticSelect ariaLabel="Horizontal auto layout alignment" value="Space between" />
+            <InspectorSelect disabled={inert} label="Horizontal auto layout alignment" onChange={(value) => setValue("alignX", value)} options={LAYOUT_ANCHOR_OPTIONS} value={state.alignX} />
           </InspectorField>
           <InspectorField label="Align Y">
-            <StaticSelect ariaLabel="Vertical auto layout alignment" value="Center" />
+            <InspectorSelect disabled={inert} label="Vertical auto layout alignment" onChange={(value) => setValue("alignY", value)} options={LAYOUT_ANCHOR_OPTIONS} value={state.alignY} />
           </InspectorField>
         </div>
       </div>
@@ -652,12 +710,22 @@ export function AdDummyInspector({
   // ONE controller for the whole component: it renders exactly one selection
   // per mount, and the panel remounts keyed on the selected node id.
   //
-  // `initial` is the hydrated snapshot alone — these four schemas carry no
-  // schema-local default of their own (unlike text's `fontWeight` or canvas's
-  // `sizePreset`), because hydration states every Layout key for every kind
-  // (the AD4.R rule at `hydrateSceneInspectorState`). It is rebuilt from the
-  // live prop every render, which is what makes it the live merge source too.
-  const initial = { ...hydrated };
+  // `initial` is the hydrated snapshot under this schema's own defaults — the
+  // text schema's `fontWeight` and the canvas schema's `sizePreset` pattern
+  // (AD4.R: explicit defaults live in the SCHEMA, not the adapter). It is
+  // rebuilt from the live prop every render, which is what makes it the live
+  // merge source too.
+  //
+  // AD4.B step 2 needs exactly TWO of them, and only for the FIXTURE path: the
+  // Auto Layout section's Wrap and Pad boxes read `wrap`/`padding`, two keys the
+  // web lane authored long before this panel existed, so `DEFAULT_STATE` seeds
+  // them with the WEB dummy's values (`true`, `4/8/8/4`) rather than the ad
+  // scaffolding's ("No wrap", zeros). Restating them here keeps the mock
+  // rendering what it rendered before AND leaves the shared defaults — and so
+  // the web inspector — untouched. On a real node they are never seen: ruling
+  // L10 makes hydration state both for every auto-layout node, and `hydrated`
+  // spreads last.
+  const initial = { padding: FIXTURE_PADDING, wrap: false, ...hydrated };
   const controller = useInspectorController([], selection, initial, addressing, {
     // AD4.R: live only when a real scene is behind the panel — the dummy
     // fixture path (no hydration) stays the interactive mock it shipped as.
@@ -675,7 +743,7 @@ export function AdDummyInspector({
   return (
     <>
       {selection === "auto-layout" && !suppressAutoLayoutSection ? (
-        <AutoLayoutControls {...section("alignment")} />
+        <AutoLayoutControls controller={controller} inert={inert} {...section("alignment")} />
       ) : null}
       {selection === "auto-layout" || selection === "rectangle" ? (
         <ShapeControls radii {...section("shape")} />

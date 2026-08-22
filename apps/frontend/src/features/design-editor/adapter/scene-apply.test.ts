@@ -16,7 +16,12 @@ import type {
   TextAlign,
   VerticalAlign,
 } from "../engine/scene/contracts";
-import { nodePatch, pagePatch, set } from "../engine/scene/operations";
+import {
+  nodePatch,
+  pagePatch,
+  set,
+  updateNodeLayout,
+} from "../engine/scene/operations";
 import { normalizePageSize } from "../engine/scene/pageGeometry";
 import { adBrandKit } from "./__fixtures__/brand-kit-colors";
 import {
@@ -771,6 +776,280 @@ it("§1.4/OQ-2 Mode: a label outside Fixed/Hug/Fill writes nothing", () => {
   }
 });
 
+// ══ §1.4 Auto Layout — Direction · Wrap · Gap · Grow · Pad · Align ══════════
+//
+// AD4.B step 2. TWO homes, so two kinds of operation: Direction and Wrap live
+// on the node KIND (`AutoLayoutNode`) and ride `updateAutoLayoutNode`;
+// Gap/Grow/Padding/Align live on `Node.layout` (`AutoLayoutProps`) and ride
+// `updateNodeLayout`. Both carry the SAME kind guard — `auto_layout` — because
+// that is hydrate's condition for these rows (the file header's standing rule)
+// and because `updateAutoLayoutNode` THROWS on anything else.
+//
+// §1.4/OQ-2: tokens (`gap_token`/`padding_token`) and fill weights stay off the
+// surface, so a spread that PRESERVES them is what keeps a write from silently
+// dropping a binding no control on this panel can restate.
+
+it("§1.4 Auto Layout Direction: the dummy's horizontal/vertical becomes the engine's row/column", () => {
+  assert.deepEqual(
+    apply(adAutoLayout(), "direction", "vertical"),
+    updateNode("auto_row_copy", {
+      kind: set({ direction: "column", kind: "auto_layout", wrap: false }),
+    }),
+  );
+  assert.deepEqual(
+    apply(adAutoLayout(), "direction", "horizontal"),
+    updateNode("auto_row_copy", {
+      kind: set({ direction: "row", kind: "auto_layout", wrap: false }),
+    }),
+  );
+});
+
+it("§1.4 Auto Layout Direction: a word outside the dummy's vocabulary writes nothing", () => {
+  // The ENGINE's own spellings are not in the panel's vocabulary and are
+  // therefore not accepted, exactly as `VALIGN_VALUES` refuses `center`.
+  for (const value of ["row", "column", "Row", "", "constructor", "toString"]) {
+    assert.equal(apply(adAutoLayout(), "direction", value), null, value);
+  }
+});
+
+it("§1.4 Auto Layout Wrap: the BOOLEAN the select reports writes Node.kind.wrap", () => {
+  // The §1.0 lock's posture, and the web lane's own row 22 (`apply.ts:331`):
+  // a two-state control reports a boolean, so it resolves ahead of the string
+  // coercion the rest of the switch shares. `state.wrap` IS a boolean
+  // (`InspectorPresentationState`), so the display labels never cross this seam.
+  assert.deepEqual(
+    apply(adAutoLayout(), "wrap", true),
+    updateNode("auto_row_copy", {
+      kind: set({ direction: "row", kind: "auto_layout", wrap: true }),
+    }),
+  );
+  assert.deepEqual(
+    apply(adAutoLayout(), "wrap", false),
+    updateNode("auto_row_copy", {
+      kind: set({ direction: "row", kind: "auto_layout", wrap: false }),
+    }),
+  );
+});
+
+it("§1.4 Auto Layout Wrap: a non-boolean is refused — a display label is not the value", () => {
+  for (const value of ["Wrap", "No wrap", "true", 1, null]) {
+    assert.equal(apply(adAutoLayout(), "wrap", value), null, String(value));
+  }
+});
+
+it("§1.4 Auto Layout Gap: a finite number rewrites gap and leaves every other layout prop alone", () => {
+  assert.deepEqual(
+    apply(adAutoLayout(), "gap", "12"),
+    updateNodeLayout(adAutoLayout(), {
+      align_x: "start",
+      align_y: "center",
+      gap: 12,
+      grow: 0,
+      padding: [40, 44, 40, 44],
+    }),
+  );
+  // Zero is a REAL gap, not an empty box — the §1.4 stroke-width rule.
+  assert.deepEqual(
+    apply(adAutoLayout(), "gap", "0"),
+    updateNodeLayout(adAutoLayout(), {
+      align_x: "start",
+      align_y: "center",
+      gap: 0,
+      grow: 0,
+      padding: [40, 44, 40, 44],
+    }),
+  );
+});
+
+it("§1.4 Auto Layout Grow: a finite number rewrites grow alone", () => {
+  assert.deepEqual(
+    apply(adAutoLayout(), "grow", "2"),
+    updateNodeLayout(adAutoLayout(), {
+      align_x: "start",
+      align_y: "center",
+      gap: 32,
+      grow: 2,
+      padding: [40, 44, 40, 44],
+    }),
+  );
+});
+
+it("§1.4 Auto Layout Gap/Grow/Padding: a negative, unparseable or empty value writes nothing", () => {
+  // The radius row's rule: the ad's fields are free text, so a number the
+  // engine cannot hold is REFUSED rather than folded to 0 (which would be a
+  // silent guess at an intent the box does not state).
+  for (const value of ["-1", "-0.5", "abc", "", "  ", "1e400"]) {
+    assert.equal(apply(adAutoLayout(), "gap", value), null, `gap ${value}`);
+    assert.equal(apply(adAutoLayout(), "grow", value), null, `grow ${value}`);
+    for (const side of ["top", "right", "bottom", "left"]) {
+      assert.equal(
+        apply(adAutoLayout(), `padding.${side}`, value),
+        null,
+        `padding.${side} ${value}`,
+      );
+    }
+  }
+  assert.equal(apply(adAutoLayout(), "gap", 12), null, "a non-string is not a gap");
+});
+
+it("§1.4 Auto Layout Padding: each box replaces exactly ONE slot of [top, right, bottom, left]", () => {
+  // The tuple order is the wire format's (`AutoLayoutProps.padding`), and
+  // hydrate destructures it the same way — so a transposed pair here would move
+  // the user's number to the wrong side of the box.
+  const base = {
+    align_x: "start",
+    align_y: "center",
+    gap: 32,
+    grow: 0,
+  } as const;
+  assert.deepEqual(
+    apply(adAutoLayout(), "padding.top", "8"),
+    updateNodeLayout(adAutoLayout(), { ...base, padding: [8, 44, 40, 44] }),
+  );
+  assert.deepEqual(
+    apply(adAutoLayout(), "padding.right", "8"),
+    updateNodeLayout(adAutoLayout(), { ...base, padding: [40, 8, 40, 44] }),
+  );
+  assert.deepEqual(
+    apply(adAutoLayout(), "padding.bottom", "8"),
+    updateNodeLayout(adAutoLayout(), { ...base, padding: [40, 44, 8, 44] }),
+  );
+  assert.deepEqual(
+    apply(adAutoLayout(), "padding.left", "8"),
+    updateNodeLayout(adAutoLayout(), { ...base, padding: [40, 44, 40, 8] }),
+  );
+});
+
+it("§1.4 Auto Layout Align: one commit moves ONE axis and carries the other from the node", () => {
+  // Two selects, two independent commits. `updateAutoLayoutAlignment` takes
+  // BOTH anchors, so the untouched axis has to be read off the node — otherwise
+  // choosing an Align X would silently reset Align Y to the engine's `start`.
+  assert.deepEqual(
+    apply(adAutoLayout(), "alignX", "Space between"),
+    updateNodeLayout(adAutoLayout(), {
+      align_x: "space_between",
+      align_y: "center",
+      gap: 32,
+      grow: 0,
+      padding: [40, 44, 40, 44],
+    }),
+  );
+  assert.deepEqual(
+    apply(adAutoLayout(), "alignY", "Stretch"),
+    updateNodeLayout(adAutoLayout(), {
+      align_x: "start",
+      align_y: "stretch",
+      gap: 32,
+      grow: 0,
+      padding: [40, 44, 40, 44],
+    }),
+  );
+});
+
+it("§1.4 Auto Layout Align: a label outside the five anchors writes nothing", () => {
+  for (const value of ["start", "space between", "Middle", "", "constructor", "toString"]) {
+    assert.equal(apply(adAutoLayout(), "alignX", value), null, `alignX ${value}`);
+    assert.equal(apply(adAutoLayout(), "alignY", value), null, `alignY ${value}`);
+  }
+});
+
+it("§1.4/L10 Auto Layout: a layout-LESS node seeds `defaultLayoutProps()` — the values it hydrates", () => {
+  // RULING L10's write half. `Node.layout` is optional in the wire format, and
+  // the section renders for such a node all the same (hydration states the
+  // engine's defaults for it — proven in `scene-hydrate.test.ts`), so a commit
+  // must build a WHOLE `AutoLayoutProps` from those same defaults rather than
+  // refuse. The harvest's one auto-layout node carries a layout, so the field is
+  // cloned away (the AD2.4/AD2.5 derived-fixture technique).
+  const scene = clone(SCENE);
+  const node = scene.nodes.auto_row_copy;
+  node.layout = null;
+  assert.deepEqual(
+    apply(node, "gap", "16", scene),
+    updateNodeLayout(node, {
+      align_x: "start",
+      align_y: "start",
+      gap: 16,
+      grow: 0,
+      padding: [0, 0, 0, 0],
+    }),
+  );
+  assert.deepEqual(
+    apply(node, "padding.bottom", "24", scene),
+    updateNodeLayout(node, {
+      align_x: "start",
+      align_y: "start",
+      gap: 0,
+      grow: 0,
+      padding: [0, 0, 24, 0],
+    }),
+  );
+  assert.deepEqual(
+    apply(node, "alignY", "End", scene),
+    updateNodeLayout(node, {
+      align_x: "start",
+      align_y: "end",
+      gap: 0,
+      grow: 0,
+      padding: [0, 0, 0, 0],
+    }),
+  );
+});
+
+it("§1.4/OQ-2 Auto Layout: gap/padding TOKENS and the layout mode ride along untouched", () => {
+  // §1.4's Auto Layout bullet keeps tokens and fill weights OFF the surface, so
+  // no control on this panel can restate one — which means a numeric commit
+  // that DROPPED them would destroy a binding the user cannot get back. The
+  // spread preserves them; `undefined` keys are never introduced, because the
+  // spread only carries what the node actually holds (wire-format minimization).
+  const scene = clone(SCENE);
+  const node = scene.nodes.auto_row_copy;
+  node.layout = {
+    ...adAutoLayout().layout!,
+    gap_token: "$space.md",
+    layout_mode: "stack",
+    padding_token: "$space.lg",
+  };
+  assert.deepEqual(
+    apply(node, "gap", "12", scene),
+    updateNodeLayout(node, {
+      align_x: "start",
+      align_y: "center",
+      gap: 12,
+      gap_token: "$space.md",
+      grow: 0,
+      layout_mode: "stack",
+      padding: [40, 44, 40, 44],
+      padding_token: "$space.lg",
+    }),
+  );
+});
+
+it("§1.4 Auto Layout: a NON-auto-layout node writes nothing on every Auto Layout row", () => {
+  // The write's kind condition is hydrate's (the file header's standing rule):
+  // the Auto Layout section renders for the `auto_layout` kind alone — OQ-1
+  // suppresses it for a plain Frame and no other schema carries it — and
+  // `updateAutoLayoutNode` THROWS on a non-auto-layout node, so a missing guard
+  // would be a crash rather than a bad write.
+  const rows: [string, unknown][] = [
+    ["direction", "vertical"],
+    ["wrap", true],
+    ["gap", "12"],
+    ["grow", "2"],
+    ["padding.top", "8"],
+    ["padding.right", "8"],
+    ["padding.bottom", "8"],
+    ["padding.left", "8"],
+    ["alignX", "Center"],
+    ["alignY", "Center"],
+  ];
+  for (const [property, value] of rows) {
+    assert.equal(apply(adRect(), property, value), null, `rect ${property}`);
+    assert.equal(apply(adFrame(), property, value), null, `frame ${property}`);
+    assert.equal(apply(adImage(), property, value), null, `image ${property}`);
+    assert.equal(apply(adPlainText(), property, value), null, `text ${property}`);
+  }
+});
+
 // ══ §1.0 header — Lock (and the lock gate over every other row) ═════════════
 
 it("§1.0 Lock: a boolean writes Node.locked", () => {
@@ -783,6 +1062,32 @@ it("§1.0 Lock: a boolean writes Node.locked", () => {
 it("§1.0 Lock: a non-boolean lock value is refused", () => {
   assert.equal(apply(adPlainText(), "locked", "true"), null);
   assert.equal(apply(adPlainText(), "locked", 1), null);
+});
+
+it("§1.0 Lock: a locked AUTO-LAYOUT node refuses every Auto Layout row (AD4.B step 2)", () => {
+  // Stated on its own node because the row set above runs on a TEXT node,
+  // which the §1.4 Auto Layout rows refuse for their kind guard alone — that
+  // would prove nothing about the lock.
+  const { node, scene } = withNodeField("auto_row_copy", "locked", true);
+  const rows: [string, unknown][] = [
+    ["direction", "vertical"],
+    ["wrap", true],
+    ["gap", "12"],
+    ["grow", "2"],
+    ["padding.top", "8"],
+    ["padding.right", "8"],
+    ["padding.bottom", "8"],
+    ["padding.left", "8"],
+    ["alignX", "Center"],
+    ["alignY", "Center"],
+  ];
+  for (const [property, value] of rows) {
+    assert.equal(apply(node, property, value, scene), null, property);
+  }
+  assert.deepEqual(
+    apply(node, "locked", false, scene),
+    updateNode("auto_row_copy", { locked: set(false) }),
+  );
 });
 
 it("§1.0 Lock: a locked node refuses every row — except the unlock that frees it", () => {
@@ -828,10 +1133,17 @@ it("null contract: rows owned by a LATER lane write nothing today", () => {
   // AD4.A took `radius.*` and `fillMode` out of it — §1.3's two rows are
   // mapped now, and their own cases below cover them (the radius row is
   // deliberately kind-agnostic, so it WRITES on this very node). AD4.B step 1
-  // took `opacity` out for the same reason (§1.4's Layout section); `gap` is
-  // still the Auto Layout section's, which step 2 owns.
-  for (const property of ["gap"]) {
-    assert.equal(apply(adAutoLayout(), property, "4"), null, property);
+  // took `opacity` out for the same reason (§1.4's Layout section), and step 2
+  // took `gap` and its Auto Layout siblings.
+  //
+  // What is LEFT is the Shape/Stroke sections' colour rows on a NODE: §1.1's
+  // canvas function maps `backgroundColor`/`backgroundFill`/
+  // `tokenBackgroundColor` on the page's root frame, but the four ad schemas'
+  // own Fill swatch is still the static scaffolding, so a node-addressed event
+  // carrying one of them is nobody's row yet.
+  for (const property of ["backgroundColor", "tokenBackgroundColor"]) {
+    assert.equal(apply(adAutoLayout(), property, "#FF00AA"), null, property);
+    assert.equal(apply(adRect(), property, "#FF00AA"), null, property);
   }
 });
 

@@ -639,6 +639,39 @@ it("§1.4: a node with no auto-layout props hydrates no Auto Layout values", () 
   assert.equal(state.direction, undefined);
 });
 
+it("§1.4/L10: an AUTO-LAYOUT node with no `Node.layout` states the engine's own defaults", () => {
+  // RULING L10 (AD4.B step 2): the Auto Layout section renders for every
+  // `auto_layout` node, so every one of its rows must be STATED for every one
+  // of them — the AD4.R "state every bound key" rule. `Node.layout` is
+  // genuinely optional in the wire format (`contracts.ts`), and an auto-layout
+  // node that carries none really does lay out at the engine's own
+  // `defaultLayoutProps()`, so those are the honest values. Leaving them absent
+  // let `DEFAULT_STATE`'s scaffolding seeds ("Space between"/"Center", the
+  // dummy's invented anchors) stand over a real document.
+  //
+  // The harvest has exactly one auto-layout node and it DOES carry a layout, so
+  // the field is cloned away — the AD2.4/AD2.5 derived-fixture technique.
+  const scene = clone(SCENE);
+  const node = scene.nodes.auto_row_copy;
+  node.layout = null;
+  const state = hydrateSceneInspectorState(node, scene);
+  assert.equal(state.gap, "0");
+  assert.equal(state.grow, "0");
+  assert.deepEqual(state.padding, {
+    bottom: "0",
+    left: "0",
+    right: "0",
+    top: "0",
+  });
+  // `defaultLayoutProps()` anchors BOTH axes at `start` — not the dummy's
+  // "Space between"/"Center" pair, which is what this row exists to displace.
+  assert.equal(state.alignX, "Start");
+  assert.equal(state.alignY, "Start");
+  // Direction/wrap live on the node KIND and were already unconditional there.
+  assert.equal(state.direction, "horizontal");
+  assert.equal(state.wrap, false);
+});
+
 // ── §1.1 Canvas schema ─────────────────────────────────────────────────────
 
 it("§1.1: a 1200x1200 page is an exact match for the LinkedIn square preset", () => {

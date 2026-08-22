@@ -2,6 +2,7 @@ import type { InspectorBackgroundFill } from "@/features/chat-shell/hooks/use-in
 import type {
   AssetPlacement,
   AssetRecord,
+  AutoLayoutProps,
   Color,
   ColorStop,
   CornerRadii,
@@ -9,6 +10,7 @@ import type {
   Fill,
   ImageFitMode,
   ImageNode,
+  LayoutAnchor,
   Node,
   Operation,
   Page,
@@ -22,10 +24,14 @@ import type {
 } from "../engine/scene/contracts";
 import { buildNodePlacementOperations } from "../engine/scene/assetLibrary";
 import {
+  defaultLayoutProps,
   nodePatch,
   set,
+  updateAutoLayoutAlignment,
+  updateAutoLayoutNode,
   updateNodeAbsoluteBox,
   updateNodeFills,
+  updateNodeLayout,
   updateNodeLocked,
   updateNodeSize,
   updateNodeStrokes,
@@ -126,6 +132,12 @@ import {
  *     property that node does not hydrate.
  *   • `fillMode` → image only, because hydrate states it for an image node and
  *     for nothing else (`scene-hydrate.ts:687-691`).
+ *   • §1.4's AUTO LAYOUT rows (direction / wrap / gap / grow / padding / align)
+ *     → `auto_layout` only. Ruling L10 makes hydrate state the whole set for
+ *     every auto-layout node (defaults included) and for no other kind's
+ *     schema — OQ-1 suppresses the section on a plain Frame — so that is the
+ *     write's condition too. It is also a crash guard here: the engine's
+ *     `updateAutoLayoutNode` THROWS on a non-auto-layout node.
  *   • stroke / position / rotation / lock / RADIUS → every kind, because
  *     hydrate's stroke, geometry and corner mappings are one path for every
  *     kind (`scene-hydrate.ts:348-401`, `:660-672`). Same posture as the web
@@ -193,6 +205,86 @@ const SIZE_MODE_KINDS: Record<string, "fill" | "fixed" | "hug"> = {
   Fixed: "fixed",
   Hug: "hug",
 };
+
+/** §1.4 Auto Layout (AD4.B step 2): the inverse of hydrate's
+ * `node.kind.direction === "row" ? "horizontal" : "vertical"`. The seam carries
+ * the STATE vocabulary (`InspectorDirection`), not the select's display labels
+ * ("Row"/"Column") — the panel maps those, exactly as it maps the wrap select's
+ * two labels onto the boolean `state.wrap`. The engine's own `row`/`column` are
+ * not in the state vocabulary and are therefore not accepted. */
+const LAYOUT_DIRECTION_VALUES: Record<string, "column" | "row"> = {
+  horizontal: "row",
+  vertical: "column",
+};
+
+/** §1.4 Auto Layout (AD4.B step 2): the inverse of `scene-hydrate.ts`'s
+ * `LAYOUT_ANCHOR_LABELS` — the five labels the Align X/Y selects offer, and
+ * nothing else. The engine's own snake spellings (`space_between`) are not in
+ * the dummy's vocabulary and are therefore not accepted. */
+const LAYOUT_ANCHOR_VALUES: Record<string, LayoutAnchor> = {
+  Center: "center",
+  End: "end",
+  "Space between": "space_between",
+  Start: "start",
+  Stretch: "stretch",
+};
+
+/** §1.4 Auto Layout: which slot of `AutoLayoutProps.padding` a Pad box owns.
+ * The tuple order is the wire format's — **[top, right, bottom, left]** — and
+ * hydrate destructures it the same way, so this table is the one place the
+ * order is stated for the write. */
+const PADDING_SLOTS: Record<string, 0 | 1 | 2 | 3> = {
+  "padding.bottom": 2,
+  "padding.left": 3,
+  "padding.right": 1,
+  "padding.top": 0,
+};
+
+/**
+ * §1.4 Auto Layout: the `AutoLayoutProps` a commit BUILDS ON.
+ *
+ * `Node.layout` is optional in the wire format and the section renders for a
+ * layout-less auto-layout node all the same, so a commit seeds the engine's own
+ * `defaultLayoutProps()` — the very values hydration states for it (ruling
+ * L10), and the same seed `updateAutoLayoutAlignment` uses internally, so the
+ * panel and the engine cannot disagree about what such a node lays out as.
+ *
+ * Spreading the STORED object is what preserves `gap_token` / `padding_token` /
+ * `layout_mode`: §1.4/OQ-2 keeps tokens and fill weights off this surface, so
+ * no control here can restate a binding a numeric commit dropped. It also
+ * introduces no `undefined` keys — only the members the node actually holds
+ * ride along (wire-format minimization).
+ */
+function layoutBase(node: Node): AutoLayoutProps {
+  return node.layout ?? defaultLayoutProps();
+}
+
+/**
+ * §1.4 Auto Layout: the anchor an UNTOUCHED axis carries into an alignment
+ * commit — what the node stores, or the engine's own seed when it stores none.
+ *
+ * Both members are optional in the wire format, which is why this is a function
+ * rather than a field read: the two selects commit independently, so the axis
+ * the user did not touch must be restated exactly as it was, and the value
+ * hydration is SHOWING for an absent one is `defaultLayoutProps()`'s. The
+ * literal tail is the type system's and not a second policy — the builder's
+ * return type declares both members optional even though it always states them.
+ */
+function storedAnchor(
+  layout: AutoLayoutProps,
+  axis: "align_x" | "align_y",
+): LayoutAnchor {
+  return layout[axis] ?? defaultLayoutProps()[axis] ?? "start";
+}
+
+/** §1.4 Auto Layout: a Gap/Grow/Pad box's number, or `null`. Negative refuses
+ * rather than folds — the radius and stroke-width rule: these fields are free
+ * text, so a number the engine cannot hold names no intent the panel may
+ * guess at. Zero is a REAL value and is accepted. */
+function layoutNumber(raw: string): number | null {
+  const value = finiteNumber(raw);
+  return value === null || value < 0 ? null : value;
+}
 
 /** §1.3 Mode (AD4.A): the inverse of `scene-hydrate.ts`'s `IMAGE_FIT_LABELS` —
  * the three labels the dummy's select offers (`FILL_MODES`), and nothing else.
@@ -570,6 +662,23 @@ export function sceneChangeToOperation(
     return null;
   }
 
+  // §1.4 Auto Layout Wrap (AD4.B step 2): the SECOND boolean row, and it
+  // resolves here for the lock row's reason exactly — `state.wrap` is a boolean
+  // in `InspectorPresentationState`, so the select's two display labels are
+  // mapped by the PANEL and never cross this seam, and the value therefore
+  // cannot survive the string coercion below. It sits AFTER the lock gate,
+  // unlike the lock itself: a locked node refuses it like every other row. The
+  // web lane's own Wrap row is the precedent (`apply.ts:331`, row 22).
+  //
+  // KIND GUARD: `auto_layout` only — hydrate's condition for this row, the file
+  // header's standing rule, and `updateAutoLayoutNode` THROWS on anything else.
+  if (property === "wrap") {
+    if (node.kind.kind !== "auto_layout" || typeof detail.value !== "boolean") {
+      return null;
+    }
+    return updateAutoLayoutNode(node, { wrap: detail.value });
+  }
+
   const value = typeof detail.value === "string" ? detail.value : null;
   if (value === null) {
     return null;
@@ -874,6 +983,82 @@ export function sceneChangeToOperation(
         dimension = { kind: "fixed", value: size };
       }
       return updateNodeSize(node, { ...node.size, [axis]: dimension });
+    }
+
+    // ── §1.4 Auto Layout: Direction (AD4.B step 2) ───────────────────────────
+    // KIND GUARD: `auto_layout` only, on all six rows below. That is hydrate's
+    // condition for them (ruling L10 states the whole set for every auto-layout
+    // node and for no other kind's schema — OQ-1 suppresses the section on a
+    // plain Frame), the file header's standing rule — and here it is also a
+    // crash guard: `updateAutoLayoutNode` THROWS on a non-auto-layout node.
+    case "direction": {
+      if (node.kind.kind !== "auto_layout") {
+        return null;
+      }
+      const direction = vocabulary(LAYOUT_DIRECTION_VALUES, value);
+      if (direction === undefined) {
+        return null;
+      }
+      return updateAutoLayoutNode(node, { direction });
+    }
+
+    // ── §1.4 Auto Layout: Gap and Grow ───────────────────────────────────────
+    // Both are members of the SAME `AutoLayoutProps`, so each rewrites its own
+    // member over `layoutBase` — the stored props, or the engine's defaults for
+    // a layout-less node — rather than building a fresh object that would drop
+    // its sibling and the two tokens.
+    case "gap":
+    case "grow": {
+      if (node.kind.kind !== "auto_layout") {
+        return null;
+      }
+      const size = layoutNumber(value);
+      if (size === null) {
+        return null;
+      }
+      return updateNodeLayout(node, { ...layoutBase(node), [property]: size });
+    }
+
+    // ── §1.4 Auto Layout: Pad T / R / B / L ──────────────────────────────────
+    case "padding.top":
+    case "padding.right":
+    case "padding.bottom":
+    case "padding.left": {
+      if (node.kind.kind !== "auto_layout") {
+        return null;
+      }
+      const size = layoutNumber(value);
+      if (size === null) {
+        return null;
+      }
+      const base = layoutBase(node);
+      // ONE slot replaced, in the wire format's own [top, right, bottom, left]
+      // order (`PADDING_SLOTS` is where that order is stated). The tuple is
+      // rebuilt rather than mutated — `layoutBase` may hand back the node's own
+      // stored array, and an operation must never edit the scene it reads.
+      const padding: AutoLayoutProps["padding"] = [...base.padding];
+      padding[PADDING_SLOTS[property]] = size;
+      return updateNodeLayout(node, { ...base, padding });
+    }
+
+    // ── §1.4 Auto Layout: Align X / Align Y ──────────────────────────────────
+    case "alignX":
+    case "alignY": {
+      if (node.kind.kind !== "auto_layout") {
+        return null;
+      }
+      const anchor = vocabulary(LAYOUT_ANCHOR_VALUES, value);
+      if (anchor === undefined) {
+        return null;
+      }
+      // TWO selects, one engine builder that takes BOTH anchors — so the axis
+      // this commit did NOT touch is read off the node (falling back to the
+      // engine's own default, exactly as hydrate does). Without that, choosing
+      // an Align X would silently reset Align Y to `start`.
+      const base = layoutBase(node);
+      return property === "alignX"
+        ? updateAutoLayoutAlignment(node, anchor, storedAnchor(base, "align_y"))
+        : updateAutoLayoutAlignment(node, storedAnchor(base, "align_x"), anchor);
     }
 
     // ── §1.3 row 1: Mode — Fit / Fill / Crop (AD4.A) ─────────────────────────
