@@ -78,8 +78,10 @@ drafts.**
   history prose; same-preset re-pick writes a same-value version (pre-existing); corner-name
   negatives in the A29 guard would false-fail on a future comment naming a corner; editQueue
   rejected-batch replay is timing-dependent (pre-existing AD3.2 semantics, observed live).
-- The T1 sync-mirror comment relocation left the passive effect's AD2.7 paragraph on the latch
-  (deferred minor; restore at next touch).
+- Post-fix-wave residual cosmetics (final re-review): the A29 *wiring*-guard comment at
+  scene-apply.test.ts:~2198 still carries the retired seeded-copy rationale; the never-null
+  dependency sentences don't name the failed-reload error path (which nulls the scene
+  non-transiently); one ~82-char comment line in use-scene-image-ai.ts.
 
 ## For Lanes B–E (binding, recorded in the parent plan's AD4 preamble)
 
