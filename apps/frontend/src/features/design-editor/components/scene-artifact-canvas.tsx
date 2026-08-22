@@ -40,6 +40,7 @@ import {
   sceneDescriptorPoint,
   sceneGestureEffect,
   scenePressHandleTarget,
+  scenePressModifiers,
   scenePressNodeTarget,
   sceneSelectionHandlesVisible,
 } from "../adapter/scene-gestures";
@@ -852,7 +853,11 @@ function SceneDocumentCanvas({
       kind: "down",
       point,
       target,
-      modifiers: modifiersOf(event),
+      // Not the raw modifiers: an EMPTY press carries none, so a press on
+      // nothing clears the selection unconditionally — AD2.5's own behaviour,
+      // which the reducer would otherwise preserve-on-additive (multi-select is
+      // AD4.E's). Reasoned out at `scenePressModifiers`.
+      modifiers: scenePressModifiers(target, modifiersOf(event)),
     });
   };
 

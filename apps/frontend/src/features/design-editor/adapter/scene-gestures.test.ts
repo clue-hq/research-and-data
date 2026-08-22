@@ -3,6 +3,7 @@ import test from "node:test";
 import type { NodeId, Scene } from "../engine/scene/contracts";
 import {
   dragActionToOperations,
+  handleAtPoint,
   resizeActionToOperation,
 } from "../engine/scene/canvaskitGestures";
 import {
@@ -25,9 +26,11 @@ import {
 import {
   EMPTY_SCENE_PRESS,
   SCENE_PAGE_ORIGIN,
+  cornerHandleAtPoint,
   sceneDescriptorPoint,
   sceneGestureEffect,
   scenePressHandleTarget,
+  scenePressModifiers,
   scenePressNodeTarget,
   sceneSelectionHandlesVisible,
 } from "./scene-gestures";
@@ -159,6 +162,67 @@ test("Ruling C-6: the rotate handle is not a v1 target — the press falls throu
     }),
     null,
   );
+});
+
+/**
+ * Review round 1, finding 2. C-6 was first enforced by FILTERING
+ * `handleAtPoint`'s answer, and that function answers with the nearest of all
+ * eight handles (after testing the rotate hotspot first). On a small or thin
+ * selection a non-corner zone wins "nearest" and the corner grab was then
+ * thrown away — so the only resize affordance v1 has degraded exactly where
+ * nodes are small. `cornerHandleAtPoint` asks the four corners directly and
+ * never consults a zone v1 does not offer.
+ */
+function sceneWithHeroBounds(bounds: {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}): Scene {
+  const next = clone(HARVESTED_AD_PAGE);
+  next.nodes.image_hero.computed = {
+    layout_bounds: { ...bounds },
+    render_bounds: { ...bounds },
+  };
+  return next;
+}
+
+test("C-6: a THIN selection's corner still grabs, where the edge zone used to win", () => {
+  const bounds = { x: 44, y: 1000, width: 400, height: 6 };
+  const scene = sceneWithHeroBounds(bounds);
+  // The left-edge midpoint: 0px from the "left" handle, 3px from two corners.
+  const press = { x: bounds.x, y: bounds.y + bounds.height / 2 };
+  // What the eight-handle helper answers — the edge zone, nearest by 3px.
+  assert.equal(handleAtPoint(press, bounds, 0, 1), "left");
+  // A corner is well inside the 7px radius, so a corner resize is available.
+  assert.equal(cornerHandleAtPoint(press, bounds, 0, 1), "top-left");
+  const target = handlePressAt(press, { scene });
+  assert.equal(target?.kind === "handle" ? target.handle : null, "top-left");
+});
+
+test("C-6: the invisible rotate hotspot cannot swallow a corner at low zoom", () => {
+  // The radius is 7 SCREEN px, so at 25% it is 28 descriptor px — wider than
+  // the 22px rotate offset over a 20x20 node, which put the (undrawn, and in
+  // v1 unreachable) rotate zone on top of the corner the user can see.
+  const bounds = { x: 100, y: 100, width: 20, height: 20 };
+  const scene = sceneWithHeroBounds(bounds);
+  const press = { x: bounds.x, y: bounds.y };
+  assert.equal(handleAtPoint(press, bounds, 0, 0.25), "rotate");
+  assert.equal(cornerHandleAtPoint(press, bounds, 0, 0.25), "top-left");
+  const target = handlePressAt(press, { scene, zoom: 0.25 });
+  assert.equal(target?.kind === "handle" ? target.handle : null, "top-left");
+});
+
+test("C-6: the corner test keeps the radius and the nearest-wins rule", () => {
+  const box = { x: 0, y: 0, width: 100, height: 100 };
+  // Outside the radius is still no handle at all.
+  assert.equal(cornerHandleAtPoint({ x: 50, y: 50 }, box, 0, 1), null);
+  assert.equal(cornerHandleAtPoint({ x: -8, y: 0 }, box, 0, 1), null);
+  assert.equal(cornerHandleAtPoint({ x: -6, y: 0 }, box, 0, 1), "top-left");
+  // Nearest wins between two in-range corners.
+  assert.equal(cornerHandleAtPoint({ x: 97, y: 102 }, box, 0, 1), "bottom-right");
+  // Rotation is honoured: at 90° the top-left corner's neighbours move with it.
+  assert.equal(cornerHandleAtPoint({ x: 0, y: 100 }, box, 90, 1), "top-right");
 });
 
 test("the handle tolerance is 7 SCREEN px, so it tightens as the canvas zooms in", () => {
@@ -318,6 +382,53 @@ test("a press on nothing is the empty target, and never a gesture", () => {
       modifiers: {},
     }).action,
     { kind: "select", nodeId: null, additive: false },
+  );
+});
+
+test("a press on nothing clears the selection even with a modifier held", () => {
+  // Review round 1, finding 1: AD2.5 cleared UNCONDITIONALLY
+  // (`commitSelection(null)`), while the reducer preserves the selection on an
+  // ADDITIVE empty press (`gestureMachine.ts:96-100`) — because upstream keeps
+  // a multi-selection alive under a held modifier. Multi-select is AD4.E's, not
+  // v1's, so no modifier is carried into an empty press at all.
+  const scene = sceneWithLaidOutHero();
+  for (const held of [
+    {},
+    { shift: true },
+    { meta: true },
+    { shift: true, meta: true },
+  ]) {
+    const reduced = gestureReducer(initialGestureState, {
+      kind: "down",
+      point: { x: 5, y: 5 },
+      target: EMPTY_SCENE_PRESS.target,
+      modifiers: scenePressModifiers(EMPTY_SCENE_PRESS.target, held),
+    });
+    assert.deepEqual(sceneGestureEffect(reduced.action, scene, AD_PAGE_ID), {
+      kind: "select",
+      nodeId: null,
+    });
+  }
+});
+
+test("a modifier still reaches a handle press — Shift is the reducer's aspect lock", () => {
+  const scene = sceneWithLaidOutHero();
+  const handle = scenePressHandleTarget({
+    artboard: artboardFor(scene),
+    gesturesEnabled: true,
+    pageId: AD_PAGE_ID,
+    point: HERO_TOP_LEFT,
+    scene,
+    selectedNodeId: "image_hero",
+    zoom: 1,
+  });
+  assert.ok(handle);
+  assert.deepEqual(scenePressModifiers(handle, { shift: true }), {
+    shift: true,
+  });
+  assert.deepEqual(
+    scenePressModifiers(nodeTargetFor(scene), { shift: true, meta: true }),
+    { shift: true, meta: true },
   );
 });
 

@@ -1,13 +1,22 @@
 import {
+  HANDLE_HIT_RADIUS,
   dragActionToOperations,
-  handleAtPoint,
   resizeActionToOperation,
 } from "../engine/scene/canvaskitGestures";
 import type { NodeId, Operation, PageId, Scene } from "../engine/scene/contracts";
-import type { GestureAction, PressTarget } from "../engine/scene/gestureMachine";
+import type {
+  GestureAction,
+  Modifiers,
+  PressTarget,
+} from "../engine/scene/gestureMachine";
 import { getNode, isNodeDirectGeometryEditable } from "../engine/scene/sceneQueries";
 import { deriveSelectionChromeModel } from "../engine/scene/selectionChrome";
-import type { Box, Point, ResizeHandle } from "../engine/scene/transformerMath";
+import {
+  handlePoint,
+  type Box,
+  type Point,
+  type ResizeHandle,
+} from "../engine/scene/transformerMath";
 import type { SceneArtboardModel, ScenePreview } from "./scene-canvas-view";
 
 /**
@@ -65,13 +74,8 @@ import type { SceneArtboardModel, ScenePreview } from "./scene-canvas-view";
 export const SCENE_PAGE_ORIGIN: Point = { x: 0, y: 0 };
 
 /**
- * Ruling C-6: v1 accepts the FOUR CORNERS and nothing else.
- *
- * `handleAtPoint` answers with any of the eight resize handles or `"rotate"`,
- * because the upstream overlay draws all nine. The G-A ruling drew four
- * corners, so an edge or rotate answer here is not a handle at all — the press
- * falls through to the node hit-test underneath it, which is what a press
- * inside the box means anyway.
+ * Ruling C-6: v1 accepts the FOUR CORNERS and nothing else — G-A drew four
+ * handles, so four are all a press can grab.
  */
 export const CORNER_RESIZE_HANDLES: ResizeHandle[] = [
   "top-left",
@@ -79,6 +83,69 @@ export const CORNER_RESIZE_HANDLES: ResizeHandle[] = [
   "bottom-left",
   "bottom-right",
 ];
+
+/**
+ * Which CORNER handle a descriptor-space press is grabbing, or null.
+ *
+ * The four corners are tested directly rather than by filtering
+ * `handleAtPoint`'s answer, and the difference is not stylistic. That helper
+ * serves the upstream overlay, which draws all nine handles: it tests the
+ * rotate hotspot FIRST and then returns the nearest of all eight resize zones.
+ * Filtering its answer therefore silently DISCARDS a perfectly good corner grab
+ * whenever a zone v1 does not offer happens to be nearer — and the two cases
+ * where that happens are exactly the cases where a resize is hardest to aim:
+ *
+ *  • a THIN or SMALL selection, where an edge zone lies between the pointer and
+ *    the corner it is trying to reach (the edge midpoint of a 6px-tall box is
+ *    3px from two corners, so the edge always won);
+ *  • LOW ZOOM, where the radius is 7 SCREEN px = `7/zoom` descriptor px and
+ *    overruns the 22px rotate offset, putting an invisible, in-v1-unreachable
+ *    rotate zone on top of the corner the user can actually see.
+ *
+ * Asking the corners directly cannot lose to a zone that does not exist here.
+ * Everything else is `handleAtPoint`'s own arithmetic, kept deliberately
+ * identical: `handlePoint` places the (rotated) corner, the radius is the same
+ * shared `HANDLE_HIT_RADIUS`, it is divided by the same zoom to stay
+ * screen-constant, and nearest-within-tolerance wins.
+ */
+export function cornerHandleAtPoint(
+  point: Point,
+  box: Box,
+  rotation: number,
+  zoom: number,
+  radius = HANDLE_HIT_RADIUS,
+): ResizeHandle | null {
+  const scale = Number.isFinite(zoom) && zoom > 0 ? zoom : 1;
+  const tolerance = radius / scale;
+  let best: { handle: ResizeHandle; distance: number } | null = null;
+  for (const handle of CORNER_RESIZE_HANDLES) {
+    const corner = handlePoint(box, handle, rotation);
+    const distance = Math.hypot(point.x - corner.x, point.y - corner.y);
+    if (distance <= tolerance && (!best || distance < best.distance)) {
+      best = { handle, distance };
+    }
+  }
+  return best?.handle ?? null;
+}
+
+/**
+ * The modifiers a press carries into the reducer.
+ *
+ * Shift is the reducer's aspect lock on a corner resize, so it must reach a
+ * handle press intact. An EMPTY press carries none, and that is a v1 ruling
+ * rather than a detail: the reducer clears the selection only on a
+ * *non-additive* empty press (`gestureMachine.ts:96-100`), because upstream
+ * keeps a multi-selection alive under a held modifier — but AD2.5 cleared
+ * UNCONDITIONALLY, and multi-select is AD4.E's, not this task's. Carrying the
+ * live modifier would therefore have quietly changed the read path's behaviour:
+ * Shift-clicking empty workspace would stop clearing.
+ */
+export function scenePressModifiers(
+  target: PressTarget,
+  modifiers: Modifiers,
+): Modifiers {
+  return target.kind === "empty" ? {} : modifiers;
+}
 
 /** What a press grabbed, plus whether a MOVE may promote it into a gesture. */
 export interface SceneGesturePress {
@@ -143,8 +210,8 @@ export function sceneDescriptorPoint(
  * (§1.9: no managed resize in v1), which leaves `showResizeHandles` equal to
  * `showHandles`, i.e. `isNodeDirectGeometryEditable`.
  *
- * The grab radius is `HANDLE_HIT_RADIUS` in SCREEN px. `handleAtPoint` divides
- * it by the scale between its point space and the screen — and because
+ * The grab radius is `HANDLE_HIT_RADIUS` in SCREEN px. `cornerHandleAtPoint`
+ * divides it by the scale between its point space and the screen — and because
  * descriptor px ARE workspace units here (`sceneArtboardModel`'s rect is the
  * page box in descriptor px, and the viewport is what maps workspace→screen),
  * that scale is exactly `viewport.zoom`, with `unitScale` already folded into
@@ -181,15 +248,16 @@ export function scenePressHandleTarget({
     return null;
   }
   const box = descriptorBox(selectionBox.box, artboard.page.unitScale);
-  const handle = handleAtPoint(point, box, selectionBox.rotation, zoom);
-  if (handle === null || !CORNER_RESIZE_HANDLES.includes(handle as ResizeHandle)) {
-    // Ruling C-6: "rotate" and the four edge handles are not v1 targets.
+  // Ruling C-6: the four corners, asked directly — never the rotate hotspot or
+  // an edge zone, which v1 neither draws nor offers.
+  const handle = cornerHandleAtPoint(point, box, selectionBox.rotation, zoom);
+  if (!handle) {
     return null;
   }
   return {
     kind: "handle",
     nodeId: selectionBox.nodeId,
-    handle: handle as ResizeHandle,
+    handle,
     box,
     rotation: selectionBox.rotation,
   };
