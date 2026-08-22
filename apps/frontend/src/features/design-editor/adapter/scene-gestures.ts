@@ -380,6 +380,35 @@ export function shouldFreezeLayoutOnPress({
 }
 
 /**
+ * After the C-9 freeze has been applied: may this press actually arm?
+ *
+ * Asked of the NODE, against the POST-freeze scene — never inferred from the
+ * size of the freeze's operation batch. `build_freeze_layout` iterates the
+ * whole document and skips only LOCKED containers, so a batch can be non-empty
+ * (it freed some other Stack) while the pressed node's own container stayed
+ * locked and solver-owned. Reading "non-empty" as "this node was freed" armed
+ * exactly the press that cannot commit — the C-5 defect (grab, preview, commit
+ * nothing) the guard exists to prevent — in any document with two or more
+ * Stack containers, which is the normal shape of an agent-generated ad.
+ *
+ * `isNodeDirectGeometryEditable` is the same predicate the operation builders
+ * refuse on, so this answers the question the commit will actually be asked,
+ * one gesture earlier.
+ */
+export function pressArmedAfterFreeze(
+  scene: Scene | null,
+  target: PressTarget,
+): boolean {
+  if (!scene) {
+    return false;
+  }
+  if (target.kind !== "node" && target.kind !== "handle") {
+    return false;
+  }
+  return isNodeDirectGeometryEditable(scene, target.nodeId);
+}
+
+/**
  * Ruling C-12: what a freeze outcome hands to the PERSIST path — and nothing
  * else.
  *

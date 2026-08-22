@@ -28,6 +28,7 @@ import {
   SCENE_PAGE_ORIGIN,
   cornerHandleAtPoint,
   freezeOperationsToPersist,
+  pressArmedAfterFreeze,
   sceneDescriptorPoint,
   sceneGestureEffect,
   scenePressHandleTarget,
@@ -536,6 +537,130 @@ test("G-H: no freeze fires mid-turn, because a freeze is a write", () => {
         box: HEADLINE_BOX,
         rotation: 0,
       },
+    }),
+    false,
+  );
+});
+
+/* -------------------------------------------------------------------------
+ * The post-freeze arm question (review Important 1)
+ * ---------------------------------------------------------------------- */
+
+/**
+ * The harvested ad after a freeze, with a SECOND auto-layout row added and the
+ * ORIGINAL one locked — the shape that makes "was the batch empty?" the wrong
+ * question. `auto_row_copy` stays a locked Stack (the engine skips it), while
+ * `auto_row_extra` is freed, so the freeze really did emit operations without
+ * freeing `text_headline`.
+ */
+function partiallyFrozenScene(): Scene {
+  const scene = managedHeadlineScene();
+  scene.nodes.auto_row_copy.locked = true;
+  scene.nodes.auto_row_extra = {
+    ...scene.nodes.auto_row_copy,
+    id: "auto_row_extra",
+    name: "Extra row",
+    locked: false,
+    // What the freeze did to it.
+    layout: { ...scene.nodes.auto_row_copy.layout!, layout_mode: "free" },
+    children: ["text_extra"],
+  };
+  scene.nodes.text_extra = {
+    ...scene.nodes.text_headline,
+    id: "text_extra",
+    name: "Extra text",
+    children: [],
+  };
+  scene.pages[AD_PAGE_ID].children = [
+    ...scene.pages[AD_PAGE_ID].children,
+    "auto_row_extra",
+  ];
+  return scene;
+}
+
+test("Important 1: the child of the LOCKED container does NOT arm, though the freeze emitted operations", () => {
+  // The defect this closes: `build_freeze_layout` skips ONLY the locked
+  // container and still frees every other Stack, so the batch is non-empty
+  // while this node stayed solver-owned. Inferring "freed" from batch size
+  // armed it → previewed → committed nothing = the C-5 defect the guard exists
+  // to prevent. The question is now asked of the node, on the post-freeze scene.
+  const scene = partiallyFrozenScene();
+  assert.equal(
+    pressArmedAfterFreeze(scene, {
+      kind: "node",
+      nodeId: "text_headline",
+      box: HEADLINE_BOX,
+      rotation: 0,
+    }),
+    false,
+  );
+});
+
+test("Important 1: a child the freeze DID free arms", () => {
+  const scene = partiallyFrozenScene();
+  assert.equal(
+    pressArmedAfterFreeze(scene, {
+      kind: "node",
+      nodeId: "text_extra",
+      box: HEADLINE_BOX,
+      rotation: 0,
+    }),
+    true,
+  );
+});
+
+test("Important 1: a HANDLE press on the locked container's child is refused the same way", () => {
+  const scene = partiallyFrozenScene();
+  assert.equal(
+    pressArmedAfterFreeze(scene, {
+      kind: "handle",
+      nodeId: "text_headline",
+      handle: "bottom-right",
+      box: HEADLINE_BOX,
+      rotation: 0,
+    }),
+    false,
+  );
+});
+
+test("the already-frozen node answers true, so the guard is correct by construction", () => {
+  // The idempotent path does not REACH this function today: an already-free
+  // node is directly editable, so `shouldFreezeLayoutOnPress` is false and the
+  // host returns before any freeze is fired. There is therefore no case where
+  // the direct ask changes that path's behaviour — but it is worth pinning
+  // that if the early return were ever removed, this answer would still be
+  // right, which is the whole reason the direct ask beats the batch-size proxy.
+  const scene = partiallyFrozenScene();
+  assert.equal(
+    shouldFreezeLayoutOnPress({
+      gesturesEnabled: true,
+      scene,
+      target: { kind: "node", nodeId: "text_extra", box: HEADLINE_BOX, rotation: 0 },
+    }),
+    false,
+  );
+  assert.equal(
+    pressArmedAfterFreeze(scene, {
+      kind: "node",
+      nodeId: "text_extra",
+      box: HEADLINE_BOX,
+      rotation: 0,
+    }),
+    true,
+  );
+});
+
+test("a press on nothing, and a missing scene, never arm", () => {
+  assert.equal(
+    pressArmedAfterFreeze(partiallyFrozenScene(), EMPTY_SCENE_PRESS.target),
+    false,
+  );
+  assert.equal(
+    pressArmedAfterFreeze(null, {
+      kind: "node",
+      nodeId: "text_headline",
+      box: HEADLINE_BOX,
+      rotation: 0,
     }),
     false,
   );

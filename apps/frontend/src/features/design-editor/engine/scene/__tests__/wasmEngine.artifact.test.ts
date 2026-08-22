@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from "../../__tests__/vitest-shim";
 
+import { pressArmedAfterFreeze } from "../../../adapter/scene-gestures";
 import parityFixture from "./__fixtures__/edit-parity-cases.json";
 import minimalSceneFixture from "./__fixtures__/minimal_scene.json";
 import type { Operation, Scene } from "../contracts";
@@ -229,6 +230,72 @@ describe.skipIf(!wasmArtifactPresent)("WasmEngine (real artifact)", () => {
     const second = engine.applyStructuredEdit({ kind: "freeze_layout" });
     expect(second.accepted).toBe(true);
     expect(second.operations).toEqual([]);
+  });
+
+  /**
+   * TWO Stack containers, one LOCKED — the case that breaks any guard reading
+   * "was the freeze batch empty?" as "was THIS node freed?".
+   *
+   * `build_freeze_layout` iterates the whole document and skips only the
+   * locked container, so the batch is non-empty (it carries the OTHER stack's
+   * operations) while the locked container's child is still solver-owned. The
+   * single-Stack fixture above cannot see the difference, which is exactly why
+   * the first version of the host guard shipped wrong.
+   */
+  function twoStackScene(): Scene {
+    const scene = cloneScene(baseScene);
+    const template = scene.nodes.node_contact_name;
+    const stack = (id: string, childId: string, locked: boolean) =>
+      ({
+        ...template,
+        id,
+        name: id,
+        kind: { kind: "auto_layout", direction: "column", wrap: false },
+        layout: { gap: 8, grow: 0, padding: [12, 12, 12, 12], layout_mode: "stack" },
+        children: [childId],
+        locked,
+      }) as (typeof scene.nodes)[string];
+
+    // `node_contact_name` stays — the document's one slot is bound to it, and
+    // the engine refuses a scene whose slot points at a node that is gone. It
+    // is the LOCKED container's child here.
+    scene.nodes.node_free_child = { ...template, id: "node_free_child", children: [] };
+    scene.nodes.node_stack_locked = stack("node_stack_locked", "node_contact_name", true);
+    scene.nodes.node_stack_unlocked = stack("node_stack_unlocked", "node_free_child", false);
+    scene.pages.page_a4.children = ["node_stack_locked", "node_stack_unlocked"];
+    return scene;
+  }
+
+  it("freeze_layout frees the unlocked Stack while the locked one keeps its child — a NON-empty batch that did not free the pressed node", async () => {
+    const module = await loadWasmModuleFromDisk();
+    const engine = new WasmEngine(module, twoStackScene());
+
+    const outcome = engine.applyStructuredEdit({ kind: "freeze_layout" });
+
+    expect(outcome.accepted).toBe(true);
+    // THE TRAP: non-empty, because the OTHER stack was freed.
+    expect(outcome.operations.length).toBeGreaterThan(0);
+    expect(outcome.scene.nodes.node_stack_unlocked.layout?.layout_mode).toBe("free");
+    expect(outcome.scene.nodes.node_stack_locked.layout?.layout_mode ?? "stack").toBe("stack");
+
+    // So the only sound question is asked of the node itself, on the POST-
+    // freeze scene — not of the batch's size.
+    expect(
+      pressArmedAfterFreeze(outcome.scene, {
+        kind: "node",
+        nodeId: "node_contact_name",
+        box: { x: 0, y: 0, width: 10, height: 10 },
+        rotation: 0,
+      }),
+    ).toBe(false);
+    expect(
+      pressArmedAfterFreeze(outcome.scene, {
+        kind: "node",
+        nodeId: "node_free_child",
+        box: { x: 0, y: 0, width: 10, height: 10 },
+        rotation: 0,
+      }),
+    ).toBe(true);
   });
 
   it("freeze_layout leaves a LOCKED container alone", async () => {

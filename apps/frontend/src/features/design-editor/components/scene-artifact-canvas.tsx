@@ -38,6 +38,7 @@ import {
 import {
   EMPTY_SCENE_PRESS,
   freezeOperationsToPersist,
+  pressArmedAfterFreeze,
   sceneDescriptorPoint,
   sceneGestureEffect,
   scenePressHandleTarget,
@@ -934,29 +935,25 @@ function SceneDocumentCanvas({
     }
     const outcome = controls.applyStructuredEdit(freezeLayoutEdit());
     const operations = freezeOperationsToPersist(outcome);
-    if (operations.length === 0) {
-      // A freeze WAS needed and delivered nothing, so this node is still
-      // solver-owned and its drag would commit nothing. The reachable case is
-      // a managed child of a LOCKED container: `isNodeFreezableOnGesture` says
-      // "blocked only by solver ownership" (it inspects the node, not its
-      // parent's lock) while `build_freeze_layout` skips locked containers
-      // — verified both sides, and pinned in `wasmEngine.artifact.test.ts`.
-      // Refusing to arm is Ruling C-5 applied to the freeze: a press that
-      // cannot commit must not preview, or the ad appears to move and then
-      // snaps back with nothing said.
+    if (outcome && operations.length > 0) {
+      // Persisted whether or not the PRESSED node was freed: these operations
+      // are already in the engine, and whatever they freed has to reach the
+      // server or the local scene and the document diverge on the next drain.
       //
-      // (The idempotent already-frozen no-op cannot reach here: a node in an
-      // already-free container is directly editable, so it never asked for a
-      // freeze in the first place.)
-      return false;
+      // `outcome.scene` — the POST-freeze scene, not `controls.sceneSnapshot()`
+      // (which answers from this render's closure and is still the pre-freeze
+      // one until React re-renders). The queue seeds its divergence check from
+      // this, so handing it the pre-freeze scene would fake a divergence
+      // against the document the server is about to be told about.
+      onAppliedOperations?.(operations, outcome.scene);
     }
-    // `outcome.scene` — the POST-freeze scene, not `controls.sceneSnapshot()`
-    // (which answers from this render's closure and is still the pre-freeze
-    // one until React re-renders). The queue seeds its divergence check from
-    // this, so handing it the pre-freeze scene would fake a divergence against
-    // the document the server is about to be told about.
-    onAppliedOperations?.(operations, outcome?.scene ?? scene);
-    return true;
+    // Ruling C-5 applied to the freeze: a press that cannot commit must not
+    // preview. Asked of the NODE against the post-freeze scene rather than
+    // inferred from the batch being empty — `build_freeze_layout` skips only
+    // LOCKED containers and still frees every other Stack, so a non-empty
+    // batch does NOT mean this node was freed (pinned against the real engine
+    // in `wasmEngine.artifact.test.ts`, two-Stack fixture).
+    return pressArmedAfterFreeze(outcome?.scene ?? null, target);
   };
 
   /** Begin a press: arm (or refuse to arm) the gesture, then let the reducer
