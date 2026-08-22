@@ -1,8 +1,14 @@
 "use client";
 
 import type { ReactNode } from "react";
+import type { ZOrderAction } from "@/features/design-editor/adapter/scene-arrange";
 import type { SceneInspectorState } from "@/features/design-editor/adapter/scene-hydrate";
 import type { SceneLayerRow } from "@/features/design-editor/adapter/scene-layers";
+import type {
+  AlignMode,
+  DistributeAxis,
+} from "@/features/design-editor/engine/scene/alignDistribute";
+import type { SceneArrangeBinding } from "@/features/design-editor/hooks/use-scene-arrange";
 import type { ChatShellInspectorSelection } from "../model/chat-shell";
 import {
   useInspectorController,
@@ -536,49 +542,84 @@ function LayoutControls({
   );
 }
 
+/**
+ * §1.5 Arrange — AD4.B step 4's bound section.
+ *
+ * The five action tables below gained a THIRD column: the typed action the
+ * button performs, so the wiring is a lookup rather than a match on a human
+ * label. The labels, the icons, the grids and the column counts are the
+ * co-founder's, unchanged.
+ *
+ * The group row still renders for the GROUP schema alone — that is the
+ * scaffolding's own routing (`groupActions`) and step 4 does not touch it. It
+ * is a real limit and is recorded rather than worked around: ⌘G reaches the
+ * same action from every schema, so a multi-node selection under a non-group
+ * primary is still groupable by keyboard.
+ */
 const LAYER_ACTIONS = [
-  ["Bring to front", "layer-front"],
-  ["Bring forward", "layer-up"],
-  ["Send backward", "layer-down"],
-  ["Send to back", "layer-back"],
-] as const satisfies readonly (readonly [string, InspectorIconName])[];
+  ["Bring to front", "layer-front", "front"],
+  ["Bring forward", "layer-up", "forward"],
+  ["Send backward", "layer-down", "backward"],
+  ["Send to back", "layer-back", "back"],
+] as const satisfies readonly (readonly [string, InspectorIconName, ZOrderAction])[];
 
 const HORIZONTAL_ALIGNMENT_ACTIONS = [
-  ["Align left", "align-start-vertical"],
-  ["Align horizontal center", "align-center-vertical"],
-  ["Align right", "align-end-vertical"],
-] as const satisfies readonly (readonly [string, InspectorIconName])[];
+  ["Align left", "align-start-vertical", "left"],
+  ["Align horizontal center", "align-center-vertical", "center-h"],
+  ["Align right", "align-end-vertical", "right"],
+] as const satisfies readonly (readonly [string, InspectorIconName, AlignMode])[];
 
 const VERTICAL_ALIGNMENT_ACTIONS = [
-  ["Align top", "align-start-horizontal"],
-  ["Align vertical center", "align-center-horizontal"],
-  ["Align bottom", "align-end-horizontal"],
-] as const satisfies readonly (readonly [string, InspectorIconName])[];
+  ["Align top", "align-start-horizontal", "top"],
+  ["Align vertical center", "align-center-horizontal", "middle-v"],
+  ["Align bottom", "align-end-horizontal", "bottom"],
+] as const satisfies readonly (readonly [string, InspectorIconName, AlignMode])[];
 
 const DISTRIBUTION_ACTIONS = [
-  ["Distribute horizontally", "align-horizontal-distribute-center"],
-  ["Distribute vertically", "align-vertical-distribute-center"],
-] as const satisfies readonly (readonly [string, InspectorIconName])[];
+  ["Distribute horizontally", "align-horizontal-distribute-center", "horizontal"],
+  ["Distribute vertically", "align-vertical-distribute-center", "vertical"],
+] as const satisfies readonly (readonly [string, InspectorIconName, DistributeAxis])[];
 
 const GROUP_ACTIONS = [
-  ["Group selection", "group"],
-  ["Ungroup selection", "ungroup"],
-] as const satisfies readonly (readonly [string, InspectorIconName])[];
+  ["Group selection", "group", "group"],
+  ["Ungroup selection", "ungroup", "ungroup"],
+] as const satisfies readonly (readonly [string, InspectorIconName, "group" | "ungroup"])[];
 
-function DummyIconButtons({
+/**
+ * G-H (AD4.R-10): the whole grid is OPERATIONS on the document, so `inert`
+ * (locked node / in-flight agent turn) closes every button in it, and the
+ * per-action `enabled` predicate closes the ones this selection cannot perform.
+ *
+ * `onAction` ABSENT is the fixture/dummy path: the buttons render exactly as
+ * they shipped — no handler, and `enabled` left saying yes, so nothing dims on
+ * a panel that was never going to write.
+ */
+function DummyIconButtons<Action extends string>({
   actions,
   columns,
+  enabled,
+  inert,
+  onAction,
 }: {
-  actions: readonly (readonly [string, InspectorIconName])[];
+  actions: readonly (readonly [string, InspectorIconName, Action])[];
   columns: 2 | 3 | 4;
+  enabled: (action: Action) => boolean;
+  inert: boolean;
+  onAction?: (action: Action) => void;
 }) {
   return (
     <div
       className={styles.dummyInspectorActionGrid}
       style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}
     >
-      {actions.map(([label, icon]) => (
-        <button aria-label={label} key={label} type="button">
+      {actions.map(([label, icon, action]) => (
+        <button
+          aria-label={label}
+          disabled={inert || !enabled(action)}
+          key={label}
+          onClick={onAction ? () => onAction(action) : undefined}
+          type="button"
+        >
           <InspectorIcon name={icon} size={14} />
         </button>
       ))}
@@ -586,28 +627,75 @@ function DummyIconButtons({
   );
 }
 
+/** Absent binding ⇒ every action reads as available, which with no `onAction`
+ * leaves the fixture path's buttons exactly as inert and exactly as bright as
+ * they shipped. */
+const ALWAYS = () => true;
+
 function ArrangeControls({
+  arrange,
   groupActions = false,
+  inert,
   ...section
-}: DummySectionBinding & { groupActions?: boolean }) {
+}: DummySectionBinding & {
+  arrange?: SceneArrangeBinding;
+  groupActions?: boolean;
+  inert: boolean;
+}) {
+  const enablement = arrange?.enablement;
   return (
     <DummySection label="Arrange" {...section}>
       <div className={styles.dummyInspectorStack}>
         <InspectorField label="Layer">
-          <DummyIconButtons actions={LAYER_ACTIONS} columns={4} />
+          <DummyIconButtons
+            actions={LAYER_ACTIONS}
+            columns={4}
+            enabled={enablement ? (action) => enablement.zOrder[action] : ALWAYS}
+            inert={inert}
+            onAction={arrange?.zOrder}
+          />
         </InspectorField>
         <InspectorField label="Alignment">
           <div className={styles.dummyInspectorAlignmentGroups}>
-            <DummyIconButtons actions={HORIZONTAL_ALIGNMENT_ACTIONS} columns={3} />
-            <DummyIconButtons actions={VERTICAL_ALIGNMENT_ACTIONS} columns={3} />
+            <DummyIconButtons
+              actions={HORIZONTAL_ALIGNMENT_ACTIONS}
+              columns={3}
+              enabled={enablement ? () => enablement.align : ALWAYS}
+              inert={inert}
+              onAction={arrange?.align}
+            />
+            <DummyIconButtons
+              actions={VERTICAL_ALIGNMENT_ACTIONS}
+              columns={3}
+              enabled={enablement ? () => enablement.align : ALWAYS}
+              inert={inert}
+              onAction={arrange?.align}
+            />
           </div>
         </InspectorField>
         <InspectorField label="Distribution">
-          <DummyIconButtons actions={DISTRIBUTION_ACTIONS} columns={2} />
+          <DummyIconButtons
+            actions={DISTRIBUTION_ACTIONS}
+            columns={2}
+            enabled={enablement ? () => enablement.distribute : ALWAYS}
+            inert={inert}
+            onAction={arrange?.distribute}
+          />
         </InspectorField>
         {groupActions ? (
           <InspectorField label="Group">
-            <DummyIconButtons actions={GROUP_ACTIONS} columns={2} />
+            <DummyIconButtons
+              actions={GROUP_ACTIONS}
+              columns={2}
+              enabled={enablement ? (action) => enablement[action] : ALWAYS}
+              inert={inert}
+              onAction={
+                arrange
+                  ? (action) =>
+                      action === "group" ? arrange.group() : arrange.ungroup()
+                  : undefined
+              }
+            />
           </InspectorField>
         ) : null}
       </div>
@@ -773,6 +861,7 @@ function LayersControls({
 
 export function AdDummyInspector({
   addressing,
+  arrange,
   hydrated,
   inspectorDisabled = false,
   locked = false,
@@ -781,6 +870,10 @@ export function AdDummyInspector({
   suppressAutoLayoutSection = false,
   ...binding
 }: AdSchemaBinding & {
+  /** §1.5 (AD4.B step 4): the session's Arrange actions and their enablement.
+   * Absent (the dummy fixture path) leaves the section's buttons exactly as
+   * inert as they shipped. */
+  arrange?: SceneArrangeBinding;
   onSelectionChange: (selection: ChatShellInspectorSelection) => void;
   selection: AdDummyInspectorSelection;
   /** AD2.4/OQ-1: a plain Frame routes to this auto-layout schema but has no
@@ -852,7 +945,7 @@ export function AdDummyInspector({
         <StrokeControls controller={controller} inert={inert} {...section("stroke")} />
       ) : null}
       <LayoutControls controller={controller} inert={inert} {...section("layout")} />
-      <ArrangeControls groupActions={selection === "group"} {...section("arrange")} />
+      <ArrangeControls arrange={arrange} groupActions={selection === "group"} inert={inert} {...section("arrange")} />
       <LayersControls
         onSelectionChange={onSelectionChange}
         selection={selection}

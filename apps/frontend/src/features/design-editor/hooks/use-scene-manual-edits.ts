@@ -7,11 +7,13 @@ import {
   afterUndo,
   afterWrite,
   historyDepths,
+  type SceneHistoryDelta,
 } from "../adapter/scene-history";
 import {
   SCENE_WRITE_FALLBACK_ERROR,
   historyFailureToMessages,
   reconcileToMessages,
+  structuredEditFailureToMessage,
 } from "../adapter/scene-reconcile";
 import type { SceneCanvasControls } from "../components/scene-artifact-canvas";
 import { designBffConfig } from "../data/design-bff";
@@ -19,8 +21,10 @@ import type { DesignEditorConfig } from "../engine/config";
 import type { Operation, Scene } from "../engine/scene/contracts";
 import { createEditQueue, type EditQueuePort } from "../engine/scene/editQueue";
 import {
+  applyStructuredEdit,
   redoDocument,
   undoDocument,
+  type StructuredEdit,
 } from "../engine/scene/structuredEdits";
 
 /**
@@ -97,6 +101,28 @@ export interface SceneManualEdits {
    * to apply. Asked up front, the refusal costs nothing and strands nothing.
    */
   canApply: () => boolean;
+  /**
+   * AD4.B step 4 (§1.5): one DOCUMENT-LEVEL STRUCTURED EDIT — today, group and
+   * ungroup.
+   *
+   * It is a second kind of write, not a variant of `applyOps`, because the
+   * engine models it as one: `groupEdit`/`ungroupEdit` are `StructuredEdit`s
+   * (`engine/scene/structuredEdits.ts`), the server expands them into canonical
+   * operations, and the client is deliberately not the authority on that
+   * expansion — re-deriving "which inserts and moves make a group" here would
+   * be exactly the fabrication this lane's optimistic path avoids by applying
+   * only the engine's own operations.
+   *
+   * So it takes the SHAPE OF A HISTORY STEP rather than of a write: single
+   * flight, drain the write queue first, POST, re-base the queue on the version
+   * that came back, and adopt the result by RELOADING. No local apply, because
+   * there is nothing honest to apply locally.
+   *
+   * No-op while another document step is in flight and when no document is
+   * armed. A refusal reaches the inspector's existing inline error line in the
+   * server's own words; nothing new is invented for it.
+   */
+  applyEdit: (edit: StructuredEdit) => void;
   /** AD3.3: one server history step. No-op while another step is in flight and
    * when no document is armed; the result arrives as a reload. */
   undo: () => void;
@@ -401,22 +427,41 @@ export function useSceneManualEdits(
   );
 
   /**
-   * AD3.3: one server history step, the website lane's `runHistory`
-   * (`use-web-manual-edits.ts:170-199`) with this lane's two additions.
+   * AD3.3: one server-side DOCUMENT STEP — a history step, or (AD4.B step 4) a
+   * structured edit. Lifted from the website lane's `runHistory`
+   * (`use-web-manual-edits.ts:170-199`) with this lane's two additions, and
+   * generalized over `perform` once §1.5's group/ungroup turned out to need the
+   * identical control flow rather than a second copy of it.
    *
    * The success path does three things and adopts nothing by hand:
    *  1. **re-base the queue.** The server just wrote the document without us,
    *     so the queue's cached `base_version` is stale and the next inspector
    *     edit would be refused as a concurrent write. `resync` takes the version
    *     the step returned — the same re-basing the reconcile path does, for the
-   *     same reason.
-   *  2. **record the step**, so the two menu rows keep telling the truth
-   *     between reloads.
+   *     same reason. (Both routes answer with the same
+   *     `{document:{current_version}}` envelope — `dto.py`'s `document_summary`
+   *     — so `currentVersionOf` reads either.)
+   *  2. **record the step** (`recordStep`), so the two menu rows keep telling
+   *     the truth between reloads.
    *  3. **reload.** The canvas refetches, the engine is rebuilt from the
    *     server's scene, and the inspector re-reads it — the one adoption path.
+   *
+   * `describeFailure` returns the line to show, or `null` for the one refusal
+   * that means "nothing happened and nothing needs saying" (an empty history
+   * stack), which resyncs by reloading instead.
    */
-  const runHistory = useCallback(
-    (step: "undo" | "redo") => {
+  const runDocumentStep = useCallback(
+    (
+      perform: (
+        apiBaseUrl: string,
+        forDocumentId: string,
+        // Optional exactly as `DesignEditorConfig.fetchImpl` is: both routes
+        // default to the receiver-safe wrapper when the config carries none.
+        fetchImpl?: typeof fetch,
+      ) => Promise<Record<string, unknown>>,
+      recordStep: (delta: SceneHistoryDelta) => SceneHistoryDelta,
+      describeFailure: (cause: unknown) => string | null,
+    ) => {
       // Single-flight: a second step while one is in flight would race the
       // first onto a stack the server has not finished moving.
       if (historyRef.current) {
@@ -431,12 +476,11 @@ export function useSceneManualEdits(
       syncBusy();
       setNote(null);
       setError(null);
-      const impl = step === "undo" ? undoDocument : redoDocument;
       const settle = () => {
         historyRef.current = false;
         syncBusy();
       };
-      // AD3.3 review: DRAIN THE WRITE QUEUE FIRST. A history step is a second
+      // AD3.3 review: DRAIN THE WRITE QUEUE FIRST. A document step is a second
       // writer against the same document, and the queue's cached base_version
       // belongs to the batches already in it — so an undo that lands between a
       // batch's local apply and its POST makes the server refuse that batch
@@ -452,7 +496,9 @@ export function useSceneManualEdits(
           : Promise.resolve();
       void drained
         .catch(() => undefined)
-        .then(() => impl(resolved.apiBaseUrl, forDocumentId, resolved.fetchImpl))
+        .then(() =>
+          perform(resolved.apiBaseUrl, forDocumentId, resolved.fetchImpl),
+        )
         .then((payload) => {
           settle();
           // A step for a document the user has already left must not re-base
@@ -464,7 +510,7 @@ export function useSceneManualEdits(
           if (active?.documentId === forDocumentId) {
             active.queue.resync(currentVersionOf(payload));
           }
-          setDelta(step === "undo" ? afterUndo : afterRedo);
+          setDelta(recordStep);
           onReloadRef.current();
         })
         .catch((cause: unknown) => {
@@ -472,8 +518,8 @@ export function useSceneManualEdits(
           if (!mountedRef.current || documentIdRef.current !== forDocumentId) {
             return;
           }
-          const failure = historyFailureToMessages(cause);
-          if (failure.emptyStack) {
+          const message = describeFailure(cause);
+          if (message === null) {
             // The stack raced empty: nothing happened, nothing to say. The
             // reload re-reads the real depths, which is what disagreed.
             onReloadRef.current();
@@ -482,16 +528,59 @@ export function useSceneManualEdits(
           // A refusal about THIS step, in the server's own words (never the
           // upstream sentence's internal prose). No reload: the document is
           // unchanged, so there is nothing new to adopt.
-          setError(failure.error);
+          setError(message);
         });
     },
     [syncBusy],
   );
 
+  const runHistory = useCallback(
+    (step: "undo" | "redo") => {
+      runDocumentStep(
+        step === "undo" ? undoDocument : redoDocument,
+        step === "undo" ? afterUndo : afterRedo,
+        (cause) => {
+          const failure = historyFailureToMessages(cause);
+          return failure.emptyStack ? null : failure.error;
+        },
+      );
+    },
+    [runDocumentStep],
+  );
+
   const undo = useCallback(() => runHistory("undo"), [runHistory]);
   const redo = useCallback(() => runHistory("redo"), [runHistory]);
 
+  /**
+   * AD4.B step 4 (§1.5): group / ungroup.
+   *
+   * NO `base_version` IS SENT, deliberately and for the history step's exact
+   * reason: the drain above IS the ordering discipline, and the queue owns the
+   * only copy of that number (the AD3.2 addressing ruling). `require_base_version`
+   * therefore does not fire, so a 409 from this route is a real refusal about
+   * this edit rather than a concurrent-writer event — which is why
+   * `structuredEditFailureToMessage` has no quiet branch and always says
+   * something.
+   *
+   * `afterWrite`, not `afterUndo`: the server commits a new envelope and drops
+   * the redo stack, exactly as an operation batch does.
+   */
+  const applyEdit = useCallback(
+    (edit: StructuredEdit) => {
+      runDocumentStep(
+        (apiBaseUrl, forDocumentId, fetchImpl) =>
+          applyStructuredEdit(apiBaseUrl, forDocumentId, edit, {
+            fetchImpl,
+          }).then((result) => result.response),
+        afterWrite,
+        structuredEditFailureToMessage,
+      );
+    },
+    [runDocumentStep],
+  );
+
   return {
+    applyEdit,
     applyOps,
     busy,
     canApply,

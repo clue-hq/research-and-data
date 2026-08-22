@@ -1,0 +1,212 @@
+import type { NodeId, Operation, ParentRef, Scene } from "../engine/scene/contracts";
+import { moveNodeToParent } from "../engine/scene/operations";
+import { rootFrameId } from "./scene-hydrate";
+import {
+  canAlignNodes,
+  canDistributeNodes,
+  canGroupNodes,
+  canUngroupNode,
+  parentInfoForNode,
+} from "../engine/scene/sceneQueries";
+
+/**
+ * AD4.B step 4 (§1.5 Arrange): the pure decisions behind the Arrange section —
+ * what each of its fourteen buttons may do, and the ONE operation a z-order
+ * button writes.
+ *
+ * WHAT IS AND IS NOT DECIDED HERE. Every eligibility RULE is the engine's
+ * (`canAlignNodes` / `canDistributeNodes` / `canGroupNodes` / `canUngroupNode`
+ * in `sceneQueries.ts`) and every operation is the engine's builder
+ * (`moveNodeToParent`); this module owns only the composition — which gate
+ * answers which button, and the index arithmetic a z-order step needs, which is
+ * the one thing the engine exposes no helper for. The gates are called, never
+ * re-implemented: a rule that changes upstream moves these buttons with it.
+ *
+ * ── THE `move_node` INDEX SEMANTICS (verified, not assumed) ───────────────
+ * `Scene::move_node` (`crates/lumen-core/src/operations.rs:517-566`) is
+ * REMOVE-THEN-INSERT: it validates `index` against the pre-detach child list,
+ * then calls `detach_node_from_parents` and inserts at `index` into what is
+ * left. So for a SAME-PARENT reorder the index counts against a list of length
+ * n-1 that no longer contains the moved node:
+ *
+ *     siblings [a, b, c, d], moving b (i = 1, n = 4)
+ *       forward  → index i+1 = 2   →  [a, c] · b · [d]  =  [a, c, b, d]
+ *       front    → index n-1 = 3   →  [a, c, d] · b     =  [a, c, d, b]
+ *       backward → index i-1 = 0   →  b · [a, c, d]     =  (for c: [a, c, b, d])
+ *       back     → index 0
+ *
+ * (The engine also clamps a same-parent over-run to the post-detach length, but
+ * nothing here relies on that: every index below is in range by construction.)
+ *
+ * WHICH END IS "FRONT". Later in `children` paints on top — the MVP editor's
+ * own `ArrangeSection` (`subsystems/clue-design/apps/editor/src/components/
+ * inspector/ArrangeSection.tsx:94-97`, READ-ONLY) sends
+ * `moveAfterEdit(node, siblings[siblings.length - 1])` for "To front" and
+ * `moveBeforeEdit(node, siblings[0])` for "To back". That editor expresses
+ * z-order as `move_before`/`move_after` STRUCTURED EDITS against an anchor
+ * sibling; this lane uses the plain `move_node` operation instead, because the
+ * inspector's shipped write seam takes `Operation[]` and one batch is one undo
+ * frame. The resulting document is the same; only the transport differs.
+ *
+ * THE EDGE-DISABLE AND THE MATH ARE ONE STATEMENT. `arrangeEnablement`'s
+ * `zOrder` flags are literally "does `zOrderOperation` produce an operation",
+ * so a button can never be offered for a step that would write nothing (or
+ * hidden from one that would).
+ */
+
+export type ZOrderAction = "front" | "forward" | "backward" | "back";
+
+export interface ArrangeEnablement {
+  /** The PRIMARY node's four z-order steps (`selectedIds[0]`). False at the
+   * relevant edge of the stack, for a locked node, for the page's root frame,
+   * and whenever the node or its parent cannot be resolved. */
+  zOrder: Record<ZOrderAction, boolean>;
+  /** `canAlignNodes`: 2+ nodes, every one direct-geometry-editable. */
+  align: boolean;
+  /** `canDistributeNodes`: the same per-node rule at a floor of 3. */
+  distribute: boolean;
+  /** `canGroupNodes`: 2+ unlocked, unique, same-parent, non-solver-managed. */
+  group: boolean;
+  /** A SINGLE selected id that `canUngroupNode` accepts (an unlocked
+   * container). Two containers are not "a single container". */
+  ungroup: boolean;
+}
+
+const NOTHING: ArrangeEnablement = {
+  align: false,
+  distribute: false,
+  group: false,
+  ungroup: false,
+  zOrder: { back: false, backward: false, forward: false, front: false },
+};
+
+/** Where a z-order step would put the node: its own parent, and the insertion
+ * index in the post-detach sibling list. `null` is the whole refusal set — an
+ * unknown node, a locked one, the artboard, an unresolvable parent, or a step
+ * that would run off the end of the stack. */
+function zOrderTarget(
+  scene: Scene,
+  nodeId: NodeId,
+  action: ZOrderAction,
+): { index: number; parent: ParentRef } | null {
+  const node = scene.nodes[nodeId];
+  // §4: a locked node writes nothing, here as everywhere else on this lane.
+  if (!node || node.locked) {
+    return null;
+  }
+  const parentInfo = parentInfoForNode(scene, nodeId);
+  if (!parentInfo) {
+    return null;
+  }
+  // The artboard is not a layer in anyone's stack: §5 gives the page exactly
+  // one root frame, and reordering it against its own page means nothing. The
+  // check is the page's OWN root frame (not "parented by a page"), so a second
+  // top-level node — which this document does not have today — would still
+  // reorder normally.
+  if (
+    parentInfo.parent.kind === "page" &&
+    rootFrameId(scene, parentInfo.parent.id) === nodeId
+  ) {
+    return null;
+  }
+  const { index, siblings } = parentInfo;
+  // The post-detach list this index counts against.
+  const last = siblings.length - 1;
+  const isFront = index === last;
+  const isBack = index === 0;
+  switch (action) {
+    case "front":
+      return isFront ? null : { index: last, parent: parentInfo.parent };
+    case "forward":
+      return isFront ? null : { index: index + 1, parent: parentInfo.parent };
+    case "backward":
+      return isBack ? null : { index: index - 1, parent: parentInfo.parent };
+    case "back":
+      return isBack ? null : { index: 0, parent: parentInfo.parent };
+  }
+}
+
+/**
+ * The ONE operation a z-order button writes, or `null` when the step would do
+ * nothing. Built through the engine's own `moveNodeToParent`.
+ */
+export function zOrderOperation(
+  scene: Scene | null,
+  nodeId: NodeId,
+  action: ZOrderAction,
+): Operation | null {
+  if (!scene) {
+    return null;
+  }
+  const target = zOrderTarget(scene, nodeId, action);
+  return target
+    ? moveNodeToParent(nodeId, target.parent, target.index)
+    : null;
+}
+
+/**
+ * What the Arrange section may offer for this selection.
+ *
+ * `scene` is nullable because the session's is: before a document loads there
+ * is no document to arrange, and every button is honestly off rather than
+ * live-looking and silently refused.
+ */
+export function arrangeEnablement(
+  scene: Scene | null,
+  selectedIds: readonly string[],
+): ArrangeEnablement {
+  if (!scene) {
+    return NOTHING;
+  }
+  const primary = selectedIds[0] ?? null;
+  const ids = [...selectedIds];
+  return {
+    align: canAlignNodes(scene, ids),
+    distribute: canDistributeNodes(scene, ids),
+    group: canGroupNodes(scene, ids),
+    ungroup: ids.length === 1 && canUngroupNode(scene, ids[0]!),
+    zOrder: {
+      back: primary !== null && zOrderTarget(scene, primary, "back") !== null,
+      backward:
+        primary !== null && zOrderTarget(scene, primary, "backward") !== null,
+      forward:
+        primary !== null && zOrderTarget(scene, primary, "forward") !== null,
+      front: primary !== null && zOrderTarget(scene, primary, "front") !== null,
+    },
+  };
+}
+
+/**
+ * ⌘G / ⇧⌘G, decided as a pure function of the event — the half of the keydown
+ * handler that has rules, extracted so it can be tested without a DOM (the
+ * `canvasWriteTarget` / `createSceneReplaceImageHandler` precedent; the runner
+ * is `tsx --test` over `.ts` only, so a hook is never component-tested here).
+ *
+ * The typing-target skip is the ⌘Z handler's, verbatim in rule
+ * (`use-scene-inspector-writes.ts:379-387`): a focused input, textarea or
+ * contenteditable keeps its own shortcuts. `null` means "not ours", which is
+ * also what tells the caller NOT to `preventDefault` — the browser's own ⌘G
+ * (Find Again) must survive every event this lane does not handle.
+ */
+export function arrangeShortcut(
+  event: {
+    ctrlKey: boolean;
+    key: string;
+    metaKey: boolean;
+    shiftKey: boolean;
+  },
+  target: { isContentEditable: boolean; tagName: string } | null,
+): "group" | "ungroup" | null {
+  if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "g") {
+    return null;
+  }
+  if (
+    target &&
+    (target.isContentEditable ||
+      target.tagName === "INPUT" ||
+      target.tagName === "TEXTAREA")
+  ) {
+    return null;
+  }
+  return event.shiftKey ? "ungroup" : "group";
+}

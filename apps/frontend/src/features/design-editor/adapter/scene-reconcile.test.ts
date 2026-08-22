@@ -11,8 +11,10 @@ import {
   SCENE_RELOADED_NOTE,
   SCENE_HISTORY_FALLBACK_ERROR,
   SCENE_WRITE_FALLBACK_ERROR,
+  STRUCTURED_EDIT_FAILURE_PATTERN,
   historyFailureToMessages,
   reconcileToMessages,
+  structuredEditFailureToMessage,
 } from "./scene-reconcile";
 
 /**
@@ -290,5 +292,81 @@ it("treats a rejection it cannot parse at all as the reload note", () => {
   assert.deepEqual(
     reconcileToMessages(event("rejected", "something upstream reworded")),
     { note: SCENE_RELOADED_NOTE, error: null },
+  );
+});
+
+/* ── AD4.B step 4: the structured edit's own failure prose ─────────────────── */
+
+/** AD4.B step 4: the THIRD upstream template this file parses — §1.5's
+ * group/ungroup travel `applyStructuredEdit` (`structuredEdits.ts:229-231`),
+ * not the write queue. Pinned the same way, against the same source. */
+const STRUCTURED_EDIT_FAILURE_TEMPLATE =
+  "`structured edit failed (${response.status}): ${JSON.stringify(detail)}`";
+
+/** The message `applyStructuredEdit` actually throws, assembled here the way it
+ * assembles it — so a fixture can never drift from the code it stands in for. */
+function structuredEditError(status: number, detail: unknown): Error {
+  return new Error(
+    `structured edit failed (${status}): ${JSON.stringify(detail)}`,
+  );
+}
+
+it("pins the upstream structured-edit template the parse depends on", () => {
+  assert.ok(
+    UPSTREAM_STRUCTURED_EDITS.includes(STRUCTURED_EDIT_FAILURE_TEMPLATE),
+    "structuredEdits.ts no longer formats its edit failure as `scene-reconcile.ts` parses it",
+  );
+  assert.ok(
+    STRUCTURED_EDIT_FAILURE_PATTERN.test(
+      structuredEditError(409, { detail: "x" }).message,
+    ),
+  );
+});
+
+it("shows a refused group/ungroup in the SERVER's own words", () => {
+  // The engine's real refusals arrive as the API's structured detail — a
+  // locked member, a mixed-parent selection, an auto-layout ungroup without
+  // `allow_layout`. The user reads the reason, never a generic sentence.
+  assert.equal(
+    structuredEditFailureToMessage(
+      structuredEditError(422, {
+        detail: {
+          code: "edit.lifecycle_protected",
+          message: "cannot group a solver-managed stack child",
+        },
+      }),
+    ),
+    "cannot group a solver-managed stack child",
+  );
+  // A diagnostics array wins over the summary message, exactly as the queue's
+  // rejection path reads it.
+  assert.equal(
+    structuredEditFailureToMessage(
+      structuredEditError(422, {
+        detail: {
+          code: "edits.no_operations",
+          diagnostics: [{ message: "structured edit produced nothing" }],
+          message: "unused",
+        },
+      }),
+    ),
+    "structured edit produced nothing",
+  );
+});
+
+it("never shows a structured edit's raw internal prose", () => {
+  // No readable body, a transport rejection, and a non-Error throw all land on
+  // the lane's ratified sentence rather than an internal string.
+  assert.equal(
+    structuredEditFailureToMessage(structuredEditError(500, {})),
+    SCENE_WRITE_FALLBACK_ERROR,
+  );
+  assert.equal(
+    structuredEditFailureToMessage(new TypeError("Failed to fetch")),
+    SCENE_WRITE_FALLBACK_ERROR,
+  );
+  assert.equal(
+    structuredEditFailureToMessage("not an error at all"),
+    SCENE_WRITE_FALLBACK_ERROR,
   );
 });

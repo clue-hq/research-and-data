@@ -2,9 +2,12 @@
 
 import Image from "next/image";
 import { useState, type ReactNode } from "react";
+import type { ZOrderAction } from "@/features/design-editor/adapter/scene-arrange";
 import { backgroundFillCommits } from "@/features/design-editor/adapter/scene-hydrate";
 import type { SceneImageAiBinding } from "@/features/design-editor/adapter/scene-image-ai";
 import type { ScenePalette } from "@/features/design-editor/adapter/scene-palette";
+import type { AlignMode } from "@/features/design-editor/engine/scene/alignDistribute";
+import type { SceneArrangeBinding } from "@/features/design-editor/hooks/use-scene-arrange";
 import type { ChatShellInspectorSelection } from "../model/chat-shell";
 import {
   useInspectorController,
@@ -18,6 +21,7 @@ import {
   InspectorField,
   InspectorHeader,
   InspectorIcon,
+  type InspectorIconName,
   InspectorImageUpload,
   InspectorInput,
   InspectorLayerRow,
@@ -216,42 +220,52 @@ function TextAlignment({
 
 /** G-H (AD4.R-10): layer order and alignment actions are OPERATIONS on the
  * document (not navigation), so the whole grid goes dark while the panel is
- * disabled. */
+ * disabled.
+ *
+ * AD4.B step 4 (§1.5): the two tables carry the typed action each button
+ * performs, and `arrange` — when the session supplies it — is what they call.
+ * Its per-action enablement disables the buttons this selection cannot use, so
+ * an edge of the stack or a single-node selection is stated rather than
+ * silently refused. ABSENT (the dummy fixture path) keeps the original
+ * `requestAction("arrange:…")` dispatch byte for byte, dead listener and all —
+ * the AD4.A posture for a control whose live path is not armed. */
 function ArrangeControls({
+  arrange,
   disabled = false,
   onAction,
 }: {
+  arrange?: SceneArrangeBinding;
   disabled?: boolean;
   onAction: (action: string) => void;
 }) {
   const layerActions = [
-    ["Bring to front", "align-top"],
-    ["Bring forward", "align-middle"],
-    ["Send backward", "align-center"],
-    ["Send to back", "align-bottom"],
-  ] as const;
+    ["Bring to front", "align-top", "front"],
+    ["Bring forward", "align-middle", "forward"],
+    ["Send backward", "align-center", "backward"],
+    ["Send to back", "align-bottom", "back"],
+  ] as const satisfies readonly (readonly [string, InspectorIconName, ZOrderAction])[];
   const alignmentActions = [
-    ["Align left", "align-left"],
-    ["Align center", "align-center"],
-    ["Align right", "align-right"],
-    ["Align top", "align-top"],
-    ["Align middle", "align-middle"],
-    ["Align bottom", "align-bottom"],
-  ] as const;
+    ["Align left", "align-left", "left"],
+    ["Align center", "align-center", "center-h"],
+    ["Align right", "align-right", "right"],
+    ["Align top", "align-top", "top"],
+    ["Align middle", "align-middle", "middle-v"],
+    ["Align bottom", "align-bottom", "bottom"],
+  ] as const satisfies readonly (readonly [string, InspectorIconName, AlignMode])[];
 
   return (
     <>
       <InspectorField label="Layer">
         <div className={`${styles.inspectorActionGrid} ${styles.inspectorActionGridFour} ${disabled ? styles.inspectorControlDisabled : ""}`}>
-          {layerActions.map(([label, icon]) => (
-            <button aria-label={label} disabled={disabled} key={label} onClick={() => onAction(label)} type="button"><InspectorIcon name={icon} size={12} /></button>
+          {layerActions.map(([label, icon, action]) => (
+            <button aria-label={label} disabled={disabled || (arrange ? !arrange.enablement.zOrder[action] : false)} key={label} onClick={() => (arrange ? arrange.zOrder(action) : onAction(label))} type="button"><InspectorIcon name={icon} size={12} /></button>
           ))}
         </div>
       </InspectorField>
       <InspectorField label="Alignment">
         <div className={`${styles.inspectorActionGrid} ${styles.inspectorActionGridSix} ${disabled ? styles.inspectorControlDisabled : ""}`}>
-          {alignmentActions.map(([label, icon]) => (
-            <button aria-label={label} disabled={disabled} key={label} onClick={() => onAction(label)} type="button"><InspectorIcon name={icon} size={12} /></button>
+          {alignmentActions.map(([label, icon, mode]) => (
+            <button aria-label={label} disabled={disabled || (arrange ? !arrange.enablement.align : false)} key={label} onClick={() => (arrange ? arrange.align(mode) : onAction(label))} type="button"><InspectorIcon name={icon} size={12} /></button>
           ))}
         </div>
       </InspectorField>
@@ -281,6 +295,7 @@ function Section({
 
 function AdTextInspector({
   addressing,
+  arrange,
   fontOptions,
   hydrated,
   inspectorDisabled = false,
@@ -288,6 +303,9 @@ function AdTextInspector({
   onSelectionChange,
   ...binding
 }: AdSchemaBinding & {
+  /** §1.5 (AD4.B step 4): the session's Arrange actions. Absent keeps this
+   * section's original `requestAction` dispatch. */
+  arrange?: SceneArrangeBinding;
   fontOptions: readonly string[];
   onSelectionChange: (selection: ChatShellInspectorSelection) => void;
 }) {
@@ -369,7 +387,7 @@ function AdTextInspector({
         <InspectorField label="Rotation"><InspectorInput ariaLabel="Rotation" disabled={inert} onCommitValue={(value) => setValue("rotation", value)} suffix="°" value={state.rotation} /></InspectorField>
       </Section>
       <Section id="arrange" label="Arrange" open={state.openSections.arrange} toggle={() => toggleSection("arrange")}>
-        <ArrangeControls disabled={inert} onAction={(action) => requestAction(`arrange:${action}`)} />
+        <ArrangeControls arrange={arrange} disabled={inert} onAction={(action) => requestAction(`arrange:${action}`)} />
       </Section>
       <Section id="layers" label="Layers" open={state.openSections.layers} toggle={() => toggleSection("layers")}>
         <AdLayers onSelectionChange={onSelectionChange} selected="text" {...binding} />
@@ -928,6 +946,7 @@ function AdImageInspector({
 
 export function ImageInspector({
   addressing,
+  arrange,
   error = null,
   fontOptions = DEFAULT_FONT_OPTIONS,
   hydrated,
@@ -941,6 +960,13 @@ export function ImageInspector({
   suppressAutoLayoutSection = false,
   ...layers
 }: AdSchemaBinding & {
+  /** §1.5 row (AD4.B step 4): the session's Arrange actions — z-order, the six
+   * alignments, the two distributions and group/ungroup — plus what each may do
+   * for the current selection. It goes to the schemas that RENDER an Arrange
+   * section (the text schema and the four co-founder ones); absent, on the
+   * dummy fixture path, leaves every one of those buttons exactly as it
+   * shipped. */
+  arrange?: SceneArrangeBinding;
   /** AD2.7: an inline write error. Same one-line floor the web branch renders
    * (the W3.3 founder gate forbids any new failure UI). */
   error?: string | null;
@@ -1065,11 +1091,11 @@ export function ImageInspector({
             </p>
           ) : null}
           {selection === "canvas" ? <AdCanvasInspector {...schema} /> : null}
-          {selection === "text" ? <AdTextInspector fontOptions={fontOptions} {...schema} /> : null}
+          {selection === "text" ? <AdTextInspector arrange={arrange} fontOptions={fontOptions} {...schema} /> : null}
           {/* `onReplaceImage` and `imageAi` go to THIS schema alone — the rows
               are §1.3's — the way `fontOptions` goes only to the text schema. */}
           {selection === "image" ? <AdImageInspector imageAi={imageAi} onReplaceImage={onReplaceImage} {...schema} /> : null}
-          {dummySelection ? <AdDummyInspector selection={selection} suppressAutoLayoutSection={suppressAutoLayoutSection} {...schema} /> : null}
+          {dummySelection ? <AdDummyInspector arrange={arrange} selection={selection} suppressAutoLayoutSection={suppressAutoLayoutSection} {...schema} /> : null}
           {/* `"button"` is deliberately absent from this list: with its schema
               hidden (row 7) it falls through to the canvas default. */}
           {!(["auto-layout", "canvas", "ellipse", "group", "image", "rectangle", "text"] as ChatShellInspectorSelection[]).includes(selection) ? <AdCanvasInspector {...schema} /> : null}

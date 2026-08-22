@@ -212,3 +212,52 @@ export function historyFailureToMessages(cause: unknown): SceneHistoryFailure {
     error: firstServerMessage(body) ?? SCENE_HISTORY_FALLBACK_ERROR,
   };
 }
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * AD4.B step 4 — the STRUCTURED EDIT's failure, read out of its own prose.
+ * ─────────────────────────────────────────────────────────────────────────── */
+
+/**
+ * The fixed head of the upstream structured-edit error
+ * (`engine/scene/structuredEdits.ts:229-231`):
+ *
+ *     `structured edit failed (${response.status}): ${JSON.stringify(detail)}`
+ *
+ * Exported so `scene-reconcile.test.ts` can pin it against that file.
+ */
+export const STRUCTURED_EDIT_FAILURE_PATTERN =
+  /^structured edit failed \((\d+)\): ([\s\S]*)$/;
+
+/**
+ * A THIRD PARSE OF AN UPSTREAM FORMAT, contained beside the other two — the
+ * whole point of this file (see its header): every place this lane reads a
+ * status back out of an extracted module's sentence is here, with one test
+ * pinning the template against the real source.
+ *
+ * §1.5's group/ungroup are STRUCTURED EDITS, not operations, so they travel
+ * `applyStructuredEdit` (`POST /documents/{id}/edits`) rather than the write
+ * queue — and its throw flattens status and body the same way.
+ *
+ * There is NO quiet-409 branch here, and deliberately: the caller sends no
+ * `base_version` (the drain-then-post ordering is the concurrency discipline,
+ * exactly as the history step's is), so `require_base_version` cannot fire and
+ * a 409 from this route is a real refusal about THIS edit. Every failure
+ * therefore says something, in the server's own words when it named a reason
+ * and in the lane's ratified sentence when it did not.
+ */
+export function structuredEditFailureToMessage(cause: unknown): string {
+  const message = cause instanceof Error ? cause.message : "";
+  const parsed = STRUCTURED_EDIT_FAILURE_PATTERN.exec(message);
+  if (!parsed) {
+    // A transport failure, or an upstream reword. The raw string is internal
+    // prose and is never shown to the user.
+    return SCENE_WRITE_FALLBACK_ERROR;
+  }
+  let body: unknown = null;
+  try {
+    body = JSON.parse(parsed[2]);
+  } catch {
+    // Upstream's own `response.json().catch(() => ({}))` yields `{}`.
+  }
+  return firstServerMessage(body) ?? SCENE_WRITE_FALLBACK_ERROR;
+}

@@ -343,6 +343,7 @@ export function ChatSurface({
                 // exactly when the selection changes.
                 key={sceneSession.primaryNodeId ?? "canvas"}
                 addressing={sceneSession.addressing}
+                arrange={sceneSession.arrange}
                 error={sceneSession.inspectorError}
                 fontOptions={sceneSession.fontOptions}
                 hydrated={sceneSession.hydrated}

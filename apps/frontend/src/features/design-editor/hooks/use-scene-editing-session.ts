@@ -22,6 +22,7 @@ import type { NodeId, PageId, Scene } from "../engine/scene/contracts";
 import { fetchBrandKitDetail } from "../engine/scene/documentStore";
 import { collectKitFontFaceRefs } from "../engine/scene/kitFonts";
 import { fetchFontLibrary } from "../engine/scene/libraryFonts";
+import { useSceneArrange } from "./use-scene-arrange";
 import type { SceneDocumentHistory } from "./use-scene-document";
 import { useSceneImageAi } from "./use-scene-image-ai";
 import { useSceneInspectorWrites } from "./use-scene-inspector-writes";
@@ -485,6 +486,35 @@ export function useSceneEditingSession({
   // lane's signature defect, and the honest answer is not to offer the control.
   const imageAi = activeDocumentId && scene ? imageAiBinding : undefined;
 
+  // AD4.B step 4 (§1.5 Arrange): z-order, align, distribute, group/ungroup and
+  // the ⌘G/⇧⌘G pair.
+  //
+  // It takes the SELECTION SET, not the primary node — it is the one binding on
+  // this lane whose actions are about several nodes at once (align needs 2+,
+  // distribute 3+, group 2+ same-parent siblings), and the whole live scene,
+  // because every eligibility rule is a question about the tree (a node's
+  // siblings, its parent's layout mode, its lock).
+  //
+  // BOTH transports ride in: `applyOps` for the three operation actions, and
+  // `applyEdit` for group/ungroup, which the engine models as structured edits
+  // and which therefore travel the shipped undo/redo path's own control flow.
+  const arrangeBinding = useSceneArrange({
+    applyEdit: writes.applyEdit,
+    applyOps: writes.applyOps,
+    canApply: writes.canApply,
+    clearMessages: writes.clearMessages,
+    documentId: activeDocumentId,
+    scene,
+    selectedIds,
+  });
+  // OFFERED only when there is a real document to arrange — `imageAi`'s gate
+  // above, for its reason exactly: the hook always returns a binding, and
+  // without this the fixture layer tree would render fourteen live-looking
+  // buttons over no scene at all. (The enablement inside would already be all
+  // false, so nothing could be written; this keeps the panel from claiming
+  // otherwise, and keeps the absent-binding path the dummy's own.)
+  const arrange = activeDocumentId && scene ? arrangeBinding : undefined;
+
   // W3.1's triple, ad-side. `documentVersion` stays NULL here, permanently and
   // deliberately (AD3.2 ruling): the edit queue owns `base_version` internally
   // (`editQueue.ts:110-113,152`), so a copy stamped on an inspector event would
@@ -508,6 +538,10 @@ export function useSceneEditingSession({
   return {
     activeDocumentId,
     addressing,
+    /** §1.5: the Arrange section's five actions and their enablement.
+     * `undefined` until a document is actually loaded — the same gate `imageAi`
+     * takes, which is what keeps the buttons inert on the fixture path. */
+    arrange,
     canvasControls,
     fontOptions,
     hydrated,
