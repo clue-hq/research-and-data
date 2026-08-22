@@ -634,14 +634,14 @@ export const SELECTION_OUTLINE_COLOR = "#4F46E5";
 export const SELECTION_OUTLINE_WIDTH = 1.5;
 
 /**
- * The four corner handles of the same G-A ruling — **approved, not yet
- * rendered.**
+ * The four corner handles of the same G-A ruling — **approved, and LIVE since
+ * AD4.C.**
  *
- * Handles are a promise of drag-and-resize, and that behaviour is AD4's Lane C
- * (the editor is read-only until AD3 arms the write path). A handle a user can
- * grab that does nothing is a fake affordance, so the geometry and colors are
- * encoded here and the renderer is defaulted OFF — Lane C turns it on by
- * passing `handles` to the overlay, and changes nothing else.
+ * Handles are a promise of drag-and-resize, so they waited for that behaviour
+ * (the editor was read-only until AD3 armed the write path, and a handle a user
+ * can grab that does nothing is a fake affordance). AD4.C shipped it: the
+ * canvas passes `handles` to the overlay whenever the selection can actually be
+ * resized — an editable node, a live engine, and no in-flight agent turn.
  */
 export const SELECTION_HANDLE_SIZE = 8;
 export const SELECTION_HANDLE_CORNER_RADIUS = 1;
@@ -793,15 +793,6 @@ export function sceneSelectionOutline({
   });
 }
 
-/**
- * The four corner handles for an outline, centred on its corners, in the
- * outline's own PRE-rotation frame — the overlay rotates the outline and its
- * handles together as one group, so a rotated selection's handles ride its
- * corners without any second rotation here.
- *
- * G-A-approved geometry; **enabled with Lane C** (see the handle constants
- * above for why it is not rendered yet).
- */
 /** A descriptor-px box back in the scene units `selectionOutlineForBox` takes
  * — the inverse of its own `unitScale` multiply, for a gesture's live box. */
 function sceneBoxFromDescriptor(box: Box, unitScale: number): Box {
@@ -814,6 +805,15 @@ function sceneBoxFromDescriptor(box: Box, unitScale: number): Box {
   };
 }
 
+/**
+ * The four corner handles for an outline, centred on its corners, in the
+ * outline's own PRE-rotation frame — the overlay rotates the outline and its
+ * handles together as one group, so a rotated selection's handles ride its
+ * corners without any second rotation here.
+ *
+ * G-A-approved geometry, **rendered since AD4.C** (see the handle constants
+ * above).
+ */
 export function selectionHandleRects(
   outline: SceneSelectionOutline,
 ): Array<{ x: number; y: number; size: number }> {

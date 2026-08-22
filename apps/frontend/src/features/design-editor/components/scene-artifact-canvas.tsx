@@ -859,6 +859,18 @@ function SceneDocumentCanvas({
       // AD4.E's). Reasoned out at `scenePressModifiers`.
       modifiers: scenePressModifiers(target, modifiersOf(event)),
     });
+    if (!armed) {
+      // …and then straight back to rest. An unarmed press has no follow-up —
+      // moves are ignored and its `up` reduces to nothing — so the machine has
+      // no reason to hold `pressed`, and holding it was not free: capture is
+      // taken only for an ARMED press, so an unarmed one released off the stage
+      // never gets its `pointerup` and would strand `pressed` until the next
+      // press anywhere on the canvas. A machine stranded non-idle is exactly
+      // what would stop the window Escape listener below being inert — it would
+      // swallow the next Escape anywhere in the app. The press keeps its
+      // selection; only the leftover state goes.
+      gestureRef.current = initialGestureState;
+    }
   };
 
   const handlePointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -906,17 +918,25 @@ function SceneDocumentCanvas({
   const handlePointerUp = (event: ReactPointerEvent<HTMLDivElement>) => {
     const panned = panDragRef.current?.pointerId === event.pointerId;
     endPanDrag(event);
-    if (panned || gestureRef.current.kind === "idle") {
+    if (panned) {
       return;
     }
-    const point = descriptorPoint(event);
-    // The reducer commits on `up` and returns to idle; an unarmed press is
-    // still `pressed`, so its `up` reduces to nothing at all — a click.
-    if (point) {
-      dispatchGesture({ kind: "up", point, modifiers: modifiersOf(event) });
+    if (gestureRef.current.kind !== "idle") {
+      const point = descriptorPoint(event);
+      // The reducer commits on `up` and returns to idle.
+      if (point) {
+        dispatchGesture({ kind: "up", point, modifiers: modifiersOf(event) });
+      }
     }
-    gestureRef.current = initialGestureState;
-    gestureArmedRef.current = false;
+    // UNCONDITIONALLY, whatever that `up` resolved to. The preview is cleared
+    // by the `commit` arm, and two reachable paths never reach it while still
+    // ending the gesture: no descriptor point at all (a failed reload landing
+    // mid-drag), and a committed action whose node or page has left the scene
+    // (an agent turn regenerating the document mid-drag), which resolves to
+    // `none`. Leaving the preview behind there was unrescuable — the machine
+    // is idle by then, so Escape's own guard refuses to fire — so the machine
+    // and the preview go back to rest together, always.
+    resetGesture();
   };
 
   const handlePointerCancel = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -925,12 +945,23 @@ function SceneDocumentCanvas({
   };
 
   // Ruling C-2: Escape cancels a live gesture. Registered once and inert
-  // otherwise — the guard is the machine's own state, so an Escape with no
-  // gesture running reaches whatever else wants it (this canvas has never
-  // cleared a selection on Escape, and this task does not add that).
+  // otherwise — an Escape with no gesture running reaches whatever else wants
+  // it (this canvas has never cleared a selection on Escape, and this task does
+  // not add that).
+  //
+  // The guard is ARMED **and** non-idle, not non-idle alone: this is a global
+  // key handler, so its inertness must not rest on a state machine that a
+  // missed `pointerup` could leave dirty. Only an armed gesture has anything to
+  // cancel, and after `beginPress`/`handlePointerUp` above, armed and non-idle
+  // are the same condition — the second half is belt-and-braces on a handler
+  // that can `preventDefault` a key the whole app shares.
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape" || gestureRef.current.kind === "idle") {
+      if (
+        event.key !== "Escape" ||
+        !gestureArmedRef.current ||
+        gestureRef.current.kind === "idle"
+      ) {
         return;
       }
       // The same guard the space-pan listener uses: Escape inside an inspector

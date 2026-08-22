@@ -103,10 +103,14 @@ export const CORNER_RESIZE_HANDLES: ResizeHandle[] = [
  *    rotate zone on top of the corner the user can actually see.
  *
  * Asking the corners directly cannot lose to a zone that does not exist here.
- * Everything else is `handleAtPoint`'s own arithmetic, kept deliberately
- * identical: `handlePoint` places the (rotated) corner, the radius is the same
- * shared `HANDLE_HIT_RADIUS`, it is divided by the same zoom to stay
- * screen-constant, and nearest-within-tolerance wins.
+ * Everything that decides a HIT is `handleAtPoint`'s own arithmetic, kept
+ * deliberately identical: `handlePoint` places the (rotated) corner, the radius
+ * is the same shared `HANDLE_HIT_RADIUS`, it is divided by the same zoom to
+ * stay screen-constant, and nearest-within-tolerance wins. The one deliberate
+ * departure is stricter, not different: a degenerate `zoom` (zero, negative,
+ * NaN) falls back to 1 rather than dividing raw as `handleAtPoint` does, where
+ * a zero would make the tolerance infinite and every corner a hit. No clamped
+ * viewport can produce such a zoom, so this only ever errs safe.
  */
 export function cornerHandleAtPoint(
   point: Point,
