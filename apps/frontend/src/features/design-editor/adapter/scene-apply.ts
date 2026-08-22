@@ -5,6 +5,7 @@ import type {
   Color,
   ColorStop,
   CornerRadii,
+  Dimension,
   Fill,
   ImageFitMode,
   ImageNode,
@@ -26,6 +27,7 @@ import {
   updateNodeAbsoluteBox,
   updateNodeFills,
   updateNodeLocked,
+  updateNodeSize,
   updateNodeStrokes,
   updateNodeTransform,
   updatePageSize,
@@ -42,6 +44,7 @@ import {
   MINTED_STROKE_HEX,
   MINTED_STROKE_WIDTH,
   SIZE_PRESETS,
+  dimensionSize,
   finiteNumber,
   pagePixelSize,
   radiusCommit,
@@ -176,6 +179,19 @@ const VALIGN_VALUES: Record<string, VerticalAlign> = {
   bottom: "bottom",
   middle: "center",
   top: "top",
+};
+
+/** §1.4/OQ-2 (AD4.B step 1): the inverse of the mode select's three DISPLAY
+ * labels — the engine's own lowercase `Dimension.kind` words. `token` is
+ * deliberately absent: no v1 control offers it (the MVP's own select refuses
+ * the value too), so a stored token dimension is left alone unless the user
+ * picks one of the three. The engine's spellings are not in the dummy's
+ * vocabulary and are therefore not accepted, exactly as `VALIGN_VALUES`
+ * refuses `center`. */
+const SIZE_MODE_KINDS: Record<string, "fill" | "fixed" | "hug"> = {
+  Fill: "fill",
+  Fixed: "fixed",
+  Hug: "hug",
 };
 
 /** §1.3 Mode (AD4.A): the inverse of `scene-hydrate.ts`'s `IMAGE_FIT_LABELS` —
@@ -758,6 +774,106 @@ export function sceneChangeToOperation(
       // hydrates it raw). Rotation rides the TRANSFORM even for a pinned node,
       // whose box carries position and size only (`operations.ts:127-129`).
       return updateNodeTransform(node, { ...node.transform, rotation });
+    }
+
+    // ── §1.4 Layout: Dimensions W/H (AD4.B step 1) ───────────────────────────
+    // NO KIND GUARD, the file header's standing rule: hydrate states `width`
+    // and `height` for every kind, so the four dummy schemas and OQ-1's plain
+    // Frame reach this row without a second implementation.
+    //
+    // VERIFIED against the MVP editor's own W/H write (`ObjectSection.tsx`'s
+    // `emitExtent`, read-only): a pinned node's page-space box takes the
+    // number; every other node has that ONE axis rewritten to a Fixed
+    // dimension, so a size typed on a hug or fill axis FLIPS that axis to
+    // fixed rather than being refused. The panel's "Width fixed"/"Height fixed"
+    // inputs commit this same property (the MVP's `SizingSection` writes the
+    // identical `{kind:"fixed"}` from its own fixed field), so the two controls
+    // are one write path rather than two cases that could disagree.
+    //
+    // NOT gated on `isNodeDirectGeometryEditable`, unlike Position and
+    // Rotation: sizing is a layout INPUT, not direct geometry — the MVP's
+    // `SizingSection` gates its size fields on the node's lock alone and says
+    // so in as many words ("layout-managed children can change sizing mode even
+    // when their direct X/Y geometry is locked"). Its `ObjectSection` W/H pair
+    // does take the geometry gate, and the two MVP surfaces are simply split;
+    // the ad panel has ONE W/H row that doubles as the fixed input, so the
+    // permissive rule is the one that keeps both of its jobs working.
+    case "width":
+    case "height": {
+      const axis = property === "width" ? "width" : "height";
+      const size = finiteNumber(value);
+      // The MVP's fixed-size fields are `min={1}`; the ad's are free text, so
+      // the floor is a refusal here rather than a browser-enforced minimum —
+      // the §1.2 font-size row's rule exactly.
+      if (size === null || size < 1) {
+        return null;
+      }
+      const box: Rect | null = isNodePinned(scene, node.id)
+        ? (node.absolute_box ?? node.computed?.layout_bounds ?? null)
+        : null;
+      if (box) {
+        return updateNodeAbsoluteBox(node, { ...box, [axis]: size });
+      }
+      return updateNodeSize(node, {
+        ...node.size,
+        [axis]: { kind: "fixed", value: size },
+      });
+    }
+
+    // ── §1.4 Layout: Opacity — shown as %, written 0–1 (OQ-3) ────────────────
+    case "opacity": {
+      const percent = finiteNumber(value);
+      if (percent === null) {
+        return null;
+      }
+      // The one Layout row that FOLDS rather than refuses out-of-range input,
+      // and the difference is the field itself: opacity is a bounded ratio, so
+      // "150" names a real intent (fully opaque) the engine can state, while an
+      // out-of-range radius or size names none. Both ends, because the engine's
+      // own contract is 0–1 and a document holding -0.05 would render nothing
+      // the panel could then explain.
+      const clamped = Math.min(100, Math.max(0, percent));
+      return {
+        kind: "update_node",
+        node_id: node.id,
+        patch: nodePatch({ opacity: set(clamped / 100) }),
+      };
+    }
+
+    // ── §1.4 Layout: Width/Height mode — Fixed | Hug | Fill (OQ-2) ───────────
+    case "widthMode":
+    case "heightMode": {
+      const axis = property === "widthMode" ? "width" : "height";
+      const current = node.size[axis];
+      const mode = vocabulary(SIZE_MODE_KINDS, value);
+      if (mode === undefined) {
+        return null;
+      }
+      let dimension: Dimension;
+      if (mode === "hug") {
+        // WIRE FORMAT: the hug arm of `Dimension` has NO `value` member
+        // (`contracts.ts`), and an extra one is a shape the Rust core does not
+        // accept. Written as a bare literal so it cannot acquire one.
+        dimension = { kind: "hug" };
+      } else if (mode === "fill") {
+        // OQ-2/§5: fill WEIGHTS have no v1 input, so the weight is 1 — which is
+        // also what the MVP's own mode select seeds a non-fill axis with.
+        dimension = { kind: "fill", value: { weight: 1 } };
+      } else {
+        // The size the panel is SHOWING for this axis — hydration's own
+        // derivation, so the flip writes the number the user was looking at.
+        // Null (an unsolved hug/fill axis, whose W/H box is empty) writes
+        // nothing rather than the MVP's hardcoded 120.
+        const size = dimensionSize(
+          current,
+          node.computed?.layout_bounds[axis] ?? null,
+        );
+        if (size === null) {
+          return null;
+        }
+        dimension = { kind: "fixed", value: size };
+      }
+      return updateNodeSize(node, { ...node.size, [axis]: dimension });
     }
 
     // ── §1.3 row 1: Mode — Fit / Fill / Crop (AD4.A) ─────────────────────────

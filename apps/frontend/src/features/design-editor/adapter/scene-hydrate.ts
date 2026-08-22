@@ -1,6 +1,7 @@
 import type {
   InspectorBackgroundFill,
   InspectorPresentationState,
+  InspectorSizeMode,
 } from "@/features/chat-shell/hooks/use-inspector-controller";
 import type { ChatShellInspectorSelection } from "@/features/chat-shell/model/chat-shell";
 import type {
@@ -232,32 +233,25 @@ export function mintedStrokeColor(color: string, width: string): string | null {
  * inputs to the controller gave `customWidth`/`customHeight` a real state
  * field, so they now live in `InspectorPresentationState` beside their
  * siblings — the "final home" the ruling deferred — and have left this list.
- * The rest are still AD4.B's to place.
+ *
+ * AD4.B step 1 settles the rest of the CONTROLS the same way: binding §1.4's
+ * Layout section gave `opacity`, `widthMode`/`heightMode`,
+ * `widthFixed`/`heightFixed` (and, unbound until step 2, `grow`/`alignX`/
+ * `alignY`) real state fields, so they have left this list too. What remains is
+ * exactly what is NOT a control and therefore never needed one: the header's
+ * text and one display fact.
  */
 export interface SceneInspectorExtraState {
-  /** §1.4's Align X label (Start|Center|End|Space between|Stretch). */
-  alignX?: string;
-  /** §1.4's Align Y label. */
-  alignY?: string;
-  /** §1.4's Grow input. */
-  grow?: string;
-  /** §1.4/OQ-2: Fixed | Hug | Fill. */
-  heightMode?: SceneSizeMode;
-  /** §1.4/OQ-2: the "Height fixed" input — empty unless the mode is Fixed. */
-  heightFixed?: string;
-  /** §1.4/OQ-3: opacity as the displayed percent (engine 0–1 × 100). */
-  opacity?: string;
   /** §1.0: the header title — the real node's display name. */
   title?: string;
   /** §1.2: the V-alignment toggles are disabled while the height mode is hug. */
   valignDisabled?: boolean;
-  /** §1.4/OQ-2: Fixed | Hug | Fill. */
-  widthMode?: SceneSizeMode;
-  /** §1.4/OQ-2: the "Width fixed" input — empty unless the mode is Fixed. */
-  widthFixed?: string;
 }
 
-export type SceneSizeMode = "Fill" | "Fixed" | "Hug";
+/** §1.4/OQ-2's three display labels. ONE statement of the vocabulary, in the
+ * inspector's own model (this file already imports that module), so the panel
+ * and the adapter cannot drift apart on the spelling. */
+export type SceneSizeMode = InspectorSizeMode;
 
 /** What one selected scene node hydrates into: the dummy's own state plus the
  * ruling-14 fields it does not carry yet. */
@@ -602,6 +596,33 @@ function paintState(paint: Paint | undefined): PaintState {
   }
 }
 
+/**
+ * §1.4 Dimensions (AD4.B step 1): the size an axis HAS — the number the W/H box
+ * shows — or `null` when the document states none.
+ *
+ * `null` is reachable and is the honest answer: a hug or fill axis has no
+ * stored size, and `computed` (the solver's box) is null on every node AT REST,
+ * so a stored-and-not-yet-solved hug node truthfully has no width to show. The
+ * live engine scene carries the solved bounds, which is where the number comes
+ * from in the running panel.
+ *
+ * EXPORTED because the WRITE side asks the same question twice: a W/H commit's
+ * inverse, and — the one that would otherwise drift — the Width/Height mode
+ * select's Fixed arm, which must adopt the very number the box is showing. The
+ * MVP editor substitutes a hardcoded 120 there (`fields.tsx::fixedDimensionValue`);
+ * this lane refuses instead, the way the radius row refuses where upstream
+ * folds to 0, so the panel can never write a size the user was not shown.
+ */
+export function dimensionSize(
+  dimension: Dimension,
+  computed: number | null,
+): number | null {
+  if (dimension.kind === "fixed") {
+    return roundForEditor(dimension.value);
+  }
+  return computed === null ? null : roundForEditor(computed);
+}
+
 /** §1.4/OQ-2: `Dimension` → the mode select + the "fixed" input, which the
  * schema shows only in Fixed mode (hence the empty string everywhere else). */
 function dimensionState(
@@ -665,14 +686,19 @@ export function hydrateSceneInspectorState(
   // OQ-3: the engine's 0–1 is displayed as a percent.
   state.opacity = String(Math.round(node.opacity * 100));
 
-  const width = dimensionState(
-    node.size.width,
-    node.computed?.layout_bounds.width ?? null,
-  );
-  const height = dimensionState(
-    node.size.height,
-    node.computed?.layout_bounds.height ?? null,
-  );
+  const computedWidth = node.computed?.layout_bounds.width ?? null;
+  const computedHeight = node.computed?.layout_bounds.height ?? null;
+  const width = dimensionState(node.size.width, computedWidth);
+  const height = dimensionState(node.size.height, computedHeight);
+  // §1.4 Dimensions: the W/H boxes are shown in EVERY mode, so they state the
+  // size the node has rather than the Fixed-only input beside them — which is
+  // empty on a hug or fill axis, where the scaffolding's invented `100` used to
+  // stand. Unconditional, like every other Layout key (the header rule above):
+  // a truthfully-unsolved axis states the honest empty string.
+  const widthSize = dimensionSize(node.size.width, computedWidth);
+  const heightSize = dimensionSize(node.size.height, computedHeight);
+  state.width = widthSize === null ? "" : numberText(widthSize);
+  state.height = heightSize === null ? "" : numberText(heightSize);
   state.widthMode = width.mode;
   state.widthFixed = width.fixed;
   state.heightMode = height.mode;

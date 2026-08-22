@@ -24,6 +24,19 @@ export type InspectorSectionId =
 export type HorizontalAlignment = "center" | "justify" | "left" | "right";
 export type VerticalAlignment = "bottom" | "middle" | "top";
 export type InspectorDirection = "horizontal" | "vertical";
+/**
+ * AD4.B step 1 (§1.4/OQ-2): the Width/Height mode select's three DISPLAY
+ * labels. The engine's own `Dimension.kind` is lowercase snake
+ * (`fixed|hug|fill|token`) and the seam between the two is the write adapter's
+ * (`scene-apply.ts`), exactly as `VALIGN_VALUES` and `IMAGE_FIT_VALUES` already
+ * sit between the dummy's vocabulary and the engine's.
+ *
+ * `scene-hydrate.ts`'s `SceneSizeMode` is an alias of this type rather than a
+ * second declaration of the same three strings — the adapter already imports
+ * this module for `InspectorPresentationState`, so there is one statement of
+ * the vocabulary and the two cannot drift.
+ */
+export type InspectorSizeMode = "Fill" | "Fixed" | "Hug";
 export type InspectorLayoutMode = "Flex" | "Grid" | "Hide";
 export type InspectorFillType = "linear-gradient" | "radial-gradient" | "solid";
 
@@ -64,6 +77,31 @@ export function commitInspectorNumber(raw: string, max: number): number | null {
 }
 
 export interface InspectorPresentationState {
+  /**
+   * AD4.B step 1 — RULING 14's deferred "final home", settled.
+   *
+   * These ten keys (`alignX`, `alignY`, `grow`, `height`, `heightFixed`,
+   * `heightMode`, `opacity`, `width`, `widthFixed`, `widthMode`) were parked in
+   * `scene-hydrate.ts`'s `SceneInspectorExtraState` because the co-founder's
+   * four ad schemas shipped as STATIC scaffolding with no controller behind
+   * them: a hydrated value with no state field could not reach a control, and
+   * inventing the field before the control existed would have been speculative.
+   * Binding §1.4's Layout section is what gives them one, so they move here
+   * beside their siblings — the same path `customWidth`/`customHeight` took at
+   * AD4.0 step 1 and `tokenStrokeColor` at step 3. What is LEFT in
+   * `SceneInspectorExtraState` is only what is genuinely not a control:
+   * `title` (the header's text) and `valignDisabled` (a display fact).
+   *
+   * `grow`/`alignX`/`alignY` are typed and defaulted here but are NOT bound to
+   * a control until step 2 (the Auto Layout section): they hydrate today, so
+   * giving them their field now is what keeps the model one statement rather
+   * than two half-migrations.
+   *
+   * The DEFAULTS below are the dummy's own scaffolding values, verbatim, so
+   * the fixture (non-hydrated) path renders exactly what it rendered before.
+   */
+  alignX: string;
+  alignY: string;
   /** AD4.A step 3 (§1.3 row 2): the image's alt text — the AI suite's one
    * manual row. The fourth field this ad work has had to add to the dummy's
    * model under ruling 14's "final home" rule (step 1 added
@@ -86,6 +124,21 @@ export interface InspectorPresentationState {
   fontFamily: string;
   fontSize: string;
   fontWeight: string;
+  /** §1.4's Auto Layout Grow input (step 2 binds it). */
+  grow: string;
+  /**
+   * §1.4's Dimensions H box — the height the node HAS: its fixed value when the
+   * axis is fixed, else the solved layout bounds. Distinct from `heightFixed`,
+   * which is the Fixed-mode-only input and is empty on a hug or fill axis: the
+   * W/H boxes are shown in every mode, so a shared key would leave them blank
+   * (or, before AD4.B, showing the scaffolding's invented `100`) on exactly the
+   * nodes whose size the user most needs to read.
+   */
+  height: string;
+  /** §1.4/OQ-2: the "Height fixed" input — empty unless the mode is Fixed. */
+  heightFixed: string;
+  /** §1.4/OQ-2: Fixed | Hug | Fill. */
+  heightMode: InspectorSizeMode;
   horizontalAlignment: HorizontalAlignment;
   iconName: string;
   iconSize: string;
@@ -96,6 +149,9 @@ export interface InspectorPresentationState {
   imagePreviewSrc: string;
   layoutMode: InspectorLayoutMode;
   locked: boolean;
+  /** §1.4/OQ-3: opacity as the DISPLAYED percent. The engine's 0–1 conversion
+   * is the write adapter's, at the seam. */
+  opacity: string;
   openInNewTab: boolean;
   openSections: Record<InspectorSectionId, boolean>;
   padding: Record<"bottom" | "left" | "right" | "top", string>;
@@ -124,6 +180,12 @@ export interface InspectorPresentationState {
   url: string;
   verticalAlignment: VerticalAlignment;
   visible: boolean;
+  /** §1.4's Dimensions W box — see `height`. */
+  width: string;
+  /** §1.4/OQ-2: the "Width fixed" input — empty unless the mode is Fixed. */
+  widthFixed: string;
+  /** §1.4/OQ-2: Fixed | Hug | Fill. */
+  widthMode: InspectorSizeMode;
   gap: string;
   wrap: boolean;
 }
@@ -145,6 +207,16 @@ const DEFAULT_OPEN_SECTIONS: Record<InspectorSectionId, boolean> = {
 };
 
 export const DEFAULT_STATE: InspectorPresentationState = {
+  // AD4.B step 1: the ad dummy schemas' own scaffolding values, moved here
+  // verbatim from the static markup they were written into
+  // (`ad-dummy-inspectors.tsx`: `STATIC_ZERO`/`STATIC_SIZE`, the two align
+  // selects' single options, the "Fixed" mode selects, the `100` opacity) — the
+  // `customWidth`/`customHeight` precedent above, applied to ten more fields.
+  // The fixture path therefore renders exactly what it rendered before; a real
+  // node hydrates every one of them (`scene-hydrate.ts`), so none of these
+  // numbers is ever shown over a document.
+  alignX: "Space between",
+  alignY: "Center",
   altText: "",
   backgroundColor: "#00F59B",
   backgroundFill: {
@@ -167,6 +239,10 @@ export const DEFAULT_STATE: InspectorPresentationState = {
   fontFamily: "Inter",
   fontSize: "24",
   fontWeight: "Semi Bold",
+  grow: "0",
+  height: "100",
+  heightFixed: "100",
+  heightMode: "Fixed",
   horizontalAlignment: "left",
   iconName: "Apple",
   iconSize: "Large",
@@ -174,6 +250,7 @@ export const DEFAULT_STATE: InspectorPresentationState = {
   imagePreviewSrc: "/icons/chat-shell/inspector/web/image-preview.png",
   layoutMode: "Flex",
   locked: false,
+  opacity: "100",
   openInNewTab: false,
   openSections: DEFAULT_OPEN_SECTIONS,
   padding: { bottom: "4", left: "8", right: "8", top: "4" },
@@ -193,6 +270,9 @@ export const DEFAULT_STATE: InspectorPresentationState = {
   url: "",
   verticalAlignment: "top",
   visible: true,
+  width: "100",
+  widthFixed: "100",
+  widthMode: "Fixed",
   gap: "0",
   wrap: true,
 };

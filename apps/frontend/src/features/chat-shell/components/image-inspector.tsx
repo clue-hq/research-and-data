@@ -2,10 +2,7 @@
 
 import Image from "next/image";
 import { createContext, useContext, useState, type ReactNode } from "react";
-import {
-  backgroundFillCommits,
-  type SceneInspectorState,
-} from "@/features/design-editor/adapter/scene-hydrate";
+import { backgroundFillCommits } from "@/features/design-editor/adapter/scene-hydrate";
 import type { SceneImageAiBinding } from "@/features/design-editor/adapter/scene-image-ai";
 import {
   scenePaletteColor,
@@ -18,7 +15,6 @@ import {
   useInspectorLayerTree,
   type HorizontalAlignment,
   type InspectorBackgroundFill,
-  type InspectorEventAddressing,
 } from "../hooks/use-inspector-controller";
 import {
   BackgroundFillControl,
@@ -38,6 +34,7 @@ import {
   AdDummyInspector,
   AdSceneLayers,
   isAdDummyInspectorSelection,
+  type AdHydrationBinding,
   type AdLayersBinding,
 } from "./ad-dummy-inspectors";
 
@@ -142,65 +139,6 @@ function useAdColorRow({
     onTokenChange: paletteOptions && onToken,
     value,
   };
-}
-
-/**
- * AD2.7: what a caller supplies to drive the ad inspector from a REAL scene
- * node — the web branch's own prop set (`WebInspector`'s `hydrated` +
- * `addressing` + `error`/`note`), ad-side.
- *
- * Every field is optional and absent means "the dummy as it shipped", so the
- * fixture path keeps compiling and keeps rendering (the AD0.4 `fontOptions?`
- * precedent, extended). `hydrated` carries AD2.4's extra fields too
- * (`title`, `opacity`, the size modes — ruling 14); only the ones with a state
- * field reach a control today, and the rest ride along for AD4.B.
- */
-interface AdHydrationBinding {
-  /** Write addressing stamped onto every inspector event this panel raises.
-   * Its `documentVersion` is null until AD3 wires the scene write path — the
-   * W3.1 null contract, i.e. "not addressable", i.e. no write can fire. */
-  addressing?: InspectorEventAddressing;
-  /** AD4.R-10 / GATE G-H (founder-ruled 2026-08-22): an agent turn is in flight
-   * on this thread, so the human may not operate this panel — "we cannot let
-   * humans change any value when the agents are at work with designing".
-   *
-   * PREVENTION AT THE SOURCE, which is what makes it different in kind from
-   * every other refusal on this lane: the adapter's silent no and the D10 CAS
-   * reconciliation both act AFTER an interaction; this one means the
-   * interaction never happens.
-   *
-   * It gates OPERATIONS ONLY (the founder's own scope, 2026-08-22): every value
-   * control, the header lock, Replace image and the AI suite. Layer selection,
-   * layer expansion, section open/close and zoom read and navigate — they
-   * produce no document operation, so they stay live. The flag reaches nothing
-   * outside this panel: the chat side of the shell (composer, sending, gates,
-   * queueing) is not a consumer, and whatever it does during a running turn
-   * today is exactly what it goes on doing. */
-  inspectorDisabled?: boolean;
-  /** RULING A29: the selected node's lock, routed from the HEADER controller —
-   * the one that owns the lock button's write — so all four schemas read ONE
-   * statement of it. Since AD4.R-4 every schema's own `state.locked` is live
-   * too (the accepted scene owns it), so this is no longer live-vs-seeded; it
-   * is one source rather than four. The controls use it to skip a dispatch §4
-   * would refuse. */
-  locked?: boolean;
-  /** The selected node's real values (or the page's, for the canvas schema).
-   *
-   * AD4.R: this prop is read PER RENDER, not once at mount. Every ad controller
-   * passes `{ liveHydration: hydrated != null }`, so its `state` is composed as
-   * `{...uiState, ...hydrated}` on each render (`openSections` excepted — the
-   * panel owns those): the accepted scene owns every key hydration carries, and
-   * a document change re-derives them all. That is what makes a refused write
-   * unable to stick — the control never left the document's value.
-   *
-   * Absent/null (the dummy fixture path) keeps the original contract exactly:
-   * the values merge over the dummy defaults at mount and the local state owns
-   * them thereafter.
-   *
-   * Selection changes still REMOUNT the panel (`key={primaryNodeId ?? "canvas"}`,
-   * the discipline the web branch uses) — not for hydration, which no longer
-   * needs it, but to reset the UI state the document does not own. */
-  hydrated?: SceneInspectorState | null;
 }
 
 type AdSchemaBinding = AdLayersBinding & AdHydrationBinding;
@@ -1121,14 +1059,19 @@ export function ImageInspector({
     // AD4.R live hydration — see the text schema's controller.
     { liveHydration: hydrated != null },
   );
+  // AD4.B step 1: the four co-founder schemas are no longer static, so this
+  // decides only WHICH component renders — not, as it used to, whether the
+  // node's lock is real. See the `schema` object below.
   const dummySelection = isAdDummyInspectorSelection(selection);
   // §1.0: the real node's own name when there is one; the dummy's fixture
   // titles ("Text34") only while nothing is hydrated.
   const title = hydrated?.title ?? AD_INSPECTOR_TITLES[selection] ?? "Canvas";
-  // The three schemas AD0.1 authored as live controllers take the hydrated
-  // values; the four static ones (auto-layout / rectangle / ellipse / group)
-  // have no state fields to take them — ruling 14, AD4.B's to bind — so they
-  // get the layer binding and the header's real title, and nothing else.
+  // AD4.B step 1: ALL SEVEN schemas now take the same binding. The four
+  // co-founder schemas (auto-layout / rectangle / ellipse / group, plus OQ-1's
+  // plain Frame) used to be static scaffolding with no state fields to take a
+  // hydrated value — ruling 14 — so they were handed the layer binding and the
+  // header's title and nothing else. Ruling 14 is settled (the Layout keys live
+  // in `InspectorPresentationState`), so `{...schema}` goes to them too.
   //
   // RULING A29: `locked` rides down as data, from the HEADER's controller
   // rather than each schema's own. The lock button writes through
@@ -1142,11 +1085,22 @@ export function ImageInspector({
   // after the user locked the node. AD4.R-4 retired that half — every ad
   // schema's `state.locked` is live-derived from the accepted scene now — and
   // the routing stays for the single-source reason.
+  //
+  // AD4.B step 1 removed the dummy-selection ternary that used to force this
+  // line — and the header's own lock below — to a hard `false` for the four
+  // co-founder schemas. It was honest while those schemas had no
+  // bound control and no controller to write a lock through: reporting `false`
+  // kept an inoperable lock button off a panel that could not have used it. Now
+  // that their Layout rows write, `false` would be the panel LYING about a
+  // locked node — every one of those rows is gated on the very lock it was
+  // hiding, so the user would type into live-looking boxes that the adapter
+  // silently refuses (§4). The old literal is pinned negatively by RULING A29's
+  // guard in `scene-apply.test.ts` so it cannot return.
   const schema = {
     addressing,
     hydrated,
     inspectorDisabled,
-    locked: dummySelection ? false : headerController.state.locked,
+    locked: headerController.state.locked,
     onSelectionChange,
     ...layers,
   };
@@ -1163,8 +1117,8 @@ export function ImageInspector({
             // so a locked node must keep an enabled way back out.
             disabled={inspectorDisabled}
             elementActions={selection !== "canvas" && selection !== "button"}
-            locked={dummySelection ? false : headerController.state.locked}
-            onLockToggle={dummySelection ? undefined : () => headerController.setValue("locked", !headerController.state.locked)}
+            locked={headerController.state.locked}
+            onLockToggle={() => headerController.setValue("locked", !headerController.state.locked)}
             title={title}
           />
           {/* The web branch's own inline slot, verbatim: note (409 quiet reload)
@@ -1184,7 +1138,7 @@ export function ImageInspector({
           {/* `onReplaceImage` and `imageAi` go to THIS schema alone — the rows
               are §1.3's — the way `fontOptions` goes only to the text schema. */}
           {selection === "image" ? <AdImageInspector imageAi={imageAi} onReplaceImage={onReplaceImage} {...schema} /> : null}
-          {dummySelection ? <AdDummyInspector onSelectionChange={onSelectionChange} selection={selection} suppressAutoLayoutSection={suppressAutoLayoutSection} {...layers} /> : null}
+          {dummySelection ? <AdDummyInspector selection={selection} suppressAutoLayoutSection={suppressAutoLayoutSection} {...schema} /> : null}
           {/* `"button"` is deliberately absent from this list: with its schema
               hidden (row 7) it falls through to the canvas default. */}
           {!(["auto-layout", "canvas", "ellipse", "group", "image", "rectangle", "text"] as ChatShellInspectorSelection[]).includes(selection) ? <AdCanvasInspector {...schema} /> : null}

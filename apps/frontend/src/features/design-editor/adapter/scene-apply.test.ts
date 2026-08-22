@@ -580,6 +580,197 @@ it("§1.2 Rotation: a layout-managed node and an unparseable value are refused",
   assert.equal(apply(adPlainText(), "rotation", ""), null);
 });
 
+// ══ §1.4 Layout — Dimensions W/H (AD4.B step 1) ═════════════════════════════
+//
+// Semantics VERIFIED against the MVP editor's own W/H write
+// (`subsystems/clue-design/apps/editor/src/components/inspector/ObjectSection.tsx`
+// `emitExtent`): a pinned node's page-space box takes the number, and every
+// other node has that ONE axis rewritten to a Fixed dimension — so a W/H typed
+// on a hug or fill axis FLIPS it to fixed rather than being refused. The ad
+// panel's "Width fixed"/"Height fixed" inputs commit this same property (the
+// MVP's `SizingSection` writes the identical `{kind:"fixed"}` there), so there
+// is one write path, not two.
+
+it("§1.4 Dimensions: W rewrites that axis to a fixed size and leaves the other axis alone", () => {
+  assert.deepEqual(
+    apply(adRect(), "width", "400"),
+    updateNode("rect_accent_bar", {
+      size: set({
+        height: { kind: "fixed", value: 10 },
+        width: { kind: "fixed", value: 400 },
+      }),
+    }),
+  );
+  assert.deepEqual(
+    apply(adRect(), "height", "24"),
+    updateNode("rect_accent_bar", {
+      size: set({
+        height: { kind: "fixed", value: 24 },
+        width: { kind: "fixed", value: 320 },
+      }),
+    }),
+  );
+});
+
+it("§1.4 Dimensions: a HUG axis flips to fixed — the MVP's `emitExtent`, not a refusal", () => {
+  // `auto_row_copy` is width-fixed 1056, height HUG.
+  assert.deepEqual(
+    apply(adAutoLayout(), "height", "160"),
+    updateNode("auto_row_copy", {
+      size: set({
+        height: { kind: "fixed", value: 160 },
+        width: { kind: "fixed", value: 1056 },
+      }),
+    }),
+  );
+});
+
+it("§1.4 Dimensions: a PINNED node's W/H ride the absolute box (which bakes the fixed size)", () => {
+  const { node, scene } = pinnedRect();
+  assert.deepEqual(
+    apply(node, "width", "400", scene),
+    updateNode("rect_accent_bar", {
+      // The engine builder bakes the box's size as Fixed on any RESIZE
+      // (`operations.ts::updateNodeAbsoluteBox`) — the size-spec ↔ box
+      // invariant, and upstream's identical behaviour.
+      absolute_box: set({ height: 10, width: 400, x: 72, y: 368 }),
+      size: set({
+        height: { kind: "fixed", value: 10 },
+        width: { kind: "fixed", value: 400 },
+      }),
+    }),
+  );
+});
+
+it("§1.4 Dimensions: a size below 1, an unparseable one and an empty box are refused", () => {
+  // The MVP's fixed-size fields are `min={1}`; the ad's are free text, so the
+  // same floor is a refusal here rather than a browser-enforced minimum — the
+  // §1.2 font-size row's rule exactly.
+  for (const value of ["0", "0.5", "-4", "abc", "", "  ", "1e400"]) {
+    assert.equal(apply(adRect(), "width", value), null, `width ${value}`);
+    assert.equal(apply(adRect(), "height", value), null, `height ${value}`);
+  }
+  assert.equal(apply(adRect(), "width", 400), null, "a non-string is not a size");
+});
+
+// ══ §1.4 Layout — Opacity (OQ-3: shown as %, written 0–1) ═══════════════════
+
+it("§1.4/OQ-3 Opacity: the typed percent is written as the engine's 0–1", () => {
+  assert.deepEqual(
+    apply(adRect(), "opacity", "50"),
+    updateNode("rect_accent_bar", { opacity: set(0.5) }),
+  );
+  assert.deepEqual(
+    apply(adRect(), "opacity", "0"),
+    updateNode("rect_accent_bar", { opacity: set(0) }),
+  );
+});
+
+it("§1.4/OQ-3 Opacity: a percent outside 0–100 is CLAMPED, at both ends", () => {
+  // The one row on this lane that folds rather than refuses: the engine's
+  // opacity is a bounded ratio (unlike a radius or a size, where an out-of-range
+  // number names no intent), so the honest answer to "150%" is full opacity.
+  assert.deepEqual(
+    apply(adRect(), "opacity", "150"),
+    updateNode("rect_accent_bar", { opacity: set(1) }),
+  );
+  assert.deepEqual(
+    apply(adRect(), "opacity", "-5"),
+    updateNode("rect_accent_bar", { opacity: set(0) }),
+  );
+});
+
+it("§1.4/OQ-3 Opacity: text that names no number is refused, never folded to 0", () => {
+  for (const value of ["abc", "", "  ", "-", "1e400"]) {
+    assert.equal(apply(adRect(), "opacity", value), null, value);
+  }
+  assert.equal(apply(adRect(), "opacity", 50), null);
+});
+
+// ══ §1.4 Layout — Width/Height mode (OQ-2: Fixed | Hug | Fill) ══════════════
+
+it("§1.4/OQ-2 Mode: Hug writes a bare `{kind:'hug'}` — the wire format carries NO value key", () => {
+  const operation = apply(adImage(), "widthMode", "Hug");
+  assert.deepEqual(
+    operation,
+    updateNode("image_hero", {
+      size: set({
+        height: { kind: "fixed", value: 676 },
+        width: { kind: "hug" },
+      }),
+    }),
+  );
+  // Stated a second time, structurally: `Dimension`'s hug arm has no `value`
+  // member at all (`contracts.ts`), and an extra one would be a shape the Rust
+  // core does not accept.
+  assert.ok(operation && operation.kind === "update_node");
+  const size = operation.patch.size;
+  assert.ok(size.kind === "set");
+  assert.deepEqual(Object.keys(size.value.width), ["kind"]);
+});
+
+it("§1.4/OQ-2 Mode: Fill writes weight exactly 1 (§5 — fill weights have no v1 input)", () => {
+  assert.deepEqual(
+    apply(adImage(), "heightMode", "Fill"),
+    updateNode("image_hero", {
+      size: set({
+        height: { kind: "fill", value: { weight: 1 } },
+        width: { kind: "fixed", value: 1056 },
+      }),
+    }),
+  );
+});
+
+it("§1.4/OQ-2 Mode: Fixed on an already-fixed axis keeps the size the node has", () => {
+  assert.deepEqual(
+    apply(adEllipse(), "widthMode", "Fixed"),
+    updateNode("ellipse_proof_dot", {
+      size: set({
+        height: { kind: "fixed", value: 24 },
+        width: { kind: "fixed", value: 24 },
+      }),
+    }),
+  );
+});
+
+it("§1.4/OQ-2 Mode: Fixed on a HUG axis adopts the size the panel is SHOWING", () => {
+  // Hydration's own derivation — the solved bounds — so the number the W/H box
+  // displays is the number the flip writes. One field cloned and edited
+  // (`computed` is null on every stored node; the live engine scene carries it).
+  const scene = clone(SCENE);
+  const node = scene.nodes.auto_row_copy;
+  node.computed = {
+    layout_bounds: { height: 148.55555, width: 1056, x: 72, y: 96 },
+    render_bounds: { height: 148.55555, width: 1056, x: 72, y: 96 },
+  };
+  assert.equal(hydrateSceneInspectorState(node, scene).height, "148.556");
+  assert.deepEqual(
+    apply(node, "heightMode", "Fixed", scene),
+    updateNode("auto_row_copy", {
+      size: set({
+        height: { kind: "fixed", value: 148.556 },
+        width: { kind: "fixed", value: 1056 },
+      }),
+    }),
+  );
+});
+
+it("§1.4/OQ-2 Mode: Fixed on an UNSOLVED hug axis writes nothing — no invented size", () => {
+  // The panel's W/H box is empty in this state (proven in `scene-hydrate.test.ts`),
+  // so there is no number to adopt. The MVP substitutes a hardcoded 120 here;
+  // this lane's null contract refuses instead, the same way the radius row
+  // refuses where upstream folds to 0.
+  assert.equal(adAutoLayout().computed, null);
+  assert.equal(apply(adAutoLayout(), "heightMode", "Fixed"), null);
+});
+
+it("§1.4/OQ-2 Mode: a label outside Fixed/Hug/Fill writes nothing", () => {
+  for (const value of ["fixed", "hug", "Token", "", "constructor", "toString"]) {
+    assert.equal(apply(adRect(), "widthMode", value), null, `widthMode ${value}`);
+    assert.equal(apply(adRect(), "heightMode", value), null, `heightMode ${value}`);
+  }
+});
+
 // ══ §1.0 header — Lock (and the lock gate over every other row) ═════════════
 
 it("§1.0 Lock: a boolean writes Node.locked", () => {
@@ -608,6 +799,12 @@ it("§1.0 Lock: a locked node refuses every row — except the unlock that frees
     ["position.x", "180"],
     ["position.y", "180"],
     ["rotation", "45"],
+    // AD4.B step 1's §1.4 rows join the same global gate.
+    ["width", "400"],
+    ["height", "400"],
+    ["opacity", "50"],
+    ["widthMode", "Hug"],
+    ["heightMode", "Fill"],
   ];
   for (const [property, value] of rows) {
     assert.equal(apply(node, property, value, scene), null, property);
@@ -630,8 +827,10 @@ it("null contract: rows owned by a LATER lane write nothing today", () => {
   // lanes extend this same switch they move these lines out of this test.
   // AD4.A took `radius.*` and `fillMode` out of it — §1.3's two rows are
   // mapped now, and their own cases below cover them (the radius row is
-  // deliberately kind-agnostic, so it WRITES on this very node).
-  for (const property of ["opacity", "gap"]) {
+  // deliberately kind-agnostic, so it WRITES on this very node). AD4.B step 1
+  // took `opacity` out for the same reason (§1.4's Layout section); `gap` is
+  // still the Auto Layout section's, which step 2 owns.
+  for (const property of ["gap"]) {
     assert.equal(apply(adAutoLayout(), property, "4"), null, property);
   }
 });
@@ -2207,12 +2406,31 @@ it("RULING A29: a commit against a LOCKED node records NOTHING in the panel eith
     "utf8",
   );
   assert.ok(
-    inspector.includes("locked: dummySelection ? false : headerController.state.locked,"),
+    inspector.includes("locked: headerController.state.locked,"),
     "the ad schemas must receive the header controller's LIVE lock",
   );
   assert.ok(
     inspector.includes("<RadiusControls locked={locked}"),
     "the image schema must pass that lock to RadiusControls",
+  );
+
+  // AD4.B step 1 (controller-authorized pin rewrite, recorded in the lane's
+  // step-1 report): this pin used to read
+  // `locked: dummySelection ? false : headerController.state.locked,`. The
+  // four dummy schemas were hard-wired to `false` with no `onLockToggle`
+  // because they had no controller to write through; binding them (AD4.B) gave
+  // them one, so the ternary would now be the panel LYING about a locked node
+  // to exactly the four schemas whose Layout rows the lock gates. The rewrite
+  // is a strict superset of the old pin: the live-lock line is pinned
+  // positively above, and the retired branch is pinned negatively here so it
+  // cannot come back at either site (the schema object or the header).
+  assert.ok(
+    !inspector.includes("dummySelection ? false"),
+    "no schema may be told its node is unlocked when the document says otherwise",
+  );
+  assert.ok(
+    inspector.includes("locked={headerController.state.locked}"),
+    "the header's own lock button must read the same live lock for every schema",
   );
 });
 

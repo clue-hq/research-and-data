@@ -199,6 +199,65 @@ it("§1.4/OQ-2: a fill Dimension is mode Fill and shows no fixed input (weights 
   assert.equal(state.widthFixed, "");
 });
 
+// ── §1.4 Dimensions W/H (AD4.B step 1) ─────────────────────────────────────
+
+it("§1.4 Dimensions: a fixed axis states its OWN value in the W/H box", () => {
+  // The dummy's scaffolding showed a flat `100` on every node; the box now
+  // states the size the document has. `widthFixed` states the same number for
+  // a fixed axis — the two keys differ only where the axis is NOT fixed (the
+  // next two cases), which is exactly why the W/H box needs its own key.
+  const state = hydrateSceneInspectorState(adImage(), SCENE);
+  assert.equal(state.width, "1056");
+  assert.equal(state.height, "676");
+});
+
+it("§1.4 Dimensions: a hug or fill axis states the SOLVED bounds, not the empty fixed input", () => {
+  // `computed` is null on every STORED node (asserted above), so the solved box
+  // is what the live engine scene carries and the harvest cannot: one field is
+  // cloned and edited — `auto_row_copy`'s own solved geometry — rather than a
+  // node invented to carry it. Rounding is `roundForEditor`'s, the editor's own.
+  const scene = clone(SCENE);
+  const node = scene.nodes.auto_row_copy; // width fixed 1056, height HUG
+  node.computed = {
+    layout_bounds: { height: 148.55555, width: 1056, x: 72, y: 96 },
+    render_bounds: { height: 148.55555, width: 1056, x: 72, y: 96 },
+  };
+  const state = hydrateSceneInspectorState(node, scene);
+  assert.equal(state.heightFixed, "", "a hug axis still has no FIXED input");
+  assert.equal(state.height, "148.556", "but the W/H box states the solved size");
+  assert.equal(state.width, "1056");
+});
+
+it("§1.4 Dimensions: an unsolved hug/fill axis states nothing rather than a number the node lacks", () => {
+  const state = hydrateSceneInspectorState(adAutoLayout(), SCENE);
+  assert.equal(adAutoLayout().computed, null);
+  assert.equal(state.height, "");
+  assert.equal(hydrateSceneInspectorState(adGroup(), SCENE).width, "");
+});
+
+it("§1.4/AD4.R: all five schema kinds state EVERY Layout key — no kind guard", () => {
+  // The AD4.R rule at this file's `hydrateSceneInspectorState` header: a bound
+  // row that hydration leaves unstated falls back to the dummy's fixture
+  // default, which would state a number the node does not have. The four dummy
+  // schemas plus OQ-1's plain Frame are the ones AD4.B binds.
+  for (const node of [adFrame(), adAutoLayout(), adRect(), adEllipse(), adGroup()]) {
+    const state = hydrateSceneInspectorState(node, SCENE);
+    for (const key of [
+      "height",
+      "heightFixed",
+      "heightMode",
+      "opacity",
+      "position",
+      "rotation",
+      "width",
+      "widthFixed",
+      "widthMode",
+    ] as const) {
+      assert.ok(Object.hasOwn(state, key), `${node.id} must state ${key}`);
+    }
+  }
+});
+
 it("§1.4: Position X/Y read the transform (`computed` is null on every stored node)", () => {
   assert.equal(adImage().computed, null);
   assert.deepEqual(hydrateSceneInspectorState(adImage(), SCENE).position, {

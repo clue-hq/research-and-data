@@ -1,8 +1,15 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import type { ReactNode } from "react";
+import type { SceneInspectorState } from "@/features/design-editor/adapter/scene-hydrate";
 import type { SceneLayerRow } from "@/features/design-editor/adapter/scene-layers";
 import type { ChatShellInspectorSelection } from "../model/chat-shell";
+import {
+  useInspectorController,
+  type InspectorEventAddressing,
+  type InspectorSectionId,
+  type InspectorSizeMode,
+} from "../hooks/use-inspector-controller";
 import {
   ColorControl,
   InspectorField,
@@ -34,20 +41,113 @@ export function isAdDummyInspectorSelection(
 }
 
 const STATIC_ZERO = "0";
-const STATIC_SIZE = "100";
+// (`STATIC_SIZE` — the scaffolding's invented `100` — left with AD4.B step 1's
+// Layout section: its W/H and fixed-size boxes read the document now, and the
+// same number survives as `DEFAULT_STATE`'s seed for the fixture path.)
 const NO_CHANGE = () => {};
+
+/**
+ * AD4.B step 1: what a caller supplies to drive an ad schema from a REAL scene
+ * node — the web branch's own prop set (`WebInspector`'s `hydrated` +
+ * `addressing` + `error`/`note`), ad-side.
+ *
+ * Every field is optional and absent means "the dummy as it shipped", so the
+ * fixture path keeps compiling and keeps rendering (the AD0.4 `fontOptions?`
+ * precedent, extended).
+ *
+ * It lives in THIS file, not in `image-inspector.tsx` where it was written, for
+ * `AdLayersBinding`'s reason exactly: the import already runs one way
+ * (image-inspector → ad-dummy-inspectors) and the reverse would be a cycle.
+ * `image-inspector.tsx` imports it back and still composes
+ * `AdSchemaBinding = AdLayersBinding & AdHydrationBinding` for its own three
+ * schemas, so there is ONE statement of the shape rather than two that drift.
+ */
+export interface AdHydrationBinding {
+  /** Write addressing stamped onto every inspector event this panel raises.
+   * Its `documentVersion` is null on this lane permanently — the W3.1 null
+   * contract, i.e. "not addressable" for optimistic concurrency; the ad lane's
+   * D10 CAS reconciliation is the net instead. */
+  addressing?: InspectorEventAddressing;
+  /** AD4.R-10 / GATE G-H (founder-ruled 2026-08-22): an agent turn is in flight
+   * on this thread, so the human may not operate this panel — "we cannot let
+   * humans change any value when the agents are at work with designing".
+   *
+   * PREVENTION AT THE SOURCE, which is what makes it different in kind from
+   * every other refusal on this lane: the adapter's silent no and the D10 CAS
+   * reconciliation both act AFTER an interaction; this one means the
+   * interaction never happens.
+   *
+   * It gates OPERATIONS ONLY (the founder's own scope, 2026-08-22): every value
+   * control, the header lock, Replace image and the AI suite. Layer selection,
+   * layer expansion, section open/close and zoom read and navigate — they
+   * produce no document operation, so they stay live. The flag reaches nothing
+   * outside this panel: the chat side of the shell (composer, sending, gates,
+   * queueing) is not a consumer, and whatever it does during a running turn
+   * today is exactly what it goes on doing. */
+  inspectorDisabled?: boolean;
+  /** RULING A29: the selected node's lock, routed from the HEADER controller —
+   * the one that owns the lock button's write — so all seven schemas read ONE
+   * statement of it. Since AD4.R-4 every schema's own `state.locked` is live
+   * too (the accepted scene owns it), so this is no longer live-vs-seeded; it
+   * is one source rather than seven. The controls use it to skip a dispatch §4
+   * would refuse. */
+  locked?: boolean;
+  /** The selected node's real values (or the page's, for the canvas schema).
+   *
+   * AD4.R: this prop is read PER RENDER, not once at mount. Every ad controller
+   * passes `{ liveHydration: hydrated != null }`, so its `state` is composed as
+   * `{...uiState, ...hydrated}` on each render (`openSections` excepted — the
+   * panel owns those): the accepted scene owns every key hydration carries, and
+   * a document change re-derives them all. That is what makes a refused write
+   * unable to stick — the control never left the document's value.
+   *
+   * Absent/null (the dummy fixture path) keeps the original contract exactly:
+   * the values merge over the dummy defaults at mount and the local state owns
+   * them thereafter.
+   *
+   * Selection changes still REMOUNT the panel (`key={primaryNodeId ?? "canvas"}`,
+   * the discipline the web branch uses) — not for hydration, which no longer
+   * needs it, but to reset the UI state the document does not own. */
+  hydrated?: SceneInspectorState | null;
+}
+
+type AdSchemaBinding = AdLayersBinding & AdHydrationBinding;
+
+/** The one controller these schemas share (this component renders exactly one
+ * selection per mount, and the panel remounts keyed on the selected node). */
+type AdInspectorController = ReturnType<typeof useInspectorController>;
+
+/**
+ * AD4.B step 1: a section's open/closed state, which moved out of
+ * `DummySection`'s own `useState(true)` and onto the controller — the panel
+ * convention the three bound schemas already follow (`image-inspector.tsx`'s
+ * `Section`), so a section's default and its toggle event are stated once for
+ * every schema in the panel rather than twice.
+ *
+ * No new `InspectorSectionId` was needed. The mapping is by CONTENT, so the
+ * Layout section here opens exactly as the Layout section of the text and image
+ * schemas does: Layout→`layout`, Shape→`shape`, Stroke→`stroke`,
+ * Arrange→`arrange`, Layers→`layers`, and Auto Layout→`alignment` (its rows are
+ * the alignment/gap/padding set, and it is the id no other ad section uses).
+ */
+interface DummySectionBinding {
+  id: InspectorSectionId;
+  open: boolean;
+  toggle: () => void;
+}
 
 function DummySection({
   children,
+  id,
   label,
-}: {
+  open,
+  toggle,
+}: DummySectionBinding & {
   children: ReactNode;
   label: string;
 }) {
-  const [open, setOpen] = useState(true);
-
   return (
-    <InspectorSection label={label} onOpenChange={setOpen} open={open}>
+    <InspectorSection key={id} label={label} onOpenChange={toggle} open={open}>
       {children}
     </InspectorSection>
   );
@@ -90,9 +190,9 @@ function StaticSelect({
   );
 }
 
-function AutoLayoutControls() {
+function AutoLayoutControls(section: DummySectionBinding) {
   return (
-    <DummySection label="Auto Layout">
+    <DummySection label="Auto Layout" {...section}>
       <div className={styles.dummyInspectorStack}>
         <div className={styles.dummyInspectorPairGrid}>
           <InspectorField label="Direction">
@@ -139,9 +239,9 @@ function AutoLayoutControls() {
   );
 }
 
-function ShapeControls({ radii }: { radii: boolean }) {
+function ShapeControls({ radii, ...section }: DummySectionBinding & { radii: boolean }) {
   return (
-    <DummySection label="Shape">
+    <DummySection label="Shape" {...section}>
       <div className={styles.dummyInspectorStack}>
         <InspectorField label="Fill">
           <ColorControl none noneAriaLabel="Fill is none" showOpacity={false} />
@@ -174,9 +274,9 @@ function ShapeControls({ radii }: { radii: boolean }) {
   );
 }
 
-function StrokeControls() {
+function StrokeControls(section: DummySectionBinding) {
   return (
-    <DummySection label="Stroke">
+    <DummySection label="Stroke" {...section}>
       <div className={styles.dummyInspectorStack}>
         <InspectorField label="Color">
           <ColorControl none noneAriaLabel="Stroke color is none" showOpacity={false} />
@@ -189,46 +289,105 @@ function StrokeControls() {
   );
 }
 
-function LayoutControls() {
+/**
+ * §1.4/OQ-2: the mode select's three options. `as const satisfies` keeps this
+ * list and the state field's own union one vocabulary — a relabel that forgets
+ * the other side does not compile — and `sizeMode` below is the narrowing the
+ * select's `(value: string)` handler needs, in `isAdDummyInspectorSelection`'s
+ * own shape rather than a bare cast. `scene-apply.ts` refuses an off-list label
+ * a second time at the write, where a stored document (JSON, unchecked by these
+ * compile-time unions) could otherwise reach.
+ */
+const SIZE_MODE_OPTIONS = ["Fixed", "Hug", "Fill"] as const satisfies readonly InspectorSizeMode[];
+
+function sizeMode(value: string): InspectorSizeMode | null {
+  return SIZE_MODE_OPTIONS.includes(value as InspectorSizeMode)
+    ? (value as InspectorSizeMode)
+    : null;
+}
+
+/**
+ * §1.4 Layout — AD4.B step 1's bound section.
+ *
+ * Every row reads `state` (the controller's live composition of the accepted
+ * scene) and commits through `setValue`/`setNestedValue`, which DISPATCH and
+ * record nothing: a refused write leaves the box showing the document's own
+ * value, because the box never left it. Typed rows commit on blur/Enter
+ * (`InspectorInput`'s `onCommitValue`); the two selects commit on change.
+ *
+ * `inert` is G-H's one expression per schema (`locked || inspectorDisabled`) —
+ * the node's own lock, which §4 would refuse anyway, OR an agent turn in
+ * flight, which must never reach a write at all.
+ *
+ * The markup is the co-founder's, unchanged: same fields, same labels, same
+ * classes. Only the values and the handlers are real now.
+ */
+function LayoutControls({
+  controller,
+  inert,
+  ...section
+}: DummySectionBinding & {
+  controller: AdInspectorController;
+  inert: boolean;
+}) {
+  const { setNestedValue, setValue, state } = controller;
   return (
-    <DummySection label="Layout">
+    <DummySection label="Layout" {...section}>
       <div className={styles.dummyInspectorStack}>
         <InspectorField label="Position">
           <div className={styles.dummyInspectorPairGrid}>
-            <StaticInput ariaLabel="X position" prefix="X" />
-            <StaticInput ariaLabel="Y position" prefix="Y" />
+            <InspectorInput ariaLabel="X position" disabled={inert} onCommitValue={(value) => setNestedValue("position", "x", value)} prefix="X" value={state.position.x} />
+            <InspectorInput ariaLabel="Y position" disabled={inert} onCommitValue={(value) => setNestedValue("position", "y", value)} prefix="Y" value={state.position.y} />
           </div>
         </InspectorField>
+        {/* The W/H boxes state the size the node HAS in every mode — the fixed
+            value, or the solver's own bounds — which is why they read `width`/
+            `height` and not the Fixed-only pair below. A commit flips that axis
+            to Fixed (the MVP editor's `emitExtent`; `scene-apply.ts` owns it). */}
         <InspectorField label="Dimensions">
           <div className={styles.dummyInspectorPairGrid}>
-            <StaticInput ariaLabel="Width" prefix="W" value={STATIC_SIZE} />
-            <StaticInput ariaLabel="Height" prefix="H" value={STATIC_SIZE} />
+            <InspectorInput ariaLabel="Width" disabled={inert} onCommitValue={(value) => setValue("width", value)} prefix="W" value={state.width} />
+            <InspectorInput ariaLabel="Height" disabled={inert} onCommitValue={(value) => setValue("height", value)} prefix="H" value={state.height} />
           </div>
         </InspectorField>
         <div className={styles.dummyInspectorPairGrid}>
           <InspectorField label="Rotate">
-            <StaticInput ariaLabel="Rotation" prefix="R" />
+            <InspectorInput ariaLabel="Rotation" disabled={inert} onCommitValue={(value) => setValue("rotation", value)} prefix="R" value={state.rotation} />
           </InspectorField>
           <InspectorField label="Opacity">
-            <StaticInput ariaLabel="Opacity" prefix="%" value="100" />
+            {/* OQ-3: the percent is what is shown and typed; the engine's 0–1
+                conversion is the write adapter's, at the seam. */}
+            <InspectorInput ariaLabel="Opacity" disabled={inert} onCommitValue={(value) => setValue("opacity", value)} prefix="%" value={state.opacity} />
           </InspectorField>
         </div>
         <div className={styles.dummyInspectorPairGrid}>
           <InspectorField label="Width mode">
-            <StaticSelect ariaLabel="Width mode" value="Fixed" />
+            <InspectorSelect disabled={inert} label="Width mode" onChange={(value) => { const mode = sizeMode(value); if (mode) setValue("widthMode", mode); }} options={SIZE_MODE_OPTIONS} value={state.widthMode} />
           </InspectorField>
           <InspectorField label="Height mode">
-            <StaticSelect ariaLabel="Height mode" value="Fixed" />
+            <InspectorSelect disabled={inert} label="Height mode" onChange={(value) => { const mode = sizeMode(value); if (mode) setValue("heightMode", mode); }} options={SIZE_MODE_OPTIONS} value={state.heightMode} />
           </InspectorField>
         </div>
-        <div className={styles.dummyInspectorPairGrid}>
-          <InspectorField label="Width fixed">
-            <StaticInput ariaLabel="Fixed width" prefix="W" value={STATIC_SIZE} />
-          </InspectorField>
-          <InspectorField label="Height fixed">
-            <StaticInput ariaLabel="Fixed height" prefix="H" value={STATIC_SIZE} />
-          </InspectorField>
-        </div>
+        {/* OQ-2: the "fixed" inputs exist only in Fixed mode — the MVP editor's
+            own `SizingSection` rule, and hydration states the empty string for
+            them in every other mode, so rendering them would show a blank box
+            beside a mode that has no fixed value. They commit the SAME
+            `width`/`height` property as the Dimensions pair above: one write
+            path, so the two controls cannot disagree about what a size means. */}
+        {state.widthMode === "Fixed" || state.heightMode === "Fixed" ? (
+          <div className={styles.dummyInspectorPairGrid}>
+            {state.widthMode === "Fixed" ? (
+              <InspectorField label="Width fixed">
+                <InspectorInput ariaLabel="Fixed width" disabled={inert} onCommitValue={(value) => setValue("width", value)} prefix="W" value={state.widthFixed} />
+              </InspectorField>
+            ) : null}
+            {state.heightMode === "Fixed" ? (
+              <InspectorField label="Height fixed">
+                <InspectorInput ariaLabel="Fixed height" disabled={inert} onCommitValue={(value) => setValue("height", value)} prefix="H" value={state.heightFixed} />
+              </InspectorField>
+            ) : null}
+          </div>
+        ) : null}
       </div>
     </DummySection>
   );
@@ -284,9 +443,12 @@ function DummyIconButtons({
   );
 }
 
-function ArrangeControls({ groupActions = false }: { groupActions?: boolean }) {
+function ArrangeControls({
+  groupActions = false,
+  ...section
+}: DummySectionBinding & { groupActions?: boolean }) {
   return (
-    <DummySection label="Arrange">
+    <DummySection label="Arrange" {...section}>
       <div className={styles.dummyInspectorStack}>
         <InspectorField label="Layer">
           <DummyIconButtons actions={LAYER_ACTIONS} columns={4} />
@@ -422,26 +584,31 @@ export function AdSceneLayers({
 }
 
 function LayersControls({
+  id,
   layers,
   onSelectionChange,
+  open,
   selection,
+  toggle,
   ...binding
-}: AdLayersBinding & {
-  onSelectionChange: (selection: ChatShellInspectorSelection) => void;
-  selection: AdDummyInspectorSelection;
-}) {
+}: AdLayersBinding &
+  DummySectionBinding & {
+    onSelectionChange: (selection: ChatShellInspectorSelection) => void;
+    selection: AdDummyInspectorSelection;
+  }) {
+  const section = { id, open, toggle };
   // AD2.6: the real tree replaces the per-schema fixture rows below; the
   // fixture branch is untouched and still renders until AD2.7 feeds `layers`.
   if (layers) {
     return (
-      <DummySection label="Layers">
+      <DummySection label="Layers" {...section}>
         <AdSceneLayers layers={layers} {...binding} />
       </DummySection>
     );
   }
 
   return (
-    <DummySection label="Layers">
+    <DummySection label="Layers" {...section}>
       <div className={styles.layerList}>
         {LAYER_ROWS[selection].map((row) => {
           const active = row.selection === selection;
@@ -462,11 +629,15 @@ function LayersControls({
 }
 
 export function AdDummyInspector({
+  addressing,
+  hydrated,
+  inspectorDisabled = false,
+  locked = false,
   onSelectionChange,
   selection,
   suppressAutoLayoutSection = false,
   ...binding
-}: AdLayersBinding & {
+}: AdSchemaBinding & {
   onSelectionChange: (selection: ChatShellInspectorSelection) => void;
   selection: AdDummyInspectorSelection;
   /** AD2.4/OQ-1: a plain Frame routes to this auto-layout schema but has no
@@ -474,21 +645,49 @@ export function AdDummyInspector({
    * hidden = absent). Every other section still applies. */
   suppressAutoLayoutSection?: boolean;
 }) {
+  // G-H (AD4.R-10): one expression for every write control below — the node's
+  // own lock OR an in-flight agent turn. The Layers section is navigation and
+  // takes neither.
+  const inert = locked || inspectorDisabled;
+  // ONE controller for the whole component: it renders exactly one selection
+  // per mount, and the panel remounts keyed on the selected node id.
+  //
+  // `initial` is the hydrated snapshot alone — these four schemas carry no
+  // schema-local default of their own (unlike text's `fontWeight` or canvas's
+  // `sizePreset`), because hydration states every Layout key for every kind
+  // (the AD4.R rule at `hydrateSceneInspectorState`). It is rebuilt from the
+  // live prop every render, which is what makes it the live merge source too.
+  const initial = { ...hydrated };
+  const controller = useInspectorController([], selection, initial, addressing, {
+    // AD4.R: live only when a real scene is behind the panel — the dummy
+    // fixture path (no hydration) stays the interactive mock it shipped as.
+    // The flag reads the `hydrated` PROP, never `initial`, which is an object
+    // either way.
+    liveHydration: hydrated != null,
+  });
+  const { state, toggleSection } = controller;
+  const section = (id: InspectorSectionId): DummySectionBinding => ({
+    id,
+    open: state.openSections[id],
+    toggle: () => toggleSection(id),
+  });
+
   return (
     <>
       {selection === "auto-layout" && !suppressAutoLayoutSection ? (
-        <AutoLayoutControls />
+        <AutoLayoutControls {...section("alignment")} />
       ) : null}
       {selection === "auto-layout" || selection === "rectangle" ? (
-        <ShapeControls radii />
+        <ShapeControls radii {...section("shape")} />
       ) : null}
-      {selection === "ellipse" ? <ShapeControls radii={false} /> : null}
-      {selection !== "group" ? <StrokeControls /> : null}
-      <LayoutControls />
-      <ArrangeControls groupActions={selection === "group"} />
+      {selection === "ellipse" ? <ShapeControls radii={false} {...section("shape")} /> : null}
+      {selection !== "group" ? <StrokeControls {...section("stroke")} /> : null}
+      <LayoutControls controller={controller} inert={inert} {...section("layout")} />
+      <ArrangeControls groupActions={selection === "group"} {...section("arrange")} />
       <LayersControls
         onSelectionChange={onSelectionChange}
         selection={selection}
+        {...section("layers")}
         {...binding}
       />
     </>
