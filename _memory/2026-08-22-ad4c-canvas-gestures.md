@@ -131,3 +131,102 @@ listeners (see merge touchpoint above), and both branches tick plan checkboxes /
 annotate the contract, which may collide textually in
 `2026-08-20-ad-editor-integration-execution-plan.md` and the contract §6 — trivial merges,
 but expect them.
+
+---
+
+## AD4.C-3 — freeze-on-grab + the F9 fix (follow-up slice, 2026-08-22)
+
+Same worktree/branch, two commits on top of the lane close (`8d8922f4`):
+`65a37c31` (F9) → `49c77eea` (freeze-on-grab). Founder-driven: while manually
+testing the lane build at :3020 he found that the proof-point dot inside the
+copy row would not move.
+
+### Rulings (ledger numbering continues)
+
+- **C-9 (FOUNDER).** A human dragging on the canvas must NEVER be refused by
+  auto-layout. The agent works in auto-layout; this editor's user is not a
+  designer and cannot be expected to know what it is. Supersedes the plan's
+  "managed-layout nodes refuse" rule and the managed half of C-5/C-6 for HUMAN
+  gestures. Locked nodes keep their lock/unlock gate; managed nodes need no
+  unlock at all.
+- **C-10.** The freeze fires on BOTH `node` and `handle` press targets.
+  Upstream guards on `node` alone, which is safe only because upstream never
+  draws handles on a managed node — this platform now does.
+- **C-11.** F9 pulled into scope: it reproduces TODAY on the harvested ad, one
+  level deeper than the close-out note claimed (see below).
+- **C-12.** Freeze persistence = apply locally via a new
+  `SceneCanvasControls.applyStructuredEdit`, then persist the already-applied
+  operations through a new persist-only seam. Never `applyOps` (double-apply),
+  never `POST /documents/{id}/edits` (422s on the idempotent empty batch).
+- **C-13.** Two existing tests pinned the rule C-9 overturned; approved to
+  REWRITE (strict-superset), never delete, keeping every LOCKED assertion
+  byte-identical. Also ratified the R1 guide-readout widening.
+
+### What shipped
+
+**F9 (`65a37c31`).** `canvasOperations.ts`'s generic drag and resize branches
+now rebase the committed position against `parentComputedOrigin`, and so do
+both guide readouts (`dragSnapGuides`/`resizeSnapGuides`) so a reported guide
+stays the guide the commit snaps to. The rebase goes BEFORE snapping in these
+branches — unlike the freehand ones, which snap against PAGE guides and rebase
+last — because their guides (`guidesForNodeParent`) and their clamp
+(`clampNodeTransformToParentBounds`) are both already parent-frame. Page-parented
+nodes are unaffected (origin (0,0)).
+
+**The close-out note above was wrong** to call F9 "invisible on the harvested
+ad". `frame_ad_root` is at the page origin, but `group_proof` is a GROUP — not
+layout-managed — so `text_proof_stat`/`ellipse_proof_dot` are directly editable
+today and take the generic branch under a parent solved at ~(116, 112). That is
+the founder's repro exactly. Root CLAUDE.md's F9 bullet is corrected and marked
+resolved for the platform copy.
+
+**Freeze-on-grab (`49c77eea`).** `showResizeHandles` and the press `armed` flag
+both widen by `isNodeFreezableOnGesture`; `shouldFreezeLayoutOnPress` /
+`freezeOperationsToPersist` are the new pure decisions in `scene-gestures.ts`,
+so the host still holds no policy. On a qualifying press the host fires
+`freezeLayoutEdit()` through the new `applyStructuredEdit` control BEFORE
+`beginPress`, then hands `outcome.operations` to `persistAppliedOps` →
+`onAppliedOperations`. The freeze is its own undo frame (upstream parity).
+
+### Decisions worth keeping
+
+- **The persist seam is a SIBLING prop, not a flag on `onOperations`.** The two
+  carry opposite contracts ("apply then persist" vs "persist only; the apply
+  already happened"), and a flag would let a wiring slip silently double-apply.
+  Path: `writes.persistAppliedOps` → `onSceneAppliedOperations` (artifact-stage)
+  → `onAppliedOperations` (canvas). `enqueueApplied` in
+  `use-scene-manual-edits.ts` is the extracted shared tail; the freeze path
+  deliberately does NOT clear the two message slots (it is a silent consequence
+  of a grab, not a write the user asked for).
+- **R3 finding — the managed child of a LOCKED CONTAINER.**
+  `isNodeFreezableOnGesture` inspects the NODE, not its parent's lock, so it
+  answers TRUE there (verified), while `build_freeze_layout` skips locked
+  containers and freezes nothing (pinned against the real wasm). Left alone
+  that is C-5's exact defect — grab, preview, commit nothing — so the host
+  refuses to arm when a freeze it asked for returns no operations. The
+  idempotent already-frozen no-op cannot reach that guard (such a node is
+  already directly editable and never asks for a freeze).
+- Handles are still DRAWN on that locked-container child, though pressing them
+  now does nothing. Cosmetic fake affordance; the honest fix is teaching the
+  predicate about locked ancestors, which forks a function that is currently
+  byte-identical with upstream's. **Residual, unowned.**
+- `layoutManagedEditing` stays un-passed on the platform (dormant opt-out).
+  `allowManagedResize` stays false — after a freeze there are no managed nodes
+  left, which is the point.
+
+### Gates
+
+Frontend 1813/1813 (up from 1790; +23 new, 3 rewritten/inverted), lint 0 errors
+(3 pre-existing warnings), build green, `tsc --noEmit` 84-line baseline
+unchanged. The freeze's engine properties (accepted / zero-motion / plain
+operation batch / idempotent second call / locked container untouched) are
+proven against the REAL vendored wasm in `wasmEngine.artifact.test.ts`, not a
+fake. NOT browser-proven — the founder was testing the running dev server
+throughout, so the live walk is his.
+
+### Residuals
+
+- The design subsystem's copy of `canvasOperations.ts` still carries F9 —
+  deliberately untouched (its own editor, its own review). Unowned.
+- The locked-container handle-drawing cosmetic above.
+- Everything in the base lane's residual list still stands.
