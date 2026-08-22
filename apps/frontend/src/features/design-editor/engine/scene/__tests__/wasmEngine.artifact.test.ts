@@ -239,7 +239,7 @@ describe.skipIf(!wasmArtifactPresent)("WasmEngine (real artifact)", () => {
     const engine = new WasmEngine(module, paddedHugScene());
     const before = solvedBoxes(engine.scene);
     const containerBefore = engine.scene.nodes.node_stack.computed?.layout_bounds;
-    expect(containerBefore).not.toBeNull();
+    expect(containerBefore).toBeDefined();
 
     const outcome = engine.applyStructuredEdit({ kind: "freeze_layout" });
 

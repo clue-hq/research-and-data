@@ -1812,10 +1812,12 @@ pub fn build_reattach_to_layout(scene: &Scene, node_id: NodeId) -> Result<EditBa
 /// Phase 1c freehand: flip an auto-layout container between the flex solve
 /// (`Stack`) and hand-placed children (`Free`). Converting to Free bakes
 /// every managed child's transform to its solved offset inside the container
-/// (and Hug/Fill sizes to Fixed) so the conversion is zero-motion; children
-/// already pinned Absolute are left untouched — their page-space box keeps
-/// winning either way. Converting back to Stack only flips the mode: the
-/// solve takes over and re-stacks the children.
+/// (and Hug/Fill sizes to Fixed, including the container's OWN Hug dims) so
+/// the conversion is zero-motion; children already pinned Absolute are left
+/// untouched — their page-space box keeps winning either way. Converting
+/// back to Stack only flips the mode: the solve takes over and re-stacks
+/// the children (baked sizes stay baked — a once-Hug container returns as
+/// Fixed; undo, not re-convert, restores Hug).
 pub fn build_convert_container_layout(
     scene: &Scene,
     node_id: NodeId,
@@ -1962,6 +1964,10 @@ fn free_container_operations(
 /// unresolved case, and severing brand governance to steady a broken
 /// binding is the worse trade.
 fn baked_container_size(node: &Node, container_bounds: &Rect) -> FieldPatch<SizeSpec> {
+    // Deliberately narrower than `bake_dimension` (which also bakes Fill —
+    // correct for a CHILD leaving the solve, wrong here: a Free container's
+    // Fill still tracks its parent and must keep doing so). If you change
+    // `bake_dimension`, decide this match again on its own terms.
     let bake = |dimension: &Dimension, solved: f64| match dimension {
         Dimension::Hug => Dimension::Fixed(solved),
         other => other.clone(),
