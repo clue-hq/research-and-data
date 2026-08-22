@@ -49,3 +49,59 @@ this worktree has NO `.env.local` (copy from the main bangalore checkout); colom
 Deferred minors for the final whole-branch review are itemized in the ledger (scale-multiplier
 parallel array; preview-leg tests are browser-only; cache retention across document switch;
 scrub-cost no-debounce; PDF iframe fills not letterboxes; pre-load refusal evaporation window).
+
+---
+
+## Close-out — D4 complete, Lane D DONE (2026-08-22)
+
+Branch `ad4d-export-binding`, code range `c22f3ef9..e02b8532` (8 code commits + docs), all local,
+nothing pushed. Suite **1805/1805**; lint 0 errors; build green; tsc 84-line baseline; root
+`make check` at exactly the five documented pre-existing reds (3× pilot_budget, 1×
+unified_agent_gate_migration, 1× o3_account_deep) — zero backend files in the lane.
+
+**D4 verification.** G-E (transparency) and G-F (print extras) verified held: comments only, no
+live controls, no JPEG. Browser proof on BOTH routes against the live stack (:3030 serving this
+worktree): three-format UI downloads with honest aria-live status and byte-identity to the
+D1-profile server exports (PNG@2x 375,801 B = 2400×2400 RGBA; SVG 61,800 B with embedded Inter
+@font-face; PDF 47,166 B v1.4 %PDF..%%EOF); preview renders the real ad letterboxed in the
+designed region; scale 3x re-exports / back-to-2x cache-hits; ⌘Z under the open menu blanked the
+preview honestly (and proved identity-anchoring — the undone op was same-value); reopen → fresh
+render; **no export or preview ever bumped the document version** (619 held across all of them).
+
+**Final whole-branch review found the lane's one real Critical** (invisible to per-task reviews):
+both export legs raced the edit queue's persist — the server renders the PERSISTED document while
+the optimistic scene leads by one round-trip; a download could deliver a pre-edit file announced
+as exported, and the preview could cache that stale render under the post-edit anchor. Partly a
+plan defect (Step 2 mandates the documentId branch). Fixed under ruling R-D19 (`e02b8532`):
+`awaitWritesSettled` (the queue's `idle()`, promoted from AD3.3's inline drain) awaited on both
+legs before `runExport`; no timeout by verified design (the chain always settles — a timeout
+would resume mid-persist and re-open the race). Scoped re-review clean; the gated path then
+browser-proven live: edit → immediate export → 260,208 B = the settled post-edit server render
+(pre-edit was 260,101 B).
+
+**Benign incident:** the founder was invited to test :3030 mid-lane and wrote to the seeded doc
+during the re-walk (headline token picks, an X commit); my restore was correctly CAS-refused in
+that window. Restored via server undo to the audited baseline hash `b225d5bc…` (corner 32/32/96/32,
+headline `$text.inverse`) at v643 — values node-identical, history append-only as designed.
+
+**Founder items (none block merge):** (1) the PDF preview iframe needs one real-browser glance —
+headless Chromium ships no PDF viewer, the iframe src is verified correct, upstream ships the same
+mechanism; fallback = suppress PDF preview (one line). (2) The dummy's caption pill ("PNG preview")
+overlays the real render — kept per R-D14; relabel/move is founder copy. (3) A write while the
+preview is open blanks it until reopen (R-D17, plan-mandated deps); the generation-dep fix is
+costed and small. (4) Scale scrubbing fires one real export per new key (4x = 23 MP) — debounce is
+one line if wanted. Deferred minors are itemized in the lane ledger section of the execution
+plan's SDD workspace (deleted at close; this note + git history are the record): stale
+preview-failure status outliving the closed menu; downloadDataUrl's unconditional true; dead
+iframe object-fit + no sandbox (defense-in-depth candidate); dot-leading filename titles;
+preview cache retention across document switch; one-frame caption/format mismatch.
+
+**Rulings register (R-D1a..R-D21) — the full list with costs-if-wrong lived in the ledger and is
+summarized in the close-out session message.** Key ones: R-D3 export is a read, never G-H
+turn-gated; R-D13 version-changed ⇒ scene-object identity; R-D16 PDF preview via iframe
+(upstream's mechanism, AD4.A precedent); R-D19 write-quiescence gating (supersedes nothing in the
+plan — it closes the plan's own unreconciled race).
+
+**Merge coordination:** zero file overlap with Lane B (adapter/panel) — Lane D's scene-apply/
+scene-hydrate are untouched; Lane C shares only `use-scene-editing-session.ts` returns consumed by
+`artifact-stage.tsx` props (additive on both sides). Whichever lands second rebases trivially.
