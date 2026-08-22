@@ -50,6 +50,7 @@ from clue_api.design_leg_wiring import (
 from clue_api.toolbelt_wiring import build_toolbelt
 from clue_design import legs as design_legs
 from clue_design import runs as design_runs
+from clue_design.documents import create_document
 from clue_storage import FsStorage
 from tests._identity import seed_principal
 from tests._workspace import seed_project
@@ -377,6 +378,131 @@ def test_a_design_leg_turn_lands_attribution_history_and_the_stamped_run(
                 conn, workspace_id=seeds["workspace_id"], leg_id=seeds["leg"]["id"]
             )
             assert leg_after["state"] == "open_awaiting_user"
+
+    run_async(scenario())
+
+
+async def _pin_document(
+    conn: AsyncConnection,
+    seeds: dict[str, Any],
+    *,
+    doc_kind: str,
+    version: int,
+) -> dict[str, Any]:
+    """Create a real design document of ``doc_kind`` at ``version`` and pin the leg to it."""
+
+    document_id = f"doc_p34e_{doc_kind}_{uuid4().hex[:8]}"
+    scene: dict[str, Any] = (
+        {
+            "schema_version": 1,
+            "id": document_id,
+            "title": "Harbor & Sage",
+            "theme": {},
+            "pages": [{"id": "home", "nodes": {"root": {"kind": "root"}}}],
+        }
+        if doc_kind == "web"
+        else {"meta": {"id": document_id, "title": "Launch artboard"}}
+    )
+    document = await create_document(
+        conn, workspace_id=seeds["workspace_id"], scene=scene, doc_kind=doc_kind
+    )
+    await conn.execute(
+        text(
+            "UPDATE design_document SET current_version = :v WHERE id = :id AND workspace_id = :w"
+        ),
+        {"v": version, "id": document["id"], "w": seeds["workspace_id"]},
+    )
+    await conn.execute(
+        text("UPDATE design_leg SET document_id = :doc WHERE id = CAST(:leg AS uuid)"),
+        {"doc": document["id"], "leg": seeds["leg"]["id"]},
+    )
+    seeds["leg"] = await design_legs.get_leg(
+        conn, workspace_id=seeds["workspace_id"], leg_id=seeds["leg"]["id"]
+    )
+    return document
+
+
+def test_a_scene_leg_envelope_carries_the_documents_base_version(
+    tmp_path: Path,
+    migrated_db: bool,  # noqa: F811
+) -> None:
+    """genad Task 5: the scene executor OWNS the persist, so it needs a CAS base.
+
+    The leg block carries ``document_base_version`` read ONCE here, at freeze time — the same
+    posture as the web request's ``base_version`` (which is why a web-pinned leg's block must
+    NOT carry the key: web already pins the version inside its own request, and two copies of
+    one CAS base is exactly the drift this freeze exists to prevent).
+    """
+
+    if not migrated_db:
+        pytest.skip("database not reachable")
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            seeds = await _seed_leg_conversation(conn, storage_root=tmp_path, label="casbase")
+            registry = build_agent_profile_registry(build_toolbelt(storage=None, gateway=None))
+            document = await _pin_document(conn, seeds, doc_kind="scene", version=3)
+            lane = _FakeLane(conn_factory=seeds["conn_factory"])
+            submission = await _submit_message(
+                conn, seeds, label="casbase", message="Make the headline two lines."
+            )
+            await _run_turn(conn, seeds, registry, lane, submission)
+
+            envelope = lane.envelopes[0]
+            assert envelope.kind == "agent_turn"
+            assert envelope.config["leg"]["document_base_version"] == 3
+            assert envelope.config["request"]["document_id"] == document["id"]
+
+    run_async(scenario())
+
+
+def test_a_web_leg_envelope_carries_no_document_base_version_on_its_leg_block(
+    tmp_path: Path,
+    migrated_db: bool,  # noqa: F811
+) -> None:
+    """A web-pinned leg's CAS base lives in its request, and nowhere else."""
+
+    if not migrated_db:
+        pytest.skip("database not reachable")
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            seeds = await _seed_leg_conversation(conn, storage_root=tmp_path, label="webbase")
+            registry = build_agent_profile_registry(build_toolbelt(storage=None, gateway=None))
+            await _pin_document(conn, seeds, doc_kind="web", version=4)
+            lane = _FakeLane(conn_factory=seeds["conn_factory"])
+            submission = await _submit_message(
+                conn, seeds, label="webbase", message="Warmer palette."
+            )
+            await _run_turn(conn, seeds, registry, lane, submission)
+
+            envelope = lane.envelopes[0]
+            assert envelope.kind == "web_turn"
+            assert "document_base_version" not in envelope.config["leg"]
+            assert envelope.config["request"]["base_version"] == 4
+
+    run_async(scenario())
+
+
+def test_a_document_less_leg_envelope_carries_no_document_base_version(
+    tmp_path: Path,
+    migrated_db: bool,  # noqa: F811
+) -> None:
+    """Legacy (AD4.R-era) legs pin no document at all; the executor must read that as
+    'preview-only', so the key is absent rather than a fabricated zero."""
+
+    if not migrated_db:
+        pytest.skip("database not reachable")
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            seeds = await _seed_leg_conversation(conn, storage_root=tmp_path, label="nodoc")
+            registry = build_agent_profile_registry(build_toolbelt(storage=None, gateway=None))
+            lane = _FakeLane(conn_factory=seeds["conn_factory"])
+            submission = await _submit_message(conn, seeds, label="nodoc", message="Bolder.")
+            await _run_turn(conn, seeds, registry, lane, submission)
+
+            assert "document_base_version" not in lane.envelopes[0].config["leg"]
 
     run_async(scenario())
 

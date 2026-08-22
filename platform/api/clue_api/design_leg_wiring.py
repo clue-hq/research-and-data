@@ -1332,6 +1332,20 @@ class DesignLegTurnRunner:
                 "brand_kit_id": leg.get("brand_kit_id"),
                 "brand_kit_version": leg.get("brand_kit_version"),
                 "document_version_guard": leg.get("document_version_guard"),
+                # genad Task 5: the SCENE executor owns its persist (the genweb ruling extended
+                # to ads), so a scene-pinned leg turn needs a CAS base. Read ONCE, here, because
+                # the envelope is frozen as the run row's payload and a re-offer replays it
+                # verbatim; the executor's own re-check against the stored document stays the
+                # authority on staleness. The key is deliberately ABSENT for a web-pinned leg
+                # (``request.base_version`` already pins that turn — two copies of one CAS base
+                # is exactly the drift this freeze exists to prevent) and for a document-less
+                # legacy leg (nothing to persist into; the executor reads a missing key as
+                # "preview-only" rather than a fabricated version zero).
+                **(
+                    {"document_base_version": int(document.get("current_version") or 0)}
+                    if kind == "agent_turn" and leg.get("document_id") and document
+                    else {}
+                ),
                 "focus_refs": [
                     {
                         "object_type": ref.object_type,
