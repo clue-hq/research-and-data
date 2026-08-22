@@ -56,27 +56,30 @@ export const COLOR_NONE = "none";
 /**
  * RULING A9 (2026-08-21): the stroke a colour or a width commit MINTS on a
  * node that has none — upstream's own two defaults. The WRITE is where the
- * ruling is stated in full (`scene-apply.ts`, with both upstream citations);
- * the pair lives HERE because the panel needs the identical numbers.
+ * ruling is stated in full (`scene-apply.ts`, with both upstream citations,
+ * importing these two constants); they live HERE beside the hydration that
+ * reads the minted stroke back out of the document.
  *
  * A9 makes the Stroke row's two fields move TOGETHER: a colour on a strokeless
  * node gives the document a 1px stroke, and a width on one gives it a teal
- * paint. A successful write does not remount the inspector (§4 / the AD3.2
- * keying rule), so nothing else would re-read them — the row would go on
- * saying "none / 0" over a node that now visibly has a stroke, which is the
- * "a field may not display a value the document does not have" rule this
- * lane's reviews have already applied twice. `mintedStrokeDisplay` is the one
- * decision both halves re-seed from.
+ * paint. AD4.R made the display half structural: the panel DISPLAYS the minted
+ * scene by live derivation — the accepted document arrives in the same React
+ * batch as the write and hydration states both fields from it — so the row
+ * cannot go on saying "none / 0" over a node that now visibly has a stroke.
+ * The mint is stated once, on the write side; nothing re-seeds a panel copy.
  */
 export const MINTED_STROKE_WIDTH = 1;
 export const MINTED_STROKE_HEX = "#256c70";
 
 /**
  * A typed field's number, or `null`. The ad inspector's numeric fields are
- * free-text `InspectorInput`s firing per KEYSTROKE, so "", "-" and "1e" are
- * ordinary intermediate events, not commits: an empty field is mid-edit, never
- * a request to write 0 (JS's `Number("") === 0` would say otherwise).
- * Upstream's `NumberField` does not need this — it is an `<input
+ * free-text `InspectorInput`s, so "", "-" and "1e" reach the adapter as
+ * ordinary text that names no number: an empty field is a cleared box, never a
+ * request to write 0 (JS's `Number("") === 0` would say otherwise). AD4.R-6
+ * moved these fields from per-keystroke writes to commit-on-blur/Enter, which
+ * narrows how often the adapter sees a half-typed value but does not change
+ * the contract — an emptied box still commits `""`, and this is what refuses
+ * it. Upstream's `NumberField` does not need this — it is an `<input
  * type="number">` and never sees the intermediate text.
  *
  * It lives beside `numberText` (its inverse) rather than in `scene-apply.ts`,
@@ -120,9 +123,10 @@ export function vocabulary<Value>(
 
 /** `fields.tsx:174` `roundForEditor`, ported at the two sites upstream applies
  * it: the stroke width it stores, and the corner radius (through
- * `normalizeCornerRadius`). It lives HERE for `finiteNumber`'s own reason — the
- * PANEL needs the identical number (`radiusCommitText` below), and scene-apply
- * already imports this file, so importing back would close a cycle. */
+ * `normalizeCornerRadius`). It lives HERE for `finiteNumber`'s own reason —
+ * `radiusCommit`/`radiusCommitText` below need it and hydration states the
+ * numbers it produces, while scene-apply (its other caller, for the stroke
+ * width) already imports this file, so importing back would close a cycle. */
 export function roundForEditor(value: number): number {
   return Math.round(value * 1000) / 1000;
 }
@@ -131,15 +135,16 @@ export function roundForEditor(value: number): number {
  * §1.3 Radius / RULING A28: the number a radius commit WRITES for this text, or
  * `null` when it writes nothing.
  *
- * ONE rule, two callers, and that is the whole point of it existing:
- * `scene-apply.ts`'s `radius.*` row takes the number, and `RadiusControls`'s
- * scene branch takes `radiusCommitText` below to decide whether the four corner
- * boxes must re-state themselves — so the mirror and the write cannot disagree
- * about what a commit does. They did: the mirror used to ask the dummy's
- * integer regex (`NUMERIC_RADIUS`, `^\d+$`), so a fractional radius wrote all
- * four corners while the boxes went on showing the old numbers, and every
- * re-type of one of those numbers compared equal and was swallowed
- * (browser-proven — it blocked restoring a document by hand).
+ * The one production caller is `scene-apply.ts`'s `radius.*` row, which takes
+ * the number. `RadiusControls`' scene branch used to be the second, taking
+ * `radiusCommitText` below to re-state the four corner boxes after a commit;
+ * AD4.R-7 deleted that mirror (the boxes project the live document instead), so
+ * the two rules can no longer disagree because there is only one. They did
+ * disagree: the mirror asked the dummy's integer regex (`NUMERIC_RADIUS`,
+ * `^\d+$`), so a fractional radius wrote all four corners while the boxes went
+ * on showing the old numbers, and every re-type of one of those numbers
+ * compared equal and was swallowed (browser-proven — it blocked restoring a
+ * document by hand).
  *
  * The rule is `finiteNumber`'s, plus §1.3's refusal of a negative radius
  * (upstream folds one to 0; the null contract refuses instead — `scene-apply.ts`
@@ -151,13 +156,15 @@ export function radiusCommit(raw: string): number | null {
 }
 
 /**
- * A28: the TEXT a radius field must read once its commit has landed — the
- * canonical spelling of the number the document now holds, or `null` when the
- * commit wrote nothing and nothing may be re-stated.
+ * A28: the canonical spelling of the number a radius commit puts in the
+ * document, or `null` when the commit writes nothing.
  *
  * It is `numberText` of the written number, i.e. EXACTLY what
- * `hydrateSceneInspectorState` would state for that corner on the next read, so
- * the mirrored panel and a re-hydrated one cannot differ. That is stronger than
+ * `hydrateSceneInspectorState` states for that corner on the next read. It was
+ * written for the panel mirror AD4.R-7 deleted, and survives **test-side
+ * only** (`scene-hydrate.test.ts`'s A28 vocabulary, `scene-apply.test.ts`'s
+ * A31 chain): the canonical statement that hydration's spelling is the write's
+ * own, which is now the only spelling a box can show. That is stronger than
  * echoing the user's own text back: `007` and `12.3456789` are accepted commits
  * whose documents hold `7` and `12.346`, and a box repeating the typed spelling
  * would be stating a number the document does not have.
@@ -168,9 +175,15 @@ export function radiusCommitText(raw: string): string | null {
 }
 
 /**
- * A9: the WIDTH the Stroke row must read once a colour has landed on it —
- * `"1"` when the row was showing no stroke at all, `null` when it was not (the
- * node already has a stroke, so the write keeps that width).
+ * A9: the WIDTH a colour commit lands beside itself — `"1"` when the row was
+ * showing no stroke at all, `null` when it was not (the node already has a
+ * stroke, so the write keeps that width).
+ *
+ * AD4.R-6 deleted the panel mirror that consumed this: the Stroke row displays
+ * the minted scene by live derivation, so no component re-seeds a width. It is
+ * consumed by TESTS ONLY now, and kept as the canonical statement of A9's
+ * numbers in the panel's own vocabulary, beside the `MINTED_STROKE_*`
+ * constants the write (`scene-apply.ts`) owns and applies.
  *
  * The condition is the ROW's displayed colour, which is exactly the write's
  * condition seen from the panel: hydration states `none` for a node with no
@@ -184,9 +197,10 @@ export function mintedStrokeWidth(color: string): string | null {
 }
 
 /**
- * A9, the mirror: the COLOUR the Stroke row must read once a width has landed
- * on it — upstream's default when the row was showing no stroke and the typed
- * width really mints one, `null` otherwise.
+ * A9, the other direction: the COLOUR a width commit lands beside itself —
+ * upstream's default when the row was showing no stroke and the typed width
+ * really mints one, `null` otherwise. Test-only for the same reason as
+ * `mintedStrokeWidth` above, and kept for the same one.
  *
  * The width IS consulted here, because this direction's write depends on it: a
  * `0` clears and an unparseable one is refused, and neither mints a colour.
@@ -393,9 +407,15 @@ export type BackgroundCommit =
  * commits — the whole handler's decision, pure, so the component holds none of
  * it: one handler that dispatches AND keeps a sibling control honest.
  *
- * Two browser-proven defects live here, and they are one bug: the fill OBJECT
- * in controller state is seeded once at mount and does not track the writes
- * that follow, so a mode switch commits a stale seed.
+ * Two browser-proven defects live here, and they were one bug. Their original
+ * premise — the fill OBJECT in controller state is seeded once at mount and
+ * does not track the writes that follow, so a mode switch commits a stale seed
+ * — is RETIRED on the ad lane by AD4.R: under live hydration the fill object
+ * tracks the document, so the values this function reads off the panel are the
+ * document's own. What survives is the function itself, unchanged and still
+ * needed: it is the pure decision for WHICH writes a mode switch dispatches,
+ * because the two paints are different rows and a switch between them is not a
+ * single property change.
  *
  *   • SOLID → GRADIENT discarded the colour the user had just set (green
  *     reverted to the pre-edit navy) because the object's stops still carried

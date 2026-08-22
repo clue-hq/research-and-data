@@ -46,8 +46,8 @@ import type { AssetRecord, Node, Operation, Scene } from "../engine/scene/contra
  *
  * WHY THE STATE LIVES HERE RATHER THAN IN THE PANEL. The inspector is remounted
  * per selection (`key={nodeId}`), so a candidate held in the component would be
- * thrown away by any panel lifecycle event — a paid model call silently
- * discarded, which is the fourth discipline exactly. A result someone paid for
+ * thrown away by a selection change landing mid-review — a paid model call
+ * silently discarded, which is the fourth discipline exactly. A result someone paid for
  * must outlive the panel showing it. Held here it does; it is STAMPED with the
  * document and node it was made from, so a selection change hides it instead
  * (and `accept` refuses outright), which is the rule that matters most in this

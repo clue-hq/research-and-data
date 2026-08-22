@@ -201,6 +201,13 @@ export function useSceneEditingSession({
   // entry state — a selected root frame renders §1.1's page rows, which a node
   // hydration cannot state. The rule, and why the node still wins every shared
   // field, is documented there.
+  //
+  // AD4.R, the producer side of a load-bearing guarantee: this memo must never
+  // yield null for a mounted document mid-reload — `use-scene-document` keeps
+  // the old load in place until the new one arrives (a reload-token bump never
+  // resets to `loading`), so `scene` stays non-null across the refetch. The
+  // live-hydrated inspector depends on it: a transient null would drop every
+  // bound field back to the controller's mount-mode defaults for a frame.
   const hydrated = useMemo<SceneInspectorState | null>(
     () =>
       scene

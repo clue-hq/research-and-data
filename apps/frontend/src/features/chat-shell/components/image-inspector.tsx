@@ -160,9 +160,12 @@ interface AdHydrationBinding {
    * Its `documentVersion` is null until AD3 wires the scene write path — the
    * W3.1 null contract, i.e. "not addressable", i.e. no write can fire. */
   addressing?: InspectorEventAddressing;
-  /** RULING A29: the selected node's LIVE lock (the header controller's, not a
-   * schema's mount-time seed), for the controls whose local state must not
-   * record a write §4 refuses. */
+  /** RULING A29: the selected node's lock, routed from the HEADER controller —
+   * the one that owns the lock button's write — so all four schemas read ONE
+   * statement of it. Since AD4.R-4 every schema's own `state.locked` is live
+   * too (the accepted scene owns it), so this is no longer live-vs-seeded; it
+   * is one source rather than four. The controls use it to skip a dispatch §4
+   * would refuse. */
   locked?: boolean;
   /** The selected node's real values (or the page's, for the canvas schema).
    *
@@ -1011,11 +1014,16 @@ export function ImageInspector({
   //
   // RULING A29: `locked` rides down as data, from the HEADER's controller
   // rather than each schema's own. The lock button writes through
-  // `headerController` (below), and a successful write deliberately does not
-  // remount the panel (§4 / the AD3.2 keying rule) — so a schema's own
-  // `state.locked`, seeded once at mount, would still say `false` a click after
-  // the user locked the node, which is exactly when a control must stop
-  // recording writes the adapter is refusing.
+  // `headerController` (below), so taking the value from there keeps ONE
+  // statement of the lock for every schema — the controller that dispatches
+  // the write is the one that reports the result.
+  //
+  // The original reason was sharper: a schema's own `state.locked` was a
+  // mount-time seed, and a successful lock write deliberately does not remount
+  // the panel (§4 / the AD3.2 keying rule), so it still said `false` a click
+  // after the user locked the node. AD4.R-4 retired that half — every ad
+  // schema's `state.locked` is live-derived from the accepted scene now — and
+  // the routing stays for the single-source reason.
   const schema = {
     addressing,
     hydrated,

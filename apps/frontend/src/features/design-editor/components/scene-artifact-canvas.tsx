@@ -426,10 +426,8 @@ function SceneDocumentCanvas({
     return () => observer.disconnect();
   }, []);
 
-  // AD2.7: hand the rendered scene up. A passive-ref effect (callback only, no
-  // state) so it can never fight the render, and keyed on the scene identity
-  // the draw loop is actually using — including the relaid one the C4
-  // measurement pass adopts.
+  // The latch for the scene-change callback below — a ref so neither caller
+  // (the apply path, the passive effect) closes over a stale one.
   const onSceneChangeRef = useRef(onSceneChange);
   useEffect(() => {
     onSceneChangeRef.current = onSceneChange;
@@ -669,6 +667,18 @@ function SceneDocumentCanvas({
     event.currentTarget.releasePointerCapture?.(event.pointerId);
   };
 
+  // AD2.7: hand the rendered scene up. A passive-ref effect (callback only, no
+  // state) so it can never fight the render, and keyed on the scene identity
+  // the draw loop is actually using — including the relaid one the C4
+  // measurement pass adopts. This owns the load / reload / relaid-scene paths.
+  //
+  // AD4.R-1 added a SYNCHRONOUS sibling on the accepted-apply path
+  // (`controls.applyOperations` above): a write's own scene mirrors up inside
+  // the same call stack, so the inspector's live-derived fields re-read the
+  // post-write document in the same React batch instead of one passive-effect
+  // render later. This effect still fires afterwards for that same scene, and
+  // that repeat is an idempotent `setLoaded` — the two are not redundant, they
+  // cover different arrivals.
   useEffect(() => {
     onSceneChangeRef.current?.(scene, pageId, documentId);
   }, [documentId, pageId, scene]);

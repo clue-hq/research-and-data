@@ -2164,10 +2164,13 @@ it("RULING A29: a commit against a LOCKED node records NOTHING in the panel eith
   // radius control asked only "would this text write?", never "did it LAND?",
   // so on a locked node a commit re-stated all five boxes and their `committed`
   // snapshot over a document nothing had touched. Two clicks reproduced it —
-  // select the image, click the header lock, type 24 into All — and because no
-  // write happened, `inspectorGeneration` never moved, so only reselecting the
-  // node cleared the lie. It also re-opened A27's trap behind the lock: after
-  // unlocking, re-typing 24 compared equal to `committed` and committed nothing.
+  // select the image, click the header lock, type 24 into All — and only
+  // reselecting the node cleared the lie, because a successful write never
+  // triggers a reload or a remount either (§4 / the AD3.2 keying rule) and the
+  // panel had no other way back to the document. It also re-opened A27's trap
+  // behind the lock: after unlocking, re-typing 24 compared equal to
+  // `committed` and committed nothing. Under AD4.R the boxes derive, so there
+  // is no snapshot to strand.
   const source = readFileSync(
     join(
       dirname(fileURLToPath(import.meta.url)),

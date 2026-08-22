@@ -235,6 +235,14 @@ export interface InspectorControllerOptions {
    * (the Task-1 synchronous mirror). False (the default) is the original
    * mount-seeded behavior, byte-for-byte — the web inspector and the dummy
    * fixture paths run on it unchanged, pending the web lane's own migration.
+   *
+   * LOAD-BEARING DEPENDENCY: live mode assumes the caller's `hydrated` never
+   * transiently goes null for a mounted real document. On the ad lane that
+   * holds because `use-scene-document.ts` keeps the old scene mounted through a
+   * reload — a reload-token bump refetches without resetting the load state to
+   * `loading` — so the session's hydration memo cannot yield null mid-reload.
+   * A future loading-state refactor that breaks that would flash the
+   * mount-mode defaults through every bound field.
    */
   liveHydration?: boolean;
 }
@@ -257,10 +265,19 @@ export function useInspectorController(
   collapsedSections: InspectorSectionId[] = [],
   selectionType: ChatShellInspectorSelection = "canvas",
   // W2.2: the hydration seam — real values from the selected node (the
-  // design-editor hydrate adapter) merge over the dummy defaults at mount.
-  // Initial state only, by design: callers remount the inspector per
-  // selection (keyed on the selected node), exactly how the dummy swaps
-  // schema views, so a new selection re-hydrates naturally.
+  // design-editor hydrate adapter).
+  //
+  // AD4.R: what this prop MEANS now depends on `options.liveHydration`. Under
+  // it, the prop is composed into the returned state PER RENDER — the accepted
+  // engine scene owns every key it carries, so a document change re-derives
+  // those values with no remount and no local copy in between. WITHOUT the
+  // option it is still the MOUNT SEED it shipped as, merged over the dummy
+  // defaults once and owned locally thereafter — the web inspector's and the
+  // dummy fixture paths' contract, pending the web lane's own migration.
+  // Either way callers keep remounting the inspector per selection (keyed on
+  // the selected node), exactly how the dummy swaps schema views; in live mode
+  // that remount survives to reset UI state (open sections, field drafts)
+  // rather than to re-seed document values.
   hydrated?: Partial<InspectorPresentationState>,
   // W3.1: write addressing stamped onto every dispatched event detail.
   addressing?: InspectorEventAddressing,
