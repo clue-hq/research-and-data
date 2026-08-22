@@ -126,10 +126,6 @@ export interface SceneExportRequest {
   title: string | null;
 }
 
-/** `"1x"` → `1`. The menu's scale vocabulary is `Nx` for a single digit, so the
- * index into `IMAGE_EXPORT_SCALES` IS the multiplier minus one. */
-const SCALE_MULTIPLIERS = [1, 2, 3, 4] as const;
-
 /**
  * The menu's scale label as the raster multiplier `sceneExportProfile` takes.
  *
@@ -145,8 +141,40 @@ const SCALE_MULTIPLIERS = [1, 2, 3, 4] as const;
  * argument for them anyway.
  */
 export function sceneExportScaleMultiplier(scale: unknown): 1 | 2 | 3 | 4 {
+  // ARITHMETIC, not a parallel lookup array (final review, finding 2). The
+  // menu's scale vocabulary is `Nx` for a single digit, so the index into
+  // `IMAGE_EXPORT_SCALES` IS the multiplier minus one — a second array holding
+  // `[1,2,3,4]` only created a way for the two to fall out of step, and with
+  // `noUncheckedIndexedAccess` off its indexing was unchecked besides.
   const index = IMAGE_EXPORT_SCALES.indexOf(scale as ImageExportScale);
-  return index === -1 ? 1 : SCALE_MULTIPLIERS[index];
+  return index === -1 ? 1 : ((index + 1) as 1 | 2 | 3 | 4);
+}
+
+/**
+ * Which stamped status the export menu's `aria-live` span announces.
+ *
+ * A status is STAMPED with the document it is about and only announced under
+ * that document, so switching artifacts cannot inherit the previous ad's
+ * outcome. The `null` stamp is the deliberate exception (final review, finding
+ * 3): a refusal issued while NO document was loaded is not about a document at
+ * all, so it must not evaporate the moment one arrives. It used to — and
+ * because the menu reads `exportStatus ?? controller.statusMessage`, the span
+ * then fell back to the controller's optimistic "PNG export requested at 1x"
+ * about an export that had just been refused and never ran. Announcing a
+ * fiction is precisely the defect R-D7 exists to prevent, so the refusal
+ * outlives the arrival and stands until a real attempt replaces it.
+ */
+export function exportStatusFor(
+  status: { forDocumentId: string | null; message: string } | null,
+  documentId: string | null,
+): string | null {
+  if (!status) {
+    return null;
+  }
+  if (status.forDocumentId === null || status.forDocumentId === documentId) {
+    return status.message;
+  }
+  return null;
 }
 
 /**

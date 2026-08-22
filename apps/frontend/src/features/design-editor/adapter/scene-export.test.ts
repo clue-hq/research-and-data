@@ -5,6 +5,7 @@ import type { EditorExportResult } from "../engine/scene/exportRunner";
 import { HARVESTED_AD_PAGE } from "./__fixtures__/scene-nodes";
 import {
   exportFilename,
+  exportStatusFor,
   parseSceneExportRequest,
   previewAnchorsMatch,
   previewCacheKey,
@@ -501,4 +502,39 @@ it("anchors match only for the same document AND the same scene object", () => {
 
 it("nothing anchored matches nothing", () => {
   assert.equal(previewAnchorsMatch(null, "doc-1", HARVESTED_AD_PAGE), false);
+});
+
+// ── AD4.D final review: which stamped status the menu's span announces ─────
+
+it("a status stamped with the live document is announced", () => {
+  assert.equal(
+    exportStatusFor({ forDocumentId: "doc-1", message: "PNG exported" }, "doc-1"),
+    "PNG exported",
+  );
+});
+
+it("a status about another document is not announced under this one", () => {
+  assert.equal(
+    exportStatusFor({ forDocumentId: "doc-1", message: "PNG exported" }, "doc-2"),
+    null,
+  );
+  assert.equal(
+    exportStatusFor({ forDocumentId: "doc-1", message: "PNG exported" }, null),
+    null,
+  );
+});
+
+it("nothing said yet announces nothing", () => {
+  assert.equal(exportStatusFor(null, "doc-1"), null);
+});
+
+it("a pre-load refusal SURVIVES the document arriving — the span must never fall back to the optimistic line about an export that never ran", () => {
+  const refusal = { forDocumentId: null, message: "No document to export" };
+  // Announced during the pre-load window…
+  assert.equal(exportStatusFor(refusal, null), "No document to export");
+  // …and still announced once a document loads, rather than evaporating and
+  // letting the controller's "PNG export requested at 1x" speak for an export
+  // that was refused.
+  assert.equal(exportStatusFor(refusal, "doc-1"), "No document to export");
+  assert.equal(exportStatusFor(refusal, "doc-2"), "No document to export");
 });

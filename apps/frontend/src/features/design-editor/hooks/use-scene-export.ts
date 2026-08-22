@@ -8,6 +8,7 @@ import type {
 } from "@/features/chat-shell/model/image-export";
 import {
   exportFilename,
+  exportStatusFor,
   parseSceneExportRequest,
   previewAnchorsMatch,
   previewCacheKey,
@@ -139,6 +140,7 @@ function dataUrlToBlob(dataUrl: string): Blob {
 }
 
 export function useSceneExport({
+  awaitWritesSettled,
   documentId,
   pageId,
   scene,
@@ -160,6 +162,13 @@ export function useSceneExport({
    * menu's shape). The DETAIL's title wins — it is what the tab said at the
    * moment the user pressed Export. */
   title: string | null;
+  /** R-D19: resolves once the document's queued write batches have been
+   * persisted. BOTH legs await it immediately before rendering, because the
+   * server renders its PERSISTED copy and this lane applies edits optimistically
+   * — see the ruling section in the header. Optional so the pre-load and
+   * fixture paths compose without a write controller; absent means "nothing is
+   * being written", which is true on both. */
+  awaitWritesSettled?: (documentId: string) => Promise<void>;
 }): {
   /** §1.11: the render to show in the designed preview region, paired with the
    * element that hosts it, or `null` when there is nothing TRUE to show — no
@@ -184,13 +193,14 @@ export function useSceneExport({
   // `exportStatus ?? controller.statusMessage`) — a finished operation
   // announced about a document it never touched. Derivation rather than a
   // clearing effect, because this repo's react-hooks rules forbid setting state
-  // from an effect.
+  // from an effect. The one exception — a `null` stamp, meaning a refusal made
+  // when no document was loaded, which must OUTLIVE the document's arrival —
+  // lives in `exportStatusFor`, where its reasoning is written out.
   const [status, setStatus] = useState<{
     forDocumentId: string | null;
     message: string;
   } | null>(null);
-  const exportStatus =
-    status && status.forDocumentId === documentId ? status.message : null;
+  const exportStatus = exportStatusFor(status, documentId);
 
   // Latest-value refs so the one listener reads current state without re-arming
   // (written passively, per this repo's react-hooks rules) — the
@@ -199,11 +209,13 @@ export function useSceneExport({
   const pageIdRef = useRef(pageId);
   const sceneRef = useRef(scene);
   const titleRef = useRef(title);
+  const awaitWritesSettledRef = useRef(awaitWritesSettled);
   useEffect(() => {
     documentIdRef.current = documentId;
     pageIdRef.current = pageId;
     sceneRef.current = scene;
     titleRef.current = title;
+    awaitWritesSettledRef.current = awaitWritesSettled;
   });
 
   /** One place to write a status, so every message is stamped with the document
@@ -278,8 +290,13 @@ export function useSceneExport({
   const exportPreview =
     preview &&
     previewMode &&
-    preview.forDocumentId === documentId &&
-    preview.forScene === scene &&
+    documentId !== null &&
+    scene !== null &&
+    // The SHARED predicate, not a hand-rolled repeat of it (final review,
+    // finding 4) — its whole purpose is that the cache lookup, the cache store,
+    // the in-flight registry and this display gate cannot disagree about what
+    // "same document, same scene" means.
+    previewAnchorsMatch(preview, documentId, scene) &&
     preview.forKey === requestedKey
       ? { dataUrl: preview.dataUrl, mode: previewMode }
       : null;
@@ -345,6 +362,11 @@ export function useSceneExport({
             documentId: armedDocumentId,
             fetchImpl: config.fetchImpl,
           });
+          // R-D19, and the preview leg needs it MORE than the download does:
+          // an unwaited render is not just shown stale, it is CACHED under the
+          // post-edit scene anchor, which poisons that key until the scene
+          // object next changes. The revalidation below still runs after.
+          await awaitWritesSettledRef.current?.(armedDocumentId);
           const result = await runExport({
             scene: armedScene,
             profile: sceneExportProfile(format, sceneExportScaleMultiplier(scale)),
@@ -477,6 +499,13 @@ export function useSceneExport({
             documentId: armedDocumentId,
             fetchImpl: config.fetchImpl,
           });
+          // R-D19: the file must contain the edit the user just made. The
+          // server renders its PERSISTED copy, and this lane's writes land
+          // optimistically on a chained promise, so without this wait an export
+          // fired inside that window downloads the PRE-edit document and
+          // announces "PNG exported" over it. Bounded — the proof is at
+          // `use-scene-manual-edits.ts`'s `awaitWritesSettled`.
+          await awaitWritesSettledRef.current?.(armedDocumentId);
           const result = await runExport({
             scene: armedScene,
             profile: sceneExportProfile(request.format, request.scale),

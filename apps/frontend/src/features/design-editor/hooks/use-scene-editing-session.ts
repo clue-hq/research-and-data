@@ -494,6 +494,11 @@ export function useSceneEditingSession({
   // primary source and the image menu always sends one (the tab's own title,
   // as the header renders it).
   const { exportPreview, exportStatus, requestExportPreview } = useSceneExport({
+    // R-D19: an export reads the server's PERSISTED copy, so it has to wait for
+    // this document's optimistic writes to land or it renders the pre-edit
+    // document. Same drain a history step takes, for the same reason — the
+    // write controller owns the queue, so it owns the answer.
+    awaitWritesSettled: writes.awaitWritesSettled,
     documentId: activeDocumentId,
     pageId,
     scene,
