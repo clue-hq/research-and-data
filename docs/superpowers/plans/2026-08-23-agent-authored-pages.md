@@ -204,6 +204,11 @@ e. non-leg turn on a pageless doc → byte-identical result envelope (dict equal
   - [T4] `prompts.py:319-320` ownership clause ("YOU author every page") is welded onto the units bullet and is the one new sentence no test pins — own bullet + pin, or drop.
   - [T4] The print-preset list reads closed (3 of 5 DSL presets named); prefix "for example," to keep the agent-side catalog open. The "(pt works too)" parenthetical is droppable.
   - [T4 → founder] The engine never refuses a size-less `page <id>` line (silent A4-portrait default, `dsl.rs:1714-1718`); the prompt now warns, but a `lower_page` warning diagnostic would be the mechanical guard — Rust change, outside this lane's fence.
+  - [T5] `scene-pageless.ts:76`'s `pageId` parameter creates an unreachable fail-quiet branch (prefer `isPagelessScene(scene)` alone); the four-hop pageless wiring (chat/editor-surface → image-inspector → AdCanvasInspector) is unpinned — deleting a forward silently restores the 1200×1200 fabrication (~4-line source-literal pin closes it).
+  - [T5] `scene-artifact-canvas.module.css:83-84` comment claims a nonexistent token relationship (literal palette value, not `--clue-content-subtle`); a hand-crafted `?selection=text|image` URL on a pageless doc still renders un-hydrated schemas (unreachable in normal use); the "100% zoom over a pageless doc" residual should gain a line in `scene-pageless.ts`'s flag docblock.
+  - [T6] `pagePixelSize` now has ZERO production consumers (the brief's "render-path consumers" premise was disproven) — controller ruling: DELETE it in this task's sweep (one function + two test refs; the px-sounding name invites reintroducing the 595×842 misreport).
+  - [T6] `PRESET_DIMENSIONS` (`scene-apply.ts:1441`) should be a total `Record<PagePreset, … | null>` so a new engine preset fails the TS build; the values' honest home is the `pageGeometry.ts` port (its owner's call).
+  - [T6 → founder walk] The min-1 W/H floor is unit-blind (a 0.75 in label page is refused); and the size SELECT's px-spelled labels convert a physical page to raster on explicit choice — legible, charter-consistent, but ask whether an A4 page should be offered px-only labels at all.
 - [ ] Commit: `docs(genad2): close-out — agent-authored pages live end-to-end; birth-owns-the-page superseded (dated)`.
 
 ## Self-review (performed at authoring)
