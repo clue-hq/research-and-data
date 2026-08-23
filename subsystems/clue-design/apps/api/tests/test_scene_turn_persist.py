@@ -741,3 +741,296 @@ def test_the_dsl_the_steering_block_quotes_actually_compiles_against_the_empty_p
     compiled_page = result["scene"]["pages"][AD_PAGE_ID]
     assert compiled_page["children"] == ["ad_root"], "the subtree must attach to the EXISTING page"
     assert compiled_page["size"] == scene["pages"][AD_PAGE_ID]["size"], "the page must not move"
+
+
+# --- (g) genad2 Task 3: the >=1-page success gate ----------------------------
+#
+# The zero-page birth (genad2 ruling 1) moved page authorship to the design agent:
+# `open_design_leg@4` mints a scene document with NO pages at all, and the trio authors the page
+# in a later turn at the size the user's own words imply. That makes "the turn produced nothing"
+# newly indistinguishable from "the turn produced a design" at the persist seam — an empty or
+# meta-only proposal on a page-less newborn used to come back a cheerful success while the
+# gallery had nothing to open. A LEG turn whose APPLIED result still has zero pages is therefore
+# refused honestly: no write, a typed `agent_turn.pageless_result` failure, the document exactly
+# as it was.
+
+PAGELESS_SUMMARY = (
+    "Design finished without creating a page — nothing was saved; "
+    "send another message to try again."
+)
+
+
+def create_pageless_document(client: TestClient) -> dict:
+    """A document born the way `open_design_leg@4` births one: the engine's own `new_scene`,
+    no page minted by anybody.
+
+    Returned as the STORED row (not the creation DTO, which carries no scene) so `_leg_config`
+    hands the turn the page-less scene the document really has.
+    """
+
+    response = client.post("/documents", json={"title": "Harbor & Sage Launch Ad"})
+    assert response.status_code == 200, response.text
+    document = HybridRepository().require_document(response.json()["document"]["id"])
+    assert document["scene"]["pages"] == {}, "the birth scene must be page-less"
+    assert document["current_version"] == 0
+    return document
+
+
+def add_page_operation(page_id: str = AD_PAGE_ID) -> dict:
+    """The page the design agent is now the one to author."""
+
+    return {"kind": "add_page", "page": empty_ad_scene(page_id)["pages"][page_id]}
+
+
+def _assert_pageless_refusal(response: dict) -> None:
+    assert response["status"] == "failed"
+    assert response["operations"] == []
+    assert response["diagnostics"][0]["code"] == "agent_turn.pageless_result"
+    # The sentence a marketer reads names the fact — no page was made, nothing was saved, and
+    # what to do next. "Design turn failed." would be true and useless. Asserted on BOTH prose
+    # slots for the reason `_assert_conflict_is_legible` gives: `summary` is the design editor's
+    # run-panel key, `stop_reason` the platform scene summarizer's, and the failure builder
+    # leaves the latter None unless it is set deliberately.
+    assert response["summary"] == PAGELESS_SUMMARY
+    assert response["stop_reason"] == PAGELESS_SUMMARY
+
+
+def test_a_leg_scene_turn_that_authors_the_first_page_commits_it(
+    client: TestClient,
+) -> None:
+    """(a) The happy zero-page path: the agent authors the page, so the gate lets it through and
+    the newborn advances to a document with something in it."""
+
+    from lumen_api.main import execute_agent_turn_job
+
+    document = create_pageless_document(client)
+    store = HybridRepository()
+
+    status, response, _, _ = execute_agent_turn_job(
+        _scene_envelope(document["id"], store.workspace_id, _leg_config(document, 0)),
+        store=store,
+        host=_turn_host(client, proposing_runner([add_page_operation()])),
+        event_sink=None,
+    )
+
+    assert status == "succeeded", response
+    assert response["status"] == "proposed"
+    stored = store.require_document(document["id"])
+    assert stored["current_version"] == 1
+    assert list(stored["scene"]["pages"]) == [AD_PAGE_ID]
+    assert response["current_version"] == 1
+    assert len(store.list_envelopes(document["id"])) == 1
+
+
+def test_a_leg_scene_turn_that_makes_no_page_is_refused_instead_of_committed(
+    client: TestClient,
+) -> None:
+    """(b) The operations replay cleanly — they just do not amount to a design. Committing them
+    would advance the version and report success over a document with nothing to open."""
+
+    from lumen_api.main import execute_agent_turn_job
+
+    document = create_pageless_document(client)
+    store = HybridRepository()
+
+    status, response, kind, marker = execute_agent_turn_job(
+        _scene_envelope(document["id"], store.workspace_id, _leg_config(document, 0)),
+        store=store,
+        host=_turn_host(client, proposing_runner([title_operation("Agent Title")])),
+        event_sink=None,
+    )
+
+    assert (status, kind) == ("failed", "result")
+    assert marker == {"status": "failed"}
+    _assert_pageless_refusal(response)
+    # No write at all: not the version, not the title the meta-only op carried, not an envelope.
+    stored = store.require_document(document["id"])
+    assert stored["current_version"] == 0
+    assert stored["scene"]["pages"] == {}
+    assert stored["scene"]["meta"]["title"] == "Harbor & Sage Launch Ad"
+    assert store.list_envelopes(document["id"]) == []
+
+
+def test_a_leg_scene_turn_proposing_nothing_on_a_pageless_document_is_refused(
+    client: TestClient,
+) -> None:
+    """(c) The empty-proposal shape never reaches the replay, so the gate has to be repeated over
+    the STORED scene. On a page-less newborn a contentless proposal is not a clarification — it
+    is a generation that produced nothing, and saying "proposed" would be a fake success."""
+
+    from lumen_api.main import execute_agent_turn_job
+
+    document = create_pageless_document(client)
+    store = HybridRepository()
+
+    status, response, kind, marker = execute_agent_turn_job(
+        _scene_envelope(document["id"], store.workspace_id, _leg_config(document, 0)),
+        store=store,
+        host=_turn_host(client, proposing_runner([])),
+        event_sink=None,
+    )
+
+    assert (status, kind) == ("failed", "result")
+    assert marker == {"status": "failed"}
+    _assert_pageless_refusal(response)
+    assert "current_version" not in response
+    stored = store.require_document(document["id"])
+    assert stored["current_version"] == 0
+    assert stored["scene"]["pages"] == {}
+    assert store.list_envelopes(document["id"]) == []
+
+
+def test_a_leg_scene_turn_proposing_nothing_on_a_content_bearing_document_still_succeeds(
+    client: TestClient,
+) -> None:
+    """(d) The regression pin. A pure clarification on a document that HAS a page is the same
+    real, successful outcome it always was — byte-identical to the runner's own envelope. The
+    gate reads the pages, never "did this turn commit anything"."""
+
+    from lumen_api.main import execute_agent_turn_job
+
+    document = create_document(client)
+    store = HybridRepository()
+    # `minimal_scene()` — the scene this document was created from, and the one `_leg_config`
+    # hands the turn — has a page WITH a child.
+    assert store.require_document(document["id"])["scene"]["pages"]["page_a4"]["children"]
+
+    status, response, kind, marker = execute_agent_turn_job(
+        _scene_envelope(document["id"], store.workspace_id, _leg_config(document, 0)),
+        store=store,
+        host=_turn_host(client, proposing_runner([])),
+        event_sink=None,
+    )
+
+    assert (status, kind, marker) == ("succeeded", "result", {"status": "proposed"})
+    assert response == proposing_runner([])(None, None)
+    stored = store.require_document(document["id"])
+    assert stored["current_version"] == 0
+    assert store.list_envelopes(document["id"]) == []
+
+
+def test_an_unreplayable_turn_on_a_pageless_document_still_reports_the_replay_failure(
+    client: TestClient,
+) -> None:
+    """The gate must not swallow its neighbour's code. A page-less document is exactly where the
+    two refusals could be confused, so the engine's own precedence is pinned: an operation that
+    cannot apply at all fails BEFORE the scene is validated, so it is still an unreplayable
+    history — `agent_turn.pageless_result` is reserved for operations that applied and simply did
+    not amount to a page."""
+
+    from lumen_api.main import execute_agent_turn_job
+
+    document = create_pageless_document(client)
+    store = HybridRepository()
+
+    status, response, _, _ = execute_agent_turn_job(
+        _scene_envelope(document["id"], store.workspace_id, _leg_config(document, 0)),
+        store=store,
+        host=_turn_host(client, proposing_runner([unreplayable_operation()])),
+        event_sink=None,
+    )
+
+    assert status == "failed"
+    assert response["diagnostics"][0]["code"] == "agent_turn.operations_replay_failed"
+    stored = store.require_document(document["id"])
+    assert stored["current_version"] == 0
+    assert store.list_envelopes(document["id"]) == []
+
+
+class _AcceptingPagelessCore:
+    """An engine that ACCEPTS the replay and hands back a page-less scene.
+
+    The real engine refuses that scene itself (`LUMV0100`, `validate_scene`), so on the operations
+    half of the gate its `CoreError` is what fires today and the post-replay page check never runs
+    against it. That is exactly why the check is worth pinning separately: the contract is "what
+    would be WRITTEN must have a page", read off the applied scene — not "the engine happened to
+    complain". This stub is the only way to reach it, and it is what holds the line if the engine
+    ever admits a page-less scene.
+    """
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def apply_operations(self, scene: dict, operations: list) -> dict:
+        self.calls += 1
+        return {
+            "scene": {**scene, "pages": {}},
+            "diagnostics": [],
+            "edit": {"inverse_operations": []},
+        }
+
+
+def test_a_leg_turn_whose_applied_scene_has_no_page_is_refused_even_if_the_engine_allows_it(
+    client: TestClient,
+) -> None:
+    """(b, the gate itself) The operations replayed clean — no exception, no error diagnostic —
+    and still produced nothing to look at. The refusal is the same one, and nothing is written."""
+
+    from lumen_api.fleet_handler import DesignTurnHost
+    from lumen_api.main import execute_agent_turn_job
+
+    document = create_pageless_document(client)
+    store = HybridRepository()
+    core = _AcceptingPagelessCore()
+    state = client.app.state
+
+    status, response, kind, marker = execute_agent_turn_job(
+        _scene_envelope(document["id"], store.workspace_id, _leg_config(document, 0)),
+        store=store,
+        host=DesignTurnHost(
+            agent_turn_runner=proposing_runner([add_page_operation()]),
+            core=core,
+            storage=state.storage,
+            engine_cache_root=state.engine_cache_root,
+        ),
+        event_sink=None,
+    )
+
+    # The proposal DID carry a page-adding operation, so a gate reading the stored scene or the
+    # operation list would have let this through: only the applied scene tells the truth.
+    assert core.calls == 1
+    assert (status, kind) == ("failed", "result")
+    assert marker == {"status": "failed"}
+    _assert_pageless_refusal(response)
+    stored = store.require_document(document["id"])
+    assert stored["current_version"] == 0
+    assert stored["scene"]["pages"] == {}
+    assert store.list_envelopes(document["id"]) == []
+
+
+def test_a_non_leg_turn_on_a_pageless_document_stays_byte_identical(
+    client: TestClient,
+) -> None:
+    """(e) P3.7's layering rule against the new gate: the editor's own direct turn carries no
+    `leg` block, so it proposes exactly what the runner returned — the SAME operations that are
+    refused one test above — and the editor's route still owns the commit."""
+
+    from lumen_api.main import execute_agent_turn_job
+
+    document = create_pageless_document(client)
+    store = HybridRepository()
+    operations = [title_operation("Agent Title")]
+
+    status, response, kind, marker = execute_agent_turn_job(
+        _scene_envelope(
+            document["id"],
+            store.workspace_id,
+            {
+                "request": {
+                    "prompt": "Fill this document with a launch ad.",
+                    "scene": document["scene"],
+                    "document_id": document["id"],
+                }
+            },
+        ),
+        store=store,
+        host=_turn_host(client, proposing_runner(operations)),
+        event_sink=None,
+    )
+
+    assert (status, kind, marker) == ("succeeded", "result", {"status": "proposed"})
+    assert response == proposing_runner(operations)(None, None)
+    stored = store.require_document(document["id"])
+    assert stored["current_version"] == 0
+    assert stored["scene"]["pages"] == {}
+    assert store.list_envelopes(document["id"]) == []

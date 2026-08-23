@@ -322,6 +322,57 @@ def conflicted_agent_turn_response(
     }
 
 
+# The engine's own verdict on a scene with no page/artboard ("document must contain at least one
+# page/artboard", `validate_scene`). A turn whose applied result is page-less trips it during the
+# replay, so the engine refuses the operations before the gate below ever sees a scene — the code
+# is matched to name that refusal for what it is rather than as "could not be replayed".
+PAGELESS_SCENE_DIAGNOSTIC = "LUMV0100"
+
+
+def is_pageless_scene_refusal(diagnostics: Any) -> bool:
+    if not isinstance(diagnostics, list):
+        return False
+    return any(
+        isinstance(diagnostic, dict)
+        and diagnostic.get("code") == PAGELESS_SCENE_DIAGNOSTIC
+        for diagnostic in diagnostics
+    )
+
+
+def pageless_agent_turn_response() -> JsonObject:
+    """Terminal result for a LEG scene turn that produced no page (genad2 Task 3).
+
+    Since the zero-page birth (genad2 ruling 1) a chat-born scene document starts with NO pages
+    — `open_design_leg@4` mints none, and the design trio authors the page itself. That makes a
+    turn which generated nothing look exactly like a turn which generated a design at this seam:
+    the document is still page-less either way, and a "proposed" result would tell a marketer
+    their ad is ready while the gallery has nothing to open. A page-less result is therefore a
+    terminal FAILURE with nothing written, in the same shape as the replay refusal beside it.
+
+    The sentence rides BOTH prose slots for the reason ``conflicted_agent_turn_response`` spells
+    out: the platform's scene summarizer (``_assistant_summary``, design_leg_wiring) reads only
+    ``stop_reason``, and ``failed_agent_turn_response`` leaves it None, so a refusal built naively
+    from it is contentless by construction. Be honest about who reads it TODAY: a failed run is
+    short-circuited by ``_fail_turn`` before that summarizer runs, so this is durable
+    result-payload prose — legible to an operator reading the run row, and ready for whichever
+    surface the genad founder item on failure/conflict routing hands it to.
+    """
+
+    message = (
+        "Design finished without creating a page — nothing was saved; "
+        "send another message to try again."
+    )
+    return {
+        **failed_agent_turn_response(
+            "agent_turn.pageless_result",
+            message,
+            "The turn's result contains no page, so there would be nothing to show; "
+            "the design was not saved and the document is unchanged.",
+        ),
+        "stop_reason": message,
+    }
+
+
 def with_web_turn_failure_diagnostic(response: JsonObject) -> JsonObject:
     """Guarantee a non-applied website turn carries its reason as a real diagnostic.
 
@@ -8213,27 +8264,32 @@ def execute_agent_turn_job(
                 resolved_brand_kit=resolved_brand_kit,
             )
         operations = response.get("operations")
-        if (
-            doc is not None  # set together with leg_persist, above
-            and response.get("status") == "proposed"
-            and isinstance(operations, list)
-            and operations
-        ):
-            # A proposal with nothing in it (a pure clarification, a failed run) is a real
-            # outcome with nothing to commit, and falls straight through this branch.
-            response = _persist_leg_scene_proposal(
-                response,
-                doc=doc,
-                operations=operations,
-                document_id=str(document_id),
-                base_version=int(base_version),
-                host=host,
-                store=store,
-                run_subject=run_subject,
-                workspace_id=workspace_id,
-                run_id=envelope.run_id,
-                intent=user_message,
-            )
+        if doc is not None and response.get("status") == "proposed":
+            # ``doc`` is set together with ``leg_persist``, above — so everything in here is
+            # LEG-ONLY, and a direct editor turn still falls straight through untouched.
+            if isinstance(operations, list) and operations:
+                response = _persist_leg_scene_proposal(
+                    response,
+                    doc=doc,
+                    operations=operations,
+                    document_id=str(document_id),
+                    base_version=int(base_version),
+                    host=host,
+                    store=store,
+                    run_subject=run_subject,
+                    workspace_id=workspace_id,
+                    run_id=envelope.run_id,
+                    intent=user_message,
+                )
+            elif not (doc["scene"].get("pages") or {}):
+                # genad2 Task 3, the empty-proposal half of the >=1-page gate. A proposal with
+                # nothing in it never reaches the persist function (there is nothing to replay),
+                # so the gate is repeated here over the STORED scene. On a document that HAS a
+                # page an empty proposal is what it always was — a pure clarification, a real
+                # outcome with nothing to commit, still a success. On a page-less newborn it is a
+                # generation that produced nothing, and calling that a finished design is exactly
+                # the lie the gate exists to refuse.
+                response = pageless_agent_turn_response()
         # ``conflicted`` is minted ONLY by the leg-persist path above; a direct editor turn can
         # never produce it, so this mapping stays byte-identical for non-leg turns.
         status = (
@@ -8278,6 +8334,11 @@ def _persist_leg_scene_proposal(
         # undo, and the inverse operations the checkpoint needs come out of this same call.
         applied = _turn_core(host).apply_operations(doc["scene"], operations)
     except CoreError as error:
+        if is_pageless_scene_refusal(error.diagnostics):
+            # Not an unreplayable history — the operations replayed fine and simply did not
+            # amount to a page, which the engine refuses as an invalid scene. Same fact as the
+            # gate below, reached first because the engine validates the result for us.
+            return pageless_agent_turn_response()
         return failed_agent_turn_response(
             "agent_turn.operations_replay_failed",
             "The AI turn's operations could not be replayed.",
@@ -8290,6 +8351,12 @@ def _persist_leg_scene_proposal(
             "The engine reported errors replaying the turn's operations; "
             "the proposal was not committed.",
         )
+    # genad2 Task 3 — the >=1-page success gate, read off the scene that would be written. The
+    # engine's own LUMV0100 refusal above is what fires today, but the authoritative statement of
+    # the contract is this one (it survives an engine that ever admits a page-less scene): a leg
+    # turn only succeeds if what it applied has somewhere to be seen.
+    if not (applied["scene"].get("pages") or {}):
+        return pageless_agent_turn_response()
     # D4 backstop — see PUT /scene: this is an ACCEPT seam, and a turn that generated imagery
     # mid-run holds those bytes only in the engine's wipeable cache until now. Custody first, so
     # the registry can never outlive the bytes it points at.
