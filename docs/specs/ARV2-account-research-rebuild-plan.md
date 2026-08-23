@@ -1,5 +1,13 @@
 # ARV2 — Account-research rebuild: Apollo + Exa deep-agent plan
 
+> **Revision note (2026-08-23):** after a critical re-evaluation requested by the founder, the
+> *phasing* in §8 of this document is superseded by `ARV2-deep-agent-build-runbook.md` (line-by-line
+> execution, day-one deliverables, and six recorded revisions — notably: build Exa-only on Day 1,
+> touch zero old-lane files, defer Melissa/C7/ICP-compiled-fields out of build scope). The
+> no-schema-change position is proven constraint-by-constraint in `ARV2-schema-impact-audit.md`,
+> and the Apollo wire schemas (and the repo resolver's incorrect assumed contract) are pinned in
+> `ARV2-apollo-api-contract.md`. The provider verdict (§2) and keep/drop treaty (§3) here stand.
+
 **Status:** proposal for founder ratification (Shashank + Aryan). Authored 2026-08-22 from a
 five-way repo audit (M8D runtime, claim-store guardrails, provider stack, frontend contracts,
 live vendor-API verification) plus the branch-side evidence in

@@ -63,3 +63,26 @@ cancellation date, research model + relaunch-over-resume, Melissa trial, the §7
 
 No code changed. Working tree: this note + the spec only. Nothing pushed. The five audit briefs
 were session-ephemeral; their content is condensed into the spec's §1.
+
+## Addendum 2026-08-23 — critical re-evaluation (founder pushback)
+
+Founder challenged the v1 plan; produced three review docs (all committed):
+- `docs/specs/ARV2-deep-agent-build-runbook.md` — six recorded revisions of the v1 plan (Day-1 is
+  the Exa-only agent since Exa/OpenRouter keys exist and Apollo needs a purchase; zero old-lane
+  file edits — quarantine, don't refactor; ICP-compiled qualifier fields deferred; Melissa + C7
+  governance dropped from build scope; the stamping matrix + explicit durable-layer split were the
+  two under-specifications that would have reproduced "mechanical failures"), plus the job-by-job
+  line-by-line runtime walkthrough and the day-1/2/3 deliverables checklist with exit gates.
+- `docs/specs/ARV2-schema-impact-audit.md` — ZERO Alembic migrations; head stays 612428f3731f;
+  all ~14 claim CHECKs/triggers mapped to born-valid stamping rules; new source keys exa_search/
+  exa_research to dodge the exa_deep/sumble per-source-key lineage CHECKs; R4/R5 authority/
+  settlement tables left dormant (trade-off documented); the single existing-test edit is the
+  seeds frozen fixture.
+- `docs/specs/ARV2-apollo-api-contract.md` — live-doc-verified Apollo contract. The repo's
+  resolvers/apollo assumed contract is wrong on 6 counts: base URL (/api/v1 not /v1), auth
+  (x-api-key header not query param), response wrappers ({"organization":{...}}, person+request_id),
+  work_email mapped onto the org endpoint (emails only via people/match), funding field names
+  (total_funding not funding_total_usd), and nonexistent apollo_url/confidence keys. Also:
+  people api_search is deliberately degraded (obfuscated last names, 0 credits) — shortlist only,
+  never claim-store truth; phones are webhook-only with _cd-suffixed async field names; rate
+  limits are per-team; org search returns organizations[] AND accounts[] (merge both).
