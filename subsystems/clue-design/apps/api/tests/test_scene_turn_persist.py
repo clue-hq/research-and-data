@@ -167,11 +167,13 @@ def _assert_conflict_is_legible(response: dict, *, moved_from: int, moved_to: in
     """A conflict a human can act on: both versions named, and the reassurance that their own
     edit survived.
 
-    Asserted on BOTH prose slots, because two different surfaces read two different keys:
-    `summary` is what the design editor's own run panel shows, and `stop_reason` is the only
-    key the platform's scene summarizer (`_assistant_summary`, design_leg_wiring) renders into
-    the project chat thread. `failed_agent_turn_response` leaves `stop_reason` None, so a
-    conflict built naively from it is contentless on the platform side by construction.
+    Asserted on BOTH prose slots, because the two candidate reader keys differ: `summary` is
+    the design editor's run-panel key, `stop_reason` the platform scene summarizer's
+    (`_assistant_summary`, design_leg_wiring). NEITHER renders a conflict today — the builder
+    is leg-only and a conflicted turn is a `failed` run that `_fail_turn` short-circuits with
+    no assistant message — so this pins the durable result payload, ready for whichever surface
+    the genad founder item on conflict routing hands it to. `failed_agent_turn_response` leaves
+    `stop_reason` None, so a conflict built naively from it is contentless by construction.
     """
 
     for field in ("summary", "stop_reason"):
@@ -436,6 +438,61 @@ def test_a_leg_scene_turn_with_no_operations_persists_nothing_and_still_succeeds
     assert "current_version" not in response
     assert store.require_document(document["id"])["current_version"] == 0
     assert store.list_envelopes(document["id"]) == []
+
+
+# --- (d2) the post-persist re-read ------------------------------------------
+
+
+class _StoreThatBreaksAfterTheWrite(HybridRepository):
+    """A store whose reads work until the governed write has already committed.
+
+    The re-read that stamps `current_version` onto the result runs AFTER the durable write.
+    Anything that fails there is reporting on a turn that already happened, so it must not be
+    allowed to turn a committed turn into `agent_runtime.failed` — the marketer would be told
+    nothing was saved while their ad sits changed in the gallery.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.reads = 0
+
+    def require_document(self, document_id):  # type: ignore[override]
+        self.reads += 1
+        # 1 = the executor's early CAS check, 2 = the post-persist re-read.
+        if self.reads >= 2:
+            raise RuntimeError("transient read failure after the commit")
+        return super().require_document(document_id)
+
+
+def test_a_committed_leg_scene_turn_survives_a_failing_post_persist_re_read(
+    client: TestClient,
+) -> None:
+    """The write landed; only the version lookup after it failed. The turn stays a success."""
+
+    from lumen_api.main import execute_agent_turn_job
+
+    document = create_document(client)
+    store = _StoreThatBreaksAfterTheWrite()
+
+    status, response, kind, marker = execute_agent_turn_job(
+        _scene_envelope(document["id"], store.workspace_id, _leg_config(document, 0)),
+        store=store,
+        host=_turn_host(client, proposing_runner([title_operation("Agent Title")])),
+        event_sink=None,
+    )
+
+    # NOT `agent_runtime.failed`: the proposal is still the proposal it was.
+    assert (status, kind) == ("succeeded", "result"), response
+    assert response["status"] == "proposed"
+    assert marker == {"status": "proposed"}
+    assert response.get("diagnostics") == []
+    # The version could not be read, so it is honestly absent rather than guessed at.
+    assert "current_version" not in response
+    # ...and the write really did land: the document advanced, once.
+    verified = HybridRepository().require_document(document["id"])
+    assert verified["current_version"] == 1
+    assert verified["scene"]["meta"]["title"] == "Agent Title"
+    assert store.reads == 2
 
 
 # --- (e) the replay refusal --------------------------------------------------

@@ -283,12 +283,21 @@ def conflicted_agent_turn_response(
     disagreed. Direct editor turns never reach it — they propose, and the editor's own route
     commits under its own CAS.
 
-    The two versions are named in the PROSE, not only in the structured keys, because the two
-    surfaces that show this to a human read prose: the editor's panel renders ``summary``, and
-    the platform's chat thread renders ``stop_reason`` and nothing else (the scene branch of
-    ``_assistant_summary`` in ``design_leg_wiring``). A version-less sentence there reaches a
-    marketer as a bare "Design turn conflicted." — technically true and practically useless, and
-    it fails to tell them the one thing that stops them panicking: their own edit survived."""
+    The two versions are named in the PROSE (``summary`` AND ``stop_reason``), not only in the
+    structured keys — but be honest about who reads that prose TODAY: nobody. The builder is
+    leg-only, so the editor's own panel never sees it, and on the platform side a conflicted
+    turn comes back with run status ``failed``, which ``design_leg_wiring`` short-circuits into
+    ``_fail_turn`` — a typed unfinalized turn with NO assistant message, so the scene branch of
+    ``_assistant_summary`` (the only ``stop_reason`` reader) never runs on it. The prose is
+    therefore durable RESULT-PAYLOAD content: it makes the run row self-explanatory to an
+    operator reading it, and it is ready for the first surface that renders it.
+
+    That surface arrives with the **genad founder item: conflict routing** — whether a
+    CAS-conflicted turn stays a typed failed turn (today's ratified honest-terminal shape, web
+    parity) or is rewired to land back in the thread with a message. Until that is decided, a
+    marketer who loses the race sees a failed turn with no inline prose. Whichever way it goes,
+    the sentence must keep naming BOTH versions and saying their own edit survived — a bare
+    "Design turn conflicted." is technically true and practically useless."""
 
     message = (
         f"This design moved from version {base_version} to version {current_version} while "
@@ -8321,7 +8330,24 @@ def _persist_leg_scene_proposal(
         # The race window between the early check and this write — the DAL's row-locked CAS is
         # what actually decides it, and losing is an honest terminal outcome, not a crash.
         return conflicted_agent_turn_response(conflict.expected, conflict.current)
-    return {**response, "current_version": store.require_document(document_id)["current_version"]}
+    # PAST THE POINT OF NO RETURN. The governed write above has COMMITTED; everything below only
+    # describes it. This re-read is a convenience (it stamps the new version so the platform's
+    # projection can pin it), so its failure must not propagate to the executor's outer handler,
+    # which would fold a committed turn into `agent_runtime.failed` and tell a marketer nothing
+    # was saved while their ad sits changed in the gallery. A missing `current_version` is the
+    # honest degradation — the same shape a preview-only leg turn returns — and readers already
+    # treat the key as optional. The write's OWN failure stays fatal/conflicted, above.
+    try:
+        current_version = store.require_document(document_id)["current_version"]
+    except Exception as error:  # pragma: no cover - exercised by the stub-store test
+        api_logger.warning(
+            "leg_scene_turn.version_reread_failed",
+            document_id=document_id,
+            base_version=base_version,
+            error=str(error),
+        )
+        return response
+    return {**response, "current_version": current_version}
 
 
 def execute_web_turn_job(
