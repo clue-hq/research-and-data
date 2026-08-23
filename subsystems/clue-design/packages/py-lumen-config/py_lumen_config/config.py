@@ -138,7 +138,7 @@ class Settings(BaseSettings):
     # OpenRouter is the SOLE LLM gateway: the model id must be "openai:<id>" and
     # init_model errors without OpenRouter creds. Blank/unset base_url falls back
     # to the OpenRouter API URL in AgentRuntimeConfig.from_env.
-    lumen_agent_model: str = "openai:x-ai/grok-4.5"
+    lumen_agent_model: str = "openai:x-ai/grok-4.6"
     lumen_agent_max_iterations: int = 5
     lumen_agent_preview_format: str = "svg"
     # W-isolation (D3): the deepagent's isolated workspace root. None → the run
@@ -177,7 +177,7 @@ class Settings(BaseSettings):
     # field and got the provider's own default instead; "medium" restores that
     # behavior as EXPLICIT policy. Blank still means "unset" for a deployment
     # that genuinely wants the platform baseline.
-    lumen_agent_reasoning: str | None = "medium"
+    lumen_agent_reasoning: str | None = "high"
     # L1 (latency: cache locality) — OpenRouter provider `sort` preference applied
     # to every deep-agent LLM call. `sort` DISABLES OpenRouter's load-balancing and
     # pins one provider replica, which is the cache-locality lever: a byte-identical
