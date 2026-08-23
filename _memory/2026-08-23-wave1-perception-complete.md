@@ -106,9 +106,15 @@ arrive later). Controller recommended pulling W2.1 alone ahead of G1.
   always "high", background always "auto" (enum has NO transparent —
   transparency is prose-hint best-effort), input_references as typed image_url
   data: URLs (cap 16 asserted). Decode data[*].b64_json primary; url fallback
-  follows redirects + rejects non-image/* typed. FIRST-LIVE-CALL CHECKLIST
-  (key was weekly-limited): data: URLs accepted in input_references?; aspect
-  honored; style-vs-copy behavior of brand anchors under this model.
+  follows redirects + rejects non-image/* typed. LIVE-VERIFIED 2026-08-23
+  (founder raised the key limit; probe through the SHIPPED provider path):
+  (1) base64 data: URLs in input_references ACCEPTED; (2) aspect_ratio honored
+  exactly (16:9 -> 1536x864, 3:2 -> 1536x1024); (3) style-vs-copy: an abstract
+  style anchor produced a NEW composition in its palette/rhythm, not a copy
+  (logo-anchor case untested by design — logos never anchor). CRITICAL OPS
+  FINDING: 67-75s/image at quality=high — the 60s IMAGE_MODEL_TIMEOUT_S
+  default times out EVERY call (burns all 3 retries); recipes now set 240
+  (root .env, both /tmp scripts, .env.example).
 - **Ops learning:** frontend on 3030 MUST launch with
   CLUE_APP_ORIGIN=http://localhost:3030 (its .env.local pins 3020 → every
   mutation POST 403s REQUEST_ORIGIN_FORBIDDEN). In the /tmp recipes' spirit —
