@@ -10,7 +10,10 @@ writes is DERIVED and DISPOSABLE: delete `.design-runs/` at any time, nothing re
 Usage, from the repo root with the colombo `.env` sourced::
 
     set -a; source .env; set +a
-    python subsystems/clue-design/scripts/run_view.py <ref> [--out DIR] [--copy]
+    .venv/bin/python subsystems/clue-design/scripts/run_view.py <ref> [--out DIR] [--copy]
+
+The venv interpreter is named explicitly on purpose: sourcing `.env` activates nothing, bare
+`python` is often not on PATH, and `asyncpg` lives only in the repo-root `.venv`.
 
 `<ref>` is a design run id (`run_…`), a document id (`doc_…`), or a leg UUID. Environment:
 
@@ -168,13 +171,26 @@ def _dump(value: object) -> str:
 
 
 def _reset(out: Path) -> None:
-    """Clear exactly what a previous materialization wrote, and nothing else.
+    """Clear what a previous materialization wrote — but only inside a directory this tool owns.
 
     Re-running on the same ref must not leave the previous view's envelopes or asset links
     behind (a stale file in a derived view is a lie, and a leftover symlink would crash the
-    second run outright). Only the known output names are removed — this never empties a
-    directory the caller pointed ``--out`` at for other reasons.
+    second run outright). The removals are name-scoped, but ``envelopes/`` and ``assets/`` are
+    ordinary names: in a caller-supplied ``--out`` that happens to hold real directories of
+    those names, a name-scoped ``rmtree`` is still a data-loss bug. So the tool first asserts
+    OWNERSHIP — the directory must be empty, or hold the ``manifest.json`` every run view has —
+    and refuses outright otherwise. A file it did not write and does not know about (anything
+    beyond the seven names below) survives untouched either way.
     """
+    existing = {path.name for path in out.iterdir()}
+    if existing and "manifest.json" not in existing:
+        raise SystemExit(
+            f"run_view: refusing to write into {out} — it is not empty and holds no "
+            "manifest.json, so it is not a run view this tool wrote. Materializing here would "
+            "delete any `envelopes/` or `assets/` directory already in it. --out is pointing at "
+            "a non-run-view directory; point it at a new, an empty, or a previous run-view "
+            "directory instead."
+        )
     for name in _WRITTEN_FILES:
         (out / name).unlink(missing_ok=True)
     for name in _WRITTEN_DIRS:
@@ -189,7 +205,8 @@ def materialize(view: RunView, out_dir: Path, *, copy: bool = False) -> None:
     """Write the run view's browsable layout into ``out_dir``.
 
     Absent sections are skipped silently — ``manifest['gaps']`` already names them, and an empty
-    file would imply an emptiness the assembler did not assert.
+    file would imply an emptiness the assembler did not assert. Raises ``SystemExit`` if
+    ``out_dir`` is a non-empty directory this tool did not write (see ``_reset``).
     """
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
@@ -258,7 +275,7 @@ def _readme(view: RunView, *, copy: bool, skipped: list[str]) -> str:
         "",
         "```",
         "set -a; source .env; set +a",
-        f"python subsystems/clue-design/scripts/run_view.py {asked}",
+        f".venv/bin/python subsystems/clue-design/scripts/run_view.py {asked}",
         "```",
         "",
         "## Where this actually lives (the real homes)",

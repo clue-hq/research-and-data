@@ -68,12 +68,14 @@ Step-1 evidence lock, run 2026-08-23 against the dev DB
 import asyncio
 import json
 import os
+import re
 import uuid
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 
 import pytest
 
+from lumen_api import run_view as run_view_module
 from lumen_api.run_view import RunViewNotFound, assemble
 
 DB = os.environ.get("CLUE_DATABASE_URL", "").replace("+asyncpg", "")
@@ -553,3 +555,89 @@ def test_cli_warns_but_continues_on_a_relative_cache_root(tmp_path, monkeypatch,
     message = str(exit_info.value)
     assert "cannot reach the database at 127.0.0.1:1/nope" in message
     assert "clue:clue" not in message
+
+
+def test_materialize_refuses_an_out_dir_it_does_not_own(tmp_path):
+    """`--out` at a real directory must not delete the caller's data.
+
+    `_reset` removes `envelopes/` and `assets/` by name, and those are ordinary names — a
+    caller-supplied out dir that happens to hold a real `assets/` directory would lose it. So
+    materialize asserts OWNERSHIP first (empty, or holding the `manifest.json` every run view
+    has) and refuses otherwise, deleting nothing.
+    """
+    from lumen_api.run_view import RunView
+
+    cli = _cli()
+    out = tmp_path / "someones-work"
+    (out / "assets").mkdir(parents=True)
+    (out / "assets" / "precious.png").write_bytes(b"not ours")
+    (out / "envelopes").mkdir()
+    (out / "notes.txt").write_text("keep me")
+
+    view = RunView(manifest={"ref": "doc_x", "gaps": []}, brief=None, scene=None)
+    with pytest.raises(SystemExit) as exit_info:
+        cli.materialize(view, out)
+    assert "not a run view this tool wrote" in str(exit_info.value)
+    assert (out / "assets" / "precious.png").read_bytes() == b"not ours"
+    assert (out / "envelopes").is_dir() and (out / "notes.txt").exists()
+    assert not (out / "manifest.json").exists()  # nothing was written either
+
+
+def test_the_run_view_never_writes_to_the_database(tmp_path):
+    """The founder's "read-only over every substrate, never a write path" ratification, as a gate.
+
+    Matcher rule, stated so a failure is actionable — over BOTH source files, parsed with `ast`
+    so comments and the `sys.path.insert` call are out of scope by construction:
+
+    * only STRING LITERALS are examined, and DOCSTRINGS are exempt (prose about the rule — the
+      assembler's own "performs zero INSERT/UPDATE/DELETE" — is documentation, not SQL, and
+      never reaches a cursor);
+    * rule A: a SQL-SHAPED literal (one containing SELECT / FROM / WHERE) may not contain
+      INSERT, UPDATE, DELETE, TRUNCATE, ALTER, DROP, or CREATE TABLE as whole words;
+    * rule B: no literal at all may be STATEMENT-shaped (`INSERT INTO x`, `DELETE FROM x`,
+      `UPDATE x SET`, `TRUNCATE/ALTER/DROP TABLE x`) — which catches a write with no FROM
+      clause, and which English prose never accidentally forms.
+
+    If prose ever trips rule A, move it into a comment or a docstring; do not weaken the gate.
+    """
+    import ast
+
+    sql_shaped = re.compile(r"\b(SELECT|FROM|WHERE)\b", re.IGNORECASE)
+    write_tokens = re.compile(
+        r"\b(INSERT|UPDATE|DELETE|TRUNCATE|ALTER|DROP|CREATE\s+TABLE)\b", re.IGNORECASE
+    )
+    statements = re.compile(
+        r"\b(INSERT\s+INTO|DELETE\s+FROM|UPDATE\s+\w+\s+SET|(TRUNCATE|ALTER|DROP)\s+TABLE)\b",
+        re.IGNORECASE,
+    )
+
+    sources = {
+        "lumen_api/run_view.py": Path(run_view_module.__file__),
+        "scripts/run_view.py": _CLI_PATH,
+    }
+    holders = (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)
+    for label, path in sources.items():
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        docstrings = set()
+        for node in ast.walk(tree):
+            if not isinstance(node, holders):
+                continue
+            body = getattr(node, "body", None)
+            first = body[0] if body else None
+            if isinstance(first, ast.Expr) and isinstance(first.value, ast.Constant):
+                if isinstance(first.value.value, str):
+                    docstrings.add(id(first.value))
+        literals = [
+            node.value
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Constant)
+            and isinstance(node.value, str)
+            and id(node) not in docstrings
+        ]
+        assert literals, f"{label}: parsed no string literals — the matcher is broken, not clean"
+        for literal in literals:
+            if sql_shaped.search(literal):
+                found = write_tokens.search(literal)
+                assert not found, f"{label}: write token {found.group(0)!r} in SQL: {literal!r}"
+            found = statements.search(literal)
+            assert not found, f"{label}: write statement {found.group(0)!r} in: {literal!r}"

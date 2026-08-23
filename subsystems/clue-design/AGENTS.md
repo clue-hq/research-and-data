@@ -73,11 +73,16 @@ it left behind, every envelope and event in between — materialize the view:
 
 ```bash
 set -a; source .env; set +a     # from the colombo repo root
-python subsystems/clue-design/scripts/run_view.py <run_id|doc_id|leg_id>
+.venv/bin/python subsystems/clue-design/scripts/run_view.py <run_id|doc_id|leg_id>
 ```
 
-It writes `.design-runs/<ref>/` (gitignored): `manifest.json`, the leg's frozen
-brief, the current scene, seq-ordered `envelopes/`, `events.jsonl`, and `assets/`
+Use the venv interpreter explicitly (as §3 does): sourcing `.env` does not activate
+anything, bare `python` is often not on PATH at all, and `asyncpg` lives only in the
+repo-root `.venv`.
+
+It writes `subsystems/clue-design/.design-runs/<ref>/` (gitignored — the path is
+the SUBSYSTEM's, not the repo root's): `manifest.json`, the leg's frozen brief,
+the current scene, seq-ordered `envelopes/`, `events.jsonl`, and `assets/`
 linked to real bytes (symlinks; `--copy` to hand the directory around), with any
 asset that has no bytes on this machine NAMED rather than dropped. Whatever it
 could not resolve lands in `manifest["gaps"]` — the view is honest, never
@@ -87,9 +92,9 @@ Env: `CLUE_DATABASE_URL` and `CLUE_STORAGE_FS_ROOT` are both required, and the
 storage root must be **absolute** — the CLI refuses a relative one instead of
 resolving it against wherever you happen to be standing, because a wrong root
 reports the frozen bundle and every durable asset as missing, which is a
-confident lie. `LUMEN_ASSET_STORE_ROOT` is optional (defaults to this repo's
-`.engine-cache`; a relative value warns and continues, since a wrong cache root
-only costs a fallback to the durable blob).
+confident lie. `LUMEN_ASSET_STORE_ROOT` is optional (defaults to this subsystem's
+`subsystems/clue-design/.engine-cache`; a relative value warns and continues,
+since a wrong cache root only costs a fallback to the durable blob).
 
 **Paste any run id straight from a worker log.** The trio's INNER deepagent run
 id — the one the logs print — is durable in no table; it survives only inside the

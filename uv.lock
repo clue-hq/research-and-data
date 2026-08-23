@@ -2059,6 +2059,7 @@ name = "lumen-api"
 version = "0.0.0"
 source = { editable = "subsystems/clue-design/apps/api" }
 dependencies = [
+    { name = "asyncpg" },
     { name = "clue-design" },
     { name = "fastapi" },
     { name = "fonttools" },
@@ -2079,6 +2080,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "asyncpg" },
     { name = "clue-design", editable = "subsystems/design" },
     { name = "fastapi", specifier = ">=0.111,<1" },
     { name = "fonttools", specifier = ">=4.53,<5" },
