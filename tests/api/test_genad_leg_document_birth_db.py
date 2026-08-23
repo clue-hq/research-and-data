@@ -1,28 +1,33 @@
-"""genad — ``open_design_leg@3`` births the ad (scene) document (genad rulings 1+2).
+"""genad2 — ``open_design_leg@4`` births a ZERO-PAGE design document (genad2 ruling 1).
 
-``open_design_leg@2`` refused scene creation outright: the ad flow was editor-first, so a
-scene leg could only ever pin a document a human had already made in the editor. That ruling
-was reversed 2026-08-23 — "make me a LinkedIn ad" must land the same way "make me a landing
-page" does. A document-less open with ``doc_kind="scene"`` now names a ratified **format**
-and births one empty ad document at that size.
+``open_design_leg@3`` (genad, 2026-08-23) made a document-less ``doc_kind="scene"`` open
+birth an ad document with ONE page, at a format the *platform* resolved from ``ad_format`` /
+``ad_width`` / ``ad_height`` tool parameters. The founder reversed that half of genad ruling 2
+the same week: the platform must not own page geometry at all. **Superseded 2026-08-23 by
+genad2 ruling 1** — plan ``docs/superpowers/plans/2026-08-23-agent-authored-pages.md``. The @3
+tests this file used to carry (the format-required / custom-dimensions / preset-with-dimensions
+/ ad-format-on-web refusals, the preset pixel lookup, the single-artboard assertions) are
+deleted rather than amended: their whole subject — a platform-side format aperture — no longer
+exists, and the design deepagent authors the page itself in a later turn, at the size and unit
+the user's own words imply.
 
-The properties this file pins, mirroring the genweb birth file seam for seam:
+The properties this file pins at @4:
 
-* **the format is a loud precondition, never a guess** — a scene open with no ``ad_format``
-  is refused (``design_leg_ad_format_required``), ``custom`` without dimensions and a preset
-  *with* dimensions are both refused (``design_leg_ad_format_invalid``), and an ``ad_format``
-  on a ``web`` open is refused too (no cross-kind leakage);
-* **the preset resolves its own pixels** — the tool, not the minter, looks the format up in
-  :data:`clue_api.design_tools.AD_FORMAT_PRESETS`;
+* **the birth is pageless** — ``pages == {}``, ``nodes == {}``: a durable document, a brand
+  binding, a leg pin, and nothing whatsoever about geometry;
+* **the format fields are gone, loudly** — ``ToolInput`` forbids extras, so an agent still
+  sending ``ad_format`` gets a validation refusal instead of a silently ignored parameter
+  (the correct behaviour while the Head-of-ABM profile catches up);
 * **the birth is governed, twin-proof, and brand-decided-at-birth** — the same three
   guarantees the web birth carries, because it runs through the same seams
   (``create_document`` inside the leg's own transaction, a document id derived from the leg
-  id, and a D5 brand pin READ BACK off the stored row).
+  id, and a D5 brand pin READ BACK off the stored row);
+* **the gallery states nothing it does not know** — a pageless ad card carries no dimensions.
 
 All writes run in rolled-back transactions against the session-migrated DB. Only the ENGINE
 round-trip is faked (:class:`_RecordingSceneMinter`), so these tests need no Rust binary; the
-scene it returns reproduces the real ``mint_empty_ad_document`` shape (``new_scene`` + one
-``add_page`` carrying :func:`clue_api.design_tools.ad_birth_page`) field for field.
+scene it returns reproduces ``lumen_core::Scene::new``'s serialized shape (``scene.rs:25-42``)
+field for field, including the ``null`` optionals serde emits.
 """
 
 from __future__ import annotations
@@ -34,11 +39,13 @@ from typing import Any
 from uuid import NAMESPACE_URL, uuid4, uuid5
 
 import pytest
+from pydantic import ValidationError
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_api.agent_turn_submission import insert_submission
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
+from clue_api.chat.router import _design_artifact_list_item
 from clue_api.conversation_capture import persist_user_turn
 from clue_api.design_leg_tools import (
     OpenDesignLegTool,
@@ -46,20 +53,19 @@ from clue_api.design_leg_tools import (
     derive_leg_document_id,
 )
 from clue_api.design_leg_wiring import document_page_pixels, project_design_documents
-from clue_api.design_tools import AD_FORMAT_PRESETS, ad_birth_page
 from clue_api.turn_action import derive_turn_action_ref
 from clue_core import new_operation_id
 from clue_design import legs as design_legs
 from clue_design.documents import get_document
 from clue_storage import FsStorage
 from clue_toolbelt import (
-    PreconditionFailed,
     ToolContext,
     ToolRegistry,
     invoke_tool,
 )
 from tests._identity import seed_principal
 from tests._workspace import seed_project
+from tests.api.test_genweb_leg_document_birth_db import engine_web_doc
 from tests.db.conftest import run_async
 from tests.profiling.conftest import (
     conn_session_factory,
@@ -75,31 +81,29 @@ def engine_ad_scene(
     *,
     document_id: str,
     title: str,
-    format_key: str,
-    width: int,
-    height: int,
     brand_kit_ref: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """The engine's empty ad scene, reproduced (``new_scene`` + one ``add_page``).
+    """The engine's empty scene, reproduced (``lumen_core::Scene::new`` + serde).
 
-    The real ``mint_empty_ad_document`` is a blocking ``lumen-api-helper`` round-trip; this is
-    the shape it returns, built from the SAME :func:`ad_birth_page` payload so the artboard
-    (and therefore the gallery card's pixels) is the production one, not a test invention.
-    NO ``meta.brand_kit`` unless the caller pinned a kit — which is exactly the hole the DAL's
-    creation contract fills with the workspace's latest approved kit.
+    The real minter is a blocking ``lumen-api-helper`` round-trip; this is the shape it
+    returns for ``new_scene(document_id, title, None, "ad")``. ``Scene::new`` builds empty
+    ``pages``/``nodes``/``slots``/``assets`` maps, and the ``Option`` fields carry no
+    ``skip_serializing_if``, so ``artifact_type`` and ``brand_kit`` ride the wire as JSON
+    ``null`` — which is exactly the hole the DAL's creation contract fills with the
+    workspace's latest approved kit.
     """
 
-    page = ad_birth_page(document_id=document_id, format_key=format_key, width=width, height=height)
     scene: dict[str, Any] = {
         "schema_version": 1,
         "meta": {
             "id": document_id,
             "title": title,
-            "artifact_type": f"{format_key}_ad",
+            "artifact_type": None,
             "medium": "ad",
+            "brand_kit": None,
             "status": {"kind": "draft"},
         },
-        "pages": {page["id"]: page},
+        "pages": {},
         "nodes": {},
         "slots": {},
         "assets": {},
@@ -111,7 +115,11 @@ def engine_ad_scene(
 
 
 class _RecordingSceneMinter:
-    """The injected engine seam, recording every kwarg the tool threaded into it."""
+    """The injected engine seam, recording every kwarg the tool threaded into it.
+
+    Its signature IS an assertion: a tool that still tried to thread a format key or
+    dimensions through would raise ``TypeError`` here rather than quietly pass them on.
+    """
 
     def __init__(self) -> None:
         self.calls: list[dict[str, Any]] = []
@@ -121,27 +129,18 @@ class _RecordingSceneMinter:
         *,
         document_id: str,
         title: str,
-        format_key: str,
-        width: int,
-        height: int,
         brand_kit_ref: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         self.calls.append(
             {
                 "document_id": document_id,
                 "title": title,
-                "format_key": format_key,
-                "width": width,
-                "height": height,
                 "brand_kit_ref": brand_kit_ref,
             }
         )
         return engine_ad_scene(
             document_id=document_id,
             title=title,
-            format_key=format_key,
-            width=width,
-            height=height,
             brand_kit_ref=brand_kit_ref,
         )
 
@@ -289,6 +288,7 @@ def _registry(seeds: dict[str, Any], minter: _RecordingSceneMinter) -> ToolRegis
             conn_factory=seeds["conn_factory"],
             storage=seeds["storage"],
             scene_document_minter=minter,
+            web_document_minter=engine_web_doc,
         ),
         make_default=True,
     )
@@ -309,7 +309,6 @@ async def _open(seeds: dict[str, Any], registry: ToolRegistry, **overrides: Any)
         "source_turn_ref": derive_turn_action_ref(seeds["turn_id"]),
         "brief": "A launch ad for Insight Health, aimed at clinical operations leads.",
         "doc_kind": "scene",
-        "ad_format": "square",
     }
     args.update(overrides)
     return await invoke_tool(
@@ -336,11 +335,14 @@ async def _no_leg_and_no_document(conn: AsyncConnection, seeds: dict[str, Any]) 
     return open_leg is None and int(born) == 0
 
 
-def test_a_document_less_scene_open_births_the_ad_and_pins_the_leg(
+def test_a_document_less_scene_open_births_a_zero_page_document(
     tmp_path: Path,
     migrated_db: bool,  # noqa: F811
 ) -> None:
-    """genad ruling 1: the leg creates its own empty ad document at the ratified format."""
+    """genad2 ruling 1: the leg creates the document and the brand binding — and NO page.
+
+    Geometry is the design deepagent's to author, so the birth names none: no format key
+    reaches the engine, ``artifact_type`` stays null, and the scene is pageless."""
 
     if not migrated_db:
         pytest.skip("database not reachable")
@@ -371,10 +373,11 @@ def test_a_document_less_scene_open_births_the_ad_and_pins_the_leg(
             assert document["current_version"] == 0
             assert document["title"] == "Insight Health launch ad"
             assert document["account_id"] is None
-            # EMPTY: one artboard at the format's size and nothing authored on it.
-            page = next(iter(document["scene"]["pages"].values()))
-            assert page["children"] == []
-            assert page["size"]["output"]["raster"] == {"width_px": 1200, "height_px": 1200}
+            # ZERO PAGES: the document exists, and nothing about its geometry does.
+            assert document["scene"]["pages"] == {}
+            assert document["scene"]["nodes"] == {}
+            assert document["scene"]["meta"]["medium"] == "ad"
+            assert document["scene"]["meta"]["artifact_type"] is None
 
             # The leg is pinned to it at birth, and the pin is the durable row's.
             leg = await design_legs.get_leg(
@@ -384,14 +387,14 @@ def test_a_document_less_scene_open_births_the_ad_and_pins_the_leg(
             assert leg["document_id"] == document["id"]
             assert leg["document_version_guard"] == 0
 
-            # The PRESET resolved the pixels — the tool looked them up, not the minter.
-            assert len(minter.calls) == 1
-            call = minter.calls[0]
-            assert call["format_key"] == "square"
-            assert (call["width"], call["height"]) == AD_FORMAT_PRESETS["square"]
-            assert (call["width"], call["height"]) == (1200, 1200)
-            assert call["document_id"] == document["id"]
-            assert call["title"] == "Insight Health launch ad"
+            # The engine was asked for an identity and nothing else — no format, no size.
+            assert minter.calls == [
+                {
+                    "document_id": document["id"],
+                    "title": "Insight Health launch ad",
+                    "brand_kit_ref": None,
+                }
+            ]
 
             # The frozen bundle names the document this delegation created.
             bundle = json.loads(await seeds["storage"].get(leg["bundle_artifact_ref"]))
@@ -403,11 +406,11 @@ def test_a_document_less_scene_open_births_the_ad_and_pins_the_leg(
     run_async(scenario())
 
 
-def test_the_scene_birth_is_twin_proof_under_replay(
+def test_the_zero_page_birth_is_twin_proof_under_replay(
     tmp_path: Path,
     migrated_db: bool,  # noqa: F811
 ) -> None:
-    """§6 trap 3, for ads: a retried delegation must not mint a second ad document."""
+    """§6 trap 3, for ads: a retried delegation must not mint a second document."""
 
     if not migrated_db:
         pytest.skip("database not reachable")
@@ -449,142 +452,15 @@ def test_the_scene_birth_is_twin_proof_under_replay(
     run_async(scenario())
 
 
-def test_a_custom_format_threads_its_dimensions(
+def test_an_approved_kit_is_stamped_on_the_pageless_birth_and_the_leg_pins_it_read_back(
     tmp_path: Path,
     migrated_db: bool,  # noqa: F811
 ) -> None:
-    """The custom escape: the agent's own width×height reach the engine unaltered."""
-
-    if not migrated_db:
-        pytest.skip("database not reachable")
-
-    async def scenario() -> None:
-        async with rollback_conn() as conn:
-            seeds = await _seed_conversation(conn, storage_root=tmp_path, label="custom")
-            minter = _RecordingSceneMinter()
-            result = await _open(
-                seeds,
-                _registry(seeds, minter),
-                ad_format="custom",
-                ad_width=900,
-                ad_height=450,
-            )
-            assert result.references["document_created"] is True
-            assert len(minter.calls) == 1
-            call = minter.calls[0]
-            assert call["format_key"] == "custom"
-            assert call["width"] == 900
-            assert call["height"] == 450
-
-            document = await get_document(
-                conn,
-                workspace_id=seeds["workspace_id"],
-                document_id=str(result.references["document_id"]),
-            )
-            page = next(iter(document["scene"]["pages"].values()))
-            assert page["size"]["output"]["raster"] == {"width_px": 900, "height_px": 450}
-
-    run_async(scenario())
-
-
-def test_a_scene_open_without_a_format_is_refused(
-    tmp_path: Path,
-    migrated_db: bool,  # noqa: F811
-) -> None:
-    """The format is a loud precondition: an ad has a size, and guessing one is a lie."""
-
-    if not migrated_db:
-        pytest.skip("database not reachable")
-
-    async def scenario() -> None:
-        async with rollback_conn() as conn:
-            seeds = await _seed_conversation(conn, storage_root=tmp_path, label="noformat")
-            minter = _RecordingSceneMinter()
-            with pytest.raises(PreconditionFailed) as failure:
-                await _open(seeds, _registry(seeds, minter), ad_format=None)
-            assert "design_leg_ad_format_required" in str(failure.value)
-            assert minter.calls == []
-            assert await _no_leg_and_no_document(conn, seeds)
-
-    run_async(scenario())
-
-
-def test_a_custom_format_without_dimensions_is_refused(
-    tmp_path: Path,
-    migrated_db: bool,  # noqa: F811
-) -> None:
-    """``custom`` names no size by itself — a silent 1200×1200 would be a fabricated ad."""
-
-    if not migrated_db:
-        pytest.skip("database not reachable")
-
-    async def scenario() -> None:
-        async with rollback_conn() as conn:
-            seeds = await _seed_conversation(conn, storage_root=tmp_path, label="nodims")
-            minter = _RecordingSceneMinter()
-            with pytest.raises(PreconditionFailed) as failure:
-                await _open(seeds, _registry(seeds, minter), ad_format="custom")
-            assert "design_leg_ad_format_invalid" in str(failure.value)
-            assert minter.calls == []
-            assert await _no_leg_and_no_document(conn, seeds)
-
-    run_async(scenario())
-
-
-def test_a_preset_with_explicit_dimensions_is_refused(
-    tmp_path: Path,
-    migrated_db: bool,  # noqa: F811
-) -> None:
-    """A preset OWNS its pixels: dimensions alongside one are a malformed agent belief, and
-    silently ignoring them would hide it."""
-
-    if not migrated_db:
-        pytest.skip("database not reachable")
-
-    async def scenario() -> None:
-        async with rollback_conn() as conn:
-            seeds = await _seed_conversation(conn, storage_root=tmp_path, label="presetdims")
-            minter = _RecordingSceneMinter()
-            with pytest.raises(PreconditionFailed) as failure:
-                await _open(seeds, _registry(seeds, minter), ad_format="story", ad_width=1000)
-            assert "design_leg_ad_format_invalid" in str(failure.value)
-            assert minter.calls == []
-            assert await _no_leg_and_no_document(conn, seeds)
-
-    run_async(scenario())
-
-
-def test_a_web_open_with_an_ad_format_is_refused(
-    tmp_path: Path,
-    migrated_db: bool,  # noqa: F811
-) -> None:
-    """No cross-kind leakage: a website has no ad format, so naming one is refused rather
-    than dropped on the floor."""
-
-    if not migrated_db:
-        pytest.skip("database not reachable")
-
-    async def scenario() -> None:
-        async with rollback_conn() as conn:
-            seeds = await _seed_conversation(conn, storage_root=tmp_path, label="webformat")
-            minter = _RecordingSceneMinter()
-            with pytest.raises(PreconditionFailed) as failure:
-                await _open(seeds, _registry(seeds, minter), doc_kind="web", ad_format="square")
-            assert "design_leg_ad_format_invalid" in str(failure.value)
-            assert minter.calls == []
-            assert await _no_leg_and_no_document(conn, seeds)
-
-    run_async(scenario())
-
-
-def test_an_approved_kit_is_stamped_on_the_born_ad_and_the_leg_pins_it_read_back(
-    tmp_path: Path,
-    migrated_db: bool,  # noqa: F811
-) -> None:
-    """The Task-1 scene stamp, THROUGH the tool: the minter returns a kit-less scene, the
-    creation contract stamps the workspace's latest APPROVED kit, and the leg's D5 pin is
-    that stored stamp read back — never a second, independent derivation. (The approved v1
-    wins over the newer *draft* v2: approval is version-specific.)"""
+    """The scene stamp survives the zero-page flip: the minter returns a kit-less scene, the
+    creation contract stamps the workspace's latest APPROVED kit onto a document that has no
+    pages at all, and the leg's D5 pin is that stored stamp read back — never a second,
+    independent derivation. (The approved v1 wins over the newer *draft* v2: approval is
+    version-specific.)"""
 
     if not migrated_db:
         pytest.skip("database not reachable")
@@ -619,6 +495,7 @@ def test_an_approved_kit_is_stamped_on_the_born_ad_and_the_leg_pins_it_read_back
                 workspace_id=seeds["workspace_id"],
                 document_id=str(result.references["document_id"]),
             )
+            assert document["scene"]["pages"] == {}
             stamped = document["scene"]["meta"]["brand_kit"]
             assert stamped == {"id": "kit_genad", "version": 1}
             assert document["effective_brand_kit_id"] == "kit_genad"
@@ -639,12 +516,12 @@ def test_an_approved_kit_is_stamped_on_the_born_ad_and_the_leg_pins_it_read_back
     run_async(scenario())
 
 
-def test_without_an_approved_kit_the_born_ad_is_unbranded_and_the_leg_carries_no_pin(
+def test_without_an_approved_kit_the_pageless_birth_is_unbranded_no_pin(
     tmp_path: Path,
     migrated_db: bool,  # noqa: F811
 ) -> None:
-    """The honest fallback: no approved kit ⇒ no ``meta.brand_kit`` at all and a leg with no
-    pin. Generation still works — un-branded, honestly."""
+    """The honest fallback: no approved kit ⇒ ``meta.brand_kit`` stays null and the leg
+    carries no pin. Generation still works — un-branded, honestly."""
 
     if not migrated_db:
         pytest.skip("database not reachable")
@@ -668,7 +545,8 @@ def test_without_an_approved_kit_the_born_ad_is_unbranded_and_the_leg_carries_no
                 workspace_id=seeds["workspace_id"],
                 document_id=str(result.references["document_id"]),
             )
-            assert "brand_kit" not in document["scene"]["meta"]
+            assert document["scene"]["pages"] == {}
+            assert document["scene"]["meta"]["brand_kit"] is None
             assert document["effective_brand_kit_id"] is None
             assert document["effective_brand_kit_version"] is None
 
@@ -683,12 +561,42 @@ def test_without_an_approved_kit_the_born_ad_is_unbranded_and_the_leg_carries_no
     run_async(scenario())
 
 
-def test_the_born_ad_appears_in_the_projects_gallery_feed_as_kind_ad(
+def test_format_fields_are_rejected_as_unknown(
     tmp_path: Path,
     migrated_db: bool,  # noqa: F811
 ) -> None:
-    """Rail derivation, for free (AD2.1): the kind-aware feed serves the newborn ad, and the
-    card's size is the FORMAT's — read off the document's own page, never guessed."""
+    """The @3 aperture is DELETED, not deprecated: ``ToolInput`` forbids extras, so an agent
+    still sending ``ad_format`` gets a loud validation refusal rather than a silently ignored
+    parameter. That is the correct behaviour while the Head-of-ABM profile catches up — a
+    dropped format would look like agreement."""
+
+    if not migrated_db:
+        pytest.skip("database not reachable")
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            seeds = await _seed_conversation(conn, storage_root=tmp_path, label="format")
+            minter = _RecordingSceneMinter()
+            with pytest.raises(ValidationError) as failure:
+                await _open(seeds, _registry(seeds, minter), ad_format="square")
+            assert "ad_format" in str(failure.value)
+            assert "extra_forbidden" in str(failure.value)
+            assert minter.calls == []
+            assert await _no_leg_and_no_document(conn, seeds)
+
+    run_async(scenario())
+
+
+def test_the_zero_page_birth_appears_in_the_gallery_feed_with_no_dimensions(
+    tmp_path: Path,
+    migrated_db: bool,  # noqa: F811
+) -> None:
+    """Rail derivation, for free (AD2.1) — and the card states nothing it does not know.
+
+    The feed serves the newborn ad the moment the leg opens, but a pageless document records
+    no size and no artifact type, so ``document_page_pixels`` is honestly ``None`` and the
+    wire's ``width_px``/``height_px`` are ``None`` too. The G-H rule holds under zero pages:
+    a card says nothing rather than something false."""
 
     if not migrated_db:
         pytest.skip("database not reachable")
@@ -700,7 +608,6 @@ def test_the_born_ad_appears_in_the_projects_gallery_feed_as_kind_ad(
             result = await _open(
                 seeds,
                 _registry(seeds, minter),
-                ad_format="portrait",
                 title="Insight Health launch ad",
             )
 
@@ -711,14 +618,60 @@ def test_the_born_ad_appears_in_the_projects_gallery_feed_as_kind_ad(
             )
             assert [item["id"] for item in feed] == [result.references["document_id"]]
             card = feed[0]
-            # The wire's ``kind`` is "web" iff doc_kind is "web" — an ad card otherwise.
             assert card["doc_kind"] == "scene"
             assert card["title"] == "Insight Health launch ad"
             assert card["status"] == "draft"
             assert card["current_version"] == 0
             assert card["origin_thread_id"] == seeds["thread_id"]
-            assert card["artifact_type"] == "portrait_ad"
-            assert document_page_pixels(card["pages_json"]) == AD_FORMAT_PRESETS["portrait"]
-            assert document_page_pixels(card["pages_json"]) == (1080, 1350)
+            assert card["artifact_type"] is None
+            assert document_page_pixels(card["pages_json"]) is None
+
+            wire = _design_artifact_list_item(seeds["project_id"], card)
+            assert wire.kind == "ad"
+            assert wire.artifact_type is None
+            assert wire.width_px is None
+            assert wire.height_px is None
+
+    run_async(scenario())
+
+
+def test_web_birth_is_byte_unchanged(
+    tmp_path: Path,
+    migrated_db: bool,  # noqa: F811
+) -> None:
+    """The regression pin: @4 touches the SCENE path only. A ``doc_kind="web"`` open still
+    births the engine's one-page ``WebDoc`` exactly as it did at @3 — same page, same root
+    container, same pin at version 0."""
+
+    if not migrated_db:
+        pytest.skip("database not reachable")
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            seeds = await _seed_conversation(conn, storage_root=tmp_path, label="web")
+            minter = _RecordingSceneMinter()
+            result = await _open(seeds, _registry(seeds, minter), doc_kind="web")
+            assert result.references["document_created"] is True
+            # The web birth never touches the scene minter.
+            assert minter.calls == []
+
+            document = await get_document(
+                conn,
+                workspace_id=seeds["workspace_id"],
+                document_id=str(result.references["document_id"]),
+            )
+            assert document["doc_kind"] == "web"
+            assert document["status"] == "draft"
+            assert document["current_version"] == 0
+            page = document["scene"]["pages"][0]
+            assert page["id"] == "home"
+            assert list(page["nodes"]) == ["root"]
+            assert page["nodes"]["root"]["kind"] == "container"
+
+            leg = await design_legs.get_leg(
+                conn, workspace_id=seeds["workspace_id"], leg_id=str(result.references["leg_id"])
+            )
+            assert leg["document_id"] == document["id"]
+            assert leg["document_version_guard"] == 0
 
     run_async(scenario())

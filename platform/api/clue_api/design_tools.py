@@ -25,13 +25,21 @@ The import is deliberately narrow: ``lumen_api.toolbelt`` pulls ``clue_toolbelt`
 nothing else (its heavy design collaborators are imported inside function bodies). An unimportable
 design app is a hard, loud failure rather than a silently smaller registry — see the docstring of
 :class:`clue_api.design_fleet.DesignRuntimeUnavailable` for the same stance on the fleet handler.
+
+**Ad page-geometry helpers retired 2026-08-23 (genad2 ruling 1; plan
+``docs/superpowers/plans/2026-08-23-agent-authored-pages.md``).** For one week this module also
+held ``AD_FORMAT_PRESETS``, ``ad_birth_page`` and ``mint_empty_ad_document`` — a platform-side
+preset table and a hand-authored artboard payload that ``open_design_leg@3`` minted an ad
+document around. The founder ruled that the platform must not own page geometry at all, so a
+scene birth is now a bare ``new_scene`` issued by ``design_leg_tools`` (zero pages) and the
+design deepagent authors the page. They were deleted rather than generalized; only the web
+minter, whose ``WebDoc`` shape carries no such geometry, still lives here.
 """
 
 from __future__ import annotations
 
 from functools import lru_cache
 from typing import Any, cast
-from uuid import NAMESPACE_URL, uuid5
 
 from clue_api.design_fleet import DesignRuntimeUnavailable
 from clue_obs import get_logger
@@ -41,10 +49,7 @@ from clue_toolbelt import Tool
 log = get_logger("clue_api.design_tools")
 
 __all__ = [
-    "AD_FORMAT_PRESETS",
-    "ad_birth_page",
     "build_design_tools",
-    "mint_empty_ad_document",
     "mint_empty_web_document",
 ]
 
@@ -102,81 +107,6 @@ def mint_empty_web_document(
         dict[str, Any],
         _core_client().web_new_doc(document_id, title, brand_kit_ref)["web_doc"],
     )
-
-
-#: The ratified ad format presets (genad ruling 2, 2026-08-23) — px. ``square`` matches the
-#: engine-validated seeded LinkedIn ad (scripts/seed_ad_document.py). Copy tweaks are cheap;
-#: the custom escape (explicit width×height) covers everything else.
-AD_FORMAT_PRESETS: dict[str, tuple[int, int]] = {
-    "square": (1200, 1200),
-    "portrait": (1080, 1350),
-    "story": (1080, 1920),
-    "landscape": (1200, 628),
-}
-
-
-def ad_birth_page(*, document_id: str, format_key: str, width: int, height: int) -> dict[str, Any]:
-    """The newborn ad's single artboard, as an ``add_page`` operation payload.
-
-    The one platform-authored scene fragment in the birth path, mirroring the
-    engine-validated seed page shape (scripts/seed_ad_document.py) field for field;
-    everything around it is engine-minted. Deterministic page id, so a replayed birth
-    converges byte-identically.
-    """
-    return {
-        "id": "page_" + uuid5(NAMESPACE_URL, f"clue:genad:birth-page:{document_id}").hex[:16],
-        "name": format_key.replace("_", " ").title(),
-        "size": {
-            "width": float(width),
-            "height": float(height),
-            "unit": "pt",
-            "preset": "custom",
-            "orientation": "landscape" if width > height else "portrait",
-            "source": {"width": float(width), "height": float(height), "unit": "px"},
-            "output": {"raster": {"width_px": width, "height_px": height}},
-        },
-        "children": [],
-        "bleed": None,
-        "safe_area": None,
-        "background": [],
-    }
-
-
-def mint_empty_ad_document(
-    *,
-    document_id: str,
-    title: str,
-    format_key: str,
-    width: int,
-    height: int,
-    brand_kit_ref: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    """Mint the engine's empty scene for a new ad document, with one artboard at the format.
-
-    The scene sibling of :func:`mint_empty_web_document`, same contract: the engine is the
-    only author of the scene shape (``new_scene`` then one ``add_page`` engine operation),
-    it is a SYNC blocking subprocess round-trip (callers on an event loop must hop a
-    thread), and ``brand_kit_ref=None`` leaves ``meta.brand_kit`` absent so the DAL's
-    creation contract stamps the workspace's latest approved kit at birth (Task-1 seam).
-    An explicit ref is authoritative, exactly as the web path treats ``theme.brand_kit``.
-    """
-    core = _core_client()
-    scene = core.new_scene(document_id, title, f"{format_key}_ad", "ad")
-    result = core.apply_operations(
-        scene,
-        [
-            {
-                "kind": "add_page",
-                "page": ad_birth_page(
-                    document_id=document_id, format_key=format_key, width=width, height=height
-                ),
-            }
-        ],
-    )
-    minted = cast(dict[str, Any], result["scene"])
-    if brand_kit_ref is not None:
-        minted["meta"]["brand_kit"] = dict(brand_kit_ref)
-    return minted
 
 
 def build_design_tools(

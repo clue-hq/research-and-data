@@ -1,6 +1,6 @@
 """The governed delegation entry onto the design leg (Part III P3.4, PD-part3 §1-D1/§2.3).
 
-One tool, ``open_design_leg@3``, granted to the Head of ABM. It is the materialization of the
+One tool, ``open_design_leg@4``, granted to the Head of ABM. It is the materialization of the
 master plan's "attach as subagent" wrapper under ruling D1: delegating to Design is not a
 LangGraph edge but a durable act — validate the D5 pins, build the §2.3 delegation bundle as one
 immutable canonical-JSON artifact, and open the ``design_leg`` row whose existence *is* the
@@ -67,6 +67,20 @@ malformed agent belief is worth surfacing. Everything else about the birth is th
 seam for seam: one document per leg (twin-proof under replay), the create and the leg insert in
 ONE transaction, and the brand identity decided by the DAL's creation contract at birth and
 only READ BACK into the leg's D5 pin.
+
+**@4 — the format aperture is deleted; the birth is ZERO-PAGE (genad2 ruling 1, 2026-08-23;
+plan ``docs/superpowers/plans/2026-08-23-agent-authored-pages.md``).** The two paragraphs above
+record what @3 shipped; the founder reversed their *format* half the same week. The platform
+must not own page geometry at all — not a preset table, not a unit, not an artboard. So the
+``ad_format``/``ad_width``/``ad_height`` parameters are GONE (``ToolInput`` forbids extras, so
+an agent still sending one gets a loud validation refusal rather than a silently dropped
+belief), and a document-less ``doc_kind="scene"`` open now births a scene with **no pages at
+all** — one ``new_scene`` call, ``medium="ad"``, no artifact type, ``pages == {}``. The design
+deepagent authors the page itself in a later turn, at the size and unit the user's own words
+imply (``size(w,h,px|pt|mm|in)`` in its DSL, normalized by the engine), which is the only place
+that knowledge honestly lives. Everything else about the birth is unchanged from @3, which is
+unchanged from the web path: one document per leg, one transaction, brand decided at birth and
+only read back.
 """
 
 from __future__ import annotations
@@ -75,7 +89,7 @@ import asyncio
 import json
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import Annotated, Any, ClassVar, Literal
+from typing import Annotated, Any, ClassVar, Literal, cast
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 from pydantic import Field, JsonValue, StringConstraints
@@ -224,22 +238,14 @@ class OpenDesignLegInput(ToolInput):
     #: Target document (nullable — a leg may create its document, §2.1).
     document_id: str | None = Field(default=None, min_length=1, max_length=200)
     #: What to create when there is no ``document_id`` — REQUIRED on a document-less open.
-    #: ``web`` births one empty website-mode document; ``scene`` births one empty ad document
-    #: at ``ad_format`` (genad ruling 1, 2026-08-23 — @2 refused scene creation outright).
-    #: With a ``document_id`` present the durable row's own kind is the truth and this field
-    #: is ignored.
+    #: ``web`` births one empty website-mode document; ``scene`` births one empty, PAGELESS
+    #: design document (genad2 ruling 1, 2026-08-23 — @3 took an ``ad_format`` and minted an
+    #: artboard; the design deepagent owns page geometry now). With a ``document_id`` present
+    #: the durable row's own kind is the truth and this field is ignored.
     doc_kind: Literal["web", "scene"] | None = Field(default=None)
     #: The born document's title (F5). Absent ⇒ the brief's first ~8 words. Ignored when the
     #: leg pins an existing document — a delegation never renames someone else's artifact.
     title: str | None = Field(default=None, min_length=1, max_length=200)
-    #: genad ruling 2 (2026-08-23): the ad's format, REQUIRED on a document-less
-    #: ``doc_kind="scene"`` open. A preset resolves its own dimensions; ``custom`` requires
-    #: ``ad_width``/``ad_height`` (px). Ignored when ``document_id`` pins an existing artifact.
-    ad_format: Literal["square", "portrait", "story", "landscape", "custom"] | None = Field(
-        default=None
-    )
-    ad_width: int | None = Field(default=None, ge=16, le=8192)
-    ad_height: int | None = Field(default=None, ge=16, le=8192)
     #: The document version the agent believes is current. When present it must match the durable
     #: ``current_version`` exactly (the D5 CAS guard); when absent the current version is pinned.
     expected_document_version: int | None = Field(default=None, ge=0)
@@ -305,10 +311,6 @@ class _ResolvedDelegation:
     #: What kind of document that birth mints (``"web"`` | ``"scene"``) — set together with
     #: ``birth_title``, which stays the single "this open births" flag.
     birth_doc_kind: str | None = None
-    #: @3's ad geometry: ``(format_key, width_px, height_px)`` on a scene birth, ``None`` on a
-    #: web birth. The preset lookup happens once, in ``_resolve``, so the minter is handed
-    #: resolved pixels rather than a key it would have to interpret.
-    birth_format: tuple[str, int, int] | None = None
     #: The §2.3 payload behind ``bundle_bytes``, kept so the birth path can re-freeze the bundle
     #: with the brand pin the DOCUMENT was actually born with (which does not exist until the
     #: create runs, inside ``invoke``).
@@ -357,9 +359,9 @@ def _default_web_document_minter(
     )
 
 
-#: The engine round-trip a scene (ad) birth needs: an id, a title, the resolved format and its
-#: pixels in, one empty single-artboard scene out. Injected like its web sibling; production
-#: passes ``clue_api.design_tools.mint_empty_ad_document``.
+#: The engine round-trip a scene birth needs: an id, a title and the requested brand-kit ref
+#: in, one PAGELESS scene out (@4). Injected like its web sibling; production passes
+#: :func:`_default_scene_document_minter`.
 SceneDocumentMinter = Callable[..., dict[str, Any]]
 
 
@@ -367,77 +369,36 @@ def _default_scene_document_minter(
     *,
     document_id: str,
     title: str,
-    format_key: str,
-    width: int,
-    height: int,
     brand_kit_ref: dict[str, Any] | None,
 ) -> dict[str, Any]:
-    # Lazily imported for the same reason as the web minter: `design_tools` reaches into
-    # `lumen_api`, and the leg tools are imported by processes that must not pay for it.
-    from clue_api.design_tools import mint_empty_ad_document
+    """Mint the engine's empty scene for a new design document — with NO pages (@4).
 
-    return mint_empty_ad_document(
-        document_id=document_id,
-        title=title,
-        format_key=format_key,
-        width=width,
-        height=height,
-        brand_kit_ref=brand_kit_ref,
-    )
+    ``Scene::new`` already IS the pageless shape the platform wants, so the birth is one
+    engine call and nothing else: no artifact type (no format key exists to derive one from
+    since genad2 ruling 1) and no ``add_page``. The design deepagent authors the page in a
+    later turn, at the size and unit the user's own words imply.
 
-
-def _resolve_ad_format(inputs: OpenDesignLegInput) -> tuple[str, int, int]:
-    """The @3 format contract for a scene birth: one ratified size, stated loudly.
-
-    Every violation is a refusal rather than a repair, because each one is a *malformed
-    belief* the agent should see: no format at all would make the tool guess an ad's size;
-    a preset carrying dimensions means the agent believes it can override pixels it cannot;
-    ``custom`` without them names no size to build.
+    It is a subprocess call to ``lumen-api-helper`` and therefore SYNC and blocking — callers
+    on an event loop must hop a thread. ``brand_kit_ref=None`` leaves ``meta.brand_kit`` null
+    so the DAL's creation contract stamps the workspace's latest approved kit at birth; an
+    explicit ref is authoritative, exactly as the web path treats ``theme.brand_kit``.
     """
 
-    from clue_api.design_tools import AD_FORMAT_PRESETS
+    # Lazily imported for the same reason as the web minter: `design_tools` reaches into
+    # `lumen_api`, and the leg tools are imported by processes (the C6 authority audit, the
+    # trial surface) that must not pay for it. The client is that module's one per-process,
+    # `lru_cache`d engine handle — reused rather than re-instantiated per birth.
+    from clue_api.design_tools import _core_client
 
-    presets = ", ".join(f"{key} ({w}x{h})" for key, (w, h) in sorted(AD_FORMAT_PRESETS.items()))
-    if inputs.ad_format is None:
-        raise _LegRefused(
-            "an ad has a size, and this delegation names none: pass ad_format — one of "
-            f"{presets} — or ad_format='custom' with ad_width and ad_height in px",
-            reason_code="design_leg_ad_format_required",
-        )
-    if inputs.ad_format == "custom":
-        if inputs.ad_width is None or inputs.ad_height is None:
-            raise _LegRefused(
-                "ad_format='custom' names no size by itself; pass BOTH ad_width and "
-                f"ad_height in px, or use a preset ({presets})",
-                reason_code="design_leg_ad_format_invalid",
-            )
-        return "custom", inputs.ad_width, inputs.ad_height
-    if inputs.ad_width is not None or inputs.ad_height is not None:
-        raise _LegRefused(
-            f"the ad_format preset '{inputs.ad_format}' carries its own dimensions, so "
-            "ad_width/ad_height cannot be supplied with it; drop them, or pass "
-            "ad_format='custom' with both to choose the size yourself",
-            reason_code="design_leg_ad_format_invalid",
-        )
-    width, height = AD_FORMAT_PRESETS[inputs.ad_format]
-    return inputs.ad_format, width, height
-
-
-def _refuse_ad_format_on_web(inputs: OpenDesignLegInput) -> None:
-    """No cross-kind leakage: a website has no ad format (@3)."""
-
-    if inputs.ad_format is None and inputs.ad_width is None and inputs.ad_height is None:
-        return
-    raise _LegRefused(
-        "ad_format/ad_width/ad_height describe an ad, and this delegation is creating a "
-        "website (doc_kind='web'); drop them, or pass doc_kind='scene' to make an ad",
-        reason_code="design_leg_ad_format_invalid",
-    )
+    scene = cast(dict[str, Any], _core_client().new_scene(document_id, title, None, "ad"))
+    if brand_kit_ref is not None:
+        scene["meta"]["brand_kit"] = dict(brand_kit_ref)
+    return scene
 
 
 class OpenDesignLegTool(Tool):
     name = "open_design_leg"
-    version = "3"
+    version = "4"
     model_description = (
         "Hand this conversation to the design deepagent — the only way to get a website (or any "
         "design artifact) made. Use it the moment the user asks for a landing page, microsite, "
@@ -448,10 +409,11 @@ class OpenDesignLegTool(Tool):
         "Put the user's actual ask in brief — what the page is for, who it is for, what it must "
         "say — because Design sees the brief, not this conversation. To keep working on an "
         "EXISTING artifact pass its document_id instead (doc_kind is then ignored). "
-        "For a NEW ad pass doc_kind='scene', no document_id, and ad_format — one of square "
-        "(1200x1200), portrait (1080x1350), story (1080x1920), landscape (1200x628), or custom "
-        "with ad_width/ad_height in px. Infer the format from what the user asked for and STATE "
-        "your choice in your reply (they can correct it); do not block on a confirmation. "
+        "For a NEW ad or any designed page pass doc_kind='scene' and no document_id: an empty "
+        "design document is created (no page yet) and the design agent authors the page itself — "
+        "size, unit (px for digital, mm/in for print) and layout come from the user's own words, "
+        "so put everything the user said about format, dimensions, medium and purpose in brief. "
+        "Do not infer or restate dimensions yourself; Design owns them. "
         "To resume a design session you closed by "
         "mistake, pass reopen_leg_id — a reopen ignores every other field. While the leg is "
         "open, every user message on this thread goes directly to Design — you will not see the "
@@ -474,9 +436,6 @@ class OpenDesignLegTool(Tool):
         safe_display_fields=(
             "document_id",
             "doc_kind",
-            "ad_format",
-            "ad_width",
-            "ad_height",
             "expected_document_version",
             "brand_kit_id",
             "brand_kit_version",
@@ -579,16 +538,11 @@ class OpenDesignLegTool(Tool):
                 if resolved.birth_title is not None:
                     assert resolved.document_id is not None  # set together in _resolve
                     if resolved.birth_doc_kind == "scene":
-                        assert resolved.birth_format is not None  # @3: set with the kind
-                        format_key, width, height = resolved.birth_format
                         brand_kit_id, brand_kit_version = await self._birth_scene_document(
                             conn,
                             workspace_id=ctx.workspace_id,
                             document_id=resolved.document_id,
                             title=resolved.birth_title,
-                            format_key=format_key,
-                            width=width,
-                            height=height,
                             requested_brand_kit_id=resolved.brand_kit_id,
                             requested_brand_kit_version=resolved.brand_kit_version,
                         )
@@ -719,25 +673,23 @@ class OpenDesignLegTool(Tool):
         workspace_id: str,
         document_id: str,
         title: str,
-        format_key: str,
-        width: int,
-        height: int,
         requested_brand_kit_id: str | None,
         requested_brand_kit_version: int | None,
     ) -> tuple[str | None, int | None]:
-        """Create the leg's empty ad document and return the pin READ BACK off the stored row.
+        """Create the leg's empty, PAGELESS design document and return the pin READ BACK.
 
         The scene sibling of :meth:`_birth_web_document`, using the same two seams in the same
         order and for the same reasons: the engine mints the scene (it is the only author of
-        that shape — here one ``new_scene`` plus one ``add_page`` at the resolved format), then
-        the DAL's ``create_document`` performs the governed write carrying the frozen creation
-        contract, which stamps the workspace's latest APPROVED brand kit onto a new scene
-        document. Both run inside the CALLER's transaction — the one that inserts the leg — so
-        a failed delegation leaves no orphan ad.
+        that shape — since @4 one bare ``new_scene``, no artboard), then the DAL's
+        ``create_document`` performs the governed write carrying the frozen creation contract,
+        which stamps the workspace's latest APPROVED brand kit onto a new scene document (it
+        reads and writes only ``meta``, so a pageless scene is nothing special to it). Both run
+        inside the CALLER's transaction — the one that inserts the leg — so a failed delegation
+        leaves no orphan document.
 
-        The dimensions arrive already resolved (``_resolve_ad_format`` did the preset lookup),
-        so this method never interprets a format key; it only threads it through as the page's
-        name/artifact type. The returned pin is read off the stored row, never re-derived.
+        Nothing here knows a size, a unit, or a format: genad2 ruling 1 put page geometry
+        entirely inside the design deepagent's later turns. The returned pin is read off the
+        stored row, never re-derived.
         """
 
         requested_ref = (
@@ -750,9 +702,6 @@ class OpenDesignLegTool(Tool):
             self._mint_scene_document,
             document_id=document_id,
             title=title,
-            format_key=format_key,
-            width=width,
-            height=height,
             brand_kit_ref=requested_ref,
         )
         document = await create_document(
@@ -762,7 +711,7 @@ class OpenDesignLegTool(Tool):
         stamped_version = document.get("effective_brand_kit_version")
         if stamped_id is None or stamped_version is None:
             # No approved kit in this workspace (or the fail-closed multi-brand case): an
-            # un-branded ad and a leg with NO pin — honestly, and generation still works.
+            # un-branded document and a leg with NO pin — honestly, and generation still works.
             return None, None
         return str(stamped_id), int(stamped_version)
 
@@ -876,7 +825,6 @@ class OpenDesignLegTool(Tool):
         document_id = inputs.document_id
         birth_title: str | None = None
         birth_doc_kind: str | None = None
-        birth_format: tuple[str, int, int] | None = None
         if inputs.document_id is not None:
             try:
                 document = await get_document(
@@ -904,21 +852,16 @@ class OpenDesignLegTool(Tool):
                 reason_code="design_document_pin_incomplete",
             )
         else:
-            # @2's document birth (plan §4.1), widened to ads by @3 (genad ruling 1). No
-            # document to pin ⇒ the delegation must say what to make — and, for an ad, at
-            # what size.
+            # @2's document birth (plan §4.1), widened to scenes by @3 and made pageless by
+            # @4. No document to pin ⇒ the delegation must say what to make. What SIZE to
+            # make it is not asked and cannot be answered here (genad2 ruling 1).
             if inputs.doc_kind is None:
                 raise _LegRefused(
                     "this delegation names no document, so it must say what to create: pass "
-                    "doc_kind='web' to start a new website, doc_kind='scene' (with an "
-                    "ad_format) to start a new ad, or document_id to work on an existing "
-                    "artifact",
+                    "doc_kind='web' to start a new website, doc_kind='scene' to start a new "
+                    "ad or designed page, or document_id to work on an existing artifact",
                     reason_code="design_leg_doc_kind_required",
                 )
-            if inputs.doc_kind == "scene":
-                birth_format = _resolve_ad_format(inputs)
-            else:
-                _refuse_ad_format_on_web(inputs)
             birth_doc_kind = inputs.doc_kind
             document_id = derive_leg_document_id(leg_id=leg_id)
             birth_title = _document_title(title=inputs.title, brief=inputs.brief)
@@ -974,7 +917,6 @@ class OpenDesignLegTool(Tool):
             bundle_bytes=bundle_bytes,
             birth_title=birth_title,
             birth_doc_kind=birth_doc_kind,
-            birth_format=birth_format,
             bundle_payload=bundle_payload,
         )
 
