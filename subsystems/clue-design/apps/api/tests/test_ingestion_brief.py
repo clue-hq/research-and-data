@@ -40,7 +40,9 @@ from lumen_ingestion.brief_agent import (
     generate_brief,
     load_brief_prompt,
 )
+from lumen_ingestion.capture.geometry import parse_geometry
 from lumen_ingestion.evidence import BrandEvidence
+from lumen_ingestion.normalizer import normalize_evidence
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "ingestion"
 EXPECTED = FIXTURES / "expected"
@@ -57,6 +59,27 @@ def _evidence() -> BrandEvidence:
     return BrandEvidence.model_validate(
         json.loads((FIXTURES / "evidence_website_insight.json").read_text())
     )
+
+
+def _kit_with_bands() -> tuple[BrandEvidence, dict]:
+    """The website fixture wearing the real Stripe harvest's background rhythm.
+
+    Its two navy sections mint `surface.band.statement`, which is the whole
+    point: a name for the color the page stands on.
+    """
+    harvest = json.loads(
+        (FIXTURES / "geometry" / "stripe_home.json").read_text()
+    )
+    parsed = parse_geometry(harvest, page_url="https://stripe.com/")
+    evidence = _evidence().model_copy(update={"geometry": parsed.evidence()})
+    kit = normalize_evidence(
+        evidence,
+        brand_kit_id="brand_kit_bands",
+        version=1,
+        name="Bands",
+        created_at="2026-07-05",
+    ).brand_kit
+    return evidence, kit
 
 
 def _brief_payload(**overrides) -> dict:
@@ -241,6 +264,26 @@ def test_every_token_bearing_section_is_checked_against_the_kit() -> None:
             validate_brief(payload, token_names=kit_token_names(_kit()))
 
 
+def test_a_band_the_kit_minted_is_a_name_the_brief_may_speak() -> None:
+    """The token law cuts both ways.
+
+    A kit whose measured rhythm minted `surface.band.statement` must offer that
+    name to the agent (in the prompt payload AND in the validation dictionary),
+    or the agent is back to approximating the one color the page stands on.
+    """
+    evidence, kit = _kit_with_bands()
+    assert "surface.band.statement" in kit["tokens"]["colors"]
+
+    request = build_brief_request(evidence, kit)
+    assert "surface.band.statement" in request.token_names
+    assert any(token["name"] == "surface.band.statement" for token in request.tokens)
+
+    payload = _brief_payload()
+    payload["background_rhythm"]["bands"][0]["token"] = "surface.band.statement"
+    brief = validate_brief(payload, token_names=kit_token_names(kit))
+    assert brief.background_rhythm.bands[0].token == "surface.band.statement"
+
+
 def test_a_palette_scope_outside_the_grammar_is_refused() -> None:
     payload = _brief_payload()
     payload["palette_application"][0]["scope"] = "decoration"
@@ -325,6 +368,9 @@ def test_the_system_prompt_is_the_committed_controller_authored_file() -> None:
     # The two promises the harness has to keep true.
     assert "evidence or silence" in text.lower()
     assert "BrandBrief@1" in text
+    # …and the band vocabulary the kit now mints, so the agent names a recurring
+    # background by its token instead of the nearest approximation.
+    assert "surface.band." in text
 
 
 def test_an_unconfigured_brief_stage_is_silent() -> None:
