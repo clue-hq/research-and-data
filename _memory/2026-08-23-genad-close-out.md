@@ -47,10 +47,36 @@ documented pre-existing reds.
    both-versions prose exists in the durable run result. Rewiring conflict →
    AWAITING_INPUT-with-message changes the P3 finalization contract for BOTH
    kinds — founder decision.
-4. Smaller: prose-summary of a *committed* scene turn still reads "proposed" and
+4. **The WEB executor carries the same post-commit re-read defect the fix wave
+   closed on the scene path** (`lumen_api/main.py:8519` — a non-CAS exception from
+   the re-read after a committed `design_apply_web_operations` reports
+   `agent_runtime.failed` for a website turn that committed). Found by the final
+   scoped re-review; pre-existing, unowned; the fix is the same two-line shape as
+   commit `ac36499d`'s scene fix.
+5. Smaller: prose-summary of a *committed* scene turn still reads "proposed" and
    doesn't name the new version (plan-sanctioned; reads oddly now);
    `brand_kit=` param vs `meta.brand_kit` scene/columns divergence (exact web
    mirror, both-kinds decision).
+
+## Adversarial-pass residuals (Fable's own final review, 2026-08-23)
+
+- Birth + leg insert are genuinely ONE transaction (verified at
+  `design_leg_tools.py:552/584/621`); the delegation-bundle artifact persists via
+  its own connection just before it (pre-existing @2 shape) — a failed leg insert
+  can orphan a bundle blob (harmless, audit-only).
+- At-least-once window: a worker dying between the governed write and the run's
+  terminal write replays the turn; the CAS pre-check then reports an honest
+  CONFLICT for content that is actually present (bounded by `max_reoffers=1`;
+  exact web parity; never a clobber).
+- The persist composition has only ever executed against STUB proposals — every
+  underlying function (`apply_operations` replay, `register_scene_asset_backstop`,
+  `design_apply_operations`) is the same code the MVP editor's accept seam runs in
+  production, but **watch the first live generation end-to-end** when the
+  transport founder item is fixed.
+- Editor-emptied ads (user deletes all nodes, then chats): a user-edited page
+  name containing quotes/newlines makes `_quotable_page_name` suppress the F1
+  steering block — honest degradation (the turn may thrash as pre-F1), never an
+  injection.
 
 ## Incidents & environment (operational truths for the next session)
 
