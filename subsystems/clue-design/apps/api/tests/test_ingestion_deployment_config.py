@@ -25,6 +25,10 @@ def _env_values(path: Path) -> dict[str, str]:
 
 
 def test_deployment_recipes_enable_ingestion_vision_and_descriptions() -> None:
+    """Both recipes, not just the subsystem's own. W1.6 landed the brief stage's
+    `LUMEN_INGESTION_BRIEF=1` in `subsystems/clue-design/.env.example` alone,
+    which left the monorepo recipe — the one that actually configures the design
+    API in this repo — publishing briefless kits off every forced render."""
     monorepo_recipe = _env_values(MONOREPO_ROOT / ".env.example")
     assert monorepo_recipe["OPENROUTER_API_KEY"] == '"${CLUE_OPENROUTER_API_KEY}"'
 
@@ -32,6 +36,7 @@ def test_deployment_recipes_enable_ingestion_vision_and_descriptions() -> None:
         values = _env_values(recipe)
         assert values["LUMEN_INGESTION_VISION"] == "1", recipe
         assert values["LUMEN_INGESTION_DESCRIBE"] == "1", recipe
+        assert values["LUMEN_INGESTION_BRIEF"] == "1", recipe
         assert "OPENROUTER_API_KEY" in values, recipe
 
 

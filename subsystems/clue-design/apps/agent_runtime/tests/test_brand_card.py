@@ -331,8 +331,11 @@ def test_a_kit_already_ordered_by_record_dims_is_left_untouched() -> None:
 
 
 def test_equal_area_images_keep_their_insertion_order() -> None:
-    """Ties break on kit order — the same tie-break `_select_for_describe` uses,
-    so the two selections cannot diverge on a uniformly-sized kit."""
+    """Ties break on kit order — the same tie-break `_select_for_describe` uses.
+    The two can still diverge even here (a website kit's record dims can be
+    uniform while the DOM areas describe ranks by are not — the ledgered
+    describe-ranking-source item above); this pins only that the CARD's tie-break
+    is kit order, and therefore deterministic."""
     sizes = [(f"img{i}", 800, 600) for i in range(6)]
     images, manifest = _sized_images(sizes)
     kit = _kit()

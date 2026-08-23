@@ -3117,9 +3117,11 @@ class LumenWebTools:
         `px` ("WxH", omitted when the record states no dimensions), `view`
         (paste into `view("asset:<id>")` to see the actual pixels before
         choosing), and `status` ONLY when it is not "ready" — a non-ready record
-        is searchable and viewable, but placement will refuse it. A row marked
-        `grounding: "unregistered — source cap reached"` is a real record this
-        run has no source budget left to cite; it is still listed.
+        is searchable and viewable, but placement will refuse it. A `library`
+        row marked `grounding: "unregistered — source cap reached"` is a real
+        record this run has no source budget left to cite; it is still listed.
+        Searching costs no source budget on a `brand_kit` or `document` row —
+        only a library placement cites one.
 
         ZERO results always names the inventory that was searched, so "nothing
         matched" is never confused with "nothing exists" — and because a matched
@@ -3208,15 +3210,28 @@ class LumenWebTools:
         unregistered = 0
         for asset_id, entry, origin, id_match, note in ordered[:limit]:
             source = self._asset_grounding_source(asset_id, entry)
-            # A full source budget must not eat the ANSWER. Dropping the row (or
-            # breaking out of the loop) turned a budget condition into a
-            # shorter — or empty — result set, which reads to the agent exactly
-            # like "your query matched less", and the honest-empty note would
-            # then blame the query for a cap. The row still comes back; it just
-            # says it is uncited.
-            registered = self._register_grounding_source(source)
-            if not registered:
-                unregistered += 1
+            # Only a LIBRARY row can ever spend a grounded source: placing one
+            # (`use_library_asset`) preserves the record's own license and
+            # provenance and cites the source, while `use_brand_asset` rewrites
+            # the source to the brand guide and registers nothing, and a
+            # document row is already on the page. Registering every returned
+            # row spent the shared budget on rows that never needed it — a few
+            # kit-heavy searches exhausted all 64 slots and the next
+            # `use_library_asset`/`fetch_page` then hard-failed
+            # `asset.grounding_limit` mid-turn. A kit/document row is therefore
+            # not "cap-suppressed": it simply never registers, so it carries no
+            # `grounding` annotation and is not counted in the note below.
+            registered = True
+            if origin == "library":
+                # A full source budget must not eat the ANSWER. Dropping the row
+                # (or breaking out of the loop) turned a budget condition into a
+                # shorter — or empty — result set, which reads to the agent
+                # exactly like "your query matched less", and the honest-empty
+                # note would then blame the query for a cap. The row still comes
+                # back; it just says it is uncited.
+                registered = self._register_grounding_source(source)
+                if not registered:
+                    unregistered += 1
             results.append(
                 self._asset_search_result(
                     source,

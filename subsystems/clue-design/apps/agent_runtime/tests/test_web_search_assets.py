@@ -656,6 +656,10 @@ def _fill_grounding_budget(tools: LumenWebTools) -> None:
         )
 
 
+def _by_origin(result: dict, origin: str) -> list[dict]:
+    return [row for row in result["results"] if row["origin"] == origin]
+
+
 def test_a_full_source_budget_still_returns_the_matched_rows(tmp_path: Path):
     """A budget condition must not read to the agent as "your query matched
     less". Before this, registration failure `break`ed out of the result loop, so
@@ -666,11 +670,16 @@ def test_a_full_source_budget_still_returns_the_matched_rows(tmp_path: Path):
 
     result = _search(tools, "payment", kind="image")
 
-    assert result["count"] >= 1
+    library_rows = _by_origin(result, "library")
+    kit_rows = _by_origin(result, "brand_kit")
+    assert library_rows and kit_rows
     assert all(
-        row["grounding"] == "unregistered — source cap reached"
-        for row in result["results"]
+        row["grounding"] == "unregistered — source cap reached" for row in library_rows
     )
+    # A kit row never registers a source at all (only `use_library_asset`
+    # consumes one), so a full budget is not its story and the annotation would
+    # be a lie about a row nothing is wrong with.
+    assert all("grounding" not in row for row in kit_rows)
 
 
 def test_a_full_source_budget_is_named_in_a_note(tmp_path: Path):
@@ -680,7 +689,9 @@ def test_a_full_source_budget_is_named_in_a_note(tmp_path: Path):
     result = _search(tools, "payment", kind="image")
 
     note = result["note"]
-    assert f"{result['count']} of {result['count']} result(s)" in note
+    # Only the rows that TRIED to register are counted — the kit row in this
+    # result set never does.
+    assert f"{len(_by_origin(result, 'library'))} of {result['count']} result(s)" in note
     assert "source budget is full" in note
     assert "needs budget" in note
 
@@ -690,6 +701,72 @@ def test_registered_rows_carry_no_grounding_field(tmp_path: Path):
 
     assert all("grounding" not in row for row in result["results"])
     assert "note" not in result
+
+
+# --- only the rows that can SPEND the budget register against it ---------------
+#
+# `use_library_asset` is the one action that consumes a grounded source.
+# `use_brand_asset` registers none (it rewrites the record's source to the brand
+# guide), and a document row is already on the page. Registering a source for
+# every returned row therefore spent the shared 64-slot budget on rows that were
+# never going to need it: a handful of kit-heavy searches exhausted it, and the
+# next `use_library_asset` / `fetch_page` hard-failed `asset.grounding_limit`
+# mid-turn — a browse of the kit killing a placement it had nothing to do with.
+
+
+def _kit_heavy_tools(tmp_path: Path) -> tuple[LumenWebTools, str]:
+    """A turn whose brand kit alone can fill the whole source budget by search.
+
+    Eight tag groups of eight — eight `limit=8` searches is a plausible browse
+    of a real kit, and `8 x 8` is exactly `_GROUNDED_SOURCE_MAX`.
+    """
+    kit: dict = {}
+    for group in range(8):
+        for index in range(8):
+            asset_id = f"asset_kit_{group}{index}"
+            kit[asset_id] = {
+                "record": _record(
+                    asset_id,
+                    label=f"Kit plate {group}{index}",
+                    tags=[f"bandgroup{group}"],
+                ),
+                "title": f"Kit plate {group}{index}",
+            }
+    library_record = json.loads(
+        (REPO_ROOT / "crates/lumen-core/fixtures/assets/uploaded_logo_asset.json").read_text()
+    )
+    library_id = library_record["id"]
+    library = {library_id: {"record": library_record, "title": "Acme primary logo"}}
+    return _tools(tmp_path, brand_kit_assets=kit, asset_library=library), library_id
+
+
+def test_a_kit_heavy_turn_leaves_budget_for_a_later_library_placement(tmp_path: Path):
+    tools, library_id = _kit_heavy_tools(tmp_path)
+
+    for group in range(8):
+        assert _search(tools, f"bandgroup{group}", kind="image")["count"] == 8
+
+    # Nothing placeable was browsed away: the kit rows cost no budget at all.
+    assert tools.grounding_report()["sources"] == []
+
+    placed = json.loads(tools.asset(action="use_library_asset", asset_id=library_id))
+
+    assert placed["status"] == "ok", placed
+    assert placed["asset_id"] == library_id
+
+
+def test_a_library_row_still_registers_its_source_when_search_returns_it(
+    tmp_path: Path,
+):
+    """The other half of the rule — the row that CAN be placed by
+    `use_library_asset` still arrives grounded, exactly as before."""
+    tools = _stripe_tools(tmp_path)
+
+    result = _search(tools, "payment", kind="image")
+
+    registered = {source["asset_id"] for source in tools.grounding_report()["sources"]}
+    assert registered == {row["asset_id"] for row in _by_origin(result, "library")}
+    assert _by_origin(result, "brand_kit")  # the kit row was returned, uncited
 
 
 def test_zero_results_can_only_ever_mean_zero_matches(tmp_path: Path):
