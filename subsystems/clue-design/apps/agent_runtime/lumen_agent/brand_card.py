@@ -17,6 +17,12 @@ import math
 from typing import Any, Optional
 
 from .brand_brief import BRAND_BRIEF_TOKEN_BUDGET, read_brief, render_brand_grammar
+from .engine_mirror import (
+    ALIAS_DEPTH_CAP,
+    record_pixel_dims,
+    resolve_kit_color,
+    sanitize_token_name,
+)
 
 JsonObject = dict[str, Any]
 
@@ -44,7 +50,23 @@ MAX_IMAGE_LIST = 16
 #: How many missing glyphs a font-gap note spells out before summarizing the
 #: rest as "(+N more)" — keeps the note short on heavily-subset faces.
 MAX_GLYPHS_IN_NOTE = 16
-MAX_ALIAS_HOPS = 8
+#: Alias-chain bound. The engine's own cap (`engine_mirror.ALIAS_DEPTH_CAP`), so
+#: a color the card shows is a color the compiled theme resolves.
+MAX_ALIAS_HOPS = ALIAS_DEPTH_CAP
+
+#: The one line that kills the transposition trap. The card lists kit ROLE names
+#: (`text.brand`); a class is `<utility-prefix>-<token>`, and the token for a
+#: role is its sanitized name — so `text.brand` is the class `text-text-brand`
+#: (prefix `text-` + token `text-brand`), never `text-brand`. Writing the role
+#: as if it were a token is what produced 153 live LUMW0212 rejections
+#: (`brand`/`secondary` are not tokens), so every role row now carries the token
+#: name outright and this note states which list is authoritative.
+COLOR_ROLE_NOTE = (
+    "These are kit ROLE names, not class tokens. Build a class from `token`: "
+    "<utility-prefix>-<token>, e.g. bg-surface-brand, text-text-brand, "
+    "border-border-brand. The author prompt's THEME TOKENS list is authoritative "
+    "for what exists."
+)
 
 
 def build_brand_card(
@@ -53,6 +75,7 @@ def build_brand_card(
     source: Optional[str] = None,
     notice: Optional[str] = None,
     include_brief: bool = False,
+    asset_manifest: Optional[JsonObject] = None,
 ) -> Optional[JsonObject]:
     """The compact card, or None when the run has no attached kit.
 
@@ -62,6 +85,13 @@ def build_brand_card(
     kit that carries no `BrandBrief@1` renders today's card either way — the
     brief and the geometry ride together, so "no brief" is one clean switch
     back to pre-slice-4 behavior rather than two half-states.
+
+    ``asset_manifest`` is the run's by-value kit asset manifest (the same
+    ``config.brand_kit_assets`` ``use_brand_asset`` reads: ``{asset_id: {"record":
+    AssetRecord}}``). The kit's own asset entries carry only an ``asset_id``, so
+    the pixel dimensions the author needs to tell a 2460px panel from a 296px
+    crop exist ONLY on those records. Omitted → the rows simply carry no size,
+    exactly as before.
     """
     if not isinstance(brand_kit, dict) or not brand_kit.get("id"):
         return None
@@ -70,12 +100,14 @@ def build_brand_card(
     typography = (brand_kit.get("tokens") or {}).get("typography") or {}
     assets = brand_kit.get("assets") or {}
     constraints = brand_kit.get("constraints") or {}
+    manifest = asset_manifest if isinstance(asset_manifest, dict) else {}
 
-    color_roles: JsonObject = {}
+    roles: JsonObject = {}
     for role in CARD_COLOR_ROLES:
-        resolved = _resolve_color(role, colors, set())
+        resolved = _resolve_color(role, colors)
         if resolved:
-            color_roles[role] = resolved
+            roles[role] = {"token": sanitize_token_name(role), "value": resolved}
+    color_roles = {"note": COLOR_ROLE_NOTE, "roles": roles}
 
     accent = _brightest_accent(colors)
 
@@ -93,8 +125,8 @@ def build_brand_card(
         # emphasis reach for THIS (see brand-application.md), not ink.
         "accent": accent,
         "type_roles": _type_roles(typography),
-        "logos": _logo_inventory(assets.get("logos") or {}),
-        "images": _image_inventory(assets.get("images") or {}),
+        "logos": _logo_inventory(assets.get("logos") or {}, manifest),
+        "images": _image_inventory(assets.get("images") or {}, manifest),
     }
     # Font honesty: subset webfaces silently lack glyphs (× / — …). Surface the
     # ingestion audit so the author chooses copy with open eyes. Omitted when no
@@ -175,7 +207,7 @@ def _type_roles(typography: JsonObject) -> JsonObject:
     return roles
 
 
-def _logo_inventory(logos: JsonObject) -> list[JsonObject]:
+def _logo_inventory(logos: JsonObject, manifest: JsonObject) -> list[JsonObject]:
     inventory = []
     for logo_id, logo in list(logos.items())[:MAX_LIST]:
         if not isinstance(logo, dict):
@@ -191,6 +223,9 @@ def _logo_inventory(logos: JsonObject) -> list[JsonObject]:
                         # K2: the placement handle — pass to
                         # asset(action="use_brand_asset", asset_id=…).
                         "asset_id": v.get("asset_id"),
+                        # A wordmark's pixels decide whether it survives a small
+                        # header slot — same honesty as the image rows.
+                        **_pixel_field(v.get("asset_id"), manifest),
                     }
                     for v in (logo.get("variants") or [])[:4]
                     if isinstance(v, dict)
@@ -207,7 +242,7 @@ def _logo_inventory(logos: JsonObject) -> list[JsonObject]:
     return inventory
 
 
-def _image_inventory(images: JsonObject) -> list[JsonObject]:
+def _image_inventory(images: JsonObject, manifest: JsonObject) -> list[JsonObject]:
     inventory = []
     items = list(images.items())
     for image_id, image in items[:MAX_IMAGE_LIST]:
@@ -220,6 +255,10 @@ def _image_inventory(images: JsonObject) -> list[JsonObject]:
             "asset_id": image.get("asset_id"),
             "role": image.get("role"),
             "title": image.get("title"),
+            # The size the row could not state before: a 2460px panel and a
+            # 296px crop read identically without it, and 512px is the floor a
+            # style anchor must clear.
+            **_pixel_field(image.get("asset_id"), manifest),
         }
         description = image.get("description")
         if isinstance(description, str) and description:
@@ -240,6 +279,16 @@ def _image_inventory(images: JsonObject) -> list[JsonObject]:
             {"note": f"{overflow} more asset(s) available — full manifest via the asset tool"}
         )
     return inventory
+
+
+def _pixel_field(asset_id: Any, manifest: JsonObject) -> JsonObject:
+    """`{"px": "2460x1060"}` for an asset whose record states its dimensions,
+    else `{}` — never a guess. The key carries the unit so the value stays a
+    plain WxH the agent can compare at a glance."""
+    entry = manifest.get(asset_id) if isinstance(asset_id, str) else None
+    record = (entry or {}).get("record") if isinstance(entry, dict) else None
+    dims = record_pixel_dims(record) if isinstance(record, dict) else None
+    return {"px": f"{dims[0]}x{dims[1]}"} if dims else {}
 
 
 def _usage_note_field(entry: JsonObject) -> JsonObject:
@@ -267,7 +316,7 @@ def _brightest_accent(colors: JsonObject) -> Optional[JsonObject]:
         if l < 0.55 or l > 0.92:
             continue
         if best is None or c > best[0]:
-            resolved = _resolve_color(name, colors, set())
+            resolved = _resolve_color(name, colors)
             if resolved:
                 best = (float(c), name, resolved)
     if best is None:
@@ -275,27 +324,22 @@ def _brightest_accent(colors: JsonObject) -> Optional[JsonObject]:
     return {"token": best[1], "value": best[2]}
 
 
-def _resolve_color(name: str, colors: JsonObject, seen: set[str]) -> Optional[str]:
-    if name in seen or len(seen) >= MAX_ALIAS_HOPS:
+def _resolve_color(name: str, colors: JsonObject) -> Optional[str]:
+    """A kit color role as the HEX the design will actually paint, or None when
+    the compiled theme would carry no color for it.
+
+    The alias walk itself is the engine's (`engine_mirror.resolve_kit_color`), so
+    the card can never show a color the theme skipped; only the presentation —
+    oklch converted to hex, because the card quotes pixels — lives here."""
+    default = resolve_kit_color(name, colors)
+    if default is None:
         return None
-    seen.add(name)
-    value = (colors.get(name) or {}).get("value") or {}
-    default = value.get("default") or {}
-    kind = default.get("kind")
-    if kind == "hex":
+    if default.get("kind") == "hex":
         raw = default.get("value")
         return raw if isinstance(raw, str) else None
-    if kind == "oklch":
-        try:
-            return _oklch_to_hex(
-                float(default["l"]), float(default["c"]), float(default["h"])
-            )
-        except (KeyError, TypeError, ValueError):
-            return None
-    if kind == "alias":
-        target = default.get("token")
-        return _resolve_color(target, colors, seen) if isinstance(target, str) else None
-    return None
+    return _oklch_to_hex(
+        float(default["l"]), float(default["c"]), float(default["h"])
+    )
 
 
 def _oklch_to_hex(l: float, c: float, h: float) -> str:

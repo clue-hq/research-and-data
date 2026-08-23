@@ -73,10 +73,10 @@ def _empty_patch() -> JsonObject:
 # --- kit value indexes ------------------------------------------------------------
 
 
-def _resolve_color_hex(name: str, colors: JsonObject, seen: set[str]) -> Optional[str]:
+def _resolve_color_hex(name: str, colors: JsonObject) -> Optional[str]:
     from .brand_card import _resolve_color
 
-    resolved = _resolve_color(name, colors, seen)
+    resolved = _resolve_color(name, colors)
     return resolved.lower() if isinstance(resolved, str) else None
 
 
@@ -87,7 +87,7 @@ def _color_index(brand_kit: JsonObject) -> dict[str, str]:
     )
     index: dict[str, str] = {}
     for name in ranked:
-        value = _resolve_color_hex(name, colors, set())
+        value = _resolve_color_hex(name, colors)
         if value and value not in index:
             index[value] = name
     return index

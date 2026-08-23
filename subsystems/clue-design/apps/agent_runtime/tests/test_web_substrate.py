@@ -154,14 +154,18 @@ def test_web_theme_token_names_semantic_only_without_kit():
     )
 
 
+def _hex_color(value="#00525C"):
+    return {"value": {"default": {"kind": "hex", "value": value}}}
+
+
 def test_web_theme_token_names_appends_sanitized_kit_colors():
     kit = {
         "tokens": {
             "colors": {
                 # a duplicate of a semantic name is not repeated
-                "primary": {},
-                "Surface.Brand": {},
-                "palette.primary.500": {},
+                "primary": _hex_color(),
+                "Surface.Brand": _hex_color(),
+                "palette.primary.500": _hex_color("#30D8A7"),
             }
         }
     }
@@ -181,6 +185,89 @@ def test_web_theme_token_names_appends_sanitized_kit_colors():
     assert "palette-primary-500" in names
     # "primary" appears exactly once (semantic; the kit dup is skipped).
     assert names.count("primary") == 1
+
+
+# W1.3 — the prompt may never advertise a token the compiled theme did not emit.
+# The Rust compiler (crates/lumen-web/src/theme.rs:113-131) skips a kit color on
+# TWO rules: its sanitized name already exists, and it does not resolve to a
+# concrete color (LUMW0302). Python replicated only the first, so a broken alias
+# chain became a token name the author was invited to use and the lint rejected.
+
+
+def test_web_theme_token_names_skips_a_color_that_does_not_resolve():
+    kit = {
+        "tokens": {
+            "colors": {
+                "brand.teal": _hex_color(),
+                # alias chain into a token the kit does not carry → LUMW0302
+                "brand.ghost": {"value": {"default": {"kind": "alias", "token": "gone"}}},
+            }
+        }
+    }
+    names = web_theme_token_names(kit).split()
+    assert "brand-teal" in names
+    assert "brand-ghost" not in names
+
+
+def test_web_theme_token_names_resolves_through_an_alias_chain():
+    kit = {
+        "tokens": {
+            "colors": {
+                "brand.base": _hex_color(),
+                "brand.hop": {"value": {"default": {"kind": "alias", "token": "brand.base"}}},
+            }
+        }
+    }
+    assert "brand-hop" in web_theme_token_names(kit).split()
+
+
+def test_web_theme_token_names_skips_a_cyclic_alias():
+    kit = {
+        "tokens": {
+            "colors": {
+                "a.one": {"value": {"default": {"kind": "alias", "token": "a.two"}}},
+                "a.two": {"value": {"default": {"kind": "alias", "token": "a.one"}}},
+            }
+        }
+    }
+    names = web_theme_token_names(kit).split()
+    assert "a-one" not in names and "a-two" not in names
+
+
+def test_web_theme_token_names_keeps_an_unresolvable_name_available_to_a_later_color():
+    """Rust never inserts the skipped name, so a LATER kit color that sanitizes
+    to the same thing still gets its token. Skipping must not poison the name."""
+    kit = {
+        "tokens": {
+            "colors": {
+                "brand.ghost": {"value": {"default": {"kind": "alias", "token": "gone"}}},
+                "Brand.Ghost": _hex_color(),
+            }
+        }
+    }
+    assert web_theme_token_names(kit).split().count("brand-ghost") == 1
+
+
+def test_web_theme_token_names_unchanged_for_a_healthy_kit():
+    """Byte-stability guard: a kit whose colors all resolve and never collide
+    yields exactly the string this seam has always produced."""
+    kit = {
+        "tokens": {
+            "colors": {
+                "surface.brand": _hex_color(),
+                "palette.primary.500": _hex_color("#30D8A7"),
+                "text.primary": {
+                    "value": {
+                        "default": {"kind": "oklch", "l": 0.2, "c": 0.02, "h": 200.0, "alpha": 1.0}
+                    }
+                },
+            }
+        }
+    }
+    assert web_theme_token_names(kit) == (
+        "primary accent dark light card muted border inverse "
+        "surface-brand palette-primary-500 text-primary"
+    )
 
 
 # --- author_web_page against the real helper --------------------------------

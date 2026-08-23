@@ -3,7 +3,10 @@
 Covers the two brand-card honesty fixes — surfacing the ingestion glyph-coverage
 audit (fonts.*.metrics.missing_glyphs) as a short font-gap note, and replacing
 the silent 8-image cap with a realistic cap plus an explicit truncation line.
-Offline, no LLM.
+W1.3 adds the two facts the author could not read off the card at all: an
+image's PIXEL SIZE (so a 2460px panel is distinguishable from a 296px crop) and
+the class-shaped token name behind each kit color role (so `text.brand` is never
+transposed into the invalid class `text-brand`). Offline, no LLM.
 """
 
 from __future__ import annotations
@@ -127,3 +130,125 @@ def test_no_truncation_line_exactly_at_cap() -> None:
     card = build_brand_card(kit)
     assert len(card["images"]) == MAX_IMAGE_LIST
     assert all("note" not in e for e in card["images"])
+
+
+# --- W1.3: image/logo rows carry their true pixel size -------------------------
+#
+# The card is the agent's visual MENU, and until now every row read the same
+# size — nothing distinguished a 2460px hero panel from a 296px thumbnail, so
+# the author could not prefer the panel or know which assets clear the 512px
+# style-anchor floor. The dimensions live on the ASSET RECORD (the kit's own
+# `assets.images` entry carries only an asset_id), which is why the card now
+# takes the same by-value asset manifest `use_brand_asset` reads.
+
+
+def _manifest(asset_id, block="raster", width=2460, height=1060):
+    record = {"id": asset_id}
+    if block is not None:
+        record[block] = {"pixel_width": width, "pixel_height": height}
+    return {asset_id: {"record": record}}
+
+
+def test_image_row_carries_px_from_the_asset_record() -> None:
+    kit = _kit()
+    kit["assets"]["images"] = {"img.1": {"asset_id": "a1", "role": "hero"}}
+    card = build_brand_card(kit, asset_manifest=_manifest("a1"))
+    assert card["images"][0]["px"] == "2460x1060"
+
+
+def test_image_row_omits_px_when_the_record_has_no_dimensions() -> None:
+    """Never fabricate a size: a record with no raster/logo block (or no
+    manifest entry at all) simply carries no `px` field."""
+    kit = _kit()
+    kit["assets"]["images"] = {"img.1": {"asset_id": "a1"}, "img.2": {"asset_id": "a2"}}
+    card = build_brand_card(kit, asset_manifest=_manifest("a1", block=None))
+    assert "px" not in card["images"][0]
+    assert "px" not in card["images"][1]
+
+
+def test_image_row_omits_px_without_a_manifest() -> None:
+    """The scene lane and every older caller pass no manifest — the card must
+    render exactly as before rather than raising."""
+    kit = _kit()
+    kit["assets"]["images"] = {"img.1": {"asset_id": "a1"}}
+    card = build_brand_card(kit)
+    assert "px" not in card["images"][0]
+
+
+def test_logo_variant_rows_carry_px_too() -> None:
+    """A logo's pixels decide whether it survives a small header slot; the logo
+    block is where a logo record keeps them."""
+    kit = _kit()
+    kit["assets"]["logos"] = {
+        "primary": {
+            "usage": "primary",
+            "variants": [{"name": "full_color", "asset_id": "l1"}],
+        }
+    }
+    manifest = _manifest("l1", block="logo", width=800, height=300)
+    card = build_brand_card(kit, asset_manifest=manifest)
+    variant = card["logos"][0]["variants"][0]
+    assert variant["px"] == "800x300"
+
+
+def test_logo_variant_row_omits_px_when_unknown() -> None:
+    kit = _kit()
+    kit["assets"]["logos"] = {
+        "primary": {"usage": "primary", "variants": [{"name": "mono", "asset_id": "l1"}]}
+    }
+    card = build_brand_card(kit, asset_manifest={})
+    assert "px" not in card["logos"][0]["variants"][0]
+
+
+# --- W1.3: color roles state the class-shaped token name ----------------------
+#
+# 153 live rejections came from reading `text.brand` off this block and writing
+# the class `text-brand` — which the engine parses as color-prefix `text-` plus
+# token `brand`, and `brand` is not a token. The row now states the token the
+# compiled theme actually emits for that role, and the block says outright that
+# roles are not classes.
+
+
+def _color_kit():
+    def hex_token(value):
+        return {"value": {"default": {"kind": "hex", "value": value}}}
+
+    kit = _kit()
+    kit["tokens"]["colors"] = {
+        "surface.brand": hex_token("#00525C"),
+        "surface.brand.subtle": hex_token("#E6F2F3"),
+        "text.brand": hex_token("#00525C"),
+        "text.primary": hex_token("#111111"),
+        "border.brand": hex_token("#00525C"),
+    }
+    return kit
+
+
+def test_color_role_rows_carry_the_sanitized_token_name() -> None:
+    card = build_brand_card(_color_kit())
+    roles = card["color_roles"]["roles"]
+    assert roles["text.brand"] == {"token": "text-brand", "value": "#00525C"}
+    assert roles["surface.brand"]["token"] == "surface-brand"
+    assert roles["surface.brand.subtle"]["token"] == "surface-brand-subtle"
+    assert roles["border.brand"]["token"] == "border-brand"
+
+
+def test_color_role_block_says_roles_are_not_class_tokens() -> None:
+    card = build_brand_card(_color_kit())
+    note = card["color_roles"]["note"]
+    assert "not class" in note.lower()
+    assert "THEME TOKENS" in note
+    # The note teaches the mechanically correct class shape.
+    assert "bg-surface-brand" in note
+
+
+def test_color_role_block_omits_roles_the_kit_cannot_resolve() -> None:
+    """An unresolvable role is left out entirely — the card never advertises a
+    color the theme will not carry."""
+    kit = _color_kit()
+    kit["tokens"]["colors"]["text.brand"] = {
+        "value": {"default": {"kind": "alias", "token": "colors.gone"}}
+    }
+    roles = build_brand_card(kit)["color_roles"]["roles"]
+    assert "text.brand" not in roles
+    assert "surface.brand" in roles

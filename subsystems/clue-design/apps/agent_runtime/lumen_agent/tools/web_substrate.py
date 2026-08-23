@@ -54,6 +54,7 @@ except Exception:  # pragma: no cover
 from ..brand_brief import read_brief, render_reviewer_brief
 from ..brand_card import build_brand_card, render_brand_card_text
 from ..config import AgentRuntimeConfig
+from ..engine_mirror import record_pixel_dims, resolve_kit_color, sanitize_token_name
 from ..models.schemas import LumenRunTraceEvent, new_run_id
 from .asset_preview import asset_preview_path
 from .substrate import _CoreHelperProxy, _image_warning, blob_path_for_digest
@@ -286,17 +287,6 @@ def _valid_font_style(value: Any) -> bool:
     return value in ("normal", "italic")
 
 
-def _record_pixel_dims(record: JsonObject) -> Optional[tuple]:
-    """An asset's TRUE pixel dimensions from its own metadata block, or None.
-
-    Same blocks the shared preview resolver reads for a non-thumbnailed raster
-    (`raster`, else `logo`); a vector or a record that never carried dimensions
-    honestly has none."""
-    dims = record.get("raster") or record.get("logo") or {}
-    width, height = dims.get("pixel_width"), dims.get("pixel_height")
-    return (width, height) if width and height else None
-
-
 def _capped_id_list(ids: List[str]) -> str:
     """Ids as a readable list, capped, with the overflow STATED. A harvested kit
     routinely carries dozens of images; dumping 49 ids into every error string
@@ -394,34 +384,34 @@ def _interactive_capture_plan(web_doc: JsonObject) -> JsonObject:
     }
 
 
-def sanitize_token_name(name: str) -> str:
-    """Mirror crates/lumen-web/src/theme.rs `sanitize_token_name`: keep
-    [a-z0-9-], lowercase [A-Z], map ./_/space to '-', drop everything else,
-    then trim leading/trailing '-'."""
-    out: List[str] = []
-    for ch in name:
-        if "a" <= ch <= "z" or "0" <= ch <= "9" or ch == "-":
-            out.append(ch)
-        elif "A" <= ch <= "Z":
-            out.append(ch.lower())
-        elif ch in "._ ":
-            out.append("-")
-        # any other character is dropped
-    return "".join(out).strip("-")
-
-
 def web_theme_token_names(brand_kit: Optional[JsonObject]) -> str:
     """The space-joined color-token vocabulary the theme compiler exposes for a
-    kit: the eight semantic names plus every additional kit color under its
-    sanitized name (dedup-preserving). Mirrors the Rust theme compiler's token
-    map so the author prompt names exactly what it may reference. No kit → just
-    the semantic eight."""
+    kit: the eight semantic names plus every additional kit color that the
+    compiler actually PRESERVES, under its sanitized name. Mirrors
+    `theme.rs::compile_web_theme` so the author prompt names exactly what it may
+    reference. No kit → just the semantic eight.
+
+    The compiler skips a kit color on two rules, and both are replicated here,
+    because a name advertised but not emitted is an invitation to write a class
+    the lint then rejects (LUMW0212 — and one rejected class voids the whole
+    page):
+
+    * **name collision** — a sanitized name already taken (by a semantic token
+      or an earlier kit color) is not re-inserted; the FIRST holder wins;
+    * **unresolvable color** — a color whose alias chain dangles, cycles, runs
+      past the depth cap, or ends in a value outside the CSS-color charset never
+      enters the token map (the compiler reports LUMW0302 and moves on). A
+      skipped name is NOT reserved, exactly as in Rust: a later kit color that
+      sanitizes to the same name still gets the token.
+    """
     names = list(_SEMANTIC_WEB_TOKENS)
     seen = set(names)
     colors = ((brand_kit or {}).get("tokens") or {}).get("colors") or {}
     for key in colors.keys():
         web_name = sanitize_token_name(str(key))
         if not web_name or web_name in seen:
+            continue
+        if resolve_kit_color(str(key), colors) is None:
             continue
         seen.add(web_name)
         names.append(web_name)
@@ -680,7 +670,13 @@ class LumenWebTools:
         # review-website's brief checks do not depend on the director quoting
         # the brief into its delegation.
         self.brand_card: Optional[JsonObject] = build_brand_card(
-            config.brand_kit, source=config.brand_kit_source, include_brief=True
+            config.brand_kit,
+            source=config.brand_kit_source,
+            include_brief=True,
+            # W1.3: the manifest is where an asset's pixel dimensions live, so
+            # the card's image/logo rows can state a size instead of leaving a
+            # 296px crop and a 2460px panel indistinguishable.
+            asset_manifest=config.brand_kit_assets,
         )
         self.reviewer_brief_text: Optional[str] = None
         if self.brand_card:
@@ -3355,15 +3351,15 @@ class LumenWebTools:
         # The card's roles are kit-token names (`surface.page`, `text.primary`),
         # not Tailwind-ish aliases; `accent` is the card's own "most vivid brand
         # color" field. Named explicitly so a rename fails a test, not silently.
-        roles = (card.get("color_roles") or {})
+        # Each role row is `{token, value}` (W1.3); this note wants the hex.
+        roles = (card.get("color_roles") or {}).get("roles") or {}
+        role_hexes = [
+            (roles.get(role) or {}).get("value")
+            for role in ("surface.brand", "surface.page", "text.primary")
+        ]
         palette = [
             value
-            for value in (
-                card.get("accent"),
-                roles.get("surface.brand"),
-                roles.get("surface.page"),
-                roles.get("text.primary"),
-            )
+            for value in (card.get("accent"), *role_hexes)
             if isinstance(value, str) and value.strip()
         ]
         if palette:
@@ -4495,7 +4491,7 @@ class LumenWebTools:
         # The SOURCE dims decide whether an asset can carry a full-bleed band;
         # the PREVIEW dims say how much detail this look actually shows. Reporting
         # only the resolver's tuple made every thumbnailed kit asset read ~256px.
-        source_dims = _record_pixel_dims(record)
+        source_dims = record_pixel_dims(record)
         preview_dims = (pixel_width, pixel_height) if pixel_width and pixel_height else None
         details: List[str] = []
         if source_dims:

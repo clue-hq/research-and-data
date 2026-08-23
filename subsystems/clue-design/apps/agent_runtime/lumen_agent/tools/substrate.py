@@ -315,7 +315,11 @@ class LumenDesignTools:
         # config (None without a kit). Injected via load_knowledge and
         # curated_context — the full kit JSON never enters model history.
         self.brand_card: Optional[JsonObject] = build_brand_card(
-            config.brand_kit, source=config.brand_kit_source
+            config.brand_kit,
+            source=config.brand_kit_source,
+            # W1.3: pixel dimensions for the image/logo rows — they live on the
+            # by-value asset records, never on the kit's own asset entries.
+            asset_manifest=config.brand_kit_assets,
         )
         self.dsl_session: Optional[JsonObject] = None
         self.latest_export_summary: Optional[JsonObject] = None
