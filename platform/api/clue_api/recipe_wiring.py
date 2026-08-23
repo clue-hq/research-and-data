@@ -80,6 +80,10 @@ SYSTEM_RECIPE_FILENAMES: tuple[str, ...] = (
     # births the ad document too). Same exact-address rule as v17 — the slot would refuse the tool
     # the profile grants without its own revision.
     "recipe0-stage0-v18.json",
+    # genad2: the delegation entry becomes ``open_design_leg@4`` (the ``doc_kind='scene'`` open
+    # births a ZERO-PAGE document; the design agent authors the page). Same exact-address rule as
+    # v17/v18 — the slot would refuse the tool the profile grants without its own revision.
+    "recipe0-stage0-v19.json",
     "recipe1-classic-v1.json",
     "recipe1-classic-v2.json",
 )

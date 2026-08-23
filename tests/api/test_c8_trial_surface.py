@@ -130,9 +130,9 @@ def test_the_capability_map_names_the_surface_and_its_withheld_tools_honestly(
 
     for name in sorted(_WITHHELD):
         # genweb slice 2 promoted the design delegation entry to @2 (web document birth at
-        # leg-open) and genad promoted it again to @3 (ad document birth); the trial withholds
-        # it at whatever version the belt carries.
-        _promoted = {"synthesize_icps": "2", "open_design_leg": "3"}
+        # leg-open), genad promoted it again to @3 (ad document birth) and genad2 to @4
+        # (zero-page scene birth); the trial withholds it at whatever version the belt carries.
+        _promoted = {"synthesize_icps": "2", "open_design_leg": "4"}
         address = f"{name}@{_promoted.get(name, '1')}"
         disclosure = by_address[address]
         assert disclosure.status is AgentCapabilityStatus.PROFILE_UNAVAILABLE
