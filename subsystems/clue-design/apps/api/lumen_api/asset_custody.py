@@ -26,10 +26,14 @@ image), whereas a failed register is a real custody failure and propagates.
 
 from __future__ import annotations
 
+import logging
 import os
 from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+
+from clue_storage import StorageError
+from py_lumen_obs import get_logger
 
 from clue_design.storage import (
     SOURCE_KEY_ASSET,
@@ -39,9 +43,12 @@ from clue_design.storage import (
 )
 
 from .database import NotFoundError
-from .design_store import DesignBlobStore
+from .design_store import CustodyState, DesignBlobStore
+from .observability import log_event
 
 JsonObject = Dict[str, Any]
+
+_logger = get_logger("lumen_api.asset_custody")
 
 __all__ = [
     "SOURCE_KEY_ASSET",
@@ -267,11 +274,24 @@ def register_scene_asset_backstop(
     a row-only probe that divergence is PERMANENT: the row keeps answering yes, every later
     persist skips the digest, and the asset 404s on ``/asset-store/{digest}`` forever — a canvas
     painting an empty box while every server-side export, which reads the engine cache directly,
-    still renders it. Probing for retrievable bytes (:meth:`DesignBlobStore.has_readable_bytes`)
+    still renders it. Probing for retrievable bytes (:meth:`DesignBlobStore.custody_states`)
     is what makes this pass *healing*: any cache-resident asset whose custody is broken — this
     turn's or any earlier turn's, since the whole scene's asset table is walked every time — is
     re-registered, and ``register`` is content-addressed and row-before-blob, so the repair is
     one upsert plus the missing put and re-running it changes nothing.
+
+    **A backstop that cannot repair must not destroy the write.** Repairing custody talks to the
+    backend, and a backend that is *itself* sick (unreachable, misconfigured) fails that call.
+    Which failures are allowed to kill the persist is decided by what the digest already had:
+
+    * ``ROW_ONLY`` — a REPAIR. Before this pass probed bytes, a digest with a row was skipped
+      without touching the backend at all, so letting a failed repair raise here would turn a
+      backend outage into a failed accept on scenes that used to persist fine. Logged and
+      skipped: the asset is exactly as broken as it was a moment ago, and the next persist
+      tries again.
+    * ``ABSENT`` — a FIRST registration, and the propagating behaviour is unchanged from before
+      this pass probed bytes. It has to stay loud: a scene is about to be persisted citing bytes
+      nothing durable holds, which is the very fabrication this backstop exists to prevent.
 
     Returns the digests it newly registered (empty in the common case).
     """
@@ -279,6 +299,13 @@ def register_scene_asset_backstop(
     assets = (scene or {}).get("assets") if isinstance(scene, dict) else None
     if not isinstance(assets, dict):
         return registered
+
+    # Cache probe FIRST, durability probe second — deliberately, and not just for speed. A
+    # digest with no cache file cannot be rescued here whatever the durable answer is, and the
+    # durability probe is a round trip through the O5 bridge (its own engine, connection and
+    # transaction). Ordering it this way makes the common case — a scene naming assets that were
+    # already durable and never materialized — cost no database work at all.
+    pending: List[Tuple[str, str]] = []
     seen: set[str] = set()
     for record in assets.values():
         if not isinstance(record, dict):
@@ -287,21 +314,38 @@ def register_scene_asset_backstop(
             if digest in seen:
                 continue
             seen.add(digest)
-            # Cache probe FIRST, durability probe second — deliberately, and not just for
-            # speed. A digest with no cache file cannot be rescued here whatever the durable
-            # answer is, and the durability probe is a round trip through the O5 bridge (its own
-            # engine, connection and transaction). Ordering it this way makes the common case —
-            # a scene naming assets that were already durable and never materialized — cost no
-            # database work at all.
-            path = cache_blob_path(cache_dir, digest)
-            if not path.is_file():
-                continue
-            if blobs.has_readable_bytes(digest):
-                continue
+            if cache_blob_path(cache_dir, digest).is_file():
+                pending.append((digest, media_type))
+    if not pending:
+        return registered
+
+    # ONE bridged call for the whole scene, not one per digest: the bridge builds and disposes an
+    # engine per call, so probing serially made a 50-asset scene pay 50 of them on a path that
+    # runs on every editor operation.
+    states = blobs.custody_states(digest for digest, _media_type in pending)
+    for digest, media_type in pending:
+        state = states.get(digest, CustodyState.ABSENT)
+        if state is CustodyState.READABLE:
+            continue
+        try:
             blobs.register(
-                path.read_bytes(), media_type=media_type, source_key=SOURCE_KEY_ASSET
+                cache_blob_path(cache_dir, digest).read_bytes(),
+                media_type=media_type,
+                source_key=SOURCE_KEY_ASSET,
             )
-            registered.append(digest)
+        except StorageError as error:
+            if state is not CustodyState.ROW_ONLY:
+                raise
+            log_event(
+                _logger,
+                logging.WARNING,
+                "design_asset.custody_repair_failed",
+                digest=digest,
+                error=str(error),
+                error_type=type(error).__name__,
+            )
+            continue
+        registered.append(digest)
     return registered
 
 

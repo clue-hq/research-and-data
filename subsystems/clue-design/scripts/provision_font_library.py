@@ -94,7 +94,11 @@ def check_environment(manifest_path: Path, workspace_id: str) -> int:
     for family in manifest["families"]:
         for face in family["faces"]:
             digest = face["digest"]
-            if not blobs.exists(digest):
+            # `has_readable_bytes`, not `exists`: a row is a CLAIM of custody, and this is a
+            # VERIFIER. Under the row/blob divergence the genad2 walk found (2026-08-23) the
+            # row-only probe reported the font library healthy while every face 404'd, which is
+            # the one failure a check script must never miss.
+            if not blobs.has_readable_bytes(digest):
                 problems.append(
                     f"{family['slug']} w{face['weight']}: durable bytes missing ({digest})"
                 )
