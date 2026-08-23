@@ -44,13 +44,10 @@ turns as in-scope (non-leg editor turns stay byte-identical — the P3.7 layerin
 - Trip-wire test that MUST be consciously rewritten:
   `tests/api/test_genweb_leg_document_birth_db.py::test_scene_document_creation_is_refused` (:461).
 
-## State
+## State — SUPERSEDED 2026-08-23 (same day): the plan was EXECUTED in full
 
-- Plan authored: `docs/superpowers/plans/2026-08-23-chat-driven-ad-creation.md`
-  (7 tasks: DAL stamp → ad minter/presets → open_design_leg@3 → profile v38/prompt v6 →
-  scene-turn persist → visible-loop verification → acceptance walk + close-out).
-- Nothing implemented yet; nothing committed yet (plan + this note pending founder's
-  go-ahead on execution mode).
-- Residuals deliberately OUT of scope: reference attachments in platform chat (runtime
-  supports them; no chat UI / no envelope resolution — dormant), leg CLOSE exit-judge
-  gateway timeout (pre-existing, shared machinery).
+All 7 tasks complete; see `_memory/2026-08-23-genad-close-out.md` for the shipped
+commits, live-proof evidence, founder items, and incidents. Residuals deliberately
+OUT of scope (unchanged): reference attachments in platform chat (runtime supports
+them; no chat UI / no envelope resolution — dormant), leg CLOSE exit-judge gateway
+timeout (pre-existing, shared machinery).
