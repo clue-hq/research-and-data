@@ -26,6 +26,33 @@ WEB_ICON_NAMES = (
     "shield lock key user layers pencil sparkles download chart-bar lightbulb"
 )
 
+# The brand-geometry vocabulary, mirroring `GEOMETRY_UTILITIES`
+# (crates/lumen-web/src/theme.rs) in grammar order.
+#
+# Same rationale as the icons above: the create-website skill carries the full
+# mechanics, but a skill is read once and skimmed, and geometry is a decision the
+# author makes in every band it writes. These ten classes resolve the PINNED
+# KIT's own measured radii, elevations, hairlines and rhythm — a raw `rounded-2xl`
+# beside them is the author quietly choosing a shape the brand never uses.
+#
+# They resolve on EVERY kit, including the platform fallback tier: each utility
+# walks the kit's chain and lands on a platform constant when the brand measured
+# nothing, so a class from this list can never silently no-op.
+#
+# Drift from the Rust table fails `test_web_geometry_vocabulary.py`.
+WEB_GEOMETRY_UTILITIES = """\
+rounded-button — the brand's measured control radius (buttons, inputs, chips)
+rounded-card — the brand's measured card/panel radius
+rounded-badge — the brand's measured badge/pill radius
+shadow-brand — the brand's signature elevation (an elevation, not a shadow COLOR)
+shadow-card — the brand's resting card elevation
+border-w-card — the brand's card border WIDTH; never `border-card`, which is a color
+border-w-divider — the brand's hairline/divider width
+py-section — the brand's measured section rhythm (a band's vertical padding)
+gap-stack — the brand's default gap between stacked items and grid cells
+p-card — the brand's measured card padding
+"""
+
 
 def build_web_orchestrator_prompt(
     *,
@@ -117,7 +144,11 @@ OPERATING SHAPE
    it is the brand-deployment grammar (palette allocation, the chromatic
    moment, background rhythm, typographic and imagery posture) and the
    contract for a Creative Brief when the brand card carries one. Its
-   adherence ladder governs conflicts. Then NAME THE BRAND ANCHOR: 2-3
+   adherence ladder governs conflicts. Part of that grammar is mechanical:
+   the brand's measured shape (radii, elevations, hairlines, section rhythm,
+   card padding, stack gaps) renders through the web geometry utilities the
+   author writes, so a recipe's shape is deployed, not approximated. Then
+   NAME THE BRAND ANCHOR: 2-3
    creative-director words from the brand card (e.g. "clinical calm
    precision") that every design decision must express. The anchor goes
    verbatim into BOTH the author's and the reviewer's briefs.
@@ -256,6 +287,17 @@ THEME TOKENS you may use for every color-bearing class:
 (plus white, black, transparent, current — and never a raw hex or a stock
 Tailwind palette color; both are hard errors that reject the whole page)
 
+BRAND GEOMETRY — the brand's SHAPE comes from these kit-resolved utilities:
+{WEB_GEOMETRY_UTILITIES}
+Prefer them over raw geometry: a radius, an elevation, a card hairline, a
+section's vertical rhythm, a stack gap, or a card's padding written as a raw
+Tailwind step (`rounded-2xl`, `shadow-lg`, `py-20`, `p-6`) is a shape this brand
+may not actually use. Each utility resolves the pinned kit's own measured value
+and falls back to a platform default when the brand measured nothing, so it is
+always safe to write. On a kit that carries a Creative Brief, a raw value where
+one of these exists is a defect the reviewer will flag (advisory, not blocking).
+The create-website skill has the full block; the mechanics live there.
+
 ICONS — `<i data-icon="NAME"></i>` accepts ONLY these names:
 {WEB_ICON_NAMES}
 This is the complete set; there is no globe, no envelope, no phone, no
@@ -307,8 +349,12 @@ WORKING RULES
   swapping the logo would let the section fit any company's site, the
   anchor is not showing (see create-website's Design guidance section).
 - The theme base layer already carries the brand type ramp and button
-  styles; write classes only for layout, spacing, and token-referencing
-  color deviations.
+  styles. Layout and spacing classes are yours to write, but the brand's
+  SHAPE decisions are not freehand: control, card and badge radius,
+  elevations, card hairlines, section rhythm, card padding and stack gaps go
+  through the BRAND GEOMETRY utilities above. Raw values stay correct for
+  everything they own — horizontal padding, max-widths, leading, one-off
+  spacing with no utility of its own.
 - Scoped edits: when the director names a target section, use
   `author_web_subtree(node_id, html)` with the COMPLETE replacement markup
   for that one section (`<section id="...">...</section>` — keep the same
