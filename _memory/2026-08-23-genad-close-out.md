@@ -103,3 +103,34 @@ The SDD ledger (`.superpowers/sdd/2026-08-23-chat-driven-ad-creation/progress.md
 gitignored) holds every ruling, fix round, review verdict, and deferred minor until
 the workspace is deleted at finish; everything durable is in THIS note + the plan +
 the commit bodies.
+
+## ADDENDUM 2026-08-23 (later session) — generation UNBLOCKED; root cause CONFIRMED, earlier framing corrected
+
+Systematic debug (forensics over 6 failed runs' traces + one single-variable live
+experiment) **overturned the "transport fragility" framing**:
+
+- **Root cause: the reviewer model `openai/gpt-5.6-luna` itself.** Every fatal call
+  (5/5 runs) was the REVIEWER's late-session multimodal wrap-up; the author model
+  never failed and swapping it changed nothing (my "two providers failed" claim was
+  wrong — the reviewer stayed luna in both). Every POST returned HTTP 200; the
+  `server_error` arrives ~240-284s in as an in-stream `response.failed` event —
+  which is also why the SDK's existing `max_retries=2` (yes, retries DO exist —
+  earlier claim corrected) never fires: nothing HTTP-shaped fails. Payload size
+  exonerated (previews 8-124KB); client/gateway timeouts exonerated (streaming
+  keep-alives defeat per-phase read timeouts); the same reviewer completed six
+  quick calls incl. a full image critique seconds earlier in the same session.
+- **Proof:** reviewer swapped (founder's choice: `openai:x-ai/grok-4.6` for both
+  roles) → the very first run succeeded end-to-end: run_7c073f66, doc_da2edcb8
+  v0→66, 13 nodes, split-panel LinkedIn ad live in the platform editor. FIRST
+  successful chat-driven ad generation; the Task-5 persist path got its live proof
+  (1 design_edit_envelope, undo_stack=1 — one intent one undo; version counts ops).
+- **Founder item #1 REVISED:** not "add retry around a 4-min ceiling" — instead
+  (a) avoid `gpt-5.6-luna` as the design reviewer until its /responses multimodal
+  serving is fixed upstream (report to OpenRouter/OpenAI with request id
+  req_1f6484cd373542e0a6241abb331ef25f); (b) the durable hardening is catching
+  in-stream `response.failed` in the governed model layer and re-attempting that
+  ONE call bounded — that class is invisible to HTTP-level retries.
+- Ops: services now launch from **colombo's own `.env`** (founder created it;
+  4 operational gaps filled in-session: workspace root, :3033 authorized party,
+  design API base URL, LUMEN_CORE_HELPER). The F1 steering block + persist are
+  proven live end-to-end.
