@@ -91,6 +91,32 @@ def _svg_record(asset_id: str) -> dict:
     }
 
 
+def _legacy_svg_record(asset_id: str) -> dict:
+    """A vector ingested BEFORE W1.2: the helper attached a self-referential
+    "thumbnail" whose location is the SVG bytes themselves. Nothing can decode
+    it as a raster, so it must not be served as one."""
+    record = _svg_record(asset_id)
+    record["media"]["thumbnail"] = {
+        "location": {"provider": "opaque_asset_store", "opaque_ref": "sha256/bb/bbbb"},
+        "mime_type": "image/svg+xml",
+        "pixel_width": None,
+        "pixel_height": None,
+    }
+    return record
+
+
+def _rasterized_svg_record(asset_id: str, thumb_ref: str) -> dict:
+    """A vector ingested AFTER W1.2: a real PNG thumbnail beside the SVG."""
+    record = _svg_record(asset_id)
+    record["media"]["thumbnail"] = {
+        "location": {"provider": "opaque_asset_store", "opaque_ref": thumb_ref},
+        "mime_type": "image/png",
+        "pixel_width": 2560,
+        "pixel_height": 512,
+    }
+    return record
+
+
 def _tools(tmp_path: Path, **cfg) -> LumenWebTools:
     """A LumenWebTools over a hand-seeded WebDoc (no core helper, no browser)."""
     config = replace(
@@ -308,6 +334,31 @@ def test_svg_without_a_thumbnail_says_so_instead_of_faking_a_preview(tmp_path: P
     assert "asset_no_preview" in _trace_summaries(tools)
 
 
+def test_a_legacy_self_referential_svg_thumbnail_says_so_instead_of_failing_to_view(
+    tmp_path: Path,
+):
+    """The real Stripe `logo.svg` record's shape. Before the resolver learned to
+    read the thumbnail's mime, this path handed the viewer the SVG bytes as if
+    they were a raster and the director got a PIL decode failure — noise where
+    the designed answer is one honest sentence."""
+    store = tmp_path / "store"
+    store.mkdir(parents=True, exist_ok=True)
+    (store / "sha256/bb").mkdir(parents=True, exist_ok=True)
+    (store / "sha256/bb/bbbb").write_bytes(b"<svg xmlns='http://www.w3.org/2000/svg'/>")
+    tools = _tools(
+        tmp_path,
+        brand_kit_assets={"asset_logo_legacy": {"record": _legacy_svg_record("asset_logo_legacy")}},
+    )
+
+    blocks = tools._view_content("asset:asset_logo_legacy")
+
+    assert all(b.get("type") == "text" for b in blocks)
+    text = _texts(blocks)
+    assert "no raster preview" in text
+    assert "view failed" not in text
+    assert "asset_no_preview" in _trace_summaries(tools)
+
+
 def test_a_non_vector_unpreviewable_mime_is_not_called_a_vector(tmp_path: Path):
     """The no-preview string states only what is established: this media has no
     raster the vision APIs read. Blaming "a vector with no thumbnail" for a TIFF
@@ -445,6 +496,37 @@ def test_shared_resolver_prefers_thumbnail_then_raster_then_nothing(tmp_path: Pa
     assert asset_preview_path(raw, store) == (str(store / "sha256/22/2222"), 1600, 1000)
 
     assert asset_preview_path(_svg_record("c"), store) is None
+
+
+def test_a_thumbnail_that_is_not_a_raster_is_not_served_as_one(tmp_path: Path):
+    """Every SVG ingested before W1.2 carries a self-referential "thumbnail"
+    pointing back at the SVG bytes. Trusting it handed the viewer a path PIL
+    cannot decode — a contained "view failed" string where the designed answer
+    is the honest "no raster preview". A thumbnail block only counts as a
+    preview when its declared mime is one the vision APIs actually read."""
+    store = tmp_path / "store"
+
+    assert asset_preview_path(_legacy_svg_record("legacy"), store) is None
+
+
+def test_a_thumbnail_with_no_declared_mime_is_still_trusted_as_a_raster(tmp_path: Path):
+    """The check is on a mime that IS present and unreadable — a block without
+    one keeps today's behavior. Every real writer stamps `image/png`, and
+    records in flight must not lose their preview to a missing field."""
+    store = tmp_path / "store"
+    record = _raster_record("d", thumb_ref="sha256/44/4444")
+    assert "mime_type" not in record["media"]["thumbnail"]
+
+    assert asset_preview_path(record, store) == (str(store / "sha256/44/4444"), 256, 160)
+
+
+def test_a_rasterized_vector_resolves_to_its_png_thumbnail(tmp_path: Path):
+    """W1.2's ingest output: the SVG record now carries a real PNG beside it,
+    and that is what the lanes look at."""
+    store = tmp_path / "store"
+    record = _rasterized_svg_record("logo", "sha256/55/5555")
+
+    assert asset_preview_path(record, store) == (str(store / "sha256/55/5555"), 2560, 512)
 
 
 # --- the prompts advertise it ------------------------------------------------

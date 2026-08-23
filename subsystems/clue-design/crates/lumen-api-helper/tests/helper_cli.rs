@@ -834,6 +834,142 @@ fn ingest_asset_stores_bytes_and_resolver_wires_export() {
     }
 }
 
+// --- W1.2: vectors get a real raster thumbnail ------------------------------
+//
+// `lumen-assets` derives no thumbnail for a vector ("the sanitized SVG itself
+// scales") — true on the canvas, false for every consumer that can only read
+// pixels: the agent's `view("asset:<id>")`, the describe stage, the vision
+// APIs. The helper is the composition point that has both `lumen-assets` and
+// `lumen-skia`, so it is where an SVG earns a PNG thumbnail.
+
+const WORDMARK_SVG: &[u8] = br##"<svg xmlns="http://www.w3.org/2000/svg" width="240" height="48" viewBox="0 0 240 48"><rect x="0" y="0" width="240" height="48" fill="#ff0000"/></svg>"##;
+
+/// Sanitizes cleanly (quick-xml is event-based and happily passes trailing
+/// text through) but is not well-formed XML, so Skia's parser refuses it —
+/// the shape that proves the fallback arm.
+const UNPARSEABLE_SVG: &[u8] = br##"<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect width="10" height="10"/></svg>junk"##;
+
+fn ingest_svg_request(store_root: &str, asset_id: &str, bytes: &[u8]) -> Value {
+    use base64::Engine;
+    json!({
+        "action": "ingest_asset",
+        "store_root": store_root,
+        "bytes_base64": base64::engine::general_purpose::STANDARD.encode(bytes),
+        "asset_id": asset_id,
+        "label": "Acme wordmark",
+        "declared_mime_type": "image/svg+xml",
+        "filename": "wordmark.svg",
+        "kind": "logo",
+        "tags": ["logo"]
+    })
+}
+
+#[test]
+fn ingest_asset_gives_a_vector_a_png_thumbnail_it_can_actually_be_looked_at_through() {
+    let store_dir = tempfile::tempdir().expect("tempdir");
+    let store_root = store_dir.path().to_string_lossy().to_string();
+
+    let ingested = helper(ingest_svg_request(
+        &store_root,
+        "asset_logo_svg",
+        WORDMARK_SVG,
+    ));
+    assert_eq!(ingested["ok"], true, "{ingested:#?}");
+
+    let record = &ingested["asset"]["record"];
+    assert_eq!(record["media"]["mime_type"], "image/svg+xml");
+    let thumbnail = &record["media"]["thumbnail"];
+    assert_eq!(thumbnail["mime_type"], "image/png");
+    // The lumen-assets thumbnail policy, applied to the vector's own units:
+    // 240x48 fits the 256 box, so the short side is lifted to the 512 floor.
+    assert_eq!(thumbnail["pixel_width"], 2560);
+    assert_eq!(thumbnail["pixel_height"], 512);
+
+    // The thumbnail is its OWN stored object — never the SVG bytes again.
+    let thumb_ref = thumbnail["location"]["opaque_ref"]
+        .as_str()
+        .expect("thumbnail ref");
+    assert_ne!(
+        thumb_ref,
+        ingested["asset"]["relative_path"].as_str().unwrap(),
+        "a self-referential SVG 'thumbnail' is what W1.2 replaces"
+    );
+    let thumb_bytes = std::fs::read(store_dir.path().join(thumb_ref)).expect("stored thumbnail");
+    assert_eq!(&thumb_bytes[..8], b"\x89PNG\r\n\x1a\n", "PNG magic");
+
+    // Sanitizer output is untouched: the PRIMARY media is still the sanitized
+    // SVG, byte-identical to what ingest produced before this slice.
+    let primary = std::fs::read(
+        store_dir
+            .path()
+            .join(ingested["asset"]["relative_path"].as_str().unwrap()),
+    )
+    .expect("stored svg");
+    assert_eq!(primary, WORDMARK_SVG, "sanitized SVG bytes unchanged");
+
+    // Ingest stayed silent: no new diagnostic rides on the happy path.
+    assert!(
+        ingested["diagnostics"]
+            .as_array()
+            .map(|entries| entries.is_empty())
+            .unwrap_or(true),
+        "{ingested:#?}"
+    );
+}
+
+#[test]
+fn ingest_asset_falls_back_to_the_self_referential_thumbnail_when_a_vector_cannot_rasterize() {
+    let store_dir = tempfile::tempdir().expect("tempdir");
+    let store_root = store_dir.path().to_string_lossy().to_string();
+
+    let ingested = helper(ingest_svg_request(
+        &store_root,
+        "asset_logo_broken",
+        UNPARSEABLE_SVG,
+    ));
+
+    // Ingest still succeeds — a thumbnail that cannot be derived is never fatal.
+    assert_eq!(ingested["ok"], true, "{ingested:#?}");
+    let thumbnail = &ingested["asset"]["record"]["media"]["thumbnail"];
+    assert_eq!(thumbnail["mime_type"], "image/svg+xml");
+    assert_eq!(thumbnail["pixel_width"], Value::Null);
+    assert_eq!(
+        thumbnail["location"]["opaque_ref"], ingested["asset"]["relative_path"],
+        "the legacy arm points the thumbnail back at the SVG itself"
+    );
+}
+
+#[test]
+fn ingest_asset_leaves_the_raster_thumbnail_untouched() {
+    // The no-regression guard for W1.2: a PNG ingest's derived thumbnail is
+    // byte-identical to the `lumen-assets` derivation, which this slice does
+    // not touch. The 8x8 fixture upscales to the 512 vision floor.
+    let store_dir = tempfile::tempdir().expect("tempdir");
+    let store_root = store_dir.path().to_string_lossy().to_string();
+
+    let ingested = helper(ingest_request(&store_root));
+    assert_eq!(ingested["ok"], true, "{ingested:#?}");
+
+    let thumbnail = &ingested["asset"]["record"]["media"]["thumbnail"];
+    assert_eq!(thumbnail["mime_type"], "image/png");
+    assert_eq!(thumbnail["pixel_width"], 512);
+    assert_eq!(thumbnail["pixel_height"], 512);
+
+    let expected = lumen_assets::derive_raster_thumbnail(
+        LOGO_PNG_BYTES,
+        lumen_assets::THUMBNAIL_MAX_DIMENSION,
+        lumen_assets::THUMBNAIL_MIN_SHORT_DIMENSION,
+    )
+    .expect("the fixture derives a thumbnail");
+    let stored = std::fs::read(
+        store_dir
+            .path()
+            .join(thumbnail["location"]["opaque_ref"].as_str().unwrap()),
+    )
+    .expect("stored thumbnail");
+    assert_eq!(stored, expected.bytes, "raster thumbnail bytes are stable");
+}
+
 #[test]
 fn ingest_asset_rejects_mime_mismatch_without_storing() {
     let store_dir = tempfile::tempdir().expect("tempdir");

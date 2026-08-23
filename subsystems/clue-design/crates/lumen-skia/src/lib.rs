@@ -13,6 +13,8 @@
 
 //! - `raster_flattened_pdf` (slice G7): bulk print V0 per the B3 verdict —
 //!   Skia raster pages flattened into PDF, never native-PDF text or fonts.
+//! - [`rasterize_svg_thumbnail`] (W1.2): one standalone SVG asset → a PNG
+//!   thumbnail, so vector assets are visible to every pixels-only consumer.
 
 pub mod embed;
 pub mod fonts;
@@ -21,6 +23,7 @@ pub mod pdf_flatten;
 pub mod pdf_impose;
 pub mod pdf_vector;
 pub mod render;
+pub mod svg_raster;
 
 pub use embed::SkiaFontFaceResolver;
 pub use fonts::{FamilyResolution, FontLoadError, FontManager, DEFAULT_FONT_FAMILY};
@@ -30,3 +33,4 @@ pub use pdf_flatten::raster_flattened_pdf;
 pub use pdf_impose::{flattened_booklet_pdf, vector_booklet_pdf};
 pub use pdf_vector::{vector_pdf, SkiaVectorPdfRenderer};
 pub use render::SkiaSceneRenderer;
+pub use svg_raster::rasterize_svg_thumbnail;

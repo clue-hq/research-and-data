@@ -3626,10 +3626,19 @@ def test_svg_upload_is_sanitized_before_storage(
     assert "javascript:" not in stored_svg
     assert "<rect" in stored_svg
 
-    # Vector thumbnails are the sanitized SVG itself.
+    # W1.2: a vector's thumbnail is a REAL raster rendered from the sanitized
+    # SVG, not the SVG bytes again. The old self-referential thumbnail was
+    # decodable by nothing — every logo was invisible to `view`, the describe
+    # stage, and the vision APIs, and the viewer failed on it outright.
     thumbnail = client.get(f"/assets/{record['id']}/thumbnail")
     assert thumbnail.status_code == 200
-    assert thumbnail.content == served.content
+    assert thumbnail.headers["content-type"].startswith("image/png")
+    assert thumbnail.content[:8] == b"\x89PNG\r\n\x1a\n"
+    assert thumbnail.content != served.content
+    thumb_block = record["media"]["thumbnail"]
+    assert thumb_block["mime_type"] == "image/png"
+    # 120x60 fits the 256 box, so the short side is lifted to the 512 floor.
+    assert (thumb_block["pixel_width"], thumb_block["pixel_height"]) == (1024, 512)
 
 
 def test_raster_upload_probes_metadata_and_serves_thumbnail(

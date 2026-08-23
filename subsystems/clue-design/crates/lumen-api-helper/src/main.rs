@@ -1399,18 +1399,53 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                         pixel_height: Some(artifact.pixel_height),
                     })
                 }
-                // Vector assets are their own thumbnail: the sanitized SVG
-                // scales without derivation.
-                None if output.sniffed_mime == "image/svg+xml" => Some(AssetThumbnail {
-                    location: AssetLocation {
-                        provider: LOCAL_STORE_PROVIDER.to_owned(),
-                        opaque_ref: stored.relative_path.clone(),
-                        url: None,
-                    },
-                    mime_type: output.sniffed_mime.clone(),
-                    pixel_width: None,
-                    pixel_height: None,
-                }),
+                // A vector scales for the canvas but has no pixels for anything
+                // that can only READ pixels — the agent's `view("asset:<id>")`,
+                // the describe stage, the vision APIs — so every logo in a kit
+                // was invisible to the trio deciding whether to place it (W1.2).
+                // `lumen-assets` cannot rasterize (it is deliberately light: the
+                // `image` crate only, no Skia), so the composition point that
+                // has both crates does it, off the SANITIZED bytes, under the
+                // same thumbnail bounds the raster path uses.
+                None if output.sniffed_mime == "image/svg+xml" => {
+                    match lumen_skia::rasterize_svg_thumbnail(
+                        &output.bytes,
+                        lumen_assets::THUMBNAIL_MAX_DIMENSION,
+                        lumen_assets::THUMBNAIL_MIN_SHORT_DIMENSION,
+                    ) {
+                        Some((png, pixel_width, pixel_height)) => {
+                            let stored_thumbnail = store
+                                .put(&png)
+                                .map_err(|error| core_error(error.code, error.message))?;
+                            Some(AssetThumbnail {
+                                location: AssetLocation {
+                                    provider: LOCAL_STORE_PROVIDER.to_owned(),
+                                    opaque_ref: stored_thumbnail.relative_path,
+                                    url: None,
+                                },
+                                mime_type: "image/png".to_owned(),
+                                pixel_width: Some(pixel_width),
+                                pixel_height: Some(pixel_height),
+                            })
+                        }
+                        // Rasterization failed (bytes Skia will not parse, font
+                        // trouble, an absurd aspect ratio). Fall back to the
+                        // legacy self-referential thumbnail — the vector is its
+                        // own thumbnail for the canvas — silently: a thumbnail
+                        // that cannot be derived has never failed an ingest, and
+                        // this slice adds no diagnostic.
+                        None => Some(AssetThumbnail {
+                            location: AssetLocation {
+                                provider: LOCAL_STORE_PROVIDER.to_owned(),
+                                opaque_ref: stored.relative_path.clone(),
+                                url: None,
+                            },
+                            mime_type: output.sniffed_mime.clone(),
+                            pixel_width: None,
+                            pixel_height: None,
+                        }),
+                    }
+                }
                 None => None,
             };
 
