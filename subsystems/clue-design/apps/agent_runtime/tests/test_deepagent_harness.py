@@ -368,6 +368,26 @@ def test_author_prompt_teaches_detach_to_freehand_for_layering_above_pins():
     assert "paint ABOVE a pinned human node" in author
 
 
+def test_author_prompt_teaches_physical_page_units_first_class():
+    # genad2 (agent-authored pages): the scene is born with ZERO pages, so the
+    # author owns page setup — the always-on prompt must teach the physical/print
+    # idiom (mm / in, print presets) as first-class alongside the digital px one,
+    # and must warn that an explicit size(...)/preset(...) is ALWAYS required
+    # because a bare `page <id>` silently defaults to A4 portrait (dsl.rs
+    # lower_page's fallback_preset).
+    author = build_author_prompt("/tmp/ws-pages")
+    # Digital idiom (unchanged) beside the physical/print one.
+    assert "size(width,height,px)" in author
+    assert "size(210,297,mm)" in author
+    assert "size(8.5,11,in)" in author
+    assert "preset(us_letter,portrait)" in author
+    # A bare page line is never acceptable.
+    assert "ALWAYS give an explicit `size(...)` or `preset(...)`" in author
+    assert "defaults to A4 portrait" in author
+    # No dimensions named in the ask → choose canonical ones and say so.
+    assert "STATE them in your report" in author
+
+
 def test_all_prompts_have_resource_map_and_workspace_path():
     ws = "/tmp/unique-workspace-xyz"
     for prompt in (
