@@ -849,6 +849,13 @@ const WORDMARK_SVG: &[u8] = br##"<svg xmlns="http://www.w3.org/2000/svg" width="
 /// the shape that proves the fallback arm.
 const UNPARSEABLE_SVG: &[u8] = br##"<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect width="10" height="10"/></svg>junk"##;
 
+/// Parses cleanly and paints NOTHING: `skia_safe::svg::Dom` is a minimal
+/// renderer, so an SVG whose artwork sits in `<defs>` (like one leaning on an
+/// unsupported filter, mask, or embedded `<image href>`) renders a fully
+/// transparent surface. Storing that would serve a blank PNG as the asset's
+/// look — the shape that proves the second fallback arm.
+const BLANK_PAINTING_SVG: &[u8] = br##"<svg xmlns="http://www.w3.org/2000/svg" width="240" height="48" viewBox="0 0 240 48"><defs><rect x="0" y="0" width="240" height="48" fill="#ff0000"/></defs></svg>"##;
+
 fn ingest_svg_request(store_root: &str, asset_id: &str, bytes: &[u8]) -> Value {
     use base64::Engine;
     json!({
@@ -928,15 +935,173 @@ fn ingest_asset_falls_back_to_the_self_referential_thumbnail_when_a_vector_canno
         UNPARSEABLE_SVG,
     ));
 
-    // Ingest still succeeds — a thumbnail that cannot be derived is never fatal.
+    assert_legacy_self_referential_thumbnail(&ingested);
+}
+
+#[test]
+fn ingest_asset_falls_back_to_the_self_referential_thumbnail_when_a_vector_paints_nothing() {
+    // Parsing is not painting. Skia's SVG renderer accepts far more than it
+    // draws, and a transparent surface encodes into a perfectly valid PNG —
+    // which would then be served as the asset's LOOK. The honest outcome is
+    // the legacy arm, which the Python resolver degrades to "no raster
+    // preview" (W1.1) instead of showing the trio a blank rectangle.
+    let store_dir = tempfile::tempdir().expect("tempdir");
+    let store_root = store_dir.path().to_string_lossy().to_string();
+
+    let ingested = helper(ingest_svg_request(
+        &store_root,
+        "asset_logo_blank",
+        BLANK_PAINTING_SVG,
+    ));
+
     assert_eq!(ingested["ok"], true, "{ingested:#?}");
+    assert_legacy_self_referential_thumbnail(&ingested);
+
+    // Nothing but the sanitized SVG itself was written: no blank PNG lingers
+    // in the store.
+    let stored: Vec<_> = walk_store(store_dir.path());
+    assert_eq!(stored.len(), 1, "only the SVG bytes: {stored:#?}");
+}
+
+#[test]
+fn ingest_asset_falls_back_to_the_self_referential_thumbnail_when_the_png_cannot_be_stored() {
+    // Thumbnail derivation may never fail an ingest — that contract covers the
+    // STORE too, not only the rasterizer. The store is content-addressed, so
+    // the failure is induced by parking a directory where the thumbnail's own
+    // digest path must go: `put` writes a temp file and renames it into place,
+    // and renaming a file onto a directory fails.
+    let first_dir = tempfile::tempdir().expect("tempdir");
+    let first = helper(ingest_svg_request(
+        &first_dir.path().to_string_lossy(),
+        "asset_logo_svg",
+        WORDMARK_SVG,
+    ));
+    let thumb_ref = first["asset"]["record"]["media"]["thumbnail"]["location"]["opaque_ref"]
+        .as_str()
+        .expect("thumbnail ref")
+        .to_owned();
+
+    let store_dir = tempfile::tempdir().expect("tempdir");
+    std::fs::create_dir_all(store_dir.path().join(&thumb_ref)).expect("block the digest path");
+
+    let ingested = helper(ingest_svg_request(
+        &store_dir.path().to_string_lossy(),
+        "asset_logo_svg",
+        WORDMARK_SVG,
+    ));
+
+    assert_eq!(
+        ingested["ok"], true,
+        "a store failure on the THUMBNAIL must not fail the ingest: {ingested:#?}"
+    );
+    assert_legacy_self_referential_thumbnail(&ingested);
+}
+
+/// The pre-W1.2 arm: the vector is its own thumbnail, dimensionless, silent.
+fn assert_legacy_self_referential_thumbnail(ingested: &Value) {
     let thumbnail = &ingested["asset"]["record"]["media"]["thumbnail"];
     assert_eq!(thumbnail["mime_type"], "image/svg+xml");
     assert_eq!(thumbnail["pixel_width"], Value::Null);
+    assert_eq!(thumbnail["pixel_height"], Value::Null);
     assert_eq!(
         thumbnail["location"]["opaque_ref"], ingested["asset"]["relative_path"],
         "the legacy arm points the thumbnail back at the SVG itself"
     );
+    assert!(
+        ingested["diagnostics"]
+            .as_array()
+            .map(|entries| entries.is_empty())
+            .unwrap_or(true),
+        "the fallback stays silent — this slice adds no diagnostic: {ingested:#?}"
+    );
+}
+
+#[test]
+fn the_vector_and_raster_thumbnail_size_policies_agree() {
+    // The size policy is written TWICE — `lumen_assets::derive_raster_thumbnail`
+    // for pixels, `lumen_skia::rasterize_svg_thumbnail` for vectors (lumen-skia
+    // may not depend on lumen-assets, so it mirrors the rules rather than
+    // calling them). Nothing but this test stops the two from drifting, and
+    // drift is exactly what would make one logo delivered as SVG and the same
+    // logo delivered as PNG arrive at different sizes. This crate is the only
+    // one that can see both.
+    //
+    // The raster of a given source size is synthesized through the vector
+    // rasterizer itself under IDENTITY bounds (a max nothing reaches, a floor
+    // of zero), which is the one call shape that paints at exactly the source
+    // dimensions — so no fixture files and no extra image dependency are
+    // needed to obtain "a raster of those dims".
+    const IDENTITY_MAX: u32 = 100_000;
+    const IDENTITY_FLOOR: u32 = 0;
+
+    let fixture = |width: u32, height: u32| {
+        format!(
+            r##"<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}"><rect x="0" y="0" width="{width}" height="{height}" fill="#336699"/></svg>"##
+        )
+        .into_bytes()
+    };
+
+    let cases: &[(u32, u32, u32, u32)] = &[
+        // (max, min_short, source width, source height) — production bounds…
+        (256, 512, 1000, 500), // large: fits into the max box
+        (256, 512, 300, 300),  // large and square
+        (256, 512, 1000, 1),   // a 1px sliver never rounds to zero
+        (256, 512, 240, 48),   // small: short side lifted to the vision floor
+        (256, 512, 8, 8),      // the tiny-icon case the floor exists for
+        // …and bounds where the "already over the floor" branch is reachable
+        // at all (with 256/512 it cannot be: a small source is ≤256 < 512).
+        (256, 64, 200, 100), // small, short side already over the floor
+        (256, 64, 128, 64),  // small, short side exactly AT the floor
+    ];
+
+    for &(max_dimension, min_short_dimension, width, height) in cases {
+        let case = format!("{width}x{height} under {max_dimension}/{min_short_dimension}");
+
+        let (raster_png, raster_width, raster_height) = lumen_skia::rasterize_svg_thumbnail(
+            &fixture(width, height),
+            IDENTITY_MAX,
+            IDENTITY_FLOOR,
+        )
+        .unwrap_or_else(|| panic!("identity raster for {case}"));
+        assert_eq!(
+            (raster_width, raster_height),
+            (width, height),
+            "the identity call must paint at the source size ({case})"
+        );
+
+        let from_raster =
+            lumen_assets::derive_raster_thumbnail(&raster_png, max_dimension, min_short_dimension)
+                .unwrap_or_else(|| panic!("raster thumbnail for {case}"));
+        let (_png, vector_width, vector_height) = lumen_skia::rasterize_svg_thumbnail(
+            &fixture(width, height),
+            max_dimension,
+            min_short_dimension,
+        )
+        .unwrap_or_else(|| panic!("vector thumbnail for {case}"));
+
+        assert_eq!(
+            (vector_width, vector_height),
+            (from_raster.pixel_width, from_raster.pixel_height),
+            "vector and raster thumbnail policies disagree for {case}"
+        );
+    }
+}
+
+/// Every stored object under a content-addressed store root.
+fn walk_store(root: &std::path::Path) -> Vec<std::path::PathBuf> {
+    let mut found = Vec::new();
+    let mut stack = vec![root.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        for entry in std::fs::read_dir(&dir).expect("read dir").flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                stack.push(path);
+            } else {
+                found.push(path);
+            }
+        }
+    }
+    found
 }
 
 #[test]
@@ -968,6 +1133,21 @@ fn ingest_asset_leaves_the_raster_thumbnail_untouched() {
     )
     .expect("stored thumbnail");
     assert_eq!(stored, expected.bytes, "raster thumbnail bytes are stable");
+
+    // Comparing the ingest against the function that produced it pins the
+    // WIRING, not the bytes: both sides would move together if the raster
+    // thumbnail policy or the PNG encoder ever changed. This digest pins the
+    // bytes themselves — the exact thumbnail derived from LOGO_PNG_BYTES under
+    // the production bounds, captured from the verified-good W1.2 output. If
+    // it fails, a raster thumbnail changed: prove the change is intended, then
+    // regenerate by printing `lumen_assets::sha256_hex(&stored)`.
+    const RASTER_THUMBNAIL_SHA256: &str =
+        "5a6db811ca1b526aeb5367bfd5cc91d45891b29e80b2fe657d0817717a2d702d";
+    assert_eq!(
+        lumen_assets::sha256_hex(&stored),
+        RASTER_THUMBNAIL_SHA256,
+        "the derived raster thumbnail is no longer byte-identical"
+    );
 }
 
 #[test]

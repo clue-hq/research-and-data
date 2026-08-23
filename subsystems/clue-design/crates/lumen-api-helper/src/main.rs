@@ -1408,43 +1408,43 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 // has both crates does it, off the SANITIZED bytes, under the
                 // same thumbnail bounds the raster path uses.
                 None if output.sniffed_mime == "image/svg+xml" => {
-                    match lumen_skia::rasterize_svg_thumbnail(
+                    // Rasterize, then store. EITHER step may decline — Skia
+                    // will not parse the bytes, or paints nothing from them, or
+                    // the store cannot commit the PNG — and neither may fail
+                    // the ingest: deriving a thumbnail has never been fatal.
+                    let rasterized = lumen_skia::rasterize_svg_thumbnail(
                         &output.bytes,
                         lumen_assets::THUMBNAIL_MAX_DIMENSION,
                         lumen_assets::THUMBNAIL_MIN_SHORT_DIMENSION,
-                    ) {
-                        Some((png, pixel_width, pixel_height)) => {
-                            let stored_thumbnail = store
-                                .put(&png)
-                                .map_err(|error| core_error(error.code, error.message))?;
-                            Some(AssetThumbnail {
-                                location: AssetLocation {
-                                    provider: LOCAL_STORE_PROVIDER.to_owned(),
-                                    opaque_ref: stored_thumbnail.relative_path,
-                                    url: None,
-                                },
-                                mime_type: "image/png".to_owned(),
-                                pixel_width: Some(pixel_width),
-                                pixel_height: Some(pixel_height),
-                            })
-                        }
-                        // Rasterization failed (bytes Skia will not parse, font
-                        // trouble, an absurd aspect ratio). Fall back to the
-                        // legacy self-referential thumbnail — the vector is its
-                        // own thumbnail for the canvas — silently: a thumbnail
-                        // that cannot be derived has never failed an ingest, and
-                        // this slice adds no diagnostic.
-                        None => Some(AssetThumbnail {
+                    )
+                    .and_then(|(png, pixel_width, pixel_height)| {
+                        let stored_thumbnail = store.put(&png).ok()?;
+                        Some(AssetThumbnail {
                             location: AssetLocation {
                                 provider: LOCAL_STORE_PROVIDER.to_owned(),
-                                opaque_ref: stored.relative_path.clone(),
+                                opaque_ref: stored_thumbnail.relative_path,
                                 url: None,
                             },
-                            mime_type: output.sniffed_mime.clone(),
-                            pixel_width: None,
-                            pixel_height: None,
-                        }),
-                    }
+                            mime_type: "image/png".to_owned(),
+                            pixel_width: Some(pixel_width),
+                            pixel_height: Some(pixel_height),
+                        })
+                    });
+                    // Fall back to the legacy self-referential thumbnail — the
+                    // vector is its own thumbnail for the canvas — silently:
+                    // this slice adds no diagnostic, and the Python resolver
+                    // degrades a non-raster thumbnail to the honest "no raster
+                    // preview" message rather than a broken decode.
+                    Some(rasterized.unwrap_or_else(|| AssetThumbnail {
+                        location: AssetLocation {
+                            provider: LOCAL_STORE_PROVIDER.to_owned(),
+                            opaque_ref: stored.relative_path.clone(),
+                            url: None,
+                        },
+                        mime_type: output.sniffed_mime.clone(),
+                        pixel_width: None,
+                        pixel_height: None,
+                    }))
                 }
                 None => None,
             };
