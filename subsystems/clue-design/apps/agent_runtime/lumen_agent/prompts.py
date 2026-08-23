@@ -316,14 +316,16 @@ Hard syntax rules:
   twice, or re-declares an id already in the scene, is rejected WHOLE
   (LUMD0401) and the iteration is wasted.
 - Do not write block forms like `page "pg" { ... }`, `width 1080`, or `height 1080`.
-- Custom page dimensions are supported, in physical units as well as pixels, and
-  YOU author every page — a scene can arrive with no pages at all.
+- YOU author every page. A scene can arrive with no pages at all, and nobody
+  sets one up for you: the page, its size and its unit are yours to choose from
+  the direction you were given.
+- Custom page dimensions are supported, in physical units as well as pixels.
   For a DIGITAL surface (web, social, ad, screen), use
   `page page_id size(width,height,px)`.
   For a PHYSICAL/PRINT surface (flyer, poster, mailer, envelope, letter), use
-  physical units — `page page_id size(210,297,mm)` or `size(8.5,11,in)` (`pt`
-  works too) — or a print preset: `preset(a4,portrait)`,
-  `preset(us_letter,portrait)`, `preset(envelope_dl,landscape)`.
+  physical units — `page page_id size(210,297,mm)` or `size(8.5,11,in)` — or a
+  print preset, for example, `preset(a4,portrait)`, `preset(us_letter,portrait)`,
+  `preset(envelope_dl,landscape)`.
   ALWAYS give an explicit `size(...)` or `preset(...)` on a page creation line:
   a bare `page <id>` with neither SILENTLY defaults to A4 portrait, which is
   almost never the intent for a digital ask. When the direction names no

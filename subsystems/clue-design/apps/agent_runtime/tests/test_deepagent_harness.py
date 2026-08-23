@@ -376,10 +376,19 @@ def test_author_prompt_teaches_physical_page_units_first_class():
     # because a bare `page <id>` silently defaults to A4 portrait (dsl.rs
     # lower_page's fallback_preset).
     author = build_author_prompt("/tmp/ws-pages")
+    # The OWNERSHIP clause — the one sentence that tells the author the platform
+    # mints nothing (genad2 ruling 1). It carries its own bullet rather than
+    # riding the units bullet, so it cannot be lost to an edit about units.
+    assert "- YOU author every page." in author
+    assert "A scene can arrive with no pages at all" in author
     # Digital idiom (unchanged) beside the physical/print one.
     assert "size(width,height,px)" in author
     assert "size(210,297,mm)" in author
     assert "size(8.5,11,in)" in author
+    # The print-preset list must read OPEN — three of the engine's five presets
+    # are named, so a closed-sounding list would teach the agent that the other
+    # two do not exist.
+    assert "for example, `preset(a4,portrait)`" in author
     assert "preset(us_letter,portrait)" in author
     # A bare page line is never acceptable.
     assert "ALWAYS give an explicit `size(...)` or `preset(...)`" in author

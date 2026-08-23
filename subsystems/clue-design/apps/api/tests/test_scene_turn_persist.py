@@ -17,6 +17,7 @@ seam, exactly as `test_web_turns.py`'s leg section drives the web executor.
 from __future__ import annotations
 
 import json
+from copy import deepcopy
 from pathlib import Path
 from uuid import uuid4
 
@@ -358,6 +359,11 @@ def test_a_non_leg_scene_turn_persists_nothing_and_stays_byte_identical(
     document = create_document(client)
     store = HybridRepository()
     operations = [title_operation("Agent Title")]
+    # The expected envelope is snapshotted from a DEEP COPY, before the run. The stub hands the
+    # executor the very list object this test holds, so an expected envelope built from that
+    # same list afterwards would AGREE with an in-place mutation instead of catching it — and
+    # "byte-identical" is exactly the claim being made here.
+    expected = proposing_runner(deepcopy(operations))(None, None)
 
     status, response, kind, marker = execute_agent_turn_job(
         _scene_envelope(
@@ -378,7 +384,7 @@ def test_a_non_leg_scene_turn_persists_nothing_and_stays_byte_identical(
 
     assert (status, kind, marker) == ("succeeded", "result", {"status": "proposed"})
     # Byte-identical: the runner's own envelope, no `current_version` grafted on.
-    assert response == proposing_runner(operations)(None, None)
+    assert response == expected
     assert "current_version" not in response
     # Nothing was committed — the editor still owns that commit.
     stored = store.require_document(document["id"])
@@ -782,6 +788,12 @@ def add_page_operation(page_id: str = AD_PAGE_ID) -> dict:
     return {"kind": "add_page", "page": empty_ad_scene(page_id)["pages"][page_id]}
 
 
+def remove_page_operation(page_id: str) -> dict:
+    """The other way a turn can end page-less: it deletes the page that was there."""
+
+    return {"kind": "remove_page", "page_id": page_id}
+
+
 def _assert_pageless_refusal(response: dict) -> None:
     assert response["status"] == "failed"
     assert response["operations"] == []
@@ -909,6 +921,52 @@ def test_a_leg_scene_turn_proposing_nothing_on_a_content_bearing_document_still_
     assert store.list_envelopes(document["id"]) == []
 
 
+def test_a_leg_turn_that_deletes_the_only_page_is_refused_and_the_document_survives(
+    client: TestClient,
+) -> None:
+    """(f) The other way into the refusal, and the one the prose does NOT describe.
+
+    Every case above starts page-less and never gets a page. This one starts with REAL content
+    and the turn deletes it: `remove_page` on the only page leaves an empty scene, which the
+    engine refuses exactly as it refuses a newborn that authored nothing. The behaviour is the
+    right one — a "successful" turn that erased the artifact would be the worst possible commit,
+    and the document is left byte-untouched — but it is worth pinning precisely BECAUSE the
+    refusal's own sentence ("Design finished without creating a page") misdescribes it. If a
+    later lane wants deletion to read differently, this test is where that decision has to be
+    made deliberately rather than discovered in production.
+    """
+
+    from lumen_api.main import execute_agent_turn_job
+
+    document = create_document(client)
+    store = HybridRepository()
+    before = store.require_document(document["id"])
+    assert list(before["scene"]["pages"]) == ["page_a4"], "the fixture must have exactly one page"
+
+    status, response, kind, marker = execute_agent_turn_job(
+        _scene_envelope(document["id"], store.workspace_id, _leg_config(document, 0)),
+        store=store,
+        host=_turn_host(client, proposing_runner([remove_page_operation("page_a4")])),
+        event_sink=None,
+    )
+
+    assert (status, kind) == ("failed", "result")
+    assert marker == {"status": "failed"}
+    _assert_pageless_refusal(response)
+    # The engine's own text rides the detail (Task-7 sweep) instead of being dropped, the way
+    # the replay refusal beside it has always forwarded `error.message`.
+    assert response["diagnostics"][0]["hint"] == (
+        "The turn's result contains no page, so there would be nothing to show; "
+        "the design was not saved and the document is unchanged. "
+        "The engine reported: operation batch produced an invalid scene"
+    )
+    # Nothing was written — the page, its children, and the version are all exactly as they were.
+    stored = store.require_document(document["id"])
+    assert stored["current_version"] == 0
+    assert stored["scene"] == before["scene"]
+    assert store.list_envelopes(document["id"]) == []
+
+
 def test_an_unreplayable_turn_on_a_pageless_document_still_reports_the_replay_failure(
     client: TestClient,
 ) -> None:
@@ -1010,6 +1068,10 @@ def test_a_non_leg_turn_on_a_pageless_document_stays_byte_identical(
     document = create_pageless_document(client)
     store = HybridRepository()
     operations = [title_operation("Agent Title")]
+    # Snapshotted from a deep copy BEFORE the run, for the reason the (a) byte-identity pin
+    # gives: the stub and this test share one list object, so a post-run expectation built from
+    # it cannot tell "unchanged" from "mutated in place".
+    expected = proposing_runner(deepcopy(operations))(None, None)
 
     status, response, kind, marker = execute_agent_turn_job(
         _scene_envelope(
@@ -1029,7 +1091,7 @@ def test_a_non_leg_turn_on_a_pageless_document_stays_byte_identical(
     )
 
     assert (status, kind, marker) == ("succeeded", "result", {"status": "proposed"})
-    assert response == proposing_runner(operations)(None, None)
+    assert response == expected
     stored = store.require_document(document["id"])
     assert stored["current_version"] == 0
     assert stored["scene"]["pages"] == {}

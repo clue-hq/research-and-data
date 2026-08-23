@@ -329,9 +329,14 @@ def conflicted_agent_turn_response(
 PAGELESS_SCENE_DIAGNOSTIC = "LUMV0100"
 
 
-def is_pageless_scene_refusal(diagnostics: Any) -> bool:
-    if not isinstance(diagnostics, list):
-        return False
+def is_pageless_scene_refusal(diagnostics: List[JsonObject]) -> bool:
+    """Is this ``CoreError``'s diagnostic list the engine's page-less verdict?
+
+    ``CoreError.diagnostics`` is normalized to a list by its constructor (``core.py``:
+    ``diagnostics or []``), so the list-ness is a type, not a thing to re-check — the per-item
+    ``isinstance`` stays because the ITEMS are engine JSON this process did not build.
+    """
+
     return any(
         isinstance(diagnostic, dict)
         and diagnostic.get("code") == PAGELESS_SCENE_DIAGNOSTIC
@@ -339,7 +344,7 @@ def is_pageless_scene_refusal(diagnostics: Any) -> bool:
     )
 
 
-def pageless_agent_turn_response() -> JsonObject:
+def pageless_agent_turn_response(engine_message: str | None = None) -> JsonObject:
     """Terminal result for a LEG scene turn that produced no page (genad2 Task 3).
 
     Since the zero-page birth (genad2 ruling 1) a chat-born scene document starts with NO pages
@@ -356,18 +361,33 @@ def pageless_agent_turn_response() -> JsonObject:
     short-circuited by ``_fail_turn`` before that summarizer runs, so this is durable
     result-payload prose — legible to an operator reading the run row, and ready for whichever
     surface the genad founder item on failure/conflict routing hands it to.
+
+    ``engine_message`` is the engine's OWN text, passed through on the arm where the ENGINE is
+    the one that refused (its ``LUMV0100`` validation of the applied scene). Its replay-failure
+    sibling has always forwarded ``error.message`` and this arm dropped it, so an operator
+    reading the run row could not tell the engine's verdict from this function's generic
+    sentence. Today that text is terse ("operation batch produced an invalid scene") — the
+    value is that it is the ENGINE speaking, and it improves for free when the engine's wording
+    does. It rides the DETAIL, never the summary: the marketer-facing prose is founder copy and
+    stays one fixed sentence. Absent on the post-replay gate below, where no engine complained
+    and quoting one would be an invention.
     """
 
     message = (
         "Design finished without creating a page — nothing was saved; "
         "send another message to try again."
     )
+    detail = (
+        "The turn's result contains no page, so there would be nothing to show; "
+        "the design was not saved and the document is unchanged."
+    )
+    if engine_message:
+        detail = f"{detail} The engine reported: {engine_message}"
     return {
         **failed_agent_turn_response(
             "agent_turn.pageless_result",
             message,
-            "The turn's result contains no page, so there would be nothing to show; "
-            "the design was not saved and the document is unchanged.",
+            detail,
         ),
         "stop_reason": message,
     }
@@ -8337,8 +8357,9 @@ def _persist_leg_scene_proposal(
         if is_pageless_scene_refusal(error.diagnostics):
             # Not an unreplayable history — the operations replayed fine and simply did not
             # amount to a page, which the engine refuses as an invalid scene. Same fact as the
-            # gate below, reached first because the engine validates the result for us.
-            return pageless_agent_turn_response()
+            # gate below, reached first because the engine validates the result for us — so the
+            # engine's own text rides the detail, exactly as the replay refusal beside it does.
+            return pageless_agent_turn_response(error.message)
         return failed_agent_turn_response(
             "agent_turn.operations_replay_failed",
             "The AI turn's operations could not be replayed.",
