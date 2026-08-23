@@ -14,6 +14,16 @@ section for section and line for line, so the prose an agent reads and the prose
 a human approves are the same prose. Divergence between the two would mean the
 founder approves one document and the agent designs from another.
 
+ONE divergence is deliberate, and it is the only one: on the agent side a
+geometry slot renders the WEB CLASS beside its token (`radius
+**rounded-button** (radius.button)`), and the measured-geometry section says
+those numbers render through those utilities. The panel keeps naming kit tokens
+alone, because a class name is authoring vocabulary — the founder is approving
+the brand's shape, not the markup that will express it. `GEOMETRY_TOKEN_UTILITIES`
+below is the whole mechanism and carries the same note. So: do NOT "restore
+parity" by reverting it, and do NOT mirror it into the panel; every OTHER change
+here still belongs in both projections.
+
 **D2's budget is a HARD cap with honest truncation.** The brief may be as large
 as the founder's reference guidance file (≈6,000 tokens); past that the
 rendering drops whole sections and SAYS which ones. The stored brief is never

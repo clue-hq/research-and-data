@@ -39,16 +39,20 @@ SKILL_MD = (
 SKILL_BLOCK_MARKER = "**Brand geometry — ten utilities that resolve the kit's own shape.**"
 
 
-def _engine_rows() -> list[tuple[str, str]]:
-    """`(utility, chain head)` for every row of `GEOMETRY_UTILITIES`, in order."""
+def _engine_table_body() -> str:
+    """The literal rows of `GEOMETRY_UTILITIES`, as Rust source."""
     source = THEME_RS.read_text(encoding="utf-8")
-    body = source.split(
+    return source.split(
         "const GEOMETRY_UTILITIES: &[(&str, &str, GeometryGroup, &[&str], &str)] = &[",
         1,
     )[1].split("\n];", 1)[0]
+
+
+def _engine_rows() -> list[tuple[str, str]]:
+    """`(utility, chain head)` for every row of `GEOMETRY_UTILITIES`, in order."""
     return re.findall(
         r'\(\s*"([a-z0-9-]+)",\s*"[a-z0-9-]+",\s*GeometryGroup::\w+,\s*&\[\s*"([a-z0-9.]+)"',
-        body,
+        _engine_table_body(),
     )
 
 
@@ -61,6 +65,12 @@ def test_the_engine_table_parse_finds_a_plausible_geometry_vocabulary() -> None:
     """Guard the guard: a parse that silently matched nothing would make every
     other assertion in this module vacuous."""
     rows = _engine_rows()
+    # Every row is counted twice, by two independent instruments: an 11th row
+    # the regex could not read (a chain head spelled with a character the
+    # pattern rejects, a reformatted literal) would otherwise leave len == 10
+    # and slip past all three prose checks in silence. `GeometryGroup::` appears
+    # exactly once per row and nowhere else inside the table body.
+    assert len(rows) == _engine_table_body().count("GeometryGroup::")
     assert len(rows) == 10
     assert ("rounded-button", "radius.button") in rows
     assert ("p-card", "space.card.padding") in rows

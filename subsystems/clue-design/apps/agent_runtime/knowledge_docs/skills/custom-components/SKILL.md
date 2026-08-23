@@ -92,6 +92,17 @@ export default function MetricCard({
 }
 ```
 
+**Custom-component CSS is its own world — the page's brand-geometry utilities
+do NOT reach it.** A component compiles in an isolated Tailwind build whose
+theme carries the four colors and two font families above and nothing else, so
+`rounded-card`, `p-card`, `py-section`, `shadow-brand` and the rest of
+`create-website`'s geometry vocabulary produce NO CSS here and would silently
+drop the shape they were meant to set. Inside custom source, raw Tailwind
+geometry (`rounded-xl`, `p-6`) is the correct spelling — the one place in the
+web grammar where that is true. Match the brand's measured numbers by eye from
+the brand card instead, and keep the surrounding layout in the typed tree, where
+the utilities do work.
+
 The default export is required. `meta` gives the picker label/description.
 Declare props as optional `string`, `number`, `boolean`, or string-literal
 unions and provide destructuring defaults; the compiler turns them into the
