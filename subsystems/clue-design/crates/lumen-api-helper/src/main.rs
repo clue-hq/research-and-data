@@ -2571,10 +2571,15 @@ fn web_theme_for(
     ))
 }
 
-/// The compiled theme's inspector-facing surface: token map + families.
+/// The compiled theme's inspector-facing surface: token map + families, plus
+/// the brand-geometry channel the static export compile rebuilds its `@theme`
+/// block from. `tokens` stays colors-only — geometry is a separate key so no
+/// color consumer (swatch grid, class-lint vocabulary) ever sees it.
 fn web_theme_json(theme: &lumen_web::WebTheme) -> Value {
     json!({
         "tokens": theme.tokens,
+        "geometry": theme.geometry,
+        "utility_css": theme.utility_css,
         "display_family": theme.display_family,
         "body_family": theme.body_family,
     })
