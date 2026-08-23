@@ -507,3 +507,49 @@ def test_cli_bridge_miss_stays_an_honest_not_found(tmp_path):
                 storage_fs_root=tmp_path,
             )
         )
+
+
+def test_cli_refuses_an_unset_or_relative_storage_root(tmp_path, monkeypatch, capsys):
+    """A RELATIVE durable root is refused as loudly as a missing one.
+
+    `Path('.artifacts')` resolves against wherever the operator happens to stand, so the view
+    would report the frozen context bundle and every durable asset as missing — the identical
+    confident lie the unset-refusal exists to close, and the same cwd-relative-root class the
+    design custody fix killed. Both refusals must fire BEFORE any database work.
+    """
+    cli = _cli()
+    monkeypatch.setenv("CLUE_DATABASE_URL", "postgresql://clue:clue@127.0.0.1:1/nope")
+    monkeypatch.delenv("CLUE_STORAGE_FS_ROOT", raising=False)
+
+    with pytest.raises(SystemExit) as unset:
+        cli.main(["doc_x"])
+    assert "CLUE_STORAGE_FS_ROOT is not set" in str(unset.value)
+
+    monkeypatch.setenv("CLUE_STORAGE_FS_ROOT", ".artifacts")
+    with pytest.raises(SystemExit) as relative:
+        cli.main(["doc_x"])
+    message = str(relative.value)
+    assert "relative path" in message
+    # The actionable part: the path it WOULD have read.
+    assert str((Path.cwd() / ".artifacts").resolve()) in message
+
+
+def test_cli_warns_but_continues_on_a_relative_cache_root(tmp_path, monkeypatch, capsys):
+    """The engine cache is a per-machine materialization — a wrong one costs a fallback to the
+    durable blob, not a false "missing" — so a relative value warns (naming the absolute path
+    used) instead of refusing. The run then fails on the DATABASE, proving it got that far."""
+    cli = _cli()
+    monkeypatch.setenv("CLUE_DATABASE_URL", "postgresql://clue:clue@127.0.0.1:1/nope")
+    monkeypatch.setenv("CLUE_STORAGE_FS_ROOT", str(tmp_path))
+    monkeypatch.setenv("LUMEN_ASSET_STORE_ROOT", "engine-cache")
+
+    with pytest.raises(SystemExit) as exit_info:
+        cli.main(["doc_x"])
+    warning = capsys.readouterr().err
+    assert "LUMEN_ASSET_STORE_ROOT" in warning
+    assert str((Path.cwd() / "engine-cache").resolve()) in warning
+    # A connection-class failure is one friendly line naming the redacted target, not a
+    # traceback — and never the credentials, which outlive a shell error line.
+    message = str(exit_info.value)
+    assert "cannot reach the database at 127.0.0.1:1/nope" in message
+    assert "clue:clue" not in message

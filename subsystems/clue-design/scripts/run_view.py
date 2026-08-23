@@ -15,12 +15,15 @@ Usage, from the repo root with the colombo `.env` sourced::
 `<ref>` is a design run id (`run_…`), a document id (`doc_…`), or a leg UUID. Environment:
 
 * ``CLUE_DATABASE_URL``    — required; the platform Postgres (read-only here).
-* ``CLUE_STORAGE_FS_ROOT`` — required, and deliberately NOT guessed: a cwd-relative default is
-  exactly the bug class the design custody fix closed, and a wrong root here would report the
-  frozen bundle and every durable asset blob as missing — a confident lie.
+* ``CLUE_STORAGE_FS_ROOT`` — required, and required ABSOLUTE: neither guessed nor resolved
+  against the caller's working directory. That is exactly the bug class the design custody fix
+  closed, and a wrong root here would report the frozen bundle and every durable asset blob as
+  missing — a confident lie.
 * ``LUMEN_ASSET_STORE_ROOT`` — optional; defaults to this repo's git-ignored `.engine-cache`,
   mirroring ``py_lumen_config.Settings.effective_asset_store_root`` (restated rather than
-  imported so the script composes no app and needs no settings singleton).
+  imported so the script composes no app and needs no settings singleton). A relative value
+  warns (naming the absolute path used) rather than refusing: the cache is a per-machine
+  materialization, so a wrong one costs a fallback to the durable blob, not a false "missing".
 
 Read-only over every substrate: the only writes are inside the output directory.
 """
@@ -35,6 +38,7 @@ import re
 import shutil
 import sys
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import asyncpg
 
@@ -47,9 +51,10 @@ from lumen_api.run_view import AssetView, RunView, RunViewNotFound, assemble  # 
 _DEFAULT_ASSET_STORE_ROOT = _DESIGN_ROOT / ".engine-cache"
 _DEFAULT_OUT_ROOT = _DESIGN_ROOT / ".design-runs"
 
-# Bounded, most-recent-first: the payload scan below is unindexed, so it is capped rather than
-# allowed to walk the whole stream. The window doubles as an ambiguity check — if several outer
-# runs mention the same inner id, the view says so instead of picking one silently.
+# The bridge's RESULT set is capped at this many rows, most-recent-first. It does not bound the
+# scan itself — `strpos` over `payload::text` is unindexed, so Postgres still walks the whole
+# `design_run` slice of the stream. The window's real job is the ambiguity check: if several
+# outer runs mention the same inner id, the view says so instead of picking one silently.
 _BRIDGE_SCAN_LIMIT = 500
 
 _UNSAFE = re.compile(r"[^A-Za-z0-9._-]+")
@@ -131,7 +136,15 @@ async def load_view(
             f"{_BRIDGE_SCAN_LIMIT} design_run events containing it)"
         ) from missing
 
-    view = await assemble(outer, database_url=database_url, **roots)
+    try:
+        view = await assemble(outer, database_url=database_url, **roots)
+    except RunViewNotFound as error:
+        # Keep the bridge context in the error: without both ids this reads as "your ref is
+        # unknown", when in fact the bridge worked and the run it pointed at is the problem.
+        raise RunViewNotFound(
+            f"bridged from {ref} to design run {outer}, but that outer ref failed to "
+            f"assemble: {error}"
+        ) from error
     view.manifest["bridged_from"] = ref
     view.manifest.setdefault("gaps", []).append(note)
     return view
@@ -301,15 +314,51 @@ def _readme(view: RunView, *, copy: bool, skipped: list[str]) -> str:
 # --- the CLI --------------------------------------------------------------------------------
 
 
+_SOURCE_HINT = (
+    "  Run from the repo root with the workspace env sourced:\n    set -a; source .env; set +a"
+)
+
+
 def _require_env(name: str, why: str) -> str:
     value = os.environ.get(name, "").strip()
     if not value:
-        raise SystemExit(
-            f"run_view: {name} is not set. {why}\n"
-            "  Run from the repo root with the workspace env sourced:\n"
-            "    set -a; source .env; set +a"
-        )
+        raise SystemExit(f"run_view: {name} is not set. {why}\n{_SOURCE_HINT}")
     return value
+
+
+def _require_absolute_root(name: str, raw: str, why: str) -> Path:
+    """A RELATIVE root is refused as loudly as a missing one.
+
+    ``Path('.artifacts')`` resolves against wherever the operator happens to stand, so the view
+    would report the frozen context bundle and every durable asset as missing — the identical
+    confident lie the unset-refusal exists to close, and the same cwd-relative-root class the
+    design custody fix killed. Naming the path it WOULD have used is the actionable part.
+    """
+    path = Path(raw)
+    if not path.is_absolute():
+        raise SystemExit(
+            f"run_view: {name}={raw!r} is a relative path — it would resolve to "
+            f"{path.resolve()} from this working directory. {why}\n{_SOURCE_HINT}"
+        )
+    return path
+
+
+def _redact(database_url: str) -> str:
+    """``host:port/database`` — never the credentials, which a shell error line outlives."""
+    parts = urlsplit(database_url.replace("+asyncpg", ""))
+    port = f":{parts.port}" if parts.port else ""
+    return f"{parts.hostname or '?'}{port}/{parts.path.lstrip('/') or '?'}"
+
+
+# Connection-class failures only: a refused socket, a bad DSN host, wrong credentials, an absent
+# database. Everything else (a query error, a bug here) keeps its traceback — a friendly message
+# over an unexpected exception is how a real defect gets mistaken for a config problem.
+_UNREACHABLE = (
+    OSError,
+    asyncpg.PostgresConnectionError,
+    asyncpg.InvalidAuthorizationSpecificationError,
+    asyncpg.InvalidCatalogNameError,
+)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -334,14 +383,26 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     database_url = _require_env("CLUE_DATABASE_URL", "The view reads Postgres (read-only).")
-    storage_fs_root = _require_env(
-        "CLUE_STORAGE_FS_ROOT",
+    why_root = (
         "Refusing to guess the durable blob root: a wrong root reports the frozen context "
-        "bundle and every durable asset as missing, which is a confident lie.",
+        "bundle and every durable asset as missing, which is a confident lie."
     )
-    asset_store_root = Path(
-        os.environ.get("LUMEN_ASSET_STORE_ROOT", "").strip() or _DEFAULT_ASSET_STORE_ROOT
+    storage_fs_root = _require_absolute_root(
+        "CLUE_STORAGE_FS_ROOT", _require_env("CLUE_STORAGE_FS_ROOT", why_root), why_root
     )
+
+    # The cache root's DEFAULT is legitimately repo-relative (it is resolved absolute here), and
+    # a wrong cache root only costs a fallback to the durable blob — so an operator-supplied
+    # relative value warns and continues rather than refusing.
+    raw_cache = os.environ.get("LUMEN_ASSET_STORE_ROOT", "").strip()
+    asset_store_root = Path(raw_cache) if raw_cache else _DEFAULT_ASSET_STORE_ROOT
+    if not asset_store_root.is_absolute():
+        asset_store_root = asset_store_root.resolve()
+        print(
+            f"run_view: warning — LUMEN_ASSET_STORE_ROOT={raw_cache!r} is relative; reading the "
+            f"engine cache at {asset_store_root}",
+            file=sys.stderr,
+        )
 
     try:
         view = asyncio.run(
@@ -349,11 +410,16 @@ def main(argv: list[str] | None = None) -> int:
                 args.ref,
                 database_url=database_url,
                 asset_store_root=asset_store_root,
-                storage_fs_root=Path(storage_fs_root),
+                storage_fs_root=storage_fs_root,
             )
         )
     except RunViewNotFound as error:
         raise SystemExit(f"run_view: {error}") from error
+    except _UNREACHABLE as error:
+        raise SystemExit(
+            f"run_view: cannot reach the database at {_redact(database_url)} — check "
+            f"CLUE_DATABASE_URL ({type(error).__name__}: {error})"
+        ) from error
 
     out = args.out or _DEFAULT_OUT_ROOT / _safe_name(args.ref, "unnamed-ref")
     materialize(view, out, copy=args.copy)
