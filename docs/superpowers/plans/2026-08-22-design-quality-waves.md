@@ -64,25 +64,28 @@ known-broken perception or page-voiding).
   submitted unit, never the whole page. This principle only ever DOWNGRADES existing
   errors (consistent with carve-out 2).
 
-## Open rulings the founder still owes (blocking where marked)
+## Founder rulings R2–R4 — RESOLVED 2026-08-22; R1 still open
 
-- **R1 — approve kit v8** (founder-only UI action on `/brand-context`). Blocks
-  nothing mechanically but every Wave 1/4 acceptance run is handicapped without it:
-  the director already asks for v8 asset ids by name and is handed smaller v6 files.
-- **R2 — force-render for website ingestion** (slice-4 walk blocker 1, HIGH). The
-  UI's Re-extract can never produce measured geometry or a brief for a
-  server-rendered site (`capture/quality_gate.py::evaluate` escalates only on
-  evidence poverty; `ReExtractRequest` carries no `force_render`). Proposed ruling:
-  website ingestion always forces the rendered tier when the geometry/brief stages
-  are enabled. **Blocks W1.4's exit gate** (a re-extract that publishes a briefless
-  kit invalidates the wave's acceptance) and every future brand onboarding.
-- **R3 — LUMW0114 degradation semantics** (Wave 2, W2.1). Proposed: unknown icon →
-  **drop the icon node + Warning naming the dropped id and the nearest valid names**.
-  Alternative (rejected by default): nearest-name substitution — risks silently
-  wrong semantics. Confirm or override before W2.1 dispatch.
-- **R4 — describe-at-ingestion cost acceptance** (W1.4): top-16 images described per
-  ingestion (~16 vision calls, one batched request, grok-4.5), replacing today's
-  0-described reality and the register's C9 (53 calls) cost path. Confirm.
+- **R1 — approve kit v8** (founder-only UI action on `/brand-context`). **STILL
+  OPEN.** Blocks nothing mechanically but every Wave 1/4 acceptance run is
+  handicapped without it: the director already asks for v8 asset ids by name and is
+  handed smaller v6 files.
+- **R2 — RULED: whenever the geometry/brief stages are enabled, website ingestion
+  always forces the rendered tier — no heuristic.** The founder accepts the cost
+  (every ingestion slower and more expensive) for the benefit (geometry + brief
+  work for every brand onboarded). Implemented as slice **W1.6** below; unblocks
+  W1.4's exit gate.
+- **R3 — RULED (overriding the plan's default): nearest-name substitution.** An
+  unknown icon name is swapped for the closest-matching valid icon from the
+  registry, with a Warning naming the swap — the page is never voided and the node
+  is never dropped. Near-future direction, registered: an icons *library* offered
+  via an MCP server only (out of this plan's scope). Encoded in W2.1.
+- **R4 — RULED: descriptions ON by default for asset ingestion, using a very small,
+  cheap image-capable model, selected via its own env var.** The env var already
+  exists (`LUMEN_INGESTION_DESCRIBE_MODEL` → `lumen_ingestion_describe_model`,
+  `py_lumen_config/config.py:118`, default `x-ai/grok-4.5`, stage default OFF at
+  :117) — so the work is: flip the stage default ON, re-point the model default to
+  a live-probe-chosen cheap vision model, document both. Encoded in W1.4.
 
 ---
 
@@ -144,18 +147,27 @@ changes, no new diagnostics anywhere.*
   yields identical token lists from Python and the helper (drift test, both layers,
   same pattern as the icon-vocabulary drift guard).
 
-### W1.4 — descriptions on, bounded (fixes C9 and the bare-menu card)
-- **Files:** `packages/py-lumen-config/py_lumen_config/config.py`
-  (`lumen_ingestion_describe`, default posture), `subsystems/clue-design/.../lumen_ingestion/describe.py`
-  (top-N selection), launch recipes (`/tmp` scripts are session-scoped — the durable
-  recipe is the deployment config/env example).
-- **Behavior:** describe runs by default whenever an API key is configured, over the
-  **top 16 images by pixel area** (16 = `brand_card.MAX_IMAGE_LIST` — describe
-  exactly what the agent will be shown, nothing more) plus ALL logos (post-W1.2 SVGs
-  included); the rest stay undescribed with the existing overflow note. A failed
-  describe stays per-asset fail-soft (`LUMI0803` path unchanged).
-- **Ruling R4 applies.** **Tests:** selection = top-N-by-area ∪ logos; cap honored;
-  null-key composes the inert describer exactly as today.
+### W1.4 — descriptions on by default, cheap model, bounded (R4; fixes C9 and the bare-menu card)
+- **Files:** `packages/py-lumen-config/py_lumen_config/config.py:117-118`
+  (`lumen_ingestion_describe: bool = False` → `True`;
+  `lumen_ingestion_describe_model` default re-pointed off `x-ai/grok-4.5`),
+  `subsystems/clue-design/.../lumen_ingestion/describe.py` (top-N selection),
+  `.env.example:40,48` (document `LUMEN_INGESTION_DESCRIBE` /
+  `LUMEN_INGESTION_DESCRIBE_MODEL` with the probe table).
+- **Behavior:** describe runs **by default** whenever an API key is configured,
+  over the **top 16 images by pixel area** (16 = `brand_card.MAX_IMAGE_LIST` —
+  describe exactly what the agent will be shown, nothing more) plus ALL logos
+  (post-W1.2 SVGs included); the rest stay undescribed with the existing overflow
+  note. A failed describe stays per-asset fail-soft (`LUMI0803` path unchanged).
+  **Model (R4): a very small, cheap image-capable model**, chosen at slice time by
+  a live OpenRouter probe (same evidence discipline as the image-model selection at
+  `.env.example:110-139` — probe the cheap vision tier, verify caption quality on
+  2-3 real kit assets, record measured per-ingestion cost in the env example);
+  `LUMEN_INGESTION_DESCRIBE_MODEL` remains the per-deployment override. The brief/
+  vision/assist stages keep their own models — no shared-model coupling.
+- **Tests:** selection = top-N-by-area ∪ logos; cap honored; missing-key composes
+  the inert describer exactly as today; the configured describe model (not the
+  brief model) is the one invoked.
 
 ### W1.5 — `search_assets` finds things
 - **Files:** `apps/agent_runtime/lumen_agent/tools/web_substrate.py:2874-2960`.
@@ -168,10 +180,36 @@ changes, no new diagnostics anywhere.*
   `_memory/2026-08-20-imagery-acceptance-after-asset-url-fix.md` reproduced as
   fixtures against a synthetic kit and now returning hits.
 
-**Wave 1 exit gate (live):** one fresh Stripe generation. The director's imagery
-decision must cite at least one asset it viewed via `view("asset:…")` (trace-proven);
-`search_assets` returns non-zero results for the run's queries; the card shows
-dimensions; no new UI surface changed. Honest-negative reporting as always.
+### W1.6 — website ingestion always renders (R2; the slice-4 walk's HIGH blocker)
+- **Files:** the website-ingestion entry (`lumen_ingestion/pipeline.py` /
+  `run_website_ingestion`) and/or `capture/quality_gate.py::evaluate` — force the
+  rendered capture tier unconditionally whenever the geometry and/or brief stages
+  are enabled; **no heuristic, no evidence-poverty escalation gate on this path**.
+  The frontend `ReExtractRequest` shape (`{url, brand_kit_id}`) stays unchanged —
+  the server-side force makes a `force_render` field unnecessary.
+- **Prerequisite folded in (slice-4 walk blocker 3):** a `force_render` ingestion
+  reproducibly FAILS in the API's **embedded** fleet worker
+  (`LUMI0401 ImportError: cannot import name 'GeometryEvidence' from
+  'lumen_ingestion.evidence'` — succeeds in a plain process and under
+  `asyncio.to_thread`; specific to the embedded worker's runtime). With rendering
+  now forced, this failure becomes load-bearing on the UI path — this slice must
+  root-cause and fix it (or route UI re-extraction to the detached fleet worker),
+  otherwise the UI's Re-extract flips from "publishes a geometry-less kit" to
+  "fails terminally". Also: `LUMEN_INGESTION_BRIEF` remains the stage gate (default
+  OFF today, slice-4 blocker 2) — this slice documents it in the durable launch
+  recipe so a rendered re-extraction cannot silently publish briefless.
+- **Tests:** website ingestion with geometry/brief stages on always takes the
+  rendered tier (the stripe.com rich-static fixture that today short-circuits in
+  10s now renders); stages off → today's behavior byte-identical; a UI-path
+  re-extract job completes with geometry tokens + a brief on the fixture.
+
+**Wave 1 exit gate (live):** (a) a UI-initiated Re-extract of stripe.com publishes
+a draft kit carrying measured geometry AND a `BrandBrief@1` (the thing today's path
+cannot do — this is R2's acceptance); (b) one fresh Stripe generation in which the
+director's imagery decision cites at least one asset it viewed via
+`view("asset:…")` (trace-proven), `search_assets` returns non-zero results for the
+run's queries, and the card shows dimensions; (c) no new UI surface changed.
+Honest-negative reporting as always.
 
 ---
 
@@ -189,9 +227,19 @@ nothing new may hard-error; carve-out 1: no new UI diagnostics).*
 - **Behavior:**
   1. Write the severity principle into the `ingest.rs` header as the binding rule
      for every future diagnostic.
-  2. **LUMW0114 unknown icon → Warning**: drop the icon node, message names the
-     dropped node id + the invalid name, hint keeps the registry list (ruling R3).
-     This alone would have prevented all three recorded page losses.
+  2. **LUMW0114 unknown icon → Warning with nearest-name substitution (R3, founder
+     ruling):** the engine swaps the unknown name for the closest-matching valid
+     icon from the registry (`lumen_core::icons`) and keeps the node; the Warning
+     names both sides of the swap (`unknown icon 'globe' → substituted 'globe-2'`)
+     so the author can correct it in a later pass if the guess is wrong. Matching
+     is deterministic: normalized edit distance over the registry (case/hyphen
+     folded), ties broken lexicographically; if no candidate clears a sane
+     similarity threshold, fall back to dropping the icon node with the same
+     Warning shape (still never voiding the page). The page is never rejected for
+     an icon name again — this alone would have prevented all three recorded page
+     losses. Registered future direction (founder): an icons **library** offered
+     via an MCP server only — out of this plan's scope; the substitution is the
+     bridge until then.
   3. **LUMW0212 stays an Error** (color is the axis that never loosens —
      `classes.rs:8-10`), but its blast radius shrinks via W2.3's smaller units, and
      its trigger causes shrink via W1.3. No other severity changes without a
@@ -202,8 +250,11 @@ nothing new may hard-error; carve-out 1: no new UI diagnostics).*
      (author prompt LUMW0114 paragraph; create-website skill table).
 - **Ritual:** wasm + helper rebuild + restarts. **Tests:** red-proof on the exact
   2026-08-20 fixture (a valid header containing the logo + one `data-icon="globe"`
-  elsewhere → page now stores, logo survives, one warning); atomicity tests for
-  remaining error codes unchanged; icon-vocabulary drift guard still green.
+  elsewhere → page now stores, logo survives, the icon is substituted with a valid
+  registry name, one warning naming the swap); the no-plausible-match fallback
+  (node dropped, page stored); substitution determinism (same input → same icon);
+  atomicity tests for remaining error codes unchanged; icon-vocabulary drift guard
+  still green.
 
 ### W2.2 — `view("doc")` returns the tree the skills promise
 - **Files:** `apps/agent_runtime/lumen_agent/tools/web_substrate.py`

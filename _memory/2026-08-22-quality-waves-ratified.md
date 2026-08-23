@@ -39,14 +39,25 @@ docs and this record.
      benchmark scoreboard over a fixed brand set with per-run JSON metrics, C15
      fleet version fence + C16/C17 hygiene.
 
-## Open rulings the founder still owes (in the master plan §Open rulings)
+## Rulings R2–R4 RESOLVED by founder (same day, follow-up message); R1 open
 
-- **R1** approve kit v8 (founder UI action; agent already requests v8 asset ids).
-- **R2** force-render for website ingestion (blocks W1.4 exit gate; the HIGH
-  unowned blocker from the slice-4 walk).
-- **R3** LUMW0114 degradation semantics (proposed: drop node + warning; NOT
-  nearest-name substitution).
-- **R4** describe-at-ingestion default-on cost (top-16 + logos, one batched call).
+- **R1 — OPEN:** approve kit v8 (founder UI action; agent already requests v8
+  asset ids).
+- **R2 — RULED as proposed:** whenever the geometry/brief stages are enabled,
+  website ingestion ALWAYS forces the rendered tier — no heuristic. Cost accepted.
+  Now slice **W1.6**, which also must fix the embedded-fleet-worker
+  `LUMI0401 GeometryEvidence` ImportError (slice-4 walk blocker 3) that becomes
+  load-bearing once rendering is forced on the UI path.
+- **R3 — RULED, overriding the plan's recommendation:** unknown icon →
+  **nearest-name substitution** (closest valid registry icon swapped in, Warning
+  names the swap, deterministic edit-distance match, drop-with-warning only as the
+  no-plausible-match fallback; page never voided). Future direction registered:
+  icons library via an MCP server only.
+- **R4 — RULED:** descriptions ON by default; use a very small cheap
+  image-capable model with its own env var. `LUMEN_INGESTION_DESCRIBE_MODEL`
+  (`lumen_ingestion_describe_model`, config.py:118) already exists — work = flip
+  stage default ON (config.py:117) + re-point model default via live cheap-vision
+  probe + document cost in `.env.example`.
 
 ## Key inspection findings that shaped the plan (grounded, file-anchored in the plans)
 
