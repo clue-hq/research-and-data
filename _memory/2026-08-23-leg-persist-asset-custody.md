@@ -1,6 +1,6 @@
 # 2026-08-23 — generated-asset custody at the leg persist seam (genad2 walk)
 
-Commit `9bc1be9aa` on `integration/frontend-design-part-iv-v4`.
+Commits `9bc1be9aa` (fix) + `bacc54b6e` (review fix loop) on `integration/frontend-design-part-iv-v4`.
 Full forensics + gate results: `.superpowers/sdd/2026-08-23-agent-authored-pages/custody-fix-report.md`
 (gitignored, local only).
 
@@ -32,6 +32,16 @@ Two halves of custody diverged and could not re-converge.
 walks the whole scene asset table each persist, and `register_design_bytes` is content-addressed
 + row-before-blob. `PUT /scene` shares the function, so the MVP editor accept heals too (pinned).
 `media.location` deliberately not re-pointed; readers resolve by digest.
+
+## Review fix loop (`bacc54b6e`)
+* Probe is now three-state (`CustodyState.READABLE/ROW_ONLY/ABSENT`) and **batched** — one bridged
+  call per scene, concurrent backend stats. Measured warm, fs, 50 digests: 18ms vs 346ms serial
+  (the serial shape was already at HEAD), so the accept path is ~19x cheaper than before the fix.
+* A sick backend can no longer fail the accept: a failed REPAIR (row existed) is logged and
+  skipped; a failed FIRST registration still propagates, unchanged. Do not "simplify" this into
+  one blanket except — the asymmetry is the point.
+* `scripts/provision_font_library.py` swapped off the row-only probe (it is a verifier and was
+  reporting a healthy font library while faces 404'd).
 
 ## Open / follow-ups
 * **Pin `CLUE_STORAGE_FS_ROOT` to an absolute path** in the dev `.env`s. The relative default is
