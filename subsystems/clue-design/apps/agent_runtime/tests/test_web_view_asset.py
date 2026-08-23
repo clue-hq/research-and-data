@@ -45,7 +45,7 @@ def _raster_record(
     asset_id: str,
     *,
     thumb_ref: str | None,
-    thumb_size: tuple[int, int] = (256, 160),
+    thumb_size: tuple[int | None, int | None] = (256, 160),
     primary_ref: str = "sha256/aa/aaaa",
     source_kind: str = "brand_guide",
     label: str = "Hero photograph",
@@ -158,10 +158,46 @@ def test_kit_manifest_asset_is_viewable(tmp_path: Path):
     # The manifest TITLE is the human label when present (it is what the brand
     # card's inventory shows the director).
     assert "Team at the bench" in text
-    assert "256x160px" in text
+    # BOTH dimensions. The attached image is the 256px thumbnail (and a small one
+    # is upscaled on the way out), so reporting only the preview size told the
+    # director every kit asset was ~256px — the one fact that decides whether an
+    # asset can carry a full-bleed band, reported wrong for every thumbnailed
+    # asset in the kit.
+    assert "source 1600x1000px" in text
+    assert "preview 256x160px" in text
     assert "brand_guide" in text
     assert any(b.get("type") == "image" for b in blocks)
     assert "asset_viewed" in _trace_summaries(tools)
+
+
+def test_a_full_size_preview_reports_its_dimensions_once(tmp_path: Path):
+    """No thumbnail → the preview IS the source raster, so there are not two
+    numbers to report and the text does not invent a distinction."""
+    store = tmp_path / "store"
+    ref = _blob(store, "9" * 64, (1600, 1000))
+    record = _raster_record("asset_kit_raw", thumb_ref=None, primary_ref=ref)
+    tools = _tools(tmp_path, brand_kit_assets={"asset_kit_raw": {"record": record}})
+
+    text = _texts(tools._view_content("asset:asset_kit_raw"))
+
+    assert "source 1600x1000px" in text
+    assert "preview" not in text
+
+
+def test_dimensions_are_omitted_when_the_record_carries_none(tmp_path: Path):
+    """A record with neither source nor preview dims says the rest honestly
+    rather than printing a made-up size."""
+    store = tmp_path / "store"
+    ref = _blob(store, "8" * 64, (600, 400))
+    record = _raster_record("asset_kit_bare", thumb_ref=ref, thumb_size=(None, None))
+    record.pop("raster")
+    tools = _tools(tmp_path, brand_kit_assets={"asset_kit_bare": {"record": record}})
+
+    text = _texts(tools._view_content("asset:asset_kit_bare"))
+
+    assert "px" not in text
+    assert "source brand_guide" in text
+    assert any(b.get("type") == "image" for b in tools._view_content("asset:asset_kit_bare"))
 
 
 def test_document_registry_asset_is_viewable(tmp_path: Path):
@@ -185,8 +221,39 @@ def test_document_registry_asset_is_viewable(tmp_path: Path):
     text = _texts(blocks)
     assert "asset_img_web_0" in text
     assert "Generated hero" in text
-    assert "300x200px" in text
+    assert "source 1600x1000px" in text
+    assert "preview 300x200px" in text
     assert "generated" in text
+    assert any(b.get("type") == "image" for b in blocks)
+
+
+def test_workspace_library_asset_is_viewable(tmp_path: Path):
+    """`search_assets` hands the director library ids and the prompt tells it to
+    look before deciding — so the library is the third place an id resolves from,
+    not a hole the director falls into."""
+    store = tmp_path / "store"
+    ref = _blob(store, "7" * 64, (256, 160))
+    record = _raster_record(
+        "asset_lib_photo", thumb_ref=ref, source_kind="uploaded", label="record label"
+    )
+    tools = _tools(
+        tmp_path,
+        asset_library={
+            "asset_lib_photo": {
+                "record": record,
+                "title": "Warehouse floor",
+                "description": "A wide shot of the packing line.",
+            }
+        },
+    )
+
+    blocks = tools._view_content("asset:asset_lib_photo")
+
+    text = _texts(blocks)
+    assert "asset_lib_photo" in text
+    assert "Warehouse floor" in text
+    assert "source 1600x1000px" in text
+    assert "source uploaded" in text
     assert any(b.get("type") == "image" for b in blocks)
 
 
@@ -197,7 +264,13 @@ def test_unknown_asset_id_lists_available_ids_capped_at_twelve(tmp_path: Path):
         f"asset_kit_{i:02d}": {"record": _raster_record(f"asset_kit_{i:02d}", thumb_ref=ref)}
         for i in range(15)
     }
-    tools = _tools(tmp_path, brand_kit_assets=manifest)
+    tools = _tools(
+        tmp_path,
+        brand_kit_assets=manifest,
+        asset_library={
+            "asset_lib_photo": {"record": _raster_record("asset_lib_photo", thumb_ref=ref)}
+        },
+    )
     tools.web_doc["assets"] = {"asset_img_web_0": _raster_record("asset_img_web_0", thumb_ref=ref)}
 
     blocks = tools._view_content("asset:asset_nope")
@@ -205,8 +278,10 @@ def test_unknown_asset_id_lists_available_ids_capped_at_twelve(tmp_path: Path):
     assert all(b.get("type") == "text" for b in blocks)
     text = _texts(blocks)
     assert "asset_nope" in text
-    # The document registry's id is offered too.
+    # All THREE sources are offered — the document registry and the library too,
+    # not just the kit.
     assert "asset_img_web_0" in text
+    assert "Library assets: asset_lib_photo" in text
     # Capped: the first 12 sorted kit ids are named, the last 3 are NOT, and the
     # overflow is stated rather than silently swallowed.
     assert "asset_kit_00" in text and "asset_kit_11" in text
@@ -228,7 +303,24 @@ def test_svg_without_a_thumbnail_says_so_instead_of_faking_a_preview(tmp_path: P
     assert "asset_logo_svg" in text
     assert "no raster preview" in text
     assert "image/svg+xml" in text
+    # The vector cause is named — for a mime that actually IS one.
+    assert "vector" in text
     assert "asset_no_preview" in _trace_summaries(tools)
+
+
+def test_a_non_vector_unpreviewable_mime_is_not_called_a_vector(tmp_path: Path):
+    """The no-preview string states only what is established: this media has no
+    raster the vision APIs read. Blaming "a vector with no thumbnail" for a TIFF
+    would send the reader hunting the wrong cause."""
+    record = _raster_record("asset_kit_tiff", thumb_ref=None, primary_ref="sha256/33/3333")
+    record["media"]["mime_type"] = "image/tiff"
+    tools = _tools(tmp_path, brand_kit_assets={"asset_kit_tiff": {"record": record}})
+
+    text = _texts(tools._view_content("asset:asset_kit_tiff"))
+
+    assert "no raster preview" in text
+    assert "image/tiff" in text
+    assert "vector" not in text
 
 
 def test_missing_preview_bytes_are_reported_honestly(tmp_path: Path):
@@ -246,6 +338,37 @@ def test_missing_preview_bytes_are_reported_honestly(tmp_path: Path):
     assert "asset_kit_gone" in text
     assert "missing" in text
     assert "asset_missing_file" in _trace_summaries(tools)
+
+
+# --- the label chain ---------------------------------------------------------
+
+
+def test_label_falls_back_through_record_then_source_then_the_id(tmp_path: Path):
+    """Manifest title → record label → the placement label the registration wrote
+    onto `source` → the id itself. Every link is a shape real records take, so
+    every link is walked here rather than assumed."""
+    store = tmp_path / "store"
+    ref = _blob(store, "5" * 64, (256, 160))
+
+    # No manifest title: the record's own label speaks.
+    record = _raster_record("asset_a", thumb_ref=ref, label="Engine label")
+    tools = _tools(tmp_path, brand_kit_assets={"asset_a": {"record": record}})
+    assert "Engine label" in _texts(tools._view_content("asset:asset_a"))
+
+    # No record label either: `_use_brand_asset`/`_use_library_asset` stamp the
+    # resolved placement label onto source.
+    record = _raster_record("asset_b", thumb_ref=ref, label="")
+    record.pop("label")
+    record["source"]["label"] = "Placement label"
+    tools = _tools(tmp_path, brand_kit_assets={"asset_b": {"record": record}})
+    assert "Placement label" in _texts(tools._view_content("asset:asset_b"))
+
+    # Nothing nameable anywhere: the id, never a blank or a fabrication.
+    record = _raster_record("asset_c", thumb_ref=ref)
+    record.pop("label")
+    record["source"].pop("label")
+    tools = _tools(tmp_path, brand_kit_assets={"asset_c": {"record": record}})
+    assert "view: asset asset_c — asset_c" in _texts(tools._view_content("asset:asset_c"))
 
 
 # --- the shared contracts ----------------------------------------------------

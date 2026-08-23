@@ -286,6 +286,17 @@ def _valid_font_style(value: Any) -> bool:
     return value in ("normal", "italic")
 
 
+def _record_pixel_dims(record: JsonObject) -> Optional[tuple]:
+    """An asset's TRUE pixel dimensions from its own metadata block, or None.
+
+    Same blocks the shared preview resolver reads for a non-thumbnailed raster
+    (`raster`, else `logo`); a vector or a record that never carried dimensions
+    honestly has none."""
+    dims = record.get("raster") or record.get("logo") or {}
+    width, height = dims.get("pixel_width"), dims.get("pixel_height")
+    return (width, height) if width and height else None
+
+
 def _capped_id_list(ids: List[str]) -> str:
     """Ids as a readable list, capped, with the overflow STATED. A harvested kit
     routinely carries dozens of images; dumping 49 ids into every error string
@@ -4382,9 +4393,11 @@ class LumenWebTools:
         should offer instead of itself."""
         doc_ids = sorted((self.web_doc.get("assets") or {}).keys())
         kit_ids = sorted((self.config.brand_kit_assets or {}).keys())
+        library_ids = sorted((self.config.asset_library or {}).keys())
         return (
             f"Document assets: {_capped_id_list(doc_ids)}. "
-            f"Brand kit assets: {_capped_id_list(kit_ids)}."
+            f"Brand kit assets: {_capped_id_list(kit_ids)}. "
+            f"Library assets: {_capped_id_list(library_ids)}."
         )
 
     def _view_asset(self, target: str) -> list:
@@ -4393,15 +4406,15 @@ class LumenWebTools:
 
         The trio is required to DECIDE about imagery (D4), and a decision made off
         titles and tags alone is made blind: a kit's "hero" can be a 296x124 crop
-        and its "texture" a QR code. Ids resolve from BOTH the document's own asset
-        registry (whatever this turn has already registered) and the brand kit's
-        manifest (whatever it could still place) — the two sets the imagery
-        decision actually chooses between.
+        and its "texture" a QR code. Ids resolve from all THREE places the decision
+        actually chooses between — the document's own asset registry (what this
+        turn already registered), the brand kit's manifest (what it could still
+        place), and the workspace asset library (what `search_assets` returns).
+        Anything the prompts tell a role to consider, it can look at.
 
         Every non-viewable outcome is an honest text block, never an exception and
         never a fabricated preview: unknown id (with the available ids), a record
-        with no raster preview at all (an SVG with no derived thumbnail), or a
-        preview whose bytes are not on disk."""
+        with no raster preview at all, or a preview whose bytes are not on disk."""
         asset_id = target[len("asset:") :]
         record: Optional[JsonObject] = None
         entry_title: Optional[str] = None
@@ -4411,13 +4424,17 @@ class LumenWebTools:
         if isinstance(registered, dict):
             record = registered
         else:
-            # The kit manifest wraps the record in an entry carrying the human
-            # title the brand card's inventory shows (see `_use_brand_asset`).
-            entry = (self.config.brand_kit_assets or {}).get(asset_id)
-            if isinstance(entry, dict) and isinstance(entry.get("record"), dict):
-                record = entry["record"]
-                title = entry.get("title")
-                entry_title = title if isinstance(title, str) and title else None
+            # Both manifests wrap the record in an entry carrying the human title
+            # their surfaces show (the brand card's image inventory; a
+            # `search_assets` result) — see `_use_brand_asset` /
+            # `_asset_library_entry`.
+            for manifest in (self.config.brand_kit_assets, self.config.asset_library):
+                entry = (manifest or {}).get(asset_id)
+                if isinstance(entry, dict) and isinstance(entry.get("record"), dict):
+                    record = entry["record"]
+                    title = entry.get("title")
+                    entry_title = title if isinstance(title, str) and title else None
+                    break
         if record is None:
             self.record(
                 "agent", "web_view_called", input_summary=target, output_summary="asset_unknown"
@@ -4431,15 +4448,22 @@ class LumenWebTools:
         resolved = asset_preview_path(record, self.config.effective_asset_store_root)
         if resolved is None:
             mime = (record.get("media") or {}).get("mime_type") or "unknown"
+            # Say only what is established: this record has no raster the vision
+            # APIs can read. A vector with no derived thumbnail is the common
+            # cause, so name it — but only when the mime actually says vector.
+            cause = (
+                " (a vector asset with no derived thumbnail)"
+                if mime == "image/svg+xml"
+                else ""
+            )
             self.record(
                 "agent", "web_view_called", input_summary=target, output_summary="asset_no_preview"
             )
             return [
                 _text_block(
-                    f"view: asset {asset_id!r} exists ({mime}) but has no raster "
-                    "preview to view — a vector asset with no derived thumbnail. "
-                    "Judge it from the brand card's description, or choose an "
-                    "asset you can see."
+                    f"view: asset {asset_id!r} exists, but its media ({mime}) has "
+                    f"no raster preview to view{cause}. Judge it from its "
+                    "description, or choose an asset you can see."
                 )
             ]
 
@@ -4465,14 +4489,26 @@ class LumenWebTools:
             or (record.get("source") or {}).get("label")
             or asset_id
         )
-        dims = f"{pixel_width}x{pixel_height}px, " if pixel_width and pixel_height else ""
-        source_kind = (record.get("source") or {}).get("kind") or "unknown"
+        # BOTH dimensions, because they answer different questions and the image
+        # itself cannot disambiguate them (a sub-512px thumbnail is upscaled
+        # before it is attached, so a 296px crop and a 2460px hero LOOK alike).
+        # The SOURCE dims decide whether an asset can carry a full-bleed band;
+        # the PREVIEW dims say how much detail this look actually shows. Reporting
+        # only the resolver's tuple made every thumbnailed kit asset read ~256px.
+        source_dims = _record_pixel_dims(record)
+        preview_dims = (pixel_width, pixel_height) if pixel_width and pixel_height else None
+        details: List[str] = []
+        if source_dims:
+            details.append(f"source {source_dims[0]}x{source_dims[1]}px")
+        if preview_dims and preview_dims != source_dims:
+            details.append(f"preview {preview_dims[0]}x{preview_dims[1]}px")
+        details.append(f"source {(record.get('source') or {}).get('kind') or 'unknown'}")
         self.record(
             "agent", "web_view_called", input_summary=target, output_summary="asset_viewed"
         )
         return [
             _text_block(
-                f"view: asset {asset_id} — {label} ({dims}source {source_kind})"
+                f"view: asset {asset_id} — {label} ({', '.join(details)})"
             ),
             # G5 (see the preview branch): every web view image rides the
             # many-image ceiling, kit assets included — they accumulate in the
@@ -4629,9 +4665,9 @@ def make_web_view_tool(tools: LumenWebTools, can_render: bool = True):
     screenshot of that width as [text, image] blocks; "state:<n>" returns the
     nth interactive STATE capture (dialog opened / accordion expanded) from the
     latest render; "asset:<asset_id>" returns that asset's preview image (from
-    the kit manifest or the document's own registry); "doc" returns a compact
-    section/asset summary; "brand" returns the brand card; "account" returns the
-    target account card (P5).
+    the document's own registry, the kit manifest, or the workspace library);
+    "doc" returns a compact section/asset summary; "brand" returns the brand
+    card; "account" returns the target account card (P5).
     Mirrors tools/view.make_view_tool: any failure inside returns an honest error
     STRING so a bad/unreadable image can never kill the turn unfinalized."""
     from langchain_core.tools import tool
@@ -4643,10 +4679,11 @@ def make_web_view_tool(tools: LumenWebTools, can_render: bool = True):
         "preview:375" returns the latest rendered screenshot at that width;
         "state:<n>" returns the nth interactive STATE capture (0-based: a dialog
         opened or accordions expanded) from the latest render;
-        "asset:<asset_id>" returns that asset's preview image (a brand kit asset
-        or one already registered in the document); "doc" returns a section +
-        asset summary; "brand" returns the brand card; "account" returns the
-        target account card. Returns image content so you judge by looking, not
+        "asset:<asset_id>" returns that asset's preview image with its SOURCE
+        pixel dimensions (a brand kit asset, a `search_assets` library result, or
+        one already registered in the document); "doc" returns a section + asset
+        summary; "brand" returns the brand card; "account" returns the target
+        account card. Returns image content so you judge by looking, not
         guessing."""
         try:
             with log_span("tool_web_view", logger=logger, target=target):
