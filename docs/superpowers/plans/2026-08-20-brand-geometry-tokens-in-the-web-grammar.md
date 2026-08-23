@@ -1,6 +1,24 @@
 # Brand Geometry Tokens in the Web Class Grammar — Ratified Plan (the enforcement mount)
 
-> **STATUS 2026-08-22 — RATIFIED (H1–H4 + G2 slice) by the founder, with two binding
+> **STATUS 2026-08-24 — IMPLEMENTED AND WALK-PROVEN (Wave 3 complete).** G1–G4 plus
+> the master plan's G5 all landed on `integration/frontend-design-part-iv-v2`
+> (`8086f445b..d824b1c28`, 17 commits): the ten utilities resolve kit geometry in
+> all three CSS pipelines (editor runtime, agent screenshots, AND the static
+> export/publish compile — a path this plan's text missed), `surface.band.*`
+> tokens mint from the measured band rhythm (Stripe navy → `surface.band.statement`),
+> the authoring stack speaks the vocabulary (prompt constant + skills + recipe
+> rendering + drift guards), the H2 phase-2 finding ships as LUMW0306 Advice
+> (agent-only, dedupe, never rejects, warnings/advice buckets split at every tool
+> exit), and a web-lane retokenizer rebinds provably-value-equal raw classes.
+> Live walk 2026-08-24: a real generation authored 31 utility usages with ZERO raw
+> geometry; DOM computed styles equal the measured tokens; identical markup
+> re-renders different geometry when the kit changes. Evidence + full decision
+> ledger: `.superpowers/sdd/2026-08-20-brand-geometry-tokens-in-the-web-grammar/`;
+> durable record: `_memory/2026-08-24-wave3-geometry-tokens-complete.md`.
+> One deviation from this plan's letter, compiler-verified: `rounded-full` is
+> excluded from the retokenizer (Tailwind v4 compiles it to `calc(infinity*1px)`).
+>
+> *(Superseded original status:)* **STATUS 2026-08-22 — RATIFIED (H1–H4 + G2 slice) by the founder, with two binding
 > carve-outs; slice-by-slice dispatch on founder order.** The carve-outs: (1) **no
 > new human-facing diagnostics** — the H2 phase-2 finding ships at Advice severity,
 > reaches the agent via tool-result diagnostics and the trace only, and is excluded

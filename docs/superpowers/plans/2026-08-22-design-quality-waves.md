@@ -329,6 +329,16 @@ run ledger (rejection count, author calls, wall clock).
 
 ## WAVE 3 — The token bridge (the ratified geometry plan, carve-outs applied)
 
+> **[DONE 2026-08-24 — G1–G5 all landed and walk-proven** (`8086f445b..d824b1c28`);
+> see the geometry plan's status header and
+> `_memory/2026-08-24-wave3-geometry-tokens-complete.md` for the delivered shape,
+> the live-walk evidence (adoption/DOM/parity all proven), and the registered
+> follow-ups — notably: chat-driven generation is blocked on this branch until a
+> rebase (sibling worktrees superseded the shared dev DB's recipe revision), kit
+> v9 (latest approved) carries no BrandBrief so the brief/advice path is dark for
+> chat-born docs, and Stripe's `space.card.padding` measured a chip's 7px (ingestion
+> measurement-quality follow-up). Executed AHEAD of Wave 2 per founder order.]**
+
 Wave 3 **is** `docs/superpowers/plans/2026-08-20-brand-geometry-tokens-in-the-web-grammar.md`
 G1→G4, ratified 2026-08-22 — it stays the implementation plan of record; this
 section only binds the carve-outs and one addition:
