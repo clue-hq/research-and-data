@@ -4336,6 +4336,428 @@ def test_image_provider_generate_without_references_is_bare_string(
     assert content == "a quiet mountain lake at dawn\n\n(Render with aspect ratio 16:9.)"
 
 
+# --- IMG-API: the gpt-image-2 (OpenRouter Images API) transport --------------
+#
+# `openai/gpt-image-2` does NOT speak the chat-completions image modality; it
+# takes an OpenAI-Images-style body at POST {base_url}/images with a top-level
+# `prompt` and a base64 `data[*].b64_json` response (founder-supplied OpenRouter
+# reference, 2026-08-23). `IMAGE_MODEL_API_STYLE=images` selects that transport;
+# the default `chat` path stays byte-identical for the Gemini-class models.
+
+
+def _images_api_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "image_model_base_url", "https://openrouter.ai/api/v1")
+    monkeypatch.setattr(settings, "image_model_api_key", "test-key")
+    monkeypatch.setattr(settings, "image_model_id", "openai/gpt-image-2")
+    monkeypatch.setattr(settings, "image_model_api_style", "images")
+
+
+def _capture_images_api_post(
+    monkeypatch: pytest.MonkeyPatch, out_png: bytes
+) -> dict:
+    """Patch httpx.post with a stub that captures the request and answers in the
+    documented Images-API shape (`data[*].b64_json`)."""
+    captured: dict = {}
+
+    class _FakeResponse:
+        status_code = 200
+        headers = {"content-type": "application/json"}
+
+        def json(self) -> dict:
+            return {
+                "data": [{"b64_json": base64.b64encode(out_png).decode("ascii")}]
+            }
+
+    def fake_post(url, json=None, headers=None, timeout=None):
+        captured.update(url=url, json=json, headers=headers, timeout=timeout)
+        return _FakeResponse()
+
+    monkeypatch.setattr("httpx.post", fake_post)
+    return captured
+
+
+def test_image_provider_images_api_generation_body(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The founder's generation sample, minus `stream` (we are synchronous):
+    # top-level prompt + structured aspect_ratio + quality. No messages, no
+    # modalities, no background (its enum is auto|opaque — never "transparent").
+    _images_api_settings(monkeypatch)
+    out_png = _tiny_png(8, 8, rgba=(3, 3, 3, 255))
+    captured = _capture_images_api_post(monkeypatch, out_png)
+
+    result = image_provider.generate(
+        prompt="a calm clinic waiting room",
+        brand_notes=["warm palette"],
+        aspect_ratio="16:9",
+        image_size="2k",
+    )
+    assert result.image_bytes == out_png
+    assert result.mime_type == "image/png"
+    assert result.model == "openai/gpt-image-2"
+
+    assert captured["url"] == "https://openrouter.ai/api/v1/images"
+    assert captured["json"] == {
+        "model": "openai/gpt-image-2",
+        "prompt": "a calm clinic waiting room\n\nBrand/style direction: warm palette",
+        "aspect_ratio": "16:9",
+        "quality": "high",
+        "background": "auto",
+    }
+    assert captured["headers"]["Authorization"] == "Bearer test-key"
+    assert captured["headers"]["Content-Type"] == "application/json"
+
+
+def test_image_provider_images_api_omits_chat_only_fields(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Explicit negative pins: the chat vocabulary and streaming never appear.
+    _images_api_settings(monkeypatch)
+    captured = _capture_images_api_post(monkeypatch, _tiny_png(8, 8))
+    image_provider.generate(prompt="a hero band", aspect_ratio="16:9")
+    body = captured["json"]
+    for absent in ("messages", "modalities", "stream", "n", "size", "output_compression"):
+        assert absent not in body, absent
+    # The prose aspect hint belongs to the chat path only — here it is structural.
+    assert "(Render with" not in body["prompt"]
+
+
+def test_image_provider_images_api_snaps_aspect_ratio_to_the_supported_enum(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # `aspect_ratio` is a CLOSED enum (1:1, 3:2, 2:3, 4:3, 3:4, 16:9, 9:16, 21:9,
+    # auto). An unsupported caller ratio snaps to the NEAREST supported value
+    # rather than being sent verbatim (which would be a 400 → grey stub).
+    _images_api_settings(monkeypatch)
+    captured = _capture_images_api_post(monkeypatch, _tiny_png(8, 8))
+
+    image_provider.generate(prompt="a wide banner", aspect_ratio="5:2")
+    assert captured["json"]["aspect_ratio"] == "21:9"
+
+    image_provider.generate(prompt="a portrait", aspect_ratio="4:5")
+    assert captured["json"]["aspect_ratio"] == "3:4"
+
+    # Exact members survive untouched, including the alternate `16x9` spelling.
+    image_provider.generate(prompt="a hero", aspect_ratio="16x9")
+    assert captured["json"]["aspect_ratio"] == "16:9"
+
+
+def test_image_provider_images_api_derives_aspect_ratio_from_dimensions(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # With only width/height the ratio is derived the way resolve_dimensions
+    # reasons, then snapped.
+    _images_api_settings(monkeypatch)
+    captured = _capture_images_api_post(monkeypatch, _tiny_png(8, 8))
+    image_provider.generate(prompt="a hero band", width=1024, height=768)
+    assert captured["json"]["aspect_ratio"] == "4:3"
+
+
+def test_image_provider_images_api_transparency_is_prose_only(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # `background` accepts only auto|opaque, so a transparent request CANNOT be
+    # expressed structurally. FOUNDER RULE 2026-08-23: `background` is ALWAYS
+    # "auto" (as in the founder's own sample bodies) — a transparent request
+    # still sends "auto" and asks for transparency in PROSE, best-effort. Never
+    # a fake "transparent" enum value (that is a 400 → grey stub), and never a
+    # silent claim that the request was honored: this model cannot guarantee an
+    # alpha channel and the caller gets whatever it renders.
+    _images_api_settings(monkeypatch)
+    captured = _capture_images_api_post(monkeypatch, _tiny_png(8, 8))
+    image_provider.generate(prompt="a cut-out product shot", transparent_background=True)
+    body = captured["json"]
+    assert body["background"] == "auto"
+    assert "transparent background" in body["prompt"]
+
+
+def test_image_provider_images_api_always_sends_background_auto(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The founder's sample bodies carry `"background":"auto"` on BOTH the plain
+    # and the reference-conditioned call, and the rule is explicit: always auto.
+    # Pinned separately from the full-body test so a future "omit the default"
+    # tidy-up has to argue with the founder rule rather than slip through.
+    _images_api_settings(monkeypatch)
+    captured = _capture_images_api_post(monkeypatch, _tiny_png(8, 8))
+
+    image_provider.generate(prompt="a hero band", aspect_ratio="16:9")
+    assert captured["json"]["background"] == "auto"
+
+    image_provider.generate(
+        prompt="a hero band",
+        aspect_ratio="3:2",
+        reference_images=[(_tiny_png(8, 8), "image/png")],
+    )
+    assert captured["json"]["background"] == "auto"
+
+    image_provider.edit(
+        prompt="make the sky pink", source_images=[(_tiny_png(8, 8), "image/png")]
+    )
+    assert captured["json"]["background"] == "auto"
+
+
+def test_image_provider_images_api_square_default_is_sent_structurally(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A generation with no framing at all still resolves to a 1024x1024 frame
+    # (resolve_dimensions' documented default), and the body says so: 1:1, not
+    # an omitted field. The rest of the stack already places into that square,
+    # so letting the endpoint's own `auto` pick something else would hand
+    # cover-fit placement a crop it did not ask for.
+    _images_api_settings(monkeypatch)
+    captured = _capture_images_api_post(monkeypatch, _tiny_png(8, 8))
+    image_provider.generate(prompt="a plain illustration")
+    assert captured["json"]["aspect_ratio"] == "1:1"
+
+
+def test_image_provider_images_api_input_references_match_the_founder_sample(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Reference-conditioned generation: `input_references` typed dicts in caller
+    # order. The founder's sample used https URLs; we send base64 data: URLs,
+    # which is the one thing the first live call must confirm.
+    _images_api_settings(monkeypatch)
+    ref_a = _tiny_png(8, 8, rgba=(200, 40, 40, 255))
+    ref_b = _tiny_png(8, 8, rgba=(40, 40, 200, 255))
+    captured = _capture_images_api_post(monkeypatch, _tiny_png(8, 8))
+
+    image_provider.generate(
+        prompt="a focused surgeon in an operating theatre",
+        aspect_ratio="3:2",
+        reference_images=[(ref_a, "image/png"), (ref_b, "image/png")],
+    )
+    body = captured["json"]
+    assert body["input_references"] == [
+        {
+            "type": "image_url",
+            "image_url": {
+                "url": "data:image/png;base64," + base64.b64encode(ref_a).decode("ascii")
+            },
+        },
+        {
+            "type": "image_url",
+            "image_url": {
+                "url": "data:image/png;base64," + base64.b64encode(ref_b).decode("ascii")
+            },
+        },
+    ]
+    # gpt-image-2 composites reference SUBJECTS by design, so the style-anchor
+    # framing is load-bearing here — and it rides the prompt, not a body field.
+    assert body["prompt"].startswith(image_provider.STYLE_REFERENCE_FRAMING)
+    assert "a focused surgeon" in body["prompt"]
+    assert body["aspect_ratio"] == "3:2"
+
+
+def test_image_provider_images_api_edit_sends_source_as_input_references(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # An edit's source image rides the same `input_references` channel, WITHOUT
+    # the style-anchor framing (an edit really does mean "use this image").
+    _images_api_settings(monkeypatch)
+    src = _tiny_png(8, 8, rgba=(7, 7, 7, 255))
+    captured = _capture_images_api_post(monkeypatch, _tiny_png(8, 8))
+
+    image_provider.edit(prompt="make the sky pink", source_images=[(src, "image/png")])
+    body = captured["json"]
+    assert body["input_references"] == [
+        {
+            "type": "image_url",
+            "image_url": {
+                "url": "data:image/png;base64," + base64.b64encode(src).decode("ascii")
+            },
+        }
+    ]
+    assert image_provider.STYLE_REFERENCE_FRAMING not in body["prompt"]
+    # No dimensions on an edit → no aspect ratio asserted.
+    assert "aspect_ratio" not in body
+
+
+def test_image_provider_images_api_refuses_more_references_than_the_endpoint_takes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # `input_references` is documented 0-16. Our upstream cap is far lower, so
+    # this can only fire on a caller bug — it must fail loudly, not silently
+    # truncate the anchors the user attached.
+    _images_api_settings(monkeypatch)
+    _capture_images_api_post(monkeypatch, _tiny_png(8, 8))
+    too_many = [(_tiny_png(8, 8), "image/png")] * (
+        image_provider.IMAGES_API_MAX_INPUT_REFERENCES + 1
+    )
+    with pytest.raises(image_provider.ImageGenerationError) as excinfo:
+        image_provider.generate(prompt="a hero", reference_images=too_many)
+    assert excinfo.value.code == "image_model.too_many_references"
+
+
+def test_image_provider_images_api_decodes_b64_then_url(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Documented shape first: data[*].b64_json. A `data:` URL in data[0].url
+    # reuses the existing decoder; a plain https URL is fetched (the minimal
+    # slice of the W4.1 fetch the images path needs to function).
+    _images_api_settings(monkeypatch)
+    png = _tiny_png(8, 8, rgba=(5, 6, 7, 255))
+    payloads: dict = {}
+
+    class _FakeResponse:
+        status_code = 200
+        headers = {"content-type": "application/json"}
+
+        def json(self) -> dict:
+            return payloads["body"]
+
+    monkeypatch.setattr("httpx.post", lambda *a, **k: _FakeResponse())
+
+    payloads["body"] = {"data": [{"b64_json": base64.b64encode(png).decode("ascii")}]}
+    assert image_provider.generate(prompt="x").image_bytes == png
+
+    payloads["body"] = {
+        "data": [
+            {"url": "data:image/png;base64," + base64.b64encode(png).decode("ascii")}
+        ]
+    }
+    assert image_provider.generate(prompt="x").image_bytes == png
+
+    fetched: dict = {}
+
+    class _FakeGetResponse:
+        status_code = 200
+        headers = {"content-type": "image/png"}
+        content = png
+
+    def fake_get(url, timeout=None, **kwargs):
+        fetched.update(url=url, timeout=timeout)
+        return _FakeGetResponse()
+
+    monkeypatch.setattr("httpx.get", fake_get)
+    payloads["body"] = {"data": [{"url": "https://cdn.example/out-0.png"}]}
+    result = image_provider.generate(prompt="x")
+    assert result.image_bytes == png
+    assert result.mime_type == "image/png"
+    assert fetched["url"] == "https://cdn.example/out-0.png"
+    assert fetched["timeout"] == settings.image_model_timeout_s
+
+
+def test_image_provider_images_api_garbage_response_is_bad_response(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _images_api_settings(monkeypatch)
+
+    class _FakeResponse:
+        status_code = 200
+        headers = {"content-type": "application/json"}
+
+        def json(self) -> dict:
+            return {"error": {"message": "model unavailable"}}
+
+    monkeypatch.setattr("httpx.post", lambda *a, **k: _FakeResponse())
+    with pytest.raises(image_provider.ImageGenerationError) as excinfo:
+        image_provider.generate(prompt="anything")
+    assert excinfo.value.code == "image_model.bad_response"
+
+
+def test_image_provider_chat_style_request_bodies_are_unchanged(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # REGRESSION: with the default `chat` style the request bodies are exactly
+    # what they were before the images transport existed — the Gemini-class
+    # models still ride this path and must not shift by one byte.
+    monkeypatch.setattr(settings, "image_model_base_url", "https://openrouter.ai/api/v1")
+    monkeypatch.setattr(settings, "image_model_api_key", "test-key")
+    monkeypatch.setattr(settings, "image_model_id", "test/image-model")
+    monkeypatch.setattr(settings, "image_model_api_style", "chat")
+
+    out_png = _tiny_png(8, 8, rgba=(9, 9, 9, 255))
+    out_url = "data:image/png;base64," + base64.b64encode(out_png).decode("ascii")
+    captured: dict = {}
+
+    class _FakeResponse:
+        status_code = 200
+        headers = {"content-type": "application/json"}
+
+        def json(self) -> dict:
+            return {"choices": [{"message": {"images": [{"image_url": {"url": out_url}}]}}]}
+
+    def fake_post(url, json=None, headers=None, timeout=None):
+        captured.update(url=url, json=json, headers=headers)
+        return _FakeResponse()
+
+    monkeypatch.setattr("httpx.post", fake_post)
+
+    # (1) plain generation — bare-string content, prose hints, image modality.
+    image_provider.generate(
+        prompt="a calm clinic waiting room",
+        brand_notes=["warm palette"],
+        aspect_ratio="16:9",
+        image_size="2k",
+        transparent_background=True,
+    )
+    assert captured["url"] == "https://openrouter.ai/api/v1/chat/completions"
+    assert captured["json"] == {
+        "model": "test/image-model",
+        "messages": [
+            {
+                "role": "user",
+                "content": (
+                    "a calm clinic waiting room\n\nBrand/style direction: warm palette"
+                    "\n\n(Render with aspect ratio 16:9, 2k resolution, "
+                    "transparent background.)"
+                ),
+            }
+        ],
+        "modalities": ["image", "text"],
+    }
+
+    # (2) reference-conditioned generation — multimodal parts, framing first.
+    ref = _tiny_png(8, 8, rgba=(200, 40, 40, 255))
+    image_provider.generate(
+        prompt="a focused surgeon",
+        aspect_ratio="3:2",
+        reference_images=[(ref, "image/png")],
+    )
+    assert captured["json"] == {
+        "model": "test/image-model",
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": "data:image/png;base64,"
+                            + base64.b64encode(ref).decode("ascii")
+                        },
+                    },
+                    {
+                        "type": "text",
+                        "text": (
+                            image_provider.STYLE_REFERENCE_FRAMING
+                            + "\n\na focused surgeon\n\n(Render with aspect ratio 3:2.)"
+                        ),
+                    },
+                ],
+            }
+        ],
+        "modalities": ["image", "text"],
+    }
+
+
+def test_image_model_api_style_rejects_a_typo(monkeypatch: pytest.MonkeyPatch) -> None:
+    # A typo'd transport must fail at startup, not silently send the wrong body
+    # shape to a paid endpoint for the rest of the deployment's life.
+    from py_lumen_config.config import Settings
+
+    monkeypatch.setenv("IMAGE_MODEL_API_STYLE", "imagess")
+    with pytest.raises(Exception) as excinfo:
+        Settings()
+    assert "IMAGE_MODEL_API_STYLE" in str(excinfo.value)
+
+    monkeypatch.setenv("IMAGE_MODEL_API_STYLE", "images")
+    assert Settings().image_model_api_style == "images"
+    monkeypatch.setenv("IMAGE_MODEL_API_STYLE", "")
+    assert Settings().image_model_api_style == "chat"
+
+
 def test_generation_key_reference_digests(client: TestClient) -> None:
     # RC2 D-RC2.3: reference_digests participate only when truthy (existing keys
     # byte-identical), order-insensitively.

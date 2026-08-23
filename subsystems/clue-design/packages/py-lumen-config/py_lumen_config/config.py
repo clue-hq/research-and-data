@@ -101,6 +101,17 @@ class Settings(BaseSettings):
     image_model_api_key: str = ""
     image_model_id: str = "default"
     image_model_provider_id: str = "image-gen-v1"
+    # Which OpenRouter TRANSPORT the configured image model speaks:
+    #   "chat"   — the OpenAI-compatible chat-completions endpoint with an image
+    #              modality (Gemini-class models; the historical default).
+    #   "images" — the dedicated Images endpoint, POST {base_url}/images, with a
+    #              top-level `prompt`/`aspect_ratio`/`quality`/`input_references`
+    #              body and a base64 `data[*].b64_json` response. This is what
+    #              `openai/gpt-image-2` takes (founder-supplied OpenRouter API
+    #              reference, 2026-08-23) — it does NOT answer the chat call.
+    # A typo must fail at startup, not silently post the wrong shape to a paid
+    # endpoint forever, so the value is enum-validated below.
+    image_model_api_style: str = "chat"
     image_model_timeout_s: float = 60.0
     image_model_max_retries: int = 2
     # Optional OpenRouter attribution headers (ranking only; harmless if unset).
@@ -287,6 +298,25 @@ class Settings(BaseSettings):
             return value
         trimmed = value.strip().rstrip("/")
         return trimmed or "http://127.0.0.1:8010"
+
+    @field_validator("image_model_api_style", mode="before")
+    @classmethod
+    def _validate_image_model_api_style(cls, value: object) -> object:
+        """A typo'd transport must fail at startup, not silently send a
+        chat-completions body to an Images endpoint (or vice versa) — either
+        way every generation 400s straight to the grey stub placeholder."""
+        if not isinstance(value, str):
+            return value
+        style = value.strip().lower()
+        if not style:
+            return "chat"
+        if style not in {"chat", "images"}:
+            raise ValueError(
+                "IMAGE_MODEL_API_STYLE must be one of chat|images (chat = the "
+                "chat-completions image modality, images = POST {base_url}/images); "
+                f"got {value!r}"
+            )
+        return style
 
     @field_validator("image_model_id", mode="before")
     @classmethod

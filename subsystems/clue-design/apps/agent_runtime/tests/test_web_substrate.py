@@ -1773,6 +1773,58 @@ def test_generate_image_uses_the_configured_model_when_available(tmp_path: Path,
     assert captured["aspect_ratio"] == "16:9"
 
 
+def test_generate_image_aspect_ratio_reaches_the_images_api_body(tmp_path: Path, monkeypatch):
+    """FOUNDER RULE (2026-08-23): the deepagent must be able to specify the
+    aspect ratio. The neighbouring test stops at the provider seam; this one runs
+    the REAL `image_provider` on the gpt-image-2 (`IMAGE_MODEL_API_STYLE=images`)
+    transport with only the HTTP call mocked, so the whole chain —
+    `asset(aspect_ratio=...)` → `_generate_image_record` → `generate` →
+    `_invoke_images_api` → the wire body's STRUCTURED `aspect_ratio` — is pinned
+    end to end. Its `21:9` also proves the closed-enum snap survives the trip:
+    the agent asks for an unsupported 5:2 and the endpoint sees a legal member.
+    """
+    from lumen_api import image_provider as real_image_provider
+    from py_lumen_config import settings
+
+    png = base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+    )
+    monkeypatch.setattr(settings, "image_model_base_url", "https://openrouter.ai/api/v1")
+    monkeypatch.setattr(settings, "image_model_api_key", "test-key")
+    monkeypatch.setattr(settings, "image_model_id", "openai/gpt-image-2")
+    monkeypatch.setattr(settings, "image_model_api_style", "images")
+    monkeypatch.setattr(real_image_provider, "is_configured", lambda: True)
+    monkeypatch.setattr(ws, "image_provider", real_image_provider)
+
+    captured: dict = {}
+
+    class _FakeResponse:
+        status_code = 200
+        headers = {"content-type": "application/json"}
+
+        def json(self) -> dict:
+            return {"data": [{"b64_json": base64.b64encode(png).decode("ascii")}]}
+
+    def fake_post(url, json=None, headers=None, timeout=None):
+        captured.update(url=url, json=json)
+        return _FakeResponse()
+
+    monkeypatch.setattr("httpx.post", fake_post)
+    tools = _tools(tmp_path)
+
+    result = json.loads(
+        tools.asset(action="generate_image", prompt="A calm hero field", aspect_ratio="5:2")
+    )
+
+    assert result["status"] == "ok", result
+    assert result["mode"] == "model"
+    assert captured["url"] == "https://openrouter.ai/api/v1/images"
+    assert captured["json"]["aspect_ratio"] == "21:9"
+    assert captured["json"]["quality"] == "high"
+    assert captured["json"]["background"] == "auto"
+    assert "messages" not in captured["json"]
+
+
 def test_generate_image_records_a_diagnostic_when_the_model_fails(tmp_path: Path, monkeypatch):
     """A real-provider failure degrades to the stub LOUDLY: the page still gets
     an image, and the tool reports why the model did not serve it. Before the fix
