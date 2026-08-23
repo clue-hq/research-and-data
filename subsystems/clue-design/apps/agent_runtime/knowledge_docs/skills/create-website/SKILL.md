@@ -10,6 +10,8 @@ The markup is parsed into a typed tree; **any error rejects the whole batch and
 nothing is stored** — you then repair with `patch_web_page` (see Repairing
 below), not by re-drafting. Warnings do not block, but they are work: resolve
 each one or explicitly justify it in your report — never carry one silently.
+A result's separate `advice` entries are informational: judge them, act only
+where they are right for this page — they are never an obligation, never block.
 
 ## Author once, at structural altitude
 
@@ -373,3 +375,4 @@ Common diagnostic codes:
 | LUMW0124 (warning) | bad component prop value | defaults applied; fix the `data-*` value |
 | LUMW0133 | invalid slot/variable key | keys are `[a-z0-9_.-]`, ≤64 chars |
 | LUMW0134 | `data-slot-when` on a non-band element | presence gates go on `<section>`/`<div>` only |
+| LUMW0306 (advice) | raw radius/shadow step on a kit whose Creative Brief measured its shape | prefer `rounded-button\|card\|badge` / `shadow-brand\|card` where the shape is a brand decision — informational, never blocking |

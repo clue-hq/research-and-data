@@ -2180,3 +2180,101 @@ def test_generate_image_reports_when_no_model_is_configured(tmp_path: Path, monk
     assert result["mode"] == "placeholder"
     messages = " ".join(str(d.get("message", "")) for d in result.get("diagnostics") or [])
     assert "IMAGE_MODEL" in messages
+
+
+# --- the advice channel: LUMW0306 reaches the agent, in its own bucket -------
+#
+# Advice used to land in `warnings`, and the author prompt calls warnings
+# mandatory work — so an advisory line arrived as an obligation. These pin the
+# split, and the one finding that rides it.
+
+ACME_KIT_PATH = REPO_ROOT / "crates/lumen-core/fixtures/brand_kits/acme_full.json"
+
+RAW_GEOMETRY_HTML = """
+<section id="cards" class="bg-light">
+  <div class="mx-auto max-w-[1200px] px-6 py-20 flex flex-col gap-6">
+    <div class="rounded-2xl shadow-lg p-6"><p class="text-muted">First card.</p></div>
+    <div class="rounded-2xl shadow-lg p-6"><p class="text-muted">Second card.</p></div>
+  </div>
+</section>
+"""
+
+
+def _kit(briefed: bool) -> dict:
+    kit = json.loads(ACME_KIT_PATH.read_text(encoding="utf-8"))
+    if briefed:
+        kit["brief"] = {
+            "schema_version": 1,
+            "characterization": {"words": ["measured", "calm"]},
+        }
+    return kit
+
+
+def _kitted_tools(tmp_path: Path, *, briefed: bool) -> LumenWebTools:
+    from lumen_api.core import CoreClient
+
+    config = replace(
+        AgentRuntimeConfig.from_env(REPO_ROOT),
+        trace_dir=tmp_path / "workspace_root",
+        brand_kit=_kit(briefed),
+    )
+    core = CoreClient(repo_root=REPO_ROOT)
+    seed = core.web_new_doc("doc_web_test", "Test site", None)["web_doc"]
+    return LumenWebTools(config, "Build a page", initial_web_doc=seed)
+
+
+def _codes(diagnostics) -> list[str]:
+    return [d.get("code") for d in diagnostics or []]
+
+
+def test_briefed_kit_advice_is_its_own_bucket(tmp_path: Path):
+    tools = _kitted_tools(tmp_path, briefed=True)
+    result = json.loads(tools.author_web_page(RAW_GEOMETRY_HTML))
+
+    assert result["status"] == "ok", result
+    # The finding arrives as advice…
+    assert "LUMW0306" in _codes(result["advice"]), result
+    assert all(d.get("severity") == "advice" for d in result["advice"]), result
+    # …and never as work.
+    assert "LUMW0306" not in _codes(result["warnings"]), result
+    assert all(d.get("severity") != "advice" for d in result["warnings"]), result
+    # One line per raw class across both cards, naming the class.
+    messages = " ".join(str(d.get("message")) for d in result["advice"])
+    assert messages.count("`rounded-2xl`") == 1, messages
+    assert "`shadow-lg`" in messages, messages
+
+    # The trace keeps the whole non-error picture.
+    lines = (tools.trace_dir / "trace.jsonl").read_text(encoding="utf-8").splitlines()
+    traced = [
+        code
+        for line in lines
+        for code in _codes(json.loads(line).get("diagnostics"))
+    ]
+    assert "LUMW0306" in traced
+
+
+def test_an_unbriefed_kit_authors_the_same_page_without_advice(tmp_path: Path):
+    tools = _kitted_tools(tmp_path, briefed=False)
+    result = json.loads(tools.author_web_page(RAW_GEOMETRY_HTML))
+
+    assert result["status"] == "ok", result
+    assert "LUMW0306" not in _codes(result["advice"]), result
+    assert "LUMW0306" not in _codes(result["warnings"]), result
+    body = tools.trace_dir.joinpath("trace.jsonl").read_text(encoding="utf-8")
+    assert "LUMW0306" not in body
+
+
+def test_geometry_advice_never_rejects_a_page(tmp_path: Path):
+    """A page saturated with raw geometry on a briefed kit still stores."""
+    tools = _kitted_tools(tmp_path, briefed=True)
+    saturated = "\n".join(
+        f'<section id="s{index}" class="rounded-2xl shadow-lg">'
+        f'<div class="rounded-2xl shadow-xl p-6"><p>Card {index}.</p></div></section>'
+        for index in range(8)
+    )
+    result = json.loads(tools.author_web_page(saturated))
+
+    assert result["status"] == "ok", result
+    assert result["installed_nodes"] > 0
+    assert tools._doc_version == 1
+    assert result["advice"], "the advice should still be reported"

@@ -25,6 +25,7 @@ from lumen_api.main import create_app
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 MINIMAL_SCENE_PATH = REPO_ROOT / "crates/lumen-core/fixtures/minimal_scene.json"
+ACME_KIT_PATH = REPO_ROOT / "crates/lumen-core/fixtures/brand_kits/acme_full.json"
 
 # The same clean landing-page fixture the turn tests ingest (header + hero +
 # footer, tokens only). Ingest yields stable section ids: hero / site_header /
@@ -896,6 +897,40 @@ def test_web_theme_returns_tokens(client: TestClient) -> None:
     assert body["theme"]["display_family"]
     # Diagnostics surface only error-severity entries.
     assert all(d.get("severity") == "error" for d in body["diagnostics"])
+
+
+def test_web_theme_never_leaks_advice_or_warnings(client: TestClient) -> None:
+    """The one human-facing surface that runs the class lint filters to errors.
+
+    Agent-facing advice (LUMW0306 brand geometry, LUMW0301/0303 theme
+    fallbacks) and warnings are for the author, not the marketer looking at an
+    Appearance panel. This pins the filter with a document that PROVABLY yields
+    both, so a refactor cannot quietly start leaking them.
+    """
+    document = create_web_document(client)
+    web_doc = ingest_content(client, document["id"])
+    # A node carrying an unknown utility (warning) and raw brand geometry
+    # (advice, once the kit is briefed).
+    page = web_doc["pages"][0]
+    page["nodes"]["hero"]["classes"] = "bg-light floop-3 rounded-2xl shadow-lg"
+    seed_content(client, document["id"], web_doc)
+
+    briefed_kit = json.loads(ACME_KIT_PATH.read_text(encoding="utf-8"))
+    briefed_kit["brief"] = {
+        "schema_version": 1,
+        "characterization": {"words": ["measured", "calm"]},
+    }
+    raw = client.app.state.core.web_validate(web_doc, briefed_kit)
+    raw_codes = {d.get("code") for d in raw.get("diagnostics") or []}
+    assert "LUMW0220" in raw_codes, raw_codes  # the warning is really there
+    assert "LUMW0306" in raw_codes, raw_codes  # so is the advice
+
+    response = client.get(f"/documents/{document['id']}/web/theme")
+    assert response.status_code == 200, response.text
+    diagnostics = response.json()["diagnostics"]
+    assert all(d.get("severity") == "error" for d in diagnostics), diagnostics
+    codes = {d.get("code") for d in diagnostics}
+    assert "LUMW0220" not in codes and "LUMW0306" not in codes, codes
 
 
 # --- (h) scene documents are rejected on every new endpoint -----------------

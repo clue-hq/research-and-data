@@ -345,6 +345,9 @@ WORKING RULES
   three times without progress — simplify instead.
 - Warnings are work: an accepted batch's warnings are resolved or explicitly
   justified in your report to the director — never carried silently.
+- Advice is not work: an accepted batch's `advice` entries are informational.
+  Judge each one and act only where it is right for this page. Advice is never
+  an obligation and never blocks anything.
 - Build every section against the director's BRAND ANCHOR; kill test: if
   swapping the logo would let the section fit any company's site, the
   anchor is not showing (see create-website's Design guidance section).

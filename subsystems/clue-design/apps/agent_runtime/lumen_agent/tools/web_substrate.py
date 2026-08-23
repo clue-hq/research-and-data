@@ -532,6 +532,33 @@ def _count_subtree(nodes: JsonObject, node_id: str) -> int:
     return total
 
 
+def _split_non_error_diagnostics(
+    diagnostics: Any,
+) -> tuple[List[JsonObject], List[JsonObject]]:
+    """Non-error diagnostics, told apart: work on the left, information on the right.
+
+    Warnings and advice used to share one `warnings` bucket — and the author
+    prompt calls that bucket mandatory work ("Warnings are work"), so an
+    advisory line arrived wearing an obligation's clothes. They are different
+    species: a warning names something the author must resolve or justify;
+    advice (theme fallbacks, brand-geometry drift) is an observation to judge.
+
+    Anything that is not an error and not explicitly `advice` counts as a
+    warning — the loud side. A severity this build has never heard of must
+    surface somewhere, and the bucket that gets read is the safer home.
+    """
+    warnings: List[JsonObject] = []
+    advice: List[JsonObject] = []
+    for diagnostic in diagnostics or []:
+        if not isinstance(diagnostic, dict) or diagnostic.get("severity") == "error":
+            continue
+        if diagnostic.get("severity") == "advice":
+            advice.append(diagnostic)
+        else:
+            warnings.append(diagnostic)
+    return warnings, advice
+
+
 def _extract_grounded_page(
     *,
     requested_url: str,
@@ -1416,9 +1443,7 @@ class LumenWebTools:
         self._doc_version += 1
         self._clear_pending()
         installed = response.get("applied_operations")
-        warnings = [
-            d for d in diagnostics if isinstance(d, dict) and d.get("severity") != "error"
-        ]
+        warnings, advice = _split_non_error_diagnostics(diagnostics)
         self.record(
             "author",
             self._authored_event(origin, submission["tool"]),
@@ -1426,13 +1451,16 @@ class LumenWebTools:
             output_summary=(
                 f"installed {installed} node(s); page now {self._page_node_count()} nodes"
             ),
-            diagnostics=warnings,
+            # The trace keeps the whole non-error picture; only the tool result
+            # separates obligation from observation.
+            diagnostics=warnings + advice,
             sink_extra={"installed_nodes": installed},
         )
         result: JsonObject = {
             "status": "ok",
             "installed_nodes": installed,
             "warnings": warnings,
+            "advice": advice,
         }
         self._decorate_success(result, origin, patch_count)
         return json.dumps(result, indent=2)
@@ -1656,9 +1684,7 @@ class LumenWebTools:
         self._record_operations(batch)
         self._doc_version += 1
         self._clear_pending()
-        warnings = [
-            d for d in diagnostics if isinstance(d, dict) and d.get("severity") != "error"
-        ]
+        warnings, advice = _split_non_error_diagnostics(diagnostics)
         self.record(
             "author",
             self._authored_event(origin, submission["tool"]),
@@ -1666,7 +1692,7 @@ class LumenWebTools:
                 origin, patch_count, f"{node_id}->{target_section}"
             ),
             output_summary=f"replaced section {target_section} with {frag_roots}",
-            diagnostics=warnings,
+            diagnostics=warnings + advice,
             payload={"section": target_section, "replaced_with": frag_roots},
             sink_extra={"section": target_section},
         )
@@ -1675,6 +1701,7 @@ class LumenWebTools:
             "section": target_section,
             "roots": frag_roots,
             "warnings": warnings,
+            "advice": advice,
         }
         self._decorate_success(result, origin, patch_count)
         return json.dumps(result, indent=2)
@@ -1958,8 +1985,9 @@ class LumenWebTools:
         The batch applies checked and atomically: any op that fails, or a batch
         that would leave the document invalid, is rejected WHOLE (nothing is
         stored) → {"status":"rejected", "diagnostics":[...]}. On success the
-        working doc is replaced and {"status":"ok", "applied":n, "warnings":[…]}
-        is returned."""
+        working doc is replaced and {"status":"ok", "applied":n, "warnings":[…],
+        "advice":[…]} is returned. `warnings` is work to resolve or justify;
+        `advice` is informational and never an obligation."""
         refusal = self._consume_round_budget("web_ops")
         if refusal is not None:
             return refusal
@@ -2037,9 +2065,7 @@ class LumenWebTools:
         self._record_operations(operations)
         self._doc_version += 1
         diagnostics = response.get("diagnostics") or []
-        warnings = [
-            d for d in diagnostics if isinstance(d, dict) and d.get("severity") != "error"
-        ]
+        warnings, advice = _split_non_error_diagnostics(diagnostics)
         kinds = [op.get("kind") for op in operations]
         applied = response.get("applied_operations") or len(operations)
         self.record(
@@ -2047,12 +2073,18 @@ class LumenWebTools:
             "web_ops_applied",
             input_summary=operations_json[:200],
             output_summary=f"applied {applied} op(s): {kinds}",
-            diagnostics=warnings,
+            diagnostics=warnings + advice,
             payload={"operation_count": applied, "kinds": kinds},
             sink_extra={"operation_count": applied},
         )
         return json.dumps(
-            {"status": "ok", "applied": applied, "warnings": warnings}, indent=2
+            {
+                "status": "ok",
+                "applied": applied,
+                "warnings": warnings,
+                "advice": advice,
+            },
+            indent=2,
         )
 
     # --- durable custom-component authoring (P6.4) -------------------------
@@ -2811,6 +2843,10 @@ class LumenWebTools:
                 "source_mutated": False,
             },
         )
+        # This path used to keep `severity == "warning"` and nothing else, so
+        # advice fell on the floor here while the authoring paths at least
+        # showed it (as a warning). Same split as everywhere else now.
+        warnings, advice = _split_non_error_diagnostics(response.get("diagnostics"))
         return json.dumps(
             {
                 "status": "ok",
@@ -2820,11 +2856,8 @@ class LumenWebTools:
                 "artifact_id": artifact_id,
                 "applied": len(operations),
                 "source_mutated": False,
-                "warnings": [
-                    diagnostic
-                    for diagnostic in response.get("diagnostics") or []
-                    if diagnostic.get("severity") == "warning"
-                ],
+                "warnings": warnings,
+                "advice": advice,
             },
             indent=2,
         )
