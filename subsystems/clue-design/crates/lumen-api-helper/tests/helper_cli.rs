@@ -2123,3 +2123,100 @@ fn web_derive_rejects_atomically_on_missing_asset() {
     let codes: Vec<String> = diagnostic_codes(&response);
     assert!(codes.contains(&"LUMW0605".to_owned()), "{codes:?}");
 }
+
+// --- Brand-geometry advice on a briefed kit (LUMW0306) -----------------------
+//
+// The one bit ingest needs about the Creative Brief is lifted off the RAW kit
+// JSON in the helper (serde drops `brief` on the way into `BrandKit`). These
+// prove the wire: the same markup and the same kit differ only by that key.
+
+const RAW_GEOMETRY_SECTION: &str = r#"<section id="cards">
+    <div id="card_a" class="rounded-2xl shadow-lg p-6"><p id="a">First.</p></div>
+    <div id="card_b" class="rounded-2xl shadow-lg p-6"><p id="b">Second.</p></div>
+  </section>"#;
+
+fn briefed_brand_kit() -> Value {
+    let mut kit = platform_brand_kit();
+    kit["brief"] = json!({
+        "schema_version": 1,
+        "characterization": { "words": ["measured", "calm"] },
+    });
+    kit
+}
+
+fn geometry_advice(response: &Value) -> Vec<String> {
+    response["diagnostics"]
+        .as_array()
+        .expect("diagnostics array")
+        .iter()
+        .filter(|diagnostic| diagnostic["code"] == "LUMW0306")
+        .map(|diagnostic| {
+            assert_eq!(diagnostic["severity"], "advice", "{diagnostic:#?}");
+            diagnostic["message"].as_str().unwrap_or_default().to_owned()
+        })
+        .collect()
+}
+
+fn web_doc_with_raw_geometry(brand_kit: Value) -> Value {
+    let base = helper(json!({
+        "action": "web_new_doc",
+        "document_id": "geo_doc",
+        "title": "Geometry",
+    }));
+    let ingested = helper(json!({
+        "action": "web_ingest_html",
+        "doc": base["web_doc"].clone(),
+        "page_id": "home",
+        "html": RAW_GEOMETRY_SECTION,
+        "brand_kit": brand_kit,
+    }));
+    assert_eq!(ingested["ok"], true, "{ingested:#?}");
+    ingested
+}
+
+#[test]
+fn briefed_ingest_advises_raw_geometry_once_and_still_installs() {
+    let response = web_doc_with_raw_geometry(briefed_brand_kit());
+    let advice = geometry_advice(&response);
+    assert_eq!(
+        advice.len(),
+        2,
+        "one line per raw class across both cards: {advice:?}"
+    );
+    assert!(advice.iter().any(|line| line.contains("`rounded-2xl`")), "{advice:?}");
+    assert!(advice.iter().any(|line| line.contains("`shadow-lg`")), "{advice:?}");
+    // Advice can never reject: the nodes are installed.
+    assert!(
+        response["applied_operations"].as_u64().unwrap_or_default() > 0,
+        "{response:#?}"
+    );
+    let serialized = response["web_doc"].to_string();
+    assert!(serialized.contains("card_a") && serialized.contains("card_b"), "{serialized}");
+}
+
+#[test]
+fn an_unbriefed_kit_ingests_the_same_markup_silently() {
+    let response = web_doc_with_raw_geometry(platform_brand_kit());
+    assert!(geometry_advice(&response).is_empty(), "{response:#?}");
+}
+
+#[test]
+fn web_validate_advises_raw_geometry_on_a_briefed_kit() {
+    let doc = web_doc_with_raw_geometry(platform_brand_kit())["web_doc"].clone();
+
+    let briefed = helper(json!({
+        "action": "web_validate",
+        "doc": doc.clone(),
+        "brand_kit": briefed_brand_kit(),
+    }));
+    assert_eq!(briefed["ok"], true, "{briefed:#?}");
+    let advice = geometry_advice(&briefed);
+    assert_eq!(advice.len(), 2, "deduped across the whole doc walk: {advice:?}");
+
+    let unbriefed = helper(json!({
+        "action": "web_validate",
+        "doc": doc,
+        "brand_kit": platform_brand_kit(),
+    }));
+    assert!(geometry_advice(&unbriefed).is_empty(), "{unbriefed:#?}");
+}

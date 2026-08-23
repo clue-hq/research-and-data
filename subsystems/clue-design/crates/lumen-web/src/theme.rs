@@ -1191,6 +1191,9 @@ mod tests {
                 None,
                 &crate::classes::ClassLintContext {
                     color_tokens: &theme.tokens,
+                    // Briefed: a brand utility must stay clean on exactly the
+                    // kit whose brief makes raw geometry advisable (LUMW0306).
+                    briefed: true,
                 },
             );
             assert!(

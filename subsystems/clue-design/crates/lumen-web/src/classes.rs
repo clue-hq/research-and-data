@@ -21,13 +21,19 @@
 //! the four that land in a color-capable namespace (`shadow-`, `border-`) are
 //! listed as non-color suffixes there.
 
-use lumen_core::{Diagnostic, DiagnosticSubject, NodeId, Phase};
+use lumen_core::{Diagnostic, DiagnosticSeverity, DiagnosticSubject, NodeId, Phase};
 use std::collections::BTreeMap;
 
 pub struct ClassLintContext<'a> {
     /// Theme token name -> resolved CSS color (used for membership checks and
     /// nearest-token suggestions).
     pub color_tokens: &'a BTreeMap<String, String>,
+    /// The pinned kit carries a Creative Brief — its shape (radius, elevation)
+    /// was MEASURED off the brand, not guessed, so a raw stock step where a
+    /// brand utility exists is visible drift worth naming. Advice only: it
+    /// reaches the authoring agent and nothing else, and can never reject.
+    /// `false` (a kit with no brief) is byte-identical to the pre-brief lint.
+    pub briefed: bool,
 }
 
 const ALLOWED_VARIANT_PREFIXES: &[&str] = &["md", "lg", "hover", "focus"];
@@ -150,6 +156,15 @@ const KNOWN_UTILITIES: &[&str] = &[
     "box-decoration-slice", "box-decoration-clone", "box-border", "box-content",
 ];
 
+/// Stock all-corner radius steps. Side/corner variants (`rounded-t-*`,
+/// `rounded-tl-*`) are deliberately absent: a side radius is compositional and
+/// has no brand utility to prefer.
+const STOCK_RADIUS_STEPS: &[&str] = &["none", "sm", "md", "lg", "xl", "2xl", "3xl", "full"];
+
+/// Stock elevation steps. `none` is absent on purpose — removing a shadow is a
+/// legitimate design decision, not drift away from the brand's measured one.
+const STOCK_SHADOW_STEPS: &[&str] = &["sm", "md", "lg", "xl", "2xl", "inner"];
+
 pub fn lint_classes(
     classes: &str,
     node: Option<&NodeId>,
@@ -160,6 +175,58 @@ pub fn lint_classes(
         lint_class_token(token, node, ctx, &mut diagnostics);
     }
     diagnostics
+}
+
+/// Append `incoming` to `sink`, dropping advice `sink` already carries.
+///
+/// Advice is a per-outcome observation, not a per-node defect: a forty-card
+/// page whose every card says `rounded-2xl` earns ONE line naming the class,
+/// not forty naming nodes. Errors and warnings are never deduped — they are
+/// node-keyed work items.
+pub fn extend_deduping_advice(sink: &mut Vec<Diagnostic>, incoming: Vec<Diagnostic>) {
+    for diagnostic in incoming {
+        if diagnostic.severity == DiagnosticSeverity::Advice
+            && sink.iter().any(|existing| {
+                existing.severity == DiagnosticSeverity::Advice
+                    && existing.code == diagnostic.code
+                    && existing.message == diagnostic.message
+            })
+        {
+            continue;
+        }
+        sink.push(diagnostic);
+    }
+}
+
+/// The brand-shape axes: where the brief measured a real value AND a named
+/// utility exists to spend it. Returns the utilities to prefer.
+///
+/// Deliberately narrow. Spacing, gaps and border widths have utilities too, but
+/// legitimate non-brand uses dominate them (a one-off `py-20` is not drift), so
+/// only radius and elevation — the two axes a brand's shape is actually read
+/// from — are named here. The prompt teaches the rest.
+fn raw_brand_shape(base: &str) -> Option<&'static str> {
+    let arbitrary = |namespace: &str| {
+        base.strip_prefix(namespace)
+            .is_some_and(|rest| rest.starts_with('['))
+    };
+    if base == "rounded"
+        || arbitrary("rounded-")
+        || base
+            .strip_prefix("rounded-")
+            .is_some_and(|step| STOCK_RADIUS_STEPS.contains(&step))
+    {
+        return Some("`rounded-button`/`rounded-card`/`rounded-badge`");
+    }
+    if base == "shadow"
+        || arbitrary("shadow-")
+        || base
+            .strip_prefix("shadow-")
+            .is_some_and(|step| STOCK_SHADOW_STEPS.contains(&step))
+    {
+        return Some("`shadow-brand`/`shadow-card`");
+    }
+    None
 }
 
 fn subject(node: Option<&NodeId>) -> Option<DiagnosticSubject> {
@@ -220,6 +287,32 @@ fn lint_class_token(
     let base = base.strip_prefix('-').unwrap_or(base);
     if base.is_empty() {
         return;
+    }
+
+    // Brand-shape drift on a briefed kit. Advice: it never returns early, never
+    // suppresses another diagnostic, and never rejects — the class is legal
+    // Tailwind and stays exactly as authored. The subject is dropped so
+    // identical advice from many nodes collapses to one line (the message names
+    // the class, which is what the author greps for).
+    if ctx.briefed {
+        if let Some(prefer) = raw_brand_shape(base) {
+            diagnostics.push(
+                Diagnostic::advice(
+                    Phase::Web,
+                    "LUMW0306",
+                    format!(
+                        "`{token}`: this kit carries a Creative Brief — its shape is measured; \
+                         prefer {prefer} (see BRAND GEOMETRY)"
+                    ),
+                    None,
+                )
+                .with_hint(
+                    "Advisory only — nothing is blocked. Spend the brand utility where the shape \
+                     IS a brand decision (controls, cards, badges, elevation); a raw step stays \
+                     right where the shape is deliberately its own.",
+                ),
+            );
+        }
     }
 
     // Tailwind v3 names that silently no-op in v4: a hard error with the
@@ -516,7 +609,14 @@ mod tests {
 
     fn run(classes: &str) -> Vec<Diagnostic> {
         let tokens = ctx_with_tokens();
-        lint_classes(classes, None, &ClassLintContext { color_tokens: &tokens })
+        lint_classes(
+            classes,
+            None,
+            &ClassLintContext {
+                color_tokens: &tokens,
+                briefed: false,
+            },
+        )
     }
 
     #[test]
@@ -681,5 +781,115 @@ mod tests {
     #[test]
     fn brand_geometry_utilities_pass_under_variants() {
         assert!(run("md:py-section hover:shadow-brand lg:border-w-card").is_empty());
+    }
+
+    // --- LUMW0306: raw brand-shape geometry on a briefed kit -----------------
+
+    fn run_briefed(classes: &str) -> Vec<Diagnostic> {
+        let tokens = ctx_with_tokens();
+        lint_classes(
+            classes,
+            None,
+            &ClassLintContext {
+                color_tokens: &tokens,
+                briefed: true,
+            },
+        )
+    }
+
+    fn advice(classes: &str) -> Vec<Diagnostic> {
+        run_briefed(classes)
+            .into_iter()
+            .filter(|diagnostic| diagnostic.code == "LUMW0306")
+            .collect()
+    }
+
+    #[test]
+    fn briefed_raw_radius_and_shadow_get_advice() {
+        for token in [
+            "rounded",
+            "rounded-none",
+            "rounded-sm",
+            "rounded-md",
+            "rounded-lg",
+            "rounded-xl",
+            "rounded-2xl",
+            "rounded-3xl",
+            "rounded-full",
+            "rounded-[13px]",
+            "md:rounded-2xl",
+            "shadow",
+            "shadow-sm",
+            "shadow-md",
+            "shadow-lg",
+            "shadow-xl",
+            "shadow-2xl",
+            "shadow-inner",
+            "shadow-[0_2px_4px_rgba(0,0,0,0.1)]",
+            "lg:shadow-lg",
+        ] {
+            let found = advice(token);
+            assert_eq!(found.len(), 1, "expected advice for `{token}`: {found:?}");
+            assert_eq!(found[0].severity, DiagnosticSeverity::Advice);
+            assert!(
+                found[0].message.contains(token),
+                "advice must name `{token}`: {}",
+                found[0].message
+            );
+            assert!(found[0].subject.is_none(), "advice is deduped, not node-keyed");
+        }
+    }
+
+    #[test]
+    fn briefed_advice_leaves_the_rest_of_the_grammar_alone() {
+        for token in [
+            // The brand utilities themselves.
+            "rounded-button",
+            "rounded-card",
+            "rounded-badge",
+            "shadow-brand",
+            "shadow-card",
+            // Removal is a decision, not drift.
+            "shadow-none",
+            // Side/corner radius is compositional — no utility exists.
+            "rounded-t-lg",
+            "rounded-tl-lg",
+            "rounded-b-[4px]",
+            // Deliberately out of scope: spacing, border widths, gaps.
+            "py-20",
+            "p-6",
+            "gap-4",
+            "border-2",
+            "px-6",
+            // Neighbours that merely start with the same letters.
+            "drop-shadow-lg",
+        ] {
+            let found = advice(token);
+            assert!(found.is_empty(), "`{token}` must not be advised: {found:?}");
+        }
+    }
+
+    #[test]
+    fn unbriefed_lint_is_unchanged() {
+        for token in ["rounded-2xl", "shadow-lg", "rounded-[13px]", "shadow"] {
+            assert!(
+                run(token).is_empty(),
+                "`{token}` must stay silent without a brief"
+            );
+        }
+    }
+
+    #[test]
+    fn advice_rides_alongside_a_real_error() {
+        // A raw shadow COLOR is still a hard error; the advice does not
+        // replace it, and the error still rejects.
+        let diagnostics = run_briefed("shadow-[#ff0000]");
+        assert!(diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "LUMW0210"
+                && diagnostic.severity == DiagnosticSeverity::Error));
+        assert!(diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "LUMW0306"));
     }
 }

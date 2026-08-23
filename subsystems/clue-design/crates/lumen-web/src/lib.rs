@@ -29,7 +29,7 @@ pub mod theme;
 pub mod util;
 pub mod validate;
 
-pub use classes::{lint_classes, ClassLintContext};
+pub use classes::{extend_deduping_advice, lint_classes, ClassLintContext};
 pub use derive::{
     derive_web_doc, personalization_key_is_valid, web_slot_key_is_valid, DeriveWebOptions,
     DerivedWebDoc, UnboundEntry, WebBoundValue, WebDeriveCoverage,
@@ -43,7 +43,10 @@ pub use doc::{
     MAX_CUSTOM_COMPONENT_PROPS, MAX_CUSTOM_COMPONENT_PROP_STRING_BYTES,
     WEB_SCHEMA_VERSION,
 };
-pub use ingest::{ingest_html, ingest_html_into_page, IngestOutcome};
+pub use ingest::{
+    ingest_html, ingest_html_into_page, ingest_html_into_page_with, ingest_html_with,
+    IngestOptions, IngestOutcome,
+};
 pub use ops::{apply_operations, apply_operations_checked, WebOpError, WebOperation};
 pub use rich_text::{
     RichTextAlignment, RichTextBlock, RichTextDocument, RichTextInline, RichTextLink,

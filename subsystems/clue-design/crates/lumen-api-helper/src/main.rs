@@ -2352,9 +2352,10 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
         }
         CoreRequest::WebValidate { doc, brand_kit } => {
             let doc = parse_web_doc(doc)?;
+            let briefed = kit_is_briefed(brand_kit.as_ref());
             let (theme, mut diagnostics) = web_theme_for(&doc, brand_kit, None)?;
             diagnostics.extend(lumen_web::validate_web_doc(&doc));
-            diagnostics.extend(lint_web_doc_classes(&doc, &theme));
+            diagnostics.extend(lint_web_doc_classes(&doc, &theme, briefed));
             let mut response = ok_web(Some(&doc), None, None, None, diagnostics);
             // Inspector surface: token pickers list exactly what the lint
             // accepts, from the same compile.
@@ -2369,12 +2370,14 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
             brand_kit,
         } => {
             let mut doc = parse_web_doc(doc)?;
+            let briefed = kit_is_briefed(brand_kit.as_ref());
             let (theme, mut diagnostics) = web_theme_for(&doc, brand_kit, None)?;
-            let outcome = lumen_web::ingest_html_into_page(
+            let outcome = lumen_web::ingest_html_into_page_with(
                 &mut doc,
                 &lumen_core::PageId::from(page_id),
                 &html,
                 &theme,
+                lumen_web::IngestOptions { briefed },
             );
             let installed = if outcome.has_errors() {
                 None
@@ -2470,8 +2473,10 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
             brand_kit,
         } => {
             let doc = parse_web_doc(doc)?;
+            let briefed = kit_is_briefed(brand_kit.as_ref());
             let (theme, mut diagnostics) = web_theme_for(&doc, brand_kit, None)?;
-            let outcome = lumen_web::ingest_html(&html, &theme);
+            let outcome =
+                lumen_web::ingest_html_with(&html, &theme, lumen_web::IngestOptions { briefed });
             // Same asset-reference discipline as the page ingest: a fragment
             // referencing unknown assets must fail loudly, not splice blind.
             for node in &outcome.nodes {
@@ -2585,18 +2590,40 @@ fn web_theme_json(theme: &lumen_web::WebTheme) -> Value {
     })
 }
 
-fn lint_web_doc_classes(doc: &lumen_web::WebDoc, theme: &lumen_web::WebTheme) -> Vec<Diagnostic> {
+fn lint_web_doc_classes(
+    doc: &lumen_web::WebDoc,
+    theme: &lumen_web::WebTheme,
+    briefed: bool,
+) -> Vec<Diagnostic> {
     let context = lumen_web::ClassLintContext {
         color_tokens: &theme.tokens,
+        briefed,
     };
-    doc.pages
-        .iter()
-        .flat_map(|page| {
-            page.nodes.values().flat_map(|node| {
-                lumen_web::lint_classes(&node.classes, Some(&node.id), &context)
-            })
-        })
-        .collect()
+    let mut diagnostics: Vec<Diagnostic> = Vec::new();
+    for page in &doc.pages {
+        for node in page.nodes.values() {
+            // Advice collapses across the whole document walk exactly as it
+            // does across an ingest: one line per raw class, not per node.
+            lumen_web::extend_deduping_advice(
+                &mut diagnostics,
+                lumen_web::lint_classes(&node.classes, Some(&node.id), &context),
+            );
+        }
+    }
+    diagnostics
+}
+
+/// Does the RAW kit JSON carry a Creative Brief?
+///
+/// Read off the untouched `Value` deliberately: `lumen_core::BrandKit` has no
+/// `brief` field and serde drops the key, and the Python pipeline depends on
+/// that (it re-attaches the brief after validation). So the one bit ingest
+/// needs is lifted here, before `parse_brand_kit` consumes the value, rather
+/// than by widening the engine's kit shape.
+fn kit_is_briefed(brand_kit: Option<&Value>) -> bool {
+    brand_kit
+        .and_then(|kit| kit.get("brief"))
+        .is_some_and(|brief| !brief.is_null())
 }
 
 fn ok_web(
