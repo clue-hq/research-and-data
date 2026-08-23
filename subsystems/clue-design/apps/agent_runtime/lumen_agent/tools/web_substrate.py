@@ -55,6 +55,7 @@ from ..brand_brief import read_brief, render_reviewer_brief
 from ..brand_card import build_brand_card, render_brand_card_text
 from ..config import AgentRuntimeConfig
 from ..models.schemas import LumenRunTraceEvent, new_run_id
+from .asset_preview import asset_preview_path
 from .substrate import _CoreHelperProxy, _image_warning, blob_path_for_digest
 from .view import _VISION_MANY_IMAGE_MAX_PX, _image_block, _text_block
 
@@ -202,6 +203,12 @@ _MAX_DIALOG_CAPTURES = 3
 # Playwright page); any beyond the cap are reported, never dropped silently.
 _MAX_TABS_CAPTURES = 2
 
+# How many asset ids a view("asset:…") error string names per source (document
+# registry / kit manifest) before it says "+N more". A harvested brand kit
+# routinely carries dozens of images, and an error that dumps all of them into
+# every turn is noise, not help.
+_VIEW_ASSET_ID_LIST_MAX = 12
+
 # The @font-face data-URL CSS built from the kit fonts is capped at this many
 # encoded (base64) bytes so a heavy multi-weight kit cannot bloat every render's
 # inlined HTML unbounded. Module-level so tests can force it small.
@@ -277,6 +284,17 @@ def _valid_font_weight(value: Any) -> bool:
 
 def _valid_font_style(value: Any) -> bool:
     return value in ("normal", "italic")
+
+
+def _capped_id_list(ids: List[str]) -> str:
+    """Ids as a readable list, capped, with the overflow STATED. A harvested kit
+    routinely carries dozens of images; dumping 49 ids into every error string
+    buries the answer it is supposed to give."""
+    if not ids:
+        return "none"
+    shown = ", ".join(ids[:_VIEW_ASSET_ID_LIST_MAX])
+    overflow = len(ids) - _VIEW_ASSET_ID_LIST_MAX
+    return f"{shown} (+{overflow} more)" if overflow > 0 else shown
 
 
 def _brand_image_rank(item: tuple) -> tuple:
@@ -4346,15 +4364,120 @@ class LumenWebTools:
             ]
         if target.startswith("state:"):
             return self._view_state(target)
+        if target.startswith("asset:"):
+            return self._view_asset(target)
         self.record(
             "agent", "web_view_called", input_summary=target, output_summary="unknown_target"
         )
         return [
             _text_block(
                 f"view: unknown target {target!r}. Use \"preview:1440\", "
-                '"preview:768", "preview:375", "state:<n>", "doc", "brand", or '
-                '"account".'
+                '"preview:768", "preview:375", "state:<n>", "asset:<asset_id>", '
+                '"doc", "brand", or "account".'
             )
+        ]
+
+    def _asset_id_menu(self) -> str:
+        """The ids an `asset:` target can name, by source — what an unknown id
+        should offer instead of itself."""
+        doc_ids = sorted((self.web_doc.get("assets") or {}).keys())
+        kit_ids = sorted((self.config.brand_kit_assets or {}).keys())
+        return (
+            f"Document assets: {_capped_id_list(doc_ids)}. "
+            f"Brand kit assets: {_capped_id_list(kit_ids)}."
+        )
+
+    def _view_asset(self, target: str) -> list:
+        """Build the view content for an `asset:<asset_id>` target — that asset's
+        raster preview as [text, image] blocks.
+
+        The trio is required to DECIDE about imagery (D4), and a decision made off
+        titles and tags alone is made blind: a kit's "hero" can be a 296x124 crop
+        and its "texture" a QR code. Ids resolve from BOTH the document's own asset
+        registry (whatever this turn has already registered) and the brand kit's
+        manifest (whatever it could still place) — the two sets the imagery
+        decision actually chooses between.
+
+        Every non-viewable outcome is an honest text block, never an exception and
+        never a fabricated preview: unknown id (with the available ids), a record
+        with no raster preview at all (an SVG with no derived thumbnail), or a
+        preview whose bytes are not on disk."""
+        asset_id = target[len("asset:") :]
+        record: Optional[JsonObject] = None
+        entry_title: Optional[str] = None
+        # Document registry first: `_register_asset_record` upserts the record
+        # WHOLE, so the registry value IS the record.
+        registered = (self.web_doc.get("assets") or {}).get(asset_id)
+        if isinstance(registered, dict):
+            record = registered
+        else:
+            # The kit manifest wraps the record in an entry carrying the human
+            # title the brand card's inventory shows (see `_use_brand_asset`).
+            entry = (self.config.brand_kit_assets or {}).get(asset_id)
+            if isinstance(entry, dict) and isinstance(entry.get("record"), dict):
+                record = entry["record"]
+                title = entry.get("title")
+                entry_title = title if isinstance(title, str) and title else None
+        if record is None:
+            self.record(
+                "agent", "web_view_called", input_summary=target, output_summary="asset_unknown"
+            )
+            return [
+                _text_block(
+                    f"view: unknown asset {asset_id!r}. {self._asset_id_menu()}"
+                )
+            ]
+
+        resolved = asset_preview_path(record, self.config.effective_asset_store_root)
+        if resolved is None:
+            mime = (record.get("media") or {}).get("mime_type") or "unknown"
+            self.record(
+                "agent", "web_view_called", input_summary=target, output_summary="asset_no_preview"
+            )
+            return [
+                _text_block(
+                    f"view: asset {asset_id!r} exists ({mime}) but has no raster "
+                    "preview to view — a vector asset with no derived thumbnail. "
+                    "Judge it from the brand card's description, or choose an "
+                    "asset you can see."
+                )
+            ]
+
+        preview_path, pixel_width, pixel_height = resolved
+        path = Path(preview_path)
+        if not path.exists():
+            self.record(
+                "agent",
+                "web_view_called",
+                input_summary=target,
+                output_summary="asset_missing_file",
+            )
+            return [
+                _text_block(
+                    f"view: asset {asset_id!r} is registered, but its preview bytes "
+                    "are missing from the asset store — nothing to look at."
+                )
+            ]
+
+        label = (
+            entry_title
+            or record.get("label")
+            or (record.get("source") or {}).get("label")
+            or asset_id
+        )
+        dims = f"{pixel_width}x{pixel_height}px, " if pixel_width and pixel_height else ""
+        source_kind = (record.get("source") or {}).get("kind") or "unknown"
+        self.record(
+            "agent", "web_view_called", input_summary=target, output_summary="asset_viewed"
+        )
+        return [
+            _text_block(
+                f"view: asset {asset_id} — {label} ({dims}source {source_kind})"
+            ),
+            # G5 (see the preview branch): every web view image rides the
+            # many-image ceiling, kit assets included — they accumulate in the
+            # same conversation as the page captures.
+            _image_block(path, max_px=_VISION_MANY_IMAGE_MAX_PX),
         ]
 
     def _view_state(self, target: str) -> list:
@@ -4505,8 +4628,10 @@ def make_web_view_tool(tools: LumenWebTools, can_render: bool = True):
     target="preview:1440"|"preview:768"|"preview:375" returns the latest
     screenshot of that width as [text, image] blocks; "state:<n>" returns the
     nth interactive STATE capture (dialog opened / accordion expanded) from the
-    latest render; "doc" returns a compact section/asset summary; "brand"
-    returns the brand card; "account" returns the target account card (P5).
+    latest render; "asset:<asset_id>" returns that asset's preview image (from
+    the kit manifest or the document's own registry); "doc" returns a compact
+    section/asset summary; "brand" returns the brand card; "account" returns the
+    target account card (P5).
     Mirrors tools/view.make_view_tool: any failure inside returns an honest error
     STRING so a bad/unreadable image can never kill the turn unfinalized."""
     from langchain_core.tools import tool
@@ -4517,10 +4642,12 @@ def make_web_view_tool(tools: LumenWebTools, can_render: bool = True):
         """Look at the page. target="preview:1440" / "preview:768" /
         "preview:375" returns the latest rendered screenshot at that width;
         "state:<n>" returns the nth interactive STATE capture (0-based: a dialog
-        opened or accordions expanded) from the latest render; "doc" returns a
-        section + asset summary; "brand" returns the brand card; "account"
-        returns the target account card. Returns image content so you judge by
-        looking, not guessing."""
+        opened or accordions expanded) from the latest render;
+        "asset:<asset_id>" returns that asset's preview image (a brand kit asset
+        or one already registered in the document); "doc" returns a section +
+        asset summary; "brand" returns the brand card; "account" returns the
+        target account card. Returns image content so you judge by looking, not
+        guessing."""
         try:
             with log_span("tool_web_view", logger=logger, target=target):
                 return tools._view_content(target, can_render=can_render)

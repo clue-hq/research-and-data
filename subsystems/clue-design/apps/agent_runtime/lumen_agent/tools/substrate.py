@@ -33,6 +33,7 @@ from ..retokenize import (
 from ..brand_card import build_brand_card
 from ..knowledge import BRAND_APPLICATION_PATH, DIRECTIVES_PATH, read_task_knowledge
 from ..paths import normalize_agent_key
+from .asset_preview import asset_preview_path
 from pydantic import ValidationError
 
 from ..models.schemas import (
@@ -92,9 +93,10 @@ CONTEXT_MAX_TEXT_LEN = 120
 # the model boundary (see providers), never accumulated in a persisted dict.
 CONTACT_SHEET_MAX = 6
 PLACED_PREVIEWS_MAX = 4
-# Raster mime types the vision APIs accept as a direct preview when no derived
-# thumbnail exists (an SVG has no raster preview → it is skipped, never a broken path).
-_PREVIEWABLE_MIME_TYPES = {"image/png", "image/jpeg", "image/webp", "image/gif"}
+# The raster mime types the vision APIs accept as a direct preview — and the
+# resolver that reads them — now live in `.asset_preview`, shared with the web
+# lane's view("asset:<id>") so the two lanes cannot disagree about which pixels
+# represent an asset.
 
 
 def blob_path_for_digest(store_root: Any, digest: str) -> Path:
@@ -1445,35 +1447,12 @@ class LumenDesignTools:
         """Slice 2: resolve a kit-asset record to an ON-DISK preview the vision APIs
         can read, returning (absolute_path, pixel_width, pixel_height) or None.
 
-        Prefer the derived 256px thumbnail (any source type gets one at ingest); else,
-        if the primary media is itself a raster the vision APIs accept, use that. An
-        SVG with no thumbnail has no usable raster preview → return None (the caller
-        skips it and counts it in `_omitted`). Refs are `sha256/<first2>/<digest>`
-        under the SAME asset-store root the tools already use for export/ingest —
-        resolved the one way (Path(effective_asset_store_root) / opaque_ref). Only the
-        path is returned; no bytes are read here (existence is checked at block-build
-        time in providers), so this stays cheap to call every curated context."""
-        media = record.get("media") or {}
-        store_root = Path(self.config.effective_asset_store_root)
-        thumbnail = media.get("thumbnail") or {}
-        thumb_ref = (thumbnail.get("location") or {}).get("opaque_ref")
-        if thumb_ref:
-            return (
-                str(store_root / thumb_ref),
-                thumbnail.get("pixel_width"),
-                thumbnail.get("pixel_height"),
-            )
-        mime = media.get("mime_type")
-        primary_ref = (media.get("location") or {}).get("opaque_ref")
-        if mime in _PREVIEWABLE_MIME_TYPES and primary_ref:
-            # Pixel dims for a raster/logo asset live in its own metadata block.
-            dims = record.get("raster") or record.get("logo") or {}
-            return (
-                str(store_root / primary_ref),
-                dims.get("pixel_width"),
-                dims.get("pixel_height"),
-            )
-        return None
+        The resolution itself is `asset_preview.asset_preview_path` — shared with
+        the web lane's view("asset:<id>") so the two lanes cannot disagree about
+        which pixels represent an asset. This binds it to THIS run's asset-store
+        root; a None result is a record with no usable raster preview (an SVG with
+        no derived thumbnail), which the caller skips and counts in `_omitted`."""
+        return asset_preview_path(record, self.config.effective_asset_store_root)
 
     def _resolve_node_image_source(
         self, node_id: str

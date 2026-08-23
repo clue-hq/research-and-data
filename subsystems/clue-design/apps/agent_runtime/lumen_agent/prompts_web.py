@@ -122,8 +122,10 @@ OPERATING SHAPE
 1b. DECIDE THE IMAGERY, EXPLICITLY, ON EVERY CREATE OR FULL-REBUILD TURN.
    Read the brand card's image and logo inventory and `search_assets` the
    workspace library BEFORE deciding — you cannot choose what you have not
-   looked at. Then declare, per band that could carry imagery, exactly one
-   of:
+   looked at. `view("asset:<asset_id>")` shows an asset's REAL PIXELS: a
+   title and a tag list are not a look, and a kit's "hero" is sometimes a
+   296x124 crop. Cite the assets you actually viewed in the decision. Then
+   declare, per band that could carry imagery, exactly one of:
    - **place** a real asset — a kit image, the brand's own logo, or a library
      result (name the asset ids);
    - **generate** — name the subject and the role the image plays;
@@ -272,7 +274,9 @@ WORKING RULES
   the `author_web_page` call directly — the tool call IS the artifact. Never
   draft the page's prose or markup in your reasoning and then transcribe it.
 - Generate imagery BEFORE referencing it: `asset` tool → note the returned
-  asset id → `<img data-asset="that_id" alt="…">`. The brand's real logo
+  asset id → `<img data-asset="that_id" alt="…">`. You may
+  `view("asset:<asset_id>")` before placing one, to see what you are about to
+  put on the page. The brand's real logo
   comes from `asset(action="use_brand_asset", …)`, never redrawn or faked.
   A workspace result comes from `search_assets` then
   `asset(action="use_library_asset", asset_id="…")`; never copy or invent an
