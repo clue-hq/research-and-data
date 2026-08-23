@@ -56,6 +56,7 @@ from ..brand_card import build_brand_card, render_brand_card_text
 from ..config import AgentRuntimeConfig
 from ..engine_mirror import record_pixel_dims, resolve_kit_color, sanitize_token_name
 from ..models.schemas import LumenRunTraceEvent, new_run_id
+from ..web_retokenize import build_web_retokenize_operations, summarize_class_pairs
 from .asset_preview import asset_preview_path
 from .substrate import _CoreHelperProxy, _image_warning, blob_path_for_digest
 from .view import _VISION_MANY_IMAGE_MAX_PX, _image_block, _text_block
@@ -109,6 +110,22 @@ _ASSET_PREFLIGHT_TIMEOUT_S = 5.0
 # The page every P0 WebDoc carries (a single "home" page at route "/"). Website
 # mode is single-page for now; the id is fixed so the tools never guess.
 HOME_PAGE_ID = "home"
+
+
+def has_existing_content(web_doc: JsonObject, page_id: str = HOME_PAGE_ID) -> bool:
+    """True when the page already carries authored content (any node beyond the
+    empty root).
+
+    ONE predicate, two consumers, and they must never disagree: `harness_web`
+    tells the orchestrator whether it is continuing someone's page, and
+    `LumenWebTools` uses the same answer to decide whether the geometry
+    retokenizer may touch these classes at all (resolution-once — an existing
+    page's classes are a human's or an earlier turn's decision).
+    """
+    for page in web_doc.get("pages") or []:
+        if isinstance(page, dict) and page.get("id") == page_id:
+            return len(page.get("nodes") or {}) > 1
+    return False
 
 # The fixed semantic web token names the theme compiler always emits, in
 # emission order (mirrors crates/lumen-web/src/theme.rs SEMANTIC_TOKENS). Every
@@ -218,6 +235,10 @@ _FONT_FACE_CSS_MAX_BYTES = 8 * 1024 * 1024
 # Sentinel distinguishing "not yet computed" from a resolved None for the cached
 # font-face CSS (fonts cannot change mid-run, so the first result is memoized).
 _FONT_CSS_UNSET = object()
+
+# The same idea for the compiled theme's brand-geometry map (G5): "not yet
+# resolved" is not "resolved to nothing".
+_GEOMETRY_UNSET = object()
 
 # Mutating tool calls allowed between renders before the substrate refuses and
 # tells the author to end its round. Sized against real healthy rounds (a full
@@ -724,6 +745,18 @@ class LumenWebTools:
         # A deep copy so the caller's stored doc is never mutated in place; every
         # accepted mutation replaces this with the helper's returned doc.
         self.web_doc: JsonObject = copy.deepcopy(initial_web_doc)
+        # G5: did this turn START from an already-authored page? The geometry
+        # retokenizer runs on the agent's OWN drafts only — a seeded document's
+        # classes belong to a human or to an earlier turn, and rebinding them
+        # would be this lane re-deciding a resolved question (resolution-once,
+        # the scene lane's `seeded_from_initial_scene` guard).
+        self.seeded_from_initial_content = has_existing_content(
+            initial_web_doc, self.page_id
+        )
+        # The compiled theme's geometry channel, resolved at most once per turn
+        # (it is a function of the kit, which cannot change mid-turn). The
+        # sentinel distinguishes "not resolved" from a resolved empty map.
+        self._geometry: Any = _GEOMETRY_UNSET
         # The exact checked WebOperations that produced ``web_doc`` from the
         # turn's starting revision. The API replays this ledger before commit
         # and persists it as the agent envelope; a whole-document replacement
@@ -958,6 +991,97 @@ class LumenWebTools:
         commit payload after the helper has accepted it.
         """
         self.operations_ledger.extend(copy.deepcopy(operations))
+
+    # --- brand-geometry retokenization (G5) ---------------------------------
+
+    def _brand_geometry(self) -> Dict[str, str]:
+        """The compiled theme's geometry channel — utility CSS-var name → CSS
+        value — resolved at most once per turn.
+
+        It is a function of the brand kit and the document's own theme, neither
+        of which any operation can change mid-turn, so one helper round-trip is
+        enough. A helper failure caches an EMPTY map: the retokenizer is an
+        optimization, and a turn that cannot compile a theme has a louder
+        problem than an unbound `rounded-2xl`.
+        """
+        if self._geometry is not _GEOMETRY_UNSET:
+            return self._geometry
+        geometry: Dict[str, str] = {}
+        try:
+            response = self.core.web_validate(self.web_doc, self.config.brand_kit)
+        except CoreError:
+            response = {}
+        resolved = (response.get("web_theme") or {}).get("geometry")
+        if isinstance(resolved, dict):
+            geometry = {
+                str(name): value
+                for name, value in resolved.items()
+                if isinstance(value, str)
+            }
+        self._geometry = geometry
+        return geometry
+
+    def _retokenize_geometry(self) -> None:
+        """Rebind raw geometry classes to the kit utilities they already equal.
+
+        The web twin of the scene lane's preflight retokenization, and the same
+        bargain: the model measurably cannot rebind tokens on request, so a
+        deterministic pass does it — but ONLY where the swap provably changes
+        nothing on screen (`web_retokenize.py` owns that proof). What it buys is
+        a page that follows the kit PIN instead of a frozen number, and silence
+        on the LUMW0306 advice for exactly the classes the advice was right
+        about.
+
+        Three guards, all required:
+
+        * an attached, non-platform-default kit — the platform theme IS the
+          stock scale, so rebinding against it renames without meaning;
+        * an unseeded document — resolution-once (see
+          ``seeded_from_initial_content``);
+        * something to do — an empty batch is never applied, and the pass is
+          idempotent by construction (after a rebind nothing matches again).
+
+        Failure posture: a rejected apply records nothing, changes nothing, and
+        returns. This runs on the way into a preview render and must never be
+        the reason a reviewer has no pixels to look at.
+        """
+        if self.config.brand_kit is None:
+            return
+        if self.config.brand_kit_source in (None, "platform_default"):
+            return
+        if self.seeded_from_initial_content:
+            return
+
+        geometry = self._brand_geometry()
+        if not geometry:
+            return
+        operations = build_web_retokenize_operations(self.web_doc, geometry)
+        if not operations:
+            return
+        # Read against the PRE-apply document — the pairs are what changed.
+        pairs = summarize_class_pairs(self.web_doc, operations)
+
+        try:
+            response = self.core.web_apply_ops(self.web_doc, operations)
+        except CoreError:
+            return
+        if not response.get("ok") or not response.get("web_doc"):
+            return
+
+        self.web_doc = response["web_doc"]
+        self._record_operations(operations)
+        self._doc_version += 1
+        # Carve-out 1: trace + agent-visible only. A class rename that renders
+        # identical pixels is not news a human needs.
+        self.record(
+            "coordinator",
+            "web_geometry_retokenized",
+            output_summary=(
+                f"{len(operations)} node(s) rebound to kit geometry: "
+                + ("; ".join(pairs) if pairs else "no class pairs resolved")
+            ),
+            payload={"operation_count": len(operations), "class_pairs": pairs},
+        )
 
     def _custom_component_registry(self):
         return getattr(self.config, "custom_component_registry", None)
@@ -4317,6 +4441,14 @@ class LumenWebTools:
                 "plainly that the final page was not visually verified), otherwise "
                 '"failed".',
             )
+        # G5 — brand-geometry retokenization, BEFORE anything is rendered, so
+        # the reviewer only ever judges rebound classes and the LUMW0306 advice
+        # the next validate emits is only about the raw shapes that really are
+        # the author's own decision. A no-op on a seeded doc or a platform kit,
+        # and idempotent afterwards; a mutating pass bumps `_doc_version`, so
+        # the unchanged-render guard below correctly declines to reuse the
+        # standing previews.
+        self._retokenize_geometry()
         # Feature 2 — unchanged-render guard. A doc with no mutation since the
         # last render whose previews are all still on hand is reused verbatim.
         if (
