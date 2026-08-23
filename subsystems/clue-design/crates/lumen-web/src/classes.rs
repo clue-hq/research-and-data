@@ -8,6 +8,18 @@
 //! pass. Unknown non-color utilities are warnings only: a false accept is
 //! harmless (the browser ignores the class), while a false reject would burn
 //! author retries — color is the axis that must never loosen.
+//!
+//! Brand geometry has its own closed vocabulary alongside the color one:
+//! `rounded-button|card|badge`, `shadow-brand|card`, `border-w-card|divider`,
+//! `py-section`, `gap-stack`, `p-card`. These are NOT color references — each
+//! resolves through the compiled theme's geometry channel
+//! (`theme.rs::compile_web_theme` → `--radius-*` / `--shadow-*` /
+//! `--border-width-*` / `--spacing-*`) onto the pinned kit's measured geometry,
+//! with a platform fallback, so a brand's real corner radius, elevation,
+//! hairline and rhythm are expressible by name and never as a raw value. Six of
+//! them already pass through the `rounded-`/`p-`/`py-`/`gap-` prefixes below;
+//! the four that land in a color-capable namespace (`shadow-`, `border-`) are
+//! listed as non-color suffixes there.
 
 use lumen_core::{Diagnostic, DiagnosticSubject, NodeId, Phase};
 use std::collections::BTreeMap;
@@ -68,6 +80,10 @@ const COLOR_PREFIXES: &[(&str, &[&str])] = &[
     ("border-", &[
         "0", "2", "4", "8", "t", "r", "b", "l", "x", "y", "solid", "dashed", "dotted", "double",
         "hidden", "none", "collapse", "separate",
+        // Brand-geometry border widths (theme `--border-width-*`). Spelled
+        // `border-w-*` deliberately: `border-card` would resolve as a COLOR
+        // (`card` is a semantic color token).
+        "w-card", "w-divider",
     ]),
     ("from-", &[]),
     ("via-", &[]),
@@ -85,7 +101,9 @@ const COLOR_PREFIXES: &[(&str, &[&str])] = &[
     ("divide-", &["0", "2", "4", "8", "x", "y", "solid", "dashed", "dotted", "double", "none"]),
     ("accent-", &["auto"]),
     ("caret-", &[]),
-    ("shadow-", &["sm", "md", "lg", "xl", "2xl", "inner", "none"]),
+    // `brand`/`card` are brand-geometry elevations (theme `--shadow-*`), not
+    // shadow colors.
+    ("shadow-", &["sm", "md", "lg", "xl", "2xl", "inner", "none", "brand", "card"]),
 ];
 
 /// Known non-color utility vocabulary. Entries ending in `-` are prefixes;
@@ -636,5 +654,32 @@ mod tests {
     #[test]
     fn builtin_colors_pass() {
         assert!(run("bg-white text-black border-transparent").is_empty());
+    }
+
+    #[test]
+    fn brand_geometry_utilities_lint_clean() {
+        for token in [
+            "rounded-button",
+            "rounded-card",
+            "rounded-badge",
+            "shadow-brand",
+            "shadow-card",
+            "border-w-card",
+            "border-w-divider",
+            "py-section",
+            "gap-stack",
+            "p-card",
+        ] {
+            let diagnostics = run(token);
+            assert!(
+                diagnostics.is_empty(),
+                "brand-geometry utility `{token}` should lint clean: {diagnostics:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn brand_geometry_utilities_pass_under_variants() {
+        assert!(run("md:py-section hover:shadow-brand lg:border-w-card").is_empty());
     }
 }
