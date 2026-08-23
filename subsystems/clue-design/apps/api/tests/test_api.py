@@ -3886,6 +3886,12 @@ def test_image_provider_openrouter_chat_completion_shape(
     monkeypatch.setattr(settings, "image_model_base_url", "https://openrouter.ai/api/v1")
     monkeypatch.setattr(settings, "image_model_api_key", "test-key")
     monkeypatch.setattr(settings, "image_model_id", "test/image-model")
+    # Pin the TRANSPORT, not just the credentials: .env.example ships
+    # IMAGE_MODEL_API_STYLE=images uncommented, so a dev who follows the
+    # documented copy-.env.example-to-.env workflow flips the ambient default
+    # and every chat-shape assertion below would otherwise go red on a machine
+    # that is configured exactly as the docs say to configure it.
+    monkeypatch.setattr(settings, "image_model_api_style", "chat")
 
     png = _tiny_png(8, 8)
     data_url = "data:image/png;base64," + base64.b64encode(png).decode("ascii")
@@ -3926,6 +3932,12 @@ def test_image_provider_surfaces_no_image_response(monkeypatch: pytest.MonkeyPat
     monkeypatch.setattr(settings, "image_model_base_url", "https://openrouter.ai/api/v1")
     monkeypatch.setattr(settings, "image_model_api_key", "test-key")
     monkeypatch.setattr(settings, "image_model_id", "test/image-model")
+    # Pin the TRANSPORT, not just the credentials: .env.example ships
+    # IMAGE_MODEL_API_STYLE=images uncommented, so a dev who follows the
+    # documented copy-.env.example-to-.env workflow flips the ambient default
+    # and every chat-shape assertion below would otherwise go red on a machine
+    # that is configured exactly as the docs say to configure it.
+    monkeypatch.setattr(settings, "image_model_api_style", "chat")
 
     class _FakeResponse:
         status_code = 200
@@ -4205,6 +4217,12 @@ def test_image_provider_edit_builds_multimodal_content(
     monkeypatch.setattr(settings, "image_model_base_url", "https://openrouter.ai/api/v1")
     monkeypatch.setattr(settings, "image_model_api_key", "test-key")
     monkeypatch.setattr(settings, "image_model_id", "test/image-model")
+    # Pin the TRANSPORT, not just the credentials: .env.example ships
+    # IMAGE_MODEL_API_STYLE=images uncommented, so a dev who follows the
+    # documented copy-.env.example-to-.env workflow flips the ambient default
+    # and every chat-shape assertion below would otherwise go red on a machine
+    # that is configured exactly as the docs say to configure it.
+    monkeypatch.setattr(settings, "image_model_api_style", "chat")
 
     src_png = _tiny_png(8, 8)
     out_png = _tiny_png(8, 8, rgba=(9, 9, 9, 255))
@@ -4253,6 +4271,12 @@ def test_image_provider_generate_builds_reference_conditioned_content(
     monkeypatch.setattr(settings, "image_model_base_url", "https://openrouter.ai/api/v1")
     monkeypatch.setattr(settings, "image_model_api_key", "test-key")
     monkeypatch.setattr(settings, "image_model_id", "test/image-model")
+    # Pin the TRANSPORT, not just the credentials: .env.example ships
+    # IMAGE_MODEL_API_STYLE=images uncommented, so a dev who follows the
+    # documented copy-.env.example-to-.env workflow flips the ambient default
+    # and every chat-shape assertion below would otherwise go red on a machine
+    # that is configured exactly as the docs say to configure it.
+    monkeypatch.setattr(settings, "image_model_api_style", "chat")
 
     ref_a = _tiny_png(8, 8, rgba=(200, 40, 40, 255))
     ref_b = _tiny_png(8, 8, rgba=(40, 40, 200, 255))
@@ -4313,6 +4337,12 @@ def test_image_provider_generate_without_references_is_bare_string(
     monkeypatch.setattr(settings, "image_model_base_url", "https://openrouter.ai/api/v1")
     monkeypatch.setattr(settings, "image_model_api_key", "test-key")
     monkeypatch.setattr(settings, "image_model_id", "test/image-model")
+    # Pin the TRANSPORT, not just the credentials: .env.example ships
+    # IMAGE_MODEL_API_STYLE=images uncommented, so a dev who follows the
+    # documented copy-.env.example-to-.env workflow flips the ambient default
+    # and every chat-shape assertion below would otherwise go red on a machine
+    # that is configured exactly as the docs say to configure it.
+    monkeypatch.setattr(settings, "image_model_api_style", "chat")
 
     out_png = _tiny_png(8, 8, rgba=(1, 2, 3, 255))
     out_url = "data:image/png;base64," + base64.b64encode(out_png).decode("ascii")
@@ -4380,8 +4410,12 @@ def test_image_provider_images_api_generation_body(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # The founder's generation sample, minus `stream` (we are synchronous):
-    # top-level prompt + structured aspect_ratio + quality. No messages, no
-    # modalities, no background (its enum is auto|opaque — never "transparent").
+    # top-level prompt + structured aspect_ratio + quality + background. No
+    # messages, no modalities. FOUNDER RULE 2026-08-23: `background` is ALWAYS
+    # "auto" — the enum is auto|opaque, so it has no "transparent" member at all
+    # and a transparent request can only be a prose hint, best-effort (see
+    # test_image_provider_images_api_transparency_is_prose_only). "auto" is what
+    # both founder sample bodies carry; do not "tidy up" the default away.
     _images_api_settings(monkeypatch)
     out_png = _tiny_png(8, 8, rgba=(3, 3, 3, 255))
     captured = _capture_images_api_post(monkeypatch, out_png)
@@ -4636,6 +4670,71 @@ def test_image_provider_images_api_decodes_b64_then_url(
     assert result.mime_type == "image/png"
     assert fetched["url"] == "https://cdn.example/out-0.png"
     assert fetched["timeout"] == settings.image_model_timeout_s
+
+
+def test_image_provider_images_api_url_fetch_follows_redirects(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A by-reference result is typically a SIGNED CDN URL, and those redirect.
+    # httpx defaults follow_redirects=False, which hands back a 302 whose body is
+    # empty — zero bytes that would sail through as a "successful" generation and
+    # land an empty image in the document. The fetch must follow the redirect.
+    _images_api_settings(monkeypatch)
+    png = _tiny_png(8, 8, rgba=(4, 5, 6, 255))
+
+    class _FakePostResponse:
+        status_code = 200
+        headers = {"content-type": "application/json"}
+
+        def json(self) -> dict:
+            return {"data": [{"url": "https://cdn.example/signed/out-0.png"}]}
+
+    fetched: dict = {}
+
+    class _FakeGetResponse:
+        status_code = 200
+        headers = {"content-type": "image/png"}
+        content = png
+
+    def fake_get(url, timeout=None, **kwargs):
+        fetched.update(url=url, timeout=timeout, **kwargs)
+        return _FakeGetResponse()
+
+    monkeypatch.setattr("httpx.post", lambda *a, **k: _FakePostResponse())
+    monkeypatch.setattr("httpx.get", fake_get)
+
+    result = image_provider.generate(prompt="a signed-url result")
+    assert result.image_bytes == png
+    assert fetched["follow_redirects"] is True
+
+
+def test_image_provider_images_api_url_fetch_rejects_a_non_image(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # An expired signed URL, an error page, or a login interstitial answers 200
+    # with text/html. Those bytes are not an image, and ingesting them would put
+    # a corrupt asset in the document under a "generated" provenance stamp —
+    # worse than failing, because it looks like it worked. Fail typed instead.
+    _images_api_settings(monkeypatch)
+
+    class _FakePostResponse:
+        status_code = 200
+        headers = {"content-type": "application/json"}
+
+        def json(self) -> dict:
+            return {"data": [{"url": "https://cdn.example/expired"}]}
+
+    class _FakeGetResponse:
+        status_code = 200
+        headers = {"content-type": "text/html; charset=utf-8"}
+        content = b"<html><body>Access denied</body></html>"
+
+    monkeypatch.setattr("httpx.post", lambda *a, **k: _FakePostResponse())
+    monkeypatch.setattr("httpx.get", lambda *a, **k: _FakeGetResponse())
+
+    with pytest.raises(image_provider.ImageGenerationError) as excinfo:
+        image_provider.generate(prompt="an expired signed url")
+    assert excinfo.value.code == "image_model.bad_response"
 
 
 def test_image_provider_images_api_garbage_response_is_bad_response(

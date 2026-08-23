@@ -642,10 +642,21 @@ def _decode_images_api_response(payload: object, *, timeout_s: float) -> Tuple[b
 
 def _fetch_image_url(url: str, *, timeout_s: float) -> Tuple[bytes, str]:
     """Download an image the Images API returned by reference. Transport errors
-    propagate (the retry wrapper handles them); an HTTP error is typed."""
+    propagate (the retry wrapper handles them); an HTTP error is typed.
+
+    Two things this must not do, because both end with a corrupt asset ingested
+    under a `generated` provenance stamp — which reads as success and is worse
+    than a clean failure:
+
+    - **Not follow redirects.** A by-reference result is typically a signed CDN
+      URL, and those redirect; httpx defaults `follow_redirects=False`, so the
+      302's empty body would become a zero-byte "image".
+    - **Trust the content-type.** An expired signature, an error page, or a login
+      interstitial answers 200 with `text/html`. Only `image/*` is an image.
+    """
     import httpx  # lazy: only the real network path needs it
 
-    response = httpx.get(url, timeout=timeout_s)
+    response = httpx.get(url, timeout=timeout_s, follow_redirects=True)
     if response.status_code >= 400:
         raise ImageGenerationError(
             "image_model.http_error",
@@ -653,7 +664,13 @@ def _fetch_image_url(url: str, *, timeout_s: float) -> Tuple[bytes, str]:
             status_code=502,
         )
     mime = (response.headers.get("content-type") or DEFAULT_MIME).split(";", 1)[0].strip()
-    return response.content, mime or DEFAULT_MIME
+    if not mime.lower().startswith("image/"):
+        raise ImageGenerationError(
+            "image_model.bad_response",
+            f"the generated-image URL served {mime or 'no content-type'}, not an image",
+            status_code=502,
+        )
+    return response.content, mime
 
 
 def _decode_openrouter_image(payload: object) -> Tuple[bytes, str]:
