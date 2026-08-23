@@ -12,6 +12,62 @@
 
 use lumen_skia::rasterize_svg_thumbnail;
 use skia_safe::{surfaces, Data, Image};
+use std::alloc::{GlobalAlloc, Layout, System};
+use std::cell::Cell;
+
+/// A counting allocator, so the paint-check's read-back buffer is observable.
+///
+/// Only the CURRENT THREAD's Rust-side allocations are counted (Skia's own
+/// buffers are C++ and never reach here), which is exactly the quantity under
+/// test and keeps the measurement safe under pytest-style parallel test threads.
+struct PeakTracking;
+
+thread_local! {
+    static LIVE: Cell<usize> = const { Cell::new(0) };
+    static PEAK: Cell<usize> = const { Cell::new(0) };
+}
+
+fn charge(bytes: usize) {
+    let _ = LIVE.try_with(|live| {
+        let now = live.get() + bytes;
+        live.set(now);
+        let _ = PEAK.try_with(|peak| {
+            if now > peak.get() {
+                peak.set(now);
+            }
+        });
+    });
+}
+
+fn release(bytes: usize) {
+    let _ = LIVE.try_with(|live| live.set(live.get().saturating_sub(bytes)));
+}
+
+unsafe impl GlobalAlloc for PeakTracking {
+    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+        let ptr = System.alloc(layout);
+        if !ptr.is_null() {
+            charge(layout.size());
+        }
+        ptr
+    }
+
+    unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+        release(layout.size());
+        System.dealloc(ptr, layout)
+    }
+}
+
+#[global_allocator]
+static ALLOCATOR: PeakTracking = PeakTracking;
+
+/// Peak thread-local Rust allocation while `body` runs.
+fn peak_bytes<T>(body: impl FnOnce() -> T) -> (T, usize) {
+    LIVE.with(|live| live.set(0));
+    PEAK.with(|peak| peak.set(0));
+    let value = body();
+    (value, PEAK.with(|peak| peak.get()))
+}
 
 /// The `lumen-assets` constants, passed the way the helper passes them.
 const MAX_DIMENSION: u32 = 256;
@@ -148,6 +204,42 @@ fn bytes_that_are_not_a_parseable_vector_return_none_instead_of_failing() {
         rasterize_svg_thumbnail(b"not an svg at all", MAX_DIMENSION, MIN_SHORT_DIMENSION).is_none()
     );
     assert!(rasterize_svg_thumbnail(b"", MAX_DIMENSION, MIN_SHORT_DIMENSION).is_none());
+}
+
+#[test]
+fn the_paint_check_reads_one_row_at_a_time_not_the_whole_surface() {
+    // The paint check used to read the ENTIRE surface back into a
+    // `width * height * 4` buffer, doubling the peak memory of a thin-vector
+    // blow-up that is already the ledgered worst case: this 240x48 wordmark
+    // lifts to 2560x512, so the read-back alone was 5 MiB — and a 2560x24
+    // divider reaches ~28 MP, where the budget ceiling admits ~600 MB of
+    // surface and the read-back matched it byte for byte. One reused row is
+    // 10 KiB here, and the scan stops at the first painted pixel.
+    let (thumbnail, peak) =
+        peak_bytes(|| rasterize_svg_thumbnail(&wordmark_svg(), MAX_DIMENSION, MIN_SHORT_DIMENSION));
+    let (_png, width, height) = thumbnail.expect("rasterizes");
+
+    assert_eq!((width, height), (2560, 512));
+    let whole_surface = (width * height * 4) as usize;
+    assert!(
+        peak < whole_surface / 4,
+        "peak Rust allocation {peak} B is full-surface-shaped \
+         (a whole read-back is {whole_surface} B)"
+    );
+}
+
+#[test]
+fn a_vector_that_paints_only_its_last_row_is_still_found() {
+    // Row-wise scanning must cover every row, not just the first — an early
+    // return that stopped at row 0 would report "painted nothing" for artwork
+    // sitting at the bottom of the box and drop a perfectly good thumbnail.
+    let svg = br##"<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64"><rect x="0" y="63" width="64" height="1" fill="#ff0000"/></svg>"##;
+
+    let (png, _width, height) =
+        rasterize_svg_thumbnail(svg, MAX_DIMENSION, MIN_SHORT_DIMENSION).expect("rasterizes");
+
+    assert_eq!(pixel(&png, 10, height as i32 - 1)[3], 255);
+    assert_eq!(pixel(&png, 10, 0)[3], 0, "the rest of the box is untouched");
 }
 
 #[test]

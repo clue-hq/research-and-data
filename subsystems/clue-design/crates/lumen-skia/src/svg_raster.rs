@@ -122,32 +122,44 @@ pub fn rasterize_svg_thumbnail(
 /// Read back unpremultiplied so alpha is the raw coverage byte. A read-back
 /// that fails answers "no" — an image whose pixels cannot be inspected must
 /// not be published as a thumbnail on the strength of an assumption.
+///
+/// ONE ROW at a time, into a single reused buffer, returning at the first
+/// painted pixel. Reading the whole surface back doubled the peak memory of the
+/// worst case this function exists to serve: a thin vector (a 2560x24 divider)
+/// blows up to ~28 MP under the thumbnail floor, which the export budget admits
+/// — and a full read-back then asked for a second buffer the same size as the
+/// surface itself. The scan is byte-for-byte the same question, asked in
+/// `width * 4` bytes.
 fn painted_anything(image: &Image) -> bool {
-    let info = ImageInfo::new(
-        (image.width(), image.height()),
-        ColorType::RGBA8888,
-        AlphaType::Unpremul,
-        None,
-    );
     let row_bytes = match usize::try_from(image.width()) {
         Ok(width) => width * 4,
         Err(_) => return false,
     };
-    let height = match usize::try_from(image.height()) {
-        Ok(height) => height,
-        Err(_) => return false,
-    };
-    let mut pixels = vec![0u8; row_bytes * height];
-    if !image.read_pixels(
-        &info,
-        &mut pixels,
-        row_bytes,
-        (0, 0),
-        skia_safe::image::CachingHint::Disallow,
-    ) {
+    if row_bytes == 0 || image.height() <= 0 {
         return false;
     }
-    pixels.chunks_exact(4).any(|pixel| pixel[3] != 0)
+    let info = ImageInfo::new(
+        (image.width(), 1),
+        ColorType::RGBA8888,
+        AlphaType::Unpremul,
+        None,
+    );
+    let mut row = vec![0u8; row_bytes];
+    for y in 0..image.height() {
+        if !image.read_pixels(
+            &info,
+            &mut row,
+            row_bytes,
+            (0, y),
+            skia_safe::image::CachingHint::Disallow,
+        ) {
+            return false;
+        }
+        if row.chunks_exact(4).any(|pixel| pixel[3] != 0) {
+            return true;
+        }
+    }
+    false
 }
 
 /// The thumbnail size for a vector of intrinsic `width`×`height` user units.
