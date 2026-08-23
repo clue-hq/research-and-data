@@ -1,0 +1,65 @@
+# 2026-08-22 — ARV2 account-research rebuild plan (planning session, no code)
+
+Founder (Shashank) directive: tear down the account-research build and redo it from scratch for
+the accounts section only — dossier-grade depth (Insight Health samples), Apollo for
+account/committee identification, Exa retained, Sumble dropped (402s + 100x cost), MelissaData
+for direct-mail addresses, claim-store schema and fleet shell unchanged, minimal mechanical
+guardrails (Aryan's note: any surviving gate must return actionable feedback the deep agent can
+act on). Deliverable this session: **`docs/specs/ARV2-account-research-rebuild-plan.md`** —
+proposal awaiting founder ratification.
+
+## What the audit established (five parallel agents + branch forensics)
+
+- The live system is `origin/platform/comprehensive-account-contact-research` (411 commits ahead
+  of main): M8D fleet + R11 DEEP bridge, 21-field account / 15-field contact profiles, prose
+  synthesis, M12.1 positioner, FI-4 auth, design Part II. `CLUE_PRODUCT_PATH=integration_pilot`
+  already forces verification + budget enforcement OFF; spend caps are record-only.
+- The branch's own `_memory/2026-08-20-pipeline-guard-inventory.md` (~500 guards): the real
+  problems are ~20 judgment gates (retire list), ~12 wrong-failure-species guards (suspend instead
+  of recoverable refusal), 2 kill-switch inversions (judge-off makes typed interview values
+  unwritable; inline Corroborator blocks field resolution), plus harness wedges (job-scoped
+  settlement folds → permanent pending, checkpoint-replayed poison calls bypass the refusal
+  renderer, encrypted-reasoning pins a job to its model). Truth/infra floors never fired wrongly.
+- Committee emptiness is commercial: Sumble 402 on /people and /techs. Model capability is NOT the
+  blocker (Grok forensics: correct research sequence unprompted, one-turn self-repair).
+- Claim store already admits free-flowing writes: (field_key, value, source_url, quote) inserts;
+  only C7's read gate (`research_view_governance.py:317-336`) is a non-toggleable verified-only
+  gate. `FieldDef` has no description but `field_definition.description` exists via
+  `register_field`.
+- Apollo resolver EXISTS built-but-unwired (`resolvers/apollo/`, Clay-alternative reference);
+  so do NPI/DUNS/CIK/LEI, ZoomInfo/Clay/BuiltWith, Parallel, Firecrawl. Melissa absent.
+- Frontend renders new research fields with zero change (generic fieldKey rendering on
+  /frontend/v1); prose needs prose claims; C7 nine-block view has no consumer.
+- Vendor verification (2026): Apollo org search/enrich/job-postings/people-search(0-credit)/
+  people-match(+8cr mobile, webhook); master keys tier-gated; LinkedIn-centric quality (weak on
+  small/local businesses — verify-don't-trust for medical practices). Exa research API removed
+  2026-05-01 → /search type=deep|deep-reasoning with outputSchema + grounding citations ($12-15/1k).
+  Melissa Business Coder + Global Address Verification, REST JSON, credits (~$40/10k 3P), docs
+  crawler-blocked. ZoomInfo enterprise-gated (~$50k/yr) — out.
+
+## Plan shape (see the spec for detail)
+
+Keep: claim store schema/DB, fleet shell + entity_research_* durable schema, agent runtime
+(create_agent + AsyncPostgresSaver), deepagent anatomy + packs-with-descriptions, human gates,
+tenancy/append-only/artifact substrate, frontend contracts, Lane-E prose + M12.1.
+Rebuild: source stack (Apollo + Exa + NPI + Melissa; no waterfall/tier routing), an 11→new direct
+tool surface (search_web / fetch_page / research_deep / apollo_* / lookup_registry / write_claims /
+verify_links / finalize), ICP-compiled dossier pack replacing the fixed 21/15 profiles, guardrail
+charter (2 gates: write-shape validation with actionable refusals + human authority; failure-
+species law; judgment annotates never vetoes; SENSITIVE-never-outreach floor kept).
+Delete/quarantine: Sumble stack (R1 pattern), the 20 judgment gates, the 2 inversions, waterfall/
+tier plans, six still-blocking money guards → record-only.
+Base: new branch cut from platform/comprehensive-account-contact-research (NOT main, NOT a fresh
+repo — cost argument in spec §4). Phases 0-6 each with live browser exit gates; acceptance
+fixtures = the two Insight Health dossiers.
+
+## Open (founder decisions, spec §9)
+
+Branch base ratification (needs Aryan), Apollo plan purchase + master-key confirmation, Sumble
+cancellation date, research model + relaunch-over-resume, Melissa trial, the §7 rulings
+(inversions/C7 gate/money guards), sensitive-hook posture, old-lane disposition.
+
+## Session hygiene
+
+No code changed. Working tree: this note + the spec only. Nothing pushed. The five audit briefs
+were session-ephemeral; their content is condensed into the spec's §1.
