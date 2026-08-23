@@ -258,15 +258,30 @@ def _image_area(image: Any, manifest: JsonObject) -> int:
 
 def _image_inventory(images: JsonObject, manifest: JsonObject) -> list[JsonObject]:
     inventory = []
-    # W1.5: rank by pixel area before the cap bites, ties keeping kit order —
-    # the SAME rule the W1.4 describe bound uses to choose which images get
-    # captioned (`lumen_ingestion.describe._select_for_describe`: `(-area,
-    # position)`). Website kits are already area-ordered at birth
-    # (`capture/parse.py`'s candidate sort), so for them this changes nothing;
-    # a PDF or manual kit has no such order, and taking its first 16 in
-    # insertion order could show the agent sixteen crops while the sixteen
-    # DESCRIBED assets were the large ones it never saw. Two inventories of the
-    # same kit that disagree about which sixteen matter is worse than either.
+    # W1.5: rank by pixel area before the cap bites, ties keeping kit order, so
+    # the card's sixteen are the sixteen LARGEST assets rather than the sixteen
+    # the kit happened to list first. Insertion order is not quality order for a
+    # PDF or manual kit, and taking its head showed the agent sixteen small
+    # crops while the large assets — the ones that can carry a band — never
+    # appeared at all.
+    #
+    # This ranks on the RECORD's raster dimensions (the same numbers the row
+    # prints as `px`). Be precise about what that does and does not align with:
+    #
+    #   - The W1.4 describe bound (`lumen_ingestion.describe._select_for_describe`)
+    #     uses the same SHAPE of rule — `(-area, position)` — but its area comes
+    #     from the CAPTURE evidence (DOM-attribute sizes), not from the record.
+    #   - A website kit's birth order (`capture/parse.py`'s candidate sort) is
+    #     `(DOM-attr area, file_size)` descending, and CSS-background art is
+    #     appended with area 0.
+    #
+    # So this is NOT a no-op for website kits, and it does NOT make the card and
+    # describe agree: a large CSS-background hero can rank into the card's
+    # top-16 on its record dimensions while describe, ranking on DOM attributes
+    # it never had, left it uncaptioned. That divergence is real and is the
+    # ledgered describe-ranking-source item, not something this sort can close.
+    # Record dims are nonetheless the truer ranking — they are the asset's
+    # actual pixels — so the card ranks on them and states the size it ranked by.
     items = sorted(
         images.items(),
         key=lambda item: -_image_area(item[1], manifest),

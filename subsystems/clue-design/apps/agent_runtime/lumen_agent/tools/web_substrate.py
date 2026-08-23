@@ -273,10 +273,21 @@ _PROVENANCE_NOTE_MAX_CHARS = 500
 #: matched NOTHING and emptied the candidate set before matching ran. Five of
 #: the six searches in the 2026-08-20 acceptance run died exactly there.
 #:
-#: A record kind not listed here is an image: `vector` and `raster_image` are
-#: both pictures to a page author, and an unrecognized future kind degrades to
-#: the broadest bucket rather than becoming unfindable.
-_ASSET_DISPLAY_KINDS = {"logo": "logo", "font": "font"}
+#: The table is an ALLOW-LIST, not a default-to-image rule. `AssetKind` also has
+#: `document` and `other`, and a PDF-ingested workspace really holds `document`
+#: rows — `capture/pdf.py::_ingest_reference_pdf` ingests the brand-guide PDF
+#: itself as `kind="document"`, and the library manifest filters only
+#: `archived`. Defaulting the unmapped kinds to `image` would have let
+#: `kind="image"` hand back a PDF, and `_use_library_asset` has no kind guard,
+#: so the author could then place it as an `<img>`. Only `raster_image` and
+#: `vector` are pictures; everything unmapped keeps its RAW kind, so a
+#: `document` matches `kind="document"` or no filter at all — never `image`.
+_ASSET_DISPLAY_KINDS = {
+    "raster_image": "image",
+    "vector": "image",
+    "logo": "logo",
+    "font": "font",
+}
 
 #: Query words that carry no selection signal. Without this, "a photo of the
 #: globe" ranks every asset whose text contains "a" — any-token matching turns
@@ -291,10 +302,18 @@ _ASSET_SEARCH_STOP_WORDS = frozenset(
 )
 
 
+#: Below this length a query token matches only at a word boundary. "ui" is a
+#: real word an author searches for, but as a free substring it also hits
+#: "fl(ui)d" — two characters land inside ordinary English constantly, and a
+#: false hit here becomes a ranked RESULT the director may place.
+_ASSET_SEARCH_SUBSTRING_MIN_LEN = 3
+
+
 def _asset_display_kind(record: JsonObject) -> str:
-    """The agent-facing kind for an engine asset record (see
-    `_ASSET_DISPLAY_KINDS`)."""
-    return _ASSET_DISPLAY_KINDS.get(str(record.get("kind") or "").lower(), "image")
+    """The agent-facing kind for an engine asset record, or its RAW kind when it
+    has no agent-facing alias (see `_ASSET_DISPLAY_KINDS`)."""
+    record_kind = str(record.get("kind") or "").lower()
+    return _ASSET_DISPLAY_KINDS.get(record_kind, record_kind)
 
 
 def _asset_kind_matches(record: JsonObject, requested: str) -> bool:
@@ -302,9 +321,11 @@ def _asset_kind_matches(record: JsonObject, requested: str) -> bool:
 
     Both vocabularies are accepted — the agent's (`image`/`logo`/`font`) and the
     engine's raw `AssetRecord.kind` — because the agent has been taught the
-    former by every surface it reads and the latter is what the record says. An
-    empty filter matches everything. ONE implementation: the search loop and the
-    named-id path must never disagree about what a kind filter means."""
+    former by every surface it reads and the latter is what the record says. A
+    kind with no agent-facing alias (`document`, `other`) matches only its own
+    raw name, so `kind="image"` can never return a PDF. An empty filter matches
+    everything. ONE implementation: the search loop and the named-id path must
+    never disagree about what a kind filter means."""
     if not requested:
         return True
     record_kind = str(record.get("kind") or "").lower()
@@ -321,6 +342,24 @@ def _asset_search_tokens(query_lower: str) -> List[str]:
     raw = list(dict.fromkeys(token for token in re.split(r"\W+", query_lower) if token))
     meaningful = [token for token in raw if token not in _ASSET_SEARCH_STOP_WORDS]
     return meaningful or raw
+
+
+def _asset_text_hit(needle: str, haystack: str, words: frozenset) -> bool:
+    """Whether `needle` matches an asset's searchable text.
+
+    A needle of at least `_ASSET_SEARCH_SUBSTRING_MIN_LEN` characters matches as
+    a free SUBSTRING, which is what makes "payment" find "payments". A shorter
+    one must match a whole word or the start of one, so "ui" finds the word "ui"
+    but not the middle of "fluid".
+
+    ONE predicate for both the token scan and the whole-query phrase check: a
+    one- or two-character QUERY is its own phrase, so a phrase check that skipped
+    this rule would put the false hit straight back."""
+    if not needle:
+        return False
+    if len(needle) >= _ASSET_SEARCH_SUBSTRING_MIN_LEN:
+        return needle in haystack
+    return needle in words or any(word.startswith(needle) for word in words)
 
 
 def _font_mime_from_magic(data: bytes) -> str:
@@ -2941,6 +2980,7 @@ class LumenWebTools:
         origin: str = "library",
         id_match: bool = False,
         kind_note: Optional[str] = None,
+        registered: bool = True,
     ) -> JsonObject:
         record = entry.get("record") or {}
         raster = record.get("raster") or record.get("logo") or {}
@@ -2986,27 +3026,33 @@ class LumenWebTools:
             row["id_match"] = True
         if kind_note:
             row["kind_note"] = kind_note
+        if not registered:
+            row["grounding"] = "unregistered — source cap reached"
         return row
 
     def _asset_search_candidates(self) -> Dict[str, tuple]:
         """Every asset this turn can name, as `{asset_id: (entry, origin)}`.
 
-        The three places an id legitimately lives — the workspace library, the
-        brand kit manifest, and the document's own registry — exactly as
-        `view("asset:<id>")` resolves them (W1.1). Searching only the library was
-        why an id the director read off the brand card could not be searched back.
+        The three places an id legitimately lives — the document's own registry,
+        the brand kit manifest, and the workspace library — resolved in EXACTLY
+        the order `view("asset:<id>")` resolves them (W1.1: registry first, then
+        the two manifests). Searching only the library was why an id the director
+        read off the brand card could not be searched back, and searching them in
+        a different precedence than `view` would mean search and view could
+        disagree about which record an id names.
 
-        Precedence on a duplicate id is library → brand kit → document, i.e.
-        richest metadata first: the library entry carries the W1.4 title /
-        description / usage / tags, the kit entry carries a title, and the
-        document registry value is a BARE record (it is upserted whole by
-        `_register_asset_record`, so it is wrapped here to match the entry shape).
+        So precedence on a duplicate id is document → brand kit → library. The
+        document registry value is a BARE record — `_register_asset_record`
+        upserts the record WHOLE, so the registry value IS the record — and is
+        wrapped here to match the manifest entry shape. It carries no W1.4
+        title/description, which is the cost of parity: an asset already placed
+        on this page is described by the record on the page.
         """
         candidates: Dict[str, tuple] = {}
         sources: list[tuple[JsonObject, str, bool]] = [
-            (self.config.asset_library or {}, "library", True),
-            (self.config.brand_kit_assets or {}, "brand_kit", True),
             (self.web_doc.get("assets") or {}, "document", False),
+            (self.config.brand_kit_assets or {}, "brand_kit", True),
+            (self.config.asset_library or {}, "library", True),
         ]
         for manifest, origin, wrapped in sources:
             if not isinstance(manifest, dict):
@@ -3043,11 +3089,13 @@ class LumenWebTools:
         MATCHES over asset id, label, filename, kind, the human/AI-authored
         title, description and usage, and both tag lists.
 
-        `kind` accepts the words you already use — "image" (any picture:
-        `raster_image`, `vector`, anything new) or "logo" — as well as a raw
-        engine record kind. It NEVER silences an id you named: an asset whose id
-        is in the query comes back with its true `kind` and a `kind_note` saying
-        the filter did not match, rather than a silent zero.
+        `kind` accepts the words you already use — "image" (a `raster_image` or a
+        `vector`) or "logo" — as well as a raw engine record kind. A record kind
+        with no such alias (`document`, `other`) matches only its own raw name,
+        so `kind="image"` never hands back the brand-guide PDF. The filter NEVER
+        silences an id you named: an asset whose id is in the query comes back
+        with its true `kind` and a `kind_note` saying the filter did not match,
+        rather than a silent zero.
 
         RANKING, exactly, descending:
           1. `id_match` rows — the query, or any of its whitespace/punctuation-
@@ -3057,9 +3105,10 @@ class LumenWebTools:
              asset's searchable text): yes before no;
           3. then the number of DISTINCT meaningful query tokens found (any one
              hit is enough to be a result — a four-word query does not need all
-             four). A token matches as a SUBSTRING, so "payment" finds
-             "payments"; common function words are ignored so they cannot match
-             everything;
+             four). A token of 3+ characters matches as a SUBSTRING, so
+             "payment" finds "payments"; a shorter one must match a whole word
+             or the start of one, so "ui" does not hit inside "fluid". Common
+             function words are ignored so they cannot match everything;
           4. then pixel area (width x height from the record, 0 when it states
              none) — bigger first, since a bigger asset carries more layouts;
           5. then asset id ascending, so the order is reproducible.
@@ -3068,10 +3117,13 @@ class LumenWebTools:
         `px` ("WxH", omitted when the record states no dimensions), `view`
         (paste into `view("asset:<id>")` to see the actual pixels before
         choosing), and `status` ONLY when it is not "ready" — a non-ready record
-        is searchable and viewable, but placement will refuse it.
+        is searchable and viewable, but placement will refuse it. A row marked
+        `grounding: "unregistered — source cap reached"` is a real record this
+        run has no source budget left to cite; it is still listed.
 
         ZERO results always names the inventory that was searched, so "nothing
-        matched" is never confused with "nothing exists".
+        matched" is never confused with "nothing exists" — and because a matched
+        row is never dropped, zero results can only mean zero matches.
         """
         query = (q or "").strip()
         if not query:
@@ -3136,8 +3188,11 @@ class LumenWebTools:
                 *(entry.get("tags") or []),
             ]
             haystack = " ".join(str(field) for field in fields if field).lower()
-            token_hits = sum(1 for token in tokens if token in haystack)
-            phrase_hit = 1 if query_lower in haystack else 0
+            words = frozenset(word for word in re.split(r"\W+", haystack) if word)
+            token_hits = sum(
+                1 for token in tokens if _asset_text_hit(token, haystack, words)
+            )
+            phrase_hit = 1 if _asset_text_hit(query_lower, haystack, words) else 0
             if not phrase_hit and token_hits == 0:
                 continue
             dims = record_pixel_dims(record)
@@ -3150,10 +3205,18 @@ class LumenWebTools:
             (hit["asset_id"], hit["entry"], hit["origin"], True, hit["note"])
             for hit in id_hits
         ] + [(item[3], item[4], item[5], False, None) for item in scored]
+        unregistered = 0
         for asset_id, entry, origin, id_match, note in ordered[:limit]:
             source = self._asset_grounding_source(asset_id, entry)
-            if not self._register_grounding_source(source):
-                break
+            # A full source budget must not eat the ANSWER. Dropping the row (or
+            # breaking out of the loop) turned a budget condition into a
+            # shorter — or empty — result set, which reads to the agent exactly
+            # like "your query matched less", and the honest-empty note would
+            # then blame the query for a cap. The row still comes back; it just
+            # says it is uncited.
+            registered = self._register_grounding_source(source)
+            if not registered:
+                unregistered += 1
             results.append(
                 self._asset_search_result(
                     source,
@@ -3161,6 +3224,7 @@ class LumenWebTools:
                     origin=origin,
                     id_match=id_match,
                     kind_note=note,
+                    registered=registered,
                 )
             )
         payload: JsonObject = {
@@ -3170,8 +3234,17 @@ class LumenWebTools:
             "count": len(results),
             "results": results,
         }
+        # A matched row is ALWAYS returned (see the loop), so zero results can
+        # only ever mean zero matches — the note never has to guess which.
         if not results:
             payload["note"] = self._asset_search_empty_note(query, normalized_kind)
+        elif unregistered:
+            payload["note"] = (
+                f"{unregistered} of {len(results)} result(s) could not be "
+                "registered as grounded sources — this run's source budget is "
+                "full. They are real records and still listed, but placing one "
+                "needs budget: cite or place fewer sources first."
+            )
         self.record(
             "agent",
             "web_assets_searched",
@@ -3203,10 +3276,15 @@ class LumenWebTools:
         )
         if document + kit + library == 0:
             return note + " This turn was passed no asset inventory at all."
-        return note + (
-            " Try a single distinctive word, an exact asset id, or drop the "
-            "kind filter."
-        )
+        # Only suggest dropping a filter that was actually applied — advice for a
+        # knob the agent did not turn reads as noise and teaches it nothing.
+        advice = " Try a single distinctive word or an exact asset id."
+        if normalized_kind:
+            advice = (
+                " Try a single distinctive word, an exact asset id, or drop the "
+                "kind filter."
+            )
+        return note + advice
 
     def provenance(
         self,

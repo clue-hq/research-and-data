@@ -254,16 +254,22 @@ def test_color_role_block_omits_roles_the_kit_cannot_resolve() -> None:
     assert "surface.brand" in roles
 
 
-# --- W1.5: the card's 16 are the SAME 16 the describe bound captions ----------
+# --- W1.5: the card's 16 are the 16 LARGEST, not the 16 listed first ----------
 #
-# W1.4 bounds captioning to every logo plus the top-16 images BY PIXEL AREA
-# (`lumen_ingestion.describe._select_for_describe`). The card took the first 16
-# in INSERTION order. For a website kit those agree — the harvest sorts
-# candidates by area at birth (`capture/parse.py:1087`) — but a PDF or manual
-# kit has no such order, so the card could show sixteen small crops while the
-# sixteen described assets were the large ones: an inventory of exactly the rows
-# whose descriptions are missing. The card now ranks the same way, off the same
-# manifest records it already reads for `px`.
+# The card took the first 16 slots in INSERTION order, which for a PDF or manual
+# kit is not quality order — it could show sixteen small crops while the assets
+# big enough to carry a band never appeared. It now ranks by pixel area first,
+# off the same manifest records it already reads for `px`.
+#
+# What this deliberately does NOT claim: alignment with the W1.4 describe bound.
+# `describe._select_for_describe` uses the same `(-area, position)` SHAPE, but
+# its area comes from capture evidence (DOM attributes), while the card's comes
+# from the record's raster block — and a website kit's birth order is
+# `(DOM-attr area, file_size)` with CSS-background art appended at area 0. So
+# this sort is not a no-op for website kits and the two selections can still
+# diverge (a big CSS-background hero can enter the card's 16 uncaptioned). That
+# gap is the ledgered describe-ranking-source item. Record dims are the truer
+# ranking, so the card uses them and prints the size it ranked by.
 
 
 def _sized_images(sizes):
@@ -295,9 +301,15 @@ def test_card_shows_the_largest_images_when_insertion_order_is_not_area_order() 
     assert rows[-1]["note"].startswith("2 more asset(s) available")
 
 
-def test_card_is_byte_identical_for_an_already_area_ordered_kit() -> None:
-    """Website kits are area-ordered at birth, so the new sort must be a no-op
-    for them — same rows, same order, byte for byte."""
+def test_a_kit_already_ordered_by_record_dims_is_left_untouched() -> None:
+    """The sort is a no-op for a kit whose insertion order ALREADY descends by
+    record dimensions — every row identical, in the identical order, including
+    the truncation line.
+
+    Note what this does not say: a website kit is ordered by DOM-attribute area
+    at birth, not by record dims, so it is not automatically such a kit. This
+    pins the sort's stability, not a claim about website kits.
+    """
     sizes = [(f"img{i}", 2400 - i * 100, 1600 - i * 50) for i in range(20)]
     images, manifest = _sized_images(sizes)
     kit = _kit()
@@ -305,9 +317,17 @@ def test_card_is_byte_identical_for_an_already_area_ordered_kit() -> None:
 
     rows = build_brand_card(kit, asset_manifest=manifest)["images"]
 
-    assert [row["title"] for row in rows[:MAX_IMAGE_LIST]] == [
-        f"img{i}" for i in range(MAX_IMAGE_LIST)
-    ]
+    # The head of the kit in INSERTION order, built through a card where the cap
+    # cannot bite and the sort therefore cannot matter — no duplicated row shape.
+    head_kit = _kit()
+    head_kit["assets"]["images"] = dict(list(images.items())[:MAX_IMAGE_LIST])
+    expected_head = build_brand_card(head_kit, asset_manifest=manifest)["images"]
+
+    # Full rows, not just the title sequence: asset, asset_id, role, title and px
+    # must all be unchanged, not merely the order.
+    assert rows[:MAX_IMAGE_LIST] == expected_head
+    assert rows[-1]["note"].startswith("4 more asset(s) available")
+    assert len(rows) == MAX_IMAGE_LIST + 1
 
 
 def test_equal_area_images_keep_their_insertion_order() -> None:

@@ -27,6 +27,7 @@ from dataclasses import replace
 from pathlib import Path
 
 from lumen_agent.config import AgentRuntimeConfig
+from lumen_agent.tools import web_substrate as ws
 from lumen_agent.tools.web_substrate import LumenWebTools
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -209,7 +210,7 @@ def test_live_failure_library_id_with_context_words(tmp_path: Path):
     assert result["results"][0]["id_match"] is True
 
 
-def test_live_failure_kit_id_with_context_words(tmp_path: Path):
+def test_live_failure_second_library_id_with_context_words(tmp_path: Path):
     result = _search(
         _stripe_tools(tmp_path), "asset_ing_f0453686516c12c8 globe payment arc", kind="image"
     )
@@ -231,10 +232,15 @@ def test_the_sixth_live_query_is_no_longer_decided_by_the_kind_filter(tmp_path: 
     unfiltered = _ids(_search(tools, query))
     filtered = _ids(_search(_stripe_tools(tmp_path), query, kind="image"))
 
-    # The globe asset's text carries none of these words — an honest miss, not a
-    # filter artifact — so three of the four fixture assets match.
-    assert len(unfiltered) == 3
-    assert "asset_ing_f0453686516c12c8" not in unfiltered
+    # Two of the four fixture assets carry a word from this query: the wordmark
+    # ("Stripe") and the card ("product", and the whole word "UI"). The globe and
+    # the bento background carry none — honest misses, not filter artifacts. The
+    # bento background matched before the short-token fix ONLY because "ui" fell
+    # inside "fluid", which is exactly the false hit that fix removes.
+    assert sorted(unfiltered) == [
+        "asset_ing_61a219a05909b652",
+        "asset_ing_f8ded0d6b5a66d21",
+    ]
     assert filtered == unfiltered
 
 
@@ -271,6 +277,69 @@ def test_the_raw_record_kind_still_filters(tmp_path: Path):
     )
 
     assert _ids(_search(tools, "Ribbon", kind="raster_image")) == ["asset_r"]
+
+
+def test_kind_image_never_returns_a_document_record(tmp_path: Path):
+    """`AssetKind` also has `document` and `other`, and a PDF-ingested workspace
+    really holds `document` rows — `capture/pdf.py::_ingest_reference_pdf`
+    stores the brand-guide PDF itself as one, and the library manifest filters
+    only `archived`. `_use_library_asset` has no kind guard, so a PDF returned
+    under `kind="image"` is a PDF the author can place in an `<img>`. The kind
+    table is an allow-list for exactly this reason."""
+    tools = _tools(
+        tmp_path,
+        asset_library={
+            "asset_pdf": {"record": _record("asset_pdf", kind="document", label="Brand guide")},
+            "asset_png": {"record": _record("asset_png", label="Brand guide cover")},
+        },
+    )
+
+    assert _ids(_search(tools, "Brand guide", kind="image")) == ["asset_png"]
+
+
+def test_a_document_record_is_still_findable_on_its_own_terms(tmp_path: Path):
+    """Not hidden — just not an image. It answers to its raw kind and to no
+    filter at all, with its true kind stated."""
+    tools = _tools(
+        tmp_path,
+        asset_library={
+            "asset_pdf": {"record": _record("asset_pdf", kind="document", label="Brand guide")}
+        },
+    )
+
+    assert _ids(_search(tools, "Brand guide", kind="document")) == ["asset_pdf"]
+    unfiltered = _search(tools, "Brand guide")
+    assert _ids(unfiltered) == ["asset_pdf"]
+    assert unfiltered["results"][0]["kind"] == "document"
+
+
+def test_an_unknown_future_kind_keeps_its_own_name(tmp_path: Path):
+    """`other`, or a kind added after this code was written, must not silently
+    become an image — it matches its own name or no filter."""
+    tools = _tools(
+        tmp_path,
+        asset_library={"asset_x": {"record": _record("asset_x", kind="other", label="Thing")}},
+    )
+
+    assert _ids(_search(tools, "Thing", kind="image")) == []
+    assert _ids(_search(tools, "Thing", kind="other")) == ["asset_x"]
+    assert _ids(_search(tools, "Thing")) == ["asset_x"]
+
+
+def test_a_named_document_id_still_returns_under_kind_image(tmp_path: Path):
+    """The named-id path is the one place a kind mismatch does not filter — it
+    annotates instead, so the agent learns the PDF is a PDF."""
+    tools = _tools(
+        tmp_path,
+        asset_library={
+            "asset_pdf": {"record": _record("asset_pdf", kind="document", label="Brand guide")}
+        },
+    )
+
+    row = _search(tools, "asset_pdf", kind="image")["results"][0]
+
+    assert row["kind"] == "document"
+    assert "document" in row["kind_note"]
 
 
 # --- the exact-id fast path across all three manifests ------------------------
@@ -398,6 +467,39 @@ def test_equal_token_hits_break_on_pixel_area(tmp_path: Path):
     )
 
     assert _ids(_search(tools, "ribbon")) == ["asset_big", "asset_small"]
+
+
+def test_a_long_token_matches_as_a_substring(tmp_path: Path):
+    """3+ characters match freely — this is what makes "payment" find
+    "payments", the plural robustness the search actually needs."""
+    tools = _tools(
+        tmp_path,
+        asset_library={
+            "asset_p": {"record": _record("asset_p", label="Payments hero")},
+        },
+    )
+
+    assert _ids(_search(tools, "payment")) == ["asset_p"]
+
+
+def test_a_short_token_does_not_match_inside_a_longer_word(tmp_path: Path):
+    """"ui" is a word an author searches for, but two characters land inside
+    ordinary English constantly ("fl(ui)d") — and a false hit here becomes a
+    ranked RESULT the director may place. Short tokens match a whole word or the
+    start of one, nothing else."""
+    tools = _tools(
+        tmp_path,
+        asset_library={
+            "asset_fluid": {"record": _record("asset_fluid", label="Abstract fluid wave")},
+            "asset_ui": {"record": _record("asset_ui", label="Checkout UI panel")},
+            "asset_uix": {"record": _record("asset_uix", label="uikit sprite")},
+        },
+    )
+
+    found = _ids(_search(tools, "ui"))
+
+    assert "asset_fluid" not in found
+    assert sorted(found) == ["asset_ui", "asset_uix"]  # whole word + prefix
 
 
 def test_stop_words_alone_do_not_match_everything(tmp_path: Path):
@@ -529,6 +631,82 @@ def test_empty_results_state_an_empty_inventory_too(tmp_path: Path):
     assert "kind=" not in result["note"]
 
 
+def test_the_empty_note_only_suggests_dropping_a_filter_that_was_applied(
+    tmp_path: Path,
+):
+    """Advice about a knob the agent never turned is noise that teaches nothing."""
+    tools = _stripe_tools(tmp_path)
+
+    unfiltered = _search(tools, "kangaroo")["note"]
+    filtered = _search(_stripe_tools(tmp_path), "kangaroo", kind="image")["note"]
+
+    assert "kind filter" not in unfiltered
+    assert "exact asset id" in unfiltered
+    assert "drop the kind filter" in filtered
+
+
+# --- the grounding source cap never eats the answer ---------------------------
+
+
+def _fill_grounding_budget(tools: LumenWebTools) -> None:
+    """Burn the run's whole grounded-source budget on unrelated sources."""
+    for index in range(ws._GROUNDED_SOURCE_MAX):
+        tools._register_grounding_source(
+            {"source_id": f"filler_{index}", "kind": "asset", "asset_id": f"filler_{index}"}
+        )
+
+
+def test_a_full_source_budget_still_returns_the_matched_rows(tmp_path: Path):
+    """A budget condition must not read to the agent as "your query matched
+    less". Before this, registration failure `break`ed out of the result loop, so
+    a full budget silently truncated — or emptied — a result set that had real
+    matches, and the honest-empty note then blamed the query."""
+    tools = _stripe_tools(tmp_path)
+    _fill_grounding_budget(tools)
+
+    result = _search(tools, "payment", kind="image")
+
+    assert result["count"] >= 1
+    assert all(
+        row["grounding"] == "unregistered — source cap reached"
+        for row in result["results"]
+    )
+
+
+def test_a_full_source_budget_is_named_in_a_note(tmp_path: Path):
+    tools = _stripe_tools(tmp_path)
+    _fill_grounding_budget(tools)
+
+    result = _search(tools, "payment", kind="image")
+
+    note = result["note"]
+    assert f"{result['count']} of {result['count']} result(s)" in note
+    assert "source budget is full" in note
+    assert "needs budget" in note
+
+
+def test_registered_rows_carry_no_grounding_field(tmp_path: Path):
+    result = _search(_stripe_tools(tmp_path), "payment", kind="image")
+
+    assert all("grounding" not in row for row in result["results"])
+    assert "note" not in result
+
+
+def test_zero_results_can_only_ever_mean_zero_matches(tmp_path: Path):
+    """The invariant behind the honest-empty note: because a matched row is
+    never dropped, an empty result set can never be a suppressed one, so the
+    note never has to guess which it is describing."""
+    tools = _stripe_tools(tmp_path)
+    _fill_grounding_budget(tools)
+
+    matched = _search(tools, "payment", kind="image")
+    unmatched = _search(tools, "kangaroo", kind="image")
+
+    assert matched["count"] > 0  # a full budget did NOT empty a matching search
+    assert unmatched["count"] == 0
+    assert "0 results for 'kangaroo'" in unmatched["note"]
+
+
 def test_search_works_with_no_library_manifest_at_all(tmp_path: Path):
     """A turn with kit assets but no library manifest used to be a hard tool
     error; the kit is a real inventory and must still be searchable."""
@@ -545,6 +723,9 @@ def test_search_works_with_no_library_manifest_at_all(tmp_path: Path):
 
 
 def test_the_same_id_in_two_manifests_appears_once(tmp_path: Path):
+    """Precedence is `view("asset:<id>")`'s own resolution order — document,
+    then brand kit, then library — so search and view can never disagree about
+    which record an id names."""
     record = _record("asset_shared", label="Hero")
     tools = _tools(
         tmp_path,
@@ -555,7 +736,20 @@ def test_the_same_id_in_two_manifests_appears_once(tmp_path: Path):
     result = _search(tools, "Hero")
 
     assert _ids(result) == ["asset_shared"]
-    assert result["results"][0]["origin"] == "library"
+    assert result["results"][0]["origin"] == "brand_kit"
+
+
+def test_precedence_matches_view_asset_resolution_order(tmp_path: Path):
+    """The registry wins over both manifests, exactly as `_view_asset` does it."""
+    record = _record("asset_shared", label="Hero")
+    tools = _tools(
+        tmp_path,
+        asset_library={"asset_shared": {"record": record, "title": "Library title"}},
+        brand_kit_assets={"asset_shared": {"record": record, "title": "Kit title"}},
+    )
+    tools.web_doc["assets"] = {"asset_shared": record}
+
+    assert _search(tools, "Hero")["results"][0]["origin"] == "document"
 
 
 def test_search_never_mutates_the_web_doc(tmp_path: Path):
