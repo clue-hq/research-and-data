@@ -16,7 +16,9 @@ seam, exactly as `test_web_turns.py`'s leg section drives the web executor.
 
 from __future__ import annotations
 
+import hashlib
 import json
+import os
 from copy import deepcopy
 from pathlib import Path
 from uuid import uuid4
@@ -24,7 +26,7 @@ from uuid import uuid4
 import pytest
 from fastapi.testclient import TestClient
 
-from conftest import make_client
+from conftest import make_blob_store, make_client
 
 from lumen_api.design_store import HybridRepository
 from lumen_api.main import create_app
@@ -32,6 +34,9 @@ from lumen_api.main import create_app
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 MINIMAL_SCENE_PATH = REPO_ROOT / "crates/lumen-core/fixtures/minimal_scene.json"
+GENERATED_RASTER_ASSET_PATH = (
+    REPO_ROOT / "crates/lumen-core/fixtures/assets/generated_raster_asset.json"
+)
 
 
 @pytest.fixture()
@@ -1096,3 +1101,230 @@ def test_a_non_leg_turn_on_a_pageless_document_stays_byte_identical(
     assert stored["current_version"] == 0
     assert stored["scene"]["pages"] == {}
     assert store.list_envelopes(document["id"]) == []
+
+
+# --- (h) genad2 walk: generated-asset custody at the leg persist seam ---------
+#
+# The live defect this section pins (walk of 2026-08-23, doc `doc_9e93c1e0…` v101): a chat-born
+# ad's GENERATED hero image rendered in every server-side export (which bakes straight out of the
+# engine cache) and 404'd on the editor canvas, which resolves pixels through
+# `GET /asset-store/{digest}` — i.e. through DURABLE custody. The persist path's D4 backstop is
+# what is supposed to make those two agree.
+#
+# What the walk's forensics actually showed, because it is not what anyone guessed: the backstop
+# RAN and SUCCEEDED. Both of that scene's generated digests got live `artifact` rows, stamped
+# `design_asset`, in the same second the leg run finished. The 404 came from the OTHER half of
+# custody — the bytes those rows point at were not in the tree the serving process reads. The
+# unhealable part, which is the defect these tests own, is that the backstop's skip probe was
+# `exists`: a ROW probe ("no blob I/O"). Once a row exists no later persist re-puts the bytes,
+# so a divergence that the engine cache could have repaired on the very next turn instead
+# survives every turn, forever.
+
+
+@pytest.fixture()
+def custody_client(tmp_path: Path, design_storage) -> TestClient:
+    """A leg-persist client whose blob backend is a tmp `FsStorage` this test can reach into.
+
+    Reaching into it is the point: the live failure was bytes that were durably registered
+    against ONE backend tree and read back from ANOTHER, and the only way to reproduce
+    "the artifact row says custody, the backend has no bytes" is to delete a blob behind the
+    store's back.
+    """
+    app = create_app(tmp_path / "engine-cache", storage=design_storage)
+    return make_client(app)
+
+
+def _workspace_cache_dir(client: TestClient) -> Path:
+    return Path(client.app.state.engine_cache_root) / os.environ["LUMEN_DEV_WORKSPACE_ID"]
+
+
+#: A 1x1 PNG (the spec's smallest valid one) standing in for a trio-generated hero image.
+TINY_PNG = bytes.fromhex(
+    "89504e470d0a1a0a0000000d4948445200000001000000010806000000"
+    "1f15c4890000000d49444154789c626001000000ffff03000006000557"
+    "bfabd40000000049454e44ae426082"
+)
+
+
+def unique_png() -> bytes:
+    """A PNG whose digest no other row in the shared dev database can hold.
+
+    Deliberate, and it cost an hour to learn: `/asset-store/{digest}` is workspace-UNSCOPED and
+    scans a BOUNDED candidate list of live `artifact` rows for the content hash, skipping any
+    whose bytes the backend cannot produce. `TINY_PNG` is a suite-wide fixture, so on a shared
+    dev database its hash already has hundreds of rows from long-deleted tmp workspaces — the
+    scan exhausts its budget on those corpses and 404s even when THIS test's custody is perfect.
+    Bytes after IEND are legal trailing data, so the file stays a valid PNG.
+    """
+    return TINY_PNG + uuid4().bytes
+
+
+def generated_asset_record(client: TestClient, asset_id: str, data: bytes) -> dict:
+    """The record shape a trio image-generation tool leaves in the proposed scene.
+
+    Copied from the live walk's `asset_img_run_6fa7_1`: bytes ONLY in the engine's per-workspace
+    materialization cache, and a `local-store` location whose `opaque_ref` is the engine's own
+    `sha256/{ab}/{digest}` relative path — never a `clue-storage` key, because nothing on the
+    runtime tool's path re-points it.
+    """
+    digest = hashlib.sha256(data).hexdigest()
+    from lumen_api.asset_custody import write_cache_blob
+
+    write_cache_blob(_workspace_cache_dir(client), digest, data)
+    record = json.loads(GENERATED_RASTER_ASSET_PATH.read_text())
+    record["id"] = asset_id
+    record["label"] = "hero_wave_ribbons"
+    record["media"]["digest"] = {"algorithm": "sha256", "value": digest}
+    record["media"]["location"] = {
+        "provider": "local-store",
+        "opaque_ref": f"sha256/{digest[:2]}/{digest}",
+        "url": None,
+    }
+    record["media"]["mime_type"] = "image/png"
+    record["media"]["byte_length"] = len(data)
+    return record
+
+
+def upsert_asset_operation(record: dict) -> dict:
+    return {"kind": "upsert_asset", "asset": record}
+
+
+def _durable_blob_path(client: TestClient, digest: str) -> Path:
+    """Where this test's `FsStorage` physically holds one design blob."""
+    from clue_design.storage import design_storage_key
+
+    root = Path(client.app.state.storage._root)  # the tmp tree the fixture built
+    return root.joinpath(
+        *design_storage_key(os.environ["LUMEN_DEV_WORKSPACE_ID"], digest).split("/")
+    )
+
+
+def _artifact_row_count(digest: str) -> int:
+    """How many live `artifact` rows THIS workspace holds for the digest — the idempotency
+    assertion (scoped to the workspace, because the dev database is shared)."""
+    from sqlalchemy import text
+
+    from lumen_api.design_store import DesignStoreBridge
+
+    workspace_id = os.environ["LUMEN_DEV_WORKSPACE_ID"]
+
+    async def _count(conn):
+        result = await conn.execute(
+            text(
+                "SELECT count(*) FROM artifact "
+                "WHERE content_sha256 = :sha AND workspace_id = :ws "
+                "AND erased_at IS NULL AND purged_at IS NULL"
+            ),
+            {"sha": digest, "ws": workspace_id},
+        )
+        return int(result.scalar_one())
+
+    return DesignStoreBridge(workspace_id)._run(_count)
+
+
+def _run_leg_turn(client: TestClient, document: dict, operations: list) -> dict:
+    from lumen_api.main import execute_agent_turn_job
+
+    store = HybridRepository()
+    status, response, _, _ = execute_agent_turn_job(
+        _scene_envelope(
+            document["id"],
+            store.workspace_id,
+            _leg_config(document, document["current_version"]),
+        ),
+        store=store,
+        host=_turn_host(client, proposing_runner(operations)),
+        event_sink=None,
+    )
+    assert status == "succeeded", response
+    assert response["status"] == "proposed", response
+    return response
+
+
+def test_a_leg_persist_gives_custody_to_a_generated_cache_only_asset(
+    custody_client: TestClient,
+) -> None:
+    """(h1) The canvas must see what the exporter sees.
+
+    A leg turn generates imagery mid-run; those bytes live only in the engine's wipeable cache
+    until the persist seam claims them. After the persist, `/asset-store/{digest}` — the route
+    the editor canvas resolves image pixels through — must serve them, with the cache gone.
+    """
+    from lumen_api.asset_custody import cache_blob_path
+
+    pixels = unique_png()
+    document = create_document(custody_client)
+    record = generated_asset_record(custody_client, "asset_img_run_test_1", pixels)
+    digest = record["media"]["digest"]["value"]
+    assert not make_blob_store(custody_client.app).exists(digest), "precondition: cache-only"
+
+    _run_leg_turn(custody_client, document, [upsert_asset_operation(record)])
+
+    # Custody is BYTES, not a row: prove it by destroying the cache first.
+    cache_blob_path(_workspace_cache_dir(custody_client), digest).unlink()
+    served = custody_client.get(f"/asset-store/{digest}")
+    assert served.status_code == 200, served.text
+    assert served.content == pixels
+
+
+def test_a_leg_persist_heals_a_scene_asset_whose_durable_bytes_are_gone(
+    custody_client: TestClient,
+) -> None:
+    """(h2) THE live defect, and the healing contract.
+
+    The walk's broken banner is exactly this state: a LIVE `artifact` row for the digest (the
+    fleet worker's persist wrote one) and NO readable bytes in the backend the design API holds
+    — because the two processes resolved the relative `CLUE_STORAGE_FS_ROOT` default against
+    different working directories, so the row and the blob landed in different trees.
+
+    The backstop's skip probe was row-only (`design_bytes_exist`, "no blob I/O"), so once a row
+    existed no later persist could ever restore the bytes: the banner stayed broken forever.
+    Custody is a claim about BYTES, so the probe must be about bytes — and then the next chat
+    iteration on the broken ad heals it.
+    """
+    pixels = unique_png()
+    document = create_document(custody_client)
+    record = generated_asset_record(custody_client, "asset_img_run_test_2", pixels)
+    digest = record["media"]["digest"]["value"]
+
+    _run_leg_turn(custody_client, document, [upsert_asset_operation(record)])
+    blob = _durable_blob_path(custody_client, digest)
+    assert blob.is_file(), "precondition: the first persist gave custody"
+
+    # The split-root shape: the row survives (it is in the shared database), the bytes do not
+    # (they went to another process's tree).
+    blob.unlink()
+    assert make_blob_store(custody_client.app).exists(digest), "the row still claims custody"
+    assert custody_client.get(f"/asset-store/{digest}").status_code == 404
+    # ...and the cache still holds them, which is why healing is possible at all: the engine
+    # cache root is anchored to the design tree, so BOTH processes always agreed on it.
+
+    # The next iteration turn on the same document — the marketer asking for one more change.
+    document = HybridRepository().require_document(document["id"])
+    _run_leg_turn(custody_client, document, [title_operation("Warmer headline")])
+
+    served = custody_client.get(f"/asset-store/{digest}")
+    assert served.status_code == 200, served.text
+    assert served.content == pixels
+
+
+def test_a_leg_persist_over_complete_custody_does_not_duplicate_it(
+    custody_client: TestClient,
+) -> None:
+    """(h3) Idempotent: re-persisting a scene whose assets are already durable is a no-op."""
+    pixels = unique_png()
+    document = create_document(custody_client)
+    record = generated_asset_record(custody_client, "asset_img_run_test_3", pixels)
+    digest = record["media"]["digest"]["value"]
+
+    _run_leg_turn(custody_client, document, [upsert_asset_operation(record)])
+    assert _artifact_row_count(digest) == 1
+    blob = _durable_blob_path(custody_client, digest)
+    stat_before = blob.stat().st_mtime_ns
+
+    document = HybridRepository().require_document(document["id"])
+    _run_leg_turn(custody_client, document, [title_operation("Second pass")])
+
+    assert _artifact_row_count(digest) == 1, "custody must not be re-minted"
+    assert blob.stat().st_mtime_ns == stat_before, "the blob must not be re-put"
+    assert custody_client.get(f"/asset-store/{digest}").content == pixels

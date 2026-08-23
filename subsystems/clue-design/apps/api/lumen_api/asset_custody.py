@@ -260,6 +260,19 @@ def register_scene_asset_backstop(
     future engine surface) cannot leave a scene citing bytes that only ever lived in a wipeable
     cache. One pass, skip-if-already-durable, and the media type is taken from the record.
 
+    **Durable means the bytes come back, not that a row says they should** (genad2 walk,
+    2026-08-23). This pass used to skip on ``blobs.exists`` — a ROW probe, "no blob I/O". A row
+    and its blob can diverge (a backend root that moved between the writing process and the
+    serving one, a database restored without its object store, an out-of-band delete), and under
+    a row-only probe that divergence is PERMANENT: the row keeps answering yes, every later
+    persist skips the digest, and the asset 404s on ``/asset-store/{digest}`` forever — a canvas
+    painting an empty box while every server-side export, which reads the engine cache directly,
+    still renders it. Probing for retrievable bytes (:meth:`DesignBlobStore.has_readable_bytes`)
+    is what makes this pass *healing*: any cache-resident asset whose custody is broken — this
+    turn's or any earlier turn's, since the whole scene's asset table is walked every time — is
+    re-registered, and ``register`` is content-addressed and row-before-blob, so the repair is
+    one upsert plus the missing put and re-running it changes nothing.
+
     Returns the digests it newly registered (empty in the common case).
     """
     registered: List[str] = []
@@ -276,14 +289,14 @@ def register_scene_asset_backstop(
             seen.add(digest)
             # Cache probe FIRST, durability probe second — deliberately, and not just for
             # speed. A digest with no cache file cannot be rescued here whatever the durable
-            # answer is, and `exists` is a round trip through the O5 bridge (its own engine,
-            # connection and transaction). Ordering it this way makes the common case — a scene
-            # naming assets that were already durable and never materialized — cost no database
-            # work at all.
+            # answer is, and the durability probe is a round trip through the O5 bridge (its own
+            # engine, connection and transaction). Ordering it this way makes the common case —
+            # a scene naming assets that were already durable and never materialized — cost no
+            # database work at all.
             path = cache_blob_path(cache_dir, digest)
             if not path.is_file():
                 continue
-            if blobs.exists(digest):
+            if blobs.has_readable_bytes(digest):
                 continue
             blobs.register(
                 path.read_bytes(), media_type=media_type, source_key=SOURCE_KEY_ASSET

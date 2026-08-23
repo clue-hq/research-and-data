@@ -199,6 +199,42 @@ def test_the_backstop_leaves_already_durable_bytes_alone(client: TestClient) -> 
     assert make_blob_store(client.app).read(record["media"]["digest"]["value"]) == TINY_PNG
 
 
+def test_the_backstop_heals_custody_whose_bytes_went_missing(client: TestClient) -> None:
+    """Custody is a claim about BYTES, so the skip probe has to be about bytes.
+
+    The genad2 walk (2026-08-23) found the row and the blob apart: the persisting process and
+    the serving one resolved the relative default blob root against different working
+    directories, so the ``artifact`` row (shared database) said custody and the design API's
+    backend could not produce a thing. That divergence is recoverable — the engine cache still
+    held the bytes — but under the old row-only probe (``exists``, "no blob I/O") it was
+    PERMANENT, because every later accept skipped the digest on the strength of the row.
+
+    This drives the NON-leg seam (``PUT /scene``) on purpose: the backstop is one shared
+    function, so the leg persist and the MVP editor's accept heal identically, and pinning it
+    here is what keeps the editor path from regressing when only the leg tests are read.
+    """
+    from clue_design.storage import design_storage_key
+
+    document = create_document(client)
+    record = cache_only_asset(client, "asset_mid_turn", TINY_PNG)
+    scene = scene_with_asset(document["id"], record)
+    digest = record["media"]["digest"]["value"]
+    assert client.put(f"/documents/{document['id']}/scene", json={"scene": scene}).status_code == 200
+
+    key = design_storage_key(os.environ["LUMEN_DEV_WORKSPACE_ID"], digest)
+    Path(client.app.state.storage._root).joinpath(*key.split("/")).unlink()
+    assert make_blob_store(client.app).exists(digest), "the row still claims custody"
+    # Workspace-scoped byte route rather than /asset-store/{digest}: the public route resolves
+    # a digest across EVERY tenant's rows, and TINY_PNG's hash is held by half this suite.
+    assert client.get("/assets/asset_mid_turn/bytes").status_code == 404
+
+    assert client.put(f"/documents/{document['id']}/scene", json={"scene": scene}).status_code == 200
+
+    served = client.get("/assets/asset_mid_turn/bytes")
+    assert served.status_code == 200, served.text
+    assert served.content == TINY_PNG
+
+
 def test_the_backstop_cannot_invent_custody_for_bytes_it_does_not_have(
     client: TestClient,
 ) -> None:

@@ -386,6 +386,36 @@ class DesignBlobStore:
             )
         )
 
+    def has_readable_bytes(self, sha256: str) -> bool:
+        """Whether this workspace holds live custody of ``sha256`` — row AND retrievable bytes.
+
+        :meth:`exists` answers a question about a ROW. That is the right probe for "may I skip
+        recording metadata", and the wrong one for "are these bytes safe", because the row and
+        the blob can diverge: a backend whose root moved, a restore that brought the database
+        back without the object store, an out-of-band delete. When they do, ``exists`` says yes
+        forever and every self-healing pass that trusts it skips the one digest it exists to
+        rescue — which is exactly how a generated image stayed 404 on ``/asset-store/{digest}``
+        across every later turn while the engine cache still held the bytes.
+
+        Bytes, not a byte count: ``storage.exists`` is a stat/HEAD, so this costs one extra
+        cheap round trip over ``exists`` and never pulls a blob. A backend that errors out is
+        read as "not readable" — the safe direction, since the caller's remedy (re-register
+        from the cache) is idempotent.
+        """
+
+        async def _readable(conn: AsyncConnection) -> bool:
+            if not await design_storage.design_bytes_exist(
+                conn, workspace_id=self.workspace_id, sha256=sha256
+            ):
+                return False
+            key = design_storage.design_storage_key(self.workspace_id, sha256)
+            try:
+                return await self.storage.exists(key)
+            except Exception:
+                return False
+
+        return self._bridge._run(_readable)
+
     def delete(self, sha256: str) -> bool:
         """Destroy this workspace's blob for ``sha256`` and tombstone its row (D4 Round B).
 
