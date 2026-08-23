@@ -117,6 +117,16 @@ spec the page was built to, so two extra checks apply:
   constraint, the width, and the section id — never softened to a
   preference. A deviation the user's own request forced is the director's to
   reconcile: report what you see, plainly, and let them.
+- **Geometry that contradicts the brand's measured shape** — a control radius
+  unlike the brand's other controls, an elevation heavier than the brand's real
+  shadows, a card whose padding or a band whose vertical rhythm ignores the
+  spacing the brief measured. The page's shape is supposed to come from the
+  kit; where the pixels say otherwise, say so. This one is an **ADVISORY** note
+  in the Verdict-discipline sense below — never blocking, and NOT a
+  `constraints` defect (unless a constraint names that geometry itself, in
+  which case the bullet above governs). You are judging pixels, not classes, so
+  report what the shape looks like beside the brand's own, and let the author
+  find the class.
 - **Background rhythm** — compare the page's actual band sequence against
   the brief's `background_rhythm` (a sequence plus a ratio, e.g. "1 dark
   sliver : 20 cream"). Judge the ratio's spirit, not a mechanical section
@@ -145,7 +155,9 @@ When your brief names a target account, additionally verify in the pixels:
 - **Blocking** (must-fix): overflow/clipping, unreadable contrast, broken or
   missing images, a dead or missing primary CTA, unusable phone header.
 - **Advisory** (note, don't block): spacing nitpicks, copy tone, an image
-  that would be nicer cropped differently.
+  that would be nicer cropped differently, and geometry that contradicts the
+  brand's measured shape (the Creative Brief section's bullet — a brand-shape
+  note is always advisory, however wrong the radius looks).
 
 Report each issue with: the width where it appears, the section id, what is
 wrong in the pixels, and the smallest concrete fix (a class change, a

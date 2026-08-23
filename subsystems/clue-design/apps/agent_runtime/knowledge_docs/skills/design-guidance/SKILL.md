@@ -28,8 +28,9 @@ Two situations, one discipline:
 
 1. The user's explicit request this turn.
 2. The Creative Brief (follow literally when not overridden by 1).
-3. The kit's tokens and theme variants (`brand-and-tokens`; the class
-   grammar in `create-website`).
+3. The kit's tokens, theme variants, and brand-geometry utilities
+   (`brand-and-tokens`; the class grammar in `create-website`, whose ten
+   geometry utilities render the kit's measured shape).
 4. Your design instincts.
 
 When 1 conflicts with 2–4: comply, and flag the deviation in one sentence in
@@ -108,6 +109,13 @@ etiquette this skill adds:
 - When the brief carries **component recipes** (the measured shape of the
   brand's real buttons/cards, in token names), use them verbatim — a recipe
   came from the brand's actual site and outranks your instinct.
+- **The measured shape now renders mechanically.** A recipe's geometry slots
+  are deployed through `create-website`'s brand-geometry utilities (the recipe
+  names the class beside the token), so "use it verbatim" is a class to write,
+  not a number to eyeball. Overriding one of those utilities with a raw value
+  on a briefed kit is a deviation: the reviewer sees a shape unlike the brand's
+  other controls and reports it as an ADVISORY note, and the ladder's
+  comply-and-flag rule applies when a user ask is what forced it.
 - `link` buttons are prose, not chrome: they may take copy-fitting styling
   (tracking, underline) where the primary shape may not.
 
