@@ -19,8 +19,9 @@ import type { ThemeColorOption } from "./theme-options";
  * and `scene-apply.ts`'s `solidHexPaint` are the only places it is mentioned.
  *
  * THE ROUTE, recorded here because the plan's own reference (`brandHub`) does
- * not exist: `GET /brand-kits/{id}` → `brand_kit_json.tokens.colors`, fetched
- * through `documentStore.fetchBrandKitDetail` and parsed by the engine's
+ * not exist: `GET /brand-kits/{id}/versions/{version}` →
+ * `brand_kit_json.tokens.colors`, fetched through
+ * `documentStore.fetchBrandKitDetail` and parsed by the engine's
  * `tokenColors.ts::buildTokenColorMap`. There is exactly ONE parser for that
  * payload and this module does not write a second — it decides only which of
  * the parsed tokens the picker OFFERS, and in what order.

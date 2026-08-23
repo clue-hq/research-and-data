@@ -31,8 +31,12 @@ const loadCanvasKitMock = vi.mock(
   (original) => ({ ...original, registerKitFontFaces: vi.fn(() => true) })
 );
 const registerKitFontFaces = loadCanvasKitMock.registerKitFontFaces;
-const { collectKitFontFaceRefs, loadKitFontFaces, resetKitDomFontsForTests } =
-  require("../kitFonts") as typeof import("../kitFonts");
+const {
+  collectKitFontFaceRefs,
+  collectKitFontFamilyRefs,
+  loadKitFontFaces,
+  resetKitDomFontsForTests,
+} = require("../kitFonts") as typeof import("../kitFonts");
 
 /** K3 canvas leg: kit JSON → face refs → fetched bytes → provider registration. */
 
@@ -56,6 +60,7 @@ const KIT = {
 describe("kitFonts (K3 canvas leg)", () => {
   beforeEach(() => {
     vi.mocked(registerKitFontFaces).mockClear();
+    vi.mocked(registerKitFontFaces).mockImplementation(() => true);
   });
 
   it("collects only faces with stored asset ids, tagged with the group family", () => {
@@ -147,6 +152,33 @@ describe("kitFonts (K3 canvas leg)", () => {
     expect(diagnostics).toEqual([]);
   });
 
+  it("surfaces CanvasKit registration failures instead of rejecting silently", async () => {
+    vi.mocked(registerKitFontFaces).mockImplementation(() => {
+      throw new Error("invalid font bytes");
+    });
+    const bytes = new ArrayBuffer(8);
+    const fetchImpl = vi.fn(
+      async () =>
+        ({ ok: true, arrayBuffer: async () => bytes }) as unknown as Response
+    ) as unknown as typeof fetch;
+    const diagnostics: unknown[] = [];
+
+    expect(
+      await loadKitFontFaces(
+        {
+          apiBaseUrl: "http://api.test",
+          fetchImpl,
+          onFaceDiagnostic: (diagnostic) => diagnostics.push(diagnostic),
+        },
+        KIT
+      )
+    ).toBe(false);
+    expect(diagnostics).toHaveLength(2);
+    expect((diagnostics[0] as { message: string }).message).toContain(
+      "CanvasKit registration failed: invalid font bytes"
+    );
+  });
+
   it("resolves false without touching the provider when the kit has no stored faces", async () => {
     const fetchImpl = vi.fn() as unknown as typeof fetch;
     expect(
@@ -154,6 +186,54 @@ describe("kitFonts (K3 canvas leg)", () => {
     ).toBe(false);
     expect(fetchImpl).not.toHaveBeenCalled();
     expect(vi.mocked(registerKitFontFaces)).not.toHaveBeenCalled();
+  });
+
+  it("states the deterministic Inter fallback when a pinned kit declares a family with zero faces", async () => {
+    const sohneKit = {
+      tokens: {
+        typography: {
+          headline: {
+            value: {
+              default: { kind: "style", font_family: "sohne-var" },
+            },
+          },
+        },
+      },
+      assets: {
+        fonts: {
+          primary: { family: "sohne-var", faces: [] },
+        },
+      },
+    } as never;
+    const fetchImpl = vi.fn() as unknown as typeof fetch;
+    const diagnostics: unknown[] = [];
+
+    expect(collectKitFontFamilyRefs(sohneKit)).toEqual([
+      { family: "sohne-var", assetIds: [] },
+    ]);
+    const registered = await loadKitFontFaces(
+      {
+        apiBaseUrl: "http://api.test",
+        fetchImpl,
+        onFaceDiagnostic: (diagnostic) => diagnostics.push(diagnostic),
+      },
+      sohneKit
+    );
+
+    expect(registered).toBe(false);
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(diagnostics).toHaveLength(1);
+    expect(diagnostics[0]).toEqual(
+      expect.objectContaining({
+        severity: "warning",
+        code: "EDITOR_KIT_FONT_FAMILY_UNAVAILABLE",
+        subject: { kind: "document" },
+      })
+    );
+    const diagnostic = diagnostics[0] as { message: string; hint: string };
+    expect(diagnostic.message).toContain("sohne-var");
+    expect(diagnostic.message).toContain("deterministic Inter fallback");
+    expect(diagnostic.hint).toContain("licensed TTF/OTF");
   });
 });
 

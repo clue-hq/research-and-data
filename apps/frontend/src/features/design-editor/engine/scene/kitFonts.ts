@@ -1,6 +1,10 @@
 import type { BrandKitDetailPayload } from "./tokenColors";
 import type { Diagnostic } from "./contracts";
-import { fontFaceDescriptors, registerKitFontFaces } from "./canvaskit/loadCanvasKit";
+import {
+  INTER_FAMILY,
+  fontFaceDescriptors,
+  registerKitFontFaces,
+} from "./canvaskit/loadCanvasKit";
 import { effectiveFaceMeta } from "./canvaskit/fontFaces";
 import { defaultDesignFetch } from "../config";
 
@@ -25,6 +29,73 @@ interface KitFontFaceRef {
    * at the (family, normal, 400) default. */
   weight?: number;
   style?: string;
+}
+
+export interface KitFontFamilyRef {
+  family: string;
+  assetIds: string[];
+}
+
+/** Every family the kit declares, including typography-token families that
+ * have no `assets.fonts` group at all. Keeping the empty declarations is
+ * deliberate: they are the data defect that used to look like a successful
+ * font load while both renderers silently substituted a face. */
+export function collectKitFontFamilyRefs(
+  kit: BrandKitDetailPayload | null | undefined
+): KitFontFamilyRef[] {
+  const families = new Map<string, Set<string>>();
+  const addFamily = (value: unknown) => {
+    if (typeof value !== "string" || value.trim().length === 0) {
+      return null;
+    }
+    const family = value.trim();
+    const assets = families.get(family) ?? new Set<string>();
+    families.set(family, assets);
+    return assets;
+  };
+
+  const fonts = (kit as { assets?: { fonts?: unknown } } | null | undefined)
+    ?.assets?.fonts;
+  if (fonts && typeof fonts === "object") {
+    for (const group of Object.values(fonts as Record<string, unknown>)) {
+      if (!group || typeof group !== "object") {
+        continue;
+      }
+      const assets = addFamily((group as { family?: unknown }).family);
+      if (!assets) {
+        continue;
+      }
+      const faces = (group as { faces?: unknown }).faces;
+      if (!Array.isArray(faces)) {
+        continue;
+      }
+      for (const face of faces) {
+        const assetId = (face as { asset_id?: unknown } | null)?.asset_id;
+        if (typeof assetId === "string" && assetId.length > 0) {
+          assets.add(assetId);
+        }
+      }
+    }
+  }
+
+  const typography = (
+    kit as {
+      tokens?: {
+        typography?: Record<
+          string,
+          { value?: { default?: { font_family?: unknown } } }
+        >;
+      };
+    } | null | undefined
+  )?.tokens?.typography;
+  for (const token of Object.values(typography ?? {})) {
+    addFamily(token?.value?.default?.font_family);
+  }
+
+  return [...families.entries()].map(([family, assetIds]) => ({
+    family,
+    assetIds: [...assetIds],
+  }));
 }
 
 /** The kit's registrable faces: every `assets.fonts[*].faces[]` entry that
@@ -83,9 +154,34 @@ function kitFontFaceDiagnostic(ref: KitFontFaceRef, reason: string): Diagnostic 
     severity: "warning",
     phase: "brand",
     code: "EDITOR_KIT_FONT_FACE_UNAVAILABLE",
-    message: `Brand Kit font “${ref.family}” face ${ref.assetId} could not be loaded (${reason}); canvas and preview keep a fallback face for it.`,
+    message: `Brand Kit font “${ref.family}” face ${ref.assetId} could not be loaded (${reason}); canvas and server export use the deterministic ${INTER_FAMILY} fallback for it.`,
     subject: { kind: "asset", id: ref.assetId },
-    hint: "Re-attach the Brand Kit or confirm the font asset is present in the asset store; export uses the same faces."
+    hint: "Re-attach the Brand Kit or confirm the licensed TTF/OTF asset is present in durable storage."
+  };
+}
+
+function kitFontFamilyDiagnostic(family: string): Diagnostic {
+  return {
+    severity: "warning",
+    phase: "brand",
+    code: "EDITOR_KIT_FONT_FAMILY_UNAVAILABLE",
+    message: `Brand Kit declares “${family}” but supplies no TTF/OTF face assets; canvas and server export use the deterministic ${INTER_FAMILY} fallback.`,
+    subject: { kind: "document" },
+    hint: `Ingest licensed TTF/OTF files for “${family}” to render that family; the editor will not download or fabricate font files implicitly.`,
+  };
+}
+
+function kitDomFontFaceDiagnostic(
+  face: { key: string; family: string },
+  reason: string
+): Diagnostic {
+  return {
+    severity: "warning",
+    phase: "brand",
+    code: "EDITOR_KIT_DOM_FONT_FACE_UNAVAILABLE",
+    message: `Brand Kit font “${face.family}” could not register in document.fonts (${reason}); DOM previews use the deterministic ${INTER_FAMILY} fallback.`,
+    subject: { kind: "asset", id: face.key.slice(face.key.lastIndexOf("@") + 1) },
+    hint: "Confirm the asset is a browser-loadable licensed TTF/OTF face and re-open the editor.",
   };
 }
 
@@ -97,6 +193,11 @@ export async function loadKitFontFaces(
   kit: BrandKitDetailPayload | null | undefined
 ): Promise<boolean> {
   const refs = collectKitFontFaceRefs(kit);
+  for (const family of collectKitFontFamilyRefs(kit)) {
+    if (family.assetIds.length === 0) {
+      onFaceDiagnostic?.(kitFontFamilyDiagnostic(family.family));
+    }
+  }
   if (refs.length === 0) {
     return false;
   }
@@ -104,6 +205,9 @@ export async function loadKitFontFaces(
   const doFetch: typeof fetch | undefined =
     fetchImpl ?? (typeof fetch !== "undefined" ? defaultDesignFetch : undefined);
   if (!doFetch) {
+    for (const ref of refs) {
+      onFaceDiagnostic?.(kitFontFaceDiagnostic(ref, "fetch is unavailable"));
+    }
     return false;
   }
   const faces = await Promise.all(
@@ -137,8 +241,25 @@ export async function loadKitFontFaces(
   // their bytes are never inlined) render kit type instead of a default
   // serif. Purely local display of already-fetched bytes; it does not touch
   // export/embedding. Failures are swallowed so the canvas leg is unaffected.
-  await registerKitFontFacesInDom(loaded);
-  return registerKitFontFaces(loaded);
+  await registerKitFontFacesInDom(loaded, onFaceDiagnostic);
+  try {
+    return registerKitFontFaces(loaded);
+  } catch (error) {
+    const reason =
+      error instanceof Error ? error.message : "CanvasKit registration failed";
+    for (const face of loaded) {
+      onFaceDiagnostic?.(
+        kitFontFaceDiagnostic(
+          {
+            assetId: face.key.slice(face.key.lastIndexOf("@") + 1),
+            family: face.family,
+          },
+          `CanvasKit registration failed: ${reason}`
+        )
+      );
+    }
+    return false;
+  }
 }
 
 const registeredDomFaceKeys = new Set<string>();
@@ -154,7 +275,8 @@ export function resetKitDomFontsForTests(): void {
  * leg, so a kit refetch never double-adds a face. No-op (and never throws)
  * where FontFace/document.fonts are unavailable (jsdom/tests). */
 async function registerKitFontFacesInDom(
-  faces: { key: string; family: string; bytes: ArrayBuffer; weight?: number; style?: string }[]
+  faces: { key: string; family: string; bytes: ArrayBuffer; weight?: number; style?: string }[],
+  onFaceDiagnostic?: (diagnostic: Diagnostic) => void
 ): Promise<void> {
   if (typeof FontFace === "undefined" || typeof document === "undefined" || !document.fonts) {
     return;
@@ -181,7 +303,12 @@ async function registerKitFontFacesInDom(
       } catch (error) {
         // A DOM font registration failure must not affect the canvas leg.
         registeredDomFaceKeys.delete(face.key);
-        console.warn(`Failed to register kit font face "${face.family}" into document.fonts`, error);
+        onFaceDiagnostic?.(
+          kitDomFontFaceDiagnostic(
+            face,
+            error instanceof Error ? error.message : "registration failed"
+          )
+        );
       }
     })
   );

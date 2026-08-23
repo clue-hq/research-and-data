@@ -1,7 +1,8 @@
 /**
  * AD4.0 step 3 fixture: the REAL brand-kit colour catalog harvested from the
- * kit the seeded ad document is bound to, exactly as `GET /brand-kits/{id}`
- * serves it under `brand_kit_json.tokens` — NOT hand-written shapes (the
+ * kit the seeded ad document is bound to, exactly as the then-current
+ * `GET /brand-kits/{id}` served it under `brand_kit_json.tokens` — NOT
+ * hand-written shapes (the
  * AD2.2/W2.2 law: every adapter in AD2/AD3/AD4 is TDD'd against real bytes).
  *
  * Harvest provenance
@@ -41,10 +42,10 @@
  *     map; `brand_summary.tokens` does not publish it, and neither does the
  *     picker (see `buildScenePalette`).
  *
- * CAVEAT recorded at capture: the scene pins `brand_kit.version: 6` while
- * `GET /brand-kits/{id}` serves the LATEST version (8 here) — the route takes
- * no version. The session's font path has always read the kit this way; the
- * palette inherits it. See the fetch site in `use-scene-editing-session.ts`.
+ * Historical capture caveat: these bytes are v8 even though the fixture scene
+ * pins v6, because the old editor read `GET /brand-kits/{id}` (latest). Product
+ * code now reads `/brand-kits/{id}/versions/{version}` from the scene's exact
+ * ref; this harvested v8 slice remains only parser/palette test material.
  */
 import type { BrandKitDetailPayload } from "../../engine/scene/tokenColors";
 

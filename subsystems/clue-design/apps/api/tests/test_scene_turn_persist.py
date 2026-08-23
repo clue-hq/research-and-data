@@ -1241,14 +1241,16 @@ def _run_leg_turn(client: TestClient, document: dict, operations: list) -> dict:
     return response
 
 
-def test_a_leg_persist_gives_custody_to_a_generated_cache_only_asset(
+def test_fresh_generation_bytes_are_durable_before_the_canvas_can_first_load_it(
     custody_client: TestClient,
 ) -> None:
-    """(h1) The canvas must see what the exporter sees.
+    """(h1) Fresh-generation ordering: the canvas must see what the exporter sees.
 
     A leg turn generates imagery mid-run; those bytes live only in the engine's wipeable cache
-    until the persist seam claims them. After the persist, `/asset-store/{digest}` — the route
-    the editor canvas resolves image pixels through — must serve them, with the cache gone.
+    until the persist seam claims them. The completed run is the earliest point at which the
+    browser can fetch the committed document and schedule its first canvas paint. At that point
+    `/asset-store/{digest}` — the exact route its image cache will resolve — must already serve
+    the bytes, with the engine cache gone.
     """
     from lumen_api.asset_custody import cache_blob_path
 
@@ -1260,8 +1262,15 @@ def test_a_leg_persist_gives_custody_to_a_generated_cache_only_asset(
 
     _run_leg_turn(custody_client, document, [upsert_asset_operation(record)])
 
-    # Custody is BYTES, not a row: prove it by destroying the cache first.
+    # Custody is BYTES, not a row: destroy the cache before simulating the
+    # canvas's first document fetch. The scene may not become observable while
+    # its image is still cache-only.
     cache_blob_path(_workspace_cache_dir(custody_client), digest).unlink()
+    first_load = custody_client.get(f"/documents/{document['id']}")
+    assert first_load.status_code == 200, first_load.text
+    first_scene_asset = first_load.json()["scene"]["assets"][record["id"]]
+    assert first_scene_asset["media"]["digest"]["value"] == digest
+
     served = custody_client.get(f"/asset-store/{digest}")
     assert served.status_code == 200, served.text
     assert served.content == pixels

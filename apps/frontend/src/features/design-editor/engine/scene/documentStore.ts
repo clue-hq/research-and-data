@@ -206,23 +206,38 @@ export async function fetchBrandKits(
 }
 
 /**
- * The full raw brand-kit JSON for one stored kit (`GET
- * /brand-kits/{id}` -> `brand_kit_json`) — the resolved token *values*, not
- * just the name/count summary `fetchBrandKits` returns. Used to build the
- * canvas token-color map (see `tokenColors.ts`); callers should treat a
- * fetch failure the same way `fetchBrandKits` does (leave the canvas on the
- * string-heuristic fallback) rather than block anything on it.
+ * The full raw brand-kit JSON for one stored kit — the resolved token
+ * *values*, not just the name/count summary `fetchBrandKits` returns.
+ *
+ * A document-bound caller MUST pass the scene's pinned version. Stored kits
+ * then resolve through `/brand-kits/{id}/versions/{version}` so a document
+ * authored against v6 cannot silently render with today's v9. The only
+ * versionless caller is the engine-builtin platform fallback kit: it has no
+ * registry history and is served by `/brand-kits/{id}` at synthetic version
+ * zero.
  */
 export async function fetchBrandKitDetail(
   // Workspace auth is the BFF's job — defaults to the receiver-safe wrapper; callers inject designBffConfig()'s transport.
   { apiBaseUrl, fetchImpl = defaultDesignFetch }: DocumentStoreOptions,
-  brandKitId: string
+  brandKitId: string,
+  brandKitVersion: number | null = null
 ): Promise<BrandKitDetailPayload | null> {
+  const encodedId = encodeURIComponent(brandKitId);
+  const path =
+    brandKitVersion !== null && brandKitVersion > 0
+      ? `/brand-kits/${encodedId}/versions/${brandKitVersion}`
+      : `/brand-kits/${encodedId}`;
   const response = await fetchImpl(
-    new URL(`/brand-kits/${encodeURIComponent(brandKitId)}`, apiBaseUrl)
+    new URL(path, apiBaseUrl)
   );
   if (!response.ok) {
-    throw new Error(`brand kit detail fetch failed (HTTP ${response.status})`);
+    const ref =
+      brandKitVersion !== null && brandKitVersion > 0
+        ? `${brandKitId}@${brandKitVersion}`
+        : brandKitId;
+    throw new Error(
+      `brand kit detail fetch failed for ${ref} (HTTP ${response.status})`
+    );
   }
   const payload = (await response.json()) as { brand_kit_json?: unknown };
   return (payload.brand_kit_json as BrandKitDetailPayload | undefined) ?? null;

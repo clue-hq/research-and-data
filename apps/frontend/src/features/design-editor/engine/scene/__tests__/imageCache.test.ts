@@ -17,11 +17,12 @@ function fakeCk(decode: (bytes: Uint8Array) => Image | null): CanvasKit {
 const fakeImage = (): Image => ({ delete: () => {} }) as unknown as Image;
 
 describe("CanvasKitImageCache", () => {
-  it("fetches+decodes once, returns the image, and fires onLoad", async () => {
+  it("replaces a fresh-generation placeholder after one byte fetch and decode", async () => {
     const image = fakeImage();
     const fetcher = vi.fn(async () => new ArrayBuffer(8));
     const onLoad = vi.fn();
-    const cache = new CanvasKitImageCache(fakeCk(() => image), {
+    const decode = vi.fn(() => image);
+    const cache = new CanvasKitImageCache(fakeCk(decode), {
       resolveUrl: (id) => `/assets/${id}/bytes`,
       onLoad,
       fetcher
@@ -35,6 +36,7 @@ describe("CanvasKitImageCache", () => {
     expect(cache.get("a")).toBe(image);
     expect(cache.get("a")).toBe(image);
     expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(decode).toHaveBeenCalledTimes(1);
     expect(onLoad).toHaveBeenCalledTimes(1);
   });
 

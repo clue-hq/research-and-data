@@ -90,22 +90,44 @@ describe("libraryFonts — manifest fetch", () => {
   });
 
   it("negatively caches a non-ok response as an empty library without refetching", async () => {
-    const fetchImpl = vi.fn(async () => ({ ok: false }) as Response) as unknown as typeof fetch;
+    const diagnostics: unknown[] = [];
+    const fetchImpl = vi.fn(async () =>
+      ({ ok: false, status: 503 }) as Response
+    ) as unknown as typeof fetch;
     const first = await fetchFontLibrary({ apiBaseUrl: "http://api.test", fetchImpl });
-    const second = await fetchFontLibrary({ apiBaseUrl: "http://api.test", fetchImpl });
+    const second = await fetchFontLibrary({
+      apiBaseUrl: "http://api.test",
+      fetchImpl,
+      onFaceDiagnostic: (diagnostic) => diagnostics.push(diagnostic),
+    });
     expect(first.families).toEqual([]);
     expect(second).toBe(first);
     expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(diagnostics).toEqual([
+      expect.objectContaining({
+        code: "EDITOR_FONT_LIBRARY_UNAVAILABLE",
+        message: expect.stringContaining("HTTP 503"),
+      }),
+    ]);
   });
 
   it("negatively caches a thrown fetch (API down) as an empty library", async () => {
+    const diagnostics: unknown[] = [];
     const fetchImpl = vi.fn(async () => {
       throw new Error("ECONNREFUSED");
     }) as unknown as typeof fetch;
-    const library = await fetchFontLibrary({ apiBaseUrl: "http://api.test", fetchImpl });
+    const library = await fetchFontLibrary({
+      apiBaseUrl: "http://api.test",
+      fetchImpl,
+      onFaceDiagnostic: (diagnostic) => diagnostics.push(diagnostic),
+    });
     await fetchFontLibrary({ apiBaseUrl: "http://api.test", fetchImpl });
     expect(library.families).toEqual([]);
     expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(diagnostics).toHaveLength(1);
+    expect((diagnostics[0] as { message: string }).message).toContain(
+      "ECONNREFUSED"
+    );
   });
 });
 
@@ -137,6 +159,7 @@ describe("libraryFonts — scene-filtered ref collection", () => {
 describe("libraryFonts — canvas leg", () => {
   beforeEach(() => {
     vi.mocked(registerKitFontFaces).mockClear();
+    vi.mocked(registerKitFontFaces).mockImplementation(() => true);
     resetFontLibraryForTests();
   });
 
@@ -163,8 +186,79 @@ describe("libraryFonts — canvas leg", () => {
     ]);
   });
 
-  it("resolves false without fetching bytes when the scene references no library family", async () => {
+  it("surfaces referenced face failures instead of silently keeping the fallback", async () => {
+    const diagnostics: unknown[] = [];
+    const fetchImpl = vi.fn(async (input: URL | RequestInfo) => {
+      if (String(input).endsWith("/font-library")) {
+        return manifestResponse({
+          version: 1,
+          families: [
+            {
+              slug: "aeonik",
+              family: "Aeonik",
+              faces: [{ asset_id: "asset_missing", weight: 400 }],
+            },
+          ],
+        });
+      }
+      return { ok: false, status: 404 } as Response;
+    }) as unknown as typeof fetch;
+
+    const registered = await loadLibraryFontFaces(SCENE, {
+      apiBaseUrl: "http://api.test",
+      fetchImpl,
+      onFaceDiagnostic: (diagnostic) => diagnostics.push(diagnostic),
+    });
+
+    expect(registered).toBe(false);
+    expect(diagnostics).toHaveLength(1);
+    expect(diagnostics[0]).toEqual(
+      expect.objectContaining({
+        code: "EDITOR_LIBRARY_FONT_FACE_UNAVAILABLE",
+        subject: { kind: "asset", id: "asset_missing" },
+      })
+    );
+    expect((diagnostics[0] as { message: string }).message).toContain(
+      "deterministic Inter fallback"
+    );
+  });
+
+  it("surfaces CanvasKit registration failures instead of rejecting silently", async () => {
+    vi.mocked(registerKitFontFaces).mockImplementation(() => {
+      throw new Error("invalid font bytes");
+    });
+    const bytes = new ArrayBuffer(8);
+    const diagnostics: unknown[] = [];
     const fetchImpl = vi.fn(async (input: URL | RequestInfo) =>
+      String(input).endsWith("/font-library")
+        ? manifestResponse({ version: 1, families: [LIBRARY.families[1]] })
+        : ({ ok: true, arrayBuffer: async () => bytes } as unknown as Response)
+    ) as unknown as typeof fetch;
+
+    expect(
+      await loadLibraryFontFaces(
+        { nodes: { headline: { font_family: "Canela" } } },
+        {
+          apiBaseUrl: "http://api.test",
+          fetchImpl,
+          onFaceDiagnostic: (diagnostic) => diagnostics.push(diagnostic),
+        }
+      )
+    ).toBe(false);
+    expect(diagnostics).toHaveLength(1);
+    expect(diagnostics[0]).toEqual(
+      expect.objectContaining({
+        code: "EDITOR_LIBRARY_FONT_FACE_UNAVAILABLE",
+        subject: { kind: "asset", id: "asset_canela" },
+      })
+    );
+    expect((diagnostics[0] as { message: string }).message).toContain(
+      "CanvasKit registration failed: invalid font bytes"
+    );
+  });
+
+  it("resolves false without fetching bytes when the scene references no library family", async () => {
+    const fetchImpl = vi.fn(async () =>
       manifestResponse(LIBRARY)
     ) as unknown as typeof fetch;
     const registered = await loadLibraryFontFaces(

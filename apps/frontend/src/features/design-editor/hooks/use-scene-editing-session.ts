@@ -329,6 +329,11 @@ export function useSceneEditingSession({
   // palette, so `kitPalette` below is set from the one `fetchBrandKitDetail`
   // the fonts already needed — never a second identical request.
   const brandKitId = scene?.meta.brand_kit?.id ?? null;
+  const brandKitVersion = scene?.meta.brand_kit?.version ?? null;
+  const brandKitRef =
+    brandKitId && brandKitVersion !== null
+      ? `${brandKitId}@${brandKitVersion}`
+      : null;
   const [libraryFamilies, setLibraryFamilies] = useState<string[]>([]);
   const [kitFamilies, setKitFamilies] = useState<string[]>([]);
   // STAMPED with the kit it was fetched for and DERIVED against the current
@@ -340,11 +345,11 @@ export function useSceneEditingSession({
   // sibling is not stamped; a stale font NAME is a weaker failure and is not
   // this step's row, but it is the same shape and is recorded.)
   const [kitPalette, setKitPalette] = useState<{
-    forBrandKitId: string;
+    forBrandKitRef: string;
     palette: ScenePalette | null;
   } | null>(null);
   const palette =
-    brandKitId && kitPalette?.forBrandKitId === brandKitId
+    brandKitRef && kitPalette?.forBrandKitRef === brandKitRef
       ? kitPalette.palette
       : null;
   useEffect(() => {
@@ -367,31 +372,34 @@ export function useSceneEditingSession({
   // ONE kit fetch, TWO vocabularies (AD4.0 step 3).
   //
   // THE ROUTE, recorded here because the plan's own reference (`brandHub`)
-  // does not exist: `GET /brand-kits/{id}` → `brand_kit_json`, whose
+  // does not exist: `GET /brand-kits/{id}/versions/{version}` →
+  // `brand_kit_json`, whose
   // `tokens.font_faces` the fonts read and whose `tokens.colors` §1.6's
   // pickers read. It goes through `designBffConfig()`, i.e. the authenticated
   // `/api/clue/design` BFF — never browser→FastAPI, and never the headerless
   // `design-public` passthrough, because `/brand-kits` requires the workspace
   // header.
   //
-  // TWO CAVEATS, both inherited from the font path rather than introduced:
-  //   • the route takes NO version, so it serves the kit's LATEST version
-  //     while `scene.meta.brand_kit` pins one (v6 pinned, v8 served on the
-  //     dev document at capture). The palette is therefore the kit as it is
-  //     today, not as the document was generated against.
-  //   • failure is silent by construction: a throw leaves the palette `null`
+  // The scene's exact version rides into the versioned route. A v6 document
+  // therefore offers v6 colors and fonts even after the same kit publishes
+  // v9; the inspector and canvas cannot disagree about which kit is attached.
+  // Failure remains fail-soft: a throw leaves the palette `null`
   //     and every picker on the dummy's own list, exactly as it renders today.
   useEffect(() => {
-    if (!brandKitId) return;
+    if (!brandKitId || brandKitVersion === null || !brandKitRef) return;
     let cancelled = false;
-    void fetchBrandKitDetail(designBffConfig(), brandKitId)
+    void fetchBrandKitDetail(
+      designBffConfig(),
+      brandKitId,
+      brandKitVersion,
+    )
       .then((detail) => {
         if (cancelled) return;
         setKitFamilies(
           collectKitFontFaceRefs(detail).map((face) => face.family),
         );
         setKitPalette({
-          forBrandKitId: brandKitId,
+          forBrandKitRef: brandKitRef,
           palette: buildScenePalette(detail),
         });
       })
@@ -399,7 +407,7 @@ export function useSceneEditingSession({
     return () => {
       cancelled = true;
     };
-  }, [brandKitId]);
+  }, [brandKitId, brandKitRef, brandKitVersion]);
   const fontOptions = useMemo(
     () => sceneFontOptions(libraryFamilies, kitFamilies),
     [kitFamilies, libraryFamilies],

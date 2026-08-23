@@ -87,6 +87,28 @@ it("stacks both banners when both failures are live (upstream would overlap them
   );
 });
 
+it("states a missing pinned-kit face and the deterministic fallback explicitly", () => {
+  const banners = sceneEngineBanners(ACTIVE, "skia", [
+    {
+      severity: "warning",
+      phase: "brand",
+      code: "EDITOR_KIT_FONT_FAMILY_UNAVAILABLE",
+      message:
+        "Brand Kit declares “sohne-var” but supplies no TTF/OTF face assets; canvas and server export use the deterministic Inter fallback.",
+      subject: { kind: "document" },
+      hint: "Ingest licensed TTF/OTF files for “sohne-var” to render that family.",
+    },
+  ]);
+
+  assert.equal(banners.length, 1);
+  assert.equal(banners[0].kind, "font-fallback");
+  assert.equal(banners[0].title, "Brand font unavailable");
+  assert.match(banners[0].body, /sohne-var/);
+  assert.match(banners[0].body, /canvas and server export/);
+  assert.equal(banners[0].command, "Deterministic fallback: Inter");
+  assert.match(banners[0].detail ?? "", /licensed TTF\/OTF/);
+});
+
 it("carries the MVP editor's exact sentences, not a paraphrase of them", () => {
   const sentences = [
     "Canvas editing is disabled",

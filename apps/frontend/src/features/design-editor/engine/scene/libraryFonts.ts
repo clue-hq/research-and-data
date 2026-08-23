@@ -1,4 +1,9 @@
-import { fontFaceDescriptors, registerKitFontFaces } from "./canvaskit/loadCanvasKit";
+import type { Diagnostic } from "./contracts";
+import {
+  INTER_FAMILY,
+  fontFaceDescriptors,
+  registerKitFontFaces,
+} from "./canvaskit/loadCanvasKit";
 import { effectiveFaceMeta } from "./canvaskit/fontFaces";
 import { defaultDesignFetch } from "../config";
 
@@ -58,6 +63,47 @@ interface LibraryFontFaceRef {
 export interface FontLibraryOptions {
   apiBaseUrl: string;
   fetchImpl?: typeof fetch;
+  /** Renderer-diagnostic sink for a referenced face that cannot load. */
+  onFaceDiagnostic?: (diagnostic: Diagnostic) => void;
+}
+
+function libraryFontFaceDiagnostic(
+  ref: LibraryFontFaceRef,
+  reason: string
+): Diagnostic {
+  return {
+    severity: "warning",
+    phase: "brand",
+    code: "EDITOR_LIBRARY_FONT_FACE_UNAVAILABLE",
+    message: `Font Library family “${ref.family}” face ${ref.assetId} could not be loaded (${reason}); canvas and server export use the deterministic ${INTER_FAMILY} fallback.`,
+    subject: { kind: "asset", id: ref.assetId },
+    hint: "Confirm the licensed TTF/OTF asset is present in durable storage.",
+  };
+}
+
+function libraryDomFontFaceDiagnostic(
+  face: { key: string; family: string },
+  reason: string
+): Diagnostic {
+  return {
+    severity: "warning",
+    phase: "brand",
+    code: "EDITOR_LIBRARY_DOM_FONT_FACE_UNAVAILABLE",
+    message: `Font Library family “${face.family}” could not register in document.fonts (${reason}); DOM previews use the deterministic ${INTER_FAMILY} fallback.`,
+    subject: { kind: "asset", id: face.key.slice(face.key.lastIndexOf("@") + 1) },
+    hint: "Confirm the asset is a browser-loadable licensed TTF/OTF face and re-open the editor.",
+  };
+}
+
+function fontLibraryDiagnostic(reason: string): Diagnostic {
+  return {
+    severity: "warning",
+    phase: "brand",
+    code: "EDITOR_FONT_LIBRARY_UNAVAILABLE",
+    message: `Font Library manifest could not be loaded (${reason}); referenced library families use the deterministic ${INTER_FAMILY} fallback.`,
+    subject: { kind: "document" },
+    hint: "Restore the workspace Font Library endpoint; the editor will not download substitute font files implicitly.",
+  };
 }
 
 const EMPTY_LIBRARY: FontLibrary = { version: 1, families: [] };
@@ -67,31 +113,46 @@ const EMPTY_LIBRARY: FontLibrary = { version: 1, families: [] };
 // session caches negatively and never spams the endpoint. One base url per
 // page, so the first caller's options win.
 let libraryPromise: Promise<FontLibrary> | null = null;
+let cachedLibraryDiagnostic: Diagnostic | null = null;
 
 /** Fetch + parse the font-library manifest once. A non-ok response or any
  * fetch/parse error resolves to an empty library and is cached for the
  * session (negative cache — API-down must not re-request per scene edit). */
-export function fetchFontLibrary({ apiBaseUrl, fetchImpl }: FontLibraryOptions): Promise<FontLibrary> {
+export async function fetchFontLibrary({
+  apiBaseUrl,
+  fetchImpl,
+  onFaceDiagnostic,
+}: FontLibraryOptions): Promise<FontLibrary> {
   libraryPromise ??= (async () => {
     // Workspace auth is the BFF's job — defaults to the receiver-safe wrapper; callers inject designBffConfig()'s transport.
     const doFetch: typeof fetch | undefined =
       fetchImpl ?? (typeof fetch !== "undefined" ? defaultDesignFetch : undefined);
     if (!doFetch) {
+      cachedLibraryDiagnostic = fontLibraryDiagnostic("fetch is unavailable");
       return EMPTY_LIBRARY;
     }
     try {
       const response = await doFetch(new URL("/font-library", apiBaseUrl));
       if (!response.ok) {
+        cachedLibraryDiagnostic = fontLibraryDiagnostic(`HTTP ${response.status}`);
         return EMPTY_LIBRARY;
       }
       const json = (await response.json()) as Partial<FontLibrary> | null;
       const families = Array.isArray(json?.families) ? (json.families as FontLibraryFamily[]) : [];
+      cachedLibraryDiagnostic = null;
       return { version: typeof json?.version === "number" ? json.version : 1, provenance: json?.provenance, families };
-    } catch {
+    } catch (error) {
+      cachedLibraryDiagnostic = fontLibraryDiagnostic(
+        error instanceof Error ? error.message : "fetch failed"
+      );
       return EMPTY_LIBRARY;
     }
   })();
-  return libraryPromise;
+  const library = await libraryPromise;
+  if (cachedLibraryDiagnostic) {
+    onFaceDiagnostic?.(cachedLibraryDiagnostic);
+  }
+  return library;
 }
 
 /** The library's registrable faces for the current scene: every `faces[]`
@@ -142,9 +203,13 @@ const loadedLibraryFaceKeys = new Set<string>();
  * `loadKitFontFaces`). */
 export async function loadLibraryFontFaces(
   scene: unknown,
-  { apiBaseUrl, fetchImpl }: FontLibraryOptions
+  { apiBaseUrl, fetchImpl, onFaceDiagnostic }: FontLibraryOptions
 ): Promise<boolean> {
-  const library = await fetchFontLibrary({ apiBaseUrl, fetchImpl });
+  const library = await fetchFontLibrary({
+    apiBaseUrl,
+    fetchImpl,
+    onFaceDiagnostic,
+  });
   if (library.families.length === 0) {
     return false;
   }
@@ -168,11 +233,20 @@ export async function loadLibraryFontFaces(
           new URL(`/assets/${encodeURIComponent(ref.assetId)}/bytes`, apiBaseUrl)
         );
         if (!response.ok) {
+          onFaceDiagnostic?.(
+            libraryFontFaceDiagnostic(ref, `HTTP ${response.status}`)
+          );
           return null;
         }
         const bytes = await response.arrayBuffer();
         return { key: `${ref.family}@${ref.assetId}`, family: ref.family, bytes, weight: ref.weight, style: ref.style };
-      } catch {
+      } catch (error) {
+        onFaceDiagnostic?.(
+          libraryFontFaceDiagnostic(
+            ref,
+            error instanceof Error ? error.message : "fetch failed"
+          )
+        );
         return null;
       }
     })
@@ -191,8 +265,25 @@ export async function loadLibraryFontFaces(
   // references the family by NAME) render library type instead of a default
   // serif. Purely local display of already-fetched bytes; failures are
   // swallowed so the canvas leg is unaffected.
-  await registerLibraryFontFacesInDom(loaded);
-  return registerKitFontFaces(loaded);
+  await registerLibraryFontFacesInDom(loaded, onFaceDiagnostic);
+  try {
+    return registerKitFontFaces(loaded);
+  } catch (error) {
+    const reason =
+      error instanceof Error ? error.message : "CanvasKit registration failed";
+    for (const face of loaded) {
+      onFaceDiagnostic?.(
+        libraryFontFaceDiagnostic(
+          {
+            assetId: face.key.slice(face.key.lastIndexOf("@") + 1),
+            family: face.family,
+          },
+          `CanvasKit registration failed: ${reason}`
+        )
+      );
+    }
+    return false;
+  }
 }
 
 const registeredDomFaceKeys = new Set<string>();
@@ -201,6 +292,7 @@ const registeredDomFaceKeys = new Set<string>();
  * registry) so each case starts from a clean slate. */
 export function resetFontLibraryForTests(): void {
   libraryPromise = null;
+  cachedLibraryDiagnostic = null;
   loadedLibraryFaceKeys.clear();
   registeredDomFaceKeys.clear();
 }
@@ -210,7 +302,8 @@ export function resetFontLibraryForTests(): void {
  * so a re-run never double-adds a face. No-op (and never throws) where
  * FontFace/document.fonts are unavailable (jsdom/tests). */
 async function registerLibraryFontFacesInDom(
-  faces: { key: string; family: string; bytes: ArrayBuffer; weight?: number; style?: string }[]
+  faces: { key: string; family: string; bytes: ArrayBuffer; weight?: number; style?: string }[],
+  onFaceDiagnostic?: (diagnostic: Diagnostic) => void
 ): Promise<void> {
   if (typeof FontFace === "undefined" || typeof document === "undefined" || !document.fonts) {
     return;
@@ -238,7 +331,12 @@ async function registerLibraryFontFacesInDom(
       } catch (error) {
         // A DOM font registration failure must not affect the canvas leg.
         registeredDomFaceKeys.delete(face.key);
-        console.warn(`Failed to register library font face "${face.family}" into document.fonts`, error);
+        onFaceDiagnostic?.(
+          libraryDomFontFaceDiagnostic(
+            face,
+            error instanceof Error ? error.message : "registration failed"
+          )
+        );
       }
     })
   );

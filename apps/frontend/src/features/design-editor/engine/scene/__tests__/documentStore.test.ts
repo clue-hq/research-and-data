@@ -241,11 +241,11 @@ describe("documentStore", () => {
     ).resolves.toEqual([]);
   });
 
-  it("fetchBrandKitDetail returns the raw brand_kit_json for token resolution", async () => {
+  it("fetchBrandKitDetail resolves the document's exact pinned version", async () => {
     const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
       jsonResponse(200, {
         schema_version: 1,
-        brand_kit: { id: "brand_kit_platform_default", version: 1, name: "Lumen Platform Default" },
+        brand_kit: { id: "brand_acme", version: 6, name: "Acme" },
         brand_kit_json: {
           tokens: {
             colors: {
@@ -258,7 +258,8 @@ describe("documentStore", () => {
 
     const detail = await fetchBrandKitDetail(
       { apiBaseUrl: "http://localhost:8002", fetchImpl },
-      "brand_kit_platform_default"
+      "brand_acme",
+      6
     );
 
     expect(detail).toEqual({
@@ -268,6 +269,22 @@ describe("documentStore", () => {
         }
       }
     });
+    expect(String(fetchImpl.mock.calls[0][0])).toBe(
+      "http://localhost:8002/brand-kits/brand_acme/versions/6"
+    );
+  });
+
+  it("fetchBrandKitDetail uses the latest route only for the unversioned builtin fallback", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      jsonResponse(200, { brand_kit_json: { tokens: {} } })
+    );
+
+    await fetchBrandKitDetail(
+      { apiBaseUrl: "http://localhost:8002", fetchImpl },
+      "brand_kit_platform_default",
+      null
+    );
+
     expect(String(fetchImpl.mock.calls[0][0])).toBe(
       "http://localhost:8002/brand-kits/brand_kit_platform_default"
     );

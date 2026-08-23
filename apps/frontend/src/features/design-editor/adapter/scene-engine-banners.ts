@@ -1,4 +1,5 @@
 import type { SceneEngineStatus } from "../hooks/use-scene-document";
+import type { Diagnostic } from "../engine/scene/contracts";
 
 /**
  * Gate G-D (founder, 2026-08-21): what the two engine-forced failure states
@@ -37,7 +38,7 @@ export type SceneTextMeasurementStatus = string;
 
 export interface SceneEngineBanner {
   /** Stable key + test hook; mirrors the source's `data-testid` names. */
-  kind: "engine-disabled" | "heuristic-measurement";
+  kind: "engine-disabled" | "heuristic-measurement" | "font-fallback";
   /** The bold first line. */
   title: string;
   /** The sentence under it. */
@@ -89,6 +90,7 @@ const REVENDOR_ASSETS_COMMAND = "node scripts/copy-design-vendor.mjs";
 export function sceneEngineBanners(
   engineStatus: SceneEngineStatus,
   measurementStatus: SceneTextMeasurementStatus,
+  fontDiagnostics: Diagnostic[] = [],
 ): SceneEngineBanner[] {
   const banners: SceneEngineBanner[] = [];
 
@@ -112,6 +114,25 @@ export function sceneEngineBanners(
       body: "Canvas geometry is approximate (font engine unavailable). On-canvas text is laid out with a heuristic estimate and may misfit or not appear as it will on export. Reload the editor; if it persists, rebuild the CanvasKit and font assets, then hard-refresh (⌘⇧R).",
       command: REVENDOR_ASSETS_COMMAND,
       detail: null,
+    });
+  }
+
+  if (fontDiagnostics.length > 0) {
+    const first = fontDiagnostics[0];
+    const additional = fontDiagnostics.length - 1;
+    banners.push({
+      kind: "font-fallback",
+      title:
+        first.code === "EDITOR_PINNED_BRAND_KIT_UNAVAILABLE"
+          ? "Pinned Brand Kit unavailable"
+          : "Brand font unavailable",
+      body: `${first.message}${
+        additional > 0
+          ? ` ${additional} additional font diagnostic${additional === 1 ? "" : "s"} reported.`
+          : ""
+      }`,
+      command: "Deterministic fallback: Inter",
+      detail: first.hint ?? null,
     });
   }
 

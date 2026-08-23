@@ -70,7 +70,13 @@ import {
   subscribeTextMeasurementStatus,
   textMeasurementStatusSnapshot,
 } from "../engine/scene/canvaskit/loadCanvasKit";
-import type { NodeId, Operation, PageId, Scene } from "../engine/scene/contracts";
+import type {
+  Diagnostic,
+  NodeId,
+  Operation,
+  PageId,
+  Scene,
+} from "../engine/scene/contracts";
 import {
   freezeLayoutEdit,
   type StructuredEdit,
@@ -420,6 +426,7 @@ function SceneDocumentCanvas({
   const {
     engine,
     engineStatus,
+    fontDiagnostics,
     loadGeneration,
     pageId,
     redoDepth,
@@ -1254,6 +1261,7 @@ function SceneDocumentCanvas({
         // of the approved visuals that now render them (Gates G-A / G-D).
         dataEngine={engineStatus.engineDisabled ? "disabled" : "wasm"}
         dataMeasurement={measurementStatus}
+        dataFontDiagnostics={fontDiagnostics.length}
         dataSelectedNode={activeSelectedNodeId ?? "none"}
         viewport={viewport}
       />
@@ -1293,6 +1301,7 @@ function SceneDocumentCanvas({
       {/* Gate G-D: the two engine-forced states, said out loud. */}
       <SceneEngineBanners
         engineStatus={engineStatus}
+        fontDiagnostics={fontDiagnostics}
         measurementStatus={measurementStatus}
       />
     </div>
@@ -1325,12 +1334,18 @@ function SceneDocumentCanvas({
  */
 function SceneEngineBanners({
   engineStatus,
+  fontDiagnostics,
   measurementStatus,
 }: {
   engineStatus: SceneEngineStatus;
+  fontDiagnostics: Diagnostic[];
   measurementStatus: string;
 }) {
-  const banners = sceneEngineBanners(engineStatus, measurementStatus);
+  const banners = sceneEngineBanners(
+    engineStatus,
+    measurementStatus,
+    fontDiagnostics,
+  );
   // Nothing wrong → no element at all, so a healthy canvas holds no space and
   // no assistive technology announces an empty alert region.
   if (banners.length === 0) {
@@ -1455,6 +1470,7 @@ function ArtboardSurface({
   artboard,
   assets,
   dataEngine,
+  dataFontDiagnostics,
   dataMeasurement,
   dataSelectedNode,
   viewport,
@@ -1462,6 +1478,7 @@ function ArtboardSurface({
   artboard: SceneArtboardModel | null;
   assets: Scene["assets"] | undefined;
   dataEngine: string;
+  dataFontDiagnostics: number;
   dataMeasurement: string;
   dataSelectedNode: string;
   viewport: WorkspaceViewport;
@@ -1658,6 +1675,7 @@ function ArtboardSurface({
     <canvas
       className={styles.canvas}
       data-scene-engine={dataEngine}
+      data-scene-font-diagnostics={dataFontDiagnostics}
       data-scene-selected-node={dataSelectedNode}
       data-scene-text-measurement={dataMeasurement}
       ref={canvasRef}
@@ -1760,4 +1778,3 @@ function drawArtboard(
   );
   borderPaint.delete();
 }
-

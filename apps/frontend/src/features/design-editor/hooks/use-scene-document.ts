@@ -5,7 +5,7 @@ import { textMeasurementSignature } from "../adapter/scene-canvas-view";
 import { designBffConfig } from "../data/design-bff";
 import { loadCanvasKit } from "../engine/scene/canvaskit/loadCanvasKit";
 import { skiaMeasurements } from "../engine/scene/canvaskit/skiaMeasurements";
-import type { PageId, Scene } from "../engine/scene/contracts";
+import type { Diagnostic, PageId, Scene } from "../engine/scene/contracts";
 import { fetchBrandKitDetail, fetchDocument } from "../engine/scene/documentStore";
 import { loadKitFontFaces } from "../engine/scene/kitFonts";
 import { loadLibraryFontFaces } from "../engine/scene/libraryFonts";
@@ -104,6 +104,9 @@ export interface SceneDocumentState {
    * measurements built before the kit lands resolve to skeleton values, so
    * every memo keyed on the scene keys on this too. */
   tokenGeneration: number;
+  /** Live renderer-only font failures. Scene/preflight diagnostics cannot
+   * carry these because they arise while the browser loads/registers faces. */
+  fontDiagnostics: Diagnostic[];
   /** Adopt the engine's current (relaid) scene as the rendered one. */
   refresh: () => void;
 }
@@ -135,6 +138,8 @@ const ENGINE_ACTIVE: SceneEngineStatus = {
   detail: null,
 };
 
+const NO_DIAGNOSTICS: Diagnostic[] = [];
+
 /**
  * The handshake is a property of this origin's build, not of a document, so it
  * runs once per page load: a reload token or a second artifact must not re-import
@@ -159,6 +164,14 @@ export function useSceneDocument(
   const [load, setLoad] = useState<LoadState>({ kind: "loading" });
   const [engineStatus, setEngineStatus] =
     useState<SceneEngineStatus>(ENGINE_ACTIVE);
+  const [kitFontDiagnosticState, setKitFontDiagnosticState] = useState<{
+    forBrandKitRef: string;
+    diagnostics: Diagnostic[];
+  } | null>(null);
+  const [libraryFontDiagnosticState, setLibraryFontDiagnosticState] = useState<{
+    forDocumentId: string;
+    diagnostics: Diagnostic[];
+  } | null>(null);
   // AD3.3: bumped by each COMPLETED load (the first fetch and every
   // reload-token refetch), never by a failed one — a load that threw brought no
   // new base with it. A ref, because it is read and advanced inside the async
@@ -205,6 +218,11 @@ export function useSceneDocument(
           activated.status === "active"
             ? new WasmEngine(activated.module, loaded.scene)
             : null;
+        // The token registry is module-scoped. Clear it BEFORE publishing a
+        // newly loaded scene so a document switch can never paint one frame
+        // with the previous document's kit while its own pinned version is in
+        // flight. The exact map lands in the brand-kit effect below.
+        setKitTokenMaps(buildKitTokenMaps(null));
         loadGenerationRef.current += 1;
         setLoad({
           kind: "ready",
@@ -241,35 +259,77 @@ export function useSceneDocument(
   // Brand kit leg. Keyed on the ref's VALUE (`id@version`), never the object:
   // `scene.meta.brand_kit` gets a fresh identity on every scene update, and an
   // object-keyed dep re-fetched the same kit thousands of times per turn in the
-  // source shell. A failed fetch leaves the previous map (or none) in place —
-  // the canvas falls back to the pre-kit heuristic rather than blocking.
+  // source shell. A failed fetch leaves the map cleared and reports the exact
+  // pin as unavailable — it never paints with another document's/latest kit.
   const brandKitRefKey = scene
     ? `${scene.meta.brand_kit?.id ?? PLATFORM_DEFAULT_BRAND_KIT_ID}@${
         scene.meta.brand_kit?.version ?? ""
       }`
     : null;
+  const kitFontDiagnostics =
+    brandKitRefKey &&
+    kitFontDiagnosticState?.forBrandKitRef === brandKitRefKey
+      ? kitFontDiagnosticState.diagnostics
+      : NO_DIAGNOSTICS;
   useEffect(() => {
     if (!brandKitRefKey) {
       return;
     }
     let cancelled = false;
     const config = designBffConfig();
-    const brandKitId = brandKitRefKey.slice(0, brandKitRefKey.lastIndexOf("@"));
+    const separator = brandKitRefKey.lastIndexOf("@");
+    const brandKitId = brandKitRefKey.slice(0, separator);
+    const versionText = brandKitRefKey.slice(separator + 1);
+    const brandKitVersion = versionText.length > 0 ? Number(versionText) : null;
     void (async () => {
       try {
-        const detail = await fetchBrandKitDetail(config, brandKitId);
+        const detail = await fetchBrandKitDetail(
+          config,
+          brandKitId,
+          brandKitVersion,
+        );
         if (cancelled) {
           return;
         }
         // Colors + type roles + numbers in one install, so paint, text
         // measurement and radii all resolve from the kit.
         setKitTokenMaps(buildKitTokenMaps(detail));
-        const registered = await loadKitFontFaces(config, detail);
+        const diagnostics: Diagnostic[] = [];
+        const registered = await loadKitFontFaces(
+          {
+            ...config,
+            onFaceDiagnostic: (diagnostic) => diagnostics.push(diagnostic),
+          },
+          detail,
+        );
+        if (!cancelled) {
+          setKitFontDiagnosticState({
+            forBrandKitRef: brandKitRefKey,
+            diagnostics,
+          });
+        }
         if (registered && !cancelled) {
           notifyKitFontsChanged();
         }
-      } catch {
-        // API down or kit gone: keep whatever map the canvas already had.
+      } catch (error) {
+        if (cancelled) {
+          return;
+        }
+        // The requested pin itself is part of render truth. Do not silently
+        // keep another document's/latest kit when it cannot be read.
+        setKitFontDiagnosticState({
+          forBrandKitRef: brandKitRefKey,
+          diagnostics: [
+            {
+              severity: "error",
+              phase: "brand",
+              code: "EDITOR_PINNED_BRAND_KIT_UNAVAILABLE",
+              message: `Pinned Brand Kit ${brandKitRefKey} could not be loaded (${error instanceof Error ? error.message : "fetch failed"}); canvas uses deterministic fallback tokens and Inter rather than a different kit version.`,
+              subject: { kind: "document" },
+              hint: "Restore that exact Brand Kit version or rebind the document explicitly; the editor will not substitute the latest version.",
+            },
+          ],
+        });
       }
     })();
     return () => {
@@ -286,19 +346,53 @@ export function useSceneDocument(
     }
     let cancelled = false;
     const config = designBffConfig();
-    void loadLibraryFontFaces(scene, config)
+    const diagnostics: Diagnostic[] = [];
+    void loadLibraryFontFaces(scene, {
+      ...config,
+      onFaceDiagnostic: (diagnostic) => diagnostics.push(diagnostic),
+    })
       .then((registered) => {
+        if (!cancelled) {
+          setLibraryFontDiagnosticState({
+            forDocumentId: documentId,
+            diagnostics,
+          });
+        }
         if (registered && !cancelled) {
           notifyKitFontsChanged();
         }
       })
-      .catch(() => {
-        // API down: leave the canvas on the fonts it already has.
+      .catch((error) => {
+        if (cancelled) {
+          return;
+        }
+        setLibraryFontDiagnosticState({
+          forDocumentId: documentId,
+          diagnostics: [
+            {
+              severity: "error",
+              phase: "brand",
+              code: "EDITOR_FONT_LIBRARY_LOAD_FAILED",
+              message: `Font Library loading failed (${error instanceof Error ? error.message : "unexpected failure"}); canvas and server export use deterministic Inter fallback for unavailable families.`,
+              subject: { kind: "document" },
+              hint: "Restore the Font Library response or its registered assets; the editor will not hide this degradation.",
+            },
+          ],
+        });
       });
     return () => {
       cancelled = true;
     };
-  }, [scene]);
+  }, [documentId, scene]);
+
+  const libraryFontDiagnostics =
+    scene && libraryFontDiagnosticState?.forDocumentId === documentId
+      ? libraryFontDiagnosticState.diagnostics
+      : NO_DIAGNOSTICS;
+  const fontDiagnostics = useMemo(
+    () => [...kitFontDiagnostics, ...libraryFontDiagnostics],
+    [kitFontDiagnostics, libraryFontDiagnostics],
+  );
 
   // C4 measure-then-inject. The dep is a digest of TEXT MEASUREMENT INPUTS
   // only — never the whole scene: `setMeasurements` relayouts and hands back a
@@ -350,6 +444,7 @@ export function useSceneDocument(
       redoDepth: history.redoDepth,
       undoDepth: history.undoDepth,
       tokenGeneration,
+      fontDiagnostics,
       refresh: () => {
         setLoad((current) =>
           current.kind === "ready" && current.engine
@@ -358,5 +453,5 @@ export function useSceneDocument(
         );
       },
     };
-  }, [engine, engineStatus, load, scene, tokenGeneration]);
+  }, [engine, engineStatus, fontDiagnostics, load, scene, tokenGeneration]);
 }

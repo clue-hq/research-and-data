@@ -7,7 +7,7 @@
  * module is that real data source.
  *
  * Input shape mirrors the server's raw brand-kit JSON (`GET
- * /brand-kits/{id}` -> `brand_kit_json`), specifically the `tokens.colors`
+ * /brand-kits/{id}/versions/{version}` -> `brand_kit_json`), specifically the `tokens.colors`
  * catalog: each entry is `{ value: { default: ColorTokenValue, modes }, ... }`
  * where `ColorTokenValue` is a Rust-side tagged union (`crates/lumen-core/src
  * /brand.rs` `ColorTokenValue`): `{kind:"hex",value}` |
