@@ -123,6 +123,24 @@ fn transparency_is_preserved_rather_than_flattened_onto_invented_paper() {
 }
 
 #[test]
+fn a_vector_that_parses_but_paints_nothing_returns_none_instead_of_a_blank_png() {
+    // `skia_safe::svg::Dom` is a MINIMAL renderer: plenty of real-world SVG
+    // parses cleanly and then paints nothing (unsupported filters/masks, an
+    // embedded <image href>, CSS it does not implement). Artwork parked in
+    // <defs> is the smallest honest stand-in for that class — a fully
+    // transparent surface. Encoding it would store a blank PNG and serve it as
+    // the asset's LOOK: confidently wrong, where the designed outcome is the
+    // honest "no raster preview" fallback. A genuinely invisible vector is not
+    // a useful thumbnail either, so None is right for it too.
+    let svg = br##"<svg xmlns="http://www.w3.org/2000/svg" width="240" height="48" viewBox="0 0 240 48"><defs><rect x="0" y="0" width="240" height="48" fill="#ff0000"/></defs></svg>"##;
+
+    assert!(
+        rasterize_svg_thumbnail(svg, MAX_DIMENSION, MIN_SHORT_DIMENSION).is_none(),
+        "a fully transparent render must not be stored as the asset's thumbnail"
+    );
+}
+
+#[test]
 fn bytes_that_are_not_a_parseable_vector_return_none_instead_of_failing() {
     // Ingest must never fail because a thumbnail could not be derived — the
     // caller falls back, silently, exactly as it did before this slice.

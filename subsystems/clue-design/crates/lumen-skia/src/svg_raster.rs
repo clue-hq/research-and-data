@@ -15,7 +15,7 @@
 //! and the helper is the composition point that already depends on both.
 
 use lumen_export::ensure_raster_within_budget;
-use skia_safe::{surfaces, EncodedImageFormat, FontMgr};
+use skia_safe::{surfaces, AlphaType, ColorType, EncodedImageFormat, FontMgr, Image, ImageInfo};
 
 /// Rasterize `svg_bytes` into a PNG thumbnail, returning
 /// `(png_bytes, pixel_width, pixel_height)`.
@@ -33,8 +33,9 @@ use skia_safe::{surfaces, EncodedImageFormat, FontMgr};
 /// thumbnail is crisp at its own resolution.
 ///
 /// Returns `None` on any failure — unparseable bytes, an oversized target, a
-/// surface or encode failure. Thumbnail derivation is never fatal to ingest;
-/// the caller falls back to whatever it did before.
+/// surface or encode failure, **or a render that painted nothing at all**
+/// (Skia's SVG support is minimal; see the guard below). Thumbnail derivation
+/// is never fatal to ingest; the caller falls back to whatever it did before.
 pub fn rasterize_svg_thumbnail(
     svg_bytes: &[u8],
     max_dimension: u32,
@@ -98,10 +99,55 @@ pub fn rasterize_svg_thumbnail(
         dom.render(canvas);
     }
 
-    let png = surface
-        .image_snapshot()
-        .encode(None, EncodedImageFormat::PNG, Some(100))?;
+    // Parsing is not painting. `skia_safe::svg::Dom` is a MINIMAL renderer: it
+    // accepts plenty it cannot draw (filtered or masked groups, an embedded
+    // `<image href>`, CSS it does not implement) and leaves the surface fully
+    // transparent — which encodes into a perfectly valid, perfectly blank PNG.
+    // Storing that would serve a blank rectangle as the asset's LOOK:
+    // confidently wrong, where the honest outcome is no raster preview at all.
+    // A vector that genuinely paints nothing is no more useful as a thumbnail,
+    // so `None` is right for it too, and the caller falls back as it does for
+    // bytes that never parsed.
+    let image = surface.image_snapshot();
+    if !painted_anything(&image) {
+        return None;
+    }
+
+    let png = image.encode(None, EncodedImageFormat::PNG, Some(100))?;
     Some((png.as_bytes().to_vec(), width, height))
+}
+
+/// Whether `image` carries a single non-transparent pixel.
+///
+/// Read back unpremultiplied so alpha is the raw coverage byte. A read-back
+/// that fails answers "no" — an image whose pixels cannot be inspected must
+/// not be published as a thumbnail on the strength of an assumption.
+fn painted_anything(image: &Image) -> bool {
+    let info = ImageInfo::new(
+        (image.width(), image.height()),
+        ColorType::RGBA8888,
+        AlphaType::Unpremul,
+        None,
+    );
+    let row_bytes = match usize::try_from(image.width()) {
+        Ok(width) => width * 4,
+        Err(_) => return false,
+    };
+    let height = match usize::try_from(image.height()) {
+        Ok(height) => height,
+        Err(_) => return false,
+    };
+    let mut pixels = vec![0u8; row_bytes * height];
+    if !image.read_pixels(
+        &info,
+        &mut pixels,
+        row_bytes,
+        (0, 0),
+        skia_safe::image::CachingHint::Disallow,
+    ) {
+        return false;
+    }
+    pixels.chunks_exact(4).any(|pixel| pixel[3] != 0)
 }
 
 /// The thumbnail size for a vector of intrinsic `width`×`height` user units.
