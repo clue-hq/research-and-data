@@ -125,10 +125,74 @@ async def _seed(conn, ws: str, doc: str, digest: str) -> None:
     )
 
 
+async def _seed_leg(conn, ws: str, *, bundle_ref: str):
+    """A leg that bound NO document — ``design_leg.document_id`` is nullable (migration
+    549de68ae3b9), which is what a leg closed ``out_of_scope`` before a document was born looks
+    like. ``design_leg`` FKs ``agent_thread(id, workspace_id)`` and
+    ``execution(id, workspace_id)``, so the workspace→brand→project→thread spine is seeded
+    too.
+    """
+    suffix = uuid.uuid4().hex[:10]
+    brand, project, thread = f"brand_v_{suffix}", f"proj_v_{suffix}", f"thr_v_{suffix}"
+    execution, leg = uuid.uuid4(), uuid.uuid4()
+    await conn.execute(
+        "INSERT INTO workspace (workspace_id, name) VALUES ($1, 'run view test')", ws
+    )
+    await conn.execute(
+        "INSERT INTO brand (brand_id, workspace_id, name) VALUES ($1,$2,'View brand')", brand, ws
+    )
+    await conn.execute(
+        "INSERT INTO project (project_id, workspace_id, brand_id, name)"
+        " VALUES ($1,$2,$3,'View project')",
+        project,
+        ws,
+        brand,
+    )
+    await conn.execute(
+        "INSERT INTO agent_thread (id, workspace_id, project_id) VALUES ($1,$2,$3)",
+        thread,
+        ws,
+        project,
+    )
+    await conn.execute(
+        "INSERT INTO execution (id, workspace_id, started_by, parameter_manifest_hash,"
+        " pin_manifest_hash) VALUES ($1,$2,'agent',$3,$3)",
+        execution,
+        ws,
+        "0" * 64,
+    )
+    await conn.execute(
+        "INSERT INTO design_leg (id, workspace_id, thread_id, parent_execution_id, state,"
+        " close_reason, bundle_artifact_ref) VALUES ($1,$2,$3,$4,'closed','out_of_scope',$5)",
+        leg,
+        ws,
+        thread,
+        execution,
+        bundle_ref,
+    )
+    return leg
+
+
 async def _cleanup(conn, ws: str) -> None:
-    await conn.execute("DELETE FROM design_edit_envelope WHERE workspace_id=$1", ws)
-    await conn.execute("DELETE FROM design_document WHERE workspace_id=$1", ws)
-    await conn.execute("DELETE FROM workspace WHERE workspace_id=$1", ws)
+    """FK order; every statement is a no-op for a test that seeded no such rows."""
+    for table in (
+        "design_edit_envelope",
+        "design_document",
+        "design_leg",
+        "agent_thread",
+        "project",
+        "brand",
+    ):
+        await conn.execute(f"DELETE FROM {table} WHERE workspace_id=$1", ws)  # noqa: S608
+    # `execution` is append-only (a DB trigger raises on DELETE) and it FKs the workspace, so the
+    # leg test deliberately leaves one execution + one workspace row behind rather than fighting
+    # the substrate. That matches the suite's stated convention (see conftest: rows accumulate;
+    # run against a disposable CLUE_DATABASE_URL), and every seeded id is unique per run.
+    leftover = await conn.fetchval(
+        "SELECT EXISTS (SELECT 1 FROM execution WHERE workspace_id=$1)", ws
+    )
+    if not leftover:
+        await conn.execute("DELETE FROM workspace WHERE workspace_id=$1", ws)
 
 
 def test_assemble_by_document_id_carries_scene_envelopes_and_asset_states(tmp_path):
@@ -140,16 +204,18 @@ def test_assemble_by_document_id_carries_scene_envelopes_and_asset_states(tmp_pa
         import asyncpg
 
         conn = await asyncpg.connect(DB)
-        try:
-            await _seed(conn, ws, doc, digest)
-            return await assemble(
-                doc,
-                database_url=DB,
-                asset_store_root=tmp_path / "cache",
-                storage_fs_root=tmp_path / "blobs",
-            )
+        try:  # nested so a raising _cleanup can never leak the connection
+            try:
+                await _seed(conn, ws, doc, digest)
+                return await assemble(
+                    doc,
+                    database_url=DB,
+                    asset_store_root=tmp_path / "cache",
+                    storage_fs_root=tmp_path / "blobs",
+                )
+            finally:
+                await _cleanup(conn, ws)
         finally:
-            await _cleanup(conn, ws)
             await conn.close()
 
     view = asyncio.run(run())
@@ -177,22 +243,68 @@ def test_assemble_finds_cache_resident_bytes(tmp_path):
         import asyncpg
 
         conn = await asyncpg.connect(DB)
-        try:
-            await _seed(conn, ws, doc, digest)
-            return await assemble(
-                doc,
-                database_url=DB,
-                asset_store_root=tmp_path / "cache",
-                storage_fs_root=tmp_path / "blobs",
-            )
+        try:  # nested so a raising _cleanup can never leak the connection
+            try:
+                await _seed(conn, ws, doc, digest)
+                return await assemble(
+                    doc,
+                    database_url=DB,
+                    asset_store_root=tmp_path / "cache",
+                    storage_fs_root=tmp_path / "blobs",
+                )
+            finally:
+                await _cleanup(conn, ws)
         finally:
-            await _cleanup(conn, ws)
             await conn.close()
 
     view = asyncio.run(run())
     (asset,) = view.assets
     assert asset.cache_path == blob
     assert asset.durable_row is False
+
+
+def test_leg_that_bound_no_document_degrades_with_a_gap(tmp_path):
+    """A leg that RESOLVED but bound no document is a view, not a raise.
+
+    Only a ref matching no row at all raises. This is the state of a leg closed
+    ``out_of_scope`` before a document was born — its frozen context bundle is exactly what a
+    debugger needs to see, so the view degrades with a gap instead of vanishing.
+    """
+    ws = f"ws_view_{uuid.uuid4().hex[:10]}"
+    digest = uuid.uuid4().hex + uuid.uuid4().hex
+    bundle_ref = f"{ws}/{digest}"  # the live shape: a FULL key, no `design/` segment
+    bundle = tmp_path / "blobs" / ws / digest
+    bundle.parent.mkdir(parents=True)
+    bundle.write_text(json.dumps({"bundle_kind": "design_leg", "brief": "make a banner"}))
+
+    async def run():
+        import asyncpg
+
+        conn = await asyncpg.connect(DB)
+        try:  # nested so a raising _cleanup can never leak the connection
+            try:
+                leg = await _seed_leg(conn, ws, bundle_ref=bundle_ref)
+                return await assemble(
+                    str(leg),
+                    database_url=DB,
+                    asset_store_root=tmp_path / "cache",
+                    storage_fs_root=tmp_path / "blobs",
+                )
+            finally:
+                await _cleanup(conn, ws)
+        finally:
+            await conn.close()
+
+    view = asyncio.run(run())
+    assert view.manifest["workspace_id"] == ws
+    assert view.manifest["leg"]["state"] == "closed"
+    assert view.manifest["leg"]["close_reason"] == "out_of_scope"
+    assert view.manifest["leg"]["document_id"] is None
+    assert view.manifest["document"] is None
+    assert view.scene is None
+    assert view.envelopes == [] and view.assets == []
+    assert view.brief["brief"] == "make a banner"  # the bundle still reads
+    assert any("bound no document" in g for g in view.manifest["gaps"])
 
 
 def test_unknown_ref_raises_not_found(tmp_path):

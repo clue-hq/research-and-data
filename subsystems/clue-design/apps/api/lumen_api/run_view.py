@@ -19,7 +19,7 @@ import json
 import uuid as _uuid
 from dataclasses import dataclass, field
 from datetime import datetime
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 import asyncpg
@@ -101,13 +101,15 @@ async def _assemble(
     gaps: list[str] = []
     run_row, leg_row, run_id, workspace_id, document_id = await _resolve(conn, ref, gaps)
 
-    document_row = await _load_document(conn, ref, workspace_id, document_id, gaps)
+    document_row = await _load_document(
+        conn, ref, workspace_id, document_id, gaps, from_leg=leg_row is not None
+    )
     if document_row is not None:
         workspace_id = document_row["workspace_id"]
         document_id = document_row["id"]
 
     if leg_row is None:
-        leg_row = await _load_leg(conn, run_row, workspace_id, document_id)
+        leg_row = await _load_leg(conn, run_row, workspace_id, document_id, gaps)
     if leg_row is None:
         gaps.append(
             "no design_leg row — the frozen context bundle is a leg-scoped artifact, so a "
@@ -208,8 +210,6 @@ async def _resolve(
     leg_row = _row(await conn.fetchrow(_LEG_SELECT + " WHERE id = $1", leg_id))
     if leg_row is None:
         raise RunViewNotFound(f"no design_leg matches ref {ref!r}")
-    if leg_row["document_id"] is None:
-        gaps.append("design_leg.document_id is NULL — this leg never bound a document")
     return None, leg_row, None, leg_row["workspace_id"], leg_row["document_id"]
 
 
@@ -219,11 +219,23 @@ async def _load_document(
     workspace_id: str | None,
     document_id: str | None,
     gaps: list[str],
+    *,
+    from_leg: bool,
 ) -> dict | None:
     if document_id is None:
-        if not ref.startswith("run_"):
-            raise RunViewNotFound(f"ref {ref!r} resolved to no document")
-        gaps.append("this run names no document — nothing to show for scene/envelopes/assets")
+        # The ref RESOLVED — only a ref matching no row at all raises. A run can name no
+        # document, and `design_leg.document_id` is nullable (migration 549de68ae3b9), so a leg
+        # closed before a document was born is a real, showable state: the leg block, its frozen
+        # bundle, and this gap are exactly what the debugger needs to see.
+        gaps.append(
+            (
+                "this leg bound no document (design_leg.document_id is NULL — e.g. a leg closed "
+                "out_of_scope before a document was born), so there is no scene, no envelopes, "
+                "and no assets to show"
+            )
+            if from_leg
+            else "this run names no document — nothing to show for scene/envelopes/assets"
+        )
         return None
 
     columns = (
@@ -267,6 +279,7 @@ async def _load_leg(
     run_row: dict | None,
     workspace_id: str | None,
     document_id: str | None,
+    gaps: list[str],
 ) -> dict | None:
     if run_row is not None and run_row.get("leg_id") is not None:
         # `_stamp` already stringified the uuid for the manifest; the column still wants a UUID.
@@ -277,7 +290,7 @@ async def _load_leg(
             return found
     if document_id is None or workspace_id is None:
         return None
-    return _row(
+    found = _row(
         await conn.fetchrow(
             _LEG_SELECT + " WHERE document_id = $1 AND workspace_id = $2"
             " ORDER BY created_at DESC LIMIT 1",
@@ -285,6 +298,15 @@ async def _load_leg(
             workspace_id,
         )
     )
+    if found is not None:
+        # A document accumulates legs across turns, so the newest is a GUESS, not this run's own
+        # leg. Say so — otherwise the view silently presents another turn's frozen bundle as the
+        # context this run actually ran against, which is worse than showing no bundle at all.
+        gaps.append(
+            f"leg {found['id']} resolved by document recency, not by the run's own leg_id — its "
+            "frozen context bundle may belong to a DIFFERENT turn on this document"
+        )
+    return found
 
 
 # --- the three homes --------------------------------------------------------------------------
@@ -302,7 +324,17 @@ def _load_bundle(leg_row: dict | None, storage_fs_root: Path, gaps: list[str]) -
             "(it may have been opened but never run)"
         )
         return None
-    path = storage_fs_root / ref
+    # A key is DATA (it reaches the filesystem), so an absolute or `..`-bearing ref is refused
+    # rather than joined — the same posture as `clue_storage.fs.FsStorage._path`. This view is
+    # read-only, so the blast radius is reading a file outside the store, not writing one.
+    pure = PurePosixPath(str(ref))
+    if pure.is_absolute() or ".." in pure.parts:
+        gaps.append(
+            f"design_leg.bundle_artifact_ref {ref!r} escapes the storage root (absolute or "
+            "'..'-bearing key) — refused unread"
+        )
+        return None
+    path = storage_fs_root.joinpath(*pure.parts)
     if not path.is_file():
         gaps.append(
             f"bundle blob not on this machine's storage root ({path}) — durable blobs live "
@@ -371,7 +403,15 @@ async def _load_assets(
     gaps: list[str],
 ) -> list[AssetView]:
     records = (scene or {}).get("assets") or {}
-    if not isinstance(records, dict) or not records:
+    if not isinstance(records, dict):
+        # Corrupt is not the same fact as empty, and a scene whose asset table is the wrong
+        # SHAPE is precisely the sort of thing this view exists to make visible.
+        gaps.append(
+            f"scene['assets'] is a {type(records).__name__}, not an object — the asset table is "
+            "malformed, so no asset states could be resolved (this is corrupt, not empty)"
+        )
+        return []
+    if not records:
         return []
 
     digests: list[str] = []
