@@ -66,6 +66,45 @@ Any state written through the API (`POST /documents/{id}/operations`, scene
 PUTs, kit publishes) is invisible to an already-open editor tab. Hard-refresh
 (⌘⇧R) before interacting, or you are testing against stale state.
 
+## 2a. Watching a design run (the run view)
+
+When you need to see what a run actually did — the brief it was handed, the scene
+it left behind, every envelope and event in between — materialize the view:
+
+```bash
+set -a; source .env; set +a     # from the colombo repo root
+python subsystems/clue-design/scripts/run_view.py <run_id|doc_id|leg_id>
+```
+
+It writes `.design-runs/<ref>/` (gitignored): `manifest.json`, the leg's frozen
+brief, the current scene, seq-ordered `envelopes/`, `events.jsonl`, and `assets/`
+linked to real bytes (symlinks; `--copy` to hand the directory around), with any
+asset that has no bytes on this machine NAMED rather than dropped. Whatever it
+could not resolve lands in `manifest["gaps"]` — the view is honest, never
+fabricated.
+
+Env: `CLUE_DATABASE_URL` and `CLUE_STORAGE_FS_ROOT` are both required, and the
+storage root must be **absolute** — the CLI refuses a relative one instead of
+resolving it against wherever you happen to be standing, because a wrong root
+reports the frozen bundle and every durable asset as missing, which is a
+confident lie. `LUMEN_ASSET_STORE_ROOT` is optional (defaults to this repo's
+`.engine-cache`; a relative value warns and continues, since a wrong cache root
+only costs a fallback to the durable blob).
+
+**Paste any run id straight from a worker log.** The trio's INNER deepagent run
+id — the one the logs print — is durable in no table; it survives only inside the
+OUTER design run's `run_event` payloads, and the CLI bridges through them for
+you, recording `bridged_from` in the manifest and naming both ids in the gaps.
+Mind the asymmetry that bridge creates: the output DIRECTORY is named for the ref
+you ASKED for, while `manifest["ref"]` is the outer run the view is actually of.
+When you need to know which run you are looking at, read the manifest, not the
+directory name.
+
+The tree is DERIVED, read-only, and disposable — a view over the real homes (the
+leg's frozen context bundle in platform blob storage, the engine materialization
+cache, Postgres). Delete it freely; re-run to refresh. It is not a fourth
+substrate and must never become a write path.
+
 ## 3. Full-suite gates for engine changes
 
 A change under `crates/` is not done until, in order: `cargo test --workspace`
