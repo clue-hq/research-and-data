@@ -988,13 +988,20 @@ def test_unselected_images_still_stamp_their_cached_descriptions(
     tmp_path: Path,
 ) -> None:
     """The bound governs MODEL CALLS, not stamping: an image already in the
-    description store keeps its caption even when it is far past the cap."""
+    description store keeps its caption even when it is far past the cap.
+
+    The cached asset here is one of the LARGEST, not the tiny one — caching the
+    tiny one would leave exactly MAX_DESCRIBED_IMAGES images pending, at which
+    point ranking-over-pending and ranking-over-all-images agree and the test
+    cannot tell a correct bound from a broken one.
+    """
     from lumen_ingestion.describe import MAX_DESCRIBED_IMAGES
 
-    images = [("asset_img_cachedtiny", 4, 4), *_descending_images(MAX_DESCRIBED_IMAGES)]
+    largest, *rest = _descending_images(MAX_DESCRIBED_IMAGES)
+    images = [("asset_img_tinyc", 4, 4), largest, *rest]
     _register(*[i[0] for i in images])
     DescriptionStore().put_ai(
-        DescribeResult("asset_img_cachedtiny", "Cached tiny", "A tiny cached crop.", "Use small.", []),
+        DescribeResult(largest[0], "Cached hero", "A cached hero image.", "Use big.", []),
         "some/model",
     )
     describer = _ScriptedDescriber()
@@ -1004,9 +1011,52 @@ def test_unselected_images_still_stamp_their_cached_descriptions(
         resolve_bytes=lambda aid: (_png_bytes(), "image/png"),
         reporter=_noop,
     )
-    assert "asset_img_cachedtiny" not in describer.seen_ids
-    tiny = next(i for i in result.images if i.asset_id == "asset_img_cachedtiny")
-    assert tiny.title == "Cached tiny"
+    # The cache hit stamps without a model call...
+    assert largest[0] not in describer.seen_ids
+    hero = next(i for i in result.images if i.asset_id == largest[0])
+    assert hero.title == "Cached hero"
+    # ...and the slot it vacates does NOT trickle down to the 17th image.
+    assert "asset_img_tinyc" not in describer.seen_ids
+    assert len(describer.seen_ids) == MAX_DESCRIBED_IMAGES - 1
+
+
+def test_a_reharvest_does_not_caption_the_images_the_bound_excluded(
+    tmp_path: Path,
+) -> None:
+    """The bound ranks the IMAGE SET, never the cache-miss set.
+
+    Asset ids are content-addressed, so re-ingesting the same site turns run 1's
+    captions into cache hits and leaves only the images the bound deliberately
+    excluded outstanding. Ranking the miss list would then promote every one of
+    them — run 2 captions the whole tail, and a kit re-harvested enough times
+    ends up fully described despite the bound. Nothing outside the top
+    MAX_DESCRIBED_IMAGES by area may ever be captioned, however many runs it
+    takes.
+    """
+    from lumen_ingestion.describe import MAX_DESCRIBED_IMAGES
+
+    top = _descending_images(MAX_DESCRIBED_IMAGES)
+    tail = [(f"asset_img_tail_{n}", 30 - n, 30 - n) for n in range(3)]
+    images = [*top, *tail]
+    _register(*[i[0] for i in images])
+    # Run 1 described exactly the bound; run 2 finds them all cached.
+    store = DescriptionStore()
+    for asset_id, _w, _h in top:
+        store.put_ai(
+            DescribeResult(asset_id, f"Run1 {asset_id}", "From run 1.", "Use it.", []),
+            "some/model",
+        )
+    describer = _ScriptedDescriber()
+    sink: list[dict] = []
+    apply_descriptions(
+        _bounded_evidence(images),
+        describer=describer,
+        resolve_bytes=lambda aid: (_png_bytes(), "image/png"),
+        reporter=_noop,
+        diagnostics=sink,
+    )
+    assert describer.calls == 0, describer.seen_ids
+    assert sink == []
 
 
 def test_every_logo_is_described_however_many_images_crowd_the_kit(

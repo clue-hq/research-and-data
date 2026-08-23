@@ -311,7 +311,30 @@ def apply_descriptions(
 def _pixel_area(image: ImageEvidence) -> int:
     """An image's pixel area, or 0 when the capture never measured it — an
     unmeasured record ranks LAST rather than being guessed at, but it is still
-    eligible for a slot the measured ones leave free."""
+    eligible for a slot the measured ones leave free.
+
+    Know what these dimensions ARE, because they are not uniform across capture
+    paths and this is the ranking key:
+
+    * uploads and PDF captures measure the decoded image — these are true raster
+      dimensions;
+    * a website ``<img>`` carries the **DOM width/height attribute**
+      (``capture/parse.py`` ``_int_attr``), which is the author's markup, not
+      the asset's real size — a 2400px hero declared ``width="600"`` ranks as
+      600px;
+    * a CSS ``background-image`` carries **no dimensions at all**
+      (``capture/parse.py``'s background branch builds its ``ParsedAsset``
+      without them), so it scores 0 and ranks last — which on a
+      background-hero site means the hero is the first thing the bound drops.
+
+    Ranking off the asset record's true raster dims instead (what
+    ``engine_mirror.record_pixel_dims`` reads, and what W1.3 already puts on the
+    brand card) is the correct fix and is DEFERRED to a later slice by controller
+    ruling — it needs a per-asset record read this seam does not currently have.
+    Until then the cost is bounded and is not a regression: a mis-ranked or
+    dimensionless image goes undescribed, exactly as every image did before this
+    slice existed.
+    """
     width, height = image.width, image.height
     if not width or not height:
         return 0
@@ -326,22 +349,30 @@ def _select_for_describe(evidence: BrandEvidence, pending: list[str]) -> list[st
     An asset that is both a logo and an image is a logo — logos are the brand's
     mark and are never held back by the image bound. Ties break on evidence
     order, keeping the selection deterministic for a given kit.
+
+    The ranking runs over the WHOLE image set and is intersected with ``pending``
+    only afterwards — never the other way round. Ranking the cache-miss list
+    instead would make the bound leak across runs: asset ids are content-
+    addressed, so a re-harvest of the same site turns run 1's captions into cache
+    hits and leaves exactly the images the bound excluded outstanding, which
+    would then rank as "the top 16 of what's left" and be captioned after all.
+    Enough re-ingestions and the whole kit is described. The bound is a property
+    of the kit's images, not of one run's misses.
     """
-    outstanding = set(pending)
     logo_ids = {logo.asset_id for logo in evidence.logos}
-    chosen = {asset_id for asset_id in logo_ids if asset_id in outstanding}
 
     ranked: list[tuple[int, int, str]] = []
     seen: set[str] = set()
     for position, image in enumerate(evidence.images):
         asset_id = image.asset_id
-        if asset_id in logo_ids or asset_id not in outstanding or asset_id in seen:
+        if asset_id in logo_ids or asset_id in seen:
             continue
         seen.add(asset_id)
         ranked.append((-_pixel_area(image), position, asset_id))
     ranked.sort()
-    chosen.update(asset_id for _area, _position, asset_id in ranked[:MAX_DESCRIBED_IMAGES])
-    return [asset_id for asset_id in pending if asset_id in chosen]
+
+    within_bound = logo_ids | {a for _area, _position, a in ranked[:MAX_DESCRIBED_IMAGES]}
+    return [asset_id for asset_id in pending if asset_id in within_bound]
 
 
 def _previews(
