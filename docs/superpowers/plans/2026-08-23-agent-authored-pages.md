@@ -188,6 +188,15 @@ e. non-leg turn on a pageless doc → byte-identical result envelope (dict equal
 ```
 - [ ] Root `make check` (five documented reds, zero new) + design suite + frontend suite.
 - [ ] Supersessions: `@3` docs/plan notes get dated supersession annotations (genad plan §Task 3, the close-out memory, the seed script if it references presets); `_memory/2026-08-23-genad-rulings.md` addendum recording THIS ruling set; new `_memory/` close-out for the lane (founder items carried: medium="ad" residual, print-intent export pending mockups, the empty-state visual design flag, multi-page staged).
+- [ ] **Deferred minors ledgered during execution (Tasks 1–2, review findings parked by the controller — sweep here or consciously carry into the close-out as residuals):**
+  - [T1] `design_leg_tools.py:391` imports the module-private `_core_client` across the `design_tools` boundary — a public `mint_empty_scene_document` (three lines) would restore web/scene symmetry.
+  - [T1] `_default_scene_document_minter` has zero direct coverage (the explicit `brand_kit_ref`-authoritative stamp is unpinned on the scene path since `test_design_tools_ad_mint.py` retired; matches the web sibling's level) — a `LUMEN_CORE_HELPER`-gated round-trip asserting `pages == {}` / `meta.medium == "ad"` / `artifact_type is None` closes it cheaply.
+  - [T1] `test_web_birth_is_byte_unchanged` overstates its name (field/DB assertions + `minter.calls == []`, not bytes); its `engine_web_doc` fixture cross-import couples the genad/genweb test files.
+  - [T1] `medium="ad"` hardcode at `design_leg_tools.py:393` is docstring-stated but carries no call-site residual marker.
+  - [T2] `apps/frontend/docs/api-contracts/projects.md:1628` still reads "`open_design_leg@3` births a scene" — stale live contract prose (out of the platform-only Task-2 scope; this task's doc sweep owns it).
+  - [T2] `v39/profile.yaml:70` "the @3 schema is frozen for replay" is imprecise since Task 1 deleted the @3 input model (only the v38 pin is frozen) — copied precedent phrasing shared by the whole lineage; fixing it is a lineage-wide honesty sweep, decide deliberately.
+  - [T2] Prompt-v7 ambiguity (plan-mandated verbatim text): "any designed page" → scene sits after the retained "website / landing page / microsite" → web paragraph; mitigated by reading order and the ad/banner/flyer/poster list, but live in a production prompt — founder-visible residual.
+  - [T1/T2, no lane owner] Two pre-existing `tests/api` reds surfaced by the Task-2 sweep and controller-verified NOT this lane's (`test_toolbelt_wiring::test_out_of_order_matrix` — research-directive input model; `test_production_context_s31_fleet_db` — red at `d81c4b6e`), plus seven more pre-existing reds inventoried in the Task-2 report — unowned, surface to founder in the close-out.
 - [ ] Commit: `docs(genad2): close-out — agent-authored pages live end-to-end; birth-owns-the-page superseded (dated)`.
 
 ## Self-review (performed at authoring)
