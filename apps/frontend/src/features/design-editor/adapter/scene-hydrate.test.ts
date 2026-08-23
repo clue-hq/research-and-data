@@ -31,7 +31,6 @@ import {
   mintedStrokeColor,
   mintedStrokeWidth,
   pageDisplaySize,
-  pagePixelSize,
   radiusCommit,
   radiusCommitText,
   rootFrameId,
@@ -873,8 +872,9 @@ it("§1.1: a PRESET-matching page hydrates its real W/H too — the Custom boxes
 // print — `open_design_leg@4` births zero pages and the agent sets the page up
 // itself). This panel was built for the seeded px ad and read every page as
 // pixels, so an A4 page showed its `pt` canonical box (595x842) as if those
-// numbers were pixels. `pageDisplaySize` is the unit-aware read; `pagePixelSize`
-// stays exactly what it was for the px-only consumers.
+// numbers were pixels. `pageDisplaySize` is the unit-aware read that replaced
+// it (the px-only `pagePixelSize` was deleted in the Task-7 close-out sweep —
+// zero production consumers, and a px-named read is a hazard on a mm page).
 
 /** A page authored in a real unit, minted by the engine's own constructor
  * (`pageGeometry.ts` — a verbatim upstream port), so every fixture below is a
@@ -919,15 +919,15 @@ it("Task 6: an inches page displays inches", () => {
 it("Task 6: a px page's display is BYTE-IDENTICAL — the raster still wins, and the unit says px", () => {
   // The whole px half of this contract is "change nothing". The harvested ad
   // and the fractional-authored page (whose raster ROUNDS, so its box and its
-  // px differ) are the two shapes `pagePixelSize` was written for, and
-  // `pageDisplaySize` must answer both with the same numbers.
+  // px differ) are the two shapes the retired px-only read was written for,
+  // and `pageDisplaySize` must answer both with the same numbers — which is
+  // why deleting that read costs nothing.
   const harvested = SCENE.pages[AD_PAGE_ID];
   assert.deepEqual(pageDisplaySize(harvested), {
     height: 1200,
     unit: "px",
     width: 1200,
   });
-  assert.deepEqual(pagePixelSize(harvested), { height: 1200, width: 1200 });
   const fractional = withAuthoredPageSize(1200, 628.4, "px").pages[AD_PAGE_ID];
   assert.equal(fractional.size.source?.height, 628.4);
   assert.deepEqual(pageDisplaySize(fractional), {
@@ -935,7 +935,6 @@ it("Task 6: a px page's display is BYTE-IDENTICAL — the raster still wins, and
     unit: "px",
     width: 1200,
   });
-  assert.deepEqual(pagePixelSize(fractional), { height: 628, width: 1200 });
   const state = hydrateSceneCanvasState(SCENE, AD_PAGE_ID);
   assert.equal(state.customWidth, "1200");
   assert.equal(state.customHeight, "1200");

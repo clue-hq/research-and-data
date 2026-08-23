@@ -1437,11 +1437,20 @@ function isUsablePageDimension(value: number): boolean {
  * Deliberately NOT a promotion: a page stored as `custom` whose numbers happen
  * to be A4's stays `custom`. Naming a preset the document never claimed is the
  * same fabrication in the other direction.
+ *
+ * The record is TOTAL over `PagePreset` (genad2 Task 7 close-out sweep), not
+ * `Partial`: a preset added to the engine's `PagePreset` union must be given
+ * an answer HERE or the TypeScript build fails, rather than silently falling
+ * through to `custom` and demoting every page of the new preset the first time
+ * someone nudges its H. `custom` is `null` because it has no fixed size — the
+ * one preset for which "no dimensions" is the truthful answer.
  */
-const PRESET_DIMENSIONS: Partial<
-  Record<PagePreset, { long: number; short: number; unit: Unit }>
+const PRESET_DIMENSIONS: Record<
+  PagePreset,
+  { long: number; short: number; unit: Unit } | null
 > = {
   a4: { long: 297, short: 210, unit: "mm" },
+  custom: null,
   envelope_dl: { long: 220, short: 110, unit: "mm" },
   linkedin_ad: { long: 1200, short: 627, unit: "px" },
   us_letter: { long: 11, short: 8.5, unit: "in" },

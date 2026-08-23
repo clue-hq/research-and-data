@@ -1074,12 +1074,12 @@ export interface PageDisplaySize {
  * genad2 Task 6: a page's size AS AUTHORED — the numbers §1.1's W/H boxes
  * display, and the unit they display beside them.
  *
- * `pagePixelSize` below reads every page as pixels, which was true while the
- * only page in the world was the seeded 1200x1200 ad. `open_design_leg@4`
- * births a document with no page and the design agent authors its own, in
- * whatever unit the medium wants — mm/in for print, px for digital — so a
- * px-only read now MISREPORTS an A4 page: it falls through to the canonical
- * `pt` box and shows 595x842 as if those were pixels.
+ * This panel used to read every page as pixels, which was true while the only
+ * page in the world was the seeded 1200x1200 ad. `open_design_leg@4` births a
+ * document with no page and the design agent authors its own, in whatever
+ * unit the medium wants — mm/in for print, px for digital — so a px-only read
+ * MISREPORTS an A4 page: it falls through to the canonical `pt` box and shows
+ * 595x842 as if those were pixels.
  *
  * The order is the engine's own certainty order, most-specific first:
  *
@@ -1087,9 +1087,9 @@ export interface PageDisplaySize {
  *     Preferred over `source` because it is the size the artifact is EXPORTED
  *     at, the same reason the raster wins below.
  *   • `output.raster` — the px export size. AHEAD of a px `source`,
- *     deliberately: that is `pagePixelSize`'s documented rule and the two
- *     differ only when a fractional authored px rounds, so every px page's
- *     display stays byte-for-byte what it was.
+ *     deliberately: that was the retired px-only read's documented rule and
+ *     the two differ only when a fractional authored px rounds, so every px
+ *     page's display stays byte-for-byte what it was.
  *   • `source` — the authored pair for a unit that mints no output (`pt`), and
  *     the general answer for any unit added later.
  *   • the canonical box, labelled with its OWN unit — `pt` for a page the
@@ -1118,32 +1118,12 @@ export function pageDisplaySize(page: Page): PageDisplaySize {
   return { height: page.size.height, unit: page.size.unit, width: page.size.width };
 }
 
-/**
- * A page's size in PIXELS.
- *
- * An authored-px page is stored in the engine's canonical form: a `pt` box
- * with the authored px size preserved on `size.source` and the export size on
- * `output.raster`. The raster output is preferred (it is already integral px
- * and is what the artifact actually exports at), then the px source, and only
- * then the box itself.
- *
- * genad2 Task 6 narrowed this function's job. It used to be §1.1's one page
- * read — "the only unit the W/H inputs speak" — and both the panel and the
- * write went through it. They now go through `pageDisplaySize` above, which
- * answers the same question for a page authored in ANY unit. This one remains
- * the px-only read, for a consumer that genuinely needs pixels (an export
- * size, a raster buffer) and would be wrong to take a millimetre. It is NOT a
- * fallback for a physical page: on an A4 page it still returns the `pt` box,
- * which is exactly the misreport `pageDisplaySize` exists to prevent.
- */
-export function pagePixelSize(page: Page): { height: number; width: number } {
-  const raster = page.size.output?.raster;
-  if (raster) {
-    return { height: raster.height_px, width: raster.width_px };
-  }
-  const source = page.size.source;
-  if (source && source.unit === "px") {
-    return { height: source.height, width: source.width };
-  }
-  return { height: page.size.height, width: page.size.width };
-}
+/* genad2 Task 7 (close-out sweep): `pagePixelSize` — the px-only page read —
+ * was DELETED here. Task 6 moved §1.1's panel and write onto
+ * `pageDisplaySize`, which left it with ZERO production consumers, and a
+ * px-named page read is a live hazard once pages can be physical: on an A4
+ * page it returns the `pt` canonical box (595x842), which is precisely the
+ * misreport this file now exists to prevent. A future consumer that genuinely
+ * needs pixels (a raster buffer, an export size) should read
+ * `page.size.output.raster` explicitly rather than resurrect a name that
+ * silently answers "pixels" for a page authored in millimetres. */

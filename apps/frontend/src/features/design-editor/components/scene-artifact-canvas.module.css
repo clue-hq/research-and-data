@@ -73,8 +73,12 @@
  * ratified; the treatment is not, and the presentation-truth rule forbids this
  * lane from inventing one. So it is deliberately the plainest thing that can be
  * read: the shell's own body text, centred on the empty workspace the stage
- * already paints, with no card, no border, no glyph and no colour of its own
- * beyond the muted content token the rest of the shell uses for secondary text.
+ * already paints, with no card, no border and no glyph. Its colour is not a
+ * token — it is this file's OWN editor-palette literal, the same
+ * `rgb(38 37 30 / …)` ink every other rule here writes (the banner text at 92%,
+ * the card border at 10%), taken down to 62% for secondary text. Stated plainly
+ * because an earlier revision of this comment claimed a shared content token
+ * that does not exist, which would send the next reader looking for one.
  * A designed empty state supersedes every declaration here.
  *
  * `pointer-events: none` for the reason the banner layer has it: the workspace

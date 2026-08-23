@@ -97,3 +97,46 @@ it("the ad canvas schema refuses its page rows BEFORE it can render them", () =>
   // And the placeholder is the one ratified sentence, not a second wording.
   assert.ok(AD_INSPECTOR_SOURCE.includes("PAGELESS_SCENE_NOTICE"));
 });
+
+/**
+ * genad2 Task 7 (close-out sweep): the FOUR-HOP forward that carries the fact.
+ *
+ * `pageless` is computed once (`use-scene-editing-session.ts`) and then handed
+ * down: both mounts → `ImageInspector` → `AdCanvasInspector`. The refusal
+ * pinned above is inert if any hop is dropped, and dropping one is SILENT —
+ * `pageless` defaults to `false` at every prop site, so the panel quietly goes
+ * back to fabricating `1200`x`1200` over a document with no page. These are
+ * `.tsx` and cannot be imported under this runner, so the wiring is pinned the
+ * same source-literal way as the refusal itself.
+ */
+const chatShellSource = (file: string): string =>
+  readFileSync(
+    join(
+      dirname(fileURLToPath(import.meta.url)),
+      "..",
+      "..",
+      "chat-shell",
+      "components",
+      file,
+    ),
+    "utf8",
+  );
+
+it("both mounts forward the session's pageless fact to the inspector", () => {
+  for (const file of ["chat-surface.tsx", "editor-surface.tsx"]) {
+    assert.ok(
+      chatShellSource(file).includes("pageless={sceneSession.pageless}"),
+      `${file} must forward sceneSession.pageless to the inspector`,
+    );
+  }
+});
+
+it("the inspector forwards pageless to EVERY AdCanvasInspector it renders", () => {
+  const renders = AD_INSPECTOR_SOURCE.split("<AdCanvasInspector").length - 1;
+  assert.ok(renders > 0, "AdCanvasInspector render sites moved");
+  assert.equal(
+    AD_INSPECTOR_SOURCE.split("<AdCanvasInspector pageless={pageless}").length - 1,
+    renders,
+    "every AdCanvasInspector render must pass pageless, or the refusal is inert",
+  );
+});

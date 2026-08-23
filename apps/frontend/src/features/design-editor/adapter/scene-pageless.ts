@@ -30,6 +30,13 @@ import type { PageId, Scene } from "../engine/scene/contracts";
  * the inspector: its existing `.inspectorStatusNote` line), and neither invents
  * styled UI. See the presentation-truth rule: the dummy frontend is the only
  * source of designed UI.
+ *
+ * KNOWN RESIDUAL under the same flag (recorded 2026-08-23, Task-7 sweep): the
+ * artifact header still reads "100%" zoom over a pageless document, which has
+ * nothing to zoom. It is stale chrome rather than a fabricated measurement (no
+ * size, preset or dimension is claimed anywhere), so it was left alone — the
+ * header's zoom control is part of the same undesigned empty state and should
+ * be decided with it, not patched piecemeal by this lane.
  */
 
 /**
