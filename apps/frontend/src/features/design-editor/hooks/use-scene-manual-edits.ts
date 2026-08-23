@@ -154,6 +154,8 @@ export interface SceneManualEdits {
    * queue — the proof is at the implementation.
    */
   awaitWritesSettled: (documentId: string) => Promise<void>;
+  /** The queue's latest acknowledged server version for this document. */
+  persistedVersion: (documentId: string) => number | null;
   /** AD3.3: one server history step. No-op while another step is in flight and
    * when no document is armed; the result arrives as a reload. */
   undo: () => void;
@@ -547,6 +549,11 @@ export function useSceneManualEdits(
     await pending.queue.idle().catch(() => undefined);
   }, []);
 
+  const persistedVersion = useCallback((forDocumentId: string): number | null => {
+    const current = queueRef.current;
+    return current?.documentId === forDocumentId ? current.queue.currentVersion : null;
+  }, []);
+
   /**
    * AD3.3: one server-side DOCUMENT STEP — a history step, or (AD4.B step 4) a
    * structured edit. Lifted from the website lane's `runHistory`
@@ -712,6 +719,7 @@ export function useSceneManualEdits(
     error,
     note,
     persistAppliedOps,
+    persistedVersion,
     redo,
     redoDisabled: depths.redo === 0,
     reportError,

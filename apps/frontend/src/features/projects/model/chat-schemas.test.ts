@@ -250,6 +250,8 @@ test("a turn body is exactly one of a message or a gate response", () => {
       contextRefs: [
         { objectId: "contact-2", objectType: "contact", version: 4 },
         { objectId: "account-1", objectType: "account", version: 2 },
+        { objectId: "doc-ad", objectType: "design_document", version: 9 },
+        { objectId: "headline", objectType: "design_node", version: 9 },
       ],
       agentProfileId: "head-of-abm@v30",
     }),
@@ -258,6 +260,8 @@ test("a turn body is exactly one of a message or a gate response", () => {
       context_refs: [
         { object_id: "contact-2", object_type: "contact", version: 4 },
         { object_id: "account-1", object_type: "account", version: 2 },
+        { object_id: "doc-ad", object_type: "design_document", version: 9 },
+        { object_id: "headline", object_type: "design_node", version: 9 },
       ],
       attachment_refs: [],
       agent_profile_id: "head-of-abm@v30",

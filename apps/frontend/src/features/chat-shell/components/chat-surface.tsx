@@ -23,6 +23,10 @@ import {
   chatSurfacePaneParams,
   chatSurfaceUrlState,
 } from "../model/chat-surface-params";
+import {
+  editTargetChips,
+  editTargetContextRefs,
+} from "../model/edit-targets";
 import { ArtifactStage } from "./artifact-stage";
 import { ChatShellHeader } from "./chat-shell-header";
 import { ImageInspector } from "./image-inspector";
@@ -116,6 +120,10 @@ export function ChatSurface({
   // way — the stage's canvas branch picks the surface by kind.
   const activeDocumentId =
     session.activeDocumentId ?? sceneSession.activeDocumentId;
+  const targetChips = editTargetChips(
+    sceneSession.scene,
+    sceneSession.selectedIds,
+  );
 
   const activeThread =
     chat.threads.find((thread) => thread.id === chat.activeThreadId) ?? null;
@@ -396,8 +404,34 @@ export function ChatSurface({
             </div>
           ) : null}
         </div>
-        <div className={styles.composerDock}>
+        <div
+          className={`${styles.composerDock} ${
+            targetChips.length ? styles.composerDockWithTargets : ""
+          }`}
+        >
           <div className={styles.composerFrame}>
+            {targetChips.length ? (
+              <div aria-label="Edit targets" className={styles.editTargetBar}>
+                <span className={styles.editTargetLabel}>Editing</span>
+                <div className={styles.editTargetList}>
+                  {targetChips.map((target) => (
+                    <span className={styles.editTargetChip} key={target.nodeId}>
+                      <span className={styles.editTargetName}>{target.label}</span>
+                      <button
+                        aria-label={`Remove ${target.label} edit target`}
+                        className={styles.editTargetRemove}
+                        onClick={() =>
+                          sceneSession.onSelectLayer(target.nodeId, true)
+                        }
+                        type="button"
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ) : null}
             <ProjectComposer
               // Never disabled while work is detached: the user keeps the wheel.
               disabled={chat.access !== null || chat.route !== null}
@@ -418,7 +452,14 @@ export function ChatSurface({
               onModelSelect={controller.selectModel}
               onPromptChange={controller.setPrompt}
               onSubmit={async (prompt, entityIds) => {
-                const contextRefs = (entityIds ?? controller.selectedEntityIds)
+                // Snapshot ids before the first await inside the scene session.
+                // A queued turn keeps this set even if the user changes the
+                // canvas selection while optimistic writes finish or the POST runs.
+                const editTargetSnapshot = await sceneSession.snapshotEditTargets();
+                if (targetChips.length > 0 && editTargetSnapshot === null) {
+                  return false;
+                }
+                const entityContextRefs = (entityIds ?? controller.selectedEntityIds)
                   .map((id) =>
                     controller.composerEntities.find((entity) => entity.id === id),
                   )
@@ -428,6 +469,10 @@ export function ChatSurface({
                     objectType: entity.type,
                     version: entity.version ?? null,
                   }));
+                const contextRefs = [
+                  ...entityContextRefs,
+                  ...editTargetContextRefs(editTargetSnapshot),
+                ];
                 const accepted = await chat.submitMessage(prompt, {
                   contextRefs,
                   agentProfileId:
@@ -447,7 +492,7 @@ export function ChatSurface({
                 }
                 if (accepted.status !== "accepted") return false;
                 controller.completeSubmissionContext(
-                  contextRefs.map((reference) => reference.objectId),
+                  entityContextRefs.map((reference) => reference.objectId),
                 );
                 return true;
               }}

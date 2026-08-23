@@ -10,13 +10,14 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Literal
+from typing import Any, Literal
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_agents import DomainObjectRef
 from clue_api.client_context_binding import workspace_client_entity_id
+from clue_api.design_turn_targets import DesignTurnTargetError, resolve_scene_targets
 from clue_api.frontend_read.account_detail import AccountNotFound
 from clue_api.frontend_read.accounts_list import list_accounts
 from clue_api.frontend_read.contacts import (
@@ -113,6 +114,7 @@ async def validated_context_refs(
     *,
     workspace_id: str,
     refs: Sequence[DomainObjectRef],
+    design_leg_document_id: str | None = None,
 ) -> tuple[DomainObjectRef, ...]:
     """Validate tenancy, exact revisions, and any selected contact/account relationship."""
 
@@ -128,9 +130,69 @@ async def validated_context_refs(
             "the same context reference may appear only once in a submission",
         )
 
+    design_nodes = tuple(ref for ref in refs if ref.object_type == "design_node")
+    target_document: dict[str, Any] | None = None
+    target_document_ref: DomainObjectRef | None = None
+    if design_nodes:
+        document_refs = tuple(ref for ref in refs if ref.object_type == "design_document")
+        if len(document_refs) != 1 or design_leg_document_id is None:
+            raise ContextReferenceError(
+                "CONTEXT_REF_RELATIONSHIP_MISMATCH",
+                "design node targets require the open design leg's one document reference",
+            )
+        target_document_ref = document_refs[0]
+        if target_document_ref.object_id != design_leg_document_id:
+            raise ContextReferenceError(
+                "CONTEXT_REF_RELATIONSHIP_MISMATCH",
+                "the targeted design document is not the open design leg's document",
+            )
+        if target_document_ref.version is None or any(
+            ref.version != target_document_ref.version for ref in design_nodes
+        ):
+            raise ContextReferenceError(
+                "CONTEXT_REF_STALE",
+                "design document and node targets must carry the same exact document version",
+            )
+        from clue_design.documents import get_document as get_design_document
+        from clue_design.errors import DesignNotFoundError
+
+        try:
+            target_document = await get_design_document(
+                conn,
+                workspace_id=workspace_id,
+                document_id=target_document_ref.object_id,
+            )
+        except DesignNotFoundError as exc:
+            raise ContextReferenceError(
+                "CONTEXT_REF_NOT_FOUND",
+                "the targeted design document is not available in this workspace",
+            ) from exc
+        if target_document.get("doc_kind") != "scene":
+            raise ContextReferenceError(
+                "CONTEXT_REF_RELATIONSHIP_MISMATCH",
+                "design node targets require a scene document",
+            )
+        if target_document_ref.version != target_document.get("current_version"):
+            raise ContextReferenceError(
+                "CONTEXT_REF_STALE",
+                "the targeted design document no longer names the current version",
+            )
+        try:
+            resolve_scene_targets(
+                target_document.get("scene") or {},
+                tuple(ref.object_id for ref in design_nodes),
+            )
+        except DesignTurnTargetError as exc:
+            raise ContextReferenceError(exc.code, exc.message) from exc
+
     selected_accounts: set[EntityId] = set()
     contact_parents: list[EntityId] = []
-    client_entity_id = await workspace_client_entity_id(conn, workspace_id=workspace_id)
+    has_entity_refs = any(ref.object_type in {"account", "contact"} for ref in refs)
+    client_entity_id = (
+        await workspace_client_entity_id(conn, workspace_id=workspace_id)
+        if has_entity_refs
+        else None
+    )
     for ref in refs:
         if ref.object_type == "design_document":
             # P3.1 (master plan §2.4): design ids are strings, not entity UUIDs, and the
@@ -138,20 +200,28 @@ async def validated_context_refs(
             from clue_design.documents import get_document as get_design_document
             from clue_design.errors import DesignNotFoundError
 
-            try:
-                document = await get_design_document(
-                    conn, workspace_id=workspace_id, document_id=ref.object_id
-                )
-            except DesignNotFoundError as exc:
-                raise ContextReferenceError(
-                    "CONTEXT_REF_NOT_FOUND",
-                    "a design document context reference is not available in this workspace",
-                ) from exc
+            if target_document_ref is not None and ref == target_document_ref:
+                document = target_document
+            else:
+                try:
+                    document = await get_design_document(
+                        conn, workspace_id=workspace_id, document_id=ref.object_id
+                    )
+                except DesignNotFoundError as exc:
+                    raise ContextReferenceError(
+                        "CONTEXT_REF_NOT_FOUND",
+                        "a design document context reference is not available in this workspace",
+                    ) from exc
+            assert document is not None
             if ref.version is not None and ref.version != document.get("current_version"):
                 raise ContextReferenceError(
                     "CONTEXT_REF_STALE",
                     "a design document context reference no longer names the current version",
                 )
+            continue
+        if ref.object_type == "design_node":
+            # Validated as one document-scoped set above. A node id is not a
+            # platform entity UUID and must never fall into the contact branch.
             continue
         try:
             entity_id = EntityId(UUID(ref.object_id))

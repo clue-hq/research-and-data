@@ -12,6 +12,7 @@ import {
 import { sceneLayerRows, type SceneLayerRow } from "../adapter/scene-layers";
 import { isPagelessScene } from "../adapter/scene-pageless";
 import { buildScenePalette, type ScenePalette } from "../adapter/scene-palette";
+import { snapshotSceneTurnTargets } from "../adapter/scene-turn-targets";
 import {
   nextSceneSelection,
   sceneExpansion,
@@ -459,6 +460,29 @@ export function useSceneEditingSession({
     undoDepth: liveHistory?.undoDepth ?? 0,
   });
 
+  /** Freeze this click-submit's target ids before waiting for optimistic writes.
+   * Selection may change while the queue drains; the accepted turn must not. */
+  const snapshotEditTargets = useCallback(async () => {
+    if (!activeDocumentId || selectedIds.length === 0) return null;
+    const controls = canvasControls.current;
+    const loadedVersion =
+      controls?.documentId === activeDocumentId ? controls.documentVersion() : null;
+    const snapshot = await snapshotSceneTurnTargets({
+      awaitWritesSettled: writes.awaitWritesSettled,
+      documentId: activeDocumentId,
+      loadedVersion,
+      persistedVersion: writes.persistedVersion,
+      selectedIds,
+    });
+    if (snapshot.documentVersion === null) {
+      writes.reportError(
+        "The selected edit targets could not be tied to the current design version. Reload the design and try again.",
+      );
+      return null;
+    }
+    return snapshot;
+  }, [activeDocumentId, selectedIds, writes]);
+
   // AD4.A step 2 (§1.3 row 1): the Replace-image flow. It takes the LIVE
   // primary node rather than the hydrated state, because §4's lock and the
   // node's own asset are facts about the document, not about the panel — and
@@ -637,8 +661,11 @@ export function useSceneEditingSession({
      * `(format, scale)`. Answered from a per-scene cache when it can be, and
      * with a fresh export when it cannot. */
     requestExportPreview,
+    /** The live document scene used to resolve selected node ids to chip labels. */
+    scene,
     selectedIds,
     selection,
+    snapshotEditTargets,
     /** AD3.3: likewise the Undo row. Both stay disabled until a document has
      * actually loaded (depth 0/0), never enabled speculatively. */
     undoDisabled: writes.undoDisabled,

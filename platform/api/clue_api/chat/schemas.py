@@ -151,12 +151,12 @@ class GateResponseRequest(_Request):
 class ContextRefRequest(_Request):
     """An ordered, workspace-scoped domain-object reference.
 
-    ``design_document`` (P3.1) is how canvas context rides the platform turn API
-    (master plan §2.4): the target document ref arrives as a focus ref, so the design
-    leg's turns know what the user is pointing at with no extra round trip.
+    ``design_document`` (P3.1) pins the open leg's document. ``design_node`` is
+    the ordered, per-message selection inside that exact document scene. Together
+    they are the durable edit-target snapshot the design runtime receives.
     """
 
-    object_type: Literal["account", "contact", "design_document"]
+    object_type: Literal["account", "contact", "design_document", "design_node"]
     object_id: str = Field(min_length=1, max_length=200)
     version: int | None = Field(default=None, gt=0)
 

@@ -38,6 +38,8 @@ export interface EditQueuePort {
   idle(): Promise<void>;
   /** Number of batches accepted by the server since creation. */
   readonly persistedBatches: number;
+  /** The exact server version the next batch would use, once known. */
+  readonly currentVersion: number | null;
   /** Re-sync after an external server-side write (e.g. a checkpoint revert):
    * the cached base_version is stale and the next batch would be rejected as
    * a concurrent write. Passing null re-fetches on the next batch. Also
@@ -74,6 +76,10 @@ class ApiEditQueue implements EditQueuePort {
     // inject fetchImpl, so only the real browser ever hit this.
     // Workspace auth is the BFF's job — defaults to the receiver-safe wrapper; callers inject designBffConfig()'s transport.
     this.fetchImpl = options.fetchImpl ?? defaultDesignFetch;
+  }
+
+  get currentVersion(): number | null {
+    return this.baseVersion;
   }
 
   enqueueOperations(operations: Operation[], options?: EnqueueOptions): void {

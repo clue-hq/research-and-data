@@ -580,6 +580,7 @@ async def _validated_submission_context(
     *,
     workspace_id: str,
     refs: tuple[Any, ...],
+    design_leg_document_id: str | None = None,
 ) -> tuple[DomainObjectRef, ...]:
     requested = tuple(
         DomainObjectRef(
@@ -595,6 +596,7 @@ async def _validated_submission_context(
             conn,
             workspace_id=workspace_id,
             refs=requested,
+            design_leg_document_id=design_leg_document_id,
         )
     except ContextReferenceError as exc:
         raise _refuse(
@@ -2019,11 +2021,6 @@ def build_chat_router(
                         code="PROJECT_NOT_FOUND",
                         message="no such project in this workspace",
                     )
-                context_refs = await _validated_submission_context(
-                    conn,
-                    workspace_id=who.workspace_id,
-                    refs=body.context_refs,
-                )
                 # P3.4 accept-time visibility: which agent will receive this message. The same
                 # one-row read the worker's routing rule performs, taken inside the accept
                 # transaction so the 202 can label the pending turn truthfully.
@@ -2034,6 +2031,15 @@ def build_chat_router(
                 )
                 routed_to: Literal["head_of_abm", "design"] = (
                     "design" if open_leg is not None else "head_of_abm"
+                )
+                requested_context_refs = tuple(
+                    DomainObjectRef(
+                        workspace_id=who.workspace_id,
+                        object_type=ref.object_type,
+                        object_id=ref.object_id,
+                        version=ref.version,
+                    )
+                    for ref in body.context_refs
                 )
                 # The gate is proved before anything is written — including before the replay read,
                 # so a stale or foreign answer never even reaches the capture path.
@@ -2066,7 +2072,7 @@ def build_chat_router(
                     if (
                         existing.message_sha256 != digest
                         or existing.agent_profile_id != agent_profile_id
-                        or existing_context_refs != context_refs
+                        or existing_context_refs != requested_context_refs
                     ):
                         raise _refuse(
                             status_code=409,
@@ -2091,6 +2097,18 @@ def build_chat_router(
                             routed_to=routed_to,
                         )
                     )
+                # Mutable domain state is checked only for a NEW submission. An
+                # idempotent replay above is proved from its immutable receipt,
+                # so a design document advancing after acceptance cannot make
+                # the accepted turn unreplayable.
+                context_refs = await _validated_submission_context(
+                    conn,
+                    workspace_id=who.workspace_id,
+                    refs=body.context_refs,
+                    design_leg_document_id=(
+                        None if open_leg is None else open_leg.get("document_id")
+                    ),
+                )
                 # A gate answer must never become a design prompt (Part-III review finding C,
                 # ratified 2026-08-14): while a leg is open, the D1 routing rule would deliver
                 # these canonical bytes to the design agent as an instruction, and the gate flow

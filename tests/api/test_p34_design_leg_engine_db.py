@@ -33,6 +33,7 @@ from clue_api.agent_turn_submission import (
     AgentTurnSubmissionRow,
     insert_submission,
     message_artifact_ref,
+    submission_context_refs,
 )
 from clue_api.agent_turn_wiring import (
     DbAgentHistoryStore,
@@ -402,7 +403,24 @@ async def _pin_document(
             "pages": [{"id": "home", "nodes": {"root": {"kind": "root"}}}],
         }
         if doc_kind == "web"
-        else {"meta": {"id": document_id, "title": "Launch artboard"}}
+        else {
+            "schema_version": 1,
+            "meta": {"id": document_id, "title": "Launch artboard"},
+            "pages": {
+                "page_ad": {
+                    "id": "page_ad",
+                    "name": "Ad",
+                    "children": ["frame"],
+                }
+            },
+            "nodes": {
+                "frame": {"id": "frame", "children": ["headline"]},
+                "headline": {"id": "headline", "children": []},
+            },
+            "slots": {},
+            "assets": {},
+            "export_profiles": [],
+        }
     )
     document = await create_document(
         conn, workspace_id=seeds["workspace_id"], scene=scene, doc_kind=doc_kind
@@ -492,6 +510,66 @@ def test_a_scene_leg_envelope_carries_the_documents_base_version(
             assert envelope.kind == "agent_turn"
             assert envelope.config["leg"]["document_base_version"] == 3
             assert envelope.config["request"]["document_id"] == document["id"]
+
+    run_async(scenario())
+
+
+def test_a_scene_leg_translates_durable_node_refs_into_the_frozen_request(
+    tmp_path: Path,
+    migrated_db: bool,  # noqa: F811
+) -> None:
+    """Focused targets are submission receipts first and runtime fields second."""
+
+    if not migrated_db:
+        pytest.skip("database not reachable")
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            seeds = await _seed_leg_conversation(conn, storage_root=tmp_path, label="targets")
+            registry = build_agent_profile_registry(build_toolbelt(storage=None, gateway=None))
+            document = await _pin_document(conn, seeds, doc_kind="scene", version=5)
+            refs = (
+                DomainObjectRef(
+                    workspace_id=seeds["workspace_id"],
+                    object_type="design_document",
+                    object_id=document["id"],
+                    version=5,
+                ),
+                DomainObjectRef(
+                    workspace_id=seeds["workspace_id"],
+                    object_type="design_node",
+                    object_id="headline",
+                    version=5,
+                ),
+            )
+            submission = await _submit_message(
+                conn,
+                seeds,
+                label="targets",
+                message="Make this bolder.",
+                focus_refs=refs,
+            )
+            durable_refs = await submission_context_refs(
+                conn,
+                workspace_id=seeds["workspace_id"],
+                turn_id=submission.turn_id,
+            )
+            assert durable_refs == refs
+
+            lane = _FakeLane(conn_factory=seeds["conn_factory"])
+            await _run_turn(conn, seeds, registry, lane, submission, durable_refs)
+
+            request = lane.envelopes[0].config["request"]
+            assert request["target_node_ids"] == ["headline"]
+            assert request["active_page_id"] == "page_ad"
+            assert lane.envelopes[0].config["leg"]["focus_refs"] == [
+                {
+                    "object_type": "design_document",
+                    "object_id": document["id"],
+                    "version": 5,
+                },
+                {"object_type": "design_node", "object_id": "headline", "version": 5},
+            ]
 
     run_async(scenario())
 

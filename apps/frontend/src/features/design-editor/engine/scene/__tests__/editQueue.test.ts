@@ -100,6 +100,7 @@ describe("editQueue", () => {
     expect(server.posts.map((post) => post.body.base_version)).toEqual([7, 8, 9]);
     expect(server.posts.every((post) => post.body.source === "editor")).toBe(true);
     expect(queue.persistedBatches).toBe(3);
+    expect(queue.currentVersion).toBe(10);
     // Matching scenes at drain: no reconcile events.
     expect(events).toEqual([]);
   });

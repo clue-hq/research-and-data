@@ -274,15 +274,98 @@
   background: linear-gradient(to bottom, rgb(255 255 255 / 0%), var(--chat-shell-neutral) 18px);
 }
 
+.composerDockWithTargets {
+  flex-basis: 210px;
+}
+
 .shellPanelOpen .composerDock {
   flex-basis: 174px;
   padding: 24px 16px;
+}
+
+.shellPanelOpen .composerDockWithTargets {
+  flex-basis: 210px;
 }
 
 .composerFrame {
   width: min(688px, 100%);
   transition: width var(--clue-ds-product-motion-duration-view)
       var(--clue-ds-product-motion-easing-standard);
+}
+
+.editTargetBar {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  margin: 0 2px 8px;
+}
+
+.editTargetLabel {
+  flex: none;
+  color: var(--chat-shell-subtle);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 20px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.editTargetList {
+  display: flex;
+  min-width: 0;
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.editTargetList::-webkit-scrollbar {
+  display: none;
+}
+
+.editTargetChip {
+  display: inline-flex;
+  max-width: 210px;
+  flex: none;
+  align-items: center;
+  gap: 5px;
+  border: 0.5px solid var(--clue-ds-color-border-neutral);
+  border-radius: 999px;
+  background: white;
+  padding: 3px 5px 3px 9px;
+  color: var(--clue-ds-color-content-neutral);
+  font-size: 12px;
+  line-height: 16px;
+  box-shadow: var(--clue-ds-shadow-card-subtle);
+}
+
+.editTargetName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.editTargetRemove {
+  display: grid;
+  width: 16px;
+  height: 16px;
+  flex: none;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  padding: 0;
+  color: var(--chat-shell-subtle);
+  font: inherit;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.editTargetRemove:hover,
+.editTargetRemove:focus-visible {
+  background: var(--clue-ds-color-bg-neutral-hover);
+  color: var(--clue-ds-color-content-neutral);
+  outline: none;
 }
 
 .shellPanelOpen .composerFrame {

@@ -29,6 +29,15 @@ def _ref(object_type: str, object_id: EntityId, *, version: int | None = None):
     )
 
 
+def _design_ref(object_type: str, object_id: str, *, version: int | None = None):
+    return DomainObjectRef(
+        workspace_id="ws-r8-context",
+        object_type=object_type,
+        object_id=object_id,
+        version=version,
+    )
+
+
 def test_context_validation_preserves_order_and_checks_contact_parent(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -187,6 +196,101 @@ def test_context_validation_refuses_the_workspace_client_and_its_contacts(
                 )
             )
         assert unavailable.value.code == "CONTEXT_REF_NOT_FOUND"
+
+
+def test_context_validation_accepts_exact_nodes_only_on_the_open_leg_document(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    document = {
+        "id": "doc_target",
+        "doc_kind": "scene",
+        "current_version": 7,
+        "scene": {
+            "pages": {"page_ad": {"id": "page_ad", "children": ["frame"]}},
+            "nodes": {
+                "frame": {"children": ["headline"]},
+                "headline": {"children": []},
+            },
+        },
+    }
+
+    async def get_document(*_args: object, **_kwargs: object):
+        return document
+
+    from clue_design import documents
+
+    monkeypatch.setattr(documents, "get_document", get_document)
+    refs = (
+        _design_ref("design_document", "doc_target", version=7),
+        _design_ref("design_node", "headline", version=7),
+    )
+
+    assert (
+        asyncio.run(
+            validated_context_refs(
+                object(),  # type: ignore[arg-type]
+                workspace_id="ws-r8-context",
+                refs=refs,
+                design_leg_document_id="doc_target",
+            )
+        )
+        == refs
+    )
+
+    with pytest.raises(ContextReferenceError) as wrong_leg:
+        asyncio.run(
+            validated_context_refs(
+                object(),  # type: ignore[arg-type]
+                workspace_id="ws-r8-context",
+                refs=refs,
+                design_leg_document_id="doc_other",
+            )
+        )
+    assert wrong_leg.value.code == "CONTEXT_REF_RELATIONSHIP_MISMATCH"
+
+
+@pytest.mark.parametrize(
+    ("node_id", "node_version", "code"),
+    [
+        ("headline", 6, "CONTEXT_REF_STALE"),
+        ("missing", 7, "CONTEXT_REF_NOT_FOUND"),
+    ],
+)
+def test_context_validation_refuses_stale_or_missing_design_nodes(
+    monkeypatch: pytest.MonkeyPatch,
+    node_id: str,
+    node_version: int,
+    code: str,
+) -> None:
+    async def get_document(*_args: object, **_kwargs: object):
+        return {
+            "id": "doc_target",
+            "doc_kind": "scene",
+            "current_version": 7,
+            "scene": {
+                "pages": {"page_ad": {"id": "page_ad", "children": ["headline"]}},
+                "nodes": {"headline": {"children": []}},
+            },
+        }
+
+    from clue_design import documents
+
+    monkeypatch.setattr(documents, "get_document", get_document)
+    refs = (
+        _design_ref("design_document", "doc_target", version=7),
+        _design_ref("design_node", node_id, version=node_version),
+    )
+
+    with pytest.raises(ContextReferenceError) as refused:
+        asyncio.run(
+            validated_context_refs(
+                object(),  # type: ignore[arg-type]
+                workspace_id="ws-r8-context",
+                refs=refs,
+                design_leg_document_id="doc_target",
+            )
+        )
+    assert refused.value.code == code
 
 
 def test_context_preparation_hydrates_exact_records_beyond_the_bounded_catalog(

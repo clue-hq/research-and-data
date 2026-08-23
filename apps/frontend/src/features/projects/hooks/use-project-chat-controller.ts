@@ -54,6 +54,7 @@ import {
   selectTurnQueueState,
   turnStateForStreamEvent,
   type ChatTurn,
+  type TurnContextReference,
   type TurnState,
 } from "../model/chat-turn";
 
@@ -115,11 +116,7 @@ export interface ProjectChatController {
   submitMessage(
     text: string,
     options?: {
-      contextRefs?: readonly {
-        objectId: string;
-        objectType: "account" | "contact";
-        version: number | null;
-      }[];
+      contextRefs?: readonly TurnContextReference[];
       agentProfileId?: string | null;
     },
   ): Promise<ChatSubmissionResult>;
@@ -544,11 +541,7 @@ export function useProjectChatController({
     async (
       text: string,
       options: {
-        contextRefs?: readonly {
-          objectId: string;
-          objectType: "account" | "contact";
-          version: number | null;
-        }[];
+        contextRefs?: readonly TurnContextReference[];
         agentProfileId?: string | null;
       } = {},
     ) => {

@@ -185,6 +185,8 @@ import styles from "./scene-artifact-canvas.module.css";
  */
 
 export interface SceneCanvasControls {
+  /** The exact design document this imperative surface is currently serving. */
+  readonly documentId: string;
   /**
    * AD3.2: apply operations to the LIVE engine and repaint — the optimistic
    * half of the write path, which must land before anything is persisted (the
@@ -233,6 +235,8 @@ export interface SceneCanvasControls {
   hitTest(x: number, y: number): HitResult | null;
   /** Adopt the engine's current scene and repaint. */
   refresh(): void;
+  /** The committed version loaded with this canvas snapshot. */
+  documentVersion(): number | null;
   /** The scene as rendered right now (the relaid engine scene when the engine
    * is live, the server snapshot otherwise), or null before it loads. */
   sceneSnapshot(): Scene | null;
@@ -424,6 +428,7 @@ function SceneDocumentCanvas({
     null,
   );
   const {
+    currentVersion,
     engine,
     engineStatus,
     fontDiagnostics,
@@ -608,6 +613,7 @@ function SceneDocumentCanvas({
   // two disagreeing.
   const controls = useMemo<SceneCanvasControls>(
     () => ({
+      documentId,
       applyOperations: (operations) => {
         if (!engine) {
           return null;
@@ -650,12 +656,13 @@ function SceneDocumentCanvas({
       // The same condition `applyOperations` refuses on, asked without
       // applying anything.
       canApply: () => Boolean(engine),
+      documentVersion: () => currentVersion,
       hitTest: (x, y) =>
         engine && pageId ? engine.hitTest(pageId, x, y) : null,
       refresh,
       sceneSnapshot: () => scene,
     }),
-    [documentId, engine, pageId, refresh, scene],
+    [currentVersion, documentId, engine, pageId, refresh, scene],
   );
   useEffect(() => {
     if (!controlsRef) {

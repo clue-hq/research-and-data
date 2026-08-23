@@ -70,6 +70,7 @@ from clue_api.agent_turn_wiring import (
 )
 from clue_api.chat.turn_events import TurnEventType, emit_turn_event
 from clue_api.chat.turn_stream import TurnStreamEmitter
+from clue_api.design_turn_targets import resolve_scene_targets
 from clue_api.turn_action import derive_turn_action_ref
 from clue_core import ExecutionId, operation_id_from_key
 from clue_db import ConnFactory, transaction
@@ -1291,6 +1292,14 @@ class DesignLegTurnRunner:
                 }
             )
         document = pinned_document or {}
+        target_node_ids = tuple(
+            ref.object_id for ref in focus_refs if ref.object_type == "design_node"
+        )
+        resolved_targets = (
+            resolve_scene_targets(document.get("scene") or {}, target_node_ids)
+            if target_node_ids
+            else None
+        )
         # B1: the leg document's kind decides which design runtime executes the turn. A web
         # document takes the ``web_turn`` path with a ``WebTurnRequest``-shaped request; a
         # scene document (or no pinned document at all — nothing to read a kind from) keeps
@@ -1318,6 +1327,14 @@ class DesignLegTurnRunner:
                 "scene": document.get("scene") or {},
                 "document_id": leg.get("document_id"),
                 "previous_turn_outcome": submission.previous_turn_outcome,
+                **(
+                    {
+                        "active_page_id": resolved_targets.active_page_id,
+                        "target_node_ids": list(resolved_targets.target_node_ids),
+                    }
+                    if resolved_targets is not None
+                    else {}
+                ),
             }
         # ``ConfigPayload`` — deliberately opaque at the substrate (clue_design.envelopes).
         config: dict[str, Any] = {
