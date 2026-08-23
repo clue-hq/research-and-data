@@ -35,12 +35,17 @@ def test_deployment_recipes_enable_ingestion_vision_and_descriptions() -> None:
         assert "OPENROUTER_API_KEY" in values, recipe
 
 
-def test_subsystem_intrinsic_defaults_stay_off(monkeypatch) -> None:
+def test_subsystem_intrinsic_defaults(monkeypatch) -> None:
+    """PDF vision stays off intrinsically; asset DESCRIBE is on by default
+    since design-quality Wave 1 (founder ruling R4) — a brand card whose image
+    menu is bare `img.N` rows is useless to the agent. The gate that keeps a
+    deterministic/test context silent is key presence, asserted next door in
+    `test_enabled_assists_fail_soft_without_openrouter_key`."""
     monkeypatch.delenv("LUMEN_INGESTION_VISION", raising=False)
     monkeypatch.delenv("LUMEN_INGESTION_DESCRIBE", raising=False)
     isolated = Settings(_env_file=None)
     assert isolated.lumen_ingestion_vision is False
-    assert isolated.lumen_ingestion_describe is False
+    assert isolated.lumen_ingestion_describe is True
 
 
 def test_enabled_assists_fail_soft_without_openrouter_key(monkeypatch) -> None:

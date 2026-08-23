@@ -114,8 +114,19 @@ class Settings(BaseSettings):
     lumen_ingestion_assist_model: str = "x-ai/grok-4.5"
     lumen_ingestion_vision: bool = False
     lumen_ingestion_vision_model: str = "x-ai/grok-4.5"
-    lumen_ingestion_describe: bool = False
-    lumen_ingestion_describe_model: str = "x-ai/grok-4.5"
+    # Asset descriptions (design-quality Wave 1, founder ruling R4). ON by
+    # default: a brand card whose image menu is bare `img.N` rows gives the
+    # agent nothing to choose between, and the last real harvest carried 46
+    # images and zero descriptions. The EFFECTIVE gate is still key presence —
+    # `OpenRouterDescriber.active` requires this flag AND an OpenRouter key, so
+    # a keyless deployment behaves exactly as it did with the flag off.
+    #
+    # The model is a small, cheap vision model chosen by the live OpenRouter
+    # probe of 2026-08-23 (candidates, prices and sample captions are recorded
+    # in `.env.example`) — ~$0.00021 per caption vs grok-4.5's ~$0.0039, and
+    # the describe stage keeps its OWN model: brief/vision/assist are untouched.
+    lumen_ingestion_describe: bool = True
+    lumen_ingestion_describe_model: str = "google/gemini-2.5-flash-lite"
     # The design-brief agent (tier 2). OFF → ingestion publishes exactly the kit
     # it publishes today, with no `brand_kit_json.brief` and no diagnostic about
     # one. The model must be vision-capable: the stage hands it the capture's

@@ -1,13 +1,17 @@
 from __future__ import annotations
 
+import base64
 import hashlib
 import io
+import json
 import os
 import subprocess
 import sys
 from pathlib import Path
 
 import pytest
+
+from py_lumen_config import settings
 
 from lumen_api.core import CoreClient
 from lumen_api.design_store import HybridRepository
@@ -856,3 +860,360 @@ def test_openrouter_invoke_captures_exception(monkeypatch) -> None:
     assert describer.last_failure_reason is not None
     assert "ConnectionError" in describer.last_failure_reason
     assert "connection reset by peer" in describer.last_failure_reason
+
+
+# --------------------------------------------------------------------------- #
+# Wave 1 W1.4 (founder ruling R4): describe ON by default, over a bounded set —
+# the top MAX_DESCRIBED_IMAGES images by pixel area ∪ ALL logos.
+# --------------------------------------------------------------------------- #
+
+
+def _bounded_evidence(
+    images: list[tuple[str, int | None, int | None]],
+    logos: list[str] | None = None,
+) -> BrandEvidence:
+    """Evidence carrying sized images (`(asset_id, width, height)`; `None` dims
+    mean the capture never measured the asset) plus optional logos."""
+    return BrandEvidence(
+        source={"kind": "logo_file", "confidence": 0.8},
+        logos=[LogoEvidence(asset_id=a, pointer=_pointer()) for a in (logos or [])],
+        images=[
+            ImageEvidence(
+                asset_id=asset_id,
+                width=width,
+                height=height,
+                kind_hint="photo",
+                pointer=_pointer(),
+            )
+            for asset_id, width, height in images
+        ],
+    )
+
+
+def _descending_images(count: int, *, prefix: str = "asset_img") -> list[tuple[str, int, int]]:
+    """`count` square images whose pixel area strictly DESCENDS with the index,
+    so `asset_img_00` is the largest and `asset_img_{count-1}` the smallest."""
+    return [(f"{prefix}_{i:02d}", 2000 - i * 10, 2000 - i * 10) for i in range(count)]
+
+
+def test_described_image_cap_mirrors_the_brand_card_constant() -> None:
+    """The ingestion-side cap is a MIRROR of `brand_card.MAX_IMAGE_LIST` (one
+    home, two packages that may not import each other) — this test is the drift
+    guard, and it is the only place both constants are read together."""
+    from lumen_agent.brand_card import MAX_IMAGE_LIST
+
+    from lumen_ingestion.describe import MAX_DESCRIBED_IMAGES
+
+    assert MAX_DESCRIBED_IMAGES == MAX_IMAGE_LIST
+
+
+def test_describe_selection_is_top_images_by_area_union_all_logos(tmp_path: Path) -> None:
+    from lumen_ingestion.describe import MAX_DESCRIBED_IMAGES
+
+    images = _descending_images(MAX_DESCRIBED_IMAGES + 4)
+    logo_ids = ["asset_logo_a", "asset_logo_b", "asset_logo_c"]
+    _register(*[i[0] for i in images], *logo_ids)
+    describer = _ScriptedDescriber()
+    sink: list[dict] = []
+    apply_descriptions(
+        _bounded_evidence(images, logo_ids),
+        describer=describer,
+        resolve_bytes=lambda aid: (_png_bytes(), "image/png"),
+        reporter=_noop,
+        diagnostics=sink,
+    )
+    expected = {i[0] for i in images[:MAX_DESCRIBED_IMAGES]} | set(logo_ids)
+    assert set(describer.seen_ids) == expected
+    # The overflow images are not failures — they are simply out of scope, so
+    # they carry no diagnostic either.
+    assert sink == []
+
+
+def test_image_beyond_the_area_cap_is_never_described(tmp_path: Path) -> None:
+    """The (cap+1)-th image BY AREA is not described — even though it is listed
+    FIRST in the evidence, so ordering cannot smuggle it in."""
+    from lumen_ingestion.describe import MAX_DESCRIBED_IMAGES
+
+    smallest = ("asset_img_tiny", 8, 8)
+    images = [smallest, *_descending_images(MAX_DESCRIBED_IMAGES)]
+    _register(*[i[0] for i in images])
+    describer = _ScriptedDescriber()
+    result = apply_descriptions(
+        _bounded_evidence(images),
+        describer=describer,
+        resolve_bytes=lambda aid: (_png_bytes(), "image/png"),
+        reporter=_noop,
+    )
+    assert describer.calls == MAX_DESCRIBED_IMAGES
+    assert "asset_img_tiny" not in describer.seen_ids
+    tiny = next(i for i in result.images if i.asset_id == "asset_img_tiny")
+    assert tiny.title is None
+    assert _description_count("asset_img_tiny") == 0
+
+
+def test_images_without_dimensions_rank_last_but_fill_free_slots(tmp_path: Path) -> None:
+    """A record the capture never measured ranks LAST (area 0) — but while
+    slots remain it is still described, rather than dropped for being honest
+    about not knowing its size."""
+    images = [("asset_img_nodims", None, None), *_descending_images(3)]
+    _register(*[i[0] for i in images])
+    describer = _ScriptedDescriber()
+    apply_descriptions(
+        _bounded_evidence(images),
+        describer=describer,
+        resolve_bytes=lambda aid: (_png_bytes(), "image/png"),
+        reporter=_noop,
+    )
+    assert set(describer.seen_ids) == {i[0] for i in images}
+
+
+def test_images_without_dimensions_lose_to_measured_ones_at_the_cap(
+    tmp_path: Path,
+) -> None:
+    from lumen_ingestion.describe import MAX_DESCRIBED_IMAGES
+
+    images = [("asset_img_nodims", None, None), *_descending_images(MAX_DESCRIBED_IMAGES)]
+    _register(*[i[0] for i in images])
+    describer = _ScriptedDescriber()
+    apply_descriptions(
+        _bounded_evidence(images),
+        describer=describer,
+        resolve_bytes=lambda aid: (_png_bytes(), "image/png"),
+        reporter=_noop,
+    )
+    assert "asset_img_nodims" not in describer.seen_ids
+
+
+def test_unselected_images_still_stamp_their_cached_descriptions(
+    tmp_path: Path,
+) -> None:
+    """The bound governs MODEL CALLS, not stamping: an image already in the
+    description store keeps its caption even when it is far past the cap."""
+    from lumen_ingestion.describe import MAX_DESCRIBED_IMAGES
+
+    images = [("asset_img_cachedtiny", 4, 4), *_descending_images(MAX_DESCRIBED_IMAGES)]
+    _register(*[i[0] for i in images])
+    DescriptionStore().put_ai(
+        DescribeResult("asset_img_cachedtiny", "Cached tiny", "A tiny cached crop.", "Use small.", []),
+        "some/model",
+    )
+    describer = _ScriptedDescriber()
+    result = apply_descriptions(
+        _bounded_evidence(images),
+        describer=describer,
+        resolve_bytes=lambda aid: (_png_bytes(), "image/png"),
+        reporter=_noop,
+    )
+    assert "asset_img_cachedtiny" not in describer.seen_ids
+    tiny = next(i for i in result.images if i.asset_id == "asset_img_cachedtiny")
+    assert tiny.title == "Cached tiny"
+
+
+def test_every_logo_is_described_however_many_images_crowd_the_kit(
+    tmp_path: Path,
+) -> None:
+    from lumen_ingestion.describe import MAX_DESCRIBED_IMAGES
+
+    images = _descending_images(MAX_DESCRIBED_IMAGES + 10)
+    logo_ids = [f"asset_logo_{i:02d}" for i in range(6)]
+    _register(*[i[0] for i in images], *logo_ids)
+    describer = _ScriptedDescriber()
+    apply_descriptions(
+        _bounded_evidence(images, logo_ids),
+        describer=describer,
+        resolve_bytes=lambda aid: (_png_bytes(), "image/png"),
+        reporter=_noop,
+    )
+    assert set(logo_ids) <= set(describer.seen_ids)
+
+
+# --------------------------------------------------------------------------- #
+# W1.4: SVG logos ride W1.2's stored raster thumbnail
+# --------------------------------------------------------------------------- #
+
+_SVG_BYTES = b'<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"></svg>'
+
+
+def _preview_size(describer: "_ScriptedDescriber") -> tuple[int, int]:
+    from io import BytesIO
+
+    from PIL import Image
+
+    with Image.open(BytesIO(base64.b64decode(describer.previews[0]))) as img:
+        return img.size
+
+
+class _PreviewCapturingDescriber(_ScriptedDescriber):
+    def __init__(self) -> None:
+        super().__init__()
+        self.previews: list[str] = []
+
+    def describe(self, items):
+        self.previews.extend(item.image_b64 for item in items)
+        return super().describe(items)
+
+
+def test_svg_logo_is_described_from_its_stored_raster_thumbnail(tmp_path: Path) -> None:
+    """Post-W1.2 every ingested SVG carries a real PNG thumbnail, so the
+    describer reads that blob instead of declining the vector — and without
+    paying for a fresh engine rasterization."""
+    _register("asset_svg_thumbed")
+    describer = _PreviewCapturingDescriber()
+    sink: list[dict] = []
+    result = apply_descriptions(
+        _evidence("asset_svg_thumbed"),
+        describer=describer,
+        resolve_bytes=lambda aid: (_SVG_BYTES, "image/svg+xml"),
+        resolve_thumbnail=lambda aid: (_png_bytes(37), "image/png"),
+        reporter=_noop,
+        diagnostics=sink,
+    )
+    assert result.logos[0].title == "Title asset_svg_thumbed"
+    assert sink == []
+    # The preview came from the THUMBNAIL bytes (37px), not the vector.
+    assert _preview_size(describer) == (37, 37)
+
+
+def test_svg_without_a_stored_thumbnail_keeps_todays_skip(tmp_path: Path) -> None:
+    _register("asset_svg_bare")
+    describer = _ScriptedDescriber()
+    sink: list[dict] = []
+    result = apply_descriptions(
+        _evidence("asset_svg_bare"),
+        describer=describer,
+        resolve_bytes=lambda aid: (_SVG_BYTES, "image/svg+xml"),
+        resolve_thumbnail=lambda aid: None,
+        reporter=_noop,
+        diagnostics=sink,
+    )
+    assert describer.calls == 0
+    assert result.logos[0].title is None
+    assert [d["code"] for d in sink] == ["LUMI0804"]
+
+
+def test_a_vector_thumbnail_is_not_mistaken_for_a_raster(tmp_path: Path) -> None:
+    """A legacy record whose `media.thumbnail` is itself the SVG must fall
+    through to the engine rasterizer, never be sent as 'raster' bytes."""
+    _register("asset_svg_vecthumb")
+    describer = _PreviewCapturingDescriber()
+    result = apply_descriptions(
+        _evidence("asset_svg_vecthumb"),
+        describer=describer,
+        resolve_bytes=lambda aid: (_SVG_BYTES, "image/svg+xml"),
+        resolve_thumbnail=lambda aid: (_SVG_BYTES, "image/svg+xml"),
+        rasterize_svg=lambda aid: _png_bytes(23),
+        reporter=_noop,
+    )
+    assert result.logos[0].title == "Title asset_svg_vecthumb"
+    assert _preview_size(describer) == (23, 23)
+
+
+# --------------------------------------------------------------------------- #
+# W1.4: the DESCRIBE model id is what the request carries; keyless is inert
+# --------------------------------------------------------------------------- #
+
+
+def test_describe_is_on_by_default_with_the_probed_cheap_vision_model() -> None:
+    """R4: descriptions run by default; the model is the cheap vision model the
+    2026-08-23 live OpenRouter probe chose (see `.env.example`)."""
+    from py_lumen_config.config import Settings
+
+    isolated = Settings(_env_file=None)
+    assert isolated.lumen_ingestion_describe is True
+    assert isolated.lumen_ingestion_describe_model == "google/gemini-2.5-flash-lite"
+    # No shared-model coupling: brief/vision/assist keep their own model.
+    assert isolated.lumen_ingestion_vision_model != isolated.lumen_ingestion_describe_model
+    assert isolated.lumen_ingestion_brief_model != isolated.lumen_ingestion_describe_model
+    assert isolated.lumen_ingestion_assist_model != isolated.lumen_ingestion_describe_model
+
+
+def test_openrouter_request_carries_the_describe_model(monkeypatch) -> None:
+    """The captured request body names the DESCRIBE model — not the brief,
+    vision or assist model."""
+    from lumen_ingestion.describe import OpenRouterDescriber
+
+    monkeypatch.setattr(settings, "lumen_ingestion_describe", True)
+    monkeypatch.setattr(settings, "lumen_ingestion_describe_model", "probe/cheap-vision")
+    monkeypatch.setattr(settings, "lumen_ingestion_vision_model", "other/vision")
+    monkeypatch.setattr(settings, "lumen_ingestion_brief_model", "other/brief")
+    monkeypatch.setattr(settings, "openrouter_api_key", "test-key")
+
+    captured: dict = {}
+
+    class _Resp:
+        status_code = 200
+
+        def json(self):
+            return {
+                "choices": [
+                    {
+                        "message": {
+                            "content": json.dumps(
+                                [
+                                    {
+                                        "asset_id": "asset_a",
+                                        "title": "T",
+                                        "description": "D",
+                                        "usage": "U",
+                                        "tags": [],
+                                    }
+                                ]
+                            )
+                        }
+                    }
+                ]
+            }
+
+    def _capture(url, **kwargs):
+        captured["url"] = url
+        captured["body"] = kwargs["json"]
+        return _Resp()
+
+    import httpx
+
+    monkeypatch.setattr(httpx, "post", _capture)
+    describer = OpenRouterDescriber()
+    results = describer.describe(
+        [DescribeItem("asset_a", "logo", "", None, "brand: X")]
+    )
+    assert results[0] is not None
+    assert captured["body"]["model"] == "probe/cheap-vision"
+    assert captured["body"]["model"] != settings.lumen_ingestion_vision_model
+    assert captured["body"]["model"] != settings.lumen_ingestion_brief_model
+
+
+def test_without_an_api_key_the_default_describer_is_inert(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """Describe-by-default changes NOTHING for a keyless deployment: the
+    resolved describer is inactive, the miss pass never runs, and no HTTP call
+    is even attempted."""
+    from lumen_ingestion import pipeline
+    from lumen_ingestion.describe import OpenRouterDescriber
+
+    monkeypatch.setattr(settings, "lumen_ingestion_describe", True)
+    monkeypatch.setattr(settings, "openrouter_api_key", "")
+
+    import httpx
+
+    def _forbidden(*args, **kwargs):
+        raise AssertionError("a keyless describer must never reach the network")
+
+    monkeypatch.setattr(httpx, "post", _forbidden)
+
+    describer = pipeline.resolve_describer()
+    assert isinstance(describer, OpenRouterDescriber)
+    assert describer.active is False
+
+    _register("asset_inert")
+    sink: list[dict] = []
+    result = apply_descriptions(
+        _evidence("asset_inert"),
+        describer=describer,
+        resolve_bytes=lambda aid: (_png_bytes(), "image/png"),
+        reporter=_noop,
+        diagnostics=sink,
+    )
+    assert result.logos[0].title is None
+    assert sink == []
+    assert _description_count("asset_inert") == 0
