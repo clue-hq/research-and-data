@@ -119,7 +119,11 @@ parity to the dummy shell and zero invented UI.
   **[STATUS-AS-OF-2026-08-19; the scene-creation clause is SUPERSEDED 2026-08-23 —
   founder genad ruling 1 reverses the editor-first refusal and `open_design_leg@3`
   births scene documents at a ratified format, brand-stamped:
-  `docs/superpowers/plans/2026-08-23-chat-driven-ad-creation.md`.]**
+  `docs/superpowers/plans/2026-08-23-chat-driven-ad-creation.md`.
+  **AMENDED 2026-08-23 (evening) — genad2 ruling 1:** the tool is `open_design_leg@**4**`
+  and the birth is **zero-page**, carrying **no format or dimension parameters** — the
+  design agent authors the page itself:
+  `docs/superpowers/plans/2026-08-23-agent-authored-pages.md`.]**
 - **Platform frontend**: zero scene modules — no canvaskit-wasm dep, no wasm, no scene engine,
   no scene adapter. What IS there (lifted in W0, inert): `image-inspector.tsx` (357 L, untrimmed
   dummy schemas), `image-export-menu.tsx` + `use-image-export-controller.ts` + `model/
@@ -158,7 +162,10 @@ Backend/platform:
   "editor-first").~~ **[SUPERSEDED 2026-08-23 — founder genad ruling 1 reverses the
   editor-first ruling; `open_design_leg@3` births scene documents at a ratified format,
   brand-stamped. Gap closed by
-  `docs/superpowers/plans/2026-08-23-chat-driven-ad-creation.md`.]**
+  `docs/superpowers/plans/2026-08-23-chat-driven-ad-creation.md`.
+  **AMENDED 2026-08-23 (evening) — genad2 ruling 1:** `open_design_leg@**4**`, zero-page
+  birth, no format parameters; the design agent authors every page:
+  `docs/superpowers/plans/2026-08-23-agent-authored-pages.md`.]**
 - **G-A4** `focus_refs` not threaded to `target_node_ids` on scene envelopes.
 - **G-A5** No thumbnail/preview read for scene cards (web has `/web/render`; scenes have only
   `/export-preview` — cost untested; current ratified ruling is "real documents have no

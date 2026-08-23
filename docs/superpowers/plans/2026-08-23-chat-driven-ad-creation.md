@@ -1,5 +1,20 @@
 # Chat-Driven Ad Creation (genad) Implementation Plan
 
+> **[SUPERSEDED IN PART — 2026-08-23 (evening), by genad2.** This plan SHIPPED in full
+> (close-out: `_memory/2026-08-23-genad-close-out.md`), and then the founder reversed its
+> **format-parameter aperture**. The birth-owns-the-page mechanism described below —
+> `ad_format`/`ad_width`/`ad_height` on the tool, `AD_FORMAT_PRESETS`, `ad_birth_page`,
+> `mint_empty_ad_document`, and `open_design_leg@3` itself — no longer exists in the
+> codebase. `open_design_leg@4` births a **ZERO-page** scene document with **no format or
+> dimension parameters**, and the design deepagent authors every page from the user's own
+> words (`size(w,h,pt|px|mm|in)` / `preset(...)`); Head-of-ABM routes and delegates and
+> never resolves presets, units, or dimensions. The superseding plan is
+> `docs/superpowers/plans/2026-08-23-agent-authored-pages.md` (rulings recorded in
+> `_memory/2026-08-23-genad-rulings.md` §ADDENDUM). Everything else this plan shipped —
+> scene-birth brand stamping, the one-transaction/CAS/pin disciplines, the leg-only scene
+> persist, the gallery/auto-open/editor loop — **survives unchanged**. The text below is
+> kept verbatim as the historical record; do NOT read Tasks 2 and 3 as live contract.]**
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** A marketer asks for an ad in a project chat; Head-of-ABM opens a design leg that *births* a brand-stamped scene document at the requested format; the design trio generates and iterates on it through chat turns whose applied results persist to the document; the ad appears in the rail's gallery and opens in the (already-shipped) scene editor.
@@ -137,6 +152,14 @@ and in `create_document`'s `else:` branch (line 179), before reading `document_i
 ---
 
 ### Task 2: The ad document minter + format presets (platform seam)
+
+> **[SUPERSEDED 2026-08-23 (evening) by genad2 ruling 1 — this whole task is RETIRED, not
+> amended.** `AD_FORMAT_PRESETS`, `ad_birth_page`, and `mint_empty_ad_document` were
+> DELETED from `platform/api/clue_api/design_tools.py` (with
+> `tests/api/test_design_tools_ad_mint.py`); there is no preset registry anywhere in the
+> platform, by ruling ("the agent's knowledge is the catalog"). Scene birth is now one
+> engine call minting a zero-page scene. See
+> `docs/superpowers/plans/2026-08-23-agent-authored-pages.md` Task 1.]**
 
 **Files:**
 - Modify: `platform/api/clue_api/design_tools.py`
@@ -293,6 +316,16 @@ def mint_empty_ad_document(
 ---
 
 ### Task 3: `open_design_leg@3` — scene birth replaces the v1 refusal
+
+> **[SUPERSEDED IN PART — 2026-08-23 (evening) by genad2 ruling 1.** The scene BIRTH this
+> task introduced survives (leg-derived document id, one transaction with the leg insert,
+> `document_version_guard=0`, brand stamp + pin read-back). Its **format aperture does
+> not**: `ad_format`/`ad_width`/`ad_height` are gone from the input model, and with them
+> the refusal codes `design_leg_ad_format_required` / `design_leg_ad_format_invalid`; the
+> tool is now `open_design_leg@4` and it births a **zero-page** document (`pages == {}`)
+> that the design agent then authors. An agent still sending a format field gets a loud
+> unknown-field validation refusal. See
+> `docs/superpowers/plans/2026-08-23-agent-authored-pages.md` Tasks 1–2.]**
 
 **Files:**
 - Modify: `platform/api/clue_api/design_leg_tools.py`

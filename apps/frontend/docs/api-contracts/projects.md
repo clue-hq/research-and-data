@@ -1632,6 +1632,20 @@ not only for editor-seeded documents. The read itself is unchanged (the leg name
 document at birth, satisfying durable contract rule 1 above). Plan:
 `docs/superpowers/plans/2026-08-23-chat-driven-ad-creation.md`.]**
 
+**[AMENDED AGAIN 2026-08-23 (evening) — the birth carries NO format.** Founder genad2
+ruling 1 supersedes the format half of the note above: `open_design_leg@**4**` births a
+**zero-page** scene document (`pages == {}`) with **no format or dimension parameters** —
+`ad_format`/`ad_width`/`ad_height` are gone from the tool's input model, and the platform
+page-minter (`AD_FORMAT_PRESETS`/`ad_birth_page`/`mint_empty_ad_document`) is deleted. The
+**design agent authors the page itself** — size, unit (px for digital, mm/in for print) and
+layout come from the user's own words. Unchanged: the birth is still one transaction with
+the leg insert, still brand-stamped, still pinned at `document_version_guard=0`, and a
+`kind: "ad"` card still appears in this feed at leg-open. The one wire consequence: a
+newborn ad has no page, so `document_page_pixels` is honestly `null` and the card's
+dimensions are absent until the agent's first generation turn persists a page (the
+frontend renders the pageless state rather than fabricating a size). Plan:
+`docs/superpowers/plans/2026-08-23-agent-authored-pages.md`.]**
+
 **Resolved frontend mapping (`toProjectArtifact`):**
 
 | wire `kind` | `type` | `collateralType` | `imagePath` |

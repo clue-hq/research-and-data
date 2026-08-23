@@ -134,3 +134,24 @@ experiment) **overturned the "transport fragility" framing**:
   4 operational gaps filled in-session: workspace root, :3033 authorized party,
   design API base URL, LUMEN_CORE_HELPER). The F1 steering block + persist are
   proven live end-to-end.
+
+## ADDENDUM 2026-08-23 (evening) — the birth-owns-the-page mechanism is SUPERSEDED (genad2)
+
+Everything above about **format** is history, not current behavior. After the live evidence
+(the F1 page-trap saga plus the registry-complexity discussion) the founder reversed genad
+ruling 2: `open_design_leg` went to **`@4`**, which births a **ZERO-page** scene document
+with **no format or dimension parameters**, and the design deepagent authors every page
+itself from the user's own words (`size(w,h,pt|px|mm|in)` / `preset(...)`; the engine
+normalizes). The format-preset machinery this note credits to commit `53f3219f` —
+`AD_FORMAT_PRESETS` (square/portrait/story/landscape), `ad_birth_page`,
+`mint_empty_ad_document`, and `tests/api/test_design_tools_ad_mint.py` — was **deleted**,
+and `a5b2c561`'s `ad_format`/`ad_width`/`ad_height` input fields with it; Head-of-ABM v38 /
+prompt v6's "infer-and-STATE the format" paragraph was replaced by v39 / v7's
+route-and-delegate posture (it never resolves presets, units, or dimensions), and F1 is now
+legacy support for the two already-seeded empty-page ads only — no new birth can reach it.
+What SURVIVES from this lane, unchanged: scene-birth brand stamping, the one-transaction /
+leg-derived-id / guard-0 / pin-read-back disciplines, the leg-only scene persist under CAS,
+and the gallery → auto-open → editor loop. The live-proven walk above (and the
+grok-4.6 reviewer finding in the addendum) remains valid evidence for those. Superseding
+plan: `docs/superpowers/plans/2026-08-23-agent-authored-pages.md`; rulings:
+`_memory/2026-08-23-genad-rulings.md` §ADDENDUM 2.

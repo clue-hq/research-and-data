@@ -77,3 +77,51 @@ Plan: `docs/superpowers/plans/2026-08-23-agent-authored-pages.md` (fact base:
 the aperture: 2 adapter fns, 1 inspector section, 1 export builder, 1 birth helper,
 1 tool input model, 1 wire schema; the ONE data-loss bug is scene-apply.ts:1390's
 hardcoded unit:"px" destroying output.physical).
+
+## ADDENDUM 2 — 2026-08-23 (close-out): the genad2 rulings SHIPPED; exact supersession map
+
+The four rulings in ADDENDUM 1 are no longer a proposal — they are the code. Recorded here
+in the authoritative form, with what they supersede stated explicitly:
+
+**genad2 ruling 1 — zero-page birth.** `open_design_leg@4` creates the durable document +
+brand binding and **NO page**, with **no format or dimension parameters**.
+`ad_format`/`ad_width`/`ad_height` are removed from the input model (an agent still sending
+one gets a loud unknown-field validation refusal), and
+`AD_FORMAT_PRESETS`/`ad_birth_page`/`mint_empty_ad_document` are **deleted, not generalized**
+(with `tests/api/test_design_tools_ad_mint.py`). The refusal codes
+`design_leg_ad_format_required`/`design_leg_ad_format_invalid` retire with them.
+→ **Supersedes genad ruling 2 IN FULL** ("ad format is a structured tool parameter —
+presets + a custom escape, REQUIRED on a document-less scene open; Head-of-ABM infers and
+states it"). Head-of-ABM no longer infers, states, or carries a format at all.
+→ **Amends genad ruling 1** (the v1 editor-first refusal stays reversed — a document-less
+`doc_kind="scene"` open still births a document, still in one transaction with the leg
+insert, still leg-derived/retry-convergent id, still pinned at `document_version_guard=0`,
+still brand-stamped fail-closed at birth). Only its "at a ratified format, with a page"
+half is gone.
+
+**genad2 ruling 2 — the design deepagent authors every page.** Every page comes from the
+user's own words via the DSL (`size(w,h,pt|px|mm|in)` / `preset(...)`); the engine
+normalizes. **No preset registry anywhere in the platform** — the agent's knowledge is the
+catalog. Head-of-ABM **routes and delegates verbatim** (prompt v7 / profile v39): it never
+resolves presets, units, or dimensions and never restates them.
+
+**genad2 ruling 3 — 300 DPI stays the design subsystem's raster default**, and **no-dims
+asks are resolved inside the design leg** (the agent proposes-and-states its choice, or
+asks). Head-of-ABM does not fill the gap on the agent's behalf.
+
+**genad2 ruling 4 — surviving unchanged:** one document = one artifact (pages are
+components of an artifact — a four-pager is ONE artifact); brand stamp at birth; the
+leg/CAS discipline; the leg-only scene persist; the gallery/auto-open/editor loop; **F1
+(the empty-page steering block) is LEGACY SUPPORT ONLY** — it exists for the two
+already-seeded empty-page ads, and no new birth can reach it. Multi-page is **STAGED
+LATER** (pager-within-one-artifact model; the page-switcher UI needs design first) and
+nothing in genad2 forecloses it.
+
+**Consequences owed and shipped alongside:** the design-side pageless-result refusal gate
+(a leg turn that ends with zero pages is refused, honestly, rather than persisted);
+physical-units teaching in the design author prompt; zero-page lifecycle states in the
+frontend (no fabricated 1200×1200); and editor unit fidelity (`output.physical` survives an
+inspector size commit — the genad-era px hardcode was a data-loss bug).
+
+Plan + evidence: `docs/superpowers/plans/2026-08-23-agent-authored-pages.md` (Tasks 1–6
+landed; Task 7 = walk + supersessions + close-out).

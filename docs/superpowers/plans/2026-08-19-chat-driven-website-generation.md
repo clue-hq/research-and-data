@@ -330,7 +330,11 @@ carry web work, then makes the frontend show what the leg already emits.
   existing document — **[SUPERSEDED 2026-08-23 — genad ruling 1: `open_design_leg@3`
   births scene documents too, at a ratified format and brand-stamped; the `@2` refusal
   described here is history. Plan:
-  `docs/superpowers/plans/2026-08-23-chat-driven-ad-creation.md`.]**), optional `title`.
+  `docs/superpowers/plans/2026-08-23-chat-driven-ad-creation.md`.
+  **AMENDED 2026-08-23 (evening) — genad2 ruling 1:** the tool is now
+  `open_design_leg@**4**` and the scene birth is **ZERO-page** with **no format or
+  dimension parameters** — the design agent authors the page itself. Plan:
+  `docs/superpowers/plans/2026-08-23-agent-authored-pages.md`.]**), optional `title`.
   Resolution path per §4.1: governed create,
   idempotency key derived from the turn/tool invocation, leg born with the document
   pinned; `OpenDesignLegOutput` gains `document_created: bool`.
@@ -575,7 +579,11 @@ also needs `LUMEN_CORE_HELPER` (document birth shells to the engine) plus the fu
    flow keeps its editor-first shape.~~ **[SUPERSEDED 2026-08-23 — founder genad ruling
    1 reverses the editor-first refusal: `open_design_leg@3` births scene documents at a
    ratified format, brand-stamped, exactly as `@2` births web ones. Plan:
-   `docs/superpowers/plans/2026-08-23-chat-driven-ad-creation.md`.]**
+   `docs/superpowers/plans/2026-08-23-chat-driven-ad-creation.md`.
+   **AMENDED 2026-08-23 (evening) — genad2 ruling 1:** `open_design_leg@**4**` births a
+   **zero-page** scene document with **no format or dimension parameters**; the design
+   agent authors every page. Plan:
+   `docs/superpowers/plans/2026-08-23-agent-authored-pages.md`.]**
 
 ## 9. Effort
 

@@ -36,6 +36,17 @@ which planted an EMPTY scene. Two deliberate differences:
   hand-written has changed: it is now the missing `agent_thread`/`execution` mint, not
   a scene-creation refusal.]**
 
+  **[AMENDED 2026-08-23 (evening) — genad2 ruling 1: a birth mints NO page at all.**
+  `open_design_leg@4` creates a **zero-page** scene document (`pages == {}`) with no
+  format or dimension parameters; the design deepagent authors every page itself from
+  the user's own words. The platform page-minter retired —
+  `AD_FORMAT_PRESETS`/`ad_birth_page`/`mint_empty_ad_document` are DELETED, so the
+  sentence above about "a single ratified-format page" describes a mechanism that no
+  longer exists. THIS SCRIPT IS STILL VALID for exactly the same reason as before: it
+  plants the richer harvested tree the AD2–AD4 adapters are TDD'd against, and its leg
+  rows are still hand-written because no route mints an `agent_thread`/`execution`.
+  Plan: `docs/superpowers/plans/2026-08-23-agent-authored-pages.md`.]**
+
 Every id below is deterministic, so a re-run reports the existing rows instead of
 minting a second document/leg. ``--recreate`` tears the seeded rows down first.
 
