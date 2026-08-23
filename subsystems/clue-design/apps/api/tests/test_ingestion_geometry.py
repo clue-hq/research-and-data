@@ -55,6 +55,37 @@ def _with_geometry(name: str, harvest: dict | None) -> BrandEvidence:
     )
 
 
+def _section(index: int, bg: str, height: float, *, gradient: bool = False,
+             image: bool = False) -> dict:
+    """One band as the live `GEOMETRY_JS` probe reports it."""
+    return {
+        "index": index,
+        "tag": "section",
+        "bg": bg,
+        "bgImage": "url(hero.jpg)" if image else None,
+        "gradient": gradient,
+        "height": height,
+        "padding": [0, 16, 0, 16],
+    }
+
+
+def _synthetic(sections: list[dict]) -> BrandEvidence:
+    """A real evidence bundle wearing a hand-authored background rhythm.
+
+    Real harvests cannot exhibit every band shape on demand (a gradient band
+    next to its flat twin, a single band at exactly 28% of the scroll), so the
+    threshold and exclusion rules are proven on sequences built through the same
+    `parse_geometry` seam the browser probe feeds.
+    """
+    parsed = parse_geometry(
+        {"url": "https://synthetic.example/", "sections": sections},
+        page_url="https://synthetic.example/",
+    )
+    return _evidence("evidence_website_insight").model_copy(
+        update={"geometry": parsed.evidence()}
+    )
+
+
 def _normalize(evidence: BrandEvidence) -> dict:
     return normalize_evidence(
         evidence,
@@ -310,6 +341,150 @@ def test_partial_measurement_leaves_the_rest_derived() -> None:
     assert radii["radius.none"]["provenance"]["source"] == "derived:radius-scale"
     assert set(_sources(kit["tokens"]["stroke_widths"])) == {"derived:stroke-scale"}
     assert kit["tokens"]["shadows"] == {}
+
+
+# --------------------------------------------------------------------------- #
+# Emission: recurring band surfaces (surface.band.*)
+# --------------------------------------------------------------------------- #
+
+
+def _bands(kit: dict) -> dict[str, dict]:
+    return {
+        path: entry
+        for path, entry in kit["tokens"]["colors"].items()
+        if path.startswith("surface.band")
+    }
+
+
+def test_a_recurring_measured_band_color_mints_a_surface_band_token() -> None:
+    """Stripe's navy runs under sections 3 and 5 — that is a brand surface.
+
+    Before this, the normalizer never read `evidence.geometry`, so the one color
+    the page actually *stands on* had no name and the brief agent could only
+    approximate it. The band sequence is measured, so the token is measured.
+    """
+    kit = _normalize(_with_geometry("evidence_website_insight", _harvest("stripe_home")))
+    statement = kit["tokens"]["colors"]["surface.band.statement"]
+    assert statement["value"]["default"]["value"] == "#0D1738"
+    assert statement["role"] == "surface"
+    provenance = statement["provenance"]
+    assert provenance["source"].startswith("website:https://stripe.com")
+    assert "recurring band background" in provenance["source"]
+    assert provenance["confidence"] == MEASURED_CONFIDENCE
+    # Light-mode only: bands are measured on the light capture.
+    assert statement["value"]["modes"] == {}
+    assert "2 bands" in statement["description"]
+
+
+def test_the_five_white_bands_the_kit_already_names_mint_nothing() -> None:
+    """A band that IS an existing kit color is that token, not a second name."""
+    kit = _normalize(_with_geometry("evidence_website_insight", _harvest("stripe_home")))
+    bands = _bands(kit)
+    assert set(bands) == {"surface.band.statement"}
+    values = {entry["value"]["default"]["value"] for entry in bands.values()}
+    assert "#FFFFFF" not in values, "white is surface.page / text.inverse already"
+    # …and the one-off 380px footer tint is a footer tint, not a brand surface.
+    assert "#F8FAFD" not in values
+
+
+def test_a_flat_brand_mints_no_band_surface() -> None:
+    """Both of flat_brand's bands are colors the kit already carries.
+
+    White is `text.inverse`; the near-black #111111 is within merge distance of
+    the derived `surface.inverse` #121212. Two bands, zero new tokens — the
+    honest outcome, and the dedupe is the reason.
+    """
+    kit = _normalize(_with_geometry("evidence_website_insight", _harvest("flat_brand")))
+    assert _bands(kit) == {}
+
+
+def test_gradient_and_image_bands_name_nothing() -> None:
+    """Their hex is not what the page shows, so it may not become a token."""
+    kit = _normalize(
+        _synthetic(
+            [
+                _section(0, "rgb(255, 255, 255)", 900),
+                _section(1, "rgb(200, 10, 10)", 900, gradient=True),
+                _section(2, "rgb(200, 10, 10)", 900, gradient=True),
+                _section(3, "rgb(200, 10, 10)", 900, image=True),
+            ]
+        )
+    )
+    assert _bands(kit) == {}
+
+    # The control: the SAME crimson, flat, is a brand surface.
+    flat = _normalize(
+        _synthetic(
+            [
+                _section(0, "rgb(255, 255, 255)", 900),
+                _section(1, "rgb(200, 10, 10)", 900),
+                _section(2, "rgb(200, 10, 10)", 900),
+            ]
+        )
+    )
+    assert flat["tokens"]["colors"]["surface.band.statement"]["value"]["default"][
+        "value"
+    ] == "#C80A0A"
+
+
+def test_a_single_small_band_names_nothing_but_a_dominant_one_does() -> None:
+    quiet = _normalize(
+        _synthetic(
+            [_section(0, "rgb(255, 255, 255)", 5000), _section(1, "rgb(255, 140, 0)", 400)]
+        )
+    )
+    assert _bands(quiet) == {}, "7% of the scroll, seen once, is an accident"
+
+    dominant = _normalize(
+        _synthetic(
+            [_section(0, "rgb(255, 255, 255)", 5000), _section(1, "rgb(255, 140, 0)", 2000)]
+        )
+    )
+    statement = dominant["tokens"]["colors"]["surface.band.statement"]
+    assert statement["value"]["default"]["value"] == "#FF8C00"
+    assert "1 band," in statement["description"]
+
+
+def test_band_names_are_classified_by_luminance_and_suffixed_by_presence() -> None:
+    kit = _normalize(
+        _synthetic(
+            [
+                _section(0, "rgb(255, 255, 255)", 1000),
+                _section(1, "rgb(43, 11, 78)", 2000),
+                _section(2, "rgb(43, 11, 78)", 2000),
+                _section(3, "rgb(61, 42, 15)", 800),
+                _section(4, "rgb(61, 42, 15)", 800),
+                _section(5, "rgb(255, 233, 196)", 600),
+                _section(6, "rgb(255, 233, 196)", 600),
+            ]
+        )
+    )
+    bands = {path: entry["value"]["default"]["value"] for path, entry in _bands(kit).items()}
+    assert bands == {
+        "surface.band.statement": "#2B0B4E",    # darkest class, tallest first
+        "surface.band.statement-2": "#3D2A0F",
+        "surface.band.tint": "#FFE9C4",         # luminance ≥ 0.5 → a tint
+    }
+
+
+def test_band_minting_is_deterministic() -> None:
+    evidence = _with_geometry("evidence_website_insight", _harvest("stripe_home"))
+    first = _normalize(evidence)
+    second = _normalize(evidence)
+    assert json.dumps(first, sort_keys=True) == json.dumps(second, sort_keys=True)
+    assert list(_bands(first)) == list(_bands(second))
+
+
+def test_a_kit_carrying_band_surfaces_still_validates_through_the_engine() -> None:
+    from lumen_api.core import CoreClient
+
+    kit = _normalize(_with_geometry("evidence_website_insight", _harvest("stripe_home")))
+    assert "surface.band.statement" in kit["tokens"]["colors"]
+    core = CoreClient()
+    validated = core.validate_brand_kit(kit, product_ready=False)
+    assert validated["ok"] is True
+    assert [d for d in validated.get("diagnostics", []) if d.get("severity") == "error"] == []
+    assert core.summarize_brand_kit(kit)["ok"] is True
 
 
 # --------------------------------------------------------------------------- #
