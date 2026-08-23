@@ -51,3 +51,29 @@ commits, live-proof evidence, founder items, and incidents. Residuals deliberate
 OUT of scope (unchanged): reference attachments in platform chat (runtime supports
 them; no chat UI / no envelope resolution — dormant), leg CLOSE exit-judge gateway
 timeout (pre-existing, shared machinery).
+
+## ADDENDUM 2026-08-23 (evening) — RULING SUPERSEDED: the agent authors the pages (genad2)
+
+The founder REVERSED the format-parameter mechanism of ruling 2 after the live evidence
+(the F1 page-trap saga + the registry-complexity discussion). New ratified rulings:
+
+1. **Zero-page birth.** `open_design_leg` (scene) creates the durable document + brand
+   binding but NO page and NO format/dimension parameters. `ad_format`/`ad_width`/
+   `ad_height` retire; `AD_FORMAT_PRESETS`/`ad_birth_page`/`mint_empty_ad_document` are
+   deleted, not generalized.
+2. **The design deepagent authors every page** from the user's own words via the DSL
+   (`size(w,h,pt|px|mm|in)` / `preset(...)`); the engine normalizes. No preset registry —
+   the agent's knowledge is the catalog. Head-of-ABM routes and delegates verbatim; it
+   never resolves presets, units, or dimensions.
+3. **300 DPI** stays the design subsystem's raster default. **No-dims asks** are resolved
+   inside the design leg (agent proposes-and-states, or asks).
+4. Surviving unchanged: one document = one artifact (pages are components of an artifact —
+   a four-pager is ONE artifact); brand stamp at birth; leg/CAS discipline; F1 = legacy
+   support only. Multi-page is STAGED LATER (pager-within-one-artifact model, page-switcher
+   UI needs design first); nothing in genad2 may foreclose it.
+
+Plan: `docs/superpowers/plans/2026-08-23-agent-authored-pages.md` (fact base:
+`.context/genad2-readiness-scout.md` — engine/DSL/print-export READY; the px-only code is
+the aperture: 2 adapter fns, 1 inspector section, 1 export builder, 1 birth helper,
+1 tool input model, 1 wire schema; the ONE data-loss bug is scene-apply.ts:1390's
+hardcoded unit:"px" destroying output.physical).
