@@ -17,6 +17,7 @@ import json
 import tempfile
 from pathlib import Path
 
+from lumen_api.core import CoreClient
 from lumen_ingestion import BrandEvidence, normalize_evidence
 from lumen_ingestion.capture import build_evidence
 from lumen_ingestion.capture import CaptureOutcome
@@ -476,8 +477,6 @@ def test_band_minting_is_deterministic() -> None:
 
 
 def test_a_kit_carrying_band_surfaces_still_validates_through_the_engine() -> None:
-    from lumen_api.core import CoreClient
-
     kit = _normalize(_with_geometry("evidence_website_insight", _harvest("stripe_home")))
     assert "surface.band.statement" in kit["tokens"]["colors"]
     core = CoreClient()
