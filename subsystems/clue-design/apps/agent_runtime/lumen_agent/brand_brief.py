@@ -61,6 +61,35 @@ _GEOMETRY_GROUPS = ("radii", "stroke_widths", "spacing", "shadows")
 #: A provenance pointer that begins here was MEASURED off the brand's live site.
 _MEASURED_PREFIX = "website:"
 
+#: KIT TOKEN -> the web class that renders it. The ten chain HEADS of
+#: `GEOMETRY_UTILITIES` (crates/lumen-web/src/theme.rs) and nothing else: the
+#: fallback rungs of a chain (`radius.md`, `shadow.sm`, `space.lg`) are the
+#: engine's business and have no class of their own to name.
+#:
+#: This exists because a recipe is a brand FACT the author must deploy, and
+#: until G3 it named only kit tokens — "radius **radius.button**" left the
+#: author to invent a class, which is exactly where a brand's measured 4px
+#: became someone's `rounded-2xl`. With the class rendered beside the token the
+#: recipe is copyable.
+#:
+#: Deliberately agent-side only: the frontend's mirror of this projection
+#: (`apps/frontend/src/features/brand-context/model/brand-brief.ts`) shows the
+#: founder the same brief, and a web class name is authoring vocabulary that
+#: means nothing on that panel. Drift from the Rust table fails
+#: `test_web_geometry_vocabulary.py`.
+GEOMETRY_TOKEN_UTILITIES = {
+    "radius.button": "rounded-button",
+    "radius.card": "rounded-card",
+    "radius.badge": "rounded-badge",
+    "shadow.brand": "shadow-brand",
+    "shadow.card": "shadow-card",
+    "stroke.width.card": "border-w-card",
+    "stroke.width.divider": "border-w-divider",
+    "space.section": "py-section",
+    "space.stack.default": "gap-stack",
+    "space.card.padding": "p-card",
+}
+
 
 @dataclass(frozen=True)
 class BriefRender:
@@ -232,6 +261,12 @@ def _geometry_sections(brand_kit: Any) -> list[tuple[str, list[str]]]:
     lines = [
         "Read off the brand's own site. These are brand FACTS about its shape —"
         " use them as given, the way you use its colors.",
+        "",
+        "You do not hand-write these numbers: they render through the web"
+        " geometry utilities (BRAND GEOMETRY in your prompt, the full block in"
+        " the create-website skill) — "
+        + ", ".join(GEOMETRY_TOKEN_UTILITIES.values())
+        + ".",
         "",
         *_capped(measured),
     ]
@@ -449,7 +484,7 @@ def _constraint_line(entry: JsonObject) -> str:
 
 def _recipe_line(recipe: JsonObject) -> str:
     slots = ", ".join(
-        f"{slot} **{_text(recipe.get(slot))}**"
+        f"{slot} {_slot_value(_text(recipe.get(slot)))}"
         for slot in ("radius", "padding", "border", "shadow", "background", "text")
         if _text(recipe.get(slot))
     )
@@ -460,6 +495,16 @@ def _recipe_line(recipe: JsonObject) -> str:
         f"{slots or 'no tokenized slots'}{trailer}"
         f"{_confidence(recipe.get('confidence'))}"
     )
+
+
+def _slot_value(token: str) -> str:
+    """One recipe slot: the class the author writes, then the token behind it.
+
+    A slot with no geometry utility (a color or a non-head spacing step) renders
+    exactly as it always did — the token name alone.
+    """
+    utility = GEOMETRY_TOKEN_UTILITIES.get(token)
+    return f"**{utility}** ({token})" if utility else f"**{token}**"
 
 
 def _push(
