@@ -11,7 +11,9 @@ nothing is stored** — you then repair with `patch_web_page` (see Repairing
 below), not by re-drafting. Warnings do not block, but they are work: resolve
 each one or explicitly justify it in your report — never carry one silently.
 A result's separate `advice` entries are informational: judge them, act only
-where they are right for this page — they are never an obligation, never block.
+where they are right for this page — they are never an obligation, never block,
+and never repair work. Advice rides its own key on accepted results AND on
+rejections; the `diagnostics` list you repair from never contains it.
 
 ## Author once, at structural altitude
 

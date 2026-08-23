@@ -532,6 +532,30 @@ def _count_subtree(nodes: JsonObject, node_id: str) -> int:
     return total
 
 
+def _partition_advice(diagnostics: Any) -> tuple[List[JsonObject], List[JsonObject]]:
+    """(work, advice) — everything a repair could act on, and everything advisory.
+
+    THE contract this protects is the rejection one. `create-website` tells the
+    author "fix ALL the diagnostics in ONE patch call", so a `diagnostics` list
+    that carries an advisory line makes the author rewrite radii to satisfy a
+    suggestion — on exactly the turn where errors and advice most often co-occur
+    (a briefed kit, one real error, `rounded-2xl` on every card). Advice
+    therefore never appears in a `diagnostics` list; it rides its own key.
+
+    Anything that is not explicitly `advice` — including a non-dict entry this
+    build cannot read — stays in `work`, so a list with no advice comes back
+    exactly as it went in.
+    """
+    work: List[JsonObject] = []
+    advice: List[JsonObject] = []
+    for diagnostic in diagnostics or []:
+        if isinstance(diagnostic, dict) and diagnostic.get("severity") == "advice":
+            advice.append(diagnostic)
+        else:
+            work.append(diagnostic)
+    return work, advice
+
+
 def _split_non_error_diagnostics(
     diagnostics: Any,
 ) -> tuple[List[JsonObject], List[JsonObject]]:
@@ -547,15 +571,12 @@ def _split_non_error_diagnostics(
     warning — the loud side. A severity this build has never heard of must
     surface somewhere, and the bucket that gets read is the safer home.
     """
-    warnings: List[JsonObject] = []
-    advice: List[JsonObject] = []
-    for diagnostic in diagnostics or []:
-        if not isinstance(diagnostic, dict) or diagnostic.get("severity") == "error":
-            continue
-        if diagnostic.get("severity") == "advice":
-            advice.append(diagnostic)
-        else:
-            warnings.append(diagnostic)
+    work, advice = _partition_advice(diagnostics)
+    warnings = [
+        diagnostic
+        for diagnostic in work
+        if isinstance(diagnostic, dict) and diagnostic.get("severity") != "error"
+    ]
     return warnings, advice
 
 
@@ -1314,8 +1335,9 @@ class LumenWebTools:
 
         On any error-severity diagnostic NOTHING is stored — fix every
         diagnostic (each carries a code, node id, and hint) and resend the
-        complete page. On success the working document is replaced and the
-        installed node count is returned.
+        complete page. A rejection's `diagnostics` list is the work and only the
+        work; anything advisory rides a separate `advice` key. On success the
+        working document is replaced and the installed node count is returned.
 
         Prefer `patch_web_page` to repair a rejected submission with targeted
         string patches instead of re-sending the whole page."""
@@ -1371,14 +1393,32 @@ class LumenWebTools:
 
     def _store_rejection(self, submission: JsonObject, diagnostics: List[JsonObject]) -> None:
         """Remember the rejected submission (with its SUBMITTED html) so
-        patch_web_page can repair and resubmit it."""
+        patch_web_page can repair and resubmit it.
+
+        Advice is stripped: what is retained here is the patch flow's work list,
+        and a suggestion is not something a patch owes a fix for."""
+        work, _advice = _partition_advice(diagnostics)
         self._last_rejected_authoring = {
             "tool": submission["tool"],
             "html": submission["html"],
             "custom_css": submission["custom_css"],
             "node_id": submission["node_id"],
-            "diagnostics": list(diagnostics or []),
+            "diagnostics": work,
         }
+
+    def _diagnostic_buckets(self, diagnostics: Any) -> JsonObject:
+        """`diagnostics` (the work) + `advice`, as payload kwargs."""
+        work, advice = _partition_advice(diagnostics)
+        return {"diagnostics": work, "advice": advice}
+
+    def _rejected(self, diagnostics: Any) -> str:
+        """The rejection envelope: `diagnostics` is the work, `advice` is not.
+
+        Both keys are always present, exactly as `warnings`/`advice` always are
+        on the accepted envelope — one shape to read, no conditional key."""
+        return json.dumps(
+            {"status": "rejected", **self._diagnostic_buckets(diagnostics)}, indent=2
+        )
 
     def _clear_pending(self) -> None:
         self._last_rejected_authoring = None
@@ -1418,7 +1458,7 @@ class LumenWebTools:
             return self._tool_error(
                 "web_author.helper_error",
                 error.message,
-                diagnostics=diagnostics,
+                **self._diagnostic_buckets(diagnostics),
             )
 
         diagnostics = response.get("diagnostics") or []
@@ -1432,9 +1472,7 @@ class LumenWebTools:
                 output_summary=f"{len(errors)} error diagnostic(s); page not stored",
                 diagnostics=diagnostics,
             )
-            return json.dumps(
-                {"status": "rejected", "diagnostics": diagnostics}, indent=2
-            )
+            return self._rejected(diagnostics)
 
         self.web_doc = response["web_doc"]
         self._record_operations(
@@ -1481,8 +1519,9 @@ class LumenWebTools:
         section's identity across the edit). Flow:
 
         1. `web_ingest_fragment` parses the markup WITHOUT mutating the doc. Any
-           error-severity diagnostic → {"status": "rejected", diagnostics} (doc
-           untouched), mirroring `author_web_page`.
+           error-severity diagnostic → {"status": "rejected", diagnostics,
+           advice} (doc untouched), mirroring `author_web_page` — `diagnostics`
+           is the work, `advice` never is.
         2. Every fragment root must be a top-level section (the page grammar
            allows only sections at the top level). A non-section root →
            `web_subtree.not_a_section`. Engine reality: the ingester reports a
@@ -1547,7 +1586,7 @@ class LumenWebTools:
             return self._tool_error(
                 "web_subtree.helper_error",
                 error.message,
-                diagnostics=diagnostics,
+                **self._diagnostic_buckets(diagnostics),
             )
 
         diagnostics = response.get("diagnostics") or []
@@ -1588,7 +1627,7 @@ class LumenWebTools:
                 "sections; wrap it in <section id=\"...\">...</section> (keep the "
                 "target section's id).",
                 offending_roots=non_section_roots,
-                diagnostics=diagnostics,
+                **self._diagnostic_buckets(diagnostics),
             )
 
         # Any other error-severity diagnostic → the fragment is unusable; store
@@ -1604,9 +1643,7 @@ class LumenWebTools:
                 output_summary=f"{len(errors)} error diagnostic(s); section not changed",
                 diagnostics=diagnostics,
             )
-            return json.dumps(
-                {"status": "rejected", "diagnostics": diagnostics}, indent=2
-            )
+            return self._rejected(diagnostics)
 
         if not frag_roots:
             # A clean parse that produced no sections (e.g. empty markup): there
@@ -1616,7 +1653,7 @@ class LumenWebTools:
                 "web_subtree.not_a_section",
                 "the replacement markup produced no top-level section; provide a "
                 "<section id=\"...\">...</section>.",
-                diagnostics=diagnostics,
+                **self._diagnostic_buckets(diagnostics),
             )
 
         # The fragment is a FRESH ingest, so its auto-minted ids (box_1, txt_2,
@@ -1669,16 +1706,10 @@ class LumenWebTools:
                 output_summary=error.message,
                 diagnostics=diagnostics,
             )
-            return json.dumps(
-                {"status": "rejected", "diagnostics": diagnostics},
-                indent=2,
-            )
+            return self._rejected(diagnostics)
         if not applied.get("ok"):
             self._store_rejection(submission, applied.get("diagnostics") or [])
-            return json.dumps(
-                {"status": "rejected", "diagnostics": applied.get("diagnostics") or []},
-                indent=2,
-            )
+            return self._rejected(applied.get("diagnostics"))
 
         self.web_doc = applied["web_doc"]
         self._record_operations(batch)
@@ -1984,7 +2015,7 @@ class LumenWebTools:
 
         The batch applies checked and atomically: any op that fails, or a batch
         that would leave the document invalid, is rejected WHOLE (nothing is
-        stored) → {"status":"rejected", "diagnostics":[...]}. On success the
+        stored) → {"status":"rejected", "diagnostics":[…], "advice":[…]}. On success the
         working doc is replaced and {"status":"ok", "applied":n, "warnings":[…],
         "advice":[…]} is returned. `warnings` is work to resolve or justify;
         `advice` is informational and never an obligation."""
@@ -2049,17 +2080,12 @@ class LumenWebTools:
                 output_summary=f"batch rejected: {error.message}",
                 diagnostics=diagnostics,
             )
-            return json.dumps(
-                {"status": "rejected", "diagnostics": diagnostics}, indent=2
-            )
+            return self._rejected(diagnostics)
 
         # Defensive: a non-raising ok:false path (raise_on_error is on today, so
         # this mirrors author_web_subtree's belt-and-braces reject guard).
         if not response.get("ok"):
-            return json.dumps(
-                {"status": "rejected", "diagnostics": response.get("diagnostics") or []},
-                indent=2,
-            )
+            return self._rejected(response.get("diagnostics"))
 
         self.web_doc = response["web_doc"]
         self._record_operations(operations)
@@ -2811,14 +2837,10 @@ class LumenWebTools:
                     "reason": "checked_operation_rejected",
                 },
             )
-            return json.dumps(
-                {"status": "rejected", "diagnostics": diagnostics}, indent=2
-            )
+            return self._rejected(diagnostics)
         if not response.get("ok"):
             diagnostics = response.get("diagnostics") or []
-            return json.dumps(
-                {"status": "rejected", "diagnostics": diagnostics}, indent=2
-            )
+            return self._rejected(diagnostics)
         self.web_doc = response["web_doc"]
         self._record_operations(operations)
         self._doc_version += 1

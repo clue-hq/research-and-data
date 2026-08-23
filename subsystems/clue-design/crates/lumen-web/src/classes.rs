@@ -156,10 +156,14 @@ const KNOWN_UTILITIES: &[&str] = &[
     "box-decoration-slice", "box-decoration-clone", "box-border", "box-content",
 ];
 
-/// Stock all-corner radius steps. Side/corner variants (`rounded-t-*`,
-/// `rounded-tl-*`) are deliberately absent: a side radius is compositional and
-/// has no brand utility to prefer.
-const STOCK_RADIUS_STEPS: &[&str] = &["none", "sm", "md", "lg", "xl", "2xl", "3xl", "full"];
+/// Stock all-corner radius steps — the WHOLE v4 ramp, `xs` and `4xl` included.
+/// Both are legal Tailwind v4 names that lint clean, so leaving either out
+/// would hand the author a silent way to dodge the advice. Side/corner variants
+/// (`rounded-t-*`, `rounded-tl-*`) are deliberately absent: a side radius is
+/// compositional and has no brand utility to prefer.
+const STOCK_RADIUS_STEPS: &[&str] = &[
+    "none", "xs", "sm", "md", "lg", "xl", "2xl", "3xl", "4xl", "full",
+];
 
 /// Stock elevation steps. `none` is absent on purpose — removing a shadow is a
 /// legitimate design decision, not drift away from the brand's measured one.
@@ -809,12 +813,14 @@ mod tests {
         for token in [
             "rounded",
             "rounded-none",
+            "rounded-xs",
             "rounded-sm",
             "rounded-md",
             "rounded-lg",
             "rounded-xl",
             "rounded-2xl",
             "rounded-3xl",
+            "rounded-4xl",
             "rounded-full",
             "rounded-[13px]",
             "md:rounded-2xl",

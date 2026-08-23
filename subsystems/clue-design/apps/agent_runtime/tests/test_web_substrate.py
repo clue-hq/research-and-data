@@ -2278,3 +2278,59 @@ def test_geometry_advice_never_rejects_a_page(tmp_path: Path):
     assert result["installed_nodes"] > 0
     assert tools._doc_version == 1
     assert result["advice"], "the advice should still be reported"
+
+
+REJECTED_GEOMETRY_HTML = """
+<section id="cards" class="bg-light">
+  <div class="mx-auto max-w-[1200px] px-6 py-20 flex flex-col gap-6">
+    <div class="rounded-2xl shadow-lg p-6 bg-[#ff0000]"><p class="text-muted">First card.</p></div>
+    <div class="rounded-2xl shadow-lg p-6"><p class="text-muted">Second card.</p></div>
+  </div>
+</section>
+"""
+
+
+def test_a_rejection_hands_back_work_only_and_advice_separately(tmp_path: Path):
+    """The turn where this matters most: a briefed kit, one genuine error, and
+    raw geometry everywhere. `create-website` says "fix ALL the diagnostics in
+    ONE patch call" — so an advisory line inside `diagnostics` would spend the
+    repair round rewriting radii nobody asked to change."""
+    tools = _kitted_tools(tmp_path, briefed=True)
+    result = json.loads(tools.author_web_page(REJECTED_GEOMETRY_HTML))
+
+    assert result["status"] == "rejected", result
+    # The work list is the work: the raw hex, and nothing advisory.
+    assert "LUMW0210" in _codes(result["diagnostics"]), result
+    assert "LUMW0306" not in _codes(result["diagnostics"]), result
+    assert all(
+        d.get("severity") != "advice" for d in result["diagnostics"]
+    ), result
+    # The advice is still delivered — under its own key.
+    assert "LUMW0306" in _codes(result["advice"]), result
+
+    # And the patch flow repairs from the same work-only list.
+    pending = tools._last_rejected_authoring
+    assert pending is not None
+    assert "LUMW0210" in _codes(pending["diagnostics"])
+    assert "LUMW0306" not in _codes(pending["diagnostics"])
+    assert all(d.get("severity") != "advice" for d in pending["diagnostics"])
+
+    # Nothing was stored, exactly as before.
+    assert tools._doc_version == 0
+    assert not (tools._home_page().get("nodes") or {}).get("cards")
+
+
+def test_an_unbriefed_rejection_carries_no_geometry_advice(tmp_path: Path):
+    """Same markup, no brief: the rejection still separates the two species —
+    this kit's LUMW0305 theme-geometry fallbacks are advice too — but nothing
+    about the author's raw radii is said."""
+    tools = _kitted_tools(tmp_path, briefed=False)
+    result = json.loads(tools.author_web_page(REJECTED_GEOMETRY_HTML))
+
+    assert result["status"] == "rejected", result
+    assert "LUMW0210" in _codes(result["diagnostics"])
+    assert "LUMW0306" not in _codes(result["advice"]), result
+    assert "LUMW0306" not in _codes(result["diagnostics"]), result
+    assert all(d.get("severity") != "advice" for d in result["diagnostics"])
+    # The patch flow repairs from exactly what the agent was handed.
+    assert result["diagnostics"] == tools._last_rejected_authoring["diagnostics"]
