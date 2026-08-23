@@ -242,9 +242,35 @@ def _logo_inventory(logos: JsonObject, manifest: JsonObject) -> list[JsonObject]
     return inventory
 
 
+def _image_area(image: Any, manifest: JsonObject) -> int:
+    """A kit image slot's pixel area from its asset record, or 0.
+
+    Same lookup `_pixel_field` does — the card ranks by exactly the number it
+    prints. A slot with no manifest entry, no record, or no dimensions has no
+    evidence of being large and ranks as 0 rather than being guessed at."""
+    if not isinstance(image, dict):
+        return 0
+    entry = manifest.get(image.get("asset_id")) if isinstance(manifest, dict) else None
+    record = (entry or {}).get("record") if isinstance(entry, dict) else None
+    dims = record_pixel_dims(record) if isinstance(record, dict) else None
+    return dims[0] * dims[1] if dims else 0
+
+
 def _image_inventory(images: JsonObject, manifest: JsonObject) -> list[JsonObject]:
     inventory = []
-    items = list(images.items())
+    # W1.5: rank by pixel area before the cap bites, ties keeping kit order —
+    # the SAME rule the W1.4 describe bound uses to choose which images get
+    # captioned (`lumen_ingestion.describe._select_for_describe`: `(-area,
+    # position)`). Website kits are already area-ordered at birth
+    # (`capture/parse.py`'s candidate sort), so for them this changes nothing;
+    # a PDF or manual kit has no such order, and taking its first 16 in
+    # insertion order could show the agent sixteen crops while the sixteen
+    # DESCRIBED assets were the large ones it never saw. Two inventories of the
+    # same kit that disagree about which sixteen matter is worse than either.
+    items = sorted(
+        images.items(),
+        key=lambda item: -_image_area(item[1], manifest),
+    )
     for image_id, image in items[:MAX_IMAGE_LIST]:
         if not isinstance(image, dict):
             continue

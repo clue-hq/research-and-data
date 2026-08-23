@@ -261,6 +261,67 @@ _PROVENANCE_SOURCE_MAX = 12
 _PROVENANCE_NODE_MAX = 20
 _PROVENANCE_NOTE_MAX_CHARS = 500
 
+#: The AGENT's asset-kind vocabulary keyed by the ENGINE's record kind — the
+#: W1.5 root cause, in one table.
+#:
+#: `AssetRecord.kind` is `raster_image` / `vector` / `logo` / `font`. Every
+#: surface the agent reads speaks a coarser language: the scene lane's contact
+#: sheet stamps `"logo" if record.kind == "logo" else "image"`, the brand card
+#: splits the kit into `logos` and `images`, and the imagery decision the
+#: director writes says "place an image". `search_assets` compared the two with
+#: `==`, so `kind="image"` — the word every one of those surfaces taught it —
+#: matched NOTHING and emptied the candidate set before matching ran. Five of
+#: the six searches in the 2026-08-20 acceptance run died exactly there.
+#:
+#: A record kind not listed here is an image: `vector` and `raster_image` are
+#: both pictures to a page author, and an unrecognized future kind degrades to
+#: the broadest bucket rather than becoming unfindable.
+_ASSET_DISPLAY_KINDS = {"logo": "logo", "font": "font"}
+
+#: Query words that carry no selection signal. Without this, "a photo of the
+#: globe" ranks every asset whose text contains "a" — any-token matching turns
+#: a stop word into a match-everything wildcard. Deliberately tiny and closed:
+#: a real vocabulary belongs to a search engine, not to a manifest scan.
+_ASSET_SEARCH_STOP_WORDS = frozenset(
+    {
+        "a", "an", "and", "are", "as", "at", "be", "by", "for", "from", "in",
+        "into", "is", "it", "of", "on", "or", "that", "the", "this", "to",
+        "with",
+    }
+)
+
+
+def _asset_display_kind(record: JsonObject) -> str:
+    """The agent-facing kind for an engine asset record (see
+    `_ASSET_DISPLAY_KINDS`)."""
+    return _ASSET_DISPLAY_KINDS.get(str(record.get("kind") or "").lower(), "image")
+
+
+def _asset_kind_matches(record: JsonObject, requested: str) -> bool:
+    """Whether an asset record satisfies a `search_assets` `kind` filter.
+
+    Both vocabularies are accepted — the agent's (`image`/`logo`/`font`) and the
+    engine's raw `AssetRecord.kind` — because the agent has been taught the
+    former by every surface it reads and the latter is what the record says. An
+    empty filter matches everything. ONE implementation: the search loop and the
+    named-id path must never disagree about what a kind filter means."""
+    if not requested:
+        return True
+    record_kind = str(record.get("kind") or "").lower()
+    return requested in {record_kind, _asset_display_kind(record)}
+
+
+def _asset_search_tokens(query_lower: str) -> List[str]:
+    """The distinct, meaningful tokens of a search query, in first-seen order.
+
+    Asset ids survive whole (`\\W+` keeps underscores), which is what lets a
+    bare id ride inside a longer query. Stop words are dropped — unless they are
+    ALL the query has, in which case the literal words the agent typed are
+    better than nothing."""
+    raw = list(dict.fromkeys(token for token in re.split(r"\W+", query_lower) if token))
+    meaningful = [token for token in raw if token not in _ASSET_SEARCH_STOP_WORDS]
+    return meaningful or raw
+
 
 def _font_mime_from_magic(data: bytes) -> str:
     """The web font MIME for `data` by its leading magic bytes; unknown → the
@@ -2873,16 +2934,27 @@ class LumenWebTools:
         }
 
     def _asset_search_result(
-        self, source: JsonObject, entry: JsonObject
+        self,
+        source: JsonObject,
+        entry: JsonObject,
+        *,
+        origin: str = "library",
+        id_match: bool = False,
+        kind_note: Optional[str] = None,
     ) -> JsonObject:
         record = entry.get("record") or {}
         raster = record.get("raster") or record.get("logo") or {}
         media = record.get("media") or {}
-        return {
+        asset_id = str(record.get("id") or "")
+        row: JsonObject = {
             "source_id": source.get("source_id"),
             "asset_id": record.get("id"),
             "label": source.get("label"),
             "kind": record.get("kind"),
+            # Which manifest answered decides which placement action works, so
+            # the row says it rather than making the agent guess and get a
+            # refusal (see the tool docstring's origin table).
+            "origin": origin,
             "mime_type": media.get("mime_type"),
             "filename": media.get("filename"),
             "width": raster.get("pixel_width") or raster.get("width"),
@@ -2894,17 +2966,112 @@ class LumenWebTools:
             "tags": source.get("tags"),
             "license": source.get("license"),
             "provenance": source.get("provenance"),
+            # W1.1: the literal target that shows this asset's real pixels. The
+            # trio is told to look before deciding; a result row that names the
+            # id but not the way to see it makes that one guess away.
+            "view": f"asset:{asset_id}",
         }
+        # W1.3's shared helper — the SOURCE dims, the number that decides whether
+        # an asset can carry a full-bleed band.
+        dims = record_pixel_dims(record) if isinstance(record, dict) else None
+        if dims:
+            row["px"] = f"{dims[0]}x{dims[1]}"
+        # W1.1 deferred finding: `use_library_asset` REFUSES a record whose
+        # status is not "ready". Hiding those rows would re-blind the agent, so
+        # they are annotated — placement will refuse, and now it knows why.
+        status = record.get("status")
+        if isinstance(status, str) and status and status != "ready":
+            row["status"] = status
+        if id_match:
+            row["id_match"] = True
+        if kind_note:
+            row["kind_note"] = kind_note
+        return row
+
+    def _asset_search_candidates(self) -> Dict[str, tuple]:
+        """Every asset this turn can name, as `{asset_id: (entry, origin)}`.
+
+        The three places an id legitimately lives — the workspace library, the
+        brand kit manifest, and the document's own registry — exactly as
+        `view("asset:<id>")` resolves them (W1.1). Searching only the library was
+        why an id the director read off the brand card could not be searched back.
+
+        Precedence on a duplicate id is library → brand kit → document, i.e.
+        richest metadata first: the library entry carries the W1.4 title /
+        description / usage / tags, the kit entry carries a title, and the
+        document registry value is a BARE record (it is upserted whole by
+        `_register_asset_record`, so it is wrapped here to match the entry shape).
+        """
+        candidates: Dict[str, tuple] = {}
+        sources: list[tuple[JsonObject, str, bool]] = [
+            (self.config.asset_library or {}, "library", True),
+            (self.config.brand_kit_assets or {}, "brand_kit", True),
+            (self.web_doc.get("assets") or {}, "document", False),
+        ]
+        for manifest, origin, wrapped in sources:
+            if not isinstance(manifest, dict):
+                continue
+            for asset_id, value in manifest.items():
+                if not isinstance(asset_id, str) or asset_id in candidates:
+                    continue
+                if wrapped:
+                    if not isinstance(value, dict):
+                        continue
+                    entry = value
+                    record = entry.get("record")
+                else:
+                    record = value
+                    entry = {"record": record}
+                if not isinstance(record, dict) or record.get("id") != asset_id:
+                    continue
+                candidates[asset_id] = (entry, origin)
+        return candidates
 
     def search_assets(
         self, q: str, kind: Optional[str] = None, limit: int = 8
     ) -> str:
-        """Search REAL non-archived workspace asset records passed by the API.
+        """Search the REAL assets this turn can place. No result is invented.
 
-        Matching covers asset id/label/filename/tags plus human or AI-authored
-        title, description, usage, and tags. Results include record provenance,
-        license, and digest; use `asset(action="use_library_asset",
-        asset_id=...)` to place an exact result. No result is invented.
+        SEARCHES all three inventories an asset id can come from, and every row
+        says which one answered under `origin`, because that decides how it is
+        placed:
+          - `library`  → `asset(action="use_library_asset", asset_id=...)`
+          - `brand_kit`→ `asset(action="use_brand_asset", asset_id=...)`
+          - `document` → already registered on this page; reference it with
+            `<img data-asset="<asset_id>">`.
+
+        MATCHES over asset id, label, filename, kind, the human/AI-authored
+        title, description and usage, and both tag lists.
+
+        `kind` accepts the words you already use — "image" (any picture:
+        `raster_image`, `vector`, anything new) or "logo" — as well as a raw
+        engine record kind. It NEVER silences an id you named: an asset whose id
+        is in the query comes back with its true `kind` and a `kind_note` saying
+        the filter did not match, rather than a silent zero.
+
+        RANKING, exactly, descending:
+          1. `id_match` rows — the query, or any of its whitespace/punctuation-
+             delimited tokens, IS an asset id — before everything else, in the
+             order the query names them.
+          2. then whole-query phrase match (the full query string appears in the
+             asset's searchable text): yes before no;
+          3. then the number of DISTINCT meaningful query tokens found (any one
+             hit is enough to be a result — a four-word query does not need all
+             four). A token matches as a SUBSTRING, so "payment" finds
+             "payments"; common function words are ignored so they cannot match
+             everything;
+          4. then pixel area (width x height from the record, 0 when it states
+             none) — bigger first, since a bigger asset carries more layouts;
+          5. then asset id ascending, so the order is reproducible.
+
+        EACH ROW carries the record's provenance, license and digest, plus
+        `px` ("WxH", omitted when the record states no dimensions), `view`
+        (paste into `view("asset:<id>")` to see the actual pixels before
+        choosing), and `status` ONLY when it is not "ready" — a non-ready record
+        is searchable and viewable, but placement will refuse it.
+
+        ZERO results always names the inventory that was searched, so "nothing
+        matched" is never confused with "nothing exists".
         """
         query = (q or "").strip()
         if not query:
@@ -2921,34 +3088,47 @@ class LumenWebTools:
                 "asset_search.bad_limit",
                 f"limit must be an integer from 1 to {_ASSET_SEARCH_LIMIT_MAX}.",
             )
-        manifest = self.config.asset_library
-        if not isinstance(manifest, dict):
-            return self._tool_error(
-                "asset_search.unavailable",
-                "the workspace asset library was not available for this turn.",
-            )
+        candidates = self._asset_search_candidates()
         normalized_kind = (kind or "").strip().lower()
         query_lower = query.lower()
-        tokens = [token for token in re.split(r"\W+", query_lower) if token]
-        scored: List[tuple[int, str, str, JsonObject]] = []
-        for asset_id, entry in manifest.items():
-            if not isinstance(entry, dict):
+        tokens = _asset_search_tokens(query_lower)
+
+        # The exact-id fast path. The live failures named an id INSIDE a longer
+        # query ("asset_ing_f8… payment card"), so equality against the whole
+        # query is not enough — any token that IS an id resolves, in query order.
+        named_ids = [
+            token
+            for token in dict.fromkeys([query_lower, *tokens])
+            if token in candidates
+        ]
+        id_hits: List[JsonObject] = []
+        for asset_id in named_ids:
+            entry, origin = candidates[asset_id]
+            record = entry.get("record") or {}
+            note = None
+            if not _asset_kind_matches(record, normalized_kind):
+                note = (
+                    f"you asked for kind={normalized_kind!r}; this asset's kind is "
+                    f"{str(record.get('kind') or 'unknown')!r}. Returned because "
+                    "you named its id."
+                )
+            id_hits.append(
+                {"asset_id": asset_id, "entry": entry, "origin": origin, "note": note}
+            )
+
+        scored: List[tuple] = []
+        for asset_id, (entry, origin) in candidates.items():
+            if asset_id in named_ids:
                 continue
-            record = entry.get("record")
-            if (
-                not isinstance(record, dict)
-                or record.get("status") != "ready"
-                or record.get("id") != asset_id
-            ):
-                continue
-            record_kind = str(record.get("kind") or "").lower()
-            if normalized_kind and record_kind != normalized_kind:
+            record = entry.get("record") or {}
+            if not _asset_kind_matches(record, normalized_kind):
                 continue
             media = record.get("media") or {}
             fields = [
                 asset_id,
                 record.get("label"),
                 media.get("filename"),
+                record.get("kind"),
                 entry.get("title"),
                 entry.get("description"),
                 entry.get("usage"),
@@ -2957,19 +3137,41 @@ class LumenWebTools:
             ]
             haystack = " ".join(str(field) for field in fields if field).lower()
             token_hits = sum(1 for token in tokens if token in haystack)
-            if query_lower not in haystack and token_hits == 0:
+            phrase_hit = 1 if query_lower in haystack else 0
+            if not phrase_hit and token_hits == 0:
                 continue
-            score = (100 if query_lower in haystack else 0) + token_hits * 10
-            label = str(record.get("label") or entry.get("title") or asset_id)
-            scored.append((score, label.lower(), asset_id, entry))
-        scored.sort(key=lambda item: (-item[0], item[1], item[2]))
+            dims = record_pixel_dims(record)
+            area = dims[0] * dims[1] if dims else 0
+            scored.append((-phrase_hit, -token_hits, -area, asset_id, entry, origin))
+        scored.sort(key=lambda item: item[:4])
 
         results: List[JsonObject] = []
-        for _, _, asset_id, entry in scored[:limit]:
+        ordered = [
+            (hit["asset_id"], hit["entry"], hit["origin"], True, hit["note"])
+            for hit in id_hits
+        ] + [(item[3], item[4], item[5], False, None) for item in scored]
+        for asset_id, entry, origin, id_match, note in ordered[:limit]:
             source = self._asset_grounding_source(asset_id, entry)
             if not self._register_grounding_source(source):
                 break
-            results.append(self._asset_search_result(source, entry))
+            results.append(
+                self._asset_search_result(
+                    source,
+                    entry,
+                    origin=origin,
+                    id_match=id_match,
+                    kind_note=note,
+                )
+            )
+        payload: JsonObject = {
+            "status": "ok",
+            "query": query,
+            "kind": normalized_kind or None,
+            "count": len(results),
+            "results": results,
+        }
+        if not results:
+            payload["note"] = self._asset_search_empty_note(query, normalized_kind)
         self.record(
             "agent",
             "web_assets_searched",
@@ -2982,15 +3184,28 @@ class LumenWebTools:
             },
             sink_extra={"result_count": len(results)},
         )
-        return json.dumps(
-            {
-                "status": "ok",
-                "query": query,
-                "kind": normalized_kind or None,
-                "count": len(results),
-                "results": results,
-            },
-            indent=2,
+        return json.dumps(payload, indent=2)
+
+    def _asset_search_empty_note(self, query: str, normalized_kind: str) -> str:
+        """What a zero-hit search says instead of handing back a bare empty list.
+
+        "0 results" and "there are no assets" are different facts and the agent
+        acted on them identically — it stopped asking. Naming the inventory it
+        just searched makes the difference legible, and makes an over-narrow
+        `kind` filter visible as the cause it usually is."""
+        document = len(self.web_doc.get("assets") or {})
+        kit = len(self.config.brand_kit_assets or {})
+        library = len(self.config.asset_library or {})
+        filter_clause = f" with kind={normalized_kind}" if normalized_kind else ""
+        note = (
+            f"0 results for {query!r}{filter_clause} across {document} document, "
+            f"{kit} brand kit, {library} library assets."
+        )
+        if document + kit + library == 0:
+            return note + " This turn was passed no asset inventory at all."
+        return note + (
+            " Try a single distinctive word, an exact asset id, or drop the "
+            "kind filter."
         )
 
     def provenance(
@@ -4499,6 +4714,13 @@ class LumenWebTools:
         if preview_dims and preview_dims != source_dims:
             details.append(f"preview {preview_dims[0]}x{preview_dims[1]}px")
         details.append(f"source {(record.get('source') or {}).get('kind') or 'unknown'}")
+        # W1.1 deferred finding: `use_library_asset` refuses a record whose status
+        # is not "ready", but it is still viewable — so say so here rather than
+        # letting the trio pick it and eat the refusal downstream. A "ready"
+        # record says nothing: the common case must not cost a line.
+        status = record.get("status")
+        if isinstance(status, str) and status and status != "ready":
+            details.append(f"status {status} — placement will refuse it")
         self.record(
             "agent", "web_view_called", input_summary=target, output_summary="asset_viewed"
         )

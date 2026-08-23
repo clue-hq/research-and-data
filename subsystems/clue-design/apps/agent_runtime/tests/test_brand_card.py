@@ -252,3 +252,95 @@ def test_color_role_block_omits_roles_the_kit_cannot_resolve() -> None:
     roles = build_brand_card(kit)["color_roles"]["roles"]
     assert "text.brand" not in roles
     assert "surface.brand" in roles
+
+
+# --- W1.5: the card's 16 are the SAME 16 the describe bound captions ----------
+#
+# W1.4 bounds captioning to every logo plus the top-16 images BY PIXEL AREA
+# (`lumen_ingestion.describe._select_for_describe`). The card took the first 16
+# in INSERTION order. For a website kit those agree — the harvest sorts
+# candidates by area at birth (`capture/parse.py:1087`) — but a PDF or manual
+# kit has no such order, so the card could show sixteen small crops while the
+# sixteen described assets were the large ones: an inventory of exactly the rows
+# whose descriptions are missing. The card now ranks the same way, off the same
+# manifest records it already reads for `px`.
+
+
+def _sized_images(sizes):
+    """`{slot: image}` in the given insertion order, plus the matching manifest."""
+    images = {}
+    manifest = {}
+    for index, (name, width, height) in enumerate(sizes):
+        asset_id = f"a_{name}"
+        images[f"img.{index}"] = {"asset_id": asset_id, "title": name}
+        manifest[asset_id] = {
+            "record": {"id": asset_id, "raster": {"pixel_width": width, "pixel_height": height}}
+        }
+    return images, manifest
+
+
+def test_card_shows_the_largest_images_when_insertion_order_is_not_area_order() -> None:
+    """A PDF-shaped kit: 18 slots, the two biggest last. Before W1.5 they were
+    the two the cap dropped."""
+    sizes = [(f"small{i}", 300, 200) for i in range(16)]
+    sizes += [("giant", 2400, 1600), ("large", 1800, 1200)]
+    images, manifest = _sized_images(sizes)
+    kit = _kit()
+    kit["assets"]["images"] = images
+
+    rows = build_brand_card(kit, asset_manifest=manifest)["images"]
+
+    assert [row["title"] for row in rows[:2]] == ["giant", "large"]
+    assert len(rows) == MAX_IMAGE_LIST + 1  # 16 rows + the truncation line
+    assert rows[-1]["note"].startswith("2 more asset(s) available")
+
+
+def test_card_is_byte_identical_for_an_already_area_ordered_kit() -> None:
+    """Website kits are area-ordered at birth, so the new sort must be a no-op
+    for them — same rows, same order, byte for byte."""
+    sizes = [(f"img{i}", 2400 - i * 100, 1600 - i * 50) for i in range(20)]
+    images, manifest = _sized_images(sizes)
+    kit = _kit()
+    kit["assets"]["images"] = images
+
+    rows = build_brand_card(kit, asset_manifest=manifest)["images"]
+
+    assert [row["title"] for row in rows[:MAX_IMAGE_LIST]] == [
+        f"img{i}" for i in range(MAX_IMAGE_LIST)
+    ]
+
+
+def test_equal_area_images_keep_their_insertion_order() -> None:
+    """Ties break on kit order — the same tie-break `_select_for_describe` uses,
+    so the two selections cannot diverge on a uniformly-sized kit."""
+    sizes = [(f"img{i}", 800, 600) for i in range(6)]
+    images, manifest = _sized_images(sizes)
+    kit = _kit()
+    kit["assets"]["images"] = images
+
+    rows = build_brand_card(kit, asset_manifest=manifest)["images"]
+
+    assert [row["title"] for row in rows] == [f"img{i}" for i in range(6)]
+
+
+def test_images_without_dimensions_sort_last_but_are_not_dropped() -> None:
+    """A record that states no size is not evidence of a big asset — it ranks
+    below every measured one, and is still shown when the cap allows."""
+    images, manifest = _sized_images([("small", 300, 200), ("big", 2000, 1500)])
+    images["img.9"] = {"asset_id": "a_unknown", "title": "unmeasured"}
+    kit = _kit()
+    kit["assets"]["images"] = images
+
+    rows = build_brand_card(kit, asset_manifest=manifest)["images"]
+
+    assert [row["title"] for row in rows] == ["big", "small", "unmeasured"]
+
+
+def test_ordering_is_unchanged_without_a_manifest() -> None:
+    """No manifest → no dimensions to rank by → the kit's own order stands."""
+    kit = _kit()
+    kit["assets"]["images"] = _images(5)
+
+    rows = build_brand_card(kit)["images"]
+
+    assert [row["title"] for row in rows] == [f"Image {i}" for i in range(5)]
