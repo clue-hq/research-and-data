@@ -209,6 +209,7 @@ export function EditorSurface({
               onSelectLayer={sceneSession.onSelectLayer}
               onSelectionChange={controller.selectInspectorElement}
               onToggleLayer={sceneSession.onToggleLayer}
+              pageless={sceneSession.pageless}
               palette={sceneSession.palette}
               selectedIds={sceneSession.selectedIds}
               selection={inspectorSelection}

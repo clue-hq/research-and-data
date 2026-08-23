@@ -5,6 +5,7 @@ import { useState, type ReactNode } from "react";
 import type { ZOrderAction } from "@/features/design-editor/adapter/scene-arrange";
 import { backgroundFillCommits } from "@/features/design-editor/adapter/scene-hydrate";
 import type { SceneImageAiBinding } from "@/features/design-editor/adapter/scene-image-ai";
+import { PAGELESS_SCENE_NOTICE } from "@/features/design-editor/adapter/scene-pageless";
 import type { ScenePalette } from "@/features/design-editor/adapter/scene-palette";
 import type { AlignMode } from "@/features/design-editor/engine/scene/alignDistribute";
 import type { SceneArrangeBinding } from "@/features/design-editor/hooks/use-scene-arrange";
@@ -413,9 +414,13 @@ function AdCanvasInspector({
   hydrated,
   inspectorDisabled = false,
   onSelectionChange,
+  pageless = false,
   ...binding
 }: AdSchemaBinding & {
   onSelectionChange: (selection: ChatShellInspectorSelection) => void;
+  /** genad2 Task 5: the open document has NO page yet (`pages: {}`) — see the
+   * refusal below. */
+  pageless?: boolean;
 }) {
   // G-H (AD4.R-10): this schema addresses the PAGE, which has no node lock —
   // the header renders no lock button here at all (`elementActions` is false for
@@ -499,6 +504,32 @@ function AdCanvasInspector({
     setCustomChosen(false);
     setValue("sizePreset", label);
   };
+  // genad2 Task 5 (contract b): a document with NO page has no size, no preset
+  // and no background — so this schema states none of them. Left to render, it
+  // would show `DEFAULT_STATE`'s invented `Linkedin square` preset and its
+  // `1200`/`1200` Custom boxes (the un-hydrated fixture seeds: a pageless scene
+  // hydrates nothing, so every bound field falls back to them), which is the
+  // exact "a field may not display a number the document does not have" defect
+  // the AD4.0 review has now caught three times. The Layers section goes too —
+  // a pageless document has no layers, and the fixture branch of `AdLayers`
+  // would paint the dummy's tree over one.
+  //
+  // The refusal sits AFTER the hooks above and before the rows, deliberately:
+  // an early return above them would reorder hooks on the turn that authors the
+  // first page.
+  //
+  // FOUNDER-DESIGN FLAG (open): plain text in this panel's own existing note
+  // idiom (`.inspectorStatusNote`, the same line the 409 reload note and the
+  // write errors use). Whether the inspector should say anything here at all —
+  // and if so in what treatment — is an unmade design decision; nothing styled
+  // is invented for it. See `scene-pageless.ts`.
+  if (pageless) {
+    return (
+      <p className={styles.inspectorStatusNote} role="status">
+        {PAGELESS_SCENE_NOTICE}
+      </p>
+    );
+  }
   return (
     <>
       <Section id="dimensions" label="Dimensions" open={state.openSections.dimensions} toggle={() => toggleSection("dimensions")}>
@@ -967,6 +998,7 @@ export function ImageInspector({
   note = null,
   onReplaceImage,
   onSelectionChange,
+  pageless = false,
   palette = null,
   selection,
   suppressAutoLayoutSection = false,
@@ -1004,6 +1036,13 @@ export function ImageInspector({
   inspectorDisabled?: boolean;
   /** AD2.7: a transient informational note (the 409 quiet reload). */
   note?: string | null;
+  /** genad2 Task 5: the open document has NO page yet — `open_design_leg@4`
+   * births a scene document with `pages: {}` and the design agent authors the
+   * first page in a later turn. The canvas schema refuses its page rows for that
+   * window rather than showing the fixture seeds over a document that measures
+   * nothing. Absent is `false`: the dummy fixture path and every page-bearing
+   * document behave exactly as they do today. */
+  pageless?: boolean;
   /** §1.3 row 1 (AD4.A step 2): the session's Replace-image flow — upload the
    * picked file, then place it in the selected node. Absent (the dummy fixture
    * path) keeps the control's local-preview-only behaviour. A rejection means
@@ -1102,7 +1141,7 @@ export function ImageInspector({
               {error}
             </p>
           ) : null}
-          {selection === "canvas" ? <AdCanvasInspector {...schema} /> : null}
+          {selection === "canvas" ? <AdCanvasInspector pageless={pageless} {...schema} /> : null}
           {selection === "text" ? <AdTextInspector arrange={arrange} fontOptions={fontOptions} {...schema} /> : null}
           {/* `onReplaceImage` and `imageAi` go to THIS schema alone — the rows
               are §1.3's — the way `fontOptions` goes only to the text schema. */}
@@ -1110,7 +1149,7 @@ export function ImageInspector({
           {dummySelection ? <AdDummyInspector arrange={arrange} selection={selection} suppressAutoLayoutSection={suppressAutoLayoutSection} {...schema} /> : null}
           {/* `"button"` is deliberately absent from this list: with its schema
               hidden (row 7) it falls through to the canvas default. */}
-          {!(["auto-layout", "canvas", "ellipse", "group", "image", "rectangle", "text"] as ChatShellInspectorSelection[]).includes(selection) ? <AdCanvasInspector {...schema} /> : null}
+          {!(["auto-layout", "canvas", "ellipse", "group", "image", "rectangle", "text"] as ChatShellInspectorSelection[]).includes(selection) ? <AdCanvasInspector pageless={pageless} {...schema} /> : null}
         </div>
       </aside>
     </ScenePaletteContext.Provider>

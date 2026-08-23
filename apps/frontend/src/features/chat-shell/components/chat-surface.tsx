@@ -372,6 +372,7 @@ export function ChatSurface({
                 onSelectLayer={sceneSession.onSelectLayer}
                 onSelectionChange={shell.selectInspectorElement}
                 onToggleLayer={sceneSession.onToggleLayer}
+                pageless={sceneSession.pageless}
                 palette={sceneSession.palette}
                 selectedIds={sceneSession.selectedIds}
                 selection={inspectorSelection}

@@ -10,6 +10,7 @@ import {
   type SceneSchemaSelection,
 } from "../adapter/scene-hydrate";
 import { sceneLayerRows, type SceneLayerRow } from "../adapter/scene-layers";
+import { isPagelessScene } from "../adapter/scene-pageless";
 import { buildScenePalette, type ScenePalette } from "../adapter/scene-palette";
 import {
   nextSceneSelection,
@@ -129,6 +130,12 @@ export function useSceneEditingSession({
       : null;
   const scene = live?.scene ?? null;
   const pageId = live?.pageId ?? null;
+  // genad2 Task 5: the loaded document has NO page at all (`open_design_leg@4`
+  // births a scene document with `pages: {}`; the design agent authors the first
+  // page in a later turn). Derived from the LIVE scene only — while nothing is
+  // loaded this is `false`, because "not answered yet" is a different fact from
+  // "the agent has not authored a page" and the panel must not confuse them.
+  const pageless = scene !== null && isPagelessScene(scene);
 
   // §1.7/§1.8: the additive selection. `[0]` is the primary — the node whose
   // schema the inspector renders and the row the panel scrolls to. Stamped
@@ -601,6 +608,11 @@ export function useSceneEditingSession({
     onToggleLayer,
     onWriteReload,
     onZoomChange,
+    /** genad2 Task 5: the open document has no page yet. The ad inspector's
+     * canvas schema states no size, preset or background for that window (it
+     * would otherwise show the un-hydrated fixture seeds — `1200`x`1200` — over
+     * a document that measures nothing); the canvas stage says so out loud. */
+    pageless,
     /** §1.6: the document's brand-kit colour palette, the way `fontOptions` is
      * exposed beside it — offered by every colour picker in the ad inspector,
      * and the vocabulary the token write rows validate against. `null` while

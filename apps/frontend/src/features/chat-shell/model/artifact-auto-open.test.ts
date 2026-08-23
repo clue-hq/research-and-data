@@ -168,6 +168,25 @@ test("a non-website artifact opens as an ad tab, matching the gallery rule", () 
   );
 });
 
+test("genad2 Task 5 (d): a ZERO-PAGE newborn ad still opens its tab", () => {
+  // `open_design_leg@4` births the ad with `pages: {}` — no artboard until a
+  // later agent turn authors one. The rule must NOT start suppressing that tab:
+  // the whole point of F2's auto-open is watching the design land, and the
+  // pageless neutral state (`scene-pageless.ts`) is what the tab shows while it
+  // has not. This decision reads only the feed card, which carries no page
+  // information at all, so a pageless ad is indistinguishable here — pinned so
+  // a future "don't open empty documents" instinct fails a test instead of
+  // silently breaking the birth flow.
+  assert.deepEqual(
+    artifactToAutoOpen({
+      activeThreadId: ACTIVE,
+      artifacts: [card("doc-pageless", { title: "LinkedIn ad", type: "canvas" })],
+      knownArtifactIds: new Set(),
+    }),
+    { id: "doc-pageless", kind: "ad", title: "LinkedIn ad" },
+  );
+});
+
 test("an empty feed decides nothing", () => {
   assert.equal(
     artifactToAutoOpen({

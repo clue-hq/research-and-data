@@ -12,6 +12,7 @@ import {
 import type { CanvasKit, Surface, TypefaceFontProvider } from "canvaskit-wasm";
 import { AlertTriangleIcon } from "lucide-react";
 import { sceneEngineBanners } from "../adapter/scene-engine-banners";
+import { scenePagelessNotice } from "../adapter/scene-pageless";
 import {
   ARTBOARD_BORDER_COLOR,
   ARTBOARD_SHADOW_COLOR,
@@ -468,6 +469,10 @@ function SceneDocumentCanvas({
   // after the first paint. AD4.C adds `preview`: a gesture in flight rebuilds
   // the tree with the dragged node's box substituted, which is how the moving
   // pixels reach the canvas without the scene being touched.
+  // genad2 Task 5: the loaded-but-pageless line, or null. Pure and derived —
+  // never a state that could survive the turn that authors the first page.
+  const pagelessNotice = scenePagelessNotice(scene, pageId);
+
   const artboard = useMemo(
     () => (scene ? sceneArtboardModel(scene, pageId, preview) : null),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- tokenGeneration
@@ -1257,6 +1262,34 @@ function SceneDocumentCanvas({
           AD4.C turns G-A's four corner handles on — the one thing Lane C was
           asked to pass, and nothing else about the overlay changes. */}
       <SelectionChrome handles={selectionHandles} outline={selectionOutline} />
+      {/* genad2 Task 5: the zero-page window, said out loud.
+       *
+       * `open_design_leg@4` births a chat-born ad as a document with `pages:
+       * {}`, so the tab opens (F2's auto-open is unchanged — the newborn ad
+       * still opens by itself; THIS is what it shows) onto a document that has
+       * no artboard yet. Without this the stage painted an unexplained empty
+       * workspace: no crash, but nothing to tell the user the agent simply has
+       * not authored the page yet.
+       *
+       * It renders here, inside the stage, for the same reason the G-D banners
+       * do: the stage is the one surface both mounts share, so the chats route
+       * and the artifact route get it with no plumbing, and the state it reads
+       * (`scene`, `pageId`) is already local. It deliberately does NOT suppress
+       * the canvas element — the workspace behind it is the honest empty
+       * surface, and the engine keeps its mounted surface for the turn that
+       * authors the first page.
+       *
+       * FOUNDER-DESIGN FLAG (open, 2026-08-23): only the WORDS are ratified.
+       * This ships as plain centred text on the empty workspace — the stage's
+       * existing empty-frame idiom — because the neutral state's visual
+       * (typography, illustration, placement, whether an illustration belongs
+       * here at all) is an unmade design decision, and the presentation-truth
+       * rule forbids inventing one. See `scene-pageless.ts`. */}
+      {pagelessNotice ? (
+        <p className={styles.pagelessNotice} role="status">
+          {pagelessNotice}
+        </p>
+      ) : null}
       {/* Gate G-D: the two engine-forced states, said out loud. */}
       <SceneEngineBanners
         engineStatus={engineStatus}

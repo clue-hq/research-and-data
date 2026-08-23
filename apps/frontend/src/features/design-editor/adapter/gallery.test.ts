@@ -239,6 +239,32 @@ test("G-H: an ad whose document records no page states no size", () => {
   assert.equal(normalized.collateralType, undefined);
 });
 
+test("genad2 Task 5 (c): a ZERO-PAGE newborn ad card is honest-empty, not hidden", () => {
+  // `open_design_leg@4` births a chat-born ad with `pages: {}`, so the feed row
+  // for it carries no `width_px`/`height_px` at all — the backend is already
+  // honest (it reports no page rather than a default), and this pins the
+  // frontend half of that: the card still appears, with its real id and title,
+  // and claims NOTHING it cannot measure. A fabricated 1080x1080 (the pre-G-H
+  // default) or a stock thumbnail here would be the gallery inventing a design
+  // that does not exist yet.
+  const artifact = toProjectArtifact(
+    listItem({
+      id: "doc-ad-newborn",
+      documentId: "doc-ad-newborn",
+      kind: "ad",
+      title: "LinkedIn ad",
+    }),
+    { now: NOW },
+  );
+  const normalized = normalizeGalleryArtifact(artifact);
+
+  assert.equal(normalized.id, "doc-ad-newborn");
+  assert.equal(normalized.title, "LinkedIn ad");
+  assert.equal(normalized.source.type, "canvas");
+  assert.equal(normalized.size, undefined);
+  assert.equal(normalized.imagePath, undefined);
+});
+
 test("G-H: an unrecognised artifact type is not forced into the vocabulary", () => {
   const artifact = toProjectArtifact(
     listItem({

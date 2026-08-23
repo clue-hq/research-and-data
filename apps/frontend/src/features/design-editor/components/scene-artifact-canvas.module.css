@@ -67,6 +67,34 @@
 }
 
 /*
+ * genad2 Task 5: the zero-page neutral state.
+ *
+ * FOUNDER-DESIGN FLAG (open, 2026-08-23) — this is NOT designed UI. The copy is
+ * ratified; the treatment is not, and the presentation-truth rule forbids this
+ * lane from inventing one. So it is deliberately the plainest thing that can be
+ * read: the shell's own body text, centred on the empty workspace the stage
+ * already paints, with no card, no border, no glyph and no colour of its own
+ * beyond the muted content token the rest of the shell uses for secondary text.
+ * A designed empty state supersedes every declaration here.
+ *
+ * `pointer-events: none` for the reason the banner layer has it: the workspace
+ * underneath keeps every gesture, and this line needs none.
+ */
+.pagelessNotice {
+  color: rgb(38 37 30 / 62%);
+  font-size: 13px;
+  left: 50%;
+  line-height: 18px;
+  margin: 0;
+  max-width: min(420px, calc(100% - 48px));
+  pointer-events: none;
+  position: absolute;
+  text-align: center;
+  top: 50%;
+  transform: translate(-50%, -50%);
+}
+
+/*
  * Gate G-D (founder, 2026-08-21): the engine-forced banners.
  *
  * The ruling was "as is from the MVP editor, no separate banner" — so this is

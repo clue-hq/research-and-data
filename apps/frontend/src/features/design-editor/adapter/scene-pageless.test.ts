@@ -1,0 +1,99 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { it } from "node:test";
+import { fileURLToPath } from "node:url";
+import type { Scene } from "../engine/scene/contracts";
+import { AD_PAGE_ID, HARVESTED_AD_PAGE } from "./__fixtures__/scene-nodes";
+import {
+  PAGELESS_SCENE_NOTICE,
+  isPagelessScene,
+  scenePagelessNotice,
+} from "./scene-pageless";
+
+/**
+ * genad2 Task 5 — the zero-page lifecycle.
+ *
+ * The platform now births a scene (ad) document with NO page at all
+ * (`open_design_leg@4`): the document exists, the artifact card exists, the tab
+ * auto-opens, and `pages` stays `{}` until the design agent authors the first
+ * page in a later turn. Every assertion below is about that window.
+ */
+
+/** The newborn shape: real meta, `pages: {}`, and nothing else authored yet. */
+const PAGELESS_SCENE: Scene = {
+  ...HARVESTED_AD_PAGE,
+  assets: {},
+  nodes: {},
+  pages: {},
+};
+
+it("a scene with no pages is pageless; the harvested ad is not", () => {
+  assert.equal(isPagelessScene(PAGELESS_SCENE), true);
+  assert.equal(isPagelessScene(HARVESTED_AD_PAGE), false);
+});
+
+it("the pageless notice is the ratified copy, verbatim", () => {
+  // Task-5 contract (a). The wording is the founder's, not this lane's — pinned
+  // here so a reword is a deliberate edit to a test, never a drift.
+  assert.equal(
+    PAGELESS_SCENE_NOTICE,
+    "Design hasn't created the page yet — it will appear when generation completes. Send a message to start (or retry).",
+  );
+});
+
+it("the pageless notice shows for a loaded zero-page scene", () => {
+  assert.equal(scenePagelessNotice(PAGELESS_SCENE, null), PAGELESS_SCENE_NOTICE);
+});
+
+it("a loading document says nothing at all", () => {
+  // Null scene is "not loaded yet", which is NOT the same fact as "the agent has
+  // not authored a page". Claiming the second while the first is true would be a
+  // fabrication of its own — the stage stays silent until the document answers.
+  assert.equal(scenePagelessNotice(null, null), null);
+});
+
+it("a page-bearing document never shows the notice", () => {
+  assert.equal(scenePagelessNotice(HARVESTED_AD_PAGE, AD_PAGE_ID), null);
+  // Defensive: a page-bearing scene whose page id has not resolved yet is still
+  // not pageless, so it earns no notice either.
+  assert.equal(scenePagelessNotice(HARVESTED_AD_PAGE, null), null);
+});
+
+/**
+ * Task-5 contract (b): the un-hydrated ad inspector's canvas schema fabricates
+ * `1200`/`1200` and a `Linkedin square` preset out of `DEFAULT_STATE` — values
+ * a pageless document does not have. The panel is a `.tsx` and cannot be
+ * imported under this runner (`tsx --test`, no DOM), so the placement of the
+ * refusal is pinned against the source literal — the same technique
+ * `scene-hydrate.test.ts` and `scene-engine-banners.test.ts` already use.
+ */
+const AD_INSPECTOR_SOURCE = readFileSync(
+  join(
+    dirname(fileURLToPath(import.meta.url)),
+    "..",
+    "..",
+    "chat-shell",
+    "components",
+    "image-inspector.tsx",
+  ),
+  "utf8",
+);
+
+it("the ad canvas schema refuses its page rows BEFORE it can render them", () => {
+  const schema = AD_INSPECTOR_SOURCE.indexOf("function AdCanvasInspector");
+  assert.notEqual(schema, -1, "AdCanvasInspector moved");
+  const body = AD_INSPECTOR_SOURCE.slice(schema);
+  const refusal = body.indexOf("if (pageless)");
+  // The Size select and the Custom W/H boxes — the exact rows that would show
+  // `DEFAULT_STATE`'s invented 1200x1200 over a document with no page.
+  const sizeRows = body.indexOf('ariaLabel="Custom width"');
+  assert.notEqual(refusal, -1, "AdCanvasInspector must have a pageless branch");
+  assert.notEqual(sizeRows, -1, "the canvas Custom-size rows moved");
+  assert.ok(
+    refusal < sizeRows,
+    "the pageless branch must return before the Size/Custom-size rows",
+  );
+  // And the placeholder is the one ratified sentence, not a second wording.
+  assert.ok(AD_INSPECTOR_SOURCE.includes("PAGELESS_SCENE_NOTICE"));
+});
