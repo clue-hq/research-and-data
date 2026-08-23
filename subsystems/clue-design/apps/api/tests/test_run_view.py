@@ -69,13 +69,28 @@ import asyncio
 import json
 import os
 import uuid
+from importlib.util import module_from_spec, spec_from_file_location
+from pathlib import Path
 
 import pytest
 
 from lumen_api.run_view import RunViewNotFound, assemble
 
 DB = os.environ.get("CLUE_DATABASE_URL", "").replace("+asyncpg", "")
-pytestmark = pytest.mark.skipif(not DB, reason="needs CLUE_DATABASE_URL")
+# Was a module-level `pytestmark` (Task 1: every test needed the DB). Task 2 adds a pure-unit
+# materializer test that must NOT be skipped just because this file's neighbours need Postgres,
+# so the skip is now per-test.
+needs_db = pytest.mark.skipif(not DB, reason="needs CLUE_DATABASE_URL")
+
+_CLI_PATH = Path(__file__).resolve().parents[3] / "scripts" / "run_view.py"
+
+
+def _cli():
+    """Load `scripts/run_view.py` as a module — it is a script, not an installed package."""
+    spec = spec_from_file_location("run_view_cli", _CLI_PATH)
+    module = module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def _scene(document_id: str, digest: str) -> dict:
@@ -195,6 +210,7 @@ async def _cleanup(conn, ws: str) -> None:
         await conn.execute("DELETE FROM workspace WHERE workspace_id=$1", ws)
 
 
+@needs_db
 def test_assemble_by_document_id_carries_scene_envelopes_and_asset_states(tmp_path):
     ws = f"ws_view_{uuid.uuid4().hex[:10]}"
     doc = f"doc_view_{uuid.uuid4().hex[:10]}"
@@ -231,6 +247,7 @@ def test_assemble_by_document_id_carries_scene_envelopes_and_asset_states(tmp_pa
     assert any("bundle" in g or "leg" in g for g in view.manifest["gaps"])  # no leg seeded
 
 
+@needs_db
 def test_assemble_finds_cache_resident_bytes(tmp_path):
     ws = f"ws_view_{uuid.uuid4().hex[:10]}"
     doc = f"doc_view_{uuid.uuid4().hex[:10]}"
@@ -263,6 +280,7 @@ def test_assemble_finds_cache_resident_bytes(tmp_path):
     assert asset.durable_row is False
 
 
+@needs_db
 def test_leg_that_bound_no_document_degrades_with_a_gap(tmp_path):
     """A leg that RESOLVED but bound no document is a view, not a raise.
 
@@ -307,11 +325,183 @@ def test_leg_that_bound_no_document_degrades_with_a_gap(tmp_path):
     assert any("bound no document" in g for g in view.manifest["gaps"])
 
 
+@needs_db
 def test_unknown_ref_raises_not_found(tmp_path):
     with pytest.raises(RunViewNotFound):
         asyncio.run(
             assemble(
                 "doc_view_definitely_absent",
+                database_url=DB,
+                asset_store_root=tmp_path,
+                storage_fs_root=tmp_path,
+            )
+        )
+
+
+def test_materialize_writes_the_layout(tmp_path):
+    from lumen_api.run_view import AssetView, RunView
+    from importlib.util import module_from_spec, spec_from_file_location
+
+    spec = spec_from_file_location(
+        "run_view_cli",
+        Path(__file__).resolve().parents[3] / "scripts" / "run_view.py",
+    )
+    cli = module_from_spec(spec); spec.loader.exec_module(cli)
+
+    blob = tmp_path / "cachefile"; blob.write_bytes(b"x")
+    view = RunView(
+        manifest={"ref": "doc_x", "gaps": []},
+        brief={"brief": "hello"},
+        scene={"meta": {"id": "doc_x"}},
+        envelopes=[{"seq": 1, "base_revision": 1, "intent": "i"}],
+        events=[{"seq": 1, "topic": "t", "payload": {}}],
+        assets=[AssetView("a1", "hero", "ab" * 32, None, blob, None, False)],
+    )
+    out = tmp_path / "out"
+    cli.materialize(view, out)
+    assert json.loads((out / "manifest.json").read_text())["ref"] == "doc_x"
+    assert json.loads((out / "brief.json").read_text()) == {"brief": "hello"}
+    assert (out / "envelopes" / "000-v1.json").exists()
+    assert (out / "events.jsonl").read_text().count("\n") == 1
+    (link,) = (out / "assets").iterdir()
+    assert link.is_symlink() and link.resolve() == blob.resolve()
+    assert "disposable" in (out / "README.md").read_text()
+
+
+def test_materialize_copies_bytes_and_says_so_when_an_asset_has_none(tmp_path):
+    """`--copy` writes real bytes; a byte-less asset is NAMED in the README, never silently
+    dropped — the whole point of the view is that absence is visible."""
+    from lumen_api.run_view import AssetView, RunView
+
+    cli = _cli()
+    blob = tmp_path / "cachefile"
+    blob.write_bytes(b"png")
+    view = RunView(
+        manifest={"ref": "doc_x", "gaps": ["one honest gap"]},
+        brief=None,
+        scene=None,
+        envelopes=[],
+        events=[],
+        assets=[
+            AssetView("a1", "hero", "ab" * 32, "image/png", None, blob, True),
+            AssetView("a2", None, None, None, None, None, False),
+        ],
+    )
+    out = tmp_path / "out"
+    cli.materialize(view, out, copy=True)
+
+    (copied,) = (out / "assets").iterdir()
+    assert not copied.is_symlink() and copied.read_bytes() == b"png"
+    assert copied.name == "hero--abababababab"
+    readme = (out / "README.md").read_text()
+    assert "a2" in readme and "one honest gap" in readme
+    # Absent sections are skipped silently — the manifest's `gaps` already names them.
+    assert not (out / "brief.json").exists()
+    assert not (out / "scene.current.json").exists()
+    assert not (out / "events.jsonl").exists()
+
+
+def test_materialize_replaces_a_previous_view_of_the_same_ref(tmp_path):
+    """Re-running the CLI on one ref must not leave the PREVIOUS run's envelopes and asset
+    links lying around — a stale file in a derived view is a lie, and a leftover symlink would
+    otherwise crash the second run outright."""
+    from lumen_api.run_view import AssetView, RunView
+
+    cli = _cli()
+    blob = tmp_path / "cachefile"
+    blob.write_bytes(b"x")
+    out = tmp_path / "out"
+    cli.materialize(
+        RunView(
+            manifest={"ref": "doc_x", "gaps": []},
+            brief={"brief": "old"},
+            scene=None,
+            envelopes=[{"seq": 1, "base_revision": 1}, {"seq": 2, "base_revision": 2}],
+            events=[],
+            assets=[AssetView("a1", "hero", "ab" * 32, None, blob, None, False)],
+        ),
+        out,
+    )
+    stray = out / "not-ours.txt"
+    stray.write_text("kept — materialize only clears what it wrote")
+
+    cli.materialize(
+        RunView(
+            manifest={"ref": "doc_x", "gaps": []},
+            brief=None,
+            scene=None,
+            envelopes=[{"seq": 9, "base_revision": 9}],
+            events=[],
+            assets=[AssetView("a1", "hero", "ab" * 32, None, blob, None, False)],
+        ),
+        out,
+    )
+    assert [p.name for p in sorted((out / "envelopes").iterdir())] == ["000-v9.json"]
+    assert not (out / "brief.json").exists()
+    assert len(list((out / "assets").iterdir())) == 1
+    assert stray.exists()
+
+
+@needs_db
+def test_cli_bridges_an_inner_deepagent_run_id_to_its_outer_run(tmp_path):
+    """The inner-id bridge (controller ruling 2026-08-23).
+
+    The trio's INNER deepagent run id — the one worker logs print — exists in NO durable table;
+    it survives only inside the OUTER design run's ``run_event`` payloads (evidence note 5). A
+    human pasting that id must still get the view, so on ``RunViewNotFound`` the CLI runs ONE
+    bounded payload search and re-assembles against the outer run, recording the indirection in
+    ``manifest['bridged_from']`` and a gap. The bridge lives in the CLI, not the assembler:
+    a substring match over JSON text is a paste-a-log-id affordance, not a substrate truth.
+    """
+    import asyncpg
+
+    cli = _cli()
+    ws = f"ws_view_{uuid.uuid4().hex[:10]}"
+    outer = f"run_{uuid.uuid4().hex}"
+    inner = f"run_{uuid.uuid4().hex}"
+
+    async def run():
+        conn = await asyncpg.connect(DB)
+        try:
+            try:
+                await conn.execute(
+                    "INSERT INTO workspace (workspace_id, name) VALUES ($1,'run view test')", ws
+                )
+                await conn.execute(
+                    "INSERT INTO run_event (workspace_id, topic, subject_kind, subject_id,"
+                    " payload) VALUES ($1,'design.run.completed','design_run',$2,$3)",
+                    ws,
+                    outer,
+                    json.dumps({"result": {"run_id": inner, "status": "ok"}}),
+                )
+                return await cli.load_view(
+                    inner,
+                    database_url=DB,
+                    asset_store_root=tmp_path / "cache",
+                    storage_fs_root=tmp_path / "blobs",
+                )
+            finally:
+                await conn.execute("DELETE FROM run_event WHERE workspace_id=$1", ws)
+                await _cleanup(conn, ws)
+        finally:
+            await conn.close()
+
+    view = asyncio.run(run())
+    assert view.manifest["ref"] == outer
+    assert view.manifest["bridged_from"] == inner
+    assert view.manifest["workspace_id"] == ws
+    assert [e["topic"] for e in view.events] == ["design.run.completed"]
+    assert any(inner in gap and outer in gap for gap in view.manifest["gaps"])
+
+
+@needs_db
+def test_cli_bridge_miss_stays_an_honest_not_found(tmp_path):
+    """A run id in no table and in no payload is simply unknown — never an invented one."""
+    cli = _cli()
+    with pytest.raises(RunViewNotFound):
+        asyncio.run(
+            cli.load_view(
+                f"run_{uuid.uuid4().hex}",
                 database_url=DB,
                 asset_store_root=tmp_path,
                 storage_fs_root=tmp_path,
