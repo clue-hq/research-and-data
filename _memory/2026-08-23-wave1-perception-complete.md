@@ -88,3 +88,28 @@ dependency; sequential Rust on the shared crate; two honest costs: Wave 3 walks
 run on the fragile page-voiding write path until W2.1; Wave 2's latency wins
 arrive later). Controller recommended pulling W2.1 alone ahead of G1.
 **Founder has not yet chosen** strict-Wave-3-first vs the W2.1 amendment.
+
+## Addendum 2026-08-23 (post-wave, founder-ordered): model defaults + gpt-image-2
+
+- **Model defaults flipped (6a416d7c8 + 94ea6c131):** agent model
+  `openai:x-ai/grok-4.6` + `LUMEN_AGENT_REASONING=high` everywhere (code
+  intrinsic default, root .env, both /tmp launch scripts, .env.example);
+  terra/luna retired; image model `openai/gpt-image-2`. The reasoning "high"
+  default supersedes the P3.2 "medium" gate finding (history preserved in the
+  test comment). CLUE_SYNTHESIS_MODEL / CLUE_JUDGE_MODEL (platform research)
+  deliberately untouched; describe/brief/vision stage models untouched per R4.
+- **gpt-image-2 transport (5a89c843d + c41970b67):** OpenRouter's dedicated
+  Images endpoint (POST {base}/images) via `IMAGE_MODEL_API_STYLE=images`
+  (config `image_model_api_style`, default chat — Gemini-class chat path proven
+  byte-identical). Body: prompt (+style framing when refs), aspect_ratio
+  snapped to the closed enum {1:1,3:2,2:3,4:3,3:4,16:9,9:16,21:9}, quality
+  always "high", background always "auto" (enum has NO transparent —
+  transparency is prose-hint best-effort), input_references as typed image_url
+  data: URLs (cap 16 asserted). Decode data[*].b64_json primary; url fallback
+  follows redirects + rejects non-image/* typed. FIRST-LIVE-CALL CHECKLIST
+  (key was weekly-limited): data: URLs accepted in input_references?; aspect
+  honored; style-vs-copy behavior of brand anchors under this model.
+- **Ops learning:** frontend on 3030 MUST launch with
+  CLUE_APP_ORIGIN=http://localhost:3030 (its .env.local pins 3020 → every
+  mutation POST 403s REQUEST_ORIGIN_FORBIDDEN). In the /tmp recipes' spirit —
+  add to any durable launch doc.
