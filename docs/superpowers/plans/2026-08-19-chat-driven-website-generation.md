@@ -327,7 +327,11 @@ carry web work, then makes the frontend show what the leg already emits.
 ### Slice 2 — document birth at leg-open + the versioning wave (backend; B2, B4, F5)
 - `open_design_leg@2`: `doc_kind: "web" | "scene" | None` (required when
   `document_id is None`; refuse `scene` creation in v1 — scene legs keep requiring an
-  existing document), optional `title`. Resolution path per §4.1: governed create,
+  existing document — **[SUPERSEDED 2026-08-23 — genad ruling 1: `open_design_leg@3`
+  births scene documents too, at a ratified format and brand-stamped; the `@2` refusal
+  described here is history. Plan:
+  `docs/superpowers/plans/2026-08-23-chat-driven-ad-creation.md`.]**), optional `title`.
+  Resolution path per §4.1: governed create,
   idempotency key derived from the turn/tool invocation, leg born with the document
   pinned; `OpenDesignLegOutput` gains `document_created: bool`.
 - Refusals stay typed and loud: runtime off; workspace mismatch; `doc_kind` missing on a
@@ -567,8 +571,11 @@ also needs `LUMEN_CORE_HELPER` (document birth shells to the engine) plus the fu
    plane, item 5).
 7. **Publishing/share chrome + public-URL routing** (master plan Part IV item 5; founder
    ruled tenant-subdomain v1) — own contract.
-8. **Scene-leg document creation** — v1 refuses `doc_kind="scene"` creation; the ad flow
-   keeps its editor-first shape.
+8. ~~**Scene-leg document creation** — v1 refuses `doc_kind="scene"` creation; the ad
+   flow keeps its editor-first shape.~~ **[SUPERSEDED 2026-08-23 — founder genad ruling
+   1 reverses the editor-first refusal: `open_design_leg@3` births scene documents at a
+   ratified format, brand-stamped, exactly as `@2` births web ones. Plan:
+   `docs/superpowers/plans/2026-08-23-chat-driven-ad-creation.md`.]**
 
 ## 9. Effort
 

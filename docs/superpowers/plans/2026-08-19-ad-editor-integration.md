@@ -116,6 +116,10 @@ parity to the dummy shell and zero invented UI.
   create** scene documents (`design_leg_tools.py:731-737`,
   `design_leg_scene_creation_unsupported` — "scene artifacts are made in the editor"), and
   `focus_refs` never reach `target_node_ids`.
+  **[STATUS-AS-OF-2026-08-19; the scene-creation clause is SUPERSEDED 2026-08-23 —
+  founder genad ruling 1 reverses the editor-first refusal and `open_design_leg@3`
+  births scene documents at a ratified format, brand-stamped:
+  `docs/superpowers/plans/2026-08-23-chat-driven-ad-creation.md`.]**
 - **Platform frontend**: zero scene modules — no canvaskit-wasm dep, no wasm, no scene engine,
   no scene adapter. What IS there (lifted in W0, inert): `image-inspector.tsx` (357 L, untrimmed
   dummy schemas), `image-export-menu.tsx` + `use-image-export-controller.ts` + `model/
@@ -150,7 +154,11 @@ Backend/platform:
   microsite hardcode) — scene documents invisible in the rail.
 - **G-A2** No scene accept/commit path on the platform: leg-dispatched scene turns produce
   proposals nobody applies. (Deferred to the chat-loop plan, §7 — but the decision shapes AD1.)
-- **G-A3** Legs cannot create scene documents (typed refusal, v1 ruling "editor-first").
+- **G-A3** ~~Legs cannot create scene documents (typed refusal, v1 ruling
+  "editor-first").~~ **[SUPERSEDED 2026-08-23 — founder genad ruling 1 reverses the
+  editor-first ruling; `open_design_leg@3` births scene documents at a ratified format,
+  brand-stamped. Gap closed by
+  `docs/superpowers/plans/2026-08-23-chat-driven-ad-creation.md`.]**
 - **G-A4** `focus_refs` not threaded to `target_node_ids` on scene envelopes.
 - **G-A5** No thumbnail/preview read for scene cards (web has `/web/render`; scenes have only
   `/export-preview` — cost untested; current ratified ruling is "real documents have no

@@ -1624,6 +1624,14 @@ document existed, the leg named it, and the gallery dropped it. Nothing else abo
 changed — the wire shape, the ordering (`updated_at DESC`), the workspace fail-closed posture,
 and the leg-derived project binding are untouched, and `doc_kind` itself is never leaked.
 
+**[AMENDED 2026-08-23 — ads can now be CHAT-BORN.** Founder genad ruling 1 reverses the v1
+"a design leg cannot create a scene document" refusal: `open_design_leg@3` births a scene
+document at a ratified format, brand-stamped, the way `@2` already births web ones. So a
+`kind: "ad"` card appears in this feed **at leg-open**, before any generation turn has run —
+not only for editor-seeded documents. The read itself is unchanged (the leg names the new
+document at birth, satisfying durable contract rule 1 above). Plan:
+`docs/superpowers/plans/2026-08-23-chat-driven-ad-creation.md`.]**
+
 **Resolved frontend mapping (`toProjectArtifact`):**
 
 | wire `kind` | `type` | `collateralType` | `imagePath` |

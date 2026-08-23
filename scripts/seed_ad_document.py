@@ -26,6 +26,16 @@ which planted an EMPTY scene. Two deliberate differences:
   `design_leg_scene_creation_unsupported`). So the leg arrangement is copied from the
   AD0.5 seeder, deterministic ids and all.
 
+  **[SUPERSEDED 2026-08-23 — genad ruling 1 REVERSES the refusal: `open_design_leg@3`
+  now births scene documents itself, at a ratified format and brand-stamped, so a
+  chat-born ad no longer needs a seeder at all. Plan:
+  `docs/superpowers/plans/2026-08-23-chat-driven-ad-creation.md`. THIS SCRIPT STAYS
+  VALID — a birth mints a single ratified-format page, while this seeder plants the
+  richer harvested tree (Frame / AutoLayout / Text / Image / Rect / Ellipse / Group /
+  Line) that the AD2–AD4 adapters are TDD'd against. Only the reason the leg rows are
+  hand-written has changed: it is now the missing `agent_thread`/`execution` mint, not
+  a scene-creation refusal.]**
+
 Every id below is deterministic, so a re-run reports the existing rows instead of
 minting a second document/leg. ``--recreate`` tears the seeded rows down first.
 
