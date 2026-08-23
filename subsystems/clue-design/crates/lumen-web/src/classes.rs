@@ -158,12 +158,14 @@ const KNOWN_UTILITIES: &[&str] = &[
 
 /// Stock all-corner radius steps — the WHOLE v4 ramp, `xs` and `4xl` included.
 /// Both are legal Tailwind v4 names that lint clean, so leaving either out
-/// would hand the author a silent way to dodge the advice. Side/corner variants
-/// (`rounded-t-*`, `rounded-tl-*`) are deliberately absent: a side radius is
+/// would hand the author a silent way to dodge the advice.
+///
+/// `none` is absent for the same reason `shadow-none` is: a square corner is a
+/// decision, not drift away from the brand's measured radius. Side/corner
+/// variants (`rounded-t-*`, `rounded-tl-*`) are absent too — a side radius is
 /// compositional and has no brand utility to prefer.
-const STOCK_RADIUS_STEPS: &[&str] = &[
-    "none", "xs", "sm", "md", "lg", "xl", "2xl", "3xl", "4xl", "full",
-];
+const STOCK_RADIUS_STEPS: &[&str] =
+    &["xs", "sm", "md", "lg", "xl", "2xl", "3xl", "4xl", "full"];
 
 /// Stock elevation steps. `none` is absent on purpose — removing a shadow is a
 /// legitimate design decision, not drift away from the brand's measured one.
@@ -812,7 +814,6 @@ mod tests {
     fn briefed_raw_radius_and_shadow_get_advice() {
         for token in [
             "rounded",
-            "rounded-none",
             "rounded-xs",
             "rounded-sm",
             "rounded-md",
@@ -855,8 +856,10 @@ mod tests {
             "rounded-badge",
             "shadow-brand",
             "shadow-card",
-            // Removal is a decision, not drift.
+            // Removal is a decision, not drift — for a corner as much as for
+            // an elevation.
             "shadow-none",
+            "rounded-none",
             // Side/corner radius is compositional — no utility exists.
             "rounded-t-lg",
             "rounded-tl-lg",

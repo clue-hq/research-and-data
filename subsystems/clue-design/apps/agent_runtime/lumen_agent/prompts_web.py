@@ -295,7 +295,8 @@ Tailwind step (`rounded-2xl`, `shadow-lg`, `py-20`, `p-6`) is a shape this brand
 may not actually use. Each utility resolves the pinned kit's own measured value
 and falls back to a platform default when the brand measured nothing, so it is
 always safe to write. On a kit that carries a Creative Brief, a raw value where
-one of these exists is a defect the reviewer will flag (advisory, not blocking).
+one of these exists is a deviation the reviewer will note (advisory, never
+blocking).
 The create-website skill has the full block; the mechanics live there.
 
 ICONS — `<i data-icon="NAME"></i>` accepts ONLY these names:
