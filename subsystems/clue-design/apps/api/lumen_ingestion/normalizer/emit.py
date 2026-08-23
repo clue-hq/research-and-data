@@ -478,6 +478,12 @@ def _merge_style_tags(existing: list[str], tags: list[str]) -> list[str]:
 def _confidence_for(basis: str) -> float:
     if basis == "evidence":
         return 0.9
+    # Read off the brand's own rendered page, but a cluster representative
+    # rather than a single observed swatch — `geometry.MEASURED_CONFIDENCE`
+    # explains the 0.8. Named here so a caller passing basis="measured" without
+    # an explicit override cannot silently land on the 0.3 default arm.
+    if basis == "measured":
+        return MEASURED_CONFIDENCE
     if basis == "derived":
         return 0.6
     return 0.3

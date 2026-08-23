@@ -428,6 +428,41 @@ def test_gradient_and_image_bands_name_nothing() -> None:
     ] == "#C80A0A"
 
 
+def test_a_translucent_band_names_nothing() -> None:
+    """The capture drops only FULLY transparent backgrounds.
+
+    So a band painted `rgba(20, 40, 120, 0.04)` — which a visitor sees as
+    barely-tinted white — arrives as the 8-digit `#1428780A`, and every reader
+    downstream (OKLab, luminance, the web theme) ignores that alpha byte. Left
+    unrefused it minted `surface.band.statement = #1428780A`: classified DARK,
+    with the alpha riding into the kit. Same dishonesty class as a gradient.
+    """
+    kit = _normalize(
+        _synthetic(
+            [
+                _section(0, "rgb(255, 255, 255)", 900),
+                _section(1, "rgba(20, 40, 120, 0.04)", 900),
+                _section(2, "rgba(20, 40, 120, 0.04)", 900),
+            ]
+        )
+    )
+    assert _bands(kit) == {}
+
+    # The control: the same navy, painted opaque, IS a brand surface.
+    opaque = _normalize(
+        _synthetic(
+            [
+                _section(0, "rgb(255, 255, 255)", 900),
+                _section(1, "rgb(20, 40, 120)", 900),
+                _section(2, "rgb(20, 40, 120)", 900),
+            ]
+        )
+    )
+    assert opaque["tokens"]["colors"]["surface.band.statement"]["value"]["default"][
+        "value"
+    ] == "#142878"
+
+
 def test_a_single_small_band_names_nothing_but_a_dominant_one_does() -> None:
     quiet = _normalize(
         _synthetic(

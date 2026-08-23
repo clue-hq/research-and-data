@@ -16,8 +16,13 @@ rendered page, which is why these tokens carry `MEASURED_CONFIDENCE` and a
 
 Three rules keep the mint honest, and each one is a refusal:
 
-* a band whose background is a gradient or an image is not a flat surface, so
-  it names nothing (its hex would be a lie about what the page shows);
+* a band whose background is a gradient, an image, or TRANSLUCENT is not a
+  flat opaque surface, so it names nothing — its hex is not what the page
+  shows. The translucent case is the sneaky one: the capture only discards a
+  *fully* transparent background, so a band painted `rgba(20, 40, 120, 0.04)`
+  arrives as `#1428780A`, and nothing downstream reads that alpha byte — it
+  would be minted as a near-black statement surface when the page renders it
+  as barely-tinted white, and the alpha would ride into the web theme;
 * a group already within merge distance of a color the kit carries names
   nothing — Stripe's five white bands are `surface.page`/`text.inverse` doing
   their job, not five new tokens;
@@ -37,12 +42,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from ..colorspace import hex_to_oklab, oklab_distance, relative_luminance
+from ..colorspace import hex_alpha, hex_to_oklab, oklab_distance, relative_luminance
 from ..evidence import SectionBackground
+from .cluster import MERGE_DISTANCE
 
-# The same OKLab tolerance `cluster.py` merges evidence colors at — two bands a
-# human would call "the same navy" must not become two tokens.
-MERGE_DISTANCE = 0.03
+# `MERGE_DISTANCE` is `cluster.py`'s — two bands a human would call "the same
+# navy" must not become two tokens, and the dedupe below is only correct while
+# bands and evidence colors agree on what "the same color" means.
+#
 # A single band this share of the measured scroll is a statement surface, not a
 # one-off: one huge band still earns a name without needing to repeat.
 HEIGHT_SHARE = 0.20
@@ -98,7 +105,14 @@ def build_band_surfaces(
     usable = [
         band
         for band in sequence
-        if band.background and not band.gradient and not band.has_image
+        if band.background
+        and not band.gradient
+        and not band.has_image
+        # Opaque only. A translucent band's stored hex describes the paint, not
+        # the pixels — and every reader downstream (OKLab, luminance, the web
+        # theme) ignores the alpha byte, so minting it would be a lie twice
+        # over. The band still shows in the rhythm; it just names nothing.
+        and hex_alpha(band.background) >= 1.0
     ]
     if not usable:
         return []

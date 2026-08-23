@@ -14,7 +14,11 @@ from dataclasses import dataclass, field
 from ..colorspace import hex_alpha, hex_to_oklab, hex_to_rgb, oklab_distance, oklab_to_hex, rgb_to_hex
 from ..evidence import ColorEvidence
 
-_MERGE_DISTANCE = 0.03
+#: The OKLab distance at which two colors are the same color. Public because
+#: `bands.py` groups and dedupes measured band backgrounds at the same
+#: tolerance, and its dedupe is only correct while the two agree — a band that
+#: merged into an evidence cluster must also recognize that cluster's color.
+MERGE_DISTANCE = 0.03
 _MIN_ALPHA = 0.05
 
 
@@ -77,7 +81,7 @@ def _cluster_theme(colors: list[ColorEvidence], theme: str) -> list[ColorCluster
         placed = False
         for acc in accumulators:
             mean = _mean(acc)
-            if oklab_distance(mean, lab) <= _MERGE_DISTANCE:
+            if oklab_distance(mean, lab) <= MERGE_DISTANCE:
                 acc.members.append(color)
                 acc.lab_sum = _add(acc.lab_sum, _scale(lab, color.weight))
                 acc.weight += color.weight
