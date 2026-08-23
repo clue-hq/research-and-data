@@ -1430,6 +1430,42 @@ function pxPage(width: number, height: number): PageSize {
   };
 }
 
+/** genad2 Task 6: the same expectation for a PHYSICAL page — the shape
+ * `normalizePageSize` mints for `mm`/`in`. The conversion is restated here
+ * (rather than borrowed from the port) so the expected numbers are this test's
+ * own statement; the expression order matches `pageGeometry.ts::unitToPoints`
+ * exactly, because float multiplication is not associative. */
+function physicalPage(
+  width: number,
+  height: number,
+  unit: "in" | "mm",
+): PageSize {
+  const toPoints = (value: number) =>
+    unit === "mm" ? (value * 72) / 25.4 : value * 72;
+  return {
+    height: toPoints(height),
+    orientation: width > height ? "landscape" : "portrait",
+    output: { physical: { height, unit, width } },
+    preset: "custom",
+    source: { height, unit, width },
+    unit: "pt",
+    width: toPoints(width),
+  };
+}
+
+/** genad2 Task 6: a `pt` page. `pt` is already the canonical unit, so the
+ * normalizer mints NO `output` at all — the key is absent, not undefined. */
+function ptPage(width: number, height: number): PageSize {
+  return {
+    height,
+    orientation: width > height ? "landscape" : "portrait",
+    preset: "custom",
+    source: { height, unit: "pt", width },
+    unit: "pt",
+    width,
+  };
+}
+
 it("§1.1 Size preset: each of the three ratified labels writes its exact px size", () => {
   const presets: [string, number, number][] = [
     ["Linkedin square (1:1) - 1200x1200", 1200, 1200],
@@ -1463,7 +1499,7 @@ it("§1.1 Size preset: a label the select does not offer writes nothing", () => 
 });
 
 it("§1.1 Custom W: the typed width keeps the HEIGHT the inspector is showing", () => {
-  // The harvested page displays 1200x1200 px (hydrate's `pagePixelSize` reads
+  // The harvested page displays 1200x1200 px (hydrate's `pageDisplaySize` reads
   // `output.raster` first), so a width edit must land 1080x1200.
   assert.deepEqual(
     applyCanvas("customWidth", "1080"),
@@ -1499,14 +1535,70 @@ it("§1.1 Custom W/H: the preserved dimension is what the panel DISPLAYS, not th
   );
 });
 
-it("§1.1 Custom W/H: the written size is CANONICAL whatever unit the stored page carries", () => {
-  // ONE field edited: the page's geometry unit. Scope, corrected after review —
-  // this does NOT discriminate against the plan's `{...page.size}` spread,
-  // which forces `unit:"px"` of its own accord, and `pagePixelSize` reads the
-  // raster rather than the unit, so both routes ignore the `mm` here. What it
-  // pins is that the OUTPUT is the engine's canonical shape and is independent
-  // of the stored unit: a `pt` box, a freshly minted px `source` and raster —
-  // never the page's own `mm` riding through.
+/**
+ * CONSCIOUS TRIP-WIRE REWRITE — 2026-08-23, genad2 Task 6
+ * (`docs/superpowers/plans/2026-08-23-agent-authored-pages.md`).
+ *
+ * This slot used to hold "§1.1 Custom W/H: the written size is CANONICAL
+ * whatever unit the stored page carries", which pinned that a page carrying
+ * `mm` still wrote px. That pin was written when §1.1 was px-only and the only
+ * page in the world was the seeded 1200x1200 ad; under the agent-authored-pages
+ * ruling the design agent births pages in mm and in, and the behaviour it
+ * guarded is DATA LOSS — an A4 page's width edit silently converted the
+ * document to raster and dropped `output.physical`.
+ *
+ * The half of it that was never about destruction survives verbatim below as
+ * the source-precedence pin: what the write reads is the page's AUTHORED unit
+ * (`size.source.unit`), not the stale box unit, so the original fixture — a px
+ * source under a hand-edited `mm` box — still writes px, and the output is
+ * still the engine's canonical shape rather than a `{...page.size}` spread.
+ */
+it("Task 6: an mm page's H commit stays MILLIMETRES and keeps output.physical", () => {
+  const scene = clone(SCENE);
+  scene.pages[AD_PAGE_ID].size = normalizePageSize({
+    height: 297,
+    preset: "a4",
+    unit: "mm",
+    width: 210,
+  });
+  assert.deepEqual(
+    applyCanvas("customHeight", "300", scene),
+    updatePage(AD_PAGE_ID, {
+      size: set(physicalPage(210, 300, "mm")),
+    }),
+  );
+  // The destroyed facts, named one at a time so a regression says which.
+  const operation = applyCanvas("customHeight", "300", scene);
+  assert.ok(operation && operation.kind === "update_page");
+  const size = operation.patch.size;
+  assert.ok(size.kind === "set");
+  assert.deepEqual(size.value.output, {
+    physical: { height: 300, unit: "mm", width: 210 },
+  });
+  assert.equal(size.value.source?.unit, "mm");
+  assert.equal(size.value.output?.raster, undefined);
+});
+
+it("Task 6: an inches page's W commit stays INCHES", () => {
+  const scene = clone(SCENE);
+  scene.pages[AD_PAGE_ID].size = normalizePageSize({
+    height: 11,
+    preset: "us_letter",
+    unit: "in",
+    width: 8.5,
+  });
+  assert.deepEqual(
+    applyCanvas("customWidth", "17", scene),
+    updatePage(AD_PAGE_ID, { size: set(physicalPage(17, 11, "in")) }),
+  );
+});
+
+it("Task 6: the AUTHORED unit decides, not the stored box unit", () => {
+  // The original pin's fixture, kept: ONE field edited (the page's geometry
+  // unit) over a px `source`. `pageDisplaySize` reads the source, so the `mm`
+  // here is the stale box it always was and the write is still canonical px —
+  // a `pt` box, a freshly minted px source and raster, never the `mm` riding
+  // through and never the plan's `{...page.size}` spread.
   const scene = clone(SCENE);
   scene.pages[AD_PAGE_ID].size.unit = "mm";
   assert.deepEqual(
@@ -1515,10 +1607,55 @@ it("§1.1 Custom W/H: the written size is CANONICAL whatever unit the stored pag
   );
 });
 
-/** A page whose DISPLAYED px size is not a usable number: the px metadata is
- * dropped so `pagePixelSize` falls through to the layout box (its documented
- * last resort), and that box carries the degenerate value. Derived from the
- * harvest, one dimension at a time. */
+it("Task 6: the stored preset survives a commit that still matches it, and only then", () => {
+  // Engine semantics (`lumen-core/page_geometry.rs::page_size_for_preset`): a4
+  // is 210x297 mm short-side-first, so a re-typed 297 is still A4 (portrait or
+  // landscape) and anything else is `custom`. Before this, EVERY W/H commit
+  // stamped `custom` — a no-op re-type demoted an A4 document to a custom size.
+  const a4 = clone(SCENE);
+  a4.pages[AD_PAGE_ID].size = normalizePageSize({
+    height: 297,
+    preset: "a4",
+    unit: "mm",
+    width: 210,
+  });
+  const preserved = applyCanvas("customHeight", "297", a4);
+  assert.ok(preserved && preserved.kind === "update_page");
+  assert.ok(preserved.patch.size.kind === "set");
+  assert.equal(preserved.patch.size.value.preset, "a4");
+  const demoted = applyCanvas("customHeight", "300", a4);
+  assert.ok(demoted && demoted.kind === "update_page");
+  assert.ok(demoted.patch.size.kind === "set");
+  assert.equal(demoted.patch.size.value.preset, "custom");
+});
+
+it("Task 6: px pages keep stamping custom — the preset row's labels are CLIENT vocabulary", () => {
+  // The three select labels are px sizes this client named; none of them is an
+  // engine `PagePreset`, so that row writes `custom` exactly as it always did,
+  // and a `linkedin_ad` page resized to one of them is no longer a linkedin_ad.
+  const banner = clone(SCENE);
+  banner.pages[AD_PAGE_ID].size = normalizePageSize({
+    height: 627,
+    preset: "linkedin_ad",
+    unit: "px",
+    width: 1200,
+  });
+  assert.deepEqual(
+    applyCanvas("sizePreset", "Story (9:16) - 1080x1920", banner),
+    updatePage(AD_PAGE_ID, { size: set(pxPage(1080, 1920)) }),
+  );
+  // Its own numbers re-typed, though, are still a linkedin_ad banner.
+  const preserved = applyCanvas("customHeight", "627", banner);
+  assert.ok(preserved && preserved.kind === "update_page");
+  assert.ok(preserved.patch.size.kind === "set");
+  assert.equal(preserved.patch.size.value.preset, "linkedin_ad");
+});
+
+/** A page whose DISPLAYED size is not a usable number: the px metadata is
+ * dropped so `pageDisplaySize` falls through to the canonical box (its
+ * documented last resort), and that box carries the degenerate value. Derived
+ * from the harvest, one dimension at a time. Note the box is a `pt` box, so
+ * this page displays — and commits — `pt`; see the repair assertions below. */
 function degeneratePage(axis: "height" | "width", value: number): Scene {
   const scene = clone(SCENE);
   const page = scene.pages[AD_PAGE_ID];
@@ -1548,13 +1685,20 @@ it("§1.1 Custom W/H: a preserved dimension that is not a usable px number is RE
   // The refusal is about the PRESERVED dimension only, so the broken axis is
   // still repairable by typing into it — the typed number replaces the value
   // that could not be stated, and nothing is guessed. Both axes, symmetrically.
+  //
+  // genad2 Task 6: the repair writes `pt`, not px. Stripping the px metadata is
+  // exactly what makes this page fall through to the canonical box, and the box
+  // is a `pt` box — so `pt` is what the panel now DISPLAYS for it, and the
+  // commit lands in the unit the panel is showing. Nothing about this page ever
+  // said px; the old expectation was §1.1's px hard-code, not a fact of the
+  // document.
   assert.deepEqual(
     applyCanvas("customHeight", "1080", degeneratePage("height", 0)),
-    updatePage(AD_PAGE_ID, { size: set(pxPage(1200, 1080)) }),
+    updatePage(AD_PAGE_ID, { size: set(ptPage(1200, 1080)) }),
   );
   assert.deepEqual(
     applyCanvas("customWidth", "1080", degeneratePage("width", 0)),
-    updatePage(AD_PAGE_ID, { size: set(pxPage(1080, 1200)) }),
+    updatePage(AD_PAGE_ID, { size: set(ptPage(1080, 1200)) }),
   );
 });
 

@@ -536,9 +536,20 @@ function AdCanvasInspector({
         <InspectorField label="Size"><InspectorSelect disabled={inspectorDisabled} label="Canvas dimensions" onChange={changeSizePreset} options={SIZE_PRESETS} value={shownPreset} /></InspectorField>
         {shownPreset === "Custom" ? (
           <InspectorField label="Custom size">
+            {/* genad2 Task 6: `suffix` states the UNIT these two numbers are in
+                — the page's own, hydrated (`pageDisplaySize`): `px` on the
+                seeded ad, `mm` on an agent-authored A4, `in` on a US Letter.
+                It is the inert-text idiom the Rotation (°) and Opacity (%)
+                rows already use, and it is all this row gains: no unit
+                selector, no orientation or bleed controls. Changing a page's
+                unit is page SETUP, which the design agent owns.
+                Read off `hydrated` rather than `state`, like the header's
+                `title` — it is a display fact with no control behind it — so
+                the dummy fixture path (no `hydrated`) renders exactly what it
+                always did. The commit lands in this same unit. */}
             <div className={styles.fieldGrid}>
-              <InspectorInput ariaLabel="Custom width" disabled={inspectorDisabled} onCommitValue={(value) => setValue("customWidth", value)} prefix="W" value={state.customWidth} />
-              <InspectorInput ariaLabel="Custom height" disabled={inspectorDisabled} onCommitValue={(value) => setValue("customHeight", value)} prefix="H" value={state.customHeight} />
+              <InspectorInput ariaLabel="Custom width" disabled={inspectorDisabled} onCommitValue={(value) => setValue("customWidth", value)} prefix="W" suffix={hydrated?.customSizeUnit} value={state.customWidth} />
+              <InspectorInput ariaLabel="Custom height" disabled={inspectorDisabled} onCommitValue={(value) => setValue("customHeight", value)} prefix="H" suffix={hydrated?.customSizeUnit} value={state.customHeight} />
             </div>
           </InspectorField>
         ) : null}

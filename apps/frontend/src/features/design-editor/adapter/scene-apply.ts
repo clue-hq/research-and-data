@@ -15,11 +15,13 @@ import type {
   Operation,
   Page,
   PageId,
+  PagePreset,
   Paint,
   Rect,
   Scene,
   Stroke,
   TextAlign,
+  Unit,
   VerticalAlign,
 } from "../engine/scene/contracts";
 import { buildNodePlacementOperations } from "../engine/scene/assetLibrary";
@@ -52,7 +54,7 @@ import {
   SIZE_PRESETS,
   dimensionSize,
   finiteNumber,
-  pagePixelSize,
+  pageDisplaySize,
   radiusCommit,
   rootFrameId,
   roundForEditor,
@@ -1340,7 +1342,8 @@ export function sceneImagePlacementOperations(
 
 /**
  * §1.1 row 1: the ONE page-size write, in the canonical form the engine mints
- * for an authored PX size.
+ * for a size authored in the page's own unit (genad2 Task 6; it was PX-only
+ * until then).
  *
  * `normalizePageSize` is the engine's own constructor (a verbatim upstream
  * port, `engine/scene/pageGeometry.ts`) and is exactly what the standalone
@@ -1356,18 +1359,14 @@ export function sceneImagePlacementOperations(
  *     so a spread would leave a resized 1920×1200 page still claiming
  *     `portrait`.
  *   • `source` / `output` — REPLACED, not kept. This is the sharp end of the
- *     px trap: hydrate's `pagePixelSize` reads `output.raster` FIRST, so a
+ *     px trap: hydrate's `pageDisplaySize` reads `output` FIRST, so a
  *     spread that left the old raster on a resized page would make the
  *     inspector re-read the OLD size — the select snapping back to the
  *     previous preset while the canvas showed the new one.
- *   • `unit` — the canonical `pt` box with the authored px on `source`, which
+ *   • `unit` — the canonical `pt` box with the authored size on `source`, which
  *     is what `is_canonical_page_size` (lumen-core `page_geometry.rs`) means
  *     by canonical; a literal `unit: "px"` page is legacy geometry the engine
  *     flags with LUMV0805.
- *
- * §1.1 is px-only (a `PageOutputSize.physical` a print page might carry is
- * therefore not preserved — a page authored in px has no physical output, and
- * the normalizer says so).
  *
  * BOTH dimensions are floored here, not just the typed one. `normalizePageSize`
  * SUBSTITUTES 1 for any non-finite or non-positive value
@@ -1376,25 +1375,93 @@ export function sceneImagePlacementOperations(
  * cannot state one of its dimensions refuses the write instead of turning a
  * width edit into a 1px-tall document. The floor is §1.1's own "min 1", so a
  * sub-pixel page is refused rather than rounded.
+ *
+ * genad2 Task 6: the UNIT is now a parameter. §1.1 shipped px-only — this
+ * function hard-coded `unit: "px"`, so an A4 page's W/H edit rewrote a
+ * millimetre document as a pixel one and DROPPED `output.physical`. The
+ * normalizer has always spoken every unit (`outputForSource` mints `physical`
+ * for mm/in, `raster` for px, nothing for pt); only this call site was px.
+ */
+function pageSizeOperation(
+  page: Page,
+  width: number,
+  height: number,
+  unit: Unit,
+  preset: PagePreset,
+): Operation | null {
+  if (!isUsablePageDimension(width) || !isUsablePageDimension(height)) {
+    return null;
+  }
+  return updatePageSize(
+    page,
+    normalizePageSize({ height, preset, unit, width }),
+  );
+}
+
+/**
+ * §1.1 row 1's PRESET SELECT half: its three labels are CLIENT vocabulary that
+ * spell px sizes, so they always write px and always write `custom` — none of
+ * them is one of the engine's own `PagePreset`s. Unchanged by Task 6, on
+ * purpose: picking "Story (9:16) - 1080x1920" on an A4 page really does mean
+ * "make this a 1080x1920 pixel page".
  */
 function pxPageSizeOperation(
   page: Page,
   width: number,
   height: number,
 ): Operation | null {
-  if (!isUsablePixelDimension(width) || !isUsablePixelDimension(height)) {
-    return null;
-  }
-  return updatePageSize(
-    page,
-    normalizePageSize({ height, preset: "custom", unit: "px", width }),
-  );
+  return pageSizeOperation(page, width, height, "px", "custom");
 }
 
 /** §1.1: a page dimension the inputs can honestly state — finite, and at least
- * the contract's one pixel. */
-function isUsablePixelDimension(value: number): boolean {
+ * the contract's 1. The floor is unit-blind (1 px, 1 mm, 1 in), which is
+ * §1.1's shipped contract rather than the engine's own (any positive number is
+ * legal; a non-positive one is LUMV0121) — a page smaller than one unit is
+ * refused rather than rounded. */
+function isUsablePageDimension(value: number): boolean {
   return Number.isFinite(value) && value >= 1;
+}
+
+/**
+ * genad2 Task 6: the `preset` a W/H commit writes — the page's OWN preset when
+ * the committed numbers still ARE that preset, `custom` otherwise.
+ *
+ * §1.1 stamped `custom` unconditionally, so re-typing 297 into an A4 page's H
+ * demoted the document to a custom size while changing nothing about it. The
+ * table is the engine's, verbatim from `lumen-core/page_geometry.rs::
+ * page_size_for_preset`, stated here rather than added to `pageGeometry.ts`
+ * (a byte-identical upstream port this lane may not edit) — and stated as
+ * short/long because the engine sorts the pair by orientation, so A4 landscape
+ * (297x210) is still A4.
+ *
+ * Deliberately NOT a promotion: a page stored as `custom` whose numbers happen
+ * to be A4's stays `custom`. Naming a preset the document never claimed is the
+ * same fabrication in the other direction.
+ */
+const PRESET_DIMENSIONS: Partial<
+  Record<PagePreset, { long: number; short: number; unit: Unit }>
+> = {
+  a4: { long: 297, short: 210, unit: "mm" },
+  envelope_dl: { long: 220, short: 110, unit: "mm" },
+  linkedin_ad: { long: 1200, short: 627, unit: "px" },
+  us_letter: { long: 11, short: 8.5, unit: "in" },
+};
+
+function preservedPreset(
+  page: Page,
+  width: number,
+  height: number,
+  unit: Unit,
+): PagePreset {
+  const stored = page.size.preset;
+  const dimensions = stored ? PRESET_DIMENSIONS[stored] : undefined;
+  if (!stored || !dimensions || dimensions.unit !== unit) {
+    return "custom";
+  }
+  return Math.min(width, height) === dimensions.short &&
+    Math.max(width, height) === dimensions.long
+    ? stored
+    : "custom";
 }
 
 /**
@@ -1756,24 +1823,39 @@ export function sceneCanvasChangeToOperation(
       return pxPageSizeOperation(page, preset.width, preset.height);
     }
 
-    // ── §1.1 row 1: the Custom W/H inputs (px only, min 1) ───────────────────
+    // ── §1.1 row 1: the Custom W/H inputs (the page's own unit, min 1) ───────
     case "customWidth":
     case "customHeight": {
       const typed = finiteNumber(value);
       // Min 1 is the contract's floor and the engine's (a non-positive page is
       // LUMV0121). The PRESERVED dimension gets the same floor inside
-      // `pxPageSizeOperation`, which is where the refusal is explained.
+      // `pageSizeOperation`, which is where the refusal is explained.
       if (typed === null || typed < 1) {
         return null;
       }
-      // The UNTOUCHED dimension is read as PIXELS, through the very function
+      // genad2 Task 6: the page is read AS AUTHORED, through the very function
       // that put it on screen — never off `page.size.width/height`, which is a
-      // `pt` box whose number can differ from the px the user is looking at
-      // (a fractional authored px rounds into `output.raster`).
-      const shown = pagePixelSize(page);
-      return detail.property === "customWidth"
-        ? pxPageSizeOperation(page, typed, shown.height)
-        : pxPageSizeOperation(page, shown.width, typed);
+      // canonical `pt` box whose numbers differ from what the user is looking
+      // at (a fractional authored px rounds into `output.raster`; an A4 page's
+      // 210x297 mm is a 595x842 pt box).
+      //
+      // Both halves of the commit come from that one read, so the write cannot
+      // disagree with the display: the UNTOUCHED dimension is the number the
+      // other box is showing, and the UNIT is the one printed beside them —
+      // which is what makes typing 300 into an A4 page's H mean 300 mm. The
+      // typed number is therefore never reinterpreted, and a physical page
+      // stays physical (`output.physical` survives) instead of being silently
+      // rewritten as a raster.
+      const shown = pageDisplaySize(page);
+      const width = detail.property === "customWidth" ? typed : shown.width;
+      const height = detail.property === "customHeight" ? typed : shown.height;
+      return pageSizeOperation(
+        page,
+        width,
+        height,
+        shown.unit,
+        preservedPreset(page, width, height, shown.unit),
+      );
     }
 
     // ── §1.1 row 2: Background — the solid swatch (§1.6 policy) ──────────────

@@ -19,6 +19,7 @@ import {
   adTokenText,
 } from "./__fixtures__/scene-nodes";
 import type { InspectorBackgroundFill } from "@/features/chat-shell/hooks/use-inspector-controller";
+import { normalizePageSize } from "../engine/scene/pageGeometry";
 import {
   COLOR_NONE,
   CUSTOM_SIZE_PRESET,
@@ -29,6 +30,8 @@ import {
   hydrateSceneSelectionState,
   mintedStrokeColor,
   mintedStrokeWidth,
+  pageDisplaySize,
+  pagePixelSize,
   radiusCommit,
   radiusCommitText,
   rootFrameId,
@@ -862,6 +865,134 @@ it("§1.1: a PRESET-matching page hydrates its real W/H too — the Custom boxes
   assert.equal(story.sizePreset, "Story (9:16) - 1080x1920");
   assert.equal(story.customWidth, "1080");
   assert.equal(story.customHeight, "1920");
+});
+
+// ── genad2 Task 6: pages that are not px ────────────────────────────────────
+//
+// The design agent now authors pages in ANY unit (px for digital, mm/in for
+// print — `open_design_leg@4` births zero pages and the agent sets the page up
+// itself). This panel was built for the seeded px ad and read every page as
+// pixels, so an A4 page showed its `pt` canonical box (595x842) as if those
+// numbers were pixels. `pageDisplaySize` is the unit-aware read; `pagePixelSize`
+// stays exactly what it was for the px-only consumers.
+
+/** A page authored in a real unit, minted by the engine's own constructor
+ * (`pageGeometry.ts` — a verbatim upstream port), so every fixture below is a
+ * shape the engine actually produces rather than one this test invented. */
+function withAuthoredPageSize(
+  width: number,
+  height: number,
+  unit: "in" | "mm" | "pt" | "px",
+  preset: "a4" | "custom" | "envelope_dl" | "linkedin_ad" | "us_letter" = "custom",
+): Scene {
+  const scene = clone(SCENE);
+  scene.pages[AD_PAGE_ID].size = normalizePageSize({ height, preset, unit, width });
+  return scene;
+}
+
+it("Task 6: an A4 page displays 210x297 MM, not its 595x842 pt box", () => {
+  const scene = withAuthoredPageSize(210, 297, "mm", "a4");
+  const page = scene.pages[AD_PAGE_ID];
+  // The canonical box really is the misleading number this panel used to show.
+  assert.equal(Math.round(page.size.width), 595);
+  assert.equal(Math.round(page.size.height), 842);
+  assert.deepEqual(pageDisplaySize(page), { height: 297, unit: "mm", width: 210 });
+  const state = hydrateSceneCanvasState(scene, AD_PAGE_ID);
+  assert.equal(state.customWidth, "210");
+  assert.equal(state.customHeight, "297");
+  assert.equal(state.customSizeUnit, "mm");
+});
+
+it("Task 6: an inches page displays inches", () => {
+  const scene = withAuthoredPageSize(8.5, 11, "in", "us_letter");
+  assert.deepEqual(pageDisplaySize(scene.pages[AD_PAGE_ID]), {
+    height: 11,
+    unit: "in",
+    width: 8.5,
+  });
+  const state = hydrateSceneCanvasState(scene, AD_PAGE_ID);
+  assert.equal(state.customWidth, "8.5");
+  assert.equal(state.customHeight, "11");
+  assert.equal(state.customSizeUnit, "in");
+});
+
+it("Task 6: a px page's display is BYTE-IDENTICAL — the raster still wins, and the unit says px", () => {
+  // The whole px half of this contract is "change nothing". The harvested ad
+  // and the fractional-authored page (whose raster ROUNDS, so its box and its
+  // px differ) are the two shapes `pagePixelSize` was written for, and
+  // `pageDisplaySize` must answer both with the same numbers.
+  const harvested = SCENE.pages[AD_PAGE_ID];
+  assert.deepEqual(pageDisplaySize(harvested), {
+    height: 1200,
+    unit: "px",
+    width: 1200,
+  });
+  assert.deepEqual(pagePixelSize(harvested), { height: 1200, width: 1200 });
+  const fractional = withAuthoredPageSize(1200, 628.4, "px").pages[AD_PAGE_ID];
+  assert.equal(fractional.size.source?.height, 628.4);
+  assert.deepEqual(pageDisplaySize(fractional), {
+    height: 628,
+    unit: "px",
+    width: 1200,
+  });
+  assert.deepEqual(pagePixelSize(fractional), { height: 628, width: 1200 });
+  const state = hydrateSceneCanvasState(SCENE, AD_PAGE_ID);
+  assert.equal(state.customWidth, "1200");
+  assert.equal(state.customHeight, "1200");
+  assert.equal(state.customSizeUnit, "px");
+});
+
+it("Task 6: a pt page says pt — the canonical box is a unit, not a pixel count", () => {
+  // `pt` mints no `output` at all (`outputForSource`), so this is the `source`
+  // arm, and a page with no metadata whatsoever is the box arm below it.
+  const authored = withAuthoredPageSize(612, 792, "pt").pages[AD_PAGE_ID];
+  assert.equal(authored.size.output, undefined);
+  assert.deepEqual(pageDisplaySize(authored), { height: 792, unit: "pt", width: 612 });
+  const bare = clone(SCENE);
+  bare.pages[AD_PAGE_ID].size = {
+    ...bare.pages[AD_PAGE_ID].size,
+    output: undefined,
+    source: undefined,
+  };
+  assert.deepEqual(pageDisplaySize(bare.pages[AD_PAGE_ID]), {
+    height: 1200,
+    unit: "pt",
+    width: 1200,
+  });
+  assert.equal(hydrateSceneCanvasState(bare, AD_PAGE_ID).customSizeUnit, "pt");
+});
+
+it("Task 6: the px preset labels are matched on PIXELS only — a 1200x1200 mm page is Custom", () => {
+  // The three ratified labels spell px sizes ("...1200x1200"), so a page whose
+  // 1200x1200 are millimetres may not claim one: the select would then name a
+  // size the page does not have, and picking it would resize the document.
+  const millimetres = withAuthoredPageSize(1200, 1200, "mm");
+  const state = hydrateSceneCanvasState(millimetres, AD_PAGE_ID);
+  assert.equal(state.sizePreset, CUSTOM_SIZE_PRESET);
+  assert.equal(state.customSizeUnit, "mm");
+  // ...and the px page it mirrors still matches, unchanged.
+  assert.equal(
+    hydrateSceneCanvasState(SCENE, AD_PAGE_ID).sizePreset,
+    "Linkedin square (1:1) - 1200x1200",
+  );
+});
+
+it("Task 6: the Custom W/H inputs render the hydrated unit as inert text", () => {
+  // Presentation-minimal (the binding presentation-truth rule): the unit rides
+  // the `InspectorInput` `suffix` the Rotation (°) and Opacity (%) rows already
+  // use — no unit selector, no new control, no new styling. The dummy fixture
+  // path passes no `hydrated`, so it renders exactly what it always did.
+  const width = AD_INSPECTOR_SOURCE.indexOf('ariaLabel="Custom width"');
+  const height = AD_INSPECTOR_SOURCE.indexOf('ariaLabel="Custom height"');
+  assert.notEqual(width, -1, "the canvas Custom-size rows moved");
+  assert.notEqual(height, -1, "the canvas Custom-size rows moved");
+  for (const start of [width, height]) {
+    const row = AD_INSPECTOR_SOURCE.slice(start, AD_INSPECTOR_SOURCE.indexOf("/>", start));
+    assert.ok(
+      row.includes("suffix={hydrated?.customSizeUnit}"),
+      "the W/H inputs must show the page's authored unit beside the number",
+    );
+  }
 });
 
 it("§1.1: the preset vocabulary is ONE list — the dummy's options are hydrate's labels plus Custom", () => {

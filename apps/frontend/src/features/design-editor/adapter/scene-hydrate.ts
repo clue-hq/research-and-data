@@ -15,6 +15,7 @@ import type {
   PageId,
   Paint,
   Scene,
+  Unit,
 } from "../engine/scene/contracts";
 import { defaultLayoutProps } from "../engine/scene/operations";
 import {
@@ -251,6 +252,12 @@ export function mintedStrokeColor(color: string, width: string): string | null {
  * text and one display fact.
  */
 export interface SceneInspectorExtraState {
+  /** genad2 Task 6: the UNIT §1.1's Custom W/H boxes are stating — `mm` on an
+   * A4 page, `px` on the seeded ad. A display fact with no control (the panel
+   * shows it as the inputs' inert `suffix`, the idiom the Rotation `°` and
+   * Opacity `%` rows already use); changing a page's unit is page setup, which
+   * the design agent owns, so there is deliberately no unit selector here. */
+  customSizeUnit?: Unit;
   /** §1.0: the header title — the real node's display name. */
   title?: string;
   /** §1.2: the V-alignment toggles are disabled while the height mode is hug. */
@@ -997,8 +1004,10 @@ export function hydrateSceneSelectionState(
  * §1.1: the canvas (page) schema — the state an EMPTY selection hydrates.
  *
  * Two rows: the size preset, matched on the page's pixel size (with the Custom
- * W/H pair always stating that same pixel size, whether or not a preset
- * matched), and the Background, which is the ROOT FRAME's first fill (founder
+ * W/H pair always stating the page's size AS AUTHORED — px on the seeded ad,
+ * mm on an agent-authored A4 — plus the unit those numbers are in, whether or
+ * not a preset matched; genad2 Task 6), and the Background, which is the ROOT
+ * FRAME's first fill (founder
  * ruling — the page's own `background` property is not the edit target and is
  * not read here). With no root frame the Background is the ColorControl none
  * state and its writes are no-ops (the null contract).
@@ -1011,10 +1020,18 @@ export function hydrateSceneCanvasState(
 
   const page = scene.pages[pageId];
   if (page) {
-    const { height, width } = pagePixelSize(page);
-    const preset = SIZE_PRESETS.find(
-      (candidate) => candidate.width === width && candidate.height === height,
-    );
+    const { height, unit, width } = pageDisplaySize(page);
+    // genad2 Task 6: the three ratified labels SPELL px sizes ("...1200x1200"),
+    // so only a px page can match one. A 1200x1200 MM page claiming "Linkedin
+    // square" would name a size the page does not have — and picking that
+    // option back would resize the document to 1200 px.
+    const preset =
+      unit === "px"
+        ? SIZE_PRESETS.find(
+            (candidate) =>
+              candidate.width === width && candidate.height === height,
+          )
+        : undefined;
     state.sizePreset = preset ? preset.label : CUSTOM_SIZE_PRESET;
     // ALWAYS, including when a preset matched (AD4.0 review finding, proven in
     // the browser): the W/H boxes are revealed by picking "Custom" in the
@@ -1026,6 +1043,11 @@ export function hydrateSceneCanvasState(
     // number the page cannot state.
     state.customWidth = numberText(width);
     state.customHeight = numberText(height);
+    // genad2 Task 6: the unit those two numbers are IN, shown beside them as
+    // inert text. Without it the panel states a bare 210/297 that the eye reads
+    // as pixels, and the commit — which lands in this same unit — looks like it
+    // did something else.
+    state.customSizeUnit = unit;
   }
 
   const frameId = page ? rootFrameId(scene, pageId) : null;
@@ -1040,8 +1062,64 @@ export function hydrateSceneCanvasState(
   return state;
 }
 
+/** genad2 Task 6: what `pageDisplaySize` answers — a page's size in the unit
+ * the page is actually authored in. */
+export interface PageDisplaySize {
+  height: number;
+  unit: Unit;
+  width: number;
+}
+
 /**
- * A page's size in PIXELS — the only unit §1.1's W/H inputs speak.
+ * genad2 Task 6: a page's size AS AUTHORED — the numbers §1.1's W/H boxes
+ * display, and the unit they display beside them.
+ *
+ * `pagePixelSize` below reads every page as pixels, which was true while the
+ * only page in the world was the seeded 1200x1200 ad. `open_design_leg@4`
+ * births a document with no page and the design agent authors its own, in
+ * whatever unit the medium wants — mm/in for print, px for digital — so a
+ * px-only read now MISREPORTS an A4 page: it falls through to the canonical
+ * `pt` box and shows 595x842 as if those were pixels.
+ *
+ * The order is the engine's own certainty order, most-specific first:
+ *
+ *   • `output.physical` — a print page's authored physical size (210x297 mm).
+ *     Preferred over `source` because it is the size the artifact is EXPORTED
+ *     at, the same reason the raster wins below.
+ *   • `output.raster` — the px export size. AHEAD of a px `source`,
+ *     deliberately: that is `pagePixelSize`'s documented rule and the two
+ *     differ only when a fractional authored px rounds, so every px page's
+ *     display stays byte-for-byte what it was.
+ *   • `source` — the authored pair for a unit that mints no output (`pt`), and
+ *     the general answer for any unit added later.
+ *   • the canonical box, labelled with its OWN unit — `pt` for a page the
+ *     engine minted, and honestly `px` for a legacy literal-px page (which the
+ *     engine flags LUMV0805). Never a unit this function guessed.
+ *
+ * §1.1's WRITE half reads its unit from here too (`scene-apply.ts`), so the
+ * commit lands in the unit the panel is showing — the same "the write is the
+ * exact inverse of hydrate" rule the rest of this file runs on. That is what
+ * makes typing 300 into an A4 page's H mean 300 mm rather than silently
+ * converting the document to a 300px raster.
+ */
+export function pageDisplaySize(page: Page): PageDisplaySize {
+  const physical = page.size.output?.physical;
+  if (physical) {
+    return { height: physical.height, unit: physical.unit, width: physical.width };
+  }
+  const raster = page.size.output?.raster;
+  if (raster) {
+    return { height: raster.height_px, unit: "px", width: raster.width_px };
+  }
+  const source = page.size.source;
+  if (source) {
+    return { height: source.height, unit: source.unit, width: source.width };
+  }
+  return { height: page.size.height, unit: page.size.unit, width: page.size.width };
+}
+
+/**
+ * A page's size in PIXELS.
  *
  * An authored-px page is stored in the engine's canonical form: a `pt` box
  * with the authored px size preserved on `size.source` and the export size on
@@ -1049,10 +1127,14 @@ export function hydrateSceneCanvasState(
  * and is what the artifact actually exports at), then the px source, and only
  * then the box itself.
  *
- * Exported for the AD4.0 write half: a Custom W/H edit changes ONE dimension
- * and must keep the other exactly as displayed, so the write reads the size
- * through this same function rather than off the raw `pt` box. Those two
- * numbers differ whenever the raster rounded a fractional authored px.
+ * genad2 Task 6 narrowed this function's job. It used to be §1.1's one page
+ * read — "the only unit the W/H inputs speak" — and both the panel and the
+ * write went through it. They now go through `pageDisplaySize` above, which
+ * answers the same question for a page authored in ANY unit. This one remains
+ * the px-only read, for a consumer that genuinely needs pixels (an export
+ * size, a raster buffer) and would be wrong to take a millimetre. It is NOT a
+ * fallback for a physical page: on an A4 page it still returns the `pt` box,
+ * which is exactly the misreport `pageDisplaySize` exists to prevent.
  */
 export function pagePixelSize(page: Page): { height: number; width: number } {
   const raster = page.size.output?.raster;
