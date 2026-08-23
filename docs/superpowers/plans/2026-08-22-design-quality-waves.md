@@ -181,6 +181,19 @@ changes, no new diagnostics anywhere.*
   fixtures against a synthetic kit and now returning hits.
 
 ### W1.6 — website ingestion always renders (R2; the slice-4 walk's HIGH blocker)
+
+> **[SUPERSEDED IN PART 2026-08-23 — discovered during wave execution.]** The
+> force-render core of this slice ALREADY LANDED 2026-08-20 as `c9bf2859`
+> ("brand-kit website ingestion always force-renders (founder ruling)"), with
+> route tests pinning that a flagless request renders — the plan was drafted
+> from a stale memory record. And the embedded-worker `LUMI0401
+> GeometryEvidence` ImportError was root-caused live 2026-08-19/20 as a **stale
+> sibling process** leasing rendered jobs from the shared queue with
+> pre-geometry code (recorded at `lumen_api/main.py:369-381`) — it is the C15
+> worker-version-fence class, owned by **W4.4**, not an in-repo import defect.
+> W1.6's remaining deliverables: the durable-recipe `LUMEN_INGESTION_BRIEF=1`
+> line in `.env.example` (done, controller edit, final review to scrutinize)
+> and the live UI-path re-extract proof, which is exit-gate item (a).
 - **Files:** the website-ingestion entry (`lumen_ingestion/pipeline.py` /
   `run_website_ingestion`) and/or `capture/quality_gate.py::evaluate` — force the
   rendered capture tier unconditionally whenever the geometry and/or brief stages
