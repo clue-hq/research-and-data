@@ -8176,9 +8176,12 @@ def execute_agent_turn_job(
     # and the history into them. This is the human-facing ``intent`` on the durable edit
     # envelope, so it must never become the rendered brief block.
     user_message = payload.prompt
-    # An explicit None means "resolved: this turn has no references" — distinct from the
-    # _REFERENCES_UNRESOLVED sentinel, which would make the runner resolve them a second time.
-    reference_assets = envelope.config.get("reference_assets")
+    # An explicit None means "resolved: this turn has no references" — distinct from a missing
+    # key. Platform LEG envelopes carry the frozen reference ids in ``request`` and deliberately
+    # do not assemble or rasterize this worker's runtime manifest while accepting the turn, so a
+    # missing manifest must take the normal in-worker resolution path. Using ``.get`` without the
+    # sentinel made every accepted platform reference silently inert.
+    reference_assets = envelope.config.get("reference_assets", _REFERENCES_UNRESOLVED)
 
     # --- P3.7: consume the platform leg envelope's frozen context ------------------------------
     # A design-leg turn (PD-part3 §2.3/§2.4) carries the delegation bundle, the leg history,

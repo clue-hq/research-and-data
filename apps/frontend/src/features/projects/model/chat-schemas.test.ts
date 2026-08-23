@@ -125,6 +125,43 @@ test("message reads are body-free by default and carry the typed refs", () => {
   assert.deepEqual(openGateIds(page.messages[1]), [fixtureGates[0].gate_id]);
 });
 
+test("design asset context refs retain read-time filename and thumbnail metadata", () => {
+  const page = ChatMessageListResponseSchema.parse({
+    data: [
+      {
+        ...fixtureMessages[0],
+        body: "Use this composition as inspiration.",
+        refs: [
+          {
+            flavor: "context",
+            workspace_id: "ws-demo",
+            object_type: "design_asset",
+            object_id: "asset_reference",
+            version: null,
+            ordinal: 0,
+            label: "inspiration.webp",
+            media_type: "image/webp",
+            thumbnail_digest: "b".repeat(64),
+          },
+        ],
+      },
+    ],
+    meta: { next_cursor: null },
+  });
+
+  assert.deepEqual(page.messages[0].refs[0], {
+    flavor: "context",
+    workspaceId: "ws-demo",
+    objectType: "design_asset",
+    objectId: "asset_reference",
+    version: null,
+    ordinal: 0,
+    label: "inspiration.webp",
+    mediaType: "image/webp",
+    thumbnailDigest: "b".repeat(64),
+  });
+});
+
 test("an unservable body is reported with its reason, never as empty text", () => {
   const page = ChatMessageListResponseSchema.parse({
     data: [{ ...fixtureMessages[0], body: null, body_unavailable_reason: "erased" }],

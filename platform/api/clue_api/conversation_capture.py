@@ -62,6 +62,7 @@ async def persist_user_turn(
     product_id: str | None = None,
     client_entity_id: EntityId | None = None,
     binding_kind: str = CONVERSATION_USER_MESSAGE_BINDING_KIND,
+    allow_empty_reference_turn: bool = False,
 ) -> CapturedUserTurn:
     """Capture one human message durably: artifact + DSAR binding + ``onboarding_input``.
 
@@ -80,9 +81,12 @@ async def persist_user_turn(
     Stage-0 recon has not run) the artifact is still workspace-scoped and reachable through the
     turn's own artifact refs — binding it to a *guessed* subject would be worse than binding it to
     none.
+
+    ``allow_empty_reference_turn`` is a bounded opt-in for the chat route after it has validated
+    at least one typed ``design_asset`` ref. It does not make empty ordinary turns valid.
     """
 
-    if not message.strip():
+    if not message.strip() and not allow_empty_reference_turn:
         raise ValueError("a conversation turn message cannot be empty")
     subject_bindings = (
         ((UUID(str(client_entity_id)), binding_kind),) if client_entity_id is not None else ()

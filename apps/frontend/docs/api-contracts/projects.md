@@ -541,6 +541,23 @@ are never accepted from the browser or model.
   the frontend hides the control in HTTP mode, and the backend refuses any
   attempted attachment receipt instead of accepting a browser-local URL.
 
+### Scene-design reference images (2026-08-24)
+
+The generic attachment capability above remains false. One design-specific exception is live:
+while the selected thread has an open **scene** design leg and its ad document is open, the
+project composer uploads up to four PNG/JPEG/WebP/SVG inspiration images through the existing
+design BFF `POST /assets` seam. These are submitted as ordered `design_asset` `context_refs`,
+never as generic `attachment_refs`.
+
+Before accepting the turn, the platform proves the open leg is scene-backed and every referenced
+asset belongs to the workspace, is `ready`, is one of the four image media types, and still has
+readable durable bytes. A fifth ref is `422 CONTEXT_REF_LIMIT_EXCEEDED`; missing/cross-workspace
+assets or bytes are scoped `404`s. The accepted ids stay on the immutable submission receipt and
+become `request.reference_asset_ids` in the design-leg envelope. Transcript reads batch-join the
+current asset library only for display metadata (`label`, `media_type`, `thumbnail_digest`). A
+reference-only ordinary message may have an empty text body; without a `design_asset` ref, the
+existing non-whitespace message rule still applies.
+
 ### R9 implementation status (2026-08-10)
 
 - L7 context assembly treats the accepted submission body as the one current
@@ -1113,6 +1130,10 @@ It requires `Idempotency-Key`, accepts exactly one of `message` or
 `context_refs`, `attachment_refs`, and `agent_profile_id` use the same shapes
 and capability rules as Home bootstrap, but are valid only with an ordinary
 `message`; a gate response plus any of them is `422 VALIDATION_ERROR`.
+The scene-design exception above is represented only by typed `design_asset`
+`context_refs`; `attachment_refs` remains disabled. Its hard cap is four at both
+the composer and admission boundary, and the reference set is snapshotted before
+the request is queued.
 
 The submissions-union read adds an explicit hydration opt-in so a queued user
 message survives a reload before the worker has materialized its canonical
@@ -1270,8 +1291,9 @@ In HTTP mode:
   all use HTTP repositories behind the same transport selection.
 - An error stays an error. No repository catches it and substitutes fixture
   projects, threads, artifacts, messages, models, accounts, or contacts.
-- Attachments stay hidden until a durable upload/capture endpoint returns the
-  attachment receipt defined in §3.
+- Generic attachments stay hidden. The only upload affordance is the scene-leg
+  reference-image exception above, backed by the design asset registry and durable bytes;
+  it does not advertise or populate generic `attachment_refs`.
 - Model selection is visible because the backend advertises the one real Terra
   profile and persists the chosen `agent_profile_id` on every message
   submission. No second/decorative option is rendered.

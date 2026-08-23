@@ -1295,6 +1295,9 @@ class DesignLegTurnRunner:
         target_node_ids = tuple(
             ref.object_id for ref in focus_refs if ref.object_type == "design_node"
         )
+        reference_asset_ids = tuple(
+            ref.object_id for ref in focus_refs if ref.object_type == "design_asset"
+        )
         resolved_targets = (
             resolve_scene_targets(document.get("scene") or {}, target_node_ids)
             if target_node_ids
@@ -1327,6 +1330,7 @@ class DesignLegTurnRunner:
                 "scene": document.get("scene") or {},
                 "document_id": leg.get("document_id"),
                 "previous_turn_outcome": submission.previous_turn_outcome,
+                "reference_asset_ids": list(reference_asset_ids),
                 **(
                     {
                         "active_page_id": resolved_targets.active_page_id,

@@ -31,6 +31,9 @@ const MessageRefWireSchema = z.object({
   object_id: z.string(),
   version: z.number().int().nullable().default(null),
   ordinal: z.number().int().min(0).default(0),
+  label: z.string().nullable().default(null),
+  media_type: z.string().nullable().default(null),
+  thumbnail_digest: z.string().nullable().default(null),
 });
 
 export interface ChatMessageRef {
@@ -40,6 +43,9 @@ export interface ChatMessageRef {
   objectId: string;
   version: number | null;
   ordinal: number;
+  label: string | null;
+  mediaType: string | null;
+  thumbnailDigest: string | null;
 }
 
 export const ChatMessageRoleSchema = z.enum([
@@ -105,6 +111,9 @@ export function toChatMessage(
       objectId: ref.object_id,
       version: ref.version,
       ordinal: ref.ordinal,
+      label: ref.label,
+      mediaType: ref.media_type,
+      thumbnailDigest: ref.thumbnail_digest,
     })),
   };
 }

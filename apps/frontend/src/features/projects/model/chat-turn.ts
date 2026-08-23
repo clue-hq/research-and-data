@@ -194,7 +194,8 @@ export type TurnContextObjectType =
   | "account"
   | "contact"
   | "design_document"
-  | "design_node";
+  | "design_node"
+  | "design_asset";
 
 export interface TurnContextReference {
   objectId: string;

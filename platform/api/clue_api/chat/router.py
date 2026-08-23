@@ -65,6 +65,7 @@ from clue_api.chat.composer_context import (
     PROJECT_CONVERSATION_MODEL_ID,
     ComposerContextEntity,
     ContextReferenceError,
+    design_asset_ref_presentations,
     list_composer_context_entities,
     prepare_composer_context_entities,
     validated_context_refs,
@@ -581,6 +582,7 @@ async def _validated_submission_context(
     workspace_id: str,
     refs: tuple[Any, ...],
     design_leg_document_id: str | None = None,
+    storage: StorageBackend | None = None,
 ) -> tuple[DomainObjectRef, ...]:
     requested = tuple(
         DomainObjectRef(
@@ -597,10 +599,19 @@ async def _validated_submission_context(
             workspace_id=workspace_id,
             refs=requested,
             design_leg_document_id=design_leg_document_id,
+            storage=storage,
         )
     except ContextReferenceError as exc:
+        if exc.code == "CONTEXT_REF_LIMIT_EXCEEDED":
+            status_code = 422
+        elif exc.code == "CAPABILITY_UNAVAILABLE":
+            status_code = 503
+        elif exc.code == "CONTEXT_REF_NOT_FOUND":
+            status_code = 404
+        else:
+            status_code = 409
         raise _refuse(
-            status_code=404 if exc.code == "CONTEXT_REF_NOT_FOUND" else 409,
+            status_code=status_code,
             code=exc.code,
             message=exc.message,
         ) from exc
@@ -815,6 +826,7 @@ def build_chat_router(
                     conn,
                     workspace_id=who.workspace_id,
                     refs=body.context_refs,
+                    storage=storage,
                 )
 
                 project = await get_project(conn, project_id)
@@ -1420,17 +1432,33 @@ def build_chat_router(
             )
         except InvalidCursorError as exc:
             raise _refuse(status_code=422, code="INVALID_CURSOR", message=str(exc)) from exc
-        if include is None:
+        all_refs = tuple(ref for item in page.items for ref in item.refs)
+        has_design_assets = any(ref.object_type == "design_asset" for ref in all_refs)
+        if include is None and not has_design_assets:
             return message_list_response(page, thread_id=thread_id)
-        assert storage is not None  # guarded above: ``artifacts`` exists iff ``storage`` does
         async with conn_factory() as conn:
-            bodies = await hydrate_message_bodies(
+            presentations = await design_asset_ref_presentations(
                 conn,
-                storage=storage,
                 workspace_id=who.workspace_id,
-                references=tuple((item.body_artifact_key, item.body_sha256) for item in page.items),
+                refs=all_refs,
             )
-        return message_list_response(page, thread_id=thread_id, bodies=bodies)
+            bodies = None
+            if include is not None:
+                assert storage is not None  # guarded above: artifacts exists iff storage does
+                bodies = await hydrate_message_bodies(
+                    conn,
+                    storage=storage,
+                    workspace_id=who.workspace_id,
+                    references=tuple(
+                        (item.body_artifact_key, item.body_sha256) for item in page.items
+                    ),
+                )
+        return message_list_response(
+            page,
+            thread_id=thread_id,
+            bodies=bodies,
+            ref_presentations=presentations,
+        )
 
     @router.get("/projects/{project_id}/threads/{thread_id}/gates")
     async def list_gates_route(
@@ -2108,6 +2136,7 @@ def build_chat_router(
                     design_leg_document_id=(
                         None if open_leg is None else open_leg.get("document_id")
                     ),
+                    storage=storage,
                 )
                 # A gate answer must never become a design prompt (Part-III review finding C,
                 # ratified 2026-08-14): while a leg is open, the D1 routing rule would deliver
@@ -2130,6 +2159,9 @@ def build_chat_router(
                     project_id=project_id,
                     turn_id=turn_id,
                     message=message,
+                    allow_empty_reference_turn=any(
+                        ref.object_type == "design_asset" for ref in context_refs
+                    ),
                     client_entity_id=await project_client_entity_id(
                         conn,
                         workspace_id=who.workspace_id,

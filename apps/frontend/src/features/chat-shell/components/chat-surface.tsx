@@ -5,6 +5,11 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { ConversationContent } from "@/features/projects/components/conversation-content";
 import { ProjectComposer } from "@/features/projects/components/project-composer";
 import type { ProjectChatController } from "@/features/projects/hooks/use-project-chat-controller";
+import { useDesignReferenceAttachments } from "@/features/projects/hooks/use-design-reference-attachments";
+import {
+  DESIGN_REFERENCE_ACCEPT,
+  MAX_DESIGN_REFERENCE_ATTACHMENTS,
+} from "@/features/projects/model/design-reference-attachments";
 import type { useProjectWorkspaceController } from "@/features/projects/hooks/use-project-workspace-controller";
 import type {
   ProjectArtifact,
@@ -120,6 +125,13 @@ export function ChatSurface({
   // way — the stage's canvas branch picks the surface by kind.
   const activeDocumentId =
     session.activeDocumentId ?? sceneSession.activeDocumentId;
+  const designReferencesEnabled =
+    chat.designLegOpen &&
+    shell.artifactKind === "ad" &&
+    sceneSession.activeDocumentId !== null;
+  const referenceAttachments = useDesignReferenceAttachments({
+    enabled: designReferencesEnabled,
+  });
   const targetChips = editTargetChips(
     sceneSession.scene,
     sceneSession.selectedIds,
@@ -433,11 +445,31 @@ export function ChatSurface({
               </div>
             ) : null}
             <ProjectComposer
+              attachmentAccept={DESIGN_REFERENCE_ACCEPT}
+              attachmentError={
+                designReferencesEnabled ? referenceAttachments.error : null
+              }
+              attachmentInputDisabled={
+                referenceAttachments.attachments.length >=
+                MAX_DESIGN_REFERENCE_ATTACHMENTS
+              }
+              attachmentLabel="Attach reference images"
+              attachments={
+                designReferencesEnabled
+                  ? [...referenceAttachments.attachments]
+                  : []
+              }
               // Never disabled while work is detached: the user keeps the wheel.
               disabled={chat.access !== null || chat.route !== null}
               entities={controller.composerEntities}
               modelPickerOpen={controller.modelPickerOpen}
               models={workspace.models}
+              onAttachmentFiles={
+                designReferencesEnabled ? referenceAttachments.onFiles : undefined
+              }
+              onAttachmentRemove={
+                designReferencesEnabled ? referenceAttachments.remove : undefined
+              }
               onEntityRemove={
                 workspace.composerCapabilities.contextRefs
                   ? controller.removeEntity
@@ -452,6 +484,17 @@ export function ChatSurface({
               onModelSelect={controller.selectModel}
               onPromptChange={controller.setPrompt}
               onSubmit={async (prompt, entityIds) => {
+                // Snapshot references synchronously before any await. A queued turn owns these
+                // exact asset ids even if uploads or selection change before the POST returns.
+                const referenceSnapshot = designReferencesEnabled
+                  ? referenceAttachments.snapshotContextRefs()
+                  : [];
+                if (
+                  referenceAttachments.attachments.length > 0 &&
+                  referenceSnapshot === null
+                ) {
+                  return false;
+                }
                 // Snapshot ids before the first await inside the scene session.
                 // A queued turn keeps this set even if the user changes the
                 // canvas selection while optimistic writes finish or the POST runs.
@@ -472,6 +515,7 @@ export function ChatSurface({
                 const contextRefs = [
                   ...entityContextRefs,
                   ...editTargetContextRefs(editTargetSnapshot),
+                  ...(referenceSnapshot ?? []),
                 ];
                 const accepted = await chat.submitMessage(prompt, {
                   contextRefs,
@@ -491,12 +535,16 @@ export function ChatSurface({
                   shell.setEditing(false);
                 }
                 if (accepted.status !== "accepted") return false;
+                referenceAttachments.clear();
                 controller.completeSubmissionContext(
                   entityContextRefs.map((reference) => reference.objectId),
                 );
                 return true;
               }}
               prompt={controller.prompt}
+              sendDisabled={
+                designReferencesEnabled && referenceAttachments.submissionBlocked
+              }
               selectedEntities={controller.selectedEntities}
               selectedEntityIds={controller.selectedEntityIds}
               selectedModel={controller.selectedModel}

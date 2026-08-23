@@ -235,6 +235,44 @@ def test_a_leg_scene_turn_commits_its_proposal_and_reports_the_new_version(
     assert LEG_BRIEF in received["payload"].prompt
 
 
+def test_platform_leg_envelope_resolves_reference_ids_when_manifest_key_is_absent(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Platform envelopes freeze ids in request; a missing by-value manifest is unresolved.
+
+    Regression for the silent-inert bridge: ``dict.get`` previously turned a missing
+    ``config.reference_assets`` into explicit ``None``, which told the runner this turn had no
+    references and skipped the existing resolver completely.
+    """
+
+    import lumen_api.main as main
+
+    document = create_document(client)
+    store = HybridRepository()
+    config = _leg_config(document, 0)
+    config["request"]["reference_asset_ids"] = ["asset_reference_one"]
+    received: dict[str, object] = {}
+
+    def run_preview(payload, _root, **kwargs):
+        received["ids"] = list(payload.reference_asset_ids)
+        received["unresolved"] = (
+            kwargs["resolved_reference_assets"] is main._REFERENCES_UNRESOLVED
+        )
+        return proposing_runner([title_operation("Referenced")])(payload, _root)
+
+    monkeypatch.setattr(main, "run_agent_turn_preview", run_preview)
+    status, response, _, _ = main.execute_agent_turn_job(
+        _scene_envelope(document["id"], store.workspace_id, config),
+        store=store,
+        host=_turn_host(client, None),
+        event_sink=None,
+    )
+
+    assert status == "succeeded", response
+    assert received == {"ids": ["asset_reference_one"], "unresolved": True}
+
+
 def test_a_leg_scene_turns_commit_is_labelled_with_the_users_message(
     client: TestClient,
 ) -> None:

@@ -110,6 +110,8 @@ export interface ProjectChatController {
    * refresh, a canvas reload nonce) belongs to whoever renders them.
    */
   designRefresh: DesignRefreshCounters;
+  /** True only when the current stream has observed an open design leg. */
+  designLegOpen: boolean;
   submitting: boolean;
   gateFor(part: ChatGatePart): GateCardModel | null;
   gateAnswerForTurn(turnId: string): GateAnswerDisplay | null;
@@ -546,8 +548,13 @@ export function useProjectChatController({
       } = {},
     ) => {
       const trimmed = text.trim();
-      if (!trimmed || !activeThreadId) return { status: "not_submitted" } as const;
       const contextRefs = options.contextRefs ?? [];
+      const hasDesignReferences = contextRefs.some(
+        (reference) => reference.objectType === "design_asset",
+      );
+      if ((!trimmed && !hasDesignReferences) || !activeThreadId) {
+        return { status: "not_submitted" } as const;
+      }
       const agentProfileId = options.agentProfileId ?? null;
       const attempt = messageSubmissions.current.begin(
         activeThreadId,
@@ -854,6 +861,7 @@ export function useProjectChatController({
     runningTurn: queue.runningTurn,
     queuedTurns: queue.queuedTurns,
     designRefresh,
+    designLegOpen: stream.designLeg.open,
     submitting,
     gateFor,
     gateAnswerForTurn,
