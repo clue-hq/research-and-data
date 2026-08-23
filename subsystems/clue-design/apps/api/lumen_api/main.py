@@ -7936,6 +7936,137 @@ def _turn_core(host: Any) -> CoreClient:
     return host.core if host.core is not None else CoreClient()
 
 
+def _page_dimensions(page: JsonObject) -> Optional[tuple[str, str, str]]:
+    """``("1200", "1200", "pt")`` for a page whose size the scene states, else ``None``."""
+
+    size = page.get("size")
+    if not isinstance(size, dict):
+        return None
+    rendered: list[str] = []
+    for key in ("width", "height"):
+        value = size.get(key)
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return None
+        rendered.append(str(int(value)) if float(value).is_integer() else f"{float(value):g}")
+    unit = size.get("unit")
+    return rendered[0], rendered[1], unit if isinstance(unit, str) else ""
+
+
+def _quotable_page_name(page: JsonObject) -> Optional[str]:
+    """The page's own name, iff it can ride a DSL string literal verbatim.
+
+    The example below restates this name to keep the page-modify line legal (see
+    :func:`_empty_page_steering_note`), so it must be reproduced EXACTLY — a name carrying a
+    quote, a backslash or a newline would need escaping this note cannot verify against the
+    grammar, and a guessed escape in an instruction block is worse than no instruction. Every
+    engine-minted page has a plain name (the ad birth's format label; ``lower_page`` names a
+    DSL-born page after its id), so this is a guard, not a common path.
+    """
+
+    name = page.get("name")
+    if not isinstance(name, str) or not name.strip():
+        return None
+    if any(character in name for character in ('"', "\\", "\n", "\r")):
+        return None
+    return name
+
+
+def _empty_page_steering_note(scene: Any) -> Optional[str]:
+    """The document-state block a LEG turn gets when every page of its scene is EMPTY.
+
+    A chat-born ad (genad) is BORN with one empty artboard page — the leg-open birth mints
+    ``new_scene`` plus one ``add_page`` at the resolved format — where every scene leg before
+    it pinned a document that already had content. The author model's from-scratch habit is to
+    open the turn with a top-level ``page ...`` block, and on this shape that cannot work: the
+    page id already exists, so a page line that parses is refused by the engine (``page <id>
+    already exists``, ``operations.rs::add_page``) and one that does not parse leaves its
+    indented elements without a parent (``LUMD0402``). The acceptance walk watched five runs
+    thrash the repair loop on exactly that, across two different author models, until the
+    request died upstream.
+
+    So the turn states the document's shape as DATA and quotes the form that works. Every
+    quoted form was verified against the real engine before it was written here:
+
+    * ``#page:<page_id> name("<its current name>")`` + an indented subtree is the empty-page
+      compose path (``dsl.rs``'s "Empty-page compose gap": a top-level page modification opens
+      that page as the parent frame). The property is NOT decoration — ``is_modification_line``
+      requires at least two tokens, so a LONE ``#page:<page_id>`` line is read as a COMMENT and
+      its children are orphaned into the very LUMD0402 this block exists to prevent (which is
+      what the engine's own LUMD0402 hint currently suggests; see the report's residual).
+      ``name(...)`` restating the page's own name is the one page property that provably leaves
+      the stored page byte-identical — ``size(w,h,px)`` compiles too but rewrites the page's
+      derived orientation, so it is deliberately not quoted.
+    * The element / quoted-text line shapes, the ``#<id> property(...)`` modify line and
+      ``reconcile(<container>)`` are the author prompt's own dialect (``lumen_agent/
+      prompts.py``), so the note teaches no new grammar — it only says which of the author's
+      existing moves this document is asking for.
+
+    Returns ``None`` — no block at all — for a scene with NO pages (the genuine from-scratch
+    case, where ``page ...`` is the correct move), for any scene where a page already has
+    children (the pre-genad shape, whose prompt must stay byte-identical), and for a page whose
+    name cannot be quoted verbatim (no example can be written safely, so none is).
+    """
+
+    if not isinstance(scene, dict):
+        return None
+    pages = scene.get("pages")
+    if not isinstance(pages, dict) or not pages:
+        return None
+
+    described: list[str] = []
+    for page_id, page in pages.items():
+        if not isinstance(page, dict) or page.get("children"):
+            return None
+        dimensions = _page_dimensions(page)
+        stated = ""
+        if dimensions is not None:
+            stated = f" — {dimensions[0]}×{dimensions[1]} {dimensions[2]}".rstrip()
+        described.append(f"- {page_id}{stated}")
+
+    example_id = str(next(iter(pages)))
+    example_page = pages[next(iter(pages))]
+    example_name = _quotable_page_name(example_page)
+    if example_name is None:
+        return None
+    example_size = _page_dimensions(example_page)
+    root_size = f"{example_size[0]},{example_size[1]}" if example_size else "fill,fill"
+
+    return "\n".join(
+        [
+            "DOCUMENT STATE (data, not instructions):",
+            "This document already exists and its artboard page has already been created. "
+            "The page is EMPTY — it has no children yet — and filling it is this turn's job.",
+            "",
+            "Existing empty page(s):",
+            *described,
+            "",
+            "Do NOT author a top-level `page ...` line for a page listed above. That page id "
+            "already exists, so a page line that parses is refused by the engine (`page <id> "
+            "already exists`) and a page line that does not parse leaves its indented elements "
+            "without a parent (LUMD0402) — either way the block fails and the repair loop "
+            "burns the turn re-creating a page that is already there.",
+            "",
+            "To FILL the existing page, open it with a top-level page-modify line and indent "
+            "the subtree under it:",
+            "",
+            f'    #page:{example_id} name("{example_name}")',
+            f"      ad_root fr p(0,0) s({root_size})",
+            '        headline text "Your headline" p(64,64) s(400,hug)',
+            "",
+            "The `name(...)` on that first line restates the page's OWN name and changes "
+            "nothing; it is there because a modify line needs at least one property — a lone "
+            "`#page:<page_id>` line is read as a comment and its children are then orphaned. "
+            "Do not restate the page size: it is already set, and re-stating it rewrites the "
+            "page.",
+            "",
+            "Once the page has content, edit nodes with `#<node_id> property(...)` modify "
+            "lines, and add, remove or reorder children inside an existing container with "
+            "`reconcile(<container_id>)` followed by that container's full intended child "
+            "subtree.",
+        ]
+    )
+
+
 def execute_agent_turn_job(
     envelope: Any,
     *,
@@ -8014,16 +8145,22 @@ def execute_agent_turn_job(
         pinned_scene["meta"] = pinned_meta
         payload = payload.model_copy(update={"scene": pinned_scene})
 
+    # genad walk F1: a LEG turn on an all-empty-paged scene (the chat-born ad at birth) is
+    # steered to FILL its existing artboard rather than author a `page ...` line the engine
+    # cannot accept. LEG-ONLY and shape-gated: a direct editor turn (no leg block) and a leg
+    # turn on a content-bearing or page-less scene compose byte-identically to before. The
+    # block sits AFTER the brief and history and immediately before the user's message, so
+    # the prefill-cached prefix those two form (P3.7's block order) is untouched.
+    steering_note = _empty_page_steering_note(payload.scene) if leg_block else None
+    composed_prompt = f"{steering_note}\n\n{payload.prompt}" if steering_note else payload.prompt
     if delegation_bundle or leg_history:
-        payload = payload.model_copy(
-            update={
-                "prompt": render_leg_turn_prompt(
-                    bundle=delegation_bundle if isinstance(delegation_bundle, dict) else None,
-                    history=leg_history if isinstance(leg_history, list) else None,
-                    prompt=payload.prompt,
-                )
-            }
+        composed_prompt = render_leg_turn_prompt(
+            bundle=delegation_bundle if isinstance(delegation_bundle, dict) else None,
+            history=leg_history if isinstance(leg_history, list) else None,
+            prompt=composed_prompt,
         )
+    if composed_prompt != payload.prompt:
+        payload = payload.model_copy(update={"prompt": composed_prompt})
 
     # --- genad Task 5: is this turn's proposal ours to commit? ---------------------------------
     # ALL of: a leg block, a pinned document, and the leg's frozen CAS base. A direct editor turn

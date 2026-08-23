@@ -466,3 +466,221 @@ def test_a_leg_scene_turn_whose_operations_do_not_replay_fails_honestly(
     assert stored["current_version"] == 0
     assert stored["scene"]["meta"]["title"] == "Hospital Letter"
     assert store.list_envelopes(document["id"]) == []
+
+
+# --- (f) genad walk F1: the empty-artboard steering block --------------------
+#
+# A chat-born ad document is BORN with one empty artboard page (the leg-open birth mints
+# `new_scene` + one `add_page` at the resolved format). The author model's from-scratch habit
+# is to open a turn with a top-level `page ...` block — which cannot work here: the page id
+# already exists, so a page line that parses is refused by the engine (`page <id> already
+# exists`) and one that does not parse leaves its indented elements parentless (LUMD0402).
+# Five live runs thrashed the repair loop that way and died upstream. A LEG turn on an
+# all-empty-paged scene therefore carries a deterministic document-state block naming the real
+# page and quoting the `#page:<page_id>` fill form the engine genuinely accepts.
+
+AD_PAGE_ID = "page_acbaa276202a57e4"
+
+
+def empty_ad_scene(
+    page_id: str = AD_PAGE_ID, width: float = 1200.0, height: float = 1200.0
+) -> dict:
+    """The newborn ad's scene: ONE artboard page at the ad format, zero children."""
+
+    scene = minimal_scene()
+    scene["pages"] = {
+        page_id: {
+            "id": page_id,
+            "name": "Square",
+            "size": {
+                "width": width,
+                "height": height,
+                "unit": "pt",
+                "preset": "custom",
+                "orientation": "landscape" if width > height else "portrait",
+                "source": {"width": width, "height": height, "unit": "px"},
+                "output": {"raster": {"width_px": int(width), "height_px": int(height)}},
+            },
+            "children": [],
+            "bleed": None,
+            "safe_area": None,
+            "background": [],
+        }
+    }
+    scene["nodes"] = {}
+    scene["slots"] = {}
+    return scene
+
+
+def _prompt_seen_by_the_runner(client: TestClient, config: dict) -> str:
+    """Drive the REAL executor and return the prompt the trio was actually handed."""
+
+    from lumen_api.main import execute_agent_turn_job
+
+    store = HybridRepository()
+    received: dict = {}
+    status, response, _, _ = execute_agent_turn_job(
+        _scene_envelope(config["request"]["document_id"], store.workspace_id, config),
+        store=store,
+        host=_turn_host(client, proposing_runner([], received)),
+        event_sink=None,
+    )
+    assert status == "succeeded", response
+    return received["payload"].prompt
+
+
+def test_a_leg_turn_on_an_all_empty_scene_is_steered_to_fill_the_birth_page(
+    client: TestClient,
+) -> None:
+    from lumen_api.main import execute_agent_turn_job  # noqa: F401  (import parity)
+
+    document = create_document(client)
+    config = _leg_config(document, 0, prompt="Go ahead.")
+    config["request"]["scene"] = empty_ad_scene()
+
+    prompt = _prompt_seen_by_the_runner(client, config)
+
+    # The block is there, and it names the REAL page and the REAL dimensions — read off the
+    # scene, never hardcoded (a wrong id would send the author at a page that does not exist).
+    assert "DOCUMENT STATE" in prompt
+    assert AD_PAGE_ID in prompt
+    assert "1200×1200" in prompt
+    # ...and it quotes the fill form the engine accepts, on the page that exists.
+    assert f"#page:{AD_PAGE_ID}" in prompt
+    # The leg's own context still rides the same prompt (P3.7/G9 unchanged).
+    assert LEG_BRIEF in prompt
+    assert "Go ahead." in prompt
+
+
+def test_the_steering_block_reads_the_page_id_and_size_off_the_scene(
+    client: TestClient,
+) -> None:
+    """A second document, a different id and format: the block moves with the scene."""
+
+    document = create_document(client)
+    config = _leg_config(document, 0)
+    config["request"]["scene"] = empty_ad_scene("page_deadbeefdeadbeef", 1080.0, 1920.0)
+
+    prompt = _prompt_seen_by_the_runner(client, config)
+
+    assert "#page:page_deadbeefdeadbeef" in prompt
+    assert "1080×1920" in prompt
+    assert AD_PAGE_ID not in prompt
+    assert "1200×1200" not in prompt
+
+
+def test_a_leg_turn_on_a_content_bearing_scene_gets_no_steering_block(
+    client: TestClient,
+) -> None:
+    """The pre-genad shape — every scene leg until now pinned a document with content. Its
+    prompt must stay byte-identical to what P3.7 composes."""
+
+    from clue_design.leg_context import render_leg_turn_prompt
+
+    document = create_document(client)
+    config = _leg_config(document, 0, prompt="Warmer, please.")
+    # `minimal_scene()` has a page WITH a child.
+    assert config["request"]["scene"]["pages"]["page_a4"]["children"]
+
+    prompt = _prompt_seen_by_the_runner(client, config)
+
+    assert prompt == render_leg_turn_prompt(
+        bundle=config["delegation_bundle"],
+        history=config["history"],
+        prompt="Warmer, please.",
+    )
+    assert "DOCUMENT STATE" not in prompt
+
+
+def test_a_leg_turn_on_a_scene_with_no_pages_gets_no_steering_block(
+    client: TestClient,
+) -> None:
+    """A page-less scene is the genuine from-scratch case: `page ...` is the CORRECT move
+    there, so the block must not appear and talk the author out of it."""
+
+    from clue_design.leg_context import render_leg_turn_prompt
+
+    document = create_document(client)
+    config = _leg_config(document, 0)
+    scene = empty_ad_scene()
+    scene["pages"] = {}
+    config["request"]["scene"] = scene
+
+    prompt = _prompt_seen_by_the_runner(client, config)
+
+    assert prompt == render_leg_turn_prompt(
+        bundle=config["delegation_bundle"],
+        history=config["history"],
+        prompt="Go ahead.",
+    )
+    assert "DOCUMENT STATE" not in prompt
+
+
+def test_a_direct_editor_turn_is_untouched_even_on_an_empty_scene(
+    client: TestClient,
+) -> None:
+    """The MVP editor's direct-turn contract (P3.7 layering): no leg block, no composition —
+    the prompt reaching the trio is the human's own words, byte for byte."""
+
+    document = create_document(client)
+    config = {
+        "request": {
+            "prompt": "Fill this page with a launch ad.",
+            "scene": empty_ad_scene(),
+            "document_id": document["id"],
+        }
+    }
+
+    prompt = _prompt_seen_by_the_runner(client, config)
+
+    assert prompt == "Fill this page with a launch ad."
+
+
+def _quoted_dsl_example(prompt: str) -> str:
+    """The DSL block the steering note quotes, dedented back to column 0."""
+
+    lines = prompt.splitlines()
+    start = next(index for index, line in enumerate(lines) if line.startswith("    #page:"))
+    block: list[str] = []
+    for line in lines[start:]:
+        if not line.strip():
+            break
+        assert line.startswith("    "), line
+        block.append(line[4:])
+    return "\n".join(block) + "\n"
+
+
+def test_the_dsl_the_steering_block_quotes_actually_compiles_against_the_empty_page(
+    client: TestClient,
+) -> None:
+    """The whole point of the block is that its DSL is a form the ENGINE accepts. A wrong form
+    here would make the defect worse, so the quoted example is compiled against the same
+    newborn scene the note was built from: it must apply cleanly, attach its subtree to the
+    EXISTING page, and leave the page's stored size untouched.
+
+    (The bare `#page:<page_id>` form the engine's own LUMD0402 hint suggests does NOT do this —
+    `is_modification_line` needs two tokens, so a lone `#…` line is a comment and its children
+    are orphaned. That is why the quoted line restates the page's name.)
+    """
+
+    document = create_document(client)
+    scene = empty_ad_scene()
+    config = _leg_config(document, 0)
+    config["request"]["scene"] = scene
+
+    prompt = _prompt_seen_by_the_runner(client, config)
+    source = _quoted_dsl_example(prompt)
+    assert source.startswith(f'#page:{AD_PAGE_ID} name("Square")')
+
+    result = client.app.state.core.compile_dsl_into_scene(scene, source)
+    compile_output = result["dsl"]["compile_output"]
+    assert compile_output["halted_at"] is None, compile_output["diagnostics"]
+    assert [
+        diagnostic
+        for diagnostic in compile_output["diagnostics"]
+        if diagnostic["diagnostic"]["severity"] == "error"
+    ] == []
+    assert result["dsl"]["operation_error"] is None
+    compiled_page = result["scene"]["pages"][AD_PAGE_ID]
+    assert compiled_page["children"] == ["ad_root"], "the subtree must attach to the EXISTING page"
+    assert compiled_page["size"] == scene["pages"][AD_PAGE_ID]["size"], "the page must not move"
