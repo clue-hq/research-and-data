@@ -176,3 +176,29 @@ invoke them separately.
    but the editor's undo UX over agent turns has not been re-reviewed.
 4. Not gated on preflight-clean, by design — see the spec entry. Revisit once
    P0.2/P0.3 land.
+
+## §7 ACCEPTANCE RUN #1 — flag ON, live, 2026-08-24 17:04 IST (colombo stack)
+Brief: Magic Doc LinkedIn square ad (audience/offer/tone stated), grok-4.6
+medium, LUMEN_AGENT_FAST_LOOP=1. Run `run_4b5dd17f9e944269b94ca45d3bd6d9f2`,
+doc `doc_aa05eefa9d85555fa6b2b45ffbc159a0` → v73, renders (full-bleed statement
+skeleton, brand purple, pink CTA).
+SCORECARD vs §1 gates: wall 10m05s (~gate limit; budget fired at 600s,
+graceful finalize, stop_reason=budget_exhausted_wall_clock) · calls 36/45 ✅
+(author 21 / orch 15 / reviewer 0 — R3 held live) · TTFP 6m09s vs ≤4m ❌ ·
+input 2.57M ≤3M ✅ · rounds 2 ✅ · usable doc ✅ (P0.4 checkpoints saved work).
+vs baseline: 43m18s→10m05s (4.3×), 178→36 calls (4.9×), 13.5M→2.57M tokens.
+Defect: headline/body OVERLAP visible in v73 (budget cut round 2 before the
+fix landed). autofix_count=0 (no class fired). 7 calls >30s — per-call latency
+is now the dominant cost; TTFP is the gate to attack next.
+Also proven live in browser: editor renders new-engine wasm, selection+
+inspector OK, export 200 (964KB PNG), visible export-failure alert (403 case),
+scene_reviewer_quarantined[fast_loop_v1_r3] in prod logs.
+Env notes: colombo frontend needed CLUE_APP_ORIGIN=http://localhost:3000
+override (.env.local pins :3033 → ALL mutations 403 at CSRF gate — fix the
+file or serve on 3033); granted mem_verify_fastloop_0824 membership row (dev
+DB) for ws_8040 access; frontend vendor wasm synced from fresh build
+(UNCOMMITTED apps/frontend/public/vendor/wasm change); colombo .env still has
+LUMEN_AGENT_REASONING=high (worker was started with medium override).
+Chat-flow paper cut (2nd occurrence today): first message only OPENS the leg
+(open_awaiting_user) — 14 min lost waiting. Product question: leg-opening
+brief that is generation-complete should carry into the design turn.
