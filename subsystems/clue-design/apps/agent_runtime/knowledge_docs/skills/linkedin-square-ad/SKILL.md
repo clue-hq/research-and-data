@@ -2,6 +2,7 @@
 name: linkedin-square-ad
 description: Author a 1080×1080 LinkedIn feed ad end-to-end — concept plan, layout skeleton, type scale, brevity budgets, and the self-audit checklist. Use whenever the brief asks for a linkedin ad, feed ad, square social ad, or 1:1 paid social creative.
 required_decisions: audience, offer_cta, tone, brand_adherence
+selection_policy: llm_selectable
 ---
 
 # LinkedIn Square Ad
@@ -115,6 +116,11 @@ the render**, never from geometry. One `acceptance_notes` line per test
 (`"<test-name>: <score> — <why>"`); every score < 2 also becomes an `issues[]`
 entry naming the test in `message`, with a `target` and a `suggested_repair`
 (category in parentheses below). Any `0` on tests 1–6 ⇒ `accepted=false`.
+
+Score with facts and measurements against the named test, never with adjectives.
+Write "headline is 6 words at 80pt" or "CTA measures 3.1:1 against its surface",
+not "looks clean" or "feels balanced". A weak design passes an adjective and
+fails a measurement, which is exactly why the measurement is the score.
 
 1. `single-focal-point` — squint: one mass, one landing spot. (`hierarchy`)
 2. `first-second-ordering` — stop → who → idea → act is legible in that order. (`hierarchy`)
