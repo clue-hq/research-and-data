@@ -158,10 +158,13 @@ export function ArtifactStage({
    * 5% steps (§1.10) — AD2.8 shows it in the menu until the user chooses. */
   onSceneFitZoom?: (zoom: string) => void;
   /** AD3.3: the loaded ad document's undo/redo stack depths, mirrored up so the
-   * header's two history rows disable off the server's real stacks. */
+   * header's two history rows disable off the server's real stacks. The
+   * committed version rides along so the session can stamp edit-target
+   * submissions after the canvas unmounts. */
   onSceneHistoryChange?: (
     history: SceneDocumentHistory,
     documentId: string,
+    currentVersion: number | null,
   ) => void;
   /** AD2.10: where a pan/wheel gesture left the viewport — the header's zoom
    * control displays this over both the fit and the chosen step, because after

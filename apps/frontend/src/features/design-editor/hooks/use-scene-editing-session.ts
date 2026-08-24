@@ -424,8 +424,21 @@ export function useSceneEditingSession({
     forDocumentId: string;
     history: SceneDocumentHistory;
   } | null>(null);
+  // The last committed version each document's canvas reported. A ref, not
+  // state: it is read only inside the submission snapshot, and it must SURVIVE
+  // the canvas unmounting (switching to the gallery surface nulls
+  // `canvasControls`, but a selection made in the editor is still submittable
+  // from there — without this memory that submit was a silent no-op).
+  const lastLoadedVersionsRef = useRef(new Map<string, number>());
   const onHistoryChange = useCallback(
-    (next: SceneDocumentHistory, documentId: string) => {
+    (
+      next: SceneDocumentHistory,
+      documentId: string,
+      currentVersion: number | null,
+    ) => {
+      if (currentVersion !== null) {
+        lastLoadedVersionsRef.current.set(documentId, currentVersion);
+      }
       setHistory({ forDocumentId: documentId, history: next });
     },
     [],
@@ -464,15 +477,27 @@ export function useSceneEditingSession({
    * Selection may change while the queue drains; the accepted turn must not. */
   const snapshotEditTargets = useCallback(async () => {
     if (!activeDocumentId || selectedIds.length === 0) return null;
+    // Only nodes the live scene still carries ride the turn: a node an agent
+    // turn or manual edit deleted has nothing to focus, and submitting its id
+    // would refuse the whole message server-side until the user found and
+    // removed a chip labelled with a raw engine id.
+    // No scene yet means nothing to validate a target against — same answer
+    // the chip bar gives (it renders no chips without a scene).
+    const liveSelectedIds = scene
+      ? selectedIds.filter((nodeId) => scene.nodes[nodeId])
+      : [];
+    if (liveSelectedIds.length === 0) return null;
     const controls = canvasControls.current;
     const loadedVersion =
-      controls?.documentId === activeDocumentId ? controls.documentVersion() : null;
+      controls?.documentId === activeDocumentId
+        ? controls.documentVersion()
+        : (lastLoadedVersionsRef.current.get(activeDocumentId) ?? null);
     const snapshot = await snapshotSceneTurnTargets({
       awaitWritesSettled: writes.awaitWritesSettled,
       documentId: activeDocumentId,
       loadedVersion,
       persistedVersion: writes.persistedVersion,
-      selectedIds,
+      selectedIds: liveSelectedIds,
     });
     if (snapshot.documentVersion === null) {
       writes.reportError(
@@ -481,7 +506,7 @@ export function useSceneEditingSession({
       return null;
     }
     return snapshot;
-  }, [activeDocumentId, selectedIds, writes]);
+  }, [activeDocumentId, scene, selectedIds, writes]);
 
   // AD4.A step 2 (§1.3 row 1): the Replace-image flow. It takes the LIVE
   // primary node rather than the hydrated state, because §4's lock and the

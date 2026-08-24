@@ -132,10 +132,18 @@ export function ChatSurface({
   const referenceAttachments = useDesignReferenceAttachments({
     enabled: designReferencesEnabled,
   });
-  const targetChips = editTargetChips(
-    sceneSession.scene,
-    sceneSession.selectedIds,
-  );
+  // Same gate as the reference images above: a `design_node` ref only means
+  // anything beside the open design leg's document, and the backend refuses a
+  // submission carrying one otherwise — a canvas selection made outside an
+  // open leg (a gallery-opened ad, a closed leg) must stay a canvas fact, not
+  // become a context ref that walls off every message in the thread.
+  const editTargetsEnabled =
+    chat.designLegOpen &&
+    shell.artifactKind === "ad" &&
+    sceneSession.activeDocumentId !== null;
+  const targetChips = editTargetsEnabled
+    ? editTargetChips(sceneSession.scene, sceneSession.selectedIds)
+    : [];
 
   const activeThread =
     chat.threads.find((thread) => thread.id === chat.activeThreadId) ?? null;
@@ -498,7 +506,9 @@ export function ChatSurface({
                 // Snapshot ids before the first await inside the scene session.
                 // A queued turn keeps this set even if the user changes the
                 // canvas selection while optimistic writes finish or the POST runs.
-                const editTargetSnapshot = await sceneSession.snapshotEditTargets();
+                const editTargetSnapshot = editTargetsEnabled
+                  ? await sceneSession.snapshotEditTargets()
+                  : null;
                 if (targetChips.length > 0 && editTargetSnapshot === null) {
                   return false;
                 }

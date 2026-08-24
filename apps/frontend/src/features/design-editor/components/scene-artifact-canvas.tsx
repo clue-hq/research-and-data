@@ -345,6 +345,10 @@ export interface SceneArtifactCanvasProps {
   onHistoryChange?: (
     history: SceneDocumentHistory,
     documentId: string,
+    /** The loaded document's committed version — remembered by the session so
+     * an edit-target submission can still stamp a version after this canvas
+     * unmounts (e.g. from the gallery surface). */
+    currentVersion: number | null,
   ) => void;
   /**
    * AD2.7: the RENDERED scene, mirrored up whenever it changes (load, reload
@@ -582,8 +586,9 @@ function SceneDocumentCanvas({
     onHistoryChangeRef.current?.(
       { loadGeneration, redoDepth, undoDepth },
       documentId,
+      currentVersion,
     );
-  }, [documentId, loadGeneration, redoDepth, undoDepth]);
+  }, [currentVersion, documentId, loadGeneration, redoDepth, undoDepth]);
 
   useEffect(() => {
     const element = stageRef.current;

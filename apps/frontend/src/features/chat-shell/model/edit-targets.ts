@@ -13,14 +13,20 @@ export interface EditTargetSnapshot {
   targetNodeIds: readonly string[];
 }
 
-/** Selection order is presentation and runtime order; missing nodes stay removable. */
+/** Selection order is presentation and runtime order. Only nodes the live
+ * scene still carries become chips — the same filter the submission snapshot
+ * applies — so what the bar shows is exactly what a send would target. A node
+ * deleted out from under the selection (an agent turn, a manual edit) simply
+ * drops off, rather than lingering as a chip labelled with a raw engine id
+ * whose submission the server must refuse. */
 export function editTargetChips(
   scene: Scene | null,
   selectedIds: readonly string[],
 ): EditTargetChip[] {
-  return selectedIds.map((nodeId) => {
-    const node = scene?.nodes[nodeId];
-    return { label: node ? nodeDisplayName(node) : nodeId, nodeId };
+  if (!scene) return [];
+  return selectedIds.flatMap((nodeId) => {
+    const node = scene.nodes[nodeId];
+    return node ? [{ label: nodeDisplayName(node), nodeId }] : [];
   });
 }
 

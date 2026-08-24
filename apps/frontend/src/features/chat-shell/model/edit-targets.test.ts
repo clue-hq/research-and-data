@@ -8,10 +8,16 @@ test("edit-target chips mirror ordered selection and use document node names", (
   const scene = HARVESTED_AD_PAGE as Scene;
   const ids = ["text_headline", "missing_after_reload"];
 
+  // A node the live scene no longer carries drops off the bar entirely — the
+  // same filter the submission snapshot applies, so a chip is always a
+  // submittable target, never a stale id the server would refuse.
   assert.deepEqual(editTargetChips(scene, ids), [
     { label: scene.nodes.text_headline.name, nodeId: "text_headline" },
-    { label: "missing_after_reload", nodeId: "missing_after_reload" },
   ]);
+});
+
+test("edit-target chips need a scene to name targets against", () => {
+  assert.deepEqual(editTargetChips(null, ["text_headline"]), []);
 });
 
 test("the target context snapshot keeps one version across document and ordered nodes", () => {
