@@ -237,3 +237,21 @@ OPEN: model-speed A/B decision still unanswered — at ~20s/call every run's
 polish round gets budget-cut, which is itself a quality ceiling.
 UNINVESTIGATED: why the logo lockup rendered as an empty plate in run #2
 (asset placed but no image drawn — check final_scene fills/asset refs).
+
+## ROOT CAUSE: authored $text.inverse rendered black (traced live, engine bug)
+Chain, fully verified: (1) kit `type.display` bakes `color: text.primary`
+(provenance: b.stripecdn.com CSS — this "Insight Health" kit v6 was ingested
+from STRIPE assets; founder's "Stripe colors" remark was correct). (2)
+`brand.rs::resolve_node` style block (~3593): a role's baked color
+UNCONDITIONALLY overwrites the node's first fill — the author's explicit
+`fill($text.inverse)` (white, 6.19:1 on #533AFD) is clobbered by text.primary
+(black). (3) P1.1 `contrast_corrected_text_color` floor is 3.0; black-on-purple
+= 3.39 → passes, no correction. Net: author paints white, engine repaints
+black, author "gives up" and authors black (run_bcdcf3e iterations 001–004).
+Fix dispatched (engine-fill-precedence agent): author's explicit fill WINS over
+role default color; role color applies only to no-fill text (P1.1 path kept).
+Full §3 engine gates required. Related-but-out-of-scope recorded: 3.0 floor
+leniency; kits baking text colors into type roles.
+Color-craft wave MERGED earlier same evening (skills/color-and-contrast +
+on-color-pairing audit test in all 5 format skills + CTA plate pin; grep-proof:
+hexes only in worked examples, rules all token-role-level → generalizes).
