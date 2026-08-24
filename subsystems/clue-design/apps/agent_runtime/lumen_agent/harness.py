@@ -31,6 +31,7 @@ from .prompts import (
     build_orchestrator_prompt,
     build_reviewer_prompt,
 )
+from .run_metrics import emit_run_metrics
 from .tools.render import make_render_preview_tool
 from .tools.substrate import LumenDesignTools
 from .tools.view import make_view_tool
@@ -80,11 +81,16 @@ def _instrument(runtime_config: AgentRuntimeConfig, tools, model_id: str, role: 
     gateway's attribution is per-instance too.
     `tools` only needs a `record(...)` method, so both LumenDesignTools and
     LumenWebTools work here.
+
+    Fast-loop v1 §7: when `tools` carries a `metrics` accumulator
+    (`run_metrics.RunMetrics`), the trace handler folds this role's calls into
+    it. `getattr` rather than an attribute access on purpose — the web tools do
+    not carry one yet, and a substrate without it must keep working unchanged.
     """
     from .trace_callbacks import attach_trace_callback
 
     model = _fresh_model(runtime_config, model_id, role=f"design_{role}")
-    attach_trace_callback(model, role=role)
+    attach_trace_callback(model, role=role, metrics=getattr(tools, "metrics", None))
     return model
 
 
@@ -405,17 +411,34 @@ def run_deepagent_turn(
             payload={"exception": exception_text},
         )
 
-    final_path = tools.trace_dir / "final.json"
-    if final_path.exists():
-        payload = json.loads(final_path.read_text(encoding="utf-8"))
-        return payload, tools
+    # Fast-loop v1 §7: ONE run_metrics summary on EVERY terminal outcome. The
+    # `finally` is the whole point — a run that died on a quota 403 mid-finalize
+    # (the 20m42s baseline) is precisely the run whose 43-minutes-went-where
+    # numbers matter most, and a metrics emission that only fired on the happy
+    # path would miss it. `emit_run_metrics` itself never raises.
+    payload: Optional[dict] = None
+    try:
+        final_path = tools.trace_dir / "final.json"
+        if final_path.exists():
+            payload = json.loads(final_path.read_text(encoding="utf-8"))
+            return payload, tools
 
-    # The orchestrator never finalized — HONEST failure, never a fabricated success.
-    detail = exception_text or "agent ended without finalize"
-    raw = tools.finalize_run(
-        "failed",
-        "orchestrator_did_not_finalize",
-        detail,
-    )
-    payload = json.loads(raw)
-    return payload, tools
+        # The orchestrator never finalized — HONEST failure, never a fabricated success.
+        detail = exception_text or "agent ended without finalize"
+        raw = tools.finalize_run(
+            "failed",
+            "orchestrator_did_not_finalize",
+            detail,
+        )
+        payload = json.loads(raw)
+        return payload, tools
+    finally:
+        final = payload or {}
+        emit_run_metrics(
+            tools,
+            outcome=final.get("outcome") or final.get("status") or "failed",
+            status=final.get("status") or "failed",
+            stop_reason=final.get("stop_reason")
+            or (exception_text or "no final payload"),
+            rounds_dir=workspace_root(tools) / "rounds",
+        )

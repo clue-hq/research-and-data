@@ -52,6 +52,9 @@ class RunView:
     envelopes: list[dict] = field(default_factory=list)
     events: list[dict] = field(default_factory=list)
     assets: list[AssetView] = field(default_factory=list)
+    #: The agent runtime's per-run summary (fast-loop v1 §7), lifted out of the
+    #: event stream. ``None`` when the run emitted none — see the matching gap.
+    metrics: dict | None = None
 
 
 def _decode(value: Any) -> Any:
@@ -125,6 +128,7 @@ async def _assemble(
     envelopes = await _load_envelopes(conn, workspace_id, document_id, gaps)
     events = await _load_events(conn, run_id, gaps)
     assets = await _load_assets(conn, scene, workspace_id, asset_store_root, storage_fs_root, gaps)
+    metrics = _extract_run_metrics(events, run_id, gaps)
 
     manifest = {
         "ref": ref,
@@ -150,6 +154,7 @@ async def _assemble(
             "events": len(events),
             "assets": len(assets),
         },
+        "metrics": metrics,
         "gaps": gaps,
     }
     return RunView(
@@ -159,7 +164,52 @@ async def _assemble(
         envelopes=envelopes,
         events=events,
         assets=assets,
+        metrics=metrics,
     )
+
+
+# --- the agent runtime's per-run summary --------------------------------------------------------
+
+
+#: The agent-runtime event name carrying the per-run summary
+#: (``lumen_agent.run_metrics.RUN_METRICS_EVENT``). Restated rather than imported: this module
+#: composes no app and must not take an agent-runtime import edge for one string constant.
+_RUN_METRICS_EVENT = "run_metrics"
+
+
+def _extract_run_metrics(events: list[dict], run_id: str | None, gaps: list[str]) -> dict | None:
+    """The runtime's ``run_metrics`` summary, lifted out of the progress stream.
+
+    The agent runtime emits it once at any terminal outcome, through the same substrate ``record``
+    every other progress event uses, so it arrives here as an ordinary ``design.run.event``
+    payload: ``{"event_type": "run_metrics", "data": {..., "metrics": {...}}}``. The metrics body
+    rides ``data["metrics"]`` because the sink push is otherwise a fixed five-field subset.
+
+    Absence is reported, never assumed away: a run that predates the counters, an inline-lane run
+    whose events were never persisted, and a run that genuinely emitted nothing all look the same
+    from here, so the gap says exactly that rather than implying the run was un-instrumented.
+    """
+    if run_id is None:
+        return None
+    found: dict | None = None
+    for event in events:
+        payload = event.get("payload")
+        if not isinstance(payload, dict) or payload.get("event_type") != _RUN_METRICS_EVENT:
+            continue
+        data = payload.get("data")
+        candidate = data.get("metrics") if isinstance(data, dict) else None
+        if isinstance(candidate, dict):
+            # Last one wins: a resumed/taken-over run can emit more than one summary, and the
+            # newest describes the attempt that actually finished.
+            found = candidate
+    if found is None and events:
+        gaps.append(
+            "no run_metrics event on this run's stream — either the run predates the per-run "
+            "summary counters, or its terminal emission never reached the durable stream "
+            "(a fenced takeover drops progress events). The run's own metrics.json, in the "
+            "agent workspace on the worker that ran it, is the other copy."
+        )
+    return found
 
 
 # --- resolution -------------------------------------------------------------------------------
