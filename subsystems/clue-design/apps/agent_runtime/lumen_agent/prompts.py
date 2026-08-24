@@ -539,26 +539,52 @@ _REVIEWER_REFERENCES_BLOCK = """
 #: defects — cropped baked-in text on a placed asset, an unreadable CTA — were
 #: plainly visible in a single render.
 _AUTHOR_FAST_LOOP_WORK_LOOP = """YOUR WORK LOOP (fast loop — you have eyes now, and you must use them):
-1. Your direction arrives INLINE in the delegation that woke you, and your
+1. START. Your direction arrives INLINE in the delegation that woke you, and your
    opening context is composed for you below (brand card, resolved type ramp,
-   live scene digest, asset index, pinned knowledge). Read the round's
-   direction.md and — when they exist — the PREVIOUS round's critique.json and
-   your own author_report.md. Request those read_file calls together in ONE
-   response. Do NOT ls, glob or grep for anything: if it is not in your payload
-   and not in a file you were NAMED, it is not needed to start.
+   live scene digest, asset index, pinned knowledge).
+   You get ONE reading response before you compile. Put everything you need into
+   it: the round's direction.md, the FORMAT SKILL named in your direction, and —
+   when they exist — the previous round's critique.json and your own
+   author_report.md. That is the whole list.
+   The capability skills (create-design, brand-and-tokens, effects,
+   brand-imagery) are background, not a prerequisite. Do not read them to get
+   started. Open one later only when a specific problem sends you there.
+   Never read the same file twice. You already have it.
+   Do NOT ls, glob or grep for anything: if it is not in your payload and not in
+   a file you were NAMED, it is not needed to start.
 2. COMPILE. Author the whole change as ONE whole-scene (or whole-subtree)
    reconcile and apply it with compile_dsl_block. See the TOOL-ROUTING RULE
    below — this is not a preference, it is the rule that ends the micro-edit
    drip. Fix compile halts in your block and compile again.
+   YOUR FIRST COMPILE MUST BE THE WHOLE DESIGN. Not a skeleton, not a warm-up,
+   not the layout now and the type later. Every node, every real string, every
+   token the design needs, in one block. You already hold the brief, the brand
+   card, the resolved type ramp and the format skill, and that is everything a
+   finished design needs — so write the finished design. Example of the mistake:
+   compiling a bare frame with three empty text nodes, then compiling again to
+   put the words in. That is two compiles and two extra minutes for one design.
 3. PREFLIGHT. preflight_design() must come back without errors you introduced;
    validate_binding_set for token work.
-4. RENDER. render_preview() — you have this tool now. It renders the current
-   scene to a validated PNG in your round directory.
+4. RENDER AS SOON AS PREFLIGHT IS CLEAN. render_preview() — you have this tool
+   now. It renders the current scene to a validated PNG in your round directory.
+   Go straight here from step 3. Do NOT inspect, do NOT measure, do NOT polish
+   and do NOT compile a second time before your first render exists. Whatever you
+   were about to check is either already in your scene digest or about to be
+   visible in the pixels, and looking at the pixels is faster and more honest
+   than either. How quickly the first picture appears is a goal of this loop in
+   its own right, not a side effect.
 5. LOOK AT YOUR OWN RENDER. view("preview"). This step is MANDATORY before you
    report done, and it is not optional even when the geometry says everything is
    fine: geometry cannot tell you that a photo's baked-in text got cropped, that
    the CTA disappears into its surface, or that the headline reads as a caption.
    Numbers said those designs were correct. The render said they were not.
+   Check collisions with your eyes, every time. Look for any text that runs into
+   another text block, into a button, or into an image edge. The geometry cannot
+   see this: the engine measures a line of text as exactly font size times line
+   height, so tight leading shrinks the measured box in step with the text and
+   the overflow it causes is never reported. When you find a collision, name both
+   elements by node id in your self-audit and fix it. The usual fix is more line
+   height, more gap, or fewer words — not a smaller font.
 6. SELF-AUDIT. Score what you SAW against the checklist of the format skill in
    force (its "Self-audit checklist" section); with no format skill, judge:
    single focal point · first-second ordering · headline within budget and not a
@@ -761,7 +787,24 @@ per authoring round. When a ceiling is hit the run STOPS and finalizes whatever
 stands — so spend the budget on the design, not on exploration. Target: the
 first render inside 3 to 4 model calls, one authoring round, at most one repair
 round. Every accepted round is checkpointed to the document as it happens, so
-stopping early costs the current round, never the run."""
+stopping early costs the current round, never the run.
+
+GET TO THE AUTHOR FAST. Your opening move is to pick the format skill, write
+direction.md, and delegate. Do NOT ls, glob or grep the knowledge tree. The skill
+index below already names every skill you can choose from, and the author's own
+payload already carries the knowledge it needs to work. Reading around the
+subject before you have delegated is the most expensive thing you can do with
+this budget, because every minute you spend there is a minute the author does
+not get.
+
+DO NOT OPEN A ROUND YOU CANNOT FINISH. Every render_preview you run ends with a
+BUDGET LEFT line: calls used, calls left, minutes used, minutes left, and a plain
+verdict on whether another authoring round still fits. Believe that verdict.
+When it says there is no room, do not delegate again. A repair round that gets
+cut in half is worse than no repair round at all, because the author stops
+mid-edit and leaves the design in a state nobody chose. Instead: keep the
+accepted design that already stands, record_gap every issue you are leaving
+behind, and finalize honestly."""
 
 
 def _fast_loop_skill_index(skills: list[tuple[str, str]] | None) -> str:

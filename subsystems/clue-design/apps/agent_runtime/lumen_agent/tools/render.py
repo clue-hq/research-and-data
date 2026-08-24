@@ -22,14 +22,26 @@ def _current_round_dir(tools: LumenDesignTools, current_round: int) -> Optional[
     return candidate if candidate.exists() else None
 
 
-def _render_preview_text(tools: LumenDesignTools, *, checkpoint: bool = True) -> str:
+def _render_preview_text(
+    tools: LumenDesignTools,
+    *,
+    checkpoint: bool = True,
+    budget=None,
+) -> str:
     """Wrap export_preview_bundle(critic_format="png"): render, copy the PNG into
     the round (or previews/) dir, and return a compact TEXT summary. On validation
     failure, return the errors verbatim. Never returns image blocks (§4b).
 
     `checkpoint` (fast loop §5.2) decides whether a clean render also fires the
     P0.4 checkpoint commit — see the trigger site below for why the AUTHOR's
-    renders are built with `checkpoint=False`."""
+    renders are built with `checkpoint=False`.
+
+    `budget` (fast loop tuning, 2026-08-24) appends the run's remaining headroom.
+    It rides THIS tool because the orchestrator's step-5 verification render is
+    the round boundary — the one moment in the loop where "open another round or
+    finalize" is actually decided, and the last thing the orchestrator reads
+    before deciding it. Handing the number over anywhere else would mean handing
+    it over at a moment nobody can act on."""
     raw = tools.export_preview_bundle(critic_format="png")
     try:
         payload = json.loads(raw)
@@ -127,6 +139,16 @@ def _render_preview_text(tools: LumenDesignTools, *, checkpoint: bool = True) ->
     #   unchanged) and touch nothing durable.
     if checkpoint and status == "ok" and not validation_errors and png_path is not None:
         tools.checkpoint_scene("render_preview")
+
+    # The round-boundary headroom report. Last line, because it is what the
+    # orchestrator acts on after it has read everything else. Best-effort by
+    # construction: a budget that cannot describe itself must not take down a
+    # render that succeeded.
+    if budget is not None:
+        try:
+            lines.append(budget.status_line())
+        except Exception:  # noqa: BLE001 - never fail a render over a status line
+            logger.warning("render_budget_line_failed")
     return "\n".join(lines)
 
 
@@ -146,7 +168,12 @@ def tools_current_round(tools: LumenDesignTools) -> int:
     return highest
 
 
-def make_render_preview_tool(tools: LumenDesignTools, *, checkpoint: bool = True):
+def make_render_preview_tool(
+    tools: LumenDesignTools,
+    *,
+    checkpoint: bool = True,
+    budget=None,
+):
     """Build a `render_preview` tool bound to `tools`.
 
     Two instances are built under the fast loop over the SAME substrate: the
@@ -155,6 +182,11 @@ def make_render_preview_tool(tools: LumenDesignTools, *, checkpoint: bool = True
     caller-identity check because the substrate genuinely cannot tell who is
     calling — the tool object is the only thing that differs between the roles,
     so the tool object is where the difference belongs.
+
+    `budget` follows the same split and for the same reason: only the
+    orchestrator's instance carries it, because only the orchestrator decides
+    whether to open another round. Telling the author its run is nearly over
+    would invite it to cut corners on work it has already been told to finish.
     """
     from langchain_core.tools import tool
 
@@ -168,6 +200,6 @@ def make_render_preview_tool(tools: LumenDesignTools, *, checkpoint: bool = True
         Requires preflight_design after any scene mutation — export refuses
         unresolved token paints."""
         with log_span("tool_render_preview", logger=logger):
-            return _render_preview_text(tools, checkpoint=checkpoint)
+            return _render_preview_text(tools, checkpoint=checkpoint, budget=budget)
 
     return render_preview

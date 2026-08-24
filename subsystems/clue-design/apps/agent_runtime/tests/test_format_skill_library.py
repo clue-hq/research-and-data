@@ -430,9 +430,29 @@ def test_every_named_self_audit_test_is_present() -> None:
         "cta-thumbnail-legibility",
         "distinctive-asset-at-real-scale",
         "safe-margins",
+        # Added 2026-08-24 after acceptance run #1 shipped a headline sitting on
+        # its body copy. No engine diagnostic covers content colliding with
+        # content, so this test is the only thing that catches the class.
+        "no-collisions",
         "brand-adherence-followed",
     ):
         assert named_test in body, f"self-audit test {named_test!r} is missing"
+
+
+def test_the_collision_test_says_why_geometry_cannot_score_it() -> None:
+    """`no-collisions` is an eyes test, and the reason is mechanical rather than
+    a matter of taste: the engine measures a line as font size x line height, so
+    tight leading shrinks the measured box in step with the text and the spill is
+    never reported. Without that explanation the author will try to score it from
+    `inspect` and find nothing wrong."""
+
+    body = _meta_and_body()[1]
+
+    assert "no-collisions" in body
+    assert "font size times line height" in body
+    assert "preflight perfectly clean" in body
+    # It must also say what to do, or it is only a complaint.
+    assert "more line height, more gap, or fewer words" in body
 
 
 def test_the_self_audit_writes_the_real_critique_shape() -> None:
