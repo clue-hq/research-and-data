@@ -134,6 +134,24 @@ class AgentRuntimeConfig:
     # via record_gap. Probes/sweeps run with this ON so results stay comparable;
     # live editor runs leave it OFF so the agent can ask a vague brief.
     auto_defaults: bool = False
+    # --- Fast loop v1 (docs/deepagent-fast-loop-v1-spec.md §5) ----------------
+    # ONE flag selects the whole §5 loop for SCENE turns. False (the default and
+    # every offline/CLI/fixture path that does not opt in) keeps the turn
+    # byte-identical to the pre-fast-loop behaviour, which is the contract the
+    # flag-off tests pin. Web turns never consult it (§3 non-goal).
+    fast_loop: bool = False
+    # R3 kill-switch: re-enable the `lumen-visual-reviewer` subagent on scene
+    # turns WITHOUT leaving the fast loop. Read through
+    # `scene_reviewer_enabled`, never directly — that property is the single
+    # place R3 is expressed.
+    scene_reviewer: bool = False
+    # R4 budgets. Only consulted under `fast_loop`.
+    fast_loop_max_llm_calls: int = 45
+    fast_loop_wall_clock_s: float = 600.0
+    fast_loop_inner_iterations: int = 4
+    # §5.1 pin-list override (comma-separated knowledge_docs-relative paths).
+    # None → `lumen_agent.frame.DEFAULT_PINNED_KNOWLEDGE`.
+    fast_loop_pinned_knowledge: str | None = None
 
     @classmethod
     def from_env(cls, repo_root: Path | None = None) -> "AgentRuntimeConfig":
@@ -165,7 +183,26 @@ class AgentRuntimeConfig:
             agent_model_author=settings.lumen_agent_model_author,
             agent_model_reviewer=settings.lumen_agent_model_reviewer,
             auto_defaults=settings.lumen_agent_auto_defaults,
+            fast_loop=settings.lumen_agent_fast_loop,
+            scene_reviewer=settings.lumen_agent_scene_reviewer,
+            fast_loop_max_llm_calls=settings.lumen_agent_fast_loop_max_llm_calls,
+            fast_loop_wall_clock_s=settings.lumen_agent_fast_loop_wall_clock_s,
+            fast_loop_inner_iterations=settings.lumen_agent_fast_loop_inner_iterations,
+            fast_loop_pinned_knowledge=settings.lumen_agent_fast_loop_pinned_knowledge,
         )
+
+    @property
+    def scene_reviewer_enabled(self) -> bool:
+        """Whether a SCENE turn dispatches the `lumen-visual-reviewer` subagent.
+
+        Ruling R3 in one expression. Off the fast loop the reviewer is always
+        dispatched (nothing changes). On the fast loop it is quarantined — its
+        prompt, model, schema and web-turn wiring all stay built and reachable,
+        it is simply absent from the scene orchestrator's subagent list, which
+        is tool-absence enforcement exactly as `request_clarification` does it.
+        `LUMEN_AGENT_SCENE_REVIEWER=1` puts it back.
+        """
+        return (not self.fast_loop) or self.scene_reviewer
 
     @property
     def orchestrator_model(self) -> str:

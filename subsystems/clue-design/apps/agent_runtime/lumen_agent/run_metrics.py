@@ -116,6 +116,18 @@ class RunMetrics:
         self._llm_calls_over_30s = 0
         self._compile_iterations = 0
         self._first_preview_monotonic: Optional[float] = None
+        # Fast-loop v1 §5.6. `_budget` is the run's `budget.RunBudget` when the
+        # flag is on (None otherwise), so the summary can report the ceilings
+        # the run was actually held to and not just the numbers it hit.
+        # `_budget_breach` is the breach triple, recorded by the budget itself at
+        # the moment it refuses a call — kept separately so a breach survives
+        # even if the budget object is never handed over.
+        self._budget: Any = None
+        self._budget_breach: Optional[dict] = None
+        # §5.2: how many times the inner-iteration cap refused a compile. A
+        # non-zero count is the honest signal that a round wanted more passes
+        # than the cap allows — the number to tune the cap against.
+        self._inner_iteration_refusals = 0
 
     # -- registration ------------------------------------------------------- #
     def register_role(self, role: str) -> None:
@@ -173,6 +185,27 @@ class RunMetrics:
             if self._first_preview_monotonic is None:
                 self._first_preview_monotonic = time.monotonic()
 
+    def mark_inner_iteration_refused(self) -> None:
+        """§5.2: the per-round inner-iteration cap refused one more compile."""
+        with self._lock:
+            self._inner_iteration_refusals += 1
+
+    # -- fed by the fast-loop budget (§5.6) ---------------------------------- #
+    def attach_budget(self, budget: Any) -> None:
+        """Register the run's `budget.RunBudget` so the summary reports it."""
+        with self._lock:
+            self._budget = budget
+
+    def record_budget_breach(self, *, kind: str, limit: float, observed: float) -> None:
+        """The FIRST breach only — a sticky budget can only be exceeded once."""
+        with self._lock:
+            if self._budget_breach is None:
+                self._budget_breach = {
+                    "kind": kind,
+                    "limit": limit,
+                    "observed": observed,
+                }
+
     # -- the summary --------------------------------------------------------- #
     def wall_time_ms(self) -> int:
         return int((time.monotonic() - self._started_monotonic) * 1000)
@@ -189,6 +222,9 @@ class RunMetrics:
         with self._lock:
             by_role = {role: counters.as_dict() for role, counters in sorted(self._roles.items())}
             first_preview = self._first_preview_monotonic
+            budget = self._budget
+            budget_breach = dict(self._budget_breach) if self._budget_breach else None
+            inner_iteration_refusals = self._inner_iteration_refusals
             summary = {
                 "run_id": self.run_id,
                 "outcome": outcome,
@@ -209,6 +245,21 @@ class RunMetrics:
                 "compile_iterations_total": self._compile_iterations,
                 "by_role": by_role,
             }
+        # Fast-loop v1 §5.6/§5.2. Both keys are ADDITIVE and both are omitted on
+        # a flag-off run, so a pre-fast-loop `metrics.json` is byte-identical:
+        # no budget exists to report and the inner-iteration cap never fires.
+        # `budget.snapshot()` is read outside the metrics lock on purpose — the
+        # budget takes its own lock, and taking them in two orders across two
+        # call paths is how deadlocks are written.
+        if budget is not None:
+            try:
+                summary["budget"] = budget.snapshot()
+            except Exception:  # noqa: BLE001 - never fail a turn on its own metrics
+                summary["budget"] = None
+        if budget_breach is not None:
+            summary["budget_exhausted"] = budget_breach
+        if inner_iteration_refusals:
+            summary["inner_iteration_refusals"] = inner_iteration_refusals
         return summary
 
 
@@ -316,7 +367,7 @@ def emit_run_metrics(
 def summarize_line(summary: dict) -> str:
     """One human line: the §1 gate row, in the order the spec's table lists it."""
     ttfp = summary.get("time_to_first_preview_ms")
-    return (
+    line = (
         f"{_ms(summary.get('wall_time_ms'))} wall · "
         f"{summary.get('llm_calls_total', 0)} llm calls · "
         f"first preview {_ms(ttfp) if ttfp is not None else 'never'} · "
@@ -325,6 +376,12 @@ def summarize_line(summary: dict) -> str:
         f"{summary.get('rounds_total', 0)} rounds · "
         f"{summary.get('compile_iterations_total', 0)} compiles"
     )
+    # §5.6: a budget-stopped run must say so on its ONE human line. Appended
+    # only when a breach happened, so the flag-off line is unchanged.
+    breach = summary.get("budget_exhausted")
+    if isinstance(breach, dict) and breach.get("kind"):
+        line += f" · BUDGET EXHAUSTED ({breach['kind']})"
+    return line
 
 
 def _ms(value: Any) -> str:

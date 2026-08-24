@@ -6,6 +6,15 @@ rulings R1–R2 in §2; the §9 review questions were answered 2026-08-24 and ar
 recorded as R3–R6 in §2. Phase 1 (P0 fixes + instrumentation) is cleared to
 start.
 
+**Phase 1 DONE 2026-08-24** (P0.1–P0.4 + W0 instrumentation, merged to
+`integration/frontend-design-part-iv-v4` at `9409fda71`).
+
+**Phase 2 CORE DONE 2026-08-24** — §5.1, §5.2, §5.3, §5.5, §5.6, §5.7 built
+behind `LUMEN_AGENT_FAST_LOOP` (default OFF), each carrying an *As built* note in
+its section below. Still open in Phase 2: **§5.4** deterministic autofix and
+**§6/§8** the format-skill library (`linkedin-square-ad`), both owned separately;
+and the §7 acceptance protocol, which needs a live stack.
+
 Baseline evidence: `fleet-worker.log` runs `run_59cbf0b7…` (inner
 `run_9269a8…`, 20m42s, failed on quota at finalize) and `run_c7640eee…` (inner
 `run_7d4ba182…`, 43m18s, succeeded; export left blocked). Full forensics in the
@@ -159,6 +168,39 @@ the skill names are pinned into the payload, not read mid-run.
 Acceptance: a clean run issues **zero** `grep`/`glob`/`ls` calls and reaches
 its first compile within 3 model calls.
 
+**As built (2026-08-24, `lumen_agent/frame.py`).** `build_frame_payload(tools)`
+composes the block onto the author's SYSTEM prompt — assembled once per turn and
+never mutated, so it sits inside the cache-stable prefix the harness's L1
+invariant protects and is paid for once rather than per call. Five sections, each
+capped and each stating its cap: the brand card (through the existing
+`render_brand_card_text` seam); the **type ramp**; the scene digest
+(`inspect(view="scene")` + each page's node tree, degrading to the summary form
+past 120 nodes with the reason stated); the asset index (every placeable id with
+its `view("asset:<id>")` handle — worth handing over only because P0.1 made those
+previews resolve); and the pinned knowledge files **inlined as bodies, not
+paths**. Default pin set: `lumen-dsl/grammar.md`, `lumen-dsl/directives.md`,
+`design-systems/brand-application.md`, `design/artboard-frame-authoring.md`
+(~24K chars once, against the baseline's 71 file reads);
+`LUMEN_AGENT_FAST_LOOP_PINNED_KNOWLEDGE` overrides it, and a missing pin is
+logged and skipped rather than fatal.
+
+*The type ramp's numbers.* Floors are this spec's own §8 figures re-expressed as
+fractions of the canvas short edge — 0.0593 × 1080 = 64 (display), 0.0204 × 1080
+= 22 (body) — so the table reproduces the pilot skill exactly at 1080 and scales
+off it honestly; kit sizes are scaled by (short edge / 1080), clamped [0.5, 4.0].
+A create turn starts with **zero pages**, so with no canvas declared the ramp
+emits fractions plus the worked 1080 example and says it cannot resolve, rather
+than inventing dimensions.
+
+*What is deliberately NOT composed:* the round direction, which the orchestrator
+writes per round long after assembly. §5.1's other half is therefore prompt-side:
+the flag-on orchestrator prompt requires the direction **inline in the `task`
+delegation** (as well as in `direction.md` for the record), and the flag-on
+author prompt forbids `ls`/`glob`/`grep` while permitting one read of a NAMED
+file. Reading a named file is not searching; hunting for it is. Tests assert the
+assertable half — that the composed prompt really carries the card, the ramp, the
+digest, the index and the pinned bodies.
+
 ### 5.2 Author with eyes — the micro-loop
 
 `render_preview` is granted to the author (today: orchestrator-only,
@@ -176,6 +218,33 @@ The render/look step is **mandatory before reporting done** — geometry tells
 the agent nothing about how the ad reads (cropped baked-in text, unreadable
 CTA: both baseline failures were visible in one render). Renders write into
 the round directory as today, preserving artifact custody.
+
+**As built (2026-08-24).** `make_render_preview_tool(tools, checkpoint=…)` builds
+**two** instances over the same substrate: the orchestrator's (`checkpoint=True`)
+and the author's (`checkpoint=False`), appended to the author subagent's tool
+list under the flag. A closure flag rather than a caller-identity check, because
+the substrate genuinely cannot tell who is calling — the tool object is the only
+thing that differs between the roles, so that is where the difference belongs.
+
+*Interaction with P0.4 — decided: author renders do NOT checkpoint* (documented
+at the trigger site in `tools/render.py`). A checkpoint means "a round was
+ACCEPTED and its scene is durable". The author renders MID-round — that is the
+point of this loop, it renders to find what is still wrong, and its first render
+of a round is frequently of a design its own next self-audit rejects. Committing
+those would weaken a checkpoint to "somebody rendered something that did not
+crash" and would mint a document version per inner iteration (up to N per round)
+instead of one per accepted round; the frontend reads checkpoints as progress and
+P0.4's replay guard reads the last one as the best surviving state, and both
+readings depend on "accepted". Round acceptance therefore stays exactly where
+P0.4 put it: the orchestrator's step-5 verification render.
+
+*The inner-iteration cap is enforced, not asked for.* `compile_dsl_block` refuses
+past `LUMEN_AGENT_FAST_LOOP_INNER_ITERATIONS` compiles in one round, counted per
+`rounds/round_N` directory so a repair round gets a fresh budget. It is a house-
+style REFUSAL string rather than an exception, checked before the iteration bump:
+nothing is rolled back, the last good scene stands, and the message tells the
+author to render, look, write an honest `critique.json` and report. An exception
+would have taken the turn down and lost a perfectly good scene.
 
 ### 5.3 Reviewer retired for scene turns; the checklist survives
 
@@ -197,6 +266,32 @@ Kept reversible: the reviewer code path stays (web turns still use their
 reviewer); a config flag can re-enable it for scene turns if self-audit scores
 diverge from human acceptance on a defect class.
 
+**As built (2026-08-24).** The quarantine is one list filter in
+`create_design_deepagent`: under the flag the `lumen-visual-reviewer` dict is
+removed from `subagents`, so the orchestrator cannot dispatch what it cannot see
+— **tool-absence enforcement**, exactly as `request_clarification` does it, and
+the M8D-R1 pattern. Everything else stays built on every turn:
+`build_reviewer_prompt`, the reviewer model instance, and
+`ToolStrategy(VisualCritique)`. `harness_web` never reads the flag, so web turns
+are untouched. The reviewer's model is still constructed deliberately — it costs
+nothing (no network until invoke) and it keeps the role REGISTERED with
+`run_metrics`, so a quarantined run reports the reviewer at **zero calls** rather
+than omitting it, which is the fact worth seeing.
+
+`AgentRuntimeConfig.scene_reviewer_enabled` is the single expression of R3
+(`(not fast_loop) or scene_reviewer`); `LUMEN_AGENT_SCENE_REVIEWER=1` is the
+kill-switch and restores the reviewer INTACT without leaving the fast loop, which
+is both §7's kill-switch check and the rollback. Under the kill-switch the
+orchestrator prompt keeps its original delegate-review steps verbatim.
+
+Orchestrator-side, steps 5–7 are replaced (not appended to — "delegate review"
+and "judge the self-audit" are contradictory instructions) with judging
+`critique.json` against its own view of the preview, with the same three
+outcomes and unchanged `rounds/index.md` discipline. The author prompt carries
+the `VisualCritique` field list and one explicit warning: an audit that
+rubber-stamps its own work is the single failure mode retiring the reviewer could
+introduce, and it is the thing that would put the reviewer back.
+
 ### 5.4 Deterministic autofix below the model
 
 Mechanical preflight diagnostics with closed-form fixes are repaired in a code
@@ -217,6 +312,14 @@ no layout implications. Any change touching layout or ≥3 nodes goes through
 that batch**, with existing content copied verbatim. The baseline's
 iterations 21–34 (14 compiles, ~24 calls) become 2–3 compiles under this rule.
 
+**As built (2026-08-24).** `prompts.TOOL_ROUTING_RULE`, interpolated once into
+each flag-on prompt (author and orchestrator). The rule carries the number —
+"layout, OR three or more nodes" — rather than a preference, and requires the
+batch to be PLANNED before it is written. §5.2's inner-iteration cap is the
+enforcement behind it: when the drip happens anyway, the round ends rather than
+grinding. Format skills should restate it; the prompt no longer depends on their
+doing so.
+
 ### 5.6 Budgets and graceful finalize
 
 Hard ceilings enforced by the harness, not the prompt: per-run model-call
@@ -227,6 +330,32 @@ The 60s per-call timeout becomes a real wall-clock watchdog (the SDK
 socket-silence timeout demonstrably lets 86–104s calls through; see
 `docs/case-studies/deepagent-latency.md` §"watchdog").
 
+**As built (2026-08-24, `lumen_agent/budget.py`).** One `RunBudget` per run,
+shared by all three roles so the orchestrator cannot buy itself calls by
+delegating, consulted immediately before every model call. The seam is a
+langchain callback attached in place to each role model's own `.callbacks` (the
+same mechanism `attach_trace_callback` uses, for the same `resolve_model` reason)
+carrying `raise_error = True` — langchain-core's documented opt-in for "propagate
+instead of log and swallow", without which the ceiling would silently degrade
+back into a suggestion. Checked BEFORE counting, so 45 means the 45th call runs
+and the 46th refuses; the breach is sticky, so a retry cannot walk past it.
+
+*Graceful finalize* (`harness._finalize_on_budget_exhausted`): `record_gap`
+naming the ceiling and what remained, then `completed_with_warnings` when the
+scene actually has content and an honest `failed` when nothing was ever
+authored — never `accepted`, because nothing accepted it. A run that already
+wrote `final.json` keeps its own verdict. `run_metrics` still emits from the
+`finally`, now with a `budget` block, a `budget_exhausted` triple and a
+"BUDGET EXHAUSTED (kind)" suffix on its one human line.
+
+*Two honest limits.* (a) Nothing interrupts a call already in flight — the
+per-call `agent_llm_timeout_s` (L3) still owns that; the budget refuses to
+*start* another, which is effective because model calls are ~99% of wall clock.
+(b) If a subagent's tool wrapper swallows the exception, the orchestrator's own
+next call raises against the same sticky budget, so a breach costs at most one
+extra hop. Replacing L3's socket-silence timeout with a true watchdog thread is
+NOT done here and remains open.
+
 ### 5.7 Conditional clarification (implements R2)
 
 Each format skill declares its **required decisions** (audience, tone/energy,
@@ -235,6 +364,41 @@ opening move checks the brief against that list: material gaps → one batched
 round of 2–4 questions (existing clarification machinery, `harness.py`
 opening-move gate); otherwise proceed on defaults, `record_gap` per
 assumption. "Facts it can find; taste and scope the user states."
+
+**As built (2026-08-24).** Prompt-level, on the EXISTING machinery: the flag-on
+orchestrator prompt replaces the "CLARIFYING A VAGUE BRIEF" paragraph with a
+required-decisions check, and `request_clarification`'s two structural
+suppressors (`auto_defaults`, `clarification_already_requested`) are untouched —
+tool-absence still resolves to the defaults branch. The built-in fallback list,
+used when no format skill is in force, is the four this spec names: **audience ·
+offer/CTA · tone · brand adherence** (default balanced).
+
+**THE FORMAT-SKILL INTERFACE** — the contract a §6 skill author writes against so
+their skill plugs in with no code change here. Declared in
+`harness._materialized_skill_index`'s docstring and referenced by name in the
+flag-on orchestrator prompt:
+
+| Where | Key / section | Role |
+|---|---|---|
+| frontmatter | `name:` | the skill's id, as today |
+| frontmatter | `description:` | what the orchestrator MATCHES on — must name the trigger phrases (this is what the composed skill index shows) |
+| frontmatter | `required_decisions:` *(optional)* | list of `{id, question, default}` — the machine-readable twin of the prose section |
+| section | `## Defaults & required decisions` | **the §5.7 gate reads this.** Authoritative for the artifact; replaces the built-in four |
+| section | `## Self-audit checklist` | what §5.3's `critique.json` scores against (the author prompt names it) |
+| frontmatter | `pinned_knowledge:` *(optional)* | knowledge_docs-relative paths this skill's work needs inlined into the §5.1 payload |
+
+Two seams are honest about being incomplete. (1) `required_decisions:` is
+declared but not consumed in Python — the orchestrator reads the prose section;
+the frontmatter key exists so the two can be checked against each other later.
+(2) `pinned_knowledge:` cannot be honoured yet: the frame payload is composed at
+assembly time and skill selection happens at runtime, so until pre-dispatch
+selection exists, `LUMEN_AGENT_FAST_LOOP_PINNED_KNOWLEDGE` is that seam.
+
+Skill SELECTION also stops costing a lookup: `_materialized_skill_index` reads
+every materialized `SKILL.md`'s frontmatter at assembly time and inlines a
+name+description index into the flag-on orchestrator prompt (the orchestrator has
+no skills middleware — only subagents do — so it would otherwise have to `ls`).
+A malformed or unreadable `SKILL.md` degrades the index; it never fails a turn.
 
 ## 6. Format-skill library v1
 
