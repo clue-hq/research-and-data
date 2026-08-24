@@ -1,16 +1,19 @@
 "use client";
 
 import {
+  useCallback,
   useEffect,
   useMemo,
   useRef,
   useState,
   useSyncExternalStore,
+  type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
   type RefObject,
 } from "react";
 import type { CanvasKit, Surface, TypefaceFontProvider } from "canvaskit-wasm";
 import { AlertTriangleIcon } from "lucide-react";
+import { textareaCommitKey } from "@/features/chat-shell/components/inspector-field-draft";
 import { sceneEngineBanners } from "../adapter/scene-engine-banners";
 import { scenePagelessNotice } from "../adapter/scene-pageless";
 import {
@@ -53,6 +56,13 @@ import {
   sceneHitPoint,
 } from "../adapter/scene-selection";
 import {
+  SCENE_TEXT_EDIT_INTENT,
+  sceneDoubleClickEffect,
+  sceneTextEditModel,
+  textEditCommitOperations,
+  type SceneTextEditModel,
+} from "../adapter/scene-text-edit";
+import {
   gestureReducer,
   initialGestureState,
   type GestureAction,
@@ -64,6 +74,8 @@ import {
   drawDescriptorTree,
   parseColor,
 } from "../engine/scene/canvaskit/drawDescriptors";
+import { valignOffset } from "../engine/scene/renderAdapter";
+import { getNode } from "../engine/scene/sceneQueries";
 import { CanvasKitImageCache } from "../engine/scene/canvaskit/imageCache";
 import {
   loadCanvasKit,
@@ -156,9 +168,13 @@ import styles from "./scene-artifact-canvas.module.css";
  * stays on the canvas as the machine-readable assertion (AD2.5 finding 4,
  * founder-confirmed).
  *
- * AD4.C also adds the write half of the pointer (§1.9's v1 scope exactly:
- * drag-to-move and CORNER resize, no rotate, no marquee, no nudge, no
- * double-click text). The decisions are pure and live in
+ * AD4.C also adds the write half of the pointer (§1.9's v1 scope: drag-to-move
+ * and CORNER resize, no rotate, no marquee, no nudge). Double-click text was on
+ * that exclusion list until the founder took it off (2026-08-24); it is now the
+ * caret session below — `SceneTextEditOverlay` over
+ * `adapter/scene-text-edit.ts`, per
+ * `docs/superpowers/plans/2026-08-24-rich-text-editing.md` rung B. The gesture
+ * decisions are pure and live in
  * `adapter/scene-gestures.ts`, over the design subsystem's own shared
  * machinery — `gestureReducer`, the transformer math, and the existing
  * operation builders — so the geometry rules are ported, never re-derived.
@@ -480,6 +496,23 @@ function SceneDocumentCanvas({
   const gestureArmedRef = useRef(false);
   const [preview, setPreview] = useState<ScenePreview | null>(null);
 
+  /* ---------------------------------------------------------------------
+   * Rung B — the inline text-edit session (rich-text plan, 2026-08-24).
+   *
+   * ONE piece of state: WHICH node has a caret in it. Everything else the
+   * session needs — its box, its style, the string it is editing — is DERIVED
+   * per render (`textEdit` below), for the same reason the selection outline
+   * is: a stored geometry could go stale against a zoom, a pan or a relayout,
+   * and the caret would sit where the text is not.
+   *
+   * The DRAFT deliberately lives inside the overlay component, not here. It is
+   * the AD4.R state model applied to a canvas surface: the engine's scene owns
+   * the document's value, the edit surface self-drafts, and one commit reaches
+   * the write path. Keeping it here would push a render through the whole
+   * canvas on every keystroke.
+   * ------------------------------------------------------------------ */
+  const [editingNodeId, setEditingNodeId] = useState<NodeId | null>(null);
+
   // The descriptor tree the draw loop walks. `tokenGeneration` is a real dep:
   // descriptors read the renderAdapter's module-level kit maps, which arrive
   // after the first paint. AD4.C adds `preview`: a gesture in flight rebuilds
@@ -489,10 +522,15 @@ function SceneDocumentCanvas({
   // never a state that could survive the turn that authors the first page.
   const pagelessNotice = scenePagelessNotice(scene, pageId);
 
+  // Rung B adds `editingNodeId`: the node under an open caret paints no glyphs,
+  // because the DOM overlay is drawing them. The STATE is passed, not the
+  // derived model — the model is built FROM this artboard, so feeding it back
+  // in would be circular; a stale id matches no node and suppresses nothing.
   const artboard = useMemo(
-    () => (scene ? sceneArtboardModel(scene, pageId, preview) : null),
+    () =>
+      scene ? sceneArtboardModel(scene, pageId, preview, editingNodeId) : null,
     // eslint-disable-next-line react-hooks/exhaustive-deps -- tokenGeneration
-    [scene, pageId, preview, tokenGeneration],
+    [scene, pageId, preview, editingNodeId, tokenGeneration],
   );
 
   // Fit-on-open (§1.10) is a pure function of the card's size and the page
@@ -739,6 +777,61 @@ function SceneDocumentCanvas({
     setOwnSelectedNodeId(nodeId);
     onSelectRef.current?.(nodeId);
   };
+
+  /**
+   * Rung B: the open session's overlay, derived from the same box model the
+   * selection chrome reads and the same render descriptor the painter reads —
+   * so the caret sits exactly where the glyphs were, at every zoom and pan.
+   *
+   * Null is the SESSION-CLOSED signal as well as the no-session one: the
+   * derivation answers null when the edited node has left the scene or stopped
+   * being text (a D10 reload, an agent turn regenerating the document), so
+   * every interlock below reads THIS rather than `editingNodeId` and no stale
+   * id can leave the chrome suppressed. The state itself is cleared by the
+   * effect after it, which is what discards the draft.
+   */
+  const textEdit = useMemo(
+    () =>
+      sceneTextEditModel({
+        artboard,
+        editingNodeId,
+        pageId,
+        scene,
+        viewport,
+      }),
+    [artboard, editingNodeId, pageId, scene, viewport],
+  );
+  // React's own adjust-state-on-change pattern (the same one the viewport reset
+  // above uses), not an effect: an effect would paint one frame with the
+  // session's interlocks still holding on a node that is no longer there.
+  if (editingNodeId && !textEdit) {
+    setEditingNodeId(null);
+  }
+
+  /**
+   * Commit the session: ONE operation batch, so a whole editing session is one
+   * atomic edit and one undo frame — the write path every canvas gesture and
+   * every inspector row already commits through.
+   *
+   * The node is re-read from the CURRENT scene rather than captured when the
+   * session opened, so a commit against a document that moved underneath is
+   * either honest or refused (the batch builder returns null for a node that is
+   * gone, locked, or no longer text). An unchanged draft writes nothing at all:
+   * a blur that typed nothing is not an edit.
+   */
+  const commitTextEdit = useCallback(
+    (draft: string) => {
+      const node = scene ? getNode(scene, editingNodeId) : null;
+      setEditingNodeId(null);
+      const operations = textEditCommitOperations(node, draft);
+      if (operations) {
+        onOperations?.(operations, SCENE_TEXT_EDIT_INTENT);
+      }
+    },
+    [editingNodeId, onOperations, scene],
+  );
+
+  const cancelTextEdit = useCallback(() => setEditingNodeId(null), []);
 
   /* ---------------------------------------------------------------------
    * AD2.10 — the workspace gestures.
@@ -1163,6 +1256,13 @@ function SceneDocumentCanvas({
    * in `sceneHitPoint`, where they are unit-tested against a non-identity unit.
    */
   const handlePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    // Rung B: while a caret session is open the textarea owns the pointer, and
+    // this press is the one that closes it — the blur commits. It arms nothing
+    // and selects nothing (upstream's own `CanvasKitCanvas.tsx:990-993`), so a
+    // press cannot start a drag on a document the commit is about to change.
+    if (textEdit) {
+      return;
+    }
     // AD2.10: a held space or the middle button starts a PAN; a plain primary
     // press still selects. Panning and selecting share the surface, so the
     // discriminator is checked before anything else — and the pan needs no
@@ -1250,6 +1350,59 @@ function SceneDocumentCanvas({
     beginPress(event, point, press.target, press.armed && freed);
   };
 
+  /**
+   * Rung B (rich-text plan, 2026-08-24 — this SUPERSEDES §1.9/§7's "no
+   * double-click text"): a double-click opens a caret on a text node, and
+   * drills the selection out to its top-level container on anything else.
+   *
+   * The coordinate chain is `handlePointerDown`'s, unchanged and reused whole —
+   * the same hit test answers both, so a double-click can never resolve to a
+   * node a single click would not have selected. What differs is only what the
+   * resolved node MEANS, and that decision is pure
+   * (`adapter/scene-text-edit.ts`).
+   *
+   * Ruling C-9's freeze-on-grab deliberately does NOT fire here: a text session
+   * changes content, and the solver re-solving around new content is the
+   * solver working. Freezing the whole document's auto-layout because someone
+   * fixed a typo would be a far larger edit than the one they asked for.
+   */
+  const handleDoubleClick = (event: ReactMouseEvent<HTMLDivElement>) => {
+    const element = stageRef.current;
+    // Same refusal as a press: with no engine there is no hit test, and a
+    // descriptor-space guess would open a caret the engine never agreed to.
+    if (!element || !artboard || !scene || engineStatus.engineDisabled) {
+      return;
+    }
+    const bounds = element.getBoundingClientRect();
+    const workspacePoint = screenToWorkspace(
+      { x: event.clientX - bounds.left, y: event.clientY - bounds.top },
+      viewport,
+    );
+    const scenePoint = sceneHitPoint(workspacePoint, artboard);
+    const result = scenePoint
+      ? controls.hitTest(scenePoint.x, scenePoint.y)
+      : null;
+    const effect = sceneDoubleClickEffect({
+      gestureDisabled,
+      nodeId: result ? representableHit(result.stack, scene, pageId) : null,
+      scene,
+      selectedNodeId: activeSelectedNodeId,
+    });
+    switch (effect.kind) {
+      case "edit":
+        // Selected AND opened, in that order: a caret in a node the inspector
+        // is not showing would be two surfaces disagreeing about the subject.
+        commitSelection(effect.nodeId);
+        setEditingNodeId(effect.nodeId);
+        break;
+      case "select":
+        commitSelection(effect.nodeId);
+        break;
+      case "none":
+        break;
+    }
+  };
+
   return (
     <div
       className={[
@@ -1259,6 +1412,7 @@ function SceneDocumentCanvas({
       ]
         .filter(Boolean)
         .join(" ")}
+      onDoubleClick={handleDoubleClick}
       onPointerCancel={handlePointerCancel}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
@@ -1280,8 +1434,27 @@ function SceneDocumentCanvas({
       {/* The selection overlay: an absolutely-positioned sibling of the canvas
           (never a canvas draw), so selection never triggers a wasm redraw.
           AD4.C turns G-A's four corner handles on — the one thing Lane C was
-          asked to pass, and nothing else about the overlay changes. */}
-      <SelectionChrome handles={selectionHandles} outline={selectionOutline} />
+          asked to pass, and nothing else about the overlay changes.
+
+          Rung B: an open caret session takes the chrome down entirely (outline
+          included — upstream's own `selectionBox && !editingNodeId`). Inside a
+          session the subject is a RANGE OF TEXT, not a box, and a resize handle
+          straddling the textarea's edge would grab a gesture the session has
+          already refused. */}
+      <SelectionChrome
+        handles={selectionHandles && !textEdit}
+        outline={textEdit ? null : selectionOutline}
+      />
+      {/* Rung B: the caret. CanvasKit cannot host one, so the session is a DOM
+          textarea over the node — the design subsystem's own answer, ported. */}
+      {textEdit ? (
+        <SceneTextEditOverlay
+          key={textEdit.nodeId}
+          model={textEdit}
+          onCancel={cancelTextEdit}
+          onCommit={commitTextEdit}
+        />
+      ) : null}
       {/* genad2 Task 5: the zero-page window, said out loud.
        *
        * `open_design_leg@4` births a chat-born ad as a document with `pages:
@@ -1471,6 +1644,136 @@ function SelectionChrome({
           : null}
       </g>
     </svg>
+  );
+}
+
+/**
+ * Rung B: the caret surface — the design subsystem's `TextEditOverlay`
+ * (`subsystems/clue-design/apps/editor/src/components/canvas/TextEditOverlay.tsx`)
+ * ported, presentation and all.
+ *
+ * CanvasKit cannot host a live caret, so the session is a DOM `<textarea>`
+ * positioned over the node and styled to match the painted glyphs. It edits the
+ * STORED content (`text_transform` applies to painted text only) and shows no
+ * spans (plain text; upstream parity, and rung C's own problem).
+ *
+ * Commit on blur or ⌘/Ctrl+Enter, Escape cancels — and the cancel flag exists
+ * because Escape blurs too, so without it a cancel would commit on the way out.
+ * Every key event stops here: an unqualified Enter is a newline, and the
+ * canvas's own window listeners (space-pan, AD4.C's Escape) are already inert
+ * over a typing target.
+ *
+ * Two things are NOT ported, because the platform has the real thing: the
+ * clamped valign formula is `renderAdapter`'s own `valignOffset` (the single
+ * source both editor legs and the engine share), and everything that is not
+ * data-driven — the border, the surface, the reset — is a CSS module rule
+ * rather than an inline literal.
+ */
+function SceneTextEditOverlay({
+  model,
+  onCancel,
+  onCommit,
+}: {
+  model: SceneTextEditModel;
+  onCancel: () => void;
+  onCommit: (content: string) => void;
+}) {
+  const ref = useRef<HTMLTextAreaElement | null>(null);
+  const [draft, setDraft] = useState(model.content);
+  // An Escape-driven blur must not also commit.
+  const cancelledRef = useRef(false);
+
+  // A7a: match the painted vertical position with a computed top padding. The
+  // content height is a LIVE DOM measurement — the only part of the geometry a
+  // pure model cannot answer — so it is recomputed as the text grows and
+  // shrinks, keeping the caret aligned mid-session.
+  //
+  // Written STRAIGHT TO THE ELEMENT rather than held in state (upstream holds
+  // it in a `useState`): it is a measurement of the DOM feeding a style of the
+  // same DOM node, so a render round-trip buys nothing and costs one per
+  // keystroke. `paddingTop` is deliberately absent from the `style` prop below,
+  // which is what keeps React from overwriting it on the next render.
+  const recomputePadding = useCallback(() => {
+    const element = ref.current;
+    if (!element) {
+      return;
+    }
+    if (model.style.valign === "top") {
+      element.style.paddingTop = "0px";
+      return;
+    }
+    // `scrollHeight` floors at `clientHeight` (so content shorter than the box
+    // reads back AS the box) and counts whatever padding is already applied —
+    // both are zeroed for the read and the height is restored before paint.
+    const previousHeight = element.style.height;
+    element.style.paddingTop = "0px";
+    element.style.height = "0px";
+    const contentHeight = element.scrollHeight;
+    element.style.height = previousHeight;
+    element.style.paddingTop = `${valignOffset(
+      model.height,
+      contentHeight,
+      model.style.valign,
+    )}px`;
+  }, [model.height, model.style.valign]);
+
+  useEffect(() => {
+    const element = ref.current;
+    if (element) {
+      element.focus();
+      element.select();
+    }
+    recomputePadding();
+  }, [recomputePadding]);
+
+  return (
+    <textarea
+      aria-label="Edit text"
+      className={styles.textEditOverlay}
+      data-scene-text-edit={model.nodeId}
+      onBlur={() => {
+        if (!cancelledRef.current) {
+          onCommit(draft);
+        }
+      }}
+      onChange={(event) => {
+        setDraft(event.target.value);
+        recomputePadding();
+      }}
+      onDoubleClick={(event) => event.stopPropagation()}
+      onKeyDown={(event) => {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          cancelledRef.current = true;
+          onCancel();
+        } else if (textareaCommitKey(event)) {
+          // Otherwise the chord also types the newline it is committing past.
+          event.preventDefault();
+          onCommit(draft);
+        }
+        event.stopPropagation();
+      }}
+      onPointerDown={(event) => event.stopPropagation()}
+      ref={ref}
+      style={{
+        color: model.style.color,
+        fontFamily: model.style.fontFamily,
+        fontSize: model.style.fontSize,
+        fontStyle: model.style.fontStyle,
+        fontWeight: model.style.fontWeight,
+        height: model.height,
+        left: model.left,
+        letterSpacing: `${model.style.letterSpacing}px`,
+        lineHeight: String(model.style.lineHeight),
+        textAlign: model.style.textAlign,
+        top: model.top,
+        transform: model.rotation
+          ? `rotate(${model.rotation}deg)`
+          : undefined,
+        width: model.width,
+      }}
+      value={draft}
+    />
   );
 }
 

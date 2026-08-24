@@ -67,6 +67,41 @@
 }
 
 /*
+ * Rung B (rich-text plan, 2026-08-24): the inline text-edit caret.
+ *
+ * The design subsystem's `TextEditOverlay` inline style, split the way this
+ * lane splits every ported surface: everything DATA-DRIVEN (the box, the
+ * rotation, the font metrics, the colour, the valign padding) stays inline on
+ * the element, because it is computed per node per zoom; everything constant
+ * lives here. The values are upstream's own — its `1px solid #256c70` edit
+ * border and white surface, so the edit state reads the same in both editors.
+ *
+ * `transform-origin: top left` is load-bearing: it is the pivot the draw loop
+ * and the G-A outline rotate a node about, so a rotated node's caret lands on
+ * its glyphs. `resize: none` / `overflow: hidden` keep the surface exactly the
+ * node's box — a resize grip would be an affordance for a gesture the session
+ * has already refused. Unlike every other overlay in this file, pointer events
+ * stay ON: this one is the thing being typed into.
+ *
+ * A7a's valign padding is written imperatively by the overlay (a live DOM
+ * measurement), so `padding: 0` is the base it overrides — never a value React
+ * re-applies on top of it.
+ */
+.textEditOverlay {
+  background: #ffffff;
+  border: 1px solid #256c70;
+  box-sizing: border-box;
+  margin: 0;
+  outline: none;
+  overflow: hidden;
+  padding: 0;
+  position: absolute;
+  resize: none;
+  transform-origin: top left;
+  z-index: 30;
+}
+
+/*
  * genad2 Task 5: the zero-page neutral state.
  *
  * FOUNDER-DESIGN FLAG (open, 2026-08-23) — this is NOT designed UI. The copy is

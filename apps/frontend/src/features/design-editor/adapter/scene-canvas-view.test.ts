@@ -31,6 +31,7 @@ import {
   selectionOutlineForBox,
   snapZoomPercent,
   textMeasurementSignature,
+  type SceneArtboardModel,
 } from "./scene-canvas-view";
 import { sceneHitPoint } from "./scene-selection";
 import type { Scene } from "../engine/scene/contracts";
@@ -514,6 +515,45 @@ test("a pinned node is hoisted out of its parent and painted last", () => {
 test("an unknown page renders nothing rather than throwing", () => {
   assert.equal(sceneArtboardModel(HARVESTED_AD_PAGE, "page_gone"), null);
   assert.equal(sceneArtboardModel(HARVESTED_AD_PAGE, null), null);
+});
+
+/**
+ * Rung B (rich-text plan, 2026-08-24): a text node with an open caret session
+ * is drawn with no text payload, so the DOM overlay is the only copy of the
+ * string on screen. Same render-time descriptor override AD4.C's gesture
+ * preview uses — the draw loop needs no session awareness at all.
+ */
+function textNodeIn(model: SceneArtboardModel, nodeId: string) {
+  const copyRow = model.nodes[0].children[0];
+  const found = [
+    ...copyRow.children,
+    ...copyRow.children.flatMap((child) => child.children),
+  ].find((node) => node.descriptor.id === nodeId);
+  assert.ok(found);
+  return found;
+}
+
+test("an open text session suppresses that node's painted text", () => {
+  const model = sceneArtboardModel(
+    HARVESTED_AD_PAGE,
+    AD_PAGE_ID,
+    null,
+    "text_headline",
+  );
+  assert.ok(model);
+  // The node still draws — its fills, strokes and box are untouched — only the
+  // glyphs go, because the overlay is painting them.
+  assert.equal(textNodeIn(model, "text_headline").descriptor.text, undefined);
+  assert.equal(textNodeIn(model, "text_proof_stat").descriptor.text?.content, "3.4x faster triage");
+});
+
+test("no session (or a stale node id) suppresses nothing", () => {
+  const model = sceneArtboardModel(HARVESTED_AD_PAGE, AD_PAGE_ID, null, "text_gone");
+  assert.ok(model);
+  assert.equal(
+    textNodeIn(model, "text_headline").descriptor.text?.content,
+    "Every inbound fax, routed to the right EHR queue.",
+  );
 });
 
 /* -------------------------------------------------------------------------
