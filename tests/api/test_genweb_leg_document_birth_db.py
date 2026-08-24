@@ -16,6 +16,16 @@ All writes run in rolled-back transactions against the session-migrated DB. The 
 round-trip (``lumen-api-helper``'s ``web_new_doc``) is injected, so these tests need no Rust
 binary; :func:`engine_web_doc` reproduces the helper's real output byte for byte (recorded
 2026-08-19 from ``target/release/lumen-api-helper``).
+
+**Scene-side history (2026-08-23).** This file once carried the v1 pin
+``test_scene_document_creation_is_refused`` (a scene leg could not create its document at all),
+replaced during the genad lane by ``test_scene_document_creation_births_since_genad`` (a scene
+open naming no ``ad_format`` still created nothing). ``open_design_leg@4`` deleted the format
+aperture outright — genad2 ruling 1, plan
+``docs/superpowers/plans/2026-08-23-agent-authored-pages.md`` — so a document-less scene open
+now simply births a pageless document and there is no scene-shaped refusal left to pin here.
+The whole scene birth contract, and a byte-unchanged regression pin over THIS file's web path,
+live in ``test_genad_leg_document_birth_db``.
 """
 
 from __future__ import annotations
@@ -453,26 +463,6 @@ def test_a_document_less_open_without_a_doc_kind_is_refused(
             with pytest.raises(PreconditionFailed) as failure:
                 await _open(seeds, doc_kind=None)
             assert "design_leg_doc_kind_required" in str(failure.value)
-            assert await _no_leg_and_no_document(conn, seeds)
-
-    run_async(scenario())
-
-
-def test_scene_document_creation_is_refused(
-    tmp_path: Path,
-    migrated_db: bool,  # noqa: F811
-) -> None:
-    """v1 scope (§8 item 8): the ad flow stays editor-first — a scene leg needs a document."""
-
-    if not migrated_db:
-        pytest.skip("database not reachable")
-
-    async def scenario() -> None:
-        async with rollback_conn() as conn:
-            seeds = await _seed_conversation(conn, storage_root=tmp_path, label="scene")
-            with pytest.raises(PreconditionFailed) as failure:
-                await _open(seeds, doc_kind="scene")
-            assert "design_leg_scene_creation_unsupported" in str(failure.value)
             assert await _no_leg_and_no_document(conn, seeds)
 
     run_async(scenario())

@@ -18,19 +18,58 @@ import type { DesignArtifactListItem } from "../model/artifact";
  *
  * Size, account and last-viewed are likewise unanswerable here; the gallery's
  * own `normalizeGalleryArtifact` supplies its defaults for them.
+ *
+ * AD2.1 made it kind-aware. A `web` document is a `website` artifact whose
+ * gallery collateral is a `microsite`; an `ad` (scene) document is a `canvas`
+ * artifact with `collateralType` ABSENT — the document knows it is an ad, never
+ * which channel, so guessing "linkedin-ad" here would paint fabricated
+ * vocabulary onto a real artifact. The mapping is also what carries the ad into
+ * the editor unchanged: both mounts reconstruct the kind as
+ * `source.type === "website" ? "web" : "ad"`, so `canvas` yields `"ad"`.
  */
+/** G-H: the document's recorded artifact type → the gallery's own channel
+ * vocabulary, and ONLY when it genuinely names one. An unrecognised or absent
+ * type maps to nothing: the founder's ruling is that we are not necessarily
+ * always making ads, so a card that cannot prove its channel claims none. */
+function collateralTypeFor(artifactType: string | undefined) {
+  if (!artifactType) return undefined;
+  const value = artifactType.toLowerCase();
+  if (value.includes("linkedin")) return "linkedin-ad" as const;
+  if (value.includes("meta") || value.includes("facebook") || value.includes("instagram")) {
+    return "meta-ad" as const;
+  }
+  if (value.includes("direct_mail") || value.includes("direct-mail")) {
+    return "direct-mail" as const;
+  }
+  return undefined;
+}
+
+/** G-H: the document's real page size → the card's size cell and its
+ * size-category filter. Absent when the document has no page; never a default. */
+function sizeFor(widthPx: number | undefined, heightPx: number | undefined) {
+  if (!widthPx || !heightPx) return undefined;
+  const ratio = widthPx / heightPx;
+  const category =
+    ratio > 1.05 ? ("landscape" as const) : ratio < 0.95 ? ("portrait" as const) : ("square" as const);
+  return { category, height: heightPx, label: `${widthPx} × ${heightPx}`, width: widthPx };
+}
+
 export function toProjectArtifact(
   item: DesignArtifactListItem,
   { now = new Date() }: { now?: Date } = {},
 ): ProjectArtifact {
+  const ad = item.kind === "ad";
+  const collateralType = ad ? collateralTypeFor(item.artifactType) : "microsite";
+  const size = ad ? sizeFor(item.widthPx, item.heightPx) : undefined;
   return ProjectArtifactSchema.parse({
-    collateralType: "microsite",
+    ...(collateralType ? { collateralType } : {}),
+    ...(size ? { size } : {}),
     createdAt: utcInstant(item.createdAt),
     editedLabel: editedLabelFor(item.updatedAt, now),
     id: item.id,
     originThreadId: item.originThreadId,
     title: item.title,
-    type: "website",
+    type: ad ? "canvas" : "website",
     updatedAt: utcInstant(item.updatedAt),
   });
 }

@@ -8,15 +8,17 @@ identity store plus the governed contact-profile reader.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Literal
+from typing import Any, Literal
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_agents import DomainObjectRef
 from clue_api.client_context_binding import workspace_client_entity_id
+from clue_api.design_turn_targets import DesignTurnTargetError, resolve_scene_targets
 from clue_api.frontend_read.account_detail import AccountNotFound
 from clue_api.frontend_read.accounts_list import list_accounts
 from clue_api.frontend_read.contacts import (
@@ -26,12 +28,15 @@ from clue_api.frontend_read.contacts import (
 )
 from clue_core import EntityId
 from clue_research.identity import get_account, get_contact
+from clue_storage import StorageBackend
 
 __all__ = [
     "PROJECT_CONVERSATION_AGENT_PROFILE_ID",
     "PROJECT_CONVERSATION_MODEL_ID",
+    "MAX_DESIGN_REFERENCE_ASSETS",
     "ComposerContextEntity",
     "ContextReferenceError",
+    "design_asset_ref_presentations",
     "list_composer_context_entities",
     "prepare_composer_context_entities",
     "validated_context_refs",
@@ -39,10 +44,15 @@ __all__ = [
 
 # One real choice, per the product ruling for R8. The id names the promoted immutable profile;
 # the model id is presentation metadata, not an instruction the browser may send independently.
-PROJECT_CONVERSATION_AGENT_PROFILE_ID = "head-of-abm@v37"
+PROJECT_CONVERSATION_AGENT_PROFILE_ID = "head-of-abm@v39"
 PROJECT_CONVERSATION_MODEL_ID = "openai/gpt-5.6-terra"
 
 _MAX_CONTEXT_ACCOUNTS = 50
+MAX_DESIGN_REFERENCE_ASSETS = 4
+_DESIGN_REFERENCE_IMAGE_TYPES = frozenset(
+    {"image/png", "image/jpeg", "image/webp", "image/svg+xml"}
+)
+_SHA256_SHAPE = re.compile(r"^[0-9a-f]{64}$")
 
 
 class ContextReferenceError(ValueError):
@@ -113,6 +123,8 @@ async def validated_context_refs(
     *,
     workspace_id: str,
     refs: Sequence[DomainObjectRef],
+    design_leg_document_id: str | None = None,
+    storage: StorageBackend | None = None,
 ) -> tuple[DomainObjectRef, ...]:
     """Validate tenancy, exact revisions, and any selected contact/account relationship."""
 
@@ -128,9 +140,170 @@ async def validated_context_refs(
             "the same context reference may appear only once in a submission",
         )
 
+    design_nodes = tuple(ref for ref in refs if ref.object_type == "design_node")
+    design_assets = tuple(ref for ref in refs if ref.object_type == "design_asset")
+    if len(design_assets) > MAX_DESIGN_REFERENCE_ASSETS:
+        raise ContextReferenceError(
+            "CONTEXT_REF_LIMIT_EXCEEDED",
+            f"a design turn accepts at most {MAX_DESIGN_REFERENCE_ASSETS} reference images",
+        )
+    target_document: dict[str, Any] | None = None
+    target_document_ref: DomainObjectRef | None = None
+    if design_nodes:
+        document_refs = tuple(ref for ref in refs if ref.object_type == "design_document")
+        if len(document_refs) != 1 or design_leg_document_id is None:
+            raise ContextReferenceError(
+                "CONTEXT_REF_RELATIONSHIP_MISMATCH",
+                "design node targets require the open design leg's one document reference",
+            )
+        target_document_ref = document_refs[0]
+        if target_document_ref.object_id != design_leg_document_id:
+            raise ContextReferenceError(
+                "CONTEXT_REF_RELATIONSHIP_MISMATCH",
+                "the targeted design document is not the open design leg's document",
+            )
+        if target_document_ref.version is None or any(
+            ref.version != target_document_ref.version for ref in design_nodes
+        ):
+            raise ContextReferenceError(
+                "CONTEXT_REF_STALE",
+                "design document and node targets must carry the same exact document version",
+            )
+        from clue_design.documents import get_document as get_design_document
+        from clue_design.errors import DesignNotFoundError
+
+        try:
+            target_document = await get_design_document(
+                conn,
+                workspace_id=workspace_id,
+                document_id=target_document_ref.object_id,
+            )
+        except DesignNotFoundError as exc:
+            raise ContextReferenceError(
+                "CONTEXT_REF_NOT_FOUND",
+                "the targeted design document is not available in this workspace",
+            ) from exc
+        if target_document.get("doc_kind") != "scene":
+            raise ContextReferenceError(
+                "CONTEXT_REF_RELATIONSHIP_MISMATCH",
+                "design node targets require a scene document",
+            )
+        if target_document_ref.version != target_document.get("current_version"):
+            raise ContextReferenceError(
+                "CONTEXT_REF_STALE",
+                "the targeted design document no longer names the current version",
+            )
+        try:
+            resolve_scene_targets(
+                target_document.get("scene") or {},
+                tuple(ref.object_id for ref in design_nodes),
+            )
+        except DesignTurnTargetError as exc:
+            raise ContextReferenceError(exc.code, exc.message) from exc
+
+    if design_assets:
+        if design_leg_document_id is None:
+            raise ContextReferenceError(
+                "CONTEXT_REF_RELATIONSHIP_MISMATCH",
+                "design reference images require an open design leg",
+            )
+        if any(ref.version is not None for ref in design_assets):
+            raise ContextReferenceError(
+                "CONTEXT_REF_RELATIONSHIP_MISMATCH",
+                "design asset references do not carry a document version",
+            )
+        if storage is None:
+            raise ContextReferenceError(
+                "CAPABILITY_UNAVAILABLE",
+                "this deployment cannot verify design reference image bytes",
+            )
+        from clue_design.assets import get_asset_records
+        from clue_design.documents import get_document as get_design_document
+        from clue_design.errors import DesignNotFoundError
+        from clue_design.storage import read_design_blob
+
+        if target_document is None:
+            try:
+                target_document = await get_design_document(
+                    conn,
+                    workspace_id=workspace_id,
+                    document_id=design_leg_document_id,
+                )
+            except DesignNotFoundError as exc:
+                raise ContextReferenceError(
+                    "CONTEXT_REF_NOT_FOUND",
+                    "the open design leg document is not available in this workspace",
+                ) from exc
+        if target_document.get("doc_kind") != "scene":
+            raise ContextReferenceError(
+                "CONTEXT_REF_RELATIONSHIP_MISMATCH",
+                "reference images are available only for scene-design turns",
+            )
+
+        asset_ids = tuple(ref.object_id for ref in design_assets)
+        records = await get_asset_records(
+            conn,
+            workspace_id=workspace_id,
+            asset_ids=asset_ids,
+        )
+        for asset_id in asset_ids:
+            wrapped = records.get(asset_id)
+            if wrapped is None:
+                raise ContextReferenceError(
+                    "CONTEXT_REF_NOT_FOUND",
+                    "a design reference image is not available in this workspace",
+                )
+            asset = wrapped.get("asset") or {}
+            media = asset.get("media") or {}
+            digest = media.get("digest") or {}
+            mime_type = str(media.get("mime_type") or "").lower()
+            sha256 = str(digest.get("value") or "")
+            if asset.get("status") != "ready":
+                raise ContextReferenceError(
+                    "CONTEXT_REF_RELATIONSHIP_MISMATCH",
+                    "a design reference image is not ready",
+                )
+            if mime_type not in _DESIGN_REFERENCE_IMAGE_TYPES:
+                raise ContextReferenceError(
+                    "CONTEXT_REF_RELATIONSHIP_MISMATCH",
+                    "design references must be PNG, JPEG, WebP, or SVG images",
+                )
+            if digest.get("algorithm") != "sha256" or not _SHA256_SHAPE.fullmatch(sha256):
+                raise ContextReferenceError(
+                    "CONTEXT_REF_NOT_FOUND",
+                    "a design reference image has no readable durable bytes",
+                )
+            try:
+                stored_media_type, data = await read_design_blob(
+                    conn,
+                    storage,
+                    workspace_id=workspace_id,
+                    sha256=sha256,
+                )
+            except DesignNotFoundError as exc:
+                raise ContextReferenceError(
+                    "CONTEXT_REF_NOT_FOUND",
+                    "a design reference image has no readable durable bytes",
+                ) from exc
+            if stored_media_type.lower() not in _DESIGN_REFERENCE_IMAGE_TYPES:
+                raise ContextReferenceError(
+                    "CONTEXT_REF_RELATIONSHIP_MISMATCH",
+                    "design references must have image bytes in durable storage",
+                )
+            if not data:
+                raise ContextReferenceError(
+                    "CONTEXT_REF_NOT_FOUND",
+                    "a design reference image has no readable durable bytes",
+                )
+
     selected_accounts: set[EntityId] = set()
     contact_parents: list[EntityId] = []
-    client_entity_id = await workspace_client_entity_id(conn, workspace_id=workspace_id)
+    has_entity_refs = any(ref.object_type in {"account", "contact"} for ref in refs)
+    client_entity_id = (
+        await workspace_client_entity_id(conn, workspace_id=workspace_id)
+        if has_entity_refs
+        else None
+    )
     for ref in refs:
         if ref.object_type == "design_document":
             # P3.1 (master plan §2.4): design ids are strings, not entity UUIDs, and the
@@ -138,20 +311,32 @@ async def validated_context_refs(
             from clue_design.documents import get_document as get_design_document
             from clue_design.errors import DesignNotFoundError
 
-            try:
-                document = await get_design_document(
-                    conn, workspace_id=workspace_id, document_id=ref.object_id
-                )
-            except DesignNotFoundError as exc:
-                raise ContextReferenceError(
-                    "CONTEXT_REF_NOT_FOUND",
-                    "a design document context reference is not available in this workspace",
-                ) from exc
+            if target_document_ref is not None and ref == target_document_ref:
+                document = target_document
+            else:
+                try:
+                    document = await get_design_document(
+                        conn, workspace_id=workspace_id, document_id=ref.object_id
+                    )
+                except DesignNotFoundError as exc:
+                    raise ContextReferenceError(
+                        "CONTEXT_REF_NOT_FOUND",
+                        "a design document context reference is not available in this workspace",
+                    ) from exc
+            assert document is not None
             if ref.version is not None and ref.version != document.get("current_version"):
                 raise ContextReferenceError(
                     "CONTEXT_REF_STALE",
                     "a design document context reference no longer names the current version",
                 )
+            continue
+        if ref.object_type == "design_node":
+            # Validated as one document-scoped set above. A node id is not a
+            # platform entity UUID and must never fall into the contact branch.
+            continue
+        if ref.object_type == "design_asset":
+            # Validated as one bounded, scene-leg-scoped set above. Asset ids are opaque design
+            # ids, never platform entity UUIDs.
             continue
         try:
             entity_id = EntityId(UUID(ref.object_id))
@@ -238,6 +423,10 @@ async def prepare_composer_context_entities(
     )
     prepared: list[ComposerContextEntity] = []
     for ref in validated:
+        if ref.object_type not in {"account", "contact"}:
+            # This endpoint hydrates mention-picker entities only. Design refs can be present on
+            # durable messages, but they are presented from their owning design read models.
+            continue
         entity_id = EntityId(UUID(ref.object_id))
         if ref.object_type == "account":
             account = await get_account(conn, entity_id)
@@ -279,3 +468,47 @@ async def prepare_composer_context_entities(
             )
         )
     return tuple(prepared)
+
+
+async def design_asset_ref_presentations(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    refs: Sequence[Any],
+) -> dict[tuple[str, str], dict[str, str]]:
+    """Resolve durable design-asset refs to read-time labels and thumbnail digests.
+
+    The append-only submission row remains the source of *which* asset was submitted. Mutable
+    presentation metadata stays in the design asset library and is joined only while reading the
+    transcript, so filenames and thumbnails are not denormalized into the durable turn receipt.
+    """
+
+    asset_ids = tuple(
+        dict.fromkeys(
+            str(ref.object_id) for ref in refs if ref.object_type == "design_asset"
+        )
+    )
+    if not asset_ids:
+        return {}
+    from clue_design.assets import get_asset_records
+
+    records = await get_asset_records(
+        conn,
+        workspace_id=workspace_id,
+        asset_ids=asset_ids,
+    )
+    result: dict[tuple[str, str], dict[str, str]] = {}
+    for asset_id, wrapped in records.items():
+        asset = wrapped.get("asset") or {}
+        media = asset.get("media") or {}
+        thumbnail = media.get("thumbnail") or {}
+        thumbnail_digest = thumbnail.get("digest") or media.get("digest") or {}
+        presentation = {
+            "label": str(media.get("filename") or asset.get("label") or "Reference image"),
+            "media_type": str(media.get("mime_type") or ""),
+        }
+        digest_value = thumbnail_digest.get("value")
+        if thumbnail_digest.get("algorithm") == "sha256" and digest_value:
+            presentation["thumbnail_digest"] = str(digest_value)
+        result[("design_asset", asset_id)] = presentation
+    return result

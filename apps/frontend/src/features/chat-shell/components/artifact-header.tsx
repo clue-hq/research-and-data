@@ -12,6 +12,11 @@ import {
 } from "lucide-react";
 import type { KeyboardEvent } from "react";
 import type { ChatShellArtifactKind } from "../model/chat-shell";
+import type {
+  ImageExportFormat,
+  ImageExportPreview,
+  ImageExportScale,
+} from "../model/image-export";
 import { useArtifactActionMenuController } from "../hooks/use-artifact-action-menu-controller";
 import { useArtifactSharingController } from "../hooks/use-artifact-sharing-controller";
 import { useArtifactTabController } from "../hooks/use-artifact-tab-controller";
@@ -29,26 +34,57 @@ const PREVIEW_DEVICE_ICONS = {
   Mobile: RectangleVerticalIcon,
   Tablet: RectangleHorizontalIcon,
 } satisfies Record<(typeof PREVIEW_DEVICES)[number], LucideIcon>;
-const ZOOM_LEVELS = ["23%", "50%", "75%", "100%"] as const;
+// §2 delta (contract row 5 / §1.10): zoom offers 10%–150% in 5% steps, in a
+// scrollable menu (`.toolbarMenuScrollable`) — every one of them inside the
+// engine's own [0.1, 2.0] viewport clamp. AD2.8 binds the menu to the real
+// viewport: fit-on-open supplies the value shown before any choice, and a
+// choice moves the canvas to exactly that percentage.
+const ZOOM_LEVELS = Array.from({ length: 29 }, (_, index) => `${10 + index * 5}%`);
 
 export function ArtifactHeader({
   editing,
+  exportPreview,
+  exportStatus,
   kind,
   onEdit,
   onRename,
+  onRequestExportPreview,
+  onZoomChange,
   redoDisabled,
   title,
   undoDisabled,
+  zoom,
 }: {
   editing: boolean;
+  /** AD4.D step 3: the ad session's render for the export menu's designed
+   * preview region, with the element that hosts it. Absent on every other
+   * path. */
+  exportPreview?: ImageExportPreview | null;
+  /** AD4.D step 2: the ad session's export outcome, for the export menu's
+   * `aria-live` line. Absent on every other path. */
+  exportStatus?: string | null;
   kind: ChatShellArtifactKind;
   onEdit: () => void;
   onRename: (title: string) => void;
+  /** AD4.D step 3: the export menu's request for a preview at the settings it
+   * is currently showing. Absent on every other path. */
+  onRequestExportPreview?: (
+    format: ImageExportFormat,
+    scale: ImageExportScale,
+  ) => void;
+  /** AD2.8: a zoom the user picked from the menu, reported to the ad editing
+   * session — which owns the value and hands it back through `zoom`. The WEB
+   * branch below renders the device menu instead and never touches either. */
+  onZoomChange?: (zoom: string) => void;
   /** W3.4: empty-stack disable for the action menu's Redo. */
   redoDisabled?: boolean;
   title: string;
   /** W3.4: empty-stack disable for the action menu's Undo. */
   undoDisabled?: boolean;
+  /** AD2.8: the zoom to DISPLAY — the session's choice, or (until there is
+   * one) the canvas's fit-on-open snapped to the nearest step this menu
+   * offers. Absent leaves the toolbar controller's own local value. */
+  zoom?: string | null;
 }) {
   const {
     closeMenu: closeArtifactActionMenu,
@@ -87,10 +123,13 @@ export function ArtifactHeader({
     deviceMenuRef,
     toggleDeviceMenu,
     toggleZoomMenu,
-    zoom,
+    zoom: activeZoom,
     zoomMenuOpen,
     zoomMenuRef,
-  } = useArtifactToolbarController();
+    // AD2.8: zoom is now LIFTED — the session owns it, because the same value
+    // has to drive the canvas viewport. The device menu (the web branch) is
+    // untouched and still lives entirely inside this controller.
+  } = useArtifactToolbarController({ onZoomChange, zoom });
   const handleRenameKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
     if (event.key === "Enter") commitRename();
     if (event.key === "Escape") cancelRename();
@@ -170,7 +209,7 @@ export function ArtifactHeader({
               }}
               type="button"
             >
-              <span>{zoom}</span>
+              <span>{activeZoom}</span>
               <ChevronDownIcon
                 absoluteStrokeWidth
                 aria-hidden="true"
@@ -180,18 +219,18 @@ export function ArtifactHeader({
               />
             </button>
             {zoomMenuOpen ? (
-              <div aria-label="Canvas zoom" className={styles.toolbarMenu} role="menu">
+              <div aria-label="Canvas zoom" className={`${styles.toolbarMenu} ${styles.toolbarMenuScrollable}`} role="menu">
                 {ZOOM_LEVELS.map((option) => (
                   <button
-                    aria-checked={zoom === option}
-                    className={`${styles.toolbarMenuItem} ${zoom === option ? styles.toolbarMenuItemActive : ""}`}
+                    aria-checked={activeZoom === option}
+                    className={`${styles.toolbarMenuItem} ${activeZoom === option ? styles.toolbarMenuItemActive : ""}`}
                     key={option}
                     onClick={() => chooseZoom(option)}
                     role="menuitemradio"
                     type="button"
                   >
                     <span>{option}</span>
-                    {zoom === option ? <CheckIcon aria-hidden="true" size={12} strokeWidth={1.5} /> : null}
+                    {activeZoom === option ? <CheckIcon aria-hidden="true" size={12} strokeWidth={1.5} /> : null}
                   </button>
                 ))}
               </div>
@@ -264,7 +303,7 @@ export function ArtifactHeader({
               <DownloadIcon absoluteStrokeWidth aria-hidden="true" size={13} strokeWidth={1.5} />
               Export
             </button>
-            {imageExportController.menuOpen ? <ImageExportMenu controller={imageExportController} /> : null}
+            {imageExportController.menuOpen ? <ImageExportMenu controller={imageExportController} exportPreview={exportPreview} exportStatus={exportStatus} onRequestExportPreview={onRequestExportPreview} /> : null}
           </div>
         ) : (
           <div className={styles.toolbarMenuAnchor} ref={sharingMenuRef}>

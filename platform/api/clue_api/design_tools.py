@@ -25,6 +25,15 @@ The import is deliberately narrow: ``lumen_api.toolbelt`` pulls ``clue_toolbelt`
 nothing else (its heavy design collaborators are imported inside function bodies). An unimportable
 design app is a hard, loud failure rather than a silently smaller registry — see the docstring of
 :class:`clue_api.design_fleet.DesignRuntimeUnavailable` for the same stance on the fleet handler.
+
+**Ad page-geometry helpers retired 2026-08-23 (genad2 ruling 1; plan
+``docs/superpowers/plans/2026-08-23-agent-authored-pages.md``).** For one week this module also
+held ``AD_FORMAT_PRESETS``, ``ad_birth_page`` and ``mint_empty_ad_document`` — a platform-side
+preset table and a hand-authored artboard payload that ``open_design_leg@3`` minted an ad
+document around. The founder ruled that the platform must not own page geometry at all, so a
+scene birth is now a bare ``new_scene`` issued by ``design_leg_tools`` (zero pages) and the
+design deepagent authors the page. They were deleted rather than generalized; only the web
+minter, whose ``WebDoc`` shape carries no such geometry, still lives here.
 """
 
 from __future__ import annotations
@@ -39,7 +48,10 @@ from clue_toolbelt import Tool
 
 log = get_logger("clue_api.design_tools")
 
-__all__ = ["build_design_tools", "mint_empty_web_document"]
+__all__ = [
+    "build_design_tools",
+    "mint_empty_web_document",
+]
 
 
 @lru_cache(maxsize=1)

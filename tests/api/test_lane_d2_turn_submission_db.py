@@ -63,6 +63,7 @@ from clue_api.agent_turn_submission import (
     agent_turn_dedup_key,
     dispatch_next_thread_turn,
     get_submission,
+    submission_context_refs,
     thread_work_id,
     turn_id_for_submission,
 )
@@ -79,6 +80,8 @@ from clue_api.projections_app import create_projections_app
 from clue_api.toolbelt_wiring import build_toolbelt
 from clue_config import Settings, load_settings
 from clue_core import AccountStatus, ProjectRunId, operation_id_from_key
+from clue_design import legs as design_legs
+from clue_design.documents import create_document
 from clue_fleet import (
     FleetTaskKind,
     FleetTaskStatus,
@@ -443,6 +446,136 @@ def test_message_submission_persists_ordered_context_and_the_real_terra_profile(
                 409,
                 "CAPABILITY_UNAVAILABLE",
             )
+
+    run_async(scenario())
+
+
+def test_design_targets_are_validated_snapshotted_and_replay_after_the_scene_advances(
+    tmp_path: Path,
+) -> None:
+    """The HTTP receipt freezes exact scene targets before the design worker sees them."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            project = await _seed(conn, "ws-edit-targets", name="Edit target chips")
+            thread_id = await _thread(
+                conn,
+                workspace_id=project.workspace_id,
+                project_id=project.project_id,
+                label="edit-targets",
+            )
+            document = await create_document(
+                conn,
+                workspace_id=project.workspace_id,
+                scene={
+                    "schema_version": 1,
+                    "meta": {"id": "doc_edit_targets", "title": "Launch banner"},
+                    "pages": {
+                        "page_ad": {"id": "page_ad", "children": ["frame"]},
+                    },
+                    "nodes": {
+                        "frame": {"id": "frame", "children": ["headline"]},
+                        "headline": {"id": "headline", "children": []},
+                    },
+                    "slots": {},
+                    "assets": {},
+                    "export_profiles": [],
+                },
+            )
+            await conn.execute(
+                text(
+                    "UPDATE design_document SET current_version = 4 "
+                    "WHERE id = :document AND workspace_id = :workspace"
+                ),
+                {"document": document["id"], "workspace": project.workspace_id},
+            )
+            parent_execution_id = uuid4()
+            await conn.execute(
+                text(
+                    "INSERT INTO execution "
+                    "(id, workspace_id, project_id, started_by, parameter_manifest_hash, "
+                    " pin_manifest_hash) "
+                    "VALUES (:id, :workspace, :project, 'human', :hash, :hash)"
+                ),
+                {
+                    "id": parent_execution_id,
+                    "workspace": project.workspace_id,
+                    "project": project.project_id,
+                    "hash": "0" * 64,
+                },
+            )
+            await design_legs.open_leg(
+                conn,
+                workspace_id=project.workspace_id,
+                thread_id=thread_id,
+                parent_execution_id=parent_execution_id,
+                document_id=document["id"],
+                document_version_guard=4,
+            )
+            refs = [
+                {
+                    "object_type": "design_document",
+                    "object_id": document["id"],
+                    "version": 4,
+                },
+                {
+                    "object_type": "design_node",
+                    "object_id": "headline",
+                    "version": 4,
+                },
+            ]
+            request = {
+                "message": "Make this bolder.",
+                "context_refs": refs,
+            }
+            headers = {
+                "X-Workspace-Id": project.workspace_id,
+                "Idempotency-Key": "edit-target-headline",
+            }
+            app = _app(conn, settings=_settings(), storage=FsStorage(tmp_path / "artifacts"))
+            async with _client(app) as client:
+                accepted = await client.post(
+                    f"/api/v1/projects/{project.project_id}/threads/{thread_id}/turns",
+                    json=request,
+                    headers=headers,
+                )
+                assert accepted.status_code == 202, accepted.text
+                assert accepted.json()["data"]["routed_to"] == "design"
+
+                turn_id = UUID(accepted.json()["data"]["turn_id"])
+                durable = await submission_context_refs(
+                    conn,
+                    workspace_id=project.workspace_id,
+                    turn_id=turn_id,
+                )
+                assert [(ref.object_type, ref.object_id, ref.version) for ref in durable] == [
+                    ("design_document", document["id"], 4),
+                    ("design_node", "headline", 4),
+                ]
+
+                # A later canvas edit cannot invalidate the immutable receipt on retry.
+                await conn.execute(
+                    text(
+                        "UPDATE design_document SET current_version = 5 "
+                        "WHERE id = :document AND workspace_id = :workspace"
+                    ),
+                    {"document": document["id"], "workspace": project.workspace_id},
+                )
+                replay = await client.post(
+                    f"/api/v1/projects/{project.project_id}/threads/{thread_id}/turns",
+                    json=request,
+                    headers=headers,
+                )
+                stale_new_turn = await client.post(
+                    f"/api/v1/projects/{project.project_id}/threads/{thread_id}/turns",
+                    json=request,
+                    headers={**headers, "Idempotency-Key": "edit-target-stale"},
+                )
+
+            assert replay.status_code == 202, replay.text
+            assert replay.json()["data"]["replayed"] is True
+            assert stale_new_turn.status_code == 409, stale_new_turn.text
+            assert stale_new_turn.json()["error"]["code"] == "CONTEXT_REF_STALE"
 
     run_async(scenario())
 

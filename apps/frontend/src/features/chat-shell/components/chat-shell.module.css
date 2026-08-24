@@ -274,15 +274,98 @@
   background: linear-gradient(to bottom, rgb(255 255 255 / 0%), var(--chat-shell-neutral) 18px);
 }
 
+.composerDockWithTargets {
+  flex-basis: 210px;
+}
+
 .shellPanelOpen .composerDock {
   flex-basis: 174px;
   padding: 24px 16px;
+}
+
+.shellPanelOpen .composerDockWithTargets {
+  flex-basis: 210px;
 }
 
 .composerFrame {
   width: min(688px, 100%);
   transition: width var(--clue-ds-product-motion-duration-view)
       var(--clue-ds-product-motion-easing-standard);
+}
+
+.editTargetBar {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  margin: 0 2px 8px;
+}
+
+.editTargetLabel {
+  flex: none;
+  color: var(--chat-shell-subtle);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 20px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.editTargetList {
+  display: flex;
+  min-width: 0;
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.editTargetList::-webkit-scrollbar {
+  display: none;
+}
+
+.editTargetChip {
+  display: inline-flex;
+  max-width: 210px;
+  flex: none;
+  align-items: center;
+  gap: 5px;
+  border: 0.5px solid var(--clue-ds-color-border-neutral);
+  border-radius: 999px;
+  background: white;
+  padding: 3px 5px 3px 9px;
+  color: var(--clue-ds-color-content-neutral);
+  font-size: 12px;
+  line-height: 16px;
+  box-shadow: var(--clue-ds-shadow-card-subtle);
+}
+
+.editTargetName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.editTargetRemove {
+  display: grid;
+  width: 16px;
+  height: 16px;
+  flex: none;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  padding: 0;
+  color: var(--chat-shell-subtle);
+  font: inherit;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.editTargetRemove:hover,
+.editTargetRemove:focus-visible {
+  background: var(--clue-ds-color-bg-neutral-hover);
+  color: var(--clue-ds-color-content-neutral);
+  outline: none;
 }
 
 .shellPanelOpen .composerFrame {
@@ -568,6 +651,12 @@
     var(--clue-ds-product-motion-easing-entry) both;
 }
 
+/* §2 delta (contract row 5 / §1.10): the 29-step zoom menu scrolls. */
+.toolbarMenuScrollable {
+  max-height: 320px;
+  overflow-y: auto;
+}
+
 .shareMenu {
   position: absolute;
   top: calc(100% + 6px);
@@ -822,6 +911,25 @@
   inset: 12px;
   border: 0.5px solid rgb(92 113 147 / 14%);
   background: rgb(255 255 255 / 72%);
+}
+
+/* AD4.D step 3, contract §1.11 ("the designed hook hosts the real render"):
+   the export arrives at the ARTBOARD's pixel size — 1200x1200 for a LinkedIn
+   square, doubled again at 2x — so bare it would render at 1:1 inside a ~128px
+   box and the region would show the ad's top-left corner, cropped by the
+   ancestor's `overflow: hidden`. Fitted to the designed box instead, letterboxed
+   and centred, so the preview is the whole ad at every format and scale. The
+   `border: 0` is for the PDF frame, which otherwise draws a second inset border
+   inside the designed one. Both elements in one rule, as the standalone editor
+   sizes its own two (`app/styles.css:1183-1193`). The AD0.4
+   `.toolbarMenuScrollable` precedent for a contract-ordered CSS delta. */
+.imageExportPreview > div img,
+.imageExportPreview > div iframe {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  object-fit: contain;
 }
 
 .imageExportPreview > span {
@@ -1625,6 +1733,34 @@
   box-shadow: none;
 }
 
+/*
+ * AD2.10 (founder ruling, 2026-08-20): a MOUNTED ad canvas is an infinite
+ * workspace, so its stage is the viewport — no centring frame, no padding
+ * inset, and no scrollbars (the canvas pans itself). `.imageOutputStage` above
+ * is untouched and still governs the designed EMPTY state.
+ */
+.sceneOutputStage {
+  display: flex;
+  padding: 0;
+  overflow: hidden;
+  background: var(--chat-shell-page);
+}
+
+/* The mounted canvas's own box: it takes the whole stage (the workspace colour
+ * is the canvas's, painted by the engine — see `scene-artifact-canvas.module
+ * .css`). */
+.sceneStage {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+}
+
+/*
+ * The designed empty artboard card. Until AD2.10 this was also the container a
+ * live canvas rendered inside — the assumption ruling 17 was built on, and the
+ * reason an ad could never leave a 640px square. It now has exactly one role:
+ * the empty state, unchanged.
+ */
 .imageCanvas {
   width: min(76%, 640px);
   aspect-ratio: 1;
@@ -1890,6 +2026,30 @@
 
 .inspectorControl:focus-within {
   background: white;
+}
+
+/* AD4.R-10 / GATE G-H (founder-ruled 2026-08-22): the ONE disabled treatment
+ * for an inspector write control — a locked node's fields, and every write
+ * control on the panel while an agent turn is in flight ("we cannot let humans
+ * change any value when the agents are at work with designing").
+ *
+ * FOUNDER-ORDERED CHROME, the §2-delta precedent: the dummy designed no
+ * disabled FIELD, so this is authored rather than lifted — and it is authored
+ * from the sheet's OWN `:disabled` vocabulary rather than invented. The value is
+ * the sheet's existing one (`.backgroundGradientRemove:disabled` /
+ * `.backgroundGradientAdd:disabled`, further down this file, are 0.45 — the
+ * inspector's own disabled buttons), so a disabled field reads exactly as
+ * disabled as the disabled controls it sits beside.
+ *
+ * OPACITY ONLY. No cursor vocabulary is introduced: a natively `disabled`
+ * input/button already suppresses the pointer cursor, and `cursor: wait` (the
+ * share menu's in-flight primary, `.sharePrimaryButtonWide:disabled`) means
+ * "this button is working", which is not what a field the agent has taken over
+ * is saying. The modifier rides the control's WRAPPER, never the control
+ * itself, because `.colorValue:disabled` already authors `opacity: 1` for the
+ * `none` swatch and would outrank a plain class on that element. */
+.inspectorControlDisabled {
+  opacity: 0.45;
 }
 
 .inspectorInputControl input,
@@ -2511,6 +2671,13 @@
   background: rgb(0 37 110 / 3%);
 }
 
+/* §2 delta (contract row 2): the ad text schema's horizontal alignment carries
+   four toggles (Justify), which a three-column row cannot hold. Web keeps
+   `.alignmentControl` alone. */
+.alignmentControlQuad {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
 .alignmentControl button {
   display: inline-flex;
   align-items: center;
@@ -2564,6 +2731,65 @@
   border-color: rgb(0 24 62 / 13%);
   background: white;
   box-shadow: 0 1px 2px rgb(0 0 0 / 7%);
+}
+
+.dummyInspectorStack {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+}
+
+.dummyInspectorPairGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+}
+
+.dummyInspectorPairGrid > * {
+  min-width: 0;
+}
+
+.dummyInspectorActionGrid {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  min-width: 0;
+}
+
+.dummyInspectorActionGrid button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  height: 34px;
+  padding: 8px;
+  border: 0.5px solid var(--chat-shell-border);
+  border-radius: 4px;
+  background: rgb(0 37 110 / 3%);
+}
+
+.dummyInspectorActionGrid button:hover,
+.dummyInspectorActionGrid button:focus-visible {
+  border-color: rgb(0 24 62 / 13%);
+  background: white;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 7%);
+}
+
+.dummyInspectorActionGrid button:focus-visible {
+  outline: 2px solid rgb(27 102 255 / 45%);
+  outline-offset: 2px;
+}
+
+.dummyInspectorAlignmentGroups {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
 }
 
 .verticalAlignment {
@@ -2625,6 +2851,7 @@
 }
 
 .fieldPrefix {
+  flex: 0 0 auto;
   color: var(--chat-shell-subtle);
 }
 
@@ -2763,6 +2990,12 @@
 
 .layerRowActive {
   background: rgb(0 30 75 / 7%);
+}
+
+.layerRowAccented,
+.layerRowActive.layerRowAccented {
+  background: transparent;
+  color: var(--clue-ds-color-content-utility-brand-default, #007d83);
 }
 
 .layerRow[aria-expanded="false"] .inspectorIcon {

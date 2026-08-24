@@ -25,10 +25,10 @@ import {
   type ThemeColorOption,
 } from "@/features/design-editor/adapter/theme-options";
 import type { ChatShellInspectorSelection } from "../model/chat-shell";
-import { CHAT_SHELL_INSPECTOR_SELECTIONS } from "../model/chat-shell";
 import {
   useInspectorController,
   useInspectorLayerTree,
+  type HorizontalAlignment,
   type InspectorEventAddressing,
   type InspectorPresentationState,
 } from "../hooks/use-inspector-controller";
@@ -43,6 +43,7 @@ import {
   InspectorSection,
   InspectorSelect,
   InspectorTokenControl,
+  RadiusControls,
 } from "./inspector-primitives";
 import styles from "./chat-shell.module.css";
 
@@ -65,7 +66,18 @@ const BUTTON_STYLE_OPTIONS = ["Primary", "Secondary", "Transparent"] as const;
 // hides rather than disables. The dummy's `InspectorDecoratedSelect` primitive
 // stays in `inspector-primitives.tsx` (presentation truth is not this task's to
 // delete); nothing in the web inspector renders it now.
-const INSPECTOR_TITLES: Record<ChatShellInspectorSelection, string> = {
+const WEB_INSPECTOR_SELECTIONS = [
+  "canvas",
+  "text",
+  "image",
+  "button",
+  "icon",
+  "container",
+  "section",
+] as const satisfies readonly ChatShellInspectorSelection[];
+type WebInspectorSelection = (typeof WEB_INSPECTOR_SELECTIONS)[number];
+
+const INSPECTOR_TITLES: Record<WebInspectorSelection, string> = {
   button: "Button",
   canvas: "Canvas",
   container: "Container",
@@ -74,7 +86,7 @@ const INSPECTOR_TITLES: Record<ChatShellInspectorSelection, string> = {
   section: "Section",
   text: "Text34",
 };
-const INSPECTOR_REVIEW_LABELS: Record<ChatShellInspectorSelection, string> = {
+const INSPECTOR_REVIEW_LABELS: Record<WebInspectorSelection, string> = {
   button: "Button",
   canvas: "Canvas",
   container: "Container",
@@ -160,8 +172,11 @@ function TextAlignment({
   vertical,
   verticalHidden = false,
 }: {
-  horizontal: "center" | "left" | "right";
-  onHorizontalChange: (value: "center" | "left" | "right") => void;
+  // The ad surface's §2-row-2 Justify toggle widened the shared
+  // `HorizontalAlignment`; this annotation follows it. The web control's own
+  // three options — and everything it renders — are unchanged.
+  horizontal: HorizontalAlignment;
+  onHorizontalChange: (value: HorizontalAlignment) => void;
   onVerticalChange: (value: "bottom" | "middle" | "top") => void;
   vertical: "bottom" | "middle" | "top";
   /** W3.2 (ruling 8): the text schema hides vertical alignment. */
@@ -318,118 +333,6 @@ function PaddingControls({
       <InspectorInput ariaLabel="Right padding" onChange={(value) => onChange("right", value)} prefix="R" value={values.right} />
       <InspectorInput ariaLabel="Bottom padding" onChange={(value) => onChange("bottom", value)} prefix="B" value={values.bottom} />
     </div>
-  );
-}
-
-type RadiusCorner = "all" | "bottomLeft" | "bottomRight" | "topLeft" | "topRight";
-type RadiusValues = Record<RadiusCorner, string>;
-
-/** W4.2 (ruling R-B1): only a numeric commit writes (`N` → `rounded-[Npx]`) —
- * and under founder ruling F2 that all-corners write also clears the per-corner
- * overrides, which is what the corner fields mirror below. An empty commit
- * clears the all-corners family only; a named scale value the field displays
- * verbatim (`lg`) is no write at all, so nothing is mirrored for it either. */
-const NUMERIC_RADIUS = /^\d+$/;
-
-/** W4.2 (ruling R-B2): the five radius fields adopt the ratified R3 commit
- * model — typed values draft locally and COMMIT on blur/Enter, so the write
- * path never sees a per-keystroke event. Behavioral only: same DOM, classes,
- * icons and aria-labels as the dummy ships. */
-export function RadiusControls({
-  onApplyAll,
-  onChange,
-  values,
-}: {
-  /** W4.2/F2 (the web image schema): the all-corners commit — ONE `radius.all`
-   * change, `clearsCorners` true when that write also clears the four corner
-   * overrides. Absent (the scene/ad image inspector, whose radius is dummy
-   * state and carries no F2 ruling) keeps the dummy's fan-out-to-four
-   * behaviour for the scan button. */
-  onApplyAll?: (value: string, clearsCorners: boolean) => void;
-  onChange: (corner: RadiusCorner, value: string) => void;
-  values: RadiusValues;
-}) {
-  const [drafts, setDrafts] = useState<RadiusValues>(values);
-  const setDraft = (corner: RadiusCorner, value: string) =>
-    setDrafts((current) => ({ ...current, [corner]: value }));
-
-  const commitAll = (value: string) => {
-    if (!onApplyAll) {
-      onChange("all", value);
-      return;
-    }
-    const clearsCorners = NUMERIC_RADIUS.test(value.trim());
-    onApplyAll(value, clearsCorners);
-    if (clearsCorners) {
-      setDrafts((current) => ({
-        ...current,
-        bottomLeft: "",
-        bottomRight: "",
-        topLeft: "",
-        topRight: "",
-      }));
-    }
-  };
-
-  const applyAll = () => {
-    if (!onApplyAll) {
-      // The dummy's own meaning, kept for the scene inspector.
-      (["topLeft", "topRight", "bottomLeft", "bottomRight"] as const).forEach((corner) =>
-        onChange(corner, values.all),
-      );
-      return;
-    }
-    // F2: the scan button's meaning IS the all-corners write, so it commits
-    // the all field's current draft even when unchanged — but an empty draft
-    // would clear the radius rather than apply one, so it is a no-op.
-    if (drafts.all.trim() === "") return;
-    commitAll(drafts.all);
-  };
-
-  return (
-    <>
-      <div className={styles.radiusMainRow}>
-        <InspectorInput
-          ariaLabel="All corner radius"
-          className={styles.radiusValue}
-          leading={<InspectorIcon name="radius-all" size={16} />}
-          onChange={(value) => setDraft("all", value)}
-          onCommit={() => {
-            if (drafts.all !== values.all) commitAll(drafts.all);
-          }}
-          value={drafts.all}
-        />
-        <button aria-label="Apply radius to all corners" className={styles.scanButton} onClick={applyAll} type="button">
-          <InspectorIcon name="radius-scan" size={12} />
-        </button>
-      </div>
-      <div className={styles.cornerRadiusGrid}>
-        {([
-          ["topLeft", "radius-top-left"],
-          ["topRight", "radius-top-right"],
-          ["bottomLeft", "radius-bottom-left"],
-          ["bottomRight", "radius-bottom-right"],
-        ] as const).map(([corner, icon]) => {
-          const commit = () => {
-            if (drafts[corner] !== values[corner]) onChange(corner, drafts[corner]);
-          };
-          return (
-            <span className={`${styles.inspectorControl} ${styles.inspectorInputControl} ${styles.cornerRadiusField}`} key={corner}>
-              <InspectorIcon name={icon} size={16} />
-              <input
-                aria-label={`${corner} radius`}
-                onBlur={commit}
-                onChange={(event) => setDraft(corner, event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") commit();
-                }}
-                value={drafts[corner]}
-              />
-            </span>
-          );
-        })}
-      </div>
-    </>
   );
 }
 
@@ -1493,6 +1396,11 @@ export function WebInspector({
 }) {
   const inspectorRef = useRef<HTMLElement>(null);
   const [reviewMenuOpen, setReviewMenuOpen] = useState(false);
+  const webSelection: WebInspectorSelection = WEB_INSPECTOR_SELECTIONS.includes(
+    selection as WebInspectorSelection,
+  )
+    ? (selection as WebInspectorSelection)
+    : "canvas";
   const canvasController = useInspectorController([], "canvas", hydrated, addressing);
   const textController = useInspectorController(["link"], "text", hydrated, addressing);
   const imageController = useInspectorController(["link"], "image", hydrated, addressing);
@@ -1513,7 +1421,7 @@ export function WebInspector({
   const iconLayerTree = useInspectorLayerTree("icon", ["div1", "div2"], "icon");
   const containerLayerTree = useInspectorLayerTree("container", ["div1", "div2"], "container");
   const sectionLayerTree = useInspectorLayerTree("section", ["div1", "div2"], "section");
-  const controllers: Record<ChatShellInspectorSelection, InspectorController> = {
+  const controllers: Record<WebInspectorSelection, InspectorController> = {
     button: buttonController,
     canvas: canvasController,
     container: containerController,
@@ -1522,7 +1430,7 @@ export function WebInspector({
     section: sectionController,
     text: textController,
   };
-  const activeController = controllers[selection];
+  const activeController = controllers[webSelection];
 
   useEffect(() => {
     if (!reviewMenuOpen) return;
@@ -1547,10 +1455,10 @@ export function WebInspector({
   const reviewMenu = reviewMenuEnabled && reviewMenuOpen ? (
     <div aria-label="Preview inspector element types" className={styles.inspectorVariantMenu} role="menu">
       <span className={styles.inspectorVariantMenuLabel}>Element controls</span>
-      {CHAT_SHELL_INSPECTOR_SELECTIONS.map((variant) => (
+      {WEB_INSPECTOR_SELECTIONS.map((variant) => (
         <button
-          aria-checked={selection === variant}
-          className={selection === variant ? styles.inspectorVariantMenuItemActive : ""}
+          aria-checked={webSelection === variant}
+          className={webSelection === variant ? styles.inspectorVariantMenuItemActive : ""}
           key={variant}
           onClick={() => {
             onSelectionChange(variant);
@@ -1571,7 +1479,7 @@ export function WebInspector({
       <div className={styles.inspectorRail}>
         <InspectorHeader
           actionMenu={reviewMenu}
-          elementActions={selection !== "canvas"}
+          elementActions={webSelection !== "canvas"}
           locked={activeController.state.locked}
           moreActionsExpanded={reviewMenuEnabled ? reviewMenuOpen : undefined}
           moreActionsHasPopup={reviewMenuEnabled}
@@ -1581,7 +1489,7 @@ export function WebInspector({
             if (reviewMenuEnabled) setReviewMenuOpen((open) => !open);
           }}
           onVisibilityToggle={() => activeController.setValue("visible", !activeController.state.visible)}
-          title={INSPECTOR_TITLES[selection]}
+          title={INSPECTOR_TITLES[webSelection]}
           visible={activeController.state.visible}
         />
         {/* W3.2 floor pending the W3.3 founder gate: one inline line for the
@@ -1598,13 +1506,13 @@ export function WebInspector({
         ) : null}
         <ThemeColorsContext.Provider value={themeColors}>
           <DocumentLayersContext.Provider value={documentLayers}>
-            {selection === "canvas" ? <CanvasControls controller={canvasController} layerTree={canvasLayerTree} onSelectionChange={onSelectionChange} showLayers={showLayers} /> : null}
-            {selection === "text" ? <TextControls controller={textController} layerTree={textLayerTree} onSelectionChange={onSelectionChange} richTextRange={richTextRange} showLayers={showLayers} /> : null}
-            {selection === "image" ? <ImageControls controller={imageController} layerTree={imageLayerTree} onReplaceImage={onReplaceImage} onSelectionChange={onSelectionChange} showLayers={showLayers} /> : null}
-            {selection === "button" ? <ButtonControls controller={buttonController} layerTree={buttonLayerTree} onSelectionChange={onSelectionChange} showLayers={showLayers} /> : null}
-            {selection === "icon" ? <IconControls controller={iconController} layerTree={iconLayerTree} onSelectionChange={onSelectionChange} showLayers={showLayers} /> : null}
-            {selection === "container" ? <ContainerControls controller={containerController} customComponentForm={customComponentForm} layerTree={containerLayerTree} layoutOnly={layoutOnly} onSelectionChange={onSelectionChange} showLayers={showLayers} /> : null}
-            {selection === "section" ? <SectionControls controller={sectionController} layerTree={sectionLayerTree} onSelectionChange={onSelectionChange} showLayers={showLayers} /> : null}
+            {webSelection === "canvas" ? <CanvasControls controller={canvasController} layerTree={canvasLayerTree} onSelectionChange={onSelectionChange} showLayers={showLayers} /> : null}
+            {webSelection === "text" ? <TextControls controller={textController} layerTree={textLayerTree} onSelectionChange={onSelectionChange} richTextRange={richTextRange} showLayers={showLayers} /> : null}
+            {webSelection === "image" ? <ImageControls controller={imageController} layerTree={imageLayerTree} onReplaceImage={onReplaceImage} onSelectionChange={onSelectionChange} showLayers={showLayers} /> : null}
+            {webSelection === "button" ? <ButtonControls controller={buttonController} layerTree={buttonLayerTree} onSelectionChange={onSelectionChange} showLayers={showLayers} /> : null}
+            {webSelection === "icon" ? <IconControls controller={iconController} layerTree={iconLayerTree} onSelectionChange={onSelectionChange} showLayers={showLayers} /> : null}
+            {webSelection === "container" ? <ContainerControls controller={containerController} customComponentForm={customComponentForm} layerTree={containerLayerTree} layoutOnly={layoutOnly} onSelectionChange={onSelectionChange} showLayers={showLayers} /> : null}
+            {webSelection === "section" ? <SectionControls controller={sectionController} layerTree={sectionLayerTree} onSelectionChange={onSelectionChange} showLayers={showLayers} /> : null}
           </DocumentLayersContext.Provider>
         </ThemeColorsContext.Provider>
       </div>

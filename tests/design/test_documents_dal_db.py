@@ -188,6 +188,60 @@ def test_web_document_default_fails_closed_for_a_multi_brand_workspace(
     run_async(_check())
 
 
+def test_scene_birth_stamps_the_latest_approved_kit(require_design_db: None) -> None:
+    async def _check() -> None:
+        async with db_lifespan() as engine, engine.connect() as conn, conn.begin() as txn:
+            ws = await _seed_ws(conn)
+            await _seed_brand_kit(conn, workspace_id=ws, version=1, approval_status="approved")
+
+            scene = _scene(f"doc_stamp_scene_1_{uuid4().hex}", title="Ad")
+            doc = await design_documents.create_document(
+                conn, workspace_id=ws, scene=scene, doc_kind="scene"
+            )
+            assert doc["scene"]["meta"]["brand_kit"] == {
+                "id": "kit_workspace_brand",
+                "version": 1,
+            }
+            assert doc["effective_brand_kit_id"] == "kit_workspace_brand"
+            assert doc["effective_brand_kit_version"] == 1
+            await txn.rollback()
+
+    run_async(_check())
+
+
+def test_scene_birth_respects_an_explicit_caller_kit(require_design_db: None) -> None:
+    async def _check() -> None:
+        async with db_lifespan() as engine, engine.connect() as conn, conn.begin() as txn:
+            ws = await _seed_ws(conn)
+            await _seed_brand_kit(conn, workspace_id=ws, version=1, approval_status="approved")
+
+            scene = _scene(f"doc_stamp_scene_2_{uuid4().hex}", title="Ad")
+            scene["meta"]["brand_kit"] = {"id": "brand_kit_other", "version": 3}  # type: ignore[index]
+            doc = await design_documents.create_document(
+                conn, workspace_id=ws, scene=scene, doc_kind="scene"
+            )
+            assert doc["scene"]["meta"]["brand_kit"] == {"id": "brand_kit_other", "version": 3}
+            await txn.rollback()
+
+    run_async(_check())
+
+
+def test_scene_birth_without_an_approved_kit_stays_unbranded(require_design_db: None) -> None:
+    async def _check() -> None:
+        async with db_lifespan() as engine, engine.connect() as conn, conn.begin() as txn:
+            ws = await _seed_ws(conn)
+
+            scene = _scene(f"doc_stamp_scene_3_{uuid4().hex}", title="Ad")
+            doc = await design_documents.create_document(
+                conn, workspace_id=ws, scene=scene, doc_kind="scene"
+            )
+            assert doc["scene"]["meta"].get("brand_kit") is None
+            assert doc["effective_brand_kit_id"] is None
+            await txn.rollback()
+
+    run_async(_check())
+
+
 def test_update_document_state_versions_stacks_and_history(require_design_db: None) -> None:
     async def _check() -> None:
         async with db_lifespan() as engine, engine.connect() as conn, conn.begin() as txn:

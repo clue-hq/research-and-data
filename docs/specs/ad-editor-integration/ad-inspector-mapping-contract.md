@@ -7,12 +7,54 @@ Decision trail: `ad-editor-disparity-inventory.md` (founder-annotated, Revision 
 OQ-1…OQ-8 rulings block) and the founder's final rulings message of 2026-08-20. This contract
 is the single normative restatement; where wording differs, the founder's annotations govern.
 
+**Amendments — 2026-08-20 (founder, post-freeze follow-up):**
+1. The item-5 interpretation flag is resolved: the founder confirmed **both** removals stand —
+   the two Link-to sections are removed **and** the button schema is hidden in v1. §2.7 and §5
+   remain exactly as written.
+2. **§1.8 multi-select re-ruled.** The merged-panel preference was made conditional on effort
+   ("see if it's a huge effort — then keep it out of scope for now"). Effort assessed as large
+   (net-new design existing in neither source; a "Mixed" presentation *and* edit semantics for
+   every control kind; one edit fanning out to N node patches in a single CAS batch under
+   per-node lock/token rules) → the merged panel is **out of v1 scope**. v1 shows the
+   first-selected element's schema; Arrange acts on the whole selection. Deferred to §7;
+   its §6 mockup leaves the active queue.
+3. **D7–D10 closed as recommended** (founder approved the pre-build list containing the
+   standing recommendations): D7 drop the Konva fallback from the lift; D8 asset/font bytes via
+   a narrow headerless BFF passthrough; D9 engine-stamp mismatch = loud banner + read-only
+   canvas (wording still §6-gated); D10 CAS conflict = web-style "document moved on" reload
+   message (wording still §6-gated). Mirrored into the plan's §5 register.
+
+**Amendment 4 — 2026-08-21 (founder): Gate G-D closed; §6 item 5 is built.**
+Ruling, verbatim: *"approve them as is from the mvp editor only, no separate banner needed…
+secondly, for readonly also keep them same as that in other mode only"*, then on the rendered
+preview: *"all 4 previews look good… proceed with them just the way you showed them to me."*
+Therefore:
+- **No new banner is designed.** The MVP editor's own `EngineDisabledBanner` and
+  `HeuristicMeasurementBanner` (`subsystems/clue-design/apps/editor/src/components/EditorChrome.tsx:200-288`
+  + `app/styles.css:912-974`) are ported whole — copy, glyph, geometry. A unit test asserts
+  every sentence against that source file, so the two editors cannot quietly fork their voice.
+- **Read-only is not special-cased.** The engine-stamp/handshake state gets the *same* canvas
+  treatment as degraded text (the second half of the ruling), not a bespoke read-only surface.
+- **The CAS conflict adds nothing:** it remains the inspector's existing note line
+  ("Document moved on — reloaded.", D10). The ad inspector already carries that `note` slot
+  from AD2.7; AD3's committer supplies the string.
+- **Three deviations, disclosed at the preview and taken with it:** (a) the banner background
+  is opaque — upstream's `rgba(207,45,86,0.15)` wash is only legible over that editor's always-light
+  workspace and vanished over a dark artboard, so it is composited to `#efd7dd`; (b) the two
+  banners **stack**, where upstream pins both at `top: 14px` and would overlap them; (c) the
+  command chip names *this* repo's remedy (`npm --prefix ../../subsystems/clue-design/apps/editor
+  run build:wasm`, the string our own `copy-design-vendor.mjs` prints, and
+  `node scripts/copy-design-vendor.mjs`) rather than the design subsystem's `npm run build:wasm`,
+  which does not exist in `apps/frontend`. Instructions that cannot be followed are not copy.
+D9's "loud banner" half is now literally true rather than mechanism-only; §6 item 5 leaves the
+queue, which is down to four.
+
 Sources it binds:
 - **Dummy surface:** `clue-hq/clue-frontend` branch `codex/chat-shell` — `c7f2bc5` **plus the
-  co-founder's 23-file ad-schema delta** (currently uncommitted at
-  `/Users/aryankeshri/Documents/clue-hq/clue-frontend`; per OQ-8 it will be committed, and the
-  AD0 lift pins byte-verification to that commit — record its hash here when it exists:
-  `_________`).
+  co-founder's 23-file ad-schema delta** (per OQ-8 it is now committed locally at
+  `/Users/aryankeshri/Documents/clue-hq/clue-frontend` as `32658ff` — "feat: add dummy ad
+  inspector variants", parent `c7f2bc5` — and the AD0 lift pins byte-verification to that
+  commit: `32658ff`).
 - **Engine/editor:** `subsystems/clue-design` scene editor + `lumen-core` (anchors in the
   inventory).
 
@@ -101,13 +143,12 @@ additive multi-select (shift/⌘-click) · auto-scroll to primary · **no** up/d
 buttons (z-order lives in Arrange) · container rows keep the dummy's collapse/expand chevrons ·
 the new `accented` active treatment.
 
-### §1.8 Multi-select — founder override, mockup-gated
-The founder's ruling: **a merged panel, not primary-node-only**. When N elements are selected,
-the inspector shows the sections common to the selection with per-field merged values and a
-"Mixed" presentation where values diverge; Arrange acts on the whole selection. **Neither the
-dummy nor the MVP editor has this** — it is net-new designed UI and net-new wiring, gated on a
-founder-approved mockup (§6) before build. Until that mockup is approved, implementation may
-not proceed past single-selection.
+### §1.8 Multi-select — v1: first-selected schema (amendment 2, 2026-08-20)
+When N elements are selected, the inspector shows the **first-selected element's schema**;
+Arrange acts on the whole selection (the MVP editor's behavior). The earlier merged-panel
+override was conditional on effort and the effort is large (see amendment 2), so the merged
+panel — common sections with per-field "Mixed" presentation — is **deferred to §7**, and
+re-enters mockup-gated when picked up.
 
 ### §1.9 Canvas interaction — founder ruling (b)
 Click-to-select via engine `hitTest` (selection outline) · **drag-to-move** ·
@@ -158,8 +199,8 @@ Delete: §7 (platform artifact semantics, not yet backed).
 - A raw radius write clears `corner.token`; a raw color write detaches the brand binding
   (with the §1.6 note); % opacity converts to 0–1 at the seam; preset writes are `update_page`.
 - Lock gates every write path; align/distribute/group respect the §1.5 enablement rules.
-- CAS-conflict UX posture: **pending AD1 ruling D10** (recommendation on file: web-style
-  "Document moved on — reloaded" + quiet reload).
+- CAS-conflict UX posture: **RULED (D10, 2026-08-20, amendment 3)** — web-style
+  "Document moved on — reloaded" + quiet reload; message wording stays §6-gated.
 
 ## §5 — Hidden / dropped (no v1 surface; engine capability unaffected)
 Eye toggle · both Link-to sections · the button schema · JPEG · image Stretch/Tile · the tool
@@ -173,22 +214,27 @@ line-height, letter-spacing, max-lines, wrap, direction, case, paragraph-spacing
 italic/underline/strike, truncate) · Line/Vector/Instance schemas (2026-08-19 ruling stands).
 
 ## §6 — Mockup-gated new chrome (build ONLY after founder approves visuals)
-1. Selection outline + move/resize handles (§1.9).
+1. Selection outline + move/resize handles (§1.9). — **SHIPPED (AD4.C, 2026-08-22):** G-A ruled
+   Variant B (commit `9c31bbcc`); outline shipped at AD2.5, the four corner handles +
+   drag/corner-resize shipped in this lane.
 2. The "leaves your brand palette" custom-color note (§1.6).
 3. The crop focal-point dot (§1.3).
-4. The merged multi-select panel, incl. its Mixed-value treatment (§1.8).
-5. Export print-extras options in dummy style, demonstrated in the browser (§1.11).
-6. Engine-forced user-facing states, wording proposed first: engine-stamp-mismatch banner
-   (read-only canvas), degraded-text-measurement banner, CAS-conflict message.
+4. Export print-extras options in dummy style, demonstrated in the browser (§1.11).
+5. ~~Engine-forced user-facing states~~ — **CLOSED and BUILT (amendment 4, 2026-08-21):** the
+   MVP editor's two banners ported as-is (read-only shares the degraded-text treatment), the
+   CAS-conflict message unchanged from D10.
+
+(The merged multi-select mockup left this queue with amendment 2; it re-enters when its §7
+item is picked up.)
 
 ## §7 — Future-work register (explicitly not v1)
 Tool palette (insert tools) · rotate handle, double-click text editing, marquee, Delete-key,
 nudge · versions-flyout binding to real history · JPEG (client-side conversion or engine
 format) · multi-page/PageRail · Duplicate/Archive/Delete menu actions · text-extras surfacing ·
 full brand-token editing UI (DesignTokens-style section) · effects UI · align-to-artboard ·
-Line/Vector/Instance schemas · the AD1 architecture rulings D7 (drop Konva from the lift),
-D8 (asset/font serving via headerless BFF passthrough), D9 (stamp-mismatch posture), D10 (CAS
-conflict posture) — recommendations on file in the plan's §5 register, to be closed at AD1.
+Line/Vector/Instance schemas · **the merged multi-select panel** (amendment 2 — net-new design,
+mockup-gated when picked up). The AD1 architecture rulings D7–D10 are **CLOSED as recommended**
+(2026-08-20, amendment 3) and no longer pending here.
 
 ## §8 — Engine-side work authorized
 **None authorized as of v1.** One conditional candidate: if AD1 verification finds the export

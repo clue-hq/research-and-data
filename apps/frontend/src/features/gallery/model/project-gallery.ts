@@ -33,7 +33,11 @@ export interface GalleryArtifact {
    * badge rather than a fabricated one (ruling 2's no-invented-imagery,
    * extended to account attribution). */
   account?: GalleryAccount;
-  collateralType: GalleryCollateralType;
+  /** G-H: absent when the document records no channel — "we are not
+   * necessarily always making ads", so a card that cannot prove its channel
+   * claims none (the same honest-absence rule `account` follows above). */
+  collateralType?: GalleryCollateralType;
+  /** Empty when there is no collateral type to name. */
   collateralTypeLabel: string;
   createdAt: string;
   editedLabel: string;
@@ -44,7 +48,9 @@ export interface GalleryArtifact {
   /** Absent for a leg-derived document — no generation run produced it. */
   originRunId?: string;
   originThreadId: string;
-  size: {
+  /** G-H: absent when the document records no page size — the card shows no
+   * size rather than a measurement nobody took. */
+  size?: {
     category: GallerySizeCategory;
     height: number;
     label: string;
@@ -86,11 +92,16 @@ export const SIZE_CATEGORY_LABELS: Record<GallerySizeCategory, string> = {
   square: "Square",
 };
 
-function defaultCollateralType(artifact: ProjectArtifact): GalleryCollateralType {
+function defaultCollateralType(
+  artifact: ProjectArtifact,
+): GalleryCollateralType | undefined {
   if (artifact.type === "website") return "microsite";
   if (artifact.type === "table") return "account-list";
   if (artifact.type === "presentation") return "presentation";
-  return "linkedin-ad";
+  // G-H: a canvas artifact used to default to "linkedin-ad", which stated a
+  // channel nobody recorded. The feed now carries the document's own type when
+  // it has one; when it does not, the card says nothing.
+  return undefined;
 }
 
 function defaultAccount(artifact: ProjectArtifact): GalleryAccount | undefined {
@@ -122,12 +133,10 @@ function defaultSize(artifact: ProjectArtifact): GalleryArtifact["size"] {
       width: 1440,
     };
   }
-  return {
-    category: "square",
-    height: 1080,
-    label: "1080 × 1080",
-    width: 1080,
-  };
+  // G-H: a canvas artifact used to claim 1080x1080 whatever its page really
+  // measured. The feed carries the document's real pixels; without them the
+  // card states no size at all.
+  return undefined;
 }
 
 export function normalizeGalleryArtifact(artifact: ProjectArtifact): GalleryArtifact {
@@ -136,7 +145,7 @@ export function normalizeGalleryArtifact(artifact: ProjectArtifact): GalleryArti
   return {
     account: defaultAccount(artifact),
     collateralType,
-    collateralTypeLabel: COLLATERAL_TYPE_LABELS[collateralType],
+    collateralTypeLabel: collateralType ? COLLATERAL_TYPE_LABELS[collateralType] : "",
     createdAt: artifact.createdAt ?? updatedAt,
     editedLabel: artifact.editedLabel,
     id: artifact.id,
@@ -186,13 +195,15 @@ export function filterGalleryArtifacts({
     }
     if (
       filters.collateralTypes.length > 0 &&
-      !filters.collateralTypes.includes(artifact.collateralType)
+      (artifact.collateralType === undefined ||
+        !filters.collateralTypes.includes(artifact.collateralType))
     ) {
       return false;
     }
     if (
       filters.sizeCategories.length > 0 &&
-      !filters.sizeCategories.includes(artifact.size.category)
+      (artifact.size === undefined ||
+        !filters.sizeCategories.includes(artifact.size.category))
     ) {
       return false;
     }
@@ -202,7 +213,7 @@ export function filterGalleryArtifacts({
       artifact.title,
       artifact.account?.name ?? "",
       artifact.collateralTypeLabel,
-      artifact.size.label,
+      artifact.size?.label ?? "",
     ].some((value) => value.toLocaleLowerCase().includes(normalizedQuery));
   });
 }
@@ -232,16 +243,20 @@ export function groupGalleryArtifacts(
   artifacts.forEach((artifact) => {
     // Unattributed artifacts share one honest group; its label stays empty
     // rather than inventing vocabulary (pending a founder ruling on wording).
+    // G-H: a document that records no channel groups in the same honest
+    // bucket an unattributed one does — empty label, no invented vocabulary.
     const id = groupBy === "account"
       ? (artifact.account?.id ?? "unattributed")
-      : artifact.collateralType;
+      : (artifact.collateralType ?? "untyped");
     const label = groupBy === "account"
       ? (artifact.account?.name ?? "")
-      : artifact.collateralType === "microsite"
-        ? "Websites"
-        : artifact.collateralType.includes("ad")
-          ? "Ads"
-          : COLLATERAL_TYPE_LABELS[artifact.collateralType];
+      : artifact.collateralType === undefined
+        ? ""
+        : artifact.collateralType === "microsite"
+          ? "Websites"
+          : artifact.collateralType.includes("ad")
+            ? "Ads"
+            : COLLATERAL_TYPE_LABELS[artifact.collateralType];
     const current = groups.get(id);
     if (current) {
       current.artifacts.push(artifact);

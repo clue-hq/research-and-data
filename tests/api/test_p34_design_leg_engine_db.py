@@ -33,6 +33,7 @@ from clue_api.agent_turn_submission import (
     AgentTurnSubmissionRow,
     insert_submission,
     message_artifact_ref,
+    submission_context_refs,
 )
 from clue_api.agent_turn_wiring import (
     DbAgentHistoryStore,
@@ -43,6 +44,7 @@ from clue_api.conversation_capture import persist_user_turn
 from clue_api.design_leg_tools import DESIGN_DELEGATION_BUNDLE_MEDIA_TYPE
 from clue_api.design_leg_wiring import (
     DesignLegTurnRunner,
+    _assistant_summary,
     design_leg_run_id,
     load_design_leg_history,
     load_head_of_abm_history,
@@ -50,6 +52,7 @@ from clue_api.design_leg_wiring import (
 from clue_api.toolbelt_wiring import build_toolbelt
 from clue_design import legs as design_legs
 from clue_design import runs as design_runs
+from clue_design.documents import create_document
 from clue_storage import FsStorage
 from tests._identity import seed_principal
 from tests._workspace import seed_project
@@ -377,6 +380,320 @@ def test_a_design_leg_turn_lands_attribution_history_and_the_stamped_run(
                 conn, workspace_id=seeds["workspace_id"], leg_id=seeds["leg"]["id"]
             )
             assert leg_after["state"] == "open_awaiting_user"
+
+    run_async(scenario())
+
+
+async def _pin_document(
+    conn: AsyncConnection,
+    seeds: dict[str, Any],
+    *,
+    doc_kind: str,
+    version: int,
+) -> dict[str, Any]:
+    """Create a real design document of ``doc_kind`` at ``version`` and pin the leg to it."""
+
+    document_id = f"doc_p34e_{doc_kind}_{uuid4().hex[:8]}"
+    scene: dict[str, Any] = (
+        {
+            "schema_version": 1,
+            "id": document_id,
+            "title": "Harbor & Sage",
+            "theme": {},
+            "pages": [{"id": "home", "nodes": {"root": {"kind": "root"}}}],
+        }
+        if doc_kind == "web"
+        else {
+            "schema_version": 1,
+            "meta": {"id": document_id, "title": "Launch artboard"},
+            "pages": {
+                "page_ad": {
+                    "id": "page_ad",
+                    "name": "Ad",
+                    "children": ["frame"],
+                }
+            },
+            "nodes": {
+                "frame": {"id": "frame", "children": ["headline"]},
+                "headline": {"id": "headline", "children": []},
+            },
+            "slots": {},
+            "assets": {},
+            "export_profiles": [],
+        }
+    )
+    document = await create_document(
+        conn, workspace_id=seeds["workspace_id"], scene=scene, doc_kind=doc_kind
+    )
+    await conn.execute(
+        text(
+            "UPDATE design_document SET current_version = :v WHERE id = :id AND workspace_id = :w"
+        ),
+        {"v": version, "id": document["id"], "w": seeds["workspace_id"]},
+    )
+    await conn.execute(
+        text("UPDATE design_leg SET document_id = :doc WHERE id = CAST(:leg AS uuid)"),
+        {"doc": document["id"], "leg": seeds["leg"]["id"]},
+    )
+    seeds["leg"] = await design_legs.get_leg(
+        conn, workspace_id=seeds["workspace_id"], leg_id=seeds["leg"]["id"]
+    )
+    return document
+
+
+def test_a_conflicted_scene_result_summarizes_with_the_versions_it_names() -> None:
+    """The consuming half of the design side's ``conflicted_agent_turn_response``.
+
+    A scene result's ``stop_reason`` is the ONLY prose ``_assistant_summary`` renders, so this
+    pins that a CAS-loss result arrives legible rather than as a bare "Design turn conflicted."
+
+    Honest scope note: today this summarizer is NOT reached for a conflict. The design executor
+    reports a conflicted turn with design-run status ``failed``, and ``run_leg_turn`` short-
+    circuits any non-``succeeded`` run into ``_fail_turn``, which deliberately manufactures NO
+    assistant message — so the thread currently records nothing at all for a lost race. That is
+    a real gap, and it is the visible-loop owner's (Task 6/7) to close, by routing a conflicted
+    run to a rendered message instead of the generic failure. This test pins the renderer's end
+    of the contract so that change is a routing change and not a re-derivation."""
+
+    summary = _assistant_summary(
+        {
+            "status": "failed",
+            "run_id": "run_conflicted",
+            "result": {
+                "schema_version": 1,
+                "status": "conflicted",
+                "summary": "This design moved from version 3 to version 4 …",
+                "stop_reason": (
+                    "This design moved from version 3 to version 4 while the AI turn was "
+                    "running, so the turn's changes were not applied. Your newer edits were "
+                    "preserved — send the instruction again to design against the current "
+                    "version."
+                ),
+                "base_version": 3,
+                "current_version": 4,
+            },
+        }
+    )
+    assert summary != "Design turn conflicted."
+    assert summary.startswith("Design turn conflicted: ")
+    assert "version 3" in summary and "version 4" in summary
+    assert "preserved" in summary
+
+
+def test_a_scene_leg_envelope_carries_the_documents_base_version(
+    tmp_path: Path,
+    migrated_db: bool,  # noqa: F811
+) -> None:
+    """genad Task 5: the scene executor OWNS the persist, so it needs a CAS base.
+
+    The leg block carries ``document_base_version`` read ONCE here, at freeze time — the same
+    posture as the web request's ``base_version`` (which is why a web-pinned leg's block must
+    NOT carry the key: web already pins the version inside its own request, and two copies of
+    one CAS base is exactly the drift this freeze exists to prevent).
+    """
+
+    if not migrated_db:
+        pytest.skip("database not reachable")
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            seeds = await _seed_leg_conversation(conn, storage_root=tmp_path, label="casbase")
+            registry = build_agent_profile_registry(build_toolbelt(storage=None, gateway=None))
+            document = await _pin_document(conn, seeds, doc_kind="scene", version=3)
+            lane = _FakeLane(conn_factory=seeds["conn_factory"])
+            submission = await _submit_message(
+                conn, seeds, label="casbase", message="Make the headline two lines."
+            )
+            await _run_turn(conn, seeds, registry, lane, submission)
+
+            envelope = lane.envelopes[0]
+            assert envelope.kind == "agent_turn"
+            assert envelope.config["leg"]["document_base_version"] == 3
+            assert envelope.config["request"]["document_id"] == document["id"]
+
+    run_async(scenario())
+
+
+def test_a_scene_leg_translates_durable_node_refs_into_the_frozen_request(
+    tmp_path: Path,
+    migrated_db: bool,  # noqa: F811
+) -> None:
+    """Focused targets are submission receipts first and runtime fields second."""
+
+    if not migrated_db:
+        pytest.skip("database not reachable")
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            seeds = await _seed_leg_conversation(conn, storage_root=tmp_path, label="targets")
+            registry = build_agent_profile_registry(build_toolbelt(storage=None, gateway=None))
+            document = await _pin_document(conn, seeds, doc_kind="scene", version=5)
+            refs = (
+                DomainObjectRef(
+                    workspace_id=seeds["workspace_id"],
+                    object_type="design_document",
+                    object_id=document["id"],
+                    version=5,
+                ),
+                DomainObjectRef(
+                    workspace_id=seeds["workspace_id"],
+                    object_type="design_node",
+                    object_id="headline",
+                    version=5,
+                ),
+            )
+            submission = await _submit_message(
+                conn,
+                seeds,
+                label="targets",
+                message="Make this bolder.",
+                focus_refs=refs,
+            )
+            durable_refs = await submission_context_refs(
+                conn,
+                workspace_id=seeds["workspace_id"],
+                turn_id=submission.turn_id,
+            )
+            assert durable_refs == refs
+
+            lane = _FakeLane(conn_factory=seeds["conn_factory"])
+            await _run_turn(conn, seeds, registry, lane, submission, durable_refs)
+
+            request = lane.envelopes[0].config["request"]
+            assert request["target_node_ids"] == ["headline"]
+            assert request["active_page_id"] == "page_ad"
+            assert lane.envelopes[0].config["leg"]["focus_refs"] == [
+                {
+                    "object_type": "design_document",
+                    "object_id": document["id"],
+                    "version": 5,
+                },
+                {"object_type": "design_node", "object_id": "headline", "version": 5},
+            ]
+
+    run_async(scenario())
+
+
+def test_a_target_deleted_after_acceptance_fails_the_turn_typed_and_keeps_the_leg_open(
+    tmp_path: Path,
+    migrated_db: bool,  # noqa: F811
+) -> None:
+    """A durable node target the CURRENT scene no longer carries is a typed refusal.
+
+    Acceptance validated the target against the version the user saw; a manual edit (or an
+    earlier queued turn) may delete that node before dispatch. The envelope build re-resolves
+    against the current scene and must fail the turn through ``_fail_turn`` with
+    ``design_leg_target_unresolved`` — never the ``design_leg_turn_crashed`` containment path —
+    and the leg stays open for the user to restate the edit.
+    """
+
+    if not migrated_db:
+        pytest.skip("database not reachable")
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            seeds = await _seed_leg_conversation(conn, storage_root=tmp_path, label="staletgt")
+            registry = build_agent_profile_registry(build_toolbelt(storage=None, gateway=None))
+            document = await _pin_document(conn, seeds, doc_kind="scene", version=5)
+            refs = (
+                DomainObjectRef(
+                    workspace_id=seeds["workspace_id"],
+                    object_type="design_document",
+                    object_id=document["id"],
+                    version=5,
+                ),
+                DomainObjectRef(
+                    workspace_id=seeds["workspace_id"],
+                    object_type="design_node",
+                    object_id="headline",
+                    version=5,
+                ),
+            )
+            submission = await _submit_message(
+                conn,
+                seeds,
+                label="staletgt",
+                message="Make this bolder.",
+                focus_refs=refs,
+            )
+            # The interleaved manual edit: the targeted node is gone from the
+            # current scene by the time the turn dispatches.
+            pruned_scene = dict(document["scene"])
+            pruned_scene["nodes"] = {"frame": {"id": "frame", "children": []}}
+            await conn.execute(
+                text(
+                    "UPDATE design_document SET current_scene_json = CAST(:scene AS jsonb) "
+                    "WHERE id = :id AND workspace_id = :w"
+                ),
+                {
+                    "scene": json.dumps(pruned_scene),
+                    "id": document["id"],
+                    "w": seeds["workspace_id"],
+                },
+            )
+
+            lane = _FakeLane(conn_factory=seeds["conn_factory"])
+            result = await _run_turn(conn, seeds, registry, lane, submission, refs)
+
+            assert result.outcome.status is AgentExecutionStatus.FAILED
+            assert result.outcome.failure_code == "design_leg_target_unresolved"
+            # Nothing was dispatched and no run row was born of the refusal.
+            assert lane.envelopes == []
+            leg_after = await design_legs.get_leg(
+                conn, workspace_id=seeds["workspace_id"], leg_id=seeds["leg"]["id"]
+            )
+            assert leg_after["state"] == "open_awaiting_user"
+
+    run_async(scenario())
+
+
+def test_a_web_leg_envelope_carries_no_document_base_version_on_its_leg_block(
+    tmp_path: Path,
+    migrated_db: bool,  # noqa: F811
+) -> None:
+    """A web-pinned leg's CAS base lives in its request, and nowhere else."""
+
+    if not migrated_db:
+        pytest.skip("database not reachable")
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            seeds = await _seed_leg_conversation(conn, storage_root=tmp_path, label="webbase")
+            registry = build_agent_profile_registry(build_toolbelt(storage=None, gateway=None))
+            await _pin_document(conn, seeds, doc_kind="web", version=4)
+            lane = _FakeLane(conn_factory=seeds["conn_factory"])
+            submission = await _submit_message(
+                conn, seeds, label="webbase", message="Warmer palette."
+            )
+            await _run_turn(conn, seeds, registry, lane, submission)
+
+            envelope = lane.envelopes[0]
+            assert envelope.kind == "web_turn"
+            assert "document_base_version" not in envelope.config["leg"]
+            assert envelope.config["request"]["base_version"] == 4
+
+    run_async(scenario())
+
+
+def test_a_document_less_leg_envelope_carries_no_document_base_version(
+    tmp_path: Path,
+    migrated_db: bool,  # noqa: F811
+) -> None:
+    """Legacy (AD4.R-era) legs pin no document at all; the executor must read that as
+    'preview-only', so the key is absent rather than a fabricated zero."""
+
+    if not migrated_db:
+        pytest.skip("database not reachable")
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            seeds = await _seed_leg_conversation(conn, storage_root=tmp_path, label="nodoc")
+            registry = build_agent_profile_registry(build_toolbelt(storage=None, gateway=None))
+            lane = _FakeLane(conn_factory=seeds["conn_factory"])
+            submission = await _submit_message(conn, seeds, label="nodoc", message="Bolder.")
+            await _run_turn(conn, seeds, registry, lane, submission)
+
+            assert "document_base_version" not in lane.envelopes[0].config["leg"]
 
     run_async(scenario())
 

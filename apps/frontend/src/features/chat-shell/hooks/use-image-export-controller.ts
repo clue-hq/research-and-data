@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   imageExportSupportsScale,
-  imageExportSupportsTransparency,
   type ImageExportFormat,
   type ImageExportScale,
 } from "../model/image-export";
@@ -13,7 +12,6 @@ export function useImageExportController({ title }: { title: string }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [scale, setScale] = useState<ImageExportScale>("1x");
-  const [transparentBackground, setTransparentBackground] = useState(true);
   const [statusMessage, setStatusMessage] = useState("");
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -36,24 +34,21 @@ export function useImageExportController({ title }: { title: string }) {
 
   const requestExport = useCallback(() => {
     const supportsScale = imageExportSupportsScale(format);
-    const supportsTransparency = imageExportSupportsTransparency(format);
+    // Gate G-E: the request detail carries no `transparentBackground` field —
+    // the toggle is held pending the §8 engine verification.
     window.dispatchEvent(new CustomEvent("clue:artifact-export-request", {
       detail: {
         format,
         kind: "ad",
         scale: supportsScale ? scale : undefined,
         title,
-        transparentBackground: supportsTransparency ? transparentBackground : false,
       },
     }));
     setStatusMessage(`${format} export requested${supportsScale ? ` at ${scale}` : ""}`);
-  }, [format, scale, title, transparentBackground]);
+  }, [format, scale, title]);
 
   const chooseFormat = useCallback((nextFormat: ImageExportFormat) => {
     setFormat(nextFormat);
-    if (!imageExportSupportsTransparency(nextFormat)) {
-      setTransparentBackground(false);
-    }
   }, []);
 
   return {
@@ -67,10 +62,8 @@ export function useImageExportController({ title }: { title: string }) {
       setFormat: chooseFormat,
       setPreviewOpen,
       setScale,
-      setTransparentBackground,
       statusMessage,
       toggleMenu: () => setMenuOpen((current) => !current),
-      transparentBackground,
     },
     menuRef,
   };

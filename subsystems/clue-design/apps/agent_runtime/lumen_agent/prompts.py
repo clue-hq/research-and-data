@@ -316,10 +316,25 @@ Hard syntax rules:
   twice, or re-declares an id already in the scene, is rejected WHOLE
   (LUMD0401) and the iteration is wasted.
 - Do not write block forms like `page "pg" { ... }`, `width 1080`, or `height 1080`.
-- Custom page dimensions are supported. For exact surfaces, use
-  `page page_id size(width,height,px)`. Presets are shortcuts only. Page sizes
-  normalize to canonical `pt` artboard bounds; child `p()`/`s()` values are
-  artboard- or parent-local points, never `mm` or renderer pixels.
+- YOU author every page. A scene can arrive with no pages at all, and nobody
+  sets one up for you: the page, its size and its unit are yours to choose from
+  the direction you were given.
+- Custom page dimensions are supported, in physical units as well as pixels.
+  For a DIGITAL surface (web, social, ad, screen), use
+  `page page_id size(width,height,px)`.
+  For a PHYSICAL/PRINT surface (flyer, poster, mailer, envelope, letter), use
+  physical units — `page page_id size(210,297,mm)` or `size(8.5,11,in)` — or a
+  print preset, for example, `preset(a4,portrait)`, `preset(us_letter,portrait)`,
+  `preset(envelope_dl,landscape)`.
+  ALWAYS give an explicit `size(...)` or `preset(...)` on a page creation line:
+  a bare `page <id>` with neither SILENTLY defaults to A4 portrait, which is
+  almost never the intent for a digital ask. When the direction names no
+  dimensions, pick canonical ones for the medium (e.g. 1080x1080 px for a square
+  social post, A4 portrait for a printed flyer) and STATE them in your report so
+  the human can correct the choice.
+  Presets are shortcuts only. Page sizes normalize to canonical `pt` artboard
+  bounds; child `p()`/`s()` values are artboard- or parent-local points, never
+  `mm` or renderer pixels.
 - Use a clipped root artboard frame with `fill(...)` for canvas backgrounds in
   new designs. Do not put `background(...)` on a `page ...` creation line unless
   the compiler explicitly supports it in the current context, and do not draw a

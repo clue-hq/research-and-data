@@ -27,6 +27,8 @@ reference_docs/*
 # D4: the ENGINE MATERIALIZATION CACHE (transient, per-workspace; durable design bytes live in
 # platform storage). `apps/api/asset-store/` is kept below for historical working trees.
 .engine-cache/
+# Derived, disposable per-run views written by `scripts/run_view.py` — regenerate, never commit.
+.design-runs/
 apps/api/asset-store/
 apps/agent_runtime/.lumen-runs-A/
 apps/agent_runtime/.lumen-runs-B/

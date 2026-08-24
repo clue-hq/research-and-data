@@ -18,6 +18,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from clue_design.storage import SOURCE_KEY_ASSET
+from clue_storage import StorageError
 
 from conftest import make_blob_store, make_client
 
@@ -197,6 +198,133 @@ def test_the_backstop_leaves_already_durable_bytes_alone(client: TestClient) -> 
     assert client.put(f"/documents/{document['id']}/scene", json={"scene": scene}).status_code == 200
     assert client.put(f"/documents/{document['id']}/scene", json={"scene": scene}).status_code == 200
     assert make_blob_store(client.app).read(record["media"]["digest"]["value"]) == TINY_PNG
+
+
+def test_the_backstop_heals_custody_whose_bytes_went_missing(client: TestClient) -> None:
+    """Custody is a claim about BYTES, so the skip probe has to be about bytes.
+
+    The genad2 walk (2026-08-23) found the row and the blob apart: the persisting process and
+    the serving one resolved the relative default blob root against different working
+    directories, so the ``artifact`` row (shared database) said custody and the design API's
+    backend could not produce a thing. That divergence is recoverable — the engine cache still
+    held the bytes — but under the old row-only probe (``exists``, "no blob I/O") it was
+    PERMANENT, because every later accept skipped the digest on the strength of the row.
+
+    This drives the NON-leg seam (``PUT /scene``) on purpose: the backstop is one shared
+    function, so the leg persist and the MVP editor's accept heal identically, and pinning it
+    here is what keeps the editor path from regressing when only the leg tests are read.
+    """
+    from clue_design.storage import design_storage_key
+
+    document = create_document(client)
+    record = cache_only_asset(client, "asset_mid_turn", TINY_PNG)
+    scene = scene_with_asset(document["id"], record)
+    digest = record["media"]["digest"]["value"]
+    assert client.put(f"/documents/{document['id']}/scene", json={"scene": scene}).status_code == 200
+
+    key = design_storage_key(os.environ["LUMEN_DEV_WORKSPACE_ID"], digest)
+    Path(client.app.state.storage._root).joinpath(*key.split("/")).unlink()
+    assert make_blob_store(client.app).exists(digest), "the row still claims custody"
+    # Workspace-scoped byte route rather than /asset-store/{digest}: the public route resolves
+    # a digest across EVERY tenant's rows, and TINY_PNG's hash is held by half this suite.
+    assert client.get("/assets/asset_mid_turn/bytes").status_code == 404
+
+    assert client.put(f"/documents/{document['id']}/scene", json={"scene": scene}).status_code == 200
+
+    served = client.get("/assets/asset_mid_turn/bytes")
+    assert served.status_code == 200, served.text
+    assert served.content == TINY_PNG
+
+
+class FlakyBackend:
+    """A storage backend one digest can be made to fail on, the way a sick backend fails.
+
+    Not "the blob is missing" (that is `ArtifactNotFound` and a normal answer) — this is the
+    backend itself refusing: unreachable, misconfigured, credentials expired. Switchable at
+    runtime because the interesting sequence is *healthy, then sick*, and `create_app` fixes the
+    backend for the life of the app.
+    """
+
+    def __init__(self, inner: object) -> None:
+        self._inner = inner
+        self.fail_on: str | None = None
+
+    def _guard(self, key: str) -> None:
+        if self.fail_on is not None and self.fail_on in key:
+            raise StorageError(f"backend unreachable for {key!r}")
+
+    async def put(self, key: str, data: bytes, *, media_type: str) -> None:
+        self._guard(key)
+        await self._inner.put(key, data, media_type=media_type)
+
+    async def get(self, key: str) -> bytes:
+        self._guard(key)
+        return await self._inner.get(key)
+
+    async def exists(self, key: str) -> bool:
+        self._guard(key)
+        return await self._inner.exists(key)
+
+    async def delete(self, key: str) -> None:
+        self._guard(key)
+        await self._inner.delete(key)
+
+    def list_blobs(self):
+        return self._inner.list_blobs()
+
+    async def presign(self, key: str, *, expires_in: int = 3600) -> str:
+        self._guard(key)
+        return await self._inner.presign(key, expires_in=expires_in)
+
+
+@pytest.fixture()
+def flaky_client(tmp_path: Path, design_storage) -> TestClient:
+    """A client whose backend can be made sick mid-test (`client.app.state.storage.fail_on`)."""
+    app = create_app(tmp_path / "engine-cache", storage=FlakyBackend(design_storage))
+    return make_client(app)
+
+
+def test_a_failed_custody_REPAIR_does_not_destroy_the_write(flaky_client: TestClient) -> None:
+    """A backstop that cannot repair must leave the persist alone.
+
+    Probing for bytes means the backstop now talks to the backend on scenes it used to skip
+    without a single call — so a backend outage must not turn an accept that used to succeed
+    into a 500. A repair it cannot perform is logged and skipped: the asset stays exactly as
+    broken as it already was, and the next persist tries again.
+    """
+    document = create_document(flaky_client)
+    record = cache_only_asset(flaky_client, "asset_mid_turn", TINY_PNG)
+    scene = scene_with_asset(document["id"], record)
+    digest = record["media"]["digest"]["value"]
+    assert client_put_scene(flaky_client, document, scene) == 200
+
+    from clue_design.storage import design_storage_key
+
+    key = design_storage_key(os.environ["LUMEN_DEV_WORKSPACE_ID"], digest)
+    Path(flaky_client.app.state.storage._inner._root).joinpath(*key.split("/")).unlink()
+    flaky_client.app.state.storage.fail_on = digest
+
+    assert client_put_scene(flaky_client, document, scene) == 200, "the write survived"
+    assert flaky_client.get("/assets/asset_mid_turn/bytes").status_code == 404, "still broken"
+
+
+def test_a_failed_FIRST_registration_still_refuses_the_write(flaky_client: TestClient) -> None:
+    """The asymmetry's other half, unchanged from before the backstop probed bytes.
+
+    No row, no bytes, and a backend that will not take them: persisting the scene would commit a
+    document citing imagery nothing durable holds. That has always propagated, and it stays loud
+    — it is the fabrication this backstop exists to prevent, not a repair it can defer.
+    """
+    document = create_document(flaky_client)
+    record = cache_only_asset(flaky_client, "asset_mid_turn", TINY_PNG)
+    flaky_client.app.state.storage.fail_on = record["media"]["digest"]["value"]
+
+    with pytest.raises(StorageError):
+        client_put_scene(flaky_client, document, scene_with_asset(document["id"], record))
+
+
+def client_put_scene(client: TestClient, document: dict, scene: dict) -> int:
+    return client.put(f"/documents/{document['id']}/scene", json={"scene": scene}).status_code
 
 
 def test_the_backstop_cannot_invent_custody_for_bytes_it_does_not_have(

@@ -151,12 +151,14 @@ class GateResponseRequest(_Request):
 class ContextRefRequest(_Request):
     """An ordered, workspace-scoped domain-object reference.
 
-    ``design_document`` (P3.1) is how canvas context rides the platform turn API
-    (master plan §2.4): the target document ref arrives as a focus ref, so the design
-    leg's turns know what the user is pointing at with no extra round trip.
+    ``design_document`` (P3.1) pins the open leg's document. ``design_node`` is
+    the ordered, per-message selection inside that exact document scene. ``design_asset``
+    identifies one ready image in the design asset library for reference conditioning.
     """
 
-    object_type: Literal["account", "contact", "design_document"]
+    object_type: Literal[
+        "account", "contact", "design_document", "design_node", "design_asset"
+    ]
     object_id: str = Field(min_length=1, max_length=200)
     version: int | None = Field(default=None, gt=0)
 
@@ -202,7 +204,7 @@ class SubmitTurnRequest(_Request):
     spend.
     """
 
-    message: str | None = Field(default=None, min_length=1, max_length=32_000)
+    message: str | None = Field(default=None, max_length=32_000)
     gate_response: GateResponseRequest | None = None
     context_refs: tuple[ContextRefRequest, ...] = Field(
         default=(), max_length=MAX_CONTEXT_REFS_PER_TURN
@@ -226,8 +228,14 @@ class SubmitTurnRequest(_Request):
 
         if (self.message is None) == (self.gate_response is None):
             raise ValueError("supply exactly one of message or gate_response")
-        if self.message is not None and not self.message.strip():
-            raise ValueError("message must contain something other than whitespace")
+        design_asset_refs = tuple(
+            ref for ref in self.context_refs if ref.object_type == "design_asset"
+        )
+        if self.message is not None and not self.message.strip() and not design_asset_refs:
+            raise ValueError(
+                "message must contain something other than whitespace unless reference images "
+                "are supplied"
+            )
         if self.gate_response is not None and (
             self.context_refs or self.attachment_refs or self.agent_profile_id is not None
         ):
@@ -590,6 +598,12 @@ class DesignArtifactListItemWire(DesignArtifactWire):
     created_at: str
     updated_at: str
     origin_thread_id: str
+    # G-H: the card's own facts, carried from the document rather than guessed
+    # by the client. Both are absent when the document does not record them —
+    # a card then states nothing instead of inventing a channel or a size.
+    artifact_type: str | None = None
+    width_px: int | None = None
+    height_px: int | None = None
 
 
 class DesignArtifactListResponse(_Wire):
@@ -828,6 +842,7 @@ def message_wire(
     thread_id: str,
     body: str | None = None,
     body_unavailable_reason: str | None = None,
+    ref_presentations: Mapping[tuple[str, str], Mapping[str, Any]] | None = None,
 ) -> ThreadMessageWire:
     """One message on the wire; ``body`` is present only on the D3 hydrated cold-load read.
 
@@ -836,6 +851,13 @@ def message_wire(
     honest about a body it could not serve — erased, too large, not text — instead of returning an
     empty string that renders as a message the user never sent.
     """
+
+    refs: list[dict[str, Any]] = []
+    for ref in item.refs:
+        wire = ref.model_dump(mode="json")
+        if ref_presentations is not None:
+            wire.update(ref_presentations.get((ref.object_type, ref.object_id), {}))
+        refs.append(wire)
 
     return ThreadMessageWire(
         id=str(item.message_id),
@@ -848,7 +870,7 @@ def message_wire(
         body=body,
         body_unavailable_reason=body_unavailable_reason,
         created_at=item.created_at.isoformat(),
-        refs=tuple(ref.model_dump(mode="json") for ref in item.refs),
+        refs=tuple(refs),
     )
 
 
@@ -857,6 +879,7 @@ def message_list_response(
     *,
     thread_id: str,
     bodies: Mapping[str, HydratedBody] | None = None,
+    ref_presentations: Mapping[tuple[str, str], Mapping[str, Any]] | None = None,
 ) -> MessageListResponse:
     """One page on the wire. ``bodies`` is supplied only by the ``?include=bodies`` opt-in.
 
@@ -873,6 +896,7 @@ def message_list_response(
                 body_unavailable_reason=(
                     None if hydrated is None or hydrated.body is not None else hydrated.reason
                 ),
+                ref_presentations=ref_presentations,
             )
             for item in page.items
             for hydrated in ((None if bodies is None else bodies.get(item.body_artifact_key)),)

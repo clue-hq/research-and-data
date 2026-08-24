@@ -42,6 +42,11 @@ dependencies = [
     # clue-research's >=6 in the shared lockfile — a dead dep is not worth a version treaty.
     "selectolax>=0.3.21,<1",
     "tinycss2>=1.3,<2",
+    # `lumen_api.run_view` (and `scripts/run_view.py`) talk raw asyncpg — the run view composes no
+    # app and no SQLAlchemy session, it opens one read-only connection. It resolved transitively
+    # through clue-db until now; a direct import gets a direct declaration. Unpinned, matching
+    # libs/clue-db's own entry, so the workspace keeps one asyncpg version story.
+    "asyncpg",
     "clue-design",
     # D5 Round B: the two design-tree shims, now installed packages rather than PYTHONPATH.
     "py-lumen-obs",

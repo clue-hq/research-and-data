@@ -543,6 +543,48 @@ def test_resolve_agent_turn_brand_kit_passes_document_kit_by_value(
     assert entry["usage"] == "Use on dark or brand-colored fields."
 
 
+def test_zero_face_brand_font_uses_inter_and_reports_the_server_fallback(
+    client: TestClient,
+) -> None:
+    """A pinned kit may name a family without carrying licensed face bytes.
+
+    That is an explicit, deterministic degradation — not permission to fetch
+    an arbitrary system/web font. The server's Skia path must use bundled
+    Inter and report LUMS0100, matching the browser's renderer diagnostic.
+    """
+    compiled = client.post(
+        "/brand-kits/compile-styles",
+        json={
+            "source": valid_styles_source(),
+            "brand_kit_id": "brand_kit_zero_face_fallback",
+            "version": 4,
+            "name": "Zero-face fallback",
+        },
+    )
+    assert compiled.status_code == 200, compiled.text
+
+    scene = preflightable_scene()
+    scene["meta"]["brand_kit"] = {
+        "id": "brand_kit_zero_face_fallback",
+        "version": 4,
+    }
+    scene["nodes"]["node_contact_name"]["kind"]["font_family"] = "Source Sans 3"
+
+    exported = client.post(
+        "/export-preview",
+        json={"scene": scene, "format": "png", "page_ids": ["page_a4"]},
+    )
+    assert exported.status_code == 200, exported.text
+    current = exported.json().get("diagnostics") or []
+    fallback = next(
+        (diagnostic for diagnostic in current if diagnostic.get("code") == "LUMS0100"),
+        None,
+    )
+    assert fallback is not None, current
+    assert "Source Sans 3" in fallback["message"]
+    assert "Inter" in fallback["message"]
+
+
 def test_brand_kit_font_faces_ride_preflight_as_store_digests(
     client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

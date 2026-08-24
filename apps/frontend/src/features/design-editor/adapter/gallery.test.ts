@@ -47,6 +47,36 @@ test("a listed design artifact maps onto the gallery's website artifact", () => 
   assert.equal(artifact.originThreadId, "thread-9");
 });
 
+test("an ad artifact maps onto a canvas artifact with no collateral type", () => {
+  // AD2.1: the feed is kind-aware, so a scene document arrives as `kind: "ad"`.
+  // It becomes a `canvas` artifact — the type both editor mounts reconstruct
+  // `kind: "ad"` from (`source.type === "website" ? "web" : "ad"`), so the ad
+  // reaches the editor with zero mount changes. `collateralType` is left ABSENT
+  // rather than guessed: the document says it is an ad, never which channel.
+  const artifact = toProjectArtifact(listItem({ id: "doc-ad-1", kind: "ad" }), {
+    now: NOW,
+  });
+
+  assert.equal(artifact.type, "canvas");
+  assert.equal("collateralType" in artifact, false);
+  // The honest-empty card holds: no invented thumbnail for an ad either.
+  assert.equal(artifact.imagePath, undefined);
+  assert.doesNotThrow(() => ProjectArtifactSchema.parse(artifact));
+});
+
+test("a web artifact keeps its website mapping alongside ads", () => {
+  const web = toProjectArtifact(listItem(), { now: NOW });
+  const ad = toProjectArtifact(listItem({ id: "doc-ad-2", kind: "ad" }), { now: NOW });
+
+  assert.deepEqual(
+    [web, ad].map((artifact) => [artifact.type, artifact.collateralType]),
+    [
+      ["website", "microsite"],
+      ["canvas", undefined],
+    ],
+  );
+});
+
 test("real timestamps survive as the schema's UTC instants", () => {
   const artifact = toProjectArtifact(
     listItem({
@@ -142,4 +172,111 @@ test("the mapped artifact survives the gallery's normalizer", () => {
   // The optionals stay absent through normalization — nothing is invented.
   assert.equal(normalized.imagePath, undefined);
   assert.equal(normalized.originRunId, undefined);
+});
+
+// ── G-H (founder ruling 2026-08-20) ────────────────────────────────────────
+// A card states only what its document records. The old defaults called every
+// design artifact a 1080x1080 "LinkedIn ad"; both facts now come from the
+// document, and a document that records neither says nothing.
+
+test("G-H: an ad carries the document's own size and its recorded channel", () => {
+  const normalized = normalizeGalleryArtifact(
+    toProjectArtifact(
+      listItem({
+        id: "doc-ad-1",
+        documentId: "doc-ad-1",
+        kind: "ad",
+        title: "Insight Health — LinkedIn square ad",
+        artifactType: "linkedin_square_ad",
+        widthPx: 1200,
+        heightPx: 1200,
+      }),
+      { now: NOW },
+    ),
+  );
+
+  assert.equal(normalized.collateralType, "linkedin-ad");
+  assert.equal(normalized.collateralTypeLabel, "LinkedIn ad");
+  assert.deepEqual(normalized.size, {
+    category: "square",
+    height: 1200,
+    label: "1200 × 1200",
+    width: 1200,
+  });
+});
+
+test("G-H: an ad whose document records no channel claims none", () => {
+  const normalized = normalizeGalleryArtifact(
+    toProjectArtifact(
+      listItem({
+        id: "doc-ad-2",
+        documentId: "doc-ad-2",
+        kind: "ad",
+        title: "Untitled design",
+        widthPx: 1080,
+        heightPx: 1920,
+      }),
+      { now: NOW },
+    ),
+  );
+
+  assert.equal(normalized.collateralType, undefined);
+  assert.equal(normalized.collateralTypeLabel, "");
+  // The size is still the document's own, and its category is derived.
+  assert.equal(normalized.size?.label, "1080 × 1920");
+  assert.equal(normalized.size?.category, "portrait");
+});
+
+test("G-H: an ad whose document records no page states no size", () => {
+  const normalized = normalizeGalleryArtifact(
+    toProjectArtifact(
+      listItem({ id: "doc-ad-3", documentId: "doc-ad-3", kind: "ad", title: "Empty" }),
+      { now: NOW },
+    ),
+  );
+
+  assert.equal(normalized.size, undefined);
+  assert.equal(normalized.collateralType, undefined);
+});
+
+test("genad2 Task 5 (c): a ZERO-PAGE newborn ad card is honest-empty, not hidden", () => {
+  // `open_design_leg@4` births a chat-born ad with `pages: {}`, so the feed row
+  // for it carries no `width_px`/`height_px` at all — the backend is already
+  // honest (it reports no page rather than a default), and this pins the
+  // frontend half of that: the card still appears, with its real id and title,
+  // and claims NOTHING it cannot measure. A fabricated 1080x1080 (the pre-G-H
+  // default) or a stock thumbnail here would be the gallery inventing a design
+  // that does not exist yet.
+  const artifact = toProjectArtifact(
+    listItem({
+      id: "doc-ad-newborn",
+      documentId: "doc-ad-newborn",
+      kind: "ad",
+      title: "LinkedIn ad",
+    }),
+    { now: NOW },
+  );
+  const normalized = normalizeGalleryArtifact(artifact);
+
+  assert.equal(normalized.id, "doc-ad-newborn");
+  assert.equal(normalized.title, "LinkedIn ad");
+  assert.equal(normalized.source.type, "canvas");
+  assert.equal(normalized.size, undefined);
+  assert.equal(normalized.imagePath, undefined);
+});
+
+test("G-H: an unrecognised artifact type is not forced into the vocabulary", () => {
+  const artifact = toProjectArtifact(
+    listItem({
+      id: "doc-ad-4",
+      documentId: "doc-ad-4",
+      kind: "ad",
+      title: "Conference poster",
+      artifactType: "a2_conference_poster",
+      widthPx: 1191,
+      heightPx: 1684,
+    }),
+  );
+
+  assert.equal(artifact.collateralType, undefined);
 });

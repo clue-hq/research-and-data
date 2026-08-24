@@ -80,6 +80,7 @@ that scaffolding, and Part-IV item 5 deletes the interim ``/w/{workspace_id}/p/.
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 
 # THE ONE SURVIVING sqlite3 REFERENCE IN THE DESIGN API (D2.5B deleted the substrate itself).
@@ -92,10 +93,12 @@ import sqlite3
 import threading
 from collections.abc import Awaitable, Callable
 from concurrent.futures import ThreadPoolExecutor
+from enum import Enum
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 from uuid import UUID
 
 from clue_db import create_engine
+from py_lumen_obs import get_logger
 from clue_storage import StorageBackend
 from clue_design import accounts as design_accounts
 from clue_design import assets as design_assets
@@ -136,8 +139,24 @@ from .database import (
     custom_component_references,
     custom_component_source_candidate,
 )
+from .observability import log_event
 
 JsonObject = Dict[str, Any]
+
+_logger = get_logger("lumen_api.design_store")
+
+
+class CustodyState(Enum):
+    """How far one digest's durable custody actually reaches.
+
+    ``READABLE`` is the only state that means "these bytes are safe". ``ROW_ONLY`` is the
+    dangerous one: the ``artifact`` row claims custody the backend cannot honour, which reads as
+    healthy to any row-level probe while every byte route 404s.
+    """
+
+    READABLE = "readable"
+    ROW_ONLY = "row_only"
+    ABSENT = "absent"
 
 _DEV_WORKSPACE_ENV = "LUMEN_DEV_WORKSPACE_ID"
 _DEV_WORKSPACE_DEFAULT = "ws_lumen_dev"
@@ -385,6 +404,80 @@ class DesignBlobStore:
                 conn, workspace_id=self.workspace_id, sha256=sha256
             )
         )
+
+    def custody_states(self, digests: Iterable[str]) -> Dict[str, CustodyState]:
+        """Where each digest stands between "a row says so" and "the bytes come back".
+
+        :meth:`exists` answers a question about a ROW. That is the right probe for "may I skip
+        recording metadata", and the wrong one for "are these bytes safe", because the row and
+        the blob can diverge: a backend whose root moved, a restore that brought the database
+        back without the object store, an out-of-band delete. When they do, ``exists`` says yes
+        forever and every self-healing pass that trusts it skips the one digest it exists to
+        rescue — which is exactly how a generated image stayed 404 on ``/asset-store/{digest}``
+        across every later turn while the engine cache still held the bytes.
+
+        Three states rather than a bool because a caller that repairs custody must be able to
+        tell a REPAIR from a FIRST registration: the two deserve different behaviour when the
+        backend itself is sick (see :func:`~lumen_api.asset_custody.register_scene_asset_backstop`).
+
+        **Batched on purpose.** Every :class:`DesignStoreBridge` call builds and disposes its own
+        engine (the O5 rule), so a per-digest probe made scene-persist cost scale in ROUND TRIPS:
+        a 50-asset scene meant 50 engines. This is ONE bridged transaction — the row lookups are
+        indexed primary-key reads on a single connection, and the backend stats (a HEAD on S3)
+        run CONCURRENTLY inside it, so the wall cost is one engine plus one slow HEAD rather than
+        fifty of each. Digests are de-duplicated and every one asked for is answered.
+        """
+        wanted = list(dict.fromkeys(digests))
+        if not wanted:
+            return {}
+
+        async def _states(conn: AsyncConnection) -> Dict[str, CustodyState]:
+            states: Dict[str, CustodyState] = {}
+            rowed: List[str] = []
+            for digest in wanted:
+                if await design_storage.design_bytes_exist(
+                    conn, workspace_id=self.workspace_id, sha256=digest
+                ):
+                    rowed.append(digest)
+                else:
+                    states[digest] = CustodyState.ABSENT
+            readable = await asyncio.gather(*(self._bytes_retrievable(d) for d in rowed))
+            for digest, ok in zip(rowed, readable):
+                states[digest] = CustodyState.READABLE if ok else CustodyState.ROW_ONLY
+            return states
+
+        return self._bridge._run(_states)
+
+    def has_readable_bytes(self, sha256: str) -> bool:
+        """Whether this workspace holds live custody of ``sha256`` — row AND retrievable bytes.
+
+        The single-digest reading of :meth:`custody_states`, for the callers that only need the
+        verdict (a health check, a verifier). Anything walking a whole scene should batch.
+        """
+        return self.custody_states([sha256])[sha256] is CustodyState.READABLE
+
+    async def _bytes_retrievable(self, sha256: str) -> bool:
+        """Can the backend actually produce this digest's blob? A stat/HEAD, never a read.
+
+        A backend that raises is read as "not retrievable" — the safe direction, since the
+        caller's remedy (re-register from a cache) is idempotent — but it is LOGGED, because a
+        misconfigured or unreachable backend and a genuinely missing blob are the same answer
+        here and only one of them is an operator's problem.
+        """
+        key = design_storage.design_storage_key(self.workspace_id, sha256)
+        try:
+            return await self.storage.exists(key)
+        except Exception as error:
+            log_event(
+                _logger,
+                logging.WARNING,
+                "design_blob.custody_probe_failed",
+                workspace_id=self.workspace_id,
+                storage_key=key,
+                error=str(error),
+                error_type=type(error).__name__,
+            )
+            return False
 
     def delete(self, sha256: str) -> bool:
         """Destroy this workspace's blob for ``sha256`` and tombstone its row (D4 Round B).

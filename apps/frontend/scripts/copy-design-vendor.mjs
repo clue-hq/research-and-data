@@ -1,3 +1,5 @@
+import { execFileSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import { copyFile, mkdir } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
@@ -44,3 +46,53 @@ await build({
   platform: "browser",
   target: "es2020",
 });
+
+// ── Scene editor vendor assets (ad editor, AD1.1) ──────────────────────────
+// The scene (ad) editor renders through CanvasKit + the Rust engine compiled to
+// wasm, both loaded from THIS origin — the upstream design editor serves them
+// from its own `public/`, which this app does not have. Everything below lands
+// under `public/vendor/` (gitignored) on every `predev`/`prebuild`.
+
+// canvaskit.wasm: pinned 0.41.1 for render parity with the design subsystem.
+const canvaskitWasm = require.resolve("canvaskit-wasm/bin/canvaskit.wasm");
+await mkdir(join(outputDir, "canvaskit"), { recursive: true });
+await copyFile(canvaskitWasm, join(outputDir, "canvaskit", "canvaskit.wasm"));
+
+// Inter statics: TTF only — CanvasKit's FontMgr cannot read woff2.
+const designRoot = join(projectRoot, "..", "..", "subsystems", "clue-design");
+await mkdir(join(outputDir, "fonts"), { recursive: true });
+for (const face of ["Inter-Regular", "Inter-SemiBold", "Inter-Bold", "Inter-ExtraBold"]) {
+  await copyFile(
+    join(designRoot, "fonts", `${face}.ttf`),
+    join(outputDir, "fonts", `${face}.ttf`),
+  );
+}
+
+// lumen_wasm: stamp-preflight (rebuilds on source drift when the Rust
+// toolchain is present; exits 0 otherwise), then copy the artifacts.
+// Missing artifacts are a WARNING, not a failure — the editor mounts
+// read-only without wasm (runtime handshake owns the hard guarantee). This
+// script gates every `dev`/`build`, so the whole wasm leg stays non-fatal:
+// the preflight is designed to exit 0 even when it cannot rebuild, and a
+// crash in it (missing script, node error) must not take the app down.
+try {
+  execFileSync("node", [join(designRoot, "scripts", "preflight_editor_wasm.mjs")], {
+    cwd: designRoot,
+    stdio: "inherit",
+  });
+} catch (error) {
+  console.warn(
+    `[copy-design-vendor] wasm preflight did not complete (${error instanceof Error ? error.message : error}) — continuing with whatever artifact exists.`,
+  );
+}
+const wasmSrc = join(designRoot, "apps", "editor", "public", "wasm");
+if (existsSync(join(wasmSrc, "lumen_wasm_bg.wasm"))) {
+  await mkdir(join(outputDir, "wasm"), { recursive: true });
+  for (const f of ["lumen_wasm.js", "lumen_wasm_bg.wasm"]) {
+    await copyFile(join(wasmSrc, f), join(outputDir, "wasm", f));
+  }
+} else {
+  console.warn(
+    "[copy-design-vendor] lumen_wasm not built — scene editor will run read-only. Fix: npm --prefix ../../subsystems/clue-design/apps/editor run build:wasm",
+  );
+}

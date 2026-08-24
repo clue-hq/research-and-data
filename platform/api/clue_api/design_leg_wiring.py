@@ -70,6 +70,7 @@ from clue_api.agent_turn_wiring import (
 )
 from clue_api.chat.turn_events import TurnEventType, emit_turn_event
 from clue_api.chat.turn_stream import TurnStreamEmitter
+from clue_api.design_turn_targets import DesignTurnTargetError, resolve_scene_targets
 from clue_api.turn_action import derive_turn_action_ref
 from clue_core import ExecutionId, operation_id_from_key
 from clue_db import ConnFactory, transaction
@@ -130,6 +131,15 @@ DESIGN_LEG_ACCOUNT_UNRESOLVED = "design_leg_account_unresolved"
 #: failed): lane unavailable, join timeout, bundle fault, finisher fault. Marked
 #: abandoned so the turn is terminal, streamed, and prunable instead of a zombie.
 DESIGN_LEG_TURN_CRASHED = "design_leg_turn_crashed"
+
+#: The accepted turn's durable ``design_node`` targets no longer resolve against the
+#: document's CURRENT scene at dispatch time — a manual edit or an earlier queued turn
+#: deleted a targeted node, or the pinned document itself vanished (that path
+#: deliberately dispatches with an empty scene, in which no target can exist). The
+#: focused edit fails closed with this typed refusal instead of crashing the turn
+#: body: editing something OTHER than what the user pointed at would be worse than
+#: asking them to say it again against the scene as it now stands.
+DESIGN_LEG_TARGET_UNRESOLVED = "design_leg_target_unresolved"
 
 _EXECUTION_NAMESPACE = uuid5(NAMESPACE_URL, "clue-design-leg-execution")
 _RUN_NAMESPACE = uuid5(NAMESPACE_URL, "clue-design-leg-run")
@@ -431,17 +441,26 @@ async def project_design_documents(
 
     Fail-closed tenancy like every other design read: ``workspace_id`` is pinned on both
     the leg and the document (``design_leg.document_id`` carries no foreign key, so a leg
-    naming another tenant's document resolves to nothing), and ``scene`` documents are
-    excluded — the gallery serves web documents only. A document no leg names belongs to
-    no project and is listed nowhere.
+    naming another tenant's document resolves to nothing). A document no leg names belongs
+    to no project and is listed nowhere.
+
+    Kind-aware since AD2.1: **every** doc kind a leg names is served — ``web`` documents
+    and ``scene`` (ad) documents alike — and ``doc_kind`` rides along so the caller can
+    map it onto the wire's ``kind``. The earlier ``WHERE d.doc_kind = 'web'`` filter made
+    the rail structurally unable to reach an ad artifact (audit finding F1).
     """
 
     rows = (
         (
             await conn.execute(
                 text(
-                    "SELECT d.id, d.title, d.status, d.current_version, d.created_at,"
-                    " d.updated_at, origin.thread_id AS origin_thread_id"
+                    "SELECT d.id, d.title, d.status, d.doc_kind, d.current_version,"
+                    " d.created_at, d.updated_at, origin.thread_id AS origin_thread_id,"
+                    # G-H: the card's own facts, read from the document instead of
+                    # guessed downstream. Both are NULL when the document does not
+                    # record them — the caller states nothing rather than inventing.
+                    " d.current_scene_json #>> '{meta,artifact_type}' AS artifact_type,"
+                    " d.current_scene_json #>> '{pages}' AS pages_json"
                     " FROM ("
                     "   SELECT DISTINCT ON (leg.document_id)"
                     "          leg.document_id, leg.thread_id"
@@ -455,7 +474,6 @@ async def project_design_documents(
                     " ) origin"
                     " JOIN design_document d"
                     "   ON d.id = origin.document_id AND d.workspace_id = :ws"
-                    " WHERE d.doc_kind = 'web'"
                     " ORDER BY d.updated_at DESC, d.id"
                 ),
                 {"ws": workspace_id, "project": project_id},
@@ -465,6 +483,55 @@ async def project_design_documents(
         .all()
     )
     return tuple(dict(row) for row in rows)
+
+
+def document_page_pixels(pages_json: str | None) -> tuple[int, int] | None:
+    """The document's own page size in PIXELS, or ``None`` when it has none.
+
+    G-H: the gallery card used to state a hardcoded ``1080x1080`` for every
+    design artifact. The document knows its real size, so the feed carries it
+    and a card with no page states nothing at all.
+
+    The engine stores a page canonically (``unit`` may be ``pt`` after an
+    authored ``px`` page is normalized), so the pixel truth is read in the same
+    precedence the editor's own resolver uses: the raster output it would
+    export, else the authored source when that was already px, else the
+    canonical box. A malformed scene yields ``None`` — never a guess.
+    """
+
+    if not pages_json:
+        return None
+    try:
+        pages = json.loads(pages_json)
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(pages, dict):
+        return None
+    # Insertion order is the scene's own page order; v1 ads are single-page and
+    # the rail shows one size, so the first page is the document's size.
+    page = next((value for value in pages.values() if isinstance(value, dict)), None)
+    size = page.get("size") if page else None
+    if not isinstance(size, dict):
+        return None
+
+    output = size.get("output")
+    raster = output.get("raster") if isinstance(output, dict) else None
+    if isinstance(raster, dict):
+        width, height = raster.get("width_px"), raster.get("height_px")
+        if isinstance(width, (int, float)) and isinstance(height, (int, float)):
+            return int(width), int(height)
+
+    source = size.get("source")
+    if isinstance(source, dict) and source.get("unit") == "px":
+        width, height = source.get("width"), source.get("height")
+        if isinstance(width, (int, float)) and isinstance(height, (int, float)):
+            return int(width), int(height)
+
+    if size.get("unit") == "px":
+        width, height = size.get("width"), size.get("height")
+        if isinstance(width, (int, float)) and isinstance(height, (int, float)):
+            return int(width), int(height)
+    return None
 
 
 def _canonical_json(value: object) -> bytes:
@@ -831,18 +898,38 @@ class DesignLegTurnRunner:
                     )
                 account_card = _account_card(account)
 
-            run = await self._dispatch(
-                submission=submission,
-                leg=leg,
-                leg_id=leg_id,
-                execution_id=execution_id,
-                user_message_ref=user_message_ref,
-                prior_history=prior_history,
-                pinned_document=pinned_document,
-                account_card=account_card,
-                focus_refs=focus_refs,
-                workspace_id=workspace_id,
-            )
+            try:
+                run = await self._dispatch(
+                    submission=submission,
+                    leg=leg,
+                    leg_id=leg_id,
+                    execution_id=execution_id,
+                    user_message_ref=user_message_ref,
+                    prior_history=prior_history,
+                    pinned_document=pinned_document,
+                    account_card=account_card,
+                    focus_refs=focus_refs,
+                    workspace_id=workspace_id,
+                )
+            except DesignTurnTargetError as exc:
+                # Raised while BUILDING the envelope (before any run row or leg-state
+                # write): the durable node targets validated at acceptance no longer
+                # resolve in the document's current scene. A typed pre-dispatch
+                # refusal, exactly like G1/G2 above — the leg stays open_awaiting_user
+                # and the user can restate the edit against the scene as it now is.
+                log.warning(
+                    "design_leg.target_unresolved",
+                    leg_id=leg_id,
+                    turn_id=str(turn_id),
+                    document_id=str(leg.get("document_id")),
+                    code=exc.code,
+                )
+                return await self._fail_turn(
+                    submission=submission,
+                    execution_id=execution_id,
+                    failure_code=DESIGN_LEG_TARGET_UNRESOLVED,
+                    stream=stream,
+                )
             await self._leg_back_to_awaiting(
                 workspace_id=workspace_id,
                 leg_id=leg_id,
@@ -1234,6 +1321,17 @@ class DesignLegTurnRunner:
                 }
             )
         document = pinned_document or {}
+        target_node_ids = tuple(
+            ref.object_id for ref in focus_refs if ref.object_type == "design_node"
+        )
+        reference_asset_ids = tuple(
+            ref.object_id for ref in focus_refs if ref.object_type == "design_asset"
+        )
+        resolved_targets = (
+            resolve_scene_targets(document.get("scene") or {}, target_node_ids)
+            if target_node_ids
+            else None
+        )
         # B1: the leg document's kind decides which design runtime executes the turn. A web
         # document takes the ``web_turn`` path with a ``WebTurnRequest``-shaped request; a
         # scene document (or no pinned document at all — nothing to read a kind from) keeps
@@ -1261,6 +1359,23 @@ class DesignLegTurnRunner:
                 "scene": document.get("scene") or {},
                 "document_id": leg.get("document_id"),
                 "previous_turn_outcome": submission.previous_turn_outcome,
+                # Only when references actually ride: the scene ``agent_turn``
+                # request is a frozen byte-for-byte contract (B1), and the
+                # design request model defaults the absent key — an
+                # unconditional empty list here broke that freeze.
+                **(
+                    {"reference_asset_ids": list(reference_asset_ids)}
+                    if reference_asset_ids
+                    else {}
+                ),
+                **(
+                    {
+                        "active_page_id": resolved_targets.active_page_id,
+                        "target_node_ids": list(resolved_targets.target_node_ids),
+                    }
+                    if resolved_targets is not None
+                    else {}
+                ),
             }
         # ``ConfigPayload`` — deliberately opaque at the substrate (clue_design.envelopes).
         config: dict[str, Any] = {
@@ -1275,6 +1390,20 @@ class DesignLegTurnRunner:
                 "brand_kit_id": leg.get("brand_kit_id"),
                 "brand_kit_version": leg.get("brand_kit_version"),
                 "document_version_guard": leg.get("document_version_guard"),
+                # genad Task 5: the SCENE executor owns its persist (the genweb ruling extended
+                # to ads), so a scene-pinned leg turn needs a CAS base. Read ONCE, here, because
+                # the envelope is frozen as the run row's payload and a re-offer replays it
+                # verbatim; the executor's own re-check against the stored document stays the
+                # authority on staleness. The key is deliberately ABSENT for a web-pinned leg
+                # (``request.base_version`` already pins that turn — two copies of one CAS base
+                # is exactly the drift this freeze exists to prevent) and for a document-less
+                # legacy leg (nothing to persist into; the executor reads a missing key as
+                # "preview-only" rather than a fabricated version zero).
+                **(
+                    {"document_base_version": int(document.get("current_version") or 0)}
+                    if kind == "agent_turn" and leg.get("document_id") and document
+                    else {}
+                ),
                 "focus_refs": [
                     {
                         "object_type": ref.object_type,

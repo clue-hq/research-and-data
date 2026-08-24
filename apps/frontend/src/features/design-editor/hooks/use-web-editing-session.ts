@@ -38,15 +38,32 @@ export type WebEditingSession = ReturnType<typeof useWebEditingSession>;
 export function useWebEditingSession({
   activeArtifactId,
   documentIds,
+  enabled = true,
 }: {
   /** The caller's OWN shell controller's active artifact tab. */
   activeArtifactId: string | null;
   /** W2.1: artifact id → design-document id, from the page's read-seam fetch. */
   documentIds: Record<string, string> | undefined;
+  /**
+   * AD2.7 (audit finding F3): the caller's kind guard.
+   *
+   * Both mounts call this hook unconditionally — React forbids a conditional
+   * hook — so before AD2.7 an AD document was fed to the WEB legs: every ad
+   * load fetched `/documents/{id}/web/theme` and `/documents/{id}` (web shape)
+   * and swallowed the resulting 409s. The kind therefore rides in as a
+   * PARAMETER: a mount showing an ad passes `false` and every leg below sees a
+   * null document id, which is already the "no document, no fetch" path each
+   * of them has always had.
+   *
+   * Defaults to `true`, so a caller that only mounts web artifacts (and every
+   * existing test) behaves exactly as before.
+   */
+  enabled?: boolean;
 }) {
-  const activeDocumentId = activeArtifactId
-    ? (documentIds?.[activeArtifactId] ?? null)
-    : null;
+  const activeDocumentId =
+    enabled && activeArtifactId
+      ? (documentIds?.[activeArtifactId] ?? null)
+      : null;
   // W2.2: the canvas bridge's nonce-validated selections joined with the
   // loaded document → {node, nodeInfo} + schema + hydrated inspector state.
   // W3.2: after a committed write the reload nonce bumps — the document

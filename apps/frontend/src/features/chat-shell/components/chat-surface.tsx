@@ -5,11 +5,17 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { ConversationContent } from "@/features/projects/components/conversation-content";
 import { ProjectComposer } from "@/features/projects/components/project-composer";
 import type { ProjectChatController } from "@/features/projects/hooks/use-project-chat-controller";
+import { useDesignReferenceAttachments } from "@/features/projects/hooks/use-design-reference-attachments";
+import {
+  DESIGN_REFERENCE_ACCEPT,
+  MAX_DESIGN_REFERENCE_ATTACHMENTS,
+} from "@/features/projects/model/design-reference-attachments";
 import type { useProjectWorkspaceController } from "@/features/projects/hooks/use-project-workspace-controller";
 import type {
   ProjectArtifact,
   ProjectWorkspace,
 } from "@/features/projects/model/project-workspace";
+import { useSceneEditingSession } from "@/features/design-editor/hooks/use-scene-editing-session";
 import { useWebEditingSession } from "@/features/design-editor/hooks/use-web-editing-session";
 import { useEditorShellController } from "../hooks/use-editor-shell-controller";
 import { artifactToAutoOpen } from "../model/artifact-auto-open";
@@ -22,6 +28,10 @@ import {
   chatSurfacePaneParams,
   chatSurfaceUrlState,
 } from "../model/chat-surface-params";
+import {
+  editTargetChips,
+  editTargetContextRefs,
+} from "../model/edit-targets";
 import { ArtifactStage } from "./artifact-stage";
 import { ChatShellHeader } from "./chat-shell-header";
 import { ImageInspector } from "./image-inspector";
@@ -96,10 +106,44 @@ export function ChatSurface({
   // (documents/selection/writes/rich-text/theme), keyed only on this mount's
   // own active tab and the page's id map — the hook never sees a shell
   // controller, so the two routes stay independent mounts of one machine.
+  // AD2.7: one session per LANE, each gated on this mount's own active tab
+  // kind. React forbids a conditional hook, so both are always called and the
+  // kind rides in as `enabled` — the disabled one touches no transport
+  // (audit finding F3: an ad tab used to run the web theme/document fetches
+  // and swallow their 409s).
   const session = useWebEditingSession({
     activeArtifactId: shell.activeArtifactId,
     documentIds,
+    enabled: shell.artifactKind === "web",
   });
+  const sceneSession = useSceneEditingSession({
+    activeArtifactId: shell.activeArtifactId,
+    documentIds,
+    enabled: shell.artifactKind === "ad",
+  });
+  // Exactly one lane can be enabled, so this is the active document either
+  // way — the stage's canvas branch picks the surface by kind.
+  const activeDocumentId =
+    session.activeDocumentId ?? sceneSession.activeDocumentId;
+  const designReferencesEnabled =
+    chat.designLegOpen &&
+    shell.artifactKind === "ad" &&
+    sceneSession.activeDocumentId !== null;
+  const referenceAttachments = useDesignReferenceAttachments({
+    enabled: designReferencesEnabled,
+  });
+  // Same gate as the reference images above: a `design_node` ref only means
+  // anything beside the open design leg's document, and the backend refuses a
+  // submission carrying one otherwise — a canvas selection made outside an
+  // open leg (a gallery-opened ad, a closed leg) must stay a canvas fact, not
+  // become a context ref that walls off every message in the thread.
+  const editTargetsEnabled =
+    chat.designLegOpen &&
+    shell.artifactKind === "ad" &&
+    sceneSession.activeDocumentId !== null;
+  const targetChips = editTargetsEnabled
+    ? editTargetChips(sceneSession.scene, sceneSession.selectedIds)
+    : [];
 
   const activeThread =
     chat.threads.find((thread) => thread.id === chat.activeThreadId) ?? null;
@@ -130,9 +174,13 @@ export function ChatSurface({
 
   // The artifact route's own fallback (editor-surface.tsx): a live canvas
   // selection names the schema to render; with nothing selected the inspector
-  // falls back to this mount's shell state (the ?selection= pane param).
+  // falls back to this mount's shell state (the ?selection= pane param). The
+  // two lanes are mutually exclusive (one `enabled` each), so at most one of
+  // the first two terms is ever non-null.
   const inspectorSelection =
-    session.webSelection.selection?.schema.selection ?? shell.inspectorSelection;
+    session.webSelection.selection?.schema.selection ??
+    sceneSession.selection?.selection ??
+    shell.inspectorSelection;
 
   // Chat-flow slice 5: the pane state writes back to the URL, so every state
   // the user reaches (rail open, surface, Edit, inspector schema) is a
@@ -176,13 +224,17 @@ export function ChatSurface({
     if (feedRevision === 0) return;
     router.refresh();
   }, [feedRevision, router]);
-  const reloadCanvas = session.onWriteReload;
+  const reloadWebCanvas = session.onWriteReload;
+  const reloadSceneCanvas = sceneSession.onWriteReload;
   useEffect(() => {
     if (canvasRevision === 0) return;
     // The SAME seam a committed inspector write uses — one reload mechanism,
-    // whether the version was advanced by hand or by the design agent.
-    reloadCanvas();
-  }, [canvasRevision, reloadCanvas]);
+    // whether the version was advanced by hand or by the design agent. Both
+    // lanes are bumped: the stage takes the SUM as its reload token, and the
+    // frame that fired names a document, not a kind.
+    reloadWebCanvas();
+    reloadSceneCanvas();
+  }, [canvasRevision, reloadSceneCanvas, reloadWebCanvas]);
 
   // Founder ruling F2 **(b)**, 2026-08-19 — superseding option (a) for v1: the
   // leg-born document opens ITSELF next to the Gallery, so the user watches the
@@ -253,11 +305,17 @@ export function ChatSurface({
       data-artifact-kind={shell.artifactKind ?? "none"}
       data-editing={editorVisible}
       data-project-id={projectId}
-      data-selected-node={session.webSelection.selection?.node.id}
+      data-selected-node={
+        session.webSelection.selection?.node.id ??
+        sceneSession.primaryNodeId ??
+        undefined
+      }
       data-selected-schema={
         session.webSelection.selection
           ? `${session.webSelection.selection.schema.selection}${session.webSelection.selection.schema.layoutOnly ? ":layout-only" : ""}`
-          : undefined
+          : dockContent === "ad-inspector" && sceneSession.selection
+            ? `${sceneSession.selection.selection}${sceneSession.selection.suppressAutoLayoutSection ? ":no-auto-layout" : ""}`
+            : undefined
       }
     >
       <section className={styles.chatPane}>
@@ -306,8 +364,49 @@ export function ChatSurface({
           {dockContent === "ad-inspector" ? (
             <div className={styles.inspectorDock}>
               <ImageInspector
+                // Keyed on the SELECTED NODE only, exactly as the web branch
+                // above. Values need no remount to resynchronize — every bound
+                // field derives from live hydrated state (AD4.R); remounting
+                // resets UI facts (open sections, drafts), which is right
+                // exactly when the selection changes.
+                key={sceneSession.primaryNodeId ?? "canvas"}
+                addressing={sceneSession.addressing}
+                arrange={sceneSession.arrange}
+                error={sceneSession.inspectorError}
+                fontOptions={sceneSession.fontOptions}
+                hydrated={sceneSession.hydrated}
+                imageAi={sceneSession.imageAi}
+                // AD4.R-10 / GATE G-H (founder-ruled 2026-08-22): while an
+                // agent turn is in flight on THIS thread, the human may not
+                // operate the inspector — "we cannot let humans change any
+                // value when the agents are at work with designing".
+                //
+                // `chat.threadBusy` is the controller's own already-public fact
+                // (`selectTurnQueueState`: a running turn, or one queued behind
+                // it), the same one the conversation view reads for its busy
+                // affordance. Nothing new is derived and nothing is written
+                // back: this is a READ of the chat controller, so no chat-side
+                // behaviour — composer, sending, gates, queueing, mid-turn
+                // steering — can move because of this line, in either
+                // direction (the founder's chat-status-quo addendum).
+                //
+                // The gate is a TURN in flight, not an open design leg: a leg
+                // stays open across turns, and interleaved manual edits BETWEEN
+                // turns are the ratified genweb feature this must not touch.
+                inspectorDisabled={chat.threadBusy}
+                layers={sceneSession.layerRows}
+                note={sceneSession.note}
+                onReplaceImage={sceneSession.onReplaceImage}
+                onSelectLayer={sceneSession.onSelectLayer}
                 onSelectionChange={shell.selectInspectorElement}
-                selection={shell.inspectorSelection}
+                onToggleLayer={sceneSession.onToggleLayer}
+                pageless={sceneSession.pageless}
+                palette={sceneSession.palette}
+                selectedIds={sceneSession.selectedIds}
+                selection={inspectorSelection}
+                suppressAutoLayoutSection={
+                  sceneSession.selection?.suppressAutoLayoutSection
+                }
               />
             </div>
           ) : null}
@@ -325,14 +424,60 @@ export function ChatSurface({
             </div>
           ) : null}
         </div>
-        <div className={styles.composerDock}>
+        <div
+          className={`${styles.composerDock} ${
+            targetChips.length ? styles.composerDockWithTargets : ""
+          }`}
+        >
           <div className={styles.composerFrame}>
+            {targetChips.length ? (
+              <div aria-label="Edit targets" className={styles.editTargetBar}>
+                <span className={styles.editTargetLabel}>Editing</span>
+                <div className={styles.editTargetList}>
+                  {targetChips.map((target) => (
+                    <span className={styles.editTargetChip} key={target.nodeId}>
+                      <span className={styles.editTargetName}>{target.label}</span>
+                      <button
+                        aria-label={`Remove ${target.label} edit target`}
+                        className={styles.editTargetRemove}
+                        onClick={() =>
+                          sceneSession.onSelectLayer(target.nodeId, true)
+                        }
+                        type="button"
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ) : null}
             <ProjectComposer
+              attachmentAccept={DESIGN_REFERENCE_ACCEPT}
+              attachmentError={
+                designReferencesEnabled ? referenceAttachments.error : null
+              }
+              attachmentInputDisabled={
+                referenceAttachments.attachments.length >=
+                MAX_DESIGN_REFERENCE_ATTACHMENTS
+              }
+              attachmentLabel="Attach reference images"
+              attachments={
+                designReferencesEnabled
+                  ? [...referenceAttachments.attachments]
+                  : []
+              }
               // Never disabled while work is detached: the user keeps the wheel.
               disabled={chat.access !== null || chat.route !== null}
               entities={controller.composerEntities}
               modelPickerOpen={controller.modelPickerOpen}
               models={workspace.models}
+              onAttachmentFiles={
+                designReferencesEnabled ? referenceAttachments.onFiles : undefined
+              }
+              onAttachmentRemove={
+                designReferencesEnabled ? referenceAttachments.remove : undefined
+              }
               onEntityRemove={
                 workspace.composerCapabilities.contextRefs
                   ? controller.removeEntity
@@ -347,7 +492,27 @@ export function ChatSurface({
               onModelSelect={controller.selectModel}
               onPromptChange={controller.setPrompt}
               onSubmit={async (prompt, entityIds) => {
-                const contextRefs = (entityIds ?? controller.selectedEntityIds)
+                // Snapshot references synchronously before any await. A queued turn owns these
+                // exact asset ids even if uploads or selection change before the POST returns.
+                const referenceSnapshot = designReferencesEnabled
+                  ? referenceAttachments.snapshotContextRefs()
+                  : [];
+                if (
+                  referenceAttachments.attachments.length > 0 &&
+                  referenceSnapshot === null
+                ) {
+                  return false;
+                }
+                // Snapshot ids before the first await inside the scene session.
+                // A queued turn keeps this set even if the user changes the
+                // canvas selection while optimistic writes finish or the POST runs.
+                const editTargetSnapshot = editTargetsEnabled
+                  ? await sceneSession.snapshotEditTargets()
+                  : null;
+                if (targetChips.length > 0 && editTargetSnapshot === null) {
+                  return false;
+                }
+                const entityContextRefs = (entityIds ?? controller.selectedEntityIds)
                   .map((id) =>
                     controller.composerEntities.find((entity) => entity.id === id),
                   )
@@ -357,6 +522,11 @@ export function ChatSurface({
                     objectType: entity.type,
                     version: entity.version ?? null,
                   }));
+                const contextRefs = [
+                  ...entityContextRefs,
+                  ...editTargetContextRefs(editTargetSnapshot),
+                  ...(referenceSnapshot ?? []),
+                ];
                 const accepted = await chat.submitMessage(prompt, {
                   contextRefs,
                   agentProfileId:
@@ -375,12 +545,16 @@ export function ChatSurface({
                   shell.setEditing(false);
                 }
                 if (accepted.status !== "accepted") return false;
+                referenceAttachments.clear();
                 controller.completeSubmissionContext(
-                  contextRefs.map((reference) => reference.objectId),
+                  entityContextRefs.map((reference) => reference.objectId),
                 );
                 return true;
               }}
               prompt={controller.prompt}
+              sendDisabled={
+                designReferencesEnabled && referenceAttachments.submissionBlocked
+              }
               selectedEntities={controller.selectedEntities}
               selectedEntityIds={controller.selectedEntityIds}
               selectedModel={controller.selectedModel}
@@ -390,13 +564,38 @@ export function ChatSurface({
       </section>
       <ArtifactStage
         activeArtifactId={shell.activeArtifactId}
-        activeDocumentId={session.activeDocumentId}
+        activeDocumentId={activeDocumentId}
         artifacts={feedArtifacts}
         artifactKind={shell.artifactKind}
         artifactMaximized={shell.artifactMaximized}
         artifactTitle={shell.artifactTitle}
         canvasControlsRef={session.canvasControls}
-        canvasReloadToken={session.reloadNonce}
+        canvasReloadToken={session.reloadNonce + sceneSession.reloadNonce}
+        exportPreview={sceneSession.exportPreview}
+        exportStatus={sceneSession.exportStatus}
+        onRequestExportPreview={sceneSession.requestExportPreview}
+        onSceneChange={sceneSession.onSceneChange}
+        onSceneFitZoom={sceneSession.onFitZoom}
+        onSceneGestureZoom={sceneSession.onGestureZoom}
+        onSceneHistoryChange={sceneSession.onHistoryChange}
+        // AD4.C / Ruling C-3: a committed canvas gesture rides the SAME write
+        // path the inspector's rows do — the session's `applyOps` (optimistic
+        // engine apply → repaint → edit-queue persist), so a drag is one
+        // atomic batch, one undo frame, and ⌘Z needs nothing new.
+        onSceneAppliedOperations={sceneSession.writes.persistAppliedOps}
+        onSceneOperations={sceneSession.writes.applyOps}
+        onSceneSelect={sceneSession.onSelectCanvas}
+        onSceneZoomChange={sceneSession.onZoomChange}
+        sceneCanvasControlsRef={sceneSession.canvasControls}
+        // AD4.C / Ruling C-4 — GATE G-H, the canvas half of the same ruling
+        // `inspectorDisabled` above implements, off the same already-public
+        // fact: while a turn is in flight on THIS thread the human may not
+        // change values, so drag and resize are off and the handles go with
+        // them. Selection stays live — looking is not changing.
+        sceneGestureDisabled={chat.threadBusy}
+        sceneSelectedNodeId={sceneSession.primaryNodeId}
+        sceneZoomLabel={sceneSession.zoom}
+        sceneZoomOverride={sceneSession.zoomOverride}
         editing={shell.editing}
         onActivateArtifact={shell.activateArtifact}
         onCanvasSelect={session.webSelection.onSelect}
@@ -425,10 +624,23 @@ export function ChatSurface({
         onToggleEditing={() => shell.setEditing(!shell.editing)}
         openArtifacts={shell.openArtifacts}
         projectTitle={workspace.title}
-        redoDisabled={session.redoDisabled}
+        // AD3.3: the header carries ONE pair of history-row disables, and the
+        // artifact on screen decides which lane's stacks they describe — the
+        // same kind switch that gates the two sessions above. Without it an ad
+        // would read the (always-empty) web session's depths and its rows could
+        // never be offered.
+        redoDisabled={
+          shell.artifactKind === "ad"
+            ? sceneSession.redoDisabled
+            : session.redoDisabled
+        }
         selectedCanvasNodeId={session.webSelection.selection?.node.id ?? null}
         surface={shell.surface}
-        undoDisabled={session.undoDisabled}
+        undoDisabled={
+          shell.artifactKind === "ad"
+            ? sceneSession.undoDisabled
+            : session.undoDisabled
+        }
       />
     </main>
   );

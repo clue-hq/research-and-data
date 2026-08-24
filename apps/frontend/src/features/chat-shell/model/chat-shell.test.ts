@@ -8,15 +8,18 @@ import {
   IMAGE_EXPORT_FORMATS,
   IMAGE_EXPORT_SCALES,
   imageExportSupportsScale,
-  imageExportSupportsTransparency,
 } from "./image-export";
 
-test("the Web Inspector exposes every production Figma selection type", () => {
+test("the chat shell accepts every production inspector selection type", () => {
   assert.deepEqual(CHAT_SHELL_INSPECTOR_SELECTIONS, [
     "canvas",
     "text",
     "image",
     "button",
+    "auto-layout",
+    "rectangle",
+    "ellipse",
+    "group",
     "icon",
     "container",
     "section",
@@ -32,16 +35,15 @@ test("inspector selection parsing accepts authored variants and rejects unknown 
   assert.equal(parseChatShellInspectorSelection("video"), "canvas");
 });
 
-test("image export formats expose Figma-compatible capabilities", () => {
-  assert.deepEqual(IMAGE_EXPORT_FORMATS, ["PNG", "JPEG", "SVG", "PDF"]);
+test("image export formats expose the v1 contract's capabilities", () => {
+  // §2 delta (contract row 6 / §1.11): JPEG is dropped in v1, so PNG is the
+  // only scalable (raster) format left. Gate G-E holds the transparency
+  // capability out entirely — `imageExportSupportsTransparency` no longer
+  // exists, so there is nothing to assert about it.
+  assert.deepEqual(IMAGE_EXPORT_FORMATS, ["PNG", "SVG", "PDF"]);
   assert.deepEqual(IMAGE_EXPORT_SCALES, ["1x", "2x", "3x", "4x"]);
 
   assert.equal(imageExportSupportsScale("PNG"), true);
-  assert.equal(imageExportSupportsScale("JPEG"), true);
   assert.equal(imageExportSupportsScale("SVG"), false);
   assert.equal(imageExportSupportsScale("PDF"), false);
-  assert.equal(imageExportSupportsTransparency("PNG"), true);
-  assert.equal(imageExportSupportsTransparency("SVG"), true);
-  assert.equal(imageExportSupportsTransparency("JPEG"), false);
-  assert.equal(imageExportSupportsTransparency("PDF"), false);
 });

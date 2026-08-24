@@ -3,10 +3,12 @@ import type { HistoryEditor } from "slate-history";
 import type { ReactEditor } from "slate-react";
 
 export interface ProjectComposerAttachment {
+  assetId?: string;
+  error?: string;
   filename: string;
   id: string;
   mediaType: string;
-  status: "ready" | "uploading";
+  status: "failed" | "ready" | "uploading";
   type: "file";
   url: string;
 }

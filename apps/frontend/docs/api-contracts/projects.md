@@ -541,6 +541,23 @@ are never accepted from the browser or model.
   the frontend hides the control in HTTP mode, and the backend refuses any
   attempted attachment receipt instead of accepting a browser-local URL.
 
+### Scene-design reference images (2026-08-24)
+
+The generic attachment capability above remains false. One design-specific exception is live:
+while the selected thread has an open **scene** design leg and its ad document is open, the
+project composer uploads up to four PNG/JPEG/WebP/SVG inspiration images through the existing
+design BFF `POST /assets` seam. These are submitted as ordered `design_asset` `context_refs`,
+never as generic `attachment_refs`.
+
+Before accepting the turn, the platform proves the open leg is scene-backed and every referenced
+asset belongs to the workspace, is `ready`, is one of the four image media types, and still has
+readable durable bytes. A fifth ref is `422 CONTEXT_REF_LIMIT_EXCEEDED`; missing/cross-workspace
+assets or bytes are scoped `404`s. The accepted ids stay on the immutable submission receipt and
+become `request.reference_asset_ids` in the design-leg envelope. Transcript reads batch-join the
+current asset library only for display metadata (`label`, `media_type`, `thumbnail_digest`). A
+reference-only ordinary message may have an empty text body; without a `design_asset` ref, the
+existing non-whitespace message rule still applies.
+
 ### R9 implementation status (2026-08-10)
 
 - L7 context assembly treats the accepted submission body as the one current
@@ -1113,6 +1130,10 @@ It requires `Idempotency-Key`, accepts exactly one of `message` or
 `context_refs`, `attachment_refs`, and `agent_profile_id` use the same shapes
 and capability rules as Home bootstrap, but are valid only with an ordinary
 `message`; a gate response plus any of them is `422 VALIDATION_ERROR`.
+The scene-design exception above is represented only by typed `design_asset`
+`context_refs`; `attachment_refs` remains disabled. Its hard cap is four at both
+the composer and admission boundary, and the reference set is snapshotted before
+the request is queued.
 
 The submissions-union read adds an explicit hydration opt-in so a queued user
 message survives a reload before the worker has materialized its canonical
@@ -1270,8 +1291,9 @@ In HTTP mode:
   all use HTTP repositories behind the same transport selection.
 - An error stays an error. No repository catches it and substitutes fixture
   projects, threads, artifacts, messages, models, accounts, or contacts.
-- Attachments stay hidden until a durable upload/capture endpoint returns the
-  attachment receipt defined in §3.
+- Generic attachments stay hidden. The only upload affordance is the scene-leg
+  reference-image exception above, backed by the design asset registry and durable bytes;
+  it does not advertise or populate generic `attachment_refs`.
 - Model selection is visible because the backend advertises the one real Terra
   profile and persists the chosen `agent_profile_id` on every message
   submission. No second/decorative option is rendered.
@@ -1612,3 +1634,56 @@ and no fabricated account attribution (unattributed artifacts show no account ba
 2. **This read is replaced WHOLESALE when the real platform-artifact registry lands**
    (documents registered as platform artifacts with first-class project linkage). No
    incremental migration of the leg-derived query.
+
+#### Kind-aware feed — resolved contract (2026-08-20, AD2.1)
+
+**Supersedes the `doc_kind = 'web'` restriction above.** The feed now serves **every** doc
+kind a leg names, and `kind` on the wire is real rather than constant: a `web` document
+reports `kind: "web"`, a `scene` document reports `kind: "ad"` — the same expression the
+single-artifact read (`GET …/design-artifacts/{artifact_id}`) already applied. The old filter
+made the chats route structurally unable to reach an ad artifact (audit finding F1): the
+document existed, the leg named it, and the gallery dropped it. Nothing else about the read
+changed — the wire shape, the ordering (`updated_at DESC`), the workspace fail-closed posture,
+and the leg-derived project binding are untouched, and `doc_kind` itself is never leaked.
+
+**[AMENDED 2026-08-23 — ads can now be CHAT-BORN.** Founder genad ruling 1 reverses the v1
+"a design leg cannot create a scene document" refusal: `open_design_leg@3` births a scene
+document at a ratified format, brand-stamped, the way `@2` already births web ones. So a
+`kind: "ad"` card appears in this feed **at leg-open**, before any generation turn has run —
+not only for editor-seeded documents. The read itself is unchanged (the leg names the new
+document at birth, satisfying durable contract rule 1 above). Plan:
+`docs/superpowers/plans/2026-08-23-chat-driven-ad-creation.md`.]**
+
+**[AMENDED AGAIN 2026-08-23 (evening) — the birth carries NO format.** Founder genad2
+ruling 1 supersedes the format half of the note above: `open_design_leg@**4**` births a
+**zero-page** scene document (`pages == {}`) with **no format or dimension parameters** —
+`ad_format`/`ad_width`/`ad_height` are gone from the tool's input model, and the platform
+page-minter (`AD_FORMAT_PRESETS`/`ad_birth_page`/`mint_empty_ad_document`) is deleted. The
+**design agent authors the page itself** — size, unit (px for digital, mm/in for print) and
+layout come from the user's own words. Unchanged: the birth is still one transaction with
+the leg insert, still brand-stamped, still pinned at `document_version_guard=0`, and a
+`kind: "ad"` card still appears in this feed at leg-open. The one wire consequence: a
+newborn ad has no page, so `document_page_pixels` is honestly `null` and the card's
+dimensions are absent until the agent's first generation turn persists a page (the
+frontend renders the pageless state rather than fabricating a size). Plan:
+`docs/superpowers/plans/2026-08-23-agent-authored-pages.md`.]**
+
+**Resolved frontend mapping (`toProjectArtifact`):**
+
+| wire `kind` | `type` | `collateralType` | `imagePath` |
+| --- | --- | --- | --- |
+| `"web"` | `"website"` | `"microsite"` | absent |
+| `"ad"` | `"canvas"` | **absent** | absent |
+
+- `type: "canvas"` is what carries the ad into the editor with **zero mount changes** — both
+  mounts reconstruct the artifact kind as `source.type === "website" ? "web" : "ad"`.
+- `collateralType` is **omitted** for ads, not guessed. The document knows it is an ad; it does
+  not know which channel, and `linkedin-ad` / `meta-ad` are channel claims. Note the
+  consequence, unchanged by this task: the gallery's own `normalizeGalleryArtifact` still
+  defaults an absent collateral type on a `canvas` artifact to `linkedin-ad` (its
+  dummy-era fallback), so an ad card currently *labels* as "LinkedIn ad" and groups under
+  "Ads". Honest channel labelling for real ad documents needs a founder ruling on the
+  vocabulary and is deliberately out of AD2.1's scope.
+- **No thumbnail** — ruling 2 holds for ads exactly as for websites: the card frame renders
+  empty rather than showing placeholder artwork (the ratified honest empty card). `size`
+  falls to the gallery's `square` 1080×1080 default for canvas artifacts.

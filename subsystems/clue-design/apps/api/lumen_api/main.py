@@ -272,6 +272,127 @@ def failed_agent_turn_response(code: str, message: str, detail: str) -> JsonObje
     }
 
 
+def conflicted_agent_turn_response(
+    base_version: int, current_version: int
+) -> JsonObject:
+    """Terminal result for a LEG scene turn that lost its version race (genad Task 5).
+
+    The scene twin of ``conflicted_web_turn_response``, and it exists for the same reason: once
+    the executor owns the persist, "the document moved under me" is a real terminal outcome that
+    is neither a success nor a runtime failure, and the human needs to be told which two versions
+    disagreed. Direct editor turns never reach it — they propose, and the editor's own route
+    commits under its own CAS.
+
+    The two versions are named in the PROSE (``summary`` AND ``stop_reason``), not only in the
+    structured keys — but be honest about who reads that prose TODAY: nobody. The builder is
+    leg-only, so the editor's own panel never sees it, and on the platform side a conflicted
+    turn comes back with run status ``failed``, which ``design_leg_wiring`` short-circuits into
+    ``_fail_turn`` — a typed unfinalized turn with NO assistant message, so the scene branch of
+    ``_assistant_summary`` (the only ``stop_reason`` reader) never runs on it. The prose is
+    therefore durable RESULT-PAYLOAD content: it makes the run row self-explanatory to an
+    operator reading it, and it is ready for the first surface that renders it.
+
+    That surface arrives with the **genad founder item: conflict routing** — whether a
+    CAS-conflicted turn stays a typed failed turn (today's ratified honest-terminal shape, web
+    parity) or is rewired to land back in the thread with a message. Until that is decided, a
+    marketer who loses the race sees a failed turn with no inline prose. Whichever way it goes,
+    the sentence must keep naming BOTH versions and saying their own edit survived — a bare
+    "Design turn conflicted." is technically true and practically useless."""
+
+    message = (
+        f"This design moved from version {base_version} to version {current_version} while "
+        "the AI turn was running, so the turn's changes were not applied. Your newer edits "
+        "were preserved — send the instruction again to design against the current version."
+    )
+    return {
+        **failed_agent_turn_response(
+            "agent_turn.version_conflict",
+            message,
+            (
+                f"The turn started at version {base_version}; the stored "
+                f"document is now version {current_version}."
+            ),
+        ),
+        "status": "conflicted",
+        # The platform's scene summarizer reads ONLY this key for its sentence; the scene result
+        # shape has no other prose slot it consumes.
+        "stop_reason": message,
+        "base_version": base_version,
+        "current_version": current_version,
+    }
+
+
+# The engine's own verdict on a scene with no page/artboard ("document must contain at least one
+# page/artboard", `validate_scene`). A turn whose applied result is page-less trips it during the
+# replay, so the engine refuses the operations before the gate below ever sees a scene — the code
+# is matched to name that refusal for what it is rather than as "could not be replayed".
+PAGELESS_SCENE_DIAGNOSTIC = "LUMV0100"
+
+
+def is_pageless_scene_refusal(diagnostics: List[JsonObject]) -> bool:
+    """Is this ``CoreError``'s diagnostic list the engine's page-less verdict?
+
+    ``CoreError.diagnostics`` is normalized to a list by its constructor (``core.py``:
+    ``diagnostics or []``), so the list-ness is a type, not a thing to re-check — the per-item
+    ``isinstance`` stays because the ITEMS are engine JSON this process did not build.
+    """
+
+    return any(
+        isinstance(diagnostic, dict)
+        and diagnostic.get("code") == PAGELESS_SCENE_DIAGNOSTIC
+        for diagnostic in diagnostics
+    )
+
+
+def pageless_agent_turn_response(engine_message: str | None = None) -> JsonObject:
+    """Terminal result for a LEG scene turn that produced no page (genad2 Task 3).
+
+    Since the zero-page birth (genad2 ruling 1) a chat-born scene document starts with NO pages
+    — `open_design_leg@4` mints none, and the design trio authors the page itself. That makes a
+    turn which generated nothing look exactly like a turn which generated a design at this seam:
+    the document is still page-less either way, and a "proposed" result would tell a marketer
+    their ad is ready while the gallery has nothing to open. A page-less result is therefore a
+    terminal FAILURE with nothing written, in the same shape as the replay refusal beside it.
+
+    The sentence rides BOTH prose slots for the reason ``conflicted_agent_turn_response`` spells
+    out: the platform's scene summarizer (``_assistant_summary``, design_leg_wiring) reads only
+    ``stop_reason``, and ``failed_agent_turn_response`` leaves it None, so a refusal built naively
+    from it is contentless by construction. Be honest about who reads it TODAY: a failed run is
+    short-circuited by ``_fail_turn`` before that summarizer runs, so this is durable
+    result-payload prose — legible to an operator reading the run row, and ready for whichever
+    surface the genad founder item on failure/conflict routing hands it to.
+
+    ``engine_message`` is the engine's OWN text, passed through on the arm where the ENGINE is
+    the one that refused (its ``LUMV0100`` validation of the applied scene). Its replay-failure
+    sibling has always forwarded ``error.message`` and this arm dropped it, so an operator
+    reading the run row could not tell the engine's verdict from this function's generic
+    sentence. Today that text is terse ("operation batch produced an invalid scene") — the
+    value is that it is the ENGINE speaking, and it improves for free when the engine's wording
+    does. It rides the DETAIL, never the summary: the marketer-facing prose is founder copy and
+    stays one fixed sentence. Absent on the post-replay gate below, where no engine complained
+    and quoting one would be an invention.
+    """
+
+    message = (
+        "Design finished without creating a page — nothing was saved; "
+        "send another message to try again."
+    )
+    detail = (
+        "The turn's result contains no page, so there would be nothing to show; "
+        "the design was not saved and the document is unchanged."
+    )
+    if engine_message:
+        detail = f"{detail} The engine reported: {engine_message}"
+    return {
+        **failed_agent_turn_response(
+            "agent_turn.pageless_result",
+            message,
+            detail,
+        ),
+        "stop_reason": message,
+    }
+
+
 def with_web_turn_failure_diagnostic(response: JsonObject) -> JsonObject:
     """Guarantee a non-applied website turn carries its reason as a real diagnostic.
 
@@ -7909,6 +8030,137 @@ def _turn_core(host: Any) -> CoreClient:
     return host.core if host.core is not None else CoreClient()
 
 
+def _page_dimensions(page: JsonObject) -> Optional[tuple[str, str, str]]:
+    """``("1200", "1200", "pt")`` for a page whose size the scene states, else ``None``."""
+
+    size = page.get("size")
+    if not isinstance(size, dict):
+        return None
+    rendered: list[str] = []
+    for key in ("width", "height"):
+        value = size.get(key)
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return None
+        rendered.append(str(int(value)) if float(value).is_integer() else f"{float(value):g}")
+    unit = size.get("unit")
+    return rendered[0], rendered[1], unit if isinstance(unit, str) else ""
+
+
+def _quotable_page_name(page: JsonObject) -> Optional[str]:
+    """The page's own name, iff it can ride a DSL string literal verbatim.
+
+    The example below restates this name to keep the page-modify line legal (see
+    :func:`_empty_page_steering_note`), so it must be reproduced EXACTLY — a name carrying a
+    quote, a backslash or a newline would need escaping this note cannot verify against the
+    grammar, and a guessed escape in an instruction block is worse than no instruction. Every
+    engine-minted page has a plain name (the ad birth's format label; ``lower_page`` names a
+    DSL-born page after its id), so this is a guard, not a common path.
+    """
+
+    name = page.get("name")
+    if not isinstance(name, str) or not name.strip():
+        return None
+    if any(character in name for character in ('"', "\\", "\n", "\r")):
+        return None
+    return name
+
+
+def _empty_page_steering_note(scene: Any) -> Optional[str]:
+    """The document-state block a LEG turn gets when every page of its scene is EMPTY.
+
+    A chat-born ad (genad) is BORN with one empty artboard page — the leg-open birth mints
+    ``new_scene`` plus one ``add_page`` at the resolved format — where every scene leg before
+    it pinned a document that already had content. The author model's from-scratch habit is to
+    open the turn with a top-level ``page ...`` block, and on this shape that cannot work: the
+    page id already exists, so a page line that parses is refused by the engine (``page <id>
+    already exists``, ``operations.rs::add_page``) and one that does not parse leaves its
+    indented elements without a parent (``LUMD0402``). The acceptance walk watched five runs
+    thrash the repair loop on exactly that, across two different author models, until the
+    request died upstream.
+
+    So the turn states the document's shape as DATA and quotes the form that works. Every
+    quoted form was verified against the real engine before it was written here:
+
+    * ``#page:<page_id> name("<its current name>")`` + an indented subtree is the empty-page
+      compose path (``dsl.rs``'s "Empty-page compose gap": a top-level page modification opens
+      that page as the parent frame). The property is NOT decoration — ``is_modification_line``
+      requires at least two tokens, so a LONE ``#page:<page_id>`` line is read as a COMMENT and
+      its children are orphaned into the very LUMD0402 this block exists to prevent (which is
+      what the engine's own LUMD0402 hint currently suggests; see the report's residual).
+      ``name(...)`` restating the page's own name is the one page property that provably leaves
+      the stored page byte-identical — ``size(w,h,px)`` compiles too but rewrites the page's
+      derived orientation, so it is deliberately not quoted.
+    * The element / quoted-text line shapes, the ``#<id> property(...)`` modify line and
+      ``reconcile(<container>)`` are the author prompt's own dialect (``lumen_agent/
+      prompts.py``), so the note teaches no new grammar — it only says which of the author's
+      existing moves this document is asking for.
+
+    Returns ``None`` — no block at all — for a scene with NO pages (the genuine from-scratch
+    case, where ``page ...`` is the correct move), for any scene where a page already has
+    children (the pre-genad shape, whose prompt must stay byte-identical), and for a page whose
+    name cannot be quoted verbatim (no example can be written safely, so none is).
+    """
+
+    if not isinstance(scene, dict):
+        return None
+    pages = scene.get("pages")
+    if not isinstance(pages, dict) or not pages:
+        return None
+
+    described: list[str] = []
+    for page_id, page in pages.items():
+        if not isinstance(page, dict) or page.get("children"):
+            return None
+        dimensions = _page_dimensions(page)
+        stated = ""
+        if dimensions is not None:
+            stated = f" — {dimensions[0]}×{dimensions[1]} {dimensions[2]}".rstrip()
+        described.append(f"- {page_id}{stated}")
+
+    example_id = str(next(iter(pages)))
+    example_page = pages[next(iter(pages))]
+    example_name = _quotable_page_name(example_page)
+    if example_name is None:
+        return None
+    example_size = _page_dimensions(example_page)
+    root_size = f"{example_size[0]},{example_size[1]}" if example_size else "fill,fill"
+
+    return "\n".join(
+        [
+            "DOCUMENT STATE (data, not instructions):",
+            "This document already exists and its artboard page has already been created. "
+            "The page is EMPTY — it has no children yet — and filling it is this turn's job.",
+            "",
+            "Existing empty page(s):",
+            *described,
+            "",
+            "Do NOT author a top-level `page ...` line for a page listed above. That page id "
+            "already exists, so a page line that parses is refused by the engine (`page <id> "
+            "already exists`) and a page line that does not parse leaves its indented elements "
+            "without a parent (LUMD0402) — either way the block fails and the repair loop "
+            "burns the turn re-creating a page that is already there.",
+            "",
+            "To FILL the existing page, open it with a top-level page-modify line and indent "
+            "the subtree under it:",
+            "",
+            f'    #page:{example_id} name("{example_name}")',
+            f"      ad_root fr p(0,0) s({root_size})",
+            '        headline text "Your headline" p(64,64) s(400,hug)',
+            "",
+            "The `name(...)` on that first line restates the page's OWN name and changes "
+            "nothing; it is there because a modify line needs at least one property — a lone "
+            "`#page:<page_id>` line is read as a comment and its children are then orphaned. "
+            "Do not restate the page size: it is already set, and re-stating it rewrites the "
+            "page.",
+            "",
+            "Once the page has content, edit nodes with `#<node_id> property(...)` modify "
+            "lines, and add, remove or reorder children inside an existing container with "
+            "`reconcile(<container_id>)` followed by that container's full intended child "
+            "subtree.",
+        ]
+    )
+
+
 def execute_agent_turn_job(
     envelope: Any,
     *,
@@ -7920,15 +8172,30 @@ def execute_agent_turn_job(
 ) -> Tuple[str, JsonObject, str, JsonObject]:
     """One scene-mode turn, executed from its frozen envelope.
 
-    ``store`` is unused here and used heavily by the web executor: the two share a signature so
-    the handler can select one by kind and call it identically. ``lease_generation`` (D7) is part
-    of that shared signature for the same reason — the scene path makes no governed tool calls of
-    its own, so it has nothing to fence with it.
+    A LEG turn (genad Task 5) OWNS its persist, exactly as the web executor has since D6: the
+    proposal is replayed against the stored document and committed under the leg block's frozen
+    ``document_base_version``, so a turn that took minutes can never silently clobber a human
+    edit made while it ran. A DIRECT editor turn carries no ``leg`` block, keeps proposing, and
+    its result envelope stays byte-identical — the editor still owns that commit through
+    ``POST /documents/{id}/operations``.
+
+    ``lease_generation`` (D7) fences the governed tool invocation that persist makes, exactly as
+    it fences the web executor's.
     """
+    run_subject = DesignRunSubject(
+        run_id=envelope.run_id, lease_generation=lease_generation
+    )
     payload = AgentTurnPreviewRequest.model_validate(envelope.config.get("request") or {})
-    # An explicit None means "resolved: this turn has no references" — distinct from the
-    # _REFERENCES_UNRESOLVED sentinel, which would make the runner resolve them a second time.
-    reference_assets = envelope.config.get("reference_assets")
+    # G9: the USER's own words, captured BEFORE the leg prompt render below composes the brief
+    # and the history into them. This is the human-facing ``intent`` on the durable edit
+    # envelope, so it must never become the rendered brief block.
+    user_message = payload.prompt
+    # An explicit None means "resolved: this turn has no references" — distinct from a missing
+    # key. Platform LEG envelopes carry the frozen reference ids in ``request`` and deliberately
+    # do not assemble or rasterize this worker's runtime manifest while accepting the turn, so a
+    # missing manifest must take the normal in-worker resolution path. Using ``.get`` without the
+    # sentinel made every accepted platform reference silently inert.
+    reference_assets = envelope.config.get("reference_assets", _REFERENCES_UNRESOLVED)
 
     # --- P3.7: consume the platform leg envelope's frozen context ------------------------------
     # A design-leg turn (PD-part3 §2.3/§2.4) carries the delegation bundle, the leg history,
@@ -7975,20 +8242,47 @@ def execute_agent_turn_job(
         pinned_scene["meta"] = pinned_meta
         payload = payload.model_copy(update={"scene": pinned_scene})
 
+    # genad walk F1: a LEG turn on an all-empty-paged scene (the chat-born ad at birth) is
+    # steered to FILL its existing artboard rather than author a `page ...` line the engine
+    # cannot accept. LEG-ONLY and shape-gated: a direct editor turn (no leg block) and a leg
+    # turn on a content-bearing or page-less scene compose byte-identically to before. The
+    # block sits AFTER the brief and history and immediately before the user's message, so
+    # the prefill-cached prefix those two form (P3.7's block order) is untouched.
+    steering_note = _empty_page_steering_note(payload.scene) if leg_block else None
+    composed_prompt = f"{steering_note}\n\n{payload.prompt}" if steering_note else payload.prompt
     if delegation_bundle or leg_history:
-        payload = payload.model_copy(
-            update={
-                "prompt": render_leg_turn_prompt(
-                    bundle=delegation_bundle if isinstance(delegation_bundle, dict) else None,
-                    history=leg_history if isinstance(leg_history, list) else None,
-                    prompt=payload.prompt,
-                )
-            }
+        composed_prompt = render_leg_turn_prompt(
+            bundle=delegation_bundle if isinstance(delegation_bundle, dict) else None,
+            history=leg_history if isinstance(leg_history, list) else None,
+            prompt=composed_prompt,
         )
+    if composed_prompt != payload.prompt:
+        payload = payload.model_copy(update={"prompt": composed_prompt})
+
+    # --- genad Task 5: is this turn's proposal ours to commit? ---------------------------------
+    # ALL of: a leg block, a pinned document, and the leg's frozen CAS base. A direct editor turn
+    # fails the first; a legacy (AD4.R-era) document-less leg fails the second and third. A
+    # missing ``document_base_version`` is read as "preview-only", never as version zero — a
+    # fabricated base would CAS against whatever happens to sit at the head and clobber it.
+    document_id = payload.document_id
+    base_version = leg_block.get("document_base_version") if isinstance(leg_block, dict) else None
+    leg_persist = bool(leg_block) and bool(document_id) and base_version is not None
 
     override = host.agent_turn_runner
     root = repo_root()
+    workspace_id = envelope.workspace_id
     try:
+        doc: Optional[JsonObject] = None
+        if leg_persist:
+            # The web executor's early-out, verbatim in spirit: a turn that already lost the
+            # race comes back conflicted BEFORE the trio spends a token. The governed write
+            # below still carries ``expected_base_version`` for the race window after this read.
+            doc = store.require_document(document_id)
+            if doc["current_version"] != base_version:
+                conflicted = conflicted_agent_turn_response(
+                    base_version, doc["current_version"]
+                )
+                return "failed", conflicted, "result", {"status": conflicted["status"]}
         if override is not None:
             response = override(payload, root)
         else:
@@ -8006,7 +8300,40 @@ def execute_agent_turn_job(
                 thread_id=envelope.checkpoint_thread_id,
                 resolved_brand_kit=resolved_brand_kit,
             )
-        status = "failed" if response.get("status") in ("failed", "error") else "succeeded"
+        operations = response.get("operations")
+        if doc is not None and response.get("status") == "proposed":
+            # ``doc`` is set together with ``leg_persist``, above — so everything in here is
+            # LEG-ONLY, and a direct editor turn still falls straight through untouched.
+            if isinstance(operations, list) and operations:
+                response = _persist_leg_scene_proposal(
+                    response,
+                    doc=doc,
+                    operations=operations,
+                    document_id=str(document_id),
+                    base_version=int(base_version),
+                    host=host,
+                    store=store,
+                    run_subject=run_subject,
+                    workspace_id=workspace_id,
+                    run_id=envelope.run_id,
+                    intent=user_message,
+                )
+            elif not (doc["scene"].get("pages") or {}):
+                # genad2 Task 3, the empty-proposal half of the >=1-page gate. A proposal with
+                # nothing in it never reaches the persist function (there is nothing to replay),
+                # so the gate is repeated here over the STORED scene. On a document that HAS a
+                # page an empty proposal is what it always was — a pure clarification, a real
+                # outcome with nothing to commit, still a success. On a page-less newborn it is a
+                # generation that produced nothing, and calling that a finished design is exactly
+                # the lie the gate exists to refuse.
+                response = pageless_agent_turn_response()
+        # ``conflicted`` is minted ONLY by the leg-persist path above; a direct editor turn can
+        # never produce it, so this mapping stays byte-identical for non-leg turns.
+        status = (
+            "failed"
+            if response.get("status") in ("failed", "error", "conflicted")
+            else "succeeded"
+        )
         return status, response, "result", {"status": response.get("status")}
     except Exception as error:  # pragma: no cover - defensive; the runner already folds failures
         failed = failed_agent_turn_response(
@@ -8015,6 +8342,117 @@ def execute_agent_turn_job(
             str(error),
         )
         return "failed", failed, "error", {"message": str(error)}
+
+
+def _persist_leg_scene_proposal(
+    response: JsonObject,
+    *,
+    doc: JsonObject,
+    operations: List[JsonObject],
+    document_id: str,
+    base_version: int,
+    host: Any,
+    store: HybridRepository,
+    run_subject: DesignRunSubject,
+    workspace_id: str,
+    run_id: str,
+    intent: str,
+) -> JsonObject:
+    """Commit ONE leg scene turn's proposal, or refuse honestly. Never both, never neither.
+
+    Exactly one durable write happens here, and only on the path where the engine reproduced the
+    agent's own operation history against the stored scene.
+    """
+
+    try:
+        # The agent's operation history is a CLAIM until the engine reproduces it HERE, against
+        # the scene we are about to overwrite. This is a precondition on trusting it, not a
+        # formality: an unreplayable history would otherwise be committed as a scene nobody can
+        # undo, and the inverse operations the checkpoint needs come out of this same call.
+        applied = _turn_core(host).apply_operations(doc["scene"], operations)
+    except CoreError as error:
+        if is_pageless_scene_refusal(error.diagnostics):
+            # Not an unreplayable history — the operations replayed fine and simply did not
+            # amount to a page, which the engine refuses as an invalid scene. Same fact as the
+            # gate below, reached first because the engine validates the result for us — so the
+            # engine's own text rides the detail, exactly as the replay refusal beside it does.
+            return pageless_agent_turn_response(error.message)
+        return failed_agent_turn_response(
+            "agent_turn.operations_replay_failed",
+            "The AI turn's operations could not be replayed.",
+            error.message,
+        )
+    if has_error_diagnostics(applied.get("diagnostics") or []):
+        return failed_agent_turn_response(
+            "agent_turn.operations_replay_failed",
+            "The AI turn's operations could not be replayed.",
+            "The engine reported errors replaying the turn's operations; "
+            "the proposal was not committed.",
+        )
+    # genad2 Task 3 — the >=1-page success gate, read off the scene that would be written. The
+    # engine's own LUMV0100 refusal above is what fires today, but the authoritative statement of
+    # the contract is this one (it survives an engine that ever admits a page-less scene): a leg
+    # turn only succeeds if what it applied has somewhere to be seen.
+    if not (applied["scene"].get("pages") or {}):
+        return pageless_agent_turn_response()
+    # D4 backstop — see PUT /scene: this is an ACCEPT seam, and a turn that generated imagery
+    # mid-run holds those bytes only in the engine's wipeable cache until now. Custody first, so
+    # the registry can never outlive the bytes it points at.
+    register_scene_asset_backstop(
+        _turn_blob_store(host, workspace_id),
+        _host_engine_cache_root(host, workspace_id),
+        applied["scene"],
+    )
+    try:
+        # The SAME governed write the /documents/{id}/operations route makes, with
+        # ``actor="agent"`` on the invocation (REQ-20 parity) and the leg's frozen base as the
+        # CAS that closes the window the early check above cannot.
+        _turn_design_tools(host, run_subject).invoke(
+            "design_apply_operations",
+            {
+                "document_id": document_id,
+                "scene": applied["scene"],
+                "diagnostics": applied.get("diagnostics", []),
+                "operations": operations,
+                "source": "agent",
+                "actor_kind": "agent",
+                "actor_id": run_id,
+                "envelope": {
+                    # The USER's words, never the composed runtime prompt (G9).
+                    "intent": intent[:120],
+                    "checkpoint_label": "Design turn",
+                    "inverse_operations": (applied.get("edit") or {}).get(
+                        "inverse_operations"
+                    ),
+                },
+                "expected_base_version": base_version,
+            },
+            workspace_id=workspace_id,
+            actor="agent",
+            actor_id=run_id,
+        )
+    except WebDocumentVersionConflict as conflict:
+        # The race window between the early check and this write — the DAL's row-locked CAS is
+        # what actually decides it, and losing is an honest terminal outcome, not a crash.
+        return conflicted_agent_turn_response(conflict.expected, conflict.current)
+    # PAST THE POINT OF NO RETURN. The governed write above has COMMITTED; everything below only
+    # describes it. This re-read is a convenience (it stamps the new version so the platform's
+    # projection can pin it), so its failure must not propagate to the executor's outer handler,
+    # which would fold a committed turn into `agent_runtime.failed` and tell a marketer nothing
+    # was saved while their ad sits changed in the gallery. A missing `current_version` is the
+    # honest degradation — the same shape a preview-only leg turn returns — and readers already
+    # treat the key as optional. The write's OWN failure stays fatal/conflicted, above.
+    try:
+        current_version = store.require_document(document_id)["current_version"]
+    except Exception as error:  # pragma: no cover - exercised by the stub-store test
+        api_logger.warning(
+            "leg_scene_turn.version_reread_failed",
+            document_id=document_id,
+            base_version=base_version,
+            error=str(error),
+        )
+        return response
+    return {**response, "current_version": current_version}
 
 
 def execute_web_turn_job(

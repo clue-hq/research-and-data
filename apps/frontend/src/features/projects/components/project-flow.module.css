@@ -117,6 +117,14 @@
   display: none;
 }
 
+.composerAttachmentError {
+  margin: 0;
+  padding: 2px 6px 0;
+  color: var(--clue-ds-color-content-danger, #b42318);
+  font-size: 11px;
+  line-height: 16px;
+}
+
 .composerEditorShell {
   position: relative;
   min-width: 0;
@@ -2744,6 +2752,21 @@
   padding: 0 7px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.messageContextRefs > .messageReferenceImage {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding-left: 3px;
+}
+
+.messageReferenceThumbnail {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  border-radius: 999px;
+  object-fit: cover;
 }
 
 .gateAnswerReceipt {

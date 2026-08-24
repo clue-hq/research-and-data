@@ -1,6 +1,12 @@
 # Ad-design (scene) editor integration — plan of action
 
-**Status: DRAFT — awaiting founder review of the decision register (§5) before any phase starts.**
+**Status 2026-08-20: SUPERSEDED for execution.** All twelve §5 decisions are closed and the
+contract is frozen; the task-level execution plan is
+**`2026-08-20-ad-editor-integration-execution-plan.md`** — implementers work from that document.
+This one remains the study record (§1 findings, §2 gap register, §3 laws, §5 decision register,
+§6 traps, §7 out-of-scope) and is no longer the source of phase scope.
+
+**Original status line: DRAFT — awaiting founder review of the decision register (§5) before any phase starts.**
 Date: 2026-08-19. Branch context: `integration/frontend-design-part-iv-v2` (W0–W5 website-editor
 integration COMPLETE; chat-flow integration COMPLETE; genweb slices 0–2 landed).
 
@@ -110,6 +116,14 @@ parity to the dummy shell and zero invented UI.
   create** scene documents (`design_leg_tools.py:731-737`,
   `design_leg_scene_creation_unsupported` — "scene artifacts are made in the editor"), and
   `focus_refs` never reach `target_node_ids`.
+  **[STATUS-AS-OF-2026-08-19; the scene-creation clause is SUPERSEDED 2026-08-23 —
+  founder genad ruling 1 reverses the editor-first refusal and `open_design_leg@3`
+  births scene documents at a ratified format, brand-stamped:
+  `docs/superpowers/plans/2026-08-23-chat-driven-ad-creation.md`.
+  **AMENDED 2026-08-23 (evening) — genad2 ruling 1:** the tool is `open_design_leg@**4**`
+  and the birth is **zero-page**, carrying **no format or dimension parameters** — the
+  design agent authors the page itself:
+  `docs/superpowers/plans/2026-08-23-agent-authored-pages.md`.]**
 - **Platform frontend**: zero scene modules — no canvaskit-wasm dep, no wasm, no scene engine,
   no scene adapter. What IS there (lifted in W0, inert): `image-inspector.tsx` (357 L, untrimmed
   dummy schemas), `image-export-menu.tsx` + `use-image-export-controller.ts` + `model/
@@ -144,7 +158,14 @@ Backend/platform:
   microsite hardcode) — scene documents invisible in the rail.
 - **G-A2** No scene accept/commit path on the platform: leg-dispatched scene turns produce
   proposals nobody applies. (Deferred to the chat-loop plan, §7 — but the decision shapes AD1.)
-- **G-A3** Legs cannot create scene documents (typed refusal, v1 ruling "editor-first").
+- **G-A3** ~~Legs cannot create scene documents (typed refusal, v1 ruling
+  "editor-first").~~ **[SUPERSEDED 2026-08-23 — founder genad ruling 1 reverses the
+  editor-first ruling; `open_design_leg@3` births scene documents at a ratified format,
+  brand-stamped. Gap closed by
+  `docs/superpowers/plans/2026-08-23-chat-driven-ad-creation.md`.
+  **AMENDED 2026-08-23 (evening) — genad2 ruling 1:** `open_design_leg@**4**`, zero-page
+  birth, no format parameters; the design agent authors every page:
+  `docs/superpowers/plans/2026-08-23-agent-authored-pages.md`.]**
 - **G-A4** `focus_refs` not threaded to `target_node_ids` on scene envelopes.
 - **G-A5** No thumbnail/preview read for scene cards (web has `/web/render`; scenes have only
   `/export-preview` — cost untested; current ratified ruling is "real documents have no
@@ -393,6 +414,12 @@ consolidated browser sweep, both documents restored node-identical.
 
 ## 5. Founder decision register (rule before the phase that names them)
 
+**Status 2026-08-20: ALL TWELVE CLOSED.** D1–D6 and D11–D12 were ruled through the disparity
+inventory's founder-annotation passes and are folded into the frozen
+`docs/specs/ad-editor-integration/ad-inspector-mapping-contract.md` (the normative record);
+D7–D10 were closed 2026-08-20 as recommended (contract amendment 3). Nothing in this table
+gates AD-R/AD0/AD1 anymore.
+
 | # | Decision | Gates | Recommendation |
 |---|---|---|---|
 | **D1** | **On-canvas direct manipulation in v1?** (drag/resize/rotate handles, double-click text edit — engine-ready, but the dummy shows no handles; selection outlines are the only ratified canvas chrome) | AD-R / Lane C | Ship **selection + move/resize** in v1 with the minimal SVG handle chrome presented as explicit founder options (screenshots) before building; defer rotate/text-overlay to v1.1. An ad editor whose canvas cannot be dragged reads as broken in a way the web editor did not. |
@@ -401,10 +428,10 @@ consolidated browser sweep, both documents restored node-identical.
 | **D4** | Tool palette / node insertion in v1 (authored-but-unbuilt in the dummy) | AD-R / AD4 | Out of v1 (§7 register); inserting content stays agent-driven, matching the web editor's node-op posture. |
 | **D5** | Gallery: do ad/scene documents enter the rail feed now? | AD2 | Yes — kind-aware feed with the ratified collateral type; card body stays the honest no-thumbnail state (or gate a cheap `/export-preview` thumbnail behind evidence). |
 | **D6** | Shape/group/frame selection fallback schema (§5 rule for kinds the dummy never designed) | AD-R | Layout-only fallback, mirroring the web §5 precedent. |
-| **D7** | Konva fallback: extract or drop? | AD1 | Drop — CanvasKit only; the software-surface fallback already covers WebGL-less environments. |
-| **D8** | `/asset-store/{digest}` + `/font-library` serving under the platform origin | AD1 | Narrow BFF passthrough without the workspace header (browser never leaves our origin; no CORS games). |
-| **D9** | Engine-stamp mismatch UX in the platform shell | AD1 | Loud banner + read-only canvas (never silent), mirroring the standalone editor's posture — wording proposed to founder first (new user-facing state). |
-| **D10** | CAS conflict posture: web-style reload-and-drop vs editQueue's optimistic reconciliation | AD3 | Web-style for v1 (honest + already ratified UX); revisit if editing feels laggy. |
+| **D7** | Konva fallback: extract or drop? | AD1 | **RULED 2026-08-20 (founder): as recommended.** Drop — CanvasKit only; the software-surface fallback already covers WebGL-less environments. |
+| **D8** | `/asset-store/{digest}` + `/font-library` serving under the platform origin | AD1 | **RULED 2026-08-20 (founder): as recommended.** Narrow BFF passthrough without the workspace header (browser never leaves our origin; no CORS games). |
+| **D9** | Engine-stamp mismatch UX in the platform shell | AD1 | **RULED 2026-08-20 (founder): as recommended.** Loud banner + read-only canvas (never silent), mirroring the standalone editor's posture — wording proposed to founder first (new user-facing state). |
+| **D10** | CAS conflict posture: web-style reload-and-drop vs editQueue's optimistic reconciliation | AD3 | **RULED 2026-08-20 (founder): as recommended.** Web-style for v1 (honest + already ratified UX); revisit if editing feels laggy. |
 | **D11** | Multi-page scenes: v1 = single-page ad ("one ad is one artifact" per the dummy contract) with multi-page/PageRail deferred? | AD-R | Yes — v1 single page; multi-artboard workspace is §7 future work. |
 | **D12** | Export JPEG: drop the dummy option or add the engine format (an enumerated §8 engine change)? | AD-R | Drop in v1 (§2 hidden); PNG scale covers the use case. |
 

@@ -1,9 +1,11 @@
 "use client";
 
+import Image from "next/image";
 import { MessageResponse } from "@/components/ai-elements/message-response";
 import { unavailableMessageBody } from "../model/chat-message";
 import type { GateAnswerDisplay } from "../model/chat-gate";
 import {
+  designReferenceThumbnailUrl,
   gateResponseBodyDisplay,
   humanizeMessageBody,
 } from "../model/chat-message-presentation";
@@ -105,10 +107,37 @@ export function ChatTranscript({
                     const fallbackLabel =
                       ref.objectType === "contact"
                         ? "Selected contact"
-                        : "Selected account";
+                        : ref.objectType === "account"
+                          ? "Selected account"
+                          : ref.objectType === "design_node"
+                            ? "Selected design element"
+                            : ref.objectType === "design_document"
+                              ? "Design"
+                              : "Reference image";
+                    const label = entity?.label ?? ref.label ?? fallbackLabel;
                     return (
-                      <span key={`${ref.ordinal}:${ref.objectType}:${ref.objectId}`}>
-                        @{entity?.label ?? fallbackLabel}
+                      <span
+                        className={
+                          ref.objectType === "design_asset"
+                            ? styles.messageReferenceImage
+                            : undefined
+                        }
+                        key={`${ref.ordinal}:${ref.objectType}:${ref.objectId}`}
+                        title={label}
+                      >
+                        {ref.objectType === "design_asset" && ref.thumbnailDigest ? (
+                          <Image
+                            alt=""
+                            className={styles.messageReferenceThumbnail}
+                            height={18}
+                            src={designReferenceThumbnailUrl(ref.thumbnailDigest)}
+                            unoptimized
+                            width={18}
+                          />
+                        ) : null}
+                        {ref.objectType === "account" || ref.objectType === "contact"
+                          ? `@${label}`
+                          : label}
                       </span>
                     );
                   })}

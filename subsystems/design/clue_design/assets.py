@@ -91,6 +91,34 @@ async def get_asset_record(
     return _asset_record_from_row(row)
 
 
+async def get_asset_records(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    asset_ids: list[str] | tuple[str, ...],
+) -> dict[str, JsonObject]:
+    """Batch workspace-scoped asset records, omitting ids that are not visible.
+
+    This is the read-side companion to :func:`get_asset_record`: callers that need every
+    requested id still fail closed by comparing the returned keys, while transcript projections
+    can preserve a truthful generic fallback for a historical ref whose registry row was erased.
+    One statement serves the whole bounded set, so message history never becomes an N+1 read.
+    """
+
+    if not asset_ids:
+        return {}
+    rows = (
+        await conn.execute(
+            text(
+                "SELECT * FROM design_asset "
+                "WHERE workspace_id = :w AND asset_id = ANY(CAST(:asset_ids AS text[]))"
+            ),
+            {"w": workspace_id, "asset_ids": list(asset_ids)},
+        )
+    ).all()
+    return {str(row.asset_id): _asset_record_from_row(row) for row in rows}
+
+
 async def create_asset_record(
     conn: AsyncConnection, *, workspace_id: str, record: JsonObject
 ) -> JsonObject:

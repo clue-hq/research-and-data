@@ -19,6 +19,10 @@ import styles from "./project-flow.module.css";
 const NOOP = () => undefined;
 
 export function ProjectComposer({
+  attachmentAccept,
+  attachmentError,
+  attachmentInputDisabled = false,
+  attachmentLabel = "Attach files",
   attachments = [],
   disabled = false,
   entities = [],
@@ -39,6 +43,10 @@ export function ProjectComposer({
   selectedModel,
   variant = "default",
 }: {
+  attachmentAccept?: string;
+  attachmentError?: string | null;
+  attachmentInputDisabled?: boolean;
+  attachmentLabel?: string;
   attachments?: ProjectComposerAttachmentData[];
   disabled?: boolean;
   entities?: ProjectEntity[];
@@ -80,7 +88,9 @@ export function ProjectComposer({
       const currentPrompt =
         promptOverride ?? editorRef.current?.getPrompt() ?? prompt;
       const currentEntityIds = editorRef.current?.getEntityIds() ?? [];
-      if (!currentPrompt.trim() && !currentEntityIds.length) return;
+      if (!currentPrompt.trim() && !currentEntityIds.length && !attachments.length) {
+        return;
+      }
 
       setSubmitting(true);
       try {
@@ -91,7 +101,7 @@ export function ProjectComposer({
         setSubmitting(false);
       }
     },
-    [disabled, onSubmit, prompt, sendDisabled, submitting],
+    [attachments.length, disabled, onSubmit, prompt, sendDisabled, submitting],
   );
 
   return (
@@ -120,6 +130,11 @@ export function ProjectComposer({
             ))}
           </Attachments>
         ) : null}
+        {attachmentError ? (
+          <p className={styles.composerAttachmentError} role="alert">
+            {attachmentError}
+          </p>
+        ) : null}
         <ProjectComposerEditor
           disabled={disabled || submitting}
           entities={entities}
@@ -137,10 +152,13 @@ export function ProjectComposer({
       <div className={styles.composerFooter}>
         <div className={styles.composerPickerAnchor}>
           {onAttachmentFiles ? (
-            <label aria-label="Attach files" className={styles.iconButton}>
+            <label aria-label={attachmentLabel} className={styles.iconButton}>
               <input
-                accept=".csv,.doc,.docx,.gif,.jpeg,.jpg,.pdf,.png,.webp,.xls,.xlsx"
-                disabled={disabled}
+                accept={
+                  attachmentAccept ??
+                  ".csv,.doc,.docx,.gif,.jpeg,.jpg,.pdf,.png,.webp,.xls,.xlsx"
+                }
+                disabled={disabled || submitting || attachmentInputDisabled}
                 multiple
                 onChange={(event) => {
                   onAttachmentFiles(Array.from(event.target.files ?? []));
@@ -193,7 +211,7 @@ export function ProjectComposer({
               disabled ||
               sendDisabled ||
               submitting ||
-              (!prompt.trim() && !selectedEntities.length)
+              (!prompt.trim() && !selectedEntities.length && !attachments.length)
             }
             type="submit"
           >

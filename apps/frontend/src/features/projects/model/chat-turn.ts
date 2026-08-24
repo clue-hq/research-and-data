@@ -190,6 +190,19 @@ export interface MessageSubmissionAttempt {
   idempotencyKey: string;
 }
 
+export type TurnContextObjectType =
+  | "account"
+  | "contact"
+  | "design_document"
+  | "design_node"
+  | "design_asset";
+
+export interface TurnContextReference {
+  objectId: string;
+  objectType: TurnContextObjectType;
+  version: number | null;
+}
+
 /** Block only a duplicate of the exact message request currently in flight. */
 export class MessageSubmissionGuard {
   private readonly inFlight = new Map<string, MessageSubmissionAttempt>();
@@ -198,11 +211,7 @@ export class MessageSubmissionGuard {
     threadId: string,
     submission: {
       message: string;
-      contextRefs: readonly {
-        objectId: string;
-        objectType: "account" | "contact";
-        version: number | null;
-      }[];
+      contextRefs: readonly TurnContextReference[];
       agentProfileId: string | null;
     },
     createIdempotencyKey: () => string,
@@ -289,11 +298,7 @@ export type TurnSubmission =
   | {
       kind: "message";
       message: string;
-      contextRefs?: readonly {
-        objectId: string;
-        objectType: "account" | "contact";
-        version: number | null;
-      }[];
+      contextRefs?: readonly TurnContextReference[];
       agentProfileId?: string | null;
     }
   | { kind: "gate_response"; response: GateResponse };

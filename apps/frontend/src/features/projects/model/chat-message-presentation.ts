@@ -22,6 +22,11 @@ const SCOPED_IDS: readonly [RegExp, string][] = [
   [/\busr_[a-z0-9_.:-]+\b/gi, "the workspace member"],
 ];
 
+/** Same-origin public byte route used only to present a durable design reference thumbnail. */
+export function designReferenceThumbnailUrl(digest: string): string {
+  return `/api/clue/design-public/asset-store/${digest}`;
+}
+
 function record(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)

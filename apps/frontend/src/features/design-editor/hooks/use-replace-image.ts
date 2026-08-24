@@ -62,9 +62,28 @@ export function createReplaceImageHandler(
     );
     if (!page) return;
 
+    const documentId = document?.documentId ?? null;
+
     inFlight = true;
     try {
       const record = await upload(file);
+      // AD4.A step 3 review (2026-08-21): a ONE-LINE SAFETY FIX carried over
+      // from the ad lane's blocker, not a behaviour change. An upload takes
+      // seconds, and `applyOps` is bound to the document that was loaded when
+      // this handler captured it — so a user who moved to another document
+      // while the bytes were travelling had this batch written into the
+      // document they LEFT, keyed on a base version that has since moved to the
+      // one they are in. Nothing else about this flow changes: the guard only
+      // decides whether the write happens, and on the passing path every value
+      // used below is the one it always was.
+      //
+      // (Two known gaps in this hook are deliberately NOT touched here, both
+      // recorded for lane B: a selection that moves WITHIN the same document
+      // still writes, and the placement's alt text is not this lane's ruling to
+      // change — see A38's reasoning on the ad side.)
+      if (readDeps().document?.documentId !== documentId) {
+        return;
+      }
       // The record is already on the document → a plain replace needs no
       // upsert first (upstream WebEditorApp's `docHasAsset`).
       const assets =

@@ -434,8 +434,14 @@ def test_a_leg_with_no_document_contributes_nothing(require_chat_db: None) -> No
     run_async(scenario())
 
 
-def test_a_scene_document_is_excluded(require_chat_db: None) -> None:
-    """Ruling 3: the gallery serves web documents only."""
+def test_a_scene_document_lists_beside_a_web_one_with_its_own_kind(
+    require_chat_db: None,
+) -> None:
+    """AD2.1 supersedes Ruling 3's web-only filter: the gallery serves both kinds.
+
+    A ``scene`` document reports ``kind == "ad"`` and a ``web`` document still reports
+    ``kind == "web"`` — one project, both kinds, ordering untouched (``updated_at DESC``).
+    """
 
     del require_chat_db
 
@@ -444,15 +450,17 @@ def test_a_scene_document_is_excluded(require_chat_db: None) -> None:
             project = await _seed_project_row(conn, "ws-gallery-scene", name="Gallery scene")
             workspace_id = project.workspace_id
             await seed_principal(conn, workspace_id=workspace_id, user_id=USER_ID)
-            for document_id, doc_kind, thread_id in (
-                ("doc_gallery_web", "web", "thr_gallery_web"),
-                ("doc_gallery_scene", "scene", "thr_gallery_scene"),
+            touched = datetime(2026, 8, 20, 9, 0, tzinfo=UTC)
+            for document_id, doc_kind, thread_id, age_hours in (
+                ("doc_gallery_web", "web", "thr_gallery_web", 1),
+                ("doc_gallery_scene", "scene", "thr_gallery_scene", 0),
             ):
                 await _seed_design_document(
                     conn,
                     workspace_id=workspace_id,
                     document_id=document_id,
                     doc_kind=doc_kind,
+                    updated_at=touched - timedelta(hours=age_hours),
                 )
                 await _seed_thread(
                     conn,
@@ -469,7 +477,23 @@ def test_a_scene_document_is_excluded(require_chat_db: None) -> None:
                 )
 
             feed = await _feed(conn, workspace_id=workspace_id, project_id=project.project_id)
-            assert [item["id"] for item in feed] == ["doc_gallery_web"]
+            assert [(item["id"], item["kind"]) for item in feed] == [
+                ("doc_gallery_scene", "ad"),
+                ("doc_gallery_web", "web"),
+            ]
+            # The wire shape is unchanged — ``doc_kind`` is read, never leaked.
+            assert set(feed[0]) == {
+                "id",
+                "project_id",
+                "document_id",
+                "kind",
+                "title",
+                "status",
+                "current_version_id",
+                "created_at",
+                "updated_at",
+                "origin_thread_id",
+            }
 
     run_async(scenario())
 

@@ -26,7 +26,7 @@ demarcation registry §2.2, and doing it here would mean editing another lane's 
 from __future__ import annotations
 
 import re
-from collections.abc import Awaitable, Callable, Coroutine
+from collections.abc import Awaitable, Callable, Coroutine, Mapping
 from typing import Annotated, Any, Literal
 from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
@@ -65,6 +65,7 @@ from clue_api.chat.composer_context import (
     PROJECT_CONVERSATION_MODEL_ID,
     ComposerContextEntity,
     ContextReferenceError,
+    design_asset_ref_presentations,
     list_composer_context_entities,
     prepare_composer_context_entities,
     validated_context_refs,
@@ -141,7 +142,11 @@ from clue_api.chat.schemas import (
 )
 from clue_api.chat.turn_events import TurnEventType, emit_turn_event
 from clue_api.conversation_capture import persist_user_turn, project_client_entity_id
-from clue_api.design_leg_wiring import design_legs_for_threads, project_design_documents
+from clue_api.design_leg_wiring import (
+    design_legs_for_threads,
+    document_page_pixels,
+    project_design_documents,
+)
 from clue_api.stage0_icp_gate import IcpGateSubjectError, exact_icp_gate_subject
 from clue_api.stage0_project_scope import resolve_stage0_project_scope_for_project
 from clue_api.thread_store import create_thread, get_thread, thread_id_for_operation
@@ -224,6 +229,38 @@ _HOME_SUGGESTIONS = (
 
 def _framed(*parts: str) -> str:
     return "".join(f"{len(part)}:{part}" for part in parts)
+
+
+def _design_artifact_list_item(
+    project_id: str, document: Mapping[str, Any]
+) -> DesignArtifactListItemWire:
+    """One gallery row, carrying only what the document itself records.
+
+    G-H (founder ruling 2026-08-20): the client used to guess a card's channel
+    and size — every design artifact claimed to be a 1080x1080 LinkedIn ad.
+    Neither is a safe default ("we are not necessarily always making ads"), so
+    the document's own artifact type and page size ride the wire and a document
+    that records neither yields ``None`` for both. A card then says nothing
+    rather than something false; its name is its identity.
+    """
+
+    pixels = document_page_pixels(document.get("pages_json"))
+    artifact_type = document.get("artifact_type")
+    return DesignArtifactListItemWire(
+        id=str(document["id"]),
+        project_id=project_id,
+        document_id=str(document["id"]),
+        kind="web" if document["doc_kind"] == "web" else "ad",
+        title=str(document["title"]),
+        status=str(document["status"]),
+        current_version_id=str(document["current_version"]),
+        created_at=document["created_at"].isoformat(),
+        updated_at=document["updated_at"].isoformat(),
+        origin_thread_id=str(document["origin_thread_id"]),
+        artifact_type=str(artifact_type) if artifact_type else None,
+        width_px=pixels[0] if pixels else None,
+        height_px=pixels[1] if pixels else None,
+    )
 
 
 def _home_project_id(*, workspace_id: str, idempotency_key: str) -> str:
@@ -544,6 +581,8 @@ async def _validated_submission_context(
     *,
     workspace_id: str,
     refs: tuple[Any, ...],
+    design_leg_document_id: str | None = None,
+    storage: StorageBackend | None = None,
 ) -> tuple[DomainObjectRef, ...]:
     requested = tuple(
         DomainObjectRef(
@@ -559,10 +598,20 @@ async def _validated_submission_context(
             conn,
             workspace_id=workspace_id,
             refs=requested,
+            design_leg_document_id=design_leg_document_id,
+            storage=storage,
         )
     except ContextReferenceError as exc:
+        if exc.code == "CONTEXT_REF_LIMIT_EXCEEDED":
+            status_code = 422
+        elif exc.code == "CAPABILITY_UNAVAILABLE":
+            status_code = 503
+        elif exc.code == "CONTEXT_REF_NOT_FOUND":
+            status_code = 404
+        else:
+            status_code = 409
         raise _refuse(
-            status_code=404 if exc.code == "CONTEXT_REF_NOT_FOUND" else 409,
+            status_code=status_code,
             code=exc.code,
             message=exc.message,
         ) from exc
@@ -777,6 +826,7 @@ def build_chat_router(
                     conn,
                     workspace_id=who.workspace_id,
                     refs=body.context_refs,
+                    storage=storage,
                 )
 
                 project = await get_project(conn, project_id)
@@ -1009,11 +1059,13 @@ def build_chat_router(
         """The project's design-artifact feed — the gallery's list read (leg-derived v1).
 
         The document row carries a workspace, not a project, so the project binding is the
-        design **leg**: the documents named by the legs of this project's threads, web
-        documents only. A document no leg names belongs to no project and is not listed
-        (the ratified v1 gap). Like the single-artifact sibling below, the project and the
-        documents are workspace-scoped fail-closed reads, and the artifact id IS the
-        design-document id.
+        design **leg**: the documents named by the legs of this project's threads. A
+        document no leg names belongs to no project and is not listed (the ratified v1
+        gap). Like the single-artifact sibling below, the project and the documents are
+        workspace-scoped fail-closed reads, and the artifact id IS the design-document id.
+
+        Kind-aware since AD2.1: web documents and scene (ad) documents both list, each
+        carrying its own ``kind`` — the same mapping the single-artifact read applies.
         """
 
         _require(who, PERMISSION_PROJECT_READ)
@@ -1035,22 +1087,7 @@ def build_chat_router(
                 project_id=project_id,
             )
         return DesignArtifactListResponse(
-            data=tuple(
-                DesignArtifactListItemWire(
-                    id=str(document["id"]),
-                    project_id=project_id,
-                    document_id=str(document["id"]),
-                    # Ruling 3: the query admits ``doc_kind = 'web'`` only.
-                    kind="web",
-                    title=str(document["title"]),
-                    status=str(document["status"]),
-                    current_version_id=str(document["current_version"]),
-                    created_at=document["created_at"].isoformat(),
-                    updated_at=document["updated_at"].isoformat(),
-                    origin_thread_id=str(document["origin_thread_id"]),
-                )
-                for document in documents
-            )
+            data=tuple(_design_artifact_list_item(project_id, document) for document in documents)
         )
 
     @router.get("/projects/{project_id}/design-artifacts/{artifact_id}")
@@ -1395,17 +1432,33 @@ def build_chat_router(
             )
         except InvalidCursorError as exc:
             raise _refuse(status_code=422, code="INVALID_CURSOR", message=str(exc)) from exc
-        if include is None:
+        all_refs = tuple(ref for item in page.items for ref in item.refs)
+        has_design_assets = any(ref.object_type == "design_asset" for ref in all_refs)
+        if include is None and not has_design_assets:
             return message_list_response(page, thread_id=thread_id)
-        assert storage is not None  # guarded above: ``artifacts`` exists iff ``storage`` does
         async with conn_factory() as conn:
-            bodies = await hydrate_message_bodies(
+            presentations = await design_asset_ref_presentations(
                 conn,
-                storage=storage,
                 workspace_id=who.workspace_id,
-                references=tuple((item.body_artifact_key, item.body_sha256) for item in page.items),
+                refs=all_refs,
             )
-        return message_list_response(page, thread_id=thread_id, bodies=bodies)
+            bodies = None
+            if include is not None:
+                assert storage is not None  # guarded above: artifacts exists iff storage does
+                bodies = await hydrate_message_bodies(
+                    conn,
+                    storage=storage,
+                    workspace_id=who.workspace_id,
+                    references=tuple(
+                        (item.body_artifact_key, item.body_sha256) for item in page.items
+                    ),
+                )
+        return message_list_response(
+            page,
+            thread_id=thread_id,
+            bodies=bodies,
+            ref_presentations=presentations,
+        )
 
     @router.get("/projects/{project_id}/threads/{thread_id}/gates")
     async def list_gates_route(
@@ -1996,11 +2049,6 @@ def build_chat_router(
                         code="PROJECT_NOT_FOUND",
                         message="no such project in this workspace",
                     )
-                context_refs = await _validated_submission_context(
-                    conn,
-                    workspace_id=who.workspace_id,
-                    refs=body.context_refs,
-                )
                 # P3.4 accept-time visibility: which agent will receive this message. The same
                 # one-row read the worker's routing rule performs, taken inside the accept
                 # transaction so the 202 can label the pending turn truthfully.
@@ -2011,6 +2059,15 @@ def build_chat_router(
                 )
                 routed_to: Literal["head_of_abm", "design"] = (
                     "design" if open_leg is not None else "head_of_abm"
+                )
+                requested_context_refs = tuple(
+                    DomainObjectRef(
+                        workspace_id=who.workspace_id,
+                        object_type=ref.object_type,
+                        object_id=ref.object_id,
+                        version=ref.version,
+                    )
+                    for ref in body.context_refs
                 )
                 # The gate is proved before anything is written — including before the replay read,
                 # so a stale or foreign answer never even reaches the capture path.
@@ -2043,7 +2100,7 @@ def build_chat_router(
                     if (
                         existing.message_sha256 != digest
                         or existing.agent_profile_id != agent_profile_id
-                        or existing_context_refs != context_refs
+                        or existing_context_refs != requested_context_refs
                     ):
                         raise _refuse(
                             status_code=409,
@@ -2068,6 +2125,19 @@ def build_chat_router(
                             routed_to=routed_to,
                         )
                     )
+                # Mutable domain state is checked only for a NEW submission. An
+                # idempotent replay above is proved from its immutable receipt,
+                # so a design document advancing after acceptance cannot make
+                # the accepted turn unreplayable.
+                context_refs = await _validated_submission_context(
+                    conn,
+                    workspace_id=who.workspace_id,
+                    refs=body.context_refs,
+                    design_leg_document_id=(
+                        None if open_leg is None else open_leg.get("document_id")
+                    ),
+                    storage=storage,
+                )
                 # A gate answer must never become a design prompt (Part-III review finding C,
                 # ratified 2026-08-14): while a leg is open, the D1 routing rule would deliver
                 # these canonical bytes to the design agent as an instruction, and the gate flow
@@ -2089,6 +2159,9 @@ def build_chat_router(
                     project_id=project_id,
                     turn_id=turn_id,
                     message=message,
+                    allow_empty_reference_turn=any(
+                        ref.object_type == "design_asset" for ref in context_refs
+                    ),
                     client_entity_id=await project_client_entity_id(
                         conn,
                         workspace_id=who.workspace_id,

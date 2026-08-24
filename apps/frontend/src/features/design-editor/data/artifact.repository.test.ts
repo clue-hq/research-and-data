@@ -28,10 +28,19 @@ test("the fixture adapter serves its artifact and refuses unknown ids typed", as
 test("the fixture adapter lists only the asked-for project's artifacts", async () => {
   const repository = fixtureDesignArtifactRepository();
   const artifacts = await repository.list("10m-landing-page-campaign");
-  assert.equal(artifacts.length, 1);
-  assert.equal(artifacts[0].id, "doc_web_fixture");
-  assert.equal(artifacts[0].originThreadId, "thread_fixture");
-  assert.equal(artifacts[0].updatedAt, "2026-08-16T12:30:00+00:00");
+  // AD0.4 (ruling 4): the fixture project now carries both kinds — the ad row
+  // is the newer one, so it leads the newest-updated-first feed.
+  assert.deepEqual(
+    artifacts.map((artifact) => artifact.id),
+    ["doc_ad_fixture", "doc_web_fixture"],
+  );
+  assert.deepEqual(
+    artifacts.map((artifact) => artifact.kind),
+    ["ad", "web"],
+  );
+  const web = artifacts[1];
+  assert.equal(web.originThreadId, "thread_fixture");
+  assert.equal(web.updatedAt, "2026-08-16T12:30:00+00:00");
   // A project with no design legs has no artifacts — an empty list, not a refusal.
   assert.deepEqual(await repository.list("other-project"), []);
 });
