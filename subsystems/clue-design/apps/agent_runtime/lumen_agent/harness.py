@@ -129,9 +129,15 @@ def create_design_deepagent(
     *,
     clarification_already_requested: bool = False,
     checkpointer: Any = None,
+    scene_checkpoint=None,
 ) -> tuple[Any, LumenDesignTools]:
     """Build the v0 deepagent + substrate. Mirrors
     factory.create_lumen_design_agent's signature so callers can swap.
+
+    `scene_checkpoint` (P0.4) is the checkpoint-commit sink: each verified
+    authoring round hands it the operation ledger so the caller can make the
+    round durable mid-run. `None` — every CLI/fixture/offline path — keeps the
+    run save-on-finalize-only. See `LumenDesignTools.checkpoint_scene`.
 
     `clarification_already_requested` is the STRUCTURAL one-round-per-turn guard:
     when the PREVIOUS turn ended `clarification_requested`, this turn does NOT get
@@ -166,7 +172,11 @@ def create_design_deepagent(
     materialize_agent_workspace(runtime_config)
 
     tools = LumenDesignTools(
-        runtime_config, prompt, initial_scene=initial_scene, event_sink=event_sink
+        runtime_config,
+        prompt,
+        initial_scene=initial_scene,
+        event_sink=event_sink,
+        scene_checkpoint=scene_checkpoint,
     )
 
     scaffold_workspace(tools, prompt)
@@ -337,6 +347,7 @@ def run_deepagent_turn(
     clarification_already_requested: bool = False,
     checkpointer: Any = None,
     thread_id: str | None = None,
+    scene_checkpoint=None,
 ) -> tuple[dict, LumenDesignTools]:
     """Create + invoke + guarantee an honest finalize payload.
 
@@ -354,6 +365,9 @@ def run_deepagent_turn(
     so graph state, run row, event stream and fleet work id all key on one
     identifier. Without them the turn threads on `tools.run_id` exactly as it
     did before, which is what every CLI/fixture/offline caller still wants.
+
+    `scene_checkpoint` (P0.4) rides through to the substrate's checkpoint-commit
+    seam — see `create_design_deepagent`.
     """
     agent, tools = create_design_deepagent(
         prompt,
@@ -362,6 +376,7 @@ def run_deepagent_turn(
         event_sink=event_sink,
         clarification_already_requested=clarification_already_requested,
         checkpointer=checkpointer,
+        scene_checkpoint=scene_checkpoint,
     )
 
     # Per-run trace substrate (deliverables 2+3): attach THIS run's full-detail

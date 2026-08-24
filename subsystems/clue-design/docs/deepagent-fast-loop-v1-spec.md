@@ -106,11 +106,44 @@ stand.
   `image-export-menu.tsx`). Finalize must not record `succeeded` while a
   *blocking* export error persists (closes the "accepted but unexportable"
   loophole).
-- **P0.4 Checkpoint commits.** Each accepted round's scene persists to the
-  document (version bump) instead of save-on-finalize-only. A quota 403 or
-  budget exhaustion then loses one round, not the run (the 20m42s run
-  discarded a fully valid scene). Also gives the frontend real progress to
+- **P0.4 Checkpoint commits — DONE 2026-08-24.** Each accepted round's scene
+  persists to the document (version bump) instead of save-on-finalize-only. A
+  quota 403 or budget exhaustion then loses one round, not the run (the 20m42s
+  run discarded a fully valid scene). Also gives the frontend real progress to
   show.
+
+  **As built.** *Round acceptance* is the orchestrator's step-5 verification
+  render: `render_preview` is orchestrator-only and runs once per round, so a
+  render that produced a validated raster with no validation errors is the one
+  moment Python can observe "an authoring round finished and its scene is
+  real". It fires `LumenDesignTools.checkpoint_scene`, which hands the caller
+  the FULL operation ledger (the caller commits only the not-yet-durable
+  prefix, so a refused checkpoint self-heals inside the next one) and swallows
+  every failure — a lost version is never a lost run. The write path is the
+  existing one, unchanged: `lumen_api.main._LegSceneCommitter` owns *every*
+  durable write the turn makes, checkpoint and finalize alike, through
+  `design_apply_operations` with the D4 asset-custody backstop and the
+  row-locked `expected_base_version` CAS. Because `update_document_state`
+  advances the version by `len(ops)`, a turn ends at `base + N` whether it
+  checkpointed five times or not at all: **same head, same final scene, more
+  history envelopes**. Checkpoint commits are LEG-ONLY (a direct editor turn
+  owns no persist and is byte-identical to before).
+
+  *Replay.* Each commit emits a durable `scene_checkpoint_committed` run event
+  carrying the version. A redrive whose document head matches its own last mark
+  refuses with `agent_turn.interrupted_after_checkpoint` rather than
+  double-applying its restarted operation history — and rather than reporting a
+  human conflict nobody caused. The saved work stands; the marketer's next turn
+  seeds from it. **Residual:** a taken-over run therefore does not *continue*
+  from its checkpoint (resume-as-restart is unchanged, `checkpoint.py`);
+  making the redrive re-seed from the checkpointed document scene is the
+  natural follow-up and belongs with §5.6's "finalize the best accepted
+  checkpoint".
+
+  *Deliberately not gated on preflight-clean.* Cleanliness is recorded on the
+  checkpoint (`preflight_clean`) but does not gate it: LUMV0820 blocks export
+  on exactly the runs P0.2/P0.3 own, and gating here would make P0.4 silent
+  where it is needed most. A validated raster is the bar.
 
 ## 5. Loop redesign
 

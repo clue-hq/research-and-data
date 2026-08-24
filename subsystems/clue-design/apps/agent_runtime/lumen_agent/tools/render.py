@@ -91,6 +91,18 @@ def _render_preview_text(tools: LumenDesignTools) -> str:
     unchanged = payload.get("unchanged")
     if unchanged:
         lines.append(unchanged)
+    # P0.4 checkpoint commit. THIS is the round-acceptance seam. `render_preview`
+    # is orchestrator-only (the author cannot render), and the orchestrator runs
+    # it exactly once per round at its step-5 verification — so a render that
+    # produced a validated raster with no validation errors is the one moment
+    # Python can observe "an authoring round finished and its scene is real".
+    # The export itself already refuses a scene whose token paints are
+    # unresolved, so reaching here also means preflight ran after the last
+    # mutation. Best-effort by construction: `checkpoint_scene` swallows and
+    # records everything, so the render summary the model reads is unchanged
+    # whether or not the document moved.
+    if status == "ok" and not validation_errors and png_path is not None:
+        tools.checkpoint_scene("render_preview")
     return "\n".join(lines)
 
 
