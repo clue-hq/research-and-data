@@ -134,6 +134,19 @@ class AgentRuntimeConfig:
     # via record_gap. Probes/sweeps run with this ON so results stay comparable;
     # live editor runs leave it OFF so the agent can ask a vague brief.
     auto_defaults: bool = False
+    # Fast-loop v1 (docs/deepagent-fast-loop-v1-spec.md §7): the single gate on
+    # the §5 loop. False → every fast-loop mechanism is a no-op and the turn is
+    # byte-identical to the pre-fast-loop runtime.
+    fast_loop: bool = False
+    # §5.4: planning-pass ceiling for the deterministic autofix loop. Only read
+    # when `fast_loop` is true; 0 disables autofix on its own.
+    autofix_max_passes: int = 2
+
+    @property
+    def autofix_passes(self) -> int:
+        """How many autofix passes THIS run may take — 0 whenever the flag is
+        down, so no caller has to remember to check both."""
+        return self.autofix_max_passes if self.fast_loop else 0
 
     @classmethod
     def from_env(cls, repo_root: Path | None = None) -> "AgentRuntimeConfig":
@@ -165,6 +178,8 @@ class AgentRuntimeConfig:
             agent_model_author=settings.lumen_agent_model_author,
             agent_model_reviewer=settings.lumen_agent_model_reviewer,
             auto_defaults=settings.lumen_agent_auto_defaults,
+            fast_loop=settings.lumen_agent_fast_loop,
+            autofix_max_passes=settings.lumen_agent_autofix_max_passes,
         )
 
     @property

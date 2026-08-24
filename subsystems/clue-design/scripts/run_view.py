@@ -319,6 +319,10 @@ def _metrics_section(metrics: dict | None) -> list[str]:
         ("output tokens", _num(metrics.get("output_tokens_total")), ""),
         ("rounds", _num(metrics.get("rounds_total")), _GATES["rounds_total"]),
         ("compile iterations", _num(metrics.get("compile_iterations_total")), ""),
+        # §5.4: repairs that landed with NO model call. Read next to "llm calls":
+        # this is the share of the mechanical work the code loop absorbed.
+        ("autofix applied", _num(metrics.get("autofix_count")), ""),
+        ("autofix rolled back", _num(metrics.get("autofix_rolled_back")), ""),
         ("failed llm calls", _num(metrics.get("llm_calls_failed")), ""),
         ("llm calls over 30s", _num(metrics.get("llm_calls_over_30s")), ""),
     ]
