@@ -102,6 +102,39 @@ unaffected); 8 `test_export_policy.py` unit tests (fail-closed default is
 pinned); 2 API route tests (advisory-only exports with warnings / blocking
 still refuses and reports no warnings); 4 finalize-guard tests.
 
+## Consumer-compatibility check on the new `warnings` field (verified 2026-08-24)
+
+The additive response fields cannot break any existing consumer. Verified
+directly, not assumed:
+
+- The **only** consumers of `/documents/{id}/export` and `/export-preview` are
+  two copies of the same file — `apps/frontend/src/features/design-editor/engine/scene/exportRunner.ts`
+  and the design subsystem's own editor at
+  `subsystems/clue-design/apps/editor/src/engine/exportRunner.ts` (plus their
+  `__tests__`). Both were read; both are **byte-identical in the relevant
+  function** and equally tolerant.
+- `exportResultFromUnknown` (line 256 platform / 250 subsystem) is hand-rolled
+  and **allowlist-style**: it builds a fresh object picking only `status`,
+  `diagnostics`, `export.artifacts`, `export.print_ready`. Unknown keys are
+  silently dropped, never rejected — no `.strict()`, no throw on extra keys.
+- No strict Zod schema is in the path. The four `.strict()` schemas in the
+  frontend live in `features/{projects,onboarding,session}/model/`, none of
+  which touch the export response. (Had the export path been strict-parsed,
+  `d1c9884db` would have failed every export on the day it shipped.)
+- `status: payload.status === "ok" ? "ok" : "failed"` — so an `ok` status with
+  non-empty `warnings` reads as `ok`, matching the intended semantics.
+
+**Handoff for whoever builds the advisory UI** (frontend, not this slice): the
+allowlist parser means `warnings` is dropped at the adapter boundary and never
+reaches React. It has to be threaded in three places, not one —
+(1) the `EditorExportResult` interface (`exportRunner.ts:42`); (2)
+`exportResultFromUnknown` (`:256`), reading `payload.warnings` tolerantly like
+its neighbours; (3) `SceneExportStatus` in `scene-export.ts` + `report(...)` in
+`use-scene-export.ts`. Note the **two-copy** problem: the design subsystem's
+editor has its own `exportRunner.ts` with the same shape, so decide
+deliberately whether it gets the same treatment (same dual-copy hazard class as
+the AD4.C F9 residual in the root CLAUDE.md).
+
 ## Residuals / follow-ups
 - **`visual_regression` cannot compile at this base** — `crates/lumen-core/fixtures/visual_regression/baselines/*.png` are absent from the repo *and* from the pristine colombo workspace. Pre-existing, unrelated to this change; it is why `cargo test -p lumen-core` was run per-target.
 - **Wasm handshake not re-verified in this worktree.** Engine sources changed, so AGENTS.md §1 requires `bash scripts/build_wasm_core.sh` + `node scripts/verify_handshake.mjs`. Both are impossible here: `apps/editor/node_modules` is not installed, so `wasm-pack` is missing (the build script exits 0 with a "not found" notice — quiet, worth knowing). The output dir is gitignored and untracked, so nothing was committable anyway. **Anyone running the editor against this branch must run `npm --prefix apps/editor install && bash scripts/build_wasm_core.sh` or the canvas will show "Canvas editing is disabled" on a stamp mismatch.**
