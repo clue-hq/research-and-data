@@ -61,3 +61,50 @@ real wasm) + scoped round 2 (fresh Opus) + Fable review of the round-2 diff.
 7. Selection surface is the overlay textarea (not WYSIWYG mid-session); contentEditable/CanvasKit
    upgrade path recorded in the plan.
 8. Design-subsystem's own editor copies untouched (its own lane, per standing practice).
+
+---
+
+## T5 LIVE WALK COMPLETE (2026-08-24, same day) — feature browser-proven
+
+Residual #1 above is CLOSED. A medan-local dev stack was stood up (user-directed):
+DB `clue-pg-medan` :55230 (pg_dump clone of the shared dev DB at istanbul:55040, head
+`db145059253b`, seeded ads included), `clue-redis-medan` :6381, blob root `medan/.artifacts`
+(merged colombo/.artifacts + /tmp/lumen-dev-storage), platform API :8020, design API :8065
+(embedded design fleet worker), platform fleet worker, frontend :3020. Launch scripts:
+`.context/stack/launch-*.sh`; env in root `.env` (medan-notes block documents every choice)
++ `apps/frontend/.env.local` (added `LUMEN_API_BASE_URL`).
+
+**Walk verdict (Opus browser agent, real stack, seeded ad `doc_ad22linkedinsquare00000000001`):**
+all 10 steps PASS functionally — rung A commit +1 version; rung B overlay open/Escape-cancel/
+⌘Enter-commit; rung C Bold + recolor as own undo frames with live selection; typing inside a
+styled range grew the span exactly (4..9 → 4..11); 5 undos restored byte-identical baseline;
+zero app console errors. Bold on the 700-base headline correctly toggled OFF to 400 (override
+semantics, not a bug).
+
+**Three presentation defects found by the walk, fixed at `0f756feb9`, re-verified live:**
+1. D1 overlay white-on-white (upstream's genuine `background:#ffffff` — deliberate divergence
+   to `transparent`; artboard shows through where the node's glyphs are suppressed).
+2. D2 serif fallback (scene says "Inter", DOM registers "Inter Variable" — overlay now emits a
+   `"<family>", "<family> Variable", sans-serif` stack via pure `domFontFamilyStack`); wrap
+   parity with the painted canvas is now line-identical.
+3. D3 toolbar under the banner layer (z 30 vs 40) and placed into the banner band for
+   top-of-artboard nodes — overlay/toolbar z → 41/42 AND `sceneTextToolbarPosition` takes a
+   measured `stage.topInset`, flipping BELOW the node when above would clip. Proven with a
+   real actionability-checked mouse click on Bold (696→697→698), where the pre-fix walk's
+   identical click hit the banner span.
+
+Suite at close: **2246 pass / 0 fail / 0 skipped**. Commits added since the first close-out:
+`0f756feb9` (D1–D3 fixes). Doc restored: v698, content byte-identical, `spans: []`.
+
+## Stack/env traps for the next session (hard-won)
+
+- `next dev --hostname localhost` binds IPv6-ONLY on this box — curl passes (::1 fallback),
+  Chrome fails (ERR_CONNECTION_REFUSED). Always `--hostname 0.0.0.0` (launch script has it).
+- The design API's engine stamp comes from the `lumen-api-helper` BINARY (`build_info` action);
+  a helper copied from another workspace can mismatch the vendored wasm → "Canvas editing is
+  disabled" banner. Rebuild `cargo build --release -p lumen-api-helper` from THIS tree (~90s).
+- gstack browse: `$B url` is read-only (silently ignores an argument) — navigate with `goto`.
+- Clone auth: the walk's Clerk account mapped to platform user `usr_4580df…` with NO membership;
+  inserted `mem_medanwalk4580df2026082401` (owner, Insight Health) into the CLONE only.
+- Pre-existing, unrelated: `asset-store/2b0928ca…` 404 (likely the sohne-var face the brand-font
+  banner reports); the /accounts page shows a version-support error in this clone.
