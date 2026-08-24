@@ -174,13 +174,15 @@ def test_flag_on_author_prompt_makes_looking_mandatory() -> None:
     assert "LOOK AT YOUR OWN RENDER" in author
     assert "This step is MANDATORY before you" in author
     assert "report done" in author
-    # The loop, in order.
-    for step in ("COMPILE.", "PREFLIGHT.", "RENDER.", "SELF-AUDIT.", "FIX."):
+    # The loop, in order. Step 4's heading gained "AS SOON AS PREFLIGHT IS CLEAN"
+    # in the 2026-08-24 TTFP tuning; see
+    # test_the_first_render_is_an_obligation_with_no_detour for what that buys.
+    for step in ("COMPILE.", "PREFLIGHT.", "RENDER AS SOON AS", "SELF-AUDIT.", "FIX."):
         assert step in author
     positions = [
         author.index("2. COMPILE."),
         author.index("3. PREFLIGHT."),
-        author.index("4. RENDER."),
+        author.index("4. RENDER AS SOON AS PREFLIGHT IS CLEAN."),
         author.index("5. LOOK AT YOUR OWN RENDER."),
         author.index("6. SELF-AUDIT."),
         author.index("7. FIX."),
@@ -191,6 +193,73 @@ def test_flag_on_author_prompt_makes_looking_mandatory() -> None:
     assert build_author_prompt(WS, fast_loop=True, inner_iterations=2).count(
         "2 inner iterations"
     ) == 1
+
+
+# ---------------------------------------------------------------------------
+# TTFP tuning (2026-08-24). Acceptance run #1 took 6m09s to its first preview
+# against a 4m gate. The trace says where it went: the author spent three calls
+# and 110s reading eight SKILL.md files (two of them twice) before its first
+# compile, then — with a CLEAN preflight already in hand at 232s — spent another
+# 137s on three inspects and a second compile before it finally rendered at 369s.
+# Rendering off that first clean preflight alone would have landed at ~236s.
+# ---------------------------------------------------------------------------
+
+
+def test_the_first_compile_must_be_the_whole_design() -> None:
+    """A warm-up compile costs a second compile plus the minutes around it.
+
+    The author already holds the brief, the brand card, the resolved type ramp
+    and the format skill before its first call, so a skeleton-then-fill pass buys
+    nothing the payload did not already give it.
+    """
+    author = build_author_prompt(WS, fast_loop=True)
+    assert "YOUR FIRST COMPILE MUST BE THE WHOLE DESIGN." in author
+    assert "Not a skeleton, not a warm-up" in author
+    # Founder style: the rule carries a worked example of the mistake.
+    assert "compiling a bare frame with three empty text nodes" in author
+
+
+def test_the_first_render_is_an_obligation_with_no_detour() -> None:
+    """The 137s between the first clean preflight and the first render.
+
+    Nothing the author did in that gap needed doing before a picture existed, so
+    the prompt now forbids each thing it actually did — inspect, measure, polish,
+    recompile — by name rather than merely asking for speed.
+    """
+    author = build_author_prompt(WS, fast_loop=True)
+    assert "RENDER AS SOON AS PREFLIGHT IS CLEAN." in author
+    assert "Go straight here from step 3." in author
+    for forbidden in ("Do NOT inspect", "do NOT measure", "do NOT polish"):
+        assert forbidden in author
+    assert "compile a second time before your first render exists" in author
+
+
+def test_the_author_gets_one_reading_response_and_no_re_reads() -> None:
+    """Eight skill reads over three calls, two of them duplicates.
+
+    The capability skills are named as background precisely because the run read
+    all four of them (create-design, brand-and-tokens, effects, brand-imagery)
+    before writing a single line of DSL.
+    """
+    author = build_author_prompt(WS, fast_loop=True)
+    assert "You get ONE reading response before you compile." in author
+    assert "Never read the same file twice." in author
+    assert "are background, not a prerequisite" in author
+    # The one skill it DOES need is still named as required reading.
+    assert "the FORMAT SKILL named in your direction" in author
+
+
+def test_the_orchestrator_is_told_to_delegate_before_it_reads_around() -> None:
+    """The orchestrator burned 117s and 7 calls before delegating.
+
+    Five of those calls were filesystem hunting — two globs, three ls, and one
+    read of a knowledge path that did not exist. §5.1's no-search rule only ever
+    bound the author; the orchestrator spends from the same ceiling.
+    """
+    orchestrator = build_orchestrator_prompt(WS, fast_loop=True, scene_reviewer=False)
+    assert "GET TO THE AUTHOR FAST." in orchestrator
+    assert "Do NOT ls, glob or grep the knowledge tree." in orchestrator
+    assert "every minute you spend there is a minute the author does\nnot get" in orchestrator
 
 
 def test_flag_on_author_prompt_advertises_render_in_its_resource_map() -> None:
