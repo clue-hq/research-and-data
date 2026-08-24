@@ -12,10 +12,12 @@ to a sentinel for the same reason.
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import sys
 import threading
 import types
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -272,6 +274,152 @@ def test_view_bogus_asset_lists_available_ids(tmp_path, monkeypatch):
     assert all(b["type"] == "text" for b in content)
     assert "bogus" in content[0]["text"]
     assert "available asset ids" in content[0]["text"].lower()
+
+
+def _clue_storage_kit_asset(
+    workspace_id: str, thumb_bytes: bytes, source_bytes: bytes
+) -> dict:
+    """A brand-kit asset record shaped exactly as D4 leaves one: both byte objects
+    live in platform storage and their `media.location.opaque_ref` is a REAL
+    `clue-storage` key, minted by the production helpers rather than typed out here."""
+    from clue_design.storage import design_location, design_storage_key
+
+    source_digest = hashlib.sha256(source_bytes).hexdigest()
+    thumb_digest = hashlib.sha256(thumb_bytes).hexdigest()
+    return {
+        "id": "asset_kit_logo",
+        "label": "Scribe wordmark",
+        "kind": "logo",
+        "status": "ready",
+        "media": {
+            "mime_type": "image/png",
+            "digest": {"algorithm": "sha256", "value": source_digest},
+            "location": design_location(design_storage_key(workspace_id, source_digest)),
+            "thumbnail": {
+                "location": design_location(
+                    design_storage_key(workspace_id, thumb_digest)
+                ),
+                "mime_type": "image/png",
+                "pixel_width": 640,
+                "pixel_height": 640,
+            },
+        },
+    }
+
+
+def test_view_asset_delivers_pixels_for_a_clue_storage_backed_record(
+    tmp_path, monkeypatch
+):
+    """P0.1 regression (fast-loop v1 spec §4): `view("asset:<id>")` must return real
+    pixels for a DURABLY-stored brand-kit asset.
+
+    The bug this pins: `_asset_preview_path` appended the record's `opaque_ref`
+    verbatim onto `effective_asset_store_root`, which the API points at the
+    per-WORKSPACE engine cache. A D4 ref (`ws_X/design/<digest>`) therefore resolved
+    to `<cache>/ws_X/ws_X/design/<digest>` — a doubled workspace segment that never
+    exists — so every kit asset answered `asset_missing_file` and the author designed
+    blind (2026-08-24 Stuttgart forensics). Resolution is by DIGEST now, so the
+    genuine ref shape lands on the bytes the API's read-through materialized.
+    """
+    from lumen_api.asset_custody import write_cache_blob
+
+    workspace_id = "ws_p01regression"
+    # The runtime's asset-store root IS the per-workspace engine cache — exactly what
+    # `api_engine_cache_root(workspace_id)` builds and `run_agent_turn_preview` injects.
+    cache_dir = tmp_path / "engine-cache" / workspace_id
+    thumb_bytes = _solid_png()
+    source_bytes = _solid_png(size=1024)
+    record = _clue_storage_kit_asset(workspace_id, thumb_bytes, source_bytes)
+    # The API's read-through (`ensure_materialized`) lands durable bytes here by
+    # digest; `write_cache_blob` is the very function it uses, so the on-disk state
+    # this test starts from is production's, not an invention.
+    write_cache_blob(cache_dir, hashlib.sha256(thumb_bytes).hexdigest(), thumb_bytes)
+    write_cache_blob(cache_dir, hashlib.sha256(source_bytes).hexdigest(), source_bytes)
+
+    config = replace(
+        runtime_config(tmp_path),
+        asset_store_root=cache_dir,
+        brand_kit_assets={record["id"]: {"record": record, "title": "Scribe wordmark"}},
+    )
+    monkeypatch.setattr("lumen_agent.tools.substrate.CoreClient", FakeCoreClient)
+    tools = _tools_only(config)
+
+    # RED CASE, spelled out: the path the old resolver built for this very record.
+    doubled = cache_dir / record["media"]["thumbnail"]["location"]["opaque_ref"]
+    assert not doubled.exists(), "the pre-fix concatenation must still be a dead path"
+
+    view = harness_mod.make_view_tool(tools)
+    msg = view.invoke(
+        {
+            "name": "view",
+            "args": {"target": f"asset:{record['id']}"},
+            "id": "c4",
+            "type": "tool_call",
+        }
+    )
+    content = msg.content
+    assert isinstance(content, list), content
+    image_blocks = [b for b in content if b["type"] == "image"]
+    assert len(image_blocks) == 1, content
+    assert base64.b64decode(image_blocks[0]["data"]) == thumb_bytes
+
+    # And the placement/contact-sheet surfaces that share the resolver see it too.
+    sheet, omitted = tools._brand_asset_contact_sheet()
+    assert omitted == 0
+    assert [entry["asset_id"] for entry in sheet] == [record["id"]]
+
+
+def test_view_asset_still_resolves_a_legacy_engine_cache_record(tmp_path, monkeypatch):
+    """The pre-D4 `sha256/<ab>/<digest>` ref shape must keep working — asset records
+    are durable JSON on scenes and registry rows that nothing rewrites in place, so
+    both shapes are live at once and the fix may not trade one for the other."""
+    from lumen_api.asset_custody import write_cache_blob
+
+    cache_dir = tmp_path / "engine-cache" / "ws_legacy"
+    thumb_bytes = _solid_png(size=576)
+    digest = hashlib.sha256(thumb_bytes).hexdigest()
+    write_cache_blob(cache_dir, digest, thumb_bytes)
+    record = {
+        "id": "asset_legacy_logo",
+        "label": "Legacy mark",
+        "kind": "logo",
+        "status": "ready",
+        "media": {
+            "mime_type": "image/png",
+            "digest": {"algorithm": "sha256", "value": digest},
+            "thumbnail": {
+                "location": {
+                    "provider": "local-store",
+                    "opaque_ref": f"sha256/{digest[:2]}/{digest}",
+                    "url": None,
+                },
+                "mime_type": "image/png",
+                "pixel_width": 576,
+                "pixel_height": 576,
+            },
+        },
+    }
+
+    config = replace(
+        runtime_config(tmp_path),
+        asset_store_root=cache_dir,
+        brand_kit_assets={record["id"]: {"record": record}},
+    )
+    monkeypatch.setattr("lumen_agent.tools.substrate.CoreClient", FakeCoreClient)
+    tools = _tools_only(config)
+
+    view = harness_mod.make_view_tool(tools)
+    msg = view.invoke(
+        {
+            "name": "view",
+            "args": {"target": f"asset:{record['id']}"},
+            "id": "c5",
+            "type": "tool_call",
+        }
+    )
+    image_blocks = [b for b in msg.content if b["type"] == "image"]
+    assert len(image_blocks) == 1, msg.content
+    assert base64.b64decode(image_blocks[0]["data"]) == thumb_bytes
 
 
 # --- 3. tool surfaces pinned (D5) -------------------------------------------

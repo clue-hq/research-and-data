@@ -8781,10 +8781,9 @@ def load_brand_kit_by_value(
     repo = HybridRepository(workspace_id, ensure_workspace=ensure_workspace)
     record = repo.require_brand_kit(brand_kit_id, version)
     brand_kit = record["brand_kit"]
-    manifest = brand_kit_asset_manifest(repo, brand_kit)
-    font_spec = brand_kit_font_spec(
-        repo, brand_kit, blobs, str(api_engine_cache_root(workspace_id))
-    )
+    cache_dir = str(api_engine_cache_root(workspace_id))
+    manifest = brand_kit_asset_manifest(repo, brand_kit, blobs, cache_dir)
+    font_spec = brand_kit_font_spec(repo, brand_kit, blobs, cache_dir)
     return brand_kit, source, manifest, font_spec
 
 
@@ -8932,8 +8931,9 @@ def resolve_web_turn_brand_kit(
     unreadable database all return (None, None, None, None) and the pipeline
     falls back to the platform default kit — the same silent-fallback contract
     the scene path has. `blobs` (D4) is the tenant's byte store, used to materialize the kit's
-    font faces into the engine cache; REQUIRED since D5 Round C, because a defaulted one named
-    the dev workspace and quietly resolved the wrong tenant's kit."""
+    font faces AND its asset/thumbnail bytes into the engine cache; REQUIRED since D5 Round C,
+    because a defaulted one named the dev workspace and quietly resolved the wrong tenant's
+    kit."""
     theme = web_doc.get("theme") if isinstance(web_doc, dict) else None
     ref = theme.get("brand_kit") if isinstance(theme, dict) else None
     if not isinstance(ref, dict) or not ref.get("id"):
@@ -8943,10 +8943,9 @@ def resolve_web_turn_brand_kit(
         repo = HybridRepository(blobs.workspace_id)
         record = repo.require_brand_kit(str(ref["id"]), ref.get("version"))
         brand_kit = record["brand_kit"]
-        manifest = brand_kit_asset_manifest(repo, brand_kit)
-        font_spec = brand_kit_font_spec(
-            repo, brand_kit, blobs, str(api_engine_cache_root(blobs.workspace_id))
-        )
+        cache_dir = str(api_engine_cache_root(blobs.workspace_id))
+        manifest = brand_kit_asset_manifest(repo, brand_kit, blobs, cache_dir)
+        font_spec = brand_kit_font_spec(repo, brand_kit, blobs, cache_dir)
         return brand_kit, "document", manifest, font_spec
     except Exception:
         return None, None, None, None
@@ -9069,14 +9068,27 @@ def workspace_asset_library_manifest(repo: HybridRepository) -> JsonObject:
 
 
 def brand_kit_asset_manifest(
-    repo: HybridRepository, brand_kit: JsonObject
+    repo: HybridRepository,
+    brand_kit: JsonObject,
+    blobs: DesignBlobStore,
+    cache_dir: str,
 ) -> JsonObject:
     """K2: {asset_id: {record, title, description, usage}} for the kit's logo
     variants and brand images. Records come back VERBATIM from the library
     (they were engine-built at ingestion) — the runtime rewrites only the
     scene copy's provenance. Missing records are skipped silently: a kit may
     reference assets whose bytes/rows never landed, and a partial manifest
-    beats a failed turn."""
+    beats a failed turn.
+
+    D4 read-through (fast-loop v1 §4 P0.1): the runtime resolves each record's
+    preview BY DIGEST out of the per-workspace engine cache (`_asset_preview_path`
+    → `blob_path_for_digest`), so the kit's asset and thumbnail bytes have to be
+    pulled out of durable storage into that cache first — exactly as
+    `brand_kit_font_spec` does for faces and `reference_asset_manifest` does for
+    attachment previews. Without it a fleet worker (or any process whose cache
+    was never the ingesting one's) sees the manifest but none of the pixels.
+    Fail-soft like every other read-through: a digest with no durable bytes is
+    left absent and `view("asset:…")` degrades to its honest missing-file text."""
     assets = brand_kit.get("assets") or {}
     asset_ids: list[str] = []
     for logo in (assets.get("logos") or {}).values():
@@ -9111,6 +9123,16 @@ def brand_kit_asset_manifest(
             if described.get(field):
                 entry[field] = described[field]
         manifest[asset_id] = entry
+
+    ensure_materialized(
+        blobs,
+        cache_dir,
+        (
+            digest
+            for entry in manifest.values()
+            for digest, _mime in record_digests(entry["record"])
+        ),
+    )
     return manifest
 
 

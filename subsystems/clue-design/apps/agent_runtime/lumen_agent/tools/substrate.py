@@ -12,6 +12,7 @@ from typing import Any, Callable, Dict, List, Optional
 
 from py_lumen_obs import bind_run_id, get_logger, log_span
 
+from clue_design.storage import location_digest
 from lumen_api.core import CoreClient, CoreError
 
 try:  # the real Python text-to-image seam, shared with the /assets/generate route
@@ -1448,28 +1449,44 @@ class LumenDesignTools:
         Prefer the derived 256px thumbnail (any source type gets one at ingest); else,
         if the primary media is itself a raster the vision APIs accept, use that. An
         SVG with no thumbnail has no usable raster preview → return None (the caller
-        skips it and counts it in `_omitted`). Refs are `sha256/<first2>/<digest>`
-        under the SAME asset-store root the tools already use for export/ingest —
-        resolved the one way (Path(effective_asset_store_root) / opaque_ref). Only the
-        path is returned; no bytes are read here (existence is checked at block-build
-        time in providers), so this stays cheap to call every curated context."""
+        skips it and counts it in `_omitted`). Only the path is returned; no bytes are
+        read here (existence is checked at block-build time in providers), so this
+        stays cheap to call every curated context.
+
+        **Resolve by DIGEST, never by the stored ref's text** (the same rule
+        `clue_design.storage.location_digest` states, which is why this calls it rather
+        than re-deriving it). Three `opaque_ref` shapes exist in the wild — the engine's
+        `sha256/<ab>/<digest>`, D4's durable `<workspace>/design/<digest>`, and a bare
+        digest — and only the trailing segment is common to all three. This used to
+        append the ref verbatim onto `effective_asset_store_root`, which is the
+        per-WORKSPACE engine materialization cache: a D4 ref then produced the doubled
+        `<cache>/ws_X/ws_X/design/<digest>` and EVERY `view("asset:…")` on a
+        durably-stored brand-kit asset answered `asset_missing_file` (2026-08-24
+        forensics; fast-loop v1 spec §4 P0.1). The digest goes through
+        `blob_path_for_digest` — the one place the engine-cache layout is spelled out —
+        and the API's `brand_kit_asset_manifest` read-through has already materialized
+        those bytes out of durable storage into that cache."""
         media = record.get("media") or {}
         store_root = Path(self.config.effective_asset_store_root)
         thumbnail = media.get("thumbnail") or {}
-        thumb_ref = (thumbnail.get("location") or {}).get("opaque_ref")
-        if thumb_ref:
+        thumb_digest = location_digest(thumbnail.get("location"))
+        if thumb_digest:
             return (
-                str(store_root / thumb_ref),
+                str(blob_path_for_digest(store_root, thumb_digest)),
                 thumbnail.get("pixel_width"),
                 thumbnail.get("pixel_height"),
             )
         mime = media.get("mime_type")
-        primary_ref = (media.get("location") or {}).get("opaque_ref")
-        if mime in _PREVIEWABLE_MIME_TYPES and primary_ref:
+        # `media.digest.value` is the record's own byte identity and the primary source
+        # of truth; the location is the fallback for a record that carries only a ref.
+        primary_digest = ((media.get("digest") or {}).get("value")) or location_digest(
+            media.get("location")
+        )
+        if mime in _PREVIEWABLE_MIME_TYPES and primary_digest:
             # Pixel dims for a raster/logo asset live in its own metadata block.
             dims = record.get("raster") or record.get("logo") or {}
             return (
-                str(store_root / primary_ref),
+                str(blob_path_for_digest(store_root, primary_digest)),
                 dims.get("pixel_width"),
                 dims.get("pixel_height"),
             )
