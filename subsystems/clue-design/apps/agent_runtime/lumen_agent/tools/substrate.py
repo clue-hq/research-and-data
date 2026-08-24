@@ -34,6 +34,7 @@ from ..retokenize import (
 from ..brand_card import build_brand_card
 from ..knowledge import BRAND_APPLICATION_PATH, DIRECTIVES_PATH, read_task_knowledge
 from ..paths import normalize_agent_key
+from ..run_metrics import RunMetrics
 from pydantic import ValidationError
 
 from ..models.schemas import (
@@ -271,6 +272,14 @@ class LumenDesignTools:
         self._record_lock = threading.Lock()
         self.run_id = new_run_id()
         self.iteration = 0
+        # Fast-loop v1 §7: per-run summary counters, started at the earliest
+        # moment of the run so `wall_time_ms` measures the whole turn. The three
+        # role tracers fold their calls in (harness._instrument), this class
+        # marks compiles and the first validated preview, and the harness runner
+        # emits ONE `run_metrics` event + `metrics.json` at any terminal outcome.
+        # Pure in-process integer arithmetic — no extra LLM call, tool call, or
+        # hot-loop I/O. See lumen_agent/run_metrics.py.
+        self.metrics = RunMetrics(self.run_id)
         self.trace_dir = config.trace_dir / self.run_id
         self.iterations_dir = self.trace_dir / "iterations"
         self.trace_dir.mkdir(parents=True, exist_ok=True)
@@ -430,6 +439,10 @@ class LumenDesignTools:
     def compile_dsl_block(self, source: str) -> str:
         """Compile a Lumen DSL block and update the scene only from core output."""
         self.iteration += 1
+        # §7 metrics: every compile counts, including the ones that fail below —
+        # the baseline's micro-edit drip (14 compiles for one property each) is
+        # exactly what this counter has to make visible.
+        self.metrics.mark_compile_iteration()
         iteration_dir = self._iteration_dir()
         (iteration_dir / "dsl.lumen").write_text(source, encoding="utf-8")
 
@@ -4014,6 +4027,13 @@ class LumenDesignTools:
                     validation_errors = [*validation_errors, sentinel_error]
                 if uniform_warning:
                     warnings.append(uniform_warning)
+            if not validation_errors:
+                # §7 metrics: time-to-first-preview is the run's single most
+                # diagnostic number (baseline: 15.4 min, gate: <= 4 min), and it
+                # must mean "the agent could actually SEE something" — so a
+                # VALIDATED artifact starts the clock, never a written-but-broken
+                # one. Idempotent: only the first call is kept.
+                self.metrics.mark_first_preview()
             artifacts.append(
                 PreviewArtifact(
                     format=artifact_format,

@@ -46,6 +46,11 @@ _TOOL_EVENTS = {
     "subagent_completed",
 }
 
+# Fast-loop v1 §7: the per-run summary event the harness emits at any terminal
+# outcome. Rendered verbatim at the end of the timeline so the one number the
+# spec's gate table asks for is visible without a footer recomputation.
+_SUMMARY_EVENT = "run_metrics"
+
 _TRUNC_LIMIT = 500
 
 
@@ -156,6 +161,43 @@ def _render_message(msg: dict, full: bool) -> str:
     return f"      [{role}] {text}"
 
 
+def _format_summary(ev: dict, ts: str) -> list[str]:
+    """The `run_metrics` block: the §1 gate row, then the per-role split.
+
+    Rendered from the event's OWN fields rather than recomputed, so what the
+    viewer prints is exactly what `metrics.json` and the durable `run_event`
+    stream carry — three surfaces, one set of numbers.
+    """
+    ttfp = ev.get("time_to_first_preview_ms")
+    lines = [
+        "",
+        f"{ts} RUN METRICS ▸ {ev.get('outcome') or '?'} "
+        f"({ev.get('stop_reason') or 'no reason recorded'})",
+        f"  wall            {_dur(ev.get('wall_time_ms'))}",
+        f"  llm calls       {ev.get('llm_calls_total', 0)}"
+        f" ({ev.get('llm_calls_failed', 0)} failed,"
+        f" {ev.get('llm_calls_over_30s', 0)} over 30s)",
+        f"  tokens          in {_ktok(ev.get('input_tokens_total'))} /"
+        f" out {_ktok(ev.get('output_tokens_total'))}",
+        "  first preview   "
+        + (_dur(ttfp) if isinstance(ttfp, (int, float)) else "never rendered"),
+        f"  rounds          {ev.get('rounds_total', 0)}",
+        f"  compiles        {ev.get('compile_iterations_total', 0)}",
+    ]
+    by_role = ev.get("by_role")
+    if isinstance(by_role, dict):
+        for role in sorted(by_role):
+            stats = by_role[role] or {}
+            lines.append(
+                f"  {role:<15} {stats.get('calls', 0)} calls · "
+                f"{_dur(stats.get('duration_ms_total'))} total · "
+                f"{_dur(stats.get('duration_ms_max'))} slowest · "
+                f"in {_ktok(stats.get('input_tokens'))} / "
+                f"out {_ktok(stats.get('output_tokens'))}"
+            )
+    return lines
+
+
 def format_event(ev: dict, *, full: bool = False) -> list[str]:
     """Render one event to a list of colourless text lines."""
     name = ev.get("event", "")
@@ -222,6 +264,9 @@ def format_event(ev: dict, *, full: bool = False) -> list[str]:
             f"{ts} {label} ▸ subagent done · {ev.get('subagent')}{suffix}{errs}"
         )
 
+    elif name == _SUMMARY_EVENT:
+        lines.extend(_format_summary(ev, ts))
+
     elif name == "trace_callback_warning":
         lines.append(f"{ts} {label} ▸ trace warning: {ev.get('error', '')}")
 
@@ -236,6 +281,11 @@ def format_event(ev: dict, *, full: bool = False) -> list[str]:
 # --------------------------------------------------------------------------- #
 def event_passes(ev: dict, *, role: Optional[str], tools_only: bool, messages_only: bool) -> bool:
     name = ev.get("event", "")
+    # The run summary is role-less and belongs to the whole run: it survives the
+    # role filter (there is nothing to attribute it to) and both --tools-only and
+    # --messages-only (a narrowed view still wants to know where the time went).
+    if name == _SUMMARY_EVENT:
+        return True
     if role is not None and ev.get("role") != role:
         return False
     if tools_only and name not in _TOOL_EVENTS:

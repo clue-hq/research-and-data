@@ -261,6 +261,98 @@ def _write_assets(assets: list[AssetView], out: Path, *, copy: bool) -> list[str
     return skipped
 
 
+#: The `docs/deepagent-fast-loop-v1-spec.md` §1 acceptance gates, rendered beside the run's own
+#: numbers so the README answers "did this run pass?" rather than only "what did this run do?".
+#: Kept as display text — this is a VIEW, so it reports the gate, it never enforces one.
+_GATES = {
+    "wall_time_ms": "<= 10 min",
+    "llm_calls_total": "<= 45",
+    "time_to_first_preview_ms": "<= 4 min",
+    "input_tokens_total": "<= 3M",
+    "rounds_total": "<= 1 repair round",
+}
+
+
+def _ms(value: object) -> str:
+    """A duration for humans. Non-numeric (including a genuine `null`) stays honest."""
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        return "—"
+    ms = int(value)
+    if ms >= 60_000:
+        return f"{ms // 60_000}m{(ms % 60_000) // 1000:02d}s"
+    if ms >= 1000:
+        return f"{ms / 1000:.1f}s"
+    return f"{ms}ms"
+
+
+def _num(value: object) -> str:
+    return f"{value:,}" if isinstance(value, int) and not isinstance(value, bool) else "—"
+
+
+def _metrics_section(metrics: dict | None) -> list[str]:
+    """The per-run summary block (fast-loop v1 §7).
+
+    This section exists so nobody hand-aggregates 6000 log lines again to learn where 43 minutes
+    went. The numbers are the runtime's OWN — read verbatim off the `run_metrics` event, never
+    recomputed here from the raw stream, so this README, the run's `metrics.json`, and
+    `python -m lumen_agent.trace` can never disagree.
+    """
+    if not metrics:
+        return [
+            "",
+            "## Run metrics",
+            "",
+            "None on this run's stream — see the gap below. (Runs from before the per-run "
+            "summary counters landed have none, and neither does a run whose terminal emission "
+            "was fenced.)",
+        ]
+    ttfp = metrics.get("time_to_first_preview_ms")
+    rows = [
+        ("wall time", _ms(metrics.get("wall_time_ms")), _GATES["wall_time_ms"]),
+        ("llm calls", _num(metrics.get("llm_calls_total")), _GATES["llm_calls_total"]),
+        (
+            "time to first preview",
+            _ms(ttfp) if ttfp is not None else "never rendered",
+            _GATES["time_to_first_preview_ms"],
+        ),
+        ("input tokens", _num(metrics.get("input_tokens_total")), _GATES["input_tokens_total"]),
+        ("output tokens", _num(metrics.get("output_tokens_total")), ""),
+        ("rounds", _num(metrics.get("rounds_total")), _GATES["rounds_total"]),
+        ("compile iterations", _num(metrics.get("compile_iterations_total")), ""),
+        ("failed llm calls", _num(metrics.get("llm_calls_failed")), ""),
+        ("llm calls over 30s", _num(metrics.get("llm_calls_over_30s")), ""),
+    ]
+    lines = [
+        "",
+        "## Run metrics",
+        "",
+        f"Outcome: **{metrics.get('outcome') or '?'}** "
+        f"({metrics.get('stop_reason') or 'no stop reason recorded'}). "
+        "Gates are `docs/deepagent-fast-loop-v1-spec.md` §1.",
+        "",
+        "| metric | value | v1 gate |",
+        "| --- | ---: | ---: |",
+    ]
+    lines += [f"| {name} | {value} | {gate} |" for name, value, gate in rows]
+
+    by_role = metrics.get("by_role")
+    if isinstance(by_role, dict) and by_role:
+        lines += [
+            "",
+            "| role | calls | failed | total | slowest | in tokens | out tokens |",
+            "| --- | ---: | ---: | ---: | ---: | ---: | ---: |",
+        ]
+        for role in sorted(by_role):
+            stats = by_role[role] or {}
+            lines.append(
+                f"| {role} | {_num(stats.get('calls'))} | {_num(stats.get('failed'))} "
+                f"| {_ms(stats.get('duration_ms_total'))} "
+                f"| {_ms(stats.get('duration_ms_max'))} "
+                f"| {_num(stats.get('input_tokens'))} | {_num(stats.get('output_tokens'))} |"
+            )
+    return lines
+
+
 def _readme(view: RunView, *, copy: bool, skipped: list[str]) -> str:
     manifest = view.manifest
     # Regenerate with the ref the caller ASKED for — on a bridged view that is the inner id, and
@@ -303,6 +395,7 @@ def _readme(view: RunView, *, copy: bool, skipped: list[str]) -> str:
         f"- brief: {'present' if view.brief is not None else 'absent (see gaps)'}",
         f"- scene: {'present' if view.scene is not None else 'absent (see gaps)'}",
     ]
+    lines += _metrics_section(view.metrics)
     if manifest.get("bridged_from"):
         lines += [
             "",
