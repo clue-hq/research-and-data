@@ -202,3 +202,19 @@ LUMEN_AGENT_REASONING=high (worker was started with medium override).
 Chat-flow paper cut (2nd occurrence today): first message only OPENS the leg
 (open_awaiting_user) — 14 min lost waiting. Product question: leg-opening
 brief that is generation-complete should carry into the design turn.
+
+## §7 ACCEPTANCE RUN #2 — tuned loop + R6 skills, 2026-08-24 19:36 IST
+Run `run_bcdcf3e484fd48b7805c8eb561a64854`, doc `doc_ac8a96ae…` → v97.
+30 calls (author 23 / orch 7 / reviewer 0) · wall 10m13s (budget-cut AGAIN) ·
+TTFP 5m33s · 1 round · autofix fired 4× (first live firings) · 2.03M input
+tokens · 8 calls >30s. vs run #1: calls 36→30, orch 15→7 (GET-TO-THE-AUTHOR
+worked), tokens 2.57M→2.03M, TTFP 6m09→5m33.
+Result: NO collision (run-1 defect class gone; clearance advisory + no-collisions
+eyes test in force) but polish is budget-cut: black-on-purple headline contrast,
+tiny body, oversized CTA label, dead middle band. completed_with_warnings.
+VERDICT: loop structure is now lean — wall time is LATENCY-bound: ~20s/call
+mean × 30 calls ≈ 10 min. Round-boundary budget rule can't help a single long
+round. The remaining lever is the MODEL CONFIG decision (deliberately not taken
+by agents): faster model for orchestrator and/or author
+(LUMEN_AGENT_MODEL / LUMEN_AGENT_MODEL_ORCHESTRATOR env knobs exist).
+At ~8s/call the same 30 calls ≈ 4 min → polish round fits, quality recovers.
