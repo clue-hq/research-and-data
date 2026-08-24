@@ -18,6 +18,8 @@ cut, and what survives the ink. Everything below serves those two.
 This skill decides; the craft skills execute. Read beside it:
 
 - `skills/brand-and-tokens` — role tokens, never guessed values.
+- `skills/color-and-contrast` — which combination of those tokens actually
+  reads. The on-color pairing law, and the shade decision.
 - `skills/brand-imagery` — the kit-asset / generate / deliberately-none call.
 - `skills/clarify-design-brief` — derive before you ask.
 - `skills/print-bleed-marks` — **only** on the baked route below. It owns the
@@ -99,6 +101,11 @@ normally.
 
 ## Press-safe color and effects
 
+- **On a saturated brand ground, text is `$text.inverse`.** Dark ink belongs on
+  `$surface.page`, `$surface.card`, or `$surface.brand.subtle`, never on
+  `$surface.brand`. Press makes this worse than a screen does: a dark ink over a
+  heavy colored field loses the little separation it had. See
+  `skills/color-and-contrast`.
 - **Prefer solid, well-separated colors over subtle gradients.** A gentle tonal
   ramp that looks smooth on a screen bands on press. Two colors that differ only
   slightly in value print as the same color. Keep a real value gap between any
@@ -176,7 +183,7 @@ like this:
 - Every score below 2 also becomes an `issues[]` entry. Name the test in
   `message`, give a `target` and a `suggested_repair`, and use the category
   shown in parentheses below.
-- Any `0` on tests 1–6 means `accepted=false`.
+- Any `0` on tests 1–7 means `accepted=false`.
 
 Score with facts and measurements against the named test, never with adjectives.
 Write "headline is 4 words at 56pt" or "body copy measures 3.1:1 against the
@@ -189,7 +196,10 @@ and fails a measurement, which is exactly why the measurement is the score.
 4. `edge-art-reaches-the-bleed` — every fill touching a trim edge extends to the bleed line on the chosen route, or the design has no edge art at all. (`overflow`)
 5. `press-safe-color` — no large pure-black field, no screen-only effect, and adjacent colors differ by a real value step. (`contrast`)
 6. `one-ask-with-its-standing-detail` — exactly one CTA, and the date, place, or URL it needs to be actionable on paper. (`request_satisfaction`)
-7. `brand-adherence-followed` — the chosen level actually holds (tokens, faces, assets). (`brand_fit`)
+7. `on-color-pairing` — every text/ground and plate/ground pair reads cleanly.
+   Dark ink on a saturated brand ground scores 0, and so does spending the
+   full-strength brand color as BOTH the ground and the accent. (`contrast`)
+8. `brand-adherence-followed` — the chosen level actually holds (tokens, faces, assets). (`brand_fit`)
 
 ## Override
 

@@ -16,11 +16,15 @@ do. Every rule below serves that ordering; clarity earns the seconds after.
 This skill decides; the craft skills execute. Read beside it:
 
 - `skills/brand-and-tokens` — role tokens, never guessed values.
+- `skills/color-and-contrast` — which combination of those tokens actually
+  reads. The on-color pairing law, and the shade decision.
 - `skills/brand-imagery` — the kit-asset / generate / deliberately-none call.
+- `skills/clarify-design-brief` — derive before you ask.
 
 Pin these knowledge files into the frame payload instead of hunting for them
 mid-run: `knowledge/design/layout-recipes` (the six-archetype canon),
 `knowledge/design/blocks/patterns` (validator-passed 1080² blocks),
+`knowledge/design/blocks/actions` (the validated button structure),
 `knowledge/design/foundations` (squint test, 60-30-10, contrast floors), and
 `knowledge/lumen-dsl/grammar` + `text` (the size ramp).
 
@@ -88,8 +92,20 @@ pour copy into the shell.
   **22pt**. That is one step above the general 1080² skeletons' 19–21pt, because
   the feed downscales the canvas. If the kit's body role lands smaller, step up
   with `font_size($type.size.xl)` (24).
-- CTA label: ≤4 words, `style($type.cta) align(center)`, inside a `s(fill,hug)`
-  text node.
+- CTA label: ≤4 words at `style($type.cta) align(center)`, inside a
+  `s(fill,hug)` text node. Give the label the CTA role and nothing bigger. A
+  `style($type.headline)` label is what inflates a button into a second hero.
+- **The CTA plate is the validated button from `knowledge/design/blocks/actions`.**
+  Build it exactly that way. The plate is a fixed `s(340,76)` container written
+  `al(h,x(c),y(c),pad(20,40))`, with a fill and `rd($radius.button)`. It holds
+  ONE label node sized `s(fill,hug) align(center)`.
+- **Those two sizings are what keep the label centered.** The plate's `y(c)`
+  centers the label box inside the plate. The label's `align(center)` centers
+  the glyph inside that box. Drop either one and the label drifts off-center or
+  sinks toward the bottom edge.
+- **The plate takes its size from its own geometry, never from its label.** A
+  plate left to grow around an oversized label becomes a second focal mass. Never
+  give the label a hug WIDTH either — that trips `LUMV0902`.
 - Kit faces first. A library display face may carry the headline when the kit
   voice is too neutral to stop a scroll and adherence is not strict — **Anton**,
   **Bebas Neue** (caps only), **Archivo Black**, **Bricolage Grotesque**; exact
@@ -102,6 +118,11 @@ pour copy into the shell.
 
 ## Brand & assets
 
+- **On a saturated brand ground, text is `$text.inverse`.** Dark ink belongs on
+  `$surface.page`, `$surface.card`, or `$surface.brand.subtle`, never on
+  `$surface.brand`. Do not spend the full-strength brand color on the ground and
+  on the CTA plate both. One of the two takes a softer shade or a neutral. See
+  `skills/color-and-contrast`.
 - Logo or wordmark at real scale — **≥48pt height**, or the kit's declared
   minimum size if larger; an eyebrow line is not a substitute. Bind through slots
   (`slot(account.logo)`) with asset roles (`logo.primary` / `logo.reversed`),
@@ -125,7 +146,7 @@ like this:
 - Every score below 2 also becomes an `issues[]` entry. Name the test in
   `message`, give a `target` and a `suggested_repair`, and use the category
   shown in parentheses below.
-- Any `0` on tests 1–7 means `accepted=false`.
+- Any `0` on tests 1–8 means `accepted=false`.
 
 Score with facts and measurements against the named test, never with adjectives.
 Write "headline is 6 words at 80pt" or "CTA measures 3.1:1 against its surface",
@@ -140,7 +161,10 @@ fails a measurement, which is exactly why the measurement is the score.
 6. `safe-margins` — all four margins clear, nothing clipped, no dead or zero-size nodes. (`clipping`)
 7. `no-collisions` — no text runs into another text block, a button, or an image
    edge. (`overflow`)
-8. `brand-adherence-followed` — the chosen level actually holds (tokens, faces, assets). (`brand_fit`)
+8. `on-color-pairing` — every text/ground and plate/ground pair reads cleanly.
+   Dark ink on a saturated brand ground scores 0, and so does spending the
+   full-strength brand color as BOTH the ground and the accent. (`contrast`)
+9. `brand-adherence-followed` — the chosen level actually holds (tokens, faces, assets). (`brand_fit`)
 
 Test 7 is an EYES test and cannot be scored from geometry. The engine measures a
 line of text as exactly font size times line height, so tight leading shrinks the

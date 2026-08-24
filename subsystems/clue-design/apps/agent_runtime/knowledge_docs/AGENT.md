@@ -83,6 +83,7 @@ Over-load, never under-load. The reference files are short and precise. Load
 | **Any repair** (compile, preflight, or visual diagnostic) | `skills/repair-design` + `knowledge/lumen-dsl/directives` + `knowledge/lumen-dsl/diagnostics` |
 | **Page/artboard bounds or parent overflow repair** | `skills/repair-design` + `knowledge/lumen-dsl/layout` + `knowledge/loop/layout-cluster-repair` |
 | **Branded design** (a Brand Kit is in play) | `skills/brand-and-tokens` + `knowledge/design-systems/token-taxonomy` + `knowledge/design-systems/brand-kits` |
+| **Filling a surface and putting text on it** (every design does) | `skills/color-and-contrast` — the on-color pairing law, choosing a shade instead of defaulting to full strength, and checking the pairs by looking at the render |
 | **Brand governance / off-brand diagnostics** | + `knowledge/design-systems/brand-validation` + `knowledge/design-systems/modes` |
 | **Logos / brand imagery** | + `knowledge/design-systems/logo-and-assets` + `knowledge/assets/asset-placement` |
 | **Shadows, special strokes, gradients** | `skills/effects` + `knowledge/lumen-dsl/colors` |
@@ -134,6 +135,7 @@ Each skill is a procedure for one job. Read the skill before doing that job.
 | **LinkedIn banner** (format skill) | The brief asks for a linkedin banner, linkedin cover, profile banner, company page cover, or linkedin header — ambient brand canvas, not an ad | `skills/linkedin-banner/SKILL.md` |
 | **Repair a design** | Fixing a compile / preflight / visual diagnostic on an existing scene — surgically, without re-authoring | `skills/repair-design/SKILL.md` |
 | **Brand & tokens** | Interpreting a Brand Kit and choosing `$tokens` instead of raw values | `skills/brand-and-tokens/SKILL.md` |
+| **Color & contrast** | Judging a color COMBINATION after you pick the tokens — light text on a saturated brand ground, the shade decision, separating two saturated hues, and the structure/atmosphere/accent split. Every format skill composes with it | `skills/color-and-contrast/SKILL.md` |
 | **Design guidance** | Deploying a brand rather than just its palette — where each color may live, how backgrounds sequence, what the buttons mean, and how to read a Creative Brief. **Must-read on every website turn** (it sits between brand-and-tokens and create-website) | `skills/design-guidance/SKILL.md` |
 | **Effects** | Shadows, special strokes (dash/cap/join/align), gradients | `skills/effects/SKILL.md` |
 | **Tools & functions** | Choosing the right tool/function for the step you're on | `skills/tools/SKILL.md` |
