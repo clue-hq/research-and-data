@@ -59,3 +59,60 @@ open questions.
 - Scene text-content editing needs a founder presentation ruling (dummy
   frontend is presentation truth).
 - Stuttgart `.env` was set to `LUMEN_AGENT_REASONING=medium` (other session).
+
+## P0.4 checkpoint commits — DONE 2026-08-24 (worktree `agent-a39b7db549641ba99`)
+Spec §4 P0.4 implemented; the spec entry now carries the as-built record.
+
+**Where round acceptance turned out to live.** Nowhere, as code — the scene
+orchestrator loop is entirely prompt-driven (`prompts._ORCHESTRATOR_TEMPLATE`
+steps 3–8, one `agent.invoke` at `harness.py:381`, `recursion_limit=200`). No
+Python reads `rounds/index.md` or `rounds/round_N/critique.json`; both are
+model-written free text. `LumenTurnState.current_round` is never written after
+init. So the only Python-observable round boundary is **`render_preview`** —
+orchestrator-only (author tool list has no render) and run once per round at
+prompt step 5. A render returning `status=ok` with no validation errors is the
+acceptance signal used. `export_preview_bundle` already refuses unresolved
+token paints, so reaching it also means preflight ran after the last mutation.
+
+**Write path.** Reused exactly: `design_apply_operations` →
+`_advance_scene_state` → `HybridRepository.update_document_state` →
+`clue_design.documents.update_document_state`. New `_LegSceneCommitter` in
+`lumen_api/main.py` owns every write the turn makes; `_persist_leg_scene_proposal`
+now writes only the ledger tail. Version arithmetic is `base + len(ops)` either
+way, so the head is unchanged — only the number of `design_edit_envelope`
+batches differs.
+
+**Replay.** `scene_checkpoint_committed` run events are the durable mark;
+`_own_checkpoint_version` reads them so a redrive recognises its own work and
+refuses (`agent_turn.interrupted_after_checkpoint`) instead of double-applying
+or falsely blaming a human. Takeover does NOT resume from the checkpoint —
+that is the recorded residual.
+
+**Files:** `lumen_agent/tools/substrate.py` (`SceneCheckpoint`,
+`checkpoint_scene`, `latest_preflight_has_errors`), `lumen_agent/tools/render.py`
+(the trigger), `lumen_agent/harness.py` (plumbing), `lumen_api/main.py`
+(committer, replay guard, `_call_turn_override` back-compat seam),
++ `apps/api/tests/test_scene_turn_persist.py` section (i),
++ `apps/agent_runtime/tests/test_scene_checkpoint.py` (new).
+
+**Tests run (focused only; the full design suite was NOT run — >1h):**
+`test_scene_turn_persist.py` 32 passed · `test_scene_checkpoint.py` 8 passed ·
+`test_web_turns.py`+`test_write_path_governance.py`+`test_run_view.py` 46 passed ·
+`tests/design/test_design_fleet_turns_db.py`+`test_p37_design_entry_consumption.py`
+12 passed · runtime `test_deepagent_harness/test_view_and_finalize_hygiene/
+test_export_token_refusal/test_retokenize/test_checkpoint_resume` 92 passed.
+Env: `CLUE_DATABASE_URL=…@localhost:55040/clue`,
+`LUMEN_CORE_HELPER=subsystems/clue-design/target/release/lumen-api-helper`
+(built with `cargo build -p lumen-api-helper --release`), `CLUE_STORAGE_FS_ROOT`
+pointed at a scratch dir. NOTE: the API-tests and agent_runtime-tests trees both
+ship a `tests/conftest.py`, so they collide if collected in ONE pytest run —
+invoke them separately.
+
+**Residuals.**
+1. Takeover does not resume from a checkpoint (refuses honestly instead).
+2. If the `scene_checkpoint_committed` emit fails (e.g. no run row), a redrive
+   reads its own move as a human conflict — wrong message, still safe (refuses).
+3. Checkpointing splits one turn's undo history into several envelopes. Intended,
+   but the editor's undo UX over agent turns has not been re-reviewed.
+4. Not gated on preflight-clean, by design — see the spec entry. Revisit once
+   P0.2/P0.3 land.

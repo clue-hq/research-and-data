@@ -67,6 +67,14 @@ JsonObject = Dict[str, Any]
 # Kept dependency-free so agent_runtime never imports the API/DB layer.
 EventSink = Callable[[str, JsonObject], None]
 
+# P0.4 checkpoint-commit hook: hand the run's operation ledger, in order, to a
+# caller that can persist it mid-run (the API's leg-turn committer). Called with
+# the FULL ordered operation list every time — the caller knows which prefix it
+# already made durable and commits only the delta, so a dropped or refused
+# checkpoint self-heals on the next one. Kept dependency-free for the same
+# reason EventSink is: agent_runtime never imports the API/DB layer.
+SceneCheckpoint = Callable[[List[JsonObject], JsonObject], None]
+
 
 # Hard caps for the curated, windowed per-iteration context (P1). They keep the
 # director/author/reviewer prompt bounded no matter how many repair iterations
@@ -247,6 +255,7 @@ class LumenDesignTools:
         prompt: str,
         initial_scene: Optional[JsonObject] = None,
         event_sink: Optional["EventSink"] = None,
+        scene_checkpoint: Optional["SceneCheckpoint"] = None,
     ) -> None:
         self.config = config
         # Obs logger for tool spans + the core-helper proxy. Context (run_id) is
@@ -262,6 +271,13 @@ class LumenDesignTools:
         # this sink so a caller (the API's async turn) can persist it to a
         # durable store and stream it. None keeps the run purely file-traced.
         self.event_sink = event_sink
+        # P0.4: optional checkpoint-commit hook (see SceneCheckpoint). None keeps
+        # the run save-on-finalize-only, exactly as before.
+        self.scene_checkpoint = scene_checkpoint
+        # How many ledger entries have already been handed to `scene_checkpoint`.
+        # The sink is only called when the ledger has grown past this, so a round
+        # that changed nothing never mints a document version.
+        self._checkpointed_operations = 0
         # Batched read-only tool calls (deepagent-latency L2) now run on
         # langgraph's ToolNode thread pool, so `record` can be invoked from
         # concurrent threads. This lock serializes the whole record body (jsonl
@@ -318,6 +334,10 @@ class LumenDesignTools:
         self.dsl_session: Optional[JsonObject] = None
         self.latest_export_summary: Optional[JsonObject] = None
         self.latest_preview_bundle: Optional[JsonObject] = None
+        # P0.4: the last `preflight_design` verdict. None = preflight has not run
+        # yet. Recorded on every checkpoint so a reader can tell a clean round's
+        # commit from one taken with diagnostics still standing.
+        self.latest_preflight_has_errors: Optional[bool] = None
         # Staleness contract (sweep A3): the scene-mutation count captured the
         # last time a valid preview was rendered. `view("preview")` compares it
         # against the current count so it never silently serves a render that
@@ -2289,6 +2309,7 @@ class LumenDesignTools:
                 diagnostics=diagnostics_from(error.diagnostics),
             )
             payload = {"preflight": _dump(summary)}
+            self.latest_preflight_has_errors = True
             self._write_json(iteration_dir / "preflight.json", payload)
             self.record(
                 "coordinator",
@@ -2320,6 +2341,7 @@ class LumenDesignTools:
             "raw_preflight": preflight,
             "effective_brand": brand_context,
         }
+        self.latest_preflight_has_errors = bool(summary.has_errors)
         self._write_json(iteration_dir / "preflight.json", payload)
         self.record(
             "coordinator",
@@ -3952,6 +3974,69 @@ class LumenDesignTools:
         self._write_json(
             self.trace_dir / "operations_ledger.json",
             {"entries": self.operations_ledger},
+        )
+
+    def checkpoint_scene(self, reason: str) -> None:
+        """P0.4 — hand this round's work to the checkpoint sink so it becomes
+        durable NOW instead of only at finalize.
+
+        Called at the orchestrator's round-verification seam (a `render_preview`
+        that produced a validated raster — see `tools/render.py`), which is the
+        one place in this runtime where Python can observe "an authoring round
+        finished and the scene it produced is real". Before this existed a run
+        that died at finalize — the 2026-08-24 quota 403 at 20m42s — discarded a
+        fully valid scene and left the document at version 0.
+
+        Three properties this must keep, because it runs mid-run against a live
+        document:
+
+        * **Best-effort.** A checkpoint that cannot be committed is a lost
+          version, never a lost run. Every failure is recorded and swallowed;
+          the finalize commit remains the run's authority.
+        * **Monotone.** The FULL ordered ledger goes to the sink every time and
+          the sink commits only the delta it has not made durable, so a refused
+          checkpoint is simply re-offered inside the next one.
+        * **Silent when nothing moved.** No new operations means no call, so an
+          unchanged re-render cannot mint an empty document version.
+        """
+        if self.scene_checkpoint is None:
+            return
+        pending = len(self.operations_ledger) - self._checkpointed_operations
+        if pending <= 0:
+            return
+        operations = [
+            entry["operation"]
+            for entry in self.operations_ledger
+            if isinstance(entry, dict) and "operation" in entry
+        ]
+        meta = {
+            "reason": reason,
+            "run_id": self.run_id,
+            "iteration": self.iteration,
+            # Recorded, deliberately NOT gated on: a scene that rendered a
+            # validated raster is work worth keeping even while preflight still
+            # reports diagnostics (LUMV0820 blocks export on runs the fast-loop
+            # spec's P0.2/P0.3 own). The reader decides what a dirty checkpoint
+            # is worth; this seam only refuses to throw the scene away.
+            "preflight_clean": self.latest_preflight_has_errors is False,
+            "operations_total": len(operations),
+        }
+        try:
+            self.scene_checkpoint(operations, meta)
+        except Exception as error:  # noqa: BLE001 - a checkpoint never fails a run
+            self.record(
+                "coordinator",
+                "scene_checkpoint_failed",
+                output_summary=f"{type(error).__name__}: {error}",
+                payload=meta,
+            )
+            return
+        self._checkpointed_operations = len(operations)
+        self.record(
+            "coordinator",
+            "scene_checkpointed",
+            output_summary=f"{reason}: {pending} new operation(s), {len(operations)} total",
+            payload=meta,
         )
 
     def _write_and_validate_preview_artifacts(

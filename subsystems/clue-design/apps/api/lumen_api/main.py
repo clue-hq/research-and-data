@@ -4,6 +4,7 @@ import asyncio
 import base64
 import copy
 import hashlib
+import inspect
 import io
 import json
 import logging
@@ -7547,6 +7548,7 @@ def run_agent_turn_preview(
     checkpointer: Any = None,
     thread_id: Optional[str] = None,
     resolved_brand_kit: Any = _BRAND_KIT_UNRESOLVED,
+    scene_checkpoint: Any = None,
 ) -> JsonObject:
     # D4: the turn's tenant. It decides which engine materialization cache the runtime reads and
     # writes — and the accept seam that gives those bytes durable custody looks in that same
@@ -7684,6 +7686,9 @@ def run_agent_turn_preview(
             # keeps those turns byte-identical to pre-D5.
             checkpointer=checkpointer,
             thread_id=thread_id,
+            # P0.4: the checkpoint-commit sink. Supplied only by a leg turn (the one turn kind
+            # that owns a persist), so every other caller keeps save-on-finalize-only.
+            scene_checkpoint=scene_checkpoint,
         )
     except Exception as error:
         return failed_agent_turn_response(
@@ -8259,18 +8264,46 @@ def execute_agent_turn_job(
     workspace_id = envelope.workspace_id
     try:
         doc: Optional[JsonObject] = None
+        committer: Optional[_LegSceneCommitter] = None
         if leg_persist:
             # The web executor's early-out, verbatim in spirit: a turn that already lost the
             # race comes back conflicted BEFORE the trio spends a token. The governed write
             # below still carries ``expected_base_version`` for the race window after this read.
             doc = store.require_document(document_id)
             if doc["current_version"] != base_version:
+                # P0.4 replay guard. A moved document is USUALLY a human who edited while we ran
+                # — but it is also what THIS run's own checkpoints look like to a redrive (a
+                # takeover restarts the agent from the frozen envelope, so its fresh operation
+                # history would double-apply onto its own committed work). Ask the run's durable
+                # event stream which of the two happened before blaming a human.
+                if _own_checkpoint_version(
+                    store, run_id=envelope.run_id, document_id=str(document_id)
+                ) == doc["current_version"]:
+                    interrupted = failed_agent_turn_response(
+                        "agent_turn.interrupted_after_checkpoint",
+                        "This design turn was interrupted after part of it was saved.",
+                        f"The design was saved at version {doc['current_version']} before the "
+                        "turn stopped. Ask again to keep going from there — nothing is lost.",
+                    )
+                    return "failed", interrupted, "result", {"status": interrupted["status"]}
                 conflicted = conflicted_agent_turn_response(
                     base_version, doc["current_version"]
                 )
                 return "failed", conflicted, "result", {"status": conflicted["status"]}
+            committer = _LegSceneCommitter(
+                doc=doc,
+                document_id=str(document_id),
+                host=host,
+                store=store,
+                run_subject=run_subject,
+                workspace_id=workspace_id,
+                run_id=envelope.run_id,
+                intent=user_message,
+            )
         if override is not None:
-            response = override(payload, root)
+            response = _call_turn_override(
+                override, payload, root, scene_checkpoint=_checkpoint_sink(committer)
+            )
         else:
             response = run_agent_turn_preview(
                 payload,
@@ -8285,33 +8318,32 @@ def execute_agent_turn_job(
                 checkpointer=checkpointer,
                 thread_id=envelope.checkpoint_thread_id,
                 resolved_brand_kit=resolved_brand_kit,
+                # P0.4: only a LEG turn owns a persist, so only a leg turn checkpoints. A direct
+                # editor turn passes None and stays save-nothing, exactly as before.
+                scene_checkpoint=_checkpoint_sink(committer),
             )
         operations = response.get("operations")
-        if doc is not None and response.get("status") == "proposed":
+        if committer is not None and doc is not None and response.get("status") == "proposed":
             # ``doc`` is set together with ``leg_persist``, above — so everything in here is
             # LEG-ONLY, and a direct editor turn still falls straight through untouched.
             if isinstance(operations, list) and operations:
                 response = _persist_leg_scene_proposal(
                     response,
-                    doc=doc,
+                    committer=committer,
                     operations=operations,
                     document_id=str(document_id),
                     base_version=int(base_version),
-                    host=host,
                     store=store,
-                    run_subject=run_subject,
-                    workspace_id=workspace_id,
-                    run_id=envelope.run_id,
-                    intent=user_message,
                 )
-            elif not (doc["scene"].get("pages") or {}):
+            elif not (committer.scene.get("pages") or {}):
                 # genad2 Task 3, the empty-proposal half of the >=1-page gate. A proposal with
                 # nothing in it never reaches the persist function (there is nothing to replay),
-                # so the gate is repeated here over the STORED scene. On a document that HAS a
-                # page an empty proposal is what it always was — a pure clarification, a real
-                # outcome with nothing to commit, still a success. On a page-less newborn it is a
-                # generation that produced nothing, and calling that a finished design is exactly
-                # the lie the gate exists to refuse.
+                # so the gate is repeated here over the STORED scene — which, after P0.4, means
+                # the scene this turn's last checkpoint left there, not the one it started from.
+                # On a document that HAS a page an empty proposal is what it always was — a pure
+                # clarification, a real outcome with nothing to commit, still a success. On a
+                # page-less newborn it is a generation that produced nothing, and calling that a
+                # finished design is exactly the lie the gate exists to refuse.
                 response = pageless_agent_turn_response()
         # ``conflicted`` is minted ONLY by the leg-persist path above; a direct editor turn can
         # never produce it, so this mapping stays byte-identical for non-leg turns.
@@ -8320,6 +8352,19 @@ def execute_agent_turn_job(
             if response.get("status") in ("failed", "error", "conflicted")
             else "succeeded"
         )
+        if (
+            status == "failed"
+            and committer is not None
+            and committer.committed_operations
+            and "current_version" not in response
+        ):
+            # P0.4 — the whole point, stated on the way out. The turn failed (a quota 403 at
+            # finalize, a crash, a budget ceiling), but checkpoints made real work durable while
+            # it ran. Naming the saved version keeps the result honest: the run failed AND the
+            # gallery moved, which is strictly better than the old "nothing was saved".
+            response = _leg_scene_version_stamp(
+                response, str(document_id), int(base_version), store
+            )
         return status, response, "result", {"status": response.get("status")}
     except Exception as error:  # pragma: no cover - defensive; the runner already folds failures
         failed = failed_agent_turn_response(
@@ -8330,32 +8375,267 @@ def execute_agent_turn_job(
         return "failed", failed, "error", {"message": str(error)}
 
 
+#: The durable mark one P0.4 checkpoint commit leaves on its run's event stream. It is BOTH the
+#: frontend's mid-run progress signal (the canvas can pin a real version instead of waiting out
+#: the whole generation on version 0) and the replay guard's evidence: a redrive reads it back to
+#: recognise a document its OWN earlier attempt advanced.
+SCENE_CHECKPOINT_EVENT = "scene_checkpoint_committed"
+
+
+class _LegSceneCommitter:
+    """Every durable scene write ONE leg turn makes, in ledger order, through the one governed
+    write path — the P0.4 mid-run checkpoints and the final commit alike.
+
+    Before P0.4 a leg turn wrote once, at finalize, so a run that died on the last call (the
+    2026-08-24 quota 403 at 20m42s) discarded a fully valid, reviewer-accepted scene and left the
+    document at version 0. Now each verified authoring round commits, and a terminal failure
+    costs one round instead of the run.
+
+    The arithmetic is what makes checkpoints *strictly additive*. Each write applies only the
+    operations not yet durable onto the scene the previous write produced, and CAS's on the
+    version that write left behind; ``update_document_state`` advances the version by exactly
+    ``len(ops)``. So a turn proposing N operations ends at ``base + N`` whether it checkpointed
+    five times or not at all — same destination, same final scene, just visible on the way.
+
+    A checkpoint is BEST-EFFORT and a commit is not: :meth:`checkpoint` swallows every failure
+    (a lost version is never a lost run, and the un-committed tail is simply re-offered inside
+    the next checkpoint), while :meth:`commit` raises so the finalize path can keep minting the
+    exact honest refusals it always has.
+    """
+
+    def __init__(
+        self,
+        *,
+        doc: JsonObject,
+        document_id: str,
+        host: Any,
+        store: HybridRepository,
+        run_subject: DesignRunSubject,
+        workspace_id: str,
+        run_id: str,
+        intent: str,
+    ) -> None:
+        self._document_id = document_id
+        self._host = host
+        self._store = store
+        self._run_subject = run_subject
+        self._workspace_id = workspace_id
+        self._run_id = run_id
+        self._intent = intent
+        #: The version the next write CAS's against — the leg's frozen base until we move it.
+        self.version = int(doc["current_version"])
+        #: The scene the next write applies its operations onto.
+        self.scene: JsonObject = doc["scene"]
+        #: How much of the run's operation ledger is already durable.
+        self.committed_operations = 0
+
+    def pending(self, operations: List[JsonObject]) -> List[JsonObject]:
+        """The ledger tail this turn has not yet made durable."""
+        return list(operations)[self.committed_operations :]
+
+    def replay(self, delta: List[JsonObject]) -> JsonObject:
+        """Reproduce ``delta`` through the engine against the scene the next write overwrites.
+
+        The agent's operation history is a CLAIM until this succeeds — an unreplayable history
+        would otherwise be committed as a scene nobody can undo — and the inverse operations the
+        edit envelope carries come out of this same call. Raises :class:`CoreError`.
+        """
+        return _turn_core(self._host).apply_operations(self.scene, delta)
+
+    def commit(self, delta: List[JsonObject], applied: JsonObject, label: str) -> None:
+        """Write one already-replayed operation batch, then advance our bookkeeping.
+
+        The caller replays and vets ``delta`` first (the engine reproducing the agent's claimed
+        history against the scene we are about to overwrite is the precondition for trusting it),
+        so this is only the write. Raises on conflict or write failure — nothing is advanced when
+        it does, which is what lets a refused checkpoint be re-offered whole.
+        """
+        # D4 backstop, unchanged and now per-commit: imagery a turn generated lives only in the
+        # engine's wipeable cache until an accept seam gives it durable custody. A checkpoint IS
+        # an accept seam, so custody must happen here too — otherwise a checkpointed scene could
+        # reference bytes that the next cache wipe takes with it.
+        register_scene_asset_backstop(
+            _turn_blob_store(self._host, self._workspace_id),
+            _host_engine_cache_root(self._host, self._workspace_id),
+            applied["scene"],
+        )
+        _turn_design_tools(self._host, self._run_subject).invoke(
+            "design_apply_operations",
+            {
+                "document_id": self._document_id,
+                "scene": applied["scene"],
+                "diagnostics": applied.get("diagnostics", []),
+                "operations": delta,
+                "source": "agent",
+                "actor_kind": "agent",
+                "actor_id": self._run_id,
+                "envelope": {
+                    # The USER's words, never the composed runtime prompt (G9).
+                    "intent": self._intent[:120],
+                    "checkpoint_label": label,
+                    "inverse_operations": (applied.get("edit") or {}).get(
+                        "inverse_operations"
+                    ),
+                },
+                "expected_base_version": self.version,
+            },
+            workspace_id=self._workspace_id,
+            actor="agent",
+            actor_id=self._run_id,
+        )
+        self.version += len(delta)
+        self.scene = applied["scene"]
+        self.committed_operations += len(delta)
+
+    def checkpoint(self, operations: List[JsonObject], meta: JsonObject) -> None:
+        """The runtime's checkpoint sink (see ``LumenDesignTools.checkpoint_scene``).
+
+        Contains everything. A checkpoint that cannot be taken — the engine refuses the replay, a
+        human edit moved the document under us, the write fails — is logged and dropped, and the
+        run continues to its own finalize, which is still the turn's authority.
+        """
+        delta = self.pending(operations)
+        if not delta:
+            return
+        try:
+            applied = self.replay(delta)
+            if has_error_diagnostics(applied.get("diagnostics") or []):
+                # The same precondition finalize enforces: an operation history the engine cannot
+                # reproduce is not committed. Here it is simply skipped — finalize will say so.
+                return self._skip(delta, meta, "the engine refused the round's operations")
+            if not (applied["scene"].get("pages") or {}):
+                # genad2's >=1-page gate: a page-less scene is not a design yet, so there is
+                # nothing worth a version. Not an error — just too early to checkpoint.
+                return
+            self.commit(delta, applied, "Design turn (in progress)")
+        except Exception as error:  # noqa: BLE001 - a checkpoint never fails a run
+            return self._skip(delta, meta, str(error))
+        try:
+            self._store.emit_run_event(
+                self._run_id,
+                SCENE_CHECKPOINT_EVENT,
+                {
+                    "document_id": self._document_id,
+                    "version": self.version,
+                    "operations": self.committed_operations,
+                    "reason": meta.get("reason"),
+                    "preflight_clean": meta.get("preflight_clean"),
+                },
+                expected_generation=self._run_subject.lease_generation,
+            )
+        except Exception as error:  # noqa: BLE001 - the commit already landed; the mark is extra
+            # Losing the mark costs the frontend one progress frame and costs a redrive its
+            # self-recognition (it will read the moved document as a human conflict, which is
+            # wrong but safe — it refuses rather than double-commits).
+            api_logger.warning(
+                "leg_scene_turn.checkpoint_mark_failed",
+                document_id=self._document_id,
+                run_id=self._run_id,
+                version=self.version,
+                error=str(error),
+            )
+
+    def _skip(self, delta: List[JsonObject], meta: JsonObject, reason: str) -> None:
+        """Record a checkpoint that could not be taken. The operations stay un-acknowledged, so
+        the next checkpoint (or finalize) carries them again."""
+        api_logger.warning(
+            "leg_scene_turn.checkpoint_skipped",
+            document_id=self._document_id,
+            run_id=self._run_id,
+            base_version=self.version,
+            pending_operations=len(delta),
+            trigger=meta.get("reason"),
+            error=reason,
+        )
+
+
+def _own_checkpoint_version(
+    store: HybridRepository, *, run_id: str, document_id: str
+) -> Optional[int]:
+    """The version this run's OWN last P0.4 checkpoint left the document at, or None.
+
+    Read off the run's durable event stream, which survives a takeover because it is keyed on the
+    run — so a redrive can tell "my earlier attempt already moved this document" apart from "a
+    human edited it while I ran". Best-effort: an unreadable stream returns None and the caller
+    falls back to treating the move as somebody else's, which refuses rather than double-commits.
+    """
+    try:
+        events = store.list_run_events(run_id)
+    except Exception:  # noqa: BLE001 - never fail a turn on a progress-stream read
+        return None
+    version: Optional[int] = None
+    for event in events:
+        if not isinstance(event, dict) or event.get("type") != SCENE_CHECKPOINT_EVENT:
+            continue
+        data = event.get("data")
+        if not isinstance(data, dict) or data.get("document_id") != document_id:
+            continue
+        candidate = data.get("version")
+        if isinstance(candidate, int):
+            version = candidate
+    return version
+
+
+def _checkpoint_sink(committer: Optional["_LegSceneCommitter"]):
+    """The runtime's P0.4 sink for this turn, or None when the turn owns no persist."""
+    return None if committer is None else committer.checkpoint
+
+
+def _call_turn_override(override: Any, payload: Any, root: Path, *, scene_checkpoint: Any):
+    """Call the injected turn-runner test seam, handing it the checkpoint sink only if it wants it.
+
+    ``DesignTurnHost.agent_turn_runner`` is a test double whose shipped contract is
+    ``(payload, root)``. P0.4 needs a stub to be *able* to checkpoint (that is the only way to
+    drive the mid-run path without a live model), so the sink is offered as a keyword — and every
+    existing two-argument stub keeps working untouched, which is the point of asking first.
+    """
+    try:
+        parameters = inspect.signature(override).parameters
+    except (TypeError, ValueError):  # pragma: no cover - builtins/C callables
+        parameters = {}
+    wants_sink = "scene_checkpoint" in parameters or any(
+        parameter.kind is inspect.Parameter.VAR_KEYWORD
+        for parameter in parameters.values()
+    )
+    if wants_sink:
+        return override(payload, root, scene_checkpoint=scene_checkpoint)
+    return override(payload, root)
+
+
 def _persist_leg_scene_proposal(
     response: JsonObject,
     *,
-    doc: JsonObject,
+    committer: "_LegSceneCommitter",
     operations: List[JsonObject],
     document_id: str,
     base_version: int,
-    host: Any,
     store: HybridRepository,
-    run_subject: DesignRunSubject,
-    workspace_id: str,
-    run_id: str,
-    intent: str,
 ) -> JsonObject:
     """Commit ONE leg scene turn's proposal, or refuse honestly. Never both, never neither.
 
     Exactly one durable write happens here, and only on the path where the engine reproduced the
     agent's own operation history against the stored scene.
+
+    P0.4: "the proposal" now means *the part of it that is not durable yet*. The committer has
+    been taking checkpoints of verified rounds while the turn ran, so this replays and writes
+    only the tail, onto the scene the last checkpoint produced and CAS'd on the version it left.
+    The destination is unchanged — ``base + len(operations)``, the same final scene — and a turn
+    whose last checkpoint already carried everything writes nothing at all, because there is
+    nothing left to write, not because anything was dropped.
     """
 
+    delta = committer.pending(operations)
+    if not delta:
+        # Fully checkpointed: every operation is already durable at the head, and the scene there
+        # is byte-for-byte the one a single finalize write would have produced. Reporting the
+        # version is all that is left.
+        return _leg_scene_version_stamp(response, document_id, base_version, store)
     try:
         # The agent's operation history is a CLAIM until the engine reproduces it HERE, against
         # the scene we are about to overwrite. This is a precondition on trusting it, not a
         # formality: an unreplayable history would otherwise be committed as a scene nobody can
         # undo, and the inverse operations the checkpoint needs come out of this same call.
-        applied = _turn_core(host).apply_operations(doc["scene"], operations)
+        applied = committer.replay(delta)
     except CoreError as error:
         if is_pageless_scene_refusal(error.diagnostics):
             # Not an unreplayable history — the operations replayed fine and simply did not
@@ -8381,53 +8661,37 @@ def _persist_leg_scene_proposal(
     # turn only succeeds if what it applied has somewhere to be seen.
     if not (applied["scene"].get("pages") or {}):
         return pageless_agent_turn_response()
-    # D4 backstop — see PUT /scene: this is an ACCEPT seam, and a turn that generated imagery
-    # mid-run holds those bytes only in the engine's wipeable cache until now. Custody first, so
-    # the registry can never outlive the bytes it points at.
-    register_scene_asset_backstop(
-        _turn_blob_store(host, workspace_id),
-        _host_engine_cache_root(host, workspace_id),
-        applied["scene"],
-    )
     try:
         # The SAME governed write the /documents/{id}/operations route makes, with
-        # ``actor="agent"`` on the invocation (REQ-20 parity) and the leg's frozen base as the
-        # CAS that closes the window the early check above cannot.
-        _turn_design_tools(host, run_subject).invoke(
-            "design_apply_operations",
-            {
-                "document_id": document_id,
-                "scene": applied["scene"],
-                "diagnostics": applied.get("diagnostics", []),
-                "operations": operations,
-                "source": "agent",
-                "actor_kind": "agent",
-                "actor_id": run_id,
-                "envelope": {
-                    # The USER's words, never the composed runtime prompt (G9).
-                    "intent": intent[:120],
-                    "checkpoint_label": "Design turn",
-                    "inverse_operations": (applied.get("edit") or {}).get(
-                        "inverse_operations"
-                    ),
-                },
-                "expected_base_version": base_version,
-            },
-            workspace_id=workspace_id,
-            actor="agent",
-            actor_id=run_id,
-        )
+        # ``actor="agent"`` on the invocation (REQ-20 parity) and — through the committer — the
+        # leg's frozen base (or the version this turn's last checkpoint left) as the CAS that
+        # closes the window the early check cannot. The D4 asset-custody backstop rides inside
+        # `commit`, so every accept seam this turn opens gets it, not only the last one.
+        committer.commit(delta, applied, "Design turn")
     except WebDocumentVersionConflict as conflict:
         # The race window between the early check and this write — the DAL's row-locked CAS is
         # what actually decides it, and losing is an honest terminal outcome, not a crash.
         return conflicted_agent_turn_response(conflict.expected, conflict.current)
     # PAST THE POINT OF NO RETURN. The governed write above has COMMITTED; everything below only
-    # describes it. This re-read is a convenience (it stamps the new version so the platform's
-    # projection can pin it), so its failure must not propagate to the executor's outer handler,
-    # which would fold a committed turn into `agent_runtime.failed` and tell a marketer nothing
-    # was saved while their ad sits changed in the gallery. A missing `current_version` is the
-    # honest degradation — the same shape a preview-only leg turn returns — and readers already
-    # treat the key as optional. The write's OWN failure stays fatal/conflicted, above.
+    # describes it.
+    return _leg_scene_version_stamp(response, document_id, base_version, store)
+
+
+def _leg_scene_version_stamp(
+    response: JsonObject,
+    document_id: str,
+    base_version: int,
+    store: HybridRepository,
+) -> JsonObject:
+    """Stamp the committed document's version onto the turn's result.
+
+    A convenience (it lets the platform's projection pin the new version), so its failure must
+    not propagate to the executor's outer handler, which would fold a committed turn into
+    `agent_runtime.failed` and tell a marketer nothing was saved while their ad sits changed in
+    the gallery. A missing `current_version` is the honest degradation — the same shape a
+    preview-only leg turn returns — and readers already treat the key as optional. The write's
+    OWN failure stays fatal/conflicted, in the caller.
+    """
     try:
         current_version = store.require_document(document_id)["current_version"]
     except Exception as error:  # pragma: no cover - exercised by the stub-store test
