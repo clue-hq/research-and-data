@@ -386,6 +386,7 @@ flag-on orchestrator prompt:
 | section | `## Defaults & required decisions` | **the §5.7 gate reads this.** Authoritative for the artifact; replaces the built-in four |
 | section | `## Self-audit checklist` | what §5.3's `critique.json` scores against (the author prompt names it) |
 | frontmatter | `pinned_knowledge:` *(optional)* | knowledge_docs-relative paths this skill's work needs inlined into the §5.1 payload |
+| frontmatter | `selection_policy:` *(optional)* | `llm_selectable` (default) or `deterministic` — see §6.1. Declared only; nothing consumes it yet |
 
 Two seams are honest about being incomplete. (1) `required_decisions:` is
 declared but not consumed in Python — the orchestrator reads the prose section;
@@ -430,6 +431,25 @@ named tests, defaults; never design-theory prose**. Required sections:
 Selection: the orchestrator matches the brief to a format skill by
 trigger phrases (progressive-disclosure index, as today); no match falls back
 to `create-design` unchanged.
+
+**`selection_policy:` (optional frontmatter).** How a skill expects to be
+chosen. Two values:
+
+| Value | Meaning |
+|---|---|
+| `llm_selectable` (default) | the orchestrator decides, by matching the brief against the skill's `description` trigger phrases. This is the behavior described above and the only behavior that exists today. |
+| `deterministic` | the skill is fired by a format match, not by a judgement call. For formats where the artifact's own parameters settle it and there is nothing for a model to weigh — print work is the motivating case, where a page size plus a bleed requirement identifies the format outright. |
+
+A skill that declares nothing is `llm_selectable`, so every skill already in the
+tree keeps its current behavior.
+
+**Document-only in v1 — nothing consumes this field yet.** Selection still runs
+entirely through trigger-phrase matching, and a `deterministic` declaration
+changes no behavior at runtime. The field ships now so format skills can record
+their intended selection mode while they are being written, and so the
+deterministic dispatcher has a declared interface to read when it is built. A
+reader for the field lives beside the other frontmatter readers
+(`lumen_agent/knowledge.py::selection_policy`); it has no production caller.
 
 ### 6.2 v1 scope
 

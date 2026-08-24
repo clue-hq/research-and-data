@@ -27,7 +27,13 @@ import re
 import types
 from pathlib import Path
 
-from lumen_agent.knowledge import parse_frontmatter, required_decision_keys
+from lumen_agent.knowledge import (
+    DEFAULT_SELECTION_POLICY,
+    SELECTION_POLICIES,
+    parse_frontmatter,
+    required_decision_keys,
+    selection_policy,
+)
 from lumen_agent.materialize import materialize_agent_workspace
 
 RUNTIME_ROOT = Path(__file__).resolve().parents[1]
@@ -335,6 +341,78 @@ def test_a_skill_with_no_declaration_gates_on_nothing() -> None:
 
 
 # ============================================================================
+# 5b. §6.1 `selection_policy` — declared, defaulted, and honest about being inert
+# ============================================================================
+
+
+def test_the_pilot_skill_declares_an_llm_selectable_selection_policy() -> None:
+    """The pilot is chosen by the orchestrator matching its trigger phrases, which
+    is exactly what `llm_selectable` names. It declares the value explicitly rather
+    than leaning on the default, so the field has one worked example in the tree."""
+
+    meta = _meta_and_body()[0]
+
+    assert meta.get("selection_policy") == "llm_selectable"
+    assert selection_policy(_skill_text()) == "llm_selectable"
+
+
+def test_selection_policy_defaults_to_llm_selectable_when_undeclared() -> None:
+    """Every craft skill declares nothing, and must keep today's behavior. "No
+    declaration" has to mean "the orchestrator picks it", never a crash and never a
+    silent switch to deterministic dispatch."""
+
+    for skill_dir in sorted(p for p in SKILLS_DIR.iterdir() if p.is_dir()):
+        if skill_dir.name == SKILL_NAME:
+            continue
+        text = (skill_dir / "SKILL.md").read_text(encoding="utf-8")
+        assert "selection_policy" not in parse_frontmatter(text)[0], skill_dir.name
+        assert selection_policy(text) == DEFAULT_SELECTION_POLICY, skill_dir.name
+
+
+def test_selection_policy_reads_deterministic_and_degrades_a_bad_value() -> None:
+    """`deterministic` is the other real value (§6.1's print case). Anything else —
+    a typo, an empty value — degrades to the default rather than failing a turn,
+    because the field is advisory and no turn should die on it."""
+
+    def _doc(declared: str) -> str:
+        return f"---\nname: x\nselection_policy: {declared}\n---\n\nbody\n"
+
+    assert selection_policy(_doc("deterministic")) == "deterministic"
+    assert set(SELECTION_POLICIES) == {"llm_selectable", "deterministic"}
+
+    for bad in ("", "  ", "Deterministic", "always", "llm-selectable"):
+        assert selection_policy(_doc(bad)) == DEFAULT_SELECTION_POLICY, bad
+
+    # A skill with no frontmatter at all is still safe to ask about.
+    assert selection_policy("no frontmatter here") == DEFAULT_SELECTION_POLICY
+
+
+def test_the_spec_documents_selection_policy_as_not_yet_consumed() -> None:
+    """The field is declared ahead of its consumer. If that stops being true the
+    spec text must change with it — a reader who believes `deterministic` already
+    routes anything would be wrong today."""
+
+    spec = (
+        RUNTIME_ROOT.parents[1] / "docs" / "deepagent-fast-loop-v1-spec.md"
+    ).read_text(encoding="utf-8")
+
+    assert "`selection_policy:`" in spec
+    for value in SELECTION_POLICIES:
+        assert value in spec
+    assert "Document-only in v1 — nothing consumes this field yet." in spec
+
+    # And it really is unconsumed: the reader has no caller outside its own module
+    # and this suite.
+    agent_pkg = RUNTIME_ROOT / "lumen_agent"
+    callers = [
+        path.name
+        for path in agent_pkg.rglob("*.py")
+        if path.name != "knowledge.py" and "selection_policy" in path.read_text(encoding="utf-8")
+    ]
+    assert not callers, f"selection_policy now has production callers: {callers}"
+
+
+# ============================================================================
 # 6. The §8 self-audit checklist — every named test survives
 # ============================================================================
 
@@ -391,6 +469,19 @@ def test_the_self_audit_is_render_gated_not_geometry_gated() -> None:
     assert "never from geometry" in body
 
 
+def test_the_self_audit_scores_with_measurements_not_adjectives() -> None:
+    """A score written as an adjective is not a score. "Looks clean" is how a weak
+    design passes its own audit, so the skill has to demand a fact against the named
+    test — and show what one looks like."""
+
+    body = re.sub(r"\s+", " ", _meta_and_body()[1].lower())
+
+    assert "never with adjectives" in body
+    assert "looks clean" in body
+    # It does not just ban the bad form; it shows the good one.
+    assert "facts and measurements" in body
+
+
 def test_the_override_clause_is_last_and_records_the_gap() -> None:
     body = _meta_and_body()[1]
 
@@ -413,3 +504,81 @@ def test_the_format_layer_is_the_pilot_alone() -> None:
 
     assert SKILL_NAME in present
     assert not present.intersection(DEFERRED_FORMAT_SKILLS)
+
+
+# ============================================================================
+# 8. The craft docs' engine claims are pinned to the engine
+# ============================================================================
+
+CRATES = RUNTIME_ROOT.parents[1] / "crates" / "lumen-core" / "src"
+FOUNDATIONS = KNOWLEDGE_DOCS / "knowledge" / "design" / "foundations.md"
+
+
+def test_the_slack_guidance_matches_the_layout_solver() -> None:
+    """`foundations`' "Spend the slack" block tells the author what the engine does
+    with leftover main-axis space. That is a claim about code, not taste, so it goes
+    stale silently if the solver changes. Pin the two load-bearing facts to source:
+    the anchor set really is these five, and `space_between` really is the only one
+    that puts space BETWEEN children."""
+
+    body = FOUNDATIONS.read_text(encoding="utf-8")
+    scene = (CRATES / "scene.rs").read_text(encoding="utf-8")
+    layout = (CRATES / "layout.rs").read_text(encoding="utf-8")
+
+    # The doc says the anchor set is exactly s / c / e / sb / st and nothing else.
+    assert "no space-around and no space-evenly" in body
+    assert "The anchor set is `s`, `c`, `e`, `sb`, `st`" in body
+    anchors = re.search(r"pub enum LayoutAnchor \{(.*?)\}", scene, re.S)
+    assert anchors, "LayoutAnchor enum not found — the pin needs re-pointing"
+    assert [v.strip().rstrip(",") for v in anchors.group(1).strip().splitlines()] == [
+        "Start",
+        "Center",
+        "End",
+        "SpaceBetween",
+        "Stretch",
+    ]
+
+    # …and the main-axis mapping the doc describes: SpaceBetween is the only
+    # distributing value, and Stretch degrades to Start rather than distributing.
+    main_axis = re.search(
+        r"fn main_axis_alignment\(.*?\) -> JustifyContent \{(.*?)\n\}", layout, re.S
+    )
+    assert main_axis, "main_axis_alignment not found — the pin needs re-pointing"
+    arms = main_axis.group(1)
+    assert "LayoutAnchor::Start | LayoutAnchor::Stretch => JustifyContent::Start" in arms
+    assert "LayoutAnchor::SpaceBetween => JustifyContent::SpaceBetween" in arms
+    assert "SpaceAround" not in arms and "SpaceEvenly" not in arms
+
+
+def test_the_slack_guidance_names_the_right_axis_and_the_default() -> None:
+    """The two facts an author gets wrong first: in `al(v, …)` it is `y(…)` that
+    distributes (not `x(…)`), and the default is top-pack. Both are asserted in the
+    doc and both come straight off the solver's direction switch and the anchor
+    default."""
+
+    body = FOUNDATIONS.read_text(encoding="utf-8")
+    layout = (CRATES / "layout.rs").read_text(encoding="utf-8")
+    scene = (CRATES / "scene.rs").read_text(encoding="utf-8")
+
+    assert "the distributing anchor is `y(…)`" in body
+    assert "The default is top-pack." in body
+    assert "Nothing stretches on its own." in body
+
+    # Column's main (justifying) axis is align_y; Row's is align_x. Match the
+    # direction switch itself, so the `flex_grow` arm earlier in the file — which
+    # also opens with `AutoLayoutDirection::Column` — cannot satisfy this.
+    switch = re.search(
+        r"AutoLayoutDirection::Row => \{\s*"
+        r"style\.justify_content = Some\(main_axis_alignment\(&props\.(\w+)\)\);"
+        r".*?"
+        r"AutoLayoutDirection::Column => \{\s*"
+        r"style\.justify_content = Some\(main_axis_alignment\(&props\.(\w+)\)\);",
+        layout,
+        re.S,
+    )
+    assert switch, "the direction/justify switch was not found — re-point this pin"
+    assert switch.groups() == ("align_x", "align_y")
+
+    # And an undeclared anchor really does start-pack.
+    assert "fn default_layout_anchor_start" in scene
+    assert "LayoutAnchor::Start" in scene
