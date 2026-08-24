@@ -183,8 +183,8 @@ not from the tool.
   UNMOTIVATED gradient: the stock blue→purple that belongs to no brand, neon-on-dark
   for its own sake. Derive the stops from the palette or don't use one.
 - **Decorative shapes — banned when they're confetti.** Low-opacity circles (or
-  blobs) drifting behind the content to "fill space" are the tell. The moda rec-2
-  minimal aesthetic failed exactly here: scattered pale blobs read as noise, not
+  blobs) drifting behind the content to "fill space" are the tell. The soft-wash
+  recreation case failed exactly here: scattered pale blobs read as noise, not
   design. If a shape isn't structural (a scrim, a plate, an accent rule, a stat
   bar), cut it — claim the space with alignment and scale instead.
 - **Shadows & plates — encouraged with intent.** A shadowed plate that lifts a

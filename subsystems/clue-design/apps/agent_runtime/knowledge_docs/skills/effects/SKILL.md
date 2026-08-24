@@ -66,7 +66,7 @@ glow(numeral_halo, #f5a020, o(0.5), blur(56), spread(2))   # optional leading id
 - Channels: `o(opacity)`, `blur(radius)`, `spread(s)`. Malformed → `LUMD0266`
   (hint: `glow(glow_soft,#7c3aed,o(0.8),blur(24),spread(4))`).
 - **When to use:** a display numeral or wordmark that has to carry a **dark**
-  canvas — the moda "Living Type" move, where the number reads as lit rather than
+  canvas — the "living type" move, where the number reads as lit rather than
   printed. Pick a glow color from the type's own gradient (a warm halo under warm
   digits), not a generic white bloom.
 - **When NOT to use:** glow is focal — reserve it for the ONE hero element on a

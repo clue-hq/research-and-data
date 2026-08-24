@@ -73,7 +73,6 @@ Auto-layout parts:
 | `y(anchor)` | same set | the vertical axis |
 | `g(n)` | number / `$space.*` | gap between children |
 | `pad(a)` · `pad(v,h)` · `pad(t,r,b,l)` | 1/2/4 values | padding (other arities → `LUMD0222`) |
-| `grow(n)` | number | child grow factor inside a parent layout |
 | `wrap(bool)` | | wrap to multiple lines |
 
 `x` and `y` name the literal screen axes, not the roles "main" and "cross". Which

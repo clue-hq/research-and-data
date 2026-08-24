@@ -103,7 +103,7 @@ page linkedin_square size(1080,1080,px)
       url text "northwind.grid" p(0,0) s(300,hug) font("Space Mono",15,400,right) fill(#6b7280) align(right) max_lines(1)
 ```
 
-**Two-color headline (the moda span move).** Accent ONE phrase of the headline
+**Two-color headline (the accent-span move).** Accent ONE phrase of the headline
 with a `[[…]]` run + `span(...)` — one accent per headline, never a rainbow. Raw
 hex when unbranded, a kit token when branded:
 
@@ -157,7 +157,7 @@ is deliberately quiet.
 
 - **Suits:** dark solid paper (numeral pops) or a soft wash. A **gradient text
   fill** on the numeral (`fill(linear(...))`) + optional shadow is the signature.
-  On a **dark** field, a **glow** on the numeral is the moda "Living Type" move —
+  On a **dark** field, a **glow** on the numeral is the "living type" move —
   the number reads as lit, not printed. Add `glow(id, #warm, o(0.5), blur(56),
   spread(2))` to the `numeral` line, pulling the halo color from the numeral's own
   gradient (a warm halo under warm digits). Glow is focal — the ONE hero element,

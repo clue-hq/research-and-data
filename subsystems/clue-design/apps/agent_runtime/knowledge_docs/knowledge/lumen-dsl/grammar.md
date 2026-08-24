@@ -112,7 +112,7 @@ style one `[[…]]` run of the content; **comma-separated channels**, repeatable
 
 Auto-layout (on `al` containers; see `layout.md`):
 
-`al(v|h, x(anchor), y(anchor), g(gap), pad(...), grow(n), wrap(bool))` where
+`al(v|h, x(anchor), y(anchor), g(gap), pad(...), wrap(bool))` where
 anchor ∈ `start`/`s`, `center`/`c`, `end`/`e`, `space_between`/`sb`,
 `stretch`/`st`.
 
