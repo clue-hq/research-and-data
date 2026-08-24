@@ -119,7 +119,28 @@ anchor ∈ `start`/`s`, `center`/`c`, `end`/`e`, `space_between`/`sb`,
 Slots / ABM (see `knowledge/design-systems`):
 
 `slot(key)`, `label("…")`, `required(bool)`, `placeholder("…")`, `sample("…")`,
-`worst_case("…")`, `bind(node)`, `unbind(node)`.
+`worst_case("…")`, `bind(node)`, `unbind(node)`, `image_policy(…)`.
+
+**`image_policy(…)` — slot-modify lines only** (`#slot:key` / `#slot_id:id`).
+Sets the *image policy* on an image-like slot. Forms:
+
+```text
+#slot:account.logo image_policy(contain)                  # bare fit mode
+#slot:account.logo image_policy(fit=cover, focal_x=0.5, focal_y=0.35)
+#slot:hero.shot    image_policy(fit=cover, min_dpi=300, aspect=1.5,
+                                preserve_transparency=false)
+#slot:account.logo image_policy(none)                     # clear the policy
+```
+
+Fields: `fit` (`cover`|`contain`|`crop`), `focal_x`/`focal_y` (0..1, given
+together), `min_dpi`, `aspect`, `preserve_transparency`. Anything you leave out
+takes the default (`fit:cover`, transparency preserved, nothing else asserted),
+so a short form is a complete policy — you never end up half-configured.
+
+You will rarely need this: **a slot created by `image … slot(key)` is already
+born with the default policy.** It exists for slots that predate that behavior
+and arrive without one — the fix for a `LUMV0820` on a document you did not
+author. If you see `LUMV0820`, this one line clears it; do not delete the slot.
 
 Assets / vectors: `asset(id)`, `path("…")`, `source(node)`, `to(x,y)` (line end).
 
@@ -144,6 +165,12 @@ Three ways to put a picture on a surface — pick by content (see `knowledge/ima
 image + scrim structure**; the placement is set on the node, not typed as a property on
 the `image` line (`fit(...)`/`focal(...)` are not DSL properties). The default is
 **`fit:cover` + a sensible focal point**; aspect comes from the *frame*, never stretch.
+
+Do not confuse this node-level **AssetPlacement** with a *slot's*
+`image_policy` (above): placement says how THIS node draws THIS asset; the slot
+policy is the contract every future binding of that slot must satisfy. The slot
+policy is the one `LUMV0820` asks for, and `#slot:key image_policy(…)` is what
+sets it — `asset(action="place")` does not.
 
 ### The scrim idiom — text over an image is ALWAYS scrimmed
 

@@ -11,7 +11,8 @@ use crate::{
     AssetId, AutoLayoutDirection, AutoLayoutNode, AutoLayoutProps, CloneSlotPolicy,
     CloneSubtreeRequest, Color, ComputedClonePolicy, Diagnostic, DiagnosticSeverity, DocumentPatch,
     EditError, EditPatch, EditTargetRef, Effect, EffectId, EffectKind, ExportFormat, FieldPatch,
-    Fill, ImageNode, LayoutAnchor, LineNode, Node, NodeEditPatch, NodeId, NodeKind, Operation,
+    Fill, FocalPoint, ImageFitMode, ImageNode, ImagePolicy, LayoutAnchor, LineNode, Node,
+    NodeEditPatch, NodeId, NodeKind, Operation,
     OperationError, OperationReport, OptionalFieldPatch, Orientation, Page, PageEditPatch, PageId,
     PagePreset, PageSizeInput, Paint, PaintId, ParentRef, PdfIntent, Phase, PositionMode,
     RasterScale, Rect, RelativePlacement, ReplaceNodeRequest, ReplaceSlotPolicy, Scene, SizeSpec,
@@ -475,6 +476,10 @@ pub enum DslProperty {
     SlotWorstCase(String),
     SlotBind(NodeId),
     SlotUnbind(NodeId),
+    /// `image_policy(fit=cover, focal_x=.., focal_y=.., min_dpi=.., aspect=..,
+    /// preserve_transparency=..)` on a slot-modify line. `None` is the
+    /// `image_policy(none)` form, which clears the policy.
+    SlotImagePolicy(Option<ImagePolicy>),
     LineTo(f64, f64),
     Name(String),
     Token(String),
@@ -2293,6 +2298,20 @@ impl<'a> DslCompiler<'a> {
                 NodeKind::Text(_) => crate::ContentType::TextShort,
                 _ => crate::ContentType::TextShort,
             };
+            // Born-correct image slots. `Slot::text_short` is the only slot
+            // constructor, so an image-like slot inherited `image_policy: None`
+            // and tripped LUMV0820 the instant it was created — an error the
+            // author could only clear by DELETING the slot it had just asked
+            // for. Image-like content types now start from the neutral
+            // `ImagePolicy::default()` (fit: cover, transparency preserved,
+            // nothing else asserted); `#slot:key image_policy(...)` overrides
+            // it. Text slots keep `None`, which is correct for them.
+            if matches!(
+                slot.content_type,
+                crate::ContentType::Image | crate::ContentType::Logo
+            ) {
+                slot.image_policy = Some(crate::ImagePolicy::default());
+            }
             if let NodeKind::Text(text) = &node.kind {
                 slot.placeholder = Some(text.content.clone());
             }
@@ -3426,6 +3445,7 @@ fn node_edit_patch_from_properties(
             | DslProperty::SlotWorstCase(_)
             | DslProperty::SlotBind(_)
             | DslProperty::SlotUnbind(_)
+            | DslProperty::SlotImagePolicy(_)
             | DslProperty::Path(_)
             | DslProperty::Source(_)
             | DslProperty::LineTo(_, _)
@@ -3646,6 +3666,12 @@ fn slot_edit_patch_from_properties(
             DslProperty::SlotUnbind(node_id) => {
                 patch.unbind_nodes.push(node_id.clone());
             }
+            DslProperty::SlotImagePolicy(policy) => {
+                patch.image_policy = match policy {
+                    Some(policy) => OptionalFieldPatch::Set(policy.clone()),
+                    None => OptionalFieldPatch::Clear,
+                };
+            }
             _ => {
                 return Err(error_diag(
                     line.line_number,
@@ -3653,7 +3679,7 @@ fn slot_edit_patch_from_properties(
                     line.raw.len().max(1),
                     "LUMD0903",
                     "property is not supported for slot modify targets",
-                    "Use label(...), required(...), placeholder(...), sample(...), worst_case(...), bind(...), or unbind(...).",
+                    "Use label(...), required(...), placeholder(...), sample(...), worst_case(...), bind(...), unbind(...), or image_policy(...).",
                 ));
             }
         }
@@ -4269,6 +4295,13 @@ fn parse_property_token(
             expect_arg_count(&call, 1, line_number)?;
             vec![DslProperty::SlotUnbind(parse_node_id(
                 &call.args[0],
+                line_number,
+                column,
+            )?)]
+        }
+        "image_policy" | "image-policy" => {
+            vec![DslProperty::SlotImagePolicy(parse_image_policy(
+                &call,
                 line_number,
                 column,
             )?)]
@@ -5369,7 +5402,8 @@ fn apply_properties(
             | DslProperty::SlotSample(_)
             | DslProperty::SlotWorstCase(_)
             | DslProperty::SlotBind(_)
-            | DslProperty::SlotUnbind(_) => {
+            | DslProperty::SlotUnbind(_)
+            | DslProperty::SlotImagePolicy(_) => {
                 diagnostics.push(warning_diag(
                     line_number,
                     1,
@@ -6031,6 +6065,135 @@ fn parse_font(call: &Call, line_number: usize, column: usize) -> Result<DslFont,
         weight: parse_u16(&call.args[2], line_number, column)?,
         align: parse_text_align(&call.args[3], line_number, column)?,
     })
+}
+
+/// `image_policy(...)` on a `#slot:key` / `#slot_id:id` modify line — the
+/// author-reachable repair for `LUMV0820` (and the only way to state fit /
+/// focal point / print DPI for an image-like slot from the DSL).
+///
+/// Forms:
+///   `image_policy(cover)`            — bare fit mode, everything else default
+///   `image_policy(fit=contain)`      — named fit
+///   `image_policy(fit=cover, focal_x=0.5, focal_y=0.35, min_dpi=300,
+///                 aspect=1.5, preserve_transparency=false)`
+///   `image_policy(none)`             — clear the policy (`Ok(None)`)
+///
+/// Unspecified members fall back to `ImagePolicy::default()`, so the short
+/// forms are complete policies and never leave a half-configured slot behind.
+fn parse_image_policy(
+    call: &Call,
+    line_number: usize,
+    column: usize,
+) -> Result<Option<ImagePolicy>, DslDiagnostic> {
+    let invalid = |message: String| {
+        error_diag(
+            line_number,
+            column,
+            call.name.len(),
+            "LUMD0276",
+            message,
+            "Use image_policy(cover|contain|crop) or image_policy(fit=cover, \
+             focal_x=0.5, focal_y=0.35, min_dpi=300, aspect=1.5, \
+             preserve_transparency=true); image_policy(none) clears it.",
+        )
+    };
+
+    if call.args.is_empty() {
+        return Err(invalid(
+            "image_policy(...) needs a fit mode or at least one named field".to_string(),
+        ));
+    }
+
+    // The clear form. Deliberately exclusive: mixing `none` with fields would
+    // be two contradictory instructions in one call.
+    if call.args.len() == 1 {
+        let bare = unquote_lossy(&call.args[0]).trim().to_ascii_lowercase();
+        if bare == "none" || bare == "clear" {
+            return Ok(None);
+        }
+    }
+
+    let mut policy = ImagePolicy::default();
+    let mut focal_x: Option<f64> = None;
+    let mut focal_y: Option<f64> = None;
+
+    for arg in &call.args {
+        let raw = unquote_lossy(arg);
+        let trimmed = raw.trim();
+        let (name, value) = match trimmed.split_once('=') {
+            Some((name, value)) => (
+                name.trim().to_ascii_lowercase(),
+                unquote_lossy(value.trim()).trim().to_string(),
+            ),
+            // A bare positional argument is a fit mode: `image_policy(cover)`.
+            None => ("fit".to_string(), trimmed.to_string()),
+        };
+
+        match name.as_str() {
+            "fit" => {
+                policy.fit = match value.to_ascii_lowercase().as_str() {
+                    "cover" => ImageFitMode::Cover,
+                    "contain" => ImageFitMode::Contain,
+                    "crop" => ImageFitMode::Crop,
+                    other => {
+                        return Err(invalid(format!(
+                            "unknown image fit mode {other:?} (expected cover, contain, or crop)"
+                        )))
+                    }
+                };
+            }
+            "focal_x" | "focal-x" => focal_x = Some(parse_f64(&value, line_number, column)?),
+            "focal_y" | "focal-y" => focal_y = Some(parse_f64(&value, line_number, column)?),
+            "min_dpi" | "min-dpi" => {
+                let dpi = parse_f64(&value, line_number, column)?;
+                if !(dpi.is_finite() && dpi > 0.0 && dpi <= f64::from(u16::MAX)) {
+                    return Err(invalid(format!(
+                        "min_dpi must be a positive integer under {}, got {dpi}",
+                        u16::MAX
+                    )));
+                }
+                policy.min_dpi = Some(dpi.round() as u16);
+            }
+            "aspect" | "aspect_ratio" | "aspect-ratio" => {
+                let ratio = parse_f64(&value, line_number, column)?;
+                // Mirrors the LUMV0822 preflight rule — refuse at authoring
+                // time rather than emitting a slot that preflight will reject.
+                if !(ratio.is_finite() && ratio > 0.0) {
+                    return Err(invalid(format!(
+                        "aspect ratio must be a positive number, got {ratio}"
+                    )));
+                }
+                policy.aspect_ratio = Some(ratio);
+            }
+            "preserve_transparency" | "preserve-transparency" => {
+                policy.preserve_transparency = parse_bool(&value, line_number, column)?;
+            }
+            other => {
+                return Err(invalid(format!(
+                    "unknown image_policy field {other:?}"
+                )))
+            }
+        }
+    }
+
+    if focal_x.is_some() != focal_y.is_some() {
+        return Err(invalid(
+            "focal_x and focal_y must be given together".to_string(),
+        ));
+    }
+    if let (Some(x), Some(y)) = (focal_x, focal_y) {
+        // Mirrors the LUMV0821 preflight rule (focal point inside 0..=1) so a
+        // bad focal point is a compile error the author sees immediately,
+        // rather than a preflight error one step later.
+        if !(0.0..=1.0).contains(&x) || !(0.0..=1.0).contains(&y) {
+            return Err(invalid(format!(
+                "focal point ({x}, {y}) must lie inside 0..1"
+            )));
+        }
+        policy.focal_point = Some(FocalPoint { x, y });
+    }
+
+    Ok(Some(policy))
 }
 
 fn parse_meta_slot(

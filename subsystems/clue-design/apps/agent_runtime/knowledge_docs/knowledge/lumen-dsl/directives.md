@@ -17,6 +17,7 @@ Edit one existing object in place. The ref selects what you target:
 | `#node_id` | a node | `#headline s(440,hug) font_size(22)` |
 | `#page:id` | a page | `#page:page_a4 size(1080,1920,px)` |
 | `#slot:key` | a slot | `#slot:contact.name required(true) sample("Jane Q. Patient")` |
+| `#slot:key` (image) | an image-like slot's policy | `#slot:account.logo image_policy(cover)` — the `LUMV0820` fix |
 | `#asset:id` | an asset | `#asset:logo_main name("Primary logo")` |
 | `#export:name` | an export profile | `#export:web format(png)` |
 | `#document` | document metadata | `#document medium(print)` |
@@ -47,7 +48,7 @@ and `replace(<its existing root node>)` with your new single-root subtree.
 
 | Directive | Form | Use |
 |-----------|------|-----|
-| `delete` | `delete(id [,if_exists] [,hard])` | remove a node/asset; `if_exists` downgrades a missing target to info |
+| `delete` | `delete(id [,if_exists] [,hard])` — also `delete(page:id)`, `delete(slot:key)`, `delete(asset:id[,hard])`, `delete(export:name)` | remove a node/page/slot/asset/export profile; `if_exists` downgrades a missing target to info |
 | `parent` | `parent(id, parent:pid [,index:N \| before:anchor \| after:anchor])` | re-home a node |
 | `before` / `after` | `before(id, anchor)` · `after(id, anchor)` | reorder siblings |
 | `clone` | `clone(src, new_id, after:anchor [,slots:copy\|detach\|suffix:_x] [,computed:clear\|preserve])` | duplicate a subtree (e.g. another card) without re-authoring it |

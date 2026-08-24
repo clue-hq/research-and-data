@@ -11,7 +11,7 @@ use crate::scene::{
     Node, NodeKind, PageSize, Paint, ParentRef, PositionMode, Rect, Scene, SizeSpec, Stroke,
     TextAlign, TextDirection, TextNode, TextSpan, TextTransform, TextWrap, Transform, VerticalAlign,
 };
-use crate::slots::Slot;
+use crate::slots::{ImagePolicy, Slot};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
@@ -657,6 +657,11 @@ pub struct SlotEditPatch {
     pub worst_case: OptionalFieldPatch<String>,
     pub bind_nodes: Vec<NodeId>,
     pub unbind_nodes: Vec<NodeId>,
+    /// The author-reachable repair for `LUMV0820`. `Set` installs a policy on
+    /// an image-like slot; `Clear` removes one (the only legitimate use is a
+    /// slot that is no longer image-like). Reached from the DSL as
+    /// `#slot:key image_policy(fit=cover, …)` / `image_policy(none)`.
+    pub image_policy: OptionalFieldPatch<ImagePolicy>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -1123,6 +1128,7 @@ pub fn build_slot_modify(
         OptionalFieldPatch::Clear => next_slot.validation.samples.clear(),
     }
     apply_optional_patch(&mut next_slot.validation.worst_case, patch.worst_case);
+    apply_optional_patch(&mut next_slot.image_policy, patch.image_policy);
 
     let mut operations = vec![Operation::UpsertSlot {
         slot: next_slot.clone(),

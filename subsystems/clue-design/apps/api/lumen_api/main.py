@@ -59,6 +59,11 @@ from .custom_component_compiler import (
     compile_custom_component,
     default_compiler_worker_path,
 )
+from .export_policy import (
+    export_warning_views,
+    has_blocking_export_diagnostics,
+    partition_export_diagnostics,
+)
 from .agent_custom_components import DurableAgentCustomComponentRegistry
 from .custom_component_runtime import (
     build_custom_component_runtime_frames,
@@ -2927,11 +2932,15 @@ def create_app(
         diagnostics = result.get("diagnostics", [])
         if not result.get("ok", False) and not diagnostics:
             diagnostics = diagnostics_from_helper_error(result.get("error"))
+        # P0.3: same severity split as /documents/{id}/export. A policy lint
+        # must not report a rendered preview as failed.
         status = (
             "failed"
-            if not result.get("ok", False) or has_error_diagnostics(diagnostics)
+            if not result.get("ok", False)
+            or has_blocking_export_diagnostics(diagnostics)
             else "ok"
         )
+        warnings = export_warning_views(diagnostics)
         log_event(
             api_logger,
             logging.INFO,
@@ -2939,6 +2948,7 @@ def create_app(
             status=status,
             format=payload.format,
             page_id_count=len(payload.page_ids or []),
+            advisory_diagnostics=len(warnings),
             **artifact_summary(export),
             **diagnostic_summary(diagnostics),
         )
@@ -2946,6 +2956,7 @@ def create_app(
             "schema_version": 1,
             "status": status,
             "diagnostics": diagnostics,
+            "warnings": warnings,
             "export": compact_export_result(export),
         }
 
@@ -4740,7 +4751,17 @@ def create_app(
         preflight_diagnostics = preflight_result.get("diagnostics", [])
         preflight = preflight_result.get("preflight") or {}
         preflight_operations = preflight_operation_list(preflight)
-        if preflight.get("has_errors") or has_error_diagnostics(preflight_diagnostics):
+        # P0.3 severity split. `preflight.has_errors` is the engine's own
+        # `any(severity == Error)` over THIS same diagnostics list (see the
+        # helper's PreflightScene arm), so it carries no information the list
+        # does not — and consulting it here would re-block the advisory codes
+        # the split exists to let through. The blocking predicate is now the
+        # single source of truth; `has_errors` still rides the response as the
+        # raw engine signal.
+        blocking_diagnostics, advisory_diagnostics = partition_export_diagnostics(
+            preflight_diagnostics
+        )
+        if blocking_diagnostics:
             _record_diagnostics(repo, document_id, "export", preflight_diagnostics)
             log_event(
                 api_logger,
@@ -4752,6 +4773,8 @@ def create_app(
                 effective_brand_source=source,
                 profile_name=profile.get("name"),
                 preflight_blocked=True,
+                blocking_diagnostics=len(blocking_diagnostics),
+                advisory_diagnostics=len(advisory_diagnostics),
                 **diagnostic_summary(preflight_diagnostics),
             )
             return document_export_response(
@@ -4766,6 +4789,12 @@ def create_app(
                 export={},
                 profile=profile,
             )
+        # Advisory-only diagnostics do NOT return here: the export proceeds and
+        # the render runs. They are recorded with the export-phase diagnostics
+        # below (that call already includes `preflight_diagnostics`, so there is
+        # nothing to record separately) and surfaced on the response as
+        # `warnings` for the editor's export menu — ruling R5, editor surface
+        # only, never the end client.
 
         export_scene = preflight_result.get("scene", document["scene"])
         updated_document = document
@@ -4812,9 +4841,14 @@ def create_app(
             export_diagnostics = diagnostics_from_helper_error(export_result.get("error"))
         diagnostics = preflight_diagnostics + export_diagnostics
         _record_diagnostics(repo, document_id, "export", diagnostics)
+        # P0.3: an advisory-only diagnostic must not flip a rendered export to
+        # "failed" here either — the bytes exist and are correct. Export-phase
+        # diagnostics (licence refusals, missing pages) are unclassified and so
+        # block by default, which is the fail-closed behavior we want.
         status = (
             "failed"
-            if not export_result.get("ok", False) or has_error_diagnostics(diagnostics)
+            if not export_result.get("ok", False)
+            or has_blocking_export_diagnostics(diagnostics)
             else "ok"
         )
         log_event(
@@ -4827,6 +4861,7 @@ def create_app(
             effective_brand_source=source,
             profile_name=profile.get("name"),
             preflight_blocked=False,
+            advisory_diagnostics=len(advisory_diagnostics),
             **artifact_summary(export),
             **diagnostic_summary(diagnostics),
         )
@@ -7279,8 +7314,17 @@ def document_export_response(
         },
         "operations": operation_summaries(preflight_operations),
         "diagnostics": diagnostic_views(diagnostics, diagnostics),
+        # P0.3 / ruling R5. Error-severity diagnostics that are policy lints
+        # rather than render blockers: the export SUCCEEDED with these present.
+        # An editor-surface channel only — the export menu renders them; the
+        # end client who receives the artifact never sees them.
+        "warnings": export_warning_views(diagnostics),
         "preflight": {
+            # The raw engine signal — `any(severity == Error)`. Deliberately
+            # NOT the export gate any more: consult `warnings` and `status` to
+            # tell "refused" from "exported with advisories".
             "has_errors": preflight.get("has_errors", False),
+            "advisory_warnings": len(export_warning_views(diagnostics)),
             "brand_ref_operations": len(preflight.get("brand_ref_operations", [])),
             "token_operations": len(preflight.get("token_operations", [])),
             "layout_operations": len(preflight.get("layout_operations", [])),

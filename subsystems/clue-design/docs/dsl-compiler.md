@@ -128,6 +128,7 @@ wrap_text(true|false)
 dir(ltr|rtl|auto)
 slot(key)
 meta(slot="key")
+image_policy(fit=cover, focal_x=.., focal_y=.., min_dpi=.., aspect=.., preserve_transparency=..)
 asset(asset_id)
 path("svg path data")
 source(node_id)
@@ -264,6 +265,13 @@ These are represented in the AST or parser and produce explicit DSL diagnostics 
 - Comments beginning with `//` are checkpoints.
 - `#target ...` lines are target-reference modify syntax; plain `# comment` lines are comments.
 - Rich page/export/brand/slot configuration stays in scene JSON and operations.
+  **One deliberate exception (fast-loop v1, P0.2):** a slot's `image_policy` is
+  settable from a `#slot:key image_policy(...)` modify line. The general rule
+  held until it produced an unrepairable state — `LUMV0820` is a preflight
+  ERROR that only slot metadata can clear, so with slot metadata out of the DSL
+  the author had no repair at all and the deepagent burned runs probing for
+  one. A diagnostic the authoring surface cannot answer is not a scope
+  boundary, it is a dead end.
 
 ## Lowering Notes
 

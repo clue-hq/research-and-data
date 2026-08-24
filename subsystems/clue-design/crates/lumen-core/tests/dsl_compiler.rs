@@ -3930,3 +3930,213 @@ page page_a6 size(400,400,px)
         output.compile_output.diagnostics
     );
 }
+
+// ---------------------------------------------------------------------------
+// LUMV0820 repairability (fast-loop v1, P0.2)
+//
+// LUMV0820 ("image-like slot needs an image policy") used to be a preflight
+// ERROR with no authoring escape: the DSL's only slot constructor is
+// `Slot::text_short`, so `image … slot(key)` produced an Image slot with
+// `image_policy: None` and an instant error the author could only clear by
+// deleting the slot it had just asked for. The design deepagent burned dozens
+// of model calls probing for a repair that did not exist.
+//
+// Two halves are proven here: image slots are now BORN with a policy, and an
+// existing policy-less slot can be REPAIRED in place.
+// ---------------------------------------------------------------------------
+
+fn image_slot_policy_diagnostics(scene: &Scene) -> Vec<lumen_core::Diagnostic> {
+    lumen_core::validate_layout(scene, lumen_core::LayoutOptions::default())
+        .into_iter()
+        .filter(|diagnostic| diagnostic.code == "LUMV0820")
+        .collect()
+}
+
+fn scene_with_image_slot(document_id: &str) -> Scene {
+    let mut scene = Scene::new(lumen_core::DocumentId::from(document_id), "Image Slot");
+    let output = compile_dsl_into_scene(
+        r#"
+page page_square size(400,400,px)
+  logo image asset(account_logo) p(24,24) s(96,96) slot(account.logo)
+"#,
+        &mut scene,
+    );
+    assert_no_dsl_errors(&output.compile_output.diagnostics);
+    scene
+}
+
+#[test]
+fn dsl_image_slot_is_born_with_an_image_policy() {
+    let scene = scene_with_image_slot("doc_image_slot_born");
+
+    let slot = scene
+        .slot_by_key(&SlotKey::from("account.logo"))
+        .expect("slot should exist");
+    assert_eq!(slot.content_type, lumen_core::ContentType::Image);
+    let policy = slot
+        .image_policy
+        .as_ref()
+        .expect("an image-like slot must be born with a policy");
+    assert_eq!(policy.fit, lumen_core::ImageFitMode::Cover);
+    assert!(policy.preserve_transparency);
+    assert_eq!(policy.focal_point, None);
+    assert_eq!(policy.aspect_ratio, None);
+
+    // The regression this whole slice exists to kill.
+    assert!(
+        image_slot_policy_diagnostics(&scene).is_empty(),
+        "a freshly authored image slot must not raise LUMV0820"
+    );
+}
+
+#[test]
+fn dsl_text_slot_is_not_given_an_image_policy() {
+    let mut scene = Scene::new(
+        lumen_core::DocumentId::from("doc_text_slot_policy"),
+        "Text Slot",
+    );
+    let output = compile_dsl_into_scene(
+        r#"
+page page_square size(400,400,px)
+  headline text "Headline" p(24,24) s(300,hug) slot(campaign.headline)
+"#,
+        &mut scene,
+    );
+    assert_no_dsl_errors(&output.compile_output.diagnostics);
+
+    let slot = scene
+        .slot_by_key(&SlotKey::from("campaign.headline"))
+        .expect("slot should exist");
+    assert_eq!(slot.image_policy, None);
+}
+
+#[test]
+fn slot_modify_image_policy_clears_lumv0820_on_a_legacy_slot() {
+    let mut scene = scene_with_image_slot("doc_image_policy_repair");
+
+    // Reproduce a document authored BEFORE the born-correct fix: an image slot
+    // carrying no policy at all. Documents in this shape already exist, so the
+    // in-place repair has to work on them, not just on new scenes.
+    {
+        let mut stripped = scene
+            .slot_by_key(&SlotKey::from("account.logo"))
+            .expect("slot should exist")
+            .clone();
+        stripped.image_policy = None;
+        scene.slots.insert(stripped.id.clone(), stripped);
+    }
+    assert_eq!(
+        image_slot_policy_diagnostics(&scene).len(),
+        1,
+        "the legacy shape must reproduce LUMV0820"
+    );
+
+    let repair = compile_dsl_into_scene(
+        r#"#slot:account.logo image_policy(fit=contain, focal_x=0.5, focal_y=0.35, min_dpi=300, aspect=1.5, preserve_transparency=false)"#,
+        &mut scene,
+    );
+    assert_no_dsl_errors(&repair.compile_output.diagnostics);
+    assert!(repair.operation_error.is_none());
+
+    let slot = scene
+        .slot_by_key(&SlotKey::from("account.logo"))
+        .expect("slot should exist");
+    let policy = slot
+        .image_policy
+        .as_ref()
+        .expect("the repair must install a policy");
+    assert_eq!(policy.fit, lumen_core::ImageFitMode::Contain);
+    assert_eq!(
+        policy.focal_point,
+        Some(lumen_core::FocalPoint { x: 0.5, y: 0.35 })
+    );
+    assert_eq!(policy.min_dpi, Some(300));
+    assert_eq!(policy.aspect_ratio, Some(1.5));
+    assert!(!policy.preserve_transparency);
+
+    assert!(
+        image_slot_policy_diagnostics(&scene).is_empty(),
+        "the author-reachable repair must clear LUMV0820"
+    );
+}
+
+#[test]
+fn slot_modify_image_policy_accepts_a_bare_fit_mode() {
+    let mut scene = scene_with_image_slot("doc_image_policy_bare");
+
+    let repair = compile_dsl_into_scene(r#"#slot:account.logo image_policy(crop)"#, &mut scene);
+    assert_no_dsl_errors(&repair.compile_output.diagnostics);
+
+    let slot = scene
+        .slot_by_key(&SlotKey::from("account.logo"))
+        .expect("slot should exist");
+    let policy = slot.image_policy.as_ref().expect("policy");
+    assert_eq!(policy.fit, lumen_core::ImageFitMode::Crop);
+    // Unspecified members fall back to the default, never to a half-built
+    // policy that preflight would then reject.
+    assert!(policy.preserve_transparency);
+    assert_eq!(policy.focal_point, None);
+}
+
+#[test]
+fn slot_modify_image_policy_none_clears_the_policy() {
+    let mut scene = scene_with_image_slot("doc_image_policy_clear");
+
+    let cleared = compile_dsl_into_scene(r#"#slot:account.logo image_policy(none)"#, &mut scene);
+    assert_no_dsl_errors(&cleared.compile_output.diagnostics);
+
+    let slot = scene
+        .slot_by_key(&SlotKey::from("account.logo"))
+        .expect("slot should exist");
+    assert_eq!(slot.image_policy, None);
+}
+
+#[test]
+fn slot_modify_image_policy_refuses_values_preflight_would_reject() {
+    let mut scene = scene_with_image_slot("doc_image_policy_invalid");
+
+    // A focal point outside 0..1 is LUMV0821 at preflight; the compiler
+    // refuses it up front so the author sees it on the line that wrote it.
+    let out_of_range = compile_dsl_into_scene(
+        r#"#slot:account.logo image_policy(fit=cover, focal_x=1.4, focal_y=0.5)"#,
+        &mut scene,
+    );
+    assert!(
+        out_of_range
+            .compile_output
+            .diagnostics
+            .iter()
+            .any(|d| d.diagnostic.code == "LUMD0276"),
+        "{:#?}",
+        out_of_range.compile_output.diagnostics
+    );
+
+    // A lone focal axis is meaningless.
+    let half_focal = compile_dsl_into_scene(
+        r#"#slot:account.logo image_policy(fit=cover, focal_x=0.5)"#,
+        &mut scene,
+    );
+    assert!(
+        half_focal
+            .compile_output
+            .diagnostics
+            .iter()
+            .any(|d| d.diagnostic.code == "LUMD0276"),
+        "{:#?}",
+        half_focal.compile_output.diagnostics
+    );
+
+    let bad_fit = compile_dsl_into_scene(
+        r#"#slot:account.logo image_policy(fit=squish)"#,
+        &mut scene,
+    );
+    assert!(
+        bad_fit
+            .compile_output
+            .diagnostics
+            .iter()
+            .any(|d| d.diagnostic.code == "LUMD0276"),
+        "{:#?}",
+        bad_fit.compile_output.diagnostics
+    );
+}
