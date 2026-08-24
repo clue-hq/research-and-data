@@ -14,6 +14,7 @@ import type {
   PageSize,
   Scene,
   TextAlign,
+  TextNode,
   VerticalAlign,
 } from "../engine/scene/contracts";
 import {
@@ -265,6 +266,92 @@ it("rung A Text: a LOCKED text node refuses the content row like every other", (
   const { node, scene } = withNodeField("text_proof_stat", "locked", true);
   assert.equal(apply(node, "content", "4.1x faster triage", scene), null);
   assert.equal(apply(node, "content", "", scene), null);
+});
+
+/* Rung C upgrade (founder-visible item 6): before rung C an inspector content
+ * edit let the engine's D4 rule clear every span on the node. It now remaps
+ * them with the same conservative prefix/suffix diff the caret session's
+ * untracked path uses — styling inside the unchanged prefix and suffix
+ * survives, styling over the changed middle is trimmed or dropped. */
+
+/** The harvested stat with `faster` bolded — the same span the session tests
+ * use, so both surfaces are proven over one document shape. */
+function adSpannedText(): { node: Node; scene: Scene } {
+  const scene = clone(SCENE);
+  const node = scene.nodes.text_proof_stat;
+  (node.kind as TextNode).spans = [{ start: 5, end: 11, font_weight: 700 }];
+  return { node, scene };
+}
+
+it("rung C Text: an edit AFTER every span keeps the styling, re-authored so D4 cannot clear it", () => {
+  const { node, scene } = adSpannedText();
+  // The maintained vector is byte-identical here (the edit is past the last
+  // span), which the engine reads as a stale carry-forward and clears. The
+  // commit therefore re-authors it as the same styling in a different shape.
+  assert.deepEqual(
+    apply(node, "content", "3.4x faster triage!", scene),
+    updateNode("text_proof_stat", {
+      kind: set({
+        ...node.kind,
+        content: "3.4x faster triage!",
+        spans: [
+          { start: 5, end: 6, font_weight: 700 },
+          { start: 6, end: 11, font_weight: 700 },
+        ],
+      }),
+    }),
+  );
+});
+
+it("rung C Text: an edit BEFORE a span carries the span with the text it styles", () => {
+  const { node, scene } = adSpannedText();
+  assert.deepEqual(
+    apply(node, "content", "Up to 3.4x faster triage", scene),
+    updateNode("text_proof_stat", {
+      kind: set({
+        ...node.kind,
+        content: "Up to 3.4x faster triage",
+        spans: [{ start: 11, end: 17, font_weight: 700 }],
+      }),
+    }),
+  );
+});
+
+it("rung C Text: an edit THROUGH a styled run trims it to what is still attributable", () => {
+  const { node, scene } = adSpannedText();
+  assert.deepEqual(
+    apply(node, "content", "3.4x fXr triage", scene),
+    updateNode("text_proof_stat", {
+      kind: set({
+        ...node.kind,
+        content: "3.4x fXr triage",
+        spans: [
+          { start: 5, end: 6, font_weight: 700 },
+          { start: 7, end: 8, font_weight: 700 },
+        ],
+      }),
+    }),
+  );
+});
+
+it("rung C Text: clearing the text drops the spans it can no longer index", () => {
+  const { node, scene } = adSpannedText();
+  assert.deepEqual(
+    apply(node, "content", "", scene),
+    updateNode("text_proof_stat", {
+      kind: set({ ...node.kind, content: "", spans: [] }),
+    }),
+  );
+});
+
+it("rung C Text: a node with NO spans still writes the content channel alone", () => {
+  // Unchanged from rung A: nothing to remap, so nothing about the write moves.
+  assert.deepEqual(
+    apply(adPlainText(), "content", "4.1x faster triage"),
+    updateNode("text_proof_stat", {
+      kind: set({ ...adPlainText().kind, content: "4.1x faster triage" }),
+    }),
+  );
 });
 
 // ══ §1.2 row 2 — Font family ════════════════════════════════════════════════

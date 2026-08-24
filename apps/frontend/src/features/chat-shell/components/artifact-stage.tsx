@@ -16,6 +16,7 @@ import {
   SceneArtifactCanvas,
   type SceneCanvasControls,
 } from "@/features/design-editor/components/scene-artifact-canvas";
+import type { ScenePalette } from "@/features/design-editor/adapter/scene-palette";
 import type {
   SceneDocumentHistory,
   SceneEngineStatus,
@@ -81,6 +82,7 @@ export function ArtifactStage({
   onSceneZoomChange,
   sceneCanvasControlsRef,
   sceneGestureDisabled,
+  scenePalette,
   sceneSelectedNodeId,
   sceneZoomLabel,
   sceneZoomOverride,
@@ -194,6 +196,10 @@ export function ArtifactStage({
    * Passed by the chats route only — the artifact route has no turn stream to
    * read (the same posture as `inspectorDisabled` there). */
   sceneGestureDisabled?: boolean;
+  /** Rung C / §1.6: the document's brand-kit colour vocabulary, for the caret
+   * session's formatting toolbar — the same `sceneSession.palette` the
+   * inspector's colour pickers are handed, so one document has one palette. */
+  scenePalette?: ScenePalette | null;
   /** AD2.7: the session's primary selection, back down to the canvas. */
   sceneSelectedNodeId?: string | null;
   /**
@@ -298,6 +304,7 @@ export function ArtifactStage({
                   onOperations={onSceneOperations}
                   onSceneChange={onSceneChange}
                   onSelect={onSceneSelect}
+                  palette={scenePalette}
                   reloadToken={canvasReloadToken}
                   selectedNodeId={sceneSelectedNodeId}
                   zoom={sceneZoomOverride}

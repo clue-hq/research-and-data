@@ -4,6 +4,8 @@ import type {
   Operation,
   PageId,
   Scene,
+  TextNode,
+  TextSpan,
 } from "../engine/scene/contracts";
 import { updateTextNode } from "../engine/scene/operations";
 import { nodeDescriptor } from "../engine/scene/renderAdapter";
@@ -12,6 +14,11 @@ import {
   parentComputedOrigin,
   topLevelAncestorId,
 } from "../engine/scene/sceneQueries";
+import {
+  normalizeSpans,
+  spanValidationIssues,
+  spansVectorForContentEdit,
+} from "../engine/scene/textSpans";
 import { deriveSelectionChromeModel } from "../engine/scene/selectionChrome";
 import type { WorkspaceViewport } from "../engine/scene/workspaceViewport";
 import {
@@ -52,6 +59,14 @@ import {
 /** The label a committed session writes under — the lane's convention is that
  * the intent names the SURFACE the edit came from. */
 export const SCENE_TEXT_EDIT_INTENT = "canvas: text edit";
+
+/**
+ * Rung C: the label a RANGE-STYLING action writes under. A separate intent from
+ * the session's own commit because it is a separate edit with a separate cause
+ * — founder-visible item 5: each formatting action is its own undo frame, and
+ * the history should be able to say which is which.
+ */
+export const SCENE_TEXT_STYLE_INTENT = "canvas: text style";
 
 /**
  * Upstream's own floor (`TextEditOverlay.tsx`: `Math.max(8, …)`). A text node
@@ -133,17 +148,32 @@ export function sceneDoubleClickEffect({
   return { kind: "select", nodeId: top };
 }
 
+/** Structural span equality that the WIRE's key order cannot decide: the
+ * engine's serde emits its own field order, the session builds the contract's,
+ * and one re-typed span must not read as a change. */
+function spansKey(spans: readonly TextSpan[]): string {
+  return JSON.stringify(
+    spans.map((span) =>
+      Object.entries(span as unknown as Record<string, unknown>)
+        .filter(([, value]) => value !== undefined)
+        .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0)),
+    ),
+  );
+}
+
 /**
- * A committed draft as operations, or null when nothing may be written.
+ * A committed session as operations, or null when nothing may be written.
  *
  * ONE `updateTextNode` — so a whole editing session, however long, is one
  * atomic batch and therefore ONE undo frame (the same contract a canvas
- * gesture keeps, Ruling C-3).
+ * gesture keeps, Ruling C-3). Rung C adds a second caller with the same
+ * shape: one FORMATTING action, committed immediately, is likewise one batch
+ * and one undo frame (founder-visible item 5).
  *
  * Null in every honest no-write case, and each is a real path:
  *
- *  • the draft equals the stored content — a blur that typed nothing is not an
- *    edit, and the session closes silently;
+ *  • nothing changed — neither the content nor the spans. A blur that typed
+ *    nothing is not an edit, and the session closes silently;
  *  • the node is LOCKED or not text — the write side would refuse it anyway;
  *  • the node is GONE — a D10 reload or an agent turn replaced the scene under
  *    the open session; the draft is discarded rather than written to whatever
@@ -151,22 +181,63 @@ export function sceneDoubleClickEffect({
  *
  * The EMPTY string is a legal commit: a text node that says nothing is a real
  * edit and a node that survives (rung A's `case "content"` takes the same
- * position). D4, stated so it is not rediscovered: the engine clears a spanned
- * node's spans when the content changes and byte-identical spans arrive, so a
- * session commit today drops any range styling — honest and undoable; rung C
- * sends a remapped spans vector alongside.
+ * position). So is an EMPTY spans vector — un-bolding the only bold run leaves
+ * a node with no spans, and `spans: []` is how that reaches the engine.
+ *
+ * ── THE SPANS CHANNEL (rung C) ───────────────────────────────────────────
+ * `spans` absent (rung B's two-argument call) means this session authors no
+ * spans at all: the write carries content alone, and the engine's D4 rule
+ * clears any stored range styling a content change would otherwise strand.
+ *
+ * `spans` present means the session MAINTAINED a vector across its edits, and
+ * both channels ride the one batch. It goes out through
+ * `spansVectorForContentEdit` — called LAST, immediately before the write, and
+ * never re-normalized afterwards, because its whole job is to produce a vector
+ * the engine cannot mistake for a stale carry-forward (D4,
+ * `operations.rs:620-631`), and normalizing would merge that deliberate split
+ * straight back together.
+ *
+ * The content rides along whenever the draft is dirty, even for a pure
+ * formatting action: span offsets index the string they were computed in, and
+ * committing them against a stale stored content would point them at other
+ * text.
  */
 export function textEditCommitOperations(
   node: Node | null,
   draft: string,
+  /** The session's working spans, or absent for a session that authors none. */
+  spans?: readonly TextSpan[] | null,
 ): Operation[] | null {
   if (!node || node.kind.kind !== "text" || node.locked) {
     return null;
   }
-  if (draft === node.kind.content) {
+  const contentChanged = draft !== node.kind.content;
+  if (spans === undefined || spans === null) {
+    return contentChanged ? [updateTextNode(node, { content: draft })] : null;
+  }
+  const stored = node.kind.spans ?? [];
+  const vector = spansVectorForContentEdit(draft, stored, spans, contentChanged);
+  const spansChanged =
+    spansKey(vector) !== spansKey(normalizeSpans(node.kind.content, stored));
+  if (!contentChanged && !spansChanged) {
     return null;
   }
-  return [updateTextNode(node, { content: draft })];
+  const issues = spanValidationIssues(draft, vector);
+  if (issues.length > 0) {
+    // Unreachable by construction — every `textSpans.ts` exit normalizes onto
+    // the five rules — and load-bearing anyway: the engine validates spans at
+    // LAYOUT, not at apply, so an invalid vector applies clean and then drops
+    // the node out of measurement (LUMV0906) with nothing refused. Loud in
+    // dev/test; in production the spans channel is dropped and the content
+    // edit still lands, which is the honest degradation.
+    if (process.env.NODE_ENV !== "production") {
+      throw new Error(
+        `refusing to write an invalid spans vector: ${issues.join("; ")}`,
+      );
+    }
+    return contentChanged ? [updateTextNode(node, { content: draft })] : null;
+  }
+  return [updateTextNode(node, { content: draft, spans: vector })];
 }
 
 /** The DOM edit surface's style, in the units CSS takes. */
@@ -199,6 +270,17 @@ export interface SceneTextEditModel {
    * outline rotate about. */
   rotation: number;
   style: SceneTextEditStyle;
+  /**
+   * Rung C: the node's STORED text kind, carried whole.
+   *
+   * The range toolbar cannot work from the string alone — `formatStateForRange`
+   * and `applyStyleToRange` resolve override semantics against the node's own
+   * base (a span whose weight equals the node's is no override at all), and the
+   * session seeds its working vector from `text.spans`. Carrying the kind here
+   * keeps the overlay reading ONE derivation of the session's subject, the same
+   * way its geometry comes from one box model.
+   */
+  text: TextNode;
   top: number;
   width: number;
 }
@@ -286,6 +368,7 @@ export function sceneTextEditModel({
       textAlign: text.align,
       valign: text.valign,
     },
+    text: node.kind,
     top: outline.y,
     width: Math.max(MIN_TEXT_EDIT_SIZE_PX, outline.width),
   };

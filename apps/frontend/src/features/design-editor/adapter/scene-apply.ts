@@ -43,6 +43,10 @@ import {
 } from "../engine/scene/operations";
 import { normalizePageSize } from "../engine/scene/pageGeometry";
 import {
+  remapSpansByDiff,
+  spansVectorForContentEdit,
+} from "../engine/scene/textSpans";
+import {
   getPage,
   isNodeDirectGeometryEditable,
   isNodePinned,
@@ -803,15 +807,42 @@ export function sceneChangeToOperation(
     // string coercion above needs relaxing (a non-string never reaches the
     // switch).
     //
-    // D4, stated so it is not rediscovered: the engine CLEARS a spanned node's
-    // spans when the content changes and the spans arrive byte-identical
-    // (`operations.rs`), so a content edit today drops any range styling. That
-    // is honest and undoable; rung C sends a remapped spans vector alongside.
+    // D4, and rung C's answer to it (founder-visible item 6). The engine CLEARS
+    // a spanned node's spans when the content changes and the spans arrive
+    // byte-identical (`operations.rs:620-631`) — right for a caller who forgot
+    // them, wrong for one that can still place them. So a spanned node's edit
+    // now carries a REMAPPED vector: the conservative prefix/suffix diff
+    // (`remapSpansByDiff`, the same one the caret session's untracked path
+    // uses), which keeps styling inside the unchanged prefix and suffix and
+    // trims or drops what touched the changed middle. It never guesses — this
+    // row sees only the before and after strings, so a bolded word the user
+    // retyped in the middle comes back unstyled rather than mis-styled.
+    //
+    // `spansVectorForContentEdit` runs LAST, immediately before the write, and
+    // its output is never re-normalized: its whole job is to make a vector the
+    // engine cannot mistake for a stale carry-forward, and normalizing would
+    // merge that deliberate split back together.
+    //
+    // A node with no spans writes the content channel alone, exactly as rung A
+    // did — there is nothing to remap and nothing for the engine to clear.
     case "content": {
       if (!text) {
         return null;
       }
-      return updateTextNode(node, { content: value });
+      const stored = text.spans ?? [];
+      if (stored.length === 0) {
+        return updateTextNode(node, { content: value });
+      }
+      const remapped = remapSpansByDiff(text.content, value, stored);
+      return updateTextNode(node, {
+        content: value,
+        spans: spansVectorForContentEdit(
+          value,
+          stored,
+          remapped,
+          value !== text.content,
+        ),
+      });
     }
 
     // ── §1.2 row 2: Font family (§2 delta row 3 — the real vocabulary) ───────

@@ -1,12 +1,20 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { NodeId, Scene } from "../engine/scene/contracts";
+import type {
+  Node,
+  NodeId,
+  Operation,
+  Scene,
+  TextNode,
+  TextSpan,
+} from "../engine/scene/contracts";
 import type { WorkspaceViewport } from "../engine/scene/workspaceViewport";
 import { AD_PAGE_ID, HARVESTED_AD_PAGE } from "./__fixtures__/scene-nodes";
 import { sceneArtboardModel } from "./scene-canvas-view";
 import {
   MIN_TEXT_EDIT_SIZE_PX,
   SCENE_TEXT_EDIT_INTENT,
+  SCENE_TEXT_STYLE_INTENT,
   sceneDoubleClickEffect,
   sceneTextEditModel,
   textEditCommitOperations,
@@ -230,6 +238,185 @@ test("D10: a node the reload took away commits nothing", () => {
 
 test("the write says which surface it came from", () => {
   assert.equal(SCENE_TEXT_EDIT_INTENT, "canvas: text edit");
+});
+
+/* -------------------------------------------------------------------------
+ * Rung C: the spans channel — the relaxed null contract
+ *
+ * Rung B committed on ONE question ("did the content change?"). Rung C's
+ * toolbar can change a node without touching a character of it, so the question
+ * becomes "did the content OR the spans change?", and both channels ride the
+ * same single `update_node` batch. The rung-B cases above are unchanged and
+ * still hold: a caller that passes no spans channel gets exactly rung B's
+ * write.
+ * ---------------------------------------------------------------------- */
+
+/** `faster` in bold, over the harvested stat's 18 ASCII bytes. */
+const BOLD_FASTER: TextSpan = { start: 5, end: 11, font_weight: 700 };
+
+function spannedStat(): Node {
+  const scene = clone(HARVESTED_AD_PAGE);
+  const node = scene.nodes.text_proof_stat;
+  textKind(node).spans = [BOLD_FASTER];
+  return node;
+}
+
+/** The node's text kind, narrowed — every case here is about a text node. */
+function textKind(node: Node): TextNode {
+  assert.ok(node.kind.kind === "text");
+  return node.kind;
+}
+
+/** The single `update_node` patch a committed batch carries. */
+function committedKind(operations: Operation[] | null) {
+  assert.ok(operations);
+  assert.equal(operations.length, 1);
+  const [operation] = operations;
+  assert.ok(operation.kind === "update_node");
+  return operation.patch.kind;
+}
+
+test("content and spans commit together, in ONE batch", () => {
+  const node = HARVESTED_AD_PAGE.nodes.text_proof_stat;
+  const operations = textEditCommitOperations(node, "3.4x faster triage!", [
+    BOLD_FASTER,
+  ]);
+  assert.deepEqual(committedKind(operations), {
+    kind: "set",
+    value: {
+      ...node.kind,
+      content: "3.4x faster triage!",
+      spans: [BOLD_FASTER],
+    },
+  });
+});
+
+test("a SPANS-ONLY change is a real edit — rung B's null contract, relaxed", () => {
+  const node = HARVESTED_AD_PAGE.nodes.text_proof_stat;
+  const operations = textEditCommitOperations(node, textKind(node).content, [
+    BOLD_FASTER,
+  ]);
+  assert.deepEqual(committedKind(operations), {
+    kind: "set",
+    value: { ...node.kind, spans: [BOLD_FASTER] },
+  });
+});
+
+test("clearing every span is a write, not a no-op", () => {
+  // An EMPTY vector is a legitimate formatting result (un-bold the only bold
+  // run) and must reach the engine as `spans: []`, never be read as "nothing
+  // to write".
+  const node = spannedStat();
+  const operations = textEditCommitOperations(node, textKind(node).content, []);
+  assert.deepEqual(committedKind(operations), {
+    kind: "set",
+    value: { ...node.kind, spans: [] },
+  });
+});
+
+test("unchanged content AND unchanged spans write nothing", () => {
+  const node = spannedStat();
+  assert.equal(
+    textEditCommitOperations(node, textKind(node).content, [BOLD_FASTER]),
+    null,
+  );
+});
+
+test("the stored spans' key ORDER does not make an unchanged vector look changed", () => {
+  const node = spannedStat();
+  // The wire hands spans back in the engine's serde order; the session builds
+  // them in the contract's. Same span either way.
+  assert.equal(
+    textEditCommitOperations(node, textKind(node).content, [
+      { font_weight: 700, end: 11, start: 5 },
+    ]),
+    null,
+  );
+});
+
+test("D4: a content edit past every span SPLITS the vector so both survive", () => {
+  // The engine clears spans when a content change carries a byte-identical
+  // vector (`operations.rs:620-631`). Edits landing after the last span
+  // legitimately maintain the same vector, so the commit re-authors it as a
+  // semantically identical but structurally different one.
+  const node = spannedStat();
+  const operations = textEditCommitOperations(node, "3.4x faster triage!", [
+    BOLD_FASTER,
+  ]);
+  assert.deepEqual(committedKind(operations), {
+    kind: "set",
+    value: {
+      ...node.kind,
+      content: "3.4x faster triage!",
+      spans: [
+        { start: 5, end: 6, font_weight: 700 },
+        { start: 6, end: 11, font_weight: 700 },
+      ],
+    },
+  });
+});
+
+test("a locked node refuses the spans channel too", () => {
+  const node = spannedStat();
+  node.locked = true;
+  assert.equal(textEditCommitOperations(node, "anything", []), null);
+});
+
+test("D10: a node the reload took away refuses the spans channel too", () => {
+  assert.equal(textEditCommitOperations(null, "anything", [BOLD_FASTER]), null);
+});
+
+test("an out-of-bounds vector is CLAMPED, never written as the engine would take it", () => {
+  // The engine validates spans at LAYOUT, not at apply: an out-of-bounds span
+  // applies clean and then silently drops the node out of measurement
+  // (LUMV0906). So the commit is the last line of defence, and what it sends
+  // always satisfies the five rules — here, an end past the string is clamped
+  // to it rather than refused or forwarded.
+  const node = HARVESTED_AD_PAGE.nodes.text_proof_stat;
+  const operations = textEditCommitOperations(node, "3.4x faster triage", [
+    { start: 5, end: 4000, font_weight: 700 },
+  ]);
+  assert.deepEqual(committedKind(operations), {
+    kind: "set",
+    value: {
+      ...node.kind,
+      spans: [{ start: 5, end: 18, font_weight: 700 }],
+    },
+  });
+});
+
+test("the STYLE write says which surface it came from", () => {
+  assert.equal(SCENE_TEXT_STYLE_INTENT, "canvas: text style");
+});
+
+test("a formatting commit does not change what the overlay is KEYED on", () => {
+  // The overlay is mounted `key={textEdit.nodeId}`, and a formatting action
+  // commits mid-session: the scene comes straight back with new spans (and,
+  // when the draft was dirty, new content). If either of those reached the key
+  // the overlay would remount and throw away the live draft, the caret and the
+  // selection the next toggle acts on. So the key must move for NEITHER.
+  const before = modelFor(sceneWithLaidOutStat());
+  const committed = sceneWithLaidOutStat();
+  textKind(committed.nodes.text_proof_stat).spans = [BOLD_FASTER];
+  textKind(committed.nodes.text_proof_stat).content = "3.4x faster triage!";
+  const after = modelFor(committed);
+  assert.ok(before && after);
+  assert.equal(after.nodeId, before.nodeId);
+  // …and the model DID move, so the assertion above is not vacuous.
+  assert.notDeepEqual(after.text, before.text);
+});
+
+test("the overlay model carries the stored text kind, for the toolbar to read", () => {
+  const scene = sceneWithLaidOutStat();
+  textKind(scene.nodes.text_proof_stat).spans = [BOLD_FASTER];
+  const model = modelFor(scene);
+  assert.ok(model);
+  // The toolbar's format reads run against the NODE (override semantics are
+  // resolved against its own base), so the session needs the whole kind — not
+  // just the string the caret edits.
+  assert.equal(model.text.font_weight, 600);
+  assert.deepEqual(model.text.spans, [BOLD_FASTER]);
+  assert.equal(model.text.content, model.content);
 });
 
 /* -------------------------------------------------------------------------

@@ -247,6 +247,9 @@ export function EditorSurface({
         // reconciliation, and the recorded follow-up (a document-scoped
         // agent-busy signal off the run_event SSE) would close this gap and
         // that one together.
+        // Rung C / §1.6: one document, one brand palette — the caret
+        // session's colour control offers exactly what the inspector's do.
+        scenePalette={sceneSession.palette}
         sceneSelectedNodeId={sceneSession.primaryNodeId}
         sceneZoomLabel={sceneSession.zoom}
         sceneZoomOverride={sceneSession.zoomOverride}
