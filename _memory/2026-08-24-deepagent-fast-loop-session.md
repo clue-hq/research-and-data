@@ -218,3 +218,22 @@ round. The remaining lever is the MODEL CONFIG decision (deliberately not taken
 by agents): faster model for orchestrator and/or author
 (LUMEN_AGENT_MODEL / LUMEN_AGENT_MODEL_ORCHESTRATOR env knobs exist).
 At ~8s/call the same 30 calls ≈ 4 min → polish round fits, quality recovers.
+
+## Founder quality verdict on run #2 output (2026-08-24 evening) — "still looks slop"
+Verbatim gist: two solid saturated kit colors with a non-pairing text color;
+token picked, zero second thought on how the combination READS; never considers
+a softer shade the kit offers. Preview defects confirmed at full res: black
+$text.primary on saturated brand purple, saturated pink CTA plate on purple,
+EMPTY white plate where the logo should be, CTA label bottom-aligned in an
+oversized fixed-size plate. Diagnosis accepted: corpus had a numeric contrast
+floor and NO color-judgment doctrine.
+→ Dispatched color-craft wave: new skills/color-and-contrast (on-color pairing
+law, shade-not-just-token, saturated-on-saturated separator, roles/families +
+hard reject test, contrast-before-harmony by LOOKING), composed into all five
+format skills + on-color-pairing self-audit test + CTA hug-plate rule anchored
+to blocks/actions. Playbook test runs (before/after, stat-proof,
+product-as-hero briefs) queued AFTER this lands.
+OPEN: model-speed A/B decision still unanswered — at ~20s/call every run's
+polish round gets budget-cut, which is itself a quality ceiling.
+UNINVESTIGATED: why the logo lockup rendered as an empty plate in run #2
+(asset placed but no image drawn — check final_scene fills/asset refs).
