@@ -257,6 +257,44 @@ describe("libraryFonts — canvas leg", () => {
     );
   });
 
+  it("re-reports a session-permanent registration failure on every later run", async () => {
+    vi.mocked(registerKitFontFaces).mockImplementation(() => {
+      throw new Error("invalid font bytes");
+    });
+    const bytes = new ArrayBuffer(8);
+    const fetchImpl = vi.fn(async (input: URL | RequestInfo) =>
+      String(input).endsWith("/font-library")
+        ? manifestResponse({ version: 1, families: [LIBRARY.families[1]] })
+        : ({ ok: true, arrayBuffer: async () => bytes } as unknown as Response)
+    ) as unknown as typeof fetch;
+    const scene = { nodes: { headline: { font_family: "Canela" } } };
+    await loadLibraryFontFaces(scene, {
+      apiBaseUrl: "http://api.test",
+      fetchImpl,
+      onFaceDiagnostic: () => undefined,
+    });
+
+    // The face is marked loaded, so a later run (the caller's effect re-runs
+    // on every scene change and REPLACES its diagnostic state) takes the
+    // nothing-new-to-fetch early return — the degradation diagnostic must
+    // still be re-emitted or the banner clears while the fallback persists.
+    const diagnostics: unknown[] = [];
+    expect(
+      await loadLibraryFontFaces(scene, {
+        apiBaseUrl: "http://api.test",
+        fetchImpl,
+        onFaceDiagnostic: (diagnostic) => diagnostics.push(diagnostic),
+      })
+    ).toBe(false);
+    expect(diagnostics).toHaveLength(1);
+    expect(diagnostics[0]).toEqual(
+      expect.objectContaining({
+        code: "EDITOR_LIBRARY_FONT_FACE_UNAVAILABLE",
+        subject: { kind: "asset", id: "asset_canela" },
+      })
+    );
+  });
+
   it("resolves false without fetching bytes when the scene references no library family", async () => {
     const fetchImpl = vi.fn(async () =>
       manifestResponse(LIBRARY)

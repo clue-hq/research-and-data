@@ -118,7 +118,12 @@ export function sceneEngineBanners(
   }
 
   if (fontDiagnostics.length > 0) {
-    const first = fontDiagnostics[0];
+    // One banner, led by the worst diagnostic: the array concatenates kit
+    // before library, so without the severity sort an error-severity library
+    // failure would hide behind a kit warning as "N additional diagnostics".
+    const first =
+      fontDiagnostics.find((diagnostic) => diagnostic.severity === "error") ??
+      fontDiagnostics[0];
     const additional = fontDiagnostics.length - 1;
     banners.push({
       kind: "font-fallback",

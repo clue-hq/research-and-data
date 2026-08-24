@@ -109,6 +109,35 @@ it("states a missing pinned-kit face and the deterministic fallback explicitly",
   assert.match(banners[0].detail ?? "", /licensed TTF\/OTF/);
 });
 
+it("leads the font banner with an error-severity diagnostic over an earlier warning", () => {
+  // The array concatenates kit before library diagnostics; the banner must
+  // still be led by the worst one, not the first one.
+  const banners = sceneEngineBanners(ACTIVE, "skia", [
+    {
+      severity: "warning",
+      phase: "brand",
+      code: "EDITOR_KIT_FONT_FAMILY_UNAVAILABLE",
+      message: "Brand Kit declares “sohne-var” but supplies no TTF/OTF face assets.",
+      subject: { kind: "document" },
+      hint: "Ingest licensed TTF/OTF files.",
+    },
+    {
+      severity: "error",
+      phase: "brand",
+      code: "EDITOR_PINNED_BRAND_KIT_UNAVAILABLE",
+      message:
+        "Pinned Brand Kit brand_acme@6 could not be loaded (HTTP 404); canvas uses deterministic fallback tokens and Inter rather than a different kit version.",
+      subject: { kind: "document" },
+      hint: "Restore that exact Brand Kit version.",
+    },
+  ]);
+
+  assert.equal(banners.length, 1);
+  assert.equal(banners[0].title, "Pinned Brand Kit unavailable");
+  assert.match(banners[0].body, /brand_acme@6/);
+  assert.match(banners[0].body, /1 additional font diagnostic reported\./);
+});
+
 it("carries the MVP editor's exact sentences, not a paraphrase of them", () => {
   const sentences = [
     "Canvas editing is disabled",

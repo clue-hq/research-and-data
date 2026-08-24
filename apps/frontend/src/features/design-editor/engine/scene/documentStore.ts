@@ -12,6 +12,7 @@
 import { defaultDesignFetch } from "../config";
 import type { BrandKitSummary, Operation, Scene } from "./contracts";
 import type { BrandKitDetailPayload } from "./tokenColors";
+import { PLATFORM_DEFAULT_BRAND_KIT_ID } from "./tokenColors";
 
 /**
  * Phase 2a: document identity for the editor.
@@ -211,10 +212,11 @@ export async function fetchBrandKits(
  *
  * A document-bound caller MUST pass the scene's pinned version. Stored kits
  * then resolve through `/brand-kits/{id}/versions/{version}` so a document
- * authored against v6 cannot silently render with today's v9. The only
- * versionless caller is the engine-builtin platform fallback kit: it has no
- * registry history and is served by `/brand-kits/{id}` at synthetic version
- * zero.
+ * authored against v6 cannot silently render with today's v9. The engine-builtin
+ * platform fallback kit is the one exception: it has no registry row, so the
+ * versioned route 404s for it, and only `/brand-kits/{id}` synthesizes it — yet
+ * preflight stamps its fixture version (1) into kit-less scenes, so the builtin
+ * id must always take the versionless route regardless of the pinned version.
  */
 export async function fetchBrandKitDetail(
   // Workspace auth is the BFF's job — defaults to the receiver-safe wrapper; callers inject designBffConfig()'s transport.
@@ -222,6 +224,9 @@ export async function fetchBrandKitDetail(
   brandKitId: string,
   brandKitVersion: number | null = null
 ): Promise<BrandKitDetailPayload | null> {
+  if (brandKitId === PLATFORM_DEFAULT_BRAND_KIT_ID) {
+    brandKitVersion = null;
+  }
   const encodedId = encodeURIComponent(brandKitId);
   const path =
     brandKitVersion !== null && brandKitVersion > 0

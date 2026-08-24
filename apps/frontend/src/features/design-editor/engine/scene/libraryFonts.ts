@@ -197,6 +197,16 @@ export function collectReferencedLibraryFaceRefs(
 // only known families makes zero network calls.
 const loadedLibraryFaceKeys = new Set<string>();
 
+// Registration failures for faces whose FETCH succeeded (a DOM `document.fonts`
+// refusal, a CanvasKit provider throw). Such a face sits in
+// `loadedLibraryFaceKeys`, so no later run re-attempts it — the degradation is
+// permanent for the session, and its diagnostic must be too. The caller's
+// effect re-runs on every scene change and REPLACES its diagnostic state, so
+// without this cache the banner would vanish on the first edit after the
+// failure while the fallback rendering persisted. (Fetch failures need no
+// cache: they are retried — and re-reported — on every referencing run.)
+const persistentFaceDiagnostics = new Map<string, Diagnostic>();
+
 /** Fetch + register the library faces referenced by `scene`. Resolves true
  * when at least one new face landed in a live provider (the caller should
  * then invalidate text measurement/render memos — same contract as
@@ -210,6 +220,13 @@ export async function loadLibraryFontFaces(
     fetchImpl,
     onFaceDiagnostic,
   });
+  // Session-permanent registration failures are re-reported on EVERY run —
+  // including the early returns below — the same way the manifest diagnostic
+  // is, so the caller's replace-not-merge diagnostic state cannot silently
+  // clear a banner whose degradation is still in force.
+  for (const diagnostic of persistentFaceDiagnostics.values()) {
+    onFaceDiagnostic?.(diagnostic);
+  }
   if (library.families.length === 0) {
     return false;
   }
@@ -272,15 +289,17 @@ export async function loadLibraryFontFaces(
     const reason =
       error instanceof Error ? error.message : "CanvasKit registration failed";
     for (const face of loaded) {
-      onFaceDiagnostic?.(
-        libraryFontFaceDiagnostic(
-          {
-            assetId: face.key.slice(face.key.lastIndexOf("@") + 1),
-            family: face.family,
-          },
-          `CanvasKit registration failed: ${reason}`
-        )
+      const diagnostic = libraryFontFaceDiagnostic(
+        {
+          assetId: face.key.slice(face.key.lastIndexOf("@") + 1),
+          family: face.family,
+        },
+        `CanvasKit registration failed: ${reason}`
       );
+      // The face is already marked loaded, so it is never re-attempted this
+      // session — persist its diagnostic alongside the degradation.
+      persistentFaceDiagnostics.set(face.key, diagnostic);
+      onFaceDiagnostic?.(diagnostic);
     }
     return false;
   }
@@ -295,6 +314,7 @@ export function resetFontLibraryForTests(): void {
   cachedLibraryDiagnostic = null;
   loadedLibraryFaceKeys.clear();
   registeredDomFaceKeys.clear();
+  persistentFaceDiagnostics.clear();
 }
 
 /** Feed already-fetched library face bytes to the browser's DOM font registry
@@ -329,14 +349,17 @@ async function registerLibraryFontFacesInDom(
         await fontFace.load();
         document.fonts.add(fontFace);
       } catch (error) {
-        // A DOM font registration failure must not affect the canvas leg.
+        // A DOM font registration failure must not affect the canvas leg. The
+        // face never re-enters this function (its fetch succeeded, so it is in
+        // `loadedLibraryFaceKeys`), making the failure session-permanent —
+        // persist the diagnostic under its own leg-scoped key.
         registeredDomFaceKeys.delete(face.key);
-        onFaceDiagnostic?.(
-          libraryDomFontFaceDiagnostic(
-            face,
-            error instanceof Error ? error.message : "registration failed"
-          )
+        const diagnostic = libraryDomFontFaceDiagnostic(
+          face,
+          error instanceof Error ? error.message : "registration failed"
         );
+        persistentFaceDiagnostics.set(`dom:${face.key}`, diagnostic);
+        onFaceDiagnostic?.(diagnostic);
       }
     })
   );

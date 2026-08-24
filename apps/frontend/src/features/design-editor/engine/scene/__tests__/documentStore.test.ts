@@ -290,6 +290,27 @@ describe("documentStore", () => {
     );
   });
 
+  it("fetchBrandKitDetail routes a VERSION-PINNED builtin to the latest route too", async () => {
+    // Preflight stamps kit-less scenes with the builtin's fixture version
+    // (brand_kit_platform_default@1), but the builtin has no registry row —
+    // the versioned endpoint 404s for it and only `/brand-kits/{id}`
+    // synthesizes it. Without this rerouting, every default-branded document
+    // raised "Pinned Brand Kit unavailable" and dropped to fallback tokens.
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      jsonResponse(200, { brand_kit_json: { tokens: {} } })
+    );
+
+    await fetchBrandKitDetail(
+      { apiBaseUrl: "http://localhost:8002", fetchImpl },
+      "brand_kit_platform_default",
+      1
+    );
+
+    expect(String(fetchImpl.mock.calls[0][0])).toBe(
+      "http://localhost:8002/brand-kits/brand_kit_platform_default"
+    );
+  });
+
   it("fetchBrandKitDetail throws on HTTP errors and tolerates a missing brand_kit_json", async () => {
     const failing = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse(404, {}));
     await expect(

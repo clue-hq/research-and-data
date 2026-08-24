@@ -140,6 +140,15 @@ const ENGINE_ACTIVE: SceneEngineStatus = {
 
 const NO_DIAGNOSTICS: Diagnostic[] = [];
 
+/** The value the brand-kit effect keys on: the pin `id@version`, never the
+ * object (a fresh identity per scene update re-fetched the same kit thousands
+ * of times per turn in the source shell). */
+function kitRefKeyOf(scene: Scene): string {
+  return `${scene.meta.brand_kit?.id ?? PLATFORM_DEFAULT_BRAND_KIT_ID}@${
+    scene.meta.brand_kit?.version ?? ""
+  }`;
+}
+
 /**
  * The handshake is a property of this origin's build, not of a document, so it
  * runs once per page load: a reload token or a second artifact must not re-import
@@ -177,6 +186,11 @@ export function useSceneDocument(
   // new base with it. A ref, because it is read and advanced inside the async
   // load below, and it is the value stamped into that load's state.
   const loadGenerationRef = useRef(0);
+  // The kit whose token maps are currently installed in the module-scoped
+  // registry (`null` = the deterministic fallback maps). The clears below are
+  // guarded on it: a reload-token refetch of the SAME pinned kit must not wipe
+  // maps the brand-kit effect (keyed on the pin value) will never re-install.
+  const installedKitKeyRef = useRef<string | null>(null);
 
   const tokenGeneration = useSyncExternalStore(
     subscribeTokenColors,
@@ -219,10 +233,19 @@ export function useSceneDocument(
             ? new WasmEngine(activated.module, loaded.scene)
             : null;
         // The token registry is module-scoped. Clear it BEFORE publishing a
-        // newly loaded scene so a document switch can never paint one frame
-        // with the previous document's kit while its own pinned version is in
-        // flight. The exact map lands in the brand-kit effect below.
-        setKitTokenMaps(buildKitTokenMaps(null));
+        // newly loaded scene whose PIN DIFFERS from the installed kit, so a
+        // document switch can never paint one frame with the previous
+        // document's kit while its own pinned version is in flight. Guarded,
+        // because the brand-kit effect below is keyed on the pin VALUE: after
+        // a reload of the same pin (every committed write and agent turn bumps
+        // the reload token) that effect does not re-run, so an unconditional
+        // clear here would leave the canvas on fallback tokens for the rest of
+        // the session.
+        const loadedScene = engine ? engine.scene : loaded.scene;
+        if (installedKitKeyRef.current !== kitRefKeyOf(loadedScene)) {
+          setKitTokenMaps(buildKitTokenMaps(null));
+          installedKitKeyRef.current = null;
+        }
         loadGenerationRef.current += 1;
         setLoad({
           kind: "ready",
@@ -261,11 +284,7 @@ export function useSceneDocument(
   // object-keyed dep re-fetched the same kit thousands of times per turn in the
   // source shell. A failed fetch leaves the map cleared and reports the exact
   // pin as unavailable — it never paints with another document's/latest kit.
-  const brandKitRefKey = scene
-    ? `${scene.meta.brand_kit?.id ?? PLATFORM_DEFAULT_BRAND_KIT_ID}@${
-        scene.meta.brand_kit?.version ?? ""
-      }`
-    : null;
+  const brandKitRefKey = scene ? kitRefKeyOf(scene) : null;
   const kitFontDiagnostics =
     brandKitRefKey &&
     kitFontDiagnosticState?.forBrandKitRef === brandKitRefKey
@@ -281,42 +300,26 @@ export function useSceneDocument(
     const brandKitId = brandKitRefKey.slice(0, separator);
     const versionText = brandKitRefKey.slice(separator + 1);
     const brandKitVersion = versionText.length > 0 ? Number(versionText) : null;
+    // The pin changed under an installed kit (an in-place SetBrandKitRef, or a
+    // remount): fall back deterministically while the new pin is in flight
+    // rather than painting with the previous kit.
+    if (installedKitKeyRef.current !== brandKitRefKey) {
+      setKitTokenMaps(buildKitTokenMaps(null));
+      installedKitKeyRef.current = null;
+    }
     void (async () => {
+      let detail;
       try {
-        const detail = await fetchBrandKitDetail(
-          config,
-          brandKitId,
-          brandKitVersion,
-        );
-        if (cancelled) {
-          return;
-        }
-        // Colors + type roles + numbers in one install, so paint, text
-        // measurement and radii all resolve from the kit.
-        setKitTokenMaps(buildKitTokenMaps(detail));
-        const diagnostics: Diagnostic[] = [];
-        const registered = await loadKitFontFaces(
-          {
-            ...config,
-            onFaceDiagnostic: (diagnostic) => diagnostics.push(diagnostic),
-          },
-          detail,
-        );
-        if (!cancelled) {
-          setKitFontDiagnosticState({
-            forBrandKitRef: brandKitRefKey,
-            diagnostics,
-          });
-        }
-        if (registered && !cancelled) {
-          notifyKitFontsChanged();
-        }
+        detail = await fetchBrandKitDetail(config, brandKitId, brandKitVersion);
       } catch (error) {
         if (cancelled) {
           return;
         }
         // The requested pin itself is part of render truth. Do not silently
-        // keep another document's/latest kit when it cannot be read.
+        // keep another document's/latest kit when it cannot be read — this
+        // effect owns the clear it reports, so the message cannot lie.
+        setKitTokenMaps(buildKitTokenMaps(null));
+        installedKitKeyRef.current = null;
         setKitFontDiagnosticState({
           forBrandKitRef: brandKitRefKey,
           diagnostics: [
@@ -329,6 +332,45 @@ export function useSceneDocument(
               hint: "Restore that exact Brand Kit version or rebind the document explicitly; the editor will not substitute the latest version.",
             },
           ],
+        });
+        return;
+      }
+      if (cancelled) {
+        return;
+      }
+      // Colors + type roles + numbers in one install, so paint, text
+      // measurement and radii all resolve from the kit.
+      setKitTokenMaps(buildKitTokenMaps(detail));
+      installedKitKeyRef.current = brandKitRefKey;
+      const diagnostics: Diagnostic[] = [];
+      try {
+        const registered = await loadKitFontFaces(
+          {
+            ...config,
+            onFaceDiagnostic: (diagnostic) => diagnostics.push(diagnostic),
+          },
+          detail,
+        );
+        if (registered && !cancelled) {
+          notifyKitFontsChanged();
+        }
+      } catch (error) {
+        // A font-leg throw arrives AFTER the token maps installed above, so it
+        // is a font degradation, never a token one — saying "fallback tokens"
+        // here would be false.
+        diagnostics.push({
+          severity: "error",
+          phase: "brand",
+          code: "EDITOR_KIT_FONT_FAMILY_UNAVAILABLE",
+          message: `Brand Kit ${brandKitRefKey} font faces could not be loaded (${error instanceof Error ? error.message : "font load failed"}); canvas and server export use deterministic Inter fallback while kit tokens stay applied.`,
+          subject: { kind: "document" },
+          hint: "Confirm the kit's licensed TTF/OTF assets are present in durable storage.",
+        });
+      }
+      if (!cancelled) {
+        setKitFontDiagnosticState({
+          forBrandKitRef: brandKitRefKey,
+          diagnostics,
         });
       }
     })();
