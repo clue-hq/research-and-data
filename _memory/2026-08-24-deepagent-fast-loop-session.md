@@ -51,11 +51,61 @@ routing rule, budgets, conditional clarification), format-skill library spec
 + full `linkedin-square-ad` pilot skill draft, instrumentation/rollout plan,
 open questions.
 
+## Phase 1 EXECUTED + INTEGRATED 2026-08-24 (same day, later session)
+Spec ratified (R1–R6 recorded; commit `59b557931`). Five Opus worktree agents
+ran Phase 1 in parallel; EVERY one was independently verified before merge
+(base ancestry attested, diffs read, tests re-run by the orchestrator,
+red-cases proven for P0.1 asset-preview E2E and the obs cross-package guard).
+Merged into `integration/frontend-design-part-iv-v4` as five --no-ff merges
+ending `b0ecf2f16`:
+- P0.1 `30481ca51` — asset previews resolve BY DIGEST via
+  `clue_design.storage.location_digest`/`blob_path_for_digest`; PLUS the
+  missing durable→cache read-through in `brand_kit_asset_manifest` (2nd real
+  defect). Archive copy (`lumen_pipeline_archive/tools.py:1218`) still buggy,
+  deliberately (frozen).
+- W0 `19144ee25` — `run_metrics.py` accumulator; summary into run.jsonl +
+  metrics.json + run_event stream + run-view README; emits in finally, never
+  raises. Web harness deliberately unwired; `autofix_count` awaits §5.4.
+- P0.2/P0.3 `d1c9884db` — LUMV0820 root cause: DSL's only slot constructor was
+  text_short → image slots born policy-less. Fixed at birth
+  (`ImagePolicy::default()`) + `#slot:key image_policy(...)` (compile-time
+  guard `LUMD0276`); `export_policy.py` fail-closed blocking/advisory split
+  (advisory = only LUMV0820, justified); finalize refuses on blocking export
+  errors. Engine stamp now `4efb25b7eb70`; wasm rebuilt, HANDSHAKE OK.
+- P0.4 `457287dfa` — round acceptance exists nowhere in code (prompt-driven
+  loop); checkpoint trigger = orchestrator's per-round `render_preview` ok;
+  `_LegSceneCommitter` owns every durable write; replay guard
+  `scene_checkpoint_committed`/`_own_checkpoint_version`; leg-only. Residual:
+  takeover refuses-after-checkpoint rather than resuming (goes with §5.6).
+- small-bugs `15c713a26`/`bf425d092`/`3d696570e` — visible export failure
+  (`role="alert"`, reuses inspectorStatusError idiom; was a re-lift REGRESSION
+  — standalone editor was never broken); one root console handler cross-package
+  (root cause: two StreamHandlers, NOT double registration); undici
+  `bodyTimeout: 0` dispatcher for SSE proxies only.
+Verification env notes: shared venvs' editable installs shadow worktree code —
+run with PYTHONPATH pointing at worktree copies; 2 `test_asset_custody` +
+2 `test_fleet_wiring` failures are PRE-EXISTING at base in this env (proven at
+59b55793 via throwaway worktree — clean up /tmp/verify-base-59b55793 when done).
+Worktree provisioning served 3/5 agents a stale base (5ea7a879); all
+self-corrected; final commits all verified on 59b55793.
+Integrated gates green: agent_runtime 643 passed; frontend scene-export 52/52 +
+lint clean; obs 7/7; dsl_compiler 135; helper rebuilt; HANDSHAKE OK. Full
+`cargo test --workspace` + full `apps/api` pytest launched in background
+(/tmp/fastloop-fullsuite.log) — check before calling §3 gate met.
+
 ## Not done / next
-- Spec NOT committed (awaiting founder review per discuss-before-editing).
-- Implementation not started. Planned split: P0 bugs (parallelizable),
-  instrumentation, loop change flag-gated (`LUMEN_AGENT_FAST_LOOP`), pilot
-  skill; then follow-on format skills; variants later per R1.
+- BASELINE RE-RUN (§7 calibration): run the Magic Doc brief end-to-end on this
+  branch, compare run_metrics vs frozen 178 calls/43 min. Needs a live stack.
+- Phase 2: `LUMEN_AGENT_FAST_LOOP` loop redesign + `linkedin-square-ad` pilot
+  skill (spec §5/§6/§8).
+- High-value one-liner follow-ups found by agents, NOT yet fixed: stale
+  "Working…" render (`use-project-chat-controller.ts:477` missing
+  `attached.current.delete(turnId)`), reconnect budget never resets
+  (`chat-stream.repository.ts:123`), backend SSE keepalive
+  (`chat/stream.py:442`), editor TS hardcodes `image_policy: null`
+  (`operations.ts` — the remaining born-broken hole), advisory-warnings UI is
+  a TWO-COPY job (platform + subsystem exportRunner both drop `warnings` at
+  the parser; FE13 precedent at `onboarding.ts:123`).
 - Scene text-content editing needs a founder presentation ruling (dummy
   frontend is presentation truth).
 - Stuttgart `.env` was set to `LUMEN_AGENT_REASONING=medium` (other session).
