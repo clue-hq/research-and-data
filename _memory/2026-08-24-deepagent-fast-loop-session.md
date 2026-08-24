@@ -89,9 +89,19 @@ run with PYTHONPATH pointing at worktree copies; 2 `test_asset_custody` +
 Worktree provisioning served 3/5 agents a stale base (5ea7a879); all
 self-corrected; final commits all verified on 59b55793.
 Integrated gates green: agent_runtime 643 passed; frontend scene-export 52/52 +
-lint clean; obs 7/7; dsl_compiler 135; helper rebuilt; HANDSHAKE OK. Full
-`cargo test --workspace` + full `apps/api` pytest launched in background
-(/tmp/fastloop-fullsuite.log) — check before calling §3 gate met.
+lint clean; obs 7/7; dsl_compiler 135; helper rebuilt; HANDSHAKE OK.
+FULL-SUITE GATE VERDICT (completed later same session): Rust 815 passed across
+workspace + all lumen-core targets EXCEPT `visual_regression` (does not COMPILE
+— baseline PNGs absent from the repo; pre-existing) and 4 `lumen-skia` goldens
+(golden_effects_card/golden_a4_effects/+2 — fail identically at base;
+pre-existing missing-golden class). apps/api full: 669 passed / 18 failed —
+ALL 18 reproduce at base 59b55793 with a BASE-BUILT helper (16 =
+test_custom_component_{compiler,publish,runtime}+test_agent_custom_components,
+need the constrained-worker runtime this env lacks; 2 = test_asset_custody
+public-route env cases). ZERO regressions from the five merges. §3 gate met.
+TRIAGE TRAP recorded: a base-control run MUST use a base-built
+`LUMEN_CORE_HELPER` — pointing base code at the integrated helper produced ~30
+false failures (engine-stamp mismatch) before being caught.
 
 ## Not done / next
 - BASELINE RE-RUN (§7 calibration): run the Magic Doc brief end-to-end on this
