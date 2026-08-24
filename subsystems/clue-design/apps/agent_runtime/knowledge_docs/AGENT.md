@@ -78,6 +78,7 @@ Over-load, never under-load. The reference files are short and precise. Load
 | Task | Load |
 |------|------|
 | **Any new design** | `skills/create-design` + `knowledge/lumen-dsl/grammar` + `knowledge/lumen-dsl/text` + `knowledge/design/foundations` (taste rubric — one dominant element, hero-size-per-surface, whitespace-as-margin, anti-cliché) + `knowledge/design/artboard-frame-authoring` + the **vetted block catalog** `knowledge/design/blocks/*` (README + patterns + layout + actions + data-display — pinned automatically; ASSEMBLE from these, don't invent proportions) |
+| **A named artifact FORMAT the brief matches** (a linkedin ad / feed ad / square social ad / 1:1 paid social creative) | `skills/linkedin-square-ad` **first**, then the craft skills it names. A format skill sits ABOVE `create-design`: it pre-makes the format's decisions (surface, skeletons, type floors, brevity budgets, self-audit tests). No format match → `create-design` unchanged |
 | **Any website turn** (a WebDoc page — create, edit, or review) | `skills/design-guidance` — **must-read on every web turn**: the brand-deployment grammar (palette allocation, the chromatic moment, background rhythm, typographic/imagery posture) and the contract for a Creative Brief when the brand card carries one — plus `skills/create-website` (authoring contract) / `skills/edit-website` (live-page edits) / `skills/review-website` (ship bar) and the recipe `knowledge/web/landing-page` (or `knowledge/web/abm-page` for a 1:1 account page) |
 | **Any repair** (compile, preflight, or visual diagnostic) | `skills/repair-design` + `knowledge/lumen-dsl/directives` + `knowledge/lumen-dsl/diagnostics` |
 | **Page/artboard bounds or parent overflow repair** | `skills/repair-design` + `knowledge/lumen-dsl/layout` + `knowledge/loop/layout-cluster-repair` |
@@ -111,6 +112,7 @@ Each skill is a procedure for one job. Read the skill before doing that job.
 | Skill | Use when | Path |
 |-------|----------|------|
 | **Create a design** | Composing a brand-new artifact from a prompt | `skills/create-design/SKILL.md` |
+| **LinkedIn square ad** (format skill) | The brief asks for a linkedin ad, feed ad, square social ad, or 1:1 paid social creative — a 1080×1080 feed unit. Read it BEFORE `create-design`; it declares the format's `required_decisions`, its layout skeletons, and the named self-audit tests | `skills/linkedin-square-ad/SKILL.md` |
 | **Repair a design** | Fixing a compile / preflight / visual diagnostic on an existing scene — surgically, without re-authoring | `skills/repair-design/SKILL.md` |
 | **Brand & tokens** | Interpreting a Brand Kit and choosing `$tokens` instead of raw values | `skills/brand-and-tokens/SKILL.md` |
 | **Design guidance** | Deploying a brand rather than just its palette — where each color may live, how backgrounds sequence, what the buttons mean, and how to read a Creative Brief. **Must-read on every website turn** (it sits between brand-and-tokens and create-website) | `skills/design-guidance/SKILL.md` |
