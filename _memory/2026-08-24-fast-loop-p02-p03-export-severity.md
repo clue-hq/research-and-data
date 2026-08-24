@@ -117,10 +117,16 @@ directly, not assumed:
   and **allowlist-style**: it builds a fresh object picking only `status`,
   `diagnostics`, `export.artifacts`, `export.print_ready`. Unknown keys are
   silently dropped, never rejected — no `.strict()`, no throw on extra keys.
-- No strict Zod schema is in the path. The four `.strict()` schemas in the
+- No strict Zod schema is in the path. The `.strict()` call sites in the
   frontend live in `features/{projects,onboarding,session}/model/`, none of
   which touch the export response. (Had the export path been strict-parsed,
   `d1c9884db` would have failed every export on the day it shipped.)
+- **The additive-payload rule is already house doctrine**, which is a stronger
+  justification than either agent's own reasoning:
+  `apps/frontend/src/features/onboarding/model/onboarding.ts:123` carries the
+  comment *"Deliberately NOT .strict(): an additive backend field must never
+  turn a successful provision into a client-side failure (review finding
+  FE13)."* Cite FE13 when adding fields to an existing response.
 - `status: payload.status === "ok" ? "ok" : "failed"` — so an `ok` status with
   non-empty `warnings` reads as `ok`, matching the intended semantics.
 
@@ -131,9 +137,27 @@ reaches React. It has to be threaded in three places, not one —
 `exportResultFromUnknown` (`:256`), reading `payload.warnings` tolerantly like
 its neighbours; (3) `SceneExportStatus` in `scene-export.ts` + `report(...)` in
 `use-scene-export.ts`. Note the **two-copy** problem: the design subsystem's
-editor has its own `exportRunner.ts` with the same shape, so decide
-deliberately whether it gets the same treatment (same dual-copy hazard class as
-the AD4.C F9 residual in the root CLAUDE.md).
+editor has its own `exportRunner.ts` with the same shape (the two
+`exportResultFromUnknown` bodies are byte-identical — verified by diff), so
+decide deliberately whether it gets the same treatment.
+
+**Dual-copy hazard runs in BOTH directions — check which before assuming.**
+The root CLAUDE.md's AD4.C F9 residual set the expectation that the platform
+copy gets fixed while the subsystem copy rots. The export UI is the *inverse*
+case and it is worth knowing the shape can flip:
+
+- *Advisory-UI threading* (the `warnings` field): genuinely **two-copy** — both
+  `exportRunner.ts` files parse allowlist-style and both would need the field.
+- *Export-failure visibility* (the sibling agent's bug): correctly **one-copy**,
+  and now closed. The subsystem editor was **never broken** —
+  `subsystems/clue-design/apps/editor/src/components/ExportPanel.tsx:88` has
+  always rendered a plainly visible `<strong>Export failed</strong>`, and the
+  only sr-only treatment anywhere in that tree is `WebRichTextToolbar.tsx`
+  (both verified). The platform chat-shell copy was a **regression**: the
+  re-lift into chat-shell dropped a visible failure state the standalone editor
+  already had. Fixed on the platform side as `15c713a26`.
+
+So "the subsystem copy is the stale one" is not a reliable prior. Read both.
 
 ## Residuals / follow-ups
 - **`visual_regression` cannot compile at this base** — `crates/lumen-core/fixtures/visual_regression/baselines/*.png` are absent from the repo *and* from the pristine colombo workspace. Pre-existing, unrelated to this change; it is why `cargo test -p lumen-core` was run per-target.
