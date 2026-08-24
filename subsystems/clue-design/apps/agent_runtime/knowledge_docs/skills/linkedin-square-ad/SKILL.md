@@ -125,7 +125,7 @@ like this:
 - Every score below 2 also becomes an `issues[]` entry. Name the test in
   `message`, give a `target` and a `suggested_repair`, and use the category
   shown in parentheses below.
-- Any `0` on tests 1–6 means `accepted=false`.
+- Any `0` on tests 1–7 means `accepted=false`.
 
 Score with facts and measurements against the named test, never with adjectives.
 Write "headline is 6 words at 80pt" or "CTA measures 3.1:1 against its surface",
@@ -138,7 +138,17 @@ fails a measurement, which is exactly why the measurement is the score.
 4. `cta-thumbnail-legibility` — CTA readable at thumbnail scale; ≥ 4.5:1 against its surface. (`contrast`)
 5. `distinctive-asset-at-real-scale` — logo/wordmark ≥48pt; no asset with cropped baked-in text. (`asset_use`)
 6. `safe-margins` — all four margins clear, nothing clipped, no dead or zero-size nodes. (`clipping`)
-7. `brand-adherence-followed` — the chosen level actually holds (tokens, faces, assets). (`brand_fit`)
+7. `no-collisions` — no text runs into another text block, a button, or an image
+   edge. (`overflow`)
+8. `brand-adherence-followed` — the chosen level actually holds (tokens, faces, assets). (`brand_fit`)
+
+Test 7 is an EYES test and cannot be scored from geometry. The engine measures a
+line of text as exactly font size times line height, so tight leading shrinks the
+measured box in step with the text and the spill it causes is never reported.
+A scene can preflight perfectly clean while a headline sits on top of the body
+copy. Look at the render, and name both node ids when you find a pair. The fix is
+more line height, more gap, or fewer words — never a smaller font, which only
+hides the crowding.
 
 ## Override
 

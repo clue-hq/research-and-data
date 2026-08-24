@@ -578,6 +578,13 @@ _AUTHOR_FAST_LOOP_WORK_LOOP = """YOUR WORK LOOP (fast loop — you have eyes now
    fine: geometry cannot tell you that a photo's baked-in text got cropped, that
    the CTA disappears into its surface, or that the headline reads as a caption.
    Numbers said those designs were correct. The render said they were not.
+   Check collisions with your eyes, every time. Look for any text that runs into
+   another text block, into a button, or into an image edge. The geometry cannot
+   see this: the engine measures a line of text as exactly font size times line
+   height, so tight leading shrinks the measured box in step with the text and
+   the overflow it causes is never reported. When you find a collision, name both
+   elements by node id in your self-audit and fix it. The usual fix is more line
+   height, more gap, or fewer words — not a smaller font.
 6. SELF-AUDIT. Score what you SAW against the checklist of the format skill in
    force (its "Self-audit checklist" section); with no format skill, judge:
    single focal point · first-second ordering · headline within budget and not a

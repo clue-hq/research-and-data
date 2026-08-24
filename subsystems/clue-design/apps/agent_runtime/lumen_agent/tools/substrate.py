@@ -37,6 +37,7 @@ from ..brand_card import build_brand_card
 from ..knowledge import BRAND_APPLICATION_PATH, DIRECTIVES_PATH, read_task_knowledge
 from ..paths import normalize_agent_key
 from ..run_metrics import RunMetrics
+from ..text_clearance import collision_advisory
 from pydantic import ValidationError
 
 from ..models.schemas import (
@@ -2505,6 +2506,22 @@ class LumenDesignTools:
             # the author the mechanical repair was already tried and refused.
             payload["autofix"] = autofix_result.as_payload()
             output_summary = f"{output_summary}; {autofix_result.summary_line()}"
+        # Text-collision advisory (fast-loop tuning 2026-08-24). Flag-gated, so a
+        # flag-off preflight payload stays byte-identical. It rides preflight
+        # rather than render because the author reads preflight at work-loop
+        # step 3, one step BEFORE its first render — which is the earliest moment
+        # the finding can change what it does. Advisory only: it never sets
+        # has_errors and never edits the scene. See lumen_agent/text_clearance.py
+        # for why the engine itself cannot report this class.
+        if self.config.fast_loop:
+            try:
+                advisory = collision_advisory(self.scene)
+            except Exception:  # noqa: BLE001 - an advisory never fails a preflight
+                _SUBSTRATE_LOG.warning("text_collision_advisory_failed")
+                advisory = None
+            if advisory:
+                payload["text_collisions"] = advisory
+                output_summary = f"{output_summary}; text collisions advised"
         self.latest_preflight_has_errors = bool(summary.has_errors)
         self._write_json(iteration_dir / "preflight.json", payload)
         self.record(
