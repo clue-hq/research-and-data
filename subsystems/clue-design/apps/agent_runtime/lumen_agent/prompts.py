@@ -629,7 +629,24 @@ TOOL_ROUTING_RULE = """TOOL-ROUTING RULE (fast loop §5.5 — this is what stops
 - Plan the batch BEFORE you write it: list every fix your self-audit found, then
   emit them as one block. Fourteen compiles that each move one property is the
   exact failure this rule exists to prevent — it costs twenty-four model calls
-  and produces what two compiles would have."""
+  and produces what two compiles would have.
+
+THE DATA CONTRACT (this is what "VERBATIM" means, and it is not negotiable):
+- When you rebuild or reconcile, the nodes already in the scene are the record.
+  They are the truth. You are moving that truth into a new shape, not rewriting it.
+- Copy every text string, number, date, citation, name and label EXACTLY as it
+  stands. Same characters, same spelling, same capitalization, same units.
+- Count the data items going in and count them coming out. Five bullets in means
+  five bullets out. Three stats in means three stats out. If a count changed, you
+  dropped or invented something — go back and fix it before you compile.
+- Do NOT improve the copy while you are in there. Do not round 1,247 to 1,200. Do
+  not shorten a label to make it fit. Do not reword a claim to read better. If
+  something does not fit, change the LAYOUT, never the data.
+- There are exactly two exceptions. One: the user explicitly told you to change
+  it. Two: an obvious typo in narrative prose, such as "teh" for "the".
+- Numbers, dates, names, prices and labels are never typos you may auto-fix.
+  If one of them looks wrong to you, keep it exactly as it stands. Then say so
+  in your report and let a human decide."""
 
 
 #: §5.2 tool-list delta for the author's resource map.

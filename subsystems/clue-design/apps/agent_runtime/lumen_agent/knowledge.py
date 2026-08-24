@@ -235,6 +235,40 @@ def required_decision_keys(text: str) -> list[str]:
     return [key.strip() for key in raw.split(",") if key.strip()]
 
 
+#: The two values `selection_policy:` accepts, and the one it defaults to.
+SELECTION_POLICIES = ("llm_selectable", "deterministic")
+DEFAULT_SELECTION_POLICY = "llm_selectable"
+
+
+def selection_policy(text: str) -> str:
+    """How a FORMAT skill expects to be selected (`selection_policy:` frontmatter).
+
+    Declared in the fast-loop spec's §6.1 (`docs/deepagent-fast-loop-v1-spec.md`).
+    `llm_selectable` — the default, and today's only real behavior — means the
+    orchestrator picks the skill by matching the brief against its `description`
+    trigger phrases. `deterministic` means the skill is fired by a format match
+    rather than a judgement call, for formats whose own parameters settle the
+    choice (print work, where a page size plus a bleed requirement identifies the
+    format outright).
+
+    **Nothing consumes this yet.** Selection still runs entirely through
+    trigger-phrase matching, so a `deterministic` declaration changes no runtime
+    behavior. The reader exists so a skill can record its intended mode while it is
+    being written, and so the deterministic dispatcher has a declared interface to
+    read when it is built. Same deliberately-simple flat form as
+    `required_decisions:` / `assumes:`, so it parses with `parse_frontmatter` (a
+    `key: value` line reader, not YAML) and needs no new machinery.
+
+    An absent, empty, or unrecognized value returns ``llm_selectable`` — the field
+    is advisory today, so a typo must degrade to the safe default rather than fail
+    a turn (the same posture `_materialized_skill_index` takes on a malformed
+    `SKILL.md`).
+    """
+    meta, _ = parse_frontmatter(text)
+    declared = meta.get("selection_policy", "").strip()
+    return declared if declared in SELECTION_POLICIES else DEFAULT_SELECTION_POLICY
+
+
 def read_knowledge(
     repo_root: Path,
     query: str,
