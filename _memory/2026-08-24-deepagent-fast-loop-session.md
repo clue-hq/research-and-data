@@ -255,3 +255,21 @@ leniency; kits baking text colors into type roles.
 Color-craft wave MERGED earlier same evening (skills/color-and-contrast +
 on-color-pairing audit test in all 5 format skills + CTA plate pin; grep-proof:
 hexes only in worked examples, rules all token-role-level → generalizes).
+
+## Playbook runs A/B/C — post-engine-fix, 2026-08-24 late evening
+All on the fixed engine (fill precedence) + color-and-contrast skill. ZERO
+on-color pairing mistakes in all three — the color failure class is dead.
+A before/after `run_e379d570…`: 33 calls, TTFP 4m54, wall-cut 10m05. Unequal
+panels correct (dark BEFORE band, dominant AFTER), accent-span headline,
+proper CTA. Flaw: dead lower band (polish cut).
+B stat-proof `run_181c8dc5…`: 30 calls, TTFP 4m04, **8m31 UNDER budget** —
+§5.6 round-boundary rule declined an unfinishable repair round and finalized;
+stop_reason now carries an honest defect summary. Numeral-hero correct.
+C product-as-hero `run_e27f6917…`: 31 calls, TTFP 8m10 (built a full product-UI
+mock from scratch — visit-note interface w/ plausible clinical content), wall
+cut 10m46. Split-panel, UI bled off right edge, inverted white CTA correct.
+Flaws: headline line-spacing gaps, stray dot, polish cut.
+RECURRING BUG (4 runs): logo renders as EMPTY WHITE CHIP — `asset.bytes_missing`
+at RENDER time (distinct from P0.1 view fix). Top remaining quality bug, unowned.
+REMAINING LEVER: per-call latency (~20s mean) — model-speed A/B decision still
+with founder. TTFP gate met-ish only on B.
