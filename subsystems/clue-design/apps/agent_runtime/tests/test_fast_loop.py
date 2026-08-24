@@ -450,6 +450,38 @@ def test_tool_routing_rule_rides_both_flag_on_prompts() -> None:
         assert "VERBATIM" in prompt
 
 
+def test_the_routing_rule_spells_out_the_verbatim_data_contract() -> None:
+    """"Copy it VERBATIM" alone left room to "improve" a number on the way past.
+
+    The reconcile path rewrites existing nodes, so a rebuild is exactly where
+    invented or silently-corrected data enters a design. The rule therefore has to
+    say what verbatim covers, give the agent a countable check, and close the two
+    excuses (rounding a number, shortening a label to fit).
+    """
+    for prompt in (
+        build_author_prompt(WS, fast_loop=True),
+        build_orchestrator_prompt(WS, fast_loop=True, scene_reviewer=False),
+    ):
+        assert "THE DATA CONTRACT" in prompt
+        # The record, and the countable check over it.
+        assert "the nodes already in the scene are the record" in prompt
+        assert "Count the data items going in and count them coming out" in prompt
+        # The two named excuses are closed.
+        assert "Do not round 1,247 to 1,200" in prompt
+        assert "change the LAYOUT, never the data" in prompt
+        # Exactly two exceptions, and a number is not one of them.
+        assert "exactly two exceptions" in prompt
+        assert "never typos you may auto-fix" in prompt
+        assert "let a human decide" in prompt
+
+
+def test_the_verbatim_data_contract_is_absent_with_the_flag_off() -> None:
+    """It rides the routing rule, so it must inherit the routing rule's flag gate."""
+
+    for prompt in (build_author_prompt(WS), build_orchestrator_prompt(WS)):
+        assert "THE DATA CONTRACT" not in prompt
+
+
 def test_tool_routing_rule_is_absent_with_the_flag_off() -> None:
     assert TOOL_ROUTING_RULE not in build_author_prompt(WS)
     assert TOOL_ROUTING_RULE not in build_orchestrator_prompt(WS)
