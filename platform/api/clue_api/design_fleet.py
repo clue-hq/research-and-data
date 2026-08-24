@@ -50,11 +50,19 @@ class DesignRuntimeUnavailable(RuntimeError):
     """``design_runtime_enabled`` is on but the design app is not importable in this process."""
 
 
-def build_design_job_handler(*, enabled: bool) -> WorkHandler | None:
+def build_design_job_handler(
+    *, enabled: bool, purpose: str = "design_job_drain"
+) -> WorkHandler | None:
     """The ``design_job`` handler for :func:`build_multi_work_worker`, or ``None`` when off.
 
     Returned handlers carry ``kind == FleetTaskKind.DESIGN_JOB``; the worker builder re-checks
     that, so a wiring mistake fails at construction rather than at claim time.
+
+    ``purpose`` names the composition site in the registration log. One worker boot builds TWO
+    distinct handlers — the drain handler here and the inline leg lane's
+    (:func:`build_design_leg_lane_driver`) — so the event fires twice, ~300ms apart, by design.
+    Unlabelled it read as a double registration and sent a log-duplication hunt down the wrong
+    path; the real duplication was two root console handlers (see ``clue_obs.config``).
     """
     if not enabled:
         return None
@@ -69,7 +77,11 @@ def build_design_job_handler(*, enabled: bool) -> WorkHandler | None:
     handler: Any = _build()
     if handler.kind is not FleetTaskKind.DESIGN_JOB:
         raise DesignRuntimeUnavailable("the design handler does not own design_job tasks")
-    log.info("design_fleet.handler_registered", kind=FleetTaskKind.DESIGN_JOB.value)
+    log.info(
+        "design_fleet.handler_registered",
+        kind=FleetTaskKind.DESIGN_JOB.value,
+        purpose=purpose,
+    )
     return handler  # type: ignore[no-any-return]
 
 
@@ -331,7 +343,7 @@ def build_design_leg_lane_driver(*, enabled: bool) -> InlineDesignLaneDriver | N
     must refuse loudly rather than wedge the leg (the ``None`` composes the runner's
     unavailable-lane backstop).
     """
-    handler = build_design_job_handler(enabled=enabled)
+    handler = build_design_job_handler(enabled=enabled, purpose="design_leg_inline_lane")
     if handler is None:
         return None
     return InlineDesignLaneDriver(handler=handler)

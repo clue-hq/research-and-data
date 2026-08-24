@@ -1,5 +1,6 @@
 import { ClueAuthenticationError } from "@/auth/errors";
 import { backendPath, browserResponseHeaders } from "@/auth/bff";
+import { streamingFetchOptions } from "@/auth/streaming-dispatcher";
 
 /**
  * The design API speaks workspace-header auth only (`X-Workspace-Id`) and must
@@ -93,6 +94,12 @@ export async function handleDesignProxyRequest(
       body,
       cache: "no-store",
       redirect: "manual",
+      // `last-event-id` is forwarded above, so this handler is built to proxy
+      // the design run-event stream. An event stream must not run under
+      // undici's 300s body timeout; see `streaming-dispatcher.ts`. A no-op for
+      // ordinary request/response calls, and for an injected `fetchImpl` that
+      // ignores the option.
+      ...streamingFetchOptions(outgoing),
     },
   );
   return new Response(response.body, {

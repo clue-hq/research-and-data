@@ -11,6 +11,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import type { KeyboardEvent } from "react";
+import type { SceneExportStatus } from "@/features/design-editor/adapter/scene-export";
 import type { ChatShellArtifactKind } from "../model/chat-shell";
 import type {
   ImageExportFormat,
@@ -61,8 +62,8 @@ export function ArtifactHeader({
    * path. */
   exportPreview?: ImageExportPreview | null;
   /** AD4.D step 2: the ad session's export outcome, for the export menu's
-   * `aria-live` line. Absent on every other path. */
-  exportStatus?: string | null;
+   * status line. Absent on every other path. */
+  exportStatus?: SceneExportStatus | null;
   kind: ChatShellArtifactKind;
   onEdit: () => void;
   onRename: (title: string) => void;

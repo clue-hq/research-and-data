@@ -26,6 +26,29 @@ from .processors import build_processor_formatter, build_renderer, build_shared_
 # reconfiguration only ever removes ITS OWN handlers (never a foreign one).
 _OWNED = "_lumen_obs_handler"
 
+# Attribute stamped on the ROOT CONSOLE handler by every cooperating obs
+# configurator in the process, whichever package it lives in.
+#
+# Intra-package idempotency (``_OWNED``) is not enough, because two obs modules
+# ship in one process: this one and the platform's ``clue_obs``
+# (``libs/clue-obs``). Each used to strip only its own marker, so both consoles
+# ended up on the root logger and EVERY line in the design fleet worker's log
+# was written twice (measured: 6021 lines, 3391 unique). This module's console
+# arrives silently in that process — the worker imports ``lumen_api.main`` to
+# run a design job, and its module-scope ``app = create_app()`` calls
+# ``configure()``.
+#
+# So the root console is a single shared slot: last configurator wins, and
+# there is exactly one. The string is duplicated verbatim in the platform
+# package rather than imported, because the design subsystem and the platform
+# libs deliberately share no imports; keep the two literals in step.
+#
+# Scoped to the CONSOLE on purpose. Run-file handlers stay private to whoever
+# attached them (they carry only ``_OWNED``), so the harness's per-run
+# ``run.jsonl`` survives a foreign reconfigure — no event is lost, it just
+# stops being written twice.
+_ROOT_CONSOLE_OWNED = "_obs_root_console_handler"
+
 _ENV_MODE = "LUMEN_LOG_MODE"
 _ENV_FORMAT = "LUMEN_LOG_FORMAT"
 
@@ -52,8 +75,13 @@ def _resolve_format(fmt: LogFormat | str | None) -> LogFormat:
 
 
 def _remove_owned_handlers(root: logging.Logger) -> None:
+    """Detach this module's handlers, plus ANY cooperating package's root console.
+
+    The second clause is what keeps the process to one console handler; see
+    ``_ROOT_CONSOLE_OWNED``.
+    """
     for handler in list(root.handlers):
-        if getattr(handler, _OWNED, False):
+        if getattr(handler, _OWNED, False) or getattr(handler, _ROOT_CONSOLE_OWNED, False):
             root.removeHandler(handler)
             try:
                 handler.close()
@@ -121,6 +149,7 @@ def configure(
         )
     )
     setattr(console, _OWNED, True)
+    setattr(console, _ROOT_CONSOLE_OWNED, True)  # shared console slot
     root.addHandler(console)
 
     if attach_file:

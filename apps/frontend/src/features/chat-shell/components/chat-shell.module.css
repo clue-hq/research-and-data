@@ -851,6 +851,20 @@
   flex: 0 0 auto;
 }
 
+/* The export menu's failure line. Previously the outcome reached only an
+ * `.srOnly` span, so a refused export looked like a dead button.
+ *
+ * Deliberately the SAME treatment as `.inspectorStatusError` — this surface's
+ * one existing error idiom (12/16 text in `critical-700`, no box, no icon, no
+ * banner) — rather than a new one, re-spaced for a menu that pads its own
+ * edges. Do not grow this into a banner without a founder ruling. */
+.imageExportStatusError {
+  margin: 8px 0 0;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--clue-ds-color-primitives-critical-700);
+}
+
 .imageExportPreviewSection {
   display: flex;
   flex-direction: column;

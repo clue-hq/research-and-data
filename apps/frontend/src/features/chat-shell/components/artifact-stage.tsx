@@ -25,6 +25,7 @@ import type {
   PageId,
   Scene,
 } from "@/features/design-editor/engine/scene/contracts";
+import type { SceneExportStatus } from "@/features/design-editor/adapter/scene-export";
 import type { WebSelection } from "@/features/design-editor/engine/webBridge";
 import type {
   RichTextDocument,
@@ -117,9 +118,9 @@ export function ArtifactStage({
    * leaves that region the designed empty state it is today. */
   exportPreview?: ImageExportPreview | null;
   /** AD4.D step 2 (§1.11): the ad editing session's export outcome, on its way
-   * to the export menu's `aria-live` line. Absent leaves the menu announcing
+   * to the export menu's status line. Absent leaves the menu announcing
    * its controller's own optimistic line, exactly as it does today. */
-  exportStatus?: string | null;
+  exportStatus?: SceneExportStatus | null;
   onActivateArtifact: (artifactId: string) => void;
   /** AD4.D step 3: the export menu asking the ad session to render the settings
    * it is showing. Absent keeps the menu's preview effect inert. */
