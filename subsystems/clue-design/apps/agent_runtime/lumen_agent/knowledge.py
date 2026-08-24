@@ -211,6 +211,30 @@ def assumes_path(key: str) -> str:
     return f"{KNOWLEDGE_DOCS_ROOT}/knowledge/{key}.md"
 
 
+def required_decision_keys(text: str) -> list[str]:
+    """The decision ids a FORMAT skill declares via `required_decisions:` frontmatter.
+
+    The machine-readable half of the fast-loop spec's §5.7 conditional-clarification
+    contract (`docs/deepagent-fast-loop-v1-spec.md`): a format skill lists the
+    decisions that must be settled before authoring, and the orchestrator checks the
+    brief against exactly that list — material gaps become ONE batched
+    `request_clarification` round, everything else proceeds on the skill's stated
+    default with a `record_gap`.
+
+    Deliberately the same comma-separated flat form as `assumes:` so it parses with
+    the existing `parse_frontmatter` (a `key: value` line reader, not YAML) and needs
+    no new machinery. Each id here MUST have a matching row in the skill's
+    `## Defaults & required decisions` table, whose columns are the
+    `ClarificationQuestion` fields (`id | question | why_it_matters | options |
+    default`) — the table is the human/model-readable half. A skill that declares no
+    `required_decisions` returns ``[]`` (every non-format skill), so callers can treat
+    "no declaration" as "nothing to gate on".
+    """
+    meta, _ = parse_frontmatter(text)
+    raw = meta.get("required_decisions", "")
+    return [key.strip() for key in raw.split(",") if key.strip()]
+
+
 def read_knowledge(
     repo_root: Path,
     query: str,
