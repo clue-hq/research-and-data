@@ -1637,6 +1637,216 @@ fn text_color_is_corrected_for_surface_contrast() {
     );
 }
 
+// ---- Fill precedence: an author's explicit text fill beats the role's color ----
+//
+// A type role bakes one color (the platform default `type.display` bakes
+// `text.primary`). That color is a DEFAULT for text carrying no color of its
+// own. Resolution used to push it over `fills[0]` unconditionally, so an author
+// who wrote `fill($text.inverse)` on a branded ground got the role's dark text
+// instead — and the P1.1 correction did not rescue it, because the pair cleared
+// the lenient 3.0 floor. These pin the precedence, not the threshold.
+
+/// A mid-tone branded ground chosen so the role's baked `text.primary`
+/// (`#111827`) CLEARS the P1.1 floor (~3.1:1) while the author's
+/// `text.inverse` white is markedly better (~5.7:1). That is the shape of the
+/// live defect: the correction had no reason to fire, so the clobber stood.
+const BRAND_GROUND: &str = "#7C3AED";
+
+/// Resolve one text node under the platform default kit and report the fill
+/// entry it ends up with. The node sits inside an artboard painted
+/// `surface_hex` so P1.1's surface tracking has a real ground to measure.
+fn resolved_text_fill(
+    style_token: Option<&str>,
+    author_fill: Option<Paint>,
+    surface_hex: &str,
+) -> (PaintId, String) {
+    let brand_kit = platform_default_brand_kit().unwrap();
+    let mut scene = Scene::new(DocumentId::from("doc_fill_precedence"), "Fill Precedence");
+    scene.meta.brand_kit = Some(brand_kit.brand_ref());
+    scene.pages.insert(PageId::from("page"), page("page"));
+
+    let mut artboard = Node::new(NodeId::from("artboard"), NodeKind::Frame);
+    artboard.fills = vec![Fill {
+        id: PaintId::from("bg"),
+        paint: Paint::Solid {
+            color: Color::Hex {
+                value: surface_hex.to_owned(),
+            },
+        },
+    }];
+
+    let mut headline = Node::new(
+        NodeId::from("headline"),
+        NodeKind::Text(TextNode {
+            content: "Clinical notes write themselves.".to_owned(),
+            style_token: style_token.map(str::to_owned),
+            ..TextNode::default()
+        }),
+    );
+    if let Some(paint) = author_fill {
+        // The id the DSL compiler mints for an authored `fill(...)`.
+        headline.fills = vec![Fill {
+            id: PaintId::from("paint_headline_fill_1"),
+            paint,
+        }];
+    }
+
+    artboard.children = vec![headline.id.clone()];
+    scene.pages.get_mut(&PageId::from("page")).unwrap().children = vec![artboard.id.clone()];
+    scene.nodes.insert(headline.id.clone(), headline);
+    scene.nodes.insert(artboard.id.clone(), artboard);
+
+    let report = resolve_scene_tokens(&scene, &brand_kit, &TokenResolutionOptions::default());
+    let headline = report.scene.nodes.get(&NodeId::from("headline")).unwrap();
+    assert_eq!(
+        headline.fills.len(),
+        1,
+        "expected exactly one text fill, got {:#?}",
+        headline.fills
+    );
+    let Paint::Solid {
+        color: Color::Hex { value },
+    } = &headline.fills[0].paint
+    else {
+        panic!(
+            "expected a resolved solid hex text fill, got {:#?}",
+            headline.fills
+        );
+    };
+    (headline.fills[0].id.clone(), value.to_ascii_uppercase())
+}
+
+#[test]
+fn author_token_fill_beats_the_type_role_color() {
+    // The live repro (run_bcdcf3e484fd48b7805c8eb561a64854, iterations 001-003):
+    // `style($type.display) fill($text.inverse)` on the brand ground rendered
+    // `#000000` because the role's baked `text.primary` overwrote the author's
+    // white. The author's token must win and resolve through the ordinary fill
+    // path instead.
+    let (fill_id, hex) = resolved_text_fill(
+        Some("type.display"),
+        Some(Paint::Token {
+            token: "text.inverse".to_owned(),
+        }),
+        BRAND_GROUND,
+    );
+
+    assert_eq!(
+        fill_id,
+        PaintId::from("paint_headline_fill_1"),
+        "the author's own fill entry must survive resolution"
+    );
+    assert_eq!(
+        hex, "#FFFFFF",
+        "explicit fill($text.inverse) must beat the role's baked text.primary"
+    );
+}
+
+#[test]
+fn author_literal_hex_fill_beats_the_type_role_color() {
+    // Same rule for a literal color: the author said white, they get white.
+    let (fill_id, hex) = resolved_text_fill(
+        Some("type.display"),
+        Some(Paint::Solid {
+            color: Color::Hex {
+                value: "#FFFFFF".to_owned(),
+            },
+        }),
+        BRAND_GROUND,
+    );
+
+    assert_eq!(fill_id, PaintId::from("paint_headline_fill_1"));
+    assert_eq!(
+        hex, "#FFFFFF",
+        "an explicit literal fill must beat the role's baked text.primary"
+    );
+}
+
+#[test]
+fn text_with_no_author_fill_still_takes_the_role_color_and_p1_1_correction() {
+    // The path P1.1 was built for is untouched: with no author fill, the role's
+    // color lands in a role-owned fill entry, corrected only when the pair is
+    // genuinely illegible.
+    let (fill_id, on_light) = resolved_text_fill(Some("type.display"), None, "#FFFFFF");
+    assert_eq!(
+        fill_id,
+        PaintId::from("headline_text_fill"),
+        "the role synthesizes its own fill entry when the author wrote none"
+    );
+    assert_eq!(
+        on_light, "#111827",
+        "text.primary on white clears the floor, so the role's color stands"
+    );
+
+    // Same ground as the two author-fill tests above. With no author fill the
+    // role's dark color survives here, because it clears the lenient 3.0 floor
+    // — which is exactly why the old unconditional clobber went unnoticed.
+    let (_, on_brand) = resolved_text_fill(Some("type.display"), None, BRAND_GROUND);
+    assert_eq!(
+        on_brand, "#111827",
+        "the role's color still applies when the author named none"
+    );
+
+    let (_, on_dark) = resolved_text_fill(Some("type.display"), None, "#0B1220");
+    assert_eq!(
+        on_dark, "#FFFFFF",
+        "text.primary on a near-black ground is illegible, so P1.1 flips it"
+    );
+}
+
+#[test]
+fn authored_dsl_hero_keeps_its_inverse_text_on_the_brand_ground() {
+    // Run-2's exact shape, end to end through the DSL compiler: a branded
+    // artboard whose every text child names both a type role and an explicit
+    // $text.inverse fill. Before the precedence rule all three came back dark.
+    let brand_kit = platform_default_brand_kit().unwrap();
+    let source = concat!(
+        "page hero size(1080,1080,px)\n",
+        "  artboard fr p(0,0) s(1080,1080) fill($surface.brand)\n",
+        "    eyebrow text \"Insight Health\" p(96,96) s(888,44) ",
+        "style($type.eyebrow) fill($text.inverse)\n",
+        "    headline text \"Clinical notes write themselves.\" p(96,200) s(888,240) ",
+        "style($type.display) fill($text.inverse) wrap_text(true)\n",
+        "    body text \"Stop documenting after the visit.\" p(96,480) s(888,120) ",
+        "style($type.body) fill($text.inverse) wrap_text(true)\n",
+    );
+
+    let mut scene = Scene::new(DocumentId::from("doc_run2_hero"), "Run 2 Hero");
+    scene.meta.brand_kit = Some(brand_kit.brand_ref());
+    let output = compile_dsl_into_scene(source, &mut scene);
+    let dsl_errors = output
+        .compile_output
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.diagnostic.severity == DiagnosticSeverity::Error)
+        .collect::<Vec<_>>();
+    assert!(dsl_errors.is_empty(), "{dsl_errors:#?}");
+    assert!(
+        output.operation_error.is_none(),
+        "{:#?}",
+        output.operation_error
+    );
+
+    let report = resolve_scene_tokens(&scene, &brand_kit, &TokenResolutionOptions::default());
+    for node_id in ["eyebrow", "headline", "body"] {
+        let node = report.scene.nodes.get(&NodeId::from(node_id)).unwrap();
+        let Paint::Solid {
+            color: Color::Hex { value },
+        } = &node.fills[0].paint
+        else {
+            panic!(
+                "{node_id}: expected a resolved solid hex fill, got {:#?}",
+                node.fills
+            );
+        };
+        assert_eq!(
+            value.to_ascii_uppercase(),
+            "#FFFFFF",
+            "{node_id} authored fill($text.inverse) and must render white on $surface.brand"
+        );
+    }
+}
+
 fn page(id: &str) -> Page {
     Page {
         id: PageId::from(id),
