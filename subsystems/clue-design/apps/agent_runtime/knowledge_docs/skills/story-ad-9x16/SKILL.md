@@ -17,6 +17,8 @@ whole format is one vertical ladder read top to bottom.
 This skill decides; the craft skills execute. Read beside it:
 
 - `skills/brand-and-tokens` — role tokens, never guessed values.
+- `skills/color-and-contrast` — which combination of those tokens actually
+  reads. The on-color pairing law, and the shade decision.
 - `skills/brand-imagery` — the kit-asset / generate / deliberately-none call.
 - `skills/clarify-design-brief` — derive before you ask.
 
@@ -120,6 +122,10 @@ pour copy into the shell.
 
 ## Brand & assets
 
+- **On a saturated brand ground, text is `$text.inverse`.** Dark ink belongs on
+  `$surface.page`, `$surface.card`, or `$surface.brand.subtle`, never on
+  `$surface.brand`. A full-bleed brand field fills this whole format, so this is
+  the pairing that decides whether the ad reads. See `skills/color-and-contrast`.
 - Logo or wordmark at real scale — **≥48pt height**, or the kit's declared
   minimum size if larger. Put it in the header block, inside the band, never in
   the top chrome zone where the avatar row lands. Bind through slots
@@ -145,7 +151,7 @@ like this:
 - Every score below 2 also becomes an `issues[]` entry. Name the test in
   `message`, give a `target` and a `suggested_repair`, and use the category
   shown in parentheses below.
-- Any `0` on tests 1–6 means `accepted=false`.
+- Any `0` on tests 1–7 means `accepted=false`.
 
 Score with facts and measurements against the named test, never with adjectives.
 Write "headline is 6 words at 80pt" or "CTA measures 3.1:1 against its surface",
@@ -158,7 +164,10 @@ fails a measurement, which is exactly why the measurement is the score.
 4. `headline-budget` — ≤7 words, ≥64pt, and NOT a caption of the image. (`typography`)
 5. `cta-legibility` — CTA readable at phone scale; ≥ 4.5:1 against its surface. (`contrast`)
 6. `distinctive-asset-at-real-scale` — logo/wordmark ≥48pt; no asset with cropped baked-in text. (`asset_use`)
-7. `brand-adherence-followed` — the chosen level actually holds (tokens, faces, assets). (`brand_fit`)
+7. `on-color-pairing` — every text/ground and plate/ground pair reads cleanly.
+   Dark ink on a saturated brand ground scores 0, and so does spending the
+   full-strength brand color as BOTH the ground and the accent. (`contrast`)
+8. `brand-adherence-followed` — the chosen level actually holds (tokens, faces, assets). (`brand_fit`)
 
 ## Override
 

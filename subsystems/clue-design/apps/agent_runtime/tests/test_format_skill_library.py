@@ -83,7 +83,18 @@ class FormatSkill:
         return parse_frontmatter(self.text())
 
 
-_SHARED_COMPOSES = ("skills/brand-and-tokens", "skills/brand-imagery", "skills/clarify-design-brief")
+# Added 2026-08-24 (colour-craft wave): `skills/color-and-contrast` joins the
+# shared roster after acceptance run #2 shipped a black `$text.primary` headline
+# on a full-strength `$surface.brand` ground. Picking a legal token was treated
+# as the end of colour thinking; nothing in the format layer asked how the
+# combination actually reads. Every format skill composes with it, so the guard
+# below fails if one of them ever drops the pointer.
+_SHARED_COMPOSES = (
+    "skills/brand-and-tokens",
+    "skills/color-and-contrast",
+    "skills/brand-imagery",
+    "skills/clarify-design-brief",
+)
 _IMPACT_FACES = ("Anton", "Bebas Neue", "Archivo Black", "Bricolage Grotesque")
 
 PILOT = FormatSkill(
@@ -111,6 +122,12 @@ PILOT = FormatSkill(
         # its body copy. No engine diagnostic covers content colliding with
         # content, so this eyes test is the only thing that catches the class.
         "no-collisions",
+        # Added 2026-08-24 after acceptance run #2 shipped a black headline on a
+        # full-strength brand ground with a saturated CTA plate on top of it. The
+        # engine's LUMB0807 caught the 16pt body at 3.39:1 and let the 77pt
+        # headline through on the large-text floor, so the defect that actually
+        # sank the render was reported by nothing. Only an eyes test covers it.
+        "on-color-pairing",
         "brand-adherence-followed",
     ),
 )
@@ -137,6 +154,7 @@ STORY = FormatSkill(
         "headline-budget",
         "cta-legibility",
         "distinctive-asset-at-real-scale",
+        "on-color-pairing",
         "brand-adherence-followed",
     ),
 )
@@ -169,6 +187,7 @@ BANNERS = FormatSkill(
         "cta-is-the-contrast-peak",
         "cta-copy-is-an-action",
         "wordmark-legible",
+        "on-color-pairing",
         "brand-adherence-followed",
     ),
 )
@@ -195,6 +214,7 @@ POSTER = FormatSkill(
         "edge-art-reaches-the-bleed",
         "press-safe-color",
         "one-ask-with-its-standing-detail",
+        "on-color-pairing",
         "brand-adherence-followed",
     ),
 )
@@ -226,6 +246,7 @@ BANNER = FormatSkill(
         "wordmark-at-real-scale",
         "one-line-budget",
         "calm-contrast",
+        "on-color-pairing",
         "brand-adherence-followed",
     ),
 )

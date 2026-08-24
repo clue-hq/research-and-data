@@ -18,6 +18,8 @@ richer. It makes all four unreadable.
 This skill decides; the craft skills execute. Read beside it:
 
 - `skills/brand-and-tokens` — role tokens, never guessed values.
+- `skills/color-and-contrast` — which combination of those tokens actually
+  reads. The on-color pairing law, and the shade decision.
 - `skills/brand-imagery` — the kit-asset / generate / deliberately-none call.
   On a banner the answer is usually **deliberately none**: below 300 × 250 there
   is no room for a photo that reads, and a shrunken one reads as noise.
@@ -160,6 +162,11 @@ for weight and color and override the size every time.
   `rd($radius.button)`, holding one label node sized `s(fill,hug) align(center)`
   at `style($type.cta)`. Never give the label a hug WIDTH — that trips
   `LUMV0902`.
+- **On a saturated brand ground, text is `$text.inverse`.** Dark ink belongs on
+  `$surface.page`, `$surface.card`, or `$surface.brand.subtle`, never on
+  `$surface.brand`. If the ground is already the full-strength brand color, the
+  CTA plate takes a neutral or a softer shade. Two saturated hues touching at
+  banner scale read as a blur. See `skills/color-and-contrast`.
 - **The CTA is the highest-contrast element on the frame.** Not the headline,
   not the logo. If the eye lands anywhere else first, raise the button's
   contrast or lower everything around it.
@@ -177,7 +184,7 @@ like this:
 - Every score below 2 also becomes an `issues[]` entry. Name the test in
   `message`, give a `target` and a `suggested_repair`, and use the category
   shown in parentheses below.
-- Any `0` on tests 1–6 means `accepted=false`.
+- Any `0` on tests 1–7 means `accepted=false`.
 
 Score with facts and measurements against the named test, never with adjectives.
 Write "message is 5 words at 20pt" or "CTA measures 3.1:1 against its surface",
@@ -190,7 +197,10 @@ fails a measurement, which is exactly why the measurement is the score.
 4. `cta-is-the-contrast-peak` — the CTA is the loudest element and measures ≥ 4.5:1 against its surface. (`contrast`)
 5. `cta-copy-is-an-action` — a verb and an outcome, never "Learn more". (`request_satisfaction`)
 6. `wordmark-legible` — the brand reads at the unit's real pixel size, not just zoomed in. (`asset_use`)
-7. `brand-adherence-followed` — the chosen level actually holds (tokens, faces, assets). (`brand_fit`)
+7. `on-color-pairing` — every text/ground and plate/ground pair reads cleanly.
+   Dark ink on a saturated brand ground scores 0, and so does spending the
+   full-strength brand color as BOTH the ground and the accent. (`contrast`)
+8. `brand-adherence-followed` — the chosen level actually holds (tokens, faces, assets). (`brand_fit`)
 
 ## Override
 

@@ -18,6 +18,8 @@ credible. The more it competes, the worse the whole profile reads.
 This skill decides; the craft skills execute. Read beside it:
 
 - `skills/brand-and-tokens` — role tokens, never guessed values.
+- `skills/color-and-contrast` — which combination of those tokens actually
+  reads. The on-color pairing law, and the shade decision.
 - `skills/brand-imagery` — the kit-asset / generate / deliberately-none call.
   A quiet brand field beats a busy photo here almost every time.
 - `skills/clarify-design-brief` — derive before you ask.
@@ -143,6 +145,10 @@ one alignment spine**.
 
 ## Brand & assets
 
+- **On a saturated brand ground, text is `$text.inverse`.** Dark ink belongs on
+  `$surface.page`, `$surface.card`, or `$surface.brand.subtle`, never on
+  `$surface.brand`. This format wants a calm field, so `$surface.brand.subtle`
+  is often the better ground here anyway. See `skills/color-and-contrast`.
 - Prefer the real mark over a typeset wordmark. Bind through slots
   (`slot(account.logo)`) with asset roles (`logo.primary` / `logo.reversed`),
   never an invented asset id. Pick the variant that suits the field's lightness.
@@ -167,7 +173,7 @@ like this:
 - Every score below 2 also becomes an `issues[]` entry. Name the test in
   `message`, give a `target` and a `suggested_repair`, and use the category
   shown in parentheses below.
-- Any `0` on tests 1–6 means `accepted=false`.
+- Any `0` on tests 1–7 means `accepted=false`.
 
 Score with facts and measurements against the named test, never with adjectives.
 Write "wordmark starts at x=520" or "the line measures 3.1:1 against the field",
@@ -180,7 +186,10 @@ fails a measurement, which is exactly why the measurement is the score.
 4. `wordmark-at-real-scale` — the mark is ≥48pt tall, or the kit's declared minimum if larger, and carries no cropped baked-in text. (`asset_use`)
 5. `one-line-budget` — a mark plus at most one line of ≤9 words, and nothing else. (`typography`)
 6. `calm-contrast` — the line measures ≥ 4.5:1 against its field, and the field does not fight the platform chrome drawn over it. (`contrast`)
-7. `brand-adherence-followed` — the chosen level actually holds (tokens, faces, assets). (`brand_fit`)
+7. `on-color-pairing` — every text/ground and plate/ground pair reads cleanly.
+   Dark ink on a saturated brand ground scores 0, and so does spending the
+   full-strength brand color as BOTH the ground and the accent. (`contrast`)
+8. `brand-adherence-followed` — the chosen level actually holds (tokens, faces, assets). (`brand_fit`)
 
 ## Override
 
