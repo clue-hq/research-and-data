@@ -106,6 +106,7 @@ PILOT = FormatSkill(
     pinned=(
         "knowledge/design/layout-recipes",  # the archetype canon it selects from
         "knowledge/design/blocks/patterns",  # the validated 1080² proportions
+        "knowledge/design/blocks/actions",  # the validated CTA plate geometry
         "knowledge/design/foundations",  # squint test + contrast floors
         "knowledge/design/font-library",  # the display voices it names
     ),

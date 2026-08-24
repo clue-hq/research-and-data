@@ -24,6 +24,7 @@ This skill decides; the craft skills execute. Read beside it:
 Pin these knowledge files into the frame payload instead of hunting for them
 mid-run: `knowledge/design/layout-recipes` (the six-archetype canon),
 `knowledge/design/blocks/patterns` (validator-passed 1080² blocks),
+`knowledge/design/blocks/actions` (the validated button structure),
 `knowledge/design/foundations` (squint test, 60-30-10, contrast floors), and
 `knowledge/lumen-dsl/grammar` + `text` (the size ramp).
 
@@ -91,8 +92,20 @@ pour copy into the shell.
   **22pt**. That is one step above the general 1080² skeletons' 19–21pt, because
   the feed downscales the canvas. If the kit's body role lands smaller, step up
   with `font_size($type.size.xl)` (24).
-- CTA label: ≤4 words, `style($type.cta) align(center)`, inside a `s(fill,hug)`
-  text node.
+- CTA label: ≤4 words at `style($type.cta) align(center)`, inside a
+  `s(fill,hug)` text node. Give the label the CTA role and nothing bigger. A
+  `style($type.headline)` label is what inflates a button into a second hero.
+- **The CTA plate is the validated button from `knowledge/design/blocks/actions`.**
+  Build it exactly that way. The plate is a fixed `s(340,76)` container written
+  `al(h,x(c),y(c),pad(20,40))`, with a fill and `rd($radius.button)`. It holds
+  ONE label node sized `s(fill,hug) align(center)`.
+- **Those two sizings are what keep the label centered.** The plate's `y(c)`
+  centers the label box inside the plate. The label's `align(center)` centers
+  the glyph inside that box. Drop either one and the label drifts off-center or
+  sinks toward the bottom edge.
+- **The plate takes its size from its own geometry, never from its label.** A
+  plate left to grow around an oversized label becomes a second focal mass. Never
+  give the label a hug WIDTH either — that trips `LUMV0902`.
 - Kit faces first. A library display face may carry the headline when the kit
   voice is too neutral to stop a scroll and adherence is not strict — **Anton**,
   **Bebas Neue** (caps only), **Archivo Black**, **Bricolage Grotesque**; exact
