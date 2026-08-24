@@ -211,6 +211,12 @@ class Settings(BaseSettings):
     # once pre-dispatch skill selection exists (see the spec's §5.1 as-built note).
     lumen_agent_fast_loop_pinned_knowledge: str | None = None
 
+    # §5.4 deterministic autofix: how many planning passes the code loop may run
+    # per preflight. The loop also exits as soon as a pass makes no progress, so
+    # this is a ceiling, not a schedule. 0 disables autofix while leaving the
+    # rest of the fast loop on. Only read when `lumen_agent_fast_loop` is true.
+    lumen_agent_autofix_max_passes: int = 2
+
     # Read by langchain directly from os.environ; declared here for visibility.
     anthropic_api_key: str | None = None
 
@@ -255,6 +261,18 @@ class Settings(BaseSettings):
                 f"for no reasoning field); got {value!r}"
             )
         return effort
+
+    @field_validator("lumen_agent_autofix_max_passes")
+    @classmethod
+    def _validate_autofix_max_passes(cls, value: int) -> int:
+        """A negative cap is a typo, and an unbounded one defeats the point of a
+        bounded loop — both must fail at startup rather than mid-turn."""
+        if value < 0:
+            raise ValueError(
+                "LUMEN_AGENT_AUTOFIX_MAX_PASSES must be >= 0 (0 disables autofix); "
+                f"got {value!r}"
+            )
+        return value
 
     @field_validator("lumen_agent_max_tokens")
     @classmethod

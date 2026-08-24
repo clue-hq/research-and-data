@@ -26,6 +26,7 @@ try:  # generation cache (request -> asset), so the loop doesn't re-pay per iter
 except Exception:  # pragma: no cover
     image_cache = None  # type: ignore[assignment]
 
+from ..autofix import AutofixResult, run_autofix
 from ..config import AgentRuntimeConfig
 from ..retokenize import (
     build_logo_placement_operations,
@@ -2446,15 +2447,39 @@ class LumenDesignTools:
             return json.dumps(payload, indent=2)
 
         self._replace_scene_from_core_response(response, "preflight_design")
-        diagnostics = diagnostics_from(response.get("diagnostics", []))
-        if governance_diagnostics:
-            diagnostics = diagnostics + governance_diagnostics
+        raw_diagnostics = list(response.get("diagnostics", []) or [])
         preflight = response.get("preflight", {})
+
+        # §5.4: the deterministic autofix loop runs HERE — after the engine has
+        # spoken and before the author is told anything. Everything below this
+        # block therefore reports the POST-autofix world, which is the whole
+        # point: the author never spends a model call on a repair whose value
+        # the engine already implied.
+        autofix_result = self._run_autofix(raw_diagnostics, brand_kit, iteration_dir)
+        if autofix_result is not None and autofix_result.changed:
+            raw_diagnostics = list(autofix_result.diagnostics)
+            # `has_errors` must never be inferred from a MISSING summary — an
+            # empty block would read as "clean" and could let a blocking export
+            # error through the P0.3 finalize guard. Fall back to the same rule
+            # the engine uses (preflight.rs:219, `any severity == error`).
+            preflight = autofix_result.raw_preflight or {
+                "has_errors": any(d.get("severity") == "error" for d in raw_diagnostics)
+            }
+
+        diagnostics = diagnostics_from(raw_diagnostics)
+        if governance_diagnostics:
+            # Deliberately NOT recomputed after autofix: governance judges the
+            # AUTHORED (pre-resolution) scene, the only state where bindings are
+            # observable, while autofix operates on the resolved one. Re-running
+            # it here would report LUMB0805/0804/0806 on a fully-literal scene no
+            # matter how well the draft was authored — the exact artifact the K4
+            # comment above exists to avoid. It is advisory either way.
+            diagnostics = diagnostics + governance_diagnostics
         # P0.3: keep the RAW engine diagnostics (code + severity as the engine
         # spelled them) for the finalize guard — `diagnostics_from` normalizes
         # into the runtime's own wider enum, and the export classification is
         # defined against the engine's vocabulary.
-        self._latest_preflight_diagnostics = list(response.get("diagnostics", []) or [])
+        self._latest_preflight_diagnostics = raw_diagnostics
         brand_context = self._brand_context_from_scene_ref(brand_context)
         self.effective_brand_context = brand_context
         summary = PreflightSummary(
@@ -2471,19 +2496,117 @@ class LumenDesignTools:
             "raw_preflight": preflight,
             "effective_brand": brand_context,
         }
+        output_summary = f"has_errors={summary.has_errors}; {len(diagnostics)} diagnostics"
+        if autofix_result is not None and autofix_result.attempted:
+            # The autofix block rides the SAME payload the author reads, next to
+            # the diagnostics it changed — spec §5.4's "recorded in the round's
+            # diagnostics so the agent (and the trace) knows what moved". The
+            # rolled-back entries matter as much as the applied ones: they tell
+            # the author the mechanical repair was already tried and refused.
+            payload["autofix"] = autofix_result.as_payload()
+            output_summary = f"{output_summary}; {autofix_result.summary_line()}"
         self.latest_preflight_has_errors = bool(summary.has_errors)
         self._write_json(iteration_dir / "preflight.json", payload)
         self.record(
             "coordinator",
             "preflight_completed",
-            output_summary=(
-                f"has_errors={summary.has_errors}; "
-                f"{len(diagnostics)} diagnostics"
-            ),
+            output_summary=output_summary,
             diagnostics=[diag.model_dump(mode="json") for diag in diagnostics],
             payload=payload,
         )
         return json.dumps(payload, indent=2)
+
+    def _run_autofix(
+        self,
+        raw_diagnostics: list[JsonObject],
+        brand_kit: Optional[JsonObject],
+        iteration_dir: Path,
+    ) -> Optional[AutofixResult]:
+        """Drive the §5.4 code loop against the engine. Never raises.
+
+        Flag-gated to the point of invisibility: with `LUMEN_AGENT_FAST_LOOP`
+        down, `config.autofix_passes` is 0 and this returns `None` before making
+        a single call or touching a single field, so `preflight_design` is
+        byte-identical to the pre-fast-loop version.
+
+        The two engine callables are injected rather than reached for, so
+        `autofix.run_autofix` stays a pure, helper-free unit. `apply_operations`
+        deliberately does NOT go through `self.apply_operations` (the agent tool)
+        — a speculative patch must not mutate the working scene, log to the
+        ledger, or emit a trace event before the engine has verified it. Only an
+        ACCEPTED patch is committed, below.
+        """
+        if self.config.autofix_passes <= 0:
+            return None
+
+        preflight_blocks: list[tuple[JsonObject, JsonObject]] = []
+
+        def _apply(scene: JsonObject, operations: list[JsonObject]) -> JsonObject:
+            applied = self.core.apply_operations(scene, operations)
+            return applied.get("scene")
+
+        def _preflight(scene: JsonObject) -> tuple[JsonObject, list[JsonObject]]:
+            checked = self.core.preflight_scene(
+                scene, brand_kit, brand_fonts=self.config.brand_fonts
+            )
+            verified_scene = checked.get("scene")
+            preflight_blocks.append((verified_scene, checked.get("preflight") or {}))
+            return verified_scene, list(checked.get("diagnostics", []) or [])
+
+        try:
+            result = run_autofix(
+                self.scene,
+                raw_diagnostics,
+                apply_operations=_apply,
+                preflight=_preflight,
+                max_passes=self.config.autofix_passes,
+                on_attempt=lambda record: self.metrics.record_autofix(
+                    record.klass, accepted=record.accepted
+                ),
+            )
+        except Exception as error:  # noqa: BLE001 - autofix must never fail a turn
+            self.record(
+                "coordinator",
+                "autofix_failed",
+                output_summary=f"{type(error).__name__}: {error}",
+            )
+            return None
+
+        if not result.attempted:
+            return None
+
+        if result.changed:
+            # Commit: the working scene becomes the verified one, and the
+            # accepted operations join the ledger. The ledger is not optional —
+            # the editor's Accept replays THAT list onto the document and never
+            # sees this scene, so an unlogged autofix would silently vanish at
+            # accept (the K2 defect `_log_scene_operations` exists to prevent).
+            self.scene = result.scene
+            self.scene_update_sources.append("autofix")
+            self._log_scene_operations(
+                "autofix",
+                [
+                    dict(operation)
+                    for record in result.applied
+                    for operation in record.operations_json
+                ],
+            )
+            # Identity match, not "the last one": a rejected attempt after the
+            # accepted one would otherwise hand back the losing scene's summary.
+            result.raw_preflight = next(
+                (block for scene, block in preflight_blocks if scene is result.scene),
+                {},
+            )
+
+        payload = result.as_payload()
+        self._write_json(iteration_dir / "autofix.json", payload)
+        self.record(
+            "coordinator",
+            "autofix_completed",
+            output_summary=result.summary_line(),
+            payload=payload,
+        )
+        return result
 
     def baseline_preflight_diagnostics(self) -> list[JsonObject]:
         """Preflight diagnostics on the scene AS SEEDED, before this turn's own

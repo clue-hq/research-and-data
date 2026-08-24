@@ -24,6 +24,7 @@ from lumen_agent.run_metrics import (
     RunMetrics,
     count_round_dirs,
     emit_run_metrics,
+    summarize_line,
 )
 from lumen_agent.trace_callbacks import TraceCallbackHandler, attach_trace_callback
 
@@ -331,6 +332,34 @@ def test_substrate_marks_compiles_and_first_valid_preview(tmp_path, monkeypatch)
     assert isinstance(tools.metrics.snapshot()["time_to_first_preview_ms"], int)
 
 
+def test_autofix_counters_split_the_payoff_from_the_waste(tmp_path):
+    """§5.4's counter, the one W0 left as a named residual.
+
+    `autofix_count` is the payoff — repairs that landed with NO model call, the
+    number the §1 call-count gate is trying to move. `autofix_rolled_back` is
+    the honesty check: a class that keeps getting rejected is spending two
+    engine calls to hand the author the diagnostic it started with, and should
+    be narrowed rather than left running. Summing them would hide exactly that.
+    """
+    metrics = RunMetrics("run_autofix")
+
+    zero = metrics.snapshot()
+    assert (zero["autofix_count"], zero["autofix_rolled_back"]) == (0, 0)
+    assert zero["autofix_by_class"] == {}
+
+    metrics.record_autofix("text_box_hug", accepted=True)
+    metrics.record_autofix("slot_fixture", accepted=True)
+    metrics.record_autofix("text_box_hug", accepted=True)
+    metrics.record_autofix("text_box_hug", accepted=False)
+
+    summary = metrics.snapshot()
+    assert summary["autofix_count"] == 3
+    assert summary["autofix_rolled_back"] == 1
+    # per-class, so a class can be judged on its own record
+    assert summary["autofix_by_class"] == {"slot_fixture": 1, "text_box_hug": 2}
+    assert "3 autofix" in summarize_line(summary)
+
+
 # --------------------------------------------------------------------------- #
 # 5. the FAILURE path emits too — the run whose metrics matter most
 # --------------------------------------------------------------------------- #
@@ -465,6 +494,28 @@ def test_viewer_renders_the_run_summary():
     assert "rounds          3" in report
     assert "compiles        34" in report
     assert "author          90 calls · 20.0m total · 1.7m slowest" in report
+
+
+def test_viewer_renders_the_autofix_split_with_its_classes():
+    """A reader comparing a fast-loop run against the 178-call baseline needs to
+    see how much of the mechanical work the code loop absorbed, and which class
+    absorbed it — one under-performing class is the actionable finding."""
+    event = dict(
+        _SUMMARY_EVENT_FIXTURE,
+        autofix_count=4,
+        autofix_rolled_back=1,
+        autofix_by_class={"slot_fixture": 1, "text_box_hug": 3},
+    )
+    report = viewer.render_report([event])
+    assert "autofix         4 applied (1 rolled back) — slot_fixture×1, text_box_hug×3" in report
+
+
+def test_viewer_reports_zero_autofix_on_a_pre_fast_loop_run():
+    """The fixture below predates §5.4 and carries no autofix keys at all — a
+    replayed old run must render, not raise."""
+    assert "autofix         0 applied (0 rolled back)" in viewer.render_report(
+        [_SUMMARY_EVENT_FIXTURE]
+    )
 
 
 def test_viewer_summary_survives_every_filter():

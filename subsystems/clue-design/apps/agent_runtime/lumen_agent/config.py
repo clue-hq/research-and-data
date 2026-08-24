@@ -152,6 +152,15 @@ class AgentRuntimeConfig:
     # §5.1 pin-list override (comma-separated knowledge_docs-relative paths).
     # None → `lumen_agent.frame.DEFAULT_PINNED_KNOWLEDGE`.
     fast_loop_pinned_knowledge: str | None = None
+    # §5.4: planning-pass ceiling for the deterministic autofix loop. Only read
+    # when `fast_loop` is true; 0 disables autofix on its own.
+    autofix_max_passes: int = 2
+
+    @property
+    def autofix_passes(self) -> int:
+        """How many autofix passes THIS run may take — 0 whenever the flag is
+        down, so no caller has to remember to check both."""
+        return self.autofix_max_passes if self.fast_loop else 0
 
     @classmethod
     def from_env(cls, repo_root: Path | None = None) -> "AgentRuntimeConfig":
@@ -189,6 +198,7 @@ class AgentRuntimeConfig:
             fast_loop_wall_clock_s=settings.lumen_agent_fast_loop_wall_clock_s,
             fast_loop_inner_iterations=settings.lumen_agent_fast_loop_inner_iterations,
             fast_loop_pinned_knowledge=settings.lumen_agent_fast_loop_pinned_knowledge,
+            autofix_max_passes=settings.lumen_agent_autofix_max_passes,
         )
 
     @property

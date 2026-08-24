@@ -19,7 +19,9 @@ runtime ALREADY produces:
 * ``LumenDesignTools.compile_dsl_block`` calls
   :meth:`mark_compile_iteration` next to its own iteration bump;
 * ``LumenDesignTools._write_and_validate_preview_artifacts`` calls
-  :meth:`mark_first_preview` the first time a preview artifact validates.
+  :meth:`mark_first_preview` the first time a preview artifact validates;
+* ``LumenDesignTools.preflight_design`` calls :meth:`record_autofix` once per
+  §5.4 deterministic-autofix attempt, accepted or rolled back.
 
 COST. Integer arithmetic under one ``threading.Lock`` (the lock is required for
 the same reason ``LumenDesignTools._record_lock`` is: batched read-only tool
@@ -128,6 +130,9 @@ class RunMetrics:
         # non-zero count is the honest signal that a round wanted more passes
         # than the cap allows — the number to tune the cap against.
         self._inner_iteration_refusals = 0
+        self._autofix_applied = 0
+        self._autofix_rolled_back = 0
+        self._autofix_by_class: dict[str, int] = {}
 
     # -- registration ------------------------------------------------------- #
     def register_role(self, role: str) -> None:
@@ -205,6 +210,23 @@ class RunMetrics:
                     "limit": limit,
                     "observed": observed,
                 }
+    def record_autofix(self, klass: str, *, accepted: bool) -> None:
+        """One §5.4 deterministic-autofix attempt.
+
+        Both halves are counted, and they answer different questions.
+        ``autofix_count`` is the payoff — repairs that landed WITHOUT a model
+        call, which is the number the §1 call-count gate is trying to move.
+        ``autofix_rolled_back`` is the honesty check: a class that keeps getting
+        rejected is burning two engine calls to hand the author the same
+        diagnostic it started with, and should be narrowed or retired rather
+        than left running.
+        """
+        with self._lock:
+            if accepted:
+                self._autofix_applied += 1
+                self._autofix_by_class[klass] = self._autofix_by_class.get(klass, 0) + 1
+            else:
+                self._autofix_rolled_back += 1
 
     # -- the summary --------------------------------------------------------- #
     def wall_time_ms(self) -> int:
@@ -243,6 +265,9 @@ class RunMetrics:
                 ),
                 "rounds_total": int(rounds_total),
                 "compile_iterations_total": self._compile_iterations,
+                "autofix_count": self._autofix_applied,
+                "autofix_rolled_back": self._autofix_rolled_back,
+                "autofix_by_class": dict(sorted(self._autofix_by_class.items())),
                 "by_role": by_role,
             }
         # Fast-loop v1 §5.6/§5.2. Both keys are ADDITIVE and both are omitted on
@@ -374,7 +399,8 @@ def summarize_line(summary: dict) -> str:
         f"in {summary.get('input_tokens_total', 0)} tok / "
         f"out {summary.get('output_tokens_total', 0)} tok · "
         f"{summary.get('rounds_total', 0)} rounds · "
-        f"{summary.get('compile_iterations_total', 0)} compiles"
+        f"{summary.get('compile_iterations_total', 0)} compiles · "
+        f"{summary.get('autofix_count', 0)} autofix"
     )
     # §5.6: a budget-stopped run must say so on its ONE human line. Appended
     # only when a breach happened, so the flag-off line is unchanged.

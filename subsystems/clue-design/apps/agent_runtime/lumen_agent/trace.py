@@ -104,6 +104,13 @@ def _ktok(n: Any) -> str:
     return str(n)
 
 
+def _by_class(counts: Any) -> str:
+    """`" — text_box_hug×3, slot_fixture×1"`, or nothing when no class fired."""
+    if not isinstance(counts, dict) or not counts:
+        return ""
+    return " — " + ", ".join(f"{klass}×{count}" for klass, count in sorted(counts.items()))
+
+
 def _dur(ms: Any) -> str:
     if not isinstance(ms, (int, float)):
         return "?"
@@ -183,6 +190,9 @@ def _format_summary(ev: dict, ts: str) -> list[str]:
         + (_dur(ttfp) if isinstance(ttfp, (int, float)) else "never rendered"),
         f"  rounds          {ev.get('rounds_total', 0)}",
         f"  compiles        {ev.get('compile_iterations_total', 0)}",
+        f"  autofix         {ev.get('autofix_count', 0)} applied"
+        f" ({ev.get('autofix_rolled_back', 0)} rolled back)"
+        + _by_class(ev.get("autofix_by_class")),
     ]
     by_role = ev.get("by_role")
     if isinstance(by_role, dict):

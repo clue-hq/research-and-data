@@ -48,9 +48,13 @@ def _set(value: Any) -> JsonObject:
     return {"kind": "set", "value": value}
 
 
-def _empty_patch() -> JsonObject:
+def empty_node_patch() -> JsonObject:
     """A full-shape NodePatch with every field unchanged (the operation
-    schema requires the non-defaulted fields to be present)."""
+    schema requires the non-defaulted fields to be present).
+
+    Public because `autofix.py` builds `update_node` operations too, and a
+    second hand-written copy of this field list is exactly the kind of drift
+    that produces a "missing field" refusal from the helper months later."""
     return {
         "name": _unchanged(),
         "kind": _unchanged(),
@@ -220,7 +224,7 @@ def build_retokenize_operations(
     for node_id, node in (scene.get("nodes") or {}).items():
         if not isinstance(node, dict):
             continue
-        patch = _empty_patch()
+        patch = empty_node_patch()
         touched = False
 
         new_fills = _retokenize_paints(node.get("fills"), colors)
