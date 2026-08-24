@@ -399,6 +399,26 @@ def test_flag_on_orchestrator_judges_the_self_audit_instead_of_delegating_review
     assert "8. Finish honestly with finalize_run:" in orch
 
 
+def test_the_fast_loop_splices_survive_a_reference_turn() -> None:
+    """The §5.3/§5.7 replacements are index splices into the shared template.
+
+    A reference turn interpolates an extra block into that template, so this is
+    the case where an anchor could plausibly move. Both must still land, and RC's
+    own blocks must survive intact.
+    """
+    orch = build_orchestrator_prompt(
+        WS, has_references=True, fast_loop=True, scene_reviewer=False
+    )
+    assert "REFERENCE IMAGES (this turn" in orch
+    assert "Judge the SELF-AUDIT" in orch
+    assert "CONDITIONAL CLARIFICATION" in orch
+    assert "8. Finish honestly with finalize_run:" in orch
+
+    author = build_author_prompt(WS, has_references=True, fast_loop=True)
+    assert "REFERENCE IMAGES:" in author
+    assert "LOOK AT YOUR OWN RENDER" in author
+
+
 def test_kill_switch_orchestrator_keeps_the_original_review_steps() -> None:
     orch = build_orchestrator_prompt(WS, fast_loop=True, scene_reviewer=True)
     assert 'task(subagent_type="lumen-visual-reviewer"' in orch
