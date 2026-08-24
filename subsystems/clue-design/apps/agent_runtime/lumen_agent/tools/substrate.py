@@ -297,6 +297,11 @@ class LumenDesignTools:
         # Pure in-process integer arithmetic — no extra LLM call, tool call, or
         # hot-loop I/O. See lumen_agent/run_metrics.py.
         self.metrics = RunMetrics(self.run_id)
+        # Fast loop §5.2: the per-round inner-iteration counter and the round it
+        # belongs to. Only read when `config.fast_loop` is on; born here so the
+        # attribute always exists (a config swapped mid-run must not AttributeError).
+        self._fast_loop_round = 0
+        self._fast_loop_round_compiles = 0
         self.trace_dir = config.trace_dir / self.run_id
         self.iterations_dir = self.trace_dir / "iterations"
         self.trace_dir.mkdir(parents=True, exist_ok=True)
@@ -461,9 +466,93 @@ class LumenDesignTools:
         )
         return json.dumps(payload, indent=2)
 
+    # --- fast loop §5.2: the per-round inner-iteration cap -------------------
+    def _fast_loop_round_number(self) -> int:
+        """The newest `rounds/round_N` directory number, or 0.
+
+        Mirrors `tools.render.tools_current_round` deliberately rather than
+        importing it: `render` imports THIS module, so the import would be a
+        cycle. `workspace.workspace_root(tools)` is the canonical spelling of
+        the path below (`trace_dir / "workspace"`) and is likewise unimportable
+        here for the same reason.
+        """
+        rounds = self.trace_dir / "workspace" / "rounds"
+        highest = 0
+        try:
+            for child in rounds.iterdir():
+                if child.is_dir() and child.name.startswith("round_"):
+                    suffix = child.name[len("round_") :]
+                    if suffix.isdigit():
+                        highest = max(highest, int(suffix))
+        except OSError:
+            return 0
+        return highest
+
+    def _inner_iteration_refusal(self) -> Optional[str]:
+        """Refuse a compile past the round's inner-iteration cap, or None.
+
+        WHY A CAP AT ALL. §5.2's loop is compile → preflight → render → look →
+        self-audit → ONE batched fix, and its whole economy assumes the fix is
+        batched. The baseline's iterations 21-34 were fourteen compiles carrying
+        one property change each — the drip §5.5 forbids in words. This is the
+        same rule in Python: when the drip happens anyway, the round ends instead
+        of grinding.
+
+        WHY A REFUSAL AND NOT AN EXCEPTION. House style, and it is also the more
+        useful behaviour: a refusal string is something the author reads and acts
+        on (render, self-audit honestly, report what is unfinished), where an
+        exception would take the turn down and lose the perfectly good scene the
+        author already compiled. The cap does not roll back anything.
+
+        The count is per ROUND — a new `rounds/round_N` directory resets it — so
+        the orchestrator's one permitted repair round gets a full budget of its
+        own.
+        """
+        cap = int(getattr(self.config, "fast_loop_inner_iterations", 0) or 0)
+        if cap <= 0:
+            return None
+        round_number = self._fast_loop_round_number()
+        if round_number != self._fast_loop_round:
+            self._fast_loop_round = round_number
+            self._fast_loop_round_compiles = 0
+        if self._fast_loop_round_compiles < cap:
+            self._fast_loop_round_compiles += 1
+            return None
+        self.metrics.mark_inner_iteration_refused()
+        self.record(
+            "dsl-author",
+            "inner_iteration_cap_reached",
+            output_summary=f"round {round_number}: {cap} compiles used",
+            payload={"round": round_number, "cap": cap},
+        )
+        return self._tool_error(
+            "compile.inner_iteration_cap",
+            f"REFUSED: this round has used its {cap} inner iterations (fast loop "
+            "§5.2). Nothing was rolled back — the scene from your last successful "
+            "compile stands. Stop compiling now: render_preview(), view(\"preview\"), "
+            "write an HONEST critique.json naming every issue still standing "
+            "(accepted:false if any blocker remains), save dsl.lumen / "
+            "diagnostics.json / author_report.md, and return. The orchestrator "
+            "decides whether to open a repair round — that round gets its own "
+            "fresh budget of iterations. If you were making one property edit per "
+            "compile, that is the pattern this cap exists to stop: batch every "
+            "planned fix into ONE whole-scene reconcile next time.",
+            round=round_number,
+            inner_iterations_used=self._fast_loop_round_compiles,
+            inner_iteration_cap=cap,
+        )
+
     @_tool_span
     def compile_dsl_block(self, source: str) -> str:
         """Compile a Lumen DSL block and update the scene only from core output."""
+        # Fast loop §5.2. Checked BEFORE the iteration bump so a refused compile
+        # costs nothing: no iteration number, no metrics compile, no scene touch.
+        # `fast_loop_inner_iterations` is only non-zero under the flag, so this is
+        # a single attribute read on the flag-off path.
+        if getattr(self.config, "fast_loop", False):
+            refusal = self._inner_iteration_refusal()
+            if refusal is not None:
+                return refusal
         self.iteration += 1
         # §7 metrics: every compile counts, including the ones that fail below —
         # the baseline's micro-edit drip (14 compiles for one property each) is

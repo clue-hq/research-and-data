@@ -6,9 +6,15 @@ valid, reviewer-accepted scene and then hit an OpenRouter 403 on its last model 
 of it ("Nothing was saved", document still at version 0).
 
 `LumenDesignTools.checkpoint_scene` is the seam that fixes it, and `render_preview` is where it
-fires: that tool is ORCHESTRATOR-ONLY (the author cannot render its own edits) and the orchestrator
-runs it once per round at its step-5 verification, so a render that produced a validated raster is
-the one moment Python can observe "an authoring round finished and its scene is real".
+fires: the ORCHESTRATOR runs that tool once per round at its step-5 verification, so a render that
+produced a validated raster is the one moment Python can observe "an authoring round finished and
+its scene is real".
+
+AMENDED 2026-08-24 (fast loop §5.2): `render_preview` is no longer orchestrator-only — under
+`LUMEN_AGENT_FAST_LOOP` the author gets its own instance so it can see its own edits. That instance
+is built with `checkpoint=False` and does NOT fire this seam, precisely so a checkpoint keeps
+meaning "a round was ACCEPTED" rather than "somebody rendered". The trigger below is unchanged, and
+`tests/test_fast_loop.py` pins the two-instance split.
 
 The commit itself belongs to the caller (`lumen_api.main._LegSceneCommitter`, covered by
 `apps/api/tests/test_scene_turn_persist.py` section (i)). What is pinned here is the contract the

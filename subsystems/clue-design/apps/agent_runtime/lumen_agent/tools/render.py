@@ -22,10 +22,14 @@ def _current_round_dir(tools: LumenDesignTools, current_round: int) -> Optional[
     return candidate if candidate.exists() else None
 
 
-def _render_preview_text(tools: LumenDesignTools) -> str:
+def _render_preview_text(tools: LumenDesignTools, *, checkpoint: bool = True) -> str:
     """Wrap export_preview_bundle(critic_format="png"): render, copy the PNG into
     the round (or previews/) dir, and return a compact TEXT summary. On validation
-    failure, return the errors verbatim. Never returns image blocks (§4b)."""
+    failure, return the errors verbatim. Never returns image blocks (§4b).
+
+    `checkpoint` (fast loop §5.2) decides whether a clean render also fires the
+    P0.4 checkpoint commit — see the trigger site below for why the AUTHOR's
+    renders are built with `checkpoint=False`."""
     raw = tools.export_preview_bundle(critic_format="png")
     try:
         payload = json.loads(raw)
@@ -91,17 +95,37 @@ def _render_preview_text(tools: LumenDesignTools) -> str:
     unchanged = payload.get("unchanged")
     if unchanged:
         lines.append(unchanged)
-    # P0.4 checkpoint commit. THIS is the round-acceptance seam. `render_preview`
-    # is orchestrator-only (the author cannot render), and the orchestrator runs
-    # it exactly once per round at its step-5 verification — so a render that
-    # produced a validated raster with no validation errors is the one moment
-    # Python can observe "an authoring round finished and its scene is real".
-    # The export itself already refuses a scene whose token paints are
-    # unresolved, so reaching here also means preflight ran after the last
-    # mutation. Best-effort by construction: `checkpoint_scene` swallows and
-    # records everything, so the render summary the model reads is unchanged
-    # whether or not the document moved.
-    if status == "ok" and not validation_errors and png_path is not None:
+    # P0.4 checkpoint commit. THIS is the round-acceptance seam. The
+    # ORCHESTRATOR runs render_preview exactly once per round at its step-5
+    # verification — so a render that produced a validated raster with no
+    # validation errors is the one moment Python can observe "an authoring round
+    # finished and its scene is real". The export itself already refuses a scene
+    # whose token paints are unresolved, so reaching here also means preflight
+    # ran after the last mutation. Best-effort by construction:
+    # `checkpoint_scene` swallows and records everything, so the render summary
+    # the model reads is unchanged whether or not the document moved.
+    #
+    # FAST LOOP §5.2 — DELIBERATE DECISION: the author now has render_preview
+    # too, and its renders do NOT checkpoint. `checkpoint=False` is passed for
+    # the author's instance, and this is the reason:
+    #
+    #   A checkpoint means "a round was ACCEPTED and its scene is durable". The
+    #   author renders MID-round — that is the whole point of §5.2, it renders to
+    #   find what is still wrong, and its first render of a round is frequently
+    #   of a design its own next self-audit will reject. Committing those would
+    #   redefine a checkpoint as "the author rendered something that did not
+    #   crash", which is a materially weaker claim, and it would mint a document
+    #   version per inner iteration (up to 4 per round) instead of one per
+    #   accepted round. The frontend reads checkpoints as progress; a takeover
+    #   reads the last one as the best surviving state (P0.4's replay guard).
+    #   Both readings depend on "accepted", not "rendered".
+    #
+    #   So round acceptance stays exactly where P0.4 put it: the orchestrator's
+    #   own verification render, which still happens once per round and still
+    #   follows the author's report. The author's renders are pure looking —
+    #   they write their PNG into the round directory as always (custody
+    #   unchanged) and touch nothing durable.
+    if checkpoint and status == "ok" and not validation_errors and png_path is not None:
         tools.checkpoint_scene("render_preview")
     return "\n".join(lines)
 
@@ -122,7 +146,16 @@ def tools_current_round(tools: LumenDesignTools) -> int:
     return highest
 
 
-def make_render_preview_tool(tools: LumenDesignTools):
+def make_render_preview_tool(tools: LumenDesignTools, *, checkpoint: bool = True):
+    """Build a `render_preview` tool bound to `tools`.
+
+    Two instances are built under the fast loop over the SAME substrate: the
+    orchestrator's (`checkpoint=True`, the P0.4 round-acceptance trigger) and the
+    author's (`checkpoint=False`, pure looking). A closure flag rather than a
+    caller-identity check because the substrate genuinely cannot tell who is
+    calling — the tool object is the only thing that differs between the roles,
+    so the tool object is where the difference belongs.
+    """
     from langchain_core.tools import tool
 
     @tool
@@ -135,6 +168,6 @@ def make_render_preview_tool(tools: LumenDesignTools):
         Requires preflight_design after any scene mutation — export refuses
         unresolved token paints."""
         with log_span("tool_render_preview", logger=logger):
-            return _render_preview_text(tools)
+            return _render_preview_text(tools, checkpoint=checkpoint)
 
     return render_preview
