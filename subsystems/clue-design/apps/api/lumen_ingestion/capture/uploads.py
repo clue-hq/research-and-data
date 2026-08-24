@@ -31,7 +31,7 @@ from ..evidence import (
 )
 from .parse import parse_color_value
 
-MAX_FILES = 20
+MAX_FILES = 100
 INGEST_MAX_BYTES = 15 * 1024 * 1024
 
 
@@ -376,7 +376,7 @@ def analyze_uploads(
     """Analyse uploaded files into a ``BrandEvidence`` bundle + diagnostics.
 
     Unsupported files (magic sniff fails) are skipped with a LUMI0701 warning;
-    beyond 20 files are skipped with LUMI0702. If nothing survives, raises
+    beyond 100 files are skipped with LUMI0702. If nothing survives, raises
     ``ValueError`` (the job then fails with a clear message).
     """
     diagnostics: list[dict] = []

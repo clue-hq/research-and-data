@@ -282,11 +282,19 @@ def test_ingest_assets_name_default_when_absent(
     assert kit["name"] == "Uploaded assets (3 files)", kit["name"]
 
 
-def test_ingest_assets_too_many_files_422(client: TestClient) -> None:
-    uploads = [(f"logo{i}.png", PNG_BYTES, "image/png") for i in range(21)]
-    resp = _post_assets(client, uploads=uploads)
-    assert resp.status_code == 422, resp.text
-    assert resp.json()["detail"]["code"] == "ingest.too_many_files"
+def test_ingest_assets_file_limit(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _install_stub_pipeline(monkeypatch, analyze=_good_analyze)
+
+    accepted = [(f"logo{i}.png", PNG_BYTES, "image/png") for i in range(100)]
+    accepted_resp = _post_assets(client, uploads=accepted)
+    assert accepted_resp.status_code == 200, accepted_resp.text
+
+    rejected = [(f"logo{i}.png", PNG_BYTES, "image/png") for i in range(101)]
+    rejected_resp = _post_assets(client, uploads=rejected)
+    assert rejected_resp.status_code == 422, rejected_resp.text
+    assert rejected_resp.json()["detail"]["code"] == "ingest.too_many_files"
 
 
 def test_ingest_assets_oversize_413(

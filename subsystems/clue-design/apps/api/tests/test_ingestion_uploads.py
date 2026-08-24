@@ -289,9 +289,9 @@ def test_all_unsupported_raises() -> None:
 
 def test_file_cap_diagnostic() -> None:
     core = _StubCore()
-    # 21 tiny distinct logos → cap at 20 with LUMI0702.
+    # 101 tiny distinct logos → cap at 100 with LUMI0702.
     files = []
-    for i in range(21):
+    for i in range(101):
         from PIL import Image
 
         img = Image.new("RGBA", (32 + i, 32), (0, 0, 0, 0))
@@ -300,6 +300,6 @@ def test_file_cap_diagnostic() -> None:
     evidence, diags = analyze_uploads(
         files, core=core, store_root="/tmp/store", reporter=_noop
     )
-    assert len(core.calls) == 20
+    assert len(core.calls) == 100
     codes = {d["code"] for d in diags}
     assert "LUMI0702" in codes

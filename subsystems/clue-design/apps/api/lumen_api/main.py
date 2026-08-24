@@ -153,6 +153,7 @@ from .models import (
     ValidateBrandKitRequest,
     ValidateDocumentBrandGovernanceRequest,
 )
+from lumen_ingestion.capture.uploads import MAX_FILES as INGEST_MAX_ASSET_FILES
 from lumen_ingestion.capture.uploads import sniff_mime
 from lumen_ingestion.describe import DescriptionStore
 from lumen_ingestion.jobs import IngestionJobStore
@@ -1781,13 +1782,13 @@ def create_app(
                     "message": "asset ingest requires at least one file",
                 },
             )
-        if len(files) > _INGEST_MAX_ASSET_FILES:
+        if len(files) > INGEST_MAX_ASSET_FILES:
             raise HTTPException(
                 status_code=422,
                 detail={
                     "code": "ingest.too_many_files",
                     "message": (
-                        f"asset ingest accepts at most {_INGEST_MAX_ASSET_FILES} "
+                        f"asset ingest accepts at most {INGEST_MAX_ASSET_FILES} "
                         f"files, got {len(files)}"
                     ),
                 },
@@ -7057,11 +7058,6 @@ def _resolve_guard_url():
     from lumen_ingestion.capture.net import guard_url
 
     return guard_url
-
-
-# Asset-upload ingest (slice 3 §6). The cap mirrors uploads.py's own LUMI0702
-# cap so the route and analyzer agree; the sniff mirrors §2's accepted types.
-_INGEST_MAX_ASSET_FILES = 20
 
 
 def _sniff_supported_asset(data: bytes) -> bool:
