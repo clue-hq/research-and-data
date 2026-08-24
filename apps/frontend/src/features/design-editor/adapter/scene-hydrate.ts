@@ -862,6 +862,10 @@ export function hydrateSceneInspectorState(
   // §1.2 Typography (text only).
   if (node.kind.kind === "text") {
     const text = node.kind;
+    // Rung A: the STORED content, verbatim. `text_transform` is a paint-time
+    // concern (the engine uppercases when it draws, not when it stores), so the
+    // row must state what a commit will replace, never what the canvas shows.
+    state.content = text.content;
     state.fontFamily = text.font_family;
     state.fontSize = numberText(text.font_size);
     const weight = vocabulary(FONT_WEIGHT_LABELS, String(text.font_weight));

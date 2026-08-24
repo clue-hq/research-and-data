@@ -795,6 +795,25 @@ export function sceneChangeToOperation(
       return backgroundFillsOperation(node, paint);
     }
 
+    // ── Rung A: Text — what the node SAYS (rich-text plan, 2026-08-24) ───────
+    //
+    // The empty string is a LEGAL commit here, unlike every other text row: an
+    // emptied text node is a node that says nothing, which is a real edit and a
+    // node that survives — so no `trim() === ""` refusal, and none of the
+    // string coercion above needs relaxing (a non-string never reaches the
+    // switch).
+    //
+    // D4, stated so it is not rediscovered: the engine CLEARS a spanned node's
+    // spans when the content changes and the spans arrive byte-identical
+    // (`operations.rs`), so a content edit today drops any range styling. That
+    // is honest and undoable; rung C sends a remapped spans vector alongside.
+    case "content": {
+      if (!text) {
+        return null;
+      }
+      return updateTextNode(node, { content: value });
+    }
+
     // ── §1.2 row 2: Font family (§2 delta row 3 — the real vocabulary) ───────
     case "fontFamily": {
       if (!text || value.trim() === "") {

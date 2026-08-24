@@ -18,7 +18,7 @@ import {
   type InspectorFillType,
 } from "../hooks/use-inspector-controller";
 import { resolveInspectorThemeColors } from "../model/inspector-theme-colors";
-import { fieldCommit, fieldDisplay } from "./inspector-field-draft";
+import { fieldCommit, fieldDisplay, textareaCommitKey } from "./inspector-field-draft";
 import styles from "./chat-shell.module.css";
 
 const INSPECTOR_ICON_ROOT = "/icons/chat-shell/inspector";
@@ -604,6 +604,75 @@ export function InspectorInput({
         value={shown}
       />
       {suffix ? <span className={styles.fieldPrefix}>{suffix}</span> : null}
+    </span>
+  );
+}
+
+/**
+ * The MULTILINE sibling of `InspectorInput` — a text node's own content is the
+ * first inspector value that can legitimately hold a newline.
+ *
+ * Same AD4.R state model, unchanged: self-drafting through `fieldDisplay` /
+ * `fieldCommit`, so the box holds a draft only while it is being typed in,
+ * `value` is the LIVE document value, and a no-op re-type commits nothing.
+ *
+ * ONE contract differs from `InspectorInput`: Enter inserts a newline and the
+ * commit chord is ⌘/Ctrl+Enter (`textareaCommitKey`). A field whose value may
+ * contain newlines cannot spend Enter on committing. Blur commits either way.
+ */
+export function InspectorTextArea({
+  ariaLabel,
+  className,
+  disabled = false,
+  onCommitValue,
+  placeholder,
+  rows = 3,
+  value,
+}: {
+  ariaLabel: string;
+  className?: string;
+  /** AD4.R-10 (G-H), exactly as `InspectorInput` states it: BOTH the draft and
+   * the commit are guarded. A natively disabled textarea fires no blur of its
+   * own, but a PROGRAMMATIC blur — a focused field whose panel disables
+   * underneath it — is the shape that would slip a write through. */
+  disabled?: boolean;
+  onCommitValue: (value: string) => void;
+  placeholder?: string;
+  rows?: number;
+  value: string;
+}) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const shown = fieldDisplay(draft, value);
+  const commitSelf = () => {
+    // ABOVE the draft clear: a refused commit must touch nothing at all, so the
+    // text typed for a write that never happened survives the turn.
+    if (disabled) return;
+    const commit = fieldCommit(draft, value);
+    setDraft(null);
+    if (commit !== null) onCommitValue(commit);
+  };
+  return (
+    <span className={`${styles.inspectorControl} ${styles.inspectorInputControl} ${styles.inspectorTextAreaControl} ${className ?? ""} ${disabled ? styles.inspectorControlDisabled : ""}`}>
+      <textarea
+        aria-label={ariaLabel}
+        disabled={disabled}
+        onBlur={commitSelf}
+        onChange={(event) => {
+          // A disabled field may not mutate its own draft either: the draft is
+          // what a later blur would commit.
+          if (disabled) return;
+          setDraft(event.target.value);
+        }}
+        onKeyDown={(event) => {
+          if (!textareaCommitKey(event)) return;
+          // Otherwise the chord also types the newline it is committing past.
+          event.preventDefault();
+          commitSelf();
+        }}
+        placeholder={placeholder}
+        rows={rows}
+        value={shown}
+      />
     </span>
   );
 }

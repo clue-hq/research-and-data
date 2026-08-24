@@ -113,6 +113,12 @@ export interface InspectorPresentationState {
   backgroundColor: string;
   backgroundFill: InspectorBackgroundFill;
   buttonLabel: string;
+  /** Rung A (rich-text plan, 2026-08-24): what a text node SAYS — its stored
+   * `TextNode.content`, which the ad text schema's first Typography row edits.
+   * The dummy schemas never authored a content control, so its default below is
+   * the honest empty string rather than invented copy; only a text node
+   * hydrates it. Multiline is real: the row is a textarea, not an input. */
+  content: string;
   /** AD4.0 §1.1 row 1: the Custom size preset's H input (px). Ruling 14 parked
    * this pair with no state field while the control was inert; binding it to
    * the write seam is what gives it one. */
@@ -230,6 +236,7 @@ export const DEFAULT_STATE: InspectorPresentationState = {
     type: "radial-gradient",
   },
   buttonLabel: "Primary",
+  content: "",
   // The dummy's own Custom W/H seeds, moved here verbatim from the local
   // `useState` pair they used to live in (`image-inspector.tsx`).
   customHeight: "1200",

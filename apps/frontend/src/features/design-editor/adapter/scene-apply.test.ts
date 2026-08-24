@@ -219,6 +219,54 @@ it("§1.2 Color: a NON-text node is refused — hydrate routes its fill to backg
   assert.equal(apply(adAutoLayout(), "textColor", "#FF00AA"), null);
 });
 
+// ══ Rung A — Text content (the Typography section's first row) ══════════════
+
+it("rung A Text: a string writes only the text kind's content", () => {
+  assert.deepEqual(
+    apply(adPlainText(), "content", "4.1x faster triage"),
+    updateNode("text_proof_stat", {
+      kind: set({ ...adPlainText().kind, content: "4.1x faster triage" }),
+    }),
+  );
+  // Multiline is the whole point of the textarea: the newline rides through
+  // verbatim, it is not a commit terminator here.
+  assert.deepEqual(
+    apply(adPlainText(), "content", "3.4x\nfaster triage"),
+    updateNode("text_proof_stat", {
+      kind: set({ ...adPlainText().kind, content: "3.4x\nfaster triage" }),
+    }),
+  );
+});
+
+it("rung A Text: an EMPTY string is a legal commit — clearing text is a real edit", () => {
+  // Unlike `fontFamily`, which refuses "" (an unnamed family is not a family),
+  // an emptied text node is a node that says nothing, and it survives.
+  assert.deepEqual(
+    apply(adPlainText(), "content", ""),
+    updateNode("text_proof_stat", {
+      kind: set({ ...adPlainText().kind, content: "" }),
+    }),
+  );
+});
+
+it("rung A Text: a non-string value is refused rather than coerced", () => {
+  assert.equal(apply(adPlainText(), "content", 34), null);
+  assert.equal(apply(adPlainText(), "content", true), null);
+  assert.equal(apply(adPlainText(), "content", null), null);
+});
+
+it("rung A Text: a NON-text node is refused (updateTextNode throws on one)", () => {
+  assert.equal(apply(adRect(), "content", "hello"), null);
+  assert.equal(apply(adAutoLayout(), "content", "hello"), null);
+  assert.equal(apply(adImage(), "content", "hello"), null);
+});
+
+it("rung A Text: a LOCKED text node refuses the content row like every other", () => {
+  const { node, scene } = withNodeField("text_proof_stat", "locked", true);
+  assert.equal(apply(node, "content", "4.1x faster triage", scene), null);
+  assert.equal(apply(node, "content", "", scene), null);
+});
+
 // ══ §1.2 row 2 — Font family ════════════════════════════════════════════════
 
 it("§1.2 Font: a family writes only the text kind's font_family", () => {
