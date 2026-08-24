@@ -86,3 +86,40 @@ Founder challenged the v1 plan; produced three review docs (all committed):
   people api_search is deliberately degraded (obfuscated last names, 0 credits) — shortlist only,
   never claim-store truth; phones are webhook-only with _cd-suffixed async field names; rate
   limits are per-team; org search returns organizations[] AND accounts[] (merge both).
+
+## Addendum 2026-08-23b — Melissa verified (docs blocked; OpenAPI specs used instead)
+
+`developer.melissa.com` / `docs.melissa.com` BLOCK our fetcher. Authoritative substitute found:
+Melissa's own GitHub org publishes machine-readable specs —
+`MelissaData/MelissaCloudAPI-OpenAPI-Specifications`, `openapi/apis/*.yaml` (people-business-search,
+global-address-verification, us-business-coder, personator-consumer, personator-search). Use `gh api`
++ raw.githubusercontent for these; result-code tables and pricing remain blocked-doc only.
+
+Doc written: `docs/specs/ARV2-melissa-address-contract.md`. Verdict:
+- **Contact Search (the founder's link) is the WRONG tool and ARV2 will not use it.** Server
+  `search.melissadata.net/V5/WEB/contactsearch`, GET/POST `/docontactSearch`, auth `id`=license key.
+  Input sets: address / phone / (full|last|anyname|comp)+adminarea|postal. Response `Consumer` block
+  has NO title, NO email, NO employer join; `Address` block has NO DeliveryIndicator (no R/B flag).
+  So "person X at company Y → their office address" is not expressible; you get a name+geography
+  match with `MatchLevel` (<80 = questionable) against a consumer index = WEAK identity binding,
+  typically a home address. Personator Search is explicitly skip-tracing (current/previous address,
+  DOB/DOD) — same family, also out.
+- **Right tools:** Global Address Verification (`address.melissadata.net/V3/WEB/GlobalAddress`,
+  `/doGlobalAddress`, POST batch maxItems=100) → `FormattedAddress`, `SubPremises`, ZIP+4 appended
+  when verified, **`DeliveryIndicator` R/B/U**, `MelissaAddressKey`, `Results` AV/AC/GS codes; plus
+  **US Business Coder** (`businesscoder.melissadata.net/WEB/BusinessCoder`, `/doBusinessCoderUS`)
+  which accepts **`web`=domain** (Apollo gives us this) and returns `Suite`, `Plus4`,
+  `CurrentCompanyName` (identity cross-check), **`LocationType` 0=HQ/1=Branch/2=SubHQ/3=Single**,
+  `MelissaEnterpriseKey`, EIN/SIC/NAICS/Employees/Sales. Its `Contacts[]`
+  {NameFirst,NameLast,Gender,Title,ContactPhone,Email} exists but ARV2 does NOT use it for committee
+  discovery; `Gender` must never be written.
+- Melissa = verifier, not locator: Apollo/Exa decide who + which site; Melissa proves the address is
+  deliverable. Mail goes to the verified BUSINESS address with the person as the Attn line.
+- Claim store: still zero schema change — new `core.mailing_address` object field row + `melissa`
+  source seed; no citable URL from Melissa (use snapshot + MelissaAddressKey as provenance).
+- **Sequencing recommendation: defer Melissa to the direct-mail export epic (Phase 5).** There is no
+  recipient-address slot in the design/content schema and no mail-merge consumer today, so buying it
+  now ships a field nobody reads.
+- Founder to check in-portal (blocked for us): per-endpoint credit costs, whether People/Business
+  Search is separately contracted (permissible-use terms), and the AV/AC + AS/DA/FS result-code
+  tables so we can pin the "safe to mail" allow-list.
