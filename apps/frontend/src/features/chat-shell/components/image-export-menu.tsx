@@ -2,6 +2,7 @@
 
 import { ChevronDownIcon, DownloadIcon } from "lucide-react";
 import { useEffect } from "react";
+import type { SceneExportStatus } from "@/features/design-editor/adapter/scene-export";
 import {
   type useImageExportController,
 } from "../hooks/use-image-export-controller";
@@ -69,8 +70,10 @@ export function ImageExportMenu({
    * actually DID — in flight, downloaded, or refused in the engine's own
    * words. It outranks the controller's optimistic "…export requested" line,
    * which is true only until the listener answers. Absent (the fixture path,
-   * a web artifact) leaves the controller's line exactly as it renders today. */
-  exportStatus?: string | null;
+   * a web artifact) leaves the controller's line exactly as it renders today.
+   * Its `failed` flag is what promotes the line from screen-reader-only to
+   * VISIBLE — see the status line at the foot of the menu. */
+  exportStatus?: SceneExportStatus | null;
   /** AD4.D step 3: ask the ad session to render these settings. Absent on the
    * fixture path and for web artifacts, which keeps the effect below inert. */
   onRequestExportPreview?: (format: ImageExportFormat, scale: ImageExportScale) => void;
@@ -84,6 +87,16 @@ export function ImageExportMenu({
     if (!previewOpen) return;
     onRequestExportPreview?.(format, scale);
   }, [format, onRequestExportPreview, previewOpen, scale]);
+
+  // The session's answer outranks the controller's optimistic line, exactly as
+  // before. The controller's own line is never a failure — it is written the
+  // instant the request is dispatched, before anyone has answered — so it
+  // always folds in as `failed: false`.
+  const status: SceneExportStatus | null =
+    exportStatus ??
+    (controller.statusMessage
+      ? { failed: false, message: controller.statusMessage }
+      : null);
 
   return (
     <div aria-label="Export image output" className={styles.imageExportMenu} role="dialog">
@@ -143,7 +156,30 @@ export function ImageExportMenu({
         <span>Export {controller.format}</span>
         <DownloadIcon aria-hidden="true" className={styles.imageExportDownloadIcon} size={13} strokeWidth={1.5} />
       </button>
-      <span aria-live="polite" className={styles.srOnly}>{exportStatus ?? controller.statusMessage}</span>
+      {/* ONE status element, two presentations — never both at once, or the
+          same sentence would be announced twice (the polite span and the
+          assertive alert are both live regions).
+
+          A FAILURE is shown, not just announced. It used to go only to the
+          `.srOnly` span, so an export the engine refused (a preflight block, a
+          transport throw, "no document to export") left the button looking
+          inert to a sighted user — the founder clicked a preflight-blocked
+          scene repeatedly with no feedback at all. `role="alert"` is the same
+          pairing the inspector's write-path error line uses
+          (`web-inspector.tsx`, `image-inspector.tsx`), and
+          `.imageExportStatusError` is that idiom's `.inspectorStatusError`
+          re-spaced for this menu — no new visual language.
+
+          Everything else (the two progress lines, "PNG exported") stays
+          screen-reader-only: it is transient, the download itself is the
+          sighted user's confirmation, and the menu is deliberately quiet. */}
+      {status?.failed ? (
+        <p className={styles.imageExportStatusError} role="alert">
+          {status.message}
+        </p>
+      ) : (
+        <span aria-live="polite" className={styles.srOnly}>{status?.message ?? ""}</span>
+      )}
     </div>
   );
 }

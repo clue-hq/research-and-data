@@ -151,9 +151,26 @@ export function sceneExportScaleMultiplier(scale: unknown): 1 | 2 | 3 | 4 {
 }
 
 /**
- * Which stamped status the export menu's `aria-live` span announces.
+ * What the export menu says about the last attempt, and whether that attempt
+ * produced a file.
  *
- * A status is STAMPED with the document it is about and only announced under
+ * `failed` is deliberately TWO-VALUED — "the user asked for a file and there is
+ * no file" — not a severity scale. It exists so the menu can make a refusal
+ * VISIBLE (`image-export-menu.tsx`); before it, every outcome went only to a
+ * `.srOnly` span, so a preflight-blocked export looked to a sighted user like a
+ * button that does nothing, and the founder clicked it repeatedly. The advisory
+ * / blocking severity split of the export response itself is spec P0.3 + ruling
+ * R5 and is owned elsewhere; nothing here anticipates it.
+ */
+export interface SceneExportStatus {
+  failed: boolean;
+  message: string;
+}
+
+/**
+ * Which stamped status the export menu shows.
+ *
+ * A status is STAMPED with the document it is about and only shown under
  * that document, so switching artifacts cannot inherit the previous ad's
  * outcome. The `null` stamp is the deliberate exception (final review, finding
  * 3): a refusal issued while NO document was loaded is not about a document at
@@ -165,14 +182,14 @@ export function sceneExportScaleMultiplier(scale: unknown): 1 | 2 | 3 | 4 {
  * outlives the arrival and stands until a real attempt replaces it.
  */
 export function exportStatusFor(
-  status: { forDocumentId: string | null; message: string } | null,
+  status: (SceneExportStatus & { forDocumentId: string | null }) | null,
   documentId: string | null,
-): string | null {
+): SceneExportStatus | null {
   if (!status) {
     return null;
   }
   if (status.forDocumentId === null || status.forDocumentId === documentId) {
-    return status.message;
+    return { failed: status.failed, message: status.message };
   }
   return null;
 }
