@@ -14,6 +14,7 @@ from py_lumen_obs import bind_run_id, get_logger, log_span
 
 from clue_design.storage import location_digest
 from lumen_api.core import CoreClient, CoreError
+from lumen_api.export_policy import partition_export_diagnostics
 
 try:  # the real Python text-to-image seam, shared with the /assets/generate route
     from lumen_api import image_provider
@@ -346,6 +347,11 @@ class LumenDesignTools:
         # baseline, populated on first access by `baseline_preflight_diagnostics`.
         # None means "not computed yet" (distinct from `[]`, "computed, clean").
         self._baseline_diagnostics: Optional[list[JsonObject]] = None
+        # P0.3 finalize guard: the raw diagnostics of the most recent
+        # `preflight_design`, kept so `finalize_run` can refuse to record an
+        # accepted run that still carries a BLOCKING export error. None means
+        # preflight has not run this turn (distinct from `[]`, "ran, clean").
+        self._latest_preflight_diagnostics: Optional[list[JsonObject]] = None
         self._write_json(
             self.trace_dir / "input.json",
             {
@@ -2334,6 +2340,11 @@ class LumenDesignTools:
         if governance_diagnostics:
             diagnostics = diagnostics + governance_diagnostics
         preflight = response.get("preflight", {})
+        # P0.3: keep the RAW engine diagnostics (code + severity as the engine
+        # spelled them) for the finalize guard — `diagnostics_from` normalizes
+        # into the runtime's own wider enum, and the export classification is
+        # defined against the engine's vocabulary.
+        self._latest_preflight_diagnostics = list(response.get("diagnostics", []) or [])
         brand_context = self._brand_context_from_scene_ref(brand_context)
         self.effective_brand_context = brand_context
         summary = PreflightSummary(
@@ -3785,6 +3796,46 @@ class LumenDesignTools:
                     "at score >= 2, or finalize honestly with a non-accepted "
                     "status."
                 )
+        # P0.3 finalize guard — closes the "accepted but unexportable" loophole.
+        # The 2026-08-24 baseline run finalized as a success while EVERY export
+        # of its scene was refused by preflight; the run result said "done" and
+        # the artifact could not leave the building. A run may no longer record
+        # acceptance while a BLOCKING export error stands.
+        #
+        # Scoped to blocking errors on purpose: advisory policy lints (the
+        # LUMV0820 class) export fine, so they must not refuse a finalize —
+        # that would just re-create the original dead end one layer up. They
+        # are reported in the summary instead, never silently dropped.
+        if status == "accepted" and self._latest_preflight_diagnostics is not None:
+            blocking, advisory = partition_export_diagnostics(
+                self._latest_preflight_diagnostics
+            )
+            if blocking:
+                named = ", ".join(
+                    sorted({str(item.get("code")) for item in blocking})
+                )
+                self.record(
+                    "coordinator",
+                    "finalize_refused_blocking_export_error",
+                    output_summary=named,
+                )
+                return (
+                    "REFUSED: this scene cannot be exported — "
+                    f"{len(blocking)} blocking preflight error(s) remain ({named}). "
+                    "Accepting now would record a success for a design that no "
+                    "PNG, SVG or PDF export can produce. Repair the errors and "
+                    "re-run preflight_design, or finalize honestly with a "
+                    "non-accepted status."
+                )
+            if advisory:
+                lints = ", ".join(
+                    sorted({str(item.get("code")) for item in advisory})
+                )
+                note = (
+                    f"Exports carry {len(advisory)} advisory policy lint(s) "
+                    f"({lints}); the design exports cleanly regardless."
+                )
+                summary = f"{summary}\n{note}" if summary else note
         baseline_advisory = (
             json.loads(baseline_advisory_json) if baseline_advisory_json.strip() else None
         )

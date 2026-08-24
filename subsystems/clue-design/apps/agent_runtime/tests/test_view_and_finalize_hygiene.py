@@ -436,6 +436,72 @@ def test_finalize_keeps_a_single_empty_page(tmp_path, monkeypatch):
     assert "Pruned" not in result["summary"]
 
 
+# --- P0.3: the accepted-but-unexportable finalize guard ---------------------
+#
+# The 2026-08-24 baseline run finalized "succeeded" while EVERY export of its
+# scene was refused by preflight. A run may no longer record acceptance while a
+# blocking export error stands — but an advisory policy lint, which exports
+# fine, must not refuse the finalize either.
+
+
+def _diagnostic(code: str, severity: str = "error") -> dict:
+    return {
+        "code": code,
+        "severity": severity,
+        "message": f"{code} happened",
+        "phase": "layout",
+        "subject": None,
+        "hint": None,
+    }
+
+
+def test_finalize_refuses_acceptance_while_a_blocking_export_error_stands(
+    tmp_path, monkeypatch
+):
+    tools = _tools(tmp_path, monkeypatch)
+    tools._latest_preflight_diagnostics = [_diagnostic("LUMV0821")]
+
+    result = tools.finalize_run("accepted", "done", "Delivered the ad.")
+
+    assert result.startswith("REFUSED:")
+    assert "LUMV0821" in result
+    # The refusal is a tool-level string, not a written final.json — nothing
+    # recorded a success.
+    assert not (tools.trace_dir / "final.json").exists()
+
+
+def test_finalize_allows_acceptance_with_only_advisory_lints(tmp_path, monkeypatch):
+    tools = _tools(tmp_path, monkeypatch)
+    tools._latest_preflight_diagnostics = [_diagnostic("LUMV0820")]
+
+    result = json.loads(tools.finalize_run("accepted", "done", "Delivered the ad."))
+
+    assert result["status"] == "accepted"
+    # Announced, never silently dropped.
+    assert "LUMV0820" in result["summary"]
+    assert "advisory policy lint" in result["summary"]
+
+
+def test_finalize_guard_only_binds_accepted_runs(tmp_path, monkeypatch):
+    """An honest non-accepted finalize must still be able to record itself —
+    the guard exists to stop false success, not to trap a failing run."""
+    tools = _tools(tmp_path, monkeypatch)
+    tools._latest_preflight_diagnostics = [_diagnostic("LUMV0821")]
+
+    result = json.loads(tools.finalize_run("failed", "blocked", "Could not finish."))
+
+    assert result["status"] == "failed"
+
+
+def test_finalize_guard_is_inert_when_preflight_never_ran(tmp_path, monkeypatch):
+    tools = _tools(tmp_path, monkeypatch)
+    assert tools._latest_preflight_diagnostics is None
+
+    result = json.loads(tools.finalize_run("accepted", "done", "Delivered."))
+
+    assert result["status"] == "accepted"
+
+
 # --- Task 3: brand_logo_auto place-once (no re-injection) -------------------
 
 
