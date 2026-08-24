@@ -79,6 +79,7 @@ Three structural causes, in order of cost:
   The end client never sees them; the editor's export menu does.
 - **R6 — Follow-on skill sequencing approved (answers §9.4).** After the
   pilot holds: `story-ad-9x16`, `banner-2x1`, `a4-poster`, `linkedin-banner`.
+  (As shipped, `banner-2x1` became `web-display-banners` — see the §6.2 note.)
 
 ## 3. Goals and non-goals
 
@@ -455,7 +456,9 @@ reader for the field lives beside the other frontmatter readers
 
 One pilot skill ships with the loop change so speed and quality are measured
 together: **`linkedin-square-ad`** (draft below, §8). Follow-ons once the
-pilot's metrics hold: `story-ad-9x16`, `banner-2x1`, `a4-poster`,
+pilot's metrics hold: `story-ad-9x16`, `web-display-banners` (the IAB
+display family — renamed from the drafted `banner-2x1` when the R6 wave landed,
+since a display brief names a placement, not a ratio), `a4-poster`,
 `linkedin-banner`.
 
 ## 7. Instrumentation, rollout, acceptance
