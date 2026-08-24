@@ -483,6 +483,11 @@ function SceneDocumentCanvas({
 }: SceneArtifactCanvasProps) {
   const stageRef = useRef<HTMLDivElement | null>(null);
   const [stageSize, setStageSize] = useState({ width: 0, height: 0 });
+  // D3a: how much of the stage's TOP the G-D banner band is occupying, in
+  // stage px — 0 whenever no banner is up. Measured rather than assumed: a
+  // banner wraps to two lines on a narrow stage, and a fixed guess would put
+  // the caret toolbar back under it exactly then.
+  const [bannerInset, setBannerInset] = useState(0);
   const [ownSelectedNodeId, setOwnSelectedNodeId] = useState<NodeId | null>(
     null,
   );
@@ -680,6 +685,24 @@ function SceneDocumentCanvas({
     });
     observer.observe(element);
     return () => observer.disconnect();
+  }, []);
+
+  // D3a: the stage the caret toolbar is placed against — its size plus the
+  // band at its top that is already spoken for. Memoized because the toolbar
+  // re-runs its measure-and-place layout effect whenever this identity
+  // changes, and a fresh object per render would re-place it every keystroke.
+  const stageBounds = useMemo(
+    () => ({
+      height: stageSize.height,
+      topInset: bannerInset,
+      width: stageSize.width,
+    }),
+    [bannerInset, stageSize.height, stageSize.width],
+  );
+  // Stable, so the banner layer's own measuring effect is not torn down and
+  // rebuilt on every parent render.
+  const reportBannerInset = useCallback((inset: number) => {
+    setBannerInset(inset);
   }, []);
 
   // The latch for the scene-change callback below — a ref so neither caller
@@ -1560,7 +1583,7 @@ function SceneDocumentCanvas({
           onCommit={commitTextEdit}
           onStyleCommit={commitTextEditStyle}
           palette={palette}
-          stage={stageSize}
+          stage={stageBounds}
         />
       ) : null}
       {/* genad2 Task 5: the zero-page window, said out loud.
@@ -1596,6 +1619,7 @@ function SceneDocumentCanvas({
         engineStatus={engineStatus}
         fontDiagnostics={fontDiagnostics}
         measurementStatus={measurementStatus}
+        onInsetChange={reportBannerInset}
       />
     </div>
   );
@@ -1624,28 +1648,62 @@ function SceneDocumentCanvas({
  *
  * The third G-D state — the CAS conflict — is deliberately NOT here: it stays
  * the inspector's existing note line ("Document moved on — reloaded.", D10).
+ *
+ * D3a: it also REPORTS the band it occupies, so the caret toolbar can place
+ * itself clear of it. The band is measured off the mounted layer (bottom edge
+ * relative to the stage, which is the layer's offset parent) rather than
+ * assumed from a banner count — one banner wraps to two lines on a narrow
+ * stage, and that is precisely when a fixed guess would be wrong.
  */
 function SceneEngineBanners({
   engineStatus,
   fontDiagnostics,
   measurementStatus,
+  onInsetChange,
 }: {
   engineStatus: SceneEngineStatus;
   fontDiagnostics: Diagnostic[];
   measurementStatus: string;
+  /** The bottom edge of the banner band in stage px, or 0 for no banners. */
+  onInsetChange: (inset: number) => void;
 }) {
+  const layerRef = useRef<HTMLDivElement | null>(null);
   const banners = sceneEngineBanners(
     engineStatus,
     measurementStatus,
     fontDiagnostics,
   );
+  const bannerCount = banners.length;
+  useEffect(() => {
+    const element = layerRef.current;
+    if (bannerCount === 0 || !element) {
+      onInsetChange(0);
+      return;
+    }
+    const report = () =>
+      onInsetChange(element.offsetTop + element.offsetHeight);
+    report();
+    if (typeof ResizeObserver === "undefined") {
+      return;
+    }
+    // A banner reflows with the stage's width, so the band is re-reported
+    // rather than measured once at mount.
+    const observer = new ResizeObserver(report);
+    observer.observe(element);
+    return () => {
+      observer.disconnect();
+      // The band is gone the moment this layer is: leaving a stale inset
+      // behind would push the toolbar down past a banner that is not there.
+      onInsetChange(0);
+    };
+  }, [bannerCount, onInsetChange]);
   // Nothing wrong → no element at all, so a healthy canvas holds no space and
   // no assistive technology announces an empty alert region.
-  if (banners.length === 0) {
+  if (bannerCount === 0) {
     return null;
   }
   return (
-    <div className={styles.bannerLayer}>
+    <div className={styles.bannerLayer} ref={layerRef}>
       {banners.map((banner) => (
         <div
           className={styles.banner}
@@ -1832,7 +1890,9 @@ function SceneTextEditOverlay({
   /** Answers whether the formatting write LANDED (F4/P3-4). */
   onStyleCommit: (session: TextEditSession) => boolean;
   palette: ScenePalette | null;
-  stage: { width: number; height: number };
+  /** D3a: `topInset` is the occupied band at the stage's top (the G-D banners),
+   * which the toolbar places itself clear of. */
+  stage: { width: number; height: number; topInset?: number };
 }) {
   const ref = useRef<HTMLTextAreaElement | null>(null);
   const [session, setSession] = useState<TextEditSession>(() =>

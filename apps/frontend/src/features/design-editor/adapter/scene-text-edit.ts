@@ -241,9 +241,59 @@ export function textEditCommitOperations(
   return [updateTextNode(node, { content: draft, spans: vector })];
 }
 
+/**
+ * D2 (live walk, 2026-08-24): the CSS `font-family` DECLARATION that actually
+ * resolves to a scene family in the DOM.
+ *
+ * The overlay asked for the scene's family verbatim — `font-family: Inter` —
+ * and got a system SERIF, while CanvasKit painted true Inter underneath, so
+ * the caret's wrapping visibly disagreed with the canvas it is meant to sit
+ * exactly on top of. Nothing registers a DOM face under the bare name "Inter":
+ * `app/globals.css` imports `@fontsource-variable/inter`, whose face registers
+ * as **"Inter Variable"**, while the scene grammar and CanvasKit's
+ * `INTER_FAMILY` both say "Inter". One name for the painter, another for the
+ * DOM.
+ *
+ * So the overlay emits a STACK rather than a name, and its three entries are
+ * this repo's three registration paths in trust order:
+ *
+ *  1. **the declared family** — `libraryFonts.ts` and `kitFonts.ts` both add
+ *     their faces to `document.fonts` under `face.family`, the family the
+ *     scene itself names, so a kit or library family hits here;
+ *  2. **`<family> Variable`** — fontsource-variable's own naming, which is how
+ *     the bundled Inter is present in the DOM at all;
+ *  3. **`sans-serif`** — the honest floor. A serif fallback is what the defect
+ *     LOOKED like; a missing family should at least land in the right species.
+ *
+ * This is not special-casing one font: `features/projects/config/project-canvas-fonts.ts`
+ * already writes the identical `Inter → "Inter Variable", …` mapping by hand
+ * for the same reason, which is the corroboration that the naming convention
+ * is real rather than a guess. It is deliberately NOT imported — that map is
+ * another feature's three-entry dummy-screen constant, not a registry, and the
+ * design editor's families come from the scene, not from its keys.
+ *
+ * Every name is quoted and every quote inside a name is escaped, so a family
+ * carrying punctuation cannot break out of the declaration and take the whole
+ * rule down with it (which would be a serif again).
+ */
+export function domFontFamilyStack(family: string): string {
+  const declared = family.trim();
+  if (declared.length === 0) {
+    return "sans-serif";
+  }
+  const quote = (name: string) =>
+    `"${name.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+  const names = declared.endsWith(" Variable")
+    ? [declared]
+    : [declared, `${declared} Variable`];
+  return [...names.map(quote), "sans-serif"].join(", ");
+}
+
 /** The DOM edit surface's style, in the units CSS takes. */
 export interface SceneTextEditStyle {
   color: string;
+  /** A CSS font-family DECLARATION, not a bare family name — see
+   * {@link domFontFamilyStack} for why the DOM needs the stack. */
   fontFamily: string;
   /** Stage px (descriptor px × zoom). */
   fontSize: number;
@@ -360,7 +410,7 @@ export function sceneTextEditModel({
     rotation: outline.rotation,
     style: {
       color: descriptor.fill,
-      fontFamily: text.fontFamily,
+      fontFamily: domFontFamilyStack(text.fontFamily),
       fontSize: text.fontSize * scale,
       fontStyle: text.italic ? "italic" : "normal",
       fontWeight: text.fontWeight,

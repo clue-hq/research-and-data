@@ -12,9 +12,24 @@
  * What could NOT be reused is the frame. That toolbar is `position: fixed`,
  * floating over an iframe in VIEWPORT coordinates. This one is an absolutely
  * positioned sibling of the canvas inside `.stage`, in the same STAGE px the
- * caret overlay (`.textEditOverlay`, z-index 30) and the selection outline are
+ * caret overlay (`.textEditOverlay`, z-index 41) and the selection outline are
  * placed in — so it must be `absolute`, and it must sit just above the caret it
- * belongs to while staying under the G-D banners (z-index 40).
+ * belongs to.
+ *
+ * ── ABOVE THE BANNERS, NOT UNDER THEM (D3b, live walk 2026-08-24) ─────────
+ * This rule used to be 31, deliberately UNDER the G-D banners (z-index 40),
+ * and that was the wrong call. The seeded ad always shows the non-dismissible
+ * brand-font fallback banner; the bar placed itself over a top-of-artboard
+ * headline, landed in the banner's band, and `elementFromPoint` at the Bold
+ * button returned the banner's span — a real mouse sequence there did nothing,
+ * so rung C was mouse-unreachable on that ad.
+ *
+ * The ordering rule is now the plain one: INTERACTIVE surfaces sit above
+ * INFORMATIONAL ones. 42 keeps the bar above the caret (41) exactly as it was
+ * above it before, and puts both over the banners (40). No banner is hidden or
+ * made inert: `sceneTextToolbarPosition`'s `topInset` is what keeps the two
+ * apart in the normal case, and this is the guarantee for when they overlap
+ * anyway.
  *
  * The layout/typography of the bar itself is the source `.toolbar`'s, restated
  * for this one class because a CSS-module `composes` cannot reliably override
@@ -23,7 +38,7 @@
 
 .anchor {
   position: absolute;
-  z-index: 31;
+  z-index: 42;
   display: flex;
   flex-direction: column;
   align-items: center;

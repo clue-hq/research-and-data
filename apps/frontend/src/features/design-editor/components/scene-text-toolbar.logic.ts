@@ -157,6 +157,26 @@ export interface SceneTextToolbarPosition {
  * never leave the stage. Unlike the web toolbar it never answers null — the
  * session is open and the box is on the stage by construction, and a hidden
  * toolbar over a live caret would be a session with no way to format.
+ *
+ * ── `topInset` (D3a, live walk 2026-08-24) ───────────────────────────────
+ * The walk edited the seeded ad's top-of-artboard headline. There WAS room
+ * above it by the rule above, so the bar went above — straight into the G-D
+ * banner band, which that ad always shows (the non-dismissible brand-font
+ * fallback). `elementFromPoint` at the Bold button returned the banner's span
+ * and a real mouse sequence there did nothing.
+ *
+ * `topInset` is how much of the stage's top is already spoken for, measured by
+ * the host (0 when nothing is). The rule stays the same GEOMETRIC one — "is
+ * there room above?" — with the top edge moved down to the inset, so a bar
+ * that would land in an occupied band flips below the node instead. It is not
+ * banner-aware and does not need to be: anything the host declares occupied
+ * behaves identically, and a fixed 40px guess would be wrong the moment a
+ * banner wrapped to two lines.
+ *
+ * The clamp floors on the inset too, so the below case cannot be squeezed back
+ * up into the band by a short stage. Where the two must overlap anyway (a
+ * stage with no room on either side), the stylesheet's stacking order is what
+ * keeps the bar clickable — the two halves of D3 are deliberately independent.
  */
 export function sceneTextToolbarPosition({
   box,
@@ -164,16 +184,20 @@ export function sceneTextToolbarPosition({
   toolbar,
 }: {
   box: { left: number; top: number; width: number; height: number };
-  stage: { width: number; height: number };
+  /** `topInset` is the occupied band at the stage's top, in stage px; absent
+   * means a clear stage, which is the pre-D3a behaviour exactly. */
+  stage: { width: number; height: number; topInset?: number };
   toolbar: { width: number; height: number };
 }): SceneTextToolbarPosition {
+  const inset = Math.max(0, stage.topInset ?? 0);
+  const ceiling = inset + SCENE_TEXT_TOOLBAR_EDGE_GAP;
   const centre = box.left + box.width / 2;
   const left = Math.min(
     stage.width - toolbar.width - SCENE_TEXT_TOOLBAR_EDGE_GAP,
     Math.max(SCENE_TEXT_TOOLBAR_EDGE_GAP, centre - toolbar.width / 2),
   );
   const above = box.top - toolbar.height - SCENE_TEXT_TOOLBAR_BOX_GAP;
-  const placement = above >= SCENE_TEXT_TOOLBAR_EDGE_GAP ? "above" : "below";
+  const placement = above >= ceiling ? "above" : "below";
   const top =
     placement === "above"
       ? above
@@ -183,7 +207,7 @@ export function sceneTextToolbarPosition({
         );
   return {
     left: Math.max(SCENE_TEXT_TOOLBAR_EDGE_GAP, left),
-    top: Math.max(SCENE_TEXT_TOOLBAR_EDGE_GAP, top),
+    top: Math.max(ceiling, top),
     placement,
   };
 }

@@ -76,8 +76,10 @@ export interface SceneTextToolbarProps {
   onInteractionStart: () => void;
   onMark: (channel: SceneTextMarkChannel) => void;
   palette: ScenePalette | null;
-  /** The stage's own size, so the bar can be clamped inside it. */
-  stage: { width: number; height: number };
+  /** The stage's own size, so the bar can be clamped inside it, plus the band
+   * at its top that is already occupied (D3a — the G-D banners), which the bar
+   * places itself clear of rather than under. */
+  stage: { width: number; height: number; topInset?: number };
 }
 
 function isTextField(target: EventTarget | null): boolean {

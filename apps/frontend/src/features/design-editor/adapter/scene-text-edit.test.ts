@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import type {
   Node,
@@ -15,6 +16,7 @@ import {
   MIN_TEXT_EDIT_SIZE_PX,
   SCENE_TEXT_EDIT_INTENT,
   SCENE_TEXT_STYLE_INTENT,
+  domFontFamilyStack,
   sceneDoubleClickEffect,
   sceneTextEditModel,
   textEditCommitOperations,
@@ -444,12 +446,62 @@ test("the overlay edits the STORED content, not the painted text", () => {
   assert.equal(model.content, "3.4x faster triage");
 });
 
+/* -------------------------------------------------------------------------
+ * The DOM font stack (D2)
+ *
+ * Found by the live walk, 2026-08-24: the overlay asked for `font-family:
+ * Inter` and got a system SERIF, because nothing registers a DOM face under
+ * the bare name "Inter" — `globals.css` imports `@fontsource-variable/inter`,
+ * whose face registers as "Inter Variable", while the scene's own family
+ * string (and CanvasKit's `INTER_FAMILY`) is "Inter". CanvasKit painted true
+ * Inter under a serif caret, so the wrapping visibly disagreed.
+ *
+ * The stack is not a guess about one font: it is the general shape of this
+ * repo's registration. `libraryFonts.ts` / `kitFonts.ts` add faces under the
+ * DECLARED family (so a kit family hits entry one), fontsource-variable adds
+ * a " Variable"-suffixed family (entry two), and `sans-serif` is the honest
+ * floor. `features/projects/config/project-canvas-fonts.ts` already writes the
+ * identical convention by hand for the same font.
+ * ---------------------------------------------------------------------- */
+
+test("the stack covers both the declared family and its Variable face", () => {
+  assert.equal(domFontFamilyStack("Inter"), '"Inter", "Inter Variable", sans-serif');
+});
+
+test("a family with a space is quoted, so the stack stays parseable CSS", () => {
+  assert.equal(
+    domFontFamilyStack("PP Neue Montreal"),
+    '"PP Neue Montreal", "PP Neue Montreal Variable", sans-serif',
+  );
+});
+
+test("a family already named Variable is not suffixed twice", () => {
+  assert.equal(domFontFamilyStack("Inter Variable"), '"Inter Variable", sans-serif');
+});
+
+test("a nameless family degrades to the generic, never to an empty stack", () => {
+  // An empty first entry is invalid CSS and takes the WHOLE declaration down
+  // with it, which is how a missing family would become a serif again.
+  assert.equal(domFontFamilyStack(""), "sans-serif");
+  assert.equal(domFontFamilyStack("   "), "sans-serif");
+});
+
+test("a family carrying quote characters cannot break out of its quotes", () => {
+  assert.equal(
+    domFontFamilyStack('Ev"il'),
+    '"Ev\\"il", "Ev\\"il Variable", sans-serif',
+  );
+});
+
 test("the overlay is style-matched to the painted node", () => {
   const model = modelFor(sceneWithLaidOutStat());
   assert.ok(model);
   assert.deepEqual(model.style, {
     color: "#C7C2F5",
-    fontFamily: "Inter",
+    // D2: the node's family is "Inter"; what the DOM is asked for is the STACK
+    // that actually resolves to it. Stronger than the bare family this pinned
+    // before — it names the exact declaration, family included.
+    fontFamily: '"Inter", "Inter Variable", sans-serif',
     fontSize: 26,
     fontStyle: "normal",
     fontWeight: 600,
@@ -525,4 +577,36 @@ test("a non-text node has no overlay", () => {
 
 test("no session, no overlay", () => {
   assert.equal(modelFor(sceneWithLaidOutStat(), { editingNodeId: null }), null);
+});
+
+/* -------------------------------------------------------------------------
+ * The edit surface's constant styling (D1)
+ *
+ * Found by the live walk, 2026-08-24, on the seeded DARK-NAVY ad: the textarea
+ * resolved `color: #fff` (correct — the node's own fill) over an OPAQUE WHITE
+ * surface, so the user typed blind and only the selection highlight made the
+ * text legible at all. The colour is data and lives in the model above; the
+ * surface is constant and lives in the stylesheet, so it is pinned here — the
+ * same discipline `scene-image-ai.test.ts` keeps over `chat-shell.module.css`.
+ * ---------------------------------------------------------------------- */
+
+const OVERLAY_RULE = /\.textEditOverlay \{([^}]*)\}/.exec(
+  readFileSync(
+    new URL("../components/scene-artifact-canvas.module.css", import.meta.url),
+    "utf8",
+  ),
+)?.[1];
+
+test("the edit surface is TRANSPARENT, so the node's own fill stays legible", () => {
+  assert.ok(OVERLAY_RULE);
+  // Anything opaque re-introduces the defect on any artboard whose contrast
+  // the node's fill was chosen against — white text on white being the walk's
+  // own case.
+  assert.match(OVERLAY_RULE, /background:\s*transparent;/);
+  assert.doesNotMatch(OVERLAY_RULE, /background:\s*#/);
+});
+
+test("the edit border survives, so the session still says where it is", () => {
+  assert.ok(OVERLAY_RULE);
+  assert.match(OVERLAY_RULE, /border:\s*1px solid #256c70;/);
 });

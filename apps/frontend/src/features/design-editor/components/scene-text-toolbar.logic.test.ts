@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import { adBrandKit } from "../adapter/__fixtures__/brand-kit-colors";
 import { buildScenePalette } from "../adapter/scene-palette";
@@ -193,6 +194,102 @@ test("a box below the stage's bottom keeps the toolbar inside it", () => {
     position.top,
     STAGE.height - TOOLBAR.height - SCENE_TEXT_TOOLBAR_EDGE_GAP,
   );
+});
+
+/* -------------------------------------------------------------------------
+ * `topInset` — the occupied band at the top of the stage (D3a)
+ *
+ * The live walk (2026-08-24, seeded 1200×1200 ad): the headline sits near the
+ * top of the artboard, the bar placed itself ~47 stage px above it, and that
+ * landed inside the G-D banner band — which the seeded ad ALWAYS shows (the
+ * non-dismissible brand-font fallback). `elementFromPoint` at the Bold button
+ * returned the banner's span, so rung C was mouse-unreachable on it.
+ *
+ * The rule is geometric, not banner-aware: `topInset` is however much of the
+ * stage's top is already spoken for, and the toolbar treats it as the top edge
+ * — room is measured from there, and the clamp floors there.
+ * ---------------------------------------------------------------------- */
+
+test("a top inset moves the edge the toolbar measures its room against", () => {
+  const box = { left: 400, top: 120, width: 200, height: 60 };
+  // With a clear stage there IS room above (120 - 40 - 10 = 70 ≥ 12).
+  const clear = sceneTextToolbarPosition({ box, stage: STAGE, toolbar: TOOLBAR });
+  assert.equal(clear.placement, "above");
+  assert.equal(clear.top, 70);
+  // An 80px band at the top (a banner) makes the same 70 a collision, so the
+  // bar flips below the node rather than under the banner.
+  const occupied = sceneTextToolbarPosition({
+    box,
+    stage: { ...STAGE, topInset: 80 },
+    toolbar: TOOLBAR,
+  });
+  assert.equal(occupied.placement, "below");
+  assert.equal(occupied.top, 120 + 60 + SCENE_TEXT_TOOLBAR_BOX_GAP);
+});
+
+test("a top inset that still leaves room above keeps the toolbar above", () => {
+  const position = sceneTextToolbarPosition({
+    box: { left: 400, top: 300, width: 200, height: 60 },
+    stage: { ...STAGE, topInset: 80 },
+    toolbar: TOOLBAR,
+  });
+  assert.equal(position.placement, "above");
+  assert.equal(position.top, 300 - TOOLBAR.height - SCENE_TEXT_TOOLBAR_BOX_GAP);
+});
+
+test("the clamp floors on the inset, so a squeezed toolbar never lands under it", () => {
+  // A box tall enough that BELOW clamps against the stage bottom: the clamp's
+  // floor is the inset, not 0, so the bar cannot be squeezed into the band.
+  const position = sceneTextToolbarPosition({
+    box: { left: 400, top: 5, width: 200, height: 900 },
+    stage: { width: 200, height: 100, topInset: 60 },
+    toolbar: TOOLBAR,
+  });
+  assert.equal(position.top, 60 + SCENE_TEXT_TOOLBAR_EDGE_GAP);
+});
+
+test("an absent inset is the old behaviour exactly — a clear stage top", () => {
+  const box = { left: 400, top: 300, width: 200, height: 60 };
+  assert.deepEqual(
+    sceneTextToolbarPosition({ box, stage: { ...STAGE, topInset: 0 }, toolbar: TOOLBAR }),
+    sceneTextToolbarPosition({ box, stage: STAGE, toolbar: TOOLBAR }),
+  );
+});
+
+/* -------------------------------------------------------------------------
+ * The stacking order (D3b)
+ *
+ * The other half of the same walk finding: even correctly placed, an
+ * INFORMATIONAL banner must never eat a click meant for an INTERACTIVE
+ * surface. Asserted against the stylesheets themselves because that is where
+ * the ordering lives — the same discipline `scene-image-ai.test.ts` keeps.
+ * ---------------------------------------------------------------------- */
+
+const CANVAS_STYLESHEET = readFileSync(
+  new URL("./scene-artifact-canvas.module.css", import.meta.url),
+  "utf8",
+);
+const TOOLBAR_STYLESHEET = readFileSync(
+  new URL("./scene-text-toolbar.module.css", import.meta.url),
+  "utf8",
+);
+
+/** The `z-index` a rule declares, or null when it declares none. */
+function zIndexOf(stylesheet: string, selector: string): number | null {
+  const rule = new RegExp(`\\${selector} \\{([^}]*)\\}`).exec(stylesheet);
+  const declared = rule ? /z-index:\s*(\d+)/.exec(rule[1]) : null;
+  return declared ? Number(declared[1]) : null;
+}
+
+test("the interactive text surfaces stack ABOVE the informational banners", () => {
+  const banners = zIndexOf(CANVAS_STYLESHEET, ".bannerLayer");
+  const overlay = zIndexOf(CANVAS_STYLESHEET, ".textEditOverlay");
+  const toolbar = zIndexOf(TOOLBAR_STYLESHEET, ".anchor");
+  assert.equal(banners, 40);
+  assert.ok(overlay !== null && overlay > banners);
+  assert.ok(toolbar !== null && toolbar > banners);
+  // And the bar stays above the caret it belongs to, as it always has.
+  assert.ok(toolbar !== null && overlay !== null && toolbar > overlay);
 });
 
 /* -------------------------------------------------------------------------
