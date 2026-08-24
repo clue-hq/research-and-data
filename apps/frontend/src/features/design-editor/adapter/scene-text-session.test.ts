@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type {
   Node,
+  Operation,
   Paint,
   Scene,
   TextNode,
@@ -14,12 +15,14 @@ import {
   textEditReplacement,
   textEditSessionAfterInput,
   textEditSessionAfterReplacement,
+  textEditSessionAfterStyle,
   textEditSessionAfterStyleCommit,
   textEditSessionEnds,
   textEditSessionNode,
   textEditSessionOperations,
   textEditSessionResync,
   textEditSessionReseed,
+  textEditSessionReseedSelection,
   textEditSessionSeed,
   textEditStyledSpans,
   type TextEditSession,
@@ -52,7 +55,22 @@ function textKind(node: Node): TextNode {
 }
 
 function session(overrides: Partial<TextEditSession> = {}): TextEditSession {
-  return { content: TEXT.content, spans: [], dirty: false, ...overrides };
+  return {
+    content: TEXT.content,
+    spans: [],
+    contentDirty: false,
+    spansDirty: false,
+    ...overrides,
+  };
+}
+
+/** The single `update_node` patch a committed batch carries. */
+function committedKind(operations: Operation[] | null) {
+  assert.ok(operations);
+  assert.equal(operations.length, 1);
+  const [operation] = operations;
+  assert.ok(operation.kind === "update_node");
+  return operation.patch.kind;
 }
 
 /** `faster` in bold — the span every typing case moves around. */
@@ -449,37 +467,60 @@ test("a formatting action can legitimately empty the vector", () => {
 });
 
 /* -------------------------------------------------------------------------
- * F3 (review 2026-08-24, P2): DIRTY — an idle session must not revert a
- * concurrent write.
+ * F3 (review 2026-08-24, P2) → G1 (review round 2, P2): the TWO dirty channels.
  *
  * A session seeds ONCE, from the node as it read when the caret opened, and a
  * D10 reload or an agent turn keeps that session alive (the scene comes back
  * ready and the node still exists). So an untouched open session was carrying a
- * stale snapshot and writing it back over whatever landed underneath it. The
- * flag is set by the human's own edits and by a formatting action, and by
- * NOTHING the model does: while it is clear the session follows the document,
- * and once it is set the draft is the human's and the document may not take it
- * back.
+ * stale snapshot and writing it back over whatever landed underneath it — F3's
+ * `dirty` flag closed that.
+ *
+ * G1 is the half F3 got wrong: ONE flag for TWO channels. `applyStyle` set it,
+ * so a session whose human only clicked Bold stopped re-seeding, and its blur
+ * then committed the opening snapshot as a CONTENT write over a concurrent
+ * agent write. The flag is now a pair — `contentDirty` (the human typed) and
+ * `spansDirty` (the human formatted) — and each channel commits on its own.
+ * Neither is ever set by the model.
  * ---------------------------------------------------------------------- */
 
-test("a freshly seeded session is CLEAN", () => {
+test("a freshly seeded session is CLEAN in both channels", () => {
   const seeded = textEditSessionSeed(TEXT.content, [BOLD_FASTER]);
-  assert.equal(seeded.dirty, false);
+  assert.equal(seeded.contentDirty, false);
+  assert.equal(seeded.spansDirty, false);
   assert.equal(seeded.content, TEXT.content);
   assert.deepEqual(seeded.spans, [BOLD_FASTER]);
 });
 
-test("typing marks the session dirty — tracked, untracked and arbitrated alike", () => {
-  assert.equal(
-    textEditSessionAfterReplacement(session(), { start: 18, end: 18, text: "!" })
-      .dirty,
-    true,
-  );
-  assert.equal(textEditSessionResync(session(), "3.4x faster triage!").dirty, true);
-  assert.equal(
-    textEditSessionAfterInput(session(), null, "3.4x faster triage!").dirty,
-    true,
-  );
+test("typing marks the CONTENT channel — tracked, untracked and arbitrated alike", () => {
+  const typed = [
+    textEditSessionAfterReplacement(session(), { start: 18, end: 18, text: "!" }),
+    textEditSessionResync(session(), "3.4x faster triage!"),
+    textEditSessionAfterInput(session(), null, "3.4x faster triage!"),
+  ];
+  for (const after of typed) {
+    assert.equal(after.contentDirty, true);
+    // G1: typing is NOT a formatting action. The maintained spans ride along
+    // with the content commit regardless, so a text mutation has no reason to
+    // claim the spans channel — and claiming it would make every keystroke
+    // stop the session from following the document's spans.
+    assert.equal(after.spansDirty, false);
+  }
+});
+
+test("typing inside a FORMATTED session keeps the spans channel dirty too", () => {
+  const styled = textEditSessionAfterStyle(session(), [BOLD_FASTER]);
+  const typed = textEditSessionResync(styled, "3.4x faster triage!");
+  assert.equal(typed.contentDirty, true);
+  assert.equal(typed.spansDirty, true);
+});
+
+test("a formatting action marks ONLY the spans channel", () => {
+  const styled = textEditSessionAfterStyle(session(), [BOLD_FASTER]);
+  assert.deepEqual(styled.spans, [BOLD_FASTER]);
+  assert.equal(styled.spansDirty, true);
+  assert.equal(styled.contentDirty, false);
+  // …and it leaves the draft exactly as it found it.
+  assert.equal(styled.content, TEXT.content);
 });
 
 test("a CLEAN session re-seeds from a model that changed underneath it", () => {
@@ -488,7 +529,8 @@ test("a CLEAN session re-seeds from a model that changed underneath it", () => {
   // nothing of theirs is lost by dropping it.
   const reseeded = textEditSessionReseed(session(), "An agent wrote this", []);
   assert.equal(reseeded.content, "An agent wrote this");
-  assert.equal(reseeded.dirty, false);
+  assert.equal(reseeded.contentDirty, false);
+  assert.equal(reseeded.spansDirty, false);
 });
 
 test("a CLEAN session re-seeds when only the SPANS moved underneath it", () => {
@@ -508,11 +550,35 @@ test("a clean session whose model did not move is the SAME object (no churn)", (
   );
 });
 
-test("a DIRTY session keeps its draft across a model change", () => {
+test("a TYPED session keeps its draft across a model change", () => {
   // The pre-existing posture, and the one that must not regress: mid-typing
   // drafts survive a reload (AD4.R's own rule).
-  const typed = session({ content: "half-typed thought", dirty: true });
+  const typed = session({ content: "half-typed thought", contentDirty: true });
   assert.equal(textEditSessionReseed(typed, "An agent wrote this", []), typed);
+  // …and that holds whatever the document does to the spans, too.
+  assert.equal(
+    textEditSessionReseed(typed, "An agent wrote this", [BOLD_FASTER]),
+    typed,
+  );
+});
+
+test("G1: a FORMATTING-ONLY session adopts a concurrent content change", () => {
+  // The whole point of splitting the flag: this session's human never typed, so
+  // it has no draft to defend — but it DOES have a spans vector nobody else
+  // authored, so the vector is remapped onto the new text rather than dropped.
+  const styled = textEditSessionAfterStyle(session(), [BOLD_FASTER]);
+  const reseeded = textEditSessionReseed(styled, "3.4x faster triage now", []);
+  assert.equal(reseeded.content, "3.4x faster triage now");
+  assert.deepEqual(reseeded.spans, [BOLD_FASTER]);
+  assert.equal(reseeded.spansDirty, true);
+  assert.equal(reseeded.contentDirty, false);
+});
+
+test("G1: a formatting-only session does NOT take the document's spans back", () => {
+  // The human's vector outranks the document's on the channel they touched —
+  // otherwise the toolbar would flip back under them on the next render.
+  const styled = textEditSessionAfterStyle(session(), []);
+  assert.equal(textEditSessionReseed(styled, TEXT.content, [BOLD_FASTER]), styled);
 });
 
 test("an UNTOUCHED session writes nothing, even when the model moved under it", () => {
@@ -525,14 +591,70 @@ test("an UNTOUCHED session writes nothing, even when the model moved under it", 
   assert.equal(textEditSessionOperations(node, session()), null);
 });
 
-test("a DIRTY session writes, through the ordinary commit builder", () => {
+test("a TYPED session writes its draft, through the ordinary commit builder", () => {
   const node = HARVESTED_AD_PAGE.nodes.text_proof_stat;
   const operations = textEditSessionOperations(
     node,
-    session({ content: "4.1x faster triage", dirty: true }),
+    session({ content: "4.1x faster triage", contentDirty: true }),
   );
   assert.ok(operations);
   assert.equal(operations.length, 1);
+});
+
+test("G1: a formatting-only commit sends the LIVE content, never the snapshot", () => {
+  // The proven defect: one `dirty` flag meant a Bold-only session stopped
+  // re-seeding AND claimed the content channel, so the blur committed its
+  // opening snapshot as a content write over the agent's sentence.
+  const scene = clone(HARVESTED_AD_PAGE);
+  const node = scene.nodes.text_proof_stat;
+  textKind(node).content = "An agent wrote this";
+  const styled = textEditSessionAfterStyle(session(), [BOLD_FASTER]);
+  assert.deepEqual(committedKind(textEditSessionOperations(node, styled)), {
+    kind: "set",
+    value: { ...textKind(node), spans: [BOLD_FASTER] },
+  });
+});
+
+test("G1: a formatting-only commit still writes when the model did NOT move", () => {
+  // The ordinary case, unchanged by the split: nothing concurrent happened, so
+  // the live content and the session's snapshot are the same string.
+  const node = HARVESTED_AD_PAGE.nodes.text_proof_stat;
+  const styled = textEditSessionAfterStyle(session(), [BOLD_FASTER]);
+  assert.deepEqual(committedKind(textEditSessionOperations(node, styled)), {
+    kind: "set",
+    value: { ...textKind(node), spans: [BOLD_FASTER] },
+  });
+});
+
+/* -------------------------------------------------------------------------
+ * G2 (review round 2, P3): a re-seed must not leave a STALE live selection.
+ *
+ * The re-seed rewrites the textarea's value, but the selection offsets were
+ * measured in the text it replaced — so Bold would style a range of the new
+ * string the human never selected. The adopted content resets the selection to
+ * the posture a session OPENS in (select-all), which is the only offset pair
+ * that is meaningful in a string nobody has looked at yet.
+ * ---------------------------------------------------------------------- */
+
+test("G2: a re-seed that adopts new content resets the selection to select-all", () => {
+  const before = session();
+  const after = textEditSessionReseed(before, "An agent wrote this", []);
+  assert.deepEqual(textEditSessionReseedSelection(before, after, { start: 4, end: 9 }), {
+    start: 0,
+    end: "An agent wrote this".length,
+  });
+});
+
+test("G2: a re-seed that changed no characters leaves the live selection alone", () => {
+  // A spans-only re-seed keeps every offset valid, and stealing the human's
+  // range there would be its own defect.
+  const before = session();
+  const after = textEditSessionReseed(before, TEXT.content, [BOLD_FASTER]);
+  const selection = { start: 4, end: 9 };
+  assert.equal(
+    textEditSessionReseedSelection(before, after, selection),
+    selection,
+  );
 });
 
 /* -------------------------------------------------------------------------
@@ -558,7 +680,7 @@ test("a commit with nothing to write ends the session regardless", () => {
 
 test("a refused FORMATTING commit reverts the session's working spans", () => {
   const before = session({ spans: [] });
-  const after = session({ spans: [BOLD_FASTER], dirty: true });
+  const after = session({ spans: [BOLD_FASTER], spansDirty: true });
   assert.equal(textEditSessionAfterStyleCommit(before, after, false), before);
   assert.equal(textEditSessionAfterStyleCommit(before, after, true), after);
 });

@@ -3,6 +3,7 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -68,10 +69,12 @@ import {
   textEditReplacement,
   textEditSessionAfterInput,
   textEditSessionAfterReplacement,
+  textEditSessionAfterStyle,
   textEditSessionAfterStyleCommit,
   textEditSessionEnds,
   textEditSessionOperations,
   textEditSessionReseed,
+  textEditSessionReseedSelection,
   textEditSessionSeed,
   textEditStyledSpans,
   type TextEditSelection,
@@ -1801,12 +1804,17 @@ function SelectionChrome({
  * become reachable one at a time once the session closes, which is what "its
  * own undo frame" buys.
  *
- * ── THE SESSION FOLLOWS THE DOCUMENT UNTIL IT IS TOUCHED (F3) ────────────
- * The session state carries `dirty`. While it is clear the session RE-SEEDS
- * from the live model on every render, so an untouched caret sitting open
- * across a D10 reload or an agent turn shows what the document now says instead
- * of writing its opening snapshot back over it. The human's first keystroke (or
- * formatting action) sets the flag, and from then on the draft is theirs.
+ * ── THE SESSION FOLLOWS THE DOCUMENT UNTIL IT IS TOUCHED (F3/G1) ─────────
+ * The session state carries TWO dirty flags, one per channel. While a channel
+ * is clear the session RE-SEEDS it from the live model on every render, so an
+ * untouched caret sitting open across a D10 reload or an agent turn shows what
+ * the document now says instead of writing its opening snapshot back over it.
+ * The human's first keystroke claims the CONTENT channel; a formatting action
+ * claims only the SPANS one, so a Bold-only session still follows the
+ * document's text (G1 — with one flag it did not, and its blur reverted the
+ * concurrent write). A re-seed that adopts new content also resets the
+ * selection to select-all (G2), because the offsets it had were measured in the
+ * text that is no longer there.
  */
 function SceneTextEditOverlay({
   model,
@@ -1837,7 +1845,11 @@ function SceneTextEditOverlay({
     start: 0,
     end: model.content.length,
   }));
-  // F3: an untouched session follows the document. React's own
+  // The content a re-seed last ADOPTED. State rather than a ref because it is
+  // what the G2 selection push below is keyed on — it must move exactly when a
+  // re-seed rewrites the textarea's value, and never when typing does.
+  const [seededContent, setSeededContent] = useState(model.content);
+  // F3/G1: an untouched channel follows the document. React's own
   // adjust-state-on-change pattern (the host uses it for the session id), not
   // an effect — an effect would paint one frame of the stale snapshot first,
   // and the reseeded value is what the rest of this render must read.
@@ -1848,6 +1860,15 @@ function SceneTextEditOverlay({
   );
   if (live !== session) {
     setSession(live);
+    // G2: the live selection's offsets were measured in the text the re-seed
+    // just replaced, so an adopted CONTENT change resets them to the posture a
+    // session opens in. A spans-only adoption returns the same object and
+    // leaves the human's range alone.
+    const reseeded = textEditSessionReseedSelection(session, live, selection);
+    if (reseeded !== selection) {
+      setSelection(reseeded);
+      setSeededContent(live.content);
+    }
   }
   // Event handlers bound to the DOM (and the window listener below) must read
   // the CURRENT session and selection, not the ones captured when they were
@@ -1912,6 +1933,19 @@ function SceneTextEditOverlay({
       element.select();
     }
   }, []);
+
+  // G2: push the re-seeded selection at the DOM, which holds its own and would
+  // otherwise keep the offsets it had in the text the re-seed replaced. Keyed
+  // on the ADOPTED content, so it fires for a re-seed and never for typing;
+  // LAYOUT, so the range is right in the same frame the new value paints. It
+  // does not touch focus — a re-seed while the toolbar's hex field has it must
+  // not yank the caret back.
+  useLayoutEffect(() => {
+    const element = ref.current;
+    if (element) {
+      element.setSelectionRange(0, seededContent.length);
+    }
+  }, [seededContent]);
 
   // `live.content` is a dependency because F3's re-seed changes the text with no
   // input event to recompute from: a valigned overlay would otherwise keep the
@@ -2047,18 +2081,13 @@ function SceneTextEditOverlay({
    */
   const applyStyle = (patch: StylePatch) => {
     const current = sessionRef.current;
-    const next: TextEditSession = {
-      content: current.content,
-      spans: textEditStyledSpans(
-        model.text,
-        current,
-        selectionRef.current,
-        patch,
-      ),
-      // A formatting action is the human touching the session, so it may write
-      // (F3) — and the draft it carries is now the human's to keep.
-      dirty: true,
-    };
+    // G1: the SPANS channel only. A formatting action says nothing about the
+    // text, so it must not claim the draft — claiming it is what let a
+    // Bold-only session commit its opening snapshot over a concurrent write.
+    const next = textEditSessionAfterStyle(
+      current,
+      textEditStyledSpans(model.text, current, selectionRef.current, patch),
+    );
     sessionRef.current = next;
     setSession(next);
     // F4/P3-4: a refused write puts the pre-action vector straight back, so the

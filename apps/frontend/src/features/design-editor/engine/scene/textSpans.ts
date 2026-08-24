@@ -722,13 +722,30 @@ export function remapSpansByDiff(
  *     so this changes no pixel while changing the bytes. Order is most-inert
  *     first: the two decorations, then italic (a measurement input, but the
  *     same value measures the same), then the weight — and the weight ONLY for
- *     a node with no `style_token`, because `resolvedTextFields` resolves a
- *     token's weight OVER the node literal, so restating the literal on a span
- *     (which outranks both) would be a real weight change.
+ *     a node whose weight is its OWN literal, i.e. no `style_token` AND no
+ *     token-ref `font_family` ({@link namesTokenRef}, G3), because
+ *     `resolvedTextFields` resolves a typography token's weight OVER the node
+ *     literal, so restating that literal on a span (which outranks both) would
+ *     be a real weight change.
  *
- * If neither is available — a single-character span that already states every
- * channel, which is constructible — the vector is returned as-is and the
- * engine's documented clear is accepted: honest, and undo restores it.
+ * ── TWO HONEST LIMITS OF THE RESTATEMENT (G4, review round 2) ────────────
+ * Neither is a defect to fix here; both are recorded so nobody reads this
+ * fallback as unconditional.
+ *
+ *  • It is **exhaustible, and reachably so.** Each restatement consumes one
+ *    channel of one span, so an unsplittable span (every span one character)
+ *    has at most FOUR of them: four consecutive suffix edits burn underline,
+ *    strikethrough, italic and the weight, and the FIFTH collides with the
+ *    stored vector again — at which point the engine's D4 clear stands. That is
+ *    an ordinary sequence of keystrokes on a coloured "!", not a contrived one,
+ *    so the earlier "constructible" framing understated it. The clear is still
+ *    honest and undo still restores it.
+ *  • A restatement is **durable**, not a marker: it writes a real span override
+ *    at the node's current value, and the span then STOPS following later
+ *    changes to the node's own base. Restating `italic: false` or the weight
+ *    pins real pixels; restating a decoration pins what the union-painted
+ *    toolbar reads, so a later node-level change can leave the toolbar and the
+ *    paint disagreeing over that run.
  *
  * `node` is the STORED node (its `content` and `spans` are what the document
  * holds, and the write is a content edit exactly when `content !== node.content`);
@@ -780,6 +797,20 @@ type Restatement =
   | { channel: "underline" | "strikethrough" | "italic"; value: boolean }
   | { channel: "font_weight"; value: number };
 
+/**
+ * Does this `font_family` name a TOKEN rather than a literal family?
+ *
+ * The engine's own rule, ported: `resolve_text_style` takes `style_token` when
+ * there is one and otherwise falls back to the `font_family` whenever it
+ * `looks_like_token_ref` — `$…` or `token(…)`, after trimming
+ * (`lumen-core/src/brand.rs:6154`, consumed at `:3928`). A node whose family is
+ * a token ref therefore resolves its weight from that typography token exactly
+ * as a `style_token` node does, so it has no literal weight to restate either.
+ */
+function namesTokenRef(fontFamily: string): boolean {
+  return /^\s*(\$|token\()/.test(fontFamily);
+}
+
 /** The channels this node can restate without moving a pixel, most inert
  * first. See {@link spansVectorForContentEdit} for why the weight is last and
  * why a token-styled node has no weight to restate. */
@@ -789,7 +820,7 @@ function baseRestatements(node: TextNode): Restatement[] {
     { channel: "strikethrough", value: node.strikethrough ?? false },
     { channel: "italic", value: node.italic ?? false },
   ];
-  if (!node.style_token) {
+  if (!node.style_token && !namesTokenRef(node.font_family)) {
     restatements.push({ channel: "font_weight", value: node.font_weight });
   }
   return restatements;

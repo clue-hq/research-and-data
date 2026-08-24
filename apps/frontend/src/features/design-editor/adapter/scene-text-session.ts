@@ -43,21 +43,33 @@ import { textEditCommitOperations } from "./scene-text-edit";
  */
 
 /**
- * The live session: what the textarea shows, the spans riding it, and whether
- * a HUMAN has touched it yet.
+ * The live session: what the textarea shows, the spans riding it, and which of
+ * its two channels a HUMAN has touched.
  *
- * `dirty` (F3, review 2026-08-24) is the answer to "may this session speak for
- * the document?". It is set by the human's own edits — every typing transition
- * below, and a formatting action — and by NOTHING the document does. While it
- * is clear the session FOLLOWS the model ({@link textEditSessionReseed}) and
- * writes nothing on commit ({@link textEditSessionOperations}); once it is set
- * the draft belongs to the human and no reload may take it back.
+ * The dirty flags (F3, review 2026-08-24; SPLIT IN TWO by G1, round 2) answer
+ * "may this session speak for the document, and about what?". They are set by
+ * the human's own actions and by NOTHING the document does. A clear channel
+ * FOLLOWS the model ({@link textEditSessionReseed}) and writes nothing on
+ * commit ({@link textEditSessionOperations}); a set one belongs to the human
+ * and no reload may take it back.
+ *
+ * ── WHY TWO FLAGS AND NOT ONE (G1) ───────────────────────────────────────
+ * F3 shipped ONE flag, and a formatting action set it. So a session whose human
+ * only clicked Bold stopped re-seeding — and then committed its OPENING content
+ * snapshot as a content write, over whatever an agent turn had written
+ * meanwhile. The two channels are genuinely independent: clicking Bold says
+ * nothing about the text, and typing authors no styling of its own (the
+ * maintained spans ride along with the content commit either way). So each is
+ * claimed on its own and committed on its own.
  */
 export interface TextEditSession {
   content: string;
   spans: TextSpan[];
-  /** Has a human edit or a formatting action touched this session? */
-  dirty: boolean;
+  /** Has the human EDITED THE TEXT? Only a text mutation sets this. */
+  contentDirty: boolean;
+  /** Has the human AUTHORED STYLING? Only an explicit formatting action sets
+   * this — a typing transition maintains the vector but does not claim it. */
+  spansDirty: boolean;
 }
 
 /** A textarea selection, in the UTF-16 code units it reports. */
@@ -222,7 +234,8 @@ export function textEditSessionAfterReplacement(
       utf16ToByteOffset(session.content, replacement.end),
       replacement.text,
     ),
-    dirty: true,
+    contentDirty: true,
+    spansDirty: session.spansDirty,
   };
 }
 
@@ -244,7 +257,8 @@ export function textEditSessionResync(
   return {
     content,
     spans: remapSpansByDiff(session.content, content, session.spans),
-    dirty: true,
+    contentDirty: true,
+    spansDirty: session.spansDirty,
   };
 }
 
@@ -275,8 +289,8 @@ export function textEditSessionAfterInput(
  * A session outlives the document state it opened on: a D10 reload keeps the
  * scene ready and the caret alive, and an agent turn is not allowed to kill an
  * open session (gate G-H's own posture). So "what does this session hold?" and
- * "what may it write?" are two different questions, and these four functions
- * are the answers.
+ * "what may it write?" are two different questions — asked once per CHANNEL
+ * since G1 — and the functions below are the answers.
  * ------------------------------------------------------------------------ */
 
 /**
@@ -288,29 +302,66 @@ export function textEditSessionSeed(
   content: string,
   spans: readonly TextSpan[],
 ): TextEditSession {
-  return { content, spans: [...spans], dirty: false };
+  return { content, spans: [...spans], contentDirty: false, spansDirty: false };
 }
 
 /**
- * F3: the model moved under an OPEN session — a D10 reload, an agent turn, a
- * write from another surface — and this decides whether the session follows it.
+ * One formatting action's result: the vector it produced, and the SPANS channel
+ * claimed — nothing else.
  *
- * A dirty session never follows: the human's half-typed thought outranks the
- * document, which is AD4.R's own mid-typing-draft-survives posture. A clean one
- * always follows, because it holds nothing but a snapshot, and a snapshot that
- * disagrees with the document is exactly what used to get written back over a
- * concurrent write on the next blur.
+ * G1: this used to be written inline in the overlay as `dirty: true`, which
+ * claimed the content channel too and is precisely the defect. Here so the
+ * "a formatting action does not touch the draft" rule is a function with a
+ * test, not a component detail.
+ */
+export function textEditSessionAfterStyle(
+  session: TextEditSession,
+  spans: TextSpan[],
+): TextEditSession {
+  return { ...session, spans, spansDirty: true };
+}
+
+/**
+ * F3/G1: the model moved under an OPEN session — a D10 reload, an agent turn, a
+ * write from another surface — and this decides, PER CHANNEL, whether the
+ * session follows it.
  *
- * Returns the SAME object when nothing moved, so a render that changes nothing
- * cannot churn React state (`textEditSessionResync` takes the same care).
+ * A session whose human TYPED never follows: their half-typed thought outranks
+ * the document, which is AD4.R's own mid-typing-draft-survives posture, and
+ * their spans index that draft's own offsets so the two cannot be separated.
+ *
+ * A session that has only been FORMATTED (G1) has no draft to defend, so it
+ * adopts the live content — and carries its working vector across by
+ * `remapSpansByDiff`, the same conservative prefix/suffix remap an untracked
+ * typing mutation uses. It does NOT take the document's spans back: that is the
+ * one channel the human authored, and letting the model win there would flip
+ * the toolbar back under them mid-session.
+ *
+ * A session touched in NEITHER channel follows both, because it holds nothing
+ * but a snapshot — and a snapshot that disagrees with the document is exactly
+ * what used to get written back over a concurrent write on the next blur.
+ *
+ * Returns the SAME object when nothing it would adopt moved, so a render that
+ * changes nothing cannot churn React state (`textEditSessionResync` takes the
+ * same care).
  */
 export function textEditSessionReseed(
   session: TextEditSession,
   content: string,
   spans: readonly TextSpan[],
 ): TextEditSession {
-  if (session.dirty) {
+  if (session.contentDirty) {
     return session;
+  }
+  if (session.spansDirty) {
+    return session.content === content
+      ? session
+      : {
+          content,
+          spans: remapSpansByDiff(session.content, content, session.spans),
+          contentDirty: false,
+          spansDirty: true,
+        };
   }
   if (
     session.content === content &&
@@ -322,6 +373,30 @@ export function textEditSessionReseed(
 }
 
 /**
+ * The selection a re-seed leaves behind (G2, review round 2).
+ *
+ * A re-seed that adopted new content rewrote the textarea's value, but the live
+ * selection's offsets were measured in the string it replaced — so the next
+ * Bold would style a range of the NEW text the human never selected. The answer
+ * is the posture a session OPENS in: select-all, which is the only offset pair
+ * that means anything in a string nobody has looked at yet (and which the mount
+ * effect already applies to a fresh session).
+ *
+ * A re-seed that changed no characters — a spans-only adoption — keeps every
+ * offset valid, so it returns the SAME selection object: stealing the human's
+ * range there would be its own defect.
+ */
+export function textEditSessionReseedSelection(
+  previous: TextEditSession,
+  next: TextEditSession,
+  selection: TextEditSelection,
+): TextEditSelection {
+  return previous.content === next.content
+    ? selection
+    : { start: 0, end: next.content.length };
+}
+
+/**
  * What a session commit writes, or null when it may write nothing.
  *
  * The dirty gate is the ONLY thing this adds to
@@ -329,15 +404,27 @@ export function textEditSessionReseed(
  * untouched session has no edit to contribute, so it must not be able to
  * express one — even when its snapshot differs from the live node, which is
  * precisely the case where the difference is the DOCUMENT's, not the human's.
+ *
+ * G1 makes that gate PER CHANNEL. The content channel goes out only when the
+ * human typed; otherwise the write carries the node's own LIVE content, so a
+ * formatting-only commit states the styling and states nothing about the text.
+ * The engine's D4 clear (`operations.rs:620-631`) is not triggered by it — the
+ * content it sends is the content already stored — and the spans, which DID
+ * change, apply. The alternative (sending the session's stale snapshot) is the
+ * concurrent-write revert this split exists to close.
  */
 export function textEditSessionOperations(
   node: Node | null,
   session: TextEditSession,
 ): Operation[] | null {
-  if (!session.dirty) {
+  if (!session.contentDirty && !session.spansDirty) {
     return null;
   }
-  return textEditCommitOperations(node, session.content, session.spans);
+  const content =
+    session.contentDirty || node?.kind.kind !== "text"
+      ? session.content
+      : node.kind.content;
+  return textEditCommitOperations(node, content, session.spans);
 }
 
 /**

@@ -222,6 +222,35 @@ against the build cost of (2)/(3).
    node bakes the layout as a side effect of wanting to fix a typo. Changing it would change ratified
    AD4.C-3 behaviour for every press, not just text ones — **needs a founder ruling; nothing was
    changed here.**
+9. **[added 2026-08-24, review round 2 / G1] A concurrent write and an open session settle PER
+   CHANNEL.** The session tracks "the human typed" and "the human formatted" separately. A session
+   whose human only clicked Bold now ADOPTS an agent's concurrent rewrite of the text (its working
+   spans are remapped onto the new string by prefix/suffix diff) and commits only the styling; a
+   session whose human typed keeps its draft as before. The visible consequence: styling applied just
+   before an agent turn lands can end up over *different words* than it was applied to, because the
+   remap is conservative and never guesses what changed in the middle. The alternative — refusing the
+   formatting commit outright — was not chosen: it would lose the human's action to a race they could
+   not see.
+
+## Residuals (recorded, not fixed — round 2, 2026-08-24)
+
+- **The D4 restatement fallback is exhaustible, and reachably so.** When a content edit's maintained
+  span vector would reach the engine byte-identical to the stored one, `spansVectorForContentEdit`
+  re-authors it — first by splitting a span, and (F2) for an unsplittable one by restating a channel
+  at the node's own value. That second fallback has at most FOUR channels per span, so four
+  consecutive suffix edits on a single-character span burn underline, strikethrough, italic and the
+  weight, and the fifth collides again and the engine clears the styling. The F2 docstring called that
+  case merely "constructible"; it is an ordinary sequence of keystrokes on a coloured "!". The clear
+  is still honest and undo still restores it. (Corrected in `textSpans.ts`.)
+- **A restatement is durable, not a marker.** It writes a real span override at the node's value, so
+  that run STOPS following later changes to the node's own base: restating italic or the weight pins
+  real pixels, and restating a decoration pins what the union-painted toolbar reads — a later
+  node-level change can leave the toolbar and the paint disagreeing over that run.
+- **A refused commit can be silent.** `use-scene-manual-edits.ts`'s not-armed path returns false with
+  no message, and D9 read-only relies on the G-D banner rather than a per-write refusal. A session
+  that refuses to commit therefore holds the caret with no stated reason; Escape exits but costs the
+  draft. Fixing it needs a decision about a shared refusal message on the write path — **not this
+  lane's to make**, recorded so the next owner of that path has it.
 
 ## Implementation plan (each task: TDD, focused tests, then the frontend gate; local commit per task)
 

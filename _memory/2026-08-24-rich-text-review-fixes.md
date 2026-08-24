@@ -46,6 +46,64 @@ Branch `integration/frontend-design-part-iv-v8`. Base `098f243c` (frontend suite
 `npm run design-system:build && npm run lint && npm run build` — 0 errors, the 2 known
 `canvasOperations.ts` unused-var warnings only.
 
+## Round 2 (2026-08-24) — scoped re-review of `75a25835`
+
+Base attested: HEAD `75a25835`, frontend suite 2225 pass / 0 fail / 0 skipped. One commit on top.
+All three code fixes TDD (red test first, verified failing).
+
+- **G1 (P2, the one that mattered).** F3's single `dirty` flag served TWO channels, and `applyStyle`
+  set it — so a session whose human only clicked Bold stopped re-seeding AND claimed the content
+  channel, and its blur committed the stale opening snapshot as a content write over a concurrent
+  agent write. `TextEditSession.dirty` → `contentDirty` + `spansDirty`:
+  - a text mutation (tracked / untracked / arbitrated) sets `contentDirty` only — the maintained spans
+    ride along with a content commit regardless, so typing has no reason to claim the spans channel;
+  - a formatting action sets `spansDirty` only, through the new pure `textEditSessionAfterStyle`
+    (previously an inline `dirty: true` object literal in the overlay — moved so the rule has a test);
+  - `textEditSessionReseed` is per-channel: `contentDirty` keeps the draft (unchanged posture);
+    `spansDirty` alone ADOPTS the live content and remaps the working vector onto it via
+    `remapSpansByDiff`, while refusing to take the document's spans back; neither dirty follows both;
+  - `textEditSessionOperations` sends the session's content only when `contentDirty`, otherwise the
+    node's LIVE content — so a spans-only commit does not trip engine D4 and cannot revert text.
+- **G2 (P3).** A re-seed rewrote the textarea value while `selection` state and the DOM selection
+  still pointed at the old offsets. New pure `textEditSessionReseedSelection` (select-all on an
+  adopted content change, same object otherwise), plus a `useLayoutEffect` keyed on the adopted
+  content that pushes the range at the DOM without touching focus.
+- **G3 (P3).** The F2 weight-restatement guard read `!node.style_token` only. `resolve_text_style`
+  (`brand.rs:3928`) also treats a token-ref `font_family` (`looks_like_token_ref`, `:6154` — `$…` or
+  `token(…)` after trimming) as a style-token source, so restating the literal weight there is a real
+  change at export. Guard is now `!node.style_token && !namesTokenRef(node.font_family)`; both shapes
+  plus a leading-space one are pinned, and a literal family is pinned to still restate.
+- **G4 (P3s, prose only, no code behaviour).** The F2 docstring's "constructible" framing was
+  over-optimistic — the restatement fallback is exhaustible in four ordinary suffix edits, and a
+  restatement is durable (that run stops following later node-base changes). Both, plus the silent
+  refusal path (`use-scene-manual-edits.ts` not-armed returns false with no message; D9 read-only
+  leans on the G-D banner), are now in the plan doc's new **Residuals** section. The G1 per-channel
+  settlement is founder-visible item 9.
+
+### Tests REWRITTEN (strict supersets, none weakened)
+
+All in `adapter/scene-text-session.test.ts`; each keeps its original assertion and adds the split:
+
+1. `session()` helper — `dirty` → `contentDirty` + `spansDirty` (both default false).
+2. "a freshly seeded session is CLEAN" → "…in both channels": asserts BOTH flags false.
+3. "typing marks the session dirty" → "typing marks the CONTENT channel": same three transitions,
+   now asserting `contentDirty` true AND `spansDirty` false (the added half is the G1 rule).
+4. "a CLEAN session re-seeds…" — adds `spansDirty` to the flags asserted after the re-seed.
+5. "a DIRTY session keeps its draft" → "a TYPED session…": same case on `contentDirty`, plus a second
+   assertion that it also holds when the document moved the spans.
+6. "a DIRTY session writes" → "a TYPED session writes its draft": same, on `contentDirty`.
+7. "a refused FORMATTING commit reverts…" — the `after` session is now `spansDirty`.
+
+Nine cases added: typing-in-a-formatted-session, formatting-claims-only-spans, the two G1 reseed pins,
+the two G1 commit pins (live content vs snapshot; unchanged-model), the two G2 selection pins, and the
+G3 token-ref family case in `__tests__/textSpans.test.ts`.
+
+### Gates (round 2)
+
+`npm test` 2234 pass / 0 fail / 0 skipped (2225 + 9; wasm artifact suite RUN, 6 cases).
+`npm run design-system:build && npm run lint && npm run build` — 0 errors, the same 2 known
+`canvasOperations.ts` unused-var warnings. No browser walk (no live stack this session).
+
 ## Residuals / notes for the next session
 
 - F4's component plumbing (settle latch, refocus-on-refusal) is React and therefore not unit-tested;

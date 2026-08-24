@@ -848,6 +848,38 @@ describe("spansVectorForContentEdit", () => {
     ).toEqual(before);
   });
 
+  it("never restates the weight of a node whose FONT_FAMILY names a token ref", () => {
+    // G3 (review round 2, 2026-08-24): `style_token` is not the only style-token
+    // source. `resolve_text_style` falls back to the `font_family` when it
+    // LOOKS LIKE a token ref — `$…` or `token(…)` (`brand.rs:6154`) — and
+    // resolves that typography token's weight over the node literal, exactly as
+    // a `style_token` does. So restating the literal weight on a span (which
+    // outranks both) is a real change at export for this node too.
+    const before: TextSpan[] = [
+      { start: 1, end: 5, italic: true, underline: true, strikethrough: true },
+    ];
+    for (const font_family of ["$text.heading", "token(text.heading)", "  $text.heading"]) {
+      expect(
+        spansVectorForContentEdit(
+          storedNode(EMOJI, before, { font_weight: 600, font_family }),
+          `${EMOJI}!`,
+          before,
+        ),
+        font_family,
+      ).toEqual(before);
+    }
+    // …and the guard is not over-broad: a literal family still restates.
+    expect(
+      spansVectorForContentEdit(
+        storedNode(EMOJI, before, { font_weight: 600, font_family: "Inter" }),
+        `${EMOJI}!`,
+        before,
+      ),
+    ).toEqual([
+      { start: 1, end: 5, font_weight: 600, italic: true, underline: true, strikethrough: true },
+    ]);
+  });
+
   it("accepts the engine's clear when every channel is already restated", () => {
     // The one genuinely unconstructible case, and it IS constructible: a
     // single-character span that already states every channel has no split to
