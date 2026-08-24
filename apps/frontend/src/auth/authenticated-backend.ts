@@ -5,6 +5,7 @@ import { clueApiBaseUrl, lumenApiBaseUrl } from "./config";
 import { backendRequestHeaders } from "./bff";
 import { ClueAuthenticationError } from "./errors";
 import { providerSessionToken } from "./server";
+import { streamingFetchOptions } from "./streaming-dispatcher";
 import { loadProtectedSession } from "@/features/session/data/session-dal";
 import { WORKSPACE_COOKIE } from "@/features/session/model/session";
 
@@ -79,6 +80,9 @@ export async function fetchAuthenticatedDesignBackend(
   headers.set("X-Workspace-Id", resolved.workspaceId);
   return fetch(new URL(path, lumenApiBaseUrl()), {
     ...init,
+    // An event stream must not run under undici's 300s body timeout; see
+    // `streaming-dispatcher.ts`. A no-op for ordinary request/response calls.
+    ...streamingFetchOptions(headers),
     cache: "no-store",
     headers,
     redirect: "manual",
@@ -98,13 +102,17 @@ export async function fetchAuthenticatedClueBackend(
   context?: AuthenticatedBackendContext,
 ): Promise<Response> {
   const resolved = context ?? (await authenticatedBackendContext());
+  const headers = backendRequestHeaders(new Headers(init.headers), {
+    token: resolved.token,
+    workspaceId: resolved.workspaceId,
+  });
   return fetch(backendUrl(path), {
     ...init,
+    // An event stream must not run under undici's 300s body timeout; see
+    // `streaming-dispatcher.ts`. A no-op for ordinary request/response calls.
+    ...streamingFetchOptions(headers),
     cache: "no-store",
-    headers: backendRequestHeaders(new Headers(init.headers), {
-      token: resolved.token,
-      workspaceId: resolved.workspaceId,
-    }),
+    headers,
     redirect: "manual",
   });
 }
