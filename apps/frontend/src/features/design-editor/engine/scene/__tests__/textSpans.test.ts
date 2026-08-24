@@ -669,20 +669,32 @@ describe("remapSpansByDiff", () => {
  * survives.
  */
 describe("spansVectorForContentEdit", () => {
+  /** The STORED node a commit is measured against: its `content` is what the
+   * document holds and its `spans` are the vector the engine will compare the
+   * write against — RAW, exactly as they sit in the document. */
+  const storedNode = (content: string, spans: TextSpan[], rest: Partial<TextNode> = {}) =>
+    textNode({ content, spans, ...rest });
+
   it("passes the vector through when the content did not change", () => {
     const spans: TextSpan[] = [{ start: 0, end: 5, font_weight: 700 }];
-    expect(spansVectorForContentEdit(HELLO, spans, spans, false)).toEqual(spans);
+    expect(spansVectorForContentEdit(storedNode(HELLO, spans), HELLO, spans)).toEqual(spans);
   });
 
   it("passes the vector through when it already differs from the stored one", () => {
     const before: TextSpan[] = [{ start: 0, end: 5, font_weight: 700 }];
     const after: TextSpan[] = [{ start: 0, end: 7, font_weight: 700 }];
-    expect(spansVectorForContentEdit("Hello!! World", before, after, true)).toEqual(after);
+    expect(
+      spansVectorForContentEdit(storedNode(HELLO, before), "Hello!! World", after),
+    ).toEqual(after);
   });
 
   it("splits the last span so a byte-identical vector survives the content edit", () => {
     const before: TextSpan[] = [{ start: 0, end: 5, font_weight: 700 }];
-    const result = spansVectorForContentEdit("Hello World!", before, before, true);
+    const result = spansVectorForContentEdit(
+      storedNode(HELLO, before),
+      "Hello World!",
+      before,
+    );
     expect(result).toEqual([
       { start: 0, end: 1, font_weight: 700 },
       { start: 1, end: 5, font_weight: 700 },
@@ -697,7 +709,11 @@ describe("spansVectorForContentEdit", () => {
       { start: 0, end: 5, font_weight: 700 },
       { start: 6, end: 11, italic: true },
     ];
-    const result = spansVectorForContentEdit("Hello World!", before, before, true);
+    const result = spansVectorForContentEdit(
+      storedNode(HELLO, before),
+      "Hello World!",
+      before,
+    );
     expect(result).toEqual([
       { start: 0, end: 5, font_weight: 700 },
       { start: 6, end: 7, italic: true },
@@ -706,12 +722,151 @@ describe("spansVectorForContentEdit", () => {
   });
 
   it("returns an empty vector as-is (there is nothing for the engine to clear)", () => {
-    expect(spansVectorForContentEdit("Hello!", [], [], true)).toEqual([]);
+    expect(spansVectorForContentEdit(storedNode("Hello", []), "Hello!", [])).toEqual([]);
   });
 
-  it("accepts the engine's clear when no span has an interior char boundary", () => {
+  /**
+   * F1 (review 2026-08-24, P1): the guard compares against the RAW stored
+   * vector, because that is what the engine compares against
+   * (`after.spans == before.spans` over the stored bytes). Comparing against
+   * the NORMALIZED stored vector made the split self-defeating: the split
+   * output is deterministic, so a second suffix edit — whose maintained vector
+   * normalizes back to the pre-split shape — regenerated exactly the stored
+   * split and the engine cleared every span.
+   */
+  it("a SECOND suffix edit does not regenerate the stored split (the D4 collision)", () => {
+    // What the FIRST suffix edit wrote: one bold run, split in two.
+    const stored: TextSpan[] = [
+      { start: 0, end: 1, font_weight: 700 },
+      { start: 1, end: 5, font_weight: 700 },
+    ];
+    const result = spansVectorForContentEdit(
+      storedNode("Hello World!", stored),
+      "Hello World!!",
+      stored,
+    );
+    // The merged shape is itself the re-authoring: same styling, structurally
+    // different from what the document holds, so D4 cannot read it as stale.
+    expect(result).toEqual([{ start: 0, end: 5, font_weight: 700 }]);
+    expect(JSON.stringify(result)).not.toBe(JSON.stringify(stored));
+    expect(spanValidationIssues("Hello World!!", result)).toEqual([]);
+  });
+
+  it("chains: three suffix edits in a row each keep the styling alive", () => {
+    let content = HELLO;
+    let stored: TextSpan[] = [{ start: 0, end: 5, font_weight: 700 }];
+    for (const suffix of ["!", "!!", "!!!"]) {
+      const next = `${HELLO}${suffix}`;
+      const vector = spansVectorForContentEdit(storedNode(content, stored), next, stored);
+      expect(JSON.stringify(vector), `after "${suffix}"`).not.toBe(JSON.stringify(stored));
+      expect(spanValidationIssues(next, vector)).toEqual([]);
+      // Whatever shape it takes, it still says "the first five bytes are bold".
+      expect(formatStateForRange(textNode({ content: next, spans: vector }), [0, 5]).bold).toBe(
+        "on",
+      );
+      content = next;
+      stored = vector;
+    }
+  });
+
+  /**
+   * F2 (review 2026-08-24, P3-1): when nothing can be split — every span one
+   * character wide — the vector used to go out unchanged and the engine cleared
+   * it (a coloured "!" died on any suffix edit). It now RESTATES a channel the
+   * span does not carry at the node's own value: renders identically, and the
+   * engine can no longer mistake it for a carry-forward.
+   */
+  it("restates a no-op channel when no span has an interior char boundary", () => {
     const before: TextSpan[] = [{ start: 1, end: 5, font_weight: 700 }];
-    expect(spansVectorForContentEdit(EMOJI, before, before, true)).toEqual(before);
+    const result = spansVectorForContentEdit(
+      storedNode(EMOJI, before, { underline: false }),
+      `${EMOJI}!`,
+      before,
+    );
+    expect(result).toEqual([
+      { start: 1, end: 5, font_weight: 700, underline: false },
+    ]);
+    expect(JSON.stringify(result)).not.toBe(JSON.stringify(before));
+    expect(spanValidationIssues(`${EMOJI}!`, result)).toEqual([]);
+    // Identical pixels: the restated value IS the node's own.
+    const painted = textNode({ content: `${EMOJI}!`, spans: result });
+    expect(formatStateForRange(painted, [1, 5]).underline).toBe("off");
+    expect(formatStateForRange(painted, [1, 5]).bold).toBe("on");
+  });
+
+  it("restates the node's TRUE base, not a default (an underlined node restates true)", () => {
+    const before: TextSpan[] = [{ start: 1, end: 5, font_weight: 700 }];
+    const result = spansVectorForContentEdit(
+      storedNode(EMOJI, before, { underline: true }),
+      `${EMOJI}!`,
+      before,
+    );
+    expect(result).toEqual([
+      { start: 1, end: 5, font_weight: 700, underline: true },
+    ]);
+    expect(
+      formatStateForRange(textNode({ content: `${EMOJI}!`, spans: result, underline: true }), [
+        1, 5,
+      ]).underline,
+    ).toBe("on");
+  });
+
+  it("falls through the decoration channels to the WEIGHT when they are all stated", () => {
+    const before: TextSpan[] = [
+      { start: 1, end: 5, italic: true, underline: true, strikethrough: true },
+    ];
+    const result = spansVectorForContentEdit(
+      storedNode(EMOJI, before, { font_weight: 600 }),
+      `${EMOJI}!`,
+      before,
+    );
+    expect(result).toEqual([
+      {
+        start: 1,
+        end: 5,
+        font_weight: 600,
+        underline: true,
+        strikethrough: true,
+        italic: true,
+      },
+    ]);
+  });
+
+  it("never restates the weight of a TOKEN-styled node — the token outranks the literal", () => {
+    // `resolvedTextFields` resolves `style_token`'s weight OVER `font_weight`,
+    // so restating the literal on a span would be a real weight change, not a
+    // no-op. The engine's clear is the honest answer instead.
+    const before: TextSpan[] = [
+      { start: 1, end: 5, italic: true, underline: true, strikethrough: true },
+    ];
+    expect(
+      spansVectorForContentEdit(
+        storedNode(EMOJI, before, { font_weight: 600, style_token: "text.heading" }),
+        `${EMOJI}!`,
+        before,
+      ),
+    ).toEqual(before);
+  });
+
+  it("accepts the engine's clear when every channel is already restated", () => {
+    // The one genuinely unconstructible case, and it IS constructible: a
+    // single-character span that already states every channel has no split to
+    // take and no channel left to restate. The clear is honest, and undo
+    // restores it (this was the pre-F2 behaviour of EVERY unsplittable vector).
+    const before: TextSpan[] = [
+      {
+        start: 1,
+        end: 5,
+        fill: RED,
+        font_weight: 700,
+        underline: true,
+        strikethrough: true,
+        italic: true,
+      },
+    ];
+    expect(
+      spansVectorForContentEdit(storedNode(EMOJI, before), `${EMOJI}!`, before),
+    ).toEqual(before);
   });
 });
 
@@ -793,7 +948,11 @@ describe("span validity is closed under every operation", () => {
           spanValidationIssues(result.content, remapped),
           `diff ${content} -> ${result.content} step ${step}`,
         ).toEqual([]);
-        const d4 = spansVectorForContentEdit(result.content, spans, result.spans, true);
+        const d4 = spansVectorForContentEdit(
+          textNode({ content, spans }),
+          result.content,
+          result.spans,
+        );
         expect(spanValidationIssues(result.content, d4), `d4 step ${step}`).toEqual([]);
       }
     }

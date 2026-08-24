@@ -156,7 +156,7 @@ describe.skipIf(!wasmArtifactPresent)("scene text spans (real artifact)", () => 
     // still correct and the maintained vector is byte-identical to the stored
     // one — precisely the shape the engine reads as a stale carry-forward.
     const draft = "Dr. Priya Sharma, MD";
-    const vector = spansVectorForContentEdit(draft, stored, stored, true);
+    const vector = spansVectorForContentEdit(textKind(engine.scene), draft, stored);
     // Semantically the same styling, structurally different: one span split in
     // two adjacent ones (adjacency is legal; only overlap is not).
     expect(vector).toEqual([
@@ -184,5 +184,111 @@ describe.skipIf(!wasmArtifactPresent)("scene text spans (real artifact)", () => 
     expect(undo.accepted).toBe(true);
     expect(textKind(undo.scene).content).toBe("Dr. Priya Sharma");
     expect(textKind(undo.scene).spans).toEqual([RED_PRIYA]);
+  });
+
+  /**
+   * F1 (review 2026-08-24, P1). ONE suffix edit was proven above; the defect
+   * was in the SECOND. The split is deterministic, so a second session over the
+   * already-split node regenerated exactly the vector the document held — and
+   * the engine, which compares the RAW stored bytes, cleared every span. Only a
+   * chain of two commits against the real engine can catch that: each commit in
+   * isolation looks correct.
+   */
+  it("the D4 EDGE, CHAINED: a second suffix edit keeps the styling the first one saved", async () => {
+    const module = await loadWasmModuleFromDisk();
+    const engine = new WasmEngine(module, spannedScene());
+
+    // ── COMMIT 1 — the case proven above, run for real so commit 2 starts from
+    // the bytes the engine actually holds afterwards.
+    const first = "Dr. Priya Sharma, MD";
+    const firstVector = spansVectorForContentEdit(
+      textKind(engine.scene),
+      first,
+      textKind(engine.scene).spans ?? [],
+    );
+    const editOne = engine.applyOperations([
+      updateTextNode(engine.scene.nodes.node_contact_name, {
+        content: first,
+        spans: firstVector,
+      }),
+    ]);
+    expect(editOne.accepted).toBe(true);
+    expect(textKind(engine.scene).spans).toEqual([
+      { start: 4, end: 5, fill: RED_PRIYA.fill },
+      { start: 5, end: 9, fill: RED_PRIYA.fill },
+    ]);
+
+    // ── COMMIT 2 — a second session opens on the SPLIT node, seeds its working
+    // vector from it, and types another suffix. Nothing about `Priya` moved, so
+    // the maintained vector normalizes straight back to the merged shape.
+    const second = "Dr. Priya Sharma, MD, PhD";
+    const secondVector = spansVectorForContentEdit(
+      textKind(engine.scene),
+      second,
+      textKind(engine.scene).spans ?? [],
+    );
+    // The MERGE is the re-authoring this time: it differs from the stored split
+    // by itself, so no further re-authoring is needed (and re-splitting it —
+    // what the pre-F1 guard did — would have reproduced the stored vector).
+    expect(secondVector).toEqual([{ start: 4, end: 9, fill: RED_PRIYA.fill }]);
+
+    const editTwo = engine.applyOperations([
+      updateTextNode(engine.scene.nodes.node_contact_name, {
+        content: second,
+        spans: secondVector,
+      }),
+    ]);
+    expect(editTwo.accepted).toBe(true);
+    expect(textKind(engine.scene).content).toBe(second);
+    // SURVIVED TWICE. Before F1 this assertion read `[]`: the styling vanished
+    // on the second suffix edit, silently.
+    expect(textKind(engine.scene).spans ?? []).toEqual(secondVector);
+    expect(formatStateForRange(textKind(engine.scene), [4, 9]).fill).toEqual({
+      kind: "uniform",
+      paint: RED_PRIYA.fill,
+    });
+  });
+
+  /**
+   * F2 (review 2026-08-24, P3-1). A span with no interior char boundary — the
+   * coloured single character — cannot be split, so before F2 it went out
+   * byte-identical and the engine cleared it. The restated channel is a no-op
+   * to the painter and a real difference to D4; this asks the engine to prove
+   * both halves (it accepts the vector, and gives it back unchanged).
+   */
+  it("the D4 EDGE, UNSPLITTABLE: a coloured single character survives a suffix edit", async () => {
+    const module = await loadWasmModuleFromDisk();
+    // `Dr. Priya Sharm` + a final `a` at bytes 15..16 — one character, so there
+    // is no interior boundary anywhere in the vector.
+    const singleChar: TextSpan = { start: 15, end: 16, fill: RED_PRIYA.fill };
+    const engine = new WasmEngine(module, spannedScene([singleChar]));
+    expect(textKind(engine.scene).spans).toEqual([singleChar]);
+
+    const draft = "Dr. Priya Sharma!";
+    const vector = spansVectorForContentEdit(
+      textKind(engine.scene),
+      draft,
+      textKind(engine.scene).spans ?? [],
+    );
+    // The node states no underline, so `underline: false` IS its base: the run
+    // paints exactly as it did, and the bytes are no longer the stored ones.
+    expect(vector).toEqual([
+      { start: 15, end: 16, fill: RED_PRIYA.fill, underline: false },
+    ]);
+
+    const edit = engine.applyOperations([
+      updateTextNode(engine.scene.nodes.node_contact_name, {
+        content: draft,
+        spans: vector,
+      }),
+    ]);
+    expect(edit.accepted).toBe(true);
+    expect(textKind(engine.scene).content).toBe(draft);
+    // SURVIVED. Before F2 this assertion read `[]`.
+    expect(textKind(engine.scene).spans ?? []).toEqual(vector);
+    expect(formatStateForRange(textKind(engine.scene), [15, 16])).toMatchObject({
+      underline: "off",
+      fill: { kind: "uniform", paint: RED_PRIYA.fill },
+    });
   });
 });

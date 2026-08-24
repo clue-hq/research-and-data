@@ -1,14 +1,16 @@
-import type { TextNode, TextSpan } from "../engine/scene/contracts";
+import type { Node, Operation, TextNode, TextSpan } from "../engine/scene/contracts";
 import {
   applyStyleToRange,
   formatStateForRange,
   reconcileSpansForReplacement,
   remapSpansByDiff,
+  spansStableKey,
   utf16ToByteOffset,
   type ByteRange,
   type RangeFormatState,
   type StylePatch,
 } from "../engine/scene/textSpans";
+import { textEditCommitOperations } from "./scene-text-edit";
 
 /**
  * Rung C of the rich-text ladder (`docs/superpowers/plans/2026-08-24-rich-text-editing.md`):
@@ -40,10 +42,22 @@ import {
  * prediction only when the DOM's own value proves it right.
  */
 
-/** The live session: what the textarea shows, and the spans riding it. */
+/**
+ * The live session: what the textarea shows, the spans riding it, and whether
+ * a HUMAN has touched it yet.
+ *
+ * `dirty` (F3, review 2026-08-24) is the answer to "may this session speak for
+ * the document?". It is set by the human's own edits — every typing transition
+ * below, and a formatting action — and by NOTHING the document does. While it
+ * is clear the session FOLLOWS the model ({@link textEditSessionReseed}) and
+ * writes nothing on commit ({@link textEditSessionOperations}); once it is set
+ * the draft belongs to the human and no reload may take it back.
+ */
 export interface TextEditSession {
   content: string;
   spans: TextSpan[];
+  /** Has a human edit or a formatting action touched this session? */
+  dirty: boolean;
 }
 
 /** A textarea selection, in the UTF-16 code units it reports. */
@@ -200,13 +214,16 @@ export function textEditSessionAfterReplacement(
   session: TextEditSession,
   replacement: TextEditReplacement,
 ): TextEditSession {
-  return reconcileSpansForReplacement(
-    session.content,
-    session.spans,
-    utf16ToByteOffset(session.content, replacement.start),
-    utf16ToByteOffset(session.content, replacement.end),
-    replacement.text,
-  );
+  return {
+    ...reconcileSpansForReplacement(
+      session.content,
+      session.spans,
+      utf16ToByteOffset(session.content, replacement.start),
+      utf16ToByteOffset(session.content, replacement.end),
+      replacement.text,
+    ),
+    dirty: true,
+  };
 }
 
 /**
@@ -227,6 +244,7 @@ export function textEditSessionResync(
   return {
     content,
     spans: remapSpansByDiff(session.content, content, session.spans),
+    dirty: true,
   };
 }
 
@@ -249,6 +267,121 @@ export function textEditSessionAfterInput(
     return prediction;
   }
   return textEditSessionResync(session, content);
+}
+
+/* ---------------------------------------------------------------------------
+ * The session's LIFECYCLE against a moving document (F3/F4, review 2026-08-24)
+ *
+ * A session outlives the document state it opened on: a D10 reload keeps the
+ * scene ready and the caret alive, and an agent turn is not allowed to kill an
+ * open session (gate G-H's own posture). So "what does this session hold?" and
+ * "what may it write?" are two different questions, and these four functions
+ * are the answers.
+ * ------------------------------------------------------------------------ */
+
+/**
+ * A session as it opens: the node's own content and spans, and CLEAN — nothing
+ * here is the human's yet. The one place a session is born, so "born clean"
+ * cannot be forgotten at a call site.
+ */
+export function textEditSessionSeed(
+  content: string,
+  spans: readonly TextSpan[],
+): TextEditSession {
+  return { content, spans: [...spans], dirty: false };
+}
+
+/**
+ * F3: the model moved under an OPEN session — a D10 reload, an agent turn, a
+ * write from another surface — and this decides whether the session follows it.
+ *
+ * A dirty session never follows: the human's half-typed thought outranks the
+ * document, which is AD4.R's own mid-typing-draft-survives posture. A clean one
+ * always follows, because it holds nothing but a snapshot, and a snapshot that
+ * disagrees with the document is exactly what used to get written back over a
+ * concurrent write on the next blur.
+ *
+ * Returns the SAME object when nothing moved, so a render that changes nothing
+ * cannot churn React state (`textEditSessionResync` takes the same care).
+ */
+export function textEditSessionReseed(
+  session: TextEditSession,
+  content: string,
+  spans: readonly TextSpan[],
+): TextEditSession {
+  if (session.dirty) {
+    return session;
+  }
+  if (
+    session.content === content &&
+    spansStableKey(session.spans) === spansStableKey(spans)
+  ) {
+    return session;
+  }
+  return textEditSessionSeed(content, spans);
+}
+
+/**
+ * What a session commit writes, or null when it may write nothing.
+ *
+ * The dirty gate is the ONLY thing this adds to
+ * {@link textEditCommitOperations}, and it is the whole of F3's write half: an
+ * untouched session has no edit to contribute, so it must not be able to
+ * express one — even when its snapshot differs from the live node, which is
+ * precisely the case where the difference is the DOCUMENT's, not the human's.
+ */
+export function textEditSessionOperations(
+  node: Node | null,
+  session: TextEditSession,
+): Operation[] | null {
+  if (!session.dirty) {
+    return null;
+  }
+  return textEditCommitOperations(node, session.content, session.spans);
+}
+
+/**
+ * F4: does a commit END the session?
+ *
+ * It ends when the write LANDED, or when there was nothing to write (null is
+ * not a refusal — there was no write to refuse). A refused write keeps the
+ * session open, with the typed text intact, which is the plan's error-handling
+ * contract: "overlay commit failure keeps the session open with the typed text
+ * (nothing lost)".
+ *
+ * This deliberately DIFFERS from the inspector's revert-on-refusal (AD4.R): a
+ * one-line field's refused value is still on screen and one keystroke from
+ * being re-entered, while a multi-line draft — a paragraph someone just wrote —
+ * is unrecoverable once the session closes. Same refusal, different cost, so a
+ * different posture; recorded as founder-visible item 7 on the plan.
+ */
+export function textEditSessionEnds(
+  operations: Operation[] | null,
+  accepted: boolean,
+): boolean {
+  return operations === null || accepted;
+}
+
+/**
+ * F4, the formatting half: a refused formatting commit must leave the session
+ * holding the vector it had BEFORE the action.
+ *
+ * A formatting action adopts its new vector optimistically (the canvas repaints
+ * from the committed document, so the toolbar has to lead). If the write is
+ * refused, that optimism is a session whose toolbar says "bold" over a document
+ * that says otherwise, and whose next commit would carry the refused styling
+ * back in. The error slot is already populated by the write path; this only
+ * undoes the optimism.
+ *
+ * Nothing typed is at stake here — only the styling was refused — which is why
+ * this reverts where the session commit above keeps.
+ */
+export function textEditSessionAfterStyleCommit(
+  previous: TextEditSession,
+  next: TextEditSession,
+  accepted: boolean,
+): TextEditSession {
+  return accepted ? next : previous;
 }
 
 /**

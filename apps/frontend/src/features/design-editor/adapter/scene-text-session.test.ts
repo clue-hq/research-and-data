@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { Paint, TextNode, TextSpan } from "../engine/scene/contracts";
+import type {
+  Node,
+  Paint,
+  Scene,
+  TextNode,
+  TextSpan,
+} from "../engine/scene/contracts";
 import { HARVESTED_AD_PAGE } from "./__fixtures__/scene-nodes";
 import {
   textEditByteRange,
@@ -8,8 +14,13 @@ import {
   textEditReplacement,
   textEditSessionAfterInput,
   textEditSessionAfterReplacement,
+  textEditSessionAfterStyleCommit,
+  textEditSessionEnds,
   textEditSessionNode,
+  textEditSessionOperations,
   textEditSessionResync,
+  textEditSessionReseed,
+  textEditSessionSeed,
   textEditStyledSpans,
   type TextEditSession,
 } from "./scene-text-session";
@@ -29,8 +40,19 @@ import {
 const TEXT = HARVESTED_AD_PAGE.nodes.text_proof_stat.kind as TextNode;
 const RED: Paint = { kind: "solid", color: { kind: "hex", value: "#ff0000" } };
 
+function clone(scene: Scene): Scene {
+  return JSON.parse(JSON.stringify(scene)) as Scene;
+}
+
+/** The node's text kind, narrowed — every case that reaches for it is about a
+ * text node. */
+function textKind(node: Node): TextNode {
+  assert.ok(node.kind.kind === "text");
+  return node.kind;
+}
+
 function session(overrides: Partial<TextEditSession> = {}): TextEditSession {
-  return { content: TEXT.content, spans: [], ...overrides };
+  return { content: TEXT.content, spans: [], dirty: false, ...overrides };
 }
 
 /** `faster` in bold — the span every typing case moves around. */
@@ -345,10 +367,10 @@ test("no prediction at all still lands on the session's own content", () => {
  * ---------------------------------------------------------------------- */
 
 test("the session's node is the stored kind wearing the live draft and spans", () => {
-  const node = textEditSessionNode(TEXT, {
-    content: "3.4x quicker triage",
-    spans: [BOLD_FASTER],
-  });
+  const node = textEditSessionNode(
+    TEXT,
+    session({ content: "3.4x quicker triage", spans: [BOLD_FASTER] }),
+  );
   assert.equal(node.content, "3.4x quicker triage");
   assert.deepEqual(node.spans, [BOLD_FASTER]);
   // Everything else is the stored node's, untouched.
@@ -424,4 +446,119 @@ test("a formatting action can legitimately empty the vector", () => {
     textEditStyledSpans(TEXT, styled, { start: 5, end: 11 }, { bold: false }),
     [],
   );
+});
+
+/* -------------------------------------------------------------------------
+ * F3 (review 2026-08-24, P2): DIRTY — an idle session must not revert a
+ * concurrent write.
+ *
+ * A session seeds ONCE, from the node as it read when the caret opened, and a
+ * D10 reload or an agent turn keeps that session alive (the scene comes back
+ * ready and the node still exists). So an untouched open session was carrying a
+ * stale snapshot and writing it back over whatever landed underneath it. The
+ * flag is set by the human's own edits and by a formatting action, and by
+ * NOTHING the model does: while it is clear the session follows the document,
+ * and once it is set the draft is the human's and the document may not take it
+ * back.
+ * ---------------------------------------------------------------------- */
+
+test("a freshly seeded session is CLEAN", () => {
+  const seeded = textEditSessionSeed(TEXT.content, [BOLD_FASTER]);
+  assert.equal(seeded.dirty, false);
+  assert.equal(seeded.content, TEXT.content);
+  assert.deepEqual(seeded.spans, [BOLD_FASTER]);
+});
+
+test("typing marks the session dirty — tracked, untracked and arbitrated alike", () => {
+  assert.equal(
+    textEditSessionAfterReplacement(session(), { start: 18, end: 18, text: "!" })
+      .dirty,
+    true,
+  );
+  assert.equal(textEditSessionResync(session(), "3.4x faster triage!").dirty, true);
+  assert.equal(
+    textEditSessionAfterInput(session(), null, "3.4x faster triage!").dirty,
+    true,
+  );
+});
+
+test("a CLEAN session re-seeds from a model that changed underneath it", () => {
+  // The agent rewrote the node while the caret sat in it untouched. The overlay
+  // must show the new text — the old snapshot is not the human's work, and
+  // nothing of theirs is lost by dropping it.
+  const reseeded = textEditSessionReseed(session(), "An agent wrote this", []);
+  assert.equal(reseeded.content, "An agent wrote this");
+  assert.equal(reseeded.dirty, false);
+});
+
+test("a CLEAN session re-seeds when only the SPANS moved underneath it", () => {
+  const reseeded = textEditSessionReseed(session(), TEXT.content, [BOLD_FASTER]);
+  assert.deepEqual(reseeded.spans, [BOLD_FASTER]);
+});
+
+test("a clean session whose model did not move is the SAME object (no churn)", () => {
+  const before = session({ spans: [BOLD_FASTER] });
+  assert.equal(textEditSessionReseed(before, TEXT.content, [BOLD_FASTER]), before);
+  // …including when the stored spans come back in the engine's own key order.
+  assert.equal(
+    textEditSessionReseed(before, TEXT.content, [
+      { font_weight: 700, end: 11, start: 5 },
+    ]),
+    before,
+  );
+});
+
+test("a DIRTY session keeps its draft across a model change", () => {
+  // The pre-existing posture, and the one that must not regress: mid-typing
+  // drafts survive a reload (AD4.R's own rule).
+  const typed = session({ content: "half-typed thought", dirty: true });
+  assert.equal(textEditSessionReseed(typed, "An agent wrote this", []), typed);
+});
+
+test("an UNTOUCHED session writes nothing, even when the model moved under it", () => {
+  // The defect: `draft !== node.kind.content` was true here — not because the
+  // human typed, but because the DOCUMENT moved — so a blur wrote the session's
+  // opening snapshot back over the agent's work.
+  const scene = clone(HARVESTED_AD_PAGE);
+  const node = scene.nodes.text_proof_stat;
+  textKind(node).content = "An agent wrote this";
+  assert.equal(textEditSessionOperations(node, session()), null);
+});
+
+test("a DIRTY session writes, through the ordinary commit builder", () => {
+  const node = HARVESTED_AD_PAGE.nodes.text_proof_stat;
+  const operations = textEditSessionOperations(
+    node,
+    session({ content: "4.1x faster triage", dirty: true }),
+  );
+  assert.ok(operations);
+  assert.equal(operations.length, 1);
+});
+
+/* -------------------------------------------------------------------------
+ * F4 (review 2026-08-24, P2/P3-4): a REFUSED write loses nothing.
+ *
+ * The plan's error-handling contract: "overlay commit failure keeps the session
+ * open with the typed text (nothing lost)". This deliberately differs from the
+ * inspector's revert-on-refusal (AD4.R) — see `textEditSessionEnds`.
+ * ---------------------------------------------------------------------- */
+
+test("a commit ENDS the session when the write landed", () => {
+  assert.equal(textEditSessionEnds([], true), true);
+});
+
+test("a REFUSED commit keeps the session open — the typed text is not thrown away", () => {
+  assert.equal(textEditSessionEnds([], false), false);
+});
+
+test("a commit with nothing to write ends the session regardless", () => {
+  // Null is not a refusal: there was no write to refuse.
+  assert.equal(textEditSessionEnds(null, false), true);
+});
+
+test("a refused FORMATTING commit reverts the session's working spans", () => {
+  const before = session({ spans: [] });
+  const after = session({ spans: [BOLD_FASTER], dirty: true });
+  assert.equal(textEditSessionAfterStyleCommit(before, after, false), before);
+  assert.equal(textEditSessionAfterStyleCommit(before, after, true), after);
 });

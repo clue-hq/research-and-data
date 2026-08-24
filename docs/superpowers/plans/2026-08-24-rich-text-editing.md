@@ -58,8 +58,16 @@ it too).
    not *open* while `gestureDisabled`/`threadBusy`; an open session is not force-killed by a turn start
    (same posture as in-flight gestures — D10 CAS is the net).
 4. **Locked nodes refuse** (write-side `scene-apply.ts:669` stays authoritative). Managed (auto-layout)
-   nodes **do** allow text editing — content edits re-solve layout; no freeze-on-grab needed for a
-   text session (C-9 freeze stays a drag/resize concern).
+   nodes **do** allow text editing — content edits re-solve layout; ~~no freeze-on-grab needed for a
+   text session (C-9 freeze stays a drag/resize concern)~~.
+   **[CORRECTED 2026-08-24, adversarial review F5 — prose only, no behaviour changed]** The struck
+   sentence was false about the mechanism. The text SESSION adds no freeze, but the double-click's
+   first pointer-down runs `freezeLayoutForPress` like any press on a freezable node, so opening a
+   caret on a layout-managed text node has already baked the document's layout to free placement —
+   exactly as a plain selection click on that node does. That is ratified AD4.C-3 / ruling C-10
+   behaviour and this lane deliberately left it alone; only the two docstrings that claimed the
+   freeze "does NOT fire" (`adapter/scene-text-edit.ts`, `components/scene-artifact-canvas.tsx`) were
+   rewritten to say what actually happens. See founder-visible item 8 for the open question.
 5. **Testability:** the suite runs only `*.test.ts` — every decision lives in a pure `.ts` module
    (`adapter/` or `engine/scene/`), components stay thin.
 6. **Wasm-backed proof:** the D4-through-wasm test (upstream `wasmOperations.test.ts:520-554`) gets a
@@ -150,6 +158,16 @@ against the build cost of (2)/(3).
     we accept the engine's documented clear *unless* the vector still validates against the new
     content, in which case a no-op split-and-merge normalization is applied to make it differ. (Pure,
     tested; keeps the engine's honesty rule intact without corrupting offsets.)
+    **[AMENDED 2026-08-24, review F1+F2 — two defects in that re-authoring, both fixed]** (a) the
+    "is it byte-identical?" question must be asked of the **raw stored vector**, which is what the
+    engine compares (`after.spans == before.spans`); asking it of a *normalized* copy made the split
+    self-defeating, because a second suffix edit regenerated exactly the split the document already
+    held and the engine cleared every span — silent styling loss on the second edit of any node.
+    (b) when nothing can be split — every span one character wide, e.g. a coloured "!" — the vector
+    used to go out unchanged and die; it now **restates a channel** the span does not carry at the
+    node's own value (`underline`/`strikethrough`/`italic`, or the weight for a node with no
+    `style_token`), which paints identically and differs in bytes. The clear is accepted only for the
+    one shape that can express neither: a single-character span already stating every channel.
   - *Fallback:* an untracked mutation (autofill/IME edge) → prefix/suffix diff remap; still ambiguous →
     clear (engine-honest default), never guess.
   - *Inspector content commits (rung A path) upgrade:* `case "content"` remaps existing spans with the
@@ -191,6 +209,19 @@ against the build cost of (2)/(3).
 5. Each formatting action = its own undo frame.
 6. Inspector content edits remap spans via prefix/suffix diff once C lands (before that, engine D4
    clears them).
+7. **[added 2026-08-24, review F4] A refused overlay commit KEEPS the session and the typed text** —
+   the session stays open, the caret comes back, and the human can retry or Escape. This deliberately
+   differs from the inspector's revert-on-refusal (AD4.R): a one-line field's refused value is one
+   keystroke from being re-entered, while a multi-line draft someone just wrote is unrecoverable once
+   the session closes. Same refusal, different cost. (A refused FORMATTING commit still reverts — the
+   session's working spans go back to the pre-action vector, because only the styling was refused and
+   nothing typed is at stake.)
+8. **[added 2026-08-24, review F5] Option — defer the C-9 freeze to the drag threshold**, so pure
+   clicks and double-clicks stop freezing the document's auto-layout at all. Today the freeze fires on
+   the press (see standing constraint 4's correction), which means opening a caret on a managed text
+   node bakes the layout as a side effect of wanting to fix a typo. Changing it would change ratified
+   AD4.C-3 behaviour for every press, not just text ones — **needs a founder ruling; nothing was
+   changed here.**
 
 ## Implementation plan (each task: TDD, focused tests, then the frontend gate; local commit per task)
 

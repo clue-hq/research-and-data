@@ -344,6 +344,53 @@ it("rung C Text: clearing the text drops the spans it can no longer index", () =
   );
 });
 
+it("rung C Text: a SECOND edit on an already-split node does not regenerate the split", () => {
+  // F1 (review 2026-08-24, P1). The inspector reaches the same D4 collision the
+  // caret session does: `text_proof_stat` here holds what a previous suffix edit
+  // wrote — one bold run stored as two adjacent same-style spans. Remapping a
+  // fresh suffix edit normalizes them back together, and the pre-F1 guard
+  // compared that against the NORMALIZED stored vector, matched, and re-split it
+  // into exactly the bytes the document already held — so the engine cleared the
+  // styling. Compared RAW (what the engine compares), the merge already differs.
+  const scene = clone(SCENE);
+  const node = scene.nodes.text_proof_stat;
+  (node.kind as TextNode).spans = [
+    { start: 5, end: 6, font_weight: 700 },
+    { start: 6, end: 11, font_weight: 700 },
+  ];
+  const operation = apply(node, "content", "3.4x faster triage!!", scene);
+  assert.deepEqual(
+    operation,
+    updateNode("text_proof_stat", {
+      kind: set({
+        ...node.kind,
+        content: "3.4x faster triage!!",
+        spans: [{ start: 5, end: 11, font_weight: 700 }],
+      }),
+    }),
+  );
+});
+
+it("rung C Text: an UNSPLITTABLE span restates a no-op channel rather than dying", () => {
+  // F2 (review 2026-08-24, P3-1): a one-character styled run — the coloured "!"
+  // — has no interior boundary to split, so before F2 it went out byte-identical
+  // and the engine cleared it. `text_proof_stat`'s node states no underline, so
+  // `underline: false` is its own base: identical pixels, different bytes.
+  const scene = clone(SCENE);
+  const node = scene.nodes.text_proof_stat;
+  (node.kind as TextNode).spans = [{ start: 17, end: 18, font_weight: 700 }];
+  assert.deepEqual(
+    apply(node, "content", "3.4x faster triage!", scene),
+    updateNode("text_proof_stat", {
+      kind: set({
+        ...node.kind,
+        content: "3.4x faster triage!",
+        spans: [{ start: 17, end: 18, font_weight: 700, underline: false }],
+      }),
+    }),
+  );
+});
+
 it("rung C Text: a node with NO spans still writes the content channel alone", () => {
   // Unchanged from rung A: nothing to remap, so nothing about the write moves.
   assert.deepEqual(

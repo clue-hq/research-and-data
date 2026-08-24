@@ -44,6 +44,7 @@ import {
 import { normalizePageSize } from "../engine/scene/pageGeometry";
 import {
   remapSpansByDiff,
+  spanValidationIssues,
   spansVectorForContentEdit,
 } from "../engine/scene/textSpans";
 import {
@@ -825,6 +826,14 @@ export function sceneChangeToOperation(
     //
     // A node with no spans writes the content channel alone, exactly as rung A
     // did — there is nothing to remap and nothing for the engine to clear.
+    //
+    // RECORDED, NOT FIXED (review 2026-08-24, P3-5): a content commit whose
+    // value equals the stored content still writes, and its spans channel then
+    // carries the NORMALIZED stored vector — so a no-op "edit" could mint a
+    // document version whose only change is a span merge. It is unreachable
+    // from the shipped UI: every inspector row commits through `fieldCommit`,
+    // which suppresses a re-type of the live value before it ever reaches this
+    // switch. Left as it is rather than adding a guard nothing can trip.
     case "content": {
       if (!text) {
         return null;
@@ -834,15 +843,25 @@ export function sceneChangeToOperation(
         return updateTextNode(node, { content: value });
       }
       const remapped = remapSpansByDiff(text.content, value, stored);
-      return updateTextNode(node, {
-        content: value,
-        spans: spansVectorForContentEdit(
-          value,
-          stored,
-          remapped,
-          value !== text.content,
-        ),
-      });
+      const vector = spansVectorForContentEdit(text, value, remapped);
+      // The pre-send gate, the caret session's own
+      // (`scene-text-edit.ts::textEditCommitOperations`) repeated here rather
+      // than assumed: the engine validates spans at LAYOUT, not at apply, so an
+      // invalid vector applies clean and then drops the node out of measurement
+      // (LUMV0906) with nothing refused. Unreachable by construction — every
+      // `textSpans.ts` exit normalizes onto the five rules — and load-bearing
+      // anyway. Loud in dev/test; in production the spans channel is dropped
+      // and the content edit still lands, which is the honest degradation.
+      const issues = spanValidationIssues(value, vector);
+      if (issues.length > 0) {
+        if (process.env.NODE_ENV !== "production") {
+          throw new Error(
+            `refusing to write an invalid spans vector: ${issues.join("; ")}`,
+          );
+        }
+        return updateTextNode(node, { content: value });
+      }
+      return updateTextNode(node, { content: value, spans: vector });
     }
 
     // ── §1.2 row 2: Font family (§2 delta row 3 — the real vocabulary) ───────

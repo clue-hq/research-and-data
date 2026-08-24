@@ -61,7 +61,6 @@ import {
   SCENE_TEXT_STYLE_INTENT,
   sceneDoubleClickEffect,
   sceneTextEditModel,
-  textEditCommitOperations,
   type SceneTextEditModel,
 } from "../adapter/scene-text-edit";
 import {
@@ -69,6 +68,11 @@ import {
   textEditReplacement,
   textEditSessionAfterInput,
   textEditSessionAfterReplacement,
+  textEditSessionAfterStyleCommit,
+  textEditSessionEnds,
+  textEditSessionOperations,
+  textEditSessionReseed,
+  textEditSessionSeed,
   textEditStyledSpans,
   type TextEditSelection,
   type TextEditSession,
@@ -856,19 +860,31 @@ function SceneDocumentCanvas({
    * spans vector (seeded from the node's own), so it is always authoritative
    * here — which is also what lets a formatting action that changed no
    * characters be a real commit.
+   *
+   * ── THE ORDER IS THE CONTRACT (F4, review 2026-08-24) ──────────────────
+   * The write runs BEFORE the session closes, and its answer decides whether
+   * the session closes at all. It used to be the other way round — close, then
+   * write, then discard the boolean — so a refused write (a read-only engine,
+   * an engine refusal) threw away the typed paragraph while the error slot
+   * pointed at nothing left to fix. Returning false here keeps the session and
+   * its text alive; the overlay re-arms and the human can retry or Escape.
+   *
+   * An absent `onOperations` is not a refusal: that canvas has no write path at
+   * all (the standalone read path), so the preview simply drops, exactly as it
+   * does for a gesture there.
    */
   const commitTextEdit = useCallback(
-    (session: TextEditSession) => {
+    (session: TextEditSession): boolean => {
       const node = scene ? getNode(scene, editingNodeId) : null;
-      setEditingNodeId(null);
-      const operations = textEditCommitOperations(
-        node,
-        session.content,
-        session.spans,
-      );
-      if (operations) {
-        onOperations?.(operations, SCENE_TEXT_EDIT_INTENT);
+      const operations = textEditSessionOperations(node, session);
+      const accepted = operations
+        ? (onOperations?.(operations, SCENE_TEXT_EDIT_INTENT) ?? true)
+        : false;
+      const ends = textEditSessionEnds(operations, accepted);
+      if (ends) {
+        setEditingNodeId(null);
       }
+      return ends;
     },
     [editingNodeId, onOperations, scene],
   );
@@ -885,18 +901,21 @@ function SceneDocumentCanvas({
    * The dirty draft rides along when there is one: span offsets index the
    * string they were computed in, and committing them against a stale stored
    * content would point them at other text.
+   *
+   * F4/P3-4: it ANSWERS, like the session commit. A refused formatting write
+   * leaves the session holding a vector the document rejected — the toolbar
+   * would say "bold" over text that is not, and the next commit would carry the
+   * refusal back in — so the overlay reverts its working spans on false.
    */
   const commitTextEditStyle = useCallback(
-    (session: TextEditSession) => {
+    (session: TextEditSession): boolean => {
       const node = scene ? getNode(scene, editingNodeId) : null;
-      const operations = textEditCommitOperations(
-        node,
-        session.content,
-        session.spans,
-      );
-      if (operations) {
-        onOperations?.(operations, SCENE_TEXT_STYLE_INTENT);
+      const operations = textEditSessionOperations(node, session);
+      if (!operations) {
+        // Nothing to write is not a refusal: keep the session as it is.
+        return true;
       }
+      return onOperations?.(operations, SCENE_TEXT_STYLE_INTENT) ?? true;
     },
     [editingNodeId, onOperations, scene],
   );
@@ -1431,10 +1450,19 @@ function SceneDocumentCanvas({
    * resolved node MEANS, and that decision is pure
    * (`adapter/scene-text-edit.ts`).
    *
-   * Ruling C-9's freeze-on-grab deliberately does NOT fire here: a text session
-   * changes content, and the solver re-solving around new content is the
-   * solver working. Freezing the whole document's auto-layout because someone
-   * fixed a typo would be a far larger edit than the one they asked for.
+   * F5 (review 2026-08-24) — what C-9 actually does here. This used to claim
+   * the freeze-on-grab "does NOT fire" for a double-click. It does: the first
+   * pointer-down of that double-click went through `handlePointerDown`, which
+   * calls `freezeLayoutForPress` for every press on a freezable node, so by the
+   * time this handler runs a layout-managed text node has ALREADY had the
+   * document's auto-layout baked to free placement — exactly as a plain
+   * selection click on it would (ratified AD4.C-3, ruling C-10; not this lane's
+   * to change, and deliberately unchanged). What is true is that THIS handler
+   * adds no freeze of its own, and the session's own commit is an ordinary
+   * content/spans write that lets the solver re-solve around the new text.
+   *
+   * Deferring the freeze to a drag threshold — so pure clicks and double-clicks
+   * stop freezing — is a live founder question recorded on the plan.
    */
   const handleDoubleClick = (event: ReactMouseEvent<HTMLDivElement>) => {
     const element = stageRef.current;
@@ -1765,8 +1793,20 @@ function SelectionChrome({
  *
  * Escape still cancels the UNCOMMITTED tail only. Formatting actions have
  * already landed as their own undo frames by then (founder-visible item 5) and
- * stay landed — ⌘Z takes them back one at a time, which is what "its own undo
- * frame" means.
+ * stay landed. F7/P3-3 correction (review 2026-08-24): ⌘Z does NOT take them
+ * back one at a time WHILE THE SESSION IS OPEN — document undo skips typing
+ * targets (`scene-arrange.ts::isTypingTarget`, the ⌘Z listener's own rule) and
+ * this textarea swallows every key anyway, so inside a session ⌘Z is the
+ * browser's native textarea undo over the draft. The landed formatting frames
+ * become reachable one at a time once the session closes, which is what "its
+ * own undo frame" buys.
+ *
+ * ── THE SESSION FOLLOWS THE DOCUMENT UNTIL IT IS TOUCHED (F3) ────────────
+ * The session state carries `dirty`. While it is clear the session RE-SEEDS
+ * from the live model on every render, so an untouched caret sitting open
+ * across a D10 reload or an agent turn shows what the document now says instead
+ * of writing its opening snapshot back over it. The human's first keystroke (or
+ * formatting action) sets the flag, and from then on the draft is theirs.
  */
 function SceneTextEditOverlay({
   model,
@@ -1778,16 +1818,18 @@ function SceneTextEditOverlay({
 }: {
   model: SceneTextEditModel;
   onCancel: () => void;
-  onCommit: (session: TextEditSession) => void;
-  onStyleCommit: (session: TextEditSession) => void;
+  /** Answers whether the session ENDED: false is a refused write, whose typed
+   * text must survive (F4). */
+  onCommit: (session: TextEditSession) => boolean;
+  /** Answers whether the formatting write LANDED (F4/P3-4). */
+  onStyleCommit: (session: TextEditSession) => boolean;
   palette: ScenePalette | null;
   stage: { width: number; height: number };
 }) {
   const ref = useRef<HTMLTextAreaElement | null>(null);
-  const [session, setSession] = useState<TextEditSession>(() => ({
-    content: model.content,
-    spans: model.text.spans ?? [],
-  }));
+  const [session, setSession] = useState<TextEditSession>(() =>
+    textEditSessionSeed(model.content, model.text.spans ?? []),
+  );
   // The mount effect below focuses and SELECTS ALL, so that is where the
   // selection starts — stated here rather than waiting for the first `select`
   // event, so the toolbar is never briefly wrong about it.
@@ -1795,13 +1837,25 @@ function SceneTextEditOverlay({
     start: 0,
     end: model.content.length,
   }));
+  // F3: an untouched session follows the document. React's own
+  // adjust-state-on-change pattern (the host uses it for the session id), not
+  // an effect — an effect would paint one frame of the stale snapshot first,
+  // and the reseeded value is what the rest of this render must read.
+  const live = textEditSessionReseed(
+    session,
+    model.content,
+    model.text.spans ?? [],
+  );
+  if (live !== session) {
+    setSession(live);
+  }
   // Event handlers bound to the DOM (and the window listener below) must read
   // the CURRENT session and selection, not the ones captured when they were
   // created — the same ref-mirror the canvas's gesture inputs use.
-  const sessionRef = useRef(session);
+  const sessionRef = useRef(live);
   const selectionRef = useRef(selection);
   useEffect(() => {
-    sessionRef.current = session;
+    sessionRef.current = live;
     selectionRef.current = selection;
   });
   /** The tracked `beforeinput` prediction awaiting its `input` event. */
@@ -1859,9 +1913,12 @@ function SceneTextEditOverlay({
     }
   }, []);
 
+  // `live.content` is a dependency because F3's re-seed changes the text with no
+  // input event to recompute from: a valigned overlay would otherwise keep the
+  // padding of the content it no longer shows.
   useEffect(() => {
     recomputePadding();
-  }, [recomputePadding]);
+  }, [live.content, recomputePadding]);
 
   /**
    * The tracked half of rung C's typing path.
@@ -1909,17 +1966,34 @@ function SceneTextEditOverlay({
     return () => element.removeEventListener("beforeinput", handleBeforeInput);
   }, []);
 
-  /** End the session exactly once. */
+  /**
+   * End the session exactly once — unless the write is REFUSED (F4), in which
+   * case the session did not end at all: the latch is re-armed so the next blur
+   * or ⌘Enter can try again, and the caret is taken back (the blur that
+   * triggered this already moved focus away, and a session nobody can focus is
+   * a paragraph nobody can rescue).
+   */
   const settle = useCallback(
     (kind: "commit" | "cancel") => {
       if (settledRef.current) {
         return;
       }
       settledRef.current = true;
-      if (kind === "commit") {
-        onCommit(sessionRef.current);
-      } else {
+      if (kind === "cancel") {
         onCancel();
+        return;
+      }
+      if (onCommit(sessionRef.current)) {
+        return;
+      }
+      settledRef.current = false;
+      const element = ref.current;
+      if (element) {
+        element.focus();
+        element.setSelectionRange(
+          selectionRef.current.start,
+          selectionRef.current.end,
+        );
       }
     },
     [onCancel, onCommit],
@@ -1981,10 +2055,24 @@ function SceneTextEditOverlay({
         selectionRef.current,
         patch,
       ),
+      // A formatting action is the human touching the session, so it may write
+      // (F3) — and the draft it carries is now the human's to keep.
+      dirty: true,
     };
     sessionRef.current = next;
     setSession(next);
-    onStyleCommit(next);
+    // F4/P3-4: a refused write puts the pre-action vector straight back, so the
+    // toolbar never states styling the document rejected. The error slot is
+    // populated by the write path itself.
+    const settled = textEditSessionAfterStyleCommit(
+      current,
+      next,
+      onStyleCommit(next),
+    );
+    if (settled !== next) {
+      sessionRef.current = settled;
+      setSession(settled);
+    }
   };
 
   const applyMark = (channel: SceneTextMarkChannel) => {
@@ -2020,7 +2108,7 @@ function SceneTextEditOverlay({
   };
 
   const collapsed = selection.start === selection.end;
-  const format = textEditFormatState(model.text, session, selection);
+  const format = textEditFormatState(model.text, live, selection);
   // The toolbar measures itself against this box, so it must not be a fresh
   // object on every keystroke — that would re-run its placement effect (and its
   // `setPosition`) for every character typed.
@@ -2103,7 +2191,7 @@ function SceneTextEditOverlay({
             : undefined,
           width: model.width,
         }}
-        value={session.content}
+        value={live.content}
       />
       {/* Rung C: the range toolbar. A sibling of the caret, not a child of it —
           a `<textarea>` can hold no elements — positioned in the same stage px.

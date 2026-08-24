@@ -17,6 +17,7 @@ import {
 import {
   normalizeSpans,
   spanValidationIssues,
+  spansStableKey,
   spansVectorForContentEdit,
 } from "../engine/scene/textSpans";
 import { deriveSelectionChromeModel } from "../engine/scene/selectionChrome";
@@ -111,9 +112,21 @@ export type SceneDoubleClickEffect =
  * preceded this double-click already selected the node, so there is nothing
  * left to say.
  *
- * Ruling C-9's freeze-on-grab deliberately does NOT fire here. A layout-managed
- * text node opens a session like any other: a content edit re-solves the
- * layout, which is the solver doing its job, not a refusal to work around.
+ * ── C-9, TRUTHFULLY (F5, review 2026-08-24) ──────────────────────────────
+ * This docstring used to claim the C-9 freeze "does NOT fire" for a text-edit
+ * press. That was false, and the correction is a correction of the PROSE only:
+ * a double-click's first pointer-down runs `freezeLayoutForPress` like any
+ * press on a freezable node, so opening a caret on a layout-managed text node
+ * has already baked the document's layout to free placement — exactly as a
+ * plain selection click on that node does, which is ratified AD4.C-3 /
+ * ruling C-10 behaviour and NOT this lane's to change. What is true is that the
+ * text session itself adds NO freeze of its own: it opens on the post-press
+ * scene and its commit is an ordinary content/spans write, so a managed node
+ * re-solves around the new content like the solver is meant to.
+ *
+ * Whether the freeze should wait for a drag threshold — so that pure clicks and
+ * double-clicks stop freezing at all — is a live founder question recorded on
+ * the plan, not a defect of this function.
  */
 export function sceneDoubleClickEffect({
   gestureDisabled,
@@ -146,19 +159,6 @@ export function sceneDoubleClickEffect({
     return { kind: "none" };
   }
   return { kind: "select", nodeId: top };
-}
-
-/** Structural span equality that the WIRE's key order cannot decide: the
- * engine's serde emits its own field order, the session builds the contract's,
- * and one re-typed span must not read as a change. */
-function spansKey(spans: readonly TextSpan[]): string {
-  return JSON.stringify(
-    spans.map((span) =>
-      Object.entries(span as unknown as Record<string, unknown>)
-        .filter(([, value]) => value !== undefined)
-        .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0)),
-    ),
-  );
 }
 
 /**
@@ -216,9 +216,10 @@ export function textEditCommitOperations(
     return contentChanged ? [updateTextNode(node, { content: draft })] : null;
   }
   const stored = node.kind.spans ?? [];
-  const vector = spansVectorForContentEdit(draft, stored, spans, contentChanged);
+  const vector = spansVectorForContentEdit(node.kind, draft, spans);
   const spansChanged =
-    spansKey(vector) !== spansKey(normalizeSpans(node.kind.content, stored));
+    spansStableKey(vector) !==
+    spansStableKey(normalizeSpans(node.kind.content, stored));
   if (!contentChanged && !spansChanged) {
     return null;
   }

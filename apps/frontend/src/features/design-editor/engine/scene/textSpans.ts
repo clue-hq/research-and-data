@@ -298,6 +298,18 @@ function stableKey(value: unknown): string {
   return `{${entries.map(([key, item]) => `${JSON.stringify(key)}:${stableKey(item)}`).join(",")}}`;
 }
 
+/**
+ * Structural equality key for a whole spans vector, exported because more than
+ * one surface has to ask "is this the same styling?" — the commit path (against
+ * the stored vector), the session's re-seed (against the model's) and this
+ * module's own D4 guard (against what the engine will compare). Key ORDER must
+ * not decide it: the engine's serde, the wire and this module each emit their
+ * own, and one re-typed span must never read as a change.
+ */
+export function spansStableKey(spans: readonly TextSpan[]): string {
+  return stableKey(spans);
+}
+
 function sameOverrides(left: SpanOverrides, right: SpanOverrides): boolean {
   return stableKey(left) === stableKey(right);
 }
@@ -681,43 +693,144 @@ export function remapSpansByDiff(
  * That is right for a caller who forgot the spans, and wrong for us: a session
  * whose edits all landed AFTER the last span legitimately maintains the same
  * vector, and it would be cleared. So when the content changed and the
- * maintained vector is deep-equal to the stored one, this returns a
- * semantically identical but structurally DIFFERENT vector — the last span
- * split into two adjacent spans with identical props, which renders identically
- * and is valid under the five rules (adjacency is legal; only overlap is not).
+ * maintained vector would reach the engine byte-identical to the stored one,
+ * this returns a semantically identical but structurally DIFFERENT vector.
  *
- * Untouched otherwise: an already-different vector, an unchanged content, or an
- * empty vector (there is nothing for the engine to clear). If no span has an
- * interior char boundary to split on (every span is a single character), the
- * vector is returned as-is and the engine's documented clear is accepted —
- * honest, and undo restores it.
+ * ── WHAT IS COMPARED (F1, review 2026-08-24) ─────────────────────────────
+ * The candidate is compared against `node.spans` **RAW** — exactly the bytes
+ * the document holds — because that is what the engine compares against. It is
+ * NOT compared against a normalized copy of them: normalizing hid the very
+ * collision this function exists to prevent. The split output is deterministic,
+ * so a SECOND suffix edit on an already-split node maintains that split vector,
+ * normalizes it back to the merged shape, matched the normalized stored vector,
+ * re-split it into precisely what the document already held — and the engine
+ * cleared every span. Reading raw, that second edit's merged candidate already
+ * differs from the stored split and goes out untouched, which is why a
+ * re-authoring is only ever attempted for a vector that really would collide.
  *
- * `content` is the content BEING WRITTEN; the split point must be one of its
- * char boundaries. The result is deliberately NOT re-normalized (that would
- * merge the split straight back together).
+ * ── THE TWO RE-AUTHORINGS, IN ORDER ──────────────────────────────────────
+ *  1. **SPLIT** one span at an interior char boundary into two adjacent spans
+ *     with identical props. Renders identically; adjacency is legal (only
+ *     overlap is not). Since the candidate that collided is fully normalized,
+ *     any split of it carries one more span than the stored vector and cannot
+ *     itself collide — the collision check is kept anyway, because a rule this
+ *     load-bearing should not rest on a counting argument.
+ *  2. **RESTATE** a channel (F2): when no span has an interior boundary — every
+ *     span a single character, e.g. a coloured "!" — set a channel the span
+ *     does NOT carry to the node's own value for it. `span.underline ??
+ *     node.underline` means an override equal to the base paints identically,
+ *     so this changes no pixel while changing the bytes. Order is most-inert
+ *     first: the two decorations, then italic (a measurement input, but the
+ *     same value measures the same), then the weight — and the weight ONLY for
+ *     a node with no `style_token`, because `resolvedTextFields` resolves a
+ *     token's weight OVER the node literal, so restating the literal on a span
+ *     (which outranks both) would be a real weight change.
+ *
+ * If neither is available — a single-character span that already states every
+ * channel, which is constructible — the vector is returned as-is and the
+ * engine's documented clear is accepted: honest, and undo restores it.
+ *
+ * `node` is the STORED node (its `content` and `spans` are what the document
+ * holds, and the write is a content edit exactly when `content !== node.content`);
+ * `content` is the content BEING WRITTEN, so every offset and split point is a
+ * char boundary of IT. The result is deliberately NOT re-normalized — that
+ * would merge the split straight back together.
  */
 export function spansVectorForContentEdit(
+  node: TextNode,
   content: string,
-  storedSpans: readonly TextSpan[],
   nextSpans: readonly TextSpan[],
-  contentChanged: boolean,
 ): TextSpan[] {
   const spans = normalizeSpans(content, nextSpans);
-  if (!contentChanged || spans.length === 0) return spans;
-  if (stableKey(spans) !== stableKey(normalizeSpans(content, storedSpans))) return spans;
+  if (content === node.content || spans.length === 0) return spans;
+  const storedKey = stableKey(node.spans ?? []);
+  if (stableKey(spans) !== storedKey) return spans;
+  return (
+    splitOneSpan(content, spans, storedKey) ??
+    restateOneChannel(node, spans, storedKey) ??
+    spans
+  );
+}
 
+/** Re-authoring 1: the last span that HAS an interior char boundary, split. */
+function splitOneSpan(
+  content: string,
+  spans: readonly TextSpan[],
+  storedKey: string,
+): TextSpan[] | null {
   const { byteStarts } = indexContent(content);
   for (let index = spans.length - 1; index >= 0; index -= 1) {
     const span = spans[index];
     const split = byteStarts.find((offset) => offset > span.start && offset < span.end);
     if (split === undefined) continue;
     const overrides = spanOverrides(span);
-    return [
+    const candidate = [
       ...spans.slice(0, index),
       makeSpan(span.start, split, overrides),
       makeSpan(split, span.end, overrides),
       ...spans.slice(index + 1),
     ];
+    if (stableKey(candidate) !== storedKey) return candidate;
   }
-  return spans;
+  return null;
+}
+
+/** One channel restated at the node's own value — a no-op to the painter. */
+type Restatement =
+  | { channel: "underline" | "strikethrough" | "italic"; value: boolean }
+  | { channel: "font_weight"; value: number };
+
+/** The channels this node can restate without moving a pixel, most inert
+ * first. See {@link spansVectorForContentEdit} for why the weight is last and
+ * why a token-styled node has no weight to restate. */
+function baseRestatements(node: TextNode): Restatement[] {
+  const restatements: Restatement[] = [
+    { channel: "underline", value: node.underline ?? false },
+    { channel: "strikethrough", value: node.strikethrough ?? false },
+    { channel: "italic", value: node.italic ?? false },
+  ];
+  if (!node.style_token) {
+    restatements.push({ channel: "font_weight", value: node.font_weight });
+  }
+  return restatements;
+}
+
+function withRestatement(overrides: SpanOverrides, restatement: Restatement): SpanOverrides {
+  switch (restatement.channel) {
+    case "font_weight":
+      return { ...overrides, font_weight: restatement.value };
+    case "underline":
+      return { ...overrides, underline: restatement.value };
+    case "strikethrough":
+      return { ...overrides, strikethrough: restatement.value };
+    default:
+      return { ...overrides, italic: restatement.value };
+  }
+}
+
+/** Re-authoring 2: the last span LACKING the most inert restatable channel,
+ * wearing that channel at the node's own value. Null when every span already
+ * states every channel — the one case where the engine's clear stands. */
+function restateOneChannel(
+  node: TextNode,
+  spans: readonly TextSpan[],
+  storedKey: string,
+): TextSpan[] | null {
+  for (const restatement of baseRestatements(node)) {
+    for (let index = spans.length - 1; index >= 0; index -= 1) {
+      const span = spans[index];
+      if (span[restatement.channel] !== undefined) continue;
+      const candidate = [
+        ...spans.slice(0, index),
+        makeSpan(
+          span.start,
+          span.end,
+          withRestatement(spanOverrides(span), restatement),
+        ),
+        ...spans.slice(index + 1),
+      ];
+      if (stableKey(candidate) !== storedKey) return candidate;
+    }
+  }
+  return null;
 }
