@@ -354,7 +354,10 @@ def create_design_deepagent(
     )
 
     view = make_view_tool(tools)
-    render_preview = make_render_preview_tool(tools)
+    # `budget` is None off the flag, so the orchestrator's render summary stays
+    # byte-identical to a pre-fast-loop turn. Under the flag it appends the
+    # round-boundary headroom line — this render IS the round boundary.
+    render_preview = make_render_preview_tool(tools, budget=budget)
     # §5.2: the author's own render. Same substrate, same round-directory
     # custody — but it does NOT checkpoint. See the trigger site in
     # tools/render.py for the full reasoning; the short version is that a

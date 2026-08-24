@@ -54,6 +54,25 @@ BUDGET_WALL_CLOCK = "wall_clock"
 #: The one run event announcing a breach.
 BUDGET_EXHAUSTED_EVENT = "run_budget_exhausted"
 
+# ---------------------------------------------------------------------------
+# What one more authoring round costs. Measured, not guessed: acceptance run #1
+# (`run_4b5dd17f9e944269b94ca45d3bd6d9f2`, 2026-08-24) shows a repair round's
+# irreducible shape as the author's delegation + one batched read + compile +
+# preflight + render + view + one fix compile + the four round files + the report
+# — about a dozen author calls — plus the orchestrator's own step-5 verification
+# (read, preflight, render, view: four more). Sixteen calls. That run's mean call
+# took ~17s across both roles, so sixteen calls is ~4.5 minutes; the floors below
+# round that to a defensible 12 calls and 4 minutes.
+#
+# WHY THESE ARE FLOORS AND NOT A FORECAST. They are not a promise that a round
+# fits in twelve calls. They are the point below which one demonstrably does NOT
+# fit, which is the only question the orchestrator has to answer at a round
+# boundary. Being wrong upward costs one unspent repair round; being wrong
+# downward costs exactly what acceptance run #1 paid — a design left mid-repair
+# when the wall clock fired at 604.6s of 600s.
+REPAIR_ROUND_MIN_CALLS = 12
+REPAIR_ROUND_MIN_SECONDS = 240.0
+
 
 class BudgetExhausted(RuntimeError):
     """Raised at the seam of the model call that would have gone over budget.
@@ -164,6 +183,65 @@ class RunBudget:
             except Exception:  # noqa: BLE001 - metrics never break the stop path
                 pass
         raise breach
+
+    # -- headroom, for the model rather than the metrics -----------------------
+    def remaining(self) -> dict:
+        """What is left, as numbers the harness computed rather than the model.
+
+        The 2026-08-24 acceptance run died mid-repair because nothing ever told
+        the loop how much budget remained: the orchestrator opened round 2 with
+        56 seconds of wall clock left, delegated, and the ceiling fired before
+        the author's first compile. Every number needed to avoid that was already
+        in this object — it was simply never shown to anyone who could act on it.
+
+        `room_for_another_round` is the whole point. The orchestrator should not
+        be doing arithmetic against a pair of ceilings in prose; it should be
+        told yes or no. Both floors must clear, because a round starved of either
+        resource stops in the same half-finished place.
+        """
+        calls_left = max(0, self.max_llm_calls - self.calls)
+        elapsed = self.elapsed_s()
+        seconds_left = max(0.0, self.wall_clock_s - elapsed)
+        return {
+            "calls_used": self.calls,
+            "calls_left": calls_left,
+            "max_llm_calls": self.max_llm_calls,
+            "elapsed_s": elapsed,
+            "seconds_left": seconds_left,
+            "wall_clock_s": self.wall_clock_s,
+            "room_for_another_round": (
+                calls_left >= REPAIR_ROUND_MIN_CALLS
+                and seconds_left >= REPAIR_ROUND_MIN_SECONDS
+            ),
+        }
+
+    def status_line(self) -> str:
+        """The headroom as one block of prose, for a tool result a model reads.
+
+        Deliberately a finished sentence rather than a data dump: the consumer is
+        a language model at a decision point, and "there is not room" is acted on
+        where "calls_left: 9" invites it to argue. The raw numbers ride along so
+        the judgement is auditable rather than mysterious.
+        """
+        state = self.remaining()
+        verdict = (
+            "There is room for another authoring round."
+            if state["room_for_another_round"]
+            else (
+                "There is NOT room for another authoring round — do not delegate "
+                "again. Keep the design that stands, record_gap what is still "
+                "wrong, and finalize."
+            )
+        )
+        return (
+            "BUDGET LEFT: "
+            f"{state['calls_used']} of {state['max_llm_calls']} model calls used, "
+            f"{state['calls_left']} left. "
+            f"{state['elapsed_s'] / 60.0:.1f} of "
+            f"{state['wall_clock_s'] / 60.0:.1f} minutes used, "
+            f"{state['seconds_left'] / 60.0:.1f} left. "
+            f"{verdict}"
+        )
 
     def snapshot(self) -> dict:
         """The budget's own line in the §7 metrics summary."""

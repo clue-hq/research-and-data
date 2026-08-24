@@ -788,7 +788,16 @@ index below already names every skill you can choose from, and the author's own
 payload already carries the knowledge it needs to work. Reading around the
 subject before you have delegated is the most expensive thing you can do with
 this budget, because every minute you spend there is a minute the author does
-not get."""
+not get.
+
+DO NOT OPEN A ROUND YOU CANNOT FINISH. Every render_preview you run ends with a
+BUDGET LEFT line: calls used, calls left, minutes used, minutes left, and a plain
+verdict on whether another authoring round still fits. Believe that verdict.
+When it says there is no room, do not delegate again. A repair round that gets
+cut in half is worse than no repair round at all, because the author stops
+mid-edit and leaves the design in a state nobody chose. Instead: keep the
+accepted design that already stands, record_gap every issue you are leaving
+behind, and finalize honestly."""
 
 
 def _fast_loop_skill_index(skills: list[tuple[str, str]] | None) -> str:

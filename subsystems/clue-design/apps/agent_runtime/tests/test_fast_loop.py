@@ -28,6 +28,8 @@ from lumen_agent import harness as harness_mod
 from lumen_agent.budget import (
     BUDGET_LLM_CALLS,
     BUDGET_WALL_CLOCK,
+    REPAIR_ROUND_MIN_CALLS,
+    REPAIR_ROUND_MIN_SECONDS,
     BudgetCallbackHandler,
     BudgetExhausted,
     RunBudget,
@@ -793,6 +795,172 @@ def test_the_round_direction_is_required_inline_in_the_delegation() -> None:
 # ===========================================================================
 # §5.6 — budgets and graceful finalize
 # ===========================================================================
+
+
+# ---------------------------------------------------------------------------
+# Budget HEADROOM (2026-08-24 tuning). Acceptance run #1 opened round 2 with the
+# wall clock already at ~9m56s of 10m, delegated, and died mid-repair — the
+# design shipped with the defect the round existed to fix. Every number needed
+# to refuse that delegation was already inside RunBudget; nothing showed it to
+# the one role that could act on it.
+# ---------------------------------------------------------------------------
+
+
+def test_remaining_reports_both_ceilings_and_a_verdict(monkeypatch) -> None:
+    clock = {"now": 500.0}
+    monkeypatch.setattr(time, "monotonic", lambda: clock["now"])
+    budget = RunBudget(max_llm_calls=45, wall_clock_s=600.0)
+    for _ in range(20):
+        budget.check_and_count()
+    clock["now"] = 500.0 + 120.0
+
+    state = budget.remaining()
+    assert state["calls_used"] == 20
+    assert state["calls_left"] == 25
+    assert state["elapsed_s"] == pytest.approx(120.0)
+    assert state["seconds_left"] == pytest.approx(480.0)
+    assert state["room_for_another_round"] is True
+
+
+def test_a_round_needs_room_on_BOTH_ceilings(monkeypatch) -> None:
+    """Either floor alone is enough to refuse: a round starved of calls and a
+    round starved of clock both stop in the same half-finished place."""
+    clock = {"now": 0.0}
+    monkeypatch.setattr(time, "monotonic", lambda: clock["now"])
+
+    # Plenty of clock, not enough calls.
+    starved_calls = RunBudget(max_llm_calls=45, wall_clock_s=600.0)
+    for _ in range(45 - (REPAIR_ROUND_MIN_CALLS - 1)):
+        starved_calls.check_and_count()
+    assert starved_calls.remaining()["calls_left"] == REPAIR_ROUND_MIN_CALLS - 1
+    assert starved_calls.remaining()["room_for_another_round"] is False
+
+    # Plenty of calls, not enough clock — this is acceptance run #1's shape.
+    clock["now"] = 0.0
+    starved_clock = RunBudget(max_llm_calls=45, wall_clock_s=600.0)
+    clock["now"] = 600.0 - (REPAIR_ROUND_MIN_SECONDS - 1.0)
+    assert starved_clock.remaining()["calls_left"] == 45
+    assert starved_clock.remaining()["room_for_another_round"] is False
+
+
+def test_the_status_line_states_the_verdict_in_words(monkeypatch) -> None:
+    """The consumer is a model at a decision point, so it is told what to do —
+    `calls_left: 9` invites an argument that "there is NOT room" does not."""
+    clock = {"now": 0.0}
+    monkeypatch.setattr(time, "monotonic", lambda: clock["now"])
+    budget = RunBudget(max_llm_calls=45, wall_clock_s=600.0)
+
+    clock["now"] = 120.0
+    roomy = budget.status_line()
+    assert roomy.startswith("BUDGET LEFT: ")
+    assert "0 of 45 model calls used, 45 left" in roomy
+    assert "2.0 of 10.0 minutes used, 8.0 left" in roomy
+    assert "There is room for another authoring round." in roomy
+
+    clock["now"] = 600.0 - 56.0  # where run #1 actually delegated round 2
+    cramped = budget.status_line()
+    assert "There is NOT room for another authoring round" in cramped
+    assert "do not delegate" in cramped
+    assert "record_gap" in cramped
+
+
+def test_the_orchestrators_render_reports_headroom_and_the_authors_does_not(
+    tmp_path, monkeypatch
+) -> None:
+    """Same split, same reason, as the checkpoint flag: only the orchestrator
+    decides whether to open another round. Telling the author its run is nearly
+    over would invite it to cut corners on work it was told to finish."""
+    from lumen_agent.tools import render as render_module
+
+    monkeypatch.setattr(
+        render_module, "_latest_preview_png", lambda tools: None
+    )
+
+    class _Tools:
+        config = None
+
+        def export_preview_bundle(self, critic_format: str) -> str:
+            return json.dumps({"reviewer": {"status": "ok", "artifacts": []}})
+
+        def checkpoint_scene(self, _label: str) -> None:  # pragma: no cover
+            raise AssertionError("no PNG, so no checkpoint")
+
+    budget = RunBudget(max_llm_calls=45, wall_clock_s=600.0)
+    tools = _Tools()
+
+    orchestrator_text = render_module._render_preview_text(
+        tools, checkpoint=True, budget=budget
+    )
+    author_text = render_module._render_preview_text(tools, checkpoint=False, budget=None)
+
+    assert "BUDGET LEFT:" in orchestrator_text
+    assert orchestrator_text.splitlines()[-1].startswith("BUDGET LEFT:")
+    assert "BUDGET LEFT:" not in author_text
+
+
+def test_a_budget_that_cannot_describe_itself_never_fails_a_render(
+    tmp_path, monkeypatch
+) -> None:
+    """A render that succeeded must not be lost to a broken status line."""
+    from lumen_agent.tools import render as render_module
+
+    monkeypatch.setattr(render_module, "_latest_preview_png", lambda tools: None)
+
+    class _Tools:
+        config = None
+
+        def export_preview_bundle(self, critic_format: str) -> str:
+            return json.dumps({"reviewer": {"status": "ok", "artifacts": []}})
+
+    class _BrokenBudget:
+        def status_line(self):
+            raise RuntimeError("clock exploded")
+
+    text = render_module._render_preview_text(
+        _Tools(), checkpoint=False, budget=_BrokenBudget()
+    )
+    assert "render_preview: status=ok" in text
+    assert "BUDGET LEFT:" not in text
+
+
+def test_flag_off_render_carries_no_budget_line(tmp_path, monkeypatch) -> None:
+    """Off the flag the harness passes budget=None, so the summary is unchanged."""
+    from lumen_agent.tools import render as render_module
+
+    monkeypatch.setattr(render_module, "_latest_preview_png", lambda tools: None)
+
+    class _Tools:
+        config = None
+
+        def export_preview_bundle(self, critic_format: str) -> str:
+            return json.dumps({"reviewer": {"status": "ok", "artifacts": []}})
+
+    assert "BUDGET" not in render_module._render_preview_text(_Tools(), checkpoint=True)
+
+
+def test_the_orchestrator_prompt_forbids_a_round_it_cannot_finish() -> None:
+    """Harness-computed, prompt-consumed: the model is pointed at the line the
+    render emits rather than asked to do arithmetic against two ceilings."""
+    orchestrator = build_orchestrator_prompt(WS, fast_loop=True, scene_reviewer=False)
+    assert "DO NOT OPEN A ROUND YOU CANNOT FINISH." in orchestrator
+    assert "BUDGET LEFT line" in orchestrator
+    assert "When it says there is no room, do not delegate again." in orchestrator
+    # And it says what to do instead, so the rule is not merely a prohibition.
+    assert "record_gap every issue you are leaving" in orchestrator
+
+
+def test_the_headroom_floors_sit_under_the_r4_ceilings(tmp_path) -> None:
+    """R4's ceilings are the contract and are untouched; the floors only decide
+    when to stop spending them. A floor at or above its ceiling would refuse
+    every round on a fresh run, so the ordering is the thing worth pinning."""
+    config = runtime_config(tmp_path)
+    assert REPAIR_ROUND_MIN_CALLS < config.fast_loop_max_llm_calls
+    assert REPAIR_ROUND_MIN_SECONDS < config.fast_loop_wall_clock_s
+    fresh = RunBudget(
+        max_llm_calls=config.fast_loop_max_llm_calls,
+        wall_clock_s=config.fast_loop_wall_clock_s,
+    )
+    assert fresh.remaining()["room_for_another_round"] is True
 
 
 def test_budget_admits_exactly_its_limit_then_refuses() -> None:
