@@ -70,7 +70,7 @@ from clue_api.agent_turn_wiring import (
 )
 from clue_api.chat.turn_events import TurnEventType, emit_turn_event
 from clue_api.chat.turn_stream import TurnStreamEmitter
-from clue_api.design_turn_targets import resolve_scene_targets
+from clue_api.design_turn_targets import DesignTurnTargetError, resolve_scene_targets
 from clue_api.turn_action import derive_turn_action_ref
 from clue_core import ExecutionId, operation_id_from_key
 from clue_db import ConnFactory, transaction
@@ -131,6 +131,15 @@ DESIGN_LEG_ACCOUNT_UNRESOLVED = "design_leg_account_unresolved"
 #: failed): lane unavailable, join timeout, bundle fault, finisher fault. Marked
 #: abandoned so the turn is terminal, streamed, and prunable instead of a zombie.
 DESIGN_LEG_TURN_CRASHED = "design_leg_turn_crashed"
+
+#: The accepted turn's durable ``design_node`` targets no longer resolve against the
+#: document's CURRENT scene at dispatch time — a manual edit or an earlier queued turn
+#: deleted a targeted node, or the pinned document itself vanished (that path
+#: deliberately dispatches with an empty scene, in which no target can exist). The
+#: focused edit fails closed with this typed refusal instead of crashing the turn
+#: body: editing something OTHER than what the user pointed at would be worse than
+#: asking them to say it again against the scene as it now stands.
+DESIGN_LEG_TARGET_UNRESOLVED = "design_leg_target_unresolved"
 
 _EXECUTION_NAMESPACE = uuid5(NAMESPACE_URL, "clue-design-leg-execution")
 _RUN_NAMESPACE = uuid5(NAMESPACE_URL, "clue-design-leg-run")
@@ -889,18 +898,38 @@ class DesignLegTurnRunner:
                     )
                 account_card = _account_card(account)
 
-            run = await self._dispatch(
-                submission=submission,
-                leg=leg,
-                leg_id=leg_id,
-                execution_id=execution_id,
-                user_message_ref=user_message_ref,
-                prior_history=prior_history,
-                pinned_document=pinned_document,
-                account_card=account_card,
-                focus_refs=focus_refs,
-                workspace_id=workspace_id,
-            )
+            try:
+                run = await self._dispatch(
+                    submission=submission,
+                    leg=leg,
+                    leg_id=leg_id,
+                    execution_id=execution_id,
+                    user_message_ref=user_message_ref,
+                    prior_history=prior_history,
+                    pinned_document=pinned_document,
+                    account_card=account_card,
+                    focus_refs=focus_refs,
+                    workspace_id=workspace_id,
+                )
+            except DesignTurnTargetError as exc:
+                # Raised while BUILDING the envelope (before any run row or leg-state
+                # write): the durable node targets validated at acceptance no longer
+                # resolve in the document's current scene. A typed pre-dispatch
+                # refusal, exactly like G1/G2 above — the leg stays open_awaiting_user
+                # and the user can restate the edit against the scene as it now is.
+                log.warning(
+                    "design_leg.target_unresolved",
+                    leg_id=leg_id,
+                    turn_id=str(turn_id),
+                    document_id=str(leg.get("document_id")),
+                    code=exc.code,
+                )
+                return await self._fail_turn(
+                    submission=submission,
+                    execution_id=execution_id,
+                    failure_code=DESIGN_LEG_TARGET_UNRESOLVED,
+                    stream=stream,
+                )
             await self._leg_back_to_awaiting(
                 workspace_id=workspace_id,
                 leg_id=leg_id,
@@ -1330,7 +1359,15 @@ class DesignLegTurnRunner:
                 "scene": document.get("scene") or {},
                 "document_id": leg.get("document_id"),
                 "previous_turn_outcome": submission.previous_turn_outcome,
-                "reference_asset_ids": list(reference_asset_ids),
+                # Only when references actually ride: the scene ``agent_turn``
+                # request is a frozen byte-for-byte contract (B1), and the
+                # design request model defaults the absent key — an
+                # unconditional empty list here broke that freeze.
+                **(
+                    {"reference_asset_ids": list(reference_asset_ids)}
+                    if reference_asset_ids
+                    else {}
+                ),
                 **(
                     {
                         "active_page_id": resolved_targets.active_page_id,

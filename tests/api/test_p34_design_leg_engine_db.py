@@ -574,6 +574,79 @@ def test_a_scene_leg_translates_durable_node_refs_into_the_frozen_request(
     run_async(scenario())
 
 
+def test_a_target_deleted_after_acceptance_fails_the_turn_typed_and_keeps_the_leg_open(
+    tmp_path: Path,
+    migrated_db: bool,  # noqa: F811
+) -> None:
+    """A durable node target the CURRENT scene no longer carries is a typed refusal.
+
+    Acceptance validated the target against the version the user saw; a manual edit (or an
+    earlier queued turn) may delete that node before dispatch. The envelope build re-resolves
+    against the current scene and must fail the turn through ``_fail_turn`` with
+    ``design_leg_target_unresolved`` — never the ``design_leg_turn_crashed`` containment path —
+    and the leg stays open for the user to restate the edit.
+    """
+
+    if not migrated_db:
+        pytest.skip("database not reachable")
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            seeds = await _seed_leg_conversation(conn, storage_root=tmp_path, label="staletgt")
+            registry = build_agent_profile_registry(build_toolbelt(storage=None, gateway=None))
+            document = await _pin_document(conn, seeds, doc_kind="scene", version=5)
+            refs = (
+                DomainObjectRef(
+                    workspace_id=seeds["workspace_id"],
+                    object_type="design_document",
+                    object_id=document["id"],
+                    version=5,
+                ),
+                DomainObjectRef(
+                    workspace_id=seeds["workspace_id"],
+                    object_type="design_node",
+                    object_id="headline",
+                    version=5,
+                ),
+            )
+            submission = await _submit_message(
+                conn,
+                seeds,
+                label="staletgt",
+                message="Make this bolder.",
+                focus_refs=refs,
+            )
+            # The interleaved manual edit: the targeted node is gone from the
+            # current scene by the time the turn dispatches.
+            pruned_scene = dict(document["scene"])
+            pruned_scene["nodes"] = {"frame": {"id": "frame", "children": []}}
+            await conn.execute(
+                text(
+                    "UPDATE design_document SET current_scene_json = CAST(:scene AS jsonb) "
+                    "WHERE id = :id AND workspace_id = :w"
+                ),
+                {
+                    "scene": json.dumps(pruned_scene),
+                    "id": document["id"],
+                    "w": seeds["workspace_id"],
+                },
+            )
+
+            lane = _FakeLane(conn_factory=seeds["conn_factory"])
+            result = await _run_turn(conn, seeds, registry, lane, submission, refs)
+
+            assert result.outcome.status is AgentExecutionStatus.FAILED
+            assert result.outcome.failure_code == "design_leg_target_unresolved"
+            # Nothing was dispatched and no run row was born of the refusal.
+            assert lane.envelopes == []
+            leg_after = await design_legs.get_leg(
+                conn, workspace_id=seeds["workspace_id"], leg_id=seeds["leg"]["id"]
+            )
+            assert leg_after["state"] == "open_awaiting_user"
+
+    run_async(scenario())
+
+
 def test_a_web_leg_envelope_carries_no_document_base_version_on_its_leg_block(
     tmp_path: Path,
     migrated_db: bool,  # noqa: F811

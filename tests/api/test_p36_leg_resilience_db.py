@@ -717,6 +717,7 @@ def test_a_gate_answer_queued_behind_a_leg_opening_still_reaches_head_of_abm(
                 turn_id=answer_submission.turn_id,
                 action_ref=derive_turn_action_ref(answer_submission.turn_id),
                 decision="approved",
+                expected_subject_sha256="c" * 64,
                 answered_by_user_id=USER_ID,
             )
 
