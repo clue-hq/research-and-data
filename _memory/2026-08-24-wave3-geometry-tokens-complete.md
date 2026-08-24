@@ -126,3 +126,25 @@ asset-store-family member lives in `test_workspace_seam.py`).
   non-empty = the one worth doing opportunistically), OSError not wrapped.
 - Do NOT wire LUMW0306 counts to any gate: the advice covers axes the
   retokenizer never touches (shadows, non-matching radii) — quiet ≠ handled.
+
+## Addendum 2026-08-24 (post-close-out, founder-ordered): colombo v4 merged in
+
+`b66c4edca` merges colombo's `integration/frontend-design-part-iv-v4` (185
+commits since the common ancestor `94f398c4a`) into this branch. ZERO
+conflicts — only two files were touched by both sides
+(`lumen_api/main.py`: ours +14 / theirs +454 in disjoint regions;
+`test_api.py`), auto-merged. v4 brings: design-editor fidelity + pinned-kit
+fixes, chat scene-reference-image turns + selected-node edit-target bridging,
+the run_view observability CLI, the asset-custody probe/repair loop, genad2
+close-out, head-of-abm profile v38/v39 + prompt v6/v7, and
+`recipe0-stage0-v18/v19.json` — which likely clears the walk's
+"chat generation blocked on this branch" recipe-supersession concern (the
+promoted revisions now exist here; verify on the next live chat walk).
+Verified on the merged tree: both merged files compile; design agent_runtime
+suite exit 0 (~800 tests); their new design tests (run_view, scene-persist;
+DB-gated ones skip) + our web export/operations/documents tests exit 0; v4
+touched no Rust so the wave's cargo state stands. Alembic: the 4-head state
+(3 phase-C lane heads + the design lane) PRE-DATES the merge on both sides —
+the merge added no divergence (their chain extends our old design-lane tip
+`a1c5b9842f0e` → `db145059253b`); the phase-C multi-head alembic-merge debt
+is owned by the phase-C integration, not this branch.
