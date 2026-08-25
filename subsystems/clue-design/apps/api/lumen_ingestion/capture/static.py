@@ -10,6 +10,7 @@ from urllib.parse import urljoin, urlparse
 
 from selectolax.parser import HTMLParser
 
+from .. import logo_ladder
 from .imgsrc import background_image_urls, image_source_ladder
 from .net import BoundedFetcher, FetchRequest
 from .snapshot import Download, SiteSnapshot, Stylesheet, HTML_MAX_BYTES
@@ -159,6 +160,7 @@ async def _collect_assets(
 ) -> tuple[list[Download], list[dict]]:
     requests: list[FetchRequest] = []
     kinds: dict[str, str] = {}
+    stylesheets_for_ladder = [(sheet.url, sheet.text) for sheet in stylesheets]
 
     def add(url: str, kind: str) -> None:
         if url.startswith("data:"):
@@ -203,6 +205,14 @@ async def _collect_assets(
         content = node.attributes.get("content")
         if content:
             add(urljoin(base_url, content), "image")
+
+    # Every URL the logo ladder can consider — JSON-LD Organization.logo, og:logo,
+    # logo-container imgs anywhere on the page, footer marks, chrome CSS
+    # backgrounds. Without this the scorer ranks candidates whose bytes were
+    # never downloaded, the top candidate arrives byteless, and the evidence
+    # builder drops it without a word (the recurring `bytes_missing`).
+    for url in logo_ladder.candidate_asset_urls(tree, base_url, stylesheets_for_ladder):
+        add(url, "logo")
 
     # Images. The ladder (srcset / <picture><source> / CDN width upgrade / bare src) is the
     # SHARED chooser `parse._parse_images` walks — see `imgsrc` for why implementing it twice
