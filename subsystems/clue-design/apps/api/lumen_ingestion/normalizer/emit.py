@@ -14,6 +14,7 @@ import re
 
 from ..colorspace import hex_alpha
 from ..evidence import BrandEvidence, FontEvidence, ImageEvidence, LogoEvidence
+from ..logo_policy import allowed_backgrounds_for
 from .geometry import MEASURED_CONFIDENCE
 from .required import (
     REQUIRED_ASSET_TOKENS,
@@ -265,10 +266,12 @@ class KitBuilder:
         min_size_rule = _rule_numeric(self.evidence, "min_size")
 
         for key, group in groups.items():
-            has_reversed = any(g.color_mode_hint == "reversed" for g in group)
-            allowed = ["surface.page", "surface.card"]
-            if has_reversed:
-                allowed.append("surface.inverse")
+            # W1.6: the slot's background policy is derived from the colour modes
+            # of the variants it actually holds — a slot with a light/reversed
+            # mark also allows the dark surfaces, which is the reference-driven
+            # placement the Cursor pilot could not express. One shared rule, so
+            # this cannot drift from the human-curation path in `main.py`.
+            allowed = allowed_backgrounds_for(g.color_mode_hint for g in group)
             entry = {
                 "variants": [
                     {

@@ -38,7 +38,8 @@
           "allowed_backgrounds": [
             "surface.page",
             "surface.card",
-            "surface.inverse"
+            "surface.inverse",
+            "surface.brand"
           ],
           "clearspace": 24.0,
           "license": null,
