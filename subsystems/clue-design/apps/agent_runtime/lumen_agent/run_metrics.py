@@ -229,6 +229,14 @@ class RunMetrics:
 
         Deliberately shaped with a `target` key rather than the breach's `limit`,
         so a consumer reading the two dicts cannot confuse them by shape either.
+
+        READING THE ABSENCE OF THIS KEY. It is recorded at a call the budget
+        ADMITTED, so a run that leaps from inside its target straight past the
+        backstop (one very long call) reports `budget_exhausted` with no
+        `budget_target_exceeded` beside it. That is not "stayed within
+        guidance" — the config validator guarantees backstop >= target, so a
+        backstop hit is past-target by construction. Count drift as
+        `budget_target_exceeded OR budget_exhausted`, never the former alone.
         """
         with self._lock:
             if self._budget_target_exceeded is None:
