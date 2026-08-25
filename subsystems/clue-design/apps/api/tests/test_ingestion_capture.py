@@ -165,6 +165,164 @@ def test_parse_color_value_forms() -> None:
 
 
 # --------------------------------------------------------------------------- #
+# W1.3 — modern CSS color syntax must not sink the ingestion job
+#
+# apollo.io failed LUMI0401 on 4/4 URLs with
+# `ValueError: could not convert string to float: 'var(--tw-text-opacity'`.
+# Tailwind serves `rgb(15 23 42 / var(--tw-text-opacity))`; the tokenizer split
+# on `)`, so the fragment reached a bare float() and killed the whole job.
+# --------------------------------------------------------------------------- #
+
+
+def test_tailwind_slash_alpha_keeps_the_color_instead_of_crashing() -> None:
+    """RED before the fix: this exact apollo.io string raised ValueError."""
+    diagnostics: list[dict] = []
+    # The three channels are numeric and carry apollo.io's real text color;
+    # only the alpha is an unresolved custom property. Keep the color.
+    assert (
+        parse_color_value(
+            "rgb(15 23 42 / var(--tw-text-opacity))", {}, diagnostics=diagnostics
+        )
+        == "#0F172A"
+    )
+    # ...and say out loud that the alpha was read as opaque.
+    assert [d for d in diagnostics if d["code"] == "LUMI0511"]
+    assert "alpha channel unreadable" in diagnostics[0]["message"]
+    # The same shape in hsl(), and in the rgba() spelling Tailwind also emits.
+    assert parse_color_value("rgba(24 24 27 / var(--tw-bg-opacity))", {}) == "#18181B"
+    assert parse_color_value("hsl(0 100% 50% / var(--tw-x))", {}) == "#FF0000"
+
+
+def test_modern_space_separated_rgb_parses_with_numeric_alpha() -> None:
+    """The modern syntax is not just survivable — it is read correctly."""
+    assert parse_color_value("rgb(15 23 42)", {}) == "#0F172A"
+    assert parse_color_value("rgb(15 23 42 / 0.5)", {}) == "#0F172A80"
+    assert parse_color_value("rgb(15 23 42 / 50%)", {}) == "#0F172A80"
+    assert parse_color_value("hsl(0 100% 50%)", {}) == "#FF0000"
+
+
+def test_a_genuinely_unreadable_color_is_skipped_not_raised() -> None:
+    """Fail soft: an unreadable value is one swatch dropped, with a reason."""
+    diagnostics: list[dict] = []
+    # Relative-color syntax — real modern CSS this parser does not implement.
+    assert parse_color_value("rgb(from var(--accent) r g b)", {}, diagnostics=diagnostics) is None
+    assert parse_color_value("rgb(a b c)", {}, diagnostics=diagnostics) is None
+    assert parse_color_value("hsl(nope, bad, worse)", {}, diagnostics=diagnostics) is None
+    assert len(diagnostics) == 3
+    assert all(d["severity"] == "warning" for d in diagnostics)
+
+
+def test_a_cyclic_custom_property_chain_is_skipped_not_a_recursion_error() -> None:
+    """RED before the fix: cursor.com/about's cyclic var() blew the stack."""
+    props = {"--a": "var(--b)", "--b": "var(--a)"}
+    diagnostics: list[dict] = []
+    assert parse_color_value("var(--a)", props, diagnostics=diagnostics) is None
+    assert "did not resolve" in diagnostics[0]["message"]
+    # A long-but-finite chain still resolves.
+    chain = {f"--n{i}": f"var(--n{i + 1})" for i in range(10)}
+    chain["--n10"] = "#12EAB1"
+    assert parse_color_value("var(--n0)", chain) == "#12EAB1"
+
+
+_TAILWIND_CSS = """
+:root { --color-brand: rgb(254 255 0 / var(--tw-bg-opacity)); }
+body { background-color: rgb(255 255 255 / var(--tw-bg-opacity)); color: rgb(15 23 42 / var(--tw-text-opacity)); }
+h1 { color: rgb(15 23 42 / var(--tw-text-opacity)); font-family: 'Source Serif 4'; font-size: 48px; font-weight: 700; }
+p { color: rgb(71 85 105 / var(--tw-text-opacity)); font-family: 'DM Sans'; font-size: 16px; }
+.btn { background-color: rgb(254 255 0 / var(--tw-bg-opacity)); color: rgb(15 23 42 / var(--tw-text-opacity)); }
+"""
+
+
+def _tailwind_snapshot():
+    """The apollo.io shape: a real snapshot whose CSS is modern Tailwind color
+    syntax with unresolved opacity custom properties."""
+    from lumen_ingestion.capture.snapshot import SiteSnapshot, Stylesheet
+
+    base = load("insight_static")
+    return SiteSnapshot(
+        **{
+            **base.model_dump(),
+            "requested_url": "https://apollo.io",
+            "final_url": "https://apollo.io",
+            "stylesheets": [
+                Stylesheet(url="https://apollo.io/assets/app.css", text=_TAILWIND_CSS).model_dump()
+            ],
+            "custom_props": {"--color-brand": "rgb(254 255 0 / var(--tw-bg-opacity))"},
+        }
+    )
+
+
+def test_an_ingestion_job_survives_unparseable_colors_end_to_end(tmp_path) -> None:
+    """RED before the fix: apollo.io failed `LUMI0401` on 4/4 URLs here.
+
+    This is the whole offline job — parse → evidence → normalize — driven
+    through `run_ingestion_job`, the wrapper that turns any escaped exception
+    into the `LUMI0401` failure the pilot hit. It must reach `succeeded`.
+    """
+    from lumen_api.design_store import HybridRepository
+    from lumen_ingestion.jobs import IngestionJobStore, run_ingestion_job
+
+    kit_id = "kit_tailwind_survival"
+    HybridRepository().create_brand_kit(
+        {"id": kit_id, "version": 1, "name": kit_id, "approval_status": "draft"},
+        {"product_ready": False},
+        [],
+        "website",
+    )
+    store = IngestionJobStore()
+    job_id = store.create("website", {"url": "https://apollo.io"})["job_id"]
+
+    outcome = CaptureOutcome(
+        snapshot=_tailwind_snapshot(),
+        tier="static",
+        escalated=False,
+        escalation_reason=None,
+        diagnostics=[],
+    )
+    stub = _StubCore()
+
+    def work(report):
+        report("Taking a closer look…", 0.55)  # the stage apollo.io died at
+        with tempfile.TemporaryDirectory() as asset_store:
+            evidence = build_evidence(
+                outcome, core=stub, store_root=asset_store, reporter=_noop
+            )
+        result = normalize_evidence(
+            evidence, brand_kit_id=kit_id, name="Apollo", created_at="2026-08-26"
+        )
+        assert result.brand_kit["assets"] is not None
+        return (kit_id, 1, None)
+
+    run_ingestion_job(store, job_id, work)
+
+    job = store.require(job_id)
+    assert job["error"] is None, job["error"]
+    assert job["status"] == "succeeded"
+
+    # The colors were not merely survived — the real channels were read.
+    hexes = {c.value for c in parse_site(_tailwind_snapshot()).colors}
+    assert "#0F172A" in hexes  # apollo's near-black text
+    assert "#FEFF00" in hexes  # apollo's brand yellow
+
+    # ...and the skipped alpha is reported to the human, on the outcome the
+    # pipeline publishes, not swallowed.
+    assert [d for d in outcome.diagnostics if d["code"] == "LUMI0511"]
+
+
+def test_diagnostics_are_deduped_and_bounded() -> None:
+    """A Tailwind site serves thousands of these; the report stays readable."""
+    diagnostics: list[dict] = []
+    for i in range(200):
+        parse_color_value(f"rgb(a{i} b c)", {}, diagnostics=diagnostics)
+    assert 0 < len(diagnostics) <= 8
+    # Repeating one value does not repeat its diagnostic.
+    repeated: list[dict] = []
+    for _ in range(50):
+        parse_color_value("rgb(a b c)", {}, diagnostics=repeated)
+    assert len(repeated) == 1
+
+
+# --------------------------------------------------------------------------- #
 # Parse: role hints, dark scope, var() resolution, rem→px, fonts, logos, images
 # --------------------------------------------------------------------------- #
 
@@ -532,6 +690,165 @@ def test_build_evidence_screenshot_listed() -> None:
         )
     assert evidence.screenshots
     assert evidence.screenshots[0].startswith("asset_ing_")
+
+
+# --------------------------------------------------------------------------- #
+# W1.2 — font byte custody
+#
+# Both pilots recorded brand faces by URL with `asset_id: null` (CursorGothic:
+# 4 woff2 URLs, nothing stored), so the renderer had no bytes, emitted
+# LUMS0100, and painted Inter in literally every run. Capture and parse were
+# discovering @font-face URLs two different ways; the evidence builder matches
+# a face to its bytes by exact URL string, so any disagreement meant the bytes
+# were fetched under one key and looked for under another.
+# --------------------------------------------------------------------------- #
+
+
+_WOFF2 = base64.b64decode("d09GMgABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")
+
+
+def _font_site(css: str, sheet_path: str = "/assets/app.css"):
+    """A site whose only interesting content is one self-hosted @font-face."""
+    page_html = (
+        "<html><head><title>Brand</title>"
+        f'<link rel="stylesheet" href="{sheet_path}">'
+        "</head><body><h1>Brand</h1><p>hello world</p></body></html>"
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path == "/":
+            return httpx.Response(200, html=page_html)
+        if path == sheet_path:
+            return httpx.Response(200, text=css, headers={"content-type": "text/css"})
+        if path.endswith(".woff2"):
+            return httpx.Response(
+                200, content=_WOFF2, headers={"content-type": "font/woff2"}
+            )
+        return httpx.Response(404)
+
+    async def run() -> CaptureOutcome:
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await capture_website(
+                "https://example.com/",
+                reporter=_noop,
+                render_available=False,
+                http_client=client,
+            )
+
+    return asyncio.run(asyncio.wait_for(run(), timeout=10.0))
+
+
+@pytest.mark.parametrize(
+    "src,label",
+    [
+        ("url('/media/BrandSans-Regular.woff2')", "root-relative"),
+        # RED: resolved against the stylesheet by capture and against the page
+        # by parse — two different absolute URLs for one file.
+        ("url('../media/BrandSans-Regular.woff2')", "stylesheet-relative"),
+        # RED: capture's old regex required the extension to be the last thing
+        # before the paren, so a cache-busted URL was never fetched at all.
+        ("url('/media/BrandSans-Regular.woff2?v=3')", "cache-busted"),
+        (
+            "url('/media/BrandSans-Regular.woff2') format('woff2')",
+            "with-format-hint",
+        ),
+    ],
+)
+def test_a_declared_font_face_ends_up_with_retrievable_bytes(src, label) -> None:
+    """The W1.2 contract: a face the site declares carries an asset_id, and
+    that asset was handed real bytes through the normal custody path."""
+    css = (
+        "@font-face{font-family:'BrandSans';font-weight:400;font-style:normal;"
+        f"src:{src};}}"
+        "h1{font-family:'BrandSans';font-size:48px;font-weight:700}"
+    )
+    outcome = _font_site(css)
+
+    # The bytes were actually downloaded during capture.
+    font_downloads = [d for d in outcome.snapshot.downloads if d.kind == "font"]
+    assert font_downloads, f"{label}: no font bytes were fetched at all"
+
+    stub = _StubCore()
+    with tempfile.TemporaryDirectory() as store:
+        evidence = build_evidence(outcome, core=stub, store_root=store, reporter=_noop)
+
+    assert evidence.fonts, f"{label}: no font evidence"
+    face = evidence.fonts[0].faces[0]
+    assert face.asset_id is not None, f"{label}: face has no asset_id — LUMS0100"
+    assert face.asset_id.startswith("asset_ing_")
+
+    # ...and that asset id was ingested with the real bytes, as a font.
+    ingested = {c["asset_id"]: c for c in stub.calls}
+    assert face.asset_id in ingested, f"{label}: asset_id was never custodied"
+    call = ingested[face.asset_id]
+    assert call["kind"] == "font"
+    assert base64.b64decode(call["bytes_base64"]) == _WOFF2
+    # Nothing was reported as missing.
+    assert not [d for d in outcome.diagnostics if d["code"] == "LUMI0231"]
+
+
+def test_capture_and_parse_agree_on_every_font_url() -> None:
+    """The invariant behind the fix: every URL a face points at is a URL whose
+    bytes capture actually downloaded. This is what `asset_id: null` meant."""
+    css = (
+        "@font-face{font-family:'BrandSans';font-weight:400;"
+        "src:url('../media/BrandSans-Regular.woff2');}"
+        "@font-face{font-family:'BrandSans';font-weight:700;"
+        "src:url('/media/BrandSans-Bold.woff2?v=9');}"
+    )
+    outcome = _font_site(css, sheet_path="/nested/css/app.css")
+    downloaded = {d.url for d in outcome.snapshot.downloads if d.kind == "font"}
+    declared = {
+        face.source_url
+        for font in parse_site(outcome.snapshot).fonts
+        for face in font.faces
+        if face.source_url
+    }
+    assert declared, "no faces parsed"
+    assert declared <= downloaded, f"faces with no bytes: {declared - downloaded}"
+    # The stylesheet-relative URL resolved against the stylesheet, not the page.
+    assert "https://example.com/nested/media/BrandSans-Regular.woff2" in declared
+
+
+def test_a_font_whose_bytes_cannot_be_fetched_is_reported_not_silent() -> None:
+    """Honest failure: when the site's font 404s we cannot custody it, and that
+    must be said out loud rather than surfacing later as a mystery Inter run."""
+    css = (
+        "@font-face{font-family:'BrandSans';font-weight:400;"
+        "src:url('/media/missing.woff2');}"
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path == "/":
+            return httpx.Response(
+                200,
+                html='<html><head><title>B</title><link rel="stylesheet" href="/a.css">'
+                "</head><body><p>hello world</p></body></html>",
+            )
+        if path == "/a.css":
+            return httpx.Response(200, text=css, headers={"content-type": "text/css"})
+        return httpx.Response(404)  # the font is gone
+
+    async def run() -> CaptureOutcome:
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await capture_website(
+                "https://example.com/",
+                reporter=_noop,
+                render_available=False,
+                http_client=client,
+            )
+
+    outcome = asyncio.run(asyncio.wait_for(run(), timeout=10.0))
+    stub = _StubCore()
+    with tempfile.TemporaryDirectory() as store:
+        evidence = build_evidence(outcome, core=stub, store_root=store, reporter=_noop)
+
+    assert evidence.fonts[0].faces[0].asset_id is None  # honestly empty
+    reported = [d for d in outcome.diagnostics if d["code"] == "LUMI0231"]
+    assert reported, "a byte-less font face was recorded in total silence"
+    assert "BrandSans" in reported[0]["message"]
 
 
 # --------------------------------------------------------------------------- #

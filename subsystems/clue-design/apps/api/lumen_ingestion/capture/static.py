@@ -11,6 +11,7 @@ from urllib.parse import urljoin, urlparse
 from selectolax.parser import HTMLParser
 
 from .net import BoundedFetcher, FetchRequest
+from .parse import font_face_sources
 from .snapshot import Download, SiteSnapshot, Stylesheet, HTML_MAX_BYTES
 
 _IMPORT_RE = re.compile(
@@ -166,15 +167,16 @@ async def _collect_assets(
             kinds[url] = kind
             requests.append(FetchRequest(url=url, kind="font" if kind == "font" else ("image")))
 
-    # Fonts from @font-face src url() in fetched CSS.
-    for sheet in stylesheets:
-        for match in re.finditer(
-            r"url\(\s*['\"]?([^'\")]+\.(?:woff2|woff|ttf|otf))['\"]?\s*\)",
-            sheet.text,
-            re.IGNORECASE,
-        ):
-            base = sheet.url if not sheet.url.startswith("inline:") else base_url
-            add(urljoin(base, match.group(1)), "font")
+    # Fonts: exactly the files @font-face selects, found by the same walk
+    # parse_site uses. Capture and parse must agree on the URL to the character
+    # — the evidence builder matches a face to its bytes by exact URL string, so
+    # any divergence silently yields `asset_id: null` and a brand font that
+    # never paints. The old regex here diverged on both counts: it resolved
+    # relative URLs against a different base than parse did, and it skipped any
+    # URL whose extension was not the last thing before the paren
+    # (`url(/f/X.woff2?v=3)`), which parse happily recorded anyway.
+    for url in font_face_sources(stylesheets, base_url):
+        add(url, "font")
 
     # Logos: header/nav/logo imgs, apple-touch-icon.
     for node in tree.css("header img, nav img, [class*=logo] img, a[href='/'] img"):

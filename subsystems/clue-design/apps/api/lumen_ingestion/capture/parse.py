@@ -129,6 +129,12 @@ _NAMED_COLORS = {
 }
 
 
+# A custom-property chain deeper than this is a cycle, not a real color.
+_MAX_VAR_HOPS = 24
+# Diagnostics are a report, not a log: cap how many skipped colors we name.
+_MAX_COLOR_SKIPS_REPORTED = 8
+
+
 def _clamp8(value: float) -> int:
     return max(0, min(255, round(value)))
 
@@ -159,9 +165,25 @@ def _hsl_to_hex(h: float, s: float, lightness: float) -> str:
     )
 
 
-def parse_color_value(raw: str, custom_props: dict[str, str]) -> str | None:
-    """Parse a CSS color token to #RRGGBB(AA). One var() hop resolved. Returns
-    None for keywords we skip (transparent/inherit/currentColor/unset)."""
+def parse_color_value(
+    raw: str,
+    custom_props: dict[str, str],
+    *,
+    diagnostics: list[dict] | None = None,
+    _depth: int = 0,
+) -> str | None:
+    """Parse a CSS color token to #RRGGBB(AA). var() hops resolved (bounded).
+
+    **This function never raises.** A color we cannot read is one swatch
+    skipped, never a failed ingestion job: every unreadable value returns
+    ``None`` and, when a ``diagnostics`` sink is supplied, records why. That
+    matters because a single modern-syntax color used to sink whole sites —
+    apollo.io served ``rgb(15 23 42 / var(--tw-text-opacity))`` and the bare
+    ``float()`` under the alpha channel failed the job 4/4 URLs (``LUMI0401``).
+
+    ``None`` is also the answer for keywords we deliberately skip
+    (transparent/inherit/currentColor/unset); those are not diagnosed.
+    """
     text = raw.strip()
     lowered = text.lower()
     if lowered in _SKIP_COLOR_KEYWORDS:
@@ -169,14 +191,26 @@ def parse_color_value(raw: str, custom_props: dict[str, str]) -> str | None:
 
     var_match = re.match(r"var\(\s*(--[\w-]+)\s*(?:,\s*([^)]+))?\)", text, re.IGNORECASE)
     if var_match:
+        # A custom property may point at another one. Real sites ship cyclic
+        # chains (cursor.com/about does), so the walk is bounded: unbounded
+        # recursion here is a RecursionError, i.e. another whole-job failure.
+        if _depth >= _MAX_VAR_HOPS:
+            _record_color_skip(
+                diagnostics, f"custom-property chain did not resolve (cycle?): {text}"
+            )
+            return None
         name = var_match.group(1)
         resolved = custom_props.get(name)
         if resolved is None:
             fallback = var_match.group(2)
             if fallback is None:
                 return None
-            return parse_color_value(fallback, custom_props)
-        return parse_color_value(resolved, custom_props)
+            return parse_color_value(
+                fallback, custom_props, diagnostics=diagnostics, _depth=_depth + 1
+            )
+        return parse_color_value(
+            resolved, custom_props, diagnostics=diagnostics, _depth=_depth + 1
+        )
 
     if lowered in _NAMED_COLORS:
         return _NAMED_COLORS[lowered]
@@ -193,6 +227,8 @@ def parse_color_value(raw: str, custom_props: dict[str, str]) -> str | None:
                 return None
         return None
 
+    # Both the legacy comma form `rgb(15, 23, 42)` and the modern
+    # space-separated/slash form `rgb(15 23 42 / 60%)` split the same way.
     rgb = re.match(r"rgba?\(([^)]+)\)", text, re.IGNORECASE)
     if rgb:
         parts = re.split(r"[,\s/]+", rgb.group(1).strip())
@@ -201,13 +237,15 @@ def parse_color_value(raw: str, custom_props: dict[str, str]) -> str | None:
             try:
                 comps = [_parse_channel(parts[i]) for i in range(3)]
             except ValueError:
+                _record_color_skip(diagnostics, f"unreadable rgb() channels: {text}")
                 return None
             hex6 = "#%02X%02X%02X" % (comps[0], comps[1], comps[2])
             if len(parts) >= 4:
-                alpha = _parse_alpha(parts[3])
+                alpha = _alpha_or_opaque(parts[3], text, diagnostics)
                 if alpha < 255:
                     return hex6 + "%02X" % alpha
             return hex6
+        _record_color_skip(diagnostics, f"unreadable rgb() value: {text}")
         return None
 
     hsl = re.match(r"hsla?\(([^)]+)\)", text, re.IGNORECASE)
@@ -220,13 +258,15 @@ def parse_color_value(raw: str, custom_props: dict[str, str]) -> str | None:
                 s = float(parts[1].rstrip("%"))
                 lightness = float(parts[2].rstrip("%"))
             except ValueError:
+                _record_color_skip(diagnostics, f"unreadable hsl() channels: {text}")
                 return None
             hex6 = _hsl_to_hex(h, s, lightness)
             if len(parts) >= 4:
-                alpha = _parse_alpha(parts[3])
+                alpha = _alpha_or_opaque(parts[3], text, diagnostics)
                 if alpha < 255:
                     return hex6 + "%02X" % alpha
             return hex6
+        _record_color_skip(diagnostics, f"unreadable hsl() value: {text}")
         return None
 
     return None
@@ -244,6 +284,41 @@ def _parse_alpha(token: str) -> int:
     if token.endswith("%"):
         return _clamp8(float(token[:-1]) / 100.0 * 255)
     return _clamp8(float(token) * 255)
+
+
+def _alpha_or_opaque(token: str, source: str, diagnostics: list[dict] | None) -> int:
+    """Read an alpha channel, falling back to fully opaque when it is unreadable.
+
+    Tailwind serves `rgb(15 23 42 / var(--tw-text-opacity))`: the three channels
+    carry the site's real color and only the alpha is an unresolved custom
+    property. Dropping the whole swatch there would throw away good brand
+    evidence, so we keep the color and read it as opaque — which is also what
+    the browser shows when the opacity var is unset.
+    """
+    try:
+        return _parse_alpha(token)
+    except (ValueError, TypeError):
+        _record_color_skip(
+            diagnostics, f"alpha channel unreadable, color read as opaque: {source}"
+        )
+        return 255
+
+
+def _record_color_skip(diagnostics: list[dict] | None, message: str) -> None:
+    """Record one unreadable color into an ingestion diagnostics sink.
+
+    Bounded and deduped on purpose: a Tailwind site serves thousands of these
+    and the diagnostics list is a report a human reads, not a log.
+    """
+    if diagnostics is None:
+        return
+    entry = {"code": "LUMI0511", "severity": "warning", "message": message[:240]}
+    for existing in diagnostics:
+        if existing.get("message") == entry["message"]:
+            return
+    if sum(1 for d in diagnostics if d.get("code") == "LUMI0511") >= _MAX_COLOR_SKIPS_REPORTED:
+        return
+    diagnostics.append(entry)
 
 
 # --- selector role hints --------------------------------------------------------
@@ -484,6 +559,60 @@ def _license_hint(face: ParsedFontFace) -> str | None:
     return None
 
 
+def _sheet_base(sheet_url: str, page_url: str) -> str:
+    """The base a relative URL inside this stylesheet resolves against.
+
+    Per the CSS spec that is the stylesheet's own URL, not the page's. The
+    rendered tier reads same-origin sheets straight out of the CSSOM and stores
+    them as ``inline:N``, which have no URL of their own — those resolve against
+    the page, exactly like a ``<style>`` block.
+    """
+    if not sheet_url or sheet_url.startswith("inline:"):
+        return page_url
+    return sheet_url
+
+
+def iter_font_faces(stylesheets, page_url: str):
+    """Yield ``(sheet_url, ParsedFontFace)`` for every ``@font-face`` rule.
+
+    **This is the one and only ``@font-face`` discovery path.** Capture calls it
+    to decide which font files to download and :func:`parse_site` calls it to
+    record the faces, so the two cannot disagree about a URL. They used to:
+    capture found font files with its own regex resolved against the stylesheet
+    while parse resolved against the page, and the evidence builder then looked
+    the bytes up by exact URL string. Every mismatch produced a face with
+    ``asset_id: null`` — bytes fetched under one key, looked for under another —
+    which is why ingested brand fonts never painted and every render fell back
+    to Inter with ``LUMS0100``.
+    """
+    for sheet in stylesheets:
+        base = _sheet_base(sheet.url, page_url)
+        rules = tinycss2.parse_stylesheet(
+            sheet.text, skip_comments=True, skip_whitespace=True
+        )
+        for rule in rules:
+            if rule.type == "at-rule" and rule.lower_at_keyword == "font-face":
+                decls = tinycss2.parse_declaration_list(
+                    rule.content or [], skip_comments=True, skip_whitespace=True
+                )
+                face = _parse_font_face(decls, base)
+                if face is not None:
+                    yield sheet.url, face
+
+
+def font_face_sources(stylesheets, page_url: str) -> list[str]:
+    """Absolute URLs of the font files ``@font-face`` actually selects.
+
+    Capture downloads exactly these, so every face the evidence builder later
+    looks up has bytes waiting under the same key.
+    """
+    urls: list[str] = []
+    for _sheet_url, face in iter_font_faces(stylesheets, page_url):
+        if face.source_url and face.source_url not in urls:
+            urls.append(face.source_url)
+    return urls
+
+
 # --- main parse -----------------------------------------------------------------
 
 
@@ -511,7 +640,7 @@ def _parse_css(
 ) -> None:
     # Custom props → hinted color evidence (weight 3.0).
     for name, value in custom_props.items():
-        hex_value = parse_color_value(value, custom_props)
+        hex_value = parse_color_value(value, custom_props, diagnostics=parsed.diagnostics)
         if hex_value:
             parsed.colors.append(
                 ParsedColor(
@@ -524,20 +653,15 @@ def _parse_css(
                 )
             )
 
+    # @font-face — the shared walk capture also downloads from, so a face's
+    # source_url is always the key its bytes were fetched under.
+    for sheet_url, face in iter_font_faces(snapshot.stylesheets, base_url):
+        _accumulate_font(parsed, face, sheet_url)
+
     for sheet in snapshot.stylesheets:
         rules = tinycss2.parse_stylesheet(
             sheet.text, skip_comments=True, skip_whitespace=True
         )
-        # @font-face at top level (and inside media, though rare).
-        for rule in rules:
-            if rule.type == "at-rule" and rule.lower_at_keyword == "font-face":
-                decls = tinycss2.parse_declaration_list(
-                    rule.content or [], skip_comments=True, skip_whitespace=True
-                )
-                face = _parse_font_face(decls, base_url)
-                if face is not None:
-                    _accumulate_font(parsed, face, sheet.url)
-
         for selectors, decls, theme in _iter_qualified_rules(rules, "light"):
             _parse_rule(parsed, selectors, decls, theme, custom_props, sheet.url)
 
@@ -564,19 +688,27 @@ def _parse_rule(
             name = decl.name.lower()
             value = _decl_value_text(decl)
             if name in ("color", "fill"):
-                hex_value = parse_color_value(value, custom_props)
+                hex_value = parse_color_value(
+                    value, custom_props, diagnostics=parsed.diagnostics
+                )
                 if hex_value:
                     parsed.colors.append(
                         ParsedColor(hex_value, weight, theme, list(fg_hints), None, locator)
                     )
             elif name in ("background", "background-color"):
-                hex_value = parse_color_value(value.split()[0] if value else value, custom_props)
+                hex_value = parse_color_value(
+                    value.split()[0] if value else value,
+                    custom_props,
+                    diagnostics=parsed.diagnostics,
+                )
                 if hex_value:
                     parsed.colors.append(
                         ParsedColor(hex_value, weight, theme, list(bg_hints), None, locator)
                     )
             elif name in ("border-color", "border"):
-                hex_value = _extract_first_color(value, custom_props)
+                hex_value = _extract_first_color(
+                    value, custom_props, diagnostics=parsed.diagnostics
+                )
                 if hex_value:
                     parsed.colors.append(
                         ParsedColor(hex_value, weight, theme, ["border"] if weight >= 2.0 else [], None, locator)
@@ -607,9 +739,11 @@ def _parse_rule(
             )
 
 
-def _extract_first_color(value: str, custom_props: dict[str, str]) -> str | None:
+def _extract_first_color(
+    value: str, custom_props: dict[str, str], *, diagnostics: list[dict] | None = None
+) -> str | None:
     for token in re.split(r"\s+", value.strip()):
-        hex_value = parse_color_value(token, custom_props)
+        hex_value = parse_color_value(token, custom_props, diagnostics=diagnostics)
         if hex_value:
             return hex_value
     return None
@@ -661,13 +795,17 @@ def _parse_computed_samples(snapshot: SiteSnapshot, parsed: ParsedSite) -> None:
         bg = sample.get("bg")
         color = sample.get("color")
         if bg:
-            hex_value = parse_color_value(str(bg), parsed.custom_props)
+            hex_value = parse_color_value(
+                str(bg), parsed.custom_props, diagnostics=parsed.diagnostics
+            )
             if hex_value:
                 parsed.colors.append(
                     ParsedColor(hex_value, weight, "light", list(bg_hints), None, locator)
                 )
         if color:
-            hex_value = parse_color_value(str(color), parsed.custom_props)
+            hex_value = parse_color_value(
+                str(color), parsed.custom_props, diagnostics=parsed.diagnostics
+            )
             if hex_value:
                 parsed.colors.append(
                     ParsedColor(hex_value, weight, "light", list(fg_hints), None, locator)
