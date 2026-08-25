@@ -217,6 +217,43 @@ class Settings(BaseSettings):
     # comparable across a sweep. Probes/sweeps set LUMEN_AGENT_AUTO_DEFAULTS=1;
     # live editor runs leave it off so the agent can ask.
     lumen_agent_auto_defaults: bool = False
+
+    # --- Fast loop v1 (docs/deepagent-fast-loop-v1-spec.md §5) ---
+    # THE cutover flag (§7 "flag-gated cutover"). OFF → the scene turn is
+    # byte-identical to the pre-fast-loop loop: orchestrator-only render, the
+    # `lumen-visual-reviewer` subagent dispatched as always, discovered (not
+    # composed) author context, no harness-enforced budgets, no inner-iteration
+    # cap. ON → the §5 loop. Web turns (`create-website`) are untouched either
+    # way — this flag is scene-turn-only, by §3 non-goal.
+    lumen_agent_fast_loop: bool = False
+    # R3's kill-switch. Under the fast loop the `lumen-visual-reviewer` subagent
+    # is NOT dispatched on scene turns (the author's own self-audit critique.json
+    # replaces it); setting this to 1 re-enables the reviewer WITHOUT leaving the
+    # fast loop, which is how §7's "kill-switch check" run is performed and how a
+    # defect class the self-audit misses gets the old reviewer back. Meaningless
+    # (and ignored) when the fast loop is off — the reviewer is always dispatched
+    # there.
+    lumen_agent_scene_reviewer: bool = False
+    # §5.6 budgets, ratified as R4: 45 model calls / 10 minutes wall / 4 inner
+    # iterations per round. HARNESS-enforced (a callback and a tool refusal), not
+    # prompt-hoped. Only consulted under the fast loop. A non-positive value is a
+    # startup failure, not a silently disabled ceiling.
+    lumen_agent_fast_loop_max_llm_calls: int = 45
+    lumen_agent_fast_loop_wall_clock_s: float = 600.0
+    lumen_agent_fast_loop_inner_iterations: int = 4
+    # §5.1 pin list override: comma-separated knowledge paths, each relative to
+    # `apps/agent_runtime/knowledge_docs/`, inlined into the author's composed
+    # frame payload. Blank/unset → `lumen_agent.frame.DEFAULT_PINNED_KNOWLEDGE`.
+    # This is the seam a format skill's `pinned_knowledge:` manifest field feeds
+    # once pre-dispatch skill selection exists (see the spec's §5.1 as-built note).
+    lumen_agent_fast_loop_pinned_knowledge: str | None = None
+
+    # §5.4 deterministic autofix: how many planning passes the code loop may run
+    # per preflight. The loop also exits as soon as a pass makes no progress, so
+    # this is a ceiling, not a schedule. 0 disables autofix while leaving the
+    # rest of the fast loop on. Only read when `lumen_agent_fast_loop` is true.
+    lumen_agent_autofix_max_passes: int = 2
+
     # Read by langchain directly from os.environ; declared here for visibility.
     anthropic_api_key: str | None = None
 
@@ -237,6 +274,7 @@ class Settings(BaseSettings):
         "lumen_agent_model_author",
         "lumen_agent_model_reviewer",
         "lumen_agent_max_tokens",
+        "lumen_agent_fast_loop_pinned_knowledge",
         "anthropic_api_key",
         mode="before",
     )
@@ -260,6 +298,18 @@ class Settings(BaseSettings):
                 f"for no reasoning field); got {value!r}"
             )
         return effort
+
+    @field_validator("lumen_agent_autofix_max_passes")
+    @classmethod
+    def _validate_autofix_max_passes(cls, value: int) -> int:
+        """A negative cap is a typo, and an unbounded one defeats the point of a
+        bounded loop — both must fail at startup rather than mid-turn."""
+        if value < 0:
+            raise ValueError(
+                "LUMEN_AGENT_AUTOFIX_MAX_PASSES must be >= 0 (0 disables autofix); "
+                f"got {value!r}"
+            )
+        return value
 
     @field_validator("lumen_agent_max_tokens")
     @classmethod
@@ -317,6 +367,27 @@ class Settings(BaseSettings):
                 f"got {value!r}"
             )
         return style
+
+    @field_validator(
+        "lumen_agent_fast_loop_max_llm_calls",
+        "lumen_agent_fast_loop_wall_clock_s",
+        "lumen_agent_fast_loop_inner_iterations",
+    )
+    @classmethod
+    def _validate_fast_loop_budget(cls, value: float) -> float:
+        """§5.6 ceilings must be real ceilings.
+
+        A zero or negative budget would either stop the run before its first
+        model call or (read the other way) disable the ceiling entirely — both
+        are silent, and a budget that silently does nothing is worse than no
+        budget at all. Fail at startup instead.
+        """
+        if value <= 0:
+            raise ValueError(
+                "LUMEN_AGENT_FAST_LOOP_* budgets must be positive (calls, seconds, "
+                f"iterations); got {value!r}"
+            )
+        return value
 
     @field_validator("image_model_id", mode="before")
     @classmethod

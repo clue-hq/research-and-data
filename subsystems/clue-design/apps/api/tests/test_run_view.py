@@ -583,6 +583,143 @@ def test_materialize_refuses_an_out_dir_it_does_not_own(tmp_path):
     assert not (out / "manifest.json").exists()  # nothing was written either
 
 
+# --- the agent runtime's per-run summary (fast-loop v1 §7) --------------------------------------
+
+
+def _metrics_body(**overrides) -> dict:
+    body = {
+        "run_id": "run_inner",
+        "outcome": "accepted",
+        "status": "accepted",
+        "stop_reason": "review_passed",
+        "wall_time_ms": 2_598_000,
+        "llm_calls_total": 178,
+        "llm_calls_failed": 0,
+        "llm_calls_over_30s": 6,
+        "input_tokens_total": 13_500_000,
+        "output_tokens_total": 92_000,
+        "time_to_first_preview_ms": 924_000,
+        "rounds_total": 3,
+        "compile_iterations_total": 34,
+        "by_role": {
+            "author": {
+                "calls": 90,
+                "failed": 0,
+                "duration_ms_total": 1_200_000,
+                "duration_ms_max": 104_000,
+                "input_tokens": 9_000_000,
+                "output_tokens": 60_000,
+            }
+        },
+    }
+    body.update(overrides)
+    return body
+
+
+def _progress(event_type: str, data: dict) -> dict:
+    """One `design.run.event` row as the assembler hands it over."""
+    return {
+        "seq": 1,
+        "topic": "design.run.event",
+        "payload": {"event_type": event_type, "data": data},
+    }
+
+
+def test_extract_run_metrics_lifts_the_summary_out_of_the_event_stream():
+    from lumen_api.run_view import _extract_run_metrics
+
+    body = _metrics_body()
+    gaps: list[str] = []
+    events = [
+        _progress("run_started", {"actor": "coordinator"}),
+        _progress("run_metrics", {"actor": "coordinator", "metrics": body}),
+    ]
+    assert _extract_run_metrics(events, "run_outer", gaps) == body
+    assert gaps == []
+
+
+def test_extract_run_metrics_takes_the_newest_of_several():
+    """A resumed or taken-over run can emit more than one summary; the attempt that actually
+    finished is the last one on the stream."""
+    from lumen_api.run_view import _extract_run_metrics
+
+    first, second = _metrics_body(llm_calls_total=1), _metrics_body(llm_calls_total=2)
+    events = [
+        _progress("run_metrics", {"metrics": first}),
+        _progress("run_metrics", {"metrics": second}),
+    ]
+    assert _extract_run_metrics(events, "run_outer", [])["llm_calls_total"] == 2
+
+
+def test_extract_run_metrics_reports_its_absence_as_a_gap():
+    from lumen_api.run_view import _extract_run_metrics
+
+    gaps: list[str] = []
+    assert _extract_run_metrics([_progress("run_started", {})], "run_outer", gaps) is None
+    assert len(gaps) == 1 and "no run_metrics event" in gaps[0]
+
+    # A ref that names no run has nothing to join on — that emptiness is already
+    # explained by the events loader's own gap, so this must not add a second one.
+    other: list[str] = []
+    assert _extract_run_metrics([], None, other) is None
+    assert other == []
+
+
+def test_readme_renders_the_run_metrics_summary(tmp_path):
+    """The whole point of the counters: the README answers "where did 43 minutes go?" without
+    anyone opening a log."""
+    from lumen_api.run_view import RunView
+
+    cli = _cli()
+    body = _metrics_body()
+    view = RunView(
+        manifest={"ref": "run_outer", "gaps": [], "metrics": body},
+        brief=None,
+        scene=None,
+        metrics=body,
+    )
+    out = tmp_path / "out"
+    cli.materialize(view, out)
+    readme = (out / "README.md").read_text()
+
+    assert "## Run metrics" in readme
+    assert "Outcome: **accepted** (review_passed)" in readme
+    assert "| wall time | 43m18s | <= 10 min |" in readme
+    assert "| llm calls | 178 | <= 45 |" in readme
+    assert "| time to first preview | 15m24s | <= 4 min |" in readme
+    assert "| input tokens | 13,500,000 | <= 3M |" in readme
+    assert "| compile iterations | 34 |" in readme
+    # The per-role split names where the calls actually went.
+    assert "| author | 90 | 0 | 20m00s | 1m44s | 9,000,000 | 60,000 |" in readme
+
+
+def test_readme_is_honest_when_a_run_emitted_no_metrics(tmp_path):
+    from lumen_api.run_view import RunView
+
+    cli = _cli()
+    view = RunView(manifest={"ref": "run_outer", "gaps": []}, brief=None, scene=None)
+    out = tmp_path / "out"
+    cli.materialize(view, out)
+    readme = (out / "README.md").read_text()
+    assert "## Run metrics" in readme
+    assert "None on this run's stream" in readme
+
+
+def test_readme_says_never_rendered_when_no_preview_landed(tmp_path):
+    from lumen_api.run_view import RunView
+
+    cli = _cli()
+    body = _metrics_body(time_to_first_preview_ms=None, outcome="failed", stop_reason="quota")
+    view = RunView(
+        manifest={"ref": "run_outer", "gaps": []}, brief=None, scene=None, metrics=body
+    )
+    out = tmp_path / "out"
+    cli.materialize(view, out)
+    readme = (out / "README.md").read_text()
+    assert "| time to first preview | never rendered | <= 4 min |" in readme
+    assert "Outcome: **failed** (quota)" in readme
+
+
 def test_the_run_view_never_writes_to_the_database(tmp_path):
     """The founder's "read-only over every substrate, never a write path" ratification, as a gate.
 

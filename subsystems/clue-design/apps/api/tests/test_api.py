@@ -2160,6 +2160,72 @@ def test_document_export_route_uses_saved_profile_and_persists_preflight(
     assert diagnostics["kind"] == "export"
 
 
+def advisory_only_scene(document_id: str) -> dict:
+    """A scene whose ONLY error-severity diagnostic is the LUMV0820 policy
+    lint: an image-like slot carrying no image policy.
+
+    This is the exact shape that bricked the 2026-08-24 baseline run — a scene
+    that rendered previews perfectly for 43 minutes and then had every export
+    refused on a lint.
+    """
+    scene = preflightable_scene()
+    scene["meta"]["id"] = document_id
+    template = scene["slots"]["slot_contact_name"]
+    scene["slots"]["slot_account_logo"] = {
+        **json.loads(json.dumps(template)),
+        "id": "slot_account_logo",
+        "key": "account.logo",
+        "label": "Account logo",
+        "content_type": "logo",
+        # The defect under test. Left unbound so the scene trips LUMV0820 and
+        # nothing else — an image-like slot bound to a TEXT node would also
+        # raise LUMA0300, which is a genuine blocker and would muddy the case.
+        "image_policy": None,
+        "bound_nodes": [],
+        "required": False,
+        "placeholder": None,
+        "binding_hints": [],
+    }
+    return scene
+
+
+def test_document_export_route_exports_with_warnings_on_advisory_diagnostics(
+    client: TestClient,
+) -> None:
+    """P0.3: an advisory-only scene EXPORTS, and the advisories ride the
+    response for the editor's export menu (ruling R5)."""
+    document = create_document(client, advisory_only_scene("doc_export_advisory"))
+
+    response = client.post(
+        f"/documents/{document['id']}/export",
+        json={"format": "svg", "page_ids": ["page_a4"]},
+    )
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+
+    # The scene really does carry an error-severity diagnostic...
+    assert payload["preflight"]["has_errors"] is True
+    assert any(
+        diagnostic["code"] == "LUMV0820"
+        for diagnostic in payload["diagnostics"]["current"]
+    )
+
+    # ...and the export succeeded anyway, with real bytes.
+    assert payload["status"] == "ok"
+    artifacts = payload["export"]["artifacts"]
+    assert artifacts, "an advisory-only scene must still produce artifacts"
+    assert artifacts[0]["format"] == "svg"
+
+    # The advisory is surfaced, not swallowed.
+    warnings = payload["warnings"]
+    assert [warning["code"] for warning in warnings] == ["LUMV0820"]
+    assert warnings[0]["severity"] == "advisory"
+    assert warnings[0]["engine_severity"] == "error"
+    assert "image policy" in warnings[0]["message"]
+    assert payload["preflight"]["advisory_warnings"] == 1
+
+
 def test_document_export_route_fails_closed_before_export_on_preflight_errors(
     client: TestClient,
 ) -> None:
@@ -2187,6 +2253,11 @@ def test_document_export_route_fails_closed_before_export_on_preflight_errors(
         diagnostic["severity"] == "error"
         for diagnostic in payload["diagnostics"]["current"]
     )
+    # P0.3: the severity split must not have turned a real blocker advisory.
+    # An unresolved token paint is render-impossible, so it still refuses, and
+    # nothing about it is reported as a mere warning.
+    assert payload["warnings"] == []
+    assert payload["preflight"]["advisory_warnings"] == 0
 
     loaded = client.get(f"/documents/{document['id']}").json()
     assert loaded["current_version"] == document["current_version"]

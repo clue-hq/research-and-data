@@ -46,7 +46,7 @@ def _raster_record(
     *,
     thumb_ref: str | None,
     thumb_size: tuple[int | None, int | None] = (256, 160),
-    primary_ref: str = "sha256/aa/aaaa",
+    primary_ref: str = "sha256/aa/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     source_kind: str = "brand_guide",
     label: str = "Hero photograph",
 ) -> dict:
@@ -85,7 +85,7 @@ def _svg_record(asset_id: str) -> dict:
         "media": {
             "mime_type": "image/svg+xml",
             "filename": f"{asset_id}.svg",
-            "location": {"provider": "opaque_asset_store", "opaque_ref": "sha256/bb/bbbb"},
+            "location": {"provider": "opaque_asset_store", "opaque_ref": "sha256/bb/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
         },
         "vector": {"width": 240.0, "height": 48.0},
     }
@@ -97,7 +97,7 @@ def _legacy_svg_record(asset_id: str) -> dict:
     it as a raster, so it must not be served as one."""
     record = _svg_record(asset_id)
     record["media"]["thumbnail"] = {
-        "location": {"provider": "opaque_asset_store", "opaque_ref": "sha256/bb/bbbb"},
+        "location": {"provider": "opaque_asset_store", "opaque_ref": "sha256/bb/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
         "mime_type": "image/svg+xml",
         "pixel_width": None,
         "pixel_height": None,
@@ -344,7 +344,7 @@ def test_a_legacy_self_referential_svg_thumbnail_says_so_instead_of_failing_to_v
     store = tmp_path / "store"
     store.mkdir(parents=True, exist_ok=True)
     (store / "sha256/bb").mkdir(parents=True, exist_ok=True)
-    (store / "sha256/bb/bbbb").write_bytes(b"<svg xmlns='http://www.w3.org/2000/svg'/>")
+    (store / "sha256/bb/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb").write_bytes(b"<svg xmlns='http://www.w3.org/2000/svg'/>")
     tools = _tools(
         tmp_path,
         brand_kit_assets={"asset_logo_legacy": {"record": _legacy_svg_record("asset_logo_legacy")}},
@@ -363,7 +363,7 @@ def test_a_non_vector_unpreviewable_mime_is_not_called_a_vector(tmp_path: Path):
     """The no-preview string states only what is established: this media has no
     raster the vision APIs read. Blaming "a vector with no thumbnail" for a TIFF
     would send the reader hunting the wrong cause."""
-    record = _raster_record("asset_kit_tiff", thumb_ref=None, primary_ref="sha256/33/3333")
+    record = _raster_record("asset_kit_tiff", thumb_ref=None, primary_ref="sha256/33/3333333333333333333333333333333333333333333333333333333333333333")
     record["media"]["mime_type"] = "image/tiff"
     tools = _tools(tmp_path, brand_kit_assets={"asset_kit_tiff": {"record": record}})
 
@@ -377,7 +377,7 @@ def test_a_non_vector_unpreviewable_mime_is_not_called_a_vector(tmp_path: Path):
 def test_missing_preview_bytes_are_reported_honestly(tmp_path: Path):
     """The record names a thumbnail ref that is not on disk — never an exception,
     never a silent empty block."""
-    record = _raster_record("asset_kit_gone", thumb_ref="sha256/ff/ffff")
+    record = _raster_record("asset_kit_gone", thumb_ref="sha256/ff/ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff")
     tools = _tools(
         tmp_path, brand_kit_assets={"asset_kit_gone": {"record": record}}
     )
@@ -473,8 +473,8 @@ def test_scene_lane_delegates_to_the_shared_resolver(tmp_path: Path, monkeypatch
     tools = LumenDesignTools(config, "Make a poster")
 
     for record in (
-        _raster_record("asset_kit_hero", thumb_ref="sha256/cc/cccc"),
-        _raster_record("asset_kit_raw", thumb_ref=None, primary_ref="sha256/dd/dddd"),
+        _raster_record("asset_kit_hero", thumb_ref="sha256/cc/cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"),
+        _raster_record("asset_kit_raw", thumb_ref=None, primary_ref="sha256/dd/dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"),
         _svg_record("asset_logo_svg"),
     ):
         assert tools._asset_preview_path(record) == asset_preview_path(
@@ -485,15 +485,15 @@ def test_scene_lane_delegates_to_the_shared_resolver(tmp_path: Path, monkeypatch
 def test_shared_resolver_prefers_thumbnail_then_raster_then_nothing(tmp_path: Path):
     store = tmp_path / "store"
 
-    thumbed = _raster_record("a", thumb_ref="sha256/11/1111")
+    thumbed = _raster_record("a", thumb_ref="sha256/11/1111111111111111111111111111111111111111111111111111111111111111")
     assert asset_preview_path(thumbed, store) == (
-        str(store / "sha256/11/1111"),
+        str(store / "sha256/11/1111111111111111111111111111111111111111111111111111111111111111"),
         256,
         160,
     )
 
-    raw = _raster_record("b", thumb_ref=None, primary_ref="sha256/22/2222")
-    assert asset_preview_path(raw, store) == (str(store / "sha256/22/2222"), 1600, 1000)
+    raw = _raster_record("b", thumb_ref=None, primary_ref="sha256/22/2222222222222222222222222222222222222222222222222222222222222222")
+    assert asset_preview_path(raw, store) == (str(store / "sha256/22/2222222222222222222222222222222222222222222222222222222222222222"), 1600, 1000)
 
     assert asset_preview_path(_svg_record("c"), store) is None
 
@@ -514,19 +514,19 @@ def test_a_thumbnail_with_no_declared_mime_is_still_trusted_as_a_raster(tmp_path
     one keeps today's behavior. Every real writer stamps `image/png`, and
     records in flight must not lose their preview to a missing field."""
     store = tmp_path / "store"
-    record = _raster_record("d", thumb_ref="sha256/44/4444")
+    record = _raster_record("d", thumb_ref="sha256/44/4444444444444444444444444444444444444444444444444444444444444444")
     assert "mime_type" not in record["media"]["thumbnail"]
 
-    assert asset_preview_path(record, store) == (str(store / "sha256/44/4444"), 256, 160)
+    assert asset_preview_path(record, store) == (str(store / "sha256/44/4444444444444444444444444444444444444444444444444444444444444444"), 256, 160)
 
 
 def test_a_rasterized_vector_resolves_to_its_png_thumbnail(tmp_path: Path):
     """W1.2's ingest output: the SVG record now carries a real PNG beside it,
     and that is what the lanes look at."""
     store = tmp_path / "store"
-    record = _rasterized_svg_record("logo", "sha256/55/5555")
+    record = _rasterized_svg_record("logo", "sha256/55/5555555555555555555555555555555555555555555555555555555555555555")
 
-    assert asset_preview_path(record, store) == (str(store / "sha256/55/5555"), 2560, 512)
+    assert asset_preview_path(record, store) == (str(store / "sha256/55/5555555555555555555555555555555555555555555555555555555555555555"), 2560, 512)
 
 
 # --- the prompts advertise it ------------------------------------------------

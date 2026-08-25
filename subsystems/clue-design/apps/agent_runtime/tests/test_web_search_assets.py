@@ -57,7 +57,7 @@ def _record(
             "mime_type": "image/png",
             "filename": filename or f"{asset_id}.png",
             "digest": {"algorithm": "sha256", "value": asset_id[-16:].rjust(64, "0")},
-            "location": {"provider": "opaque_asset_store", "opaque_ref": "sha256/aa/aaaa"},
+            "location": {"provider": "opaque_asset_store", "opaque_ref": "sha256/aa/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
         },
         "raster": {"pixel_width": width, "pixel_height": height},
         "license": {"name": "client_owned"},
@@ -569,11 +569,15 @@ def test_view_asset_text_annotates_a_non_ready_status(tmp_path: Path):
     from PIL import Image
 
     store = tmp_path / "store"
-    ref = "sha256/cc/cccc"
+    ref = "sha256/cc/cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
     (store / "sha256/cc").mkdir(parents=True, exist_ok=True)
     Image.new("RGB", (64, 40), (1, 2, 3)).save(store / ref, format="PNG")
     record = _record("asset_pending", label="Ribbon", status="pending")
     record["media"]["location"]["opaque_ref"] = ref
+    # The resolver treats `media.digest.value` as the record's byte identity
+    # (primary over the location ref), so the digest must name the bytes this
+    # test actually wrote.
+    record["media"]["digest"]["value"] = "c" * 64
     tools = _tools(tmp_path, asset_library={"asset_pending": {"record": record}})
 
     text = "\n".join(
@@ -589,7 +593,7 @@ def test_view_asset_text_omits_a_ready_status(tmp_path: Path):
     from PIL import Image
 
     store = tmp_path / "store"
-    ref = "sha256/dd/dddd"
+    ref = "sha256/dd/dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
     (store / "sha256/dd").mkdir(parents=True, exist_ok=True)
     Image.new("RGB", (64, 40), (1, 2, 3)).save(store / ref, format="PNG")
     record = _record("asset_ready", label="Ribbon")

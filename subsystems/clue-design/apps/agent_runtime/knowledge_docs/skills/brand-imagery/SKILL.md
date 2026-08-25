@@ -50,6 +50,32 @@ kit already supplies.
   asset_id=<from the card>, node_id=<frame>)` for explicit fit/slot control
   (`knowledge/design-systems/brand-application`). Never invent an `asset_id`; never
   draw a logo from shapes.
+- **Set the focal point from the pixels, not from a guess.** `inspect` gives you the
+  geometry of the frame. It never tells you what is inside the image; only the
+  render does. So look first, then crop.
+
+  Under a `cover` or `crop` fit the engine crops the image *around the focal
+  point*, and the default focal point is dead center. A subject that does not sit
+  in the center gets cut. A portrait's face usually sits well above center, so a
+  centered crop takes the top of the head off.
+
+  The procedure is three steps:
+  1. `view("asset:<asset_id>")` and note where the subject actually sits in the
+     frame.
+  2. Convert that to `focal_x` / `focal_y`. Both run 0..1, measured from the
+     TOP-LEFT, and both are always given together. A face high in the frame is
+     roughly `focal_y=0.3`; dead center is `0.5`.
+  3. Set it where the image lives. There are two places, and they are not
+     interchangeable:
+     - **On a slot**, in the DSL — this is the slot's standing policy:
+       `#slot:hero.shot image_policy(fit=cover, focal_x=0.5, focal_y=0.35)`
+       (`knowledge/lumen-dsl/grammar`).
+     - **On a node**, with the tool — this is how THIS node draws THIS asset:
+       `asset(action="place", node_id=<frame>, asset_id=<id>, fit="cover",
+       focal_x=0.5, focal_y=0.35)`.
+
+  Fit and focal point are not properties you can type on an `image` line. The DSL
+  author composes the frame; the placement is set on the node.
 
 ## 3. Generate — only what the kit can't supply, art-directed to the brand
 
@@ -91,6 +117,7 @@ honest, reviewable outcome; a faked image is a silent quality failure.
 
 - [ ] Imagery decision stated in the direction notes (kit / generate / deliberately none) with a reason.
 - [ ] Kit `images` inventory read; candidates `view()`-ed before choosing a kit asset.
+- [ ] Focal point set from what the `view()` showed, not left at the default center.
 - [ ] Generated images: brand card read, 2–3 kit images viewed, 5-component prompt, tone in `brand_notes`, no in-image text.
 - [ ] Placement follows the scrim rule; one hero image per surface; nothing stretched.
 - [ ] Warranted-but-unachievable imagery → `record_gap`, never a faked stand-in.

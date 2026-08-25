@@ -64,7 +64,7 @@ in new designs. `font_size`/`font_weight`/`tracking` are compatibility aliases f
 
 ## Rich-text spans — style a sub-range of ONE text node
 
-A **span** styles part of a single text node differently — the moda **two-color
+A **span** styles part of a single text node differently — the **two-color
 headline** (one accented phrase), a bolded keyword, one struck word. It is a
 scalpel, not a rich-text editor.
 

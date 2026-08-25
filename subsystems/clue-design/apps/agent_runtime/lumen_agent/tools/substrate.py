@@ -13,6 +13,7 @@ from typing import Any, Callable, Dict, List, Optional
 from py_lumen_obs import bind_run_id, get_logger, log_span
 
 from lumen_api.core import CoreClient, CoreError
+from lumen_api.export_policy import partition_export_diagnostics
 
 try:  # the real Python text-to-image seam, shared with the /assets/generate route
     from lumen_api import image_provider
@@ -24,6 +25,7 @@ try:  # generation cache (request -> asset), so the loop doesn't re-pay per iter
 except Exception:  # pragma: no cover
     image_cache = None  # type: ignore[assignment]
 
+from ..autofix import AutofixResult, run_autofix
 from ..config import AgentRuntimeConfig
 from ..retokenize import (
     build_logo_placement_operations,
@@ -33,7 +35,9 @@ from ..retokenize import (
 from ..brand_card import build_brand_card
 from ..knowledge import BRAND_APPLICATION_PATH, DIRECTIVES_PATH, read_task_knowledge
 from ..paths import normalize_agent_key
-from .asset_preview import asset_preview_path
+from .asset_preview import asset_preview_path, blob_path_for_digest
+from ..run_metrics import RunMetrics
+from ..text_clearance import collision_advisory
 from pydantic import ValidationError
 
 from ..models.schemas import (
@@ -68,6 +72,14 @@ JsonObject = Dict[str, Any]
 # Kept dependency-free so agent_runtime never imports the API/DB layer.
 EventSink = Callable[[str, JsonObject], None]
 
+# P0.4 checkpoint-commit hook: hand the run's operation ledger, in order, to a
+# caller that can persist it mid-run (the API's leg-turn committer). Called with
+# the FULL ordered operation list every time — the caller knows which prefix it
+# already made durable and commits only the delta, so a dropped or refused
+# checkpoint self-heals on the next one. Kept dependency-free for the same
+# reason EventSink is: agent_runtime never imports the API/DB layer.
+SceneCheckpoint = Callable[[List[JsonObject], JsonObject], None]
+
 
 # Hard caps for the curated, windowed per-iteration context (P1). They keep the
 # director/author/reviewer prompt bounded no matter how many repair iterations
@@ -99,12 +111,9 @@ PLACED_PREVIEWS_MAX = 4
 # represent an asset.
 
 
-def blob_path_for_digest(store_root: Any, digest: str) -> Path:
-    """The content-addressed store path for a sha256 digest:
-    `<store_root>/sha256/<first2>/<digest>`. The ONE place this layout is spelled
-    out for digest→path resolution (view's reference preview + the runtime's
-    reference-conditioning both call it)."""
-    return Path(store_root) / "sha256" / digest[:2] / digest
+# `blob_path_for_digest` — the one spelling of the digest→path layout — now
+# lives in `.asset_preview` beside the shared resolver (both lanes need it);
+# imported above and re-exported from this module for its existing callers.
 
 # Diagnostic codes that indicate content does not fit its frame (text overflow)
 # or a layout cluster is mis-sized — surfaced as `overflow` in the preview
@@ -249,6 +258,7 @@ class LumenDesignTools:
         prompt: str,
         initial_scene: Optional[JsonObject] = None,
         event_sink: Optional["EventSink"] = None,
+        scene_checkpoint: Optional["SceneCheckpoint"] = None,
     ) -> None:
         self.config = config
         # Obs logger for tool spans + the core-helper proxy. Context (run_id) is
@@ -264,6 +274,13 @@ class LumenDesignTools:
         # this sink so a caller (the API's async turn) can persist it to a
         # durable store and stream it. None keeps the run purely file-traced.
         self.event_sink = event_sink
+        # P0.4: optional checkpoint-commit hook (see SceneCheckpoint). None keeps
+        # the run save-on-finalize-only, exactly as before.
+        self.scene_checkpoint = scene_checkpoint
+        # How many ledger entries have already been handed to `scene_checkpoint`.
+        # The sink is only called when the ledger has grown past this, so a round
+        # that changed nothing never mints a document version.
+        self._checkpointed_operations = 0
         # Batched read-only tool calls (deepagent-latency L2) now run on
         # langgraph's ToolNode thread pool, so `record` can be invoked from
         # concurrent threads. This lock serializes the whole record body (jsonl
@@ -272,6 +289,19 @@ class LumenDesignTools:
         self._record_lock = threading.Lock()
         self.run_id = new_run_id()
         self.iteration = 0
+        # Fast-loop v1 §7: per-run summary counters, started at the earliest
+        # moment of the run so `wall_time_ms` measures the whole turn. The three
+        # role tracers fold their calls in (harness._instrument), this class
+        # marks compiles and the first validated preview, and the harness runner
+        # emits ONE `run_metrics` event + `metrics.json` at any terminal outcome.
+        # Pure in-process integer arithmetic — no extra LLM call, tool call, or
+        # hot-loop I/O. See lumen_agent/run_metrics.py.
+        self.metrics = RunMetrics(self.run_id)
+        # Fast loop §5.2: the per-round inner-iteration counter and the round it
+        # belongs to. Only read when `config.fast_loop` is on; born here so the
+        # attribute always exists (a config swapped mid-run must not AttributeError).
+        self._fast_loop_round = 0
+        self._fast_loop_round_compiles = 0
         self.trace_dir = config.trace_dir / self.run_id
         self.iterations_dir = self.trace_dir / "iterations"
         self.trace_dir.mkdir(parents=True, exist_ok=True)
@@ -324,6 +354,10 @@ class LumenDesignTools:
         self.dsl_session: Optional[JsonObject] = None
         self.latest_export_summary: Optional[JsonObject] = None
         self.latest_preview_bundle: Optional[JsonObject] = None
+        # P0.4: the last `preflight_design` verdict. None = preflight has not run
+        # yet. Recorded on every checkpoint so a reader can tell a clean round's
+        # commit from one taken with diagnostics still standing.
+        self.latest_preflight_has_errors: Optional[bool] = None
         # Staleness contract (sweep A3): the scene-mutation count captured the
         # last time a valid preview was rendered. `view("preview")` compares it
         # against the current count so it never silently serves a render that
@@ -342,6 +376,11 @@ class LumenDesignTools:
         # baseline, populated on first access by `baseline_preflight_diagnostics`.
         # None means "not computed yet" (distinct from `[]`, "computed, clean").
         self._baseline_diagnostics: Optional[list[JsonObject]] = None
+        # P0.3 finalize guard: the raw diagnostics of the most recent
+        # `preflight_design`, kept so `finalize_run` can refuse to record an
+        # accepted run that still carries a BLOCKING export error. None means
+        # preflight has not run this turn (distinct from `[]`, "ran, clean").
+        self._latest_preflight_diagnostics: Optional[list[JsonObject]] = None
         self._write_json(
             self.trace_dir / "input.json",
             {
@@ -431,10 +470,98 @@ class LumenDesignTools:
         )
         return json.dumps(payload, indent=2)
 
+    # --- fast loop §5.2: the per-round inner-iteration cap -------------------
+    def _fast_loop_round_number(self) -> int:
+        """The newest `rounds/round_N` directory number, or 0.
+
+        Mirrors `tools.render.tools_current_round` deliberately rather than
+        importing it: `render` imports THIS module, so the import would be a
+        cycle. `workspace.workspace_root(tools)` is the canonical spelling of
+        the path below (`trace_dir / "workspace"`) and is likewise unimportable
+        here for the same reason.
+        """
+        rounds = self.trace_dir / "workspace" / "rounds"
+        highest = 0
+        try:
+            for child in rounds.iterdir():
+                if child.is_dir() and child.name.startswith("round_"):
+                    suffix = child.name[len("round_") :]
+                    if suffix.isdigit():
+                        highest = max(highest, int(suffix))
+        except OSError:
+            return 0
+        return highest
+
+    def _inner_iteration_refusal(self) -> Optional[str]:
+        """Refuse a compile past the round's inner-iteration cap, or None.
+
+        WHY A CAP AT ALL. §5.2's loop is compile → preflight → render → look →
+        self-audit → ONE batched fix, and its whole economy assumes the fix is
+        batched. The baseline's iterations 21-34 were fourteen compiles carrying
+        one property change each — the drip §5.5 forbids in words. This is the
+        same rule in Python: when the drip happens anyway, the round ends instead
+        of grinding.
+
+        WHY A REFUSAL AND NOT AN EXCEPTION. House style, and it is also the more
+        useful behaviour: a refusal string is something the author reads and acts
+        on (render, self-audit honestly, report what is unfinished), where an
+        exception would take the turn down and lose the perfectly good scene the
+        author already compiled. The cap does not roll back anything.
+
+        The count is per ROUND — a new `rounds/round_N` directory resets it — so
+        the orchestrator's one permitted repair round gets a full budget of its
+        own.
+        """
+        cap = int(getattr(self.config, "fast_loop_inner_iterations", 0) or 0)
+        if cap <= 0:
+            return None
+        round_number = self._fast_loop_round_number()
+        if round_number != self._fast_loop_round:
+            self._fast_loop_round = round_number
+            self._fast_loop_round_compiles = 0
+        if self._fast_loop_round_compiles < cap:
+            self._fast_loop_round_compiles += 1
+            return None
+        self.metrics.mark_inner_iteration_refused()
+        self.record(
+            "dsl-author",
+            "inner_iteration_cap_reached",
+            output_summary=f"round {round_number}: {cap} compiles used",
+            payload={"round": round_number, "cap": cap},
+        )
+        return self._tool_error(
+            "compile.inner_iteration_cap",
+            f"REFUSED: this round has used its {cap} inner iterations (fast loop "
+            "§5.2). Nothing was rolled back — the scene from your last successful "
+            "compile stands. Stop compiling now: render_preview(), view(\"preview\"), "
+            "write an HONEST critique.json naming every issue still standing "
+            "(accepted:false if any blocker remains), save dsl.lumen / "
+            "diagnostics.json / author_report.md, and return. The orchestrator "
+            "decides whether to open a repair round — that round gets its own "
+            "fresh budget of iterations. If you were making one property edit per "
+            "compile, that is the pattern this cap exists to stop: batch every "
+            "planned fix into ONE whole-scene reconcile next time.",
+            round=round_number,
+            inner_iterations_used=self._fast_loop_round_compiles,
+            inner_iteration_cap=cap,
+        )
+
     @_tool_span
     def compile_dsl_block(self, source: str) -> str:
         """Compile a Lumen DSL block and update the scene only from core output."""
+        # Fast loop §5.2. Checked BEFORE the iteration bump so a refused compile
+        # costs nothing: no iteration number, no metrics compile, no scene touch.
+        # `fast_loop_inner_iterations` is only non-zero under the flag, so this is
+        # a single attribute read on the flag-off path.
+        if getattr(self.config, "fast_loop", False):
+            refusal = self._inner_iteration_refusal()
+            if refusal is not None:
+                return refusal
         self.iteration += 1
+        # §7 metrics: every compile counts, including the ones that fail below —
+        # the baseline's micro-edit drip (14 compiles for one property each) is
+        # exactly what this counter has to make visible.
+        self.metrics.mark_compile_iteration()
         iteration_dir = self._iteration_dir()
         (iteration_dir / "dsl.lumen").write_text(source, encoding="utf-8")
 
@@ -2272,6 +2399,7 @@ class LumenDesignTools:
                 diagnostics=diagnostics_from(error.diagnostics),
             )
             payload = {"preflight": _dump(summary)}
+            self.latest_preflight_has_errors = True
             self._write_json(iteration_dir / "preflight.json", payload)
             self.record(
                 "coordinator",
@@ -2283,10 +2411,39 @@ class LumenDesignTools:
             return json.dumps(payload, indent=2)
 
         self._replace_scene_from_core_response(response, "preflight_design")
-        diagnostics = diagnostics_from(response.get("diagnostics", []))
-        if governance_diagnostics:
-            diagnostics = diagnostics + governance_diagnostics
+        raw_diagnostics = list(response.get("diagnostics", []) or [])
         preflight = response.get("preflight", {})
+
+        # §5.4: the deterministic autofix loop runs HERE — after the engine has
+        # spoken and before the author is told anything. Everything below this
+        # block therefore reports the POST-autofix world, which is the whole
+        # point: the author never spends a model call on a repair whose value
+        # the engine already implied.
+        autofix_result = self._run_autofix(raw_diagnostics, brand_kit, iteration_dir)
+        if autofix_result is not None and autofix_result.changed:
+            raw_diagnostics = list(autofix_result.diagnostics)
+            # `has_errors` must never be inferred from a MISSING summary — an
+            # empty block would read as "clean" and could let a blocking export
+            # error through the P0.3 finalize guard. Fall back to the same rule
+            # the engine uses (preflight.rs:219, `any severity == error`).
+            preflight = autofix_result.raw_preflight or {
+                "has_errors": any(d.get("severity") == "error" for d in raw_diagnostics)
+            }
+
+        diagnostics = diagnostics_from(raw_diagnostics)
+        if governance_diagnostics:
+            # Deliberately NOT recomputed after autofix: governance judges the
+            # AUTHORED (pre-resolution) scene, the only state where bindings are
+            # observable, while autofix operates on the resolved one. Re-running
+            # it here would report LUMB0805/0804/0806 on a fully-literal scene no
+            # matter how well the draft was authored — the exact artifact the K4
+            # comment above exists to avoid. It is advisory either way.
+            diagnostics = diagnostics + governance_diagnostics
+        # P0.3: keep the RAW engine diagnostics (code + severity as the engine
+        # spelled them) for the finalize guard — `diagnostics_from` normalizes
+        # into the runtime's own wider enum, and the export classification is
+        # defined against the engine's vocabulary.
+        self._latest_preflight_diagnostics = raw_diagnostics
         brand_context = self._brand_context_from_scene_ref(brand_context)
         self.effective_brand_context = brand_context
         summary = PreflightSummary(
@@ -2303,18 +2460,133 @@ class LumenDesignTools:
             "raw_preflight": preflight,
             "effective_brand": brand_context,
         }
+        output_summary = f"has_errors={summary.has_errors}; {len(diagnostics)} diagnostics"
+        if autofix_result is not None and autofix_result.attempted:
+            # The autofix block rides the SAME payload the author reads, next to
+            # the diagnostics it changed — spec §5.4's "recorded in the round's
+            # diagnostics so the agent (and the trace) knows what moved". The
+            # rolled-back entries matter as much as the applied ones: they tell
+            # the author the mechanical repair was already tried and refused.
+            payload["autofix"] = autofix_result.as_payload()
+            output_summary = f"{output_summary}; {autofix_result.summary_line()}"
+        # Text-collision advisory (fast-loop tuning 2026-08-24). Flag-gated, so a
+        # flag-off preflight payload stays byte-identical. It rides preflight
+        # rather than render because the author reads preflight at work-loop
+        # step 3, one step BEFORE its first render — which is the earliest moment
+        # the finding can change what it does. Advisory only: it never sets
+        # has_errors and never edits the scene. See lumen_agent/text_clearance.py
+        # for why the engine itself cannot report this class.
+        if self.config.fast_loop:
+            try:
+                advisory = collision_advisory(self.scene)
+            except Exception:  # noqa: BLE001 - an advisory never fails a preflight
+                _SUBSTRATE_LOG.warning("text_collision_advisory_failed")
+                advisory = None
+            if advisory:
+                payload["text_collisions"] = advisory
+                output_summary = f"{output_summary}; text collisions advised"
+        self.latest_preflight_has_errors = bool(summary.has_errors)
         self._write_json(iteration_dir / "preflight.json", payload)
         self.record(
             "coordinator",
             "preflight_completed",
-            output_summary=(
-                f"has_errors={summary.has_errors}; "
-                f"{len(diagnostics)} diagnostics"
-            ),
+            output_summary=output_summary,
             diagnostics=[diag.model_dump(mode="json") for diag in diagnostics],
             payload=payload,
         )
         return json.dumps(payload, indent=2)
+
+    def _run_autofix(
+        self,
+        raw_diagnostics: list[JsonObject],
+        brand_kit: Optional[JsonObject],
+        iteration_dir: Path,
+    ) -> Optional[AutofixResult]:
+        """Drive the §5.4 code loop against the engine. Never raises.
+
+        Flag-gated to the point of invisibility: with `LUMEN_AGENT_FAST_LOOP`
+        down, `config.autofix_passes` is 0 and this returns `None` before making
+        a single call or touching a single field, so `preflight_design` is
+        byte-identical to the pre-fast-loop version.
+
+        The two engine callables are injected rather than reached for, so
+        `autofix.run_autofix` stays a pure, helper-free unit. `apply_operations`
+        deliberately does NOT go through `self.apply_operations` (the agent tool)
+        — a speculative patch must not mutate the working scene, log to the
+        ledger, or emit a trace event before the engine has verified it. Only an
+        ACCEPTED patch is committed, below.
+        """
+        if self.config.autofix_passes <= 0:
+            return None
+
+        preflight_blocks: list[tuple[JsonObject, JsonObject]] = []
+
+        def _apply(scene: JsonObject, operations: list[JsonObject]) -> JsonObject:
+            applied = self.core.apply_operations(scene, operations)
+            return applied.get("scene")
+
+        def _preflight(scene: JsonObject) -> tuple[JsonObject, list[JsonObject]]:
+            checked = self.core.preflight_scene(
+                scene, brand_kit, brand_fonts=self.config.brand_fonts
+            )
+            verified_scene = checked.get("scene")
+            preflight_blocks.append((verified_scene, checked.get("preflight") or {}))
+            return verified_scene, list(checked.get("diagnostics", []) or [])
+
+        try:
+            result = run_autofix(
+                self.scene,
+                raw_diagnostics,
+                apply_operations=_apply,
+                preflight=_preflight,
+                max_passes=self.config.autofix_passes,
+                on_attempt=lambda record: self.metrics.record_autofix(
+                    record.klass, accepted=record.accepted
+                ),
+            )
+        except Exception as error:  # noqa: BLE001 - autofix must never fail a turn
+            self.record(
+                "coordinator",
+                "autofix_failed",
+                output_summary=f"{type(error).__name__}: {error}",
+            )
+            return None
+
+        if not result.attempted:
+            return None
+
+        if result.changed:
+            # Commit: the working scene becomes the verified one, and the
+            # accepted operations join the ledger. The ledger is not optional —
+            # the editor's Accept replays THAT list onto the document and never
+            # sees this scene, so an unlogged autofix would silently vanish at
+            # accept (the K2 defect `_log_scene_operations` exists to prevent).
+            self.scene = result.scene
+            self.scene_update_sources.append("autofix")
+            self._log_scene_operations(
+                "autofix",
+                [
+                    dict(operation)
+                    for record in result.applied
+                    for operation in record.operations_json
+                ],
+            )
+            # Identity match, not "the last one": a rejected attempt after the
+            # accepted one would otherwise hand back the losing scene's summary.
+            result.raw_preflight = next(
+                (block for scene, block in preflight_blocks if scene is result.scene),
+                {},
+            )
+
+        payload = result.as_payload()
+        self._write_json(iteration_dir / "autofix.json", payload)
+        self.record(
+            "coordinator",
+            "autofix_completed",
+            output_summary=result.summary_line(),
+            payload=payload,
+        )
+        return result
 
     def baseline_preflight_diagnostics(self) -> list[JsonObject]:
         """Preflight diagnostics on the scene AS SEEDED, before this turn's own
@@ -3738,6 +4010,46 @@ class LumenDesignTools:
                     "at score >= 2, or finalize honestly with a non-accepted "
                     "status."
                 )
+        # P0.3 finalize guard — closes the "accepted but unexportable" loophole.
+        # The 2026-08-24 baseline run finalized as a success while EVERY export
+        # of its scene was refused by preflight; the run result said "done" and
+        # the artifact could not leave the building. A run may no longer record
+        # acceptance while a BLOCKING export error stands.
+        #
+        # Scoped to blocking errors on purpose: advisory policy lints (the
+        # LUMV0820 class) export fine, so they must not refuse a finalize —
+        # that would just re-create the original dead end one layer up. They
+        # are reported in the summary instead, never silently dropped.
+        if status == "accepted" and self._latest_preflight_diagnostics is not None:
+            blocking, advisory = partition_export_diagnostics(
+                self._latest_preflight_diagnostics
+            )
+            if blocking:
+                named = ", ".join(
+                    sorted({str(item.get("code")) for item in blocking})
+                )
+                self.record(
+                    "coordinator",
+                    "finalize_refused_blocking_export_error",
+                    output_summary=named,
+                )
+                return (
+                    "REFUSED: this scene cannot be exported — "
+                    f"{len(blocking)} blocking preflight error(s) remain ({named}). "
+                    "Accepting now would record a success for a design that no "
+                    "PNG, SVG or PDF export can produce. Repair the errors and "
+                    "re-run preflight_design, or finalize honestly with a "
+                    "non-accepted status."
+                )
+            if advisory:
+                lints = ", ".join(
+                    sorted({str(item.get("code")) for item in advisory})
+                )
+                note = (
+                    f"Exports carry {len(advisory)} advisory policy lint(s) "
+                    f"({lints}); the design exports cleanly regardless."
+                )
+                summary = f"{summary}\n{note}" if summary else note
         baseline_advisory = (
             json.loads(baseline_advisory_json) if baseline_advisory_json.strip() else None
         )
@@ -3937,6 +4249,69 @@ class LumenDesignTools:
             {"entries": self.operations_ledger},
         )
 
+    def checkpoint_scene(self, reason: str) -> None:
+        """P0.4 — hand this round's work to the checkpoint sink so it becomes
+        durable NOW instead of only at finalize.
+
+        Called at the orchestrator's round-verification seam (a `render_preview`
+        that produced a validated raster — see `tools/render.py`), which is the
+        one place in this runtime where Python can observe "an authoring round
+        finished and the scene it produced is real". Before this existed a run
+        that died at finalize — the 2026-08-24 quota 403 at 20m42s — discarded a
+        fully valid scene and left the document at version 0.
+
+        Three properties this must keep, because it runs mid-run against a live
+        document:
+
+        * **Best-effort.** A checkpoint that cannot be committed is a lost
+          version, never a lost run. Every failure is recorded and swallowed;
+          the finalize commit remains the run's authority.
+        * **Monotone.** The FULL ordered ledger goes to the sink every time and
+          the sink commits only the delta it has not made durable, so a refused
+          checkpoint is simply re-offered inside the next one.
+        * **Silent when nothing moved.** No new operations means no call, so an
+          unchanged re-render cannot mint an empty document version.
+        """
+        if self.scene_checkpoint is None:
+            return
+        pending = len(self.operations_ledger) - self._checkpointed_operations
+        if pending <= 0:
+            return
+        operations = [
+            entry["operation"]
+            for entry in self.operations_ledger
+            if isinstance(entry, dict) and "operation" in entry
+        ]
+        meta = {
+            "reason": reason,
+            "run_id": self.run_id,
+            "iteration": self.iteration,
+            # Recorded, deliberately NOT gated on: a scene that rendered a
+            # validated raster is work worth keeping even while preflight still
+            # reports diagnostics (LUMV0820 blocks export on runs the fast-loop
+            # spec's P0.2/P0.3 own). The reader decides what a dirty checkpoint
+            # is worth; this seam only refuses to throw the scene away.
+            "preflight_clean": self.latest_preflight_has_errors is False,
+            "operations_total": len(operations),
+        }
+        try:
+            self.scene_checkpoint(operations, meta)
+        except Exception as error:  # noqa: BLE001 - a checkpoint never fails a run
+            self.record(
+                "coordinator",
+                "scene_checkpoint_failed",
+                output_summary=f"{type(error).__name__}: {error}",
+                payload=meta,
+            )
+            return
+        self._checkpointed_operations = len(operations)
+        self.record(
+            "coordinator",
+            "scene_checkpointed",
+            output_summary=f"{reason}: {pending} new operation(s), {len(operations)} total",
+            payload=meta,
+        )
+
     def _write_and_validate_preview_artifacts(
         self,
         raw_artifacts: list[JsonObject],
@@ -3980,6 +4355,13 @@ class LumenDesignTools:
                     validation_errors = [*validation_errors, sentinel_error]
                 if uniform_warning:
                     warnings.append(uniform_warning)
+            if not validation_errors:
+                # §7 metrics: time-to-first-preview is the run's single most
+                # diagnostic number (baseline: 15.4 min, gate: <= 4 min), and it
+                # must mean "the agent could actually SEE something" — so a
+                # VALIDATED artifact starts the clock, never a written-but-broken
+                # one. Idempotent: only the first call is kept.
+                self.metrics.mark_first_preview()
             artifacts.append(
                 PreviewArtifact(
                     format=artifact_format,

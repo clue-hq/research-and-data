@@ -19,6 +19,7 @@ import {
   sceneExportResultMessage,
   sceneExportScaleMultiplier,
   type SceneExportPreviewCache,
+  type SceneExportStatus,
 } from "../adapter/scene-export";
 import { designBffConfig } from "../data/design-bff";
 import type { PageId, Scene } from "../engine/scene/contracts";
@@ -179,7 +180,7 @@ export function useSceneExport({
    * deliberately handed none. The two travel as ONE value so "a URL with no way
    * to render it" is not a state anything downstream can be handed. */
   exportPreview: ImageExportPreview | null;
-  exportStatus: string | null;
+  exportStatus: SceneExportStatus | null;
   /** §1.11: show the preview region at these settings — called when it opens
    * and on every format/scale change while it is open. */
   requestExportPreview: (format: ImageExportFormat, scale: ImageExportScale) => void;
@@ -196,10 +197,9 @@ export function useSceneExport({
   // from an effect. The one exception — a `null` stamp, meaning a refusal made
   // when no document was loaded, which must OUTLIVE the document's arrival —
   // lives in `exportStatusFor`, where its reasoning is written out.
-  const [status, setStatus] = useState<{
-    forDocumentId: string | null;
-    message: string;
-  } | null>(null);
+  const [status, setStatus] = useState<
+    (SceneExportStatus & { forDocumentId: string | null }) | null
+  >(null);
   const exportStatus = exportStatusFor(status, documentId);
 
   // Latest-value refs so the one listener reads current state without re-arming
@@ -223,9 +223,13 @@ export function useSceneExport({
    * armed against: a refusal or an outcome is addressed to whoever is looking
    * now. Both legs report through it — a preview failure and a download failure
    * are the same line in the same span (ruling R-D14: the region itself stays
-   * the honest empty state and says nothing on its own). */
-  const report = useCallback((message: string) => {
-    setStatus({ forDocumentId: documentIdRef.current, message });
+   * the honest empty state and says nothing on its own).
+   *
+   * `failed` says whether the user asked for a file and got none. It is what
+   * lets the menu render the outcome VISIBLY instead of only to a screen
+   * reader; it defaults to false so the two progress lines stay quiet. */
+  const report = useCallback((message: string, failed = false) => {
+    setStatus({ failed, forDocumentId: documentIdRef.current, message });
   }, []);
 
   // Ruling R-D6: one export at a time, and a second request is REFUSED rather
@@ -386,13 +390,13 @@ export function useSceneExport({
             return;
           }
           if (result.status !== "ok") {
-            report(sceneExportResultMessage(format, result));
+            report(sceneExportResultMessage(format, result), true);
             return;
           }
           // §1.11 exports ONE artboard, so `artifacts[0]` is the deliverable.
           const dataUrl = result.artifacts[0]?.data_url ?? null;
           if (!dataUrl) {
-            report(`${format} export returned no file`);
+            report(`${format} export returned no file`, true);
             return;
           }
           previewCacheRef.current = previewCacheStore(
@@ -425,7 +429,7 @@ export function useSceneExport({
           ) {
             return;
           }
-          report(cause instanceof Error ? cause.message : String(cause));
+          report(cause instanceof Error ? cause.message : String(cause), true);
         } finally {
           inFlight.keys.delete(key);
         }
@@ -460,11 +464,11 @@ export function useSceneExport({
       // export. Refused out loud rather than by a status line that never
       // changes.
       if (!armedDocumentId || !armedScene) {
-        report("No document to export");
+        report("No document to export", true);
         return;
       }
       if (inFlightRef.current) {
-        report("Export already in progress");
+        report("Export already in progress", true);
         return;
       }
       // Ruling R-D7: set SYNCHRONOUSLY, in the same event the controller sets
@@ -517,11 +521,11 @@ export function useSceneExport({
           // not something they asked for, so it is dropped rather than
           // downloaded.
           if (documentIdRef.current !== armedDocumentId) {
-            report("Export cancelled — document changed");
+            report("Export cancelled — document changed", true);
             return;
           }
           if (result.status !== "ok") {
-            report(sceneExportResultMessage(request.format, result));
+            report(sceneExportResultMessage(request.format, result), true);
             return;
           }
           // §1.11 exports ONE artboard, so `artifacts[0]` is the deliverable.
@@ -529,7 +533,7 @@ export function useSceneExport({
             // An "ok" carrying no bytes is not a success the user can use, and
             // announcing one would be this lane's signature defect: the panel
             // stating something that did not happen.
-            report(`${request.format} export returned no file`);
+            report(`${request.format} export returned no file`, true);
             return;
           }
           report(sceneExportResultMessage(request.format, result));
@@ -537,10 +541,10 @@ export function useSceneExport({
           // A transport throw (the runner's non-2xx, an offline fetch) is the
           // user's answer too — never an unhandled rejection.
           if (documentIdRef.current !== armedDocumentId) {
-            report("Export cancelled — document changed");
+            report("Export cancelled — document changed", true);
             return;
           }
-          report(cause instanceof Error ? cause.message : String(cause));
+          report(cause instanceof Error ? cause.message : String(cause), true);
         } finally {
           inFlightRef.current = false;
         }

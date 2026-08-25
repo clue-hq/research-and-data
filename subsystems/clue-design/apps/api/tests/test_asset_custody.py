@@ -444,3 +444,138 @@ def test_the_public_route_falls_back_to_sniffing_for_octet_stream_rows(
     response = client.get(f"/asset-store/{hashlib.sha256(TINY_PNG).hexdigest()}")
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("image/png")
+
+
+# ---------------------------------------------------------------------------
+# (6) The agent runtime's asset PREVIEWS resolve out of this same custody chain
+#     (deepagent fast-loop v1 spec §4 P0.1)
+
+
+def test_view_asset_delivers_pixels_for_a_durably_stored_kit_asset(
+    client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """End-to-end: upload → durable custody → wipe the cache → resolve the turn's kit →
+    ``view("asset:<id>")`` hands the model real pixels.
+
+    The P0.1 regression the 2026-08-24 Stuttgart run exposed and no test caught: the suite
+    covered ordinary design previews and unknown asset ids, never a *successful*
+    storage-backed one. Two independent defects had to be fixed for this to pass, and it
+    fails again if either returns:
+
+    * the runtime appended the record's ``opaque_ref`` verbatim onto its asset-store root —
+      which the API points at the per-WORKSPACE engine cache — so a D4 ``clue-storage`` ref
+      resolved to the doubled ``<cache>/ws_X/ws_X/design/<digest>`` and every brand-kit
+      asset answered ``asset_missing_file``, leaving the author to place imagery blind;
+    * ``brand_kit_asset_manifest`` handed those records over with no read-through, so even a
+      correctly-shaped path pointed into a cache that need never have held the bytes — which
+      is what the ``rmtree`` below makes real, exactly as this file's other cases do.
+    """
+    import base64
+    import io
+
+    from lumen_agent.config import AgentRuntimeConfig
+    from lumen_agent.harness import make_view_tool
+    from lumen_agent.tools.substrate import LumenDesignTools
+    from PIL import Image
+    from py_lumen_config import settings
+
+    from lumen_api.design_store import HybridRepository
+    from lumen_api.main import load_brand_kit_by_value
+
+    # `load_brand_kit_by_value` runs OFF-request, so it re-derives the cache root from
+    # settings rather than app.state (see `api_engine_cache_root`). Point settings at the
+    # app's injected root so the read-through and the app agree on one tree — the cache
+    # twin of the conftest's CLUE_STORAGE_FS_ROOT note.
+    monkeypatch.setattr(
+        settings, "lumen_asset_store_root", Path(client.app.state.engine_cache_root)
+    )
+
+    record = upload_logo(client)
+    asset_id = record["id"]
+    digest = record["media"]["digest"]["value"]
+    thumb_ref = record["media"]["thumbnail"]["location"]["opaque_ref"]
+    thumb_digest = thumb_ref.rsplit("/", 1)[-1]
+    # A genuine D4 record: durable storage keys, not engine-cache paths.
+    assert record["media"]["location"]["provider"] == "clue-storage"
+    assert record["media"]["thumbnail"]["location"]["provider"] == "clue-storage"
+
+    workspace_id = os.environ["LUMEN_DEV_WORKSPACE_ID"]
+    HybridRepository().create_brand_kit(
+        {
+            "id": "kit_preview_custody",
+            "version": 1,
+            "name": "Preview Custody",
+            "approval_status": "approved",
+            "description": None,
+            "assets": {
+                "logos": {
+                    "primary": {
+                        "variants": [
+                            {
+                                "name": "reversed",
+                                "asset_id": asset_id,
+                                "color_mode": "reversed",
+                                "width": 8.0,
+                                "height": 8.0,
+                            }
+                        ],
+                        "usage": "primary",
+                        "min_size": 8.0,
+                        "clearspace": None,
+                        "allowed_backgrounds": ["surface.brand"],
+                        "license": None,
+                        "provenance": {"source": "manual", "confidence": 1.0},
+                    }
+                }
+            },
+        },
+        {"product_ready": False},
+        [],
+        "manual",
+    )
+
+    # The engine tree is a CACHE: destroy it, and durable storage must still serve.
+    cache_dir = workspace_cache_dir(client)
+    shutil.rmtree(cache_dir)
+
+    _kit, _source, manifest, _fonts = load_brand_kit_by_value(
+        workspace_id=workspace_id,
+        brand_kit_id="kit_preview_custody",
+        version=1,
+        blobs=make_blob_store(client.app),
+        source="document",
+    )
+    assert asset_id in manifest
+    # The read-through ran: both byte objects are back in the cache the runtime reads.
+    assert cache_blob_path(cache_dir, digest).is_file()
+    assert cache_blob_path(cache_dir, thumb_digest).is_file()
+    # RED CASE, spelled out: the path the pre-fix concatenation built for this record.
+    assert not (cache_dir / thumb_ref).exists()
+
+    config = AgentRuntimeConfig(
+        # The real tree: `LumenDesignTools` boots against the engine helper, unstubbed.
+        repo_root=REPO_ROOT,
+        model="openai:anthropic/claude-opus-4.8",
+        max_iterations=1,
+        preview_format="svg",
+        trace_dir=tmp_path / ".deepagent-workspace",
+        # Exactly what `run_agent_turn_preview` injects: the per-workspace engine cache.
+        asset_store_root=cache_dir,
+        agent_api_key="sk-test",
+        brand_kit_assets=manifest,
+    )
+    tools = LumenDesignTools(config, "Place our logo")
+    message = make_view_tool(tools).invoke(
+        {
+            "name": "view",
+            "args": {"target": f"asset:{asset_id}"},
+            "id": "v1",
+            "type": "tool_call",
+        }
+    )
+    image_blocks = [b for b in message.content if b["type"] == "image"]
+    assert len(image_blocks) == 1, message.content
+    # The 8x8 fixture logo is upscaled to the vision floor on the way out, so the
+    # assertion is on decodable pixels at a provider-acceptable size, not byte identity.
+    decoded = Image.open(io.BytesIO(base64.b64decode(image_blocks[0]["data"])))
+    assert min(decoded.size) >= 512

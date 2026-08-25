@@ -87,6 +87,16 @@ trace_callback_warning      (emitted at most once per handler)
     error           : str    — why tracing degraded
 
 ────────────────────────────────────────────────────────────────────────────
+Run-summary accumulation (fast-loop v1 §7). An optional ``RunMetrics`` object
+(``run_metrics.py``) may be handed to the handler at attach time. When present,
+``on_llm_end``/``on_llm_error`` also fold the call into that run's per-role
+counters — the same numbers, aggregated, so nobody has to hand-total 6000 log
+lines again. It is pure in-process integer arithmetic inside the ALREADY-wrapped
+handler body: no new event, no I/O, and a metrics failure degrades to the same
+warn-once "no trace" path as any other callback failure. ``metrics=None`` (the
+default) leaves every emitted event byte-identical to before.
+
+────────────────────────────────────────────────────────────────────────────
 Subagent boundaries. These handlers are attached to the MODEL instances only
 (mirroring usage_capture), so in practice LangChain delivers `on_llm_*` events
 to them but generally NOT sibling `on_tool_*`/`on_chain_*` events (those fire on
@@ -348,8 +358,16 @@ class TraceCallbackHandler(BaseCallbackHandler):
     docstring for the full event schema.
     """
 
-    def __init__(self, role: str) -> None:
+    def __init__(self, role: str, metrics: Any = None) -> None:
         self._role = role
+        # Optional per-run summary accumulator (run_metrics.RunMetrics). Shared by
+        # all three role handlers of one run; None on every legacy/test path.
+        self._metrics = metrics
+        if metrics is not None:
+            try:
+                metrics.register_role(role)
+            except Exception:  # noqa: BLE001 - metrics never break assembly
+                self._metrics = None
         self._warned = False
         # run_id (UUID) → monotonic start time, for duration_ms.
         self._llm_started: dict[Any, float] = {}
@@ -397,6 +415,7 @@ class TraceCallbackHandler(BaseCallbackHandler):
     def on_llm_end(self, response: Any, *, run_id: Any = None, **kwargs: Any) -> None:
         try:
             usage = _extract_usage(response) or {}
+            duration_ms = self._duration_ms(self._llm_started.pop(run_id, None))
             _log.info(
                 "llm_call_completed",
                 role=self._role,
@@ -406,21 +425,31 @@ class TraceCallbackHandler(BaseCallbackHandler):
                 input_tokens=usage.get("input_tokens"),
                 output_tokens=usage.get("output_tokens"),
                 total_tokens=usage.get("total_tokens"),
-                duration_ms=self._duration_ms(self._llm_started.pop(run_id, None)),
+                duration_ms=duration_ms,
                 finish_reason=_finish_reason(response),
             )
+            if self._metrics is not None:
+                self._metrics.record_llm_completed(
+                    role=self._role,
+                    duration_ms=duration_ms,
+                    input_tokens=usage.get("input_tokens"),
+                    output_tokens=usage.get("output_tokens"),
+                )
         except Exception as error:  # noqa: BLE001
             self._warn_once(error)
 
     def on_llm_error(self, error: Any, *, run_id: Any = None, **kwargs: Any) -> None:
         try:
+            duration_ms = self._duration_ms(self._llm_started.pop(run_id, None))
             _log.error(
                 "llm_call_failed",
                 role=self._role,
                 model="unknown",
                 error=f"{type(error).__name__}: {error}",
-                duration_ms=self._duration_ms(self._llm_started.pop(run_id, None)),
+                duration_ms=duration_ms,
             )
+            if self._metrics is not None:
+                self._metrics.record_llm_failed(role=self._role, duration_ms=duration_ms)
         except Exception as err:  # noqa: BLE001
             self._warn_once(err)
 
@@ -527,14 +556,19 @@ class TraceCallbackHandler(BaseCallbackHandler):
             pass
 
 
-def attach_trace_callback(model: Any, role: str) -> Any:
+def attach_trace_callback(model: Any, role: str, metrics: Any = None) -> Any:
     """Append a ``TraceCallbackHandler`` to ``model``'s own ``.callbacks`` field
     IN PLACE and return the SAME object — identical mechanism and constraints as
     ``usage_capture.attach_usage_capture`` (see that module for the full
     rationale: ``.with_config`` breaks deepagents' ``resolve_model``; a test
     sentinel without a writable ``callbacks`` field is left untouched; existing
-    callbacks are appended to, never replaced)."""
-    handler = TraceCallbackHandler(role=role)
+    callbacks are appended to, never replaced).
+
+    ``metrics`` is the run's optional ``run_metrics.RunMetrics`` accumulator,
+    shared across the three role handlers so the run-end summary sees every
+    role's calls. Omitting it (the default) is exactly the pre-existing
+    behaviour."""
+    handler = TraceCallbackHandler(role=role, metrics=metrics)
     if not hasattr(model, "callbacks"):
         return model
     try:

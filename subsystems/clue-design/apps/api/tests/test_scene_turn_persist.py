@@ -1375,3 +1375,307 @@ def test_a_leg_persist_over_complete_custody_does_not_duplicate_it(
     assert _artifact_row_count(digest) == 1, "custody must not be re-minted"
     assert blob.stat().st_mtime_ns == stat_before, "the blob must not be re-put"
     assert custody_client.get(f"/asset-store/{digest}").content == pixels
+
+
+# --- (i) P0.4 checkpoint commits ---------------------------------------------
+#
+# `subsystems/clue-design/docs/deepagent-fast-loop-v1-spec.md` §4 P0.4. Before these, a leg turn
+# wrote ONCE, at finalize — so the 2026-08-24 run that spent 20m42s producing a valid,
+# reviewer-accepted scene and then hit an OpenRouter 403 on its last call discarded all of it and
+# left the document at version 0 ("Nothing was saved"). Now each verified authoring round commits
+# as it lands.
+#
+# The runtime half of the seam is `LumenDesignTools.checkpoint_scene`, fired from `render_preview`
+# (orchestrator-only, once per round). Here it is driven through the same test seam the rest of
+# this file uses: a stub trio that calls the checkpoint sink the way the runtime does — handing it
+# the FULL operation ledger so far, once per round.
+
+
+def checkpointing_runner(
+    rounds: list[list],
+    *,
+    outcome: str = "proposed",
+    observed: list | None = None,
+):
+    """A stub trio that checkpoints once per round, exactly as the runtime's round-verification
+    seam does: the sink always receives the whole ledger to date, never just the new tail.
+
+    ``outcome="failed"`` is the quota-403-at-finalize shape — rounds landed, the run then died
+    without ever proposing anything.
+    """
+
+    def stub(payload, root, scene_checkpoint=None):
+        ledger: list = []
+        for operations in rounds:
+            ledger.extend(operations)
+            if scene_checkpoint is not None:
+                scene_checkpoint(
+                    list(ledger), {"reason": "render_preview", "preflight_clean": True}
+                )
+            if observed is not None:
+                # Read the document back mid-run — this is what proves a checkpoint is durable
+                # BEFORE the turn ends, rather than a buffered write that lands at finalize.
+                observed.append(HybridRepository().require_document(payload.document_id))
+        if outcome == "failed":
+            return {
+                "schema_version": 1,
+                "status": "failed",
+                "summary": "The model provider refused the finalize call (quota).",
+                "run_id": "run_stub_scene",
+                "trace_dir": ".lumen-runs/run_stub_scene",
+                "preview_paths": [],
+                "dsl_blocks": [],
+                "operations": [],
+                "diagnostics": [],
+                "artifacts": [],
+            }
+        return {
+            "schema_version": 1,
+            "status": "proposed",
+            "summary": "Agent proposed a design.",
+            "run_id": "run_stub_scene",
+            "trace_dir": ".lumen-runs/run_stub_scene",
+            "preview_paths": [],
+            "dsl_blocks": ["# design"],
+            "operations": ledger,
+            "diagnostics": [],
+            "artifacts": [],
+        }
+
+    return stub
+
+
+def test_an_accepted_round_persists_a_document_version_mid_run(
+    client: TestClient,
+) -> None:
+    """(i1) The core promise: a round that lands is durable while the turn is still running.
+
+    Two rounds, one operation each. The document must ALREADY be at version 1 when the second
+    round begins — not at 0 with everything buffered for finalize.
+    """
+    from lumen_api.main import execute_agent_turn_job
+
+    document = create_document(client)
+    store = HybridRepository()
+    assert document["current_version"] == 0
+    observed: list = []
+
+    status, response, _, _ = execute_agent_turn_job(
+        _scene_envelope(document["id"], store.workspace_id, _leg_config(document, 0)),
+        store=store,
+        host=_turn_host(
+            client,
+            checkpointing_runner(
+                [[title_operation("Round one")], [title_operation("Round two")]],
+                observed=observed,
+            ),
+        ),
+        event_sink=None,
+    )
+
+    assert status == "succeeded", response
+    # MID-RUN: each round's commit was visible to a separate read before the next one ran.
+    assert [snapshot["current_version"] for snapshot in observed] == [1, 2]
+    assert observed[0]["scene"]["meta"]["title"] == "Round one"
+    # ...and the turn still ends exactly where an un-checkpointed one would: base + len(ops).
+    stored = store.require_document(document["id"])
+    assert stored["current_version"] == 2
+    assert stored["scene"]["meta"]["title"] == "Round two"
+    assert response["current_version"] == 2
+
+
+def test_checkpoints_reach_the_same_head_as_one_finalize_write(
+    client: TestClient,
+) -> None:
+    """(i2) Checkpoints are strictly ADDITIVE: same destination, same scene, more history.
+
+    The same three operations, once checkpointed round-by-round and once written whole at
+    finalize (the pre-P0.4 shape, which a two-argument stub still takes). The heads must agree.
+    """
+    from lumen_api.main import execute_agent_turn_job
+
+    operations = [
+        title_operation("One"),
+        title_operation("Two"),
+        title_operation("Three"),
+    ]
+
+    def fresh_document(document_id: str) -> dict:
+        scene = minimal_scene()
+        scene["meta"]["id"] = document_id
+        response = client.post("/documents", json={"title": "Ad", "scene": scene})
+        assert response.status_code == 200, response.text
+        return response.json()["document"]
+
+    store = HybridRepository()
+    checkpointed = fresh_document("doc_checkpointed")
+    execute_agent_turn_job(
+        _scene_envelope(
+            checkpointed["id"], store.workspace_id, _leg_config(checkpointed, 0)
+        ),
+        store=store,
+        host=_turn_host(client, checkpointing_runner([[op] for op in operations])),
+        event_sink=None,
+    )
+
+    at_once = fresh_document("doc_at_once")
+    execute_agent_turn_job(
+        _scene_envelope(at_once["id"], store.workspace_id, _leg_config(at_once, 0)),
+        store=store,
+        # A plain two-argument stub is never offered the sink, so this run is byte-for-byte the
+        # pre-P0.4 save-on-finalize path.
+        host=_turn_host(client, proposing_runner(operations)),
+        event_sink=None,
+    )
+
+    left = store.require_document(checkpointed["id"])
+    right = store.require_document(at_once["id"])
+    assert left["current_version"] == right["current_version"] == 3
+    assert left["scene"]["meta"]["title"] == right["scene"]["meta"]["title"] == "Three"
+    # The one intended difference: the undo history records three landings instead of one.
+    assert len(store.list_envelopes(checkpointed["id"])) == 3
+    assert len(store.list_envelopes(at_once["id"])) == 1
+
+
+def test_a_run_that_fails_after_an_accepted_round_leaves_that_round_as_the_head(
+    client: TestClient,
+) -> None:
+    """(i3) The 2026-08-24 failure, replayed: the run dies at finalize having produced real work.
+
+    Pre-P0.4 the document stayed at version 0 and the marketer was told nothing was saved. Now the
+    accepted round IS the head, and the failure result names the version it left behind.
+    """
+    from lumen_api.main import execute_agent_turn_job
+
+    document = create_document(client)
+    store = HybridRepository()
+
+    status, response, _, _ = execute_agent_turn_job(
+        _scene_envelope(document["id"], store.workspace_id, _leg_config(document, 0)),
+        store=store,
+        host=_turn_host(
+            client,
+            checkpointing_runner(
+                [[title_operation("Accepted round")]], outcome="failed"
+            ),
+        ),
+        event_sink=None,
+    )
+
+    assert status == "failed", response
+    stored = store.require_document(document["id"])
+    assert stored["current_version"] == 1, "the accepted round must survive the failed run"
+    assert stored["scene"]["meta"]["title"] == "Accepted round"
+    assert response["current_version"] == 1, "a failed-but-saved turn must say what it saved"
+
+
+def test_a_redrive_after_a_checkpoint_neither_double_commits_nor_blames_a_human(
+    client: TestClient,
+) -> None:
+    """(i4) Replay semantics. A takeover restarts the agent from the FROZEN envelope scene, so its
+    fresh operation history would double-apply onto its own committed work. The redrive must
+    recognise its own checkpoint (via the durable run-event mark) and refuse — and it must not
+    tell the marketer a human moved their document, because nobody did.
+    """
+    from lumen_api.main import execute_agent_turn_job
+
+    document = create_document(client)
+    store = HybridRepository()
+    envelope = _scene_envelope(
+        document["id"], store.workspace_id, _leg_config(document, 0)
+    )
+    # A real run row, so the checkpoint's durable mark can be emitted onto its event stream.
+    store.create_run(envelope.run_id, document["id"])
+
+    first_status, _, _, _ = execute_agent_turn_job(
+        envelope,
+        store=store,
+        host=_turn_host(
+            client,
+            checkpointing_runner([[title_operation("Saved round")]], outcome="failed"),
+        ),
+        event_sink=None,
+    )
+    assert first_status == "failed"
+    assert store.require_document(document["id"])["current_version"] == 1
+    marks = [
+        event
+        for event in store.list_run_events(envelope.run_id)
+        if event["type"] == "scene_checkpoint_committed"
+    ]
+    assert [mark["data"]["version"] for mark in marks] == [1]
+
+    # The takeover: the SAME envelope, same frozen base of 0, driven again.
+    status, response, _, _ = execute_agent_turn_job(
+        envelope,
+        store=store,
+        host=_turn_host(
+            client,
+            checkpointing_runner([[title_operation("Redrive round")]]),
+        ),
+        event_sink=None,
+    )
+
+    assert status == "failed", response
+    diagnostic = response["diagnostics"][0]
+    assert diagnostic["code"] == "agent_turn.interrupted_after_checkpoint"
+    # Truthful about what survived, and it does NOT accuse a human of editing.
+    assert "version 1" in diagnostic["hint"]
+    assert "nothing is lost" in diagnostic["hint"]
+    assert "preserved" not in response["summary"]
+    # Nothing was applied twice: the head, its scene and its history are exactly as the first
+    # attempt left them.
+    stored = store.require_document(document["id"])
+    assert stored["current_version"] == 1
+    assert stored["scene"]["meta"]["title"] == "Saved round"
+    assert len(store.list_envelopes(document["id"])) == 1
+
+
+def test_a_human_edit_during_a_checkpointed_run_still_conflicts_at_the_next_write(
+    client: TestClient,
+) -> None:
+    """(i5) The CAS is not weakened by checkpointing. A human edit landing between two rounds
+    fences the second round's checkpoint (dropped, best-effort) and then the finalize write
+    (conflicted) — the human's version stands, and nothing of theirs is overwritten.
+    """
+    from lumen_api.main import execute_agent_turn_job
+
+    document = create_document(client)
+    store = HybridRepository()
+
+    def racing_stub(payload, root, scene_checkpoint=None):
+        ledger = [title_operation("Round one")]
+        scene_checkpoint(list(ledger), {"reason": "render_preview"})
+        # The human edits between rounds, straight through the editor's own route.
+        raced = client.post(
+            f"/documents/{document['id']}/operations",
+            json={"operations": [title_operation("Human wins")], "base_version": 1},
+        )
+        assert raced.status_code == 200, raced.text
+        ledger.append(title_operation("Round two"))
+        scene_checkpoint(list(ledger), {"reason": "render_preview"})
+        return {
+            "schema_version": 1,
+            "status": "proposed",
+            "summary": "Agent proposed a design.",
+            "run_id": "run_stub_scene",
+            "trace_dir": ".lumen-runs/run_stub_scene",
+            "preview_paths": [],
+            "dsl_blocks": ["# design"],
+            "operations": ledger,
+            "diagnostics": [],
+            "artifacts": [],
+        }
+
+    status, response, _, _ = execute_agent_turn_job(
+        _scene_envelope(document["id"], store.workspace_id, _leg_config(document, 0)),
+        store=store,
+        host=_turn_host(client, racing_stub),
+        event_sink=None,
+    )
+
+    assert status == "failed", response
+    assert response["status"] == "conflicted"
+    stored = store.require_document(document["id"])
+    assert stored["scene"]["meta"]["title"] == "Human wins"
+    assert stored["current_version"] == 2

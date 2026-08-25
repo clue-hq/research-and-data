@@ -12,6 +12,12 @@ style. Either way, commit to a system first: a surface, 3–6 token roles with o
 brand color, a type scale, a spacing rhythm. Then decide the ONE focal point and
 the personality. Assemble from `blocks/` — don't invent proportions per run.
 
+**Correct timid before you correct bold.** Reviewed AI design fails far more
+often by playing it safe than by going too far. So when you audit your own work,
+fix what is broken and fix what is timid. Do not sand down a deliberate bold move
+just because it feels risky; that instinct is what produces the forgettable
+middle.
+
 ## Composition — one thing dominates
 
 - **One dominant region per artifact.** Every screen needs a single element the
@@ -87,6 +93,59 @@ filler element.
   The failure to avoid: top-flowing sparse content so the footer (and a large band)
   floats empty below it — a sparse multi-section card still needs `y(c)`, not `y(s)`.
 
+### Spend the slack; never stretch to fill
+
+Two opposite failures sit on either side of this rule.
+
+The first is content packed at the top with a large empty band underneath. That
+reads unfinished, as if the page were cut off.
+
+The second is worse: inflating type sizes and padding until the content covers
+every last pixel. That reads padded and stretched, and it breaks the type scale
+you committed to. Filling the canvas is not the goal.
+
+Do neither. Spend the leftover space deliberately, in two moves:
+
+1. **Widen the gaps BETWEEN sections, not inside them.** Slack spent as
+   inter-section rhythm reads as pacing. Slack spent inside a section just
+   loosens that section until it falls apart.
+2. **Anchor a real closing element near the bottom margin** — a footer, a logo
+   lockup, a CTA. Then the empty space sits *inside* the body with something
+   below it, instead of hanging off the end of the page.
+
+#### What our engine actually does with the leftover space
+
+Verified against the layout solver. This is for a vertical auto-layout container
+(`al(v, …)`) with a definite height whose children do not fill it.
+
+- **In a vertical container the distributing anchor is `y(…)`, and `x(…)` aligns
+  the cross axis.** In a horizontal container (`al(h, …)`) it is the other way
+  round. `x` and `y` name the literal screen axes, not "main" and "cross".
+- **The default is top-pack.** Write no `y(…)` at all, or write `y(s)`, and every
+  child sits at the top while all the slack collects in one band at the bottom.
+  This is exactly the "reads truncated" failure. It is the engine's default, so it
+  is what you get unless you say otherwise.
+- **`y(sb)` is the only anchor that puts space BETWEEN children.** This engine has
+  no space-around and no space-evenly. The anchor set is `s`, `c`, `e`, `sb`, `st`
+  and nothing else. Between the children is therefore the only place `sb` can put
+  the space. That is why three or more light blocks under `sb` give you the
+  dead-band failure described above.
+- **A `fill`-height child absorbs the slack instead of leaving it lying around.**
+  That is the `fill`-region mechanic above. If several children on the main axis
+  declare `fill`, the slack splits between them by weight — `fill(2)` takes twice
+  as much as `fill(1)`.
+- **Nothing stretches on its own.** The engine never grows or shrinks a child to
+  close a gap. A child keeps its natural size unless it declares `fill` on the
+  main axis. So an empty bottom band never tidies itself up. You claim it with an
+  anchor or with a `fill` region, or it stays empty.
+- **`y(st)` is not a way to do this.** `stretch` is a cross-axis value only. Used
+  on the main axis the engine warns and falls back to top-pack, so it hands you
+  the very failure you were trying to avoid.
+
+One trap worth knowing. A `fill` child only absorbs slack when its PARENT has a
+definite size on that axis. Inside a `hug`-height parent there is no slack to
+absorb, and the `fill` child falls back to hug.
+
 ## Color & contrast
 
 - **60-30-10:** one dominant surface (~60%), one secondary (~30%), one accent
@@ -94,6 +153,19 @@ filler element.
 - **Legibility is non-negotiable:** body text ≥ 4.5:1 against its surface, large
   text ≥ 3:1 (WCAG AA). Token resolution already corrects text color for its
   surface, but don't place a low-contrast accent as body copy.
+- **Never color a comparison red-versus-green.** This covers problem/solution,
+  before/after, and old-way/new-way. The lazy move is to paint the bad side red
+  and the good side green. It reads as a spreadsheet. It also drops the brand
+  palette for two colors that belong to no kit. And it says nothing at all to a
+  color-blind viewer.
+
+  Separate the two sides another way. Pick one of these:
+  - **Position and order.** The second thing reads as the answer to the first.
+  - **Weight and size.** Make the side that should win visibly heavier.
+  - **Two tonal steps of one brand color.** The same hue muted for one side, at
+    full strength for the other.
+
+  Whichever you pick, keep the accent on the side you want to win.
 
 ## Avoid the AI clichés
 
@@ -111,8 +183,8 @@ not from the tool.
   UNMOTIVATED gradient: the stock blue→purple that belongs to no brand, neon-on-dark
   for its own sake. Derive the stops from the palette or don't use one.
 - **Decorative shapes — banned when they're confetti.** Low-opacity circles (or
-  blobs) drifting behind the content to "fill space" are the tell. The moda rec-2
-  minimal aesthetic failed exactly here: scattered pale blobs read as noise, not
+  blobs) drifting behind the content to "fill space" are the tell. The soft-wash
+  recreation case failed exactly here: scattered pale blobs read as noise, not
   design. If a shape isn't structural (a scrim, a plate, an accent rule, a stat
   bar), cut it — claim the space with alignment and scale instead.
 - **Shadows & plates — encouraged with intent.** A shadowed plate that lifts a
@@ -122,6 +194,24 @@ not from the tool.
 - **Layout:** avoid three equal cards in a row as the default answer; avoid
   centering everything; avoid a lonely small headline stranded in a sea of white.
   If you've seen the move in three AI designs, drop it.
+
+### Three tells that mark a design as machine-made
+
+These three are specific enough to name. Each one is recognizable on sight as
+something a generator produced. Omit them, or replace them with a subtler
+treatment. The only exception is a user who explicitly asks for that treatment.
+
+1. **A thick accent bar down one edge of a card or page.** A heavy colored slab
+   on the left edge (or across the top) is a template default, not a decision.
+   Separate the region with a real change of surface, or with spacing, instead.
+   A hairline rule is still fine — the tell is the thick single-side slab.
+2. **The pill-with-a-dot above a heading.** A small rounded chip holding a dot
+   and one or two words, floating above the headline. This is the eyebrow
+   cliché above in its most recognizable form. Use a plain overline, a short
+   accent rule, or nothing at all.
+3. **Em-dash-heavy copy.** Sentences hinged on em-dashes read as generated
+   prose, especially two or more in a row. Write shorter sentences and end them
+   with periods.
 
 ## Content budget (keeps it uncrowded — and keeps worst_case fixtures in the box)
 

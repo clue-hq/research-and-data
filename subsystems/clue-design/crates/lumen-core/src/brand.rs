@@ -3590,14 +3590,36 @@ impl<'a> TokenResolver<'a> {
                 }
                 text.style_token = None;
 
-                if let Some(color_token) = style.color {
+                // Fill precedence: a role's baked color is a DEFAULT for text
+                // that carries no color of its own. An author who wrote an
+                // explicit `fill(...)` on the text node — token or literal —
+                // already had it materialized by the node-fill walk at the top
+                // of `resolve_node`, and that choice WINS. Before this rule the
+                // role clobbered `fills[0]` unconditionally, so authoring
+                // `style($type.display) fill($text.inverse)` (white on a brand
+                // ground) silently rendered the role's `text.primary` black.
+                //
+                // The honest signal for "the author wrote this fill" is the
+                // fill id: every author fill is named by the DSL compiler
+                // (`paint_{node}_fill_{n}`) or by the caller, while the only
+                // fill this block ever synthesizes is `{node}_text_fill`. That
+                // one stays role-owned, so a re-resolve (a rebound role over an
+                // already-resolved scene) still updates its own fill in place
+                // instead of freezing the previous role's color.
+                let role_owned_fill_id = PaintId::from(format!("{}_text_fill", node.id.as_str()));
+                let has_author_fill = node
+                    .fills
+                    .first()
+                    .is_some_and(|fill| fill.id != role_owned_fill_id);
+
+                if let Some(color_token) = style.color.filter(|_| !has_author_fill) {
                     if let Some(color) = self.resolve_color_ref(&color_token, subject.clone()) {
                         // P1.1: keep the resolved text color legible against the
                         // surface it sits on. A type role bakes in one color (e.g.
                         // type.headline -> text.inverse, white), which is invisible on
                         // the opposite surface (a white headline on a light page). If
                         // contrast is poor, flip to the better-contrasting default text
-                        // color; otherwise the author's color is preserved.
+                        // color; otherwise the role's color is preserved.
                         let color =
                             self.contrast_corrected_text_color(&node.id, color, subject.clone());
                         let paint = Paint::Solid { color };
@@ -3605,7 +3627,7 @@ impl<'a> TokenResolver<'a> {
                             fill.paint = paint;
                         } else {
                             node.fills.push(Fill {
-                                id: PaintId::from(format!("{}_text_fill", node.id.as_str())),
+                                id: role_owned_fill_id,
                                 paint,
                             });
                         }
