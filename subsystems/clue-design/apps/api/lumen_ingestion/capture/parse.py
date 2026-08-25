@@ -559,6 +559,60 @@ def _license_hint(face: ParsedFontFace) -> str | None:
     return None
 
 
+def _sheet_base(sheet_url: str, page_url: str) -> str:
+    """The base a relative URL inside this stylesheet resolves against.
+
+    Per the CSS spec that is the stylesheet's own URL, not the page's. The
+    rendered tier reads same-origin sheets straight out of the CSSOM and stores
+    them as ``inline:N``, which have no URL of their own — those resolve against
+    the page, exactly like a ``<style>`` block.
+    """
+    if not sheet_url or sheet_url.startswith("inline:"):
+        return page_url
+    return sheet_url
+
+
+def iter_font_faces(stylesheets, page_url: str):
+    """Yield ``(sheet_url, ParsedFontFace)`` for every ``@font-face`` rule.
+
+    **This is the one and only ``@font-face`` discovery path.** Capture calls it
+    to decide which font files to download and :func:`parse_site` calls it to
+    record the faces, so the two cannot disagree about a URL. They used to:
+    capture found font files with its own regex resolved against the stylesheet
+    while parse resolved against the page, and the evidence builder then looked
+    the bytes up by exact URL string. Every mismatch produced a face with
+    ``asset_id: null`` — bytes fetched under one key, looked for under another —
+    which is why ingested brand fonts never painted and every render fell back
+    to Inter with ``LUMS0100``.
+    """
+    for sheet in stylesheets:
+        base = _sheet_base(sheet.url, page_url)
+        rules = tinycss2.parse_stylesheet(
+            sheet.text, skip_comments=True, skip_whitespace=True
+        )
+        for rule in rules:
+            if rule.type == "at-rule" and rule.lower_at_keyword == "font-face":
+                decls = tinycss2.parse_declaration_list(
+                    rule.content or [], skip_comments=True, skip_whitespace=True
+                )
+                face = _parse_font_face(decls, base)
+                if face is not None:
+                    yield sheet.url, face
+
+
+def font_face_sources(stylesheets, page_url: str) -> list[str]:
+    """Absolute URLs of the font files ``@font-face`` actually selects.
+
+    Capture downloads exactly these, so every face the evidence builder later
+    looks up has bytes waiting under the same key.
+    """
+    urls: list[str] = []
+    for _sheet_url, face in iter_font_faces(stylesheets, page_url):
+        if face.source_url and face.source_url not in urls:
+            urls.append(face.source_url)
+    return urls
+
+
 # --- main parse -----------------------------------------------------------------
 
 
@@ -599,20 +653,15 @@ def _parse_css(
                 )
             )
 
+    # @font-face — the shared walk capture also downloads from, so a face's
+    # source_url is always the key its bytes were fetched under.
+    for sheet_url, face in iter_font_faces(snapshot.stylesheets, base_url):
+        _accumulate_font(parsed, face, sheet_url)
+
     for sheet in snapshot.stylesheets:
         rules = tinycss2.parse_stylesheet(
             sheet.text, skip_comments=True, skip_whitespace=True
         )
-        # @font-face at top level (and inside media, though rare).
-        for rule in rules:
-            if rule.type == "at-rule" and rule.lower_at_keyword == "font-face":
-                decls = tinycss2.parse_declaration_list(
-                    rule.content or [], skip_comments=True, skip_whitespace=True
-                )
-                face = _parse_font_face(decls, base_url)
-                if face is not None:
-                    _accumulate_font(parsed, face, sheet.url)
-
         for selectors, decls, theme in _iter_qualified_rules(rules, "light"):
             _parse_rule(parsed, selectors, decls, theme, custom_props, sheet.url)
 

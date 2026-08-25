@@ -120,6 +120,7 @@ def build_evidence(outcome, *, core, store_root: str, reporter) -> BrandEvidence
 
     # Fonts (from @font-face faces with downloaded files).
     fonts: list[FontEvidence] = []
+    uncustodied_faces: list[str] = []
     for font in parsed.fonts:
         faces: list[FontFaceEvidence] = []
         for face in font.faces:
@@ -134,6 +135,14 @@ def build_evidence(outcome, *, core, store_root: str, reporter) -> BrandEvidence
                         "font",
                         f"{font.family}.{face.format or 'woff2'}",
                     )
+            if face.source_url and asset_id is None:
+                # A face declared by the site whose bytes we do not hold. The
+                # kit will carry the URL and no asset, the renderer will have
+                # nothing to load, and the ad will paint in Inter (LUMS0100).
+                # That used to happen in total silence — LUMI0230 only fires
+                # when a family has NO faces at all, not when every face is
+                # byte-less — so say it plainly instead.
+                uncustodied_faces.append(f"{font.family} ({face.source_url})")
             faces.append(
                 FontFaceEvidence(
                     weight=face.weight,
@@ -222,6 +231,18 @@ def build_evidence(outcome, *, core, store_root: str, reporter) -> BrandEvidence
     # concatenates into the published kit's diagnostics.
     if parsed.diagnostics and isinstance(outcome_diagnostics, list):
         outcome_diagnostics.extend(parsed.diagnostics)
+    if uncustodied_faces and isinstance(outcome_diagnostics, list):
+        outcome_diagnostics.append(
+            {
+                "code": "LUMI0231",
+                "severity": "warning",
+                "message": (
+                    "font files declared but not stored, so these faces cannot "
+                    "paint and text will fall back: "
+                    + ", ".join(uncustodied_faces[:6])
+                ),
+            }
+        )
 
     narrative = NarrativeEvidence(
         brand_name=parsed.narrative.brand_name,
