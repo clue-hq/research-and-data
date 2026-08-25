@@ -4092,6 +4092,244 @@ def test_image_generation_cache_dedups_identical_requests(
     assert calls["n"] == 2
 
 
+# --- W1.4 / W1.7 (brand-ad-assets v1): model id + generation robustness -----
+
+
+def _image_model_env(monkeypatch: pytest.MonkeyPatch, model_id: str = "test/image-model") -> None:
+    monkeypatch.setattr(settings, "image_model_base_url", "https://openrouter.ai/api/v1")
+    monkeypatch.setattr(settings, "image_model_api_key", "test-key")
+    monkeypatch.setattr(settings, "image_model_id", model_id)
+
+
+class _StubResponse:
+    """Minimal httpx-response stand-in for the OpenRouter adapter."""
+
+    headers = {"content-type": "application/json"}
+
+    def __init__(self, payload: dict, status_code: int = 200, text: str = "") -> None:
+        self._payload = payload
+        self.status_code = status_code
+        self.text = text
+
+    def json(self) -> dict:
+        return self._payload
+
+
+def _image_response(png: bytes) -> _StubResponse:
+    import base64
+
+    url = "data:image/png;base64," + base64.b64encode(png).decode("ascii")
+    return _StubResponse({"choices": [{"message": {"images": [{"image_url": {"url": url}}]}}]})
+
+
+_TEXT_ONLY_RESPONSE = {"choices": [{"message": {"content": "I can't make that image."}}]}
+
+
+def test_w14_blank_or_sentinel_model_id_resolves_to_the_verified_working_model(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """W1.4: `.env` shipped `openai/gpt-image-2`, which OpenRouter serves ONLY on
+    its dedicated Image API — on the chat-completions image modality this
+    provider uses it 404s. The in-code default must be a model that actually
+    works on THIS path, and the config layer's `"default"` sentinel (what a blank
+    IMAGE_MODEL_ID normalizes to) is not one — it 404s just the same.
+
+    RED before the fix: `configured_model_id()` returned the literal `"default"`."""
+    assert image_provider.DEFAULT_IMAGE_MODEL_ID == "openai/gpt-5.4-image-2"
+
+    monkeypatch.setattr(settings, "image_model_id", "default")
+    assert image_provider.configured_model_id() == "openai/gpt-5.4-image-2"
+
+    monkeypatch.setattr(settings, "image_model_id", "   ")
+    assert image_provider.configured_model_id() == "openai/gpt-5.4-image-2"
+
+    # An explicitly configured id is always honored — no silent override.
+    monkeypatch.setattr(settings, "image_model_id", "google/gemini-2.5-flash-image")
+    assert image_provider.configured_model_id() == "google/gemini-2.5-flash-image"
+
+    # The known Image-API-only ids are named so the 404 can be explained.
+    assert "openai/gpt-image-2" in image_provider._IMAGE_API_ONLY_MODEL_IDS
+
+
+def test_w14_model_not_found_404_logs_the_config_fix_not_just_the_error(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """W1.4: a wrong IMAGE_MODEL_ID surfaces as a generic 'no endpoints found'
+    404 that reads like a provider outage (it cost the Apollo POC a restart to
+    diagnose). The first failing call must name the actual remedy in the log.
+
+    The typed error still propagates unchanged — this adds a diagnostic, not a
+    behavior change."""
+    _image_model_env(monkeypatch, "openai/gpt-image-2")
+    body = (
+        '{"error":{"message":"No endpoints found that support the requested '
+        'output modalities: image, text"}}'
+    )
+    monkeypatch.setattr(
+        "httpx.post", lambda *a, **k: _StubResponse({}, status_code=404, text=body)
+    )
+
+    with (
+        caplog.at_level(logging.ERROR, logger="lumen_api.image_provider"),
+        pytest.raises(image_provider.ImageGenerationError) as excinfo,
+    ):
+        image_provider.generate(prompt="a holographic yellow wash")
+
+    assert excinfo.value.code == "image_model.http_error"
+    logged = caplog.text
+    assert "openai/gpt-image-2" in logged
+    assert "IMAGE-API" in logged.upper()
+    assert "openai/gpt-5.4-image-2" in logged  # names the fix
+
+
+def test_w17a_text_only_response_is_retried_exactly_once_then_fails_typed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """W1.7(a): the model is non-deterministic about honoring the image modality
+    — 1 of 4 Apollo POC calls came back text-only (`image_model.no_image`) and
+    the POC's manual re-request succeeded. One automatic retry, then typed failure.
+
+    RED before the fix: `_invoke_with_retries` re-raised EVERY ImageGenerationError
+    immediately, so calls == 1 and a one-in-four flake was a hard failure."""
+    _image_model_env(monkeypatch)
+    png = _tiny_png(8, 8)
+
+    # Case 1: text-only, then an image -> the retry rescues the call.
+    calls = {"n": 0}
+
+    def flaky_post(*args, **kwargs):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return _StubResponse(_TEXT_ONLY_RESPONSE)
+        return _image_response(png)
+
+    monkeypatch.setattr("httpx.post", flaky_post)
+    result = image_provider.generate(prompt="a holographic yellow wash")
+    assert result.image_bytes == png
+    assert calls["n"] == 2, "a text-only answer must be retried exactly once"
+
+    # Case 2: text-only every time -> exactly ONE retry, then the typed error.
+    # The retry budget must not be unbounded, and must not silently become a
+    # success: a genuinely refusing prompt fails loudly after 2 attempts.
+    always = {"n": 0}
+
+    def always_text(*args, **kwargs):
+        always["n"] += 1
+        return _StubResponse(_TEXT_ONLY_RESPONSE)
+
+    monkeypatch.setattr("httpx.post", always_text)
+    with pytest.raises(image_provider.ImageGenerationError) as excinfo:
+        image_provider.generate(prompt="something it will refuse")
+    assert excinfo.value.code == "image_model.no_image"
+    assert always["n"] == 1 + image_provider.NO_IMAGE_RETRIES == 2
+
+
+def test_w17a_other_typed_errors_are_still_never_retried(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """W1.7(a) boundary: only `no_image` gets the extra attempt. Retrying a 404 or
+    an undecodable response just re-buys the same answer at the same price."""
+    _image_model_env(monkeypatch)
+    calls = {"n": 0}
+
+    def http_error(*args, **kwargs):
+        calls["n"] += 1
+        return _StubResponse({}, status_code=404, text="nope")
+
+    monkeypatch.setattr("httpx.post", http_error)
+    with pytest.raises(image_provider.ImageGenerationError):
+        image_provider.generate(prompt="anything")
+    assert calls["n"] == 1
+
+
+def test_w17b_aspect_ratio_rides_the_request_structurally(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """W1.7(b): the POC asked 16:9 and got 1024x1024 because the ratio never left
+    the prose. OpenRouter's chat-completions body takes a documented
+    `image_config` object; the requested ratio must ride it.
+
+    RED before the fix: the body had no `image_config` key at all."""
+    _image_model_env(monkeypatch)
+    png = _tiny_png(8, 8)
+    captured: dict = {}
+
+    def capture_post(url, json=None, headers=None, timeout=None):
+        captured.update(url=url, json=json)
+        return _image_response(png)
+
+    monkeypatch.setattr("httpx.post", capture_post)
+    image_provider.generate(prompt="a holographic yellow wash", aspect_ratio="16:9")
+    assert captured["json"]["image_config"] == {"aspect_ratio": "16:9"}
+    # Belt and braces: providers clamp to their own subset, so the prompt hint stays.
+    assert "16:9" in captured["json"]["messages"][0]["content"]
+
+    # No ask -> no key at all, so a plain generation's body is unchanged.
+    captured.clear()
+    image_provider.generate(prompt="a holographic yellow wash")
+    assert "image_config" not in captured["json"]
+
+
+def test_w17b_requested_ratios_snap_to_openrouters_allowlist() -> None:
+    """W1.7(b): callers speak in frame geometry ('3x2', '1.78', a raw node
+    ratio); OpenRouter takes a normalized ratio and providers reject values off
+    their supported subset. Every ask must land on a documented value."""
+    snap = image_provider.api_aspect_ratio
+    assert snap("16:9") == "16:9"
+    assert snap("16x9") == "16:9"
+    assert snap("1.78") == "16:9"
+    assert snap("1:1") == "1:1"
+    assert snap("4:5") == "4:5"
+    assert snap("1080:1350") == "4:5"  # a real LinkedIn ad frame
+    assert snap(None) is None
+    assert snap("not-a-ratio") is None
+    assert snap("0:0") is None
+    for value in ("16:9", "3:2", "9:16", "21:9", "2.35", "0.1", "12"):
+        assert snap(value) in image_provider._SUPPORTED_ASPECT_RATIOS
+
+
+def test_w17b_result_reports_actual_dimensions_not_the_request(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """W1.7(b): the Apollo POC's manifest reported the generated asset as
+    1024x1024 while every surface still said '16:9' — the caller was misled by
+    its own request. The result must carry the MEASURED geometry and admit when
+    the ratio was not honored.
+
+    RED before the fix: ImageGenerationResult had no width/height at all."""
+    _image_model_env(monkeypatch)
+
+    # The exact POC shape: 16:9 asked, a square delivered.
+    monkeypatch.setattr("httpx.post", lambda *a, **k: _image_response(_tiny_png(1024, 8)))
+    ignored = image_provider.generate(prompt="a wash", aspect_ratio="16:9")
+    assert (ignored.width, ignored.height) == (1024, 8)
+    assert ignored.requested_aspect_ratio == "16:9"
+    assert ignored.aspect_ratio_honored is False
+    notes = " ".join(ignored.provenance["notes"])
+    assert "did not honor requested aspect_ratio 16:9" in notes
+    assert "output 1024x8" in notes
+
+    # An honored ratio reports honored, and adds no complaint to provenance.
+    monkeypatch.setattr("httpx.post", lambda *a, **k: _image_response(_tiny_png(32, 18)))
+    honored = image_provider.generate(prompt="a wash", aspect_ratio="16:9")
+    assert (honored.width, honored.height) == (32, 18)
+    assert honored.aspect_ratio_honored is True
+    assert not any("did not honor" in note for note in honored.provenance["notes"])
+
+    # No ask -> the question is unanswerable, not False.
+    monkeypatch.setattr("httpx.post", lambda *a, **k: _image_response(_tiny_png(8, 8)))
+    assert image_provider.generate(prompt="a wash").aspect_ratio_honored is None
+
+
+def test_w17b_sniff_dimensions_reads_real_headers_and_never_raises() -> None:
+    """W1.7(b): header-only, dependency-free, and honest about not knowing."""
+    assert image_provider.sniff_dimensions(_tiny_png(21, 9)) == (21, 9)
+    assert image_provider.sniff_dimensions(b"GIF89a" + b"\x40\x00\x20\x00") == (64, 32)
+    # Unreadable input is "unknown", never an exception.
+    for junk in (b"", b"not an image", b"\x89PNG\r\n\x1a\n", b"\xff\xd8truncated"):
+        assert image_provider.sniff_dimensions(junk) == (None, None)
+
+
 def test_resolve_dimensions_translates_aspect_ratio_and_size_tier() -> None:
     # Step 7 (G0.2): aspect_ratio + image_size → concrete dimensions; explicit dims win.
     resolve = image_provider.resolve_dimensions
