@@ -165,6 +165,164 @@ def test_parse_color_value_forms() -> None:
 
 
 # --------------------------------------------------------------------------- #
+# W1.3 — modern CSS color syntax must not sink the ingestion job
+#
+# apollo.io failed LUMI0401 on 4/4 URLs with
+# `ValueError: could not convert string to float: 'var(--tw-text-opacity'`.
+# Tailwind serves `rgb(15 23 42 / var(--tw-text-opacity))`; the tokenizer split
+# on `)`, so the fragment reached a bare float() and killed the whole job.
+# --------------------------------------------------------------------------- #
+
+
+def test_tailwind_slash_alpha_keeps_the_color_instead_of_crashing() -> None:
+    """RED before the fix: this exact apollo.io string raised ValueError."""
+    diagnostics: list[dict] = []
+    # The three channels are numeric and carry apollo.io's real text color;
+    # only the alpha is an unresolved custom property. Keep the color.
+    assert (
+        parse_color_value(
+            "rgb(15 23 42 / var(--tw-text-opacity))", {}, diagnostics=diagnostics
+        )
+        == "#0F172A"
+    )
+    # ...and say out loud that the alpha was read as opaque.
+    assert [d for d in diagnostics if d["code"] == "LUMI0511"]
+    assert "alpha channel unreadable" in diagnostics[0]["message"]
+    # The same shape in hsl(), and in the rgba() spelling Tailwind also emits.
+    assert parse_color_value("rgba(24 24 27 / var(--tw-bg-opacity))", {}) == "#18181B"
+    assert parse_color_value("hsl(0 100% 50% / var(--tw-x))", {}) == "#FF0000"
+
+
+def test_modern_space_separated_rgb_parses_with_numeric_alpha() -> None:
+    """The modern syntax is not just survivable — it is read correctly."""
+    assert parse_color_value("rgb(15 23 42)", {}) == "#0F172A"
+    assert parse_color_value("rgb(15 23 42 / 0.5)", {}) == "#0F172A80"
+    assert parse_color_value("rgb(15 23 42 / 50%)", {}) == "#0F172A80"
+    assert parse_color_value("hsl(0 100% 50%)", {}) == "#FF0000"
+
+
+def test_a_genuinely_unreadable_color_is_skipped_not_raised() -> None:
+    """Fail soft: an unreadable value is one swatch dropped, with a reason."""
+    diagnostics: list[dict] = []
+    # Relative-color syntax — real modern CSS this parser does not implement.
+    assert parse_color_value("rgb(from var(--accent) r g b)", {}, diagnostics=diagnostics) is None
+    assert parse_color_value("rgb(a b c)", {}, diagnostics=diagnostics) is None
+    assert parse_color_value("hsl(nope, bad, worse)", {}, diagnostics=diagnostics) is None
+    assert len(diagnostics) == 3
+    assert all(d["severity"] == "warning" for d in diagnostics)
+
+
+def test_a_cyclic_custom_property_chain_is_skipped_not_a_recursion_error() -> None:
+    """RED before the fix: cursor.com/about's cyclic var() blew the stack."""
+    props = {"--a": "var(--b)", "--b": "var(--a)"}
+    diagnostics: list[dict] = []
+    assert parse_color_value("var(--a)", props, diagnostics=diagnostics) is None
+    assert "did not resolve" in diagnostics[0]["message"]
+    # A long-but-finite chain still resolves.
+    chain = {f"--n{i}": f"var(--n{i + 1})" for i in range(10)}
+    chain["--n10"] = "#12EAB1"
+    assert parse_color_value("var(--n0)", chain) == "#12EAB1"
+
+
+_TAILWIND_CSS = """
+:root { --color-brand: rgb(254 255 0 / var(--tw-bg-opacity)); }
+body { background-color: rgb(255 255 255 / var(--tw-bg-opacity)); color: rgb(15 23 42 / var(--tw-text-opacity)); }
+h1 { color: rgb(15 23 42 / var(--tw-text-opacity)); font-family: 'Source Serif 4'; font-size: 48px; font-weight: 700; }
+p { color: rgb(71 85 105 / var(--tw-text-opacity)); font-family: 'DM Sans'; font-size: 16px; }
+.btn { background-color: rgb(254 255 0 / var(--tw-bg-opacity)); color: rgb(15 23 42 / var(--tw-text-opacity)); }
+"""
+
+
+def _tailwind_snapshot():
+    """The apollo.io shape: a real snapshot whose CSS is modern Tailwind color
+    syntax with unresolved opacity custom properties."""
+    from lumen_ingestion.capture.snapshot import SiteSnapshot, Stylesheet
+
+    base = load("insight_static")
+    return SiteSnapshot(
+        **{
+            **base.model_dump(),
+            "requested_url": "https://apollo.io",
+            "final_url": "https://apollo.io",
+            "stylesheets": [
+                Stylesheet(url="https://apollo.io/assets/app.css", text=_TAILWIND_CSS).model_dump()
+            ],
+            "custom_props": {"--color-brand": "rgb(254 255 0 / var(--tw-bg-opacity))"},
+        }
+    )
+
+
+def test_an_ingestion_job_survives_unparseable_colors_end_to_end(tmp_path) -> None:
+    """RED before the fix: apollo.io failed `LUMI0401` on 4/4 URLs here.
+
+    This is the whole offline job — parse → evidence → normalize — driven
+    through `run_ingestion_job`, the wrapper that turns any escaped exception
+    into the `LUMI0401` failure the pilot hit. It must reach `succeeded`.
+    """
+    from lumen_api.design_store import HybridRepository
+    from lumen_ingestion.jobs import IngestionJobStore, run_ingestion_job
+
+    kit_id = "kit_tailwind_survival"
+    HybridRepository().create_brand_kit(
+        {"id": kit_id, "version": 1, "name": kit_id, "approval_status": "draft"},
+        {"product_ready": False},
+        [],
+        "website",
+    )
+    store = IngestionJobStore()
+    job_id = store.create("website", {"url": "https://apollo.io"})["job_id"]
+
+    outcome = CaptureOutcome(
+        snapshot=_tailwind_snapshot(),
+        tier="static",
+        escalated=False,
+        escalation_reason=None,
+        diagnostics=[],
+    )
+    stub = _StubCore()
+
+    def work(report):
+        report("Taking a closer look…", 0.55)  # the stage apollo.io died at
+        with tempfile.TemporaryDirectory() as asset_store:
+            evidence = build_evidence(
+                outcome, core=stub, store_root=asset_store, reporter=_noop
+            )
+        result = normalize_evidence(
+            evidence, brand_kit_id=kit_id, name="Apollo", created_at="2026-08-26"
+        )
+        assert result.brand_kit["assets"] is not None
+        return (kit_id, 1, None)
+
+    run_ingestion_job(store, job_id, work)
+
+    job = store.require(job_id)
+    assert job["error"] is None, job["error"]
+    assert job["status"] == "succeeded"
+
+    # The colors were not merely survived — the real channels were read.
+    hexes = {c.value for c in parse_site(_tailwind_snapshot()).colors}
+    assert "#0F172A" in hexes  # apollo's near-black text
+    assert "#FEFF00" in hexes  # apollo's brand yellow
+
+    # ...and the skipped alpha is reported to the human, on the outcome the
+    # pipeline publishes, not swallowed.
+    assert [d for d in outcome.diagnostics if d["code"] == "LUMI0511"]
+
+
+def test_diagnostics_are_deduped_and_bounded() -> None:
+    """A Tailwind site serves thousands of these; the report stays readable."""
+    diagnostics: list[dict] = []
+    for i in range(200):
+        parse_color_value(f"rgb(a{i} b c)", {}, diagnostics=diagnostics)
+    assert 0 < len(diagnostics) <= 8
+    # Repeating one value does not repeat its diagnostic.
+    repeated: list[dict] = []
+    for _ in range(50):
+        parse_color_value("rgb(a b c)", {}, diagnostics=repeated)
+    assert len(repeated) == 1
+
+
+# --------------------------------------------------------------------------- #
 # Parse: role hints, dark scope, var() resolution, rem→px, fonts, logos, images
 # --------------------------------------------------------------------------- #
 

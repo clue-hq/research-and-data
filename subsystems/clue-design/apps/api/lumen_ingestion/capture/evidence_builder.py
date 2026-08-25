@@ -216,6 +216,12 @@ def build_evidence(outcome, *, core, store_root: str, reporter) -> BrandEvidence
     outcome_diagnostics = getattr(outcome, "diagnostics", None)
     if geometry.diagnostics and isinstance(outcome_diagnostics, list):
         outcome_diagnostics.extend(geometry.diagnostics)
+    # Whatever `parse_site` skipped — an unreadable color, a font file with no
+    # bytes — is only useful if a human sees it, and `ParsedSite.diagnostics`
+    # has no other reader. Forward it onto the outcome, which the pipeline
+    # concatenates into the published kit's diagnostics.
+    if parsed.diagnostics and isinstance(outcome_diagnostics, list):
+        outcome_diagnostics.extend(parsed.diagnostics)
 
     narrative = NarrativeEvidence(
         brand_name=parsed.narrative.brand_name,
