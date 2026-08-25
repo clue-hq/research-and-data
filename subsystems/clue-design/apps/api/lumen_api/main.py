@@ -7674,6 +7674,22 @@ def run_agent_turn_preview(
                 brand_kit_assets=brand_kit_assets,
                 brand_fonts=brand_fonts,
             )
+        asset_library = resolve_scene_turn_asset_library(turn_blobs, turn_cache_root)
+        if asset_library is not None:
+            # W1.1 (Brand Ad Assets v1 §5): the bounded workspace ASSET LIBRARY rides
+            # the run BY VALUE — the same rule as brand_kit_assets and
+            # reference_assets, and the same manifest website mode has always had.
+            # Without it a scene turn could view and place only kit assets and this
+            # turn's reference attachments, so a pre-generated background was
+            # unusable (Apollo POC 2026-08-26). The store root is pinned for the same
+            # reason the reference branch pins it: the read-through staged those
+            # bytes in THIS cache, so pointing the runtime elsewhere would blind
+            # `view("asset:…")` and render placed library imagery as an empty chip.
+            config = replace(
+                config,
+                asset_library=asset_library,
+                asset_store_root=turn_cache_root,
+            )
         turn_targets = editor_target_node_ids(payload)
         if turn_targets:
             # Slice 2.5: the chipped edit targets ride the run BY VALUE so the
@@ -9373,6 +9389,133 @@ def workspace_asset_library_manifest(repo: HybridRepository) -> JsonObject:
                 entry[field] = described[field]
         manifest[str(asset_id)] = entry
     return manifest
+
+
+# --- W1.1: the workspace asset library -> SCENE turn -----------------------------------------
+#
+# THE BOUND LIVES HERE, and it is deliberately far smaller than website mode's
+# `WEB_AGENT_ASSET_LIBRARY_MAX` (2_000). The two manifests are consumed differently:
+#
+#   * A WEBSITE turn only ever SEARCHES its manifest (`search_assets` scores it in Python and
+#     returns ≤8 hits), so 2_000 entries cost memory and nothing else.
+#   * A SCENE turn has no search tool. Its manifest is looked up by id — and, more expensively,
+#     every entry's bytes are pulled out of durable storage into the per-workspace engine cache
+#     by the read-through below, because a placed asset that never materializes renders as an
+#     empty chip. Its ids are also listed back to the agent by `view`'s honest-miss text, which
+#     IS prompt-cache surface.
+#
+# So the scene manifest is the workspace's MOST RECENTLY UPDATED placeable images, capped. That
+# ordering is the DAL's (`updated_at DESC, asset_id`) and it is the right one for this feature:
+# the assets a scene turn wants are the ones the onboarding harvest / pre-generation lane just
+# wrote. If a client ever needs to reach further back, the answer is a search tool on the scene
+# side — NOT a bigger dump into every turn's context.
+SCENE_TURN_ASSET_LIBRARY_MAX = 24
+
+# Fonts and documents are not placeable in a scene, and shipping them would spend read-through
+# on bytes no image node can ever bind. `vector` stays: SVG library assets are placeable and
+# ingestion gives them raster thumbnails.
+SCENE_TURN_ASSET_LIBRARY_KINDS = frozenset({"raster_image", "logo", "vector"})
+
+# The kind/status filter runs in Python (the DAL takes one `kind` at a time), so the query
+# over-fetches a BOUNDED window of the recency order and keeps the first N placeable rows.
+# The window is what stops a library whose newest rows are all fonts from yielding nothing;
+# it is a scan bound, never a manifest bound.
+SCENE_TURN_ASSET_LIBRARY_SCAN = SCENE_TURN_ASSET_LIBRARY_MAX * 8
+
+
+def scene_turn_asset_library_manifest(
+    repo: HybridRepository,
+    blobs: DesignBlobStore,
+    cache_dir: str,
+) -> JsonObject:
+    """The bounded workspace-library manifest a SCENE turn can view and place.
+
+    W1.1 (Brand Ad Assets v1 §5). `workspace_asset_library_manifest` had exactly one
+    call site — the website-mode turn — so a scene turn saw only `brand_kit_assets`
+    and this turn's `reference_assets`. A pre-generated `asset_gen_*` background was
+    therefore unviewable AND unplaceable however healthy it was in the database
+    (Apollo POC 2026-08-26, `.context/ref-ads-pilot-apollo-report.md` §6.1). This is
+    the missing third channel, built from the same rows and the same description
+    store, then bounded (see the constants above) and byte-backed.
+
+    Read-through, the P0.1 pattern (fast-loop v1 §4), identical to
+    `brand_kit_asset_manifest`: the runtime resolves previews BY DIGEST out of the
+    per-workspace engine cache, so durable bytes are materialized there first.
+    Without it a fleet worker sees the manifest and none of the pixels — a silent
+    empty chip, which is the failure mode this whole item exists to kill. Fail-SOFT
+    like every other read-through: a digest with no durable bytes is left absent and
+    `view("asset:…")` degrades to its honest missing-file text.
+    """
+    manifest: JsonObject = {}
+    # The DAL already returns `updated_at DESC, asset_id`; keep THAT order rather than
+    # re-sorting here, so recency has exactly one definition and no timestamp shape has
+    # to be re-derived in Python.
+    for row in repo.list_asset_records(
+        include_archived=False,
+        limit=SCENE_TURN_ASSET_LIBRARY_SCAN,
+        offset=0,
+    ):
+        if len(manifest) >= SCENE_TURN_ASSET_LIBRARY_MAX:
+            break
+        record = row.get("asset") or {}
+        asset_id = record.get("id")
+        # `status` is mirrored onto the record; only a READY asset is placeable, and
+        # the runtime's library seam refuses anything else anyway.
+        if not asset_id or record.get("status") != "ready":
+            continue
+        if record.get("kind") not in SCENE_TURN_ASSET_LIBRARY_KINDS:
+            continue
+        manifest[str(asset_id)] = {
+            "record": record,
+            "created_at": row.get("created_at"),
+            "updated_at": row.get("updated_at"),
+        }
+
+    try:
+        descriptions = DescriptionStore(workspace_id=repo.workspace_id).get_many(
+            list(manifest.keys())
+        )
+    except Exception:
+        descriptions = {}
+    for asset_id, entry in manifest.items():
+        described = descriptions.get(asset_id) or {}
+        for field in ("title", "description", "usage", "tags"):
+            if described.get(field):
+                entry[field] = described[field]
+
+    ensure_materialized(
+        blobs,
+        cache_dir,
+        (
+            digest
+            for entry in manifest.values()
+            for digest, _mime in record_digests(entry["record"])
+        ),
+    )
+    return manifest
+
+
+def resolve_scene_turn_asset_library(
+    blobs: DesignBlobStore,
+    cache_dir: Path,
+) -> Optional[JsonObject]:
+    """The scene turn's library manifest, or None when it cannot be built.
+
+    Tolerant on purpose, exactly like `resolve_agent_turn_brand_kit`: an unreachable
+    database or an empty library must never fail a turn — the run simply designs
+    without the library, which is the pre-W1.1 behaviour. An EMPTY manifest returns
+    None too, so a workspace with no library assets leaves `config.asset_library`
+    unset and its turn stays byte-identical to before.
+
+    `cache_dir` is the TURN's engine cache, threaded in rather than re-derived: a
+    fleet worker injects its own, and staging bytes in one tree while the runtime
+    reads another is exactly the split D5 Round C closed elsewhere."""
+    try:
+        repo = HybridRepository(blobs.workspace_id)
+        manifest = scene_turn_asset_library_manifest(repo, blobs, str(cache_dir))
+    except Exception:
+        return None
+    return manifest or None
 
 
 def brand_kit_asset_manifest(
