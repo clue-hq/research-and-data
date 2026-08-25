@@ -639,6 +639,30 @@ reviewer could introduce, and it is the one thing that would put the reviewer
 back."""
 
 
+#: W1.5 — the self-audit's reference clause. Appended to the FAST-LOOP author
+#: prompt only, and only on a reference turn, so the flag-off prompt stays byte
+#: identical and a no-reference turn is untouched. The backend stamps the typed
+#: field either way; this is what gets a REAL judgment into it instead of a 0.
+_AUTHOR_SELF_AUDIT_FIDELITY = """REFERENCE FIDELITY — a required part of your self-audit on this turn:
+This turn carries reference images, so critique.json must carry a
+`reference_fidelity` object. Put it next to `accepted` and `summary`. It is a
+typed field. A score written as a sentence inside acceptance_notes does not
+count.
+
+  "reference_fidelity": {
+    "score": <0-3>,
+    "reasons": "<what you saw that earned this score>",
+    "regressed_to_house_style": <true if you drifted back to your own defaults>
+  }
+
+Score 3 means the design reads as a member of the references' visual system.
+Score 2 means it took the system but missed details. Score 1 means it only took
+the palette. Score 0 means it ignored the references. Judge by looking: put each
+reference next to your render and say what actually carried over. Score honestly
+— a low score with precise reasons is the useful answer, and the run can act on
+it."""
+
+
 #: §5.5 — the tool-routing rule. In the baseline, iterations 21–34 were fourteen
 #: compiles carrying one property edit each, ~24 model calls at 95–124K tokens of
 #: history apiece. The rule is not "use reconcile more"; it is a boundary with a
@@ -960,6 +984,9 @@ def build_author_prompt(
     ]
     if has_references:
         sections.append(_AUTHOR_REFERENCES_POINTER.format(workspace=workspace))
+        # W1.5: the author is the only reviewer in the fast loop, so the author
+        # is the one who must type the fidelity judgment.
+        sections.append(_AUTHOR_SELF_AUDIT_FIDELITY)
     if frame_payload:
         sections.append(frame_payload)
     return "\n\n".join(sections)

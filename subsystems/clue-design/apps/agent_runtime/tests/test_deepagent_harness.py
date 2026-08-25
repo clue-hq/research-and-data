@@ -904,6 +904,69 @@ def test_finalize_without_references_never_requires_fidelity(tmp_path, monkeypat
     assert (tools.trace_dir / "final.json").exists()
 
 
+# 7f-bis. W1.5 — the gate reads a judgment the author wrote as prose ----------
+#
+# RED (Cursor pilot): the author judged fidelity 2/3 into `acceptance_notes`
+# prose while the typed field stayed null, so this gate refused a finalize the
+# author had actually earned. The gate now normalizes before it reads.
+
+_PROSE_ONLY_CRITIQUE = json.dumps(
+    {
+        "accepted": True,
+        "summary": "Dark flat field, centered lockup, one large light headline.",
+        "acceptance_notes": [
+            "safe-margins: 2 — pad(96) all sides",
+            "reference_fidelity: 2 — dark flat field, centered lockup, generous air; "
+            "held back by the plate and the Inter fallback",
+        ],
+    }
+)
+
+
+def test_finalize_accepts_when_the_fidelity_judgment_was_written_as_prose(tmp_path, monkeypatch):
+    """W1.5 GREEN: the prose score is promoted, so the gate can read it."""
+    monkeypatch.setattr("lumen_agent.tools.substrate.CoreClient", FakeCoreClient)
+    tools = _tools_only(
+        _reference_config(tmp_path, [{"asset_id": "asset_r1", "png": _solid_png(), "order": 0}])
+    )
+    result = _finalize(tools, critique=_PROSE_ONLY_CRITIQUE)
+    assert not result.startswith("REFUSED")
+
+    final = json.loads((tools.trace_dir / "final.json").read_text())
+    fidelity = final["critique"]["reference_fidelity"]
+    assert fidelity["score"] == 2
+    assert "dark flat field" in fidelity["reasons"]
+
+
+def test_finalize_still_refuses_when_the_prose_score_is_low(tmp_path, monkeypatch):
+    """Promotion is not laundering: a prose 1 is still a refusal."""
+    monkeypatch.setattr("lumen_agent.tools.substrate.CoreClient", FakeCoreClient)
+    tools = _tools_only(
+        _reference_config(tmp_path, [{"asset_id": "asset_r1", "png": _solid_png(), "order": 0}])
+    )
+    result = _finalize(
+        tools,
+        critique=json.dumps(
+            {"accepted": True, "acceptance_notes": ["reference_fidelity: 1 — palette only"]}
+        ),
+    )
+    assert result.startswith("REFUSED")
+    assert not (tools.trace_dir / "final.json").exists()
+
+
+def test_a_non_accepted_reference_finalize_still_records_the_typed_field(tmp_path, monkeypatch):
+    """Metrics need the field on EVERY reference turn, not only accepted ones."""
+    monkeypatch.setattr("lumen_agent.tools.substrate.CoreClient", FakeCoreClient)
+    tools = _tools_only(
+        _reference_config(tmp_path, [{"asset_id": "asset_r1", "png": _solid_png(), "order": 0}])
+    )
+    result = _finalize(tools, status="blocked", critique='{"accepted": false, "summary": "s"}')
+    assert not result.startswith("REFUSED")
+
+    final = json.loads((tools.trace_dir / "final.json").read_text())
+    assert final["critique"]["reference_fidelity"]["score"] == 0
+
+
 def test_finalize_non_accepted_reference_turn_needs_no_fidelity(tmp_path, monkeypatch):
     """Honest non-acceptance stays available without a fidelity judgment."""
     monkeypatch.setattr("lumen_agent.tools.substrate.CoreClient", FakeCoreClient)
