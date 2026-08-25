@@ -145,9 +145,19 @@ class AgentRuntimeConfig:
     # `scene_reviewer_enabled`, never directly — that property is the single
     # place R3 is expressed.
     scene_reviewer: bool = False
-    # R4 budgets. Only consulted under `fast_loop`.
-    fast_loop_max_llm_calls: int = 45
-    fast_loop_wall_clock_s: float = 600.0
+    # R4 budgets, re-shaped by ruling D1 (2026-08-26). Only consulted under
+    # `fast_loop`. Two pairs, two jobs:
+    #   * `fast_loop_target_*` — GUIDANCE. Communicated to the orchestrator in
+    #     plain language (prompt + the round-boundary BUDGET LEFT line). Nothing
+    #     stops a run at the target; crossing it is recorded, not enforced.
+    #   * `fast_loop_max_llm_calls` / `fast_loop_wall_clock_s` — the BACKSTOP,
+    #     ~2x the target. The only hard stop, and only for a hung/runaway run;
+    #     it still finalizes checkpointed work gracefully. The agent's prompt
+    #     never names it.
+    fast_loop_target_llm_calls: int = 45
+    fast_loop_target_wall_clock_s: float = 900.0
+    fast_loop_max_llm_calls: int = 90
+    fast_loop_wall_clock_s: float = 1800.0
     fast_loop_inner_iterations: int = 4
     # §5.1 pin-list override (comma-separated knowledge_docs-relative paths).
     # None → `lumen_agent.frame.DEFAULT_PINNED_KNOWLEDGE`.
@@ -194,6 +204,8 @@ class AgentRuntimeConfig:
             auto_defaults=settings.lumen_agent_auto_defaults,
             fast_loop=settings.lumen_agent_fast_loop,
             scene_reviewer=settings.lumen_agent_scene_reviewer,
+            fast_loop_target_llm_calls=settings.lumen_agent_fast_loop_target_llm_calls,
+            fast_loop_target_wall_clock_s=settings.lumen_agent_fast_loop_target_wall_clock_s,
             fast_loop_max_llm_calls=settings.lumen_agent_fast_loop_max_llm_calls,
             fast_loop_wall_clock_s=settings.lumen_agent_fast_loop_wall_clock_s,
             fast_loop_inner_iterations=settings.lumen_agent_fast_loop_inner_iterations,

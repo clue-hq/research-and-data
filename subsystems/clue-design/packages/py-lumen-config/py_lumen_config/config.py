@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # D5 Round B (R-D5-B1): this package moved from `<clue-design>/py_lumen_config/` into its own
@@ -202,12 +202,32 @@ class Settings(BaseSettings):
     # (and ignored) when the fast loop is off — the reviewer is always dispatched
     # there.
     lumen_agent_scene_reviewer: bool = False
-    # §5.6 budgets, ratified as R4: 45 model calls / 10 minutes wall / 4 inner
-    # iterations per round. HARNESS-enforced (a callback and a tool refusal), not
-    # prompt-hoped. Only consulted under the fast loop. A non-positive value is a
-    # startup failure, not a silently disabled ceiling.
-    lumen_agent_fast_loop_max_llm_calls: int = 45
-    lumen_agent_fast_loop_wall_clock_s: float = 600.0
+    # §5.6 budgets. RULING D1 (founder, 2026-08-26) SPLIT THESE IN TWO: budgets
+    # are GUIDANCE, not gates.
+    #
+    #   * The TARGET is what the agent is told about. It rides the orchestrator
+    #     prompt as a plain obligation ("aim to finish within…") and the
+    #     round-boundary BUDGET LEFT line. NOTHING cuts a run off at the target
+    #     — crossing it is recorded as `budget_target_exceeded` and the run
+    #     carries on.
+    #   * The BACKSTOP is the circuit breaker for a hung or runaway run, set at
+    #     ~2x the target. It is the only hard stop, it still finalizes
+    #     checkpointed work gracefully, and the agent's prompt never mentions it
+    #     because a healthy run never reaches it.
+    #
+    # WHY 900s AND NOT 600s. Live A/B, 2026-08-26 (Apollo POC,
+    # `.context/ref-ads-pilot-apollo-report.md`): at a 600s HARD wall the run was
+    # cut right after its first look and shipped at reference_fidelity 1; at 900s
+    # the same brief reacted to its own critique and reached fidelity 2. The old
+    # ceiling was not protecting the run from waste, it was amputating the repair
+    # round the loop exists to run.
+    #
+    # A non-positive value is a startup failure, not a silently disabled budget,
+    # and a backstop below its own target is refused too (see the validators).
+    lumen_agent_fast_loop_target_llm_calls: int = 45
+    lumen_agent_fast_loop_target_wall_clock_s: float = 900.0
+    lumen_agent_fast_loop_max_llm_calls: int = 90
+    lumen_agent_fast_loop_wall_clock_s: float = 1800.0
     lumen_agent_fast_loop_inner_iterations: int = 4
     # §5.1 pin list override: comma-separated knowledge paths, each relative to
     # `apps/agent_runtime/knowledge_docs/`, inlined into the author's composed
@@ -308,16 +328,18 @@ class Settings(BaseSettings):
         return value
 
     @field_validator(
+        "lumen_agent_fast_loop_target_llm_calls",
+        "lumen_agent_fast_loop_target_wall_clock_s",
         "lumen_agent_fast_loop_max_llm_calls",
         "lumen_agent_fast_loop_wall_clock_s",
         "lumen_agent_fast_loop_inner_iterations",
     )
     @classmethod
     def _validate_fast_loop_budget(cls, value: float) -> float:
-        """§5.6 ceilings must be real ceilings.
+        """§5.6 budgets must be real numbers a run can be measured against.
 
         A zero or negative budget would either stop the run before its first
-        model call or (read the other way) disable the ceiling entirely — both
+        model call or (read the other way) disable the backstop entirely — both
         are silent, and a budget that silently does nothing is worse than no
         budget at all. Fail at startup instead.
         """
@@ -327,6 +349,35 @@ class Settings(BaseSettings):
                 f"iterations); got {value!r}"
             )
         return value
+
+    @model_validator(mode="after")
+    def _validate_backstop_sits_above_its_target(self) -> Settings:
+        """D1: the backstop must be reachable only AFTER the target, never before.
+
+        A backstop below its own target inverts the whole ruling — the run would
+        be hard-stopped before it ever crossed the guidance it was told to steer
+        by, and the prompt's "nothing cuts you off here" would be a lie the
+        harness tells the agent. That is exactly the silent failure the other
+        budget validators exist to prevent, so it fails at startup too.
+        """
+        if self.lumen_agent_fast_loop_max_llm_calls < self.lumen_agent_fast_loop_target_llm_calls:
+            raise ValueError(
+                "LUMEN_AGENT_FAST_LOOP_MAX_LLM_CALLS (the backstop, "
+                f"{self.lumen_agent_fast_loop_max_llm_calls}) must be >= "
+                "LUMEN_AGENT_FAST_LOOP_TARGET_LLM_CALLS (the target, "
+                f"{self.lumen_agent_fast_loop_target_llm_calls})"
+            )
+        if (
+            self.lumen_agent_fast_loop_wall_clock_s
+            < self.lumen_agent_fast_loop_target_wall_clock_s
+        ):
+            raise ValueError(
+                "LUMEN_AGENT_FAST_LOOP_WALL_CLOCK_S (the backstop, "
+                f"{self.lumen_agent_fast_loop_wall_clock_s}) must be >= "
+                "LUMEN_AGENT_FAST_LOOP_TARGET_WALL_CLOCK_S (the target, "
+                f"{self.lumen_agent_fast_loop_target_wall_clock_s})"
+            )
+        return self
 
     @field_validator("image_model_id", mode="before")
     @classmethod
