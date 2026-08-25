@@ -285,7 +285,14 @@ def create_design_deepagent(
     # W-isolation (D1): virtual-mode backend rooted at the isolated workspace. The
     # agent's `/` IS the workspace; absolute paths re-anchor under the root (no
     # escape), and the subclass forgives stale host-absolute/legacy path forms.
-    backend = AgentWorkspaceBackend(root_dir=str(runtime_config.workspace_root))
+    # `reference_turn` (W1.5): on a reference turn the backend normalizes any
+    # `critique.json` the author writes so the typed `reference_fidelity` is
+    # always stamped — the fast loop has no typed critique writer, only
+    # `write_file`, so this backend is the invariant's only choke point.
+    backend = AgentWorkspaceBackend(
+        root_dir=str(runtime_config.workspace_root),
+        reference_turn=bool(runtime_config.reference_assets),
+    )
 
     from .llm import assert_all_role_models_support_image_input
 

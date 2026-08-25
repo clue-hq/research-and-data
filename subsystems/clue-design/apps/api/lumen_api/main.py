@@ -163,6 +163,7 @@ from lumen_ingestion.capture.uploads import sniff_mime
 from lumen_ingestion.describe import DescriptionStore
 from lumen_ingestion.jobs import IngestionJobStore
 from lumen_ingestion.jobs import new_id as ingestion_new_id
+from lumen_ingestion.logo_policy import extend_allowed_backgrounds
 from lumen_ingestion.pipeline import (
     run_asset_ingestion,
     run_pdf_ingestion,
@@ -1993,6 +1994,15 @@ def create_app(
                 "height": None,
             }
         ]
+        # W1.6: the slot now holds a different mark, so its background policy must
+        # cover it. Promoting a reversed logo into a slot that ingestion wrote as
+        # light-only would otherwise leave the kit saying that mark may never sit
+        # on a dark field — the exact vocabulary gap the Cursor pilot hit. Widening
+        # only: an existing allowance is never dropped, and an empty list (which
+        # means "do not check this slot") is left empty.
+        slot["allowed_backgrounds"] = extend_allowed_backgrounds(
+            slot.get("allowed_backgrounds"), [payload.color_mode]
+        )
         slot["provenance"] = {
             "confidence": 1.0,
             "source": f"manual :: human-selected {asset.get('label') or payload.asset_id}",

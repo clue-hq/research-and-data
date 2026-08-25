@@ -28,6 +28,7 @@ except Exception:  # pragma: no cover
 
 from ..autofix import AutofixResult, run_autofix
 from ..config import AgentRuntimeConfig
+from ..critique_fidelity import stamp_reference_fidelity
 from ..retokenize import (
     build_logo_placement_operations,
     build_retokenize_operations,
@@ -4218,6 +4219,15 @@ class LumenDesignTools:
         # attached?" — so the omission itself refuses the finalize. The
         # orchestrator gets an actionable refusal string and must re-run the
         # reviewer (or finalize honestly as not-accepted).
+        #
+        # W1.5: before the gate reads the typed field, promote a judgment the
+        # author wrote as prose into it. The backend already stamped the durable
+        # `critique.json`; this covers the orchestrator handing us a critique it
+        # re-serialized on the way here. `stamp_reference_fidelity` only ever
+        # promotes a score the author WROTE — an unjudged self-audit stamps
+        # `score: 0`, which this gate refuses exactly as an omission did.
+        if self.config.reference_assets or {}:
+            critique = stamp_reference_fidelity(critique)
         if status == "accepted" and (self.config.reference_assets or {}):
             fidelity = (critique or {}).get("reference_fidelity") or {}
             score = fidelity.get("score")
