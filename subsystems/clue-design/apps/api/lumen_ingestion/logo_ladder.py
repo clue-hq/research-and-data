@@ -2179,7 +2179,14 @@ def resolve(
                 # a DIFFERENT LOCKUP of the same brand (workspan.com's primary is
                 # the 46x26 symbol, the rejected asset the 203x32 horizontal
                 # wordmark). Surface it rather than silently drop it.
-                if "aspect" in (why or "") and _brand_named(candidate, name_tokens):
+                if (
+                    "aspect" in (why or "")
+                    and _brand_named(candidate, name_tokens)
+                    # One entry per artwork: the same file is harvested from
+                    # several rungs, and listing it three times reads as three
+                    # rival lockups when it is one.
+                    and candidate.sha256 not in {a["sha256"] for a in alternate_lockups}
+                ):
                     alternate_lockups.append({
                         "url": candidate.url, "rung": candidate.rung, "fmt": candidate.fmt,
                         "width": candidate.width, "height": candidate.height,
@@ -2248,6 +2255,19 @@ def resolve(
             and slot_eligible(c)
             and c.sha256 not in chosen_shas
             and brand_evidence(c)
+            # A reversed asset is the dark variant of something, never "the
+            # wordmark". Live on workspan.com the white 46x26 symbol was
+            # rejected for the dark slot on lockup (correctly — different
+            # artwork) and then landed here, handing back a white symbol under
+            # the wrong name. A slot the asset does not belong in is worse than
+            # an empty one.
+            and c.variant != "dark"
+            # Same gate the primary answers to. Live on insighthealth.ai this
+            # slot picked `InsightHealth-dont-6-img.avif` off a CSS background —
+            # a brand-guidelines DON'T illustration, brand-named and wide, which
+            # is every signal this slot reads. Only rungs that mean "the brand
+            # published this as its mark" may fill it.
+            and c.rung in AUTO_ACCEPT_RUNGS
         ]
         if wordmarks:
             chosen["wordmark"] = max(wordmarks, key=lambda c: c.score)
