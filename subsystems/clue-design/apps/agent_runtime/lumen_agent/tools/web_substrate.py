@@ -57,6 +57,7 @@ from ..config import AgentRuntimeConfig
 from ..engine_mirror import record_pixel_dims, resolve_kit_color, sanitize_token_name
 from ..models.schemas import LumenRunTraceEvent, new_run_id
 from ..web_retokenize import build_web_retokenize_operations, summarize_class_pairs
+from . import logo_fetch
 from .asset_preview import asset_preview_path
 from .substrate import _CoreHelperProxy, _image_warning, blob_path_for_digest
 from .view import _VISION_MANY_IMAGE_MAX_PX, _image_block, _text_block
@@ -3103,6 +3104,156 @@ class LumenWebTools:
             },
         )
         return json.dumps({"status": "ok", **page}, indent=2)
+
+    def fetch_logo(self, domain: str, company_name: Optional[str] = None) -> str:
+        """Fetch a company's REAL logo from its website and register it here.
+
+        Use this whenever the page shows a company that is not us — the target
+        account on an ABM page, a named customer, a partner. Pass their domain
+        (`goodmancampbell.com`) or any URL on their site; pass `company_name`
+        too when you know it, because it sharpens the identity check.
+
+        Returns the asset ids it registered, one per slot it could fill:
+        `light` (for light backgrounds), `dark` (a reversed/white asset for dark
+        backgrounds), `mark` (the symbol alone) and `wordmark`. Place them like
+        any other asset. A slot is missing when the brand publishes nothing for
+        it — that is a real answer, not a failure, and it is never filled by
+        recoloring another slot.
+
+        If it comes back `needs_review`, nothing was registered because no asset
+        could be attributed to that company with confidence. Say so and ask for
+        the file. Never draw, recolor or approximate a logo.
+
+        Static fetch only: a site that builds its header in JavaScript has no
+        logo to read here, and reports that plainly.
+        """
+        requested = (domain or "").strip()
+        if not requested:
+            return self._tool_error(
+                "logo_fetch.bad_request", "fetch_logo requires a non-empty `domain`."
+            )
+        budget_error = self._consume_round_budget("fetch_logo")
+        if budget_error:
+            return budget_error
+        try:
+            outcome = logo_fetch.fetch_logo_family(
+                requested, company_name=(company_name or "").strip() or None
+            )
+        except ValueError as error:
+            return self._tool_error("logo_fetch.bad_request", str(error))
+        except CaptureError as error:
+            self.record(
+                "agent",
+                "web_logo_fetch_failed",
+                input_summary=requested[:500],
+                output_summary=f"{error.code}: {error.message}"[:500],
+            )
+            return self._tool_error(
+                "logo_fetch.blocked" if error.code == "LUMI0501" else "logo_fetch.failed",
+                error.message,
+                capture_code=error.code,
+            )
+        except Exception as error:  # noqa: BLE001 - tool failures are envelopes
+            self.record(
+                "agent",
+                "web_logo_fetch_failed",
+                input_summary=requested[:500],
+                output_summary=f"{type(error).__name__}: {error}"[:500],
+            )
+            return self._tool_error(
+                "logo_fetch.failed",
+                f"logo fetch failed: {type(error).__name__}: {error}",
+            )
+
+        if outcome.needs_review:
+            self.record(
+                "agent",
+                "web_logo_fetch_needs_review",
+                input_summary=requested[:500],
+                output_summary=(outcome.notes[0] if outcome.notes else "no slot filled")[:500],
+            )
+            return json.dumps(logo_fetch.review_payload(outcome), indent=2)
+
+        store_root = str(self.config.effective_asset_store_root)
+        placed: List[JsonObject] = []
+        failures: List[JsonObject] = []
+        for prepared in outcome.prepared:
+            ingest = self.core.ingest_asset(**prepared.ingest_kwargs(store_root))
+            if not ingest.get("ok"):
+                detail = (ingest.get("error") or {}).get("message", "unknown error")
+                failures.append({"slot": prepared.slot, "error": detail})
+                continue
+            record = (ingest.get("asset") or {}).get("record") or {}
+            registered = self._register_asset_record(
+                record,
+                origin="logo_ladder",
+                label=prepared.label,
+                alt=f"{outcome.company or prepared.label} logo",
+                extra={"slot": prepared.slot},
+            )
+            # `_register_asset_record` returns a tool-error envelope when the
+            # checked op path rejects the batch; surface it verbatim.
+            if '"status": "ok"' not in registered:
+                return registered
+            placed.append({
+                "slot": prepared.slot,
+                "asset_id": prepared.asset_id,
+                **prepared.evidence,
+            })
+
+        if not placed:
+            return self._tool_error(
+                "logo_fetch.ingest_failed",
+                "the logo was resolved but could not be registered",
+                failures=failures,
+            )
+
+        self._register_fetched_logo_custody(outcome)
+        payload: JsonObject = {
+            "status": outcome.status,
+            "site": outcome.site,
+            "identity": outcome.identity,
+            "lockup_completeness": outcome.lockup_completeness,
+            "logos": placed,
+            "notes": outcome.notes[:4],
+        }
+        if failures:
+            payload["failed_slots"] = failures
+        self.record(
+            "agent",
+            "web_logo_fetched",
+            input_summary=requested[:500],
+            output_summary=(
+                f"{outcome.site}: " + ", ".join(p["slot"] for p in placed)
+            )[:500],
+            payload={"site": outcome.site, "slots": [p["slot"] for p in placed]},
+        )
+        return json.dumps(payload, indent=2)
+
+    def _register_fetched_logo_custody(self, outcome) -> None:
+        """Give the fetched bytes durable custody now, not at accept.
+
+        The scene lane has an accept-seam backstop; the web lane's commit path
+        did not, so an agent-ingested asset lived only in the engine's own
+        cache — a directory that can be wiped, leaving the document citing bytes
+        nothing holds. A web-doc backstop now runs at the commit seam too; this
+        call is the belt to that brace, and it is best-effort because losing
+        durability is not a reason to lose the agent's turn.
+        """
+        blobs = getattr(self.config, "blob_store", None)
+        cache_root = getattr(self.config, "engine_cache_root", None)
+        if blobs is None or cache_root is None:
+            return
+        try:
+            from lumen_api.asset_custody import register_web_asset_backstop
+
+            register_web_asset_backstop(blobs, cache_root, self.web_doc)
+        except Exception as error:  # noqa: BLE001 - never fail a turn on custody
+            self._obs_log.warning(
+                "web_logo_custody_deferred",
+                error=str(error),
+                error_type=type(error).__name__,
+            )
 
     def _asset_library_entry(self, asset_id: str) -> Optional[JsonObject]:
         manifest = self.config.asset_library or {}

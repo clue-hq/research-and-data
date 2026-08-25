@@ -52,6 +52,7 @@ from .asset_custody import (
     record_digests,
     register_engine_write,
     register_scene_asset_backstop,
+    register_web_asset_backstop,
     write_cache_blob,
 )
 from .core import CoreClient, CoreError, has_error_diagnostics
@@ -8900,6 +8901,16 @@ def execute_web_turn_job(
                         )
                     else:
                         try:
+                            # Durable custody BEFORE the governed write, mirroring the
+                            # scene accept seam. An agent tool can ingest bytes mid-turn
+                            # (a fetched account logo), and until this ran the web lane
+                            # had no backstop at all — the document committed citing
+                            # bytes that lived only in a wipeable engine cache.
+                            register_web_asset_backstop(
+                                _turn_blob_store(host, workspace_id),
+                                _host_engine_cache_root(host, workspace_id),
+                                replay["web_doc"],
+                            )
                             # D6 Round B: the worker's persist is the SAME governed write the
                             # /web/operations route makes, with `actor="agent"` on the
                             # invocation (REQ-20 parity) and the envelope's frozen

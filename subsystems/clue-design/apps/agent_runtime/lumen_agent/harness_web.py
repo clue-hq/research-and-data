@@ -274,6 +274,7 @@ def create_web_deepagent(
                 tools.author_web_subtree,
                 tools.patch_web_page,
                 tools.fetch_page,
+                tools.fetch_logo,
                 tools.search_assets,
                 tools.provenance,
                 tools.asset,

@@ -2066,8 +2066,16 @@ def resolve(
             )
 
     def slot_eligible(candidate) -> bool:
-        """A junk-flagged asset never fills a slot, whatever its score."""
-        return not candidate.junk_hits
+        """What may fill a slot at all, however well it scores.
+
+        Junk is one half. The other is the partner-link rule: a mark linking
+        into /partners/, /customers/, /use-case/ is another company's logo
+        sitting on our CDN, and down-scoring it is not enough — on a page whose
+        only header mark is a partner's, the tier fallbacks happily hand that
+        slot to it. That is the AWS-as-WorkSpan failure with the brand-evidenced
+        tier simply empty, so the rule has to make it INELIGIBLE, not cheap.
+        """
+        return not candidate.junk_hits and _partner_context(candidate) is None
 
     def brand_evidence(candidate) -> list[str]:
         """Positive, ASSET-level evidence this is OUR mark.
@@ -2096,9 +2104,13 @@ def resolve(
         clean = [c for c in pool if slot_eligible(c)]
         tier1 = [c for c in clean if brand_evidence(c)]
         tier2 = [c for c in clean if c.rung in ("HEADER", "NAV_VISIBLE", "INLINE_SVG")]
+        # No unfiltered last resort. If nothing eligible survives, the honest
+        # answer is an empty slot and a needs_review — handing the slot to the
+        # best of a bad pool is exactly the confident wrong answer these guards
+        # exist to prevent.
         for tier, label in (
             (tier1, "brand-evidenced"), (tier2, "visible chrome"),
-            (clean, "clean fallback"), (pool, "unfiltered fallback"),
+            (clean, "clean fallback"),
         ):
             if tier:
                 return max(tier, key=lambda c: (LOCKUP_RANK.get(c.lockup, 0), c.score)), label

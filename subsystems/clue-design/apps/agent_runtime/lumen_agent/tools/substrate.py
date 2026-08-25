@@ -35,6 +35,7 @@ from ..retokenize import (
 from ..brand_card import build_brand_card
 from ..knowledge import BRAND_APPLICATION_PATH, DIRECTIVES_PATH, read_task_knowledge
 from ..paths import normalize_agent_key
+from . import logo_fetch
 from .asset_preview import asset_preview_path, blob_path_for_digest
 from ..run_metrics import RunMetrics
 from ..text_clearance import collision_advisory
@@ -1231,6 +1232,121 @@ class LumenDesignTools:
             "asset.bad_request",
             "action='use_brand_asset' requires `node_id` or `slot_id`.",
         )
+
+    def fetch_logo(self, domain: str, company_name: Optional[str] = None) -> str:
+        """Fetch a company's REAL logo from its website and register it here.
+
+        Use this whenever the design shows a company that is not us — the target
+        account, a named customer, a partner. Pass their domain
+        (`goodmancampbell.com`) or any URL on their site; pass `company_name`
+        too when you know it, because it sharpens the identity check.
+
+        Returns the asset ids it registered, one per slot it could fill:
+        `light` (for light backgrounds), `dark` (a reversed/white asset for dark
+        backgrounds), `mark` (the symbol alone) and `wordmark`. Place them with
+        `asset(action="place", ...)` like any other registered asset. A slot is
+        missing when the brand publishes nothing for it — that is a real answer,
+        and it is never filled by recoloring another slot.
+
+        If it comes back `needs_review`, nothing was registered because no asset
+        could be attributed to that company with confidence. Say so and ask for
+        the file. Never draw, recolor or approximate a logo.
+
+        Static fetch only: a site that builds its header in JavaScript has no
+        logo to read here, and reports that plainly.
+        """
+        requested = (domain or "").strip()
+        if not requested:
+            return self._tool_error(
+                "logo_fetch.bad_request", "fetch_logo requires a non-empty `domain`."
+            )
+        try:
+            outcome = logo_fetch.fetch_logo_family(
+                requested, company_name=(company_name or "").strip() or None
+            )
+        except ValueError as error:
+            return self._tool_error("logo_fetch.bad_request", str(error))
+        except Exception as error:  # noqa: BLE001 - tool failures are envelopes
+            code = getattr(error, "code", "")
+            self.record(
+                "coordinator",
+                "logo_fetch_failed",
+                input_summary=requested[:500],
+                output_summary=f"{type(error).__name__}: {error}"[:500],
+            )
+            return self._tool_error(
+                "logo_fetch.blocked" if code == "LUMI0501" else "logo_fetch.failed",
+                f"{getattr(error, 'message', None) or error}",
+                capture_code=code or None,
+            )
+
+        if outcome.needs_review:
+            self.record(
+                "coordinator",
+                "logo_fetch_needs_review",
+                input_summary=requested[:500],
+                output_summary=(outcome.notes[0] if outcome.notes else "no slot filled")[:500],
+            )
+            return json.dumps(logo_fetch.review_payload(outcome), indent=2)
+
+        store_root = str(self.config.effective_asset_store_root)
+        placed: list[JsonObject] = []
+        failures: list[JsonObject] = []
+        for prepared in outcome.prepared:
+            ingest = self.core.ingest_asset(**prepared.ingest_kwargs(store_root))
+            if not ingest.get("ok"):
+                detail = (ingest.get("error") or {}).get("message", "unknown error")
+                failures.append({"slot": prepared.slot, "error": detail})
+                continue
+            record = (ingest.get("asset") or {}).get("record") or {}
+            # SCENE op key is "asset"; the web lane's is "record". Same engine
+            # asset table, two operation schemas.
+            operations = [{"kind": "upsert_asset", "asset": record}]
+            try:
+                apply_response = self.core.apply_operations(self.scene, operations)
+            except CoreError as error:
+                failures.append({"slot": prepared.slot, "error": error.message})
+                continue
+            self._replace_scene_from_core_response(
+                apply_response, "fetch_logo", operations
+            )
+            placed.append({
+                "slot": prepared.slot,
+                "asset_id": record.get("id") or prepared.asset_id,
+                **prepared.evidence,
+            })
+
+        if not placed:
+            return self._tool_error(
+                "logo_fetch.ingest_failed",
+                "the logo was resolved but could not be registered in the scene",
+                failures=failures,
+            )
+
+        payload: JsonObject = {
+            "status": outcome.status,
+            "site": outcome.site,
+            "identity": outcome.identity,
+            "lockup_completeness": outcome.lockup_completeness,
+            "logos": placed,
+            "notes": outcome.notes[:4],
+            "next": (
+                "Place one with asset(action='place', asset_id=..., node_id=... or "
+                "slot_id=...). Use `dark` on dark surfaces and `light` on light ones."
+            ),
+        }
+        if failures:
+            payload["failed_slots"] = failures
+        self.record(
+            "coordinator",
+            "logo_fetched",
+            input_summary=requested[:500],
+            output_summary=(
+                f"{outcome.site}: " + ", ".join(p["slot"] for p in placed)
+            )[:500],
+            payload={"site": outcome.site, "slots": [p["slot"] for p in placed]},
+        )
+        return json.dumps(payload, indent=2)
 
     def _collect_reference_previews(
         self, condition_on_references: bool, diagnostics: List[JsonObject]

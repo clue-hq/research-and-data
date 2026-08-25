@@ -264,6 +264,13 @@ Account authoring rules (binding):
 - Their brand is quoted, never adopted: our theme tokens everywhere; the
   account appears as name + logo only. Facts about them come from the card
   or the brief — never inferred.
+- If the account card carries no logo asset, get their real one with
+  `fetch_logo("theirdomain.com")`. It returns asset ids per slot — `light`,
+  `dark` (reversed, for dark surfaces), `mark`, `wordmark` — already
+  registered, so you place them like any other asset. A missing slot means
+  the brand publishes nothing for it. If it answers `needs_review`, nothing
+  was registered: say so in chat and ask for the file. Never draw, recolor
+  or approximate someone's logo.
 """
         if account_card
         else ""

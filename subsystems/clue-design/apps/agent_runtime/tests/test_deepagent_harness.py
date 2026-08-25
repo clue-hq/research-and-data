@@ -453,6 +453,9 @@ def test_tool_surfaces_are_exactly_the_ledger(tmp_path, monkeypatch):
         "inspect",
         "compile_dsl_block",
         "asset",
+        # Another company's real logo, fetched from their own website. The
+        # author places it; it never draws one.
+        "fetch_logo",
         "validate_binding_set",
         "preflight_design",
     }
