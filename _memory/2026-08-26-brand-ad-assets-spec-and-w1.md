@@ -1,0 +1,113 @@
+# 2026-08-26 — Brand Ad Assets: POCs proven, spec ratified for W1, wave dispatched
+
+## Arc (follow-on to 2026-08-24 fast-loop session)
+
+Five POCs proved the reference-conditioned ad pipeline end to end, zero code
+changes (all run by one Opus pilot agent; reports in `.context/`):
+
+1. **Stripe refs (legacy loop)** `run_c10c81d7…` — gradient artboard + white
+   rounded card + shadow: reference steering produces the reference's system.
+2. **Cursor refs (fast loop)** `run_b206d2b2…` — dark poster, selective
+   imitation (refused calculator UI, token-honest `$surface.inverse` over
+   eyedropper), fidelity 2/3. Report: `.context/ref-ads-pilot-cursor-report.md`.
+3. **Apollo + image model** `run_892dcf6b…` — GPT-image holographic wash
+   ground + cream card + CTA pill, WITH ZERO BRAND KIT (apollo.io ingestion
+   blocked by Tailwind parser bug), fidelity 2. Report:
+   `.context/ref-ads-pilot-apollo-report.md`.
+4. **Budget/reasoning A/B** — medium reasoning ~halves call latency
+   (55–69s vs 167–174s); 900s vs 600s wall flipped fidelity 1→2.
+5. **Ramp fetch (Adyntel)** — `POST api.adyntel.com/linkedin` domain→ads;
+   34 unique static creatives / 2 credits; CDN URLs expire → bytes downloaded
+   at fetch. Harvest + creatives in `.context/ramp-ads/`. Adyntel key was at
+   repo-root `api-key.txt` (untracked — founder to move; NOT committed).
+
+## Spec ratified for W1
+
+`subsystems/clue-design/docs/brand-ad-assets-v1-spec.md`, committed
+`1324539a7`. Rulings D1–D7 recorded there (budgets = prompt-level guidance,
+NO hard cut, ~2× backstop only; own ads default / competitor opt-in; Adyntel
+v1 behind resolver seam; no UI v1 (backend-only); NO approval gates / no
+mechanical guards on the agent; skill content founder-reviewed before
+authoring — also saved as global memory `skill-content-founder-review`;
+skill 2 = full `generative-imagery` skill, not just backgrounds).
+Skill 1 (`reference-conditioned-ads`) outline APPROVED in chat. §8 open:
+backstop nod, W1.9 ingestion-depth knob, Adyntel commercial plan.
+
+## W1 wave dispatched (5 Opus agents, isolated worktrees, base `1324539a7`)
+
+- w1-asset-channel: W1.1 library→scene-turn asset channel (the Apollo POC's
+  core finding: `workspace_asset_library_manifest()` only in website mode,
+  main.py:8822; scene turns can't view/place library assets).
+- w1-ingestion: W1.2 font byte custody (asset_id:null → LUMS0100 Inter
+  fallback every run) + W1.3 Tailwind `float()` crash in capture/parse.py
+  (`rgb(15 23 42 / var(--tw-text-opacity))` kills whole job).
+- w1-fidelity-logo: W1.5 reference_fidelity typed-field invariant +
+  W1.6 logo `allowed_backgrounds` inverse-surface vocabulary (advisory per D5).
+- w1-imagegen: W1.4 IMAGE_MODEL_ID broken (`openai/gpt-image-2` 404; working:
+  `openai/gpt-5.4-image-2`; repo-root `.env` is founder's to edit) + W1.7
+  no_image retry / aspect_ratio honored-or-documented / non-blocking failure.
+- w1-budgets: W1.8 D1 wiring — medium reasoning default, 900s target as
+  prompt guidance, hard ceiling → 2× backstop w/ graceful finalize, metrics
+  distinguish target-exceeded vs backstop-hit. Flag-off byte-identity gates.
+
+W1.9 (ingestion depth knob) deferred — no founder ruling yet.
+Verification on landing: base attestation, full diff read, re-run tests,
+red-case proofs, then sequential merge. Nothing pushed anywhere.
+
+## Environment notes (POC leftovers)
+
+- lumen_api (port 8060) restarted by pilot agent with in-process env
+  overrides: fast_loop=1, reasoning=medium, IMAGE_MODEL_ID=openai/gpt-5.4-image-2,
+  wall 900s. `.env` files untouched (still carry broken image model id).
+- POC workspaces in design DB: ws_cursor_pilot_20260825, ws_apollo_pilot
+  (apollo kit does NOT exist — ingestion blocked). Cursor kit
+  `brand_kit_ing_78dc422ca5804ed6acc01635a91961d2` approved.
+- Next after W1: W2 substrate + W3 skills (generative-imagery outline to
+  founder first), W4 runtime, W5 three-brand acceptance + live demo script.
+
+## W1 CLOSE-OUT (same day) — all five agents verified, merged, gates green
+
+Verdict table (every agent's diff read + tests re-run by the orchestrator in
+its worktree before merge; all base-attested on `1324539a7` — NOTE all five
+worktrees were provisioned stale at `5ea7a8791` and every agent self-corrected):
+
+- W1.1 ✅ merged — root cause was TWO gaps (API never composed a library
+  manifest for scene turns; runtime never upserted library records pre-place).
+  Bound: `SCENE_TURN_ASSET_LIBRARY_MAX=24` most-recent placeable, kit-first,
+  provenance verbatim. Discovery-in-frame-payload deliberately left to W4.
+- W1.2+W1.3 ✅ merged — `_parse_alpha` (not `_parse_channel`) was the bare
+  float(); apollo string now → #0F172A, unparseable → None + LUMI0511, job
+  survives. Fonts: capture/parse resolved @font-face URLs differently (one
+  shared walk now); un-custodiable face → LUMI0231 named. Judgment call
+  recorded: unresolved alpha read as opaque (Tailwind-right, not CSS-strict).
+- W1.4+W1.7 ✅ merged — SPEC CORRECTION: gpt-image-2 EXISTS but only on
+  OpenRouter's dedicated Image API; our chat-completions path can't see it
+  (spec row 4 carries dated correction). aspect_ratio now rides `image_config`
+  structurally + measured dims + `aspect_ratio_honored`; no_image 1 retry;
+  generation failure = typed non-blocking `image.fallback`. FOUNDER TODO:
+  repo-root `.env` line 167 → IMAGE_MODEL_ID=openai/gpt-5.4-image-2.
+  Future ruling candidate: swap provider seam to the Image API
+  (aspect_ratio/background:transparent/input_references/cost first-class).
+- W1.5+W1.6 ✅ merged — fast loop had NO typed critique writer (only the
+  quarantined reviewer's prompt named reference_fidelity); now promoted/
+  coerced at write+finalize seams, unjudged→0 (gate still refuses).
+  LUMB0810 confirmed advisory end-to-end (live engine probe), pinned by
+  tests; shared `logo_policy.py`, reversed/light → inverse+brand allowed.
+  UNOWNED residuals: per-variant policy needs Rust `LogoVariant` change;
+  website ingestion has no logo color-mode detection (Cursor-path kits stay
+  light-only — W2-adjacent).
+- W1.8 ✅ merged — reasoning default was ALREADY medium; the drift was
+  `.env.example`'s blank `LUMEN_AGENT_REASONING=` (blank=unset). D1 wired:
+  targets 45 calls/900s as prompt guidance (verbatim text in commit
+  `cfeb978a7`), backstops 90/1800s repointed knobs, `budget_target_exceeded`
+  (info) vs `budget_exhausted` (abnormal) distinct in metrics. MIGRATION
+  HAZARD: a private .env carrying WALL_CLOCK_S=600 now fails startup loud.
+
+Integrated gates: agent_runtime 958 passed/2 skipped; test_api image+library
+20 passed; ingestion_capture+logo_policy 67 passed/1 skipped. Zero crates/
+changes → no wasm/handshake needed. AGENTS.md gained §4 (never `git stash` in
+parallel worktrees — live collision during this wave). Merges: five --no-ff,
+zero conflicts. Nothing pushed.
+
+Next: W2 substrate + W3 skills (generative-imagery outline → founder chat
+first, per D6), W4 runtime composition, W5 acceptance.

@@ -119,3 +119,12 @@ sit broken at HEAD for five commits — P4 audit finding)
 `pytest apps/agent_runtime/tests` → `pytest apps/api/tests`
 (`PYTHONPATH=.:apps/api:apps/agent_runtime`, `.venv/bin/python`). Zero
 regressions; a failing test is analyzed, never weakened to pass.
+
+## 4. Parallel worktree agents: never use `git stash`
+
+`refs/stash` is repo-global — shared by every worktree of this repo. Two agents
+stashing concurrently interleave one stack: agent A's `pop` can apply agent B's
+changes into A's worktree (happened live 2026-08-26 during the W1 wave; work
+was recovered from the dangling stash commit, but only by luck and forensics).
+For temporary saves in a worktree, commit to the worktree branch (and reset
+afterwards) or copy files aside — anything but `git stash`.
