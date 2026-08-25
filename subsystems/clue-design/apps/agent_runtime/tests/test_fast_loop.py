@@ -111,8 +111,8 @@ def test_flag_off_ignores_every_fast_loop_argument() -> None:
         fast_loop=False,
         scene_reviewer=False,
         skills=[("linkedin-square-ad", "a square ad")],
-        max_llm_calls=7,
-        wall_clock_s=30.0,
+        target_llm_calls=7,
+        target_wall_clock_s=30.0,
         inner_iterations=1,
     ) == build_orchestrator_prompt(WS)
     assert build_author_prompt(
@@ -949,14 +949,17 @@ def test_the_orchestrator_prompt_forbids_a_round_it_cannot_finish() -> None:
     assert "record_gap every issue you are leaving" in orchestrator
 
 
-def test_the_headroom_floors_sit_under_the_r4_ceilings(tmp_path) -> None:
-    """R4's ceilings are the contract and are untouched; the floors only decide
-    when to stop spending them. A floor at or above its ceiling would refuse
-    every round on a fresh run, so the ordering is the thing worth pinning."""
+def test_the_headroom_floors_sit_under_the_d1_targets(tmp_path) -> None:
+    """The floors decide when to stop spending, and under D1 they are measured
+    against the TARGET (what the agent steers by), not the backstop. A floor at
+    or above its target would refuse every round on a fresh run, so the ordering
+    is the thing worth pinning."""
     config = runtime_config(tmp_path)
-    assert REPAIR_ROUND_MIN_CALLS < config.fast_loop_max_llm_calls
-    assert REPAIR_ROUND_MIN_SECONDS < config.fast_loop_wall_clock_s
+    assert REPAIR_ROUND_MIN_CALLS < config.fast_loop_target_llm_calls
+    assert REPAIR_ROUND_MIN_SECONDS < config.fast_loop_target_wall_clock_s
     fresh = RunBudget(
+        target_llm_calls=config.fast_loop_target_llm_calls,
+        target_wall_clock_s=config.fast_loop_target_wall_clock_s,
         max_llm_calls=config.fast_loop_max_llm_calls,
         wall_clock_s=config.fast_loop_wall_clock_s,
     )
@@ -1015,7 +1018,310 @@ def test_a_breach_lands_in_the_metrics_summary(tmp_path, monkeypatch) -> None:
     assert snapshot["budget_exhausted"]["kind"] == BUDGET_LLM_CALLS
     from lumen_agent.run_metrics import summarize_line
 
-    assert "BUDGET EXHAUSTED (llm_calls)" in summarize_line(snapshot)
+    assert "BUDGET BACKSTOP HIT (llm_calls)" in summarize_line(snapshot)
+
+
+# ===========================================================================
+# RULING D1 (founder, 2026-08-26) — budgets are GUIDANCE, not gates
+#
+# The proof obligation is one sentence: a run that goes past its target must
+# NOT be stopped, and the backstop must still fire for a run that has genuinely
+# run away. Everything below is that sentence, split by mechanism.
+#
+# The evidence the ruling rests on is the Apollo A/B
+# (`.context/ref-ads-pilot-apollo-report.md`, 2026-08-26): at a 600s HARD wall
+# the run was cut right after its first look and shipped reference_fidelity 1;
+# at 900s the same brief reacted to its own critique and reached 2.
+# ===========================================================================
+
+
+def _d1_budget(clock, metrics=None) -> RunBudget:
+    """A budget at the shipped D1 numbers, on a clock the test owns."""
+    return RunBudget(
+        target_llm_calls=45,
+        target_wall_clock_s=900.0,
+        max_llm_calls=90,
+        wall_clock_s=1800.0,
+        metrics=metrics,
+    )
+
+
+def test_passing_the_wall_clock_target_does_not_stop_the_run(monkeypatch) -> None:
+    """THE ruling, on the axis the Apollo A/B measured.
+
+    Under the old contract the call at 900.1s raised and the design shipped
+    half-repaired. Here it is admitted, and so is every call for the next
+    fifteen minutes.
+    """
+    clock = {"now": 0.0}
+    monkeypatch.setattr(time, "monotonic", lambda: clock["now"])
+    budget = _d1_budget(clock)
+
+    budget.check_and_count()
+    clock["now"] = 900.1  # one tenth of a second past the target
+
+    # Not a raise, not a refusal — the run simply carries on.
+    for _ in range(20):
+        budget.check_and_count()
+    assert budget.calls == 21
+    assert budget.breach is None
+
+    # And it keeps carrying on well past the target, right up to the backstop.
+    clock["now"] = 1799.9
+    budget.check_and_count()
+    assert budget.breach is None
+
+
+def test_passing_the_call_target_does_not_stop_the_run(monkeypatch) -> None:
+    """Same ruling, other axis: call 46 used to raise. Now it is admitted."""
+    clock = {"now": 0.0}
+    monkeypatch.setattr(time, "monotonic", lambda: clock["now"])
+    budget = _d1_budget(clock)
+
+    for _ in range(60):  # 15 calls past the 45-call target
+        budget.check_and_count()
+    assert budget.calls == 60
+    assert budget.breach is None
+
+
+def test_the_backstop_still_fires_and_still_names_its_axis(monkeypatch) -> None:
+    """Guidance is not permission. A hung run is still stopped, on either axis."""
+    clock = {"now": 0.0}
+    monkeypatch.setattr(time, "monotonic", lambda: clock["now"])
+
+    wall = _d1_budget(clock)
+    wall.check_and_count()
+    clock["now"] = 1800.0
+    with pytest.raises(BudgetExhausted) as excinfo:
+        wall.check_and_count()
+    assert excinfo.value.kind == BUDGET_WALL_CLOCK
+    assert excinfo.value.limit == 1800.0
+    # The message says WHICH number this was, so nobody reads it as the target.
+    assert "BACKSTOP" in str(excinfo.value)
+
+    clock["now"] = 0.0
+    calls = _d1_budget(clock)
+    for _ in range(90):
+        calls.check_and_count()
+    with pytest.raises(BudgetExhausted) as excinfo:
+        calls.check_and_count()
+    assert excinfo.value.kind == BUDGET_LLM_CALLS
+    assert excinfo.value.limit == 90.0
+
+
+def test_a_target_crossing_and_a_backstop_hit_are_DIFFERENT_metrics_facts(
+    tmp_path, monkeypatch
+) -> None:
+    """D1 clause 4. Routine drift past 900s and a run that hung must never be
+    read off the same field, or the drift signal is worthless."""
+    monkeypatch.setattr("lumen_agent.tools.substrate.CoreClient", FakeCoreClient)
+    clock = {"now": 0.0}
+    monkeypatch.setattr(time, "monotonic", lambda: clock["now"])
+    tools = LumenDesignTools(fast_config(tmp_path), "Ad")
+    budget = _d1_budget(clock, metrics=tools.metrics)
+    tools.metrics.attach_budget(budget)
+
+    budget.check_and_count()
+    clock["now"] = 1000.0
+    budget.check_and_count()  # crosses the target; must NOT raise
+
+    snapshot = tools.metrics.snapshot()
+    exceeded = snapshot["budget_target_exceeded"]
+    assert exceeded["kind"] == BUDGET_WALL_CLOCK
+    assert exceeded["target"] == 900.0
+    assert exceeded["observed"] == pytest.approx(1000.0)
+    # The abnormal key is ABSENT — nothing was stopped.
+    assert "budget_exhausted" not in snapshot
+    # Even the shapes differ, so the two dicts cannot be confused by a consumer.
+    assert "limit" not in exceeded
+
+    # Both thresholds are reported, so the numbers behind the verdict are visible.
+    assert snapshot["budget"]["target_wall_clock_s"] == 900.0
+    assert snapshot["budget"]["wall_clock_s"] == 1800.0
+    assert snapshot["budget"]["target_exceeded"]["kind"] == BUDGET_WALL_CLOCK
+    assert snapshot["budget"]["exhausted"] is None
+
+    from lumen_agent.run_metrics import summarize_line
+
+    line = summarize_line(snapshot)
+    assert "past target (wall_clock)" in line
+    assert "BACKSTOP" not in line
+
+    # Now run it into the backstop: BOTH facts stand, separately.
+    clock["now"] = 1800.0
+    with pytest.raises(BudgetExhausted):
+        budget.check_and_count()
+    after = tools.metrics.snapshot()
+    assert after["budget_target_exceeded"]["kind"] == BUDGET_WALL_CLOCK
+    assert after["budget_exhausted"]["kind"] == BUDGET_WALL_CLOCK
+    assert after["budget_exhausted"]["limit"] == 1800.0
+    assert "past target (wall_clock)" in summarize_line(after)
+    assert "BUDGET BACKSTOP HIT (wall_clock)" in summarize_line(after)
+
+
+def test_the_target_crossing_is_recorded_once_on_the_first_axis(monkeypatch) -> None:
+    """Sticky, like the breach. The question is "did this run drift, and where
+    first", not "how many calls did it make afterwards"."""
+    clock = {"now": 0.0}
+    monkeypatch.setattr(time, "monotonic", lambda: clock["now"])
+    budget = _d1_budget(clock)
+
+    for _ in range(45):
+        budget.check_and_count()
+    assert budget.target_exceeded is None  # 45 calls is AT the target, not past
+
+    budget.check_and_count()
+    first = budget.target_exceeded
+    assert first == {"kind": BUDGET_LLM_CALLS, "target": 45.0, "observed": 45.0}
+
+    clock["now"] = 1000.0  # now the wall-clock target goes too
+    budget.check_and_count()
+    assert budget.target_exceeded == first  # unchanged: first crossing wins
+
+
+def test_a_run_with_no_target_crossing_reports_no_such_key(
+    tmp_path, monkeypatch
+) -> None:
+    """The key is additive: a well-behaved run's metrics are unchanged."""
+    monkeypatch.setattr("lumen_agent.tools.substrate.CoreClient", FakeCoreClient)
+    clock = {"now": 0.0}
+    monkeypatch.setattr(time, "monotonic", lambda: clock["now"])
+    tools = LumenDesignTools(fast_config(tmp_path), "Ad")
+    budget = _d1_budget(clock, metrics=tools.metrics)
+    tools.metrics.attach_budget(budget)
+
+    for _ in range(10):
+        budget.check_and_count()
+    clock["now"] = 500.0
+
+    snapshot = tools.metrics.snapshot()
+    assert "budget_target_exceeded" not in snapshot
+    assert "budget_exhausted" not in snapshot
+    assert snapshot["budget"]["target_exceeded"] is None
+
+    from lumen_agent.run_metrics import summarize_line
+
+    assert "target" not in summarize_line(snapshot)
+
+
+def test_the_status_line_measures_against_the_target_and_never_names_the_backstop(
+    monkeypatch,
+) -> None:
+    """What the orchestrator reads at a round boundary is its GUIDANCE.
+
+    Quoting the backstop here would both hide the target it was asked to hit and
+    invite it to spend up to a circuit breaker.
+    """
+    clock = {"now": 0.0}
+    monkeypatch.setattr(time, "monotonic", lambda: clock["now"])
+    budget = _d1_budget(clock)
+
+    clock["now"] = 120.0
+    roomy = budget.status_line()
+    assert roomy.startswith("BUDGET LEFT: ")
+    assert "0 of 45 model calls used, 45 left" in roomy
+    assert "2.0 of 15.0 minutes used, 13.0 left" in roomy
+    assert "There is room for another authoring round." in roomy
+    for backstop in ("30.0 minutes", "90 model calls", "backstop"):
+        assert backstop not in roomy
+
+
+def test_the_status_line_tells_a_past_target_run_to_finalize(monkeypatch) -> None:
+    """Past the target the honest verdict changes: nothing will cut you off, and
+    that is exactly why you should stop yourself."""
+    clock = {"now": 0.0}
+    monkeypatch.setattr(time, "monotonic", lambda: clock["now"])
+    budget = _d1_budget(clock)
+
+    clock["now"] = 1000.0
+    line = budget.status_line()
+    assert "PAST this turn's target" in line
+    assert "nothing is going to cut you off here" in line
+    assert "Do not open another authoring round." in line
+    assert "record_gap what is still wrong" in line
+    # Clamped, never negative — "-1.7 left" would read as a live allowance.
+    assert "0.0 left" in line
+    assert budget.remaining()["seconds_left"] == 0.0
+    assert budget.remaining()["past_target"] is True
+
+
+def test_a_run_past_its_target_keeps_working_then_the_backstop_finalizes_it(
+    tmp_path, monkeypatch
+) -> None:
+    """The whole ruling, end to end through the REAL runner.
+
+    A loop that would have died at 600s spends another twenty minutes designing,
+    every one of those calls admitted; the backstop then stops it at 1800s and
+    the graceful finalize keeps the work — `completed_with_warnings`, a gap in
+    the ledger, metrics on disk. Not one line of that finalize path was weakened
+    to make the target advisory.
+    """
+    capture: dict = {}
+    _install_deepagents_stub(monkeypatch, capture)
+    clock = {"now": 0.0}
+    monkeypatch.setattr(time, "monotonic", lambda: clock["now"])
+
+    class _ClockDrivenAgent:
+        """Stands in for the compiled graph: one model call per simulated minute."""
+
+        def __init__(self, tools) -> None:
+            self._tools = tools
+
+        def invoke(self, *args, **kwargs):
+            budget = self._tools.fast_loop_budget
+            while True:
+                budget.check_and_count()  # raises ONLY at the backstop
+                clock["now"] += 60.0
+                # A round's work lands as it goes — this is what must survive.
+                self._tools.scene = {
+                    **self._tools.scene,
+                    "nodes": {"headline": {"id": "headline", "children": []}},
+                }
+
+    holder: dict = {}
+    real = harness_mod.create_design_deepagent
+
+    def fake_create(prompt, **kwargs):
+        _agent, tools = real(prompt, **kwargs)
+        holder["tools"] = tools
+        return _ClockDrivenAgent(tools), tools
+
+    monkeypatch.setattr(harness_mod, "create_design_deepagent", fake_create)
+
+    payload, tools = run_deepagent_turn("Design something", fast_config(tmp_path))
+    budget = tools.fast_loop_budget
+
+    # It ran the full 30 simulated minutes — 15 of them PAST the 900s target.
+    # Under the pre-D1 contract this run stopped at call 11 (600s) with half a
+    # design; the extra calls are the repair round the ruling exists to buy.
+    assert budget.calls == 30
+    assert budget.target_exceeded["kind"] == BUDGET_WALL_CLOCK
+    assert budget.target_exceeded["target"] == 900.0
+
+    # The backstop stopped it, and the finalize was graceful — work kept, gap
+    # recorded, metrics written, and no `accepted` fabricated.
+    assert payload["status"] == "completed_with_warnings"
+    assert payload["stop_reason"] == "budget_exhausted_wall_clock"
+    assert tools.gaps
+    assert tools.gaps[-1]["area"] == "agent_protocol"
+    assert "budget" in tools.gaps[-1]["summary"]
+    assert (tools.trace_dir / "metrics.json").exists()
+
+    written = json.loads((tools.trace_dir / "metrics.json").read_text(encoding="utf-8"))
+    assert written["budget_target_exceeded"]["kind"] == BUDGET_WALL_CLOCK
+    assert written["budget_exhausted"]["kind"] == BUDGET_WALL_CLOCK
+
+
+def test_a_budget_given_only_a_backstop_targets_it(monkeypatch) -> None:
+    """Back-compat seam: single-number construction means what it always meant,
+    so a caller that has not been taught about targets cannot silently acquire a
+    target of zero (which would report every run as past guidance)."""
+    clock = {"now": 0.0}
+    monkeypatch.setattr(time, "monotonic", lambda: clock["now"])
+    budget = RunBudget(max_llm_calls=45, wall_clock_s=600.0)
+    assert budget.target_llm_calls == 45
+    assert budget.target_wall_clock_s == 600.0
+    assert budget.past_target() is False
 
 
 def test_the_budget_callback_raises_rather_than_being_swallowed() -> None:
@@ -1147,12 +1453,42 @@ def test_a_budget_breach_after_the_agent_finalized_keeps_the_real_final(
     assert payload["status"] == "accepted"
 
 
-def test_flag_on_orchestrator_prompt_states_its_budget() -> None:
+def test_flag_on_orchestrator_prompt_states_its_targets_not_a_ceiling() -> None:
+    """D1: the prompt communicates TARGETS in plain language and promises no cut.
+
+    The two halves are equally load-bearing. Stating the numbers without the
+    "nothing stops you" sentence would leave the agent reading them as the hard
+    ceiling they used to be, which is the behaviour the ruling exists to end.
+    """
     orch = build_orchestrator_prompt(
-        WS, fast_loop=True, scene_reviewer=False, max_llm_calls=45, wall_clock_s=600.0
+        WS,
+        fast_loop=True,
+        scene_reviewer=False,
+        target_llm_calls=45,
+        target_wall_clock_s=900.0,
     )
-    assert "hard ceiling of 45 model calls and 10" in orch
-    assert "enforced by the harness, not by your goodwill" in orch
+    assert "Aim to finish this turn inside 15 minutes of wall clock." in orch
+    assert "Aim to finish it inside 45 model calls across ALL roles." in orch
+    assert "targets you steer by, not walls" in orch
+    assert "Nothing stops you the moment you pass a target." in orch
+    # And the OLD hard-ceiling language is gone, not merely contradicted.
+    assert "hard ceiling" not in orch
+    assert "enforced by the harness, not by your goodwill" not in orch
+
+
+def test_the_orchestrator_prompt_never_names_the_backstop() -> None:
+    """D1: the agent's prompt talks about the TARGET only.
+
+    Naming the circuit breaker would teach the agent that the target is
+    negotiable and that it has 1800s to spend — the exact opposite of guidance
+    it is trusted to steer by. Proven against the real shipped defaults, since a
+    prompt built from custom numbers could pass this vacuously.
+    """
+    orch = build_orchestrator_prompt(WS, fast_loop=True, scene_reviewer=False)
+    for backstop_number in ("1800", "90 model calls", "30 minutes"):
+        assert backstop_number not in orch
+    for backstop_word in ("backstop", "circuit breaker", "BACKSTOP"):
+        assert backstop_word not in orch
 
 
 # ===========================================================================
@@ -1261,9 +1597,118 @@ def test_scene_reviewer_enabled_expresses_r3(tmp_path) -> None:
     assert replace(base, scene_reviewer=True).scene_reviewer_enabled is True
 
 
-def test_budget_defaults_are_the_r4_numbers(tmp_path) -> None:
+def test_budget_defaults_are_the_d1_numbers(tmp_path) -> None:
+    """R4's single ceiling became D1's target + distant backstop (2026-08-26)."""
     config = runtime_config(tmp_path)
-    assert config.fast_loop_max_llm_calls == 45
-    assert config.fast_loop_wall_clock_s == 600.0
+    # The guidance the agent is told about.
+    assert config.fast_loop_target_llm_calls == 45
+    assert config.fast_loop_target_wall_clock_s == 900.0
+    # The circuit breaker, at ~2x, that the agent is never told about.
+    assert config.fast_loop_max_llm_calls == 90
+    assert config.fast_loop_wall_clock_s == 1800.0
     assert config.fast_loop_inner_iterations == 4
     assert config.fast_loop is False
+
+
+def test_the_backstop_sits_at_roughly_twice_the_target(tmp_path) -> None:
+    """The ratio IS the ruling: close enough and it is a second gate, far enough
+    and a genuinely hung run burns money for an hour."""
+    config = runtime_config(tmp_path)
+    assert config.fast_loop_max_llm_calls == 2 * config.fast_loop_target_llm_calls
+    assert config.fast_loop_wall_clock_s == 2 * config.fast_loop_target_wall_clock_s
+
+
+# --- the env seam itself (D1 clause 1 + 3: SHIPPED defaults) ----------------
+
+
+def _isolated_settings(monkeypatch, **kwargs):
+    """`Settings` with no ambient env, because the repo `.env` legitimately sets
+    several of these and dotenv may already have exported them into this
+    process — the same isolation `test_settings_validate_reasoning_effort` uses."""
+    from py_lumen_config.config import Settings
+
+    for name in (
+        "LUMEN_AGENT_REASONING",
+        "LUMEN_AGENT_FAST_LOOP_TARGET_LLM_CALLS",
+        "LUMEN_AGENT_FAST_LOOP_TARGET_WALL_CLOCK_S",
+        "LUMEN_AGENT_FAST_LOOP_MAX_LLM_CALLS",
+        "LUMEN_AGENT_FAST_LOOP_WALL_CLOCK_S",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    return Settings(_env_file=None, **kwargs)
+
+
+def test_settings_ship_the_d1_budget_defaults(monkeypatch) -> None:
+    settings = _isolated_settings(monkeypatch)
+    assert settings.lumen_agent_fast_loop_target_llm_calls == 45
+    assert settings.lumen_agent_fast_loop_target_wall_clock_s == 900.0
+    assert settings.lumen_agent_fast_loop_max_llm_calls == 90
+    assert settings.lumen_agent_fast_loop_wall_clock_s == 1800.0
+
+
+def test_settings_ship_medium_reasoning(monkeypatch) -> None:
+    """D1 clause 1. The code default was already medium; `.env.example` was the
+    last place still handing a fresh deployment a blank (i.e. no reasoning field
+    at all), which is the configuration the Apollo A/B measured as slow."""
+    assert _isolated_settings(monkeypatch).lumen_agent_reasoning == "medium"
+
+    env_example = Path(__file__).resolve().parents[3] / ".env.example"
+    lines = env_example.read_text(encoding="utf-8").splitlines()
+    assert "LUMEN_AGENT_REASONING=medium" in lines
+
+
+def test_every_d1_budget_knob_still_honors_its_env_override(monkeypatch) -> None:
+    """Guidance is still configurable — the ruling changed the numbers, not the
+    seam. Overridden together, since the backstop must stay above its target."""
+    settings = _isolated_settings(
+        monkeypatch,
+        lumen_agent_reasoning="high",
+        lumen_agent_fast_loop_target_llm_calls=20,
+        lumen_agent_fast_loop_target_wall_clock_s=300.0,
+        lumen_agent_fast_loop_max_llm_calls=40,
+        lumen_agent_fast_loop_wall_clock_s=600.0,
+    )
+    assert settings.lumen_agent_reasoning == "high"
+    assert settings.lumen_agent_fast_loop_target_llm_calls == 20
+    assert settings.lumen_agent_fast_loop_target_wall_clock_s == 300.0
+    assert settings.lumen_agent_fast_loop_max_llm_calls == 40
+    assert settings.lumen_agent_fast_loop_wall_clock_s == 600.0
+
+
+def test_a_non_positive_target_fails_at_startup(monkeypatch) -> None:
+    """Same rule the backstop always had: a budget that silently does nothing is
+    worse than no budget at all."""
+    with pytest.raises(Exception) as excinfo:
+        _isolated_settings(monkeypatch, lumen_agent_fast_loop_target_wall_clock_s=0.0)
+    assert "must be positive" in str(excinfo.value)
+    with pytest.raises(Exception):
+        _isolated_settings(monkeypatch, lumen_agent_fast_loop_target_llm_calls=-1)
+
+
+def test_a_backstop_below_its_own_target_fails_at_startup(monkeypatch) -> None:
+    """It would invert the ruling: the run would be hard-stopped before it ever
+    crossed the guidance it was told to steer by, making the prompt's "nothing
+    cuts you off" a lie the harness tells the agent."""
+    with pytest.raises(Exception) as excinfo:
+        _isolated_settings(
+            monkeypatch,
+            lumen_agent_fast_loop_target_wall_clock_s=900.0,
+            lumen_agent_fast_loop_wall_clock_s=600.0,
+        )
+    assert "must be >=" in str(excinfo.value)
+
+    with pytest.raises(Exception) as excinfo:
+        _isolated_settings(
+            monkeypatch,
+            lumen_agent_fast_loop_target_llm_calls=45,
+            lumen_agent_fast_loop_max_llm_calls=44,
+        )
+    assert "must be >=" in str(excinfo.value)
+
+    # Equal is allowed — that is "no backstop headroom", a deliberate choice.
+    equal = _isolated_settings(
+        monkeypatch,
+        lumen_agent_fast_loop_target_llm_calls=45,
+        lumen_agent_fast_loop_max_llm_calls=45,
+    )
+    assert equal.lumen_agent_fast_loop_max_llm_calls == 45

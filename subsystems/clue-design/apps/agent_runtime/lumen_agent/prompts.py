@@ -777,17 +777,30 @@ _ORCHESTRATOR_SELF_AUDIT_JUDGMENT = """5. Verify what came back yourself: read a
    the next round must not repeat."""
 
 
-#: §5.6 — the ceilings, stated so the model is not surprised by them. They are
-#: ENFORCED in Python regardless of what any prompt says; this paragraph exists
-#: so the orchestrator spends its budget deliberately instead of discovering it.
-_ORCHESTRATOR_BUDGETS = """YOUR BUDGET (fast loop §5.6 — enforced by the harness, not by your goodwill):
-This turn has a hard ceiling of {max_llm_calls} model calls and {wall_minutes}
-minutes of wall clock across ALL roles, and {inner_iterations} inner iterations
-per authoring round. When a ceiling is hit the run STOPS and finalizes whatever
-stands — so spend the budget on the design, not on exploration. Target: the
-first render inside 3 to 4 model calls, one authoring round, at most one repair
-round. Every accepted round is checkpointed to the document as it happens, so
-stopping early costs the current round, never the run.
+#: §5.6, re-shaped by ruling D1 (founder, 2026-08-26) — the TARGET, stated as a
+#: plain obligation the orchestrator is trusted to steer by. There is no hard cut
+#: at these numbers, and the prompt must not pretend there is: the 600s hard wall
+#: this replaced was measured amputating the repair round the loop exists to run
+#: (Apollo A/B, 900s reached reference_fidelity 2 where 600s shipped a 1). A
+#: distant backstop still exists in Python for a hung run; it is deliberately NOT
+#: named here, because telling the agent about a circuit breaker only teaches it
+#: that the target is negotiable.
+_ORCHESTRATOR_BUDGETS = """\
+YOUR TARGETS FOR THIS TURN (fast loop §5.6 — targets you steer by, not walls
+that cut you off):
+Aim to finish this turn inside {wall_minutes} minutes of wall clock.
+Aim to finish it inside {target_llm_calls} model calls across ALL roles.
+Use at most {inner_iterations} inner iterations in any one authoring round.
+Nothing stops you the moment you pass a target.
+You are trusted to judge when the design is done.
+These numbers are the shape that judgement should have.
+Going past a target costs real money and real time.
+So treat it as a last resort, never as a habit.
+Plan to reach your first render inside 3 to 4 model calls.
+Plan for one authoring round, and at most one repair round after it.
+Spend the time on the design, not on exploration.
+Every accepted round is checkpointed to the document as it happens.
+So finishing early costs you the current round, never the run.
 
 GET TO THE AUTHOR FAST. Your opening move is to pick the format skill, write
 direction.md, and delegate. Do NOT ls, glob or grep the knowledge tree. The skill
@@ -797,14 +810,18 @@ subject before you have delegated is the most expensive thing you can do with
 this budget, because every minute you spend there is a minute the author does
 not get.
 
-DO NOT OPEN A ROUND YOU CANNOT FINISH. Every render_preview you run ends with a
-BUDGET LEFT line: calls used, calls left, minutes used, minutes left, and a plain
-verdict on whether another authoring round still fits. Believe that verdict.
-When it says there is no room, do not delegate again. A repair round that gets
-cut in half is worse than no repair round at all, because the author stops
-mid-edit and leaves the design in a state nobody chose. Instead: keep the
-accepted design that already stands, record_gap every issue you are leaving
-behind, and finalize honestly."""
+DO NOT OPEN A ROUND YOU CANNOT FINISH.
+Every render_preview you run ends with a BUDGET LEFT line.
+It reports the calls and minutes you have used, what is left against your
+target, and a plain verdict on whether another authoring round still fits.
+Believe that verdict.
+When it says there is no room, do not delegate again.
+When it says you are past the target, do not open another round at all.
+A repair round that gets cut in half is worse than no repair round at all,
+because the author stops mid-edit and leaves the design in a state nobody chose.
+Instead, keep the accepted design that already stands.
+record_gap every issue you are leaving behind.
+Then finalize honestly."""
 
 
 def _fast_loop_skill_index(skills: list[tuple[str, str]] | None) -> str:
@@ -837,8 +854,8 @@ def build_orchestrator_prompt(
     fast_loop: bool = False,
     scene_reviewer: bool = True,
     skills: list[tuple[str, str]] | None = None,
-    max_llm_calls: int = 45,
-    wall_clock_s: float = 600.0,
+    target_llm_calls: int = 45,
+    target_wall_clock_s: float = 900.0,
     inner_iterations: int = 4,
 ) -> str:
     """§6.1 — SHARED_SURFACE_CONTRACT interpolated once; workspace substituted.
@@ -854,6 +871,12 @@ def build_orchestrator_prompt(
     and the composed skill index. `scene_reviewer=True` under the fast loop is
     the R3 kill-switch: the reviewer subagent is back, so the ORIGINAL steps 5–7
     (delegate review) are kept and only the additive fast-loop blocks apply.
+
+    Ruling D1 (2026-08-26): the budget block interpolates the TARGET — the
+    guidance the agent is asked to steer by — and nothing else. The hard
+    backstop lives in `budget.RunBudget` and is deliberately never named in any
+    prompt, which is why this function takes no backstop parameter at all rather
+    than taking one and declining to use it.
     """
     references_block = (
         _ORCHESTRATOR_REFERENCES_BLOCK.format(workspace=workspace) if has_references else ""
@@ -903,9 +926,12 @@ def build_orchestrator_prompt(
     return "\n\n".join(
         [
             prompt,
+            # D1: the TARGET is what the prompt talks about. The backstop is a
+            # Python-side circuit breaker and is deliberately never interpolated
+            # into any prompt.
             _ORCHESTRATOR_BUDGETS.format(
-                max_llm_calls=max_llm_calls,
-                wall_minutes=int(round(wall_clock_s / 60.0)) or 1,
+                target_llm_calls=target_llm_calls,
+                wall_minutes=int(round(target_wall_clock_s / 60.0)) or 1,
                 inner_iterations=inner_iterations,
             ),
             TOOL_ROUTING_RULE,

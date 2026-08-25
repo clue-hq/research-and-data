@@ -119,13 +119,20 @@ class RunMetrics:
         self._compile_iterations = 0
         self._first_preview_monotonic: Optional[float] = None
         # Fast-loop v1 §5.6. `_budget` is the run's `budget.RunBudget` when the
-        # flag is on (None otherwise), so the summary can report the ceilings
+        # flag is on (None otherwise), so the summary can report the thresholds
         # the run was actually held to and not just the numbers it hit.
-        # `_budget_breach` is the breach triple, recorded by the budget itself at
-        # the moment it refuses a call — kept separately so a breach survives
-        # even if the budget object is never handed over.
+        # `_budget_breach` is the BACKSTOP triple, recorded by the budget itself
+        # at the moment it refuses a call — kept separately so it survives even
+        # if the budget object is never handed over.
+        #
+        # `_budget_target_exceeded` is its D1 counterpart and a DIFFERENT FACT:
+        # the run went past the guidance it was given, which is informational.
+        # The two are separate fields, separate summary keys and separate words
+        # on the human line precisely so nobody can read routine drift past a
+        # 900s target as a run that hung (ruling D1, clause 4).
         self._budget: Any = None
         self._budget_breach: Optional[dict] = None
+        self._budget_target_exceeded: Optional[dict] = None
         # §5.2: how many times the inner-iteration cap refused a compile. A
         # non-zero count is the honest signal that a round wanted more passes
         # than the cap allows — the number to tune the cap against.
@@ -202,12 +209,32 @@ class RunMetrics:
             self._budget = budget
 
     def record_budget_breach(self, *, kind: str, limit: float, observed: float) -> None:
-        """The FIRST breach only — a sticky budget can only be exceeded once."""
+        """The FIRST BACKSTOP hit only — a sticky budget can only stop once.
+
+        Abnormal by construction under D1: the target does not come through
+        here, so a non-null `budget_exhausted` means a hung or runaway run.
+        """
         with self._lock:
             if self._budget_breach is None:
                 self._budget_breach = {
                     "kind": kind,
                     "limit": limit,
+                    "observed": observed,
+                }
+
+    def record_budget_target_exceeded(
+        self, *, kind: str, target: float, observed: float
+    ) -> None:
+        """The FIRST target crossing only. INFORMATIONAL — nothing stopped.
+
+        Deliberately shaped with a `target` key rather than the breach's `limit`,
+        so a consumer reading the two dicts cannot confuse them by shape either.
+        """
+        with self._lock:
+            if self._budget_target_exceeded is None:
+                self._budget_target_exceeded = {
+                    "kind": kind,
+                    "target": target,
                     "observed": observed,
                 }
     def record_autofix(self, klass: str, *, accepted: bool) -> None:
@@ -246,6 +273,9 @@ class RunMetrics:
             first_preview = self._first_preview_monotonic
             budget = self._budget
             budget_breach = dict(self._budget_breach) if self._budget_breach else None
+            budget_target_exceeded = (
+                dict(self._budget_target_exceeded) if self._budget_target_exceeded else None
+            )
             inner_iteration_refusals = self._inner_iteration_refusals
             summary = {
                 "run_id": self.run_id,
@@ -281,6 +311,11 @@ class RunMetrics:
                 summary["budget"] = budget.snapshot()
             except Exception:  # noqa: BLE001 - never fail a turn on its own metrics
                 summary["budget"] = None
+        if budget_target_exceeded is not None:
+            # D1: informational, and additive like every other fast-loop key —
+            # absent on a run that stayed inside its guidance, and absent
+            # entirely off the flag (no budget exists to have a target).
+            summary["budget_target_exceeded"] = budget_target_exceeded
         if budget_breach is not None:
             summary["budget_exhausted"] = budget_breach
         if inner_iteration_refusals:
@@ -402,11 +437,16 @@ def summarize_line(summary: dict) -> str:
         f"{summary.get('compile_iterations_total', 0)} compiles · "
         f"{summary.get('autofix_count', 0)} autofix"
     )
-    # §5.6: a budget-stopped run must say so on its ONE human line. Appended
-    # only when a breach happened, so the flag-off line is unchanged.
+    # §5.6 / D1: the two budget outcomes must be readable at a glance and must
+    # not read alike. "past target" is a run that cost more than guidance asked;
+    # "BACKSTOP HIT" is a run the circuit breaker had to stop. Both are appended
+    # only when they happened, so the flag-off line is unchanged.
+    exceeded = summary.get("budget_target_exceeded")
+    if isinstance(exceeded, dict) and exceeded.get("kind"):
+        line += f" · past target ({exceeded['kind']})"
     breach = summary.get("budget_exhausted")
     if isinstance(breach, dict) and breach.get("kind"):
-        line += f" · BUDGET EXHAUSTED ({breach['kind']})"
+        line += f" · BUDGET BACKSTOP HIT ({breach['kind']})"
     return line
 
 

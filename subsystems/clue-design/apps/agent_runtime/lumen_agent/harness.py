@@ -331,6 +331,10 @@ def create_design_deepagent(
     budget = None
     if fast_loop:
         budget = RunBudget(
+            # D1: the guidance the agent steers by...
+            target_llm_calls=runtime_config.fast_loop_target_llm_calls,
+            target_wall_clock_s=runtime_config.fast_loop_target_wall_clock_s,
+            # ...and the distant circuit breaker that is the only hard stop.
             max_llm_calls=runtime_config.fast_loop_max_llm_calls,
             wall_clock_s=runtime_config.fast_loop_wall_clock_s,
             metrics=tools.metrics,
@@ -512,8 +516,9 @@ def create_design_deepagent(
             # §5.7: composed at assembly time so selecting a format skill costs
             # no `ls` — see _materialized_skill_index for the skill interface.
             skills=_materialized_skill_index(runtime_config) if fast_loop else None,
-            max_llm_calls=runtime_config.fast_loop_max_llm_calls,
-            wall_clock_s=runtime_config.fast_loop_wall_clock_s,
+            # D1: the prompt is handed the TARGET, never the backstop.
+            target_llm_calls=runtime_config.fast_loop_target_llm_calls,
+            target_wall_clock_s=runtime_config.fast_loop_target_wall_clock_s,
             inner_iterations=runtime_config.fast_loop_inner_iterations,
         ),
         subagents=subagents,
