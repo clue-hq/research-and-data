@@ -995,9 +995,14 @@ def test_agent_turn_forwards_the_workspace_asset_library_into_config(
     assert entry["record"]["id"] == asset_id
     assert entry["record"]["status"] == "ready"
 
-    # The read-through actually ran: the turn's engine cache holds the bytes the
-    # runtime resolves BY DIGEST (the P0.1 pattern). Without this the manifest is
-    # a promise the render cannot keep.
+    # The read-through actually ran: the turn's engine cache holds the bytes at
+    # `sha256/{ab}/{digest}`. That single path is what BOTH readers compute —
+    # `view("asset:…")` via `blob_path_for_digest`, and the ENGINE at render via
+    # `StoreBackedResolver`'s digest fallback (a `clue-storage` location is not
+    # `local-store`, so it resolves through `digest_relative_path`, which is
+    # `cache_relative_path` byte for byte). Without this materialization the
+    # manifest is a promise the render cannot keep: `asset.bytes_missing`, an
+    # empty chip where the image should be.
     cache_dir = (
         tmp_path / "engine-cache" / os.environ["LUMEN_DEV_WORKSPACE_ID"]
     )
