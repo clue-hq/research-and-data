@@ -1153,6 +1153,146 @@ def test_generate_image_missing_reference_blob_skipped_not_fatal(tmp_path, monke
     assert "ref_gone" in trace
 
 
+# 7h. W1.7 generation robustness (brand-ad-assets v1) -------------------------
+
+
+def _install_failing_image_model(monkeypatch, error):
+    """A configured T2I model whose generate() always raises — the shape of a
+    real provider failure (no_image after its retry, a 404, a read timeout)."""
+    def fake_generate(**kwargs):
+        raise error
+
+    monkeypatch.setattr(
+        "lumen_agent.tools.substrate.image_provider",
+        types.SimpleNamespace(
+            is_configured=lambda: True,
+            configured_model_id=lambda: "test/image-model",
+            generate=fake_generate,
+        ),
+    )
+
+
+def test_w17c_generation_failure_does_not_fail_the_turn(tmp_path, monkeypatch):
+    """W1.7(c) + founder ruling D5 (no new blocking gates): a failed generation
+    must NEVER block the design turn. It degrades to the deterministic
+    placeholder so the design still composes, and hands the agent a TYPED,
+    non-blocking outcome it can react to — the documented reaction being to drop
+    the image ground and proceed with a flat brand-token ground.
+
+    This pins the behavior the Apollo pilot observed for `image_edit_failed` on
+    the GENERATE path too, so it cannot silently regress into a hard failure."""
+    monkeypatch.setattr("lumen_agent.tools.substrate.CoreClient", FakeCoreClient)
+
+    class _ProviderError(Exception):
+        code = "image_model.no_image"
+
+    _install_failing_image_model(
+        monkeypatch, _ProviderError("OpenRouter response contained no image")
+    )
+
+    tools = _tools_only(runtime_config(tmp_path), prompt="hero")
+    result = json.loads(tools.generate_image("an abstract holographic yellow wash"))
+
+    # NOT blocked: the tool returns a usable asset, not an error status.
+    image = result["image"]
+    assert image["status"] == "ok"
+    assert image["asset_id"]
+    # ...but it is honest that the imagery is a placeholder, not the real thing.
+    assert image["mode"] == "placeholder"
+
+    # The typed, machine-readable outcome the agent reacts to.
+    fallback = image["fallback"]
+    assert fallback["reason"] == "model_failed"
+    assert fallback["error_code"] == "image_model.no_image"
+    assert fallback["conditioning_lost"] is False
+    # ...and the reaction is spelled out, including the flat-token-ground option.
+    assert "flat brand-token ground" in image["hint"]
+
+    # A warning diagnostic still rides along (unchanged behavior).
+    assert any(diag.get("code") == "LUMA0710" for diag in result["diagnostics"])
+
+
+def test_w17c_unconfigured_model_is_a_distinct_typed_fallback(tmp_path, monkeypatch):
+    """W1.7(c): 'the model broke' and 'no model is configured' are different
+    problems with different fixes, so they are different typed reasons — an agent
+    should not retry a prompt against a model that does not exist."""
+    monkeypatch.setattr("lumen_agent.tools.substrate.CoreClient", FakeCoreClient)
+    monkeypatch.setattr(
+        "lumen_agent.tools.substrate.image_provider",
+        types.SimpleNamespace(is_configured=lambda: False, configured_model_id=lambda: ""),
+    )
+
+    tools = _tools_only(runtime_config(tmp_path), prompt="hero")
+    image = json.loads(tools.generate_image("an abstract wash"))["image"]
+
+    assert image["status"] == "ok"  # still never blocks
+    assert image["mode"] == "placeholder"
+    assert image["fallback"]["reason"] == "not_configured"
+    assert image["fallback"]["error_code"] == "image_model.not_configured"
+
+
+def test_w17c_reference_conditioned_failure_reports_conditioning_lost(
+    tmp_path, monkeypatch
+):
+    """W1.7(c): a placeholder is inherently UNCONDITIONED. When the failed
+    generation was reference-conditioned, the typed outcome says the brand
+    conditioning was lost — otherwise the agent would place a generic placeholder
+    believing it still carries the reference's palette and mood."""
+    monkeypatch.setattr("lumen_agent.tools.substrate.CoreClient", FakeCoreClient)
+    config = _reference_config(
+        tmp_path, [{"asset_id": "ref_a", "png": _solid_png(544), "order": 0}]
+    )
+    _install_failing_image_model(monkeypatch, RuntimeError("upstream exploded"))
+
+    tools = _tools_only(config, prompt="hero")
+    image = json.loads(tools.generate_image("a calm clinic reception"))["image"]
+
+    assert image["status"] == "ok"
+    assert image["fallback"]["conditioning_lost"] is True
+
+
+def test_w17b_turn_sees_real_output_dimensions_not_its_own_request(
+    tmp_path, monkeypatch
+):
+    """W1.7(b): the Apollo POC asked 16:9 and got 1024x1024, while the reference
+    manifest kept reporting the REQUEST back. The tool payload must carry the
+    model's real geometry and flag the mismatch, so an agent choosing a ground
+    treatment is never misled about what it just placed."""
+    monkeypatch.setattr("lumen_agent.tools.substrate.CoreClient", FakeCoreClient)
+
+    def fake_generate(**kwargs):
+        return types.SimpleNamespace(
+            image_bytes=b"\x89PNG-generated-bytes",
+            mime_type="image/png",
+            model="test/image-model",
+            provenance={"created_by": "agent", "notes": []},
+            license={"name": "generated_commercial_use", "allow_export": True},
+            width=1024,          # what the model actually returned...
+            height=1024,
+            aspect_ratio_honored=False,  # ...which is not the 16:9 that was asked
+        )
+
+    monkeypatch.setattr(
+        "lumen_agent.tools.substrate.image_provider",
+        types.SimpleNamespace(
+            is_configured=lambda: True,
+            configured_model_id=lambda: "test/image-model",
+            generate=fake_generate,
+        ),
+    )
+
+    tools = _tools_only(runtime_config(tmp_path), prompt="hero")
+    image = json.loads(
+        tools.generate_image("a holographic wash", aspect_ratio="16:9")
+    )["image"]
+
+    assert image["status"] == "ok"
+    assert image["aspect_ratio"] == "16:9"  # the request is still reported...
+    assert (image["actual_width"], image["actual_height"]) == (1024, 1024)  # ...and the truth
+    assert image["aspect_ratio_honored"] is False
+    assert "1024x1024" in image["note"] and "16:9" in image["note"]
+
+
 # 7b. scaffold ----------------------------------------------------------------
 
 

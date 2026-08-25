@@ -970,7 +970,15 @@ class LumenDesignTools:
         that deliberately diverges from the references. The scene must already
         contain a page/artboard (author the layout first) or registration fails with
         a retryable error. Returns the asset_id; place it with place_asset_in_node /
-        place_asset_in_slot (a generated image is not auto-placed)."""
+        place_asset_in_slot (a generated image is not auto-placed).
+
+        Generation NEVER blocks the turn. If the model fails, you still get an
+        asset_id, but `image.mode` is "placeholder" and `image.fallback` says why —
+        that is a deterministic stand-in, NOT real imagery, so do not ship it as
+        though it were: either retry once with a shorter prompt, or drop the image
+        ground and use a flat brand-token ground instead. `image.actual_width` /
+        `actual_height` report what the model really returned, which can differ from
+        the aspect ratio you asked for."""
         asset_id = f"asset_img_{self.run_id[:8]}_{len(self.scene.get('assets', {}))}"
         width, height, aspect_ratio = self._image_constraints(
             target_node_id, target_slot_id, width, height, aspect_ratio
@@ -1044,20 +1052,48 @@ class LumenDesignTools:
             apply_response, "generate_image", [{"kind": "upsert_asset", "asset": record}]
         )
 
+        image: JsonObject = {
+            "status": "ok",
+            "asset_id": record.get("id"),
+            "mode": meta.get("mode"),
+            "model": meta.get("model"),
+            "mime_type": (record.get("media") or {}).get("mime_type"),
+            "aspect_ratio": aspect_ratio,
+            "width": width,
+            "height": height,
+            "provenance": record.get("provenance"),
+            "source": record.get("source"),
+            "license": (record.get("license") or {}).get("name"),
+        }
+        # W1.7(b): `width`/`height`/`aspect_ratio` above are the REQUEST. When the
+        # model returned something else, say so rather than let the ask stand in
+        # for the answer — cover-fit placement still works, but an agent choosing
+        # a ground treatment deserves the real geometry.
+        if meta.get("actual_width") and meta.get("actual_height"):
+            image["actual_width"] = meta["actual_width"]
+            image["actual_height"] = meta["actual_height"]
+            if meta.get("aspect_ratio_honored") is False:
+                image["aspect_ratio_honored"] = False
+                image["note"] = (
+                    f"the model returned {meta['actual_width']}x{meta['actual_height']}, "
+                    f"which is not the requested {aspect_ratio}; it is placed cover-fit "
+                    "and will be cropped to the frame"
+                )
+        # W1.7(c): a failed generation is a NON-BLOCKING, typed outcome (D5 — no
+        # new blocking gates). The placeholder keeps the design composing; this
+        # block is how the agent learns the imagery is not real and can choose to
+        # proceed with a flat token ground instead.
+        if meta.get("fallback"):
+            image["fallback"] = meta["fallback"]
+            image["hint"] = (
+                "Image generation failed and a deterministic PLACEHOLDER was used — "
+                "this is not real imagery and must not ship as if it were. The turn is "
+                "not blocked: either retry once with a shorter, simpler prompt, or drop "
+                "the image ground and proceed with a flat brand-token ground (a clean "
+                "token fill beats a placeholder)."
+            )
         payload = {
-            "image": {
-                "status": "ok",
-                "asset_id": record.get("id"),
-                "mode": meta.get("mode"),
-                "model": meta.get("model"),
-                "mime_type": (record.get("media") or {}).get("mime_type"),
-                "aspect_ratio": aspect_ratio,
-                "width": width,
-                "height": height,
-                "provenance": record.get("provenance"),
-                "source": record.get("source"),
-                "license": (record.get("license") or {}).get("name"),
-            },
+            "image": image,
             "diagnostics": [diag.model_dump(mode="json") for diag in diagnostics],
         }
         self.record(
@@ -1288,8 +1324,17 @@ class LumenDesignTools:
         dead-ends on imagery. When this turn carries reference attachments and
         `condition_on_references` is set, the reference previews ride the model
         call as STYLE anchors (and key the cache on their pixel digests). Returns
-        (record, meta, raw_diagnostics, error)."""
+        (record, meta, raw_diagnostics, error).
+
+        W1.7(c) — FAILED GENERATION NEVER BLOCKS THE TURN (founder ruling D5: no
+        new blocking gates). Every degrade path below is non-fatal by
+        construction, and each one now also records a TYPED `fallback` descriptor
+        on the returned meta — `{reason, error_code, detail, conditioning_lost}` —
+        so the agent can react in kind (most often: proceed with a flat token
+        ground instead of an image ground) rather than having to parse a warning
+        string. `meta["fallback"]` is absent on the success path."""
         diagnostics: List[JsonObject] = []
+        fallback: Optional[JsonObject] = None
 
         # 1) Real text-to-image model, when configured.
         if image_provider is not None and image_provider.is_configured():
@@ -1361,8 +1406,31 @@ class LumenDesignTools:
                     diagnostics.extend(_as_diag_list(ingest.get("diagnostics")))
                     if cache_key is not None and image_cache is not None:
                         image_cache.store(store_root, cache_key, record)
-                    return record, {"mode": "model", "model": result.model}, diagnostics, None
+                    # W1.7(b): the model's REAL output geometry, measured from the
+                    # returned bytes. `width`/`height` above are what we ASKED for,
+                    # and the Apollo POC proved the two can differ (16:9 asked,
+                    # 1024x1024 delivered) — so both travel, never just the ask.
+                    return (
+                        record,
+                        {
+                            "mode": "model",
+                            "model": result.model,
+                            "actual_width": getattr(result, "width", None),
+                            "actual_height": getattr(result, "height", None),
+                            "aspect_ratio_honored": getattr(
+                                result, "aspect_ratio_honored", None
+                            ),
+                        },
+                        diagnostics,
+                        None,
+                    )
                 detail = (ingest.get("error") or {}).get("message", "unknown error")
+                fallback = {
+                    "reason": "ingest_failed",
+                    "error_code": "image.ingest_failed",
+                    "detail": str(detail)[:200],
+                    "conditioning_lost": bool(reference_digests),
+                }
                 diagnostics.append(
                     _image_warning(
                         "LUMA0710",
@@ -1377,6 +1445,12 @@ class LumenDesignTools:
                 conditioning_note = (
                     " (reference conditioning lost)" if reference_digests else ""
                 )
+                fallback = {
+                    "reason": "model_failed",
+                    "error_code": str(code),
+                    "detail": str(error)[:200],
+                    "conditioning_lost": bool(reference_digests),
+                }
                 diagnostics.append(
                     _image_warning(
                         "LUMA0710",
@@ -1385,6 +1459,12 @@ class LumenDesignTools:
                     )
                 )
         elif image_provider is not None:
+            fallback = {
+                "reason": "not_configured",
+                "error_code": "image_model.not_configured",
+                "detail": "text-to-image model is not configured (set IMAGE_MODEL_*)",
+                "conditioning_lost": False,
+            }
             diagnostics.append(
                 _image_warning(
                     "LUMA0711",
@@ -1419,7 +1499,10 @@ class LumenDesignTools:
             return None, {}, diagnostics, (error.code, error.message)
         record = (response.get("asset") or {}).get("record") or {}
         diagnostics.extend(_as_diag_list(response.get("diagnostics")))
-        return record, {"mode": "placeholder", "model": "stub-image-v0"}, diagnostics, None
+        meta: JsonObject = {"mode": "placeholder", "model": "stub-image-v0"}
+        if fallback is not None:
+            meta["fallback"] = fallback
+        return record, meta, diagnostics, None
 
     def _image_constraints(
         self,
