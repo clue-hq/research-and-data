@@ -27,8 +27,6 @@ import json
 from dataclasses import replace
 from pathlib import Path
 
-import pytest
-
 from lumen_agent import harness as harness_mod
 from lumen_agent.tools.substrate import LumenDesignTools
 
