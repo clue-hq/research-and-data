@@ -84,6 +84,11 @@ class Settings(BaseSettings):
     # Blank base_url/api_key → /assets/generate returns a clean 503.
     image_model_base_url: str = ""
     image_model_api_key: str = ""
+    # W1.4: `"default"` is a sentinel, NOT a usable model id — it 404s on
+    # OpenRouter exactly like a wrong id does. `image_provider.configured_model_id()`
+    # resolves it to `image_provider.DEFAULT_IMAGE_MODEL_ID` (the verified working
+    # `openai/gpt-5.4-image-2`). Resolution lives there, not here, because this
+    # package must stay provider-agnostic — it has no business naming a vendor model.
     image_model_id: str = "default"
     image_model_provider_id: str = "image-gen-v1"
     image_model_timeout_s: float = 60.0

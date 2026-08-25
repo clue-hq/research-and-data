@@ -73,7 +73,15 @@ def load_env(repo: Path) -> None:
                 continue
             k, _, v = line.partition("=")
             os.environ.setdefault(k.strip(), v.strip())
-    # A real image-output model id; .env leaves IMAGE_MODEL_ID unset.
+    # A real chat-completions image-output model id, used only when `.env` (read
+    # above, and it wins — this is a setdefault) names none.
+    #
+    # W1.4: if your `.env` DOES set IMAGE_MODEL_ID, that value is what `--live`
+    # uses, and a wrong one 404s with "No endpoints found that support the
+    # requested output modalities: image, text". `openai/gpt-image-2` is the known
+    # trap — real on OpenRouter's dedicated Image API, absent from the
+    # chat-completions catalogue this path uses. Verified working ids:
+    # openai/gpt-5.4-image-2, google/gemini-2.5-flash-image.
     os.environ.setdefault("IMAGE_MODEL_ID", "google/gemini-2.5-flash-image")
     # Point CoreClient straight at the built helper so it never shells out to cargo.
     helper = repo / "target" / "debug" / "lumen-api-helper"

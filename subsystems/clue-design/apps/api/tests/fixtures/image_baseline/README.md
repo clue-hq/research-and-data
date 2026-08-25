@@ -55,8 +55,15 @@ from model noise. The reference is byte-deterministic, so `render.png` is byte-s
 
 Prereqs: the built `target/debug/lumen-api-helper` (the harness points `LUMEN_CORE_HELPER`
 at it), `.env` with `IMAGE_MODEL_*` (only `--live` actually needs the key/credits), and
-`httpx`. `IMAGE_MODEL_ID` is unset in `.env`; the harness defaults it to
-`google/gemini-2.5-flash-image` (a real OpenRouter image-output model).
+`httpx`. When `.env` names no `IMAGE_MODEL_ID`, the harness defaults it to
+`google/gemini-2.5-flash-image` (a real OpenRouter image-output model) — but `.env`
+wins when it does name one.
+
+**W1.4 trap:** the id must be served on OpenRouter's *chat-completions* image modality,
+which is a narrower list than "OpenRouter image models". `openai/gpt-image-2` is real but
+Image-API-only, so on this path it 404s with *"No endpoints found that support the
+requested output modalities: image, text"*. Verified working: `openai/gpt-5.4-image-2`,
+`google/gemini-2.5-flash-image`.
 
 ## How to compare across steps
 
