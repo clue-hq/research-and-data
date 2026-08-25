@@ -1073,6 +1073,41 @@ class LumenDesignTools:
         )
         return json.dumps(payload, indent=2)
 
+    def _library_asset_entry(self, asset_id: str) -> Optional[JsonObject]:
+        """W1.1: the by-value WORKSPACE ASSET LIBRARY entry for `asset_id`, or None.
+
+        Mirrors website mode's `LumenWebTools._asset_library_entry` exactly (same
+        seam, same checks): the entry must carry a record whose own id matches, and
+        the record must be `ready`. Anything else is not a usable library asset and
+        this returns None so the caller stays honest.
+
+        Deliberately does NOT fall back to the kit manifest — kit membership is
+        checked first by every caller, because a kit asset's scene copy is rewritten
+        to `brand_guide` provenance (which is what keeps LUMB0809/LUMB0810 logo
+        governance matching on kit variant ids), while a library asset's own
+        licence and provenance are the truth we must preserve."""
+        entry = (self.config.asset_library or {}).get(asset_id)
+        if not isinstance(entry, dict):
+            return None
+        record = entry.get("record")
+        if not isinstance(record, dict) or record.get("id") != asset_id:
+            return None
+        if record.get("status") != "ready":
+            return None
+        return entry
+
+    def _library_asset_scene_record(self, asset_id: str) -> Optional[JsonObject]:
+        """A deep copy of the library record ready to upsert into the scene.
+
+        Unlike a kit asset the `source` block is NOT rewritten: the record's
+        recorded licence and provenance are exactly what a grounded library
+        placement promises to keep (the ratified website-mode rule in
+        `_use_library_asset`)."""
+        entry = self._library_asset_entry(asset_id)
+        if entry is None:
+            return None
+        return copy.deepcopy(entry["record"])
+
     def _register_referenced_brand_assets(self, origin: str) -> None:
         """K2 root fix: a DSL author naturally writes `image asset(<id>)` with
         an asset_id straight from the brand card — a form the compiler accepts
@@ -1083,9 +1118,17 @@ class LumenDesignTools:
         carry yet gets its record auto-registered with brand_guide provenance
         — the same registration use_brand_asset performs. The explicit action
         remains for fit/slot control. Failures never break the calling tool:
-        registration is a repair, not a gate."""
-        manifest = self.config.brand_kit_assets or {}
-        if not manifest:
+        registration is a repair, not a gate.
+
+        W1.1 widens the same repair to the WORKSPACE ASSET LIBRARY. The Apollo POC
+        scene cited a pre-generated ground the identical way (`image
+        asset(asset_gen_…)`) and preflight answered `LUME0211 op.asset_missing`,
+        because a library asset had no channel into a scene turn at all. A library
+        record is registered VERBATIM (its own source/licence/provenance survive);
+        the kit is still checked first, so an id in both stays a kit asset."""
+        kit = self.config.brand_kit_assets or {}
+        library = self.config.asset_library or {}
+        if not kit and not library:
             return
         scene_assets = self.scene.get("assets") or {}
         referenced: list[str] = []
@@ -1094,19 +1137,31 @@ class LumenDesignTools:
             if kind.get("kind") != "image":
                 continue
             asset_id = kind.get("asset_id")
-            if asset_id in manifest and asset_id not in scene_assets:
+            if not asset_id or asset_id in scene_assets:
+                continue
+            if asset_id in kit or asset_id in library:
                 referenced.append(asset_id)
         for asset_id in dict.fromkeys(referenced):
-            entry = manifest.get(asset_id) or {}
-            record = copy.deepcopy(entry.get("record") or {})
+            from_kit = asset_id in kit
+            entry = (kit.get(asset_id) if from_kit else library.get(asset_id)) or {}
+            record = (
+                copy.deepcopy(entry.get("record") or {})
+                if from_kit
+                else (self._library_asset_scene_record(asset_id) or {})
+            )
             if not record.get("id"):
                 continue
             label = entry.get("title") or record.get("label") or asset_id
-            record["source"] = {
-                "kind": "brand_guide",
-                "source_asset_id": asset_id,
-                "label": label,
-            }
+            if from_kit:
+                # A kit asset's scene copy is re-stamped brand_guide so the logo
+                # governance that matches on kit variant ids keeps firing. A LIBRARY
+                # record keeps its own source/licence/provenance — that is the
+                # grounded promise, and rewriting it would launder its origin.
+                record["source"] = {
+                    "kind": "brand_guide",
+                    "source_asset_id": asset_id,
+                    "label": label,
+                }
             try:
                 response = self.core.apply_operations(
                     self.scene, [{"kind": "upsert_asset", "asset": record}]
@@ -1121,11 +1176,16 @@ class LumenDesignTools:
                 "brand_asset_registered",
                 input_summary=asset_id,
                 output_summary=(
-                    f"auto-registered kit asset {asset_id} referenced by the "
-                    f"scene ({origin})"
+                    f"auto-registered {'kit' if asset_id in kit else 'library'} "
+                    f"asset {asset_id} referenced by the scene ({origin})"
                 ),
                 payload={
-                    "brand_asset": {"asset_id": asset_id, "label": label, "via": origin}
+                    "brand_asset": {
+                        "asset_id": asset_id,
+                        "label": label,
+                        "via": origin,
+                        "manifest": "brand_kit" if asset_id in kit else "asset_library",
+                    }
                 },
             )
 
@@ -1510,6 +1570,15 @@ class LumenDesignTools:
         alt: Optional[str],
         preserve_transparency: Optional[bool],
     ) -> str:
+        # W1.1: a WORKSPACE ASSET LIBRARY id the scene does not carry yet is
+        # registered first, or the engine refuses the placement with
+        # `LUME0211 op.asset_missing` — precisely what killed the Apollo POC's
+        # pre-generated ground (`.context/ref-ads-pilot-apollo-report.md` §6.1).
+        # This tool has always DOCUMENTED "generated or library"; the library half
+        # simply had no channel into a scene turn. Same repair-not-gate discipline
+        # as `_register_referenced_brand_assets`: an id the library does not hold
+        # reaches the engine bare, so an honest miss stays an honest miss.
+        self._register_library_asset_for_placement(asset_id, kind)
         placement: JsonObject = {
             "fit": fit,
             "focal_point": {"x": float(focal_x), "y": float(focal_y)},
@@ -1569,6 +1638,45 @@ class LumenDesignTools:
             sink_extra={"operations": [operation]},
         )
         return json.dumps(payload, indent=2)
+
+    def _register_library_asset_for_placement(self, asset_id: str, kind: str) -> None:
+        """Upsert a workspace-library record into the scene so a placement can bind.
+
+        No-ops for anything already in the scene, anything the kit owns (the kit
+        has its own brand_guide registration path), and anything the library does
+        not hold as a `ready` record. A failed upsert is swallowed on purpose: the
+        placement then reaches the engine exactly as it did before, and the engine's
+        own diagnostic — not a second, invented one — is what the agent sees."""
+        if not asset_id or asset_id in (self.scene.get("assets") or {}):
+            return
+        if asset_id in (self.config.brand_kit_assets or {}):
+            return
+        record = self._library_asset_scene_record(asset_id)
+        if record is None:
+            return
+        operation = {"kind": "upsert_asset", "asset": record}
+        try:
+            response = self.core.apply_operations(self.scene, [operation])
+        except CoreError:
+            return
+        self._replace_scene_from_core_response(response, kind, [operation])
+        entry = self._library_asset_entry(asset_id) or {}
+        self.record(
+            "coordinator",
+            "library_asset_registered",
+            input_summary=asset_id,
+            output_summary=(
+                f"registered workspace library asset {asset_id} "
+                f"(licence and provenance preserved) before {kind}"
+            ),
+            payload={
+                "library_asset": {
+                    "asset_id": asset_id,
+                    "label": entry.get("title") or record.get("label") or asset_id,
+                    "via": kind,
+                }
+            },
+        )
 
     def _asset_preview_path(
         self, record: JsonObject
@@ -2040,7 +2148,9 @@ class LumenDesignTools:
         - `action="generate_qr"` — generate a deterministic QR asset from `data`
           (URL/text). For physical artifacts set `print_media=True` and `target_width_mm`
           so print-scannability diagnostics can fire. Optional `ec_level`, `label`.
-        - `action="place"` — place an existing asset (`asset_id`, generated or library)
+        - `action="place"` — place an existing asset (`asset_id`: one you generated
+          this run, or one from this workspace's asset library — a library asset is
+          registered into the scene for you)
           into either an image node (`node_id`) or a bound image slot (`slot_id`) with a
           `fit` (default cover), normalized focal point (`focal_x`/`focal_y`, 0..1,
           default centered), `alt` text, and optional `preserve_transparency`. Reversible.

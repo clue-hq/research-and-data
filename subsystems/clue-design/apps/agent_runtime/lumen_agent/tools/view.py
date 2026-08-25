@@ -86,8 +86,16 @@ def _latest_preview_png(tools: LumenDesignTools) -> Optional[Path]:
 
 
 def _asset_manifest_ids(tools: LumenDesignTools) -> list[str]:
-    manifest = tools.config.brand_kit_assets or {}
-    return sorted(manifest.keys())
+    """Every asset id this turn can view: the kit's, then the workspace library's.
+
+    W1.1: the library half is the only DISCOVERY surface a scene turn has for a
+    pre-generated asset — the manifest is looked up by id, never rendered into the
+    prompt, so without it an agent that mistypes an id is told nothing useful.
+    The API caps the library manifest (see `SCENE_TURN_ASSET_LIBRARY_MAX`), so this
+    list stays short by construction."""
+    kit = tools.config.brand_kit_assets or {}
+    library = tools.config.asset_library or {}
+    return sorted(kit.keys()) + sorted(set(library.keys()) - set(kit.keys()))
 
 
 def _reference_entries(tools: LumenDesignTools) -> list[tuple[int, str, dict]]:
@@ -234,8 +242,15 @@ def _view_content(tools: LumenDesignTools, target: str) -> list[dict]:
 
     if target.startswith("asset:"):
         asset_id = target[len("asset:"):]
-        manifest = tools.config.brand_kit_assets or {}
-        entry = manifest.get(asset_id)
+        # W1.1: two by-value manifests answer `asset:<id>` — the attached kit's
+        # assets, then the workspace ASSET LIBRARY. Before this, only the kit was
+        # consulted, so a pre-generated `asset_gen_*` background was invisible to a
+        # scene turn however real it was in the database (Apollo POC 2026-08-26,
+        # `.context/ref-ads-pilot-apollo-report.md` §6.1). Kit first: an id in both
+        # is a kit asset, and the kit entry carries the curated title/usage.
+        entry = (tools.config.brand_kit_assets or {}).get(asset_id)
+        if not isinstance(entry, dict):
+            entry = (tools.config.asset_library or {}).get(asset_id)
         resolved = None
         if isinstance(entry, dict):
             resolved = tools._asset_preview_path(entry.get("record") or {})
@@ -337,9 +352,10 @@ def make_view_tool(tools: LumenDesignTools):
     @tool
     def view(target: str) -> list:
         """Look at real pixels. target="preview" returns the latest rendered PNG;
-        target="asset:<asset_id>" returns that kit asset's source preview
-        thumbnail. Returns image content so you can judge by looking, not by
-        guessing from metadata."""
+        target="asset:<asset_id>" returns that asset's source preview thumbnail —
+        a brand-kit asset OR one from this workspace's asset library (including
+        pre-generated imagery). Returns image content so you can judge by looking,
+        not by guessing from metadata."""
         # Containment (sweep A2): NOTHING inside view() — a provider-rejectable
         # image, an unreadable file, a corrupt/undecodable thumbnail — may
         # propagate as an unhandled exception and kill the turn unfinalized. On
