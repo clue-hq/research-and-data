@@ -123,3 +123,16 @@ Doc written: `docs/specs/ARV2-melissa-address-contract.md`. Verdict:
 - Founder to check in-portal (blocked for us): per-endpoint credit costs, whether People/Business
   Search is separately contracted (permissible-use terms), and the AV/AC + AS/DA/FS result-code
   tables so we can pin the "safe to mail" allow-list.
+
+## Addendum 2026-08-24 — Eve.dev evaluated and declined
+
+Founder brought a ChatGPT-agent review of Eve.dev (Vercel beta TS filesystem-first durable-agent
+framework) asking whether ARV2 should be built on it. Re-verified Eve docs directly. Decision note:
+`docs/specs/ARV2-eve-framework-decision.md`. Verdict: NO — the reviewer's own rule (Python+LangGraph
+backend ⇒ don't add a Node runtime) plus the repo-context mapping: every Eve capability (durable
+steps/replay, filesystem catalog, parked approvals, isolated subagents, sandboxes, evals) already
+exists in the platform runtime, and Eve lacks exactly what Clue has (tenancy, rate limits, caching,
+audit). Eve replay semantics verified: completed steps replay recorded results; interrupted steps
+RE-RUN ⇒ idempotency keys — same law our snapshots already implement. Kept from the review: the
+10-account benchmark (accuracy/citation coverage/latency/cost), pointed at ARV2 instead of Eve.
+Backlog ideas: schedules for freshness re-research; evals-directory convention over M9.6.
