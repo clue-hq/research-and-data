@@ -939,6 +939,147 @@ def test_agent_turn_without_references_leaves_config_unset(
     assert captured["config"].reference_assets is None
 
 
+# --- W1.1: the workspace asset library reaches the SCENE turn ---------------
+
+
+def _stub_scene_turn_runtime(monkeypatch: pytest.MonkeyPatch) -> dict:
+    """Capture the config a scene turn hands the runtime, without running one."""
+    import lumen_agent.harness as harness_mod
+    import lumen_agent.llm as llm_mod
+
+    captured: dict = {}
+
+    class _Stop(Exception):
+        pass
+
+    def fake_run(prompt, config, **kwargs):
+        captured["config"] = config
+        raise _Stop()
+
+    monkeypatch.setattr(harness_mod, "run_deepagent_turn", fake_run)
+    monkeypatch.setattr(
+        llm_mod, "assert_model_supports_image_input", lambda *a, **k: None
+    )
+    return captured
+
+
+def test_agent_turn_forwards_the_workspace_asset_library_into_config(
+    client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """W1.1 (Brand Ad Assets v1 §5, item 1) — RED before the fix.
+
+    `workspace_asset_library_manifest` had one call site, the WEBSITE turn, so a
+    scene turn's config carried only `brand_kit_assets` + `reference_assets`. A
+    library asset that was neither could not be viewed and could not be placed
+    (Apollo POC 2026-08-26, `.context/ref-ads-pilot-apollo-report.md` §6.1). The
+    manifest must now ride the scene run BY VALUE — and its bytes must be
+    materialized into the turn's engine cache, or a placed asset renders empty.
+    """
+    from lumen_api.asset_custody import cache_blob_path, record_digests
+    from lumen_api.main import repo_root, run_agent_turn_preview
+    from lumen_api.models import AgentTurnPreviewRequest
+
+    monkeypatch.setattr(settings, "lumen_asset_store_root", tmp_path / "engine-cache")
+    asset_id = upload_logo(client).json()["asset"]["id"]
+    captured = _stub_scene_turn_runtime(monkeypatch)
+
+    run_agent_turn_preview(
+        AgentTurnPreviewRequest(prompt="Design an ad", scene=minimal_scene()),
+        repo_root(),
+        workspace_id=os.environ["LUMEN_DEV_WORKSPACE_ID"],
+    )
+    config = captured["config"]
+    assert config.asset_library is not None
+    assert asset_id in config.asset_library
+    entry = config.asset_library[asset_id]
+    assert entry["record"]["id"] == asset_id
+    assert entry["record"]["status"] == "ready"
+
+    # The read-through actually ran: the turn's engine cache holds the bytes at
+    # `sha256/{ab}/{digest}`. That single path is what BOTH readers compute —
+    # `view("asset:…")` via `blob_path_for_digest`, and the ENGINE at render via
+    # `StoreBackedResolver`'s digest fallback (a `clue-storage` location is not
+    # `local-store`, so it resolves through `digest_relative_path`, which is
+    # `cache_relative_path` byte for byte). Without this materialization the
+    # manifest is a promise the render cannot keep: `asset.bytes_missing`, an
+    # empty chip where the image should be.
+    cache_dir = (
+        tmp_path / "engine-cache" / os.environ["LUMEN_DEV_WORKSPACE_ID"]
+    )
+    digests = [digest for digest, _mime in record_digests(entry["record"])]
+    assert digests
+    for digest in digests:
+        assert cache_blob_path(cache_dir, digest).is_file(), digest
+
+
+def test_agent_turn_asset_library_is_bounded_to_the_most_recent(
+    client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The bound is a real cap on the most-recently-updated rows, not a suggestion:
+    a workspace library can be large, and every entry costs read-through bytes plus
+    prompt-cache surface in `view`'s available-ids text."""
+    from lumen_api import main as main_mod
+    from lumen_api.main import repo_root, run_agent_turn_preview
+    from lumen_api.models import AgentTurnPreviewRequest
+
+    monkeypatch.setattr(settings, "lumen_asset_store_root", tmp_path / "engine-cache")
+    older = upload_logo(client, label="Older mark").json()["asset"]["id"]
+    newer = upload_logo(client, label="Newer mark").json()["asset"]["id"]
+    assert older != newer
+    monkeypatch.setattr(main_mod, "SCENE_TURN_ASSET_LIBRARY_MAX", 1)
+    captured = _stub_scene_turn_runtime(monkeypatch)
+
+    run_agent_turn_preview(
+        AgentTurnPreviewRequest(prompt="Design an ad", scene=minimal_scene()),
+        repo_root(),
+        workspace_id=os.environ["LUMEN_DEV_WORKSPACE_ID"],
+    )
+    library = captured["config"].asset_library
+    assert list(library) == [newer], library
+
+
+def test_scene_turn_asset_library_drops_unplaceable_kinds(
+    client: TestClient, tmp_path: Path
+) -> None:
+    """A font is not placeable in a scene. Shipping one would spend read-through on
+    bytes no image node can bind and would waste a slot in a hard-capped manifest."""
+    from lumen_api.main import api_engine_cache_root, scene_turn_asset_library_manifest
+
+    repo = HybridRepository()
+    font = json.loads(
+        (REPO_ROOT / "crates/lumen-core/fixtures/assets/font_asset.json").read_text()
+    )
+    repo.create_asset_record(font)
+    raster = generated_raster_asset()
+    repo.create_asset_record(raster)
+
+    workspace_id = os.environ["LUMEN_DEV_WORKSPACE_ID"]
+    manifest = scene_turn_asset_library_manifest(
+        repo, _workspace_blobs(), str(api_engine_cache_root(workspace_id))
+    )
+    assert raster["id"] in manifest
+    assert font["id"] not in manifest
+
+
+def test_agent_turn_without_library_assets_leaves_config_unset(
+    client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No-op guarantee: a workspace with an empty library runs exactly as it did
+    before W1.1 — `config.asset_library` stays None, not an empty dict."""
+    from lumen_api.main import repo_root, run_agent_turn_preview
+    from lumen_api.models import AgentTurnPreviewRequest
+
+    monkeypatch.setattr(settings, "lumen_asset_store_root", tmp_path / "engine-cache")
+    captured = _stub_scene_turn_runtime(monkeypatch)
+
+    run_agent_turn_preview(
+        AgentTurnPreviewRequest(prompt="Design a poster", scene=minimal_scene()),
+        repo_root(),
+        workspace_id=os.environ["LUMEN_DEV_WORKSPACE_ID"],
+    )
+    assert captured["config"].asset_library is None
+
+
 def test_set_brand_kit_logo_publishes_new_version_with_human_choice(
     client: TestClient,
 ) -> None:
