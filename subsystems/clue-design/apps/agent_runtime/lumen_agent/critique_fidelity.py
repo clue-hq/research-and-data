@@ -56,7 +56,9 @@ _FIDELITY_IN_PROSE = re.compile(
 )
 
 # Leading separators between the score and the reasons the author gave for it.
-_REASON_LEAD = re.compile(r"^[\s:,.;\-–—/]*(?:3\b)?[\s:,.;\-–—]*")
+# The `/3` denominator is already consumed by the pattern above, so this only
+# has to strip punctuation — never a digit, which could be real reason text.
+_REASON_LEAD = re.compile(r"^[\s:,.;\-–—]*")
 
 UNJUDGED_REASONS = (
     "no explicit reference_fidelity judgment was recorded in this self-audit"
