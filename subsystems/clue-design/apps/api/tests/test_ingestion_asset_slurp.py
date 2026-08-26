@@ -486,9 +486,111 @@ def test_a_failed_font_rung_is_reported_even_when_the_bound_rung_is_fine() -> No
     assert len(per_rung) == 1, _codes(outcome)
     assert "acme-regular.woff" in per_rung[0]["message"]
     assert per_rung[0]["reason"]
+    # `bound` is declared contract surface for Task 3 / F2: it tells "the kit's font is dead"
+    # apart from "one alternative format is missing". This failure is the latter.
+    assert per_rung[0]["bound"] is False
 
     face = next(f for f in evidence.fonts if f.family == "Acme Sans").faces[0]
     assert face.asset_id is not None, "the bound rung is fine and must still paint"
+
+
+def test_a_base64_inlined_font_face_is_not_a_missing_file() -> None:
+    """RED CASE (fix round 2, R2-1): the same data-URI blind spot, on the font path.
+
+    A brand that inlines its webfont as base64 in the CSS holds the bytes in the CSS. The
+    rung loop treated it as a rung that never arrived — a false-positive LUMI0516 whose
+    structured ``url`` carried the whole multi-KB URI onto the published kit — and, because
+    the inlined rung is also the BOUND one, a LUMI0231 whose message interpolated it verbatim.
+    """
+    inline_font = "data:font/woff2;base64," + base64.b64encode(b"wOF2" * 900).decode()
+    css = (
+        '@font-face{font-family:"Inline Sans";'
+        f'src:url({inline_font}) format("woff2");'
+        "font-weight:400;font-style:normal}"
+        'body{color:#123456;font-family:"Inline Sans",sans-serif;font-size:16px}'
+        'h1{font-family:"Inline Sans";font-size:48px;color:#123456}'
+    )
+    outcome = _capture(css=css)
+    _evidence(outcome)
+
+    assert not [d for d in outcome.diagnostics if d["code"] == "LUMI0516"], [
+        d for d in outcome.diagnostics if d["code"] == "LUMI0516"
+    ]
+    for diagnostic in outcome.diagnostics:
+        # Nothing may carry the URI's payload onto the kit — not a message, not a key.
+        assert len(diagnostic["message"]) < 800, (
+            diagnostic["code"],
+            len(diagnostic["message"]),
+        )
+        assert "base64," not in str(diagnostic.get("url") or "")
+
+    # LUMI0231 DOES still fire, and should: the engine loads a face by asset id, and an
+    # inlined face has none, so it genuinely cannot paint. That is an honest finding, not a
+    # false positive — it just has to say so in a bounded line.
+    uncustodied = [d for d in outcome.diagnostics if d["code"] == "LUMI0231"]
+    assert len(uncustodied) == 1
+    assert "Inline Sans" in uncustodied[0]["message"]
+    assert "chars)" in uncustodied[0]["message"], "the URI must be visibly truncated"
+
+
+def test_font_rung_failures_are_capped_and_then_summarized() -> None:
+    """RED CASE (fix round 2, R2-2): per-rung LUMI0516 multiplied volume by 3.
+
+    A down font host used to mean one persisted warning per rung per face, unbounded.
+    """
+    from lumen_ingestion.capture.budget import MAX_NAMED_DROPS
+
+    faces = 9  # 9 faces x 3 rungs = 27 dead rungs, comfortably over the cap
+    css = "".join(
+        '@font-face{font-family:"Dead Sans";'
+        f"src:url(/fonts/dead-{i}.woff2) format(\"woff2\"),"
+        f'url(/fonts/dead-{i}.woff) format("woff"),'
+        f'url(/fonts/dead-{i}.ttf) format("truetype");'
+        f"font-weight:{100 * (i + 1)};font-style:normal}}"
+        for i in range(faces)
+    ) + (
+        'body{color:#123456;font-family:"Dead Sans",sans-serif;font-size:16px}'
+        'h1{font-family:"Dead Sans";font-size:48px;color:#123456}'
+    )
+    missing = {
+        f"/fonts/dead-{i}.{ext}"
+        for i in range(faces)
+        for ext in ("woff2", "woff", "ttf")
+    }
+    outcome = _capture(css=css, missing=missing)
+    _evidence(outcome)
+
+    per_rung = [d for d in outcome.diagnostics if d["code"] == "LUMI0516"]
+    named = [d for d in per_rung if d.get("url")]
+    summary = [d for d in per_rung if not d.get("url")]
+    assert len(named) == MAX_NAMED_DROPS, len(named)
+    assert len(summary) == 1
+    assert f"{faces * 3 - MAX_NAMED_DROPS} more" in summary[0]["message"]
+
+
+def test_every_faces_bound_rung_outranks_every_alternate_in_the_fetch_order() -> None:
+    """Fix round 2, R2-3: the budget drops a suffix, so bound rungs must ALL come first.
+
+    Face-by-face emission meant a budget prefix could keep face 1's ``ttf`` alternate and
+    drop face 9's bound ``woff2`` — the opposite of "the kit-bound file survives pressure".
+    """
+    from lumen_ingestion.capture.parse import font_face_source_rungs
+    from lumen_ingestion.capture.snapshot import Stylesheet
+
+    css = "".join(
+        '@font-face{font-family:"Multi";'
+        f"src:url(/f/{i}.woff2) format(\"woff2\"),url(/f/{i}.ttf) format(\"truetype\");"
+        f"font-weight:{100 * (i + 1)}}}"
+        for i in range(4)
+    )
+    rungs = font_face_source_rungs(
+        [Stylesheet(url="https://example.com/a.css", text=css)], BASE
+    )
+    bound = [u for u in rungs if u.endswith(".woff2")]
+    alternates = [u for u in rungs if u.endswith(".ttf")]
+    assert len(bound) == 4 and len(alternates) == 4
+    assert rungs[:4] == bound, rungs
+    assert rungs[4:] == alternates, rungs
 
 
 def test_a_font_face_that_failed_to_fetch_gets_its_own_diagnostic() -> None:

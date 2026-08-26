@@ -206,6 +206,12 @@ def build_evidence(outcome, *, core, store_root: str, reporter) -> BrandEvidence
             # below stays the family-level summary a human skims; this is the line that says
             # which file and why, which is what anyone debugging a fallback needs.
             for rung in face.source_urls or ([face.source_url] if face.source_url else []):
+                # A base64-inlined face is not a rung that failed to arrive: the bytes ride
+                # in the CSS the snapshot already carries. Same blind spot `queue()` has for
+                # a data-URI <img>, and the same fix — no diagnostic, and above all no
+                # multi-KB URI persisted onto the kit as a structured `url`.
+                if rung.startswith("data:"):
+                    continue
                 if _sha_for_url(snapshot, rung):
                     continue
                 reason = fetch_reasons.get(rung, "no bytes were captured for it")
@@ -230,7 +236,7 @@ def build_evidence(outcome, *, core, store_root: str, reporter) -> BrandEvidence
                 # paint in Inter (LUMS0100). That used to happen in total silence
                 # — LUMI0230 only fires when a family has NO faces at all, not
                 # when every face is byte-less — so say it plainly instead.
-                uncustodied_faces.append(f"{font.family} ({face.source_url})")
+                uncustodied_faces.append(f"{font.family} ({short_url(face.source_url)})")
             faces.append(
                 FontFaceEvidence(
                     weight=face.weight,
@@ -342,7 +348,13 @@ def build_evidence(outcome, *, core, store_root: str, reporter) -> BrandEvidence
     # Honest-partial, never silent-partial: every reference we could not store and every
     # ingest that refused is said out loud, and the ingestion still completes.
     if isinstance(outcome_diagnostics, list):
-        outcome_diagnostics.extend(face_failures)
+        outcome_diagnostics.extend(
+            cap_and_summarize(
+                face_failures,
+                code="LUMI0516",
+                noun="font file(s) were not retrieved",
+            )
+        )
         outcome_diagnostics.extend(_drop_diagnostics(drops))
         outcome_diagnostics.extend(ingest_failures)
 
@@ -493,52 +505,61 @@ def _ladder_locator(slot_name: str, slot) -> str:
     )[:400]
 
 
+def cap_and_summarize(entries: list[dict], *, code: str, noun: str) -> list[dict]:
+    """Keep at most :data:`budget.MAX_NAMED_DROPS` named diagnostics, then one summary line.
+
+    These diagnostics are PERSISTED on the published kit, and every failure they describe is
+    the per-item kind that arrives in bulk: a page that trips the count budget has a long
+    dropped tail by definition, and a font host that is down costs one warning per rung per
+    face. One entry each made the kit's diagnostics unbounded.
+
+    The summary entry deliberately carries NO ``url`` key, so a consumer splits named from
+    summary with ``d.get("url")`` and never has to parse a message. The full list is not
+    attached either — for drops, ``LUMI0514``'s ``dropped`` key is where it lives.
+    """
+    if len(entries) <= MAX_NAMED_DROPS:
+        return entries
+    remaining = len(entries) - MAX_NAMED_DROPS
+    return entries[:MAX_NAMED_DROPS] + [
+        {
+            "code": code,
+            "severity": "warning",
+            "message": (
+                f"and {remaining} more {noun}; the first {MAX_NAMED_DROPS} are named above"
+            ),
+            "reason": "diagnostic list capped",
+            "context": "summary",
+        }
+    ]
+
+
 def _drop_diagnostics(drops: list[tuple[str, str, str]]) -> list[dict]:
     """``LUMI0515``s for the assets the page referenced and we could not store.
 
     Deduped by URL — a rendition referenced from three places is one missing file, not three
-    — and CAPPED at :data:`budget.MAX_NAMED_DROPS`, with the remainder collapsed into one
-    summary line. These diagnostics are persisted on the published kit, and a page that trips
-    the count budget has a long tail by definition: one entry per drop made the kit's
-    diagnostics unbounded and duplicated the ``LUMI0514`` that already named them. The full
-    list is deliberately NOT attached here; the budget diagnostic is where it lives.
+    — then capped by :func:`cap_and_summarize`.
     """
     seen: set[str] = set()
-    unique: list[tuple[str, str, str]] = []
+    named: list[dict] = []
     for url, reason, context in drops:
         if url in seen:
             continue
         seen.add(url)
-        unique.append((url, reason, context))
-
-    out: list[dict] = [
-        {
-            "code": "LUMI0515",
-            "severity": "warning",
-            "message": (
-                f"referenced asset not stored ({context}): {short_url(url)} — {reason}"
-            ),
-            "url": url,
-            "reason": reason,
-            "context": context,
-        }
-        for url, reason, context in unique[:MAX_NAMED_DROPS]
-    ]
-    remaining = len(unique) - MAX_NAMED_DROPS
-    if remaining > 0:
-        out.append(
+        named.append(
             {
                 "code": "LUMI0515",
                 "severity": "warning",
                 "message": (
-                    f"and {remaining} more referenced asset(s) were not stored; the first "
-                    f"{MAX_NAMED_DROPS} are named above"
+                    f"referenced asset not stored ({context}): {short_url(url)} — {reason}"
                 ),
-                "reason": "diagnostic list capped",
-                "context": "summary",
+                "url": url,
+                "reason": reason,
+                "context": context,
             }
         )
-    return out
+    return cap_and_summarize(
+        named, code="LUMI0515", noun="referenced asset(s) were not stored"
+    )
 
 
 def _run_ingest(jobs: list[_AssetJob], *, core, store_root: str, snapshot) -> list[dict]:

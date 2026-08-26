@@ -18,6 +18,8 @@ from urllib.parse import urlparse
 
 import httpx
 
+from .budget import short_url
+
 # Response size caps (bytes) per resource class.
 PAGE_MAX_BYTES = 5 * 1024 * 1024
 CSS_MAX_BYTES = 5 * 1024 * 1024
@@ -291,7 +293,7 @@ def _size_cap_diagnostic(url: str, cap: int) -> dict:
     return {
         "code": "LUMI0502",
         "severity": "warning",
-        "message": f"resource exceeded {cap}-byte cap and was skipped: {url}",
+        "message": f"resource exceeded {cap}-byte cap and was skipped: {short_url(url)}",
         "url": url,
         "reason": f"exceeded the {cap}-byte cap for its resource class",
     }
@@ -303,12 +305,14 @@ def _fetch_failure_diagnostic(url: str, reason: str) -> dict:
     ``url`` and ``reason`` ride as their own keys (not only inside the message) because
     downstream consumers have to JOIN on them: the evidence builder reports a ``@font-face``
     file that never arrived and must state WHY, and string-parsing a human sentence to find
-    that out is how the two drift apart.
+    that out is how the two drift apart. The MESSAGE quotes a bounded URL — a signed CDN URL
+    runs to kilobytes and these diagnostics are persisted on the published kit — while the
+    ``url`` key keeps the whole thing, because that is what consumers join on.
     """
     return {
         "code": "LUMI0503",
         "severity": "warning",
-        "message": f"fetch failed for {url}: {reason}",
+        "message": f"fetch failed for {short_url(url)}: {reason}",
         "url": url,
         "reason": reason,
     }

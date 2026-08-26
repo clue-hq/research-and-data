@@ -613,31 +613,35 @@ def iter_font_faces(stylesheets, page_url: str):
                     yield sheet.url, face
 
 
-def font_face_sources(stylesheets, page_url: str) -> list[str]:
-    """Absolute URLs of the font files ``@font-face`` actually SELECTS — one per face.
+def font_face_source_rungs(stylesheets, page_url: str) -> list[str]:
+    """EVERY ``src`` URL every ``@font-face`` declares — EVERY face's BOUND rung first.
 
-    This is the binding set: every face the evidence builder later looks up has bytes waiting
-    under the same key. It is no longer the whole fetch list — see
-    :func:`font_face_source_rungs`.
+    What capture downloads (clone-fidelity F0.2). A face routinely lists ``woff2, woff,
+    ttf``; the kit binds the best format the same way a browser would, but F2 rewrites the
+    captured ``@font-face`` block verbatim onto our store, so a rung we never fetched is a
+    font that fails to load for whichever browser picks it.
+
+    **Why bound rungs come first GLOBALLY, not per face.** The asset budget keeps a PREFIX of
+    this list and drops the tail. Emitting face by face meant a budget that cut mid-list kept
+    face 1's ``ttf`` alternate while dropping face 9's bound ``woff2`` — the exact opposite
+    of "the file the kit binds survives budget pressure". Two passes make that promise true
+    across the whole page: every bound rung, then every alternate.
+
+    (This replaced ``font_face_sources``, which returned only the bound URLs and became the
+    binding set nobody called once the fetch list grew — the binding choice itself lives in
+    ``_parse_font_face``'s ``chosen`` and rides on ``ParsedFontFace.source_url``.)
     """
+    faces = [face for _sheet_url, face in iter_font_faces(stylesheets, page_url)]
+
+    def rungs_of(face) -> list[str]:
+        return face.source_urls or ([face.source_url] if face.source_url else [])
+
     urls: list[str] = []
-    for _sheet_url, face in iter_font_faces(stylesheets, page_url):
+    for face in faces:
         if face.source_url and face.source_url not in urls:
             urls.append(face.source_url)
-    return urls
-
-
-def font_face_source_rungs(stylesheets, page_url: str) -> list[str]:
-    """EVERY ``src`` URL every ``@font-face`` declares, bound rung first within each face.
-
-    What capture downloads (clone-fidelity F0.2 fix round 1). A face routinely lists
-    ``woff2, woff, ttf``; we bind the best format the same way a browser would, but F2
-    rewrites the captured ``@font-face`` block verbatim onto our store, so a rung we never
-    fetched is a font that fails to load for whichever browser picks it.
-    """
-    urls: list[str] = []
-    for _sheet_url, face in iter_font_faces(stylesheets, page_url):
-        for url in face.source_urls or ([face.source_url] if face.source_url else []):
+    for face in faces:
+        for url in rungs_of(face):
             if url and url not in urls:
                 urls.append(url)
     return urls
