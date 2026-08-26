@@ -99,6 +99,52 @@ nothing applied — with a truthful reason. No `completed_with_warnings` branch,
 - Seam/governance: `test_workspace_seam_route_table.py`, `test_workspace_seam.py`,
   `test_write_path_governance.py` all green (the tool-name set is unchanged — no new tool).
 
+## Post-review repair — the web test was not hermetic (coordinator finding)
+
+`test_a_cancelled_web_turn_is_failed_with_nothing_applied` passed only because the author's shell
+had the repo `.env` sourced. It built its config with `AgentRuntimeConfig.from_env(...)` and then
+reached the real `init_model`, which hard-refuses without `LUMEN_AGENT_BASE_URL` +
+`LUMEN_AGENT_API_KEY`. In any clean shell it died there. **One test affected**, confirmed by
+running the whole file with every `LUMEN_AGENT_*` / `OPENROUTER_*` / `CLUE_*` var scrubbed: 18
+passed, that one failed.
+
+**Root cause of the mistake:** I copied the config construction from `test_web_review_cap.py`,
+which uses `from_env` too — but that suite gets away with it because it monkeypatches
+`harness_web._instrument` away entirely, so `init_model` is never reached. The pattern that
+actually makes the suite hermetic is `agent_fixtures.runtime_config`, which carries dummy gateway
+creds BY VALUE (`agent_base_url="https://openrouter.ai/api/v1"`, `agent_api_key="sk-test"`) and
+says so in its own comment. My scene tests were fine precisely because they use it.
+
+**Fix:** a local `_web_config()` that takes `from_env` (right for engine paths, model ids, asset
+base URL) and then `replace()`s the two credential fields with the same dummies. The real
+`_instrument` still runs, so the test exercises attachment rather than stubbing it out.
+
+**The guard, and a trap inside the guard.** An autouse fixture now hides the credentials from
+every test in the module. The first version only called `monkeypatch.delenv` — and it was
+**theatre**: `py_lumen_config.settings` is a module-level singleton built at import time
+(`config.py: settings = Settings()`), and `AgentRuntimeConfig.from_env` reads its ATTRIBUTES, so a
+variable deleted from `os.environ` afterwards is still sitting in that object. Proven by a scratch
+test reproducing the old leaky shape: with the delenv-only fixture it still passed. The fixture now
+also blanks `settings.lumen_agent_base_url` / `.lumen_agent_api_key`, and the same scratch test
+then failed with the exact original `ValueError`. `test_the_gateway_credentials_are_unreachable_
+for_every_test_in_this_module` pins it *through `from_env`*, not through `os.environ`, for that
+reason.
+
+Also added `test_a_web_probe_attaches_the_handler_to_every_role` — the web equivalent of the scene
+attachment test, which nothing had covered. File is now 21 tests, green in both a scrubbed shell
+and a `.env`-sourced one.
+
+**Unrelated pre-existing hazard found while checking for interference** (NOT A3's, do not chase):
+`test_deepagent_harness._install_deepagents_stub` replaces `deepagents.backends.filesystem.
+FilesystemBackend` with a fake that has no `read`, and `lumen_agent.fs_backend.AgentWorkspaceBackend`
+subclasses whatever is bound when that module is FIRST imported — poisoning it process-wide.
+`pytest test_deepagent_harness.py test_web_custom_component_authoring.py` (both files untouched by
+A3, my file not even collected) fails
+`test_web_harness_exposes_read_tools_to_orchestrator_and_full_flow_to_author` with
+`'AgentWorkspaceBackend' object has no attribute 'read'`. The full alphabetical suite happens to
+import `fs_backend` for real before the stub lands, which is why it is green there — i.e. the whole
+suite's greenness on this test is an ordering accident.
+
 ## Environment gotchas for the next agent
 
 - **Shared-venv trap is REAL here.** The colombo venv's editable `.pth` files point at the MAIN
@@ -114,3 +160,6 @@ nothing applied — with a truthful reason. No `completed_with_warnings` branch,
   per-branch `CLUE_DATABASE_URL` for anything that drives a design run.
 - `apps/api/tests` does NOT migrate; `tests/design` does (session fixture). That asymmetry is why
   the cancel API tests need a hand-run `alembic upgrade head` first.
+- **Never verify an agent-runtime test only in a shell that sourced `.env`.** Run it once with the
+  credentials scrubbed; that is the only way a hidden `init_model` dependency shows itself. And
+  remember `delenv` is not enough on its own — the settings singleton caches the values (above).

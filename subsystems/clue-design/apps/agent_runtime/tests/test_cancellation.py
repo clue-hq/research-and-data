@@ -14,12 +14,24 @@ back from across a worker restart — is proven in `apps/api/tests/test_agent_ru
 against real Postgres.
 
 deepagents is stubbed exactly as `test_deepagent_harness.py` stubs it.
+
+HERMETIC BY CONSTRUCTION. Nothing here may read gateway credentials from the developer's
+environment. `init_model` refuses to build a model without `LUMEN_AGENT_BASE_URL` +
+`LUMEN_AGENT_API_KEY`, so a test that reaches it with a config built by
+`AgentRuntimeConfig.from_env` passes on a machine with the repo `.env` sourced and fails
+everywhere else — which is exactly the trap the web test in this file fell into on its first
+writing. Two things stop it recurring: every config here carries the shared fixture's DUMMY
+creds by value (`agent_fixtures.runtime_config`'s stated reason for having them), and the
+autouse fixture below hides the real credentials from the whole module — from the environment
+AND from the cached settings singleton, which is the half a first attempt missed — so the leak
+fails for the author too instead of hiding until someone else runs the file in a clean shell.
 """
 
 from __future__ import annotations
 
 import json
 import types
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -40,7 +52,82 @@ from agent_fixtures import runtime_config
 from test_deepagent_harness import _install_deepagents_stub
 
 
+#: The design subsystem root — the engine fixtures the web harness needs live under it.
+REPO_ROOT = Path(__file__).resolve().parents[3]
+
+#: The gateway creds every config in this file carries BY VALUE. Same pair, same reason, as
+#: `agent_fixtures.runtime_config`: harness construction always goes through `init_model`, which
+#: refuses to build a model without both — so a test must supply them itself rather than inherit
+#: whatever the shell happens to hold.
+FIXTURE_BASE_URL = "https://openrouter.ai/api/v1"
+FIXTURE_API_KEY = "sk-test"
+
+
+@pytest.fixture(autouse=True)
+def _no_ambient_gateway_credentials(monkeypatch) -> None:
+    """Hide the gateway credentials from every test in this module, both places they live.
+
+    THE GUARD, not a nicety. The first version of the web test below built its config with
+    `AgentRuntimeConfig.from_env(...)` and reached the real `init_model`; it passed only because
+    the author's shell had the repo `.env` sourced, and failed for everyone else with
+    "set both LUMEN_AGENT_BASE_URL and LUMEN_AGENT_API_KEY".
+
+    `delenv` ALONE DOES NOT DO IT, and the first attempt at this fixture was theatre for exactly
+    that reason. `py_lumen_config.settings` is a module-level singleton built at IMPORT time
+    (`config.py`'s `settings = Settings()`), and `AgentRuntimeConfig.from_env` reads its
+    attributes — so a variable deleted from `os.environ` afterwards is still sitting in that
+    already-materialized object, and the leaky test kept passing. The cached fields have to be
+    blanked too. Both halves are done here: `os.environ` for anything that re-reads it, and the
+    settings singleton for everything that goes through `from_env`.
+    """
+    from py_lumen_config import settings
+
+    monkeypatch.delenv("LUMEN_AGENT_BASE_URL", raising=False)
+    monkeypatch.delenv("LUMEN_AGENT_API_KEY", raising=False)
+    monkeypatch.setattr(settings, "lumen_agent_base_url", None, raising=False)
+    monkeypatch.setattr(settings, "lumen_agent_api_key", None, raising=False)
+
+
+def test_the_gateway_credentials_are_unreachable_for_every_test_in_this_module() -> None:
+    """The guard pins itself — through `from_env`, not through `os.environ`.
+
+    Two assertions, and the second is the one that matters. Checking `os.environ` alone is what
+    the first version of this test did, and it passed while the leak it was supposed to catch was
+    wide open: the credential a leaky test actually picks up comes from the cached
+    `py_lumen_config.settings` singleton, not from the environment. So the real assertion is that
+    a config built the leaky way — `AgentRuntimeConfig.from_env` — comes back with NO key. If
+    `_no_ambient_gateway_credentials` is deleted or half-done, this is what fails.
+    """
+    import os
+
+    from lumen_agent.config import AgentRuntimeConfig
+
+    assert os.environ.get("LUMEN_AGENT_BASE_URL") is None
+    assert os.environ.get("LUMEN_AGENT_API_KEY") is None
+    assert AgentRuntimeConfig.from_env(REPO_ROOT).agent_api_key is None
+
+
 # --- helpers ----------------------------------------------------------------
+
+
+def _web_config(tmp_path):
+    """The website harness's runtime config, with the gateway creds supplied BY VALUE.
+
+    `from_env` is what the sibling web suites use, and it is right for everything else on the
+    config — the engine paths, the asset base URL, the model ids all genuinely come from the
+    environment. What it must NOT be trusted for here is the credential pair, because those are
+    the two fields `init_model` hard-refuses to do without. So they are overwritten with the
+    shared fixture's dummies, which is precisely why `agent_fixtures.runtime_config` carries a
+    pair of its own.
+    """
+    from lumen_agent.config import AgentRuntimeConfig
+
+    return replace(
+        AgentRuntimeConfig.from_env(REPO_ROOT),
+        trace_dir=tmp_path / "workspace",
+        agent_base_url=FIXTURE_BASE_URL,
+        agent_api_key=FIXTURE_API_KEY,
+    )
 
 
 def _install_callbackable_models(monkeypatch) -> None:
@@ -448,37 +535,73 @@ def test_the_cancel_is_announced_on_the_run_event_stream(monkeypatch, tmp_path) 
 # ===========================================================================
 
 
+def _web_doc(doc_id: str) -> dict:
+    from lumen_api.core import CoreClient
+
+    return CoreClient(repo_root=REPO_ROOT).web_new_doc(doc_id, "A3", None)["web_doc"]
+
+
+def _stub_web_harness(monkeypatch, *, instrument=None):
+    """The web harness's standing test stubs, in one place.
+
+    `materialize_agent_workspace` and `assert_all_role_models_support_image_input` are neutered
+    exactly as `test_web_review_cap.py` and `test_web_custom_component_authoring.py` neuter them.
+    `instrument` is offered because those two suites also replace `_instrument` wholesale — which
+    is right when the assertion is ABOUT the call into it, and wrong when the assertion needs the
+    real one to run. Left None, the real `_instrument` builds real model objects, which is
+    hermetic here only because `_web_config` hands it dummy credentials.
+    """
+    import deepagents
+
+    import lumen_agent.llm as llm
+    from lumen_agent import harness_web
+
+    monkeypatch.setattr(harness_web, "materialize_agent_workspace", lambda _config: None)
+    monkeypatch.setattr(llm, "assert_all_role_models_support_image_input", lambda _config: None)
+    if instrument is not None:
+        monkeypatch.setattr(harness_web, "_instrument", instrument)
+    return deepagents, harness_web
+
+
 def test_a_web_turn_with_no_probe_calls_instrument_with_the_pre_a3_argument_list(
     monkeypatch, tmp_path
 ) -> None:
     """The web harness's `_instrument` seam is spied on with a FOUR-parameter signature
     (`test_web_review_cap.py`), so the same omit-when-absent rule applies here."""
-    import deepagents
-
-    import lumen_agent.llm as llm
-    from lumen_agent import harness_web
-    from lumen_agent.config import AgentRuntimeConfig
-    from lumen_api.core import CoreClient
-
-    repo_root = Path(__file__).resolve().parents[3]
     captured: dict = {}
+    deepagents, harness_web = _stub_web_harness(
+        monkeypatch, instrument=lambda _config, _tools, _model, role: f"{role}-model"
+    )
     monkeypatch.setattr(deepagents, "create_deep_agent", lambda **kwargs: captured.update(kwargs))
-    monkeypatch.setattr(harness_web, "materialize_agent_workspace", lambda _config: None)
-    monkeypatch.setattr(
-        harness_web, "_instrument", lambda _config, _tools, _model, role: f"{role}-model"
-    )
-    monkeypatch.setattr(llm, "assert_all_role_models_support_image_input", lambda _config: None)
 
-    from dataclasses import replace as _replace
-
-    config = _replace(
-        AgentRuntimeConfig.from_env(repo_root), trace_dir=tmp_path / "workspace"
-    )
-    web_doc = CoreClient(repo_root=repo_root).web_new_doc("doc_a3", "A3", None)["web_doc"]
-
-    harness_web.create_web_deepagent("Build a page.", config, web_doc)
+    harness_web.create_web_deepagent("Build a page.", _web_config(tmp_path), _web_doc("doc_a3"))
 
     assert captured["model"] == "orchestrator-model"
+
+
+def test_a_web_probe_attaches_the_handler_to_every_role(monkeypatch, tmp_path) -> None:
+    """Website mode wires the probe to all three minds too.
+
+    Runs the REAL `_instrument` — the sibling web suites replace it, and that is fine for what
+    they assert, but the whole claim here is that attachment happens inside it. Hermetic because
+    `init_model` is stubbed to a model-shaped object with a writable `callbacks` list, which is
+    the scene suite's own trick (`_install_deepagents_stub`), not because any credential exists.
+    """
+    captured: dict = {}
+    deepagents, harness_web = _stub_web_harness(monkeypatch)
+    _install_callbackable_models(monkeypatch)
+    monkeypatch.setattr(deepagents, "create_deep_agent", lambda **kwargs: captured.update(kwargs))
+
+    harness_web.create_web_deepagent(
+        "Build a page.",
+        _web_config(tmp_path),
+        _web_doc("doc_a3c"),
+        cancel_requested=lambda: False,
+    )
+
+    assert len(_cancel_handlers(captured["model"])) == 1
+    for subagent in captured["subagents"]:
+        assert len(_cancel_handlers(subagent["model"])) == 1
 
 
 def test_a_cancelled_web_turn_is_failed_with_nothing_applied(monkeypatch, tmp_path) -> None:
@@ -490,35 +613,19 @@ def test_a_cancelled_web_turn_is_failed_with_nothing_applied(monkeypatch, tmp_pa
     the fabrication the result envelope exists to prevent. The path itself is the harness's
     pre-existing honest-failure finalize; A3 only made its reason truthful.
     """
-    import deepagents
-
-    import lumen_agent.llm as llm
-    from lumen_agent import harness_web
-    from lumen_agent.config import AgentRuntimeConfig
-    from lumen_api.core import CoreClient
-
-    repo_root = Path(__file__).resolve().parents[3]
-
+    deepagents, harness_web = _stub_web_harness(monkeypatch)
+    _install_callbackable_models(monkeypatch)
     monkeypatch.setattr(
         deepagents,
         "create_deep_agent",
         lambda **kwargs: types.SimpleNamespace(invoke=lambda *a, **k: {"messages": []}),
     )
-    monkeypatch.setattr(harness_web, "materialize_agent_workspace", lambda _config: None)
-    monkeypatch.setattr(llm, "assert_all_role_models_support_image_input", lambda _config: None)
-
-    from dataclasses import replace as _replace
-
-    config = _replace(
-        AgentRuntimeConfig.from_env(repo_root), trace_dir=tmp_path / "workspace"
-    )
-    web_doc = CoreClient(repo_root=repo_root).web_new_doc("doc_a3b", "A3", None)["web_doc"]
 
     events: list = []
     result = harness_web.run_deepagent_web_turn(
         prompt="Build a page.",
-        config=config,
-        initial_web_doc=web_doc,
+        config=_web_config(tmp_path),
+        initial_web_doc=_web_doc("doc_a3b"),
         event_sink=lambda event, data: events.append((event, data)),
         cancel_requested=lambda: True,
     )
