@@ -44,6 +44,27 @@ BUDGET_DIAGNOSTIC_CODE = "LUMI0514"
 #: diagnostic's ``dropped`` key — the truncation is for the human-readable line only.
 _NAMED_IN_MESSAGE = 8
 
+#: How many individually-named missing-asset diagnostics (``LUMI0515``) one capture may put
+#: on a kit before the rest become a single summary line. A page that trips the count budget
+#: has, by definition, a long tail of assets it could not store; emitting one diagnostic per
+#: entry duplicated the ``LUMI0514`` that already named them and made the kit's diagnostics
+#: unbounded. Twenty is enough for a human to see the shape of the failure.
+MAX_NAMED_DROPS = 20
+
+#: How much of a URL any diagnostic MESSAGE may quote. A ``data:`` URI or a signed CDN URL is
+#: routinely kilobytes long, and diagnostics are persisted on the published kit. Structured
+#: keys (``url``, ``dropped``) keep the whole thing; only the human line is cut.
+MAX_URL_CHARS = 200
+
+
+def short_url(url: str | None) -> str:
+    """A URL trimmed to something a human line can carry, with the cut made visible."""
+    if not url:
+        return ""
+    if len(url) <= MAX_URL_CHARS:
+        return url
+    return f"{url[:MAX_URL_CHARS]}… (+{len(url) - MAX_URL_CHARS} chars)"
+
 
 def budget_diagnostic(*, budget: str, limit: int, dropped: list[str]) -> dict:
     """The loud diagnostic for a budget drop.
@@ -52,7 +73,7 @@ def budget_diagnostic(*, budget: str, limit: int, dropped: list[str]) -> dict:
     ``limit`` its value, and ``dropped`` every URL it cost — carried in full on the
     ``dropped`` key so a consumer never has to parse the message.
     """
-    named = ", ".join(dropped[:_NAMED_IN_MESSAGE])
+    named = ", ".join(short_url(url) for url in dropped[:_NAMED_IN_MESSAGE])
     more = len(dropped) - _NAMED_IN_MESSAGE
     if more > 0:
         named += f", and {more} more"

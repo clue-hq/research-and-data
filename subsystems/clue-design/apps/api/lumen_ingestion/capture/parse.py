@@ -49,6 +49,12 @@ class ParsedFontFace:
     style: str
     source_url: str | None
     format: str | None
+    # EVERY ``src`` rung this face declares, best-format first (clone-fidelity F0.2 fix
+    # round 1). ``source_url`` stays the ONE rung the kit binds — the browser would pick the
+    # best format it supports and so do we — but F2 rewrites a captured ``@font-face`` block
+    # verbatim, so every rung a browser might pick has to resolve on our store. Defaulted so
+    # a hand-built face (fixtures, the PDF path) stays valid.
+    source_urls: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -536,14 +542,19 @@ def _parse_font_face(decls, base_url: str) -> ParsedFontFace | None:
                 src_urls.append(_absolutize(base_url, m.group(1)))
     if family is None:
         return None
+    src_urls = list(dict.fromkeys(src_urls))
     chosen = None
     if src_urls:
         chosen = sorted(src_urls, key=lambda u: _FORMAT_RANK.get(_font_format(u), 3))[0]
+    # Bound rung first, then the rest in declaration order: the asset budget drops the tail,
+    # so under pressure the file the kit actually binds is the one that survives.
+    rungs = ([chosen] if chosen else []) + [u for u in src_urls if u != chosen]
     face = ParsedFontFace(
         weight=weight if weight is not None else 400,
         style=style,
         source_url=chosen,
         format=_font_format(chosen) if chosen else None,
+        source_urls=rungs,
     )
     face._family = family  # type: ignore[attr-defined]
     return face
@@ -603,15 +614,32 @@ def iter_font_faces(stylesheets, page_url: str):
 
 
 def font_face_sources(stylesheets, page_url: str) -> list[str]:
-    """Absolute URLs of the font files ``@font-face`` actually selects.
+    """Absolute URLs of the font files ``@font-face`` actually SELECTS — one per face.
 
-    Capture downloads exactly these, so every face the evidence builder later
-    looks up has bytes waiting under the same key.
+    This is the binding set: every face the evidence builder later looks up has bytes waiting
+    under the same key. It is no longer the whole fetch list — see
+    :func:`font_face_source_rungs`.
     """
     urls: list[str] = []
     for _sheet_url, face in iter_font_faces(stylesheets, page_url):
         if face.source_url and face.source_url not in urls:
             urls.append(face.source_url)
+    return urls
+
+
+def font_face_source_rungs(stylesheets, page_url: str) -> list[str]:
+    """EVERY ``src`` URL every ``@font-face`` declares, bound rung first within each face.
+
+    What capture downloads (clone-fidelity F0.2 fix round 1). A face routinely lists
+    ``woff2, woff, ttf``; we bind the best format the same way a browser would, but F2
+    rewrites the captured ``@font-face`` block verbatim onto our store, so a rung we never
+    fetched is a font that fails to load for whichever browser picks it.
+    """
+    urls: list[str] = []
+    for _sheet_url, face in iter_font_faces(stylesheets, page_url):
+        for url in face.source_urls or ([face.source_url] if face.source_url else []):
+            if url and url not in urls:
+                urls.append(url)
     return urls
 
 

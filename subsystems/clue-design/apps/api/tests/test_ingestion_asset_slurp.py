@@ -337,6 +337,160 @@ def test_an_ingest_that_raises_costs_one_asset_not_the_whole_kit() -> None:
     assert "helper.process died" in failed[0]["reason"]
 
 
+def test_a_data_uri_image_is_not_a_missing_asset() -> None:
+    """RED CASE (fix round 1, I1): the inline bytes ARE the asset.
+
+    A ``data:`` URI is not fetchable and needs no rehosting — the bytes already ride in the
+    HTML the snapshot carries. Reporting it as "not stored" was a false positive, and because
+    the diagnostic quoted the URL, a Webflow/Next LQIP placeholder dragged ~2 KB of base64 per
+    image into the published kit's diagnostics.
+    """
+    placeholder = (
+        "data:image/svg+xml;base64,"
+        + base64.b64encode(b"<svg xmlns='http://www.w3.org/2000/svg'/>" * 40).decode()
+    )
+    page = PAGE.replace(
+        "<p>Acme builds",
+        f'<img src="{placeholder}" width="600" height="400"><p>Acme builds',
+    )
+    outcome = _capture(page_html=page)
+    _evidence(outcome)
+
+    drops = [d for d in outcome.diagnostics if d["code"] == "LUMI0515"]
+    assert not any("data:" in d["message"] for d in drops), drops
+    assert all(len(d["message"]) < 600 for d in outcome.diagnostics), [
+        (d["code"], len(d["message"])) for d in outcome.diagnostics
+    ]
+
+
+def test_a_very_long_url_is_truncated_in_the_diagnostic_it_appears_in() -> None:
+    """No diagnostic may carry an unbounded URL into the kit (fix round 1, I1)."""
+    long_path = "/i/" + ("x" * 400) + ".png"
+    page = PAGE.replace(
+        "<p>Acme builds",
+        f'<img src="{long_path}" width="600" height="400"><p>Acme builds',
+    )
+    outcome = _capture(page_html=page, missing={long_path})
+    _evidence(outcome)
+
+    drops = [d for d in outcome.diagnostics if d["code"] == "LUMI0515"]
+    named = [d for d in drops if "xxxx" in d["message"]]
+    assert named, drops
+    assert "…" in named[0]["message"]
+    assert len(named[0]["message"]) < 400
+    # the structured key keeps the WHOLE url — truncation is for the human line only
+    assert named[0]["url"].endswith(".png") and len(named[0]["url"]) > 400
+
+
+def test_missing_asset_diagnostics_are_capped_and_then_summarized() -> None:
+    """RED CASE (fix round 1, I3): one diagnostic per drop was unbounded.
+
+    A page that trips the budget re-emitted its whole dropped tail as N diagnostics on top of
+    the LUMI0514 that already named them.
+    """
+    from lumen_ingestion.capture.budget import MAX_NAMED_DROPS
+
+    count = MAX_NAMED_DROPS + 7
+    extra = "".join(
+        f'<img src="/i/gone{i}.png" width="600" height="400">' for i in range(count)
+    )
+    page = PAGE.replace("<p>Acme builds", extra + "<p>Acme builds")
+    outcome = _capture(
+        page_html=page, missing={f"/i/gone{i}.png" for i in range(count)}
+    )
+    _evidence(outcome)
+
+    drops = [d for d in outcome.diagnostics if d["code"] == "LUMI0515"]
+    named = [d for d in drops if d.get("url")]
+    summary = [d for d in drops if not d.get("url")]
+    assert len(named) == MAX_NAMED_DROPS, len(named)
+    assert len(summary) == 1
+    assert f"{7} more" in summary[0]["message"]
+    # the full list is NOT persisted into the kit's diagnostics
+    assert all("dropped" not in d for d in drops)
+
+
+def test_the_byte_budget_drops_and_says_so(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The other half of the budget: what the snapshot may CARRY (fix round 1 test gap)."""
+    from lumen_ingestion.capture import static as static_module
+
+    monkeypatch.setattr(static_module, "MAX_ASSET_BYTES", 400)
+    outcome = _capture()
+
+    over = [d for d in outcome.diagnostics if d["code"] == "LUMI0514"]
+    assert len(over) == 1, _codes(outcome)
+    assert over[0]["budget"] == "asset bytes"
+    assert over[0]["limit"] == 400
+    assert over[0]["dropped"]
+    # what DID fit is still under the budget
+    kept = sum(len(base64.b64decode(d.bytes_b64)) for d in outcome.snapshot.downloads)
+    assert kept <= 400
+
+
+def test_a_budget_message_names_a_bounded_number_of_urls() -> None:
+    from lumen_ingestion.capture.budget import _NAMED_IN_MESSAGE, budget_diagnostic
+
+    dropped = [f"https://example.com/i/{i}.png" for i in range(_NAMED_IN_MESSAGE + 5)]
+    diagnostic = budget_diagnostic(budget="asset count", limit=3, dropped=dropped)
+
+    assert diagnostic["message"].count("https://") == _NAMED_IN_MESSAGE
+    assert "and 5 more" in diagnostic["message"]
+    assert len(diagnostic["dropped"]) == len(dropped)
+
+
+# --------------------------------------------------------------------------- #
+# @font-face: EVERY src rung is fetched and rehosted (fix round 1, I2)
+# --------------------------------------------------------------------------- #
+
+MULTI_RUNG_CSS = (
+    '@font-face{font-family:"Acme Sans";'
+    'src:url(/fonts/acme-regular.woff2) format("woff2"),'
+    'url(/fonts/acme-regular.woff) format("woff"),'
+    'url(/fonts/acme-regular.ttf) format("truetype");'
+    "font-weight:400;font-style:normal}"
+    'body{color:#123456;font-family:"Acme Sans",sans-serif;font-size:16px}'
+    'h1{font-family:"Acme Sans";font-size:48px;color:#123456}'
+)
+
+
+def test_every_font_face_src_rung_is_fetched_not_just_the_best_format() -> None:
+    """F2 rewrites a captured ``@font-face`` block verbatim, so every rung a browser might
+    pick has to resolve on our store — the same defect class as the srcset rungs."""
+    outcome = _capture(css=MULTI_RUNG_CSS)
+    downloaded = {d.url for d in outcome.snapshot.downloads}
+
+    for extension in ("woff2", "woff", "ttf"):
+        assert f"https://example.com/fonts/acme-regular.{extension}" in downloaded, (
+            extension,
+            sorted(downloaded),
+        )
+
+    evidence, core = _evidence(outcome)
+    # the kit still BINDS the best format
+    face = next(f for f in evidence.fonts if f.family == "Acme Sans").faces[0]
+    assert face.source_url.endswith(".woff2")
+    # …and every rung is rehosted
+    names = [call["filename"] for call in core.calls]
+    for extension in ("woff2", "woff", "ttf"):
+        assert any(name.endswith(f"-acme-regular.{extension}") for name in names), (
+            extension,
+            names,
+        )
+
+
+def test_a_failed_font_rung_is_reported_even_when_the_bound_rung_is_fine() -> None:
+    outcome = _capture(css=MULTI_RUNG_CSS, missing={"/fonts/acme-regular.woff"})
+    evidence, _ = _evidence(outcome)
+
+    per_rung = [d for d in outcome.diagnostics if d["code"] == "LUMI0516"]
+    assert len(per_rung) == 1, _codes(outcome)
+    assert "acme-regular.woff" in per_rung[0]["message"]
+    assert per_rung[0]["reason"]
+
+    face = next(f for f in evidence.fonts if f.family == "Acme Sans").faces[0]
+    assert face.asset_id is not None, "the bound rung is fine and must still paint"
+
+
 def test_a_font_face_that_failed_to_fetch_gets_its_own_diagnostic() -> None:
     outcome = _capture(missing={"/fonts/acme-bold.woff2"})
     evidence, core = _evidence(outcome)

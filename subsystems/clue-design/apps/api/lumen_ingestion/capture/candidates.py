@@ -49,7 +49,7 @@ from urllib.parse import urldefrag, urljoin
 from .. import logo_ladder
 from .budget import MAX_ASSET_COUNT, budget_diagnostic
 from .imgsrc import image_source_ladder, parse_srcset
-from .parse import font_face_sources
+from .parse import font_face_source_rungs
 
 #: Origin tags, in the order the collector emits them. Task 3 and the F2 clone harvest read
 #: these off the candidate, so they are part of this module's contract, not decoration.
@@ -142,10 +142,12 @@ def collect_asset_candidates(tree, base_url: str, stylesheets) -> CandidateHarve
     for url in logo_ladder.candidate_asset_urls(tree, base_url, sheet_pairs):
         add(url, "logo-rung", detail="logo ladder rung")
 
-    # 2 — every @font-face file, resolved by the same walk `parse` uses. Capture and parse
-    #     must agree on the URL to the character: the evidence builder matches a face to its
-    #     bytes by exact URL string.
-    for url in font_face_sources(stylesheets, base_url):
+    # 2 — EVERY @font-face src rung, resolved by the same walk `parse` uses. Capture and
+    #     parse must agree on the URL to the character: the evidence builder matches a face
+    #     to its bytes by exact URL string. All rungs, not just the best format the kit binds
+    #     — F2 rewrites the captured @font-face block verbatim, so a rung we skipped is a
+    #     font that fails to load for whichever browser picks it.
+    for url in font_face_source_rungs(stylesheets, base_url):
         add(url, "font", detail="@font-face src")
 
     # 3 — imagery: the shared ladder's picks first (best rendition), then EVERY remaining

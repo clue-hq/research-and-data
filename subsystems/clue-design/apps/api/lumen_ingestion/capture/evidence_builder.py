@@ -26,8 +26,9 @@ from ..evidence import (
     NarrativeEvidence,
     TypeSample,
 )
+from .budget import MAX_NAMED_DROPS, short_url
 from .geometry import parse_geometry
-from .parse import ParsedAsset, ParsedSite, parse_site
+from .parse import ParsedSite, parse_site
 
 INGEST_CONCURRENCY = 4
 
@@ -154,6 +155,12 @@ def build_evidence(outcome, *, core, store_root: str, reporter) -> BrandEvidence
         use), but the drop is now recorded and reported.
         """
         if not sha or sha not in sha_bytes:
+            # A `data:` URI is not a missing asset: it is not fetchable, needs no rehosting,
+            # and its bytes already ride in the HTML the snapshot carries. Reporting it was a
+            # false positive that also dragged the whole URI — kilobytes of base64 for a
+            # Webflow/Next LQIP placeholder, once per image — into the published kit.
+            if (url or "").startswith("data:"):
+                return None
             drops.append(
                 (
                     url or default_name,
@@ -192,10 +199,16 @@ def build_evidence(outcome, *, core, store_root: str, reporter) -> BrandEvidence
                         f"{font.family}.{face.format or 'woff2'}",
                         context=f"@font-face {font.family} {face.weight or 400}",
                     )
-            if face.source_url and asset_id is None:
-                # PER FACE, with the reason (clone-fidelity F0.2). LUMI0231 below is the
-                # family-level summary a human skims; this is the line that says which file
-                # and why, which is what anyone actually debugging a fallback needs.
+            # PER RUNG, with the reason (clone-fidelity F0.2, rungs added in fix round 1).
+            # A face routinely declares woff2 + woff + ttf; the kit binds the best format,
+            # but F2 rewrites the captured @font-face block verbatim, so ANY rung that never
+            # arrived is a font that fails to load for whichever browser picks it. LUMI0231
+            # below stays the family-level summary a human skims; this is the line that says
+            # which file and why, which is what anyone debugging a fallback needs.
+            for rung in face.source_urls or ([face.source_url] if face.source_url else []):
+                if _sha_for_url(snapshot, rung):
+                    continue
+                reason = fetch_reasons.get(rung, "no bytes were captured for it")
                 face_failures.append(
                     {
                         "code": "LUMI0516",
@@ -203,24 +216,20 @@ def build_evidence(outcome, *, core, store_root: str, reporter) -> BrandEvidence
                         "message": (
                             f"font file not retrieved for {font.family} "
                             f"{face.weight or 400} {face.style or 'normal'} "
-                            f"({face.source_url}): "
-                            + fetch_reasons.get(
-                                face.source_url, "no bytes were captured for it"
-                            )
+                            f"({short_url(rung)}): {reason}"
                         ),
-                        "url": face.source_url,
+                        "url": rung,
                         "family": font.family,
-                        "reason": fetch_reasons.get(
-                            face.source_url, "no bytes were captured for it"
-                        ),
+                        "bound": rung == face.source_url,
+                        "reason": reason,
                     }
                 )
-                # A face declared by the site whose bytes we do not hold. The
-                # kit will carry the URL and no asset, the renderer will have
-                # nothing to load, and the ad will paint in Inter (LUMS0100).
-                # That used to happen in total silence — LUMI0230 only fires
-                # when a family has NO faces at all, not when every face is
-                # byte-less — so say it plainly instead.
+            if face.source_url and asset_id is None:
+                # The BOUND rung has no bytes. The kit will carry the URL and no
+                # asset, the renderer will have nothing to load, and the ad will
+                # paint in Inter (LUMS0100). That used to happen in total silence
+                # — LUMI0230 only fires when a family has NO faces at all, not
+                # when every face is byte-less — so say it plainly instead.
                 uncustodied_faces.append(f"{font.family} ({face.source_url})")
             faces.append(
                 FontFaceEvidence(
@@ -485,26 +494,48 @@ def _ladder_locator(slot_name: str, slot) -> str:
 
 
 def _drop_diagnostics(drops: list[tuple[str, str, str]]) -> list[dict]:
-    """One ``LUMI0515`` per asset the page referenced and we could not store.
+    """``LUMI0515``s for the assets the page referenced and we could not store.
 
-    Deduped by URL: a rendition referenced from three places is one missing file, not three.
+    Deduped by URL — a rendition referenced from three places is one missing file, not three
+    — and CAPPED at :data:`budget.MAX_NAMED_DROPS`, with the remainder collapsed into one
+    summary line. These diagnostics are persisted on the published kit, and a page that trips
+    the count budget has a long tail by definition: one entry per drop made the kit's
+    diagnostics unbounded and duplicated the ``LUMI0514`` that already named them. The full
+    list is deliberately NOT attached here; the budget diagnostic is where it lives.
     """
     seen: set[str] = set()
-    out: list[dict] = []
+    unique: list[tuple[str, str, str]] = []
     for url, reason, context in drops:
         if url in seen:
             continue
         seen.add(url)
+        unique.append((url, reason, context))
+
+    out: list[dict] = [
+        {
+            "code": "LUMI0515",
+            "severity": "warning",
+            "message": (
+                f"referenced asset not stored ({context}): {short_url(url)} — {reason}"
+            ),
+            "url": url,
+            "reason": reason,
+            "context": context,
+        }
+        for url, reason, context in unique[:MAX_NAMED_DROPS]
+    ]
+    remaining = len(unique) - MAX_NAMED_DROPS
+    if remaining > 0:
         out.append(
             {
                 "code": "LUMI0515",
                 "severity": "warning",
                 "message": (
-                    f"referenced asset not stored ({context}): {url} — {reason}"
+                    f"and {remaining} more referenced asset(s) were not stored; the first "
+                    f"{MAX_NAMED_DROPS} are named above"
                 ),
-                "url": url,
-                "reason": reason,
-                "context": context,
+                "reason": "diagnostic list capped",
+                "context": "summary",
             }
         )
     return out
@@ -555,7 +586,7 @@ def _ingest_one(job: _AssetJob, core, store_root: str, snapshot) -> dict | None:
             "severity": "warning",
             "message": (
                 f"asset ingest failed for {job.filename} "
-                f"({job.url or 'no source url'}): {type(error).__name__}: {error}"
+                f"({short_url(job.url) or 'no source url'}): {type(error).__name__}: {error}"
             ),
             "url": job.url,
             "reason": f"{type(error).__name__}: {error}",
@@ -573,7 +604,7 @@ def _ingest_one(job: _AssetJob, core, store_root: str, snapshot) -> dict | None:
             "severity": "warning",
             "message": (
                 f"asset ingest refused for {job.filename} "
-                f"({job.url or 'no source url'}): {reason}"
+                f"({short_url(job.url) or 'no source url'}): {reason}"
             ),
             "url": job.url,
             "reason": str(reason),
