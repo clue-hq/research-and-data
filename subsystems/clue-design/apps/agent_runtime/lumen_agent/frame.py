@@ -425,6 +425,38 @@ the filesystem for something in this payload is a wasted call and a wasted
 minute."""
 
 
+def render_ad_dna_card_text(card: JsonObject) -> str:
+    """The ad-DNA card as the author reads it: a labelled paragraph, not a schema dump.
+
+    Brand Ad Assets W4. Labelled ADVISORY in the words themselves. The brand card next to it
+    carries rules the run must honour — tokens, logo policy, type roles; this one carries an
+    OBSERVATION about ads the brand already published, and if that difference is not visible in
+    the text the author will read a description as a specification.
+
+    The card is free prose by ruling (2026-08-26), so this renders the prose as prose. The only
+    structured part it surfaces is the list of named looks, and only because naming them makes
+    the attached references legible as "the brand's own ads" rather than as loose images.
+    """
+    lines = [
+        "This is how the ads this brand has already published look, described from the "
+        "creatives themselves.",
+        "",
+        "It is context, not a rule. Nothing here overrides the brand card, the format skill "
+        "in force, or what the person actually asked for. Where the description and the brand "
+        "card disagree, the brand card wins.",
+        "",
+        str(card.get("prose") or "").strip(),
+    ]
+    names = [
+        str(group.get("name") or "").strip()
+        for group in (card.get("style_groups") or [])
+        if isinstance(group, dict) and str(group.get("name") or "").strip()
+    ]
+    if names:
+        lines.extend(["", "The looks named in that description: " + ", ".join(names) + "."])
+    return "\n".join(lines)
+
+
 def build_frame_payload(tools: Any) -> str:
     """The whole §5.1 block, appended to the flag-on author system prompt."""
     sections: list[str] = [_HEADER]
@@ -436,6 +468,15 @@ def build_frame_payload(tools: Any) -> str:
         sections.append(
             "## BRAND CARD\n\nThis run has NO attached brand kit. Use raw values "
             "(`font(...)`, hex fills) — token references would be undefined here."
+        )
+
+    # W4: the brand's published-ad styles, described. Absent unless the ad-assets lane is on
+    # AND populated AND distilled, so a turn without one is byte-identical to a pre-W4 turn.
+    ad_card = (tools.config.ad_dna_card if tools.config else None) or None
+    if ad_card:
+        sections.append(
+            "## THE BRAND'S PUBLISHED-AD STYLES, DESCRIBED (advisory)\n\n"
+            + render_ad_dna_card_text(ad_card)
         )
 
     page_id = next(iter((tools.scene or {}).get("pages") or {}), None)

@@ -44,7 +44,7 @@ from fastapi.responses import (
     StreamingResponse,
 )
 
-from . import image_cache, image_provider, web_export
+from . import ad_runtime, image_cache, image_provider, web_export
 from .asset_custody import (
     ensure_materialized,
     materialize_scene_assets,
@@ -7728,6 +7728,23 @@ def run_agent_turn_preview(
     else:
         reference_assets = resolved_reference_assets
 
+    # W4 (Brand Ad Assets v1 §5): read the ad-assets lane ONCE, here, for both of the things a
+    # turn takes out of it — the auto-attached references below and the described card that
+    # rides the frame payload further down. Off unless the lane's flag is on, so a flag-off
+    # process does not even open a connection. This is the ONE hook both entry paths share:
+    # the standalone `/agent/turns` route resolves manual references in its handler and hands
+    # them in (a resolved None still lands here as "no references"), and a platform design-leg
+    # envelope carries no manifest key at all, so it takes the in-worker branch above. Neither
+    # can miss this line.
+    ad_lane = ad_runtime.read_ad_lane(turn_workspace_id)
+    if ad_lane is not None and not reference_assets:
+        # MANUAL REFERENCES ALWAYS WIN. The platform suggests; the human decides (the
+        # minimum-input / client-has-the-wheel rule). A turn that already carries attachments
+        # is left exactly as the human composed it — no top-up to the cap, no reordering.
+        reference_assets = resolve_auto_ad_references(
+            payload, turn_blobs, turn_cache_root, ad_lane
+        )
+
     try:
         config = AgentRuntimeConfig.from_env(root)
         if payload.max_iterations is not None:
@@ -7809,6 +7826,15 @@ def run_agent_turn_preview(
                 reference_assets=reference_assets,
                 asset_store_root=turn_cache_root,
             )
+        ad_dna_card = ad_runtime.context_card(ad_lane)
+        if ad_dna_card:
+            # W4: the brand's published-ad styles, DESCRIBED, ride the run BY VALUE next to
+            # the brand card — the same rule as brand_kit and reference_assets. It is advisory
+            # context and nothing more: no gate, no required structure, no refusal (D5). It
+            # rides whether or not this turn's references were auto-attached, because a human
+            # who attached their own references still benefits from knowing what this brand's
+            # published ads look like.
+            config = replace(config, ad_dna_card=ad_dna_card)
         # Slice 2 D4: the loop is mandatory-multimodal (Director + reviewer attach
         # images every turn). Fail LOUDLY here, before the run authors, if the
         # configured model is text-only — otherwise the run dies mid-turn at the
@@ -9733,6 +9759,49 @@ def resolve_reference_images_for_generate(
         images.append((blobs.read(digest), entry.get("mime_type") or "image/png"))
         digests.append(digest)
     return images, digests
+
+
+def resolve_auto_ad_references(
+    payload: AgentTurnPreviewRequest,
+    blobs: DesignBlobStore,
+    cache_dir: Path,
+    lane: Any,
+) -> Optional[JsonObject]:
+    """W4: the brand's OWN published ads, attached when the human attached none.
+
+    Brand Ad Assets v1 §4 ("the platform auto-attaches the ≤4 most relevant harvested
+    references"). Selection lives in `lumen_api.ad_runtime` and states its own reasoning; this
+    function is only the bridge from selected asset ids to the by-value manifest, built by the
+    SAME `reference_asset_manifest` the manual path uses — one definition of what a reference
+    is, so an auto-attached one and a hand-attached one are indistinguishable to the runtime.
+
+    THE ONE DELIBERATE ASYMMETRY AGAINST THE MANUAL PATH: this never raises. A bad manual
+    attachment is a loud 422 because it is explicit user intent (D2) and a reference the user
+    picked but the loop never saw is worse than a rejected request. An AUTO attachment is the
+    platform's own suggestion — a stale creative row or an unreadable preview must cost the
+    turn its references, never the turn itself. Hence the bare except around a resolver whose
+    whole contract is to throw.
+
+    Consequence worth stating rather than discovering: attaching references makes this a
+    REFERENCE turn, so the runtime's existing reference machinery switches on (the author
+    views `reference:<n>`, the typed `reference_fidelity` is stamped, and a finalize-accept
+    needs a fidelity judgment). That is the intended behaviour for an ad turn on a brand whose
+    ads we harvested — it is why W1.5 exists — and it is exactly what W5 measures.
+    """
+    # The brief the selector matches against is `payload.prompt` as it stands HERE. On a leg
+    # turn that is already the composed prompt (the leg's frozen brief, then the history, then
+    # the user's message, in that order), so the truncation inside the selector keeps the
+    # brief — which is the part that actually describes the ad — and drops the tail.
+    asset_ids = ad_runtime.select_reference_asset_ids(payload.prompt or "", lane)
+    if not asset_ids:
+        return None
+    try:
+        return reference_asset_manifest(
+            HybridRepository(blobs.workspace_id), blobs, str(cache_dir), asset_ids
+        )
+    except Exception:  # noqa: BLE001 - an auto-attachment may never fail a turn
+        api_logger.warning("auto_ad_references_unresolvable")
+        return None
 
 
 def resolve_agent_turn_references(
