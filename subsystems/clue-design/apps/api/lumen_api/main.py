@@ -3173,6 +3173,60 @@ def create_app(
             "result": run["result"],
         }
 
+    @app.post("/agent/runs/{run_id}/cancel")
+    def cancel_agent_run(
+        run_id: str, repo: HybridRepository = Depends(repository)
+    ) -> JsonObject:
+        """Ask an in-flight design run to stop (A3, defect R3-D).
+
+        WHAT THIS DOES: stamps a durable cancellation request on the run row and returns. It does
+        NOT stop anything itself. The run is driven by a fleet worker in another process, and the
+        only thing this process and that one share is Postgres — so the request is a row, and the
+        worker honours it.
+
+        **THE V1 BOUNDARY, STATED PLAINLY: cancellation takes effect at the next model-call
+        boundary. A call already in flight is not killed.** Python cannot interrupt the thread a
+        synchronous turn body runs on (the fleet handler has said the same about its own
+        cooperative stop since D5), so the honest promise is "no further model calls will be
+        paid for", not "this stops right now". Worst-case latency is one model call, bounded by
+        ``agent_llm_timeout_s``. If a run must die faster than that, the lever is the lease, not
+        this route.
+
+        WHAT SURVIVES: everything already durable. P0.4 commits each accepted authoring round to
+        the document as it happens, so a cancelled run keeps every round it finished and loses
+        only the round in flight. The worker then takes the SAME graceful-finalize path the
+        budget backstop uses and lands an honest terminal result whose ``stop_reason`` is
+        ``cancelled_by_request``.
+
+        IDEMPOTENT, three honest answers, all HTTP 200 — see ``cancellation`` in the body:
+        ``requested`` (the ask landed), ``already_requested`` (someone asked first; the original
+        timestamp is returned unchanged), ``already_terminal`` (the run had already finished —
+        not an error, just a race a human lost). A refusal here would only invite a retry loop
+        against a row that will never move again.
+
+        404 on an unknown or cross-tenant run, indistinguishable — the same fail-closed posture
+        as the run snapshot and the stream-token mint above.
+        """
+        outcome = repo.request_run_cancellation(run_id)
+        log_event(
+            api_logger,
+            logging.INFO,
+            "agent_run_cancel_requested",
+            run_id=run_id,
+            outcome=outcome["outcome"],
+            run_status=outcome["status"],
+        )
+        return {
+            "schema_version": 1,
+            "run_id": run_id,
+            # The run's status as it stands RIGHT NOW, not what it will become. The worker owns
+            # the terminal write; announcing an outcome here would be a guess, and a guess that
+            # races the only writer entitled to make it.
+            "status": outcome["status"],
+            "cancellation": outcome["outcome"],
+            "cancel_requested_at": outcome["cancel_requested_at"],
+        }
+
     @app.post("/agent/runs/{run_id}/stream-token")
     def mint_agent_run_stream_token(
         run_id: str, repo: HybridRepository = Depends(repository)
@@ -7688,6 +7742,7 @@ def run_agent_turn_preview(
     thread_id: Optional[str] = None,
     resolved_brand_kit: Any = _BRAND_KIT_UNRESOLVED,
     scene_checkpoint: Any = None,
+    cancel_requested: Any = None,
 ) -> JsonObject:
     # D4: the turn's tenant. It decides which engine materialization cache the runtime reads and
     # writes — and the accept seam that gives those bytes durable custody looks in that same
@@ -7879,6 +7934,11 @@ def run_agent_turn_preview(
             # P0.4: the checkpoint-commit sink. Supplied only by a leg turn (the one turn kind
             # that owns a persist), so every other caller keeps save-on-finalize-only.
             scene_checkpoint=scene_checkpoint,
+            # A3 (defect R3-D): the run's durable cancel probe. Supplied only by the fleet
+            # executor, which is the only caller whose turn has a run row to be cancelled
+            # THROUGH — the synchronous preview route holds the request open and has no id a
+            # second caller could name.
+            cancel_requested=cancel_requested,
         )
     except Exception as error:
         return failed_agent_turn_response(
@@ -8525,6 +8585,10 @@ def execute_agent_turn_job(
                 # P0.4: only a LEG turn owns a persist, so only a leg turn checkpoints. A direct
                 # editor turn passes None and stays save-nothing, exactly as before.
                 scene_checkpoint=_checkpoint_sink(committer),
+                # A3 (defect R3-D): every fleet-driven turn is cancellable, leg or not — the
+                # doomed W5 run was a plain editor turn, and "you can only stop it if it came
+                # from chat" would be an arbitrary line to draw through a paid run.
+                cancel_requested=_run_cancel_probe(store, envelope.run_id),
             )
         operations = response.get("operations")
         if committer is not None and doc is not None and response.get("status") == "proposed":
@@ -8783,6 +8847,24 @@ def _own_checkpoint_version(
 def _checkpoint_sink(committer: Optional["_LegSceneCommitter"]):
     """The runtime's P0.4 sink for this turn, or None when the turn owns no persist."""
     return None if committer is None else committer.checkpoint
+
+
+def _run_cancel_probe(store: HybridRepository, run_id: str):
+    """This run's cancellation probe (A3, defect R3-D): the runtime's read of a durable stamp.
+
+    The whole cross-process seam in one closure. The human's cancel arrives on a web process; the
+    turn is driven by a fleet worker that shares nothing with it but Postgres, so the ONLY way
+    the two can meet is a row the asker writes and the driver reads. This is the driver's half.
+
+    Wrapped in :class:`~lumen_agent.cancellation.CancellationProbe`, which makes it sticky (a
+    cancel never un-cancels), throttled on the negative answer (one read per model call would be
+    fine; one per retry storm is wasteful), and FAIL-OPEN — a database blip reads as "not
+    cancelled" rather than becoming the run's cause of death. Durability is what makes this
+    survive a worker restart or a lease takeover: the redrive re-reads the same stamp.
+    """
+    from lumen_agent.cancellation import CancellationProbe
+
+    return CancellationProbe(lambda: store.cancellation_requested(run_id))
 
 
 def _call_turn_override(override: Any, payload: Any, root: Path, *, scene_checkpoint: Any):
