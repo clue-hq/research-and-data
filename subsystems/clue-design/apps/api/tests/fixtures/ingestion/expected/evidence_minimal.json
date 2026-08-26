@@ -11,10 +11,11 @@
           ],
           "family": "Inter",
           "license": {
-            "embeddable": false,
+            "embeddable": true,
             "name": "unknown",
             "restrictions": [
-              "License not verified at ingestion; do not embed in print exports without confirmation."
+              "basis: platform-terms \u2014 embed permission for this workspace's own brand font comes from the platform Terms of Use, not from a license verified at ingestion.",
+              "Off-platform or print reuse still requires license confirmation; the license name above is what the source declared, not a verified license."
             ],
             "source_url": null,
             "subsettable": false

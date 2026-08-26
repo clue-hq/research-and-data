@@ -36,6 +36,46 @@ _PRINT_FONT_CAUTION = (
 )
 
 
+#: D-F2 (ruled): a font ingested from a workspace's OWN brand material is embeddable on this
+#: platform, and the basis for that is the platform's Terms of Use — not a license we read off
+#: the site. The old hardcoded ``embeddable: False`` made the publish gate
+#: (``web_export._family_embeddable``) exclude every ingested family from every web export,
+#: so a brand's own site font never shipped on its own generated pages.
+#:
+#: WHY THE BASIS IS A RESTRICTION LINE AND NOT ITS OWN KEY. The engine's ``FontLicense``
+#: (``crates/lumen-core/src/brand.rs``) is a fixed struct — ``name``, ``embeddable``,
+#: ``subsettable``, ``source_url``, ``restrictions``. Serde ACCEPTS an unknown ``basis`` key
+#: (no ``deny_unknown_fields`` anywhere in the crate), but ``validate_brand_kit`` deserializes
+#: into that struct and RE-SERIALIZES it, and the pipeline persists the returned kit — so an
+#: extra key is silently dropped on the way to the database. Verified against the built helper
+#: 2026-08-27. F0 is Python-only, so the basis is encoded in the shape that survives; adding a
+#: real ``basis`` field to the Rust struct is flagged for Phase F1.
+_PLATFORM_TERMS_BASIS = (
+    "basis: platform-terms — embed permission for this workspace's own brand font comes "
+    "from the platform Terms of Use, not from a license verified at ingestion."
+)
+_PLATFORM_TERMS_LIMIT = (
+    "Off-platform or print reuse still requires license confirmation; the license name "
+    "above is what the source declared, not a verified license."
+)
+
+
+def _workspace_brand_font_license(license_hint: str | None) -> dict:
+    """The license object for a font ingested from the workspace's own brand material.
+
+    The NAME stays exactly as honest as it was — whatever the source declared, or
+    ``"unknown"``. Nothing here fabricates an "OFL". ``subsettable`` stays ``False``: nobody
+    verified subsetting rights, and D-F2 ruled on embedding only.
+    """
+    return {
+        "name": license_hint or "unknown",
+        "embeddable": True,
+        "subsettable": False,
+        "source_url": None,
+        "restrictions": [_PLATFORM_TERMS_BASIS, _PLATFORM_TERMS_LIMIT],
+    }
+
+
 def _slug(name: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
 
@@ -255,15 +295,7 @@ class KitBuilder:
             "faces": faces,
             "fallback_stack": font.fallback_stack or fallback,
             "scripts": ["latin"],
-            "license": {
-                "name": font.license_hint or "unknown",
-                "embeddable": False,
-                "subsettable": False,
-                "source_url": None,
-                "restrictions": [
-                    "License not verified at ingestion; do not embed in print exports without confirmation."
-                ],
-            },
+            "license": _workspace_brand_font_license(font.license_hint),
             "provenance": _provenance(f"{font.pointer.source}:{font.pointer.locator}", 0.7),
         }
 
