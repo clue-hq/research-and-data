@@ -265,3 +265,11 @@ def test_scene_leg_envelope_snapshots_reference_asset_ids(
         {"object_type": "design_asset", "object_id": "asset_one", "version": None},
         {"object_type": "design_asset", "object_id": "asset_two", "version": None},
     ]
+    # The leg freezes the IDS and deliberately does not assemble the design worker's runtime
+    # manifest (that would need the design app's blob store and its SVG rasterizer, on the
+    # wrong side of the seam this runner keeps). The ABSENCE of the key is therefore the
+    # contract: the design executor reads a missing key through its `_REFERENCES_UNRESOLVED`
+    # sentinel and resolves in-worker, where a present-but-null key would instead mean
+    # "resolved: this turn has no references" and silently drop every one of them. Do not
+    # "helpfully" add a null here.
+    assert "reference_assets" not in envelope.config

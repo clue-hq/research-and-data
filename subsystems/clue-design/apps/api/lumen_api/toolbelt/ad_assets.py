@@ -89,7 +89,9 @@ class AdDnaCardRef(ToolOutput):
     version: int
     brand_kit_id: str
     brand_kit_version: int
-    system_count: int
+    #: How many style groups the card names. Zero is legal — a brand whose ads are all one
+    #: look honestly has none, and the description is what the card is FOR.
+    style_group_count: int
 
 
 class AdPregeneratedAssetsRef(ToolOutput):
@@ -108,7 +110,7 @@ class PublishAdDnaCardInput(ToolInput):
     card_id: str
     brand_kit_id: str
     brand_kit_version: int
-    #: The bounded, plain-language card: ``{"visual_systems": [...], ...}``.
+    #: The bounded, plain-language card: ``{"prose": "...", "style_groups": [...]}``.
     card: JsonObject
     source_creative_ids: list[str] = []
     harvest_job_id: str | None = None
@@ -189,9 +191,9 @@ class PublishAdDnaCardTool(DesignTool):
     name = "design_publish_ad_dna_card"
     version = "1"
     model_description = (
-        "Append the next immutable version of a brand's ad-DNA card: its named visual "
-        "systems, each with a plain-language layout skeleton, ground treatment, accent spend, "
-        "logo placement and type feel."
+        "Append the next immutable version of a brand's ad-DNA card: a plain-language "
+        "description of what the brand's published ads look like, plus the named style "
+        "groups that say which described look covers which harvested creatives."
     )
     input_model: ClassVar[type[ToolInput]] = PublishAdDnaCardInput
     output_model: ClassVar[type[ToolOutput]] = AdDnaCardRef
@@ -214,15 +216,16 @@ class PublishAdDnaCardTool(DesignTool):
     def check(self, inputs: ToolInput, ctx: ToolContext) -> tuple[PreconditionFailure, ...]:
         del ctx
         assert isinstance(inputs, PublishAdDnaCardInput)
-        systems = inputs.card.get("visual_systems")
-        if not isinstance(systems, list) or not systems:
+        prose = inputs.card.get("prose")
+        if not isinstance(prose, str) or not prose.strip():
             return (
                 PreconditionFailure(
                     reason_code="design_ad_dna_card_empty",
                     message=(
-                        "an ad-DNA card must name at least one visual system; a card with "
-                        "none is a distillation that failed, and recording it would make "
-                        "every later turn believe the brand has no system"
+                        "an ad-DNA card must describe the brand's ads; a card with no "
+                        "description is a distillation that failed, and recording it would "
+                        "make every later turn believe this brand's ads look like nothing in "
+                        "particular"
                     ),
                 ),
             )
@@ -246,7 +249,7 @@ class PublishAdDnaCardTool(DesignTool):
             version=int(card["version"]),
             brand_kit_id=card["brand_kit_id"],
             brand_kit_version=int(card["brand_kit_version"]),
-            system_count=len(card["card"].get("visual_systems") or []),
+            style_group_count=len(card["card"].get("style_groups") or []),
         )
 
 

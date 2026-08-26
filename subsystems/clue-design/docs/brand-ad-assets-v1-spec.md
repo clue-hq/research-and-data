@@ -7,6 +7,27 @@ Adyntel commercial step is the founder's.** W2–W5 remain gated on further
 review. Skill *content* additionally requires its own founder review before
 authoring (ruling D6 below).
 
+**AMENDMENT — founder rulings, 2026-08-26 (ratified in chat). These OVERRIDE
+this document where they conflict; the W2/W3/W4 rows below were edited to
+match.**
+
+- **D8 — the ad-DNA card is FREE PROSE, not a taxonomy.** The structured
+  five-field per-visual-system shape written into §4.2 (layout skeleton /
+  ground treatment / accent spend / logo placement / type relationships) is
+  **rejected as over-specification**. The vision pass describes the harvested
+  ads **in its own words**, with a *soft* coverage nudge (layout, colour
+  behaviour, imagery style) that is explicitly a suggestion and never a schema
+  requirement. The only structure that survives is the minimal machine link
+  reference selection needs: **which described style groups map to which
+  `creative_id`s**. Versioning, provenance and the bounded length are
+  unchanged. Card `schema_version` 1 → 2; the column is `jsonb`, so no
+  migration.
+- **D9 — the composition corpus is DORMANT.** W4 does **not** reference it,
+  load it, or point the agent at it in any prompt or context. The corpus docs
+  stay where they are, untouched, until a later ruling wakes them.
+- **D5 and D1 restated for W4:** no approval gates and no mechanical guards on
+  the agent; budgets stay guidance over a distant backstop.
+
 ---
 
 ## 1. Goal
@@ -80,21 +101,26 @@ kinds:
    (CDN URLs expire) into durable asset storage, provenance stamped (ad id,
    library detail link, fetch time, advertiser page id).
 2. **The ad-DNA card.** A bounded, versioned artifact distilled ONCE per
-   harvest by a vision pass over the creatives: the brand's named visual
-   systems (e.g. Ramp runs four), per-system layout skeleton, ground
-   treatment, accent spend, logo placement, type relationships. Pushed into
-   every ad turn's opening context; never re-derived per run.
-3. **Pre-generated imagery.** Per visual system, 2–3 assets generated offline
+   harvest by a vision pass over the creatives. **[AMENDED by D8, 2026-08-26 —
+   this row originally specified a five-field per-visual-system taxonomy
+   (layout skeleton, ground treatment, accent spend, logo placement, type
+   relationships). That taxonomy is REJECTED.]** The card is now **free
+   prose** — the ads described in the model's own plain words, under a soft
+   coverage nudge — plus **style groups** (`{name, creative_ids}`), the one
+   machine link turn-time reference selection needs. Pushed into every ad
+   turn's opening context as advisory text; never re-derived per run.
+3. **Pre-generated imagery.** Per style group, 2–3 assets generated offline
    against the references (abstract grounds, transparent spot illustrations,
    textures), stored as **brand-kit assets** so the scene turn can place them
    (see W1.1). Runtime generation remains available for bespoke needs.
 
 Runtime composition (no new agent roles — ruling from the fast-loop era
-stands): the turn's frame payload carries the ad-DNA card; the platform
-auto-attaches the ≤4 most relevant harvested references (cap-4 ruling
-stands); the two skills govern method; the concept plan gains a
-visual-system slot (chosen reference/system, ground treatment, accent spend,
-generate-vs-draw decisions).
+stands): the turn's frame payload carries the ad-DNA card's prose as advisory
+text; the platform auto-attaches the ≤4 most relevant harvested references
+(cap-4 ruling stands); the two skills govern method. **[AMENDED by D8: the
+concept plan gains no typed visual-system slot — the planning obligation is
+carried by the `reference-conditioned-ads` skill in words, which is what a
+prose card can honestly feed.]**
 
 ## 5. Workstreams
 
@@ -113,6 +139,12 @@ generate-vs-draw decisions).
 | 9 | Ingestion depth knob (small, optional) | No cap parameter exists on `IngestWebsiteRequest` (founder asked for one during POC); decide expose-or-not once, record it. |
 
 ### W2 — the substrate (flag-gated)
+
+**[Status: BUILT. Amended by D8 — the card the distiller writes is the prose
+card, `schema_version` 2; pre-generation prompts are anchored in that prose
+plus the style group's name. The durable `visual_system` link column keeps its
+W2 name and now carries the group name — renaming it would be a migration that
+buys nothing.]**
 
 Schema for the ad-assets lane (creatives + provenance, ad-DNA card versions,
 pre-generated asset links); the Adyntel resolver behind the resolver seam
@@ -139,13 +171,39 @@ implementation.
 - **Composition corpus**: validated snippets (card-on-ground, pill chip,
   framed plate, divider) + 2–3 skeletons (unequal-weight comparison panel,
   card-on-washed-ground). Each snippet shown to the founder before entering
-  the corpus.
+  the corpus. **[Status per D9, 2026-08-26: BUILT AND DORMANT. It exists on
+  disk and nothing loads it. W4 was built without it and must not reference
+  it. Waking it is a later ruling.]**
 
 ### W4 — runtime composition
 
-Ad-DNA card into the frame payload; reference auto-selection (≤4) at turn
-composition; scene-turn consumption of the lane (rides W1.1); concept-plan
-visual-system slot; D1 budget prompting.
+**[Status: BUILT, 2026-08-26, flag-gated by the same `LUMEN_BRAND_AD_ASSETS`.
+Flag off = byte-identical, proven. Built WITHOUT the composition corpus
+(D9).]**
+
+The card's prose into the frame payload as advisory text next to the brand
+card; reference auto-selection (≤4) at turn composition; scene-turn
+consumption of the lane (rides W1.1); D1 budget prompting.
+
+As built, in one hook: `run_agent_turn_preview` reads the lane once and, when
+the human attached nothing, attaches up to four harvested creatives through
+the same by-value manifest the manual path uses. Both entry paths pass through
+that one line — the standalone `POST /agent/turns` route (which resolves
+manual references in its handler) and the platform design-leg envelope (which
+carries no manifest key at all and therefore resolves in-worker). **Manual
+references always win**; auto-attach never overrides or tops up a human's
+attachments, and an unresolvable auto-attachment costs the turn its references
+rather than the turn.
+
+Selection v1 is deliberately the simplest honest mechanism: if the card names
+style groups, ONE cheap bounded text call matches the brief against the group
+NAMES (skipped outright when there is only one group); everything else — no
+card, no groups, a failed call, an invented name, a stale group — falls back
+deterministically to the most recently harvested creatives.
+
+Deferred from this workstream: the concept-plan visual-system slot (the
+planning obligation lives in the `reference-conditioned-ads` skill, which W3
+shipped; no typed slot was added, and none is needed for W5).
 
 ### W5 — acceptance (the gate)
 

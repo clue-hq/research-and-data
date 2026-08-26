@@ -1,7 +1,15 @@
-"""Pre-generation: brand-coherent imagery per named visual system (spec §4.3, §5 W2).
+"""Pre-generation: brand-coherent imagery per named style group (spec §4.3, §5 W2).
 
-One to three assets per system, generated offline against the brand's own harvested creatives,
+One to three assets per group, generated offline against the brand's own harvested creatives,
 so a later ad turn has something to place instead of having to invent a ground mid-run.
+
+**Card shape, after the 2026-08-26 prose ruling.** The card no longer carries a per-system
+field-by-field breakdown, so a prompt's substance is now the card's PROSE (the brand's ads
+described in the model's own words) plus the style group's name. That is a truer anchor than
+the old ``ground_treatment`` field was: it is what the ads actually look like rather than one
+slot of a form. The durable link column is still called ``visual_system`` (migration
+``50ce19bf5ef7``) and now carries the style group's name — the column keeps its W2 name because
+renaming it would be a migration that buys nothing.
 
 **Nothing about the model call is new here.** It goes through the hardened provider seam W1.4
 and W1.7 built: the resolved image model id, ``aspect_ratio`` riding ``image_config``
@@ -31,6 +39,7 @@ from typing import Any
 __all__ = [
     "ASSETS_PER_SYSTEM",
     "MAX_REFERENCE_IMAGES",
+    "PROSE_IN_PROMPT_CHARS",
     "PregeneratedAsset",
     "PregenerationOutcome",
     "background_prompt_for",
@@ -39,10 +48,15 @@ __all__ = [
 
 JsonObject = dict[str, Any]
 
-#: Assets per named visual system (spec §4.3: "2–3 assets"). Two by default — one wide ground
-#: and one square — because a system that gets three near-identical grounds has not gained a
+#: Assets per named style group (spec §4.3: "2–3 assets"). Two by default — one wide ground
+#: and one square — because a group that gets three near-identical grounds has not gained a
 #: choice, it has gained two more things to scroll past in the library manifest.
 ASSETS_PER_SYSTEM = 2
+
+#: How much of the card's prose rides one image prompt. The card is bounded for the AGENT's
+#: opening context, which is a different budget from an image model's prompt: past a paragraph
+#: or two an image prompt stops steering and starts averaging.
+PROSE_IN_PROMPT_CHARS = 900
 
 #: How many harvested creatives condition one generation call. The cap mirrors the runtime's
 #: own ``REFERENCE_ASSETS_MAX``: past four, references dilute rather than steer (ruling D1).
@@ -92,28 +106,27 @@ class PregenerationOutcome:
         ]
 
 
-def background_prompt_for(system: JsonObject, *, shape_label: str, brand_name: str | None) -> str:
-    """One system's background prompt, in the brand's own words from the card.
+def background_prompt_for(
+    group: JsonObject, *, prose: str, shape_label: str, brand_name: str | None
+) -> str:
+    """One style group's background prompt, in the brand's own described words.
 
-    The card's plain-language fields ARE the prompt's substance — that is the whole point of
-    distilling it. Anchoring generation in the brand's measured ground treatment and accent
-    spend, rather than in an adjective someone typed, is what makes the output a member of the
-    brand's system instead of a generically pretty image.
+    The card's PROSE is the prompt's substance — that is the whole point of distilling it.
+    Anchoring generation in a description of what the brand's ads actually look like, rather
+    than in an adjective someone typed, is what makes the output a member of the brand's family
+    instead of a generically pretty image.
     """
     parts: list[str] = []
     if brand_name:
         parts.append(f"A {shape_label} for {brand_name}'s advertising.")
     else:
         parts.append(f"A {shape_label} for a brand's advertising.")
-    ground = str(system.get("ground_treatment") or "").strip()
-    if ground:
-        parts.append(f"Ground treatment: {ground}")
-    accent = str(system.get("accent_spend") or "").strip()
-    if accent:
-        parts.append(f"Accent colour, used sparingly: {accent}")
-    name = str(system.get("name") or "").strip()
+    described = str(prose or "").strip()[:PROSE_IN_PROMPT_CHARS]
+    if described:
+        parts.append(f"The brand's published ads, described: {described}")
+    name = str(group.get("name") or "").strip()
     if name:
-        parts.append(f"This belongs to the brand's '{name}' visual system.")
+        parts.append(f"This ground belongs to the brand's '{name}' style group.")
     parts.append(BACKGROUND_ONLY_CLAUSE)
     return " ".join(parts)
 
@@ -131,7 +144,7 @@ def pregenerate_for_card(
     find_generated: Callable[[str], JsonObject | None] | None = None,
     max_bytes: int | None = None,
 ) -> PregenerationOutcome:
-    """Generate imagery for every named visual system on one card.
+    """Generate imagery for every named style group on one card.
 
     ``generate`` is the image provider's ``generate`` — injected rather than imported so a test
     never has to be one monkeypatch away from a real model call, and so the caller keeps the
@@ -144,18 +157,19 @@ def pregenerate_for_card(
     not write to the database.
     """
     outcome = PregenerationOutcome()
-    systems = card.get("visual_systems") or []
+    groups = card.get("style_groups") or []
+    prose = str(card.get("prose") or "")
     references = (reference_images or [])[:MAX_REFERENCE_IMAGES]
 
-    for system in systems:
-        if not isinstance(system, dict):
+    for group in groups:
+        if not isinstance(group, dict):
             continue
-        name = str(system.get("name") or "").strip()
+        name = str(group.get("name") or "").strip()
         if not name:
             continue
         for aspect_ratio, shape_label in ASSET_SHAPES[: max(0, assets_per_system)]:
             prompt = background_prompt_for(
-                system, shape_label=shape_label, brand_name=brand_name
+                group, prose=prose, shape_label=shape_label, brand_name=brand_name
             )
             generation_key = (
                 generation_key_for(prompt=prompt, aspect_ratio=aspect_ratio)

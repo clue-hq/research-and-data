@@ -75,6 +75,15 @@ class AgentRuntimeConfig:
     # None/empty -> no references; every RC step is a no-op and the turn is
     # byte-identical to today.
     reference_assets: dict | None = None
+    # Brand Ad Assets W4: the workspace's ad-DNA card PAYLOAD — {"schema_version": 2,
+    # "prose": str, "style_groups": [{"name", "creative_ids"}]} — resolved by the API from
+    # the ad-assets lane and passed BY VALUE (same rule as brand_kit: the runtime never reads
+    # the API database). It is ADVISORY context: a description of the ads this brand already
+    # published, rendered into the composed frame payload next to the brand card. It is not a
+    # gate, it carries no required structure, and nothing refuses a turn over it (ruling D5).
+    # Already bounded at distillation. None → the lane is off, empty, or undistilled, and the
+    # turn composes byte-identically to a pre-W4 one.
+    ad_dna_card: dict | None = None
     # OpenRouter unified reasoning effort ("low" | "medium" | "high") applied to
     # every deep-agent LLM call via the one gateway constructor (init_model).
     # None → the request carries no reasoning field (provider default, i.e.

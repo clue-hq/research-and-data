@@ -270,11 +270,11 @@ def _onboard(
         "status": "ok",
         "card_id": published["card_id"],
         "version": published["version"],
-        "visual_systems": published["system_count"],
+        "style_groups": published["style_group_count"],
         "model": card.model,
     }
 
-    # --- step 3: pre-generate imagery per visual system --------------------------------------
+    # --- step 3: pre-generate imagery per style group -----------------------------------------
     reporter("Creating brand imagery…", 0.8)
     _pregenerate(
         card,
@@ -338,7 +338,7 @@ def _pregenerate(
     brand_name: str | None,
     evidence: JsonObject,
 ) -> None:
-    """Generate and link imagery. Records its own outcome; never raises past this frame."""
+    """Generate and link imagery per style group. Its own outcome; never raises past here."""
     if generate is None:
         from lumen_api import image_provider
 
