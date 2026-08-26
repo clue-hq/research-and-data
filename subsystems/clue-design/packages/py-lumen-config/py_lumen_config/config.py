@@ -124,7 +124,30 @@ class Settings(BaseSettings):
     image_model_app_title: str | None = None
 
     # --- Brand-kit ingestion (lumen_ingestion) ---
+    # THE design subsystem's one OpenRouter credential. Every design-side gateway caller
+    # resolves it through this single field — the describer, the brief agent, the ingestion
+    # assist, the PDF vision pass, the ad-DNA distiller and the turn-time style-group matcher.
+    # There is deliberately no second resolution anywhere; a caller that reached for its own
+    # env var would be a lane that can be keyless while its neighbours are keyed.
     openrouter_api_key: str = ""
+    # The monorepo half of that same resolution. The platform side of this repo namespaces its
+    # settings under `CLUE_` (`clue_config.Secrets`, env_prefix="CLUE_"), so the shared secret
+    # is spelled `CLUE_OPENROUTER_API_KEY` there while the design subsystem has always spelled
+    # it `OPENROUTER_API_KEY`. Repo-root `.env.example` bridges the two by reference
+    # (`OPENROUTER_API_KEY="${CLUE_OPENROUTER_API_KEY}"`), but that bridge only exists if the
+    # operator's own `.env` actually carries the line AND the process was started by shell-
+    # sourcing it — a `.env` written before that line landed leaves the design side keyless.
+    #
+    # W5/R2-B, 2026-08-26: that is exactly what happened. On a stock checkout the ad-DNA
+    # distiller found no key, wrote no card, pre-generation produced nothing, and the job
+    # still reported `succeeded` — the lane's whole distinctive half silently inert.
+    #
+    # So the fallback is declared here, in the ONE place the design subsystem resolves this
+    # credential, rather than at any call site: `OPENROUTER_API_KEY` still wins when it carries
+    # a value, and `CLUE_OPENROUTER_API_KEY` is consulted only when it does not. Declaring it
+    # as a real field (rather than hiding it in a validation alias) keeps this module's promise
+    # that every environment variable Python reads is visible here.
+    clue_openrouter_api_key: str = ""
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
     lumen_ingestion_assist: bool = False
     lumen_ingestion_assist_model: str = "x-ai/grok-4.5"
@@ -470,6 +493,26 @@ class Settings(BaseSettings):
                 "LUMEN_AGENT_FAST_LOOP_TARGET_WALL_CLOCK_S (the target, "
                 f"{self.lumen_agent_fast_loop_target_wall_clock_s})"
             )
+        return self
+
+    @model_validator(mode="after")
+    def _resolve_openrouter_key_from_the_platform_name(self) -> Settings:
+        """W5/R2-B: one OpenRouter resolution for the whole design subsystem.
+
+        `OPENROUTER_API_KEY` is the design name and keeps precedence. When it is absent or
+        blank, the platform-namespaced `CLUE_OPENROUTER_API_KEY` supplies the same secret, so
+        a monorepo `.env` that only spells the platform name still keys the describer, the
+        brief agent, the ingestion assist, the PDF vision pass, the ad-DNA distiller and the
+        turn-time style-group matcher — all of which read `settings.openrouter_api_key` and
+        none of which resolve anything themselves.
+
+        Blank counts as absent, matching `_blank_is_unset`: `OPENROUTER_API_KEY=` in a `.env`
+        (or the same line shell-expanded from an unset variable) means "not configured", and
+        it must not shadow a platform key that IS configured. Falling through is what makes
+        the failure loud-by-absence rather than silently inert.
+        """
+        if not self.openrouter_api_key.strip() and self.clue_openrouter_api_key.strip():
+            self.openrouter_api_key = self.clue_openrouter_api_key
         return self
 
     @field_validator("image_model_id", mode="before")
