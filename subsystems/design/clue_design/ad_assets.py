@@ -22,13 +22,13 @@ pre-generated assets are born active and immediately usable (ruling D5).
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_design._codec import JsonObject, dump_json, iso, load_json
+from clue_design._codec import JsonObject, as_datetime, dump_json, iso, load_json
 from clue_design.errors import DesignNotFoundError
 
 __all__ = [
@@ -63,15 +63,13 @@ def _as_datetime(value: Any) -> datetime:
 
     The column is ``timestamptz`` and the driver binds parameters by inferred type, so a
     string does NOT survive a SQL-level ``CAST(:param AS timestamptz)`` — asyncpg rejects it
-    at encode time, before Postgres ever sees the cast. The coercion therefore belongs here,
-    in the module that owns the column, rather than in every caller.
+    at encode time, before Postgres ever sees the cast.
 
-    A naive datetime is read as UTC rather than refused: the lane's only producer stamps UTC,
-    and silently storing a local-clock instant would be a worse answer than assuming the one
-    timezone the whole pipeline uses.
+    The coercion itself lives in ``_codec`` (clone-fidelity F0.1 added a second caller-owned
+    ``timestamptz`` column, ``design_site_snapshot.captured_at``, and two copies of this rule
+    would be two chances to disagree about what a naive instant means).
     """
-    parsed = value if isinstance(value, datetime) else datetime.fromisoformat(str(value))
-    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
+    return as_datetime(value)
 
 
 def _creative_from_row(row: Any) -> JsonObject:

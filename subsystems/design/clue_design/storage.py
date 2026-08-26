@@ -55,6 +55,10 @@ SOURCE_KEY_ASSET = "design_asset"  # registered library assets, incl. their thum
 SOURCE_KEY_ENGINE_ARTIFACT = "design_engine_artifact"  # derive/export artifacts, ref previews
 SOURCE_KEY_FONT = "design_font"  # font-library faces
 SOURCE_KEY_INGEST_STAGING = "design_ingest_staging"  # uploaded bytes awaiting an ingestion job
+#: Clone-fidelity F0.1 — one website capture's own bytes: post-JS HTML, each fetched stylesheet,
+#: and the full-page screenshot. Cited by ``design_site_snapshot`` rows, never by an asset record:
+#: these are the SOURCE a later clone tier reads, not library media a document places.
+SOURCE_KEY_SITE_SNAPSHOT = "design_site_snapshot"
 
 #: The ``media.location.provider`` label a D4 asset record carries (ruling R-D4-4). The bytes it
 #: names live in platform storage under :func:`design_storage_key`, never on a local disk.

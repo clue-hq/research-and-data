@@ -296,6 +296,75 @@ def _validation_diagnostics(validation: JsonObject) -> list[JsonObject]:
 
 
 # ---------------------------------------------------------------------------
+# Snapshot custody (clone-fidelity F0.1) — additive, loud, never fatal.
+# ---------------------------------------------------------------------------
+
+
+def _outcome_snapshots(outcome: Any) -> list[Any]:
+    """Every page this capture produced, entry page first.
+
+    ``CaptureOutcome.snapshots`` is the F0.4 multi-page list; ``.snapshot`` is the entry page
+    every pre-F0.4 caller (and every capture stub in the suites) still speaks. Reading both means
+    a stubbed outcome that only sets ``.snapshot`` is persisted exactly like a real single-page
+    capture, and one that sets neither simply has nothing to persist.
+    """
+    snapshots = getattr(outcome, "snapshots", None)
+    if snapshots:
+        return list(snapshots)
+    snapshot = getattr(outcome, "snapshot", None)
+    return [snapshot] if snapshot is not None else []
+
+
+def _persist_site_snapshots(
+    outcome: Any,
+    *,
+    workspace_id: str,
+    job_id: str,
+    storage: Any,
+    diagnostics: "list[JsonObject]",
+    persist: Any = None,
+) -> list[Any]:
+    """Give the capture durable custody. A failure is a DIAGNOSTIC, not the end of the job.
+
+    Snapshot custody is additive to the ingestion's real product (the brand kit its evidence
+    produced). Two failure modes are wrong here and this function exists to avoid both: a silent
+    pass, which is how a clone tier later discovers it has no source to read and nobody knows
+    when that started; and a raise, which would throw away a perfectly good kit because the blob
+    store hiccuped after the evidence was already built. So the failure is recorded loudly —
+    ``LUMI0512`` on the kit's diagnostics, with the exception in the worker log — and the
+    ingestion carries on with an empty ref list.
+    """
+    from .site_snapshot import SNAPSHOT_PERSIST_FAILED_CODE, persist_site_snapshots
+
+    snapshots = _outcome_snapshots(outcome)
+    if not snapshots:
+        return []
+    persist = persist or persist_site_snapshots
+    try:
+        return list(
+            persist(
+                snapshots,
+                workspace_id=workspace_id,
+                job_id=job_id,
+                storage=storage,
+            )
+        )
+    except Exception as error:  # noqa: BLE001 — custody must not kill an ingestion
+        logger.exception("site snapshot persistence failed for job %s", job_id)
+        diagnostics.append(
+            {
+                "code": SNAPSHOT_PERSIST_FAILED_CODE,
+                "severity": "error",
+                "message": (
+                    "captured site snapshots were not persisted; this ingestion's html, "
+                    f"stylesheets and screenshot are not durable: {type(error).__name__}: {error}"
+                ),
+            }
+        )
+        return []
+
+
+# ---------------------------------------------------------------------------
 # Description engine hook (slice 3 §6) — shared by all three ingestion paths.
 #
 # ``describe.py`` (Agent A) may not exist while this module is edited, so the
