@@ -115,8 +115,13 @@ def upgrade() -> None:
             CONSTRAINT design_ad_creative_pkey PRIMARY KEY (creative_id, workspace_id),
             CONSTRAINT design_ad_creative_workspace_fk FOREIGN KEY (workspace_id)
                 REFERENCES workspace (workspace_id),
-            CONSTRAINT design_ad_creative_job_fk FOREIGN KEY (harvest_job_id)
-                REFERENCES design_ingestion_job (job_id) ON DELETE CASCADE,
+            -- ``harvest_job_id`` is a RECORDED REFERENCE, deliberately not a foreign key. The
+            -- ingestion job is execution-plane bookkeeping; a harvested creative is durable
+            -- brand knowledge. Tying the artifact's lifetime to the job row's would mean any
+            -- future job pruner silently deleted a brand's references, which is the opposite
+            -- of what this lane is for. (The card below could not carry such an FK at all —
+            -- ``ON DELETE SET NULL`` is an UPDATE, and the card's append-only trigger refuses
+            -- UPDATEs, so the constraint would be unfireable by construction.)
             -- The bytes live in the asset registry, structurally in this creative's own
             -- workspace: one tenant's harvest can never cite another's asset row.
             CONSTRAINT design_ad_creative_asset_fk FOREIGN KEY (asset_id, workspace_id)
@@ -156,18 +161,19 @@ def upgrade() -> None:
             source_creative_ids jsonb NOT NULL DEFAULT '[]'::jsonb,
             created_at timestamptz NOT NULL DEFAULT now(),
 
-            CONSTRAINT design_ad_dna_card_pkey PRIMARY KEY (card_id, version),
+            -- WORKSPACE-LOCAL, like every content-derived design id since migration
+            -- ``cf4f80537c8e``. A card id is derived from its brand kit's id, and brand-kit ids
+            -- are themselves workspace-local, so a globally-keyed card would let one tenant's
+            -- first harvest collide with another tenant's first harvest of a same-named kit.
+            CONSTRAINT design_ad_dna_card_pkey PRIMARY KEY (card_id, version, workspace_id),
             CONSTRAINT design_ad_dna_card_version_positive CHECK (version >= 1),
             CONSTRAINT design_ad_dna_card_workspace_fk FOREIGN KEY (workspace_id)
                 REFERENCES workspace (workspace_id),
             CONSTRAINT design_ad_dna_card_brand_kit_fk
                 FOREIGN KEY (brand_kit_id, brand_kit_version, workspace_id)
                 REFERENCES design_brand_kit (brand_kit_id, version, workspace_id),
-            CONSTRAINT design_ad_dna_card_job_fk FOREIGN KEY (harvest_job_id)
-                REFERENCES design_ingestion_job (job_id) ON DELETE SET NULL,
-            -- Composite-FK anchor for the pre-generated-asset links below.
-            CONSTRAINT design_ad_dna_card_workspace_anchor
-                UNIQUE (card_id, version, workspace_id),
+            -- ``harvest_job_id`` is a recorded reference, not an FK — see design_ad_creative
+            -- above for why, and note that on THIS table an FK could not work at all.
             CONSTRAINT design_ad_dna_card_json_object
                 CHECK (jsonb_typeof(card_json) = 'object'),
             CONSTRAINT design_ad_dna_card_sources_array
@@ -230,7 +236,7 @@ def upgrade() -> None:
             created_at timestamptz NOT NULL DEFAULT now(),
 
             CONSTRAINT design_ad_pregenerated_asset_pkey
-                PRIMARY KEY (card_id, card_version, asset_id),
+                PRIMARY KEY (card_id, card_version, asset_id, workspace_id),
             CONSTRAINT design_ad_pregenerated_asset_workspace_fk FOREIGN KEY (workspace_id)
                 REFERENCES workspace (workspace_id),
             CONSTRAINT design_ad_pregenerated_asset_card_fk

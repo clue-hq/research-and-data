@@ -22,6 +22,7 @@ pre-generated assets are born active and immediately usable (ruling D5).
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import text
@@ -53,8 +54,24 @@ _CREATIVE_COLUMNS = (
 _CREATIVE_VALUES = (
     ":creative_id, :w, :harvest_job_id, :provider, :ad_id, :advertiser_name,"
     " :advertiser_page_id, :creative_url, :view_details_link, :headline, :commentary,"
-    " :asset_id, CAST(:fetched_at AS timestamptz), CAST(:provenance AS jsonb)"
+    " :asset_id, :fetched_at, CAST(:provenance AS jsonb)"
 )
+
+
+def _as_datetime(value: Any) -> datetime:
+    """Coerce a caller's fetch time into a real aware ``datetime``.
+
+    The column is ``timestamptz`` and the driver binds parameters by inferred type, so a
+    string does NOT survive a SQL-level ``CAST(:param AS timestamptz)`` — asyncpg rejects it
+    at encode time, before Postgres ever sees the cast. The coercion therefore belongs here,
+    in the module that owns the column, rather than in every caller.
+
+    A naive datetime is read as UTC rather than refused: the lane's only producer stamps UTC,
+    and silently storing a local-clock instant would be a worse answer than assuming the one
+    timezone the whole pipeline uses.
+    """
+    parsed = value if isinstance(value, datetime) else datetime.fromisoformat(str(value))
+    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
 
 
 def _creative_from_row(row: Any) -> JsonObject:
@@ -109,7 +126,7 @@ async def record_ad_creatives(
             "headline": creative.get("headline"),
             "commentary": creative.get("commentary"),
             "asset_id": str(creative["asset_id"]),
-            "fetched_at": str(creative["fetched_at"]),
+            "fetched_at": _as_datetime(creative["fetched_at"]),
             "provenance": dump_json(creative.get("provenance") or {}),
         }
         await conn.execute(
@@ -334,7 +351,7 @@ async def link_pregenerated_assets(
                   generation_json
                 )
                 VALUES (:c, :v, :a, :w, :system, :prompt, CAST(:generation AS jsonb))
-                ON CONFLICT (card_id, card_version, asset_id) DO UPDATE SET
+                ON CONFLICT (card_id, card_version, asset_id, workspace_id) DO UPDATE SET
                   visual_system = excluded.visual_system,
                   prompt = excluded.prompt,
                   generation_json = excluded.generation_json
