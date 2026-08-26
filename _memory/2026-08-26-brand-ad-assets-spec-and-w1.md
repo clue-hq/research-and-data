@@ -111,3 +111,45 @@ zero conflicts. Nothing pushed.
 
 Next: W2 substrate + W3 skills (generative-imagery outline → founder chat
 first, per D6), W4 runtime composition, W5 acceptance.
+
+## W2 + W3(skill 1 of 2) CLOSE-OUT — merged, verified
+
+- **W3 `generative-imagery` skill ✅ merged** (`423e4c7b4`, merge on main
+  branch). Founder-approved text, repo-anchored. THREE substantive
+  corrections flagged to founder (accepted in report, overridable):
+  (1) reference conditioning is AUTOMATIC on the generate call — no
+  parameter; platform already frames refs style-only; prompt owns
+  subject/composition/calm area. (2) "harvested reference ads" was a
+  phantom pre-W2; sources = brand card `images` + turn references.
+  (3) `aspect_ratio_honored` emitted only when False. Anti-phantom guard
+  widened to check identifiers against implementing Python. Pre-existing
+  bugs found: two docs teach nonexistent `condition_on_references` param
+  (knowledge/images/prompts.md:54, skills/brand-imagery/SKILL.md:101);
+  asset generate drops `alt`; tools skill lists 3/5 actions; six skills
+  missing from AGENT.md index (tree-wide guard needed). §8-three-questions
+  into self-audit checklists: PARKED for founder ruling.
+- **W2 Brand Ad Assets substrate ✅ merged** (5 commits, flag
+  `LUMEN_BRAND_AD_ASSETS` default OFF — flag-off = routes unregistered).
+  Module home `lumen_ingestion/ad_library/` (provider seam; only
+  adyntel.py names the vendor; creds env-only ADYNTEL_API_KEY/EMAIL).
+  Schema in ROOT alembic chain: `design_ad_creative` (PK creative_id
+  derived from creative URL = dedupe key), `design_ad_dna_card`
+  (immutable versions, trigger-refused UPDATE/DELETE),
+  `design_ad_pregenerated_asset`; `design_ingestion_kind` += `ad_assets`
+  (job rides design_ingestion_job fleet machinery). Single head
+  `50ce19bf5ef7`. Pre-generated assets stored as LIBRARY assets (not kit)
+  — W1.1 channel; avoids minting unreviewed kit versions. Four governed
+  tools granted to NO role (job-driven, actor="agent"); granting to the
+  DESIGN profile = future founder decision + profile bump.
+  Routes: POST /brand-ad-assets/onboard, GET /brand-ad-assets/{kit}
+  (the W4 seam). Verification: lane tests 59/60 (1 = fleet_task dev-DB
+  contention, passes isolated), platform tests 37/38 (1 = pre-existing
+  test_out_of_order_matrix, A/B'd at base), agent_runtime 975 passed.
+  KEY FINDING: advertiser.promoted is true for personal thought-leader
+  promos too — the advertiser-NAME rule is the real filter.
+- **OPEN for founder:** (a) distillation system prompt has had no founder
+  review (same species as skill content, D6-adjacent) — review before
+  flag-on; (b) ASSETS_PER_SYSTEM=2 vs spec "2–3"; (c) W4 not started
+  (frame payload card + auto-attach references); (d) reference-
+  conditioned-ads skill draft next D6 review; (e) §8-three-questions
+  ruling; (f) granting the four ad-assets tools to a profile.
