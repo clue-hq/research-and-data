@@ -16,6 +16,7 @@ import hashlib
 from typing import Any
 
 import pytest
+from clue_design.storage import DESIGN_KEY_SEGMENT
 from clue_storage import FsStorage
 
 from lumen_api.design_store import DesignBlobStore
@@ -221,6 +222,38 @@ def test_one_page_per_job_is_structural_not_conventional(
     assert "design_site_snapshot_job_page_unique" in str(excinfo.value)
 
 
+def test_deleting_a_job_that_captured_pages_is_refused(
+    workspace_id: str, design_storage: FsStorage
+) -> None:
+    """The job FK is ON DELETE RESTRICT: clone source outlives the job that fetched it.
+
+    A snapshot row is what phase F2 harvests sections out of — durable brand source, not the
+    ingestion job's bookkeeping. Cascading would let any future job pruner destroy it as a side
+    effect nobody saw. RESTRICT keeps the reference honest AND makes that pruner fail loudly,
+    which is the whole point: a pruner that really wants these rows gone deletes them itself,
+    on purpose.
+    """
+    from sqlalchemy import text
+
+    from lumen_api.design_store import DesignStoreBridge
+
+    job_id = _job(workspace_id)
+    persist_site_snapshots(
+        [_snapshot()], workspace_id=workspace_id, job_id=job_id, storage=design_storage
+    )
+
+    with pytest.raises(Exception) as excinfo:
+        DesignStoreBridge(workspace_id)._run(
+            lambda conn: conn.execute(
+                text("DELETE FROM design_ingestion_job WHERE job_id = :job_id"),
+                {"job_id": job_id},
+            )
+        )
+    assert "design_site_snapshot_job_fk" in str(excinfo.value)
+    # The job is still there, and so is what it captured.
+    assert len(list_site_snapshot_refs(workspace_id=workspace_id, job_id=job_id)) == 1
+
+
 def test_re_ingesting_identical_content_dedups_bytes_and_writes_a_new_row(
     workspace_id: str, design_storage: FsStorage
 ) -> None:
@@ -267,20 +300,75 @@ def test_reading_another_workspaces_snapshot_is_refused(
 # --------------------------------------------------------------------------- #
 
 
+class ExplodingStorage:
+    """A byte backend that is having a bad day, for every call."""
+
+    async def exists(self, key: str) -> bool:
+        raise RuntimeError("object store is on fire")
+
+    async def put(self, key: str, data: bytes, *, media_type: str) -> None:
+        raise RuntimeError("object store is on fire")
+
+    async def get(self, key: str) -> bytes:
+        raise RuntimeError("object store is on fire")
+
+    async def delete(self, key: str) -> None:
+        raise RuntimeError("object store is on fire")
+
+
+class DeadDesignBlobStorage:
+    """:class:`ExplodingStorage`, but only for the DESIGN blob namespace.
+
+    A globally dead store cannot express ruling 5's promise, and finding that out is worth
+    recording rather than working around: the governed publish tool snapshots its own parameters
+    to storage (``clue_execution.parameters`` → the toolbelt host's ``persist``) under the
+    claim-evidence key shape ``{ws}/{sha}``, so a backend that fails EVERY put fails the kit
+    publish too. That is a real failure, and a genuinely fatal one — but it is a different
+    failure from the one this test is about.
+
+    Failing only ``{ws}/design/{sha}`` isolates exactly the byte path snapshot custody uses. In
+    this test nothing else writes design bytes at all (``build_evidence`` is stubbed, so the
+    capture layer ingests no assets), so this is precisely "snapshot custody could not write".
+    """
+
+    def __init__(self, inner: FsStorage) -> None:
+        self._inner = inner
+
+    @staticmethod
+    def _dead(key: str) -> bool:
+        return f"/{DESIGN_KEY_SEGMENT}/" in key
+
+    async def put(self, key: str, data: bytes, *, media_type: str) -> None:
+        if self._dead(key):
+            raise RuntimeError("object store is on fire")
+        await self._inner.put(key, data, media_type=media_type)
+
+    async def get(self, key: str) -> bytes:
+        if self._dead(key):
+            raise RuntimeError("object store is on fire")
+        return await self._inner.get(key)
+
+    async def delete(self, key: str) -> None:
+        if self._dead(key):
+            raise RuntimeError("object store is on fire")
+        await self._inner.delete(key)
+
+    async def exists(self, key: str) -> bool:
+        if self._dead(key):
+            raise RuntimeError("object store is on fire")
+        return await self._inner.exists(key)
+
+    async def presign(self, key: str, *, expires_in: int = 3600) -> str:
+        return await self._inner.presign(key, expires_in=expires_in)
+
+    def list_blobs(self):
+        return self._inner.list_blobs()
+
+
 def test_a_persistence_failure_is_a_loud_diagnostic_and_keeps_the_ingestion(
     workspace_id: str,
 ) -> None:
     from lumen_ingestion import pipeline
-
-    class ExplodingStorage:
-        async def exists(self, key: str) -> bool:
-            raise RuntimeError("object store is on fire")
-
-        async def put(self, key: str, data: bytes, *, media_type: str) -> None:
-            raise RuntimeError("object store is on fire")
-
-        async def get(self, key: str) -> bytes:
-            raise RuntimeError("object store is on fire")
 
     job_id = _job(workspace_id)
     outcome = _FakeOutcome([_snapshot()])
@@ -441,3 +529,43 @@ def test_a_non_entry_page_that_failed_to_capture_costs_a_page_not_the_job(
         job["brand_kit_id"], job["brand_kit_version"]
     )
     assert any(d["code"] == "LUMI0513" for d in kit["diagnostics"]), kit["diagnostics"]
+
+
+def test_a_dead_byte_store_costs_the_snapshots_and_nothing_else(
+    workspace_id: str, design_storage: FsStorage, tmp_path: Any
+) -> None:
+    """The whole of ruling 5, at the level it is actually promised: the JOB.
+
+    ``_persist_site_snapshots`` returning a diagnostic is only half of "loud, never fatal" —
+    the other half is that the diagnostic reaches somewhere a human reads, and that the job
+    keeps the result it had already produced. Both are asserted here against a real
+    ``run_website_ingestion`` whose byte backend fails every call:
+
+    * the job SUCCEEDS and still carries its evidence — the kit is the ingestion's product and
+      a byte-store outage after the evidence was built must not throw it away;
+    * ``LUMI0512`` is on the PUBLISHED KIT's diagnostics, which is the surface the checklist and
+      the review UI read. Nothing else in the suite covers that wiring: deleting
+      ``+ snapshot_diagnostics`` from the pipeline's diagnostics fold leaves every other test
+      in this file green (verified by reverting the line and watching only this test fail).
+    """
+    from lumen_api.design_store import HybridRepository
+
+    job = _run_website_ingestion(
+        workspace_id,
+        DeadDesignBlobStorage(design_storage),  # type: ignore[arg-type]
+        tmp_path,
+        _FakeOutcome([_snapshot()]),
+    )
+
+    assert job["status"] == "succeeded", job
+    assert job["evidence"] is not None
+    assert job["evidence"]["site_snapshots"] == []
+    assert list_site_snapshot_refs(workspace_id=workspace_id, job_id=job["job_id"]) == []
+
+    kit = HybridRepository(workspace_id=workspace_id).require_brand_kit(
+        job["brand_kit_id"], job["brand_kit_version"]
+    )
+    loud = [d for d in kit["diagnostics"] if d["code"] == SNAPSHOT_PERSIST_FAILED_CODE]
+    assert len(loud) == 1, kit["diagnostics"]
+    assert loud[0]["severity"] == "error"
+    assert "not durable" in loud[0]["message"]

@@ -32,11 +32,22 @@ The job link is a COMPOSITE foreign key, which needs a matching unique constrain
 so ``design_ingestion_job`` gains ``UNIQUE (job_id, workspace_id)`` (redundant with its primary
 key, and that is the point: it is the addressable target that makes the child's tenancy
 structural). Without it a snapshot row could name a job in another workspace, and design tenancy
-laws are structural here, not handler code. ``ON DELETE CASCADE``: these rows are keyed to the
-ingestion job by construction, so a deleted job takes its snapshot rows with it. The BLOBS
-survive that cascade — they are content-addressed artifacts with their own custody, and the
-asset/blob GC owns the decision to destroy bytes. That is the safe direction (an unreferenced
-blob costs storage; a row citing destroyed bytes is a lie).
+laws are structural here, not handler code.
+
+``ON DELETE RESTRICT``, deliberately, and NOT cascade. A snapshot row is **durable clone source**
+— phase F2's section harvest reads the html and CSS out of it — not execution-plane bookkeeping
+that happens to be keyed to a job. The sibling precedent is explicit about the same species:
+migration ``50ce19bf5ef7`` kept ``design_ad_creative.harvest_job_id`` a recorded reference rather
+than an FK precisely so no future job pruner could silently delete a brand's references by
+deleting the job that fetched them. Here the FK earns its place (it is what makes the child's
+tenancy structural), so the coupling is broken the other way instead: RESTRICT keeps referential
+integrity AND makes a job pruner that meets clone-source rows fail LOUDLY against them rather
+than destroy them. Loud, not silent, is this phase's whole theme. A pruner that genuinely wants
+those rows gone deletes them explicitly, which is a decision someone made rather than a
+side effect nobody saw.
+
+The BLOBS are not reachable from either direction: they are content-addressed artifacts with
+their own custody, and the asset/blob GC owns the decision to destroy bytes.
 
 Hand-written and reversible: ``downgrade()`` drops the table and the parent's added constraint.
 """
@@ -80,8 +91,10 @@ def upgrade() -> None:
 
             CONSTRAINT design_site_snapshot_pkey PRIMARY KEY (snapshot_id),
             -- Tenancy is structural: the snapshot and its job are one workspace's, together.
+            -- RESTRICT, not CASCADE — these rows are durable clone source, and a job pruner
+            -- must fail loudly against them rather than take them with the job (see docstring).
             CONSTRAINT design_site_snapshot_job_fk FOREIGN KEY (job_id, workspace_id)
-                REFERENCES design_ingestion_job (job_id, workspace_id) ON DELETE CASCADE,
+                REFERENCES design_ingestion_job (job_id, workspace_id) ON DELETE RESTRICT,
             CONSTRAINT design_site_snapshot_job_page_unique UNIQUE (job_id, page_url),
             CONSTRAINT design_site_snapshot_page_index_nonneg CHECK (page_index >= 0),
             CONSTRAINT design_site_snapshot_stylesheets_array
@@ -105,7 +118,9 @@ def upgrade() -> None:
         "design_site_snapshot. One row per (ingestion job, page); page_index 0 is the entry "
         "page. screenshot_digest is NULL on the static tier, which has no rendered page to "
         "shoot. The screenshot doubles as the reference image for the screenshot-vs-source "
-        "review gate.'"
+        "review gate. Durable clone source, not job bookkeeping: the job FK is ON DELETE "
+        "RESTRICT, so deleting a job that captured pages fails loudly instead of destroying "
+        "what a later clone tier reads.'"
     )
     op.execute(
         "CREATE INDEX design_site_snapshot_job "
