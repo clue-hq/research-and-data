@@ -22,7 +22,7 @@ from conftest import make_client, wait_for_ingestion_job
 from lumen_api import main as main_module
 from lumen_api.main import create_app
 from lumen_ingestion.ad_library.adyntel import AdyntelProvider
-from lumen_ingestion.ad_library.distill import AdDnaCard, VisualSystem
+from lumen_ingestion.ad_library.distill import AdDnaCard, StyleGroup
 from lumen_ingestion.ad_library.provider import AdLibraryPage
 from py_lumen_config import settings
 
@@ -89,17 +89,12 @@ class _FailingDistiller:
 
 def _card() -> AdDnaCard:
     return AdDnaCard(
-        visual_systems=(
-            VisualSystem(
-                name="Deep Field",
-                layout_skeleton="A heavy headline left, a product card right.",
-                ground_treatment="A flat deep-green field.",
-                accent_spend="One lime accent on the call to action only.",
-                logo_placement="Bottom left, reversed out of the ground.",
-                type_feel="Display headline over small regular body text.",
-            ),
+        prose=(
+            "These ads are one flat deep-green field with a heavy headline on the left and "
+            "a product card on the right. A lime accent shows up once, on the call to "
+            "action. The logo sits bottom left, reversed out of the green."
         ),
-        notes="One system in the stub.",
+        style_groups=(StyleGroup(name="Deep Field", creative_ids=("adcre_stub",)),),
         model="stub/vision",
     )
 
@@ -408,13 +403,14 @@ def test_a_full_run_harvests_distils_and_pregenerates(
     assert steps["custody"]["custodied"] == 4
     assert steps["record"]["count"] == 4
     assert steps["distill"]["status"] == "ok"
-    assert steps["distill"]["visual_systems"] == 1
+    assert steps["distill"]["style_groups"] == 1
     assert steps["pregenerate"]["status"] == "ok"
     assert steps["pregenerate"]["generated"] == 2
 
     lane = client.get(f"/brand-ad-assets/{brand_kit_id}").json()
     assert lane["card"]["version"] == 1
-    assert lane["card"]["card"]["visual_systems"][0]["name"] == "Deep Field"
+    assert lane["card"]["card"]["prose"].startswith("These ads are one flat deep-green field")
+    assert lane["card"]["card"]["style_groups"][0]["name"] == "Deep Field"
     assert len(lane["pregenerated_assets"]) == 2
     assert {asset["visual_system"] for asset in lane["pregenerated_assets"]} == {"Deep Field"}
     assert len(lane["creatives"]) == 4
@@ -488,8 +484,8 @@ def test_a_second_harvest_appends_a_version_and_leaves_the_first_untouched(
     assert first["evidence"]["steps"]["distill"]["version"] == 1
 
     revised = AdDnaCard(
-        visual_systems=(VisualSystem(name="Second Look", ground_treatment="A photograph."),),
-        notes="A later harvest saw something else.",
+        prose="A later harvest saw something else: these ads are photographs, edge to edge.",
+        style_groups=(StyleGroup(name="Second Look", creative_ids=("adcre_stub",)),),
         model="stub/vision",
     )
     second = _run_job(client, tmp_path, brand_kit_id=brand_kit_id, distiller=_StubDistiller(revised))
@@ -497,13 +493,14 @@ def test_a_second_harvest_appends_a_version_and_leaves_the_first_untouched(
 
     lane = client.get(f"/brand-ad-assets/{brand_kit_id}").json()
     assert lane["card"]["version"] == 2
-    assert lane["card"]["card"]["visual_systems"][0]["name"] == "Second Look"
+    assert lane["card"]["card"]["style_groups"][0]["name"] == "Second Look"
 
     from lumen_ingestion.ad_library.store import AdAssetsStore
 
     store = AdAssetsStore(workspace_id=client.headers["X-Workspace-Id"])
     original = store.get_card(lane["card"]["card_id"], 1)
-    assert original["card"]["visual_systems"][0]["name"] == "Deep Field"
+    assert original["card"]["style_groups"][0]["name"] == "Deep Field"
+    assert original["card"]["prose"].startswith("These ads are one flat deep-green field")
 
 
 def test_a_card_version_cannot_be_edited_or_deleted(

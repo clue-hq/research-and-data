@@ -811,7 +811,10 @@ def _bodies() -> dict[str, dict[str, object]]:
             "card_id": "adna_matrix",
             "brand_kit_id": "bk_matrix",
             "brand_kit_version": 1,
-            "card": {"visual_systems": [{"name": "Matrix"}]},
+            "card": {
+                "prose": "Every ad is one flat green field with a heavy headline on it.",
+                "style_groups": [{"name": "Matrix", "creative_ids": ["adcre_matrix"]}],
+            },
         },
         "design_link_ad_pregenerated_assets": {
             "card_id": "adna_matrix",

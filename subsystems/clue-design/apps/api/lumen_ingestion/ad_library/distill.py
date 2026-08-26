@@ -1,21 +1,39 @@
 """Distillation: one vision pass over the harvested creatives → the ad-DNA card (spec §4.2).
 
 The card is what every later ad turn is conditioned on, so it is deliberately SMALL and
-deliberately PLAIN. It names the brand's visual systems — a real brand runs several; Ramp runs
-four — and for each one says, in ordinary words, what the layout skeleton is, how the ground is
-treated, where the accent colour is spent, where the logo sits, and how the type feels. It does
-not carry pixels, coordinates, or a template.
+deliberately PLAIN. It is a DESCRIPTION, in the model's own words, of what this brand's
+published ads actually look like — the way a designer would describe them to another designer
+who had not seen them. It carries no pixels, no coordinates and no template.
 
-Everything about this module is the shape of ``lumen_ingestion.describe``, on purpose: the same
-OpenRouter chat-completions gateway, the same downscaled-preview channel, the same
-strict-JSON-schema response, the same "off is off, not N failures" ``active`` gate, and the same
-never-raise posture (a distillation that fails returns ``None`` with a reason, so the harvest it
-was given stays exactly as durable as it was).
+**Founder ruling, 2026-08-26 — the card is free prose, not a form.** An earlier W2 shape asked
+the vision pass to fill in five named fields per "visual system" (layout skeleton, ground
+treatment, accent spend, logo placement, type feel). That was rejected as over-specification:
+a form makes the model answer questions the ads may not answer, and a confident empty field is
+worse than an honest sentence. So the card is now:
 
-Bounds are enforced HERE rather than trusted from the model: at most
-:data:`MAX_VISUAL_SYSTEMS` systems, each field truncated to :data:`MAX_FIELD_CHARS`. A card is
-pushed into every ad turn's opening context, so an unbounded one is a permanent tax on every
-run the brand ever does.
+* ``prose`` — the description, bounded. The vision prompt nudges toward layout, colour
+  behaviour and imagery style, and says outright that the nudge is a suggestion, not a
+  checklist.
+* ``style_groups`` — the ONLY structure left, and it exists for exactly one machine reason:
+  reference selection at turn time needs to know which described style covers which harvested
+  creatives. A group is a free-form name plus the creative ids that belong to it. Nothing
+  reads a group's name for meaning except the selector, which matches it against the brief.
+
+Versioning and provenance are unchanged: every card version is immutable, stamped with the
+model that wrote it, and pinned to the creatives it was distilled from (see
+``clue_design.ad_assets``). The stored column is ``jsonb``, so this shape change needs no
+migration — ``schema_version`` on the payload is how a reader tells the two apart.
+
+Everything else about this module is still the shape of ``lumen_ingestion.describe``, on
+purpose: the same OpenRouter chat-completions gateway, the same downscaled-preview channel, the
+same strict-JSON response envelope, the same "off is off, not N failures" ``active`` gate, and
+the same never-raise posture (a distillation that fails returns ``None`` with a reason, so the
+harvest it was given stays exactly as durable as it was).
+
+Bounds are enforced HERE rather than trusted from the model: the prose truncates at
+:data:`MAX_PROSE_CHARS` and the groups cap at :data:`MAX_STYLE_GROUPS`. A card is pushed into
+every ad turn's opening context, so an unbounded one is a permanent tax on every run the brand
+ever does.
 """
 
 from __future__ import annotations
@@ -27,14 +45,15 @@ from typing import Any, Protocol, runtime_checkable
 from py_lumen_config import settings
 
 __all__ = [
-    "MAX_FIELD_CHARS",
+    "MAX_GROUP_NAME_CHARS",
     "MAX_PREVIEW_CREATIVES",
-    "MAX_VISUAL_SYSTEMS",
+    "MAX_PROSE_CHARS",
+    "MAX_STYLE_GROUPS",
     "AdDnaCard",
     "AdDnaDistiller",
     "NullAdDnaDistiller",
     "OpenRouterAdDnaDistiller",
-    "VisualSystem",
+    "StyleGroup",
     "bounded_card",
     "resolve_distiller",
 ]
@@ -43,57 +62,50 @@ DEFAULT_TIMEOUT_S = 120.0
 #: How much of an error body is threaded into the failure reason.
 FAILURE_EXCERPT_MAX = 300
 
-#: A brand runs a handful of systems, not a dozen. Anything past this is the model listing
-#: individual ads rather than recognising a system, which is the failure this cap absorbs.
-MAX_VISUAL_SYSTEMS = 6
-#: Per-field length. One or two plain sentences; the card is a summary, never a spec.
-MAX_FIELD_CHARS = 400
+#: The description's length bound. Long enough for a real paragraph or three about a brand
+#: that runs several looks; short enough that it stays a summary rather than becoming a spec.
+MAX_PROSE_CHARS = 2400
+#: A brand runs a handful of looks, not a dozen. Anything past this is the model listing
+#: individual ads rather than recognising a group, which is the failure this cap absorbs.
+MAX_STYLE_GROUPS = 6
+#: A group's name is a label, not a sentence.
+MAX_GROUP_NAME_CHARS = 80
 #: How many creatives ride the vision call. Beyond this the context cost climbs while the
-#: marginal creative teaches the model nothing new about the brand's systems.
+#: marginal creative teaches the model nothing new about the brand's looks.
 MAX_PREVIEW_CREATIVES = 12
 
 #: The card's shape version, stamped into every card so a later reader can tell what it is
-#: looking at without inferring it from which keys happen to be present.
-CARD_SCHEMA_VERSION = 1
-
-_SYSTEM_FIELDS = (
-    "layout_skeleton",
-    "ground_treatment",
-    "accent_spend",
-    "logo_placement",
-    "type_feel",
-)
+#: looking at without inferring it from which keys happen to be present. Version 1 was the
+#: five-field ``visual_systems`` taxonomy; version 2 is the prose card.
+CARD_SCHEMA_VERSION = 2
 
 
 @dataclass(frozen=True)
-class VisualSystem:
+class StyleGroup:
+    """One described look, and the harvested creatives that show it.
+
+    The name is free-form and comes from the model. It is a handle for a human and a match
+    target for the turn-time reference selector — never a controlled vocabulary.
+    """
+
     name: str
-    layout_skeleton: str = ""
-    ground_treatment: str = ""
-    accent_spend: str = ""
-    logo_placement: str = ""
-    type_feel: str = ""
-    example_creative_ids: tuple[str, ...] = ()
+    creative_ids: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
 class AdDnaCard:
-    visual_systems: tuple[VisualSystem, ...] = ()
-    notes: str = ""
+    prose: str = ""
+    style_groups: tuple[StyleGroup, ...] = ()
     model: str | None = None
 
     def to_json(self) -> dict[str, Any]:
         return {
             "schema_version": CARD_SCHEMA_VERSION,
-            "visual_systems": [
-                {
-                    "name": system.name,
-                    **{name: getattr(system, name) for name in _SYSTEM_FIELDS},
-                    "example_creative_ids": list(system.example_creative_ids),
-                }
-                for system in self.visual_systems
+            "prose": self.prose,
+            "style_groups": [
+                {"name": group.name, "creative_ids": list(group.creative_ids)}
+                for group in self.style_groups
             ],
-            "notes": self.notes,
         }
 
 
@@ -144,45 +156,42 @@ def resolve_distiller() -> AdDnaDistiller:
 
 
 def bounded_card(payload: Any, *, model: str | None = None) -> AdDnaCard | None:
-    """Coerce a model payload into a bounded card, or ``None`` when it names no system.
+    """Coerce a model payload into a bounded card, or ``None`` when it describes nothing.
 
     ``None`` rather than an empty card is load-bearing: an empty card recorded as a version
-    would tell every later ad turn that this brand HAS no visual system, which is a confident
-    lie about a distillation that simply failed. The governed publish tool refuses an empty
-    card for the same reason.
+    would tell every later ad turn that this brand's ads look like nothing in particular, which
+    is a confident lie about a distillation that simply failed. The governed publish tool
+    refuses a prose-less card for the same reason.
+
+    The DESCRIPTION is the card. Style groups are optional — a brand whose ads are all one look
+    may honestly get none, and turn-time reference selection falls back to recency when that
+    happens. A group with no name is dropped; a group whose creative ids are all unknown is
+    kept, because the selector already skips ids it cannot resolve.
     """
-    if isinstance(payload, dict):
-        raw_systems = payload.get("visual_systems") or payload.get("systems") or []
-        notes = str(payload.get("notes") or "")[:MAX_FIELD_CHARS]
-    elif isinstance(payload, list):
-        raw_systems = payload
-        notes = ""
-    else:
+    if not isinstance(payload, dict):
+        return None
+    raw_prose = payload.get("prose") or payload.get("description") or payload.get("notes")
+    prose = str(raw_prose or "").strip()[:MAX_PROSE_CHARS]
+    if not prose:
         return None
 
-    systems: list[VisualSystem] = []
-    for entry in raw_systems[:MAX_VISUAL_SYSTEMS]:
-        if not isinstance(entry, dict):
-            continue
-        name = str(entry.get("name") or "").strip()[:80]
-        if not name:
-            continue
-        examples = entry.get("example_creative_ids") or entry.get("examples") or []
-        systems.append(
-            VisualSystem(
-                name=name,
-                **{
-                    key: str(entry.get(key) or "").strip()[:MAX_FIELD_CHARS]
-                    for key in _SYSTEM_FIELDS
-                },
-                example_creative_ids=tuple(
-                    str(item) for item in examples if isinstance(item, (str, int))
-                )[:MAX_PREVIEW_CREATIVES],
-            )
-        )
-    if not systems:
-        return None
-    return AdDnaCard(visual_systems=tuple(systems), notes=notes, model=model)
+    groups: list[StyleGroup] = []
+    raw_groups = payload.get("style_groups") or payload.get("groups") or []
+    if isinstance(raw_groups, list):
+        for entry in raw_groups[:MAX_STYLE_GROUPS]:
+            if not isinstance(entry, dict):
+                continue
+            name = str(entry.get("name") or "").strip()[:MAX_GROUP_NAME_CHARS]
+            if not name:
+                continue
+            raw_ids = entry.get("creative_ids") or entry.get("example_creative_ids") or []
+            ids = tuple(
+                str(item)
+                for item in (raw_ids if isinstance(raw_ids, list) else [])
+                if isinstance(item, (str, int))
+            )[:MAX_PREVIEW_CREATIVES]
+            groups.append(StyleGroup(name=name, creative_ids=ids))
+    return AdDnaCard(prose=prose, style_groups=tuple(groups), model=model)
 
 
 @dataclass
@@ -208,7 +217,7 @@ class OpenRouterAdDnaDistiller:
             return None
         card = bounded_card(payload, model=self.model)
         if card is None:
-            self.last_failure_reason = "the model named no visual system"
+            self.last_failure_reason = "the model described nothing"
         return card
 
     def _invoke(self, previews: list[CreativePreview]) -> Any:
@@ -223,9 +232,8 @@ class OpenRouterAdDnaDistiller:
             {
                 "type": "text",
                 "text": (
-                    "These are the static ads one brand actually published. Identify the "
-                    "distinct VISUAL SYSTEMS the brand runs and describe each one.\n\n"
-                    + manifest
+                    "These are the static ads one brand actually published. Describe what "
+                    "they look like, then group them.\n\n" + manifest
                 ),
             }
         ]
@@ -245,6 +253,9 @@ class OpenRouterAdDnaDistiller:
                 {"role": "system", "content": _SYSTEM_PROMPT},
                 {"role": "user", "content": content},
             ],
+            # The response ENVELOPE is still schema-pinned, because parsing has to be reliable.
+            # What the schema no longer does is dictate the CONTENT: `prose` is one free-text
+            # field, and the only structure asked for is the group→creative_ids link.
             "response_format": {
                 "type": "json_schema",
                 "json_schema": {"name": "ad_dna_card", "strict": True, "schema": _CARD_SCHEMA},
@@ -309,47 +320,42 @@ def previews_for(
 
 
 _SYSTEM_PROMPT = (
-    "You read a brand's published static ads and describe the visual systems behind them. "
-    "A visual system is a repeatable way the brand builds an ad — not one ad, and not a "
-    "theme. A real brand usually runs between two and five. For each system, describe: the "
-    "layout skeleton (what sits where, in plain words); the ground treatment (flat colour, "
-    "photograph, gradient, texture); where the accent colour is spent and how sparingly; "
-    "where the logo sits and on what; and how the type feels (weight, size relationships, "
-    "case). Write plainly, one idea per sentence, no jargon and no measurements. Name each "
-    "system with a short descriptive label the brand's own team would recognise. List the "
-    "creative_ids that belong to each system. Return valid JSON matching the schema."
+    "You are looking at the static ads one brand actually published. "
+    "Describe, in your own plain words, what this brand's ads look like. "
+    "Write it for a designer who is about to make a new ad for this brand and has never "
+    "seen these ones.\n\n"
+    "Say what is actually there. Do not invent a rule the ads do not show you. If the brand "
+    "runs several looks that are clearly different from each other, say so and describe each "
+    "one. If they all look like the same thing, say that instead.\n\n"
+    "Things usually worth covering, when the ads actually tell you: how an ad is laid out and "
+    "what sits where; how colour behaves, and which colour is used sparingly; what the "
+    "imagery is like, or whether there is any; how the type feels; where the logo sits. "
+    "Treat that as a nudge, not a checklist. Skip anything these ads do not answer, and say "
+    "anything else you notice that a designer would want to know.\n\n"
+    "Write plainly. One idea per sentence. No jargon, no measurements, no marketing "
+    "language.\n\n"
+    "Then group the creatives. Give each distinct look you described a short name a designer "
+    "would recognise, and list the creative_ids that belong to it. The names are yours to "
+    "choose. If the ads are all one look, that is one group with every id in it."
 )
 
 _CARD_SCHEMA = {
     "type": "object",
     "properties": {
-        "visual_systems": {
+        "prose": {"type": "string"},
+        "style_groups": {
             "type": "array",
             "items": {
                 "type": "object",
                 "properties": {
                     "name": {"type": "string"},
-                    "layout_skeleton": {"type": "string"},
-                    "ground_treatment": {"type": "string"},
-                    "accent_spend": {"type": "string"},
-                    "logo_placement": {"type": "string"},
-                    "type_feel": {"type": "string"},
-                    "example_creative_ids": {"type": "array", "items": {"type": "string"}},
+                    "creative_ids": {"type": "array", "items": {"type": "string"}},
                 },
-                "required": [
-                    "name",
-                    "layout_skeleton",
-                    "ground_treatment",
-                    "accent_spend",
-                    "logo_placement",
-                    "type_feel",
-                    "example_creative_ids",
-                ],
+                "required": ["name", "creative_ids"],
                 "additionalProperties": False,
             },
         },
-        "notes": {"type": "string"},
     },
-    "required": ["visual_systems", "notes"],
+    "required": ["prose", "style_groups"],
     "additionalProperties": False,
 }
