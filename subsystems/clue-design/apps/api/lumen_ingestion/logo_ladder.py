@@ -1859,12 +1859,18 @@ def _counterpart_plausible(
     its own identity constraint; the page-level check cannot help, because it
     only proves the PAGE is WorkSpan's, not the ASSET.
 
-    The checks are ordered by how much they PROVE, strongest first: brand-name
-    mismatch and partner-link context (whose asset is it), identical vector path
-    geometry (a positive proof of same-artwork), size sanity (is it even
-    primary-sized), then placement, then the weak shape proxies. Size sits above
-    placement because of apollo.io: background luminance alone promoted a 19x19
-    OpenAI glyph to apollo's reversed primary logo, and it shipped in an ad.
+    The checks are ordered by how much they PROVE, strongest first:
+
+      1. identical vector path geometry — the only positive PROOF here, and the
+         thing every check below is merely a proxy for;
+      2. brand-name mismatch, then partner-link context — whose asset is it;
+      3. size sanity — is it even primary-sized;
+      4. placement (the footer-as-oracle rule);
+      5. aspect ratio and opacity profile, the weakest proxies.
+
+    Size sits ABOVE placement because of apollo.io: background luminance alone
+    promoted a 19x19 OpenAI glyph to apollo's reversed primary logo, and it
+    shipped in an ad. Placement may override shape, never size.
     """
     # The one POSITIVE identity signal the ladder computes, and the only PROOF
     # in this function: identical vector path geometry with a different fill is
@@ -2454,7 +2460,18 @@ def resolve(
     status = "resolved"
     if primary is None:
         status = "needs_review"
-        notes.append("no viable first-party candidate survived scoring")
+        # Distinguish "nothing scored" from "nothing was OURS" — the second is
+        # the identity-anchoring outcome, and an operator reading "survived
+        # scoring" about candidates that scored fine would be misled.
+        if viable and not any(c.identity_anchored for c in viable):
+            notes.append(
+                f"{len(viable)} first-party candidate(s) scored, but none carried any "
+                "evidence of being THIS brand's mark (no company name in the asset "
+                "name/alt/title, no favicon or other declared-identity rung, no link "
+                "to the site root) - every slot left empty rather than guessing"
+            )
+        else:
+            notes.append("no viable first-party candidate survived scoring")
     elif not identity["passed"]:
         status = "needs_review"
         chosen = {k: None for k in chosen}

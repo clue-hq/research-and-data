@@ -380,6 +380,32 @@ def test_the_glyph_was_a_live_candidate_and_was_excluded_on_identity():
     assert resolution.counts["identity_anchored"] == 2
 
 
+def test_a_site_that_anchors_nothing_returns_empty_slots_and_says_why():
+    """The cost of the rule, stated. If NOTHING on the page evidences the
+    brand's own mark, every slot is empty and needs_review — and the note
+    distinguishes 'nothing scored' from 'nothing was ours', because an operator
+    reading 'survived scoring' about candidates that scored fine is misled."""
+    anonymous = [
+        ladder.LadderCandidate(
+            url=f"https://acme.com/#inline-svg-{i}", source_domain="acme.com",
+            rung=rung, fmt="svg", width=160, height=32, dom_index=i,
+            sha256=chr(97 + i) * 64,
+            body=_svg(f'<path d="M{4 + i} 6h24v20H4zM34 6h24v20H34z" fill="#101820"/>', 160, 32),
+            content_type="image/svg+xml",
+        )
+        for i, rung in enumerate(("INLINE_SVG", "FOOTER"))
+    ]
+    meta = {"homepage_url": "https://acme.com/", "page_title": "Acme", "jsonld_org_names": []}
+
+    resolution = ladder.resolve(anonymous, meta, "acme.com", "Acme")
+
+    assert resolution.status == "needs_review"
+    assert all(slot is None for slot in resolution.slots.values())
+    assert resolution.counts["viable_first_party"] == 2
+    assert resolution.counts["identity_anchored"] == 0
+    assert any("being THIS brand's mark" in note for note in resolution.notes)
+
+
 def test_a_favicon_anchors_identity_with_no_name_and_no_link():
     """A brand whose header logo is an anonymous inline <svg> still has an
     identity: the site DECLARES its own icon in machine-readable markup, and a
