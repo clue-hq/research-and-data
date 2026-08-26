@@ -233,7 +233,7 @@ def _add_image_references(node, base_url: str, add) -> None:
             detail = "cdn width-upgraded rendition"
         add(url, origin, dark=is_dark, detail=detail)
 
-    for url, is_dark in ordered_rungs:
+    for url, _declared_dark in ordered_rungs:
         origin, resolved_dark = origin_for(url)
         add(url, origin, dark=resolved_dark, detail="srcset rung")
 

@@ -165,15 +165,26 @@ def _capture(
 
 
 class _StubCore:
-    """``CoreClient.ingest_asset``-shaped stub. ``failing`` refuses those filenames."""
+    """``CoreClient.ingest_asset``-shaped stub.
 
-    def __init__(self, failing: set[str] | None = None) -> None:
+    ``failing`` filenames get a not-ok RESPONSE (what ``raise_on_error=False`` produces);
+    ``raising`` filenames RAISE (a dead helper, an unreachable store — which
+    ``raise_on_error=False`` does not suppress).
+    """
+
+    def __init__(
+        self, failing: set[str] | None = None, raising: set[str] | None = None
+    ) -> None:
         self.calls: list[dict] = []
         self._failing = failing or set()
+        self._raising = raising or set()
 
     def ingest_asset(self, **kwargs):
         self.calls.append(kwargs)
-        if any(token in (kwargs.get("filename") or "") for token in self._failing):
+        name = kwargs.get("filename") or ""
+        if any(token in name for token in self._raising):
+            raise RuntimeError("helper.process died")
+        if any(token in name for token in self._failing):
             return {"ok": False, "error": {"code": "asset.refused", "message": "boom"}}
         return {"ok": True, "asset": {"record": {"id": kwargs["asset_id"]}}}
 
@@ -307,6 +318,25 @@ def test_an_ingest_failure_is_loud_and_the_evidence_is_still_produced() -> None:
     assert "boom" in refused[0]["message"]
 
 
+def test_an_ingest_that_raises_costs_one_asset_not_the_whole_kit() -> None:
+    """``raise_on_error=False`` suppresses a refusal, not a dead helper.
+
+    With every captured asset now rehosted, one raising ingest used to escape the gather and
+    take the human's entire brand kit with it.
+    """
+    outcome = _capture()
+    evidence, _ = _evidence(outcome, _StubCore(raising={"hero-1600"}))
+
+    assert evidence.colors and evidence.fonts
+    failed = [
+        d
+        for d in outcome.diagnostics
+        if d["code"] == "LUMI0515" and "hero-1600" in d["message"]
+    ]
+    assert failed, _codes(outcome)
+    assert "helper.process died" in failed[0]["reason"]
+
+
 def test_a_font_face_that_failed_to_fetch_gets_its_own_diagnostic() -> None:
     outcome = _capture(missing={"/fonts/acme-bold.woff2"})
     evidence, core = _evidence(outcome)
@@ -361,17 +391,19 @@ def test_a_prefers_color_scheme_dark_source_is_tagged_all_the_way_to_evidence() 
     light = [d for d in outcome.snapshot.downloads if d.url.endswith("/chart-light.png")]
     assert light and light[0].dark_scheme is False
 
-    evidence, _ = _evidence(outcome)
-    dark_pointers = [
-        image.pointer.locator
-        for image in evidence.images
-        if "chart-dark" in (image.pointer.locator or "")
-    ]
     parsed = parse_site(outcome.snapshot)
     dark_assets = [a for a in parsed.images if a.source_url.endswith("chart-dark.png")]
     assert dark_assets, [a.source_url for a in parsed.images]
     assert "prefers-color-scheme: dark" in dark_assets[0].locator
-    assert dark_pointers or True  # evidence carries the parsed locator verbatim
+
+    # …and all the way onto the evidence a human (and F2) reads.
+    evidence, _ = _evidence(outcome)
+    dark_pointers = [
+        image.pointer.locator
+        for image in evidence.images
+        if "prefers-color-scheme: dark" in (image.pointer.locator or "")
+    ]
+    assert dark_pointers, [image.pointer.locator for image in evidence.images]
 
 
 # --------------------------------------------------------------------------- #

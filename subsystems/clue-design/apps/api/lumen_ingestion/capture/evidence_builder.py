@@ -543,7 +543,47 @@ def _ingest_one(job: _AssetJob, core, store_root: str, snapshot) -> dict | None:
     asset_id = f"asset_ing_{job.sha256[:16]}"
     # Content-addressed id → idempotent: the store dedupes bytes by digest, so
     # re-ingesting the same content is a no-op that returns the same record.
-    response = core.ingest_asset(
+    try:
+        response = _call_ingest(job, core, store_root, snapshot, asset_id)
+    except Exception as error:  # noqa: BLE001 — one asset is not the ingestion
+        # `raise_on_error=False` suppresses a REFUSAL, not a helper that died or a store
+        # that is unreachable. Those used to propagate out of the gather and take the whole
+        # ingestion with them; with every captured asset now rehosted, one bad byte string
+        # could cost a human their entire brand kit. It costs a diagnostic instead.
+        return {
+            "code": "LUMI0515",
+            "severity": "warning",
+            "message": (
+                f"asset ingest failed for {job.filename} "
+                f"({job.url or 'no source url'}): {type(error).__name__}: {error}"
+            ),
+            "url": job.url,
+            "reason": f"{type(error).__name__}: {error}",
+            "context": "asset store ingest",
+        }
+    if isinstance(response, dict) and not response.get("ok", True):
+        error_obj = response.get("error") or {}
+        reason = (
+            error_obj.get("message")
+            or error_obj.get("code")
+            or "the asset store refused it without saying why"
+        )
+        return {
+            "code": "LUMI0515",
+            "severity": "warning",
+            "message": (
+                f"asset ingest refused for {job.filename} "
+                f"({job.url or 'no source url'}): {reason}"
+            ),
+            "url": job.url,
+            "reason": str(reason),
+            "context": "asset store ingest",
+        }
+    return None
+
+
+def _call_ingest(job: _AssetJob, core, store_root: str, snapshot, asset_id: str):
+    return core.ingest_asset(
         store_root=store_root,
         bytes_base64=base64.b64encode(job.body).decode("ascii"),
         asset_id=asset_id,
@@ -565,22 +605,3 @@ def _ingest_one(job: _AssetJob, core, store_root: str, snapshot) -> dict | None:
         max_bytes=15 * 1024 * 1024,
         raise_on_error=False,
     )
-    if isinstance(response, dict) and not response.get("ok", True):
-        error = response.get("error") or {}
-        reason = (
-            error.get("message")
-            or error.get("code")
-            or "the asset store refused it without saying why"
-        )
-        return {
-            "code": "LUMI0515",
-            "severity": "warning",
-            "message": (
-                f"asset ingest refused for {job.filename} "
-                f"({job.url or 'no source url'}): {reason}"
-            ),
-            "url": job.url,
-            "reason": str(reason),
-            "context": "asset store ingest",
-        }
-    return None
