@@ -84,6 +84,16 @@ class AgentRuntimeConfig:
     # Already bounded at distillation. None → the lane is off, empty, or undistilled, and the
     # turn composes byte-identically to a pre-W4 one.
     ad_dna_card: dict | None = None
+    # W5/R2-D: the pre-generated grounds the ad lane holds for the ACTIVE card, as a bounded
+    # list of {"asset_id", "style_group", "shape"} — resolved by the API from the same lane
+    # read that produced `ad_dna_card` and passed BY VALUE for the same reason.
+    #
+    # This exists because the lane's third artifact kind was invisible. The ids were placeable
+    # and viewable the whole time; they were simply never NAMED anywhere the agent reads, so
+    # the W5 Ramp turn generated its own ground while twelve pre-generated ones sat unused.
+    # Naming them is the entire fix — the list is advisory, nothing requires their use, and
+    # None (no lane, no card, no imagery) composes byte-identically to a pre-W4 turn.
+    ad_pregenerated_assets: list | None = None
     # OpenRouter unified reasoning effort ("low" | "medium" | "high") applied to
     # every deep-agent LLM call via the one gateway constructor (init_model).
     # None → the request carries no reasoning field (provider default, i.e.

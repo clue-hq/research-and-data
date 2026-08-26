@@ -65,9 +65,15 @@ def _lane(groups: list[dict] | None, creatives: dict[str, str]) -> ad_runtime.Ad
 class _FakeStore:
     """The lane's store, as `read_ad_lane` uses it. Records that it was consulted at all."""
 
-    def __init__(self, creatives: list[dict], card: Optional[dict] = None) -> None:
+    def __init__(
+        self,
+        creatives: list[dict],
+        card: Optional[dict] = None,
+        pregenerated: Optional[list[dict]] = None,
+    ) -> None:
         self._creatives = creatives
         self._card = card
+        self._pregenerated = pregenerated or []
         self.calls: list[str] = []
 
     def list_creatives(self, *, limit: int = 50) -> list[dict]:
@@ -78,6 +84,13 @@ class _FakeStore:
     def latest_card(self, **_kwargs: Any) -> Optional[dict]:
         self.calls.append("latest_card")
         return self._card
+
+    def list_pregenerated(self, *, card_id: str, card_version: int) -> list[dict]:
+        # Recorded WITH its arguments: W5/R2-D pins the listing to the ACTIVE card version, and
+        # a read that silently widened to the lineage would serve imagery generated from a
+        # description the brand has since replaced.
+        self.calls.append(f"list_pregenerated:{card_id}:{card_version}")
+        return list(self._pregenerated)
 
 
 # --- the cap ----------------------------------------------------------------------------------
@@ -106,6 +119,126 @@ def test_a_flag_off_process_never_even_asks_the_database(
     monkeypatch.setattr(settings, "lumen_brand_ad_assets", True, raising=False)
     assert ad_runtime.read_ad_lane("ws_test", store=store) is not None
     assert "list_creatives" in store.calls
+
+
+# --- W5/R2-D: the pre-generated grounds leave the database ------------------------------------
+
+
+PREGENERATED_ROWS = [
+    {
+        "asset_id": "asset_gen_aaaa1111",
+        "visual_system": "Deep Field",
+        "prompt": "…",
+        "generation": {"aspect_ratio": "16:9"},
+    },
+    {
+        "asset_id": "asset_gen_bbbb2222",
+        "visual_system": "Deep Field",
+        "prompt": "…",
+        "generation": {"aspect_ratio": "1:1"},
+    },
+]
+
+
+def test_the_lane_now_carries_the_pregenerated_grounds_for_the_active_card(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """RED CASE. Nothing at turn time read `design_ad_pregenerated_asset` at all.
+
+    The W5 Ramp run paid for twelve grounds and its turn referenced none of them, because the
+    only path out of that table was the operator's inspection route.
+    """
+    monkeypatch.setattr(settings, "lumen_brand_ad_assets", True, raising=False)
+    store = _FakeStore(
+        [{"creative_id": "adcre_a", "asset_id": "asset_a"}],
+        card={
+            "card_id": "adna_kit",
+            "version": 3,
+            "card": {"schema_version": 2, "prose": PROSE, "style_groups": []},
+        },
+        pregenerated=PREGENERATED_ROWS,
+    )
+
+    lane = ad_runtime.read_ad_lane("ws_test", store=store)
+
+    assert lane is not None
+    # Pinned to the ACTIVE card version, never the lineage.
+    assert "list_pregenerated:adna_kit:3" in store.calls
+    assert lane.pregenerated == (
+        {"asset_id": "asset_gen_aaaa1111", "style_group": "Deep Field", "shape": "wide ground"},
+        {"asset_id": "asset_gen_bbbb2222", "style_group": "Deep Field", "shape": "square ground"},
+    )
+    assert ad_runtime.context_pregenerated(lane) == [dict(e) for e in lane.pregenerated]
+
+
+def test_a_flag_off_process_never_asks_for_the_grounds_either(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The listing is inside the flag's promise, not beside it."""
+    monkeypatch.setattr(settings, "lumen_brand_ad_assets", False, raising=False)
+    store = _FakeStore(
+        [{"creative_id": "adcre_a", "asset_id": "asset_a"}], pregenerated=PREGENERATED_ROWS
+    )
+
+    assert ad_runtime.read_ad_lane("ws_test", store=store) is None
+    assert store.calls == []
+
+
+def test_a_lane_with_no_imagery_carries_none_rather_than_an_empty_list(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Absence, not emptiness — the rule every by-value channel here follows."""
+    monkeypatch.setattr(settings, "lumen_brand_ad_assets", True, raising=False)
+    store = _FakeStore(
+        [{"creative_id": "adcre_a", "asset_id": "asset_a"}],
+        card={"card_id": "adna_kit", "version": 1, "card": {"prose": PROSE}},
+    )
+
+    lane = ad_runtime.read_ad_lane("ws_test", store=store)
+    assert lane.pregenerated == ()
+    assert ad_runtime.context_pregenerated(lane) is None
+    assert ad_runtime.context_pregenerated(None) is None
+
+
+def test_an_unreadable_imagery_table_costs_the_listing_not_the_turn(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Advisory means advisory: this may never be the thing that fails a turn."""
+    monkeypatch.setattr(settings, "lumen_brand_ad_assets", True, raising=False)
+
+    class _Broken(_FakeStore):
+        def list_pregenerated(self, **_kwargs: Any) -> list[dict]:
+            raise RuntimeError("the database is unreachable")
+
+    store = _Broken(
+        [{"creative_id": "adcre_a", "asset_id": "asset_a"}],
+        card={"card_id": "adna_kit", "version": 1, "card": {"prose": PROSE}},
+    )
+
+    lane = ad_runtime.read_ad_lane("ws_test", store=store)
+    assert lane is not None, "the references still ride"
+    assert lane.pregenerated == ()
+
+
+def test_the_listing_is_bounded(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Pre-generation has no cap of its own, and this rides every ad turn's opening context."""
+    monkeypatch.setattr(settings, "lumen_brand_ad_assets", True, raising=False)
+    many = [
+        {
+            "asset_id": f"asset_gen_{index:08d}",
+            "visual_system": f"Look {index}",
+            "generation": {"aspect_ratio": "1:1"},
+        }
+        for index in range(ad_runtime.PREGENERATED_CONTEXT_MAX * 3)
+    ]
+    store = _FakeStore(
+        [{"creative_id": "adcre_a", "asset_id": "asset_a"}],
+        card={"card_id": "adna_kit", "version": 1, "card": {"prose": PROSE}},
+        pregenerated=many,
+    )
+
+    lane = ad_runtime.read_ad_lane("ws_test", store=store)
+    assert len(lane.pregenerated) == ad_runtime.PREGENERATED_CONTEXT_MAX
 
 
 def test_an_unharvested_workspace_reads_as_no_lane(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -380,6 +513,7 @@ def test_the_flag_off_turn_is_byte_identical_to_a_pre_w4_one(
     config = captured["config"]
     assert config.reference_assets is None
     assert config.ad_dna_card is None
+    assert config.ad_pregenerated_assets is None
 
 
 def test_the_selected_group_decides_which_published_ads_reach_the_run(

@@ -10,6 +10,12 @@ two things a scene design turn takes out of that lane:
 2. **The description.** The card's prose rides the turn's opening context as advisory text,
    next to the brand card. It is context, never a gate and never a required structure — ruling
    D5 stands: no approval gates and no mechanical guards on the agent.
+3. **The pre-generated grounds** (W5/R2-D). The imagery pre-generation made for the active card
+   is NAMED in that same advisory block — id, style group, shape — so the agent knows it exists.
+   Placement plumbing for these ids already worked; discovery did not, and the W5 Ramp turn
+   proved it: zero ``asset_gen_*`` events in a run whose lane held twelve of them. Naming them
+   is all this does. Nothing requires the agent to use one, and an unused list costs a turn
+   about as much as one short paragraph.
 
 **Everything here is off unless ``LUMEN_BRAND_AD_ASSETS`` is on.** :func:`read_ad_lane` returns
 ``None`` on a flag-off process before it touches a database, so a flag-off turn issues no query,
@@ -52,9 +58,11 @@ logger = get_logger("lumen_api.ad_runtime")
 __all__ = [
     "AUTO_REFERENCE_MAX",
     "CREATIVE_SCAN",
+    "PREGENERATED_CONTEXT_MAX",
     "AdLane",
     "choose_style_group",
     "context_card",
+    "context_pregenerated",
     "read_ad_lane",
     "select_reference_asset_ids",
 ]
@@ -77,6 +85,20 @@ SELECT_TIMEOUT_S = 20.0
 SELECT_BRIEF_CHARS = 1200
 
 
+#: How many pre-generated grounds one turn's opening context names. Pre-generation writes
+#: ``ASSETS_PER_SYSTEM`` (2) per style group and a card carries at most ``MAX_STYLE_GROUPS``
+#: (6), so twelve is the whole of a well-formed lane rather than an arbitrary slice. The bound
+#: exists because pre-generation has no cap of its own — a brand with more looks writes more
+#: rows — and this list is prompt-cache surface on every ad turn the brand ever runs.
+PREGENERATED_CONTEXT_MAX = 12
+
+#: ``aspect_ratio`` → the words pre-generation itself used for that shape
+#: (``pregenerate.ASSET_SHAPES``). Mirrored rather than imported to keep this turn-time module
+#: free of an ingestion-side import; a ratio with no entry renders as the bare ratio, which is
+#: still true.
+_SHAPE_WORDS = {"16:9": "wide ground", "1:1": "square ground", "4:5": "portrait ground"}
+
+
 @dataclass(frozen=True)
 class AdLane:
     """What this workspace's ad-assets lane holds right now.
@@ -85,10 +107,15 @@ class AdLane:
     ``style_groups``), not the row wrapper, because that payload is what both consumers want.
     ``creative_assets`` maps creative id → the design asset id holding its bytes, in
     newest-harvested-first order, which is also the deterministic fallback order.
+
+    ``pregenerated`` is the third thing the lane holds and the one W4 shipped without: the
+    grounds pre-generation made for the ACTIVE card, each already reduced to the three facts a
+    turn's opening context needs — its id, the style group it belongs to, and what shape it is.
     """
 
     card: Optional[JsonObject]
     creative_assets: dict[str, str]
+    pregenerated: tuple[JsonObject, ...] = ()
 
     @property
     def has_creatives(self) -> bool:
@@ -131,7 +158,71 @@ def read_ad_lane(workspace_id: str, *, store: Any = None) -> Optional[AdLane]:
         logger.warning("ad_dna_card_unreadable", workspace_id=workspace_id)
         row = None
     card = (row or {}).get("card") if isinstance(row, dict) else None
-    return AdLane(card=card if isinstance(card, dict) else None, creative_assets=creative_assets)
+    return AdLane(
+        card=card if isinstance(card, dict) else None,
+        creative_assets=creative_assets,
+        pregenerated=_read_pregenerated(store, row, workspace_id=workspace_id),
+    )
+
+
+def _read_pregenerated(
+    store: Any, card_row: Any, *, workspace_id: str
+) -> tuple[JsonObject, ...]:
+    """The grounds pre-generation made for THIS card version, reduced to three facts each.
+
+    W5/R2-D. Pre-generation writes these rows at onboarding and links them to the card version
+    they were anchored on, and until now nothing at turn time ever read them: the whole of the
+    W5 Ramp turn contains no reference to any ``asset_gen_*`` id, so ~23 minutes of paid image
+    work was invisible to the agent that could have placed it.
+
+    Pinned to the ACTIVE card version, not to the lineage. A ground was generated from one
+    card's prose, so a later harvest that re-described the brand supersedes it — offering the
+    old version's imagery alongside the new description would be advertising an answer to a
+    question the brand no longer asks.
+
+    Tolerant like every other read here: a lane whose card row is half-written, or a database
+    that will not answer, yields no listing and never a failed turn.
+    """
+    if not isinstance(card_row, dict):
+        return ()
+    card_id = card_row.get("card_id")
+    version = card_row.get("version")
+    if not card_id or version is None:
+        return ()
+    try:
+        rows = store.list_pregenerated(card_id=str(card_id), card_version=int(version))
+    except Exception:  # noqa: BLE001 - the listing is advisory; it may never fail a turn
+        logger.warning("ad_pregenerated_unreadable", workspace_id=workspace_id)
+        return ()
+
+    listed: list[JsonObject] = []
+    for row in rows or ():
+        if len(listed) >= PREGENERATED_CONTEXT_MAX:
+            break
+        asset_id = str((row or {}).get("asset_id") or "").strip()
+        if not asset_id:
+            continue
+        generation = row.get("generation")
+        ratio = str((generation or {}).get("aspect_ratio") or "").strip()
+        listed.append(
+            {
+                "asset_id": asset_id,
+                "style_group": str(row.get("visual_system") or "").strip(),
+                "shape": _SHAPE_WORDS.get(ratio, ratio),
+            }
+        )
+    return tuple(listed)
+
+
+def context_pregenerated(lane: Optional[AdLane]) -> Optional[list[JsonObject]]:
+    """The pre-generated grounds a turn carries BY VALUE, or ``None`` when there are none.
+
+    ``None`` rather than an empty list, matching ``context_card`` and every other by-value
+    channel here: absence is what keeps a lane-less turn byte-identical to a pre-W4 one.
+    """
+    if lane is None or not lane.pregenerated:
+        return None
+    return [dict(entry) for entry in lane.pregenerated]
 
 
 def select_reference_asset_ids(

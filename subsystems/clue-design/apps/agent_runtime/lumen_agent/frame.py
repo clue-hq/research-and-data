@@ -457,6 +457,62 @@ def render_ad_dna_card_text(card: JsonObject) -> str:
     return "\n".join(lines)
 
 
+def render_pregenerated_assets_text(
+    assets: list[Any], library: JsonObject | None = None
+) -> str:
+    """The lane's pre-generated grounds, named so the author knows they exist.
+
+    W5/R2-D. These images were generated at onboarding from the very description above, and
+    every one of them was already viewable and placeable by id. What was missing was any
+    sentence anywhere that said so: the asset index next to this block lists the brand KIT's
+    assets, and the library's ids appeared only inside `view`'s honest-miss text — which the
+    author reaches only by guessing an id wrong first. So a whole turn ran, made its own
+    ground, and never learned that twelve were waiting.
+
+    ``library`` is this turn's asset-library manifest. When it is present, only ids actually in
+    it are listed — advertising an id the author would then fail to open would be a worse
+    failure than the silence it replaces, and the manifest is what `view` and placement resolve
+    against. An empty result renders nothing at all, so the honest cases stay quiet.
+
+    Advisory in the words themselves, like its neighbour. There is no gate here and nothing
+    counts how many get used; a ground that does not suit the brief should be ignored.
+    """
+    rows = []
+    for entry in assets or ():
+        if not isinstance(entry, dict):
+            continue
+        asset_id = str(entry.get("asset_id") or "").strip()
+        if not asset_id:
+            continue
+        if library is not None and asset_id not in library:
+            continue
+        described = " — ".join(
+            part
+            for part in (
+                str(entry.get("style_group") or "").strip(),
+                str(entry.get("shape") or "").strip(),
+            )
+            if part
+        )
+        rows.append(f"- `{asset_id}`" + (f" — {described}" if described else ""))
+    if not rows:
+        return ""
+
+    lines = [
+        "These background images were made for this brand ahead of time, from the description "
+        "above.",
+        "",
+        "You can look at any of them with `view(\"asset:<id>\")` and place one the same way you "
+        "place any library asset.",
+        "",
+        "Using one is optional. Pick one only if it suits the brief. Making your own ground "
+        "instead is fine, and so is using no image at all.",
+        "",
+        *rows,
+    ]
+    return "\n".join(lines)
+
+
 def build_frame_payload(tools: Any) -> str:
     """The whole §5.1 block, appended to the flag-on author system prompt."""
     sections: list[str] = [_HEADER]
@@ -478,6 +534,18 @@ def build_frame_payload(tools: Any) -> str:
             "## THE BRAND'S PUBLISHED-AD STYLES, DESCRIBED (advisory)\n\n"
             + render_ad_dna_card_text(ad_card)
         )
+    # W5/R2-D: and the grounds that were pre-generated FROM that description. Same block, same
+    # advisory posture, same absence rule — no lane, no imagery, or nothing reachable in this
+    # turn's library and the section is not composed at all.
+    pregenerated = (tools.config.ad_pregenerated_assets if tools.config else None) or None
+    if pregenerated:
+        rendered = render_pregenerated_assets_text(
+            pregenerated, tools.config.asset_library if tools.config else None
+        )
+        if rendered:
+            sections.append(
+                "## BACKGROUNDS ALREADY MADE FOR THIS BRAND (advisory)\n\n" + rendered
+            )
 
     page_id = next(iter((tools.scene or {}).get("pages") or {}), None)
     width, height = tools._page_dimensions(page_id)

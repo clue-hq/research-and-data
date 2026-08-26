@@ -7836,6 +7836,15 @@ def run_agent_turn_preview(
             # who attached their own references still benefits from knowing what this brand's
             # published ads look like.
             config = replace(config, ad_dna_card=ad_dna_card)
+        ad_pregenerated = ad_runtime.context_pregenerated(ad_lane)
+        if ad_pregenerated:
+            # W5/R2-D: and the grounds pre-generation made from that description, BY VALUE for
+            # the same reason. Rides independently of the card block above (a lane can hold
+            # imagery whose prose failed to render) and independently of references, because
+            # the reason this list exists is that nothing else in the turn ever names these
+            # ids — not the asset index, which is kit-only, and not `view`, which lists library
+            # ids only once the author has already guessed one wrong.
+            config = replace(config, ad_pregenerated_assets=ad_pregenerated)
         # Slice 2 D4: the loop is mandatory-multimodal (Director + reviewer attach
         # images every turn). Fail LOUDLY here, before the run authors, if the
         # configured model is text-only — otherwise the run dies mid-turn at the
