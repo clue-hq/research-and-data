@@ -30,6 +30,8 @@ one-pager. Use these as the ground truth for correct Lumen DSL syntax + token us
 | A4 one-pager (A4 portrait) | A printed/PDF sell-sheet: header + hero + **vertical** 3-up benefits + CTA footer. |
 | Landscape flyer (1200×628) | A wide banner/email hero: left message + CTA, right proof-stat panel. |
 | Postcard (6×4 in) | The smallest surface: brand + recipient, one headline, one line, one CTA. |
+| Unequal-weight comparison panel (1080×1080) | Before/after with a **structural** winner — a compressed fixed band over a `fill` field that always dominates. |
+| Card on a washed ground (1080×1080) | The layer stack: full-bleed generated wash + banded scrim + a floating content card. |
 
 ### `layout.md` — structural shell
 | Block | Use it for |
@@ -38,6 +40,7 @@ one-pager. Use these as the ground truth for correct Lumen DSL syntax + token us
 | Header | Top band of a one-pager: brand lockup left, contact/nav right (`x(sb)`). |
 | Footer | Closing band: tinted card with contact + CTA, a rule, and a legal line. |
 | Divider | A horizontal rule (a `rect`, since there is no `divider` node); plain or labeled. |
+| Divider — zone rule | The same rule INSIDE a card, separating two kinds of content; weight and inset. |
 | Section band | A full-bleed tinted band wrapping one focal idea (eyebrow + header + body). |
 
 ### `actions.md` — actions
@@ -49,11 +52,14 @@ one-pager. Use these as the ground truth for correct Lumen DSL syntax + token us
 | Eyebrow / badge — Variant A (overline) | Default anti-cliche overline above a headline. |
 | Eyebrow / badge — Variant B (rule + label) | A short accent rule before the overline label. |
 | Eyebrow / badge — Variant C (tinted pill) | Only for genuine status badges ("NOW IN BETA"). |
+| Pill chip (hug-sized) | A fully-rounded tag that hugs its own label — "Webinar On Demand". |
 
 ### `data-display.md` — information surfaces
 | Block | Use it for |
 |-------|-----------|
 | Card | One self-contained idea on a `$surface.card` — title + short paragraph. |
+| Card on a ground (elevated plate) | A shadowed card floating on a coloured ground, carrying the whole message + CTA. |
+| Framed plate (a document inside a card) | A report cover / artwork shown as an object: an inner panel inset inside a card. |
 | Stat tile | One spotlight metric — big numeral + short label. Use 1–3, stop at three. |
 | Benefit row (3-up) | Three peer benefits **across a wide surface** (1080+); terse descriptions only. |
 | Benefit item | One full-width chip + title + description; **stack these** for benefits on A4. |

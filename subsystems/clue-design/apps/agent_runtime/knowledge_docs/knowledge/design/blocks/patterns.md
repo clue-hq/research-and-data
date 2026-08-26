@@ -388,6 +388,140 @@ Validator proof:
 
 ---
 
+## Unequal-weight comparison panel — before/after with a structural winner (1080×1080)
+
+**When to use:** the before/after (or old-way/new-way) ad, where one side has to
+clearly win. Reach for it when the reference ad splits the canvas and one half is
+obviously louder than the other. It is the **banded** archetype
+(`knowledge/design/layout-recipes`) with the bands deliberately unequal.
+
+**When NOT to use:** do not use it for a neutral feature comparison where both
+options are legitimate — an ad argues, a table compares. Do not give the two panels
+equal height; **equal panels are the exact failure this skeleton exists to prevent**
+and they read as a spec sheet, not a claim. Do not put the hero headline in the
+compressed band; the dominant field carries the message and the band carries only
+the complaint.
+
+**The inequality is structural, not a number.** The root is `al(v, y(s), g(0),
+pad(0))` with exactly two children: `before` is a FIXED `s(1080,300)` and `after` is
+`s(1080,fill)`. `fill` absorbs every remaining point of the canvas, so the solve is
+**300 / 780** (28% / 72%, verified through `layout_geometry`). Change the band's 300
+to 200 or 400 and it is still the minority — to make the two panels equal you would
+have to change a sizing MODE, not a number. That is the guarantee: the skeleton
+cannot drift into a 50/50 split by editing.
+
+**The type scale reinforces it.** The compressed band uses `$type.eyebrow` +
+`$type.body.small` and nothing larger; the dominant field steps its headline to
+`font_size($type.size.7xl)` (80) so it wins the squint test outright. The band is
+`fill($surface.inverse)`, so its text carries an explicit `fill($text.inverse)` and
+reads light on dark; the field is `fill($surface.page)` and its text takes the role
+default. One CTA, in the dominant field only.
+
+**Content budget:** band label 1-2 words `max_lines(1)`; band line ≤10 words
+`max_lines(2)` at `s(888,hug)`; hero headline 4-6 words `max_lines(2)`; support ≤12
+words `max_lines(2)` at `s(820,hug)`; CTA 2-3 words. Both panels use `pad(…,96)` so
+the two columns share one left edge at x=96.
+
+```text
+page unequal_compare size(1080,1080,px)
+  artboard al(v, x(s), y(s), g(0), pad(0)) p(0,0) s(fill,fill) fill($surface.page) clip(true)
+    before al(v, x(s), y(c), g($space.stack.tight), pad(48,96)) p(0,0) s(1080,300) fill($surface.inverse)
+      before_label text "BEFORE" p(0,0) s(888,hug) style($type.eyebrow) fill($text.inverse) wrap_text(true) max_lines(1)
+      before_line text "Four tools, three spreadsheets, one number nobody trusts." p(0,0) s(888,hug) style($type.body.small) fill($text.inverse) lh(1.4) wrap_text(true) max_lines(2) slot(compare.before)
+    after al(v, x(s), y(c), g($space.stack.default), pad(96)) p(0,0) s(1080,fill) fill($surface.page)
+      after_label text "AFTER" p(0,0) s(888,hug) style($type.eyebrow) wrap_text(true) max_lines(1)
+      headline text "One number. Everyone trusts it." p(0,0) s(888,hug) style($type.headline) font_size($type.size.7xl) lh(1.04) wrap_text(true) max_lines(2) slot(compare.after)
+      support text "Close the month in the same workspace your team already sells in." p(0,0) s(820,hug) style($type.body) lh(1.4) wrap_text(true) max_lines(2) slot(offer.primary_message)
+      cta al(h, x(c), y(c), pad(18,36)) p(0,0) s(320,72) fill($surface.brand) rd($radius.button)
+        cta_text text "See the switch" p(0,0) s(fill,hug) align(center) style($type.cta) max_lines(1) slot(campaign.cta)
+  #slot:compare.before sample("Four tools, three spreadsheets, one number nobody trusts.") worst_case("Four tools, three spreadsheets, one number nobody trusts.")
+  #slot:compare.after sample("One number. Everyone trusts it.") worst_case("One number. Everyone trusts it.")
+  #slot:offer.primary_message sample("Close the month in the same workspace your team already sells in.") worst_case("Close the month in the same workspace your team already sells in.")
+  #slot:campaign.cta sample("See the switch") worst_case("See the switch")
+```
+
+Validator proof:
+```json
+{ "ok": true, "stage": "preflight", "errors": [], "warnings": ["LUMB0613", "LUMB0614"] }
+```
+
+---
+
+## Card on a washed ground — the layer stack (1080×1080)
+
+**When to use:** a generated wash, gradient, or photograph is carrying the
+atmosphere and the copy needs a legible home on top of it. The ground runs
+full-bleed, the card floats over the calmest part of it, and every word of the
+message lives inside the card. This is the layer stack the Apollo and Stripe
+reference ads use, and it is the composition to reach for whenever
+`skills/generative-imagery` produced a background for an ad.
+
+**When NOT to use:** do not use it when the ground is busy exactly where the card
+wants to sit — move the card, or re-generate a calmer ground, but never lay copy on
+noise. Do not put text outside the card without a scrim behind it. Do not scrim the
+whole frame; that dulls the wash you paid to generate.
+
+**The stack, in declaration order (= z-order, `fr` root):** ground → scrim → the
+outside-the-card lockup → the card. The artboard is `fill($surface.inverse)` and
+that is load-bearing, exactly as in the image-hero block above: it is the fallback
+colour if the ground image fails, and it makes `$text.inverse` the correct ink for
+anything sitting on the ground.
+
+**Calm-area placement.** The card is placed absolutely at `p(140,536) s(800,hug)` —
+horizontally centred (`(1080 − 800) / 2 = 140`) and sitting in the LOWER half, which
+leaves the upper half of the ground open for whatever the image is actually doing.
+Generated washes and product photography almost always put their subject or their
+brightest passage in the upper two-thirds, so the lower-centre is the reliable calm
+area. If the specific ground is busy down there instead, move the card up — do not
+shrink it and do not drop the scrim.
+
+**Scrim discipline for anything OUTSIDE the card.** The brand lockup sits on the
+ground, not on the card, so it needs its own scrim: a `s(1080,360)` rect filled with
+a linear gradient from `$surface.inverse` to fully transparent, at
+`o($opacity.scrim)`. The alpha stop (`#00000000`) is the blur-free soft edge — there
+is no `$transparent` token, and a hard-edged scrim band across a wash is worse than
+no scrim at all. Sizing the scrim to the lockup band (0–360) instead of the whole
+frame is what keeps the wash vivid where the eye actually lands.
+
+**Content budget:** wordmark ≤3 words `max_lines(1)`; card eyebrow 2-3 words; card
+headline 4-6 words `max_lines(2)`; support ≤12 words `max_lines(2)` at
+`$type.body.small` (the card column is 688pt — `800 − 2×56`); one CTA. The card is
+`hug` height so it grows with the copy; keep the copy inside the budget or it grows
+past the calm area.
+
+Swap `generated_wash` for the generated or uploaded asset id; its `fit:cover` +
+focal point are set on the node by `asset(action="place")`, not on the DSL line
+(`knowledge/images/placement`).
+
+```text
+page card_on_wash size(1080,1080,px)
+  artboard fr p(0,0) s(fill,fill) fill($surface.inverse) clip(true)
+    ground image asset(generated_wash) p(0,0) s(1080,1080)
+    scrim r p(0,0) s(1080,360) fill(linear(180, stop($surface.inverse,0), stop(#00000000,1))) o($opacity.scrim)
+    lockup al(h, x(s), y(c), g(12), pad(0)) p(96,96) s(600,64)
+      mark al(h, x(c), y(c), pad(0)) p(0,0) s(56,56) fill($surface.accent) rd($radius.badge)
+        mark_text text "AC" p(0,0) s(fill,hug) align(center) style($type.eyebrow) max_lines(1)
+      wordmark text "Acme Cloud" p(0,0) s(440,hug) style($type.label) fill($text.inverse) wrap_text(true) max_lines(1) slot(account.name)
+    card al(v, x(s), y(c), g($space.stack.default), pad(56)) p(140,536) s(800,hug) fill($surface.card) rd($radius.card) shadow(card_lift, #000000, o(0.28), y(28), blur(64))
+      eyebrow text "PLATFORM LAUNCH" p(0,0) s(688,hug) style($type.eyebrow) wrap_text(true) max_lines(1) slot(campaign.eyebrow)
+      headline text "Every workflow, one surface." p(0,0) s(688,hug) style($type.headline) lh(1.06) wrap_text(true) max_lines(2) slot(campaign.headline)
+      support text "Acme Cloud connects the tools your team already runs on." p(0,0) s(688,hug) style($type.body.small) lh(1.4) wrap_text(true) max_lines(2) slot(offer.primary_message)
+      cta al(h, x(c), y(c), pad(18,36)) p(0,0) s(300,72) fill($surface.inverse) rd($radius.button)
+        cta_text text "Read the launch" p(0,0) s(fill,hug) align(center) style($type.cta) max_lines(1) slot(campaign.cta)
+  #slot:account.name sample("Acme Cloud") worst_case("Acme Cloud Systems")
+  #slot:campaign.eyebrow sample("PLATFORM LAUNCH") worst_case("PLATFORM LAUNCH")
+  #slot:campaign.headline sample("Every workflow, one surface.") worst_case("Every workflow, one surface.")
+  #slot:offer.primary_message sample("Acme Cloud connects the tools your team already runs on.") worst_case("Acme Cloud connects the tools your team already runs on.")
+  #slot:campaign.cta sample("Read the launch") worst_case("Read the launch")
+```
+
+Validator proof:
+```json
+{ "ok": true, "stage": "preflight", "errors": [], "warnings": ["LUMB0613", "LUMB0614"] }
+```
+
+---
+
 ## Adapting these blocks (keep them valid)
 
 - **Re-skin via slots only.** Edit the `#slot:` `sample`/`worst_case` lines; keep each

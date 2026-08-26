@@ -197,6 +197,53 @@ Validator proof:
 
 ---
 
+## Divider — zone rule inside a card (weight and inset)
+
+**When to use:** one surface is carrying two different KINDS of content and the gap
+alone is not reading as a break — a message above, proof or contact detail below.
+The rule is the same `rect` primitive as the page divider above; what changes is
+that it lives INSIDE a card and separates zones rather than page regions.
+
+**When NOT to use:** do not reach for a rule first. More space between the two zones
+is the quieter fix and is usually the right one — a rule is what you add after the
+space has failed. Do not use more than one rule per surface. Do not make it thick or
+dark; a rule you notice is a rule that is competing with the message.
+
+**Weight:** `1` is the hairline and `2` is the visible rule; both are literal numbers
+inside `s(fill,W)`. `$stroke.width.divider` is a `stroke(...)` token and is rejected
+inside `s(...)` (`LUMB0301`) — that is the same trap the page divider above warns
+about. Colour it `$border.subtle`, never `$border.strong`: a zone break is a whisper.
+
+**Inset:** the rule is `s(fill,1)` and it is a direct child of the card, so it spans
+the card's CONTENT width and stops at the card's own `pad(56)` on both sides. That
+inset is what makes it read as a zone rule instead of a band across the artboard —
+do NOT hang it off the artboard or size it to the full 888. The zones on either side
+are `s(776,hug)` groups (`888 − 2×56`), so the rule and the copy share one left edge.
+
+```text
+page zone_divider size(1080,1080,px)
+  artboard al(v, x(c), y(c), g($space.section), pad(96)) p(0,0) s(fill,fill) fill($surface.page) clip(true)
+    card al(v, x(s), y(c), g($space.stack.default), pad(56)) p(0,0) s(888,hug) fill($surface.card) rd($radius.card)
+      message al(v, x(s), g($space.stack.tight), pad(0)) p(0,0) s(776,hug)
+        headline text "Forecast in the same place you sell." p(0,0) s(776,hug) style($type.headline) lh(1.06) wrap_text(true) max_lines(2) slot(campaign.headline)
+        support text "Pipeline, coverage, and commit in one view." p(0,0) s(776,hug) style($type.body.small) lh(1.4) wrap_text(true) max_lines(2) slot(offer.primary_message)
+      zone_rule r p(0,0) s(fill,1) fill($border.subtle)
+      proof al(h, x(sb), y(c), g($space.md), pad(0)) p(0,0) s(776,hug)
+        proof_text text "Used by 4,000 finance teams" p(0,0) s(500,hug) style($type.caption) wrap_text(true) max_lines(1) slot(proof.line)
+        url text "example.com" p(0,0) s(240,hug) align(right) style($type.caption) wrap_text(true) max_lines(1) slot(account.url)
+  #slot:campaign.headline sample("Forecast in the same place you sell.") worst_case("Forecast in the same place you sell.")
+  #slot:offer.primary_message sample("Pipeline, coverage, and commit in one view.") worst_case("Pipeline, coverage, and commit in one view.")
+  #slot:proof.line sample("Used by 4,000 finance teams") worst_case("Used by 4,000 finance teams")
+  #slot:account.url sample("example.com") worst_case("example.com")
+```
+
+Validator proof:
+```json
+{ "ok": true, "stage": "preflight", "errors": [], "warnings": ["LUMB0613", "LUMB0614"] }
+```
+
+---
+
 ## Section band (full-width tinted band wrapper)
 
 **When to use:** wrap a region in a full-bleed tinted band to set it apart from
