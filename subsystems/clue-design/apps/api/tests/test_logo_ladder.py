@@ -293,6 +293,207 @@ def test_a_partner_logo_on_our_own_cdn_never_becomes_our_counterpart():
     assert "different company's asset" in why
 
 
+# ---------------------------------------------------------------------------
+# guard 1b — identity anchoring (the apollo.io / OpenAI incident, 2026-08-26)
+#
+# apollo.io shipped an ad carrying OPENAI'S logomark as apollo's own reversed
+# logo. A 19x19 partner glyph, inline on a #000000 panel, beat apollo's real
+# 303x303 asterisk for the `dark` slot because the only evidence anyone checked
+# was the luminance of the surface behind it. The deeper defect is that a third
+# party's mark was ever a CANDIDATE for a brand slot: ingestion harvests every
+# image in the page chrome, and the ladder classified from that raw pool.
+# ---------------------------------------------------------------------------
+
+
+def _apollo_pool():
+    """The three assets apollo.io really produced (W5 forensic, §R2.6)."""
+    wordmark = ladder.LadderCandidate(
+        url="https://www.apollo.io/#inline-svg-0", source_domain="www.apollo.io",
+        rung="INLINE_SVG", fmt="svg", width=152, height=26,
+        link_destination="/", dom_index=0, inline_svg_text="<svg/>", sha256="a" * 64,
+        body=_svg('<path d="M4 6h24v20H4zM34 6h24v20H34zM64 6h24v20H64z" fill="#1F1F1E"/>', 152, 26),
+        content_type="image/svg+xml",
+    )
+    asterisk = ladder.LadderCandidate(
+        url="https://www.apollo.io/assets/apollo-logo-mark.svg", source_domain="www.apollo.io",
+        rung="PAGE_LOGO_NAMED", fmt="svg", width=303, height=303, alt_text="Apollo",
+        sha256="b" * 64,
+        body=_svg('<path d="M151 20L180 120L280 151L180 182L151 282L20 151Z" fill="#1F1F1E"/>', 303, 303),
+        content_type="image/svg+xml",
+    )
+    openai = ladder.LadderCandidate(
+        url="https://www.apollo.io/#inline-svg-7", source_domain="www.apollo.io",
+        rung="INLINE_SVG", fmt="svg", width=19, height=19, dom_index=1,
+        background_context="#000000", background_source="static",
+        inline_svg_text="<svg/>", sha256="c" * 64,
+        body=_svg(
+            '<path d="M9.5 0.7c-1.9 0-3.6 1.1-4.4 2.8-1.9 0.2-3.5 1.5-4.1 3.3" fill="#FFFFFF"/>'
+            '<path d="M14 3.5c1.8 0.6 3.1 2.2 3.3 4.1 1.1 1.5 1.3 3.5 0.5 5.2" fill="#FFFFFF"/>',
+            19, 19,
+        ),
+        content_type="image/svg+xml",
+    )
+    return wordmark, asterisk, openai
+
+
+def _apollo_resolution():
+    pool = list(_apollo_pool())
+    meta = {"homepage_url": "https://www.apollo.io/", "page_title": "Apollo.io",
+            "jsonld_org_names": []}
+    return pool, ladder.resolve(pool, meta, "apollo.io", "Apollo")
+
+
+def test_a_foreign_glyph_on_a_dark_panel_fills_no_brand_slot():
+    """THE red case. Before identity anchoring this exact pool put the 19x19
+    OpenAI glyph in the `dark` slot, and the ad shipped with it."""
+    _, resolution = _apollo_resolution()
+
+    filled = {
+        name: (slot.candidate.width, slot.candidate.height)
+        for name, slot in resolution.slots.items() if slot is not None
+    }
+    assert (19, 19) not in filled.values(), f"the foreign glyph took a slot: {filled}"
+    # apollo's own marks are untouched — this is exclusion, not scorched earth.
+    assert filled["light"] == (152, 26)
+    assert filled["mark"] == (303, 303)
+    # An empty reversed slot is the CORRECT output: apollo ships no dark variant.
+    assert resolution.slots["dark"] is None
+
+
+def test_the_glyph_was_a_live_candidate_and_was_excluded_on_identity():
+    """It is not filtered as junk, nor as a partner link, nor as third-party —
+    it scores, it is first-party, it survives every pre-existing gate. Identity
+    anchoring is the only thing standing between it and a brand slot."""
+    (wordmark, asterisk, openai), resolution = _apollo_resolution()
+
+    assert openai.first_party is True
+    assert openai.score > 0
+    assert not openai.junk_hits
+    assert openai.identity_anchored is False
+    assert openai.identity_anchor == []
+
+    # Apollo's own two marks anchor on different evidence.
+    assert wordmark.identity_anchored is True
+    assert "wrapped in a link to the site root" in wordmark.identity_anchor
+    assert asterisk.identity_anchored is True
+    assert any("declared by the site" in r for r in asterisk.identity_anchor)
+    assert resolution.counts["identity_anchored"] == 2
+
+
+def test_a_favicon_anchors_identity_with_no_name_and_no_link():
+    """A brand whose header logo is an anonymous inline <svg> still has an
+    identity: the site DECLARES its own icon in machine-readable markup, and a
+    partner glyph can never be your favicon."""
+    favicon = ladder.LadderCandidate(url="https://acme.com/assets/f0e1.png", rung="FAVICON")
+    anonymous = ladder.LadderCandidate(url="https://acme.com/#inline-svg-3", rung="INLINE_SVG")
+    tokens = ladder.company_tokens("acme.com")
+
+    assert ladder.identity_anchor(favicon, tokens, "acme.com")
+    assert ladder.identity_anchor(anonymous, tokens, "acme.com") == []
+
+
+def test_identity_propagates_through_identical_vector_artwork():
+    """The footer recolour of an anchored header logo carries no name and no
+    link of its own — but it is provably the same artwork, so it is ours."""
+    header = ladder.LadderCandidate(
+        url="https://acme.com/acme-logo.svg", rung="HEADER", fmt="svg",
+        body=_svg('<path d="M4 6h24v20H4zM34 6h24v20H34z" fill="#101820"/>'),
+    )
+    footer = ladder.LadderCandidate(
+        url="https://acme.com/f2.svg", rung="FOOTER", fmt="svg",
+        body=_svg('<path d="M4 6h24v20H4zM34 6h24v20H34z" fill="#ffffff"/>'),
+    )
+    ladder._link_render_observations([header, footer])
+    ladder.anchor_identity([header, footer], ladder.company_tokens("acme.com"), "acme.com")
+
+    assert header.identity_anchored is True
+    assert footer.identity_anchored is True
+    assert "same vector artwork" in footer.identity_anchor[0]
+
+
+# --- the second net: size sanity on the counterpart slots ------------------
+
+
+def test_an_icon_sized_counterpart_is_rejected_even_when_placement_says_dark():
+    """Placement earns the right to ignore lockup SHAPE, never the right to hand
+    a primary slot to art that is not primary-sized."""
+    # Both are inline <svg>, so neither carries a filename — exactly apollo's
+    # shape, and the reason the brand-name guard could not save it.
+    primary = ladder.LadderCandidate(
+        url="https://apollo.io/#inline-svg-0", rung="INLINE_SVG", fmt="svg",
+        width=152, height=26,
+    )
+    glyph = ladder.LadderCandidate(
+        url="https://apollo.io/#inline-svg-7", rung="INLINE_SVG", fmt="svg",
+        width=19, height=19,
+        background_context="#000000", background_source="static",
+    )
+    glyph.variant, glyph.variant_basis, glyph.variant_basis_rank = ladder.classify_variant(glyph)
+    # rank 3 is placement — the rank that used to short-circuit every other check
+    assert glyph.variant_basis_rank == 3
+
+    ok, why = ladder._counterpart_plausible(glyph, primary, ladder.company_tokens("apollo.io"))
+
+    assert ok is False
+    assert "icon-sized" in why
+
+
+def test_a_counterpart_far_smaller_than_the_primary_is_not_the_same_mark():
+    primary = ladder.LadderCandidate(url="https://acme.com/acme-logo.svg", fmt="svg",
+                                     width=400, height=64)
+    sprite = ladder.LadderCandidate(url="https://acme.com/acme-sprite.svg", fmt="svg",
+                                    width=32, height=32)
+
+    ok, why = ladder._counterpart_plausible(sprite, primary, ladder.company_tokens("acme.com"))
+
+    assert ok is False
+    assert "smaller than the primary" in why
+
+
+# --- the happy path these nets must not cost -------------------------------
+
+
+def test_a_bigger_footer_lockup_is_still_a_legitimate_counterpart():
+    """workspan.com's regression pin, restated. Its footer shows the full
+    203x32 lockup against a 46x26 header symbol: growth is normal for an
+    alternate lockup, and placement must still outrank the aspect veto."""
+    primary = ladder.LadderCandidate(
+        url="https://workspan.com/workspan-symbol.svg", fmt="svg", width=46, height=26,
+    )
+    footer = ladder.LadderCandidate(
+        url="https://workspan.com/workspan-lockup.svg", rung="FOOTER", fmt="svg",
+        width=203, height=32,
+        background_context="rgb(255, 255, 255)",
+        background_source="rendered:computed-behind-asset",
+    )
+    footer.variant, footer.variant_basis, footer.variant_basis_rank = ladder.classify_variant(footer)
+    assert footer.variant_basis_rank == 3
+
+    ok, why = ladder._counterpart_plausible(footer, primary, ladder.company_tokens("workspan.com"))
+
+    assert ok is True
+    assert "placement-classified" in why
+
+
+def test_the_same_artwork_recoloured_is_admitted_on_geometry_alone():
+    """The positive identity signal. Same paths, different fill, and dimensions
+    that would otherwise trip the size floor — geometry proves it is ours."""
+    primary = ladder.LadderCandidate(
+        url="https://acme.com/acme-logo.svg", fmt="svg", width=160, height=32,
+        body=_svg('<path d="M4 6h24v20H4zM34 6h24v20H34z" fill="#101820"/>'),
+    )
+    reversed_ = ladder.LadderCandidate(
+        url="https://acme.com/f2.svg", fmt="svg", width=20, height=20,
+        body=_svg('<path d="M4 6h24v20H4zM34 6h24v20H34z" fill="#ffffff"/>'),
+    )
+    ladder._link_render_observations([primary, reversed_])
+
+    ok, why = ladder._counterpart_plausible(reversed_, primary, ladder.company_tokens("acme.com"))
+
+    assert ok is True
+    assert "identical vector path geometry" in why
+
+
 def test_a_mark_linking_into_partners_is_rejected():
     """B2B mega-menus are full of partner logos served first-party; the tell is
     the link — a partner logo links to /use-case/..., never to /."""
