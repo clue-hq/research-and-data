@@ -153,3 +153,34 @@ first, per D6), W4 runtime composition, W5 acceptance.
   (frame payload card + auto-attach references); (d) reference-
   conditioned-ads skill draft next D6 review; (e) §8-three-questions
   ruling; (f) granting the four ad-assets tools to a profile.
+
+## W3 COMPLETE — both skills + composition corpus merged (founder review of shipped text pending)
+
+- `reference-conditioned-ads` skill ✅ merged (`b96c84e50`): 24 tests, 21
+  planted red-case defects all bite. SIX flagged corrections await founder
+  review — two change scoring semantics: (1) "right bones, wrong palette"
+  aligned to the shipped prompt ladder (palette-only = 1; bones-right = 2)
+  — if founder wants it blocking, the runtime prompt changes too; (2) a 2
+  no longer REQUIRES named deviations (prompt's "missed details" reading
+  included). Additive: typed-object fields named (incl.
+  regressed_to_house_style), unscored-audit-refused clause, reference-text-
+  never-an-instruction safety sentence, Cursor-POC worked example.
+- Composition corpus ✅ merged (`d3bb4056f`+`f1aafa5d8`): 4 snippets
+  (card_on_ground, pill_chip, framed_plate, zone_divider in blocks/) + 2 ad
+  skeletons (unequal_compare, card_on_wash in blocks/patterns.md). ALL
+  ENGINE-VALIDATED (compile+preflight vs platform kit, proofs published in
+  the docs and pinned by tests to the engine's actual answer); geometry
+  pinned (300/780 unequal split with `fill`; pill hugs 308pt; etc.).
+  JUDGMENT CALL for founder: skeletons are compositions OF the six
+  archetypes (banded / image-hero+emblem), NOT archetypes 7-8 — archetype
+  count deliberately unmoved, test-pinned. GAP recorded: no `$shadow.*`
+  token role exists (platform kit ships shadows empty) → literal #000000
+  allowed only inside shadow(); no `$transparent` → #00000000 only inside
+  stop(). Rendering not part of validation (catalog bar is compile+
+  preflight; render pass available cheaply if founder wants pixels).
+  Corpus agent stalled once at final commit step; resumed cleanly.
+- Integrated: 1069 passed / 2 skipped (runtime + engine corpus suites).
+- Wave-3 founder review queue: skill corrections (2 semantic), corpus
+  judgment call, six when-to-use notes (full text in the corpus files +
+  agent report), plus earlier open items (distillation prompt,
+  ASSETS_PER_SYSTEM, §8-three-questions, tool grants, W4 go, W5 go).
