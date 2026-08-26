@@ -183,7 +183,7 @@ def _onboard(
         # An honest empty is a correct outcome, not a failure: a brand with no static company
         # ads has nothing to harvest, and saying so is more useful than a red job row.
         evidence["steps"]["harvest"]["status"] = "empty"
-        return _complete(brand_kit_id, brand_kit_version, evidence)
+        return _complete(brand_kit_id, brand_kit_version, evidence, reporter=reporter)
 
     reporter("Saving your ad creatives…", 0.3)
     custody = custody_creatives(
@@ -202,7 +202,7 @@ def _onboard(
         "failures": [{"ad_id": ad_id, "reason": reason} for ad_id, reason in custody.failures],
     }
     if not custody.creatives:
-        return _complete(brand_kit_id, brand_kit_version, evidence)
+        return _complete(brand_kit_id, brand_kit_version, evidence, reporter=reporter)
 
     # The asset rows FIRST (governed, bulk, content-derived ids), then the provenance rows that
     # point at them — a creative row whose asset does not exist yet would fail its foreign key.
@@ -249,7 +249,7 @@ def _onboard(
     reporter("Learning your ad style…", 0.55)
     card = _distil(custody.creatives, distiller=distiller, evidence=evidence)
     if card is None:
-        return _complete(brand_kit_id, brand_kit_version, evidence)
+        return _complete(brand_kit_id, brand_kit_version, evidence, reporter=reporter)
 
     card_id = request.get("card_id") or f"adna_{brand_kit_id}"
     published = tools.invoke(
@@ -291,7 +291,7 @@ def _onboard(
     )
 
     reporter("Finishing up…", 0.95)
-    return _complete(brand_kit_id, brand_kit_version, evidence)
+    return _complete(brand_kit_id, brand_kit_version, evidence, reporter=reporter)
 
 
 def _distil(creatives: list[Any], *, distiller: Any, evidence: JsonObject) -> AdDnaCard | None:
@@ -442,15 +442,110 @@ def _digest(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+#: The lane's steps, in the order they run. A job that ran all five to `ok` produced all three
+#: of the lane's artifact kinds — custodied creatives, an ad-DNA card, pre-generated imagery.
+#: Listed once so the summary and its status can never disagree about what "everything" means.
+_LANE_STEPS = ("harvest", "custody", "record", "distill", "pregenerate")
+
+
+def _outcome(evidence: JsonObject) -> JsonObject:
+    """The job's TOP-LEVEL, machine-readable outcome, derived from the per-step record.
+
+    W5/R2-C. An empty harvest, a distillation skipped for a missing key, and a fully populated
+    lane all end `succeeded` — correctly, because none of them is an error (D5: this lane has
+    no gates, and a brand with no static ads has honestly nothing to harvest). What was wrong
+    was that `succeeded` was the ONLY thing a caller saw. The truth — `kept: 0`, `distill:
+    skipped` — sat one level down under `steps`, and the W5 run lost real time to it twice.
+
+    So the outcome stays `succeeded` and gains a summary that says what actually happened, at
+    the top of the evidence rather than buried in it, in counts a caller can branch on and one
+    plain sentence a human can read. Derived here, at the single point all four exit paths
+    return through, so a new early return cannot forget to describe itself.
+
+    `status` is the summary's own word, not the job row's: `empty` when the lane holds nothing,
+    `partial` when it holds creatives but is missing the card or the imagery, `ok` when every
+    step ran and produced something.
+    """
+    steps = evidence.get("steps") or {}
+
+    def _step(name: str) -> JsonObject:
+        value = steps.get(name)
+        return value if isinstance(value, dict) else {}
+
+    kept = int(_step("harvest").get("kept") or 0)
+    custodied = int(_step("custody").get("custodied") or 0)
+    card_written = _step("distill").get("status") == "ok"
+    generated = int(_step("pregenerate").get("generated") or 0)
+
+    skipped = [n for n in _LANE_STEPS if _step(n).get("status") == "skipped"]
+    failed = [n for n in _LANE_STEPS if _step(n).get("status") == "failed"]
+    # Absent, not skipped: an earlier step ended the run before this one was ever attempted.
+    # The W5 report's "no distil or pregenerate key in evidence_json.steps" is exactly this
+    # case, and it reads as silence unless it is named.
+    not_reached = [n for n in _LANE_STEPS if n not in steps]
+    reasons = {
+        name: str(_step(name).get("reason"))
+        for name in (*skipped, *failed)
+        if _step(name).get("reason")
+    }
+
+    if custodied == 0:
+        status = "empty"
+    elif skipped or failed or not_reached or not card_written or generated == 0:
+        status = "partial"
+    else:
+        status = "ok"
+
+    sentences = [f"{kept} ad(s) kept, {custodied} custodied."]
+    if card_written:
+        sentences.append("An ad-DNA card was written.")
+    else:
+        sentences.append("No ad-DNA card was written.")
+    sentences.append(f"{generated} background image(s) were pre-generated.")
+    unfinished = [*skipped, *failed, *not_reached]
+    if unfinished:
+        sentences.append("Steps that produced nothing: " + ", ".join(unfinished) + ".")
+    for name, reason in reasons.items():
+        sentences.append(f"{name}: {reason}")
+
+    return {
+        "status": status,
+        "summary": " ".join(sentences),
+        "creatives_kept": kept,
+        "creatives_custodied": custodied,
+        "card_written": card_written,
+        "assets_generated": generated,
+        "steps_skipped": skipped,
+        "steps_failed": failed,
+        "steps_not_reached": not_reached,
+        "reasons": reasons,
+    }
+
+
 def _complete(
-    brand_kit_id: str, brand_kit_version: int, evidence: JsonObject
+    brand_kit_id: str,
+    brand_kit_version: int,
+    evidence: JsonObject,
+    *,
+    reporter: StageReporter | None = None,
 ) -> "tuple[str, int, Optional[str]]":
     """The job's terminal tuple.
 
     The result pointer is the brand kit the lane enriched, unchanged: this job publishes no kit
     version (the pre-generated imagery lands in the asset LIBRARY, not in the kit's own asset
     block), so the honest pointer is the kit the harvest was run for.
+
+    W5/R2-C: the top-level outcome summary is stamped here, at the one point every exit path
+    passes through, and the same sentence is reported as the job's final stage — so the two
+    operator-visible surfaces, the durable evidence and the polled DTO, say the same thing.
     """
+    outcome = _outcome(evidence)
+    evidence["outcome"] = outcome
+    if reporter is not None:
+        # Progress really is 1.0 — the job IS done, and `store.complete` forces it anyway. What
+        # the stage now carries is WHAT it finished with, instead of whichever step happened to
+        # narrate last before an early return.
+        reporter(outcome["summary"], 1.0)
     return (brand_kit_id, brand_kit_version, json.dumps(evidence))
 
 

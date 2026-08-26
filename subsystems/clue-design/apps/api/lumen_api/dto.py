@@ -504,15 +504,38 @@ def ingestion_job_website_url(job: JsonObject) -> Optional[str]:
     return url if isinstance(url, str) and url else None
 
 
+def ingestion_job_outcome(job: JsonObject) -> JsonObject | None:
+    """The job's bounded top-level outcome summary, or ``None`` when it has none.
+
+    W5/R2-C. The evidence BODY stays private — it holds staged digests and, for the ad-assets
+    lane, an entire harvest report — but a caller polling this job the documented way still has
+    to be able to tell a working lane from an inert one. `succeeded` alone could not: an empty
+    harvest, a distillation skipped for a missing key, and a fully populated lane all landed on
+    the same green row, with the difference buried under `evidence.steps`.
+
+    So exactly one bounded, machine-readable member is lifted out — never the body. Only the
+    ad-assets lane composes one today (see `ad_library.onboarding._outcome`); the three older
+    kinds carry no `outcome` key and this stays ``None`` for them, so their DTO gains a field
+    and loses nothing.
+    """
+    evidence = job.get("evidence")
+    if not isinstance(evidence, dict):
+        return None
+    outcome = evidence.get("outcome")
+    return outcome if isinstance(outcome, dict) else None
+
+
 def ingestion_job_dto(job: JsonObject) -> JsonObject:
-    """Public view of an ingestion job row (no request/evidence bodies — one named URL apart,
-    see :func:`ingestion_job_website_url`)."""
+    """Public view of an ingestion job row (no request/evidence bodies — one named URL and one
+    bounded outcome summary apart, see :func:`ingestion_job_website_url` and
+    :func:`ingestion_job_outcome`)."""
     return {
         "job_id": job["job_id"],
         "kind": job["kind"],
         "status": job["status"],
         "stage": job.get("stage"),
         "progress": job.get("progress"),
+        "outcome": ingestion_job_outcome(job),
         "website_url": ingestion_job_website_url(job),
         "brand_kit_id": job.get("brand_kit_id"),
         "brand_kit_version": job.get("brand_kit_version"),
