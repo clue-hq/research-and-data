@@ -184,3 +184,22 @@ first, per D6), W4 runtime composition, W5 acceptance.
   judgment call, six when-to-use notes (full text in the corpus files +
   agent report), plus earlier open items (distillation prompt,
   ASSETS_PER_SYSTEM, §8-three-questions, tool grants, W4 go, W5 go).
+
+## W4 MERGED + FAST LOOP DEFAULT ON (founder rulings, 2026-08-26 late)
+
+- W4 merged after founder reviewed the vision prompt + ratified the five
+  embedded design decisions (leg-fix option b — already landed+pinned;
+  selection via one cheap call w/ recency fallback; manual refs always win;
+  prose as advisory opening-context text; single flag). Founder also
+  accepted: auto-attach fires on ALL scene turns of an onboarded workspace
+  (kind-signal fast-follow later) and prose reaches fast-loop turns only.
+- Ad-DNA card is now schema_version 2: free prose (≤2400 chars) +
+  optional style_groups[{name, creative_ids}] — D8. Corpus dormant — D9.
+- STANDING RULE strengthened: architecture/design decisions inside approved
+  waves must be referred to the founder BEFORE implementation (also in
+  global memory discuss-before-editing).
+- `lumen_agent_fast_loop` DEFAULT FLIPPED TO TRUE (founder: "make fast_loop
+  the default true option"). LUMEN_AGENT_FAST_LOOP=0 = legacy fallback.
+  Full runtime suite green post-flip (1046 passed).
+- Remaining: W5 acceptance run + demo (three brands, end-to-end through the
+  real pipeline) — needs founder go + live stack + Adyntel/OpenRouter keys.

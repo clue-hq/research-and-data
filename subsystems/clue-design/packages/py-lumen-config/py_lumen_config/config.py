@@ -214,7 +214,10 @@ class Settings(BaseSettings):
     # composed) author context, no harness-enforced budgets, no inner-iteration
     # cap. ON → the §5 loop. Web turns (`create-website`) are untouched either
     # way — this flag is scene-turn-only, by §3 non-goal.
-    lumen_agent_fast_loop: bool = False
+    # DEFAULT FLIPPED TO TRUE (founder ruling, 2026-08-26): the fast loop is
+    # the production loop — proven live across the reference-ads acceptance
+    # runs. Set LUMEN_AGENT_FAST_LOOP=0 to fall back to the legacy loop.
+    lumen_agent_fast_loop: bool = True
     # R3's kill-switch. Under the fast loop the `lumen-visual-reviewer` subagent
     # is NOT dispatched on scene turns (the author's own self-audit critique.json
     # replaces it); setting this to 1 re-enables the reviewer WITHOUT leaving the
