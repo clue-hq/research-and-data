@@ -305,6 +305,145 @@ def test_normalizer_emits_the_type_size_ramp() -> None:
     assert "type-size-ramp" in ramp["type.size.md"]["provenance"]["source"]
 
 
+# ---------------------------------------------------------------------------
+# custody-honest type roles (the apollo.io D5 incident, 2026-08-26)
+#
+# apollo's kit declared `type.stat` as seasonMix weight 700 while custodying
+# only a weight-300 seasonMix face. The engine substituted the nearest face and
+# raised LUMS0104; the authoring agent read that as "this kit cannot do bold",
+# abandoned the kit family, and invented `Bricolage Grotesque` to get an 800.
+# A role must never declare a weight its own faces cannot paint.
+# ---------------------------------------------------------------------------
+
+
+def _apollo_evidence(faces: list[dict]) -> BrandEvidence:
+    """Website evidence whose h1 asks for a weight the custodied faces may lack."""
+    return BrandEvidence.model_validate(
+        {
+            "source": {"kind": "website", "reference": "https://www.apollo.io/"},
+            "fonts": [
+                {
+                    "family": "seasonMix",
+                    "role_hint": "heading",
+                    "faces": faces,
+                    "pointer": {
+                        "source": "website",
+                        "locator": "https://www.apollo.io/ :: @font-face",
+                    },
+                }
+            ],
+            "type_samples": [
+                {
+                    "label": "h1",
+                    "family": "seasonMix",
+                    "size_px": 72.0,
+                    "weight": 700,
+                    "pointer": {"source": "website", "locator": "h1"},
+                }
+            ],
+        }
+    )
+
+
+_CUSTODIED_300 = [
+    {
+        "weight": 300,
+        "style": "normal",
+        "asset_id": "asset_ing_seasonmix300",
+        "source_url": "https://www.apollo.io/fonts/seasonmix-light.woff2",
+        "format": "woff2",
+    }
+]
+
+
+def test_a_type_role_never_declares_a_weight_the_kit_cannot_paint() -> None:
+    """THE red case: 700 asked of a family that ships only 300."""
+    result = normalize_evidence(
+        _apollo_evidence(_CUSTODIED_300),
+        brand_kit_id="brand_kit_apollo_d5",
+        version=1,
+        name="Apollo",
+        created_at=_CREATED_AT,
+    )
+    typography = result.brand_kit["tokens"]["typography"]
+
+    for role in ("type.stat", "type.display", "type.headline"):
+        weight = typography[role]["value"]["default"]["font_weight"]
+        assert weight == 300, f"{role} declared {weight}, which seasonMix cannot paint"
+
+    snapped = [d for d in result.diagnostics if d.get("code") == "LUMI0232"]
+    assert snapped, "the moved declaration must be recorded, not silent"
+    assert any("type.stat" in d["message"] for d in snapped)
+    assert all("seasonMix" in d["message"] for d in snapped)
+
+
+def test_a_role_whose_weight_is_custodied_is_left_exactly_alone() -> None:
+    """The happy path: ship the 700 and `type.stat` keeps its 700, unremarked.
+
+    Roles the kit still cannot serve (a 500 subtitle against a {300, 700} kit)
+    do snap, and should — this pins that the snap is per-role, not per-kit.
+    """
+    faces = _CUSTODIED_300 + [
+        {
+            "weight": 700,
+            "style": "normal",
+            "asset_id": "asset_ing_seasonmix700",
+            "source_url": "https://www.apollo.io/fonts/seasonmix-bold.woff2",
+            "format": "woff2",
+        }
+    ]
+    result = normalize_evidence(
+        _apollo_evidence(faces),
+        brand_kit_id="brand_kit_apollo_d5_ok",
+        version=1,
+        name="Apollo",
+        created_at=_CREATED_AT,
+    )
+    typography = result.brand_kit["tokens"]["typography"]
+
+    assert typography["type.stat"]["value"]["default"]["font_weight"] == 700
+    snapped = [d for d in result.diagnostics if d.get("code") == "LUMI0232"]
+    assert not any("type.stat" in d["message"] for d in snapped)
+    # ...while a role this kit genuinely cannot serve is still moved and said.
+    assert typography["type.subtitle"]["value"]["default"]["font_weight"] in (300, 700)
+    assert any("type.subtitle" in d["message"] for d in snapped)
+
+
+def test_an_uncustodied_family_is_not_snapped_against_faces_it_cannot_load() -> None:
+    """A face declared with a URL and no asset_id is one we cannot paint AT ALL.
+    That is the LUMI0230/0231 story, not this one — snapping a role onto a
+    weight whose bytes we also lack would only invent a second falsehood."""
+    declared_only = [
+        {
+            "weight": 300,
+            "style": "normal",
+            "asset_id": None,
+            "source_url": "https://www.apollo.io/fonts/seasonmix-light.woff2",
+            "format": "woff2",
+        }
+    ]
+    result = normalize_evidence(
+        _apollo_evidence(declared_only),
+        brand_kit_id="brand_kit_apollo_d5_uncustodied",
+        version=1,
+        name="Apollo",
+        created_at=_CREATED_AT,
+    )
+    typography = result.brand_kit["tokens"]["typography"]
+
+    assert typography["type.stat"]["value"]["default"]["font_weight"] == 700
+    assert "LUMI0232" not in [d.get("code") for d in result.diagnostics]
+
+
+def test_the_nearest_custodied_weight_breaks_ties_toward_the_heavier_face() -> None:
+    from lumen_ingestion.normalizer.typography import _nearest_custodied
+
+    assert _nearest_custodied(700, [300]) == 300
+    assert _nearest_custodied(700, [400, 600]) == 600
+    assert _nearest_custodied(400, [300, 500]) == 500  # exact tie -> heavier
+    assert _nearest_custodied(500, [100, 900]) == 900  # tie at 400 -> heavier
+
+
 def test_normalizer_bakes_x_height_adjusted_ramp_and_metrics() -> None:
     """With measured metrics for the kit's heading family, the ramp values are
     reference-normalized (small x-height → larger pt) and the metrics block
