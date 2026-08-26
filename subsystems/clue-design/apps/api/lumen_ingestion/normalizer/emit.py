@@ -20,7 +20,12 @@ from .required import (
     REQUIRED_ASSET_TOKENS,
     REQUIRED_COLOR_TOKENS,
 )
-from .roles import DarkColorway, LightRoles, RoleAssignment
+from .roles import (
+    DECLARED_ROLE_CONFIDENCE,
+    DarkColorway,
+    LightRoles,
+    RoleAssignment,
+)
 
 _COLOR_ROLE_MAP = {
     "surface": "surface",
@@ -511,6 +516,11 @@ def _merge_style_tags(existing: list[str], tags: list[str]) -> list[str]:
 
 
 def _confidence_for(basis: str) -> float:
+    # The site stated this role in its own stylesheet (clone-fidelity F0.3). As good as a
+    # directly observed swatch and no better: 1.0 stays reserved for things that cannot be
+    # wrong, and a declaration can still be stale or aspirational.
+    if basis == "declared":
+        return DECLARED_ROLE_CONFIDENCE
     if basis == "evidence":
         return 0.9
     # Read off the brand's own rendered page, but a cluster representative

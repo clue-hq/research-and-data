@@ -18,12 +18,14 @@ from urllib.parse import urlparse
 from ..evidence import (
     BrandEvidence,
     ColorEvidence,
+    DeclaredRoleEvidence,
     EvidencePointer,
     FontEvidence,
     FontFaceEvidence,
     ImageEvidence,
     LogoEvidence,
     NarrativeEvidence,
+    StateStyle,
     TypeSample,
 )
 from .budget import MAX_NAMED_DROPS, short_url
@@ -373,6 +375,34 @@ def build_evidence(outcome, *, core, store_root: str, reporter) -> BrandEvidence
         "confidence": 0.7,
     }
 
+    # Source-truth styling (clone-fidelity F0.3): what the site DECLARED, carried through
+    # untouched. Both lists are empty for a page that declares neither, which is what keeps
+    # every pre-F0.3 fixture normalizing byte-identically.
+    declared = [
+        DeclaredRoleEvidence(
+            role=role.role,  # type: ignore[arg-type]
+            property_name=role.property_name,
+            value=role.value,
+            pointer=_pointer(f"css :: {role.property_name}"),
+        )
+        for role in parsed.declared_roles
+    ]
+    state_styles = [
+        StateStyle(
+            selector=state.selector,
+            state=state.state,  # type: ignore[arg-type]
+            scheme=state.scheme,  # type: ignore[arg-type]
+            background=state.background,
+            color=state.color,
+            border_color=state.border_color,
+            box_shadow=state.box_shadow,
+            opacity=state.opacity,
+            text_decoration=state.text_decoration,
+            pointer=_pointer(state.locator),
+        )
+        for state in parsed.state_styles
+    ]
+
     return BrandEvidence(
         source=source,
         colors=colors,
@@ -382,6 +412,8 @@ def build_evidence(outcome, *, core, store_root: str, reporter) -> BrandEvidence
         images=images,
         numbers=geometry.numbers,
         shadows=geometry.shadows,
+        declared_roles=declared,
+        state_styles=state_styles,
         geometry=geometry.evidence(),
         screenshots=screenshots,
         narrative=narrative,
