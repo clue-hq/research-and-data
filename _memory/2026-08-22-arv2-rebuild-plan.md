@@ -136,3 +136,20 @@ audit). Eve replay semantics verified: completed steps replay recorded results; 
 RE-RUN ⇒ idempotency keys — same law our snapshots already implement. Kept from the review: the
 10-account benchmark (accuracy/citation coverage/latency/cost), pointed at ARV2 instead of Eve.
 Backlog ideas: schedules for freshness re-research; evals-directory convention over M9.6.
+
+## Addendum 2026-08-25 — live sandbox sample PASSED (+2 founder rulings)
+
+Founder rulings this session: (1) **discovery is Exa's job; Apollo is committee-only** (revises the
+v1 plan's Apollo-primary discovery); (2) three principles pinned: find accounts -> deep research
+(with user confirmation between) -> populate the frontend through the DB schemas. Eve stays
+declined; adopt its compaction-policy + context-layout + evals-directory ideas only.
+
+Ran the live ARV2 pipeline sample in `.context/arv2-sample-20260825/` (Exa key from workspace .env;
+Apollo key still absent -> dry request emitted). 7 schema-bounded deep calls + discovery, $0.101
+total, 19 claims with quote+URL, stamped per the matrix. **Headline: caught the CEO transition the
+static dossier missed — Gaye Pennington retired June 2026; Erika Noll is the new CEO** (practice FB
+video + her LinkedIn). Answer-key comparison + wire-contract lessons in RESULTS.md there; the
+critical ones: Exa outputSchema hard budget = 10 properties/depth 2 (400 otherwise), output.content
+is a dict, 10 req/s account limit, deep calls 3-12s at $0.012-0.021. One quote/URL-mismatch row
+observed -> validates the verify_links audit skill. Day-1 build de-risked: the exact tool payloads
+are now proven against the live API.
