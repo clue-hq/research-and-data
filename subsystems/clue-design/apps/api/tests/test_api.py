@@ -5297,6 +5297,10 @@ def test_image_provider_chat_style_request_bodies_are_unchanged(
             }
         ],
         "modalities": ["image", "text"],
+        # W1.7(b) (merged after this test was written on the v2 lane): a
+        # REQUESTED ratio rides the chat body structurally; a no-ratio body
+        # stays byte-identical (pinned by the W1.7 tests).
+        "image_config": {"aspect_ratio": "16:9"},
     }
 
     # (2) reference-conditioned generation — multimodal parts, framing first.
@@ -5330,6 +5334,8 @@ def test_image_provider_chat_style_request_bodies_are_unchanged(
             }
         ],
         "modalities": ["image", "text"],
+        # W1.7(b): the requested ratio rides structurally here too.
+        "image_config": {"aspect_ratio": "3:2"},
     }
 
 

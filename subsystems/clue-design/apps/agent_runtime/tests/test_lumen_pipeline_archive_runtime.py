@@ -926,7 +926,10 @@ def test_settings_validate_reasoning_effort(monkeypatch):
     # the visual reviewer into a myopic identical-call loop — reproduced twice;
     # healthy at medium; "high" strictly clears the same bar). Blank remains the
     # deliberate "give me the platform baseline" escape hatch.
-    assert Settings(_env_file=None).lumen_agent_reasoning == "high"
+    # D1 (founder, 2026-08-26): medium is the shipped default — the Apollo A/B
+    # showed medium halves call latency vs high. Supersedes the earlier "high"
+    # default this test pinned on the v2 lane.
+    assert Settings(_env_file=None).lumen_agent_reasoning == "medium"
     with pytest.raises(Exception) as excinfo:
         Settings(_env_file=None, lumen_agent_reasoning="turbo")
     assert "low|medium|high" in str(excinfo.value)

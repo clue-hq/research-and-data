@@ -165,6 +165,9 @@ def test_flag_on_author_toolset_includes_render(tmp_path, monkeypatch) -> None:
         "validate_binding_set",
         "preflight_design",
         "render_preview",
+        # v2 logo-ladder merge (32e067aad): the author can fetch a target
+        # account's real logo mid-turn on both lanes.
+        "fetch_logo",
     }
     # The orchestrator keeps its own render — it is still the verification step
     # AND the P0.4 checkpoint trigger.
