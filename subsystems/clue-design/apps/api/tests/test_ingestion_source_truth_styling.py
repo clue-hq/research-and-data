@@ -18,6 +18,7 @@ Plus the two long-standing parser crashes from `design/research/RUN-REPORT.md`.
 from __future__ import annotations
 
 import tempfile
+from pathlib import Path
 
 import pytest
 
@@ -26,7 +27,7 @@ from lumen_ingestion.capture import CaptureOutcome, build_evidence
 from lumen_ingestion.capture.budget import MAX_STATE_STYLE_COUNT
 from lumen_ingestion.capture.declared_roles import role_for_property_name
 from lumen_ingestion.capture.parse import parse_color_value, parse_site
-from lumen_ingestion.capture.snapshot import SiteSnapshot, Stylesheet
+from lumen_ingestion.capture.snapshot import SiteSnapshot, Stylesheet, load_snapshot
 from lumen_ingestion.evidence import (
     ColorEvidence,
     DeclaredRoleEvidence,
@@ -379,6 +380,30 @@ def test_evidence_without_declared_roles_normalizes_exactly_as_before() -> None:
     assert _assignment(report, "surface.page")["basis"] == "evidence"
     assert _assignment(report, "surface.brand")["value"] == "#0055FF"
     assert {a["basis"] for a in report["role_assignments"]}.isdisjoint({"declared"})
+
+
+def test_the_harvested_fixture_changes_attribution_but_not_a_single_value() -> None:
+    """The captured insighthealth.ai page declares `--brand` and `--ink`.
+
+    Both were ALREADY winning their roles through clustering, so the swatches are unchanged
+    — what changes is that the kit now says WHY: the site declared them. This is the shape
+    every pre-F0.3 capture takes through this slice, and the reason the golden bundles did
+    not have to be regenerated.
+    """
+    snapshot = load_snapshot(
+        Path(__file__).resolve().parent
+        / "fixtures"
+        / "ingestion"
+        / "snapshots"
+        / "insight_static.json"
+    )
+    report = _report(_evidence(snapshot))
+    brand = _assignment(report, "surface.brand")
+    text = _assignment(report, "text.primary")
+    assert (brand["basis"], brand["pointer"]) == ("declared", "custom-prop:--brand")
+    assert (text["basis"], text["pointer"]) == ("declared", "custom-prop:--ink")
+    assert brand["value"] == "#12EAB1"  # exactly what clustering used to return
+    assert text["value"] == "#1D1C1D"
 
 
 def test_a_declared_role_leaves_its_cluster_out_of_the_extras() -> None:
