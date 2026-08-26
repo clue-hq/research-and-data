@@ -115,11 +115,21 @@ class DesignRunStatus(StrEnum):
 
 
 class DesignIngestionKind(StrEnum):
-    """``design_ingestion_kind`` — brand-kit ingestion input kinds."""
+    """``design_ingestion_kind`` — brand-onboarding job input kinds.
+
+    ``AD_ASSETS`` (Brand Ad Assets v1, W2) is the fourth: harvest → filter/dedupe → custody →
+    distill → pre-generate for one brand's own published ads. It rides ``design_ingestion_job``
+    rather than a private job table because everything that made ingestion durable — fleet
+    dispatch, the generation fence, stage reporting, the stranded-work reaper — is the same
+    machinery this lane needs, and a second copy of it would be a second thing to keep right.
+    The member is APPENDED: ``tests/design/test_design_schema_db`` asserts label ORDER against
+    the Postgres type lock-step, so its position here is the migration's position too.
+    """
 
     WEBSITE = "website"
     PDF = "pdf"
     ASSET_UPLOAD = "asset_upload"
+    AD_ASSETS = "ad_assets"
 
 
 class DesignIngestionStatus(StrEnum):

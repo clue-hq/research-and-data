@@ -20,6 +20,11 @@ from __future__ import annotations
 from clue_toolbelt import Tool
 
 from .accounts import CreateWebAccountTool, DeleteWebAccountTool, UpdateWebAccountTool
+from .ad_assets import (
+    LinkAdPregeneratedAssetsTool,
+    PublishAdDnaCardTool,
+    RecordAdCreativesTool,
+)
 from .assets import (
     DeleteAssetTool,
     RegisterAssetRecordTool,
@@ -52,7 +57,12 @@ from .documents import (
     SetLayoutManagedEditingTool,
     UndoDocumentTool,
 )
-from .ingestion import IngestAssetsTool, IngestPdfTool, IngestWebsiteTool
+from .ingestion import (
+    IngestAdAssetsTool,
+    IngestAssetsTool,
+    IngestPdfTool,
+    IngestWebsiteTool,
+)
 from .personalization import (
     AdvanceInstanceBatchTool,
     AdvanceWebBatchTool,
@@ -138,6 +148,12 @@ DESIGN_TOOL_TYPES = (
     AdvanceInstanceBatchTool,
     CreateWebBatchTool,
     AdvanceWebBatchTool,
+    # Brand Ad Assets v1 W2 — the ad-assets lane (flag-gated at its route, registered here
+    # unconditionally so the platform's C6 authority audit stays a complete statement).
+    IngestAdAssetsTool,
+    RecordAdCreativesTool,
+    PublishAdDnaCardTool,
+    LinkAdPregeneratedAssetsTool,
 )
 
 #: The registered names, in registration order. The platform's authority map and the design-side

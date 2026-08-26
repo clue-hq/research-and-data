@@ -405,6 +405,35 @@ class IngestWebsiteRequest(BaseModel):
     force_render: bool = False
 
 
+class OnboardAdAssetsRequest(BaseModel):
+    """One Brand Ad Assets onboarding job (spec §5 W2), behind ``LUMEN_BRAND_AD_ASSETS``.
+
+    **Own ads only** (ruling D2). The advertiser is identified by the CLIENT's own domain or
+    LinkedIn page id; there is no competitor field, and adding one is a deliberate per-client
+    opt-in that v1 does not build. Exactly one selector is required — the route refuses both
+    and neither, because guessing which one a caller meant would spend a vendor credit on a
+    question nobody asked.
+
+    ``brand_kit_id`` / ``brand_kit_version`` name the kit this harvest is FOR. It is required
+    because the ad-DNA card pins the kit version it was distilled against: a card that cannot
+    say which brand it describes is a card no turn can safely be conditioned on.
+    """
+
+    brand_kit_id: str
+    brand_kit_version: int
+    company_domain: Optional[str] = None
+    page_id: Optional[str] = None
+    #: Overrides the inferred company name the thought-leader filter compares against. Useful
+    #: when a page's own creatives are outnumbered by promoted personal posts.
+    advertiser_name: Optional[str] = None
+    #: Bounded spend: ~24–25 ads and ~1 vendor credit per page.
+    max_pages: int = 3
+    max_creatives: int = 15
+    date_filter: Optional[str] = None
+    #: The card lineage to append to. Defaults to one card per brand kit.
+    card_id: Optional[str] = None
+
+
 class SetBrandKitApprovalRequest(BaseModel):
     approval_status: Literal["approved", "draft"]
 

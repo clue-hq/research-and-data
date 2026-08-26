@@ -113,6 +113,27 @@ class Settings(BaseSettings):
     lumen_ingestion_brief: bool = False
     lumen_ingestion_brief_model: str = "x-ai/grok-4.5"
 
+    # --- Brand Ad Assets v1 (docs/brand-ad-assets-v1-spec.md §5 W2) ---
+    # THE lane flag. OFF (the default) → the whole ad-assets substrate is absent: the
+    # onboarding route 404s exactly like an unregistered path, no ad-assets ingestion job
+    # can be created, and nothing in the lane's tables is ever read or written. ON → the
+    # harvest → filter/dedupe → custody → distill → pre-generate job becomes reachable.
+    # Named without an `_ENABLED` suffix to match every other switch in this file
+    # (`lumen_ingestion_describe`, `lumen_agent_fast_loop`, …).
+    lumen_brand_ad_assets: bool = False
+    # D3: Adyntel is the v1 ad-library fetch vendor, wired behind the provider seam in
+    # `lumen_ingestion.ad_library`. CREDENTIALS COME FROM THE ENVIRONMENT ONLY — they are
+    # never defaulted to a real value here, never logged, and never committed. Unset (the
+    # default) makes the provider raise the typed `AdLibraryCredentialsMissing` rather than
+    # attempting an unauthenticated call.
+    adyntel_api_key: str = ""
+    adyntel_email: str = ""
+    adyntel_base_url: str = "https://api.adyntel.com"
+    adyntel_timeout_s: float = 60.0
+    # The vision model that distils harvested creatives into the ad-DNA card. Same shape and
+    # same gateway as the asset describer above (OpenRouter chat-completions, multimodal).
+    lumen_ad_dna_model: str = "x-ai/grok-4.5"
+
     # --- Agent runtime (lumen_deepagent) ---
     # OpenRouter is the SOLE LLM gateway: the model id must be "openai:<id>" and
     # init_model errors without OpenRouter creds. Blank/unset base_url falls back

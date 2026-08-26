@@ -150,6 +150,7 @@ from .models import (
     GenerateQrRequest,
     GenerateBrandKitRequest,
     IngestWebsiteRequest,
+    OnboardAdAssetsRequest,
     PreflightRequest,
     PreflightPreviewRequest,
     ReplaceSceneRequest,
@@ -164,6 +165,7 @@ from lumen_ingestion.describe import DescriptionStore
 from lumen_ingestion.jobs import IngestionJobStore
 from lumen_ingestion.jobs import new_id as ingestion_new_id
 from lumen_ingestion.logo_policy import extend_allowed_backgrounds
+from lumen_ingestion.ad_library.onboarding import run_ad_assets_onboarding
 from lumen_ingestion.pipeline import (
     run_asset_ingestion,
     run_pdf_ingestion,
@@ -562,6 +564,7 @@ _INGESTION_TOOLS = {
     "website": "design_ingest_website",
     "pdf": "design_ingest_pdf",
     "asset_upload": "design_ingest_assets",
+    "ad_assets": "design_ingest_ad_assets",
 }
 
 
@@ -1865,6 +1868,87 @@ def create_app(
             },
         )
         return {"schema_version": 1, "job": ingestion_job_dto(job)}
+
+    # --- Brand Ad Assets v1 W2 (flag-gated: LUMEN_BRAND_AD_ASSETS) ---------------------------
+    #
+    # The routes below are REGISTERED ONLY WHEN THE FLAG IS ON. That is deliberately stronger
+    # than a 403 inside a live handler: with the flag off the paths do not exist, so the app's
+    # surface — its route table, its OpenAPI schema, every 404 — is byte-identical to an app
+    # built without this lane at all. Nothing else in the app reads the lane's tables, so flag
+    # off is genuinely zero behaviour change and not merely a refusal.
+    if settings.lumen_brand_ad_assets:
+
+        @app.post("/brand-ad-assets/onboard")
+        def onboard_ad_assets(
+            payload: OnboardAdAssetsRequest,
+            repo: HybridRepository = Depends(repository),
+        ) -> JsonObject:
+            """Offer one ad-assets onboarding job (harvest → distil → pre-generate).
+
+            Like the three brand-kit ingest routes, this does not do the work: it writes the
+            job row and its ``design_job`` fleet task in one transaction and returns the job
+            reference. A leased worker runs the pipeline; poll it at
+            ``GET /brand-kits/ingest/{job_id}`` — it is an ingestion job, of a fourth kind.
+
+            Own ads only (D2): exactly one of ``company_domain`` / ``page_id``, both naming the
+            CLIENT's own advertiser. There is no competitor input in v1.
+            """
+            domain = (payload.company_domain or "").strip()
+            page = (payload.page_id or "").strip()
+            if bool(domain) == bool(page):
+                raise HTTPException(
+                    status_code=422,
+                    detail={
+                        "code": "ad_assets.advertiser_ambiguous",
+                        "message": (
+                            "supply exactly one of company_domain or page_id — the advertiser "
+                            "must be unambiguous before any vendor credit is spent"
+                        ),
+                    },
+                )
+            if payload.max_pages < 1 or payload.max_creatives < 1:
+                raise HTTPException(
+                    status_code=422,
+                    detail={
+                        "code": "ad_assets.bad_bounds",
+                        "message": "max_pages and max_creatives must both be at least 1",
+                    },
+                )
+            # Fail here rather than in the worker: an unknown kit would only surface as a
+            # foreign-key error at the very end, after the harvest had already been paid for.
+            repo.require_brand_kit(payload.brand_kit_id, payload.brand_kit_version)
+
+            job = _offer_ingestion(repo, "ad_assets", payload.model_dump())
+            return {"schema_version": 1, "job": ingestion_job_dto(job)}
+
+        @app.get("/brand-ad-assets/{brand_kit_id}")
+        def get_ad_assets_lane(
+            brand_kit_id: str, repo: HybridRepository = Depends(repository)
+        ) -> JsonObject:
+            """The lane's current state for one brand kit: latest card + its pre-generated assets.
+
+            An un-harvested brand answers ``card: null`` with an empty asset list rather than a
+            404: "this brand has no ad DNA yet" is an ordinary state of the world for every
+            consumer of this lane, and a 404 would make it look like a mistake.
+            """
+            from lumen_ingestion.ad_library.store import AdAssetsStore
+
+            store = AdAssetsStore(workspace_id=repo.workspace_id)
+            card = store.latest_card(brand_kit_id=brand_kit_id)
+            pregenerated = (
+                store.list_pregenerated(
+                    card_id=card["card_id"], card_version=int(card["version"])
+                )
+                if card
+                else []
+            )
+            return {
+                "schema_version": 1,
+                "brand_kit_id": brand_kit_id,
+                "card": card,
+                "pregenerated_assets": pregenerated,
+                "creatives": store.list_creatives(limit=50),
+            }
 
     @app.get("/brand-kits/ingest")
     def list_ingestion_jobs(
@@ -8999,6 +9083,9 @@ def execute_ingestion_job(
         DesignIngestionKind.WEBSITE: run_website_ingestion,
         DesignIngestionKind.PDF: run_pdf_ingestion,
         DesignIngestionKind.ASSET_UPLOAD: run_asset_ingestion,
+        # Brand Ad Assets v1 W2. Same signature, same never-raises contract, same fence — the
+        # lane is a fourth ingestion kind rather than a second job system (see the enum).
+        DesignIngestionKind.AD_ASSETS: run_ad_assets_onboarding,
     }[kind]
     runner(
         str(_host_engine_cache_root(host, workspace_id)),
