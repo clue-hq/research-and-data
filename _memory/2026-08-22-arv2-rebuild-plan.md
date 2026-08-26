@@ -153,3 +153,42 @@ critical ones: Exa outputSchema hard budget = 10 properties/depth 2 (400 otherwi
 is a dict, 10 req/s account limit, deep calls 3-12s at $0.012-0.021. One quote/URL-mismatch row
 observed -> validates the verify_links audit skill. Day-1 build de-risked: the exact tool payloads
 are now proven against the live API.
+
+## Addendum 2026-08-25b — two Opus sample runs complete (medical validation + Clue-ICP deliverable)
+
+Founder correction mid-stream: the sample client is CLUE ITSELF (find buyers for Clue), not the
+dossier's medical ICP. Run 1 (.context/arv2-clue-sample/, Charleston GI) kept as architecture
+validation — headline: picked account DISQUALIFIED (runs gGastro, proven 3 ways for $0.007 after
+the deep call said NOT FOUND; Apollo technographics independently showed Klara). Run 2
+(.context/arv2-clue-sample-v2/, THE deliverable): **Lassie (lassie.ai)** — dental-practice AI
+startup, $35M a16z Series A 3mo ago, 16 open roles/4 GTM, no ABM stack in 60 technologies, sales
+headcount 0, champion seat (Head of Mktg) VACANT, GTM Associate job req literally describes Clue's
+product. Committee: 10 mapped to personas; CEO steijn@lassie.ai + founding GTM max@golassie.com
+(NOTE different domain — deliverability trap) both VERIFIED emails, 2 credits. 52 claims, 100% on
+registered field keys, 0 check_claim_writable failures, all with quote+URL. 9 proposed fields
+(vertical_saas pack + canonical account.customer_count etc.) + **Persona enum lacks `user` — core
+contract-delta needed**. Dossier-bar verdict: met on structure/evidence/depth; one structural gap =
+no registry-grade person identity anchor for startups (no NPI equivalent; LinkedIn URL is closest).
+
+Costs (measured): run 2 spend $0.23 + 3 credits. Production: **$0.090/account + 3 credits**;
+two-pass tiering @20% deep = **$0.025/account**; run-1 qualifier-first probe makes a disqualified
+account cost $0.0077 + 0 credits. 100 accounts ≈ $7.82-14.52.
+
+ARV2 build corrections learned (paid for, do not relearn):
+1. Exa deep WITHOUT outputSchema returns NO output at all (billed anyway). THE pattern: one
+   deep-reasoning call with a SINGLE free-form string property ("report") — uncapped cited
+   markdown, dodges the 10-property budget. `deep` vs `deep-reasoning` output shapes differ
+   (string vs {"value":...}); handle both. Cost scales with pages retrieved (16→$0.021,
+   25→$0.030), not list price. `deep` (lite) is a trap: cost-similar, asserted stale facts run 2's
+   deep-reasoning refused.
+2. Structuring: disable reasoning tokens for extraction (gpt-5-mini reasoning:minimal = 35%
+   cheaper, 1.7x faster, +75% claims; GLM-4.7 slower/pricier and emitted wrong JSON keys run-2;
+   GLM silently returned EMPTY with reasoning on run-1). Structuring is 82% of wall clock.
+3. write_claims MUST take a closed field-key enum from the registry (run-1's free-text key let the
+   model invent 65 one-off keys); run-2's field_catalog approach → 100% registered keys.
+4. Own-site /contents fetch FIRST ($0.004 = richest artifact), then qualifier probe, then Apollo,
+   then the one deep call. Don't build own search loop ($0.061 vs $0.021 measured).
+5. Apollo: same-name org contamination live (pet-insurance Lassie people in committee);
+   departmental_head_count contradicts its own people index; match can return people under a
+   different org id. OpenRouter BYOK: real cost is cost_details.upstream_inference_cost
+   (usage.cost=0 under-reports 24%).
