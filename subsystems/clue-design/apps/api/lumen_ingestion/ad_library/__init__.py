@@ -10,12 +10,30 @@ declares the seam (:class:`~.provider.AdLibraryProvider`); ``adyntel`` is the on
 implementation of it (ruling D3), reached only through :func:`~.provider.resolve_provider`.
 Meta and Google fetchers are seam-ready and not built (spec §7).
 
+**Advertiser IDENTITY is resolved before the harvest, by a second, independent seam** (W5/R3-A).
+``company_identity`` declares it and ``pdl`` is its one v1 implementation, arranged exactly like
+the pair above. The lane resolves the client's domain to a verified LinkedIn page id and
+harvests THAT, instead of handing the question to the ad library and believing the answer — and
+whichever way identity was settled, no creative is kept unless the harvested ads' advertiser
+name agrees with the name that was resolved.
+
 Every module here is import-cheap: ``httpx`` is imported lazily on the one network path, so
 importing this package from a route, a worker or a test drags in no transport.
 """
 
 from __future__ import annotations
 
+from .company_identity import (
+    AdvertiserNameCheck,
+    AdvertiserResolution,
+    CompanyIdentity,
+    CompanyIdentityCredentialsMissing,
+    CompanyIdentityError,
+    CompanyIdentityResolver,
+    check_advertiser_names,
+    company_name_key,
+    resolve_company_identity_resolver,
+)
 from .provider import (
     AdLibraryAd,
     AdLibraryCredentialsMissing,
@@ -31,5 +49,14 @@ __all__ = [
     "AdLibraryError",
     "AdLibraryPage",
     "AdLibraryProvider",
+    "AdvertiserNameCheck",
+    "AdvertiserResolution",
+    "CompanyIdentity",
+    "CompanyIdentityCredentialsMissing",
+    "CompanyIdentityError",
+    "CompanyIdentityResolver",
+    "check_advertiser_names",
+    "company_name_key",
+    "resolve_company_identity_resolver",
     "resolve_provider",
 ]
