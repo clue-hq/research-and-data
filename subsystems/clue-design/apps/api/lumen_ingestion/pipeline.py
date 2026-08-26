@@ -347,9 +347,8 @@ def _persist_site_snapshots(
     *,
     workspace_id: str,
     job_id: str,
-    storage: Any,
+    storage: StorageBackend,
     diagnostics: "list[JsonObject]",
-    persist: Any = None,
 ) -> list[Any]:
     """Give the capture durable custody. A failure is a DIAGNOSTIC, not the end of the job.
 
@@ -366,10 +365,9 @@ def _persist_site_snapshots(
     snapshots = _outcome_snapshots(outcome)
     if not snapshots:
         return []
-    persist = persist or persist_site_snapshots
     try:
         return list(
-            persist(
+            persist_site_snapshots(
                 snapshots,
                 workspace_id=workspace_id,
                 job_id=job_id,
