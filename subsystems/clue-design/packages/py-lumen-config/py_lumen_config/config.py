@@ -190,6 +190,23 @@ class Settings(BaseSettings):
     adyntel_email: str = ""
     adyntel_base_url: str = "https://api.adyntel.com"
     adyntel_timeout_s: float = 60.0
+    # W5/R3-A: People Data Labs is the v1 COMPANY-IDENTITY resolver, wired behind the
+    # `lumen_ingestion.ad_library.company_identity` seam. It answers "which LinkedIn page is
+    # this domain" from a source that is NOT the ad library, so the harvest can be addressed by
+    # a verified page id instead of the vendor's own unverified domain resolution — which for
+    # apollo.io returned a real page with zero ads while the brand's true page had 135.
+    # CREDENTIALS COME FROM THE ENVIRONMENT ONLY, never defaulted to a real value, never
+    # logged. Blank (the default) makes the resolver raise the typed
+    # `CompanyIdentityCredentialsMissing`, which the lane DEGRADES from rather than failing on:
+    # the harvest falls back to vendor domain resolution and says, at the top level, that
+    # nothing verified it.
+    #
+    # `pdl_base_url` accepts either the API host or the full enrichment endpoint — the
+    # resolver's `_normalize_base_url` folds both to one URL, because both forms are already in
+    # live use and a doubled path would 404 in a way indistinguishable from "no such company".
+    pdl_api_key: str = ""
+    pdl_base_url: str = "https://api.peopledatalabs.com"
+    pdl_timeout_s: float = 30.0
     # The vision model that distils harvested creatives into the ad-DNA card. Same shape and
     # same gateway as the asset describer above (OpenRouter chat-completions, multimodal).
     lumen_ad_dna_model: str = "x-ai/grok-4.5"

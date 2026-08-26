@@ -189,13 +189,26 @@ def lane_on(monkeypatch: pytest.MonkeyPatch) -> None:
 def _no_live_http(monkeypatch: pytest.MonkeyPatch) -> None:
     """Nothing in this module may reach the network — asserted, not assumed.
 
-    The lane touches four external systems (the ad library, the creative CDN, the vision model
-    and the image model) and every one of them is stubbed by injection. This makes a missed
-    stub fail loudly instead of quietly making a real request: an earlier draft of these tests
-    monkeypatched a module attribute that was already bound as a default argument, so the
-    "stub" did nothing and the suite was fetching real LinkedIn CDN bytes.
+    The lane touches FIVE external systems (the company-identity resolver, the ad library, the
+    creative CDN, the vision model and the image model) and every one of them is stubbed by
+    injection. This makes a missed stub fail loudly instead of quietly making a real request: an
+    earlier draft of these tests monkeypatched a module attribute that was already bound as a
+    default argument, so the "stub" did nothing and the suite was fetching real LinkedIn CDN
+    bytes.
+
+    The identity resolver is stopped one step EARLIER than the others, by blanking its
+    credential rather than by refusing its transport. It has to be: R3-A's resolution step is
+    deliberately forgiving — an identity call that fails must degrade to the ad library's own
+    domain resolution rather than lose a harvest that would otherwise work — so a refused
+    request would be caught and turned into a fallback, and the loud guard above would go
+    unheard. With no key the resolver is never constructed at all, which is both louder and
+    closer to what these tests mean: they are about the harvest, not about identity.
     """
     import httpx
+
+    from py_lumen_config import settings as _settings
+
+    monkeypatch.setattr(_settings, "pdl_api_key", "", raising=False)
 
     def refuse(*args: Any, **kwargs: Any) -> Any:
         raise AssertionError(

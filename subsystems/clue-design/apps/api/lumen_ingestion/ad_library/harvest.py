@@ -33,6 +33,7 @@ __all__ = [
     "custody_creatives",
     "download_creative_bytes",
     "fetch_pages",
+    "normalize_name",
     "select_creatives",
 ]
 
@@ -241,10 +242,25 @@ def _drop_reason(ad: AdLibraryAd, company_name: str | None) -> str | None:
     return None
 
 
-def _normalize_name(name: str | None) -> str | None:
+def normalize_name(name: str | None) -> str | None:
+    """The subsystem's base company-name fold: whitespace collapsed, casefolded.
+
+    Public since W5/R3-A because it now has a SECOND consumer. The advertiser cross-check
+    (:func:`~.company_identity.company_name_key`) needs a stronger fold — punctuation and
+    legal-form suffixes go too — and builds it on top of this one rather than beside it, so the
+    filter below and the custody gate can never drift into disagreeing about what a name is.
+
+    Deliberately left exactly as strict as it was. The thought-leader rule compares a person's
+    name against a company's, where a fold that tried harder would start matching "Ramp" to a
+    "Ramp" employee, and the extra folding therefore lives in the caller that wants it.
+    """
     if name is None:
         return None
     return " ".join(name.split()).casefold() or None
+
+
+#: The pre-R3-A spelling, kept so nothing in this module had to change to gain a public name.
+_normalize_name = normalize_name
 
 
 # --------------------------------------------------------------------------------------
