@@ -10,6 +10,7 @@ from typing import Optional
 from py_lumen_obs import get_logger, log_span
 
 from ..paths import to_virtual
+from .asset_preview import rasterize_vector_preview
 from .substrate import LumenDesignTools, blob_path_for_digest
 
 logger = get_logger("lumen_agent.tools.view")
@@ -252,8 +253,18 @@ def _view_content(tools: LumenDesignTools, target: str) -> list[dict]:
         if not isinstance(entry, dict):
             entry = (tools.config.asset_library or {}).get(asset_id)
         resolved = None
+        record = entry.get("record") or {} if isinstance(entry, dict) else {}
         if isinstance(entry, dict):
-            resolved = tools._asset_preview_path(entry.get("record") or {})
+            resolved = tools._asset_preview_path(record)
+        if resolved is None and record:
+            # D3: a vector whose stored thumbnail is not pixels has no preview to
+            # resolve — rasterize it through the engine, once, and cache it. The
+            # agent must never place a mark it cannot look at (apollo.io, W5).
+            rasterized = rasterize_vector_preview(
+                tools.core, record, asset_id, tools.config.effective_asset_store_root
+            )
+            if rasterized is not None:
+                resolved = (str(rasterized), None, None)
         if resolved is None:
             available = _asset_manifest_ids(tools)
             content = [

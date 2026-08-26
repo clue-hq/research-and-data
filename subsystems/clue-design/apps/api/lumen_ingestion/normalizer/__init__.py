@@ -30,7 +30,7 @@ from .bands import build_band_surfaces
 from .font_metrics import build_type_size_ramp, glyph_gap_diagnostic
 from .geometry import MEASURED_CONFIDENCE, build_shadows
 from .scales import build_opacity, build_radii, build_spacing, build_strokes
-from .typography import build_type_styles, resolve_anchors
+from .typography import build_type_styles, custodied_weights, resolve_anchors
 
 _CONTRAST_MIN = 4.5
 
@@ -147,7 +147,10 @@ def normalize_evidence(
     if assist_result and assist_result.body_family and _family_in_evidence(evidence, assist_result.body_family):
         anchors.body_family = assist_result.body_family
     cta_color = _cta_color_token(semantic_light, brand_hex)
-    styles = build_type_styles(anchors, cta_color=cta_color)
+    styles, type_diags = build_type_styles(
+        anchors, cta_color=cta_color, custodied=custodied_weights(evidence)
+    )
+    diagnostics.extend(type_diags)
     type_pointer = _type_pointer(evidence)
     type_basis = "evidence" if evidence.type_samples or evidence.fonts else "default"
     for path, style in styles.items():

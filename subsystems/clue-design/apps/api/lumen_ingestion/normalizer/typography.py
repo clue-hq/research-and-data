@@ -113,9 +113,72 @@ def _round_half(value: float) -> float:
     return round(value * 2.0) / 2.0
 
 
-def build_type_styles(anchors: TypeAnchors, cta_color: str = "text.inverse") -> dict[str, dict]:
+def custodied_weights(evidence: BrandEvidence) -> dict[str, list[int]]:
+    """{family: sorted weights we actually hold BYTES for}.
+
+    Custody, not declaration: a face with a `source_url` and no `asset_id` is a
+    face the kit knows about but cannot paint, so it cannot honour a role.
+    A family with no custodied faces at all is absent from this map — that is
+    the LUMI0230 "font files not sourced" case, and it is not this function's
+    to re-report.
+    """
+    out: dict[str, list[int]] = {}
+    for font in evidence.fonts:
+        weights = sorted({
+            face.weight for face in font.faces
+            if face.asset_id is not None and face.weight
+        })
+        if weights:
+            out[font.family] = weights
+    return out
+
+
+def _nearest_custodied(target: int, available: list[int]) -> int:
+    """Closest shipped weight; ties go to the heavier face.
+
+    A tie means the target sits exactly between two faces (400 asked of
+    [300, 500]). Rounding up keeps a display/stat role as emphatic as the kit
+    can make it, which is the intent the role was carrying.
+    """
+    return min(available, key=lambda w: (abs(w - target), -w))
+
+
+def weight_snap_diagnostic(family: str, role: str, declared: int, actual: int) -> dict:
+    """One LUMI0232 advisory per role whose declared weight the kit cannot paint.
+
+    Severity `warning`: the kit is publishable and the role now renders exactly
+    what it declares — this records that the DECLARATION moved, so nobody reads
+    the emitted 300 as evidence the site's stat numerals were light.
+    """
+    return {
+        "code": "LUMI0232",
+        "severity": "warning",
+        "message": (
+            f"type.{role} asked for '{family}' weight {declared} but the kit custodies "
+            f"only {family} weight(s) that cannot serve it; the role now declares "
+            f"{actual}, the nearest face the kit actually ships — add a {declared} "
+            f"face to restore the intended weight"
+        ),
+    }
+
+
+def build_type_styles(
+    anchors: TypeAnchors,
+    cta_color: str = "text.inverse",
+    custodied: dict[str, list[int]] | None = None,
+) -> tuple[dict[str, dict], list[dict]]:
     """Return {role: {font_family, font_size, font_weight, line_height,
-    letter_spacing, color, font_asset}} for the 12 required roles."""
+    letter_spacing, color, font_asset}} for the 12 required roles, plus any
+    diagnostics raised while building them.
+
+    A role may only declare a (family, weight) pair the custodied faces can
+    actually paint. apollo.io's kit declared `type.stat` as seasonMix 700 while
+    custodying only a weight-300 face: the engine substituted the nearest face
+    and raised LUMS0104 at preflight, and the authoring agent — reading that as
+    "the kit cannot do bold" — abandoned the kit family entirely and invented
+    `Bricolage Grotesque`. Snapping the declaration at BIRTH means the role
+    always states the truth, so preflight has nothing to complain about.
+    """
     B = anchors.body_size
     H = anchors.headline_size
     hw = anchors.heading_weight
@@ -137,7 +200,9 @@ def build_type_styles(anchors: TypeAnchors, cta_color: str = "text.inverse") -> 
         ("legal", B * 0.6875, bw, 1.3, "text.muted", 0.0),
     ]
 
+    shipped = custodied or {}
     styles: dict[str, dict] = {}
+    diagnostics: list[dict] = []
     for role, size, weight, line_height, color, letter_spacing in spec:
         anchor = _anchor_for(role, anchors)
         final_size = size
@@ -155,6 +220,16 @@ def build_type_styles(anchors: TypeAnchors, cta_color: str = "text.inverse") -> 
                 final_ls = anchor.letter_spacing
         family = anchors.heading_family if role in _HEADING_ROLES else anchors.body_family
         font_asset = "brand" if role in _HEADING_ROLES else ("body" if anchors.body_family != anchors.heading_family else "brand")
+
+        # Never declare a weight this family cannot paint.
+        available = shipped.get(family)
+        if available and int(final_weight) not in available:
+            declared = int(final_weight)
+            final_weight = _nearest_custodied(declared, available)
+            diagnostics.append(
+                weight_snap_diagnostic(family, role, declared, final_weight)
+            )
+
         styles[f"type.{role}"] = {
             "kind": "style",
             "font_family": family,
@@ -165,7 +240,7 @@ def build_type_styles(anchors: TypeAnchors, cta_color: str = "text.inverse") -> 
             "color": color,
             "font_asset": font_asset,
         }
-    return styles
+    return styles, diagnostics
 
 
 def _anchor_for(role: str, anchors: TypeAnchors) -> TypeSample | None:

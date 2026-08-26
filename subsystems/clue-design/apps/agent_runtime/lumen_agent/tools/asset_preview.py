@@ -103,3 +103,127 @@ def asset_preview_path(
             dims.get("pixel_height"),
         )
     return None
+
+
+# ---------------------------------------------------------------------------
+# on-demand vector rasterization (D3)
+# ---------------------------------------------------------------------------
+
+VECTOR_MIME = "image/svg+xml"
+_RASTER_SIDE = 512.0
+_RASTER_PAGE_ID = "page_svg_raster"
+
+
+def vector_source_digest(record: Dict[str, Any]) -> Optional[str]:
+    """The digest of an SVG asset's own bytes, or None if it is not a vector."""
+    media = record.get("media") or {}
+    if media.get("mime_type") != VECTOR_MIME:
+        return None
+    return ((media.get("digest") or {}).get("value")) or location_digest(
+        media.get("location")
+    )
+
+
+def _raster_page() -> Dict[str, Any]:
+    return {
+        "id": _RASTER_PAGE_ID,
+        "name": "svg raster",
+        "size": {
+            "width": _RASTER_SIDE, "height": _RASTER_SIDE, "unit": "pt",
+            "preset": None, "orientation": "portrait",
+        },
+        "children": [], "bleed": None, "safe_area": None, "background": [],
+    }
+
+
+def _raster_image_node(asset_id: str) -> Dict[str, Any]:
+    return {
+        "id": "svg_raster_image",
+        "name": "svg raster image",
+        "kind": {"kind": "image", "asset_id": asset_id, "alt": None},
+        "children": [], "fills": [], "strokes": [],
+        "opacity": 1.0, "clip": False, "locked": False,
+        "layout": None, "computed": None,
+        "position_mode": "absolute",
+        "absolute_box": {"x": 0.0, "y": 0.0, "width": _RASTER_SIDE, "height": _RASTER_SIDE},
+        "size": {
+            "width": {"kind": "fixed", "value": _RASTER_SIDE},
+            "height": {"kind": "fixed", "value": _RASTER_SIDE},
+        },
+        "transform": {
+            "x": 0.0, "y": 0.0, "rotation": 0.0, "skew_x": 0.0, "skew_y": 0.0,
+            "flip_x": False, "flip_y": False,
+        },
+    }
+
+
+def rasterized_vector_path(store_root: Any, digest: str) -> Path:
+    """Where an on-demand vector raster is cached: content-addressed, so a
+    second `view` of the same artwork costs nothing and a changed asset (a new
+    digest) can never be served a stale picture."""
+    return Path(store_root) / "svg-preview" / f"{digest}.png"
+
+
+def rasterize_vector_preview(
+    core: Any, record: Dict[str, Any], asset_id: str, store_root: Any
+) -> Optional[Path]:
+    """Render an SVG asset to a cached PNG through the ENGINE, or None.
+
+    Why this exists: `asset_preview_path` correctly returns None for a vector
+    whose stored thumbnail is not pixels, and the agent was then told
+    `asset_unavailable` — so it PLACED marks it could never look at. That is how
+    apollo.io shipped an ad carrying OpenAI's logomark: the agent flagged the
+    logo twice from metadata alone ("renders as the asterisk-A mark, not a
+    wordmark") because it had no way to see it.
+
+    Ingestion already rasterizes SVGs two ways: the helper's standalone
+    `rasterize_svg_thumbnail` at ingest, and — when that declines — the
+    ingestion pipeline's engine round-trip (wrap the asset in a one-image scene
+    and export a PNG, the same `skia_safe::svg::Dom` path production rendering
+    uses). This is that second mechanism, on the view path, for the assets the
+    first one did not cover: pre-W1.2 records, and any SVG the standalone
+    thumbnailer declined to paint.
+
+    Deliberately NOT folded into `asset_preview_path`, which is documented as
+    cheap enough to call for every curated context and every contact sheet. An
+    engine round-trip belongs only where the agent deliberately looks at ONE
+    asset. Contact sheets keep omitting vectors and keep counting them.
+    """
+    digest = vector_source_digest(record)
+    if not digest:
+        return None
+    cached = rasterized_vector_path(store_root, digest)
+    if cached.exists():
+        return cached
+    try:
+        scene = core.new_scene("doc_svg_raster", "svg raster")
+        scene["pages"] = {_RASTER_PAGE_ID: _raster_page()}
+        scene.setdefault("assets", {})[asset_id] = record
+        applied = core.apply_operations(
+            scene,
+            [{
+                "kind": "insert_node",
+                "parent": {"kind": "page", "id": _RASTER_PAGE_ID},
+                "index": 0,
+                "node": _raster_image_node(asset_id),
+            }],
+        )
+        scene = applied.get("scene") or scene
+        export = core.export_preview(
+            scene, "png",
+            page_ids=[_RASTER_PAGE_ID],
+            raise_on_error=False,
+            asset_store_root=str(store_root),
+        )
+        for artifact in (export.get("export") or {}).get("artifacts") or []:
+            # The engine emits raw pixel bytes under `bytes` (a list of ints),
+            # never `bytes_base64` — reading the wrong key silently drops every
+            # rasterized preview.
+            raw = artifact.get("bytes")
+            if raw:
+                cached.parent.mkdir(parents=True, exist_ok=True)
+                cached.write_bytes(bytes(raw))
+                return cached
+    except Exception:  # noqa: BLE001 - an unviewable asset is the caller's honest answer
+        return None
+    return None

@@ -200,6 +200,8 @@ class LadderCandidate:
     is_mark: bool = False
     mark_reason: str | None = None
     shape_key: str | None = None
+    identity_anchored: bool = False
+    identity_anchor: list[str] = field(default_factory=list)
 
     def summary(self) -> dict:
         """A compact, JSON-safe view for tool output and needs_review lists."""
@@ -1030,6 +1032,16 @@ AUTO_ACCEPT_RUNGS = {
 }
 MARK_RUNGS = {"MANIFEST_ICON", "APPLE_TOUCH"}
 
+# Rungs where the SITE ITSELF declares "this is my identity" in machine-readable
+# markup: a <link rel=icon>, a web-app manifest, schema.org `Organization.logo`,
+# `og:logo`, the brand/press page, a file the page names as its logo. A partner
+# or integration glyph embedded in the body copy can never be any of these, so
+# arriving through one of these rungs is positive identity evidence on its own.
+DECLARED_IDENTITY_RUNGS = {
+    "FAVICON", "APPLE_TOUCH", "MANIFEST_ICON", "JSONLD_ORG", "OG_LOGO",
+    "BRAND_PAGE", "PAGE_LOGO_NAMED",
+}
+
 JUNK_TOKENS = (
     "app-store", "appstore", "app_store", "google-play", "googleplay", "play-store",
     "facebook", "twitter", "x-logo", "linkedin", "instagram", "youtube", "tiktok",
@@ -1064,6 +1076,21 @@ LOCKUP_NAME_TOKENS = (
     "wordmark", "horizontal", "lockup", "full", "primary", "logotype", "stacked",
 )
 LOCKUP_RANK = {"full_lockup": 3, "wordmark": 2, "symbol": 1, "unknown": 0}
+
+# Size sanity for the light/dark counterpart slots (D8, apollo.io 2026-08-26).
+# A 19x19 OpenAI partner glyph won apollo's `reversed` slot over their real
+# 303x303 asterisk, because placement (background luminance) short-circuited
+# every other check. These two floors are what "is this even a primary logo?"
+# means in pixels, and they are deliberately evaluated BEFORE the placement rule.
+#   * MIN_PX mirrors the mark slot's own long-standing `width >= 24` floor
+#     ("tiny sprites are UI chrome, not a brand mark") — icon-sized art is not a
+#     PRIMARY variant, whatever surface it happens to be painted on.
+#   * MAX_SHRINK is directional on purpose. A genuine alternate lockup is
+#     usually BIGGER than the primary (workspan.com's footer lockup is 203x32
+#     against a 46x26 header symbol), so growth is unbounded; it is dramatic
+#     SHRINKAGE that means "sprite / favicon / someone else's glyph".
+COUNTERPART_MIN_PX = 24
+COUNTERPART_MAX_SHRINK = 3.0
 PARTNER_LINK_HINTS = (
     "use-case", "use-cases", "partner", "partners", "partnership", "partnerships",
     "integration", "integrations", "customer", "customers", "case-study",
@@ -1218,6 +1245,69 @@ def _first_party(candidate: LadderCandidate, domain: str, page_hosts: set) -> tu
     if label and label in source:
         return True, "asset host contains the company name (CDN)"
     return False, f"third-party host {source}"
+
+
+def identity_anchor(
+    candidate: LadderCandidate, tokens: set, domain: str
+) -> list[str]:
+    """POSITIVE, asset-level evidence that this mark is THIS BRAND'S identity.
+
+    The apollo.io defect (2026-08-26) was not really "the reversed slot used
+    background luminance". It was that a third party's logo was a candidate for
+    a brand slot AT ALL. Website ingestion harvests every image in the page's
+    chrome — partner badges, integration glyphs, press logos, "powered by" marks
+    — and the ladder then classified from that raw pool with no notion of whose
+    mark each one is. Luminance is merely where it surfaced: an OpenAI glyph
+    happened to sit on a black panel, so it became apollo's reversed logo.
+
+    Scoring already knew this (an inline <svg> with no brand evidence takes -55),
+    but a penalty is not a veto: the INLINE_SVG rung is worth 98, so the glyph
+    still scored 43 and stayed viable. `slot_eligible` learned this same lesson
+    from the AWS/WorkSpan incident and states it outright — "down-scoring it is
+    not enough … the rule has to make it INELIGIBLE, not cheap". This function
+    is that rule, applied to identity rather than to junk.
+
+    Returns the reasons the asset is ours; empty means no evidence, which makes
+    it ineligible for EVERY logo slot. It stays a harvested image, never a mark.
+    """
+    why: list[str] = []
+    named = _brand_named(candidate, tokens)
+    if named:
+        why.append(f"asset name/alt/title carries the company name {named}")
+    if candidate.rung in DECLARED_IDENTITY_RUNGS:
+        why.append(f"declared by the site as its own identity ({candidate.rung})")
+    if _links_home(candidate.link_destination, domain):
+        why.append("wrapped in a link to the site root")
+    if candidate.scroll_swap_partner:
+        why.append("participates in a collapse-on-scroll logo swap")
+    if any(_has_token(_asset_hay(candidate), t) for t in LOGO_TOKENS):
+        why.append("asset names itself logo/brand/wordmark")
+    return why
+
+
+def anchor_identity(candidates: list[LadderCandidate], tokens: set, domain: str) -> None:
+    """Stamp `identity_anchored` across the pool, then propagate by artwork.
+
+    Two passes, because identity is transitive through the artwork itself: a
+    header logo that IS anchored proves that every other copy of the SAME vector
+    geometry (the footer recolour, the rendered-DOM duplicate) is also ours,
+    even where that copy carries no name and no link of its own.
+    """
+    for candidate in candidates:
+        candidate.identity_anchor = identity_anchor(candidate, tokens, domain)
+        candidate.identity_anchored = bool(candidate.identity_anchor)
+
+    anchored_shapes = {
+        c.shape_key for c in candidates if c.identity_anchored and c.shape_key
+    }
+    for candidate in candidates:
+        if candidate.identity_anchored or not candidate.shape_key:
+            continue
+        if candidate.shape_key in anchored_shapes:
+            candidate.identity_anchored = True
+            candidate.identity_anchor = [
+                "same vector artwork as an identity-anchored mark on this site"
+            ]
 
 
 def _partner_context(candidate: LadderCandidate) -> str | None:
@@ -1768,7 +1858,29 @@ def _counterpart_plausible(
     ratio was close and the filename said "black". The counterpart search needs
     its own identity constraint; the page-level check cannot help, because it
     only proves the PAGE is WorkSpan's, not the ASSET.
+
+    The checks are ordered by how much they PROVE, strongest first:
+
+      1. identical vector path geometry — the only positive PROOF here, and the
+         thing every check below is merely a proxy for;
+      2. brand-name mismatch, then partner-link context — whose asset is it;
+      3. size sanity — is it even primary-sized;
+      4. placement (the footer-as-oracle rule);
+      5. aspect ratio and opacity profile, the weakest proxies.
+
+    Size sits ABOVE placement because of apollo.io: background luminance alone
+    promoted a 19x19 OpenAI glyph to apollo's reversed primary logo, and it
+    shipped in an ad. Placement may override shape, never size.
     """
+    # The one POSITIVE identity signal the ladder computes, and the only PROOF
+    # in this function: identical vector path geometry with a different fill is
+    # precisely what a recoloured counterpart IS. It outranks the filename and
+    # aspect proxies below, which exist only to approximate it. Its absence
+    # proves nothing (a raster copy, or a reserialized SVG, has no shape key),
+    # so this can only ever admit.
+    if candidate.shape_key and candidate.shape_key == primary.shape_key:
+        return True, "identical vector path geometry to the primary - the same artwork recoloured"
+
     primary_named = _brand_named(primary, name_tokens)
     candidate_named = _brand_named(candidate, name_tokens)
     if primary_named and not candidate_named:
@@ -1785,6 +1897,24 @@ def _counterpart_plausible(
     cw, ch = candidate.width, candidate.height
     if not (pw and ph and cw and ch):
         return True, "dimensions unknown on one side - not rejected"
+
+    # SIZE SANITY — deliberately ABOVE the placement rule below (D8, apollo.io).
+    # Placement earns the right to ignore lockup SHAPE, never the right to hand
+    # a primary slot to art that is not primary-sized: apollo's `reversed` slot
+    # went to a 19x19 OpenAI partner glyph that happened to sit on a #000000
+    # panel, beating their own 303x303 asterisk, because background luminance
+    # was the only evidence anyone checked.
+    c_max, p_max = max(cw, ch), max(pw, ph)
+    if c_max < COUNTERPART_MIN_PX:
+        return False, (
+            f"{cw}x{ch} is icon-sized (under {COUNTERPART_MIN_PX}px) - UI chrome or a "
+            "third-party glyph, not a primary logo variant"
+        )
+    if c_max * COUNTERPART_MAX_SHRINK < p_max:
+        return False, (
+            f"{cw}x{ch} is more than {COUNTERPART_MAX_SHRINK:g}x smaller than the primary "
+            f"{pw}x{ph} - too small to be the same mark recoloured"
+        )
 
     # Placement evidence OUTRANKS shape similarity. If we watched this mark get
     # painted on a light footer it is the light asset, whether or not it is the
@@ -2055,6 +2185,7 @@ def resolve(
         })
 
     viable = [c for c in ranked if not c.fetch_error and c.score > 0 and c.first_party]
+    anchor_identity(ranked, name_tokens, domain)
 
     def label_all(primary_aspect):
         for candidate in viable:
@@ -2074,8 +2205,16 @@ def resolve(
         only header mark is a partner's, the tier fallbacks happily hand that
         slot to it. That is the AWS-as-WorkSpan failure with the brand-evidenced
         tier simply empty, so the rule has to make it INELIGIBLE, not cheap.
+
+        The third half (apollo.io, 2026-08-26) is IDENTITY: an asset carrying no
+        positive evidence of being THIS brand's mark fills no slot, whatever it
+        scores and whatever surface it is painted on. See `identity_anchor`.
         """
-        return not candidate.junk_hits and _partner_context(candidate) is None
+        return (
+            not candidate.junk_hits
+            and _partner_context(candidate) is None
+            and candidate.identity_anchored
+        )
 
     def brand_evidence(candidate) -> list[str]:
         """Positive, ASSET-level evidence this is OUR mark.
@@ -2171,6 +2310,13 @@ def resolve(
             if candidate is primary or candidate.variant != want:
                 continue
             if candidate.sha256 == primary.sha256:
+                continue
+            # The counterpart loop used to run over `non_marks` directly, so it
+            # was the ONE slot filler that never asked `slot_eligible` — junk
+            # tokens, partner links and (since apollo) identity anchoring were
+            # all enforced on every other slot and skipped on this one.
+            if not slot_eligible(candidate):
+                rejected.append(f"{candidate.url[-60:]} (not slot-eligible)")
                 continue
             ok, why = _counterpart_plausible(candidate, primary, name_tokens)
             if not ok:
@@ -2314,7 +2460,18 @@ def resolve(
     status = "resolved"
     if primary is None:
         status = "needs_review"
-        notes.append("no viable first-party candidate survived scoring")
+        # Distinguish "nothing scored" from "nothing was OURS" — the second is
+        # the identity-anchoring outcome, and an operator reading "survived
+        # scoring" about candidates that scored fine would be misled.
+        if viable and not any(c.identity_anchored for c in viable):
+            notes.append(
+                f"{len(viable)} first-party candidate(s) scored, but none carried any "
+                "evidence of being THIS brand's mark (no company name in the asset "
+                "name/alt/title, no favicon or other declared-identity rung, no link "
+                "to the site root) - every slot left empty rather than guessing"
+            )
+        else:
+            notes.append("no viable first-party candidate survived scoring")
     elif not identity["passed"]:
         status = "needs_review"
         chosen = {k: None for k in chosen}
@@ -2390,6 +2547,7 @@ def resolve(
             "fetched_ok": sum(1 for c in ranked if not c.fetch_error),
             "fetch_errors": sum(1 for c in ranked if c.fetch_error),
             "viable_first_party": len(viable),
+            "identity_anchored": sum(1 for c in viable if c.identity_anchored),
             "primary_selection_tier": primary_tier,
         },
     )
