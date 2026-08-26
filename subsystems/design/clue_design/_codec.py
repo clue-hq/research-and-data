@@ -14,7 +14,7 @@ endpoints already serve), so the port is a storage swap, not an API change:
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 JsonObject = dict[str, Any]
@@ -59,4 +59,4 @@ def as_datetime(value: object) -> datetime:
     UTC, and silently storing a local-clock instant would be the worse answer.
     """
     parsed = value if isinstance(value, datetime) else datetime.fromisoformat(str(value))
-    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=timezone.utc)
+    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)

@@ -127,7 +127,7 @@ def client(tmp_path: Path) -> TestClient:
 def test_ingest_website_happy_path_persists_kit_and_report(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    async def fake_capture(url, *, reporter, force_render=False):
+    async def fake_capture(url, *, reporter, force_render=False, page_urls=None):
         reporter("Visiting your website…", 0.05)
         return FakeCaptureOutcome()
 
@@ -186,7 +186,7 @@ def test_reingest_existing_website_kit_publishes_a_new_draft_version(
     """Slice 4: a client-supplied existing kit id means NEXT version, not a doomed
     create-at-version-1 collision. The human gate resets on the newly extracted draft."""
 
-    async def fake_capture(url, *, reporter, force_render=False):
+    async def fake_capture(url, *, reporter, force_render=False, page_urls=None):
         return FakeCaptureOutcome()
 
     _bypass_ssrf_guard(monkeypatch)
@@ -237,7 +237,7 @@ def test_reingest_existing_website_kit_publishes_a_new_draft_version(
 def test_ingested_kit_attaches_to_document(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    async def fake_capture(url, *, reporter, force_render=False):
+    async def fake_capture(url, *, reporter, force_render=False, page_urls=None):
         return FakeCaptureOutcome()
 
     _bypass_ssrf_guard(monkeypatch)
@@ -275,7 +275,7 @@ def test_ingested_kit_attaches_to_document(
 def test_capture_failure_marks_job_failed_no_kit(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    async def boom_capture(url, *, reporter, force_render=False):
+    async def boom_capture(url, *, reporter, force_render=False, page_urls=None):
         raise RuntimeError("capture exploded")
 
     _bypass_ssrf_guard(monkeypatch)
@@ -308,7 +308,7 @@ def test_capture_failure_marks_job_failed_no_kit(
 def test_stage_progression_reaches_preparing_before_success(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    async def fake_capture(url, *, reporter, force_render=False):
+    async def fake_capture(url, *, reporter, force_render=False, page_urls=None):
         reporter("Visiting your website…", 0.05)
         return FakeCaptureOutcome()
 
@@ -342,7 +342,7 @@ def test_stage_progression_reaches_preparing_before_success(
 
 
 def _capture_recording_force_render(seen: dict) -> Callable[..., Any]:
-    async def fake_capture(url, *, reporter, force_render=False):
+    async def fake_capture(url, *, reporter, force_render=False, page_urls=None):
         seen["force_render"] = force_render
         reporter("Visiting your website…", 0.05)
         return FakeCaptureOutcome(tier="rendered")

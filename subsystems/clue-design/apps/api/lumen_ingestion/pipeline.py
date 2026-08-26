@@ -25,7 +25,7 @@ import json
 import logging
 from functools import partial
 from pathlib import Path
-from typing import Any, Awaitable, Callable, Optional, Protocol
+from typing import Any, Awaitable, Callable, Optional, Protocol, Sequence
 
 from clue_storage import StorageBackend, storage_from_settings
 from lumen_api.database import NotFoundError
@@ -42,7 +42,12 @@ logger = logging.getLogger(__name__)
 
 class _CaptureCallable(Protocol):
     def __call__(
-        self, url: str, *, reporter: StageReporter, force_render: bool = ...
+        self,
+        url: str,
+        *,
+        reporter: StageReporter,
+        force_render: bool = ...,
+        page_urls: "Sequence[str] | None" = ...,
     ) -> Awaitable[Any]: ...
 
 
@@ -53,11 +58,17 @@ class _BuildEvidenceCallable(Protocol):
 
 
 def _default_capture(
-    url: str, *, reporter: StageReporter, force_render: bool = False
+    url: str,
+    *,
+    reporter: StageReporter,
+    force_render: bool = False,
+    page_urls: "Sequence[str] | None" = None,
 ) -> Awaitable[Any]:
     from .capture import capture_website
 
-    return capture_website(url, reporter=reporter, force_render=force_render)
+    return capture_website(
+        url, reporter=reporter, force_render=force_render, page_urls=page_urls
+    )
 
 
 def _default_build_evidence(
@@ -298,6 +309,22 @@ def _validation_diagnostics(validation: JsonObject) -> list[JsonObject]:
 # ---------------------------------------------------------------------------
 # Snapshot custody (clone-fidelity F0.1) — additive, loud, never fatal.
 # ---------------------------------------------------------------------------
+
+
+def _requested_page_urls(request: JsonObject) -> "list[str] | None":
+    """The extra pages this job asked for (F0.4), or ``None`` — the entry page alone.
+
+    Read off the durable job request rather than added to the route DTO: F0.4 is a PROVISION.
+    Nothing produces a page list yet (nav discovery is later work), and a request shape that
+    exists before a producer does is a shape nobody has tested against real input. Read
+    defensively for the same reason — the request is stored JSON, so a malformed value is a
+    thing that can happen, and it must not take an ingestion down with it.
+    """
+    raw = request.get("page_urls")
+    if not isinstance(raw, list):
+        return None
+    pages = [page for page in raw if isinstance(page, str) and page]
+    return pages or None
 
 
 def _outcome_snapshots(outcome: Any) -> list[Any]:
@@ -893,6 +920,7 @@ def _ingest(
     url = request["url"]
     requested_kit_id = request.get("brand_kit_id")
     requested_name = request.get("name")
+    page_urls = _requested_page_urls(request)
 
     # FOUNDER RULING (2026-08-20): website ingestion ALWAYS captures at the RENDERED tier —
     # "geometry needs a live page by definition". The brand's measured geometry (radii, stroke
@@ -915,9 +943,25 @@ def _ingest(
     # and drained asynchronously by a fleet worker and the checklist row streams its stage and
     # progress the whole time. If ingestion ever becomes synchronous again, this is the line
     # that makes it unaffordable.
-    outcome = asyncio.run(capture(url, reporter=reporter, force_render=True))
+    outcome = asyncio.run(
+        capture(url, reporter=reporter, force_render=True, page_urls=page_urls)
+    )
     evidence = build_evidence(
         outcome, core=core, store_root=cache_dir, reporter=reporter
+    )
+
+    # Give the capture itself durable custody (clone-fidelity F0.1) — the post-JS html, every
+    # stylesheet fetched, and the full-page screenshot, one row per captured page. Placed HERE,
+    # right after the snapshot is in scope and the evidence is built: the evidence is the job's
+    # product and must not be at risk from a byte-store hiccup, so this runs after it and cannot
+    # fail the job (see ``_persist_site_snapshots``).
+    snapshot_diagnostics: list = []
+    snapshot_refs = _persist_site_snapshots(
+        outcome,
+        workspace_id=repo.workspace_id,
+        job_id=job_id,
+        storage=blobs.storage,
+        diagnostics=snapshot_diagnostics,
     )
 
     # Persist DB asset records for everything the capture layer ingested so
@@ -1000,6 +1044,7 @@ def _ingest(
         + _validation_diagnostics(validation)
         + describe_diagnostics
         + brief_diagnostics
+        + snapshot_diagnostics
     )
 
     record = _publish_ingested_kit(
@@ -1012,7 +1057,7 @@ def _ingest(
         job_derived_id=requested_kit_id is None,
     )
 
-    evidence_json = _evidence_dump(evidence)
+    evidence_json = _evidence_dump(evidence, site_snapshots=snapshot_refs)
     return (record["brand_kit_id"], int(record["version"]), evidence_json)
 
 
@@ -1027,13 +1072,22 @@ def _kit_name(evidence: Any, url: str) -> str:
     return host or url
 
 
-def _evidence_dump(evidence: Any) -> Optional[str]:
-    """Dump BrandEvidence to JSON for the job row (it carries no raw bytes)."""
+def _evidence_dump(evidence: Any, *, site_snapshots: "list[Any] | None" = None) -> Optional[str]:
+    """Dump BrandEvidence to JSON for the job row (it carries no raw bytes).
+
+    ``site_snapshots`` (clone-fidelity F0.1) rides along on the website lane: the bounded refs
+    — snapshot id, page url, html digest, screenshot digest — for the pages this job captured,
+    so "what did this ingestion actually keep?" is answerable from the job row itself rather
+    than only by querying the snapshot table. ``evidence_json`` is the JOB's evidence payload,
+    not a serialized ``BrandEvidence`` (the ad-assets lane writes a step report into the same
+    column), which is why the key can live at the top level.
+    """
     if evidence is None:
         return None
-    if hasattr(evidence, "model_dump"):
-        return json.dumps(evidence.model_dump(), sort_keys=True, separators=(",", ":"))
-    return json.dumps(evidence, sort_keys=True, separators=(",", ":"))
+    payload = evidence.model_dump() if hasattr(evidence, "model_dump") else evidence
+    if site_snapshots is not None:
+        payload = {**payload, "site_snapshots": [ref.as_job_ref() for ref in site_snapshots]}
+    return json.dumps(payload, sort_keys=True, separators=(",", ":"))
 
 
 # ---------------------------------------------------------------------------

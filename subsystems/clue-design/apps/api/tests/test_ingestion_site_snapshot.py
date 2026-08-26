@@ -298,6 +298,8 @@ def test_a_persistence_failure_is_a_loud_diagnostic_and_keeps_the_ingestion(
     assert [d["code"] for d in diagnostics] == [SNAPSHOT_PERSIST_FAILED_CODE]
     assert diagnostics[0]["severity"] == "error"
     assert "on fire" in diagnostics[0]["message"]
+    # Row before blob, in ONE transaction: a failed put leaves no row claiming those bytes.
+    assert list_site_snapshot_refs(workspace_id=workspace_id, job_id=job_id) == []
 
 
 def test_the_snapshot_source_key_is_its_own(workspace_id: str, design_storage: FsStorage) -> None:
@@ -321,10 +323,121 @@ def test_the_snapshot_source_key_is_its_own(workspace_id: str, design_storage: F
 class _FakeOutcome:
     """CaptureOutcome-shaped stand-in carrying the snapshots the pipeline persists."""
 
-    def __init__(self, snapshots: list[SiteSnapshot]) -> None:
+    def __init__(self, snapshots: list[SiteSnapshot], diagnostics: list[dict] | None = None) -> None:
         self.snapshots = snapshots
         self.snapshot = snapshots[0]
         self.tier = snapshots[0].tier
         self.escalated = False
         self.escalation_reason: Any = None
-        self.diagnostics: list[dict] = []
+        self.diagnostics: list[dict] = diagnostics or []
+
+
+# --------------------------------------------------------------------------- #
+# The whole website lane, end to end — capture stubbed, everything else real
+# --------------------------------------------------------------------------- #
+
+
+def _load_evidence() -> Any:
+    import json
+    from pathlib import Path
+
+    from lumen_ingestion.evidence import BrandEvidence
+
+    fixture = (
+        Path(__file__).resolve().parent / "fixtures" / "ingestion" / "evidence_website_insight.json"
+    )
+    return BrandEvidence.model_validate(json.loads(fixture.read_text()))
+
+
+def _run_website_ingestion(
+    workspace_id: str,
+    design_storage: FsStorage,
+    tmp_path: Any,
+    outcome: _FakeOutcome,
+) -> dict:
+    """One real ``run_website_ingestion`` with only capture + evidence stubbed."""
+    from lumen_ingestion.pipeline import run_website_ingestion
+
+    store = IngestionJobStore(workspace_id=workspace_id)
+    job_id = store.create("website", {"url": "https://insighthealth.example/"})["job_id"]
+
+    async def _capture(url, *, reporter, force_render=False, page_urls=None):
+        reporter("Visiting your website…", 0.05)
+        return outcome
+
+    def _build_evidence(outcome_, *, core, store_root, reporter):
+        return _load_evidence()
+
+    run_website_ingestion(
+        str(tmp_path / "engine-cache"),
+        job_id,
+        capture=_capture,
+        build_evidence=_build_evidence,
+        workspace_id=workspace_id,
+        storage=design_storage,
+    )
+    return store.require(job_id)
+
+
+def test_a_website_ingestion_leaves_its_capture_durable_and_named_on_the_job(
+    workspace_id: str, design_storage: FsStorage, tmp_path: Any
+) -> None:
+    snapshot = _snapshot()
+    job = _run_website_ingestion(
+        workspace_id, design_storage, tmp_path, _FakeOutcome([snapshot])
+    )
+
+    assert job["status"] == "succeeded", job
+    refs = list_site_snapshot_refs(workspace_id=workspace_id, job_id=job["job_id"])
+    assert len(refs) == 1
+    assert refs[0].html_digest == _sha(HTML.encode("utf-8"))
+
+    # Readable from the job itself, not only from the snapshot table.
+    on_job = job["evidence"]["site_snapshots"]
+    assert on_job == [
+        {
+            "snapshot_id": refs[0].snapshot_id,
+            "page_url": snapshot.requested_url,
+            "html_digest": refs[0].html_digest,
+            "screenshot_digest": refs[0].screenshot_digest,
+        }
+    ]
+    # The bytes really are there: the round trip goes through durable custody, not memory.
+    loaded = read_site_snapshot(
+        design_storage, workspace_id=workspace_id, snapshot_id=refs[0].snapshot_id
+    )
+    assert loaded.html == HTML
+
+
+def test_a_non_entry_page_that_failed_to_capture_costs_a_page_not_the_job(
+    workspace_id: str, design_storage: FsStorage, tmp_path: Any
+) -> None:
+    """The F0.4 partial-capture contract, as the pipeline sees it.
+
+    ``capture_website`` already dropped the page that could not be fetched and left a LUMI0513
+    behind (see ``test_ingestion_capture``); what this asserts is the rest of the promise — the
+    entry page is still persisted, the diagnostic reaches the published kit, and the job is
+    green.
+    """
+    from lumen_api.design_store import HybridRepository
+
+    failure = {
+        "code": "LUMI0513",
+        "severity": "warning",
+        "message": "page capture failed for https://insighthealth.example/about",
+    }
+    job = _run_website_ingestion(
+        workspace_id,
+        design_storage,
+        tmp_path,
+        _FakeOutcome([_snapshot()], diagnostics=[failure]),
+    )
+
+    assert job["status"] == "succeeded", job
+    refs = list_site_snapshot_refs(workspace_id=workspace_id, job_id=job["job_id"])
+    assert [r.page_url for r in refs] == ["https://insighthealth.example/"]
+
+    kit = HybridRepository(workspace_id=workspace_id).require_brand_kit(
+        job["brand_kit_id"], job["brand_kit_version"]
+    )
+    assert any(d["code"] == "LUMI0513" for d in kit["diagnostics"]), kit["diagnostics"]

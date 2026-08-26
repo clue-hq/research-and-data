@@ -635,6 +635,96 @@ def test_capture_redirect_reguard_rejects_private() -> None:
 
 
 # --------------------------------------------------------------------------- #
+# F0.4 — the multi-page provision
+# --------------------------------------------------------------------------- #
+
+
+_MULTIPAGE_HTML = {
+    "/": "<html><head><title>Home</title></head><body><p>home page words</p></body></html>",
+    "/about": "<html><head><title>About</title></head><body><p>about page words</p></body></html>",
+}
+
+
+def _multipage_transport(broken: set[str] | None = None) -> httpx.MockTransport:
+    broken = broken or set()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path in broken:
+            raise httpx.ConnectError("connection refused", request=request)
+        if path in _MULTIPAGE_HTML:
+            return httpx.Response(200, html=_MULTIPAGE_HTML[path])
+        return httpx.Response(404)
+
+    return httpx.MockTransport(handler)
+
+
+def _capture(url: str, transport: httpx.MockTransport, **kwargs) -> CaptureOutcome:
+    async def run() -> CaptureOutcome:
+        async with httpx.AsyncClient(transport=transport) as client:
+            return await capture_website(
+                url, reporter=_noop, render_available=False, http_client=client, **kwargs
+            )
+
+    return asyncio.run(asyncio.wait_for(run(), timeout=10.0))
+
+
+def test_capture_website_yields_one_snapshot_for_the_entry_page_by_default() -> None:
+    outcome = _capture("https://example.com/", _multipage_transport())
+    assert [s.requested_url for s in outcome.snapshots] == ["https://example.com/"]
+    # `.snapshot` stays the entry page — every pre-F0.4 caller reads it and must not move.
+    assert outcome.snapshots[0] is outcome.snapshot
+
+
+def test_capture_website_captures_every_requested_page_in_order() -> None:
+    outcome = _capture(
+        "https://example.com/",
+        _multipage_transport(),
+        page_urls=["https://example.com/about"],
+    )
+    assert [s.requested_url for s in outcome.snapshots] == [
+        "https://example.com/",
+        "https://example.com/about",
+    ]
+    assert outcome.snapshot is outcome.snapshots[0]
+    assert "about page words" in outcome.snapshots[1].html
+
+
+def test_the_entry_page_is_captured_once_even_when_the_page_list_repeats_it() -> None:
+    outcome = _capture(
+        "https://example.com/",
+        _multipage_transport(),
+        page_urls=["https://example.com/", "https://example.com/about", "https://example.com/"],
+    )
+    assert [s.requested_url for s in outcome.snapshots] == [
+        "https://example.com/",
+        "https://example.com/about",
+    ]
+
+
+def test_a_non_entry_page_failure_is_a_loud_diagnostic_and_the_capture_continues() -> None:
+    outcome = _capture(
+        "https://example.com/",
+        _multipage_transport(broken={"/about"}),
+        page_urls=["https://example.com/about"],
+    )
+    assert [s.requested_url for s in outcome.snapshots] == ["https://example.com/"]
+    failures = [d for d in outcome.diagnostics if d["code"] == "LUMI0513"]
+    assert len(failures) == 1
+    assert "https://example.com/about" in failures[0]["message"]
+    assert failures[0]["severity"] == "warning"
+
+
+def test_an_entry_page_failure_still_fails_the_whole_capture() -> None:
+    with pytest.raises(httpx.ConnectError):
+        _capture(
+            "https://example.com/",
+            _multipage_transport(broken={"/"}),
+            page_urls=["https://example.com/about"],
+        )
+
+
+# --------------------------------------------------------------------------- #
 # evidence_builder
 # --------------------------------------------------------------------------- #
 
