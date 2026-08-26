@@ -309,7 +309,7 @@ def custody_creatives(
     fetched_at: str,
     provider_name: str,
     advertiser_page_id: str | None,
-    fetch: Callable[[str], tuple[bytes, str]] = download_creative_bytes,
+    fetch: Callable[[str], tuple[bytes, str]] | None = None,
     max_bytes: int | None = None,
 ) -> CustodyOutcome:
     """Download every kept creative and give it a design asset record.
@@ -328,6 +328,12 @@ def custody_creatives(
     raised: the harvest's value is the creatives it DID get, and losing eleven because the
     twelfth link rotted would be the worst possible trade.
     """
+    # Resolved at CALL time, never bound as a default argument. A default is captured when the
+    # module is imported, so ``fetch=download_creative_bytes`` in the signature would make this
+    # function unpatchable from the outside — and the failure mode of that is a test suite
+    # quietly making real requests to a real CDN, which is the one thing this seam exists to
+    # make impossible.
+    fetch = fetch or download_creative_bytes
     outcome = CustodyOutcome()
     for ad in selection.kept:
         image_url = ad.image_url or ""
