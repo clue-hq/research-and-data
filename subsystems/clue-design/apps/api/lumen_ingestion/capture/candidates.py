@@ -238,6 +238,9 @@ def _add_image_references(node, base_url: str, add) -> None:
         add(url, origin, dark=resolved_dark, detail="srcset rung")
 
     if src:
+        # Redundant today — the ladder always reserves its last rung for the bare `src` — and
+        # kept anyway: dedup makes it free, and it means a future change to the CHOOSER can
+        # never cost us the one URL the element actually declared.
         add(src, "img", detail="img src")
 
 
