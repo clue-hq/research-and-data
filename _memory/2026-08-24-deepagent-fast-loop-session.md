@@ -273,3 +273,30 @@ RECURRING BUG (4 runs): logo renders as EMPTY WHITE CHIP — `asset.bytes_missin
 at RENDER time (distinct from P0.1 view fix). Top remaining quality bug, unowned.
 REMAINING LEVER: per-call latency (~20s mean) — model-speed A/B decision still
 with founder. TTFP gate met-ish only on B.
+
+## Quality-gap diagnosis vs Moda (2026-08-24, late session — discussion only, NO implementation yet)
+
+Founder compared our three playbook runs against Moda outputs (same Insight Health brief, same Stripe kit). Verdict: ours is structurally flat — no shapes, no gradients, no glows, no cards/chips/dividers, no occlusion, accent never spent; before/after rendered as a vertical word stack instead of two contrasting cards. Agreed root causes:
+1. Corpus teaches only text-in-columns + one blessed CTA plate; zero validated examples of decorative/semantic shapes, grounds, or layering.
+2. Rubric is all penalty (margins/collisions/contrast/budget), zero craft reward — flat sparse text IS its optimum; this session's collision advisory + budget rules sharpened that trap.
+3. Auto-layout-first teaching; the ground→atmosphere→content absolute-positioned layer stack idiom is never demonstrated (engine supports it).
+4. Effects (gradients/blur/shadows) engine-supported but untaught in grammar docs.
+5. Concept-plan gate has no visual-system slot (ground treatment / depth / where the accent is spent).
+6. Playbooks have no per-playbook skeletons (no two-card before/after shape exists).
+7. Kit ingestion is forensic (web ramps/roles), Moda's is opinionated (bg tiers, dark colorway = Stripe's real #0A2540 navy, named secondary accent #F16366). Our ramps contain the material; nothing names the design grounds.
+Deepest structural point: Moda authors in HTML/CSS riding a huge pretraining prior; Lumen DSL has none — craft skills must be worked-example-dense (copyable validated snippets), not rule-dense.
+Assessment given to founder: ~90% closable with recipe-dense craft corpus + rubric rebalance + kit ground naming + plan-gate slot; NOT closable by skills alone: kit derivation work, logo bytes_missing bug, budget tax on decorative layers, last-mile taste (asymptotic via exemplars + visual loop).
+
+## Cowork skill-review folder (track, do not merge yet)
+
+`/Users/aryankeshri/Documents/design-deepagent` — Claude Cowork's review snapshot of our runtime skills (predates color-and-contrast). Delta vs our roster: NEW `art-direction` (229L, effects-DEPLOYMENT grammar — independently converges on our diagnosed missing layer) and NEW `carousel` (181L); light edits to a4-poster/brand-imagery/create-design/effects/linkedin-banner/story-ad-9x16/web-display-banners; heavier edit to linkedin-square-ad (29 lines); rest identical. Founder ruling: do not copy now; reconcile when the quality wave is designed.
+
+## Moda authoring architecture — founder-sourced intel (2026-08-24, from Moda's own agent)
+
+Corrects my HTML/CSS guess: Moda is NOT browser-rendered — proprietary node model + own renderer/exporter (PNG/PDF/PPTX), architecturally a cousin of Lumen. Their trick is web-SHAPED authoring surfaces that ride the model's pretraining prior. Four surfaces:
+1. READ: "TOON" — lossless JSON-as-indentation scene snapshot, short keys (t/w/h/fF/fS/cR/shC/stW), inline arrays, table form for repeated nodes. Token-cheap whole-canvas reads. Read-only; goes stale on edit.
+2. CREATE: XML-ish markup via create_from_markup — XML tree + real CSS values (linear-gradient(135deg), rgba(), font: shorthand, <styles> class selectors) + flexbox vocabulary (row/column/gap/align/justify/fill/1fr). Element roster: background, group, row, column, LAYERS (z-stack container — the ground→atmosphere→content idiom is a language primitive), table, rectangle, ellipse, line, connector, polygon, star, text, image, video, qr, latex, map, comment.
+3. EDIT: sandboxed sync JS over frozen snapshots — nodes/pages/variables reads, create/update/duplicate/group/reorder writes, batch mutation by predicate (one call = align all CTAs; vs our op-by-op drip). Trap: snapshot frozen before queued mutations replay. Delete is a separate tool.
+4. Sub-languages: <generate> restricted JS emitting nodes procedurally (rings/grids/textures — why their frames have texture and ours don't; we hand-author every line); HTML subset (p/span/b/i/ul/li + inline style) for rich text — single colored word inline.
+Their weakness / our strength: color variables DON'T resolve in markup (literal hex only, grey fallback; variable-object form only via edit) — brand discipline lives entirely in skills, no engine-side token provenance. Lumen's engine-resolved tokens + fill precedence + provenance is the governance trade we keep.
+Implication recorded: quality wave unchanged (corpus/rubric/kit grounds), but a second FUTURE lever is now competitor-proven — meet the model's prior at the language level: CSS-value aliases, batch-edit surface, bounded procedural emit, token-cheap scene reads.
