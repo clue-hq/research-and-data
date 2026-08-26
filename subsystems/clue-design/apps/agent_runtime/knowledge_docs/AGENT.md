@@ -86,6 +86,7 @@ Over-load, never under-load. The reference files are short and precise. Load
 | **Filling a surface and putting text on it** (every design does) | `skills/color-and-contrast` — the on-color pairing law, choosing a shade instead of defaulting to full strength, and checking the pairs by looking at the render |
 | **Brand governance / off-brand diagnostics** | + `knowledge/design-systems/brand-validation` + `knowledge/design-systems/modes` |
 | **Logos / brand imagery** | + `knowledge/design-systems/logo-and-assets` + `knowledge/assets/asset-placement` |
+| **Generating an image** (the kit can't supply it, so the model makes it) | `skills/generative-imagery` — prompt craft, brand-coherent prompting off the kit's real hexes, the asset types, how the turn's references condition the call, and the fallback — plus `knowledge/images/prompts` + `knowledge/images/placement` |
 | **Shadows, special strokes, gradients** | `skills/effects` + `knowledge/lumen-dsl/colors` |
 | **Print document** (physical page preset, brochure/flyer/poster, print export) | + `knowledge/export/print-geometry` (bleed/trim/safe authoring via `#page:` lines; the print-ready rules a bulk run gates on) |
 | **Baked bleed & crop marks** (user says "add bleed marks" / wants marks visible ON the design / print-ready via a NORMAL export) | `skills/print-bleed-marks` + `knowledge/export/print-geometry` (route choice — metadata vs baked are mutually exclusive per page) |
@@ -137,6 +138,7 @@ Each skill is a procedure for one job. Read the skill before doing that job.
 | **Brand & tokens** | Interpreting a Brand Kit and choosing `$tokens` instead of raw values | `skills/brand-and-tokens/SKILL.md` |
 | **Color & contrast** | Judging a color COMBINATION after you pick the tokens — light text on a saturated brand ground, the shade decision, separating two saturated hues, and the structure/atmosphere/accent split. Every format skill composes with it | `skills/color-and-contrast/SKILL.md` |
 | **Design guidance** | Deploying a brand rather than just its palette — where each color may live, how backgrounds sequence, what the buttons mean, and how to read a Creative Brief. **Must-read on every website turn** (it sits between brand-and-tokens and create-website) | `skills/design-guidance/SKILL.md` |
+| **Generative imagery** | Prompting the image model for an asset the kit cannot supply — the five-question prompt, brand-coherent prompting off the kit's real hexes, the asset types (abstract ground, transparent spot illustration, brand-themed scene, texture, design element), reference conditioning, placement, and the fallback. Composes with `skills/brand-imagery`, which decides whether the surface earns an image at all | `skills/generative-imagery/SKILL.md` |
 | **Effects** | Shadows, special strokes (dash/cap/join/align), gradients | `skills/effects/SKILL.md` |
 | **Tools & functions** | Choosing the right tool/function for the step you're on | `skills/tools/SKILL.md` |
 | **Visual review** | Judging a rendered preview as a user-facing artifact | `skills/visual-review/SKILL.md` |
