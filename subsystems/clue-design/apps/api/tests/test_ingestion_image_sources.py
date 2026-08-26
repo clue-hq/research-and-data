@@ -25,8 +25,8 @@ import pytest
 from selectolax.parser import HTMLParser
 
 from lumen_ingestion.capture import CaptureOutcome, capture_website
+from lumen_ingestion.capture.budget import MAX_ASSET_COUNT
 from lumen_ingestion.capture.imgsrc import (
-    IMAGE_CANDIDATE_CAP,
     MAX_CANDIDATES_PER_IMAGE,
     TARGET_IMAGE_WIDTH,
     background_image_urls,
@@ -298,13 +298,20 @@ def test_the_collector_and_the_parser_agree_on_every_image_url() -> None:
 
 
 def test_the_collector_and_the_parser_call_the_same_chooser() -> None:
-    """Structural pin: two copies of this logic is the one way to lose every image."""
-    from lumen_ingestion.capture import imgsrc, parse, static
+    """Structural pin: two copies of this logic is the one way to lose every image.
 
-    assert static.image_source_ladder is imgsrc.image_source_ladder
+    The collector moved out of ``static`` into ``capture.candidates`` at clone-fidelity F0.2
+    (one shared enumeration feeding both the fetch list and every scorer), so the identity to
+    pin is candidates↔parse. ``static`` no longer chooses anything — it fetches the
+    collector's list — which is itself pinned by
+    ``test_ingestion_asset_slurp.py::test_the_collector_is_the_one_list_the_fetcher_walks``.
+    """
+    from lumen_ingestion.capture import candidates, imgsrc, parse, static
+
+    assert candidates.image_source_ladder is imgsrc.image_source_ladder
     assert parse.image_source_ladder is imgsrc.image_source_ladder
-    assert static.background_image_urls is imgsrc.background_image_urls
     assert parse.background_image_urls is imgsrc.background_image_urls
+    assert static.collect_asset_candidates is candidates.collect_asset_candidates
 
 
 def test_when_the_upgraded_url_yields_no_bytes_the_original_src_still_wins() -> None:
@@ -326,12 +333,16 @@ def test_when_the_upgraded_url_yields_no_bytes_the_original_src_still_wins() -> 
 
 
 # --------------------------------------------------------------------------- #
-# Caps
+# The budget that replaced the caps (clone-fidelity F0.2)
 # --------------------------------------------------------------------------- #
 
 
-def test_image_cap_is_fifty_and_the_overflow_diagnostic_fires_at_fifty_one() -> None:
-    assert IMAGE_CANDIDATE_CAP == 50
+def test_the_image_ceiling_is_the_shared_budget_and_overflow_names_what_it_dropped() -> None:
+    """The old hard cap of 50 whispered a ``LUMI0504`` at ``info`` and named nothing.
+
+    It is now the shared asset budget with a LOUD ``LUMI0514`` carrying every dropped URL —
+    an image the kit does not carry is an image the F2 clone cannot rehost.
+    """
     snapshot = load_snapshot(FIXTURES / "insight_static.json")
 
     def parse_with(count: int):
@@ -346,20 +357,35 @@ def test_image_cap_is_fifty_and_the_overflow_diagnostic_fires_at_fifty_one() -> 
         return len([i for i in parsed.images if i.kind_hint != "og_image"])
 
     baseline = non_og(parse_with(0))
-    fill = IMAGE_CANDIDATE_CAP - baseline
+    fill = MAX_ASSET_COUNT - baseline
 
-    at_cap = parse_with(fill)
-    assert non_og(at_cap) == IMAGE_CANDIDATE_CAP
-    assert not any(d["code"] == "LUMI0504" for d in at_cap.diagnostics)
+    at_budget = parse_with(fill)
+    assert non_og(at_budget) == MAX_ASSET_COUNT
+    assert not any(d["code"] == "LUMI0514" for d in at_budget.diagnostics)
 
     over = parse_with(fill + 1)
-    assert non_og(over) == IMAGE_CANDIDATE_CAP
-    assert any(d["code"] == "LUMI0504" for d in over.diagnostics)
-    assert any(
-        "skipped 1 image(s)" in d["message"]
-        for d in over.diagnostics
-        if d["code"] == "LUMI0504"
+    assert non_og(over) == MAX_ASSET_COUNT
+    dropped = [d for d in over.diagnostics if d["code"] == "LUMI0514"]
+    assert len(dropped) == 1
+    assert dropped[0]["severity"] == "warning"
+    assert len(dropped[0]["dropped"]) == 1
+    assert dropped[0]["dropped"][0].endswith(".png")
+
+
+def test_the_old_silent_css_background_cap_is_gone() -> None:
+    """RED CASE: ``background_image_urls`` used to truncate at 40 and tell nobody."""
+    from lumen_ingestion.capture import imgsrc
+
+    assert not hasattr(imgsrc, "MAX_BACKGROUND_IMAGES")
+    assert not hasattr(imgsrc, "IMAGE_CANDIDATE_CAP")
+
+    css = "".join(f".s{i}{{background-image:url(/bg/{i}.png)}}" for i in range(60))
+    urls = background_image_urls(
+        HTMLParser("<html><body></body></html>"),
+        [type("S", (), {"url": "https://example.com/a.css", "text": css})()],
+        BASE,
     )
+    assert len(urls) == 60
 
 
 @pytest.mark.parametrize(

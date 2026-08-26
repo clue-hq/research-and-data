@@ -399,22 +399,26 @@ def test_parse_computed_samples_rendered() -> None:
     assert body_bg  # area-weighted body bg exceeds the flat CSS-rule weight
 
 
-def test_image_cap_logic() -> None:
-    """The cap holds and announces itself. Raised 12 → 50 by founder order 2026-08-20;
-    the exact boundary behaviour is pinned in ``test_ingestion_image_sources.py``."""
-    from lumen_ingestion.capture.imgsrc import IMAGE_CANDIDATE_CAP
+def test_image_budget_logic() -> None:
+    """The budget holds and announces itself.
+
+    Was a hard cap (12 → 50 by founder order 2026-08-20); replaced by the shared asset budget
+    at clone-fidelity F0.2, whose ``LUMI0514`` names every dropped URL. The exact boundary
+    behaviour is pinned in ``test_ingestion_image_sources.py``.
+    """
+    from lumen_ingestion.capture.budget import MAX_ASSET_COUNT
     from lumen_ingestion.capture.snapshot import SiteSnapshot
 
     snapshot = load("insight_static")
     extra_imgs = "".join(
         f'<img src="/img/x{i}.png" width="{100 + i}" height="{100 + i}">'
-        for i in range(IMAGE_CANDIDATE_CAP + 5)
+        for i in range(MAX_ASSET_COUNT + 5)
     )
     html = snapshot.html.replace("</main>", extra_imgs + "</main>")
     mutated = SiteSnapshot(**{**snapshot.model_dump(), "html": html})
     parsed = parse_site(mutated)
-    assert len(parsed.images) <= IMAGE_CANDIDATE_CAP + 1  # +1 tolerance for og_image
-    assert any(d["code"] == "LUMI0504" for d in parsed.diagnostics)
+    assert len(parsed.images) <= MAX_ASSET_COUNT + 1  # +1 tolerance for og_image
+    assert any(d["code"] == "LUMI0514" for d in parsed.diagnostics)
 
 
 # --------------------------------------------------------------------------- #

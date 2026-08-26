@@ -219,11 +219,9 @@ class BoundedFetcher:
         out: list[FetchResult] = []
         for request, result in zip(unique, results):
             if isinstance(result, BaseException):
-                diagnostic = {
-                    "code": "LUMI0503",
-                    "severity": "warning",
-                    "message": f"fetch failed for {request.url}: {result}",
-                }
+                diagnostic = _fetch_failure_diagnostic(
+                    request.url, f"{type(result).__name__}: {result}"
+                )
                 self._diagnostics.append(diagnostic)
                 out.append(
                     FetchResult(
@@ -248,11 +246,9 @@ class BoundedFetcher:
                 request.url, headers=_DEFAULT_HEADERS, follow_redirects=True
             )
         if response.status_code >= 400:
-            diagnostic = {
-                "code": "LUMI0503",
-                "severity": "warning",
-                "message": f"fetch failed for {request.url}: HTTP {response.status_code}",
-            }
+            diagnostic = _fetch_failure_diagnostic(
+                request.url, f"HTTP {response.status_code}"
+            )
             self._diagnostics.append(diagnostic)
             result = FetchResult(
                 url=request.url,
@@ -296,4 +292,23 @@ def _size_cap_diagnostic(url: str, cap: int) -> dict:
         "code": "LUMI0502",
         "severity": "warning",
         "message": f"resource exceeded {cap}-byte cap and was skipped: {url}",
+        "url": url,
+        "reason": f"exceeded the {cap}-byte cap for its resource class",
+    }
+
+
+def _fetch_failure_diagnostic(url: str, reason: str) -> dict:
+    """A failed fetch, said once and structurally.
+
+    ``url`` and ``reason`` ride as their own keys (not only inside the message) because
+    downstream consumers have to JOIN on them: the evidence builder reports a ``@font-face``
+    file that never arrived and must state WHY, and string-parsing a human sentence to find
+    that out is how the two drift apart.
+    """
+    return {
+        "code": "LUMI0503",
+        "severity": "warning",
+        "message": f"fetch failed for {url}: {reason}",
+        "url": url,
+        "reason": reason,
     }

@@ -33,10 +33,15 @@ The ladder, best first:
      never do worse than the old.
 
 The parser walks the same ladder and takes the first rung that actually produced bytes, so a
-CDN that refuses a widened request costs us nothing. Cost note: the ladder is bounded at
-:data:`MAX_CANDIDATES_PER_IMAGE` rungs, so with the 50-image cap the image fetch count can
-roughly double (~150 requests worst case). That is accepted — the fan-out is async under
-``net.DEFAULT_CONCURRENCY`` (8) and every ``net.py`` byte cap/timeout is unchanged.
+CDN that refuses a widened request costs us nothing.
+
+Note what this ladder is and is NOT since clone-fidelity F0.2. It is the CHOOSER — the
+per-``<img>`` preference order both the collector and the parser walk to decide which
+rendition REPRESENTS that element. It is no longer the whole fetch list: the collector
+(``capture/candidates.py``) fetches every ``srcset`` rung whether or not the ladder picks it,
+because the F2 clone rewrites a fragment's ``srcset`` wholesale and a rung we skipped is a
+broken rendition on a published page. Fan-out stays async under ``net.DEFAULT_CONCURRENCY``
+(8) with every ``net.py`` byte cap/timeout unchanged, and is bounded by the asset budget.
 """
 
 from __future__ import annotations
@@ -61,16 +66,13 @@ _HEIGHT_PARAMS = ("h", "height", "sh")
 #: image fetch count.
 MAX_CANDIDATES_PER_IMAGE = 3
 
-#: The parsed-image ceiling, raised 12 → 50 by founder order 2026-08-20 (extraction must be
-#: exhaustive: these assets are reused in generated microsites and as image-generation
-#: references). Lives here rather than in ``parse.py`` so the cap and the ladder that feeds
-#: it are read together.
-IMAGE_CANDIDATE_CAP = 50
-
-#: Ceiling on CSS ``background-image`` URLs harvested from one site. A large design system's
-#: stylesheets can reference hundreds of sprites; the cap keeps the fan-out bounded while
-#: still reaching the hero art and gradients a brand actually keeps in CSS.
-MAX_BACKGROUND_IMAGES = 40
+# Two hard caps used to live here and are GONE as of clone-fidelity F0.2 (see
+# ``capture/budget.py``): the parsed-image ceiling (12 → 50 → the shared asset budget, now
+# enforced in ``parse._parse_images`` with a loud named-URL diagnostic) and a silent ceiling
+# of 40 on CSS ``background-image`` URLs, which truncated the harvest inside
+# :func:`background_image_urls` and told nobody. A large design system genuinely does
+# reference hundreds of sprites; the F2 clone rehosts them, so the answer is a budget that
+# says what it dropped, not a cap that quietly drops the tail.
 
 #: ``background``/``background-image`` declarations only — a ``@font-face`` ``src: url(…)``
 #: is the font path's business and must not be double-counted here.
@@ -269,7 +271,7 @@ def background_image_urls(tree, stylesheets, base_url: str) -> list[str]:
         base = base_url if sheet_url.startswith("inline:") or not sheet_url else sheet_url
         urls.extend(_background_urls_in_css(getattr(sheet, "text", "") or "", base))
 
-    return _dedup(urls)[:MAX_BACKGROUND_IMAGES]
+    return _dedup(urls)
 
 
 def _background_urls_in_css(css_text: str, base: str) -> list[str]:

@@ -54,6 +54,43 @@ def _filename_from_url(url: str | None, fallback: str) -> str:
     return name or fallback
 
 
+#: How many characters of the digest ride in a stored filename. Twelve is enough to be
+#: unambiguous within one capture while leaving the original basename readable.
+_SLURP_SHA_CHARS = 12
+
+
+def _stored_filename(sha256: str, url: str | None, fallback: str) -> str:
+    """``slurp-<sha12>-<original basename>`` — the rehosted asset's origin story, readable.
+
+    Every asset a capture stores is a REHOST of something a page referenced, and a human
+    opening the asset library should be able to see that at a glance: where it came from
+    (``slurp-``), which exact bytes it is (the digest prefix, matching the content-addressed
+    ``asset_ing_<sha16>`` id), and what the site called it. The source URL itself is already
+    carried by the asset's ``source``/provenance, so the filename does not have to encode it.
+
+    Asset-id minting is deliberately untouched — the id stays ``asset_ing_<sha16>``.
+    """
+    basename = _filename_from_url(url, fallback) or fallback
+    return f"slurp-{sha256[:_SLURP_SHA_CHARS]}-{basename}"
+
+
+def _fetch_failure_reasons(snapshot) -> dict[str, str]:
+    """``url -> why it never arrived``, read off the capture's own fetch diagnostics.
+
+    ``net.py`` stamps ``url``/``reason`` as their own keys on every LUMI0502/LUMI0503 exactly
+    so this join does not have to parse a human sentence.
+    """
+    reasons: dict[str, str] = {}
+    for diagnostic in getattr(snapshot, "diagnostics", None) or []:
+        if not isinstance(diagnostic, dict):
+            continue
+        url = diagnostic.get("url")
+        reason = diagnostic.get("reason")
+        if isinstance(url, str) and isinstance(reason, str) and url not in reasons:
+            reasons[url] = reason
+    return reasons
+
+
 def build_evidence(outcome, *, core, store_root: str, reporter) -> BrandEvidence:
     snapshot = outcome.snapshot
     parsed: ParsedSite = parse_site(snapshot)
@@ -96,9 +133,34 @@ def build_evidence(outcome, *, core, store_root: str, reporter) -> BrandEvidence
     # the bytes for whichever one wins a slot — repaired, so the camelCase
     # attribute names a strict renderer needs survive the HTML round trip.
     jobs: dict[str, _AssetJob] = {}
+    #: Everything the page referenced that we could not store, with the reason. This list is
+    #: the honest replacement for the old silent `return None` — see `_drop_diagnostics`.
+    drops: list[tuple[str, str, str]] = []
+    fetch_reasons = _fetch_failure_reasons(snapshot)
 
-    def queue(sha: str | None, url: str | None, kind: str, default_name: str) -> str | None:
+    def queue(
+        sha: str | None,
+        url: str | None,
+        kind: str,
+        default_name: str,
+        *,
+        context: str = "asset",
+    ) -> str | None:
+        """Register an asset for ingest, or say out loud why it could not be.
+
+        The ``None`` return used to be a silent drop — every caller answered it with
+        ``continue`` — which is exactly how a scored-but-never-fetched logo disappeared
+        without a word. It still returns ``None`` (the caller genuinely has no asset id to
+        use), but the drop is now recorded and reported.
+        """
         if not sha or sha not in sha_bytes:
+            drops.append(
+                (
+                    url or default_name,
+                    fetch_reasons.get(url or "", "no bytes were captured for it"),
+                    context,
+                )
+            )
             return None
         if sha not in jobs:
             jobs[sha] = _AssetJob(
@@ -106,7 +168,7 @@ def build_evidence(outcome, *, core, store_root: str, reporter) -> BrandEvidence
                 sha256=sha,
                 body=sha_bytes[sha],
                 kind=kind,
-                filename=_filename_from_url(url, default_name),
+                filename=_stored_filename(sha, url, default_name),
                 content_type=sha_ct.get(sha),
             )
         return f"asset_ing_{sha[:16]}"
@@ -114,6 +176,7 @@ def build_evidence(outcome, *, core, store_root: str, reporter) -> BrandEvidence
     # Fonts (from @font-face faces with downloaded files).
     fonts: list[FontEvidence] = []
     uncustodied_faces: list[str] = []
+    face_failures: list[dict] = []
     for font in parsed.fonts:
         faces: list[FontFaceEvidence] = []
         for face in font.faces:
@@ -127,8 +190,31 @@ def build_evidence(outcome, *, core, store_root: str, reporter) -> BrandEvidence
                         face.source_url,
                         "font",
                         f"{font.family}.{face.format or 'woff2'}",
+                        context=f"@font-face {font.family} {face.weight or 400}",
                     )
             if face.source_url and asset_id is None:
+                # PER FACE, with the reason (clone-fidelity F0.2). LUMI0231 below is the
+                # family-level summary a human skims; this is the line that says which file
+                # and why, which is what anyone actually debugging a fallback needs.
+                face_failures.append(
+                    {
+                        "code": "LUMI0516",
+                        "severity": "warning",
+                        "message": (
+                            f"font file not retrieved for {font.family} "
+                            f"{face.weight or 400} {face.style or 'normal'} "
+                            f"({face.source_url}): "
+                            + fetch_reasons.get(
+                                face.source_url, "no bytes were captured for it"
+                            )
+                        ),
+                        "url": face.source_url,
+                        "family": font.family,
+                        "reason": fetch_reasons.get(
+                            face.source_url, "no bytes were captured for it"
+                        ),
+                    }
+                )
                 # A face declared by the site whose bytes we do not hold. The
                 # kit will carry the URL and no asset, the renderer will have
                 # nothing to load, and the ad will paint in Inter (LUMS0100).
@@ -166,9 +252,15 @@ def build_evidence(outcome, *, core, store_root: str, reporter) -> BrandEvidence
     images: list[ImageEvidence] = []
     for asset in parsed.images:
         asset_id = queue(
-            asset.sha256, asset.source_url, "image", _filename_from_url(asset.source_url, "image")
+            asset.sha256,
+            asset.source_url,
+            "image",
+            _filename_from_url(asset.source_url, "image"),
+            context=f"image at {asset.locator}",
         )
         if asset_id is None:
+            # Still a `continue` — an ImageEvidence with no asset id would be a lie — but no
+            # longer a SILENT one: `queue` recorded the drop and it becomes a LUMI0515.
             continue
         images.append(
             ImageEvidence(
@@ -184,13 +276,33 @@ def build_evidence(outcome, *, core, store_root: str, reporter) -> BrandEvidence
     screenshots: list[str] = []
     for entry in snapshot.downloads:
         if entry.kind == "screenshot":
-            asset_id = queue(entry.sha256, entry.url, "image", "screenshot.png")
+            asset_id = queue(
+                entry.sha256, entry.url, "image", "screenshot.png", context="screenshot"
+            )
             if asset_id:
                 screenshots.append(asset_id)
 
+    # REHOST EVERYTHING ELSE (clone-fidelity F0.2). The evidence above only queues what the
+    # KIT references — the chosen renditions, the ladder's logo slots, the faces that made
+    # it. The F2 clone rewrites a captured fragment's asset URLs onto OUR store, so every
+    # byte the page referenced has to exist there, including the srcset rungs no kit image
+    # chose, the mask a stylesheet pulls, and the sprite an inline <svg> points at. They are
+    # stored, not narrated: nothing here invents evidence for them.
+    for entry in snapshot.downloads:
+        queue(
+            entry.sha256,
+            entry.url,
+            "font" if entry.kind == "font" else "image",
+            _filename_from_url(entry.url, entry.kind),
+            context=f"captured {entry.origin or entry.kind}",
+        )
+
     # --- ingest all queued assets concurrently ---
+    ingest_failures: list[dict] = []
     if jobs:
-        _run_ingest(list(jobs.values()), core=core, store_root=store_root, snapshot=snapshot)
+        ingest_failures = _run_ingest(
+            list(jobs.values()), core=core, store_root=store_root, snapshot=snapshot
+        )
 
     # Brand geometry (design-brief slice 2): the rendered tier's measurement
     # harvest → number/shadow evidence + the structured shape records slice 3's
@@ -218,6 +330,12 @@ def build_evidence(outcome, *, core, store_root: str, reporter) -> BrandEvidence
                 ),
             }
         )
+    # Honest-partial, never silent-partial: every reference we could not store and every
+    # ingest that refused is said out loud, and the ingestion still completes.
+    if isinstance(outcome_diagnostics, list):
+        outcome_diagnostics.extend(face_failures)
+        outcome_diagnostics.extend(_drop_diagnostics(drops))
+        outcome_diagnostics.extend(ingest_failures)
 
     narrative = NarrativeEvidence(
         brand_name=parsed.narrative.brand_name,
@@ -366,24 +484,66 @@ def _ladder_locator(slot_name: str, slot) -> str:
     )[:400]
 
 
-def _run_ingest(jobs: list[_AssetJob], *, core, store_root: str, snapshot) -> None:
+def _drop_diagnostics(drops: list[tuple[str, str, str]]) -> list[dict]:
+    """One ``LUMI0515`` per asset the page referenced and we could not store.
+
+    Deduped by URL: a rendition referenced from three places is one missing file, not three.
+    """
+    seen: set[str] = set()
+    out: list[dict] = []
+    for url, reason, context in drops:
+        if url in seen:
+            continue
+        seen.add(url)
+        out.append(
+            {
+                "code": "LUMI0515",
+                "severity": "warning",
+                "message": (
+                    f"referenced asset not stored ({context}): {url} — {reason}"
+                ),
+                "url": url,
+                "reason": reason,
+                "context": context,
+            }
+        )
+    return out
+
+
+def _run_ingest(jobs: list[_AssetJob], *, core, store_root: str, snapshot) -> list[dict]:
+    """Ingest every queued asset concurrently; return a diagnostic per REFUSED ingest.
+
+    ``ingest_asset`` is called with ``raise_on_error=False`` so one bad asset cannot fail a
+    whole ingestion — but the response used to be thrown away, which made a refused ingest
+    indistinguishable from a successful one. The kit then carried an ``asset_id`` pointing at
+    nothing. Now the refusal is returned and reported.
+    """
+    failures: list[dict] = []
+
     async def _drive() -> None:
         semaphore = asyncio.Semaphore(INGEST_CONCURRENCY)
+        lock = asyncio.Lock()
 
         async def _one(job: _AssetJob) -> None:
             async with semaphore:
-                await asyncio.to_thread(_ingest_one, job, core, store_root, snapshot)
+                failure = await asyncio.to_thread(
+                    _ingest_one, job, core, store_root, snapshot
+                )
+            if failure is not None:
+                async with lock:
+                    failures.append(failure)
 
         await asyncio.gather(*(_one(job) for job in jobs))
 
     asyncio.run(_drive())
+    return failures
 
 
-def _ingest_one(job: _AssetJob, core, store_root: str, snapshot) -> None:
+def _ingest_one(job: _AssetJob, core, store_root: str, snapshot) -> dict | None:
     asset_id = f"asset_ing_{job.sha256[:16]}"
     # Content-addressed id → idempotent: the store dedupes bytes by digest, so
     # re-ingesting the same content is a no-op that returns the same record.
-    core.ingest_asset(
+    response = core.ingest_asset(
         store_root=store_root,
         bytes_base64=base64.b64encode(job.body).decode("ascii"),
         asset_id=asset_id,
@@ -405,3 +565,22 @@ def _ingest_one(job: _AssetJob, core, store_root: str, snapshot) -> None:
         max_bytes=15 * 1024 * 1024,
         raise_on_error=False,
     )
+    if isinstance(response, dict) and not response.get("ok", True):
+        error = response.get("error") or {}
+        reason = (
+            error.get("message")
+            or error.get("code")
+            or "the asset store refused it without saying why"
+        )
+        return {
+            "code": "LUMI0515",
+            "severity": "warning",
+            "message": (
+                f"asset ingest refused for {job.filename} "
+                f"({job.url or 'no source url'}): {reason}"
+            ),
+            "url": job.url,
+            "reason": str(reason),
+            "context": "asset store ingest",
+        }
+    return None

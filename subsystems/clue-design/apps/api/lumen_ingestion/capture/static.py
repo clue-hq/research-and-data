@@ -6,14 +6,13 @@ from __future__ import annotations
 import base64
 import hashlib
 import re
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urljoin
 
 from selectolax.parser import HTMLParser
 
-from .. import logo_ladder
-from .imgsrc import background_image_urls, image_source_ladder
+from .budget import MAX_ASSET_BYTES, budget_diagnostic
+from .candidates import collect_asset_candidates
 from .net import BoundedFetcher, FetchRequest
-from .parse import font_face_sources
 from .snapshot import Download, SiteSnapshot, Stylesheet, HTML_MAX_BYTES
 
 _IMPORT_RE = re.compile(
@@ -159,104 +158,72 @@ async def _collect_assets(
     base_url: str,
     stylesheets: list[Stylesheet],
 ) -> tuple[list[Download], list[dict]]:
-    requests: list[FetchRequest] = []
-    kinds: dict[str, str] = {}
-    stylesheets_for_ladder = [(sheet.url, sheet.text) for sheet in stylesheets]
+    """Fetch EVERY asset the page references, in one concurrent batch.
 
-    def add(url: str, kind: str) -> None:
-        if url.startswith("data:"):
-            return
-        if url not in kinds:
-            kinds[url] = kind
-            requests.append(FetchRequest(url=url, kind="font" if kind == "font" else ("image")))
+    The enumeration is not done here — it is
+    :func:`lumen_ingestion.capture.candidates.collect_asset_candidates`, the single list that
+    also feeds every scorer, so the scorer can never rank a URL the fetcher never saw (see
+    that module's docstring for the defect this shape exists to close). This function's whole
+    job is: fetch that list, keep what fits the byte budget, and say out loud what it dropped.
+    """
+    harvest = collect_asset_candidates(tree, base_url, stylesheets)
+    diagnostics: list[dict] = list(harvest.diagnostics)
+    if not harvest.candidates:
+        return [], diagnostics
 
-    # Fonts: exactly the files @font-face selects, found by the same walk
-    # parse_site uses. Capture and parse must agree on the URL to the character
-    # — the evidence builder matches a face to its bytes by exact URL string, so
-    # any divergence silently yields `asset_id: null` and a brand font that
-    # never paints. The old regex here diverged on both counts: it resolved
-    # relative URLs against a different base than parse did, and it skipped any
-    # URL whose extension was not the last thing before the paren
-    # (`url(/f/X.woff2?v=3)`), which parse happily recorded anyway.
-    for url in font_face_sources(stylesheets, base_url):
-        add(url, "font")
-
-    # Logos: header/nav/logo imgs, apple-touch-icon. Deliberately still the bare ``src``:
-    # ``parse._parse_primary_logo_candidates`` scores and resolves logo candidates by their
-    # ``src``, and a lockup is a vector or a small mark where the widest-rendition ladder
-    # buys nothing. The ladder below re-adds these URLs anyway (dedup keeps the "logo" kind,
-    # which is registered first).
-    for node in tree.css("header img, nav img, [class*=logo] img, a[href='/'] img"):
-        src = node.attributes.get("src")
-        if src:
-            add(urljoin(base_url, src), "logo")
-    for node in tree.css("link[rel='apple-touch-icon']"):
-        href = node.attributes.get("href")
-        if href:
-            add(urljoin(base_url, href), "logo")
-    # Favicons were recorded into ``meta`` and never fetched, so the mark slot had exactly
-    # one possible filler (apple-touch-icon). ``parse`` surfaces this as a fallback mark,
-    # ranked BELOW apple-touch-icon.
-    for node in tree.css("link[rel='icon'], link[rel='shortcut icon']"):
-        href = node.attributes.get("href")
-        if href:
-            add(urljoin(base_url, href), "logo")
-
-    # og:image + og:logo.
-    for node in tree.css("meta[property='og:image'], meta[property='og:logo']"):
-        content = node.attributes.get("content")
-        if content:
-            add(urljoin(base_url, content), "image")
-
-    # Every URL the logo ladder can consider — JSON-LD Organization.logo, og:logo,
-    # logo-container imgs anywhere on the page, footer marks, chrome CSS
-    # backgrounds. Without this the scorer ranks candidates whose bytes were
-    # never downloaded, the top candidate arrives byteless, and the evidence
-    # builder drops it without a word (the recurring `bytes_missing`).
-    for url in logo_ladder.candidate_asset_urls(tree, base_url, stylesheets_for_ladder):
-        add(url, "logo")
-
-    # Images. The ladder (srcset / <picture><source> / CDN width upgrade / bare src) is the
-    # SHARED chooser `parse._parse_images` walks — see `imgsrc` for why implementing it twice
-    # is the one way to lose every image. Enqueuing every rung multiplies the image fetch
-    # count — measured ~3x on stripe.com (50 → 149 downloads), since a srcset-heavy page
-    # spends all three rungs and only the first is ever used. Accepted, and bounded by the
-    # async fan-out (`net.DEFAULT_CONCURRENCY` = 8) with every byte cap and timeout
-    # unchanged. If that ever matters, the fix is a STAGED collector — fan out rung 1 for
-    # every image, then a second round for only those whose rung 1 failed — not a shorter
-    # ladder.
-    for node in tree.css("img"):
-        for url in image_source_ladder(node, base_url):
-            add(url, "image")
-
-    # CSS background-image: gradients and hero art a brand keeps in stylesheets rather than
-    # in markup were never downloaded at all.
-    for url in background_image_urls(tree, stylesheets, base_url):
-        add(url, "image")
-
-    if not requests:
-        return [], []
-
-    # ONE concurrent batch for all fonts + logos + images.
-    results = await fetcher.fetch_many(requests)
+    # ONE concurrent batch for all fonts + logos + images, bounded by
+    # `net.DEFAULT_CONCURRENCY` with every per-resource byte cap and timeout unchanged.
+    results = await fetcher.fetch_many(
+        [FetchRequest(url=c.url, kind=c.kind) for c in harvest.candidates]
+    )
+    by_url = {candidate.url: candidate for candidate in harvest.candidates}
 
     downloads: list[Download] = []
-    diagnostics: list[dict] = []
+    total_bytes = 0
+    over_budget: list[str] = []
     for result in results:
         diagnostics.extend(result.diagnostics)
         if not result.ok or result.body is None:
             continue
+        # The byte budget can only be spent once the bodies are in hand — nothing tells us an
+        # asset's size before we fetch it — so this bounds what the snapshot CARRIES (and
+        # therefore stores, ingests and replays), not what was requested. Candidate order is
+        # identity-first, so what a full budget costs is the least identity-critical tail.
+        if total_bytes + len(result.body) > MAX_ASSET_BYTES:
+            over_budget.append(result.url)
+            continue
+        total_bytes += len(result.body)
+        candidate = by_url.get(result.url)
         sha = hashlib.sha256(result.body).hexdigest()
         downloads.append(
             Download(
                 url=result.url,
-                kind=kinds.get(result.url, "image"),
+                kind=_download_kind(candidate),
                 content_type=result.content_type,
                 bytes_b64=base64.b64encode(result.body).decode("ascii"),
                 sha256=sha,
+                origin=candidate.origin if candidate else None,
+                dark_scheme=bool(candidate and candidate.dark_scheme),
+            )
+        )
+    if over_budget:
+        diagnostics.append(
+            budget_diagnostic(
+                budget="asset bytes", limit=MAX_ASSET_BYTES, dropped=over_budget
             )
         )
     return downloads, diagnostics
+
+
+def _download_kind(candidate) -> str:
+    """The ``Download.kind`` an origin maps to — the snapshot's own three-way split."""
+    if candidate is None:
+        return "image"
+    if candidate.origin == "font":
+        return "font"
+    if candidate.origin == "logo-rung":
+        return "logo"
+    return "image"
 
 
 def _extract_meta(tree) -> dict:

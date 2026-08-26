@@ -15,11 +15,8 @@ from urllib.parse import urljoin, urlparse
 import tinycss2
 from selectolax.parser import HTMLParser
 
-from .imgsrc import (
-    IMAGE_CANDIDATE_CAP,
-    background_image_urls,
-    image_source_ladder,
-)
+from .budget import MAX_ASSET_COUNT, budget_diagnostic
+from .imgsrc import background_image_urls, image_source_ladder
 from .snapshot import SiteSnapshot
 
 # --- parsed pieces (internal, pre-asset-ingest) ---------------------------------
@@ -841,6 +838,18 @@ def _download_by_url(snapshot: SiteSnapshot, url: str) -> str | None:
     return None
 
 
+def _is_dark_scheme(snapshot: SiteSnapshot, url: str) -> bool:
+    """Did every reference to this URL come from a ``prefers-color-scheme: dark`` source?
+
+    The collector decides this (``candidates._dedupe``) and stamps it on the download; parse
+    only reads it, so the two can never disagree about which rendition is the dark one.
+    """
+    for entry in snapshot.downloads:
+        if entry.url == url:
+            return bool(entry.dark_scheme)
+    return False
+
+
 # --- primary-logo identification: multi-signal scoring ---------------------------
 #
 # No single heuristic survives the open web (live counterexample: the first two
@@ -1179,8 +1188,11 @@ def _parse_images(snapshot: SiteSnapshot, tree, parsed: ParsedSite, base_url: st
             continue
         area = float((width or 0) * (height or 0))
         # Provenance stays honest about WHICH rendition we hold: a chosen URL that is not
-        # the element's own `src` says so in the locator.
+        # the element's own `src` says so in the locator, and a rendition that exists only
+        # for dark mode says THAT — the signal is worthless if it dies in the snapshot.
         locator = "dom :: img" if url == ladder[-1] else "dom :: img :: hi-res rendition"
+        if _is_dark_scheme(snapshot, url):
+            locator += " :: prefers-color-scheme: dark"
         candidates.append(
             (
                 area,
@@ -1222,21 +1234,21 @@ def _parse_images(snapshot: SiteSnapshot, tree, parsed: ParsedSite, base_url: st
             )
         )
 
+    # The old hard cap of 50 lived here and whispered a LUMI0504 at `info`. It is now the
+    # shared asset budget, and overflow is LOUD and NAMED (clone-fidelity F0.2): an image the
+    # kit does not carry is an image the F2 clone cannot rehost, so a human has to be told
+    # which ones. Sorted best-first (largest rendered area, then file size), so if the budget
+    # ever does trip, what it costs is the smallest imagery on the page.
     candidates.sort(key=lambda item: (item[0], item[1]), reverse=True)
-    kept = candidates[:IMAGE_CANDIDATE_CAP]
-    skipped = len(candidates) - len(kept)
+    kept = candidates[:MAX_ASSET_COUNT]
+    dropped = [asset.source_url for _, _, asset in candidates[MAX_ASSET_COUNT:]]
     for _, _, asset in kept:
         parsed.images.append(asset)
-    if skipped > 0:
+    if dropped:
         parsed.diagnostics.append(
-            {
-                "code": "LUMI0504",
-                "severity": "info",
-                "message": (
-                    f"image candidate cap of {IMAGE_CANDIDATE_CAP} reached; "
-                    f"skipped {skipped} image(s)"
-                ),
-            }
+            budget_diagnostic(
+                budget="image candidate", limit=MAX_ASSET_COUNT, dropped=dropped
+            )
         )
 
 
