@@ -26,6 +26,7 @@ why, and what it could not do. It is the thing an operator reads when a harvest 
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from datetime import UTC, datetime
 from typing import Any, Callable, Optional
 
@@ -35,6 +36,15 @@ from py_lumen_config import settings
 from py_lumen_obs import get_logger
 
 from ..jobs import IngestionJobStore, StageReporter, run_ingestion_job
+from .company_identity import (
+    RESOLVER_AD_LIBRARY_DOMAIN,
+    RESOLVER_EXPLICIT,
+    RESOLVER_PDL,
+    AdvertiserResolution,
+    CompanyIdentityError,
+    check_advertiser_names,
+    resolve_company_identity_resolver,
+)
 from .distill import AdDnaCard, previews_for, resolve_distiller
 from .harvest import (
     DEFAULT_MAX_CREATIVES,
@@ -72,6 +82,7 @@ def run_ad_assets_onboarding(
     storage: Optional[StorageBackend] = None,
     expected_generation: Optional[int] = None,
     provider: Any = None,
+    identity_resolver: Any = None,
     distiller: Any = None,
     generate: Optional[Callable[..., Any]] = None,
     fetch_creative: Optional[Callable[[str], "tuple[bytes, str]"]] = None,
@@ -79,14 +90,15 @@ def run_ad_assets_onboarding(
 ) -> None:
     """Run one ad-assets onboarding job to a terminal state. Never raises.
 
-    The injectable seams (``provider`` / ``distiller`` / ``generate`` / ``fetch_creative`` /
-    ``now``) exist for the same reason the ingestion pipeline's ``capture`` / ``analyze`` /
-    ``describer`` seams do: the suites drive the whole job with none of the external systems
-    present, and the production defaults are resolved at call time.
+    The injectable seams (``provider`` / ``identity_resolver`` / ``distiller`` / ``generate`` /
+    ``fetch_creative`` / ``now``) exist for the same reason the ingestion pipeline's ``capture``
+    / ``analyze`` / ``describer`` seams do: the suites drive the whole job with none of the
+    external systems present, and the production defaults are resolved at call time.
 
-    There are FOUR of them and not three because there are four external systems here: the ad
-    library, the CDN the creatives live on, the vision model and the image model. A suite that
-    stubbed three of the four would still be making real requests for creative bytes.
+    There are FIVE of them and not four because R3-A added a fifth external system: the
+    company-identity resolver that now answers "which LinkedIn page is this domain" BEFORE the
+    ad library is asked anything. A suite that stubbed four of the five would still be spending
+    a real enrichment credit per test.
     """
     store = IngestionJobStore(
         workspace_id=workspace_id, expected_generation=expected_generation
@@ -105,6 +117,7 @@ def run_ad_assets_onboarding(
             job_id=job_id,
             reporter=reporter,
             provider=provider,
+            identity_resolver=identity_resolver,
             distiller=distiller,
             generate=generate,
             fetch_creative=fetch_creative,
@@ -124,6 +137,7 @@ def _onboard(
     job_id: str,
     reporter: StageReporter,
     provider: Any,
+    identity_resolver: Any,
     distiller: Any,
     generate: Optional[Callable[..., Any]],
     fetch_creative: Optional[Callable[[str], "tuple[bytes, str]"]],
@@ -158,18 +172,48 @@ def _onboard(
     }
     fetched_at = now().isoformat()
 
+    # --- step 0: resolve WHO the advertiser is, before asking the ad library anything --------
+    #
+    # R3-A. This step exists because the vendor's own domain resolution is not evidence: for
+    # apollo.io it answered a real page with zero ads while the brand's true page had 135, and
+    # the lane had no way to notice. Resolution now happens first, against a source that is not
+    # the ad library, and the harvest is addressed by the id it produced.
+    reporter("Confirming who you are on LinkedIn…", 0.05)
+    resolution = _resolve_advertiser(
+        company_domain=company_domain,
+        page_id=page_id,
+        advertiser_name=advertiser_name,
+        resolver=identity_resolver,
+    )
+
     # --- step 1: harvest, filter, dedupe, custody -------------------------------------------
     reporter("Reading your published ads…", 0.1)
     resolved_provider = provider or resolve_provider()
+    # A resolved id ALWAYS wins the selector. The domain is only ever sent when nothing could
+    # be resolved from it — that is the fallback, and it is recorded as such rather than being
+    # allowed to look like the verified path.
+    harvest_page_id = resolution.linkedin_page_id
     pages = fetch_pages(
         resolved_provider,
-        company_domain=company_domain,
-        page_id=page_id,
+        company_domain=None if harvest_page_id else company_domain,
+        page_id=harvest_page_id,
         max_pages=max_pages,
         date_filter=request.get("date_filter"),
     )
+    observed_page_id = (pages[0].page_id if pages else None) or harvest_page_id
+    resolution = replace(resolution, observed_page_id=observed_page_id)
+    evidence["resolution"] = resolution.to_json()
+
     selection = select_creatives(
         pages, advertiser_name=advertiser_name, max_creatives=max_creatives
+    )
+    # THE UNIVERSAL GUARD. It runs on all three resolution paths — verified, fallback and
+    # operator-asserted — because harvesting a stranger's creatives into a brand's reference
+    # library is worse than an empty lane on every one of them.
+    advertiser_check = check_advertiser_names(
+        [ad.advertiser_name for ad in selection.kept],
+        expected=resolution.resolved_name,
+        resolution=resolution,
     )
     evidence["steps"]["harvest"] = {
         "status": "ok",
@@ -178,7 +222,15 @@ def _onboard(
         "kept": len(selection.kept),
         "dropped": selection.drop_counts(),
         "advertiser_name": selection.advertiser_name,
+        "advertiser_check": advertiser_check.to_json(),
     }
+    if advertiser_check.blocks_custody:
+        # KEEP NOTHING. Not "keep the ones that matched" — a page serving two advertisers is a
+        # page whose majority answer cannot be trusted, and a half-right reference library is
+        # the kind of wrong that only shows up later, in an ad.
+        evidence["steps"]["harvest"]["status"] = "advertiser_mismatch"
+        evidence["steps"]["harvest"]["kept"] = 0
+        return _complete(brand_kit_id, brand_kit_version, evidence, reporter=reporter)
     if not selection.kept:
         # An honest empty is a correct outcome, not a failure: a brand with no static company
         # ads has nothing to harvest, and saying so is more useful than a red job row.
@@ -192,7 +244,7 @@ def _onboard(
         cache_dir=cache_dir,
         fetched_at=fetched_at,
         provider_name=getattr(resolved_provider, "name", "unknown"),
-        advertiser_page_id=(pages[0].page_id if pages else None) or page_id,
+        advertiser_page_id=observed_page_id,
         fetch=fetch_creative,
         max_bytes=settings.lumen_asset_max_bytes,
     )
@@ -208,7 +260,7 @@ def _onboard(
     # point at them — a creative row whose asset does not exist yet would fail its foreign key.
     _register_captured_assets(tools, repo.workspace_id, custody.asset_records)
     provider_name = getattr(resolved_provider, "name", "unknown")
-    advertiser_page_id = (pages[0].page_id if pages else None) or page_id
+    advertiser_page_id = observed_page_id
     creative_rows = [
         {
             "creative_id": creative.creative_id,
@@ -292,6 +344,98 @@ def _onboard(
 
     reporter("Finishing up…", 0.95)
     return _complete(brand_kit_id, brand_kit_version, evidence, reporter=reporter)
+
+
+def _resolve_advertiser(
+    *,
+    company_domain: str | None,
+    page_id: str | None,
+    advertiser_name: str | None,
+    resolver: Any,
+) -> AdvertiserResolution:
+    """Decide which LinkedIn page this harvest will address, and how well that is known.
+
+    Three paths, and the point of the whole function is that they stay TOLD APART rather than
+    collapsing into one green "resolved":
+
+    * **explicit** — the operator supplied the page id. No resolver is called, because the id
+      IS the assertion; it is not verification, though, so ``verified`` stays false and the
+      advertiser-name check is what actually tests it.
+    * **pdl** — an independent resolver named the page from the domain. The only path that
+      earns ``verified``.
+    * **ad_library_domain** — nothing could resolve the domain, so the ad library resolves it
+      itself. Exactly the pre-R3-A behaviour, kept deliberately, and now labelled.
+
+    NOTHING here raises. Every way identity resolution can go wrong — no key, unknown domain, a
+    vendor outage, a resolver that answered without a page id — degrades to the fallback with a
+    recorded note, because a harvest that could still work must not be lost to an enrichment
+    call that did not.
+    """
+    explicit = (page_id or "").strip()
+    if explicit:
+        return AdvertiserResolution(
+            resolver_used=RESOLVER_EXPLICIT,
+            linkedin_page_id=explicit,
+            resolved_name=advertiser_name,
+            verified=False,
+            note=(
+                "the LinkedIn page id was supplied by the operator, so no identity resolver was "
+                "called — an assertion rather than a verification, tested by the advertiser-name "
+                "check"
+            ),
+        )
+
+    domain = (company_domain or "").strip()
+
+    def fallback(note: str) -> AdvertiserResolution:
+        return AdvertiserResolution(
+            resolver_used=RESOLVER_AD_LIBRARY_DOMAIN,
+            linkedin_page_id=None,
+            resolved_name=advertiser_name,
+            verified=False,
+            note=note,
+        )
+
+    try:
+        engine = resolver if resolver is not None else resolve_company_identity_resolver()
+        identity = engine.resolve(domain)
+    except CompanyIdentityError as error:
+        return fallback(
+            f"the company-identity resolver could not answer ({error.code}); the ad library "
+            "resolved the domain itself and NOTHING verified which page was harvested"
+        )
+    except Exception as error:  # noqa: BLE001 - an injected resolver may raise anything
+        return fallback(
+            f"the company-identity resolver failed ({type(error).__name__}); the ad library "
+            "resolved the domain itself and NOTHING verified which page was harvested"
+        )
+
+    if identity is None:
+        return fallback(
+            f"the company-identity resolver has no record of {domain!r}; the ad library "
+            "resolved the domain itself and NOTHING verified which page was harvested"
+        )
+    if not identity.addresses_a_page:
+        # A named company with no LinkedIn page is a real record, and its NAME is still worth
+        # keeping: it cannot address the harvest, but it can still gate custody.
+        return replace(
+            fallback(
+                f"{identity.provider} knows {domain!r} as {identity.name!r} but lists no "
+                "LinkedIn page, so the ad library resolved the domain itself"
+            ),
+            resolved_name=identity.name or advertiser_name,
+        )
+
+    return AdvertiserResolution(
+        resolver_used=RESOLVER_PDL,
+        linkedin_page_id=identity.linkedin_id,
+        linkedin_url=identity.linkedin_url,
+        # The RESOLVER's name, not the request's: the whole point is to compare the harvested
+        # ads against an independently-sourced identity. A request-supplied name compared
+        # against itself would verify nothing.
+        resolved_name=identity.name or advertiser_name,
+        verified=True,
+    )
 
 
 def _distil(creatives: list[Any], *, distiller: Any, evidence: JsonObject) -> AdDnaCard | None:
@@ -465,12 +609,24 @@ def _outcome(evidence: JsonObject) -> JsonObject:
     `status` is the summary's own word, not the job row's: `empty` when the lane holds nothing,
     `partial` when it holds creatives but is missing the card or the imagery, `ok` when every
     step ran and produced something.
+
+    W5/R3-A adds a FOURTH status, `advertiser_mismatch`, and it is deliberately not folded into
+    `empty`. Both leave the lane with nothing, but they mean opposite things: `empty` says the
+    brand has no static ads, while `advertiser_mismatch` says ads were found and REFUSED because
+    they belong to somebody else. Reading the second as the first is exactly the mistake the
+    whole R3-A investigation made, for two rounds.
     """
     steps = evidence.get("steps") or {}
+    resolution = evidence.get("resolution")
+    resolution = resolution if isinstance(resolution, dict) else {}
 
     def _step(name: str) -> JsonObject:
         value = steps.get(name)
         return value if isinstance(value, dict) else {}
+
+    check = _step("harvest").get("advertiser_check")
+    check = check if isinstance(check, dict) else {}
+    mismatch = _step("harvest").get("status") == "advertiser_mismatch"
 
     kept = int(_step("harvest").get("kept") or 0)
     custodied = int(_step("custody").get("custodied") or 0)
@@ -489,14 +645,22 @@ def _outcome(evidence: JsonObject) -> JsonObject:
         if _step(name).get("reason")
     }
 
-    if custodied == 0:
+    if mismatch:
+        status = "advertiser_mismatch"
+    elif custodied == 0:
         status = "empty"
     elif skipped or failed or not_reached or not card_written or generated == 0:
         status = "partial"
     else:
         status = "ok"
 
-    sentences = [f"{kept} ad(s) kept, {custodied} custodied."]
+    sentences: list[str] = []
+    # The advertiser sentence leads, because "whose ads are these" is the question every other
+    # number in this summary is conditional on.
+    sentences.append(_resolution_sentence(resolution))
+    if mismatch:
+        sentences.append(str(check.get("conflict") or "The advertiser names did not agree."))
+    sentences.append(f"{kept} ad(s) kept, {custodied} custodied.")
     if card_written:
         sentences.append("An ad-DNA card was written.")
     else:
@@ -510,7 +674,7 @@ def _outcome(evidence: JsonObject) -> JsonObject:
 
     return {
         "status": status,
-        "summary": " ".join(sentences),
+        "summary": " ".join(s for s in sentences if s),
         "creatives_kept": kept,
         "creatives_custodied": custodied,
         "card_written": card_written,
@@ -519,7 +683,39 @@ def _outcome(evidence: JsonObject) -> JsonObject:
         "steps_failed": failed,
         "steps_not_reached": not_reached,
         "reasons": reasons,
+        # R3-A: the four facts an operator needed and could not get — which resolver decided
+        # the advertiser, which page was harvested, whether anything independent verified it,
+        # and the conflict sentence when the names disagreed.
+        "resolver_used": resolution.get("resolver_used"),
+        "linkedin_page_id": resolution.get("observed_page_id")
+        or resolution.get("linkedin_page_id"),
+        "advertiser_verified": bool(resolution.get("verified")),
+        "advertiser_conflict": check.get("conflict") if mismatch else None,
     }
+
+
+def _resolution_sentence(resolution: JsonObject) -> str:
+    """One plain sentence naming who the advertiser was taken to be, and on whose word.
+
+    A job whose evidence predates R3-A carries no resolution block at all; it gets no sentence
+    rather than a fabricated one, so replaying an old row cannot make it claim a provenance it
+    never had.
+    """
+    if not resolution:
+        return ""
+    used = resolution.get("resolver_used")
+    page = resolution.get("observed_page_id") or resolution.get("linkedin_page_id")
+    name = resolution.get("resolved_name")
+    who = f"{name!r} " if name else ""
+    where = f"LinkedIn page {page}" if page else "a page the ad library chose from the domain"
+    if used == RESOLVER_PDL:
+        return f"Harvested {who}from {where}, verified by an independent identity resolver."
+    if used == RESOLVER_EXPLICIT:
+        return f"Harvested {who}from {where}, an operator-supplied page id (unverified)."
+    return (
+        f"Harvested {who}from {where} — resolved by the ad library itself and "
+        "UNVERIFIED by an independent identity resolver."
+    )
 
 
 def _complete(

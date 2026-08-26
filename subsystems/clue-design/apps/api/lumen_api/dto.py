@@ -525,10 +525,32 @@ def ingestion_job_outcome(job: JsonObject) -> JsonObject | None:
     return outcome if isinstance(outcome, dict) else None
 
 
+def ingestion_job_resolution(job: JsonObject) -> JsonObject | None:
+    """The job's bounded advertiser-resolution provenance, or ``None`` when it has none.
+
+    W5/R3-A. The acceptance report's minimum ask, in as many words: "surface the resolved
+    `page_id` + `advertiser_name` in the job DTO". Before this, an operator polling the
+    documented endpoint could not see WHICH LinkedIn page had been harvested — so a job that
+    fetched a stranger's page (apollo.io resolving to 107285417 instead of 18511550) was
+    indistinguishable from a brand that simply has no ads, and stayed that way for two rounds
+    of testing.
+
+    Bounded and machine-readable, lifted out of the evidence exactly as
+    :func:`ingestion_job_outcome` is, and never the evidence body itself. Only the ad-assets
+    lane composes one; the three older kinds carry no `resolution` key and this stays ``None``.
+    """
+    evidence = job.get("evidence")
+    if not isinstance(evidence, dict):
+        return None
+    resolution = evidence.get("resolution")
+    return resolution if isinstance(resolution, dict) else None
+
+
 def ingestion_job_dto(job: JsonObject) -> JsonObject:
-    """Public view of an ingestion job row (no request/evidence bodies — one named URL and one
-    bounded outcome summary apart, see :func:`ingestion_job_website_url` and
-    :func:`ingestion_job_outcome`)."""
+    """Public view of an ingestion job row (no request/evidence bodies — one named URL, one
+    bounded outcome summary and one bounded resolution block apart, see
+    :func:`ingestion_job_website_url`, :func:`ingestion_job_outcome` and
+    :func:`ingestion_job_resolution`)."""
     return {
         "job_id": job["job_id"],
         "kind": job["kind"],
@@ -536,6 +558,7 @@ def ingestion_job_dto(job: JsonObject) -> JsonObject:
         "stage": job.get("stage"),
         "progress": job.get("progress"),
         "outcome": ingestion_job_outcome(job),
+        "resolution": ingestion_job_resolution(job),
         "website_url": ingestion_job_website_url(job),
         "brand_kit_id": job.get("brand_kit_id"),
         "brand_kit_version": job.get("brand_kit_version"),

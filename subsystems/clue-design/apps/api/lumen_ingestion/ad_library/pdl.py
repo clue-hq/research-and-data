@@ -3,7 +3,7 @@
 **This module is the only place in the repository that knows People Data Labs exists.**
 Everything else goes through
 :func:`lumen_ingestion.ad_library.company_identity.resolve_company_identity_resolver`, exactly
-as everything ad-library goes through ``resolve_provider`` and never names Adyntel.
+as everything ad-library goes through ``resolve_provider`` and never names the fetch vendor.
 
 The endpoint contract, per the vendor's documented Company Enrichment schema:
 

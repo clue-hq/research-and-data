@@ -11,7 +11,7 @@ So identity is now resolved FIRST, by a party that is not the ad library, and th
 then addressed by the id that resolution produced. Two independent sources have to agree about
 who the advertiser is before a single creative is kept.
 
-**The shape of the seam mirrors ``provider``/``adyntel`` exactly**, and for the same reasons:
+**The shape of the seam mirrors the ad-library provider pair exactly**, for the same reasons:
 this module declares the protocol and the typed failures and names no vendor; ``pdl`` is the
 one v1 implementation, reached only through :func:`resolve_company_identity_resolver`. A second
 identity source (Clearbit, a CRM, a hand-curated table) is a new implementation plus a line in
@@ -40,7 +40,7 @@ __all__ = [
     "CompanyIdentityCredentialsMissing",
     "CompanyIdentityError",
     "CompanyIdentityResolver",
-    "RESOLVER_ADYNTEL_DOMAIN",
+    "RESOLVER_AD_LIBRARY_DOMAIN",
     "RESOLVER_EXPLICIT",
     "RESOLVER_PDL",
     "check_advertiser_names",
@@ -53,8 +53,14 @@ JsonObject = dict[str, Any]
 #: The three ways this lane can come to believe it knows who the advertiser is. Stamped into
 #: the job's evidence and lifted into its DTO, so an operator never has to infer which one
 #: happened — the R3-A complaint was precisely that they could not.
+#:
+#: The fallback label is ``ad_library_domain`` and NOT the v1 fetch vendor's name, which the
+#: R3-A design sketched. Naming the vendor here would breach the D3 seam that
+#: ``test_no_module_outside_the_provider_package_names_the_vendor`` enforces — and it would
+#: also become a lie the moment a Meta or Google fetcher ships, because the fact being recorded
+#: is "the ad library resolved this itself", which is true of whichever library answered.
 RESOLVER_PDL = "pdl"
-RESOLVER_ADYNTEL_DOMAIN = "adyntel_domain"
+RESOLVER_AD_LIBRARY_DOMAIN = "ad_library_domain"
 RESOLVER_EXPLICIT = "explicit"
 
 

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Literal, Optional
 
-from pydantic import BaseModel, Field, StrictInt
+from pydantic import AliasChoices, BaseModel, Field, StrictInt
 
 
 JsonObject = Dict[str, Any]
@@ -422,9 +422,32 @@ class OnboardAdAssetsRequest(BaseModel):
     brand_kit_id: str
     brand_kit_version: int
     company_domain: Optional[str] = None
-    page_id: Optional[str] = None
+    #: THE OPERATOR'S EXPLICIT OVERRIDE (W5/R3-A), and the strongest selector there is.
+    #:
+    #: Supplying it SKIPS company-identity resolution entirely — a hand-verified page id is the
+    #: operator saying "I looked, it is this one", so calling a resolver to second-guess them
+    #: would only spend a credit to relitigate a settled question. It is an assertion rather
+    #: than a verification, though, so the job still records `verified: false`, and the
+    #: advertiser-name cross-check still gates custody exactly as it does on every other path.
+    #:
+    #: Accepted under EITHER name. `linkedin_page_id` is the spelling the R3-A design used and
+    #: the one the vendor's own wire format uses; `page_id` is what this request has always
+    #: called it. They are one field rather than two on purpose — a second, independent page
+    #: selector would recreate precisely the "which one did the caller mean" ambiguity the
+    #: route refuses `company_domain` + `page_id` together to avoid.
+    page_id: Optional[str] = Field(
+        default=None,
+        validation_alias=AliasChoices("page_id", "linkedin_page_id"),
+        serialization_alias="page_id",
+    )
     #: Overrides the inferred company name the thought-leader filter compares against. Useful
     #: when a page's own creatives are outnumbered by promoted personal posts.
+    #:
+    #: R3-A gave it a second job: on the two UNVERIFIED paths (an operator-supplied page id, or
+    #: a fallback to the ad library's own domain resolution) this is the name the advertiser
+    #: cross-check gates custody against, because no independent resolver supplied one. On the
+    #: verified path the resolver's name wins — a caller-supplied name compared against itself
+    #: would verify nothing.
     advertiser_name: Optional[str] = None
     #: Bounded spend: ~24–25 ads and ~1 vendor credit per page.
     max_pages: int = 3
