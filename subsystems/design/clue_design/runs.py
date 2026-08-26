@@ -476,6 +476,84 @@ async def reoffer_stranded_run(
     return None if row is None else _agent_run_job_from_row(row)
 
 
+async def list_dispatched_queued_runs(conn: AsyncConnection) -> list[JsonObject]:
+    """Every run still ``queued`` with its lease facts — the reaper's orphan input (R3-B).
+
+    The twin of :func:`list_dispatched_running_runs`, for the same reason its ingestion
+    counterpart exists: a worker that fails *before* the claim CAS leaves the run exactly where
+    the route left it, ``queued``, while its fleet task ends terminally FAILED — a state neither
+    the ``running`` sweep nor any re-offer path can see. Every D5 run has a ``work_id``
+    (``NOT NULL``), so there is no never-dispatched shape to exclude here either.
+    """
+    rows = (
+        await conn.execute(
+            text(
+                "SELECT run_id, workspace_id, kind, work_id, document_id, leased_by,"
+                "       lease_generation, leased_at, reoffer_count, updated_at"
+                " FROM design_agent_run WHERE status = 'queued'"
+                " ORDER BY updated_at ASC, run_id ASC"
+            )
+        )
+    ).fetchall()
+    return [
+        {
+            "run_id": row.run_id,
+            "workspace_id": row.workspace_id,
+            "kind": row.kind,
+            "work_id": str(row.work_id),
+            "document_id": row.document_id,
+            "leased_by": row.leased_by,
+            "lease_generation": row.lease_generation,
+            "leased_at": iso(row.leased_at),
+            "reoffer_count": row.reoffer_count,
+            "updated_at": iso(row.updated_at),
+        }
+        for row in rows
+    ]
+
+
+async def fail_dispatched_run(
+    conn: AsyncConnection,
+    *,
+    work_id: UUID,
+    result: JsonObject,
+    lease_generation: int | None = None,
+) -> JsonObject | None:
+    """Terminalize a dispatched run ``failed`` from the FLEET plane, keyed on work id (R3-B).
+
+    The run twin of :func:`clue_design.ingestion.fail_dispatched_job` — see it for the full
+    rationale. It accepts a ``queued`` row as well as a ``running`` one because the defect it
+    repairs is a run whose worker died before the claim CAS could move it.
+
+    ``None`` means refused: the row is already terminal, or a NEWER lease generation owns it
+    (the claim CAS's own fence predicate). As with :func:`fail_stranded_run`, the terminal
+    marker event is NOT emitted here — the caller lands it in the same transaction through
+    ``lumen_api.run_stream.fenced_emit``, which keeps the stream's terminal contract intact.
+    """
+    fence = (
+        ""
+        if lease_generation is None
+        else " AND (lease_generation IS NULL OR lease_generation <= :gen)"
+    )
+    params: dict[str, Any] = {"work_id": work_id, "result": dump_json(result)}
+    if lease_generation is not None:
+        params["gen"] = lease_generation
+    row = (
+        await conn.execute(
+            text(
+                "UPDATE design_agent_run"
+                " SET status = CAST('failed' AS design_run_status),"
+                "     result_json = CAST(:result AS jsonb), updated_at = now()"
+                " WHERE work_id = :work_id AND status IN ('queued', 'running')"
+                + fence
+                + " RETURNING *"
+            ),
+            params,
+        )
+    ).first()
+    return None if row is None else _agent_run_job_from_row(row)
+
+
 async def fail_stranded_run(
     conn: AsyncConnection, *, work_id: UUID, result: JsonObject
 ) -> JsonObject | None:
