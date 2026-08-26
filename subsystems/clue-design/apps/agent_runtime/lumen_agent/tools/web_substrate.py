@@ -58,7 +58,7 @@ from ..engine_mirror import record_pixel_dims, resolve_kit_color, sanitize_token
 from ..models.schemas import LumenRunTraceEvent, new_run_id
 from ..web_retokenize import build_web_retokenize_operations, summarize_class_pairs
 from . import logo_fetch
-from .asset_preview import asset_preview_path
+from .asset_preview import asset_preview_path, rasterize_vector_preview
 from .substrate import _CoreHelperProxy, _image_warning, blob_path_for_digest
 from .view import _VISION_MANY_IMAGE_MAX_PX, _image_block, _text_block
 
@@ -5088,6 +5088,15 @@ class LumenWebTools:
             ]
 
         resolved = asset_preview_path(record, self.config.effective_asset_store_root)
+        if resolved is None:
+            # D3: rasterize a vector on demand rather than refuse it. Same seam
+            # the scene lane uses, so the two lanes cannot disagree about which
+            # assets are viewable.
+            rasterized = rasterize_vector_preview(
+                self.core, record, asset_id, self.config.effective_asset_store_root
+            )
+            if rasterized is not None:
+                resolved = (str(rasterized), None, None)
         if resolved is None:
             mime = (record.get("media") or {}).get("mime_type") or "unknown"
             # Say only what is established: this record has no raster the vision

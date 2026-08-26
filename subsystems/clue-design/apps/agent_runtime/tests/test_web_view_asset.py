@@ -529,6 +529,124 @@ def test_a_rasterized_vector_resolves_to_its_png_thumbnail(tmp_path: Path):
     assert asset_preview_path(record, store) == (str(store / "sha256/55/5555555555555555555555555555555555555555555555555555555555555555"), 2560, 512)
 
 
+# --- D3: a vector the agent can actually look at ------------------------------
+#
+# apollo.io, W5: `view("asset:<svg>")` answered `asset_unavailable`, so the agent
+# PLACED logos it could never see -- which is how an OpenAI glyph shipped in an
+# apollo ad. It flagged the mark twice from metadata alone ("renders as the
+# asterisk-A mark, not a wordmark") because looking was not on offer.
+
+
+class _RasterizingCore:
+    """Stand-in for the engine helper: renders any scene to one PNG artifact.
+
+    Mirrors the real contract the ingestion pipeline relies on -- pixel bytes
+    arrive as a list of ints under `bytes`, never `bytes_base64`.
+    """
+
+    def __init__(self) -> None:
+        self.exports = 0
+
+    def new_scene(self, doc_id, title):
+        return {"id": doc_id, "title": title, "pages": {}, "assets": {}}
+
+    def apply_operations(self, scene, operations):
+        self.last_operations = operations
+        return {"scene": scene}
+
+    def export_preview(self, scene, fmt, **kwargs):
+        from PIL import Image
+
+        self.exports += 1
+        self.last_scene = scene
+        buffer = io.BytesIO()
+        Image.new("RGB", (512, 512), (200, 40, 40)).save(buffer, format="PNG")
+        return {"export": {"artifacts": [{"bytes": list(buffer.getvalue())}]}}
+
+
+def test_an_svg_asset_is_rasterized_on_demand_and_becomes_viewable(tmp_path: Path):
+    """THE red case. Same fixture as
+    `test_svg_without_a_thumbnail_says_so_instead_of_faking_a_preview`, which
+    pins the pre-fix answer: without an engine to rasterize with, that test
+    still gets `asset_no_preview`. With one, the agent gets pixels."""
+    tools = _tools(
+        tmp_path,
+        brand_kit_assets={"asset_logo_svg": {"record": _svg_record("asset_logo_svg")}},
+    )
+    tools.core = _RasterizingCore()
+
+    blocks = tools._view_content("asset:asset_logo_svg")
+
+    assert any(b.get("type") == "image" for b in blocks), _texts(blocks)
+    assert _emitted_image(blocks).size == (512, 512)
+    assert "asset_no_preview" not in _trace_summaries(tools)
+    # The asset really was handed to the engine as an image node in a page.
+    assert tools.core.last_scene["assets"]["asset_logo_svg"]["id"] == "asset_logo_svg"
+
+
+def test_a_legacy_self_referential_svg_thumbnail_is_rasterized_too(tmp_path: Path):
+    """The pre-W1.2 shape -- a "thumbnail" that is the SVG bytes again. The
+    resolver still refuses to serve it as a raster; the rasterizer supplies one."""
+    tools = _tools(
+        tmp_path,
+        brand_kit_assets={
+            "asset_logo_legacy": {"record": _legacy_svg_record("asset_logo_legacy")}
+        },
+    )
+    tools.core = _RasterizingCore()
+
+    blocks = tools._view_content("asset:asset_logo_legacy")
+
+    assert any(b.get("type") == "image" for b in blocks), _texts(blocks)
+
+
+def test_the_rasterized_preview_is_cached_per_digest(tmp_path: Path):
+    """An engine round-trip is expensive; looking twice must not pay twice."""
+    tools = _tools(
+        tmp_path,
+        brand_kit_assets={"asset_logo_svg": {"record": _svg_record("asset_logo_svg")}},
+    )
+    tools.core = _RasterizingCore()
+
+    tools._view_content("asset:asset_logo_svg")
+    tools._view_content("asset:asset_logo_svg")
+
+    assert tools.core.exports == 1
+
+
+def test_a_raster_asset_never_reaches_the_rasterizer(tmp_path: Path):
+    """Only vectors take the engine path -- `vector_source_digest` gates on the
+    record's own mime, so a PNG with a broken thumbnail is not re-rendered."""
+    from lumen_agent.tools.asset_preview import rasterize_vector_preview, vector_source_digest
+
+    record = _raster_record("asset_kit_hero", thumb_ref=None)
+    assert vector_source_digest(record) is None
+    core = _RasterizingCore()
+    assert rasterize_vector_preview(core, record, "asset_kit_hero", tmp_path) is None
+    assert core.exports == 0
+
+
+def test_an_engine_that_declines_leaves_the_honest_refusal_in_place(tmp_path: Path):
+    """A rasterizer that fails must degrade to the designed sentence, never to
+    a traceback or a path nothing can decode."""
+
+    class _DecliningCore(_RasterizingCore):
+        def export_preview(self, scene, fmt, **kwargs):
+            raise RuntimeError("helper unavailable")
+
+    tools = _tools(
+        tmp_path,
+        brand_kit_assets={"asset_logo_svg": {"record": _svg_record("asset_logo_svg")}},
+    )
+    tools.core = _DecliningCore()
+
+    blocks = tools._view_content("asset:asset_logo_svg")
+
+    assert all(b.get("type") == "text" for b in blocks)
+    assert "no raster preview" in _texts(blocks)
+    assert "asset_no_preview" in _trace_summaries(tools)
+
+
 # --- the prompts advertise it ------------------------------------------------
 
 
