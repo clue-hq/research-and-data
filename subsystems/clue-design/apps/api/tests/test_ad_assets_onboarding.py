@@ -87,6 +87,46 @@ class _FailingDistiller:
         return None
 
 
+class _UnconfiguredDistiller:
+    """The R2-B shape: a distiller with no model key at all.
+
+    ``active = False`` is what the lane reads as "not attempted", and it is exactly what the
+    W5 acceptance run got from a stock `.env`. Kept as its own stub rather than reusing
+    ``NullAdDnaDistiller`` so the test names the condition it is reproducing.
+    """
+
+    active = False
+    model = "null"
+    last_failure_reason = None
+
+    def distil(self, previews: list[Any]) -> AdDnaCard | None:
+        raise AssertionError("an inactive distiller must never be called")
+
+
+class _EmptyProvider:
+    """A vendor that resolves the advertiser and honestly has no ads for it.
+
+    This is the Apollo shape from the W5 run — `page_id` resolves, `ads` is empty — and it is
+    the one harvest outcome the suite never covered.
+    """
+
+    name = "stub-library-empty"
+
+    def __init__(self) -> None:
+        self.calls: list[dict[str, Any]] = []
+
+    def fetch_page(self, **kwargs: Any) -> AdLibraryPage:
+        self.calls.append(kwargs)
+        return AdLibraryPage(
+            page_id="107285417",
+            total_ads=0,
+            ads=(),
+            continuation_token=None,
+            is_last_page=True,
+            provider=self.name,
+        )
+
+
 def _card() -> AdDnaCard:
     return AdDnaCard(
         prose=(
@@ -421,6 +461,155 @@ def test_a_full_run_harvests_distils_and_pregenerates(
     assert creative["asset_id"].startswith("asset_ad_")
     # The bytes really are servable through the asset registry, not just named.
     assert client.get(f"/assets/{creative['asset_id']}").status_code == 200
+
+
+# --- W5/R2-C: the top-line outcome names what actually happened -------------------------------
+#
+# All three jobs below end `succeeded`, and that stays correct: this lane has no gates (D5), and
+# a brand with no static ads has honestly nothing to harvest. What is being pinned is that the
+# CALLER can now tell them apart without opening the evidence body — which is what the W5 run
+# could not do, twice.
+
+
+def test_an_empty_harvest_says_so_at_the_top_level(
+    tmp_path: Path, lane_on: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """RED CASE 1: the vendor resolved the advertiser and returned no ads.
+
+    Before this, the whole truth was `steps.harvest.status == "empty"` one level down, while
+    the job row said `succeeded` / progress 1.0 / error null and the polled DTO carried no hint
+    at all. The distil and pre-generate steps were not merely skipped, they were never reached —
+    absent keys, which read as silence.
+    """
+    client = _client(tmp_path)
+    brand_kit_id = _seed_brand_kit(client)
+
+    job = _run_job(
+        client,
+        tmp_path,
+        brand_kit_id=brand_kit_id,
+        distiller=_StubDistiller(),
+        provider=_EmptyProvider(),
+    )
+
+    assert job["status"] == "succeeded", "an empty harvest is not an error"
+    assert job["evidence"]["steps"]["harvest"]["status"] == "empty"
+
+    outcome = job["outcome"]
+    assert outcome is not None, "the polled DTO must carry the outcome, not bury it"
+    assert outcome["status"] == "empty"
+    assert outcome["creatives_kept"] == 0
+    assert outcome["creatives_custodied"] == 0
+    assert outcome["card_written"] is False
+    assert outcome["assets_generated"] == 0
+    # The steps that never ran are NAMED, rather than being absent keys nobody notices.
+    assert outcome["steps_not_reached"] == ["custody", "record", "distill", "pregenerate"]
+    assert "0 ad(s) kept" in outcome["summary"]
+    assert "No ad-DNA card was written." in outcome["summary"]
+
+    # The durable row and the DTO tell the same story.
+    assert job["evidence"]["outcome"] == outcome
+    # And the human-facing stage no longer reads as whichever step narrated last.
+    assert job["stage"] == outcome["summary"]
+
+    lane = client.get(f"/brand-ad-assets/{brand_kit_id}").json()
+    assert lane["card"] is None
+    assert lane["creatives"] == []
+
+
+def test_a_distillation_skipped_for_a_missing_key_says_so_at_the_top_level(
+    tmp_path: Path, lane_on: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """RED CASE 2: the R2-B failure, reported honestly even when the key is still absent.
+
+    R2-B stops the design subsystem being keyless by accident. This is the other half: when a
+    deployment genuinely has no model key, the job must still not look like a working lane.
+    """
+    client = _client(tmp_path)
+    brand_kit_id = _seed_brand_kit(client)
+
+    job = _run_job(
+        client, tmp_path, brand_kit_id=brand_kit_id, distiller=_UnconfiguredDistiller()
+    )
+
+    assert job["status"] == "succeeded", "a missing key is not a job failure"
+
+    outcome = job["outcome"]
+    assert outcome["status"] == "partial", "creatives landed, the card and imagery did not"
+    assert outcome["creatives_custodied"] == 4
+    assert outcome["card_written"] is False
+    assert outcome["assets_generated"] == 0
+    assert outcome["steps_skipped"] == ["distill"]
+    assert outcome["steps_not_reached"] == ["pregenerate"]
+    # The REASON rides the top level too — an operator should not have to guess "no model key".
+    assert "no model key" in outcome["reasons"]["distill"]
+    assert "no model key" in outcome["summary"]
+
+    lane = client.get(f"/brand-ad-assets/{brand_kit_id}").json()
+    assert lane["card"] is None
+    assert len(lane["creatives"]) == 4, "the harvest survived the skipped distillation"
+
+
+def test_a_fully_populated_lane_is_the_only_one_that_reads_ok(
+    tmp_path: Path, lane_on: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The positive control: `ok` means all three artifact kinds actually exist."""
+    client = _client(tmp_path)
+    brand_kit_id = _seed_brand_kit(client)
+
+    job = _run_job(client, tmp_path, brand_kit_id=brand_kit_id, distiller=_StubDistiller())
+
+    outcome = job["outcome"]
+    assert outcome["status"] == "ok"
+    assert outcome["creatives_kept"] == 4
+    assert outcome["card_written"] is True
+    assert outcome["assets_generated"] == 2
+    assert outcome["steps_skipped"] == []
+    assert outcome["steps_failed"] == []
+    assert outcome["steps_not_reached"] == []
+    assert outcome["reasons"] == {}
+
+
+def test_a_failed_distillation_reads_as_partial_and_names_the_failure(
+    tmp_path: Path, lane_on: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A model that answered badly is `partial` too — and it is not confused with `skipped`."""
+    client = _client(tmp_path)
+    brand_kit_id = _seed_brand_kit(client)
+
+    job = _run_job(client, tmp_path, brand_kit_id=brand_kit_id, distiller=_FailingDistiller())
+
+    outcome = job["outcome"]
+    assert outcome["status"] == "partial"
+    assert outcome["steps_failed"] == ["distill"]
+    assert outcome["steps_skipped"] == []
+    assert "upstream is on fire" in outcome["reasons"]["distill"]
+
+
+def test_the_older_ingestion_kinds_gain_a_field_and_lose_nothing(tmp_path: Path) -> None:
+    """The outcome member is lifted from evidence, never the evidence body itself.
+
+    `ingestion_job_dto` is shared by all four kinds. The three older ones compose no outcome,
+    so theirs stays `None` — and no kind's DTO ever exposes the request or evidence bodies.
+    """
+    from lumen_api.dto import ingestion_job_dto
+
+    row = {
+        "job_id": "ingest_x",
+        "kind": "website",
+        "status": "succeeded",
+        "stage": None,
+        "progress": 1.0,
+        "request": {"secret_staged_digest": "do-not-leak"},
+        "evidence": {"schema_version": 1, "colors": ["#fff"]},
+        "error": None,
+        "created_at": "2026-08-26T00:00:00Z",
+        "updated_at": "2026-08-26T00:00:00Z",
+    }
+
+    dto = ingestion_job_dto(row)
+    assert dto["outcome"] is None
+    assert "evidence" not in dto and "request" not in dto
 
 
 def test_a_failed_distillation_does_not_lose_the_harvested_creatives(
