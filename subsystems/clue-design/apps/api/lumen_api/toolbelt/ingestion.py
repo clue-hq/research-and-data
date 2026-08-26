@@ -44,6 +44,7 @@ from clue_toolbelt import (
 from .base import DesignTool
 
 __all__ = [
+    "IngestAdAssetsTool",
     "IngestAssetsTool",
     "IngestPdfTool",
     "IngestWebsiteTool",
@@ -150,3 +151,26 @@ class IngestAssetsTool(IngestWebsiteTool):
         "already staged in platform storage; the job request carries their digests."
     )
     _kind: ClassVar[str] = "asset_upload"
+
+
+class IngestAdAssetsTool(IngestWebsiteTool):
+    """Offer one Brand Ad Assets onboarding job to the fleet (spec §5 W2).
+
+    The fourth ingestion kind, and a sibling rather than a special case: the lane needs fleet
+    dispatch, the lease/generation fence, stage reporting and the stranded-work reaper, which
+    is precisely what ``design_ingestion_job`` already is. Its job REQUEST holds no staged
+    bytes — the harvest fetches its own, from the ad library — so the "staged blob registration
+    stays in the route" note above simply does not apply here.
+
+    The route that offers this is flag-gated (``LUMEN_BRAND_AD_ASSETS``) and 404s when the flag
+    is off, so with the flag off this tool is registered, auditable, and unreachable.
+    """
+
+    name = "design_ingest_ad_assets"
+    version = "1"
+    model_description = (
+        "Offer a brand ad-assets onboarding job to the worker fleet: harvest the brand's own "
+        "published ads, filter and de-duplicate them, custody their bytes, distil the ad-DNA "
+        "card, and pre-generate imagery from it. Runs asynchronously."
+    )
+    _kind: ClassVar[str] = "ad_assets"

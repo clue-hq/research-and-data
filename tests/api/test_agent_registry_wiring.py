@@ -151,8 +151,10 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     # `finish_design_leg@1`, the DESIGN-granted leg exit, role-unavailable from this view
     # (110 + 1 = 111). The part-iii integration merge unions this branch's own additions since
     # the common base (readiness/synthesis @2s, company/product readers, the exact-subject
-    # gates, FI-2's selected-Account launch and reads: 111 + 18 = 129).
-    assert len(by_address) == 129
+    # gates, FI-2's selected-Account launch and reads: 111 + 18 = 129). Brand Ad Assets v1 W2
+    # adds its four ungranted lane envelopes, disclosed unavailable to every surface
+    # (129 + 4 = 133).
+    assert len(by_address) == 133
     assert by_address["finish_design_leg@1"].status is AgentCapabilityStatus.ROLE_UNAVAILABLE
     # P3.3 retired the Part II reservation: the 49 design tools are GRANTED to
     # AgentRole.DESIGN now. From head-of-abm's view they are role-unavailable with
@@ -231,7 +233,9 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     # product readers, both gate tools, and FI-2's selected-Account launch. The part-iii merge
     # adds the 49 design_* write tools and the two design-leg tools to the disclosed inventory
     # (78 + 51 = 129); all but `open_design_leg` are role-unavailable to the Head of ABM.
-    assert len(by_address) == 129
+    # Brand Ad Assets v1 W2's four ungranted lane envelopes join on the same terms as
+    # `synthesize_entity_prose@1`: machine-invoked, disclosed, granted to nobody (129 + 4 = 133).
+    assert len(by_address) == 133
     for address in (
         "create_thread@1",
         "rename_thread@1",

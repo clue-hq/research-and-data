@@ -66,14 +66,35 @@ def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
     # design-runtime-internal.
     # The part-iii integration merge unions that design lineage (49 design grants + the two leg
     # tools) with this branch's own additions since the common base: 63 + 49 + 2 = 114.
-    assert len(C6_AGENT_TOOL_AUTHORITY) == 114
+    # Brand Ad Assets v1 W2 adds the ad-assets lane's four write envelopes, all UNGRANTED
+    # (114 -> 118) — see the carve-out below.
+    assert len(C6_AGENT_TOOL_AUTHORITY) == 118
     assert C6_AGENT_TOOL_AUTHORITY["open_design_leg"] == (AgentRole.HEAD_OF_ABM,)
     assert C6_AGENT_TOOL_AUTHORITY["finish_design_leg"] == (AgentRole.DESIGN,)
     design_grants = {
         name: roles for name, roles in C6_AGENT_TOOL_AUTHORITY.items() if name.startswith("design_")
     }
-    assert len(design_grants) == 49
-    assert all(roles == (AgentRole.DESIGN,) for roles in design_grants.values())
+    assert len(design_grants) == 53
+    # The Brand Ad Assets lane is MACHINE-INVOKED, on exactly the terms `synthesize_entity_prose`
+    # and `synthesize_value_narrative` already established below: its onboarding job's worker
+    # calls these through the design toolbelt (actor="agent"), and no model surface plans a
+    # harvest, distils a card, or decides to spend N image generations. So they are registered
+    # and audited — the complete-write-surface property holds — but granted to nobody. Granting
+    # them would be a reviewed design-profile version bump, which is a decision this lane does
+    # not get to make on its own.
+    AD_ASSETS_LANE = {
+        "design_ingest_ad_assets",
+        "design_record_ad_creatives",
+        "design_publish_ad_dna_card",
+        "design_link_ad_pregenerated_assets",
+    }
+    assert AD_ASSETS_LANE <= set(design_grants)
+    assert all(design_grants[name] == () for name in AD_ASSETS_LANE)
+    assert all(
+        roles == (AgentRole.DESIGN,)
+        for name, roles in design_grants.items()
+        if name not in AD_ASSETS_LANE
+    )
     assert C6_AGENT_TOOL_AUTHORITY["create_thread"] == ()
     assert C6_AGENT_TOOL_AUTHORITY["rename_thread"] == ()
     assert C6_AGENT_TOOL_AUTHORITY["set_thread_pinned"] == ()

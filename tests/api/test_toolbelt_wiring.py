@@ -290,9 +290,16 @@ _MATRIX: dict[str, tuple[str, object]] = {
     "design_delete_asset": ("precondition", ("design_runtime_not_configured",)),
     "design_delete_binding_set": ("precondition", ("design_runtime_not_configured",)),
     "design_derive_instance": ("precondition", ("design_runtime_not_configured",)),
+    "design_ingest_ad_assets": ("precondition", ("design_runtime_not_configured",)),
     "design_ingest_assets": ("precondition", ("design_runtime_not_configured",)),
     "design_ingest_pdf": ("precondition", ("design_runtime_not_configured",)),
     "design_ingest_website": ("precondition", ("design_runtime_not_configured",)),
+    "design_link_ad_pregenerated_assets": (
+        "precondition",
+        ("design_runtime_not_configured",),
+    ),
+    "design_publish_ad_dna_card": ("precondition", ("design_runtime_not_configured",)),
+    "design_record_ad_creatives": ("precondition", ("design_runtime_not_configured",)),
     "design_publish_brand_kit_version": ("precondition", ("design_runtime_not_configured",)),
     "design_register_asset_record": ("precondition", ("design_runtime_not_configured",)),
     "design_register_captured_assets": ("precondition", ("design_runtime_not_configured",)),
@@ -779,6 +786,44 @@ def _bodies() -> dict[str, dict[str, object]]:
             "request": {"files": []},
             "envelope": {"kind": "ingestion", "job_id": "ingest_matrix_assets"},
         },
+        # Brand Ad Assets v1 W2 — the ad-assets lane (design-side flag LUMEN_BRAND_AD_ASSETS
+        # gates its route; the envelopes are registered here like every other design tool).
+        "design_ingest_ad_assets": {
+            "job_id": "ingest_matrix_ad_assets",
+            "work_id": _UUID(),
+            "request": {"company_domain": "matrix.example"},
+            "envelope": {"kind": "ingestion", "job_id": "ingest_matrix_ad_assets"},
+        },
+        "design_record_ad_creatives": {
+            "creatives": [
+                {
+                    "creative_id": "adcre_matrix",
+                    "harvest_job_id": "ingest_matrix_ad_assets",
+                    "provider": "matrix",
+                    "ad_id": "1",
+                    "creative_url": "https://matrix.example/creative.png",
+                    "asset_id": "asset_ad_matrix",
+                    "fetched_at": "2026-08-26T00:00:00+00:00",
+                }
+            ]
+        },
+        "design_publish_ad_dna_card": {
+            "card_id": "adna_matrix",
+            "brand_kit_id": "bk_matrix",
+            "brand_kit_version": 1,
+            "card": {"visual_systems": [{"name": "Matrix"}]},
+        },
+        "design_link_ad_pregenerated_assets": {
+            "card_id": "adna_matrix",
+            "card_version": 1,
+            "links": [
+                {
+                    "asset_id": "asset_gen_matrix",
+                    "visual_system": "Matrix",
+                    "prompt": "an abstract ground",
+                }
+            ],
+        },
         # Round C — the asset registry.
         "design_register_asset_record": {"record": {"id": "asset_matrix"}},
         "design_register_qr_asset": {"record": {"id": "asset_qr_matrix"}},
@@ -1230,16 +1275,18 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # promotes presentation-bearing @3, so the address inventory grows by one without adding a
     # new tool name.
     # The part-iii merge registers the 49 design_* write envelopes and the two design-leg tools
-    # in every composition (63 + 51 = 114).
-    assert len(registry.names()) == 114
+    # in every composition (63 + 51 = 114). Brand Ad Assets v1 W2 adds the ad-assets lane's
+    # four design_* envelopes — one ingestion enqueue and three lane writes (114 → 118).
+    assert len(registry.names()) == 118
     # C6 keeps profile_contact@1 for immutable historical pins and elects the governed,
     # project-run-scoped profile_contact@2 as the name-only default.
     # S4-D likewise retains both historical @1 Client-KB readers and registers strict @2 as
     # defaults. Corrected @2 contracts retain their immutable @1 versions, so the combined address
     # inventory is larger than the name inventory without rewriting any historical contract.
     # The part-iii merge adds the design write envelopes and leg tools to the address
-    # inventory as well (77 + 52 = 129).
-    assert len(registry) == 129
+    # inventory as well (77 + 52 = 129). Brand Ad Assets v1 W2 adds four more, each at @1
+    # only — the lane is new, so it has no historical contract to retain (129 → 133).
+    assert len(registry) == 133
     assert registry.descriptor("synthesize_icps").version == "3"
     assert registry.descriptor("synthesize_icps", "2").version == "2"
     assert registry.descriptor("start_confirmed_project_run").version == "3"
@@ -1257,11 +1304,12 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # PD-part3 P3.4 adds `open_design_leg` — the head-of-abm's delegation entry onto the design
     # leg (102 -> 103) — and P3.5 adds `finish_design_leg`, the DESIGN-granted leg-level exit
     # (103 -> 104). The part-iii integration merge unions this branch's own additions since the
-    # common base (104 + 10 = 114 names).
-    assert len(registry.names()) == 114
+    # common base (104 + 10 = 114 names). Brand Ad Assets v1 W2 adds the ad-assets lane's four
+    # envelopes: one ingestion enqueue and three lane writes (114 -> 118).
+    assert len(registry.names()) == 118
     # C6 keeps profile_contact@1 for immutable historical pins and elects the governed,
     # project-run-scoped profile_contact@2 as the name-only default.
-    assert len(registry) == 129
+    assert len(registry) == 133
     assert registry.descriptor("profile_contact").version == "2"
     assert registry.descriptor("profile_contact", "1").version == "1"
     assert {

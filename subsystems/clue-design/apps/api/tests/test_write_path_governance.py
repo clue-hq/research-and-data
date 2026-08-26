@@ -138,6 +138,16 @@ _GOVERNED: dict[str, tuple[str, tuple[str, ...]]] = {
     "create_web_batch": ("method", ("lumen_api/design_store.py",)),
     "update_web_batch_progress": ("method", ("lumen_api/design_store.py",)),
     "persist_derived_instance": ("function", ()),
+    # --- Brand Ad Assets v1 W2 — the ad-assets lane ----------------------------------------
+    # Three durable writes over the lane's own tables, on their own workspace-scoped store
+    # facade (``AdAssetsStore``) rather than on ``HybridRepository`` — the same shape the
+    # ingestion job store and the description store already have. The lane's OTHER two writes
+    # are not listed because they are not new: the harvested creatives' asset rows go through
+    # ``design_register_captured_assets`` and the pre-generated imagery through
+    # ``design_register_generated_asset``, both already governed above.
+    "record_creatives": ("method", ("lumen_ingestion/ad_library/store.py",)),
+    "create_card_version": ("method", ("lumen_ingestion/ad_library/store.py",)),
+    "link_pregenerated_assets": ("method", ("lumen_ingestion/ad_library/store.py",)),
 }
 
 #: Design store mutations that are deliberately NOT behind a tool, each with its justification.
@@ -233,14 +243,16 @@ def test_every_governed_name_actually_exists() -> None:
     from lumen_api.toolbelt import documents as toolbelt_documents
     from lumen_api.toolbelt import personalization as toolbelt_personalization
     from lumen_api.toolbelt import web_documents as toolbelt_web_documents
+    from lumen_ingestion.ad_library.store import AdAssetsStore
     from lumen_ingestion.describe import DescriptionStore
     from lumen_ingestion.jobs import IngestionJobStore
 
     # Round C: two governed mutations live on the design app's OTHER two workspace-scoped store
     # facades rather than on ``HybridRepository`` — the ingestion job store's atomic enqueue and
     # the description store's merge-patch. The guard's textual rule is unchanged (an attribute
-    # call ``.<name>(``); only the "does this name exist?" check has to look in three places.
-    stores = (HybridRepository, IngestionJobStore, DescriptionStore)
+    # call ``.<name>(``); only the "does this name exist?" check has to look in three places —
+    # four, since the Brand Ad Assets lane added its own facade.
+    stores = (HybridRepository, IngestionJobStore, DescriptionStore, AdAssetsStore)
     for name, (kind, _allowed) in _GOVERNED.items():
         if kind == "method":
             assert any(hasattr(store, name) for store in stores), (
@@ -353,6 +365,13 @@ def test_design_tool_names_are_stable() -> None:
         "design_advance_instance_batch",
         "design_create_web_batch",
         "design_advance_web_batch",
+        # Brand Ad Assets v1 W2 — the ad-assets lane. Registered unconditionally so the
+        # platform's C6 authority audit stays a complete statement about every write the
+        # platform can name; reachable only through the flag-gated onboarding route.
+        "design_ingest_ad_assets",
+        "design_record_ad_creatives",
+        "design_publish_ad_dna_card",
+        "design_link_ad_pregenerated_assets",
     }
 
 

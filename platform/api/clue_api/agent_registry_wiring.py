@@ -132,6 +132,17 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
     "design_ingest_assets": (AgentRole.DESIGN,),
     "design_ingest_pdf": (AgentRole.DESIGN,),
     "design_ingest_website": (AgentRole.DESIGN,),
+    # Brand Ad Assets v1 W2 — the ad-assets lane. UNGRANTED, and deliberately so: the lane is
+    # populated by an onboarding JOB, whose worker invokes these through the design toolbelt
+    # directly (actor="agent"), exactly as the brand-kit ingestion worker does. No model
+    # surface plans a harvest, so handing these to one would be authority nobody asked for.
+    # Registered here regardless, so the audit question "which durable writes can the platform
+    # name?" stays a complete, static statement. Granting them later is a reviewed profile
+    # version bump, which is the review this deliberately does not pre-empt.
+    "design_ingest_ad_assets": (),
+    "design_record_ad_creatives": (),
+    "design_publish_ad_dna_card": (),
+    "design_link_ad_pregenerated_assets": (),
     "design_publish_brand_kit_version": (AgentRole.DESIGN,),
     "design_register_asset_record": (AgentRole.DESIGN,),
     "design_register_captured_assets": (AgentRole.DESIGN,),
