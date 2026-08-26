@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 import types
+from pathlib import Path
 
 import pytest
 
@@ -443,7 +444,93 @@ def test_the_cancel_is_announced_on_the_run_event_stream(monkeypatch, tmp_path) 
 
 
 # ===========================================================================
-# 5. THE SHARED FINALIZE — reused, not reimplemented
+# 5. WEBSITE MODE — the same route must be able to stop either kind of run
+# ===========================================================================
+
+
+def test_a_web_turn_with_no_probe_calls_instrument_with_the_pre_a3_argument_list(
+    monkeypatch, tmp_path
+) -> None:
+    """The web harness's `_instrument` seam is spied on with a FOUR-parameter signature
+    (`test_web_review_cap.py`), so the same omit-when-absent rule applies here."""
+    import deepagents
+
+    import lumen_agent.llm as llm
+    from lumen_agent import harness_web
+    from lumen_agent.config import AgentRuntimeConfig
+    from lumen_api.core import CoreClient
+
+    repo_root = Path(__file__).resolve().parents[3]
+    captured: dict = {}
+    monkeypatch.setattr(deepagents, "create_deep_agent", lambda **kwargs: captured.update(kwargs))
+    monkeypatch.setattr(harness_web, "materialize_agent_workspace", lambda _config: None)
+    monkeypatch.setattr(
+        harness_web, "_instrument", lambda _config, _tools, _model, role: f"{role}-model"
+    )
+    monkeypatch.setattr(llm, "assert_all_role_models_support_image_input", lambda _config: None)
+
+    from dataclasses import replace as _replace
+
+    config = _replace(
+        AgentRuntimeConfig.from_env(repo_root), trace_dir=tmp_path / "workspace"
+    )
+    web_doc = CoreClient(repo_root=repo_root).web_new_doc("doc_a3", "A3", None)["web_doc"]
+
+    harness_web.create_web_deepagent("Build a page.", config, web_doc)
+
+    assert captured["model"] == "orchestrator-model"
+
+
+def test_a_cancelled_web_turn_is_failed_with_nothing_applied(monkeypatch, tmp_path) -> None:
+    """Website mode's honest cancelled outcome, and why it differs from the scene path's.
+
+    A web turn authors the page and persists ONCE, at the end — there is no P0.4 mid-run
+    checkpoint, so a stopped web turn has no partial work to keep. `failed` with an empty
+    operations ledger is therefore the whole truth, and a `completed_with_warnings` here would be
+    the fabrication the result envelope exists to prevent. The path itself is the harness's
+    pre-existing honest-failure finalize; A3 only made its reason truthful.
+    """
+    import deepagents
+
+    import lumen_agent.llm as llm
+    from lumen_agent import harness_web
+    from lumen_agent.config import AgentRuntimeConfig
+    from lumen_api.core import CoreClient
+
+    repo_root = Path(__file__).resolve().parents[3]
+
+    monkeypatch.setattr(
+        deepagents,
+        "create_deep_agent",
+        lambda **kwargs: types.SimpleNamespace(invoke=lambda *a, **k: {"messages": []}),
+    )
+    monkeypatch.setattr(harness_web, "materialize_agent_workspace", lambda _config: None)
+    monkeypatch.setattr(llm, "assert_all_role_models_support_image_input", lambda _config: None)
+
+    from dataclasses import replace as _replace
+
+    config = _replace(
+        AgentRuntimeConfig.from_env(repo_root), trace_dir=tmp_path / "workspace"
+    )
+    web_doc = CoreClient(repo_root=repo_root).web_new_doc("doc_a3b", "A3", None)["web_doc"]
+
+    events: list = []
+    result = harness_web.run_deepagent_web_turn(
+        prompt="Build a page.",
+        config=config,
+        initial_web_doc=web_doc,
+        event_sink=lambda event, data: events.append((event, data)),
+        cancel_requested=lambda: True,
+    )
+
+    assert result["status"] == "failed"
+    assert result["operations"] == []
+    assert "cancelled by request" in result["summary"]
+    assert [e for e, _ in events if e == CANCELLED_EVENT]
+
+
+# ===========================================================================
+# 6. THE SHARED FINALIZE — reused, not reimplemented
 # ===========================================================================
 
 

@@ -8034,6 +8034,7 @@ def run_web_agent_turn(
     engine_cache_root: Optional[Path] = None,
     checkpointer: Any = None,
     thread_id: Optional[str] = None,
+    cancel_requested: Any = None,
 ) -> JsonObject:
     """Run one website-mode turn against a WebDoc document. Mirrors
     run_agent_turn_preview's config assembly (env config + model override +
@@ -8174,6 +8175,10 @@ def run_web_agent_turn(
             # D5 Round B: see run_agent_turn_preview.
             checkpointer=checkpointer,
             thread_id=thread_id,
+            # A3 (defect R3-D): see run_agent_turn_preview. A web turn's cancelled outcome is
+            # `failed` with nothing applied — website mode persists once at the end, so there
+            # is no partial work a stop could keep.
+            cancel_requested=cancel_requested,
         )
     except Exception as error:
         return failed_agent_turn_response(
@@ -9092,6 +9097,9 @@ def execute_web_turn_job(
                 engine_cache_root=_host_engine_cache_root(host, workspace_id),
                 checkpointer=checkpointer,
                 thread_id=envelope.checkpoint_thread_id,
+                # A3 (defect R3-D): the same durable probe the scene executor builds, so ONE
+                # route can honestly stop either kind of design run.
+                cancel_requested=_run_cancel_probe(store, envelope.run_id),
             )
         if response.get("status") == "applied":
             operations = response.get("operations")
