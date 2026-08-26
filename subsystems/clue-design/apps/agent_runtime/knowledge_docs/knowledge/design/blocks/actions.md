@@ -203,3 +203,46 @@ Validator proof:
 ```json
 { "ok": true, "stage": "preflight", "errors": [], "warnings": ["LUMB0613", "LUMB0614"] }
 ```
+
+---
+
+## Pill chip (hug-sized, fully rounded)
+
+**When to use:** a short status or format label above the message — "Webinar On
+Demand", "New Report", "Now In Beta". The chip **hugs** its label, so the plate is
+always the width of the words plus its own padding. Reach for it when the reference
+ad shows a small fully-rounded tag and the words are genuinely a label.
+
+**When NOT to use:** do not use it for an ordinary eyebrow — variant A (plain
+overline) is the calmer default and a tinted pill is a well-known AI tell. Do not
+put a headline in it; a chip that wraps to a second line is not a chip. Do not give
+the label a fixed WIDE box — the empty tail inside an oversized pill is exactly what
+makes a generated ad look generated.
+
+**Hug is the whole point, and it is a frame property.** The chip frame is
+`s(hug,hug)`; the label keeps a definite width. `s(260,hug)` label + `pad(12,24)`
+solves to a **308 × label-height** chip (`260 + 24 + 24`), verified through
+`layout_geometry`. That is the difference from **variant C** above, which is a fixed
+`s(280,48)` badge: the fixed badge is right when several badges must line up, and
+this hug chip is right when one label should own exactly its own width. A hug WIDTH
+on the LABEL is still illegal (`LUMV0902`) — hug the FRAME, size the label.
+
+**The radius is `$radius.full`, not `$radius.badge`.** `$radius.full` is the pill
+role — the ends are semicircles at any height. `$radius.badge` is the softened-corner
+rectangle used by the variant-C badge and the logo mark. Picking the wrong one is the
+most common way this snippet comes back looking like a button.
+
+```text
+page pill_chip size(1080,1080,px)
+  artboard al(v, x(s), y(c), g($space.stack.default), pad(96)) p(0,0) s(fill,fill) fill($surface.page) clip(true)
+    chip al(h, x(c), y(c), pad(12,24)) p(0,0) s(hug,hug) fill($surface.brand.subtle) rd($radius.full)
+      chip_text text "Webinar On Demand" p(0,0) s(260,hug) align(center) style($type.eyebrow) lh(1.1) max_lines(1) slot(campaign.chip)
+    headline text "Watch it whenever you like." p(0,0) s(888,hug) style($type.headline) lh(1.06) wrap_text(true) max_lines(2) slot(campaign.headline)
+  #slot:campaign.chip sample("Webinar On Demand") worst_case("Webinar On Demand")
+  #slot:campaign.headline sample("Watch it whenever you like.") worst_case("Watch it whenever you like.")
+```
+
+Validator proof:
+```json
+{ "ok": true, "stage": "preflight", "errors": [], "warnings": ["LUMB0613", "LUMB0614"] }
+```

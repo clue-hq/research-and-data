@@ -67,6 +67,107 @@ Validator proof:
 
 ---
 
+## Card on a ground (elevated plate)
+
+**When to use:** reach for this when the ad has a coloured or textured ground and
+the message needs its own calm surface to sit on. The card gives the copy a light
+plate so the ground can stay saturated. Use it when the reference ad you are
+matching shows a rounded panel floating over a field. It carries the WHOLE message
+— eyebrow, headline, support line, and one call to action — so it replaces the
+loose centred stack rather than decorating it.
+
+**When NOT to use:** do not use it when the ground is already plain paper. A card
+on `$surface.page` is an invisible box with a shadow under it. Do not put a second
+card beside it — two plates of equal weight kill the focal point. Do not lift it
+with a hard dark shadow; the shadow reads as air under the plate, never as a drawn
+outline.
+
+**Content budget / geometry:** the card is `s(760,hug)` on a 1080² ground with
+`pad(96)`, so it clears the ground on every side and the ground stays visible as a
+frame. `pad(64)` inside the card leaves a `632pt` content column — size every
+slotted text node to that width with a hug height. Eyebrow 1-3 words `max_lines(1)`;
+headline 4-8 words `max_lines(2)` at `$type.headline`; support ≤12 words
+`max_lines(3)` at `$type.body.small` (`$type.body` is tuned for the wider 820pt hero
+column and crowds a 632pt card). One CTA, fixed `s(300,72)`, label `s(fill,hug)
+align(center)`.
+
+**The elevation:** `rd($radius.card)` for the corner and one soft
+`shadow(card_lift, #000000, o(0.18), y(24), blur(56))`. The blur is scaled up from
+the `skills/effects` card recipe (`o(0.12), y(8), blur(24)`) because that recipe is
+tuned for a ~400pt card and this plate is 760pt wide — a small blur on a big plate
+reads as a printed edge. **The shadow colour is a literal neutral, not a brand
+hex:** the Brand Kit's token groups carry no `shadow.*` entries, so there is no
+role to reference; use `#000000` at low opacity (ink) and never a brand colour.
+
+```text
+page card_on_ground size(1080,1080,px)
+  artboard al(v, x(c), y(c), g($space.section), pad(96)) p(0,0) s(fill,fill) fill($surface.brand) clip(true)
+    card al(v, x(s), y(c), g($space.stack.default), pad(64)) p(0,0) s(760,hug) fill($surface.card) rd($radius.card) shadow(card_lift, #000000, o(0.18), y(24), blur(56))
+      eyebrow text "WEBINAR" p(0,0) s(632,hug) style($type.eyebrow) wrap_text(true) max_lines(1) slot(campaign.eyebrow)
+      headline text "Close the quarter with fewer tools." p(0,0) s(632,hug) style($type.headline) lh(1.06) wrap_text(true) max_lines(2) slot(campaign.headline)
+      support text "One workspace for pipeline, forecast, and the board deck." p(0,0) s(632,hug) style($type.body.small) lh(1.4) wrap_text(true) max_lines(3) slot(offer.primary_message)
+      cta al(h, x(c), y(c), pad(18,36)) p(0,0) s(300,72) fill($surface.inverse) rd($radius.button)
+        cta_text text "Save my seat" p(0,0) s(fill,hug) align(center) style($type.cta) max_lines(1) slot(campaign.cta)
+  #slot:campaign.eyebrow sample("WEBINAR") worst_case("WEBINAR ON DEMAND")
+  #slot:campaign.headline sample("Close the quarter with fewer tools.") worst_case("Close the quarter with fewer tools.")
+  #slot:offer.primary_message sample("One workspace for pipeline, forecast, and the board deck.") worst_case("One workspace for pipeline, forecast, and the board deck.")
+  #slot:campaign.cta sample("Save my seat") worst_case("Save my seat")
+```
+
+Validator proof:
+```json
+{ "ok": true, "stage": "preflight", "errors": [], "warnings": ["LUMB0613", "LUMB0614"] }
+```
+
+---
+
+## Framed plate (a document inside a card)
+
+**When to use:** show a report cover, a document, or a piece of artwork as an
+**object**. The image sits inside the card with a visible margin on all four sides,
+so the card reads as a frame around it. Reach for this when the artifact IS the
+subject of the ad — a benchmark report, a guide, an issue of something.
+
+**When NOT to use:** do not use it when the image is atmosphere rather than
+subject; that ground belongs full-bleed behind the whole ad (see the
+**Card on a washed ground** composition in `knowledge/design/blocks/patterns`). Do
+not let the margin collapse to zero — an image touching the card edge stops looking
+framed and starts looking mis-cropped. Do not frame a photograph of people this
+way; a frame says "document".
+
+**Content budget / geometry:** the plate is a FIXED `s(720,880)` (not `hug`) so the
+frame proportion is the design decision and does not drift with the caption length.
+`pad(40)` is the frame margin; the inner panel is `s(640,600)`, which leaves exactly
+40pt of card on the left and right (`720 − 2×40 = 640`). The caption column below is
+the same 640 wide. Kicker 2-4 words `max_lines(1)`; title 4-7 words `max_lines(2)`.
+The panel takes `rd($radius.md)` — a smaller radius than the card's
+`rd($radius.card)`, so the frame reads as the outer object and the artwork as the
+inner one.
+
+**Placement is on the node, not the DSL line.** The `image` line carries only
+`asset(cover_art)`; its `fit:cover` + focal point + alt are set on the node's
+AssetPlacement by `asset(action="place")` (see `knowledge/images/placement`). Swap
+`cover_art` for the generated or uploaded asset id.
+
+```text
+page framed_plate size(1080,1080,px)
+  artboard al(v, x(c), y(c), g($space.section), pad(96)) p(0,0) s(fill,fill) fill($surface.muted) clip(true)
+    plate al(v, x(c), y(s), g($space.stack.default), pad(40)) p(0,0) s(720,880) fill($surface.card) rd($radius.card) shadow(plate_lift, #000000, o(0.16), y(20), blur(48))
+      panel image asset(cover_art) p(0,0) s(640,600) rd($radius.md)
+      caption al(v, x(s), g($space.stack.tight), pad(0)) p(0,0) s(640,hug)
+        kicker text "2026 BENCHMARK REPORT" p(0,0) s(640,hug) style($type.eyebrow) wrap_text(true) max_lines(1) slot(campaign.eyebrow)
+        title text "How finance teams closed the gap." p(0,0) s(640,hug) style($type.headline) lh(1.06) wrap_text(true) max_lines(2) slot(campaign.headline)
+  #slot:campaign.eyebrow sample("2026 BENCHMARK REPORT") worst_case("2026 BENCHMARK REPORT")
+  #slot:campaign.headline sample("How finance teams closed the gap.") worst_case("How finance teams closed the gap.")
+```
+
+Validator proof:
+```json
+{ "ok": true, "stage": "preflight", "errors": [], "warnings": ["LUMB0613", "LUMB0614"] }
+```
+
+---
+
 ## Stat tile
 
 **When to use:** spotlight one metric — a big number with a short label beneath
