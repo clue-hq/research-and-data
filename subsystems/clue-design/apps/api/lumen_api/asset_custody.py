@@ -60,6 +60,7 @@ __all__ = [
     "record_digests",
     "register_engine_write",
     "register_scene_asset_backstop",
+    "register_web_asset_backstop",
     "scene_asset_digests",
     "write_cache_blob",
 ]
@@ -347,6 +348,27 @@ def register_scene_asset_backstop(
             continue
         registered.append(digest)
     return registered
+
+
+def register_web_asset_backstop(
+    blobs: DesignBlobStore,
+    cache_dir: str | Path,
+    web_doc: Optional[JsonObject],
+) -> List[str]:
+    """The same backstop, on the WebDoc side of the house.
+
+    A ``WebDoc``'s ``assets`` is the identical by-value ``AssetRecord`` table a
+    scene carries (``crates/lumen-web/src/doc.rs``), so the walk, the cache
+    probe, the one bridged custody call and the repair/raise split are all
+    shared verbatim — only the seam that calls it differs.
+
+    It exists because the web commit path had no equivalent of the scene accept
+    seam's backstop, so bytes an agent tool ingested mid-turn (a fetched account
+    logo) reached durability only by whatever the engine cache happened to keep.
+    A cache is wipeable; a committed document citing wiped bytes renders an
+    empty box forever.
+    """
+    return register_scene_asset_backstop(blobs, cache_dir, web_doc)
 
 
 # --------------------------------------------------------------------------------------------

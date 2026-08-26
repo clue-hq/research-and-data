@@ -104,14 +104,25 @@ class KitBuilder:
         dark_hex: str | None,
         *,
         record_report: bool = True,
+        confidence: float | None = None,
+        description: str | None = None,
     ) -> None:
-        confidence = _confidence_for(assignment.basis)
+        """Emit one color token.
+
+        `confidence` / `description` override the basis-derived defaults for a
+        color whose story the three bases do not tell — a MEASURED band surface
+        sits at 0.8 between "observed swatch" and "derived", and carries the
+        human context of what recurred (`bands.py`). Both default to today's
+        behaviour, so every existing caller emits byte-identical JSON.
+        """
+        if confidence is None:
+            confidence = _confidence_for(assignment.basis)
         self.confidence_samples.append(confidence)
         modes = {"theme.dark": _color_value(dark_hex)} if dark_hex else {}
         self.colors[path] = {
             "value": _mode_value(_color_value(assignment.hex), modes),
             "role": _color_role(path),
-            "description": None,
+            "description": description,
             "provenance": _provenance(assignment.provenance, confidence),
         }
         if record_report:
@@ -470,6 +481,12 @@ def _merge_style_tags(existing: list[str], tags: list[str]) -> list[str]:
 def _confidence_for(basis: str) -> float:
     if basis == "evidence":
         return 0.9
+    # Read off the brand's own rendered page, but a cluster representative
+    # rather than a single observed swatch — `geometry.MEASURED_CONFIDENCE`
+    # explains the 0.8. Named here so a caller passing basis="measured" without
+    # an explicit override cannot silently land on the 0.3 default arm.
+    if basis == "measured":
+        return MEASURED_CONFIDENCE
     if basis == "derived":
         return 0.6
     return 0.3

@@ -8,6 +8,7 @@ ingest only, no LLM or browser).
 from __future__ import annotations
 
 import base64
+import hashlib
 import io
 import json
 from dataclasses import replace
@@ -153,14 +154,18 @@ def test_web_theme_token_names_semantic_only_without_kit():
     )
 
 
+def _hex_color(value="#00525C"):
+    return {"value": {"default": {"kind": "hex", "value": value}}}
+
+
 def test_web_theme_token_names_appends_sanitized_kit_colors():
     kit = {
         "tokens": {
             "colors": {
                 # a duplicate of a semantic name is not repeated
-                "primary": {},
-                "Surface.Brand": {},
-                "palette.primary.500": {},
+                "primary": _hex_color(),
+                "Surface.Brand": _hex_color(),
+                "palette.primary.500": _hex_color("#30D8A7"),
             }
         }
     }
@@ -180,6 +185,89 @@ def test_web_theme_token_names_appends_sanitized_kit_colors():
     assert "palette-primary-500" in names
     # "primary" appears exactly once (semantic; the kit dup is skipped).
     assert names.count("primary") == 1
+
+
+# W1.3 — the prompt may never advertise a token the compiled theme did not emit.
+# The Rust compiler (crates/lumen-web/src/theme.rs:113-131) skips a kit color on
+# TWO rules: its sanitized name already exists, and it does not resolve to a
+# concrete color (LUMW0302). Python replicated only the first, so a broken alias
+# chain became a token name the author was invited to use and the lint rejected.
+
+
+def test_web_theme_token_names_skips_a_color_that_does_not_resolve():
+    kit = {
+        "tokens": {
+            "colors": {
+                "brand.teal": _hex_color(),
+                # alias chain into a token the kit does not carry → LUMW0302
+                "brand.ghost": {"value": {"default": {"kind": "alias", "token": "gone"}}},
+            }
+        }
+    }
+    names = web_theme_token_names(kit).split()
+    assert "brand-teal" in names
+    assert "brand-ghost" not in names
+
+
+def test_web_theme_token_names_resolves_through_an_alias_chain():
+    kit = {
+        "tokens": {
+            "colors": {
+                "brand.base": _hex_color(),
+                "brand.hop": {"value": {"default": {"kind": "alias", "token": "brand.base"}}},
+            }
+        }
+    }
+    assert "brand-hop" in web_theme_token_names(kit).split()
+
+
+def test_web_theme_token_names_skips_a_cyclic_alias():
+    kit = {
+        "tokens": {
+            "colors": {
+                "a.one": {"value": {"default": {"kind": "alias", "token": "a.two"}}},
+                "a.two": {"value": {"default": {"kind": "alias", "token": "a.one"}}},
+            }
+        }
+    }
+    names = web_theme_token_names(kit).split()
+    assert "a-one" not in names and "a-two" not in names
+
+
+def test_web_theme_token_names_keeps_an_unresolvable_name_available_to_a_later_color():
+    """Rust never inserts the skipped name, so a LATER kit color that sanitizes
+    to the same thing still gets its token. Skipping must not poison the name."""
+    kit = {
+        "tokens": {
+            "colors": {
+                "brand.ghost": {"value": {"default": {"kind": "alias", "token": "gone"}}},
+                "Brand.Ghost": _hex_color(),
+            }
+        }
+    }
+    assert web_theme_token_names(kit).split().count("brand-ghost") == 1
+
+
+def test_web_theme_token_names_unchanged_for_a_healthy_kit():
+    """Byte-stability guard: a kit whose colors all resolve and never collide
+    yields exactly the string this seam has always produced."""
+    kit = {
+        "tokens": {
+            "colors": {
+                "surface.brand": _hex_color(),
+                "palette.primary.500": _hex_color("#30D8A7"),
+                "text.primary": {
+                    "value": {
+                        "default": {"kind": "oklch", "l": 0.2, "c": 0.02, "h": 200.0, "alpha": 1.0}
+                    }
+                },
+            }
+        }
+    }
+    assert web_theme_token_names(kit) == (
+        "primary accent dark light card muted border inverse "
+        "surface-brand palette-primary-500 text-primary"
+    )
 
 
 # --- author_web_page against the real helper --------------------------------
@@ -1592,3 +1680,657 @@ def test_view_account_none_when_unpersonalized(tmp_path: Path):
     tools = _bare_tools(tmp_path)  # no account
     blocks = tools._view_content("account")
     assert "No target account" in blocks[0]["text"]
+
+
+# --- D1: asset(action="generate_image") on the web lane ---------------------
+#
+# This path had ZERO coverage and had never once succeeded: the stub request
+# sent `"brand_notes": None`, and `AssetGenerationConstraints.brand_notes` is a
+# `Vec<String>` behind `#[serde(default)]` — which fires on an ABSENT key, never
+# on an explicit null. Every call died with
+# `invalid type: null, expected a sequence`, so the web author got
+# `asset.image_failed` for every image it ever tried to generate.
+
+
+def test_generate_image_falls_back_to_the_stub_provider(tmp_path: Path, monkeypatch):
+    """No T2I model configured → the deterministic stub still produces a real,
+    registered asset. RED before the brand_notes fix (serde rejected the null)."""
+    monkeypatch.setattr(ws, "image_provider", None)
+    tools = _tools(tmp_path)
+
+    result = json.loads(tools.asset(action="generate_image", prompt="A calm hero field"))
+
+    assert result["status"] == "ok", result
+    asset_id = result["asset_id"]
+    assert asset_id in (tools.web_doc.get("assets") or {})
+    assert result["mode"] == "placeholder"
+
+
+def test_generate_image_request_never_sends_a_null_for_a_rust_vec(tmp_path: Path, monkeypatch):
+    """Shape guard on the stub request: every field the Rust side types as a
+    `Vec` must ride as a list (or be absent), never as an explicit `null` —
+    `#[serde(default)]` does not cover null."""
+    monkeypatch.setattr(ws, "image_provider", None)
+    tools = _tools(tmp_path)
+    captured: dict = {}
+
+    real = tools.core.generate_asset
+
+    def spy(**kwargs):
+        captured.update(kwargs)
+        return real(**kwargs)
+
+    monkeypatch.setattr(tools.core, "generate_asset", spy)
+    json.loads(tools.asset(action="generate_image", prompt="A calm hero field"))
+
+    constraints = captured["request"]["constraints"]
+    assert isinstance(constraints["brand_notes"], list), constraints
+    # No sibling in the request may be an explicit null for a Vec-typed field.
+    for key in ("brand_notes", "reference_asset_ids"):
+        assert constraints.get(key, []) is not None
+
+
+def test_generate_image_uses_the_configured_model_when_available(tmp_path: Path, monkeypatch):
+    """With a configured provider the real T2I result is ingested and registered,
+    and the reported mode/model name the model — not the placeholder."""
+    png = base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+    )
+
+    class _FakeProvider:
+        @staticmethod
+        def is_configured():
+            return True
+
+        @staticmethod
+        def generate(**kwargs):
+            captured.update(kwargs)
+            return ws_result
+
+    captured: dict = {}
+
+    class _Result:
+        image_bytes = png
+        mime_type = "image/png"
+        model = "google/gemini-3.1-flash-image"
+        provenance = {"created_by": "agent", "notes": []}
+        license = None
+
+    ws_result = _Result()
+    monkeypatch.setattr(ws, "image_provider", _FakeProvider)
+    tools = _tools(tmp_path)
+
+    result = json.loads(
+        tools.asset(action="generate_image", prompt="A calm hero field", aspect_ratio="16:9")
+    )
+
+    assert result["status"] == "ok", result
+    assert result["mode"] == "model"
+    assert result["model"] == "google/gemini-3.1-flash-image"
+    assert result["asset_id"] in (tools.web_doc.get("assets") or {})
+    # brand_notes rides as a LIST even when the caller has none to give.
+    assert isinstance(captured["brand_notes"], list)
+    assert captured["aspect_ratio"] == "16:9"
+
+
+def test_generate_image_aspect_ratio_reaches_the_images_api_body(tmp_path: Path, monkeypatch):
+    """FOUNDER RULE (2026-08-23): the deepagent must be able to specify the
+    aspect ratio. The neighbouring test stops at the provider seam; this one runs
+    the REAL `image_provider` on the gpt-image-2 (`IMAGE_MODEL_API_STYLE=images`)
+    transport with only the HTTP call mocked, so the whole chain —
+    `asset(aspect_ratio=...)` → `_generate_image_record` → `generate` →
+    `_invoke_images_api` → the wire body's STRUCTURED `aspect_ratio` — is pinned
+    end to end. Its `21:9` also proves the closed-enum snap survives the trip:
+    the agent asks for an unsupported 5:2 and the endpoint sees a legal member.
+    """
+    from lumen_api import image_provider as real_image_provider
+    from py_lumen_config import settings
+
+    png = base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+    )
+    monkeypatch.setattr(settings, "image_model_base_url", "https://openrouter.ai/api/v1")
+    monkeypatch.setattr(settings, "image_model_api_key", "test-key")
+    monkeypatch.setattr(settings, "image_model_id", "openai/gpt-image-2")
+    monkeypatch.setattr(settings, "image_model_api_style", "images")
+    monkeypatch.setattr(real_image_provider, "is_configured", lambda: True)
+    monkeypatch.setattr(ws, "image_provider", real_image_provider)
+
+    captured: dict = {}
+
+    class _FakeResponse:
+        status_code = 200
+        headers = {"content-type": "application/json"}
+
+        def json(self) -> dict:
+            return {"data": [{"b64_json": base64.b64encode(png).decode("ascii")}]}
+
+    def fake_post(url, json=None, headers=None, timeout=None):
+        captured.update(url=url, json=json)
+        return _FakeResponse()
+
+    monkeypatch.setattr("httpx.post", fake_post)
+    tools = _tools(tmp_path)
+
+    result = json.loads(
+        tools.asset(action="generate_image", prompt="A calm hero field", aspect_ratio="5:2")
+    )
+
+    assert result["status"] == "ok", result
+    assert result["mode"] == "model"
+    assert captured["url"] == "https://openrouter.ai/api/v1/images"
+    assert captured["json"]["aspect_ratio"] == "21:9"
+    assert captured["json"]["quality"] == "high"
+    assert captured["json"]["background"] == "auto"
+    assert "messages" not in captured["json"]
+
+
+def test_generate_image_records_a_diagnostic_when_the_model_fails(tmp_path: Path, monkeypatch):
+    """A real-provider failure degrades to the stub LOUDLY: the page still gets
+    an image, and the tool reports why the model did not serve it. Before the fix
+    this was a bare `except Exception: pass` — a silent swallow."""
+
+    class _BrokenProvider:
+        @staticmethod
+        def is_configured():
+            return True
+
+        @staticmethod
+        def generate(**kwargs):
+            raise RuntimeError("upstream 502")
+
+    monkeypatch.setattr(ws, "image_provider", _BrokenProvider)
+    tools = _tools(tmp_path)
+
+    result = json.loads(tools.asset(action="generate_image", prompt="A calm hero field"))
+
+    assert result["status"] == "ok", result
+    assert result["mode"] == "placeholder"
+    messages = " ".join(str(d.get("message", "")) for d in result.get("diagnostics") or [])
+    assert "placeholder" in messages.lower()
+    assert "RuntimeError" in messages or "502" in messages
+
+
+def _brand_kit_with_style(*, images: dict | None = None) -> dict:
+    return {
+        "id": "brand_kit_web_test",
+        "version": 1,
+        "name": "Acme",
+        "tokens": {
+            "colors": {
+                "surface.brand": {
+                    "value": {"default": {"kind": "hex", "value": "#231d40"}}
+                }
+            },
+            "typography": {},
+        },
+        "assets": {"fonts": {}, "logos": {}, "images": images or {}},
+        "constraints": {"tone": ["precise", "calm"], "imagery": ["No lifestyle stock"]},
+        "brief": {
+            "schema_version": 1,
+            "characterization": {
+                "words": ["precise", "product-led", "infrastructural"],
+                "support": "Every band is a product surface.",
+                "confidence": "high",
+            },
+        },
+    }
+
+
+def test_generated_imagery_is_conditioned_on_the_brand(tmp_path: Path, monkeypatch):
+    """The founder's actual complaint behind D2: generated imagery must look like
+    THIS brand's imagery. The kit's characterization, imagery rules, tone, and
+    palette ride every generation as style direction."""
+    captured: dict = {}
+
+    class _Provider:
+        @staticmethod
+        def is_configured():
+            return True
+
+        @staticmethod
+        def generate(**kwargs):
+            captured.update(kwargs)
+            raise RuntimeError("stop here — the request is what this test judges")
+
+    monkeypatch.setattr(ws, "image_provider", _Provider)
+    config = replace(
+        AgentRuntimeConfig.from_env(REPO_ROOT),
+        trace_dir=tmp_path / "workspace_root",
+        brand_kit=_brand_kit_with_style(),
+    )
+    from lumen_api.core import CoreClient
+
+    core = CoreClient(repo_root=REPO_ROOT)
+    seed = core.web_new_doc("doc_web_brand", "Test site", None)["web_doc"]
+    tools = LumenWebTools(config, "Build a page", initial_web_doc=seed)
+
+    json.loads(tools.asset(action="generate_image", prompt="A hero field"))
+
+    notes = captured["brand_notes"]
+    assert isinstance(notes, list) and notes
+    joined = " | ".join(notes)
+    assert "precise, product-led, infrastructural" in joined
+    assert "No lifestyle stock" in joined
+    assert "brand tone: precise, calm" in joined
+    assert "#231d40" in joined
+
+
+def test_brand_style_references_never_include_a_logo(tmp_path: Path):
+    """A logo passed as a STYLE reference gets drawn into the picture. Only the
+    kit's brand IMAGES may condition a generation."""
+    config = replace(
+        AgentRuntimeConfig.from_env(REPO_ROOT),
+        trace_dir=tmp_path / "workspace_root",
+        brand_kit=_brand_kit_with_style(),  # logos present, images empty
+        brand_kit_assets={"logo_asset": {"record": {"id": "logo_asset"}}},
+    )
+    tools = _bare_tools(tmp_path)
+    tools.config = config
+    references, labels = tools._brand_style_references()
+    assert references is None
+    assert labels == []
+
+
+def test_brand_style_references_skip_assets_whose_bytes_are_gone(tmp_path: Path):
+    """A kit published elsewhere is a normal state — degrade to a plain
+    text-conditioned generation, never an error."""
+    config = replace(
+        AgentRuntimeConfig.from_env(REPO_ROOT),
+        trace_dir=tmp_path / "workspace_root",
+        brand_kit=_brand_kit_with_style(
+            images={"hero": {"asset_id": "img_hero", "title": "Hero texture"}}
+        ),
+        brand_kit_assets={
+            "img_hero": {
+                "record": {
+                    "id": "img_hero",
+                    "media": {"digest": {"algorithm": "sha256", "value": "f" * 64}},
+                }
+            }
+        },
+    )
+    tools = _bare_tools(tmp_path)
+    tools.config = config
+    references, labels = tools._brand_style_references()
+    assert references is None
+    assert labels == []
+
+
+def test_brand_style_references_carry_the_kits_own_image_bytes(tmp_path: Path):
+    """The bonus the founder asked for: when the kit ships real brand imagery,
+    those pixels ride the generation as STYLE anchors."""
+    store_root = tmp_path / "asset-store"
+    digest = "a" * 64
+    blob = store_root / "sha256" / digest[:2] / digest
+    blob.parent.mkdir(parents=True, exist_ok=True)
+    blob.write_bytes(_TINY_PNG)
+
+    config = replace(
+        AgentRuntimeConfig.from_env(REPO_ROOT),
+        trace_dir=tmp_path / "workspace_root",
+        asset_store_root=store_root,
+        brand_kit=_brand_kit_with_style(
+            images={"hero": {"asset_id": "img_hero", "title": "Hero texture"}}
+        ),
+        brand_kit_assets={
+            "img_hero": {
+                "record": {
+                    "id": "img_hero",
+                    "media": {
+                        "mime_type": "image/png",
+                        "digest": {"algorithm": "sha256", "value": digest},
+                    },
+                    "raster": {"pixel_width": 2048, "pixel_height": 1024},
+                }
+            }
+        },
+    )
+    tools = _bare_tools(tmp_path)
+    tools.config = config
+    references, labels = tools._brand_style_references()
+    assert references == [(_TINY_PNG, "image/png")]
+    assert labels == ["Hero texture"]
+
+
+# --- style-anchor selection: ordering and the resolution floor --------------
+#
+# Two defects found on the approved kits, 2026-08-20. Both silently degraded
+# every generated image on every page.
+
+
+def _style_image_entry(
+    tmp_path: Path, asset_id: str, *, width: int, height: int
+) -> tuple[Path, dict]:
+    """A kit image whose bytes really exist in a per-test store, so the picker
+    reaches its ordering/floor decisions instead of skipping on missing blobs."""
+    store_root = tmp_path / "asset-store"
+    digest = hashlib.sha256(asset_id.encode()).hexdigest()
+    blob = store_root / "sha256" / digest[:2] / digest
+    blob.parent.mkdir(parents=True, exist_ok=True)
+    blob.write_bytes(_TINY_PNG)
+    return store_root, {
+        "record": {
+            "id": asset_id,
+            "media": {
+                "mime_type": "image/png",
+                "digest": {"algorithm": "sha256", "value": digest},
+            },
+            "raster": {"pixel_width": width, "pixel_height": height},
+        }
+    }
+
+
+def test_a_kits_image_ordinal_is_read_numerically_not_alphabetically(tmp_path: Path):
+    """`img.{n}` is the ingestion pipeline's own quality ranking (emit.py numbers
+    an evidence list already sorted by area then file size, descending). A STRING
+    sort orders `img.1, img.10, img.11, … img.2`, so the second style anchor was
+    always `img.10` and `img.2` was unreachable at _BRAND_REFERENCE_MAX = 2.
+    On the approved v6 kit that made a 296x124 thumbnail half the conditioning of
+    every generated image."""
+    store_root = None
+    manifest: dict = {}
+    images: dict = {}
+    for ordinal in (1, 2, 10, 11):
+        asset_id = f"asset_{ordinal}"
+        store_root, entry = _style_image_entry(
+            tmp_path, asset_id, width=2048, height=1024
+        )
+        manifest[asset_id] = entry
+        images[f"img.{ordinal}"] = {"asset_id": asset_id, "title": f"Image {ordinal}"}
+
+    config = replace(
+        AgentRuntimeConfig.from_env(REPO_ROOT),
+        trace_dir=tmp_path / "workspace_root",
+        asset_store_root=store_root,
+        brand_kit=_brand_kit_with_style(images=images),
+        brand_kit_assets=manifest,
+    )
+    tools = _bare_tools(tmp_path)
+    tools.config = config
+
+    _, labels = tools._brand_style_references()
+
+    assert labels == ["Image 1", "Image 2"]
+
+
+def test_a_key_that_is_not_an_ordinal_sorts_last_rather_than_raising(tmp_path: Path):
+    """A kit shape we do not recognize must degrade, never crash a turn."""
+    store_root, ordinal_entry = _style_image_entry(
+        tmp_path, "asset_ordinal", width=2048, height=1024
+    )
+    _, odd_entry = _style_image_entry(tmp_path, "asset_odd", width=2048, height=1024)
+
+    config = replace(
+        AgentRuntimeConfig.from_env(REPO_ROOT),
+        trace_dir=tmp_path / "workspace_root",
+        asset_store_root=store_root,
+        brand_kit=_brand_kit_with_style(
+            images={
+                "hero-banner": {"asset_id": "asset_odd", "title": "Odd key"},
+                "img.9": {"asset_id": "asset_ordinal", "title": "Ranked"},
+            }
+        ),
+        brand_kit_assets={"asset_odd": odd_entry, "asset_ordinal": ordinal_entry},
+    )
+    tools = _bare_tools(tmp_path)
+    tools.config = config
+
+    _, labels = tools._brand_style_references()
+
+    assert labels == ["Ranked", "Odd key"]
+
+
+def test_a_low_resolution_image_may_not_anchor_a_generation(tmp_path: Path):
+    """Kit v8 carries a 64x64 icon and a QR code. Conditioning a hero on those is
+    worse than conditioning on nothing — and the picker must NOT backfill down
+    the ranking to reach _BRAND_REFERENCE_MAX."""
+    store_root, big = _style_image_entry(tmp_path, "asset_big", width=2048, height=1024)
+    _, icon = _style_image_entry(tmp_path, "asset_icon", width=64, height=64)
+    _, qr = _style_image_entry(tmp_path, "asset_qr", width=296, height=124)
+
+    config = replace(
+        AgentRuntimeConfig.from_env(REPO_ROOT),
+        trace_dir=tmp_path / "workspace_root",
+        asset_store_root=store_root,
+        brand_kit=_brand_kit_with_style(
+            images={
+                "img.1": {"asset_id": "asset_big", "title": "Hero"},
+                "img.2": {"asset_id": "asset_icon", "title": "Icon"},
+                "img.3": {"asset_id": "asset_qr", "title": "QR"},
+            }
+        ),
+        brand_kit_assets={"asset_big": big, "asset_icon": icon, "asset_qr": qr},
+    )
+    tools = _bare_tools(tmp_path)
+    tools.config = config
+
+    references, labels = tools._brand_style_references()
+
+    assert labels == ["Hero"]
+    assert references is not None and len(references) == 1
+
+
+def test_a_kit_of_only_thumbnails_yields_no_anchors_at_all(tmp_path: Path):
+    """Fewer anchors — or none — is the correct outcome; the generation then runs
+    plain text-conditioned, which is what the caller already handles."""
+    store_root, icon = _style_image_entry(tmp_path, "asset_icon", width=64, height=64)
+    _, qr = _style_image_entry(tmp_path, "asset_qr", width=296, height=124)
+
+    config = replace(
+        AgentRuntimeConfig.from_env(REPO_ROOT),
+        trace_dir=tmp_path / "workspace_root",
+        asset_store_root=store_root,
+        brand_kit=_brand_kit_with_style(
+            images={
+                "img.1": {"asset_id": "asset_icon", "title": "Icon"},
+                "img.2": {"asset_id": "asset_qr", "title": "QR"},
+            }
+        ),
+        brand_kit_assets={"asset_icon": icon, "asset_qr": qr},
+    )
+    tools = _bare_tools(tmp_path)
+    tools.config = config
+
+    references, labels = tools._brand_style_references()
+
+    assert references is None
+    assert labels == []
+
+
+def test_an_image_with_no_recorded_dimensions_does_not_clear_the_floor(tmp_path: Path):
+    """Unknown is not "good enough" for something that steers every generation."""
+    store_root, entry = _style_image_entry(
+        tmp_path, "asset_unknown", width=2048, height=1024
+    )
+    entry["record"].pop("raster")
+
+    config = replace(
+        AgentRuntimeConfig.from_env(REPO_ROOT),
+        trace_dir=tmp_path / "workspace_root",
+        asset_store_root=store_root,
+        brand_kit=_brand_kit_with_style(
+            images={"img.1": {"asset_id": "asset_unknown", "title": "Unknown"}}
+        ),
+        brand_kit_assets={"asset_unknown": entry},
+    )
+    tools = _bare_tools(tmp_path)
+    tools.config = config
+
+    references, labels = tools._brand_style_references()
+
+    assert references is None
+    assert labels == []
+
+
+def test_generate_image_reports_when_no_model_is_configured(tmp_path: Path, monkeypatch):
+    """The honest 'you are getting a placeholder because nothing is wired' note."""
+
+    class _UnconfiguredProvider:
+        @staticmethod
+        def is_configured():
+            return False
+
+    monkeypatch.setattr(ws, "image_provider", _UnconfiguredProvider)
+    tools = _tools(tmp_path)
+
+    result = json.loads(tools.asset(action="generate_image", prompt="A calm hero field"))
+
+    assert result["status"] == "ok", result
+    assert result["mode"] == "placeholder"
+    messages = " ".join(str(d.get("message", "")) for d in result.get("diagnostics") or [])
+    assert "IMAGE_MODEL" in messages
+
+
+# --- the advice channel: LUMW0306 reaches the agent, in its own bucket -------
+#
+# Advice used to land in `warnings`, and the author prompt calls warnings
+# mandatory work — so an advisory line arrived as an obligation. These pin the
+# split, and the one finding that rides it.
+
+ACME_KIT_PATH = REPO_ROOT / "crates/lumen-core/fixtures/brand_kits/acme_full.json"
+
+RAW_GEOMETRY_HTML = """
+<section id="cards" class="bg-light">
+  <div class="mx-auto max-w-[1200px] px-6 py-20 flex flex-col gap-6">
+    <div class="rounded-2xl shadow-lg p-6"><p class="text-muted">First card.</p></div>
+    <div class="rounded-2xl shadow-lg p-6"><p class="text-muted">Second card.</p></div>
+  </div>
+</section>
+"""
+
+
+def _kit(briefed: bool) -> dict:
+    kit = json.loads(ACME_KIT_PATH.read_text(encoding="utf-8"))
+    if briefed:
+        kit["brief"] = {
+            "schema_version": 1,
+            "characterization": {"words": ["measured", "calm"]},
+        }
+    return kit
+
+
+def _kitted_tools(tmp_path: Path, *, briefed: bool) -> LumenWebTools:
+    from lumen_api.core import CoreClient
+
+    config = replace(
+        AgentRuntimeConfig.from_env(REPO_ROOT),
+        trace_dir=tmp_path / "workspace_root",
+        brand_kit=_kit(briefed),
+    )
+    core = CoreClient(repo_root=REPO_ROOT)
+    seed = core.web_new_doc("doc_web_test", "Test site", None)["web_doc"]
+    return LumenWebTools(config, "Build a page", initial_web_doc=seed)
+
+
+def _codes(diagnostics) -> list[str]:
+    return [d.get("code") for d in diagnostics or []]
+
+
+def test_briefed_kit_advice_is_its_own_bucket(tmp_path: Path):
+    tools = _kitted_tools(tmp_path, briefed=True)
+    result = json.loads(tools.author_web_page(RAW_GEOMETRY_HTML))
+
+    assert result["status"] == "ok", result
+    # The finding arrives as advice…
+    assert "LUMW0306" in _codes(result["advice"]), result
+    assert all(d.get("severity") == "advice" for d in result["advice"]), result
+    # …and never as work.
+    assert "LUMW0306" not in _codes(result["warnings"]), result
+    assert all(d.get("severity") != "advice" for d in result["warnings"]), result
+    # One line per raw class across both cards, naming the class.
+    messages = " ".join(str(d.get("message")) for d in result["advice"])
+    assert messages.count("`rounded-2xl`") == 1, messages
+    assert "`shadow-lg`" in messages, messages
+
+    # The trace keeps the whole non-error picture.
+    lines = (tools.trace_dir / "trace.jsonl").read_text(encoding="utf-8").splitlines()
+    traced = [
+        code
+        for line in lines
+        for code in _codes(json.loads(line).get("diagnostics"))
+    ]
+    assert "LUMW0306" in traced
+
+
+def test_an_unbriefed_kit_authors_the_same_page_without_advice(tmp_path: Path):
+    tools = _kitted_tools(tmp_path, briefed=False)
+    result = json.loads(tools.author_web_page(RAW_GEOMETRY_HTML))
+
+    assert result["status"] == "ok", result
+    assert "LUMW0306" not in _codes(result["advice"]), result
+    assert "LUMW0306" not in _codes(result["warnings"]), result
+    body = tools.trace_dir.joinpath("trace.jsonl").read_text(encoding="utf-8")
+    assert "LUMW0306" not in body
+
+
+def test_geometry_advice_never_rejects_a_page(tmp_path: Path):
+    """A page saturated with raw geometry on a briefed kit still stores."""
+    tools = _kitted_tools(tmp_path, briefed=True)
+    saturated = "\n".join(
+        f'<section id="s{index}" class="rounded-2xl shadow-lg">'
+        f'<div class="rounded-2xl shadow-xl p-6"><p>Card {index}.</p></div></section>'
+        for index in range(8)
+    )
+    result = json.loads(tools.author_web_page(saturated))
+
+    assert result["status"] == "ok", result
+    assert result["installed_nodes"] > 0
+    assert tools._doc_version == 1
+    assert result["advice"], "the advice should still be reported"
+
+
+REJECTED_GEOMETRY_HTML = """
+<section id="cards" class="bg-light">
+  <div class="mx-auto max-w-[1200px] px-6 py-20 flex flex-col gap-6">
+    <div class="rounded-2xl shadow-lg p-6 bg-[#ff0000]"><p class="text-muted">First card.</p></div>
+    <div class="rounded-2xl shadow-lg p-6"><p class="text-muted">Second card.</p></div>
+  </div>
+</section>
+"""
+
+
+def test_a_rejection_hands_back_work_only_and_advice_separately(tmp_path: Path):
+    """The turn where this matters most: a briefed kit, one genuine error, and
+    raw geometry everywhere. `create-website` says "fix ALL the diagnostics in
+    ONE patch call" — so an advisory line inside `diagnostics` would spend the
+    repair round rewriting radii nobody asked to change."""
+    tools = _kitted_tools(tmp_path, briefed=True)
+    result = json.loads(tools.author_web_page(REJECTED_GEOMETRY_HTML))
+
+    assert result["status"] == "rejected", result
+    # The work list is the work: the raw hex, and nothing advisory.
+    assert "LUMW0210" in _codes(result["diagnostics"]), result
+    assert "LUMW0306" not in _codes(result["diagnostics"]), result
+    assert all(
+        d.get("severity") != "advice" for d in result["diagnostics"]
+    ), result
+    # The advice is still delivered — under its own key.
+    assert "LUMW0306" in _codes(result["advice"]), result
+
+    # And the patch flow repairs from the same work-only list.
+    pending = tools._last_rejected_authoring
+    assert pending is not None
+    assert "LUMW0210" in _codes(pending["diagnostics"])
+    assert "LUMW0306" not in _codes(pending["diagnostics"])
+    assert all(d.get("severity") != "advice" for d in pending["diagnostics"])
+
+    # Nothing was stored, exactly as before.
+    assert tools._doc_version == 0
+    assert not (tools._home_page().get("nodes") or {}).get("cards")
+
+
+def test_an_unbriefed_rejection_carries_no_geometry_advice(tmp_path: Path):
+    """Same markup, no brief: the rejection still separates the two species —
+    this kit's LUMW0305 theme-geometry fallbacks are advice too — but nothing
+    about the author's raw radii is said."""
+    tools = _kitted_tools(tmp_path, briefed=False)
+    result = json.loads(tools.author_web_page(REJECTED_GEOMETRY_HTML))
+
+    assert result["status"] == "rejected", result
+    assert "LUMW0210" in _codes(result["diagnostics"])
+    assert "LUMW0306" not in _codes(result["advice"]), result
+    assert "LUMW0306" not in _codes(result["diagnostics"]), result
+    assert all(d.get("severity") != "advice" for d in result["diagnostics"])
+    # The patch flow repairs from exactly what the agent was handed.
+    assert result["diagnostics"] == tools._last_rejected_authoring["diagnostics"]

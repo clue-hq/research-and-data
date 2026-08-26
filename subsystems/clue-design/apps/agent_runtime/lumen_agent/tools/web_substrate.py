@@ -54,17 +54,79 @@ except Exception:  # pragma: no cover
 from ..brand_brief import read_brief, render_reviewer_brief
 from ..brand_card import build_brand_card, render_brand_card_text
 from ..config import AgentRuntimeConfig
+from ..engine_mirror import record_pixel_dims, resolve_kit_color, sanitize_token_name
 from ..models.schemas import LumenRunTraceEvent, new_run_id
-from .substrate import _CoreHelperProxy
+from ..web_retokenize import build_web_retokenize_operations, summarize_class_pairs
+from . import logo_fetch
+from .asset_preview import asset_preview_path
+from .substrate import _CoreHelperProxy, _image_warning, blob_path_for_digest
 from .view import _VISION_MANY_IMAGE_MAX_PX, _image_block, _text_block
 
 logger = get_logger("lumen_agent.tools.web_substrate")
 
 JsonObject = Dict[str, Any]
 
+# Bounds on the brand style direction appended to every generated-image prompt
+# (`_brand_image_notes`). This is direction, not the brand card — a prompt that
+# recites the whole kit stops being a prompt.
+_BRAND_NOTE_MAX_NOTES = 6
+_BRAND_NOTE_MAX_RULES = 3
+_BRAND_NOTE_MAX_CHARS = 200
+# How many of the kit's own brand IMAGES ride a generation as style references
+# (`_brand_style_references`). Two is enough to anchor a look; more is cost and
+# a muddier signal.
+_BRAND_REFERENCE_MAX = 2
+# The minimum LONG SIDE, in pixels, an image must have to serve as a style
+# anchor. A kit's image set is a harvest, not a curation: the approved v6 kit's
+# second-ranked resolvable image is 296x124, and the v8 draft carries a 64x64
+# icon and a QR code. Conditioning every generated hero on a thumbnail is worse
+# than conditioning on nothing — the model inherits its compression artifacts
+# and its subject. An image whose record carries NO raster dimensions does not
+# clear the floor either: unknown is not "good enough" for something that steers
+# every generation. FEWER anchors (or none) is the correct outcome; the picker
+# never backfills down the ranking to reach _BRAND_REFERENCE_MAX.
+_BRAND_REFERENCE_MIN_LONG_SIDE_PX = 512
+
+# The base URL an agent-run preview render resolves `<img data-asset=…>` against
+# when the runtime config names none. LAST RESORT ONLY — the real value is
+# `settings.asset_base_url` (LUMEN_API_ORIGIN), threaded through
+# `AgentRuntimeConfig.asset_base_url`.
+#
+# History, because this exact line cost a day: it used to read
+# `getattr(config, "asset_base_url", None)` OR a loopback URL on port 8000, with
+# a comment claiming "a config override wins if present (none today)".
+# There WAS no such config field, so `getattr` always returned None and the
+# hardcoded value always won — and nothing has listened on 8000 since the design
+# API moved to 8010. Every image the agent placed 404'd in its own preview
+# screenshots, so the agent stripped it and honestly reported that the supplied
+# assets "did not render in the constrained preview". The editor's render route
+# resolved the same assets correctly, so a surviving image would have displayed
+# fine for the user: the agent was blind to its own images working. Any future
+# edit here must keep the value CONFIGURED, and must keep the preflight below.
+_FALLBACK_ASSET_BASE_URL = "http://127.0.0.1:8010/asset-store"
+# Seconds allowed for the once-per-turn asset-origin preflight probe. Short: a
+# dead origin is a connection refusal (instant) and a live one is a loopback GET.
+_ASSET_PREFLIGHT_TIMEOUT_S = 5.0
+
 # The page every P0 WebDoc carries (a single "home" page at route "/"). Website
 # mode is single-page for now; the id is fixed so the tools never guess.
 HOME_PAGE_ID = "home"
+
+
+def has_existing_content(web_doc: JsonObject, page_id: str = HOME_PAGE_ID) -> bool:
+    """True when the page already carries authored content (any node beyond the
+    empty root).
+
+    ONE predicate, two consumers, and they must never disagree: `harness_web`
+    tells the orchestrator whether it is continuing someone's page, and
+    `LumenWebTools` uses the same answer to decide whether the geometry
+    retokenizer may touch these classes at all (resolution-once — an existing
+    page's classes are a human's or an earlier turn's decision).
+    """
+    for page in web_doc.get("pages") or []:
+        if isinstance(page, dict) and page.get("id") == page_id:
+            return len(page.get("nodes") or {}) > 1
+    return False
 
 # The fixed semantic web token names the theme compiler always emits, in
 # emission order (mirrors crates/lumen-web/src/theme.rs SEMANTIC_TOKENS). Every
@@ -160,6 +222,12 @@ _MAX_DIALOG_CAPTURES = 3
 # Playwright page); any beyond the cap are reported, never dropped silently.
 _MAX_TABS_CAPTURES = 2
 
+# How many asset ids a view("asset:…") error string names per source (document
+# registry / kit manifest) before it says "+N more". A harvested brand kit
+# routinely carries dozens of images, and an error that dumps all of them into
+# every turn is noise, not help.
+_VIEW_ASSET_ID_LIST_MAX = 12
+
 # The @font-face data-URL CSS built from the kit fonts is capped at this many
 # encoded (base64) bytes so a heavy multi-weight kit cannot bloat every render's
 # inlined HTML unbounded. Module-level so tests can force it small.
@@ -168,6 +236,10 @@ _FONT_FACE_CSS_MAX_BYTES = 8 * 1024 * 1024
 # Sentinel distinguishing "not yet computed" from a resolved None for the cached
 # font-face CSS (fonts cannot change mid-run, so the first result is memoized).
 _FONT_CSS_UNSET = object()
+
+# The same idea for the compiled theme's brand-geometry map (G5): "not yet
+# resolved" is not "resolved to nothing".
+_GEOMETRY_UNSET = object()
 
 # Mutating tool calls allowed between renders before the substrate refuses and
 # tells the author to end its round. Sized against real healthy rounds (a full
@@ -211,6 +283,106 @@ _PROVENANCE_SOURCE_MAX = 12
 _PROVENANCE_NODE_MAX = 20
 _PROVENANCE_NOTE_MAX_CHARS = 500
 
+#: The AGENT's asset-kind vocabulary keyed by the ENGINE's record kind — the
+#: W1.5 root cause, in one table.
+#:
+#: `AssetRecord.kind` is `raster_image` / `vector` / `logo` / `font`. Every
+#: surface the agent reads speaks a coarser language: the scene lane's contact
+#: sheet stamps `"logo" if record.kind == "logo" else "image"`, the brand card
+#: splits the kit into `logos` and `images`, and the imagery decision the
+#: director writes says "place an image". `search_assets` compared the two with
+#: `==`, so `kind="image"` — the word every one of those surfaces taught it —
+#: matched NOTHING and emptied the candidate set before matching ran. Five of
+#: the six searches in the 2026-08-20 acceptance run died exactly there.
+#:
+#: The table is an ALLOW-LIST, not a default-to-image rule. `AssetKind` also has
+#: `document` and `other`, and a PDF-ingested workspace really holds `document`
+#: rows — `capture/pdf.py::_ingest_reference_pdf` ingests the brand-guide PDF
+#: itself as `kind="document"`, and the library manifest filters only
+#: `archived`. Defaulting the unmapped kinds to `image` would have let
+#: `kind="image"` hand back a PDF, and `_use_library_asset` has no kind guard,
+#: so the author could then place it as an `<img>`. Only `raster_image` and
+#: `vector` are pictures; everything unmapped keeps its RAW kind, so a
+#: `document` matches `kind="document"` or no filter at all — never `image`.
+_ASSET_DISPLAY_KINDS = {
+    "raster_image": "image",
+    "vector": "image",
+    "logo": "logo",
+    "font": "font",
+}
+
+#: Query words that carry no selection signal. Without this, "a photo of the
+#: globe" ranks every asset whose text contains "a" — any-token matching turns
+#: a stop word into a match-everything wildcard. Deliberately tiny and closed:
+#: a real vocabulary belongs to a search engine, not to a manifest scan.
+_ASSET_SEARCH_STOP_WORDS = frozenset(
+    {
+        "a", "an", "and", "are", "as", "at", "be", "by", "for", "from", "in",
+        "into", "is", "it", "of", "on", "or", "that", "the", "this", "to",
+        "with",
+    }
+)
+
+
+#: Below this length a query token matches only at a word boundary. "ui" is a
+#: real word an author searches for, but as a free substring it also hits
+#: "fl(ui)d" — two characters land inside ordinary English constantly, and a
+#: false hit here becomes a ranked RESULT the director may place.
+_ASSET_SEARCH_SUBSTRING_MIN_LEN = 3
+
+
+def _asset_display_kind(record: JsonObject) -> str:
+    """The agent-facing kind for an engine asset record, or its RAW kind when it
+    has no agent-facing alias (see `_ASSET_DISPLAY_KINDS`)."""
+    record_kind = str(record.get("kind") or "").lower()
+    return _ASSET_DISPLAY_KINDS.get(record_kind, record_kind)
+
+
+def _asset_kind_matches(record: JsonObject, requested: str) -> bool:
+    """Whether an asset record satisfies a `search_assets` `kind` filter.
+
+    Both vocabularies are accepted — the agent's (`image`/`logo`/`font`) and the
+    engine's raw `AssetRecord.kind` — because the agent has been taught the
+    former by every surface it reads and the latter is what the record says. A
+    kind with no agent-facing alias (`document`, `other`) matches only its own
+    raw name, so `kind="image"` can never return a PDF. An empty filter matches
+    everything. ONE implementation: the search loop and the named-id path must
+    never disagree about what a kind filter means."""
+    if not requested:
+        return True
+    record_kind = str(record.get("kind") or "").lower()
+    return requested in {record_kind, _asset_display_kind(record)}
+
+
+def _asset_search_tokens(query_lower: str) -> List[str]:
+    """The distinct, meaningful tokens of a search query, in first-seen order.
+
+    Asset ids survive whole (`\\W+` keeps underscores), which is what lets a
+    bare id ride inside a longer query. Stop words are dropped — unless they are
+    ALL the query has, in which case the literal words the agent typed are
+    better than nothing."""
+    raw = list(dict.fromkeys(token for token in re.split(r"\W+", query_lower) if token))
+    meaningful = [token for token in raw if token not in _ASSET_SEARCH_STOP_WORDS]
+    return meaningful or raw
+
+
+def _asset_text_hit(needle: str, haystack: str, words: frozenset) -> bool:
+    """Whether `needle` matches an asset's searchable text.
+
+    A needle of at least `_ASSET_SEARCH_SUBSTRING_MIN_LEN` characters matches as
+    a free SUBSTRING, which is what makes "payment" find "payments". A shorter
+    one must match a whole word or the start of one, so "ui" finds the word "ui"
+    but not the middle of "fluid".
+
+    ONE predicate for both the token scan and the whole-query phrase check: a
+    one- or two-character QUERY is its own phrase, so a phrase check that skipped
+    this rule would put the false hit straight back."""
+    if not needle:
+        return False
+    if len(needle) >= _ASSET_SEARCH_SUBSTRING_MIN_LEN:
+        return needle in haystack
+    return needle in words or any(word.startswith(needle) for word in words)
+
 
 def _font_mime_from_magic(data: bytes) -> str:
     """The web font MIME for `data` by its leading magic bytes; unknown → the
@@ -235,6 +407,56 @@ def _valid_font_weight(value: Any) -> bool:
 
 def _valid_font_style(value: Any) -> bool:
     return value in ("normal", "italic")
+
+
+def _capped_id_list(ids: List[str]) -> str:
+    """Ids as a readable list, capped, with the overflow STATED. A harvested kit
+    routinely carries dozens of images; dumping 49 ids into every error string
+    buries the answer it is supposed to give."""
+    if not ids:
+        return "none"
+    shown = ", ".join(ids[:_VIEW_ASSET_ID_LIST_MAX])
+    overflow = len(ids) - _VIEW_ASSET_ID_LIST_MAX
+    return f"{shown} (+{overflow} more)" if overflow > 0 else shown
+
+
+def _brand_image_rank(item: tuple) -> tuple:
+    """Sort key over a kit `assets.images` entry that honours the ingestion
+    pipeline's own ranking instead of destroying it with a string sort.
+
+    Kit image keys are `img.{n}` where `n` counts up over an evidence list
+    already sorted best-first (`normalizer/emit.py::add_images` over
+    `_parse_images`, which sorts by area then file size, descending). So the
+    numeric suffix IS the quality order — but `sorted()` on the raw key gives
+    `img.1, img.10, img.11, …, img.2`, which is why the second style anchor was
+    always `img.10`. A key that does not parse as `img.<int>` sorts LAST (and
+    then alphabetically among its peers) rather than raising: a kit shape we do
+    not recognize must degrade, not crash a turn."""
+    key = item[0]
+    text = str(key)
+    prefix, _, suffix = text.rpartition(".")
+    if prefix == "img" and suffix.isdigit():
+        return (0, int(suffix), text)
+    return (1, 0, text)
+
+
+def _clears_style_reference_floor(record: JsonObject) -> bool:
+    """Whether an asset record's pixels are big enough to steer a generation.
+
+    Reads the engine `AssetRecord.raster` block (`pixel_width`/`pixel_height`,
+    both `u32` and always present together on a raster record). Absent or
+    unusable dimensions → **False**: a style anchor conditions every image the
+    page gets, so "we do not know how big this is" is not good enough."""
+    raster = record.get("raster") if isinstance(record, dict) else None
+    if not isinstance(raster, dict):
+        return False
+    sides = []
+    for field in ("pixel_width", "pixel_height"):
+        value = raster.get(field)
+        if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
+            return False
+        sides.append(value)
+    return max(sides) >= _BRAND_REFERENCE_MIN_LONG_SIDE_PX
 
 
 def _interactive_capture_plan(web_doc: JsonObject) -> JsonObject:
@@ -284,34 +506,34 @@ def _interactive_capture_plan(web_doc: JsonObject) -> JsonObject:
     }
 
 
-def sanitize_token_name(name: str) -> str:
-    """Mirror crates/lumen-web/src/theme.rs `sanitize_token_name`: keep
-    [a-z0-9-], lowercase [A-Z], map ./_/space to '-', drop everything else,
-    then trim leading/trailing '-'."""
-    out: List[str] = []
-    for ch in name:
-        if "a" <= ch <= "z" or "0" <= ch <= "9" or ch == "-":
-            out.append(ch)
-        elif "A" <= ch <= "Z":
-            out.append(ch.lower())
-        elif ch in "._ ":
-            out.append("-")
-        # any other character is dropped
-    return "".join(out).strip("-")
-
-
 def web_theme_token_names(brand_kit: Optional[JsonObject]) -> str:
     """The space-joined color-token vocabulary the theme compiler exposes for a
-    kit: the eight semantic names plus every additional kit color under its
-    sanitized name (dedup-preserving). Mirrors the Rust theme compiler's token
-    map so the author prompt names exactly what it may reference. No kit → just
-    the semantic eight."""
+    kit: the eight semantic names plus every additional kit color that the
+    compiler actually PRESERVES, under its sanitized name. Mirrors
+    `theme.rs::compile_web_theme` so the author prompt names exactly what it may
+    reference. No kit → just the semantic eight.
+
+    The compiler skips a kit color on two rules, and both are replicated here,
+    because a name advertised but not emitted is an invitation to write a class
+    the lint then rejects (LUMW0212 — and one rejected class voids the whole
+    page):
+
+    * **name collision** — a sanitized name already taken (by a semantic token
+      or an earlier kit color) is not re-inserted; the FIRST holder wins;
+    * **unresolvable color** — a color whose alias chain dangles, cycles, runs
+      past the depth cap, or ends in a value outside the CSS-color charset never
+      enters the token map (the compiler reports LUMW0302 and moves on). A
+      skipped name is NOT reserved, exactly as in Rust: a later kit color that
+      sanitizes to the same name still gets the token.
+    """
     names = list(_SEMANTIC_WEB_TOKENS)
     seen = set(names)
     colors = ((brand_kit or {}).get("tokens") or {}).get("colors") or {}
     for key in colors.keys():
         web_name = sanitize_token_name(str(key))
         if not web_name or web_name in seen:
+            continue
+        if resolve_kit_color(str(key), colors) is None:
             continue
         seen.add(web_name)
         names.append(web_name)
@@ -330,6 +552,54 @@ def _count_subtree(nodes: JsonObject, node_id: str) -> int:
         total += 1
         stack.extend(node.get("children") or [])
     return total
+
+
+def _partition_advice(diagnostics: Any) -> tuple[List[JsonObject], List[JsonObject]]:
+    """(work, advice) — everything a repair could act on, and everything advisory.
+
+    THE contract this protects is the rejection one. `create-website` tells the
+    author "fix ALL the diagnostics in ONE patch call", so a `diagnostics` list
+    that carries an advisory line makes the author rewrite radii to satisfy a
+    suggestion — on exactly the turn where errors and advice most often co-occur
+    (a briefed kit, one real error, `rounded-2xl` on every card). Advice
+    therefore never appears in a `diagnostics` list; it rides its own key.
+
+    Anything that is not explicitly `advice` — including a non-dict entry this
+    build cannot read — stays in `work`, so a list with no advice comes back
+    exactly as it went in.
+    """
+    work: List[JsonObject] = []
+    advice: List[JsonObject] = []
+    for diagnostic in diagnostics or []:
+        if isinstance(diagnostic, dict) and diagnostic.get("severity") == "advice":
+            advice.append(diagnostic)
+        else:
+            work.append(diagnostic)
+    return work, advice
+
+
+def _split_non_error_diagnostics(
+    diagnostics: Any,
+) -> tuple[List[JsonObject], List[JsonObject]]:
+    """Non-error diagnostics, told apart: work on the left, information on the right.
+
+    Warnings and advice used to share one `warnings` bucket — and the author
+    prompt calls that bucket mandatory work ("Warnings are work"), so an
+    advisory line arrived wearing an obligation's clothes. They are different
+    species: a warning names something the author must resolve or justify;
+    advice (theme fallbacks, brand-geometry drift) is an observation to judge.
+
+    Anything that is not an error and not explicitly `advice` counts as a
+    warning — the loud side. A severity this build has never heard of must
+    surface somewhere, and the bucket that gets read is the safer home.
+    """
+    work, advice = _partition_advice(diagnostics)
+    warnings = [
+        diagnostic
+        for diagnostic in work
+        if isinstance(diagnostic, dict) and diagnostic.get("severity") != "error"
+    ]
+    return warnings, advice
 
 
 def _extract_grounded_page(
@@ -476,6 +746,18 @@ class LumenWebTools:
         # A deep copy so the caller's stored doc is never mutated in place; every
         # accepted mutation replaces this with the helper's returned doc.
         self.web_doc: JsonObject = copy.deepcopy(initial_web_doc)
+        # G5: did this turn START from an already-authored page? The geometry
+        # retokenizer runs on the agent's OWN drafts only — a seeded document's
+        # classes belong to a human or to an earlier turn, and rebinding them
+        # would be this lane re-deciding a resolved question (resolution-once,
+        # the scene lane's `seeded_from_initial_scene` guard).
+        self.seeded_from_initial_content = has_existing_content(
+            initial_web_doc, self.page_id
+        )
+        # The compiled theme's geometry channel, resolved at most once per turn
+        # (it is a function of the kit, which cannot change mid-turn). The
+        # sentinel distinguishes "not resolved" from a resolved empty map.
+        self._geometry: Any = _GEOMETRY_UNSET
         # The exact checked WebOperations that produced ``web_doc`` from the
         # turn's starting revision. The API replays this ledger before commit
         # and persists it as the agent envelope; a whole-document replacement
@@ -570,7 +852,13 @@ class LumenWebTools:
         # review-website's brief checks do not depend on the director quoting
         # the brief into its delegation.
         self.brand_card: Optional[JsonObject] = build_brand_card(
-            config.brand_kit, source=config.brand_kit_source, include_brief=True
+            config.brand_kit,
+            source=config.brand_kit_source,
+            include_brief=True,
+            # W1.3: the manifest is where an asset's pixel dimensions live, so
+            # the card's image/logo rows can state a size instead of leaving a
+            # 296px crop and a 2460px panel indistinguishable.
+            asset_manifest=config.brand_kit_assets,
         )
         self.reviewer_brief_text: Optional[str] = None
         if self.brand_card:
@@ -591,12 +879,19 @@ class LumenWebTools:
         self.account_card_text = (
             json.dumps(self.account_card, indent=2) if self.account_card else None
         )
-        # The base URL the rendered page resolves data-asset images against. The
-        # API serves the shared store at /asset-store; a config override wins if
-        # present (none today), else the pinned API origin.
-        self.asset_base_url = (
-            getattr(config, "asset_base_url", None)
-            or "http://127.0.0.1:8000/asset-store"
+        # The base URL the rendered page resolves data-asset images against.
+        # `config.asset_base_url` is the configured value (LUMEN_API_ORIGIN via
+        # AgentRuntimeConfig.from_env); the module fallback is the last resort
+        # for a hand-built config that names none. See _FALLBACK_ASSET_BASE_URL
+        # for why this line is the way it is.
+        self.asset_base_url = config.asset_base_url or _FALLBACK_ASSET_BASE_URL
+        # Preflight state: the resolved base is probed ONCE per turn, at the
+        # first preview render (_preflight_asset_base_url).
+        self._asset_base_url_preflighted = False
+        logger.info(
+            "web turn asset base url resolved to %s (source=%s)",
+            self.asset_base_url,
+            "config" if config.asset_base_url else "fallback",
         )
 
     # --- trace + errors -----------------------------------------------------
@@ -697,6 +992,97 @@ class LumenWebTools:
         commit payload after the helper has accepted it.
         """
         self.operations_ledger.extend(copy.deepcopy(operations))
+
+    # --- brand-geometry retokenization (G5) ---------------------------------
+
+    def _brand_geometry(self) -> Dict[str, str]:
+        """The compiled theme's geometry channel — utility CSS-var name → CSS
+        value — resolved at most once per turn.
+
+        It is a function of the brand kit and the document's own theme, neither
+        of which any operation can change mid-turn, so one helper round-trip is
+        enough. A helper failure caches an EMPTY map: the retokenizer is an
+        optimization, and a turn that cannot compile a theme has a louder
+        problem than an unbound `rounded-2xl`.
+        """
+        if self._geometry is not _GEOMETRY_UNSET:
+            return self._geometry
+        geometry: Dict[str, str] = {}
+        try:
+            response = self.core.web_validate(self.web_doc, self.config.brand_kit)
+        except CoreError:
+            response = {}
+        resolved = (response.get("web_theme") or {}).get("geometry")
+        if isinstance(resolved, dict):
+            geometry = {
+                str(name): value
+                for name, value in resolved.items()
+                if isinstance(value, str)
+            }
+        self._geometry = geometry
+        return geometry
+
+    def _retokenize_geometry(self) -> None:
+        """Rebind raw geometry classes to the kit utilities they already equal.
+
+        The web twin of the scene lane's preflight retokenization, and the same
+        bargain: the model measurably cannot rebind tokens on request, so a
+        deterministic pass does it — but ONLY where the swap provably changes
+        nothing on screen (`web_retokenize.py` owns that proof). What it buys is
+        a page that follows the kit PIN instead of a frozen number, and silence
+        on the LUMW0306 advice for exactly the classes the advice was right
+        about.
+
+        Three guards, all required:
+
+        * an attached, non-platform-default kit — the platform theme IS the
+          stock scale, so rebinding against it renames without meaning;
+        * an unseeded document — resolution-once (see
+          ``seeded_from_initial_content``);
+        * something to do — an empty batch is never applied, and the pass is
+          idempotent by construction (after a rebind nothing matches again).
+
+        Failure posture: a rejected apply records nothing, changes nothing, and
+        returns. This runs on the way into a preview render and must never be
+        the reason a reviewer has no pixels to look at.
+        """
+        if self.config.brand_kit is None:
+            return
+        if self.config.brand_kit_source in (None, "platform_default"):
+            return
+        if self.seeded_from_initial_content:
+            return
+
+        geometry = self._brand_geometry()
+        if not geometry:
+            return
+        operations = build_web_retokenize_operations(self.web_doc, geometry)
+        if not operations:
+            return
+        # Read against the PRE-apply document — the pairs are what changed.
+        pairs = summarize_class_pairs(self.web_doc, operations)
+
+        try:
+            response = self.core.web_apply_ops(self.web_doc, operations)
+        except CoreError:
+            return
+        if not response.get("ok") or not response.get("web_doc"):
+            return
+
+        self.web_doc = response["web_doc"]
+        self._record_operations(operations)
+        self._doc_version += 1
+        # Carve-out 1: trace + agent-visible only. A class rename that renders
+        # identical pixels is not news a human needs.
+        self.record(
+            "coordinator",
+            "web_geometry_retokenized",
+            output_summary=(
+                f"{len(operations)} node(s) rebound to kit geometry: "
+                + ("; ".join(pairs) if pairs else "no class pairs resolved")
+            ),
+            payload={"operation_count": len(operations), "class_pairs": pairs},
+        )
 
     def _custom_component_registry(self):
         return getattr(self.config, "custom_component_registry", None)
@@ -1074,8 +1460,9 @@ class LumenWebTools:
 
         On any error-severity diagnostic NOTHING is stored — fix every
         diagnostic (each carries a code, node id, and hint) and resend the
-        complete page. On success the working document is replaced and the
-        installed node count is returned.
+        complete page. A rejection's `diagnostics` list is the work and only the
+        work; anything advisory rides a separate `advice` key. On success the
+        working document is replaced and the installed node count is returned.
 
         Prefer `patch_web_page` to repair a rejected submission with targeted
         string patches instead of re-sending the whole page."""
@@ -1131,14 +1518,32 @@ class LumenWebTools:
 
     def _store_rejection(self, submission: JsonObject, diagnostics: List[JsonObject]) -> None:
         """Remember the rejected submission (with its SUBMITTED html) so
-        patch_web_page can repair and resubmit it."""
+        patch_web_page can repair and resubmit it.
+
+        Advice is stripped: what is retained here is the patch flow's work list,
+        and a suggestion is not something a patch owes a fix for."""
+        work, _advice = _partition_advice(diagnostics)
         self._last_rejected_authoring = {
             "tool": submission["tool"],
             "html": submission["html"],
             "custom_css": submission["custom_css"],
             "node_id": submission["node_id"],
-            "diagnostics": list(diagnostics or []),
+            "diagnostics": work,
         }
+
+    def _diagnostic_buckets(self, diagnostics: Any) -> JsonObject:
+        """`diagnostics` (the work) + `advice`, as payload kwargs."""
+        work, advice = _partition_advice(diagnostics)
+        return {"diagnostics": work, "advice": advice}
+
+    def _rejected(self, diagnostics: Any) -> str:
+        """The rejection envelope: `diagnostics` is the work, `advice` is not.
+
+        Both keys are always present, exactly as `warnings`/`advice` always are
+        on the accepted envelope — one shape to read, no conditional key."""
+        return json.dumps(
+            {"status": "rejected", **self._diagnostic_buckets(diagnostics)}, indent=2
+        )
 
     def _clear_pending(self) -> None:
         self._last_rejected_authoring = None
@@ -1178,7 +1583,7 @@ class LumenWebTools:
             return self._tool_error(
                 "web_author.helper_error",
                 error.message,
-                diagnostics=diagnostics,
+                **self._diagnostic_buckets(diagnostics),
             )
 
         diagnostics = response.get("diagnostics") or []
@@ -1192,9 +1597,7 @@ class LumenWebTools:
                 output_summary=f"{len(errors)} error diagnostic(s); page not stored",
                 diagnostics=diagnostics,
             )
-            return json.dumps(
-                {"status": "rejected", "diagnostics": diagnostics}, indent=2
-            )
+            return self._rejected(diagnostics)
 
         self.web_doc = response["web_doc"]
         self._record_operations(
@@ -1203,9 +1606,7 @@ class LumenWebTools:
         self._doc_version += 1
         self._clear_pending()
         installed = response.get("applied_operations")
-        warnings = [
-            d for d in diagnostics if isinstance(d, dict) and d.get("severity") != "error"
-        ]
+        warnings, advice = _split_non_error_diagnostics(diagnostics)
         self.record(
             "author",
             self._authored_event(origin, submission["tool"]),
@@ -1213,13 +1614,16 @@ class LumenWebTools:
             output_summary=(
                 f"installed {installed} node(s); page now {self._page_node_count()} nodes"
             ),
-            diagnostics=warnings,
+            # The trace keeps the whole non-error picture; only the tool result
+            # separates obligation from observation.
+            diagnostics=warnings + advice,
             sink_extra={"installed_nodes": installed},
         )
         result: JsonObject = {
             "status": "ok",
             "installed_nodes": installed,
             "warnings": warnings,
+            "advice": advice,
         }
         self._decorate_success(result, origin, patch_count)
         return json.dumps(result, indent=2)
@@ -1240,8 +1644,9 @@ class LumenWebTools:
         section's identity across the edit). Flow:
 
         1. `web_ingest_fragment` parses the markup WITHOUT mutating the doc. Any
-           error-severity diagnostic → {"status": "rejected", diagnostics} (doc
-           untouched), mirroring `author_web_page`.
+           error-severity diagnostic → {"status": "rejected", diagnostics,
+           advice} (doc untouched), mirroring `author_web_page` — `diagnostics`
+           is the work, `advice` never is.
         2. Every fragment root must be a top-level section (the page grammar
            allows only sections at the top level). A non-section root →
            `web_subtree.not_a_section`. Engine reality: the ingester reports a
@@ -1306,7 +1711,7 @@ class LumenWebTools:
             return self._tool_error(
                 "web_subtree.helper_error",
                 error.message,
-                diagnostics=diagnostics,
+                **self._diagnostic_buckets(diagnostics),
             )
 
         diagnostics = response.get("diagnostics") or []
@@ -1347,7 +1752,7 @@ class LumenWebTools:
                 "sections; wrap it in <section id=\"...\">...</section> (keep the "
                 "target section's id).",
                 offending_roots=non_section_roots,
-                diagnostics=diagnostics,
+                **self._diagnostic_buckets(diagnostics),
             )
 
         # Any other error-severity diagnostic → the fragment is unusable; store
@@ -1363,9 +1768,7 @@ class LumenWebTools:
                 output_summary=f"{len(errors)} error diagnostic(s); section not changed",
                 diagnostics=diagnostics,
             )
-            return json.dumps(
-                {"status": "rejected", "diagnostics": diagnostics}, indent=2
-            )
+            return self._rejected(diagnostics)
 
         if not frag_roots:
             # A clean parse that produced no sections (e.g. empty markup): there
@@ -1375,7 +1778,7 @@ class LumenWebTools:
                 "web_subtree.not_a_section",
                 "the replacement markup produced no top-level section; provide a "
                 "<section id=\"...\">...</section>.",
-                diagnostics=diagnostics,
+                **self._diagnostic_buckets(diagnostics),
             )
 
         # The fragment is a FRESH ingest, so its auto-minted ids (box_1, txt_2,
@@ -1428,24 +1831,16 @@ class LumenWebTools:
                 output_summary=error.message,
                 diagnostics=diagnostics,
             )
-            return json.dumps(
-                {"status": "rejected", "diagnostics": diagnostics},
-                indent=2,
-            )
+            return self._rejected(diagnostics)
         if not applied.get("ok"):
             self._store_rejection(submission, applied.get("diagnostics") or [])
-            return json.dumps(
-                {"status": "rejected", "diagnostics": applied.get("diagnostics") or []},
-                indent=2,
-            )
+            return self._rejected(applied.get("diagnostics"))
 
         self.web_doc = applied["web_doc"]
         self._record_operations(batch)
         self._doc_version += 1
         self._clear_pending()
-        warnings = [
-            d for d in diagnostics if isinstance(d, dict) and d.get("severity") != "error"
-        ]
+        warnings, advice = _split_non_error_diagnostics(diagnostics)
         self.record(
             "author",
             self._authored_event(origin, submission["tool"]),
@@ -1453,7 +1848,7 @@ class LumenWebTools:
                 origin, patch_count, f"{node_id}->{target_section}"
             ),
             output_summary=f"replaced section {target_section} with {frag_roots}",
-            diagnostics=warnings,
+            diagnostics=warnings + advice,
             payload={"section": target_section, "replaced_with": frag_roots},
             sink_extra={"section": target_section},
         )
@@ -1462,6 +1857,7 @@ class LumenWebTools:
             "section": target_section,
             "roots": frag_roots,
             "warnings": warnings,
+            "advice": advice,
         }
         self._decorate_success(result, origin, patch_count)
         return json.dumps(result, indent=2)
@@ -1744,9 +2140,10 @@ class LumenWebTools:
 
         The batch applies checked and atomically: any op that fails, or a batch
         that would leave the document invalid, is rejected WHOLE (nothing is
-        stored) → {"status":"rejected", "diagnostics":[...]}. On success the
-        working doc is replaced and {"status":"ok", "applied":n, "warnings":[…]}
-        is returned."""
+        stored) → {"status":"rejected", "diagnostics":[…], "advice":[…]}. On success the
+        working doc is replaced and {"status":"ok", "applied":n, "warnings":[…],
+        "advice":[…]} is returned. `warnings` is work to resolve or justify;
+        `advice` is informational and never an obligation."""
         refusal = self._consume_round_budget("web_ops")
         if refusal is not None:
             return refusal
@@ -1808,25 +2205,18 @@ class LumenWebTools:
                 output_summary=f"batch rejected: {error.message}",
                 diagnostics=diagnostics,
             )
-            return json.dumps(
-                {"status": "rejected", "diagnostics": diagnostics}, indent=2
-            )
+            return self._rejected(diagnostics)
 
         # Defensive: a non-raising ok:false path (raise_on_error is on today, so
         # this mirrors author_web_subtree's belt-and-braces reject guard).
         if not response.get("ok"):
-            return json.dumps(
-                {"status": "rejected", "diagnostics": response.get("diagnostics") or []},
-                indent=2,
-            )
+            return self._rejected(response.get("diagnostics"))
 
         self.web_doc = response["web_doc"]
         self._record_operations(operations)
         self._doc_version += 1
         diagnostics = response.get("diagnostics") or []
-        warnings = [
-            d for d in diagnostics if isinstance(d, dict) and d.get("severity") != "error"
-        ]
+        warnings, advice = _split_non_error_diagnostics(diagnostics)
         kinds = [op.get("kind") for op in operations]
         applied = response.get("applied_operations") or len(operations)
         self.record(
@@ -1834,12 +2224,18 @@ class LumenWebTools:
             "web_ops_applied",
             input_summary=operations_json[:200],
             output_summary=f"applied {applied} op(s): {kinds}",
-            diagnostics=warnings,
+            diagnostics=warnings + advice,
             payload={"operation_count": applied, "kinds": kinds},
             sink_extra={"operation_count": applied},
         )
         return json.dumps(
-            {"status": "ok", "applied": applied, "warnings": warnings}, indent=2
+            {
+                "status": "ok",
+                "applied": applied,
+                "warnings": warnings,
+                "advice": advice,
+            },
+            indent=2,
         )
 
     # --- durable custom-component authoring (P6.4) -------------------------
@@ -2566,14 +2962,10 @@ class LumenWebTools:
                     "reason": "checked_operation_rejected",
                 },
             )
-            return json.dumps(
-                {"status": "rejected", "diagnostics": diagnostics}, indent=2
-            )
+            return self._rejected(diagnostics)
         if not response.get("ok"):
             diagnostics = response.get("diagnostics") or []
-            return json.dumps(
-                {"status": "rejected", "diagnostics": diagnostics}, indent=2
-            )
+            return self._rejected(diagnostics)
         self.web_doc = response["web_doc"]
         self._record_operations(operations)
         self._doc_version += 1
@@ -2598,6 +2990,10 @@ class LumenWebTools:
                 "source_mutated": False,
             },
         )
+        # This path used to keep `severity == "warning"` and nothing else, so
+        # advice fell on the floor here while the authoring paths at least
+        # showed it (as a warning). Same split as everywhere else now.
+        warnings, advice = _split_non_error_diagnostics(response.get("diagnostics"))
         return json.dumps(
             {
                 "status": "ok",
@@ -2607,11 +3003,8 @@ class LumenWebTools:
                 "artifact_id": artifact_id,
                 "applied": len(operations),
                 "source_mutated": False,
-                "warnings": [
-                    diagnostic
-                    for diagnostic in response.get("diagnostics") or []
-                    if diagnostic.get("severity") == "warning"
-                ],
+                "warnings": warnings,
+                "advice": advice,
             },
             indent=2,
         )
@@ -2712,6 +3105,156 @@ class LumenWebTools:
         )
         return json.dumps({"status": "ok", **page}, indent=2)
 
+    def fetch_logo(self, domain: str, company_name: Optional[str] = None) -> str:
+        """Fetch a company's REAL logo from its website and register it here.
+
+        Use this whenever the page shows a company that is not us — the target
+        account on an ABM page, a named customer, a partner. Pass their domain
+        (`goodmancampbell.com`) or any URL on their site; pass `company_name`
+        too when you know it, because it sharpens the identity check.
+
+        Returns the asset ids it registered, one per slot it could fill:
+        `light` (for light backgrounds), `dark` (a reversed/white asset for dark
+        backgrounds), `mark` (the symbol alone) and `wordmark`. Place them like
+        any other asset. A slot is missing when the brand publishes nothing for
+        it — that is a real answer, not a failure, and it is never filled by
+        recoloring another slot.
+
+        If it comes back `needs_review`, nothing was registered because no asset
+        could be attributed to that company with confidence. Say so and ask for
+        the file. Never draw, recolor or approximate a logo.
+
+        Static fetch only: a site that builds its header in JavaScript has no
+        logo to read here, and reports that plainly.
+        """
+        requested = (domain or "").strip()
+        if not requested:
+            return self._tool_error(
+                "logo_fetch.bad_request", "fetch_logo requires a non-empty `domain`."
+            )
+        budget_error = self._consume_round_budget("fetch_logo")
+        if budget_error:
+            return budget_error
+        try:
+            outcome = logo_fetch.fetch_logo_family(
+                requested, company_name=(company_name or "").strip() or None
+            )
+        except ValueError as error:
+            return self._tool_error("logo_fetch.bad_request", str(error))
+        except CaptureError as error:
+            self.record(
+                "agent",
+                "web_logo_fetch_failed",
+                input_summary=requested[:500],
+                output_summary=f"{error.code}: {error.message}"[:500],
+            )
+            return self._tool_error(
+                "logo_fetch.blocked" if error.code == "LUMI0501" else "logo_fetch.failed",
+                error.message,
+                capture_code=error.code,
+            )
+        except Exception as error:  # noqa: BLE001 - tool failures are envelopes
+            self.record(
+                "agent",
+                "web_logo_fetch_failed",
+                input_summary=requested[:500],
+                output_summary=f"{type(error).__name__}: {error}"[:500],
+            )
+            return self._tool_error(
+                "logo_fetch.failed",
+                f"logo fetch failed: {type(error).__name__}: {error}",
+            )
+
+        if outcome.needs_review:
+            self.record(
+                "agent",
+                "web_logo_fetch_needs_review",
+                input_summary=requested[:500],
+                output_summary=(outcome.notes[0] if outcome.notes else "no slot filled")[:500],
+            )
+            return json.dumps(logo_fetch.review_payload(outcome), indent=2)
+
+        store_root = str(self.config.effective_asset_store_root)
+        placed: List[JsonObject] = []
+        failures: List[JsonObject] = []
+        for prepared in outcome.prepared:
+            ingest = self.core.ingest_asset(**prepared.ingest_kwargs(store_root))
+            if not ingest.get("ok"):
+                detail = (ingest.get("error") or {}).get("message", "unknown error")
+                failures.append({"slot": prepared.slot, "error": detail})
+                continue
+            record = (ingest.get("asset") or {}).get("record") or {}
+            registered = self._register_asset_record(
+                record,
+                origin="logo_ladder",
+                label=prepared.label,
+                alt=f"{outcome.company or prepared.label} logo",
+                extra={"slot": prepared.slot},
+            )
+            # `_register_asset_record` returns a tool-error envelope when the
+            # checked op path rejects the batch; surface it verbatim.
+            if '"status": "ok"' not in registered:
+                return registered
+            placed.append({
+                "slot": prepared.slot,
+                "asset_id": prepared.asset_id,
+                **prepared.evidence,
+            })
+
+        if not placed:
+            return self._tool_error(
+                "logo_fetch.ingest_failed",
+                "the logo was resolved but could not be registered",
+                failures=failures,
+            )
+
+        self._register_fetched_logo_custody(outcome)
+        payload: JsonObject = {
+            "status": outcome.status,
+            "site": outcome.site,
+            "identity": outcome.identity,
+            "lockup_completeness": outcome.lockup_completeness,
+            "logos": placed,
+            "notes": outcome.notes[:4],
+        }
+        if failures:
+            payload["failed_slots"] = failures
+        self.record(
+            "agent",
+            "web_logo_fetched",
+            input_summary=requested[:500],
+            output_summary=(
+                f"{outcome.site}: " + ", ".join(p["slot"] for p in placed)
+            )[:500],
+            payload={"site": outcome.site, "slots": [p["slot"] for p in placed]},
+        )
+        return json.dumps(payload, indent=2)
+
+    def _register_fetched_logo_custody(self, outcome) -> None:
+        """Give the fetched bytes durable custody now, not at accept.
+
+        The scene lane has an accept-seam backstop; the web lane's commit path
+        did not, so an agent-ingested asset lived only in the engine's own
+        cache — a directory that can be wiped, leaving the document citing bytes
+        nothing holds. A web-doc backstop now runs at the commit seam too; this
+        call is the belt to that brace, and it is best-effort because losing
+        durability is not a reason to lose the agent's turn.
+        """
+        blobs = getattr(self.config, "blob_store", None)
+        cache_root = getattr(self.config, "engine_cache_root", None)
+        if blobs is None or cache_root is None:
+            return
+        try:
+            from lumen_api.asset_custody import register_web_asset_backstop
+
+            register_web_asset_backstop(blobs, cache_root, self.web_doc)
+        except Exception as error:  # noqa: BLE001 - never fail a turn on custody
+            self._obs_log.warning(
+                "web_logo_custody_deferred",
+                error=str(error),
+                error_type=type(error).__name__,
+            )
+
     def _asset_library_entry(self, asset_id: str) -> Optional[JsonObject]:
         manifest = self.config.asset_library or {}
         entry = manifest.get(asset_id)
@@ -2760,16 +3303,28 @@ class LumenWebTools:
         }
 
     def _asset_search_result(
-        self, source: JsonObject, entry: JsonObject
+        self,
+        source: JsonObject,
+        entry: JsonObject,
+        *,
+        origin: str = "library",
+        id_match: bool = False,
+        kind_note: Optional[str] = None,
+        registered: bool = True,
     ) -> JsonObject:
         record = entry.get("record") or {}
         raster = record.get("raster") or record.get("logo") or {}
         media = record.get("media") or {}
-        return {
+        asset_id = str(record.get("id") or "")
+        row: JsonObject = {
             "source_id": source.get("source_id"),
             "asset_id": record.get("id"),
             "label": source.get("label"),
             "kind": record.get("kind"),
+            # Which manifest answered decides which placement action works, so
+            # the row says it rather than making the agent guess and get a
+            # refusal (see the tool docstring's origin table).
+            "origin": origin,
             "mime_type": media.get("mime_type"),
             "filename": media.get("filename"),
             "width": raster.get("pixel_width") or raster.get("width"),
@@ -2781,17 +3336,126 @@ class LumenWebTools:
             "tags": source.get("tags"),
             "license": source.get("license"),
             "provenance": source.get("provenance"),
+            # W1.1: the literal target that shows this asset's real pixels. The
+            # trio is told to look before deciding; a result row that names the
+            # id but not the way to see it makes that one guess away.
+            "view": f"asset:{asset_id}",
         }
+        # W1.3's shared helper — the SOURCE dims, the number that decides whether
+        # an asset can carry a full-bleed band.
+        dims = record_pixel_dims(record) if isinstance(record, dict) else None
+        if dims:
+            row["px"] = f"{dims[0]}x{dims[1]}"
+        # W1.1 deferred finding: `use_library_asset` REFUSES a record whose
+        # status is not "ready". Hiding those rows would re-blind the agent, so
+        # they are annotated — placement will refuse, and now it knows why.
+        status = record.get("status")
+        if isinstance(status, str) and status and status != "ready":
+            row["status"] = status
+        if id_match:
+            row["id_match"] = True
+        if kind_note:
+            row["kind_note"] = kind_note
+        if not registered:
+            row["grounding"] = "unregistered — source cap reached"
+        return row
+
+    def _asset_search_candidates(self) -> Dict[str, tuple]:
+        """Every asset this turn can name, as `{asset_id: (entry, origin)}`.
+
+        The three places an id legitimately lives — the document's own registry,
+        the brand kit manifest, and the workspace library — resolved in EXACTLY
+        the order `view("asset:<id>")` resolves them (W1.1: registry first, then
+        the two manifests). Searching only the library was why an id the director
+        read off the brand card could not be searched back, and searching them in
+        a different precedence than `view` would mean search and view could
+        disagree about which record an id names.
+
+        So precedence on a duplicate id is document → brand kit → library. The
+        document registry value is a BARE record — `_register_asset_record`
+        upserts the record WHOLE, so the registry value IS the record — and is
+        wrapped here to match the manifest entry shape. It carries no W1.4
+        title/description, which is the cost of parity: an asset already placed
+        on this page is described by the record on the page.
+        """
+        candidates: Dict[str, tuple] = {}
+        sources: list[tuple[JsonObject, str, bool]] = [
+            (self.web_doc.get("assets") or {}, "document", False),
+            (self.config.brand_kit_assets or {}, "brand_kit", True),
+            (self.config.asset_library or {}, "library", True),
+        ]
+        for manifest, origin, wrapped in sources:
+            if not isinstance(manifest, dict):
+                continue
+            for asset_id, value in manifest.items():
+                if not isinstance(asset_id, str) or asset_id in candidates:
+                    continue
+                if wrapped:
+                    if not isinstance(value, dict):
+                        continue
+                    entry = value
+                    record = entry.get("record")
+                else:
+                    record = value
+                    entry = {"record": record}
+                if not isinstance(record, dict) or record.get("id") != asset_id:
+                    continue
+                candidates[asset_id] = (entry, origin)
+        return candidates
 
     def search_assets(
         self, q: str, kind: Optional[str] = None, limit: int = 8
     ) -> str:
-        """Search REAL non-archived workspace asset records passed by the API.
+        """Search the REAL assets this turn can place. No result is invented.
 
-        Matching covers asset id/label/filename/tags plus human or AI-authored
-        title, description, usage, and tags. Results include record provenance,
-        license, and digest; use `asset(action="use_library_asset",
-        asset_id=...)` to place an exact result. No result is invented.
+        SEARCHES all three inventories an asset id can come from, and every row
+        says which one answered under `origin`, because that decides how it is
+        placed:
+          - `library`  → `asset(action="use_library_asset", asset_id=...)`
+          - `brand_kit`→ `asset(action="use_brand_asset", asset_id=...)`
+          - `document` → already registered on this page; reference it with
+            `<img data-asset="<asset_id>">`.
+
+        MATCHES over asset id, label, filename, kind, the human/AI-authored
+        title, description and usage, and both tag lists.
+
+        `kind` accepts the words you already use — "image" (a `raster_image` or a
+        `vector`) or "logo" — as well as a raw engine record kind. A record kind
+        with no such alias (`document`, `other`) matches only its own raw name,
+        so `kind="image"` never hands back the brand-guide PDF. The filter NEVER
+        silences an id you named: an asset whose id is in the query comes back
+        with its true `kind` and a `kind_note` saying the filter did not match,
+        rather than a silent zero.
+
+        RANKING, exactly, descending:
+          1. `id_match` rows — the query, or any of its whitespace/punctuation-
+             delimited tokens, IS an asset id — before everything else, in the
+             order the query names them.
+          2. then whole-query phrase match (the full query string appears in the
+             asset's searchable text): yes before no;
+          3. then the number of DISTINCT meaningful query tokens found (any one
+             hit is enough to be a result — a four-word query does not need all
+             four). A token of 3+ characters matches as a SUBSTRING, so
+             "payment" finds "payments"; a shorter one must match a whole word
+             or the start of one, so "ui" does not hit inside "fluid". Common
+             function words are ignored so they cannot match everything;
+          4. then pixel area (width x height from the record, 0 when it states
+             none) — bigger first, since a bigger asset carries more layouts;
+          5. then asset id ascending, so the order is reproducible.
+
+        EACH ROW carries the record's provenance, license and digest, plus
+        `px` ("WxH", omitted when the record states no dimensions), `view`
+        (paste into `view("asset:<id>")` to see the actual pixels before
+        choosing), and `status` ONLY when it is not "ready" — a non-ready record
+        is searchable and viewable, but placement will refuse it. A `library`
+        row marked `grounding: "unregistered — source cap reached"` is a real
+        record this run has no source budget left to cite; it is still listed.
+        Searching costs no source budget on a `brand_kit` or `document` row —
+        only a library placement cites one.
+
+        ZERO results always names the inventory that was searched, so "nothing
+        matched" is never confused with "nothing exists" — and because a matched
+        row is never dropped, zero results can only mean zero matches.
         """
         query = (q or "").strip()
         if not query:
@@ -2808,34 +3472,47 @@ class LumenWebTools:
                 "asset_search.bad_limit",
                 f"limit must be an integer from 1 to {_ASSET_SEARCH_LIMIT_MAX}.",
             )
-        manifest = self.config.asset_library
-        if not isinstance(manifest, dict):
-            return self._tool_error(
-                "asset_search.unavailable",
-                "the workspace asset library was not available for this turn.",
-            )
+        candidates = self._asset_search_candidates()
         normalized_kind = (kind or "").strip().lower()
         query_lower = query.lower()
-        tokens = [token for token in re.split(r"\W+", query_lower) if token]
-        scored: List[tuple[int, str, str, JsonObject]] = []
-        for asset_id, entry in manifest.items():
-            if not isinstance(entry, dict):
+        tokens = _asset_search_tokens(query_lower)
+
+        # The exact-id fast path. The live failures named an id INSIDE a longer
+        # query ("asset_ing_f8… payment card"), so equality against the whole
+        # query is not enough — any token that IS an id resolves, in query order.
+        named_ids = [
+            token
+            for token in dict.fromkeys([query_lower, *tokens])
+            if token in candidates
+        ]
+        id_hits: List[JsonObject] = []
+        for asset_id in named_ids:
+            entry, origin = candidates[asset_id]
+            record = entry.get("record") or {}
+            note = None
+            if not _asset_kind_matches(record, normalized_kind):
+                note = (
+                    f"you asked for kind={normalized_kind!r}; this asset's kind is "
+                    f"{str(record.get('kind') or 'unknown')!r}. Returned because "
+                    "you named its id."
+                )
+            id_hits.append(
+                {"asset_id": asset_id, "entry": entry, "origin": origin, "note": note}
+            )
+
+        scored: List[tuple] = []
+        for asset_id, (entry, origin) in candidates.items():
+            if asset_id in named_ids:
                 continue
-            record = entry.get("record")
-            if (
-                not isinstance(record, dict)
-                or record.get("status") != "ready"
-                or record.get("id") != asset_id
-            ):
-                continue
-            record_kind = str(record.get("kind") or "").lower()
-            if normalized_kind and record_kind != normalized_kind:
+            record = entry.get("record") or {}
+            if not _asset_kind_matches(record, normalized_kind):
                 continue
             media = record.get("media") or {}
             fields = [
                 asset_id,
                 record.get("label"),
                 media.get("filename"),
+                record.get("kind"),
                 entry.get("title"),
                 entry.get("description"),
                 entry.get("usage"),
@@ -2843,20 +3520,76 @@ class LumenWebTools:
                 *(entry.get("tags") or []),
             ]
             haystack = " ".join(str(field) for field in fields if field).lower()
-            token_hits = sum(1 for token in tokens if token in haystack)
-            if query_lower not in haystack and token_hits == 0:
+            words = frozenset(word for word in re.split(r"\W+", haystack) if word)
+            token_hits = sum(
+                1 for token in tokens if _asset_text_hit(token, haystack, words)
+            )
+            phrase_hit = 1 if _asset_text_hit(query_lower, haystack, words) else 0
+            if not phrase_hit and token_hits == 0:
                 continue
-            score = (100 if query_lower in haystack else 0) + token_hits * 10
-            label = str(record.get("label") or entry.get("title") or asset_id)
-            scored.append((score, label.lower(), asset_id, entry))
-        scored.sort(key=lambda item: (-item[0], item[1], item[2]))
+            dims = record_pixel_dims(record)
+            area = dims[0] * dims[1] if dims else 0
+            scored.append((-phrase_hit, -token_hits, -area, asset_id, entry, origin))
+        scored.sort(key=lambda item: item[:4])
 
         results: List[JsonObject] = []
-        for _, _, asset_id, entry in scored[:limit]:
+        ordered = [
+            (hit["asset_id"], hit["entry"], hit["origin"], True, hit["note"])
+            for hit in id_hits
+        ] + [(item[3], item[4], item[5], False, None) for item in scored]
+        unregistered = 0
+        for asset_id, entry, origin, id_match, note in ordered[:limit]:
             source = self._asset_grounding_source(asset_id, entry)
-            if not self._register_grounding_source(source):
-                break
-            results.append(self._asset_search_result(source, entry))
+            # Only a LIBRARY row can ever spend a grounded source: placing one
+            # (`use_library_asset`) preserves the record's own license and
+            # provenance and cites the source, while `use_brand_asset` rewrites
+            # the source to the brand guide and registers nothing, and a
+            # document row is already on the page. Registering every returned
+            # row spent the shared budget on rows that never needed it — a few
+            # kit-heavy searches exhausted all 64 slots and the next
+            # `use_library_asset`/`fetch_page` then hard-failed
+            # `asset.grounding_limit` mid-turn. A kit/document row is therefore
+            # not "cap-suppressed": it simply never registers, so it carries no
+            # `grounding` annotation and is not counted in the note below.
+            registered = True
+            if origin == "library":
+                # A full source budget must not eat the ANSWER. Dropping the row
+                # (or breaking out of the loop) turned a budget condition into a
+                # shorter — or empty — result set, which reads to the agent
+                # exactly like "your query matched less", and the honest-empty
+                # note would then blame the query for a cap. The row still comes
+                # back; it just says it is uncited.
+                registered = self._register_grounding_source(source)
+                if not registered:
+                    unregistered += 1
+            results.append(
+                self._asset_search_result(
+                    source,
+                    entry,
+                    origin=origin,
+                    id_match=id_match,
+                    kind_note=note,
+                    registered=registered,
+                )
+            )
+        payload: JsonObject = {
+            "status": "ok",
+            "query": query,
+            "kind": normalized_kind or None,
+            "count": len(results),
+            "results": results,
+        }
+        # A matched row is ALWAYS returned (see the loop), so zero results can
+        # only ever mean zero matches — the note never has to guess which.
+        if not results:
+            payload["note"] = self._asset_search_empty_note(query, normalized_kind)
+        elif unregistered:
+            payload["note"] = (
+                f"{unregistered} of {len(results)} result(s) could not be "
+                "registered as grounded sources — this run's source budget is "
+                "full. They are real records and still listed, but placing one "
+                "needs budget: cite or place fewer sources first."
+            )
         self.record(
             "agent",
             "web_assets_searched",
@@ -2869,16 +3602,34 @@ class LumenWebTools:
             },
             sink_extra={"result_count": len(results)},
         )
-        return json.dumps(
-            {
-                "status": "ok",
-                "query": query,
-                "kind": normalized_kind or None,
-                "count": len(results),
-                "results": results,
-            },
-            indent=2,
+        return json.dumps(payload, indent=2)
+
+    def _asset_search_empty_note(self, query: str, normalized_kind: str) -> str:
+        """What a zero-hit search says instead of handing back a bare empty list.
+
+        "0 results" and "there are no assets" are different facts and the agent
+        acted on them identically — it stopped asking. Naming the inventory it
+        just searched makes the difference legible, and makes an over-narrow
+        `kind` filter visible as the cause it usually is."""
+        document = len(self.web_doc.get("assets") or {})
+        kit = len(self.config.brand_kit_assets or {})
+        library = len(self.config.asset_library or {})
+        filter_clause = f" with kind={normalized_kind}" if normalized_kind else ""
+        note = (
+            f"0 results for {query!r}{filter_clause} across {document} document, "
+            f"{kit} brand kit, {library} library assets."
         )
+        if document + kit + library == 0:
+            return note + " This turn was passed no asset inventory at all."
+        # Only suggest dropping a filter that was actually applied — advice for a
+        # knob the agent did not turn reads as noise and teaches it nothing.
+        advice = " Try a single distinctive word or an exact asset id."
+        if normalized_kind:
+            advice = (
+                " Try a single distinctive word, an exact asset id, or drop the "
+                "kind filter."
+            )
+        return note + advice
 
     def provenance(
         self,
@@ -3090,23 +3841,39 @@ class LumenWebTools:
         """Produce one image AssetRecord: prefer the configured T2I model, fall
         back to the deterministic stub provider (same request shape and provider
         handling substrate.generate_image uses). Returns (record, meta,
-        diagnostics); record is None only on a hard stub failure."""
+        diagnostics); record is None only on a hard stub failure.
+
+        Both provider paths take `brand_notes` as a LIST, never None. The Rust
+        target types `AssetGenerationConstraints.brand_notes` as `Vec<String>`
+        behind `#[serde(default)]`, which fires on an ABSENT key and NOT on an
+        explicit null — a `None` here made every stub generation die with
+        `invalid type: null, expected a sequence`, which is why web pages shipped
+        with no generated imagery at all."""
         diagnostics: List[JsonObject] = []
         store_root = str(self.config.effective_asset_store_root)
+        brand_notes = self._brand_image_notes()
 
         # 1) Real text-to-image model, when configured.
         if image_provider is not None and image_provider.is_configured():
+            references, reference_labels = self._brand_style_references()
             try:
                 result = image_provider.generate(
                     prompt=prompt,
                     width=width,
                     height=height,
-                    brand_notes=None,
+                    brand_notes=brand_notes,
                     aspect_ratio=aspect_ratio,
                     transparent_background=transparent_background or None,
-                    reference_images=None,
+                    reference_images=references,
                     request_id=asset_id,
                 )
+                if reference_labels:
+                    # Honest provenance: which brand pixels conditioned the style.
+                    notes = result.provenance.setdefault("notes", [])
+                    notes.append(
+                        "brand-style-conditioned on "
+                        + ", ".join(reference_labels)
+                    )
                 ingest = self.core.ingest_asset(
                     store_root=store_root,
                     bytes_base64=base64.b64encode(result.image_bytes).decode("ascii"),
@@ -3122,8 +3889,45 @@ class LumenWebTools:
                 if ingest.get("ok"):
                     record = (ingest.get("asset") or {}).get("record") or {}
                     return record, {"mode": "model", "model": result.model}, diagnostics
-            except Exception:  # noqa: BLE001 - degrade to the stub, never crash the turn
-                pass
+                detail = (ingest.get("error") or {}).get("message", "unknown error")
+                diagnostics.append(
+                    _image_warning(
+                        "LUMA0710",
+                        f"generated image could not be ingested ({detail}); "
+                        "used a placeholder",
+                    )
+                )
+            except Exception as error:  # noqa: BLE001 - degrade to the stub, never crash the turn
+                # NEVER silent (this was a bare `except: pass`): a provider outage
+                # must reach the author as a diagnostic and the log as a warning,
+                # or "the page has no real imagery" looks like an authoring choice.
+                code = getattr(error, "code", error.__class__.__name__)
+                conditioning_note = (
+                    " (brand style conditioning lost)" if reference_labels else ""
+                )
+                logger.warning(
+                    "web text-to-image generation failed (%s: %s); using a "
+                    "placeholder for %s",
+                    code,
+                    error,
+                    asset_id,
+                    exc_info=True,
+                )
+                diagnostics.append(
+                    _image_warning(
+                        "LUMA0710",
+                        f"text-to-image model unavailable ({code}: {error}); used a "
+                        f"placeholder image{conditioning_note}",
+                    )
+                )
+        elif image_provider is not None:
+            diagnostics.append(
+                _image_warning(
+                    "LUMA0711",
+                    "text-to-image model is not configured (set IMAGE_MODEL_*); "
+                    "used a placeholder image",
+                )
+            )
 
         # 2) Deterministic stub fallback through the Rust provider registry.
         request = {
@@ -3136,7 +3940,8 @@ class LumenWebTools:
                 "width": width,
                 "height": height,
                 "transparent_background": transparent_background or None,
-                "brand_notes": None,
+                # A LIST, never None — see the docstring.
+                "brand_notes": brand_notes,
             },
         }
         try:
@@ -3152,6 +3957,111 @@ class LumenWebTools:
             return None, {"error": error.message}, diagnostics
         record = (response.get("asset") or {}).get("record") or {}
         return record, {"mode": "placeholder", "model": "stub-image-v0"}, diagnostics
+
+    def _brand_image_notes(self) -> List[str]:
+        """Short natural-language style direction from the attached kit, appended
+        to every generation prompt by the provider seam's `_compose_prompt`.
+
+        Generated imagery is supposed to look like it belongs to THIS brand; the
+        web lane previously sent no conditioning at all, so even a working model
+        would have produced brand-generic stock. Bounded and deduped — this is
+        style direction, not the brand card."""
+        card = self.brand_card or {}
+        notes: List[str] = []
+
+        brief = read_brief(self.config.brand_kit) or {}
+        words = (brief.get("characterization") or {}).get("words")
+        if isinstance(words, list):
+            characterization = ", ".join(
+                word.strip() for word in words if isinstance(word, str) and word.strip()
+            )
+            if characterization:
+                notes.append(characterization)
+
+        for rule in list(card.get("imagery_rules") or [])[:_BRAND_NOTE_MAX_RULES]:
+            if isinstance(rule, str) and rule.strip():
+                notes.append(rule.strip())
+
+        tone = [t.strip() for t in (card.get("tone") or []) if isinstance(t, str) and t.strip()]
+        if tone:
+            notes.append("brand tone: " + ", ".join(tone[:_BRAND_NOTE_MAX_RULES]))
+
+        # The card's roles are kit-token names (`surface.page`, `text.primary`),
+        # not Tailwind-ish aliases; `accent` is the card's own "most vivid brand
+        # color" field. Named explicitly so a rename fails a test, not silently.
+        # Each role row is `{token, value}` (W1.3); this note wants the hex.
+        roles = (card.get("color_roles") or {}).get("roles") or {}
+        role_hexes = [
+            (roles.get(role) or {}).get("value")
+            for role in ("surface.brand", "surface.page", "text.primary")
+        ]
+        palette = [
+            value
+            for value in (card.get("accent"), *role_hexes)
+            if isinstance(value, str) and value.strip()
+        ]
+        if palette:
+            notes.append("brand palette: " + ", ".join(dict.fromkeys(palette)))
+
+        deduped = list(dict.fromkeys(note[:_BRAND_NOTE_MAX_CHARS] for note in notes))
+        return deduped[:_BRAND_NOTE_MAX_NOTES]
+
+    def _brand_style_references(self) -> tuple[Optional[List[tuple]], List[str]]:
+        """Up to `_BRAND_REFERENCE_MAX` of the kit's own brand IMAGES as
+        (bytes, mime) style anchors for a generation, plus their labels.
+
+        Deliberately IMAGES only — never a logo. A logo passed as a style
+        reference gets drawn INTO the generated picture, which is a brand
+        failure, not brand fidelity. Missing blob bytes are skipped (a kit that
+        was published elsewhere is a normal state, not an error), so this always
+        degrades to a plain text-conditioned generation.
+
+        Two selection rules, both learned from the approved kits:
+
+        * **The kit's ordinal IS the ranking.** `normalizer/emit.py::add_images`
+          numbers images `img.{n}` over an evidence list already sorted by
+          (area, file size) DESCENDING — so `img.1` is the best image the
+          harvest found. This used to iterate `sorted(images.items())`, a STRING
+          sort, which orders `img.1, img.10, img.11, …, img.19, img.2` — so at
+          `_BRAND_REFERENCE_MAX = 2` the second anchor was always `img.10` and
+          `img.2` was unreachable. On the approved v6 kit that made a **296x124**
+          thumbnail half the style conditioning of every generated image.
+        * **A floor, not a fill.** Only images clearing
+          `_BRAND_REFERENCE_MIN_LONG_SIDE_PX` may anchor; the picker does not
+          walk further down the ranking to make up the count. Ordering alone is
+          not enough because unresolvable entries are skipped, which can still
+          surface junk from deep in the list.
+        """
+        kit = self.config.brand_kit or {}
+        images = ((kit.get("assets") or {}).get("images") or {})
+        manifest = self.config.brand_kit_assets or {}
+        if not isinstance(images, dict) or not images or not manifest:
+            return None, []
+        store_root = self.config.effective_asset_store_root
+        collected: List[tuple] = []
+        labels: List[str] = []
+        for image_key, image in sorted(images.items(), key=_brand_image_rank):
+            if len(collected) >= _BRAND_REFERENCE_MAX:
+                break
+            if not isinstance(image, dict):
+                continue
+            entry = manifest.get(image.get("asset_id"))
+            record = (entry or {}).get("record") or {}
+            if not _clears_style_reference_floor(record):
+                continue
+            media = record.get("media") or {}
+            digest = (media.get("digest") or {}).get("value")
+            if not isinstance(digest, str) or not digest:
+                continue
+            path = blob_path_for_digest(store_root, digest)
+            if not path.is_file():
+                continue
+            try:
+                collected.append((path.read_bytes(), media.get("mime_type") or "image/png"))
+            except OSError:
+                continue
+            labels.append(str(image.get("title") or image_key))
+        return (collected or None), labels
 
     def _generate_image(
         self,
@@ -3179,7 +4089,14 @@ class LumenWebTools:
             origin="generate_image",
             label=resolved_label,
             alt=alt,
-            extra={"mode": meta.get("mode"), "model": meta.get("model")},
+            # A degrade to the placeholder is reported to the AUTHOR, not just to
+            # the log: the author is the only party that can decide whether a
+            # placeholder is shippable in this band.
+            extra={
+                "mode": meta.get("mode"),
+                "model": meta.get("model"),
+                "diagnostics": diagnostics or None,
+            },
         )
 
     def _use_brand_asset(
@@ -3528,6 +4445,110 @@ class LumenWebTools:
             )
         )
 
+    def _probe_digests(self) -> List[str]:
+        """Content digests this turn could resolve, best candidate first: the
+        document's own registered assets, then the kit manifest, the account
+        logo, and the workspace library. Deduped, and only the first few are
+        ever used — this feeds a reachability probe, not an inventory."""
+        digests: List[str] = []
+
+        def _take(record: Any) -> None:
+            if not isinstance(record, dict):
+                return
+            value = ((record.get("media") or {}).get("digest") or {}).get("value")
+            if isinstance(value, str) and re.fullmatch(r"[0-9a-f]{64}", value):
+                digests.append(value)
+
+        for record in (self.web_doc.get("assets") or {}).values():
+            _take(record)
+        for manifest in (
+            self.config.brand_kit_assets,
+            self.config.account_assets,
+            self.config.asset_library,
+        ):
+            if isinstance(manifest, dict):
+                for entry in manifest.values():
+                    _take((entry or {}).get("record") if isinstance(entry, dict) else None)
+        return list(dict.fromkeys(digests))
+
+    def _preflight_asset_base_url(self) -> None:
+        """Prove — once per turn, loudly — that `self.asset_base_url` actually
+        serves bytes, and record the verdict in the run trace.
+
+        This exists because a SILENTLY dead asset origin is indistinguishable,
+        from inside the loop, from a model that refuses to use imagery: the
+        agent places `<img data-asset=…>`, the preview renders 404s, the visual
+        reviewer sees broken images, and the agent correctly strips them and
+        reports that the assets "did not render". That failure mode cost a full
+        day and three wrong diagnoses. It must never be silent again.
+
+        Deliberately NON-FATAL: an unreachable origin degrades the turn's
+        imagery, it does not invalidate the page, and failing the turn here
+        would trade a visible degradation for an invisible outage. Warn, record,
+        continue."""
+        if self._asset_base_url_preflighted:
+            return
+        self._asset_base_url_preflighted = True
+
+        base = self.asset_base_url.rstrip("/")
+        payload: JsonObject = {
+            "asset_base_url": base,
+            "source": "config" if self.config.asset_base_url else "fallback",
+        }
+        digests = self._probe_digests()
+        if not digests:
+            payload["reachable"] = None
+            payload["reason"] = "no asset digest available to probe"
+            logger.info("asset origin preflight skipped for %s: nothing to probe", base)
+            self.record(
+                "orchestrator",
+                "asset_base_url_preflight",
+                output_summary=f"{base} — not probed (no asset digest in this turn yet)",
+                payload=payload,
+            )
+            return
+
+        digest = digests[0]
+        url = f"{base}/{digest}"
+        payload["probe_url"] = url
+        try:
+            response = httpx.get(url, timeout=_ASSET_PREFLIGHT_TIMEOUT_S)
+            payload["status_code"] = response.status_code
+            payload["reachable"] = response.status_code == 200
+        except Exception as error:  # noqa: BLE001 - a probe must never break a turn
+            payload["reachable"] = False
+            payload["reason"] = f"{error.__class__.__name__}: {error}"
+
+        if payload["reachable"]:
+            logger.info("asset origin preflight OK: %s -> 200", url)
+            self.record(
+                "orchestrator",
+                "asset_base_url_preflight",
+                output_summary=f"{base} serves assets (200 for {digest[:16]})",
+                payload=payload,
+            )
+            return
+
+        detail = payload.get("reason") or f"HTTP {payload.get('status_code')}"
+        logger.warning(
+            "ASSET ORIGIN UNREACHABLE: %s did not serve %s (%s). Every "
+            "<img data-asset=...> in this turn's preview screenshots will render "
+            "BROKEN, and the agent will strip the imagery it places. Set "
+            "LUMEN_API_ORIGIN to the design API's real origin.",
+            base,
+            digest,
+            detail,
+        )
+        self.record(
+            "orchestrator",
+            "asset_base_url_unreachable",
+            output_summary=(
+                f"{base} did not serve a known asset ({detail}) — preview "
+                "screenshots will show broken images for every placed asset"
+            ),
+            payload=payload,
+        )
+
     def render_web_preview(self) -> str:
         """Render the live document (editor mode) and capture full-page
         screenshots at 1440, 768, and 375 px, plus interactive STATE captures
@@ -3542,6 +4563,9 @@ class LumenWebTools:
         no helper call, no Playwright, no iteration bump — and the result
         carries `unchanged: true` so the orchestrator reuses its standing
         critique instead of re-reviewing byte-identical pixels."""
+        # Once per turn, before the first screenshot anyone will judge: prove the
+        # asset origin these previews resolve images against is actually alive.
+        self._preflight_asset_base_url()
         # A render call means control is back with the orchestrator: open a
         # fresh between-renders edit budget for the next author round.
         self._mutations_since_render = 0
@@ -3568,6 +4592,14 @@ class LumenWebTools:
                 "plainly that the final page was not visually verified), otherwise "
                 '"failed".',
             )
+        # G5 — brand-geometry retokenization, BEFORE anything is rendered, so
+        # the reviewer only ever judges rebound classes and the LUMW0306 advice
+        # the next validate emits is only about the raw shapes that really are
+        # the author's own decision. A no-op on a seeded doc or a platform kit,
+        # and idempotent afterwards; a mutating pass bumps `_doc_version`, so
+        # the unchanged-render guard below correctly declines to reuse the
+        # standing previews.
+        self._retokenize_geometry()
         # Feature 2 — unchanged-render guard. A doc with no mutation since the
         # last render whose previews are all still on hand is reused verbatim.
         if (
@@ -3985,15 +5017,152 @@ class LumenWebTools:
             ]
         if target.startswith("state:"):
             return self._view_state(target)
+        if target.startswith("asset:"):
+            return self._view_asset(target)
         self.record(
             "agent", "web_view_called", input_summary=target, output_summary="unknown_target"
         )
         return [
             _text_block(
                 f"view: unknown target {target!r}. Use \"preview:1440\", "
-                '"preview:768", "preview:375", "state:<n>", "doc", "brand", or '
-                '"account".'
+                '"preview:768", "preview:375", "state:<n>", "asset:<asset_id>", '
+                '"doc", "brand", or "account".'
             )
+        ]
+
+    def _asset_id_menu(self) -> str:
+        """The ids an `asset:` target can name, by source — what an unknown id
+        should offer instead of itself."""
+        doc_ids = sorted((self.web_doc.get("assets") or {}).keys())
+        kit_ids = sorted((self.config.brand_kit_assets or {}).keys())
+        library_ids = sorted((self.config.asset_library or {}).keys())
+        return (
+            f"Document assets: {_capped_id_list(doc_ids)}. "
+            f"Brand kit assets: {_capped_id_list(kit_ids)}. "
+            f"Library assets: {_capped_id_list(library_ids)}."
+        )
+
+    def _view_asset(self, target: str) -> list:
+        """Build the view content for an `asset:<asset_id>` target — that asset's
+        raster preview as [text, image] blocks.
+
+        The trio is required to DECIDE about imagery (D4), and a decision made off
+        titles and tags alone is made blind: a kit's "hero" can be a 296x124 crop
+        and its "texture" a QR code. Ids resolve from all THREE places the decision
+        actually chooses between — the document's own asset registry (what this
+        turn already registered), the brand kit's manifest (what it could still
+        place), and the workspace asset library (what `search_assets` returns).
+        Anything the prompts tell a role to consider, it can look at.
+
+        Every non-viewable outcome is an honest text block, never an exception and
+        never a fabricated preview: unknown id (with the available ids), a record
+        with no raster preview at all, or a preview whose bytes are not on disk."""
+        asset_id = target[len("asset:") :]
+        record: Optional[JsonObject] = None
+        entry_title: Optional[str] = None
+        # Document registry first: `_register_asset_record` upserts the record
+        # WHOLE, so the registry value IS the record.
+        registered = (self.web_doc.get("assets") or {}).get(asset_id)
+        if isinstance(registered, dict):
+            record = registered
+        else:
+            # Both manifests wrap the record in an entry carrying the human title
+            # their surfaces show (the brand card's image inventory; a
+            # `search_assets` result) — see `_use_brand_asset` /
+            # `_asset_library_entry`.
+            for manifest in (self.config.brand_kit_assets, self.config.asset_library):
+                entry = (manifest or {}).get(asset_id)
+                if isinstance(entry, dict) and isinstance(entry.get("record"), dict):
+                    record = entry["record"]
+                    title = entry.get("title")
+                    entry_title = title if isinstance(title, str) and title else None
+                    break
+        if record is None:
+            self.record(
+                "agent", "web_view_called", input_summary=target, output_summary="asset_unknown"
+            )
+            return [
+                _text_block(
+                    f"view: unknown asset {asset_id!r}. {self._asset_id_menu()}"
+                )
+            ]
+
+        resolved = asset_preview_path(record, self.config.effective_asset_store_root)
+        if resolved is None:
+            mime = (record.get("media") or {}).get("mime_type") or "unknown"
+            # Say only what is established: this record has no raster the vision
+            # APIs can read. A vector with no derived thumbnail is the common
+            # cause, so name it — but only when the mime actually says vector.
+            cause = (
+                " (a vector asset with no derived thumbnail)"
+                if mime == "image/svg+xml"
+                else ""
+            )
+            self.record(
+                "agent", "web_view_called", input_summary=target, output_summary="asset_no_preview"
+            )
+            return [
+                _text_block(
+                    f"view: asset {asset_id!r} exists, but its media ({mime}) has "
+                    f"no raster preview to view{cause}. Judge it from its "
+                    "description, or choose an asset you can see."
+                )
+            ]
+
+        preview_path, pixel_width, pixel_height = resolved
+        path = Path(preview_path)
+        if not path.exists():
+            self.record(
+                "agent",
+                "web_view_called",
+                input_summary=target,
+                output_summary="asset_missing_file",
+            )
+            return [
+                _text_block(
+                    f"view: asset {asset_id!r} is registered, but its preview bytes "
+                    "are missing from the asset store — nothing to look at."
+                )
+            ]
+
+        label = (
+            entry_title
+            or record.get("label")
+            or (record.get("source") or {}).get("label")
+            or asset_id
+        )
+        # BOTH dimensions, because they answer different questions and the image
+        # itself cannot disambiguate them (a sub-512px thumbnail is upscaled
+        # before it is attached, so a 296px crop and a 2460px hero LOOK alike).
+        # The SOURCE dims decide whether an asset can carry a full-bleed band;
+        # the PREVIEW dims say how much detail this look actually shows. Reporting
+        # only the resolver's tuple made every thumbnailed kit asset read ~256px.
+        source_dims = record_pixel_dims(record)
+        preview_dims = (pixel_width, pixel_height) if pixel_width and pixel_height else None
+        details: List[str] = []
+        if source_dims:
+            details.append(f"source {source_dims[0]}x{source_dims[1]}px")
+        if preview_dims and preview_dims != source_dims:
+            details.append(f"preview {preview_dims[0]}x{preview_dims[1]}px")
+        details.append(f"source {(record.get('source') or {}).get('kind') or 'unknown'}")
+        # W1.1 deferred finding: `use_library_asset` refuses a record whose status
+        # is not "ready", but it is still viewable — so say so here rather than
+        # letting the trio pick it and eat the refusal downstream. A "ready"
+        # record says nothing: the common case must not cost a line.
+        status = record.get("status")
+        if isinstance(status, str) and status and status != "ready":
+            details.append(f"status {status} — placement will refuse it")
+        self.record(
+            "agent", "web_view_called", input_summary=target, output_summary="asset_viewed"
+        )
+        return [
+            _text_block(
+                f"view: asset {asset_id} — {label} ({', '.join(details)})"
+            ),
+            # G5 (see the preview branch): every web view image rides the
+            # many-image ceiling, kit assets included — they accumulate in the
+            # same conversation as the page captures.
+            _image_block(path, max_px=_VISION_MANY_IMAGE_MAX_PX),
         ]
 
     def _view_state(self, target: str) -> list:
@@ -4144,8 +5313,10 @@ def make_web_view_tool(tools: LumenWebTools, can_render: bool = True):
     target="preview:1440"|"preview:768"|"preview:375" returns the latest
     screenshot of that width as [text, image] blocks; "state:<n>" returns the
     nth interactive STATE capture (dialog opened / accordion expanded) from the
-    latest render; "doc" returns a compact section/asset summary; "brand"
-    returns the brand card; "account" returns the target account card (P5).
+    latest render; "asset:<asset_id>" returns that asset's preview image (from
+    the document's own registry, the kit manifest, or the workspace library);
+    "doc" returns a compact section/asset summary; "brand" returns the brand
+    card; "account" returns the target account card (P5).
     Mirrors tools/view.make_view_tool: any failure inside returns an honest error
     STRING so a bad/unreadable image can never kill the turn unfinalized."""
     from langchain_core.tools import tool
@@ -4156,10 +5327,13 @@ def make_web_view_tool(tools: LumenWebTools, can_render: bool = True):
         """Look at the page. target="preview:1440" / "preview:768" /
         "preview:375" returns the latest rendered screenshot at that width;
         "state:<n>" returns the nth interactive STATE capture (0-based: a dialog
-        opened or accordions expanded) from the latest render; "doc" returns a
-        section + asset summary; "brand" returns the brand card; "account"
-        returns the target account card. Returns image content so you judge by
-        looking, not guessing."""
+        opened or accordions expanded) from the latest render;
+        "asset:<asset_id>" returns that asset's preview image with its SOURCE
+        pixel dimensions (a brand kit asset, a `search_assets` library result, or
+        one already registered in the document); "doc" returns a section + asset
+        summary; "brand" returns the brand card; "account" returns the target
+        account card. Returns image content so you judge by looking, not
+        guessing."""
         try:
             with log_span("tool_web_view", logger=logger, target=target):
                 return tools._view_content(target, can_render=can_render)

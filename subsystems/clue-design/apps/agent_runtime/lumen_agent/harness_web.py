@@ -38,6 +38,7 @@ from .prompts_web import (
 from .tools.web_substrate import (
     HOME_PAGE_ID,
     LumenWebTools,
+    has_existing_content,
     make_web_view_tool,
     web_theme_token_names,
 )
@@ -172,15 +173,6 @@ class WebDelegationCap(AgentMiddleware):
         return handler(request)
 
 
-def _has_existing_content(web_doc: dict, page_id: str) -> bool:
-    """True when the home page already carries authored content (any node
-    beyond the empty root)."""
-    for page in web_doc.get("pages") or []:
-        if isinstance(page, dict) and page.get("id") == page_id:
-            return len(page.get("nodes") or {}) > 1
-    return False
-
-
 def _scaffold_web_workspace(tools: LumenWebTools, prompt: str) -> str:
     """Create the run workspace and seed its read-write files. Returns the
     virtual workspace path the file tools operate under."""
@@ -282,6 +274,7 @@ def create_web_deepagent(
                 tools.author_web_subtree,
                 tools.patch_web_page,
                 tools.fetch_page,
+                tools.fetch_logo,
                 tools.search_assets,
                 tools.provenance,
                 tools.asset,
@@ -333,7 +326,7 @@ def create_web_deepagent(
         tools=orchestrator_tools,
         system_prompt=build_web_orchestrator_prompt(
             doc_title=doc_title,
-            has_existing_content=_has_existing_content(initial_web_doc, HOME_PAGE_ID),
+            has_existing_content=has_existing_content(initial_web_doc, HOME_PAGE_ID),
             brand_card=tools.brand_card_text,
             review_cap=WEB_REVIEW_DELEGATION_CAP,
             author_cap=WEB_AUTHOR_DELEGATION_CAP,

@@ -31,7 +31,11 @@ _BRAND_FALLBACK = "#0F766E"
 @dataclass
 class RoleAssignment:
     hex: str
-    basis: str            # "evidence" | "derived" | "default"
+    # "evidence" (an observed swatch) | "measured" (read off the rendered page,
+    # but a cluster representative — see bands.py) | "derived" | "default".
+    # `emit._confidence_for` maps each to its confidence; a basis it does not
+    # know falls to 0.3, so add new ones there too.
+    basis: str
     provenance: str       # compact provenance string
     cluster: ColorCluster | None = None
 

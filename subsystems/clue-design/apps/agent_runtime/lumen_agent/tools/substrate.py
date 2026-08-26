@@ -12,7 +12,6 @@ from typing import Any, Callable, Dict, List, Optional
 
 from py_lumen_obs import bind_run_id, get_logger, log_span
 
-from clue_design.storage import location_digest
 from lumen_api.core import CoreClient, CoreError
 from lumen_api.export_policy import partition_export_diagnostics
 
@@ -37,6 +36,8 @@ from ..retokenize import (
 from ..brand_card import build_brand_card
 from ..knowledge import BRAND_APPLICATION_PATH, DIRECTIVES_PATH, read_task_knowledge
 from ..paths import normalize_agent_key
+from . import logo_fetch
+from .asset_preview import asset_preview_path, blob_path_for_digest
 from ..run_metrics import RunMetrics
 from ..text_clearance import collision_advisory
 from pydantic import ValidationError
@@ -106,17 +107,15 @@ CONTEXT_MAX_TEXT_LEN = 120
 # the model boundary (see providers), never accumulated in a persisted dict.
 CONTACT_SHEET_MAX = 6
 PLACED_PREVIEWS_MAX = 4
-# Raster mime types the vision APIs accept as a direct preview when no derived
-# thumbnail exists (an SVG has no raster preview → it is skipped, never a broken path).
-_PREVIEWABLE_MIME_TYPES = {"image/png", "image/jpeg", "image/webp", "image/gif"}
+# The raster mime types the vision APIs accept as a direct preview — and the
+# resolver that reads them — now live in `.asset_preview`, shared with the web
+# lane's view("asset:<id>") so the two lanes cannot disagree about which pixels
+# represent an asset.
 
 
-def blob_path_for_digest(store_root: Any, digest: str) -> Path:
-    """The content-addressed store path for a sha256 digest:
-    `<store_root>/sha256/<first2>/<digest>`. The ONE place this layout is spelled
-    out for digest→path resolution (view's reference preview + the runtime's
-    reference-conditioning both call it)."""
-    return Path(store_root) / "sha256" / digest[:2] / digest
+# `blob_path_for_digest` — the one spelling of the digest→path layout — now
+# lives in `.asset_preview` beside the shared resolver (both lanes need it);
+# imported above and re-exported from this module for its existing callers.
 
 # Diagnostic codes that indicate content does not fit its frame (text overflow)
 # or a layout cluster is mis-sized — surfaced as `overflow` in the preview
@@ -348,7 +347,11 @@ class LumenDesignTools:
         # config (None without a kit). Injected via load_knowledge and
         # curated_context — the full kit JSON never enters model history.
         self.brand_card: Optional[JsonObject] = build_brand_card(
-            config.brand_kit, source=config.brand_kit_source
+            config.brand_kit,
+            source=config.brand_kit_source,
+            # W1.3: pixel dimensions for the image/logo rows — they live on the
+            # by-value asset records, never on the kit's own asset entries.
+            asset_manifest=config.brand_kit_assets,
         )
         self.dsl_session: Optional[JsonObject] = None
         self.latest_export_summary: Optional[JsonObject] = None
@@ -1327,6 +1330,121 @@ class LumenDesignTools:
             "action='use_brand_asset' requires `node_id` or `slot_id`.",
         )
 
+    def fetch_logo(self, domain: str, company_name: Optional[str] = None) -> str:
+        """Fetch a company's REAL logo from its website and register it here.
+
+        Use this whenever the design shows a company that is not us — the target
+        account, a named customer, a partner. Pass their domain
+        (`goodmancampbell.com`) or any URL on their site; pass `company_name`
+        too when you know it, because it sharpens the identity check.
+
+        Returns the asset ids it registered, one per slot it could fill:
+        `light` (for light backgrounds), `dark` (a reversed/white asset for dark
+        backgrounds), `mark` (the symbol alone) and `wordmark`. Place them with
+        `asset(action="place", ...)` like any other registered asset. A slot is
+        missing when the brand publishes nothing for it — that is a real answer,
+        and it is never filled by recoloring another slot.
+
+        If it comes back `needs_review`, nothing was registered because no asset
+        could be attributed to that company with confidence. Say so and ask for
+        the file. Never draw, recolor or approximate a logo.
+
+        Static fetch only: a site that builds its header in JavaScript has no
+        logo to read here, and reports that plainly.
+        """
+        requested = (domain or "").strip()
+        if not requested:
+            return self._tool_error(
+                "logo_fetch.bad_request", "fetch_logo requires a non-empty `domain`."
+            )
+        try:
+            outcome = logo_fetch.fetch_logo_family(
+                requested, company_name=(company_name or "").strip() or None
+            )
+        except ValueError as error:
+            return self._tool_error("logo_fetch.bad_request", str(error))
+        except Exception as error:  # noqa: BLE001 - tool failures are envelopes
+            code = getattr(error, "code", "")
+            self.record(
+                "coordinator",
+                "logo_fetch_failed",
+                input_summary=requested[:500],
+                output_summary=f"{type(error).__name__}: {error}"[:500],
+            )
+            return self._tool_error(
+                "logo_fetch.blocked" if code == "LUMI0501" else "logo_fetch.failed",
+                f"{getattr(error, 'message', None) or error}",
+                capture_code=code or None,
+            )
+
+        if outcome.needs_review:
+            self.record(
+                "coordinator",
+                "logo_fetch_needs_review",
+                input_summary=requested[:500],
+                output_summary=(outcome.notes[0] if outcome.notes else "no slot filled")[:500],
+            )
+            return json.dumps(logo_fetch.review_payload(outcome), indent=2)
+
+        store_root = str(self.config.effective_asset_store_root)
+        placed: list[JsonObject] = []
+        failures: list[JsonObject] = []
+        for prepared in outcome.prepared:
+            ingest = self.core.ingest_asset(**prepared.ingest_kwargs(store_root))
+            if not ingest.get("ok"):
+                detail = (ingest.get("error") or {}).get("message", "unknown error")
+                failures.append({"slot": prepared.slot, "error": detail})
+                continue
+            record = (ingest.get("asset") or {}).get("record") or {}
+            # SCENE op key is "asset"; the web lane's is "record". Same engine
+            # asset table, two operation schemas.
+            operations = [{"kind": "upsert_asset", "asset": record}]
+            try:
+                apply_response = self.core.apply_operations(self.scene, operations)
+            except CoreError as error:
+                failures.append({"slot": prepared.slot, "error": error.message})
+                continue
+            self._replace_scene_from_core_response(
+                apply_response, "fetch_logo", operations
+            )
+            placed.append({
+                "slot": prepared.slot,
+                "asset_id": record.get("id") or prepared.asset_id,
+                **prepared.evidence,
+            })
+
+        if not placed:
+            return self._tool_error(
+                "logo_fetch.ingest_failed",
+                "the logo was resolved but could not be registered in the scene",
+                failures=failures,
+            )
+
+        payload: JsonObject = {
+            "status": outcome.status,
+            "site": outcome.site,
+            "identity": outcome.identity,
+            "lockup_completeness": outcome.lockup_completeness,
+            "logos": placed,
+            "notes": outcome.notes[:4],
+            "next": (
+                "Place one with asset(action='place', asset_id=..., node_id=... or "
+                "slot_id=...). Use `dark` on dark surfaces and `light` on light ones."
+            ),
+        }
+        if failures:
+            payload["failed_slots"] = failures
+        self.record(
+            "coordinator",
+            "logo_fetched",
+            input_summary=requested[:500],
+            output_summary=(
+                f"{outcome.site}: " + ", ".join(p["slot"] for p in placed)
+            )[:500],
+            payload={"site": outcome.site, "slots": [p["slot"] for p in placed]},
+        )
+        return json.dumps(payload, indent=2)
+
     def _collect_reference_previews(
         self, condition_on_references: bool, diagnostics: List[JsonObject]
     ) -> tuple[Optional[List[tuple]], Optional[List[str]]]:
@@ -1768,51 +1886,12 @@ class LumenDesignTools:
         """Slice 2: resolve a kit-asset record to an ON-DISK preview the vision APIs
         can read, returning (absolute_path, pixel_width, pixel_height) or None.
 
-        Prefer the derived 256px thumbnail (any source type gets one at ingest); else,
-        if the primary media is itself a raster the vision APIs accept, use that. An
-        SVG with no thumbnail has no usable raster preview → return None (the caller
-        skips it and counts it in `_omitted`). Only the path is returned; no bytes are
-        read here (existence is checked at block-build time in providers), so this
-        stays cheap to call every curated context.
-
-        **Resolve by DIGEST, never by the stored ref's text** (the same rule
-        `clue_design.storage.location_digest` states, which is why this calls it rather
-        than re-deriving it). Three `opaque_ref` shapes exist in the wild — the engine's
-        `sha256/<ab>/<digest>`, D4's durable `<workspace>/design/<digest>`, and a bare
-        digest — and only the trailing segment is common to all three. This used to
-        append the ref verbatim onto `effective_asset_store_root`, which is the
-        per-WORKSPACE engine materialization cache: a D4 ref then produced the doubled
-        `<cache>/ws_X/ws_X/design/<digest>` and EVERY `view("asset:…")` on a
-        durably-stored brand-kit asset answered `asset_missing_file` (2026-08-24
-        forensics; fast-loop v1 spec §4 P0.1). The digest goes through
-        `blob_path_for_digest` — the one place the engine-cache layout is spelled out —
-        and the API's `brand_kit_asset_manifest` read-through has already materialized
-        those bytes out of durable storage into that cache."""
-        media = record.get("media") or {}
-        store_root = Path(self.config.effective_asset_store_root)
-        thumbnail = media.get("thumbnail") or {}
-        thumb_digest = location_digest(thumbnail.get("location"))
-        if thumb_digest:
-            return (
-                str(blob_path_for_digest(store_root, thumb_digest)),
-                thumbnail.get("pixel_width"),
-                thumbnail.get("pixel_height"),
-            )
-        mime = media.get("mime_type")
-        # `media.digest.value` is the record's own byte identity and the primary source
-        # of truth; the location is the fallback for a record that carries only a ref.
-        primary_digest = ((media.get("digest") or {}).get("value")) or location_digest(
-            media.get("location")
-        )
-        if mime in _PREVIEWABLE_MIME_TYPES and primary_digest:
-            # Pixel dims for a raster/logo asset live in its own metadata block.
-            dims = record.get("raster") or record.get("logo") or {}
-            return (
-                str(blob_path_for_digest(store_root, primary_digest)),
-                dims.get("pixel_width"),
-                dims.get("pixel_height"),
-            )
-        return None
+        The resolution itself is `asset_preview.asset_preview_path` — shared with
+        the web lane's view("asset:<id>") so the two lanes cannot disagree about
+        which pixels represent an asset. This binds it to THIS run's asset-store
+        root; a None result is a record with no usable raster preview (an SVG with
+        no derived thumbnail), which the caller skips and counts in `_omitted`."""
+        return asset_preview_path(record, self.config.effective_asset_store_root)
 
     def _resolve_node_image_source(
         self, node_id: str

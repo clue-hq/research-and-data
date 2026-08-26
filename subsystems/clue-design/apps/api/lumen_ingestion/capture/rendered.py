@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import time
 from urllib.parse import urljoin
 
 from selectolax.parser import HTMLParser
@@ -74,6 +75,52 @@ _EVALUATE_JS = r"""
   return {samples, props, sheets};
 }
 """
+
+
+#: Scroll budget. The old fixed 10 x 800px = 8000px starved every below-fold lazy-loaded
+#: image on a long marketing page — extra harvest breadth is worthless if the images never
+#: enter the DOM. We now scroll until the document stops growing AND the viewport has
+#: reached the bottom, bounded two ways so a pathological infinite-scroll feed can never
+#: hold the capture: at most `_MAX_SCROLL_STEPS` x `_SCROLL_STEP_PX` (60 x 1000 = 60_000px
+#: of page) and at most `_SCROLL_BUDGET_SECONDS` of wall clock. Worst case therefore adds
+#: ~12s to a render that already allows 30s for navigation.
+_SCROLL_STEP_PX = 1000
+_MAX_SCROLL_STEPS = 60
+_SCROLL_BUDGET_SECONDS = 12.0
+#: Consecutive steps with no height growth AND the viewport at the bottom before we stop.
+_SCROLL_SETTLE_STEPS = 2
+#: Let the last batch of lazy images actually fetch before the DOM is harvested.
+_SCROLL_SETTLE_MS = 600
+
+_SCROLL_STATE_JS = (
+    "() => ({height: document.documentElement.scrollHeight, "
+    "y: window.scrollY, viewport: window.innerHeight})"
+)
+
+
+async def _scroll_until_settled(page) -> None:
+    """Scroll to the bottom so lazy-loaded imagery enters the DOM before harvesting."""
+    deadline = time.monotonic() + _SCROLL_BUDGET_SECONDS
+    last_height = -1.0
+    settled = 0
+    for _ in range(_MAX_SCROLL_STEPS):
+        await page.mouse.wheel(0, _SCROLL_STEP_PX)
+        await page.wait_for_timeout(200)
+        state = await page.evaluate(_SCROLL_STATE_JS)
+        height = float(state.get("height") or 0)
+        at_bottom = (
+            float(state.get("y") or 0) + float(state.get("viewport") or 0) >= height - 2
+        )
+        if at_bottom and height <= last_height:
+            settled += 1
+            if settled >= _SCROLL_SETTLE_STEPS:
+                break
+        else:
+            settled = 0
+        last_height = height
+        if time.monotonic() >= deadline:
+            break
+    await page.wait_for_timeout(_SCROLL_SETTLE_MS)
 
 
 async def collect_stylesheets(
@@ -148,9 +195,7 @@ async def fetch_rendered(
                     }
                 )
 
-            for _ in range(10):
-                await page.mouse.wheel(0, 800)
-                await page.wait_for_timeout(200)
+            await _scroll_until_settled(page)
 
             final_url = page.url
             data = await page.evaluate(_EVALUATE_JS)

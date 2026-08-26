@@ -834,6 +834,322 @@ fn ingest_asset_stores_bytes_and_resolver_wires_export() {
     }
 }
 
+// --- W1.2: vectors get a real raster thumbnail ------------------------------
+//
+// `lumen-assets` derives no thumbnail for a vector ("the sanitized SVG itself
+// scales") — true on the canvas, false for every consumer that can only read
+// pixels: the agent's `view("asset:<id>")`, the describe stage, the vision
+// APIs. The helper is the composition point that has both `lumen-assets` and
+// `lumen-skia`, so it is where an SVG earns a PNG thumbnail.
+
+const WORDMARK_SVG: &[u8] = br##"<svg xmlns="http://www.w3.org/2000/svg" width="240" height="48" viewBox="0 0 240 48"><rect x="0" y="0" width="240" height="48" fill="#ff0000"/></svg>"##;
+
+/// Sanitizes cleanly (quick-xml is event-based and happily passes trailing
+/// text through) but is not well-formed XML, so Skia's parser refuses it —
+/// the shape that proves the fallback arm.
+const UNPARSEABLE_SVG: &[u8] = br##"<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect width="10" height="10"/></svg>junk"##;
+
+/// Parses cleanly and paints NOTHING: `skia_safe::svg::Dom` is a minimal
+/// renderer, so an SVG whose artwork sits in `<defs>` (like one leaning on an
+/// unsupported filter, mask, or embedded `<image href>`) renders a fully
+/// transparent surface. Storing that would serve a blank PNG as the asset's
+/// look — the shape that proves the second fallback arm.
+const BLANK_PAINTING_SVG: &[u8] = br##"<svg xmlns="http://www.w3.org/2000/svg" width="240" height="48" viewBox="0 0 240 48"><defs><rect x="0" y="0" width="240" height="48" fill="#ff0000"/></defs></svg>"##;
+
+fn ingest_svg_request(store_root: &str, asset_id: &str, bytes: &[u8]) -> Value {
+    use base64::Engine;
+    json!({
+        "action": "ingest_asset",
+        "store_root": store_root,
+        "bytes_base64": base64::engine::general_purpose::STANDARD.encode(bytes),
+        "asset_id": asset_id,
+        "label": "Acme wordmark",
+        "declared_mime_type": "image/svg+xml",
+        "filename": "wordmark.svg",
+        "kind": "logo",
+        "tags": ["logo"]
+    })
+}
+
+#[test]
+fn ingest_asset_gives_a_vector_a_png_thumbnail_it_can_actually_be_looked_at_through() {
+    let store_dir = tempfile::tempdir().expect("tempdir");
+    let store_root = store_dir.path().to_string_lossy().to_string();
+
+    let ingested = helper(ingest_svg_request(
+        &store_root,
+        "asset_logo_svg",
+        WORDMARK_SVG,
+    ));
+    assert_eq!(ingested["ok"], true, "{ingested:#?}");
+
+    let record = &ingested["asset"]["record"];
+    assert_eq!(record["media"]["mime_type"], "image/svg+xml");
+    let thumbnail = &record["media"]["thumbnail"];
+    assert_eq!(thumbnail["mime_type"], "image/png");
+    // The lumen-assets thumbnail policy, applied to the vector's own units:
+    // 240x48 fits the 256 box, so the short side is lifted to the 512 floor.
+    assert_eq!(thumbnail["pixel_width"], 2560);
+    assert_eq!(thumbnail["pixel_height"], 512);
+
+    // The thumbnail is its OWN stored object — never the SVG bytes again.
+    let thumb_ref = thumbnail["location"]["opaque_ref"]
+        .as_str()
+        .expect("thumbnail ref");
+    assert_ne!(
+        thumb_ref,
+        ingested["asset"]["relative_path"].as_str().unwrap(),
+        "a self-referential SVG 'thumbnail' is what W1.2 replaces"
+    );
+    let thumb_bytes = std::fs::read(store_dir.path().join(thumb_ref)).expect("stored thumbnail");
+    assert_eq!(&thumb_bytes[..8], b"\x89PNG\r\n\x1a\n", "PNG magic");
+
+    // Sanitizer output is untouched: the PRIMARY media is still the sanitized
+    // SVG, byte-identical to what ingest produced before this slice.
+    let primary = std::fs::read(
+        store_dir
+            .path()
+            .join(ingested["asset"]["relative_path"].as_str().unwrap()),
+    )
+    .expect("stored svg");
+    assert_eq!(primary, WORDMARK_SVG, "sanitized SVG bytes unchanged");
+
+    // Ingest stayed silent: no new diagnostic rides on the happy path.
+    assert!(
+        ingested["diagnostics"]
+            .as_array()
+            .map(|entries| entries.is_empty())
+            .unwrap_or(true),
+        "{ingested:#?}"
+    );
+}
+
+#[test]
+fn ingest_asset_falls_back_to_the_self_referential_thumbnail_when_a_vector_cannot_rasterize() {
+    let store_dir = tempfile::tempdir().expect("tempdir");
+    let store_root = store_dir.path().to_string_lossy().to_string();
+
+    let ingested = helper(ingest_svg_request(
+        &store_root,
+        "asset_logo_broken",
+        UNPARSEABLE_SVG,
+    ));
+
+    assert_legacy_self_referential_thumbnail(&ingested);
+}
+
+#[test]
+fn ingest_asset_falls_back_to_the_self_referential_thumbnail_when_a_vector_paints_nothing() {
+    // Parsing is not painting. Skia's SVG renderer accepts far more than it
+    // draws, and a transparent surface encodes into a perfectly valid PNG —
+    // which would then be served as the asset's LOOK. The honest outcome is
+    // the legacy arm, which the Python resolver degrades to "no raster
+    // preview" (W1.1) instead of showing the trio a blank rectangle.
+    let store_dir = tempfile::tempdir().expect("tempdir");
+    let store_root = store_dir.path().to_string_lossy().to_string();
+
+    let ingested = helper(ingest_svg_request(
+        &store_root,
+        "asset_logo_blank",
+        BLANK_PAINTING_SVG,
+    ));
+
+    assert_eq!(ingested["ok"], true, "{ingested:#?}");
+    assert_legacy_self_referential_thumbnail(&ingested);
+
+    // Nothing but the sanitized SVG itself was written: no blank PNG lingers
+    // in the store.
+    let stored: Vec<_> = walk_store(store_dir.path());
+    assert_eq!(stored.len(), 1, "only the SVG bytes: {stored:#?}");
+}
+
+#[test]
+fn ingest_asset_falls_back_to_the_self_referential_thumbnail_when_the_png_cannot_be_stored() {
+    // Thumbnail derivation may never fail an ingest — that contract covers the
+    // STORE too, not only the rasterizer. The store is content-addressed, so
+    // the failure is induced by parking a directory where the thumbnail's own
+    // digest path must go: `put` writes a temp file and renames it into place,
+    // and renaming a file onto a directory fails.
+    let first_dir = tempfile::tempdir().expect("tempdir");
+    let first = helper(ingest_svg_request(
+        &first_dir.path().to_string_lossy(),
+        "asset_logo_svg",
+        WORDMARK_SVG,
+    ));
+    let thumb_ref = first["asset"]["record"]["media"]["thumbnail"]["location"]["opaque_ref"]
+        .as_str()
+        .expect("thumbnail ref")
+        .to_owned();
+
+    let store_dir = tempfile::tempdir().expect("tempdir");
+    std::fs::create_dir_all(store_dir.path().join(&thumb_ref)).expect("block the digest path");
+
+    let ingested = helper(ingest_svg_request(
+        &store_dir.path().to_string_lossy(),
+        "asset_logo_svg",
+        WORDMARK_SVG,
+    ));
+
+    assert_eq!(
+        ingested["ok"], true,
+        "a store failure on the THUMBNAIL must not fail the ingest: {ingested:#?}"
+    );
+    assert_legacy_self_referential_thumbnail(&ingested);
+}
+
+/// The pre-W1.2 arm: the vector is its own thumbnail, dimensionless, silent.
+fn assert_legacy_self_referential_thumbnail(ingested: &Value) {
+    let thumbnail = &ingested["asset"]["record"]["media"]["thumbnail"];
+    assert_eq!(thumbnail["mime_type"], "image/svg+xml");
+    assert_eq!(thumbnail["pixel_width"], Value::Null);
+    assert_eq!(thumbnail["pixel_height"], Value::Null);
+    assert_eq!(
+        thumbnail["location"]["opaque_ref"], ingested["asset"]["relative_path"],
+        "the legacy arm points the thumbnail back at the SVG itself"
+    );
+    assert!(
+        ingested["diagnostics"]
+            .as_array()
+            .map(|entries| entries.is_empty())
+            .unwrap_or(true),
+        "the fallback stays silent — this slice adds no diagnostic: {ingested:#?}"
+    );
+}
+
+#[test]
+fn the_vector_and_raster_thumbnail_size_policies_agree() {
+    // The size policy is written TWICE — `lumen_assets::derive_raster_thumbnail`
+    // for pixels, `lumen_skia::rasterize_svg_thumbnail` for vectors (lumen-skia
+    // may not depend on lumen-assets, so it mirrors the rules rather than
+    // calling them). Nothing but this test stops the two from drifting, and
+    // drift is exactly what would make one logo delivered as SVG and the same
+    // logo delivered as PNG arrive at different sizes. This crate is the only
+    // one that can see both.
+    //
+    // The raster of a given source size is synthesized through the vector
+    // rasterizer itself under IDENTITY bounds (a max nothing reaches, a floor
+    // of zero), which is the one call shape that paints at exactly the source
+    // dimensions — so no fixture files and no extra image dependency are
+    // needed to obtain "a raster of those dims".
+    const IDENTITY_MAX: u32 = 100_000;
+    const IDENTITY_FLOOR: u32 = 0;
+
+    let fixture = |width: u32, height: u32| {
+        format!(
+            r##"<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}"><rect x="0" y="0" width="{width}" height="{height}" fill="#336699"/></svg>"##
+        )
+        .into_bytes()
+    };
+
+    let cases: &[(u32, u32, u32, u32)] = &[
+        // (max, min_short, source width, source height) — production bounds…
+        (256, 512, 1000, 500), // large: fits into the max box
+        (256, 512, 300, 300),  // large and square
+        (256, 512, 1000, 1),   // a 1px sliver never rounds to zero
+        (256, 512, 240, 48),   // small: short side lifted to the vision floor
+        (256, 512, 8, 8),      // the tiny-icon case the floor exists for
+        // …and bounds where the "already over the floor" branch is reachable
+        // at all (with 256/512 it cannot be: a small source is ≤256 < 512).
+        (256, 64, 200, 100), // small, short side already over the floor
+        (256, 64, 128, 64),  // small, short side exactly AT the floor
+    ];
+
+    for &(max_dimension, min_short_dimension, width, height) in cases {
+        let case = format!("{width}x{height} under {max_dimension}/{min_short_dimension}");
+
+        let (raster_png, raster_width, raster_height) = lumen_skia::rasterize_svg_thumbnail(
+            &fixture(width, height),
+            IDENTITY_MAX,
+            IDENTITY_FLOOR,
+        )
+        .unwrap_or_else(|| panic!("identity raster for {case}"));
+        assert_eq!(
+            (raster_width, raster_height),
+            (width, height),
+            "the identity call must paint at the source size ({case})"
+        );
+
+        let from_raster =
+            lumen_assets::derive_raster_thumbnail(&raster_png, max_dimension, min_short_dimension)
+                .unwrap_or_else(|| panic!("raster thumbnail for {case}"));
+        let (_png, vector_width, vector_height) = lumen_skia::rasterize_svg_thumbnail(
+            &fixture(width, height),
+            max_dimension,
+            min_short_dimension,
+        )
+        .unwrap_or_else(|| panic!("vector thumbnail for {case}"));
+
+        assert_eq!(
+            (vector_width, vector_height),
+            (from_raster.pixel_width, from_raster.pixel_height),
+            "vector and raster thumbnail policies disagree for {case}"
+        );
+    }
+}
+
+/// Every stored object under a content-addressed store root.
+fn walk_store(root: &std::path::Path) -> Vec<std::path::PathBuf> {
+    let mut found = Vec::new();
+    let mut stack = vec![root.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        for entry in std::fs::read_dir(&dir).expect("read dir").flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                stack.push(path);
+            } else {
+                found.push(path);
+            }
+        }
+    }
+    found
+}
+
+#[test]
+fn ingest_asset_leaves_the_raster_thumbnail_untouched() {
+    // The no-regression guard for W1.2: a PNG ingest's derived thumbnail is
+    // byte-identical to the `lumen-assets` derivation, which this slice does
+    // not touch. The 8x8 fixture upscales to the 512 vision floor.
+    let store_dir = tempfile::tempdir().expect("tempdir");
+    let store_root = store_dir.path().to_string_lossy().to_string();
+
+    let ingested = helper(ingest_request(&store_root));
+    assert_eq!(ingested["ok"], true, "{ingested:#?}");
+
+    let thumbnail = &ingested["asset"]["record"]["media"]["thumbnail"];
+    assert_eq!(thumbnail["mime_type"], "image/png");
+    assert_eq!(thumbnail["pixel_width"], 512);
+    assert_eq!(thumbnail["pixel_height"], 512);
+
+    let expected = lumen_assets::derive_raster_thumbnail(
+        LOGO_PNG_BYTES,
+        lumen_assets::THUMBNAIL_MAX_DIMENSION,
+        lumen_assets::THUMBNAIL_MIN_SHORT_DIMENSION,
+    )
+    .expect("the fixture derives a thumbnail");
+    let stored = std::fs::read(
+        store_dir
+            .path()
+            .join(thumbnail["location"]["opaque_ref"].as_str().unwrap()),
+    )
+    .expect("stored thumbnail");
+    assert_eq!(stored, expected.bytes, "raster thumbnail bytes are stable");
+
+    // Comparing the ingest against the function that produced it pins the
+    // WIRING, not the bytes: both sides would move together if the raster
+    // thumbnail policy or the PNG encoder ever changed. This digest pins the
+    // bytes themselves — the exact thumbnail derived from LOGO_PNG_BYTES under
+    // the production bounds, captured from the verified-good W1.2 output. If
+    // it fails, a raster thumbnail changed: prove the change is intended, then
+    // regenerate by printing `lumen_assets::sha256_hex(&stored)`.
+    const RASTER_THUMBNAIL_SHA256: &str =
+        "5a6db811ca1b526aeb5367bfd5cc91d45891b29e80b2fe657d0817717a2d702d";
+    assert_eq!(
+        lumen_assets::sha256_hex(&stored),
+        RASTER_THUMBNAIL_SHA256,
+        "the derived raster thumbnail is no longer byte-identical"
+    );
+}
+
 #[test]
 fn ingest_asset_rejects_mime_mismatch_without_storing() {
     let store_dir = tempfile::tempdir().expect("tempdir");
@@ -1806,4 +2122,101 @@ fn web_derive_rejects_atomically_on_missing_asset() {
     assert!(response["coverage"].is_object(), "{response:#?}");
     let codes: Vec<String> = diagnostic_codes(&response);
     assert!(codes.contains(&"LUMW0605".to_owned()), "{codes:?}");
+}
+
+// --- Brand-geometry advice on a briefed kit (LUMW0306) -----------------------
+//
+// The one bit ingest needs about the Creative Brief is lifted off the RAW kit
+// JSON in the helper (serde drops `brief` on the way into `BrandKit`). These
+// prove the wire: the same markup and the same kit differ only by that key.
+
+const RAW_GEOMETRY_SECTION: &str = r#"<section id="cards">
+    <div id="card_a" class="rounded-2xl shadow-lg p-6"><p id="a">First.</p></div>
+    <div id="card_b" class="rounded-2xl shadow-lg p-6"><p id="b">Second.</p></div>
+  </section>"#;
+
+fn briefed_brand_kit() -> Value {
+    let mut kit = platform_brand_kit();
+    kit["brief"] = json!({
+        "schema_version": 1,
+        "characterization": { "words": ["measured", "calm"] },
+    });
+    kit
+}
+
+fn geometry_advice(response: &Value) -> Vec<String> {
+    response["diagnostics"]
+        .as_array()
+        .expect("diagnostics array")
+        .iter()
+        .filter(|diagnostic| diagnostic["code"] == "LUMW0306")
+        .map(|diagnostic| {
+            assert_eq!(diagnostic["severity"], "advice", "{diagnostic:#?}");
+            diagnostic["message"].as_str().unwrap_or_default().to_owned()
+        })
+        .collect()
+}
+
+fn web_doc_with_raw_geometry(brand_kit: Value) -> Value {
+    let base = helper(json!({
+        "action": "web_new_doc",
+        "document_id": "geo_doc",
+        "title": "Geometry",
+    }));
+    let ingested = helper(json!({
+        "action": "web_ingest_html",
+        "doc": base["web_doc"].clone(),
+        "page_id": "home",
+        "html": RAW_GEOMETRY_SECTION,
+        "brand_kit": brand_kit,
+    }));
+    assert_eq!(ingested["ok"], true, "{ingested:#?}");
+    ingested
+}
+
+#[test]
+fn briefed_ingest_advises_raw_geometry_once_and_still_installs() {
+    let response = web_doc_with_raw_geometry(briefed_brand_kit());
+    let advice = geometry_advice(&response);
+    assert_eq!(
+        advice.len(),
+        2,
+        "one line per raw class across both cards: {advice:?}"
+    );
+    assert!(advice.iter().any(|line| line.contains("`rounded-2xl`")), "{advice:?}");
+    assert!(advice.iter().any(|line| line.contains("`shadow-lg`")), "{advice:?}");
+    // Advice can never reject: the nodes are installed.
+    assert!(
+        response["applied_operations"].as_u64().unwrap_or_default() > 0,
+        "{response:#?}"
+    );
+    let serialized = response["web_doc"].to_string();
+    assert!(serialized.contains("card_a") && serialized.contains("card_b"), "{serialized}");
+}
+
+#[test]
+fn an_unbriefed_kit_ingests_the_same_markup_silently() {
+    let response = web_doc_with_raw_geometry(platform_brand_kit());
+    assert!(geometry_advice(&response).is_empty(), "{response:#?}");
+}
+
+#[test]
+fn web_validate_advises_raw_geometry_on_a_briefed_kit() {
+    let doc = web_doc_with_raw_geometry(platform_brand_kit())["web_doc"].clone();
+
+    let briefed = helper(json!({
+        "action": "web_validate",
+        "doc": doc.clone(),
+        "brand_kit": briefed_brand_kit(),
+    }));
+    assert_eq!(briefed["ok"], true, "{briefed:#?}");
+    let advice = geometry_advice(&briefed);
+    assert_eq!(advice.len(), 2, "deduped across the whole doc walk: {advice:?}");
+
+    let unbriefed = helper(json!({
+        "action": "web_validate",
+        "doc": doc,
+        "brand_kit": platform_brand_kit(),
+    }));
+    assert!(geometry_advice(&unbriefed).is_empty(), "{unbriefed:#?}");
 }

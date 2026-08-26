@@ -1399,18 +1399,53 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                         pixel_height: Some(artifact.pixel_height),
                     })
                 }
-                // Vector assets are their own thumbnail: the sanitized SVG
-                // scales without derivation.
-                None if output.sniffed_mime == "image/svg+xml" => Some(AssetThumbnail {
-                    location: AssetLocation {
-                        provider: LOCAL_STORE_PROVIDER.to_owned(),
-                        opaque_ref: stored.relative_path.clone(),
-                        url: None,
-                    },
-                    mime_type: output.sniffed_mime.clone(),
-                    pixel_width: None,
-                    pixel_height: None,
-                }),
+                // A vector scales for the canvas but has no pixels for anything
+                // that can only READ pixels — the agent's `view("asset:<id>")`,
+                // the describe stage, the vision APIs — so every logo in a kit
+                // was invisible to the trio deciding whether to place it (W1.2).
+                // `lumen-assets` cannot rasterize (it is deliberately light: the
+                // `image` crate only, no Skia), so the composition point that
+                // has both crates does it, off the SANITIZED bytes, under the
+                // same thumbnail bounds the raster path uses.
+                None if output.sniffed_mime == "image/svg+xml" => {
+                    // Rasterize, then store. EITHER step may decline — Skia
+                    // will not parse the bytes, or paints nothing from them, or
+                    // the store cannot commit the PNG — and neither may fail
+                    // the ingest: deriving a thumbnail has never been fatal.
+                    let rasterized = lumen_skia::rasterize_svg_thumbnail(
+                        &output.bytes,
+                        lumen_assets::THUMBNAIL_MAX_DIMENSION,
+                        lumen_assets::THUMBNAIL_MIN_SHORT_DIMENSION,
+                    )
+                    .and_then(|(png, pixel_width, pixel_height)| {
+                        let stored_thumbnail = store.put(&png).ok()?;
+                        Some(AssetThumbnail {
+                            location: AssetLocation {
+                                provider: LOCAL_STORE_PROVIDER.to_owned(),
+                                opaque_ref: stored_thumbnail.relative_path,
+                                url: None,
+                            },
+                            mime_type: "image/png".to_owned(),
+                            pixel_width: Some(pixel_width),
+                            pixel_height: Some(pixel_height),
+                        })
+                    });
+                    // Fall back to the legacy self-referential thumbnail — the
+                    // vector is its own thumbnail for the canvas — silently:
+                    // this slice adds no diagnostic, and the Python resolver
+                    // degrades a non-raster thumbnail to the honest "no raster
+                    // preview" message rather than a broken decode.
+                    Some(rasterized.unwrap_or_else(|| AssetThumbnail {
+                        location: AssetLocation {
+                            provider: LOCAL_STORE_PROVIDER.to_owned(),
+                            opaque_ref: stored.relative_path.clone(),
+                            url: None,
+                        },
+                        mime_type: output.sniffed_mime.clone(),
+                        pixel_width: None,
+                        pixel_height: None,
+                    }))
+                }
                 None => None,
             };
 
@@ -2317,9 +2352,10 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
         }
         CoreRequest::WebValidate { doc, brand_kit } => {
             let doc = parse_web_doc(doc)?;
+            let briefed = kit_is_briefed(brand_kit.as_ref());
             let (theme, mut diagnostics) = web_theme_for(&doc, brand_kit, None)?;
             diagnostics.extend(lumen_web::validate_web_doc(&doc));
-            diagnostics.extend(lint_web_doc_classes(&doc, &theme));
+            diagnostics.extend(lint_web_doc_classes(&doc, &theme, briefed));
             let mut response = ok_web(Some(&doc), None, None, None, diagnostics);
             // Inspector surface: token pickers list exactly what the lint
             // accepts, from the same compile.
@@ -2334,12 +2370,14 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
             brand_kit,
         } => {
             let mut doc = parse_web_doc(doc)?;
+            let briefed = kit_is_briefed(brand_kit.as_ref());
             let (theme, mut diagnostics) = web_theme_for(&doc, brand_kit, None)?;
-            let outcome = lumen_web::ingest_html_into_page(
+            let outcome = lumen_web::ingest_html_into_page_with(
                 &mut doc,
                 &lumen_core::PageId::from(page_id),
                 &html,
                 &theme,
+                lumen_web::IngestOptions { briefed },
             );
             let installed = if outcome.has_errors() {
                 None
@@ -2435,8 +2473,10 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
             brand_kit,
         } => {
             let doc = parse_web_doc(doc)?;
+            let briefed = kit_is_briefed(brand_kit.as_ref());
             let (theme, mut diagnostics) = web_theme_for(&doc, brand_kit, None)?;
-            let outcome = lumen_web::ingest_html(&html, &theme);
+            let outcome =
+                lumen_web::ingest_html_with(&html, &theme, lumen_web::IngestOptions { briefed });
             // Same asset-reference discipline as the page ingest: a fragment
             // referencing unknown assets must fail loudly, not splice blind.
             for node in &outcome.nodes {
@@ -2536,27 +2576,54 @@ fn web_theme_for(
     ))
 }
 
-/// The compiled theme's inspector-facing surface: token map + families.
+/// The compiled theme's inspector-facing surface: token map + families, plus
+/// the brand-geometry channel the static export compile rebuilds its `@theme`
+/// block from. `tokens` stays colors-only — geometry is a separate key so no
+/// color consumer (swatch grid, class-lint vocabulary) ever sees it.
 fn web_theme_json(theme: &lumen_web::WebTheme) -> Value {
     json!({
         "tokens": theme.tokens,
+        "geometry": theme.geometry,
+        "utility_css": theme.utility_css,
         "display_family": theme.display_family,
         "body_family": theme.body_family,
     })
 }
 
-fn lint_web_doc_classes(doc: &lumen_web::WebDoc, theme: &lumen_web::WebTheme) -> Vec<Diagnostic> {
+fn lint_web_doc_classes(
+    doc: &lumen_web::WebDoc,
+    theme: &lumen_web::WebTheme,
+    briefed: bool,
+) -> Vec<Diagnostic> {
     let context = lumen_web::ClassLintContext {
         color_tokens: &theme.tokens,
+        briefed,
     };
-    doc.pages
-        .iter()
-        .flat_map(|page| {
-            page.nodes.values().flat_map(|node| {
-                lumen_web::lint_classes(&node.classes, Some(&node.id), &context)
-            })
-        })
-        .collect()
+    let mut diagnostics: Vec<Diagnostic> = Vec::new();
+    for page in &doc.pages {
+        for node in page.nodes.values() {
+            // Advice collapses across the whole document walk exactly as it
+            // does across an ingest: one line per raw class, not per node.
+            lumen_web::extend_deduping_advice(
+                &mut diagnostics,
+                lumen_web::lint_classes(&node.classes, Some(&node.id), &context),
+            );
+        }
+    }
+    diagnostics
+}
+
+/// Does the RAW kit JSON carry a Creative Brief?
+///
+/// Read off the untouched `Value` deliberately: `lumen_core::BrandKit` has no
+/// `brief` field and serde drops the key, and the Python pipeline depends on
+/// that (it re-attaches the brief after validation). So the one bit ingest
+/// needs is lifted here, before `parse_brand_kit` consumes the value, rather
+/// than by widening the engine's kit shape.
+fn kit_is_briefed(brand_kit: Option<&Value>) -> bool {
+    brand_kit
+        .and_then(|kit| kit.get("brief"))
+        .is_some_and(|brief| !brief.is_null())
 }
 
 fn ok_web(

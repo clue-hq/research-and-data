@@ -47,6 +47,21 @@ class Settings(BaseSettings):
 
     # --- Backend API (lumen_api) ---
     lumen_api_cors_origins: str = "http://127.0.0.1:3000,http://localhost:3000"
+    # The design API's OWN externally-reachable origin. Every HTTP request path
+    # derives asset URLs from `request.base_url` and never needs this; it exists
+    # for the ONE consumer that has no request to derive from — the deep agent's
+    # in-loop preview render, which runs inside the fleet worker and fetches
+    # every `<img data-asset=…>` from `{origin}/asset-store/{digest}` over the
+    # network (Playwright `set_content`, so a relative src cannot resolve).
+    #
+    # This setting exists because that value used to be HARDCODED in the agent
+    # runtime at `http://127.0.0.1:8000/asset-store` — a port nothing has
+    # listened on since the design API moved to 8010. Every image the agent
+    # placed rendered broken in its own screenshots, so the agent (correctly)
+    # stripped it and reported "the supplied assets did not render". Cost: a day
+    # and three "the model won't use images" misdiagnoses. The default below is
+    # the documented canonical dev stack; deployments set LUMEN_API_ORIGIN.
+    lumen_api_origin: str = "http://127.0.0.1:8010"
     # D4/R-D4-1: this is the ENGINE MATERIALIZATION CACHE root, not a store. Durable custody of
     # every design byte lives in platform storage (`clue_storage`); the Rust engine only ever
     # reads/writes a transient per-workspace mirror at
@@ -91,6 +106,17 @@ class Settings(BaseSettings):
     # package must stay provider-agnostic — it has no business naming a vendor model.
     image_model_id: str = "default"
     image_model_provider_id: str = "image-gen-v1"
+    # Which OpenRouter TRANSPORT the configured image model speaks:
+    #   "chat"   — the OpenAI-compatible chat-completions endpoint with an image
+    #              modality (Gemini-class models; the historical default).
+    #   "images" — the dedicated Images endpoint, POST {base_url}/images, with a
+    #              top-level `prompt`/`aspect_ratio`/`quality`/`input_references`
+    #              body and a base64 `data[*].b64_json` response. This is what
+    #              `openai/gpt-image-2` takes (founder-supplied OpenRouter API
+    #              reference, 2026-08-23) — it does NOT answer the chat call.
+    # A typo must fail at startup, not silently post the wrong shape to a paid
+    # endpoint forever, so the value is enum-validated below.
+    image_model_api_style: str = "chat"
     image_model_timeout_s: float = 60.0
     image_model_max_retries: int = 2
     # Optional OpenRouter attribution headers (ranking only; harmless if unset).
@@ -104,8 +130,19 @@ class Settings(BaseSettings):
     lumen_ingestion_assist_model: str = "x-ai/grok-4.5"
     lumen_ingestion_vision: bool = False
     lumen_ingestion_vision_model: str = "x-ai/grok-4.5"
-    lumen_ingestion_describe: bool = False
-    lumen_ingestion_describe_model: str = "x-ai/grok-4.5"
+    # Asset descriptions (design-quality Wave 1, founder ruling R4). ON by
+    # default: a brand card whose image menu is bare `img.N` rows gives the
+    # agent nothing to choose between, and the last real harvest carried 46
+    # images and zero descriptions. The EFFECTIVE gate is still key presence —
+    # `OpenRouterDescriber.active` requires this flag AND an OpenRouter key, so
+    # a keyless deployment behaves exactly as it did with the flag off.
+    #
+    # The model is a small, cheap vision model chosen by the live OpenRouter
+    # probe of 2026-08-23 (candidates, prices and sample captions are recorded
+    # in `.env.example`) — ~$0.00021 per caption vs grok-4.5's ~$0.0039, and
+    # the describe stage keeps its OWN model: brief/vision/assist are untouched.
+    lumen_ingestion_describe: bool = True
+    lumen_ingestion_describe_model: str = "google/gemini-2.5-flash-lite"
     # The design-brief agent (tier 2). OFF → ingestion publishes exactly the kit
     # it publishes today, with no `brand_kit_json.brief` and no diagnostic about
     # one. The model must be vision-capable: the stage hands it the capture's
@@ -138,7 +175,7 @@ class Settings(BaseSettings):
     # OpenRouter is the SOLE LLM gateway: the model id must be "openai:<id>" and
     # init_model errors without OpenRouter creds. Blank/unset base_url falls back
     # to the OpenRouter API URL in AgentRuntimeConfig.from_env.
-    lumen_agent_model: str = "openai:x-ai/grok-4.5"
+    lumen_agent_model: str = "openai:x-ai/grok-4.6"
     lumen_agent_max_iterations: int = 5
     lumen_agent_preview_format: str = "svg"
     # W-isolation (D3): the deepagent's isolated workspace root. None → the run
@@ -177,6 +214,9 @@ class Settings(BaseSettings):
     # field and got the provider's own default instead; "medium" restores that
     # behavior as EXPLICIT policy. Blank still means "unset" for a deployment
     # that genuinely wants the platform baseline.
+    # D1 (founder, 2026-08-26) + W1.8: medium is the shipped default — the live
+    # A/B showed medium halves call latency vs high with no quality loss the
+    # rubric could see. (v2's earlier "high" default, 2026-08-23, is superseded.)
     lumen_agent_reasoning: str | None = "medium"
     # L1 (latency: cache locality) — OpenRouter provider `sort` preference applied
     # to every deep-agent LLM call. `sort` DISABLES OpenRouter's load-balancing and
@@ -351,6 +391,35 @@ class Settings(BaseSettings):
             )
         return value
 
+    @field_validator("lumen_api_origin", mode="before")
+    @classmethod
+    def _normalize_api_origin(cls, value: object) -> object:
+        """Blank → the default (`VAR=` in a .env means unset); a trailing slash
+        is stripped so `{origin}/asset-store` never doubles up."""
+        if not isinstance(value, str):
+            return value
+        trimmed = value.strip().rstrip("/")
+        return trimmed or "http://127.0.0.1:8010"
+
+    @field_validator("image_model_api_style", mode="before")
+    @classmethod
+    def _validate_image_model_api_style(cls, value: object) -> object:
+        """A typo'd transport must fail at startup, not silently send a
+        chat-completions body to an Images endpoint (or vice versa) — either
+        way every generation 400s straight to the grey stub placeholder."""
+        if not isinstance(value, str):
+            return value
+        style = value.strip().lower()
+        if not style:
+            return "chat"
+        if style not in {"chat", "images"}:
+            raise ValueError(
+                "IMAGE_MODEL_API_STYLE must be one of chat|images (chat = the "
+                "chat-completions image modality, images = POST {base_url}/images); "
+                f"got {value!r}"
+            )
+        return style
+
     @field_validator(
         "lumen_agent_fast_loop_target_llm_calls",
         "lumen_agent_fast_loop_target_wall_clock_s",
@@ -418,6 +487,17 @@ class Settings(BaseSettings):
     def cors_origins_list(self) -> list[str]:
         origins = [o.strip() for o in self.lumen_api_cors_origins.split(",") if o.strip()]
         return origins or ["http://127.0.0.1:3000"]
+
+    @property
+    def asset_base_url(self) -> str:
+        """The absolute base every `data-asset` image resolves against off-request:
+        `{LUMEN_API_ORIGIN}/asset-store`.
+
+        Derived rather than configured whole so an operator can never point the
+        origin at a real server and still get a wrong PATH — the `/asset-store`
+        suffix is the route's own, spelled here once (the request-bound paths in
+        `lumen_api.main` build the same string from `request.base_url`)."""
+        return f"{self.lumen_api_origin.rstrip('/')}/asset-store"
 
     @property
     def effective_asset_store_root(self) -> Path:

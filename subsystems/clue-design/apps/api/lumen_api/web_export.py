@@ -28,7 +28,7 @@ import subprocess
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, NamedTuple, Optional, Tuple
 from urllib.parse import urlsplit
 
 from clue_design.storage import SOURCE_KEY_PUBLISH_ASSET
@@ -545,28 +545,55 @@ def _runtime_version(html: str) -> Optional[int]:
 # --------------------------------------------------------------------------- #
 
 
-def _theme_tokens(core: Any, web_doc: JsonObject, brand_kit: Optional[JsonObject]) -> Dict[str, str]:
-    """The compiled theme's token map — exactly the surface GET web/theme
-    reads (web_validate -> web_theme.tokens)."""
+class _CompiledTheme(NamedTuple):
+    """The slice of the compiled theme the static compile needs: the color
+    tokens, the brand-geometry variables, and the ``@utility`` rules for the
+    geometry names Tailwind has no namespace for. All three are engine-owned
+    (``theme.rs``) — nothing here hand-writes CSS the editor doesn't also get."""
+
+    tokens: Dict[str, str]
+    geometry: Dict[str, str]
+    utility_css: str
+
+
+def _theme_tokens(
+    core: Any, web_doc: JsonObject, brand_kit: Optional[JsonObject]
+) -> _CompiledTheme:
+    """The compiled theme — exactly the surface GET web/theme reads
+    (web_validate -> web_theme)."""
     response = core.web_validate(web_doc, brand_kit)
     theme = response.get("web_theme") or {}
     tokens = theme.get("tokens") or {}
-    return {str(name): str(value) for name, value in tokens.items()}
+    geometry = theme.get("geometry") or {}
+    utility_css = theme.get("utility_css") or ""
+    return _CompiledTheme(
+        tokens={str(name): str(value) for name, value in tokens.items()},
+        geometry={str(name): str(value) for name, value in geometry.items()},
+        utility_css=str(utility_css),
+    )
 
 
-def _build_input_css(tokens: Dict[str, str]) -> str:
+def _build_input_css(theme: _CompiledTheme) -> str:
     lines = ['@import "tailwindcss";', "@theme {"]
-    for name, value in tokens.items():
+    for name, value in theme.tokens.items():
         lines.append(f"  --color-{name}: {value};")
+    # Brand geometry rides in the same block; without it every geometry
+    # utility silently no-ops on a published page while it works in the editor.
+    for name, value in theme.geometry.items():
+        lines.append(f"  --{name}: {value};")
     lines.append("}")
-    return "\n".join(lines) + "\n"
+    css = "\n".join(lines) + "\n"
+    # `@utility` is a top-level at-rule — it goes after the block.
+    if theme.utility_css:
+        css += theme.utility_css if theme.utility_css.endswith("\n") else theme.utility_css + "\n"
+    return css
 
 
-def _compile_static_css(html: str, tokens: Dict[str, str], node_bin: str) -> str:
+def _compile_static_css(html: str, theme: _CompiledTheme, node_bin: str) -> str:
     """Run the editor's Tailwind v4 toolchain over ``html`` against the doc's
     ``@theme`` tokens. Raises ``WebExportCompileError`` (stderr attached) on a
     non-zero exit — never returns an empty/unstyled stylesheet silently."""
-    input_css = _build_input_css(tokens)
+    input_css = _build_input_css(theme)
     with tempfile.TemporaryDirectory() as tmp:
         tmp_path = Path(tmp)
         html_file = tmp_path / "page.html"
@@ -835,8 +862,8 @@ def build_export_bundle(
         exported_images.append(image)
 
     # 4. Static CSS: compile against the doc theme, link it from the html.
-    tokens = _theme_tokens(core, web_doc, brand_kit)
-    site_css = _compile_static_css(html, tokens, node_bin)
+    compiled_theme = _theme_tokens(core, web_doc, brand_kit)
+    site_css = _compile_static_css(html, compiled_theme, node_bin)
     files["site.css"] = site_css.encode("utf-8")
 
     # 5. SEO metas + the stylesheet link, injected before </head>.
@@ -958,8 +985,8 @@ def build_publish_package(
 
     # Static CSS compiled and INLINED (no external stylesheet for a single-file
     # publish payload).
-    tokens = _theme_tokens(core, web_doc, brand_kit)
-    site_css = _compile_static_css(html, tokens, node_bin)
+    compiled_theme = _theme_tokens(core, web_doc, brand_kit)
+    site_css = _compile_static_css(html, compiled_theme, node_bin)
 
     og_image = f"{base}/asset-store/{images[0].digest}" if images else None
     head = _seo_snippet(

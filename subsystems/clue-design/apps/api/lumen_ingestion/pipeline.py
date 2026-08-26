@@ -320,6 +320,7 @@ class _ApplyDescriptionsCallable(Protocol):
         resolve_bytes: Callable[[str], "tuple[bytes, str] | None"],
         reporter: Callable[[str, float], None],
         rasterize_svg: Callable[[str], "bytes | None"] | None = None,
+        resolve_thumbnail: Callable[[str], "tuple[bytes, str] | None"] | None = None,
         diagnostics: list | None = None,
     ) -> Any: ...
 
@@ -359,6 +360,7 @@ def _default_apply_descriptions(
     resolve_bytes: Callable[[str], "tuple[bytes, str] | None"],
     reporter: Callable[[str, float], None],
     rasterize_svg: Callable[[str], "bytes | None"] | None = None,
+    resolve_thumbnail: Callable[[str], "tuple[bytes, str] | None"] | None = None,
     diagnostics: list | None = None,
     workspace_id: str | None = None,
 ) -> Any:
@@ -379,6 +381,7 @@ def _default_apply_descriptions(
         resolve_bytes=resolve_bytes,
         reporter=reporter,
         rasterize_svg=rasterize_svg,
+        resolve_thumbnail=resolve_thumbnail,
         diagnostics=diagnostics,
         workspace_id=workspace_id,
     )
@@ -511,6 +514,10 @@ def _maybe_describe(
             resolve_bytes=resolve_bytes,
             reporter=reporter,
             rasterize_svg=_make_rasterize_svg(repo, blobs, cache_dir),
+            # W1.4: SVGs prefer their STORED raster thumbnail (W1.2 makes one at
+            # ingest) over a fresh engine rasterization; `rasterize_svg` above
+            # stays as the fallback for records that predate it.
+            resolve_thumbnail=_make_resolve_thumbnail_bytes(repo, blobs),
             diagnostics=diagnostics,
         )
     except ImportError:
@@ -693,6 +700,44 @@ def _make_resolve_bytes(
         return (data, mime)
 
     return resolve_bytes
+
+
+def _make_resolve_thumbnail_bytes(
+    repo: HybridRepository, blobs: "DesignBlobStore"
+) -> Callable[[str], "tuple[bytes, str] | None"]:
+    """Build a ``resolve_thumbnail`` callable: asset_id → the record's STORED
+    thumbnail as ``(bytes, mime)``, or ``None``.
+
+    Same read as ``_make_resolve_bytes`` one block down the record —
+    ``media.thumbnail.location`` instead of ``media.location`` — because a
+    thumbnail carries no digest block of its own (see
+    ``asset_custody.record_digests``). Since W1.2 every ingested SVG has one, so
+    the describe pass can caption a vector from durable bytes instead of paying
+    for a fresh engine rasterization. Returns ``None`` for ANY miss — never
+    raises."""
+    from lumen_api.asset_custody import read_asset_bytes
+    from clue_design.storage import location_digest
+
+    def resolve_thumbnail(asset_id: str) -> "tuple[bytes, str] | None":
+        try:
+            stored = repo.require_asset_record(asset_id)
+        except Exception:
+            return None
+        record = stored.get("asset") or {}
+        media = record.get("media") or {}
+        thumbnail = media.get("thumbnail")
+        if not isinstance(thumbnail, dict):
+            return None
+        try:
+            data = read_asset_bytes(blobs, location_digest(thumbnail.get("location")))
+        except Exception:
+            return None
+        if data is None:
+            return None
+        mime = thumbnail.get("mime_type") or "application/octet-stream"
+        return (data, mime)
+
+    return resolve_thumbnail
 
 
 def run_website_ingestion(

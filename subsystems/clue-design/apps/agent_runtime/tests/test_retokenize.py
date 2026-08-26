@@ -178,3 +178,15 @@ def test_logo_placement_inserts_page_overlay_when_kit_logo_missing() -> None:
     del scene["nodes"]["logo"]
     scene["nodes"]["brand_logo_auto"] = {"kind": {"kind": "frame"}}
     assert build_logo_placement_operations(scene, kit) == []
+
+
+def test_the_live_scene_lane_module_still_indexes_kit_colors() -> None:
+    """Everything above exercises the FROZEN archive copy; the module the scene
+    lane actually runs is `lumen_agent.retokenize`, and it shares the brand
+    card's color resolution. Cover the seam so a change on the card side cannot
+    break the live color index unseen (W1.3 changed exactly that signature)."""
+    from lumen_agent.retokenize import _color_index
+
+    index = _color_index(_kit())
+    assert index["#00525c"] == "surface.brand"  # semantic name beats the palette one
+    assert index["#3d8d5c"] == "surface.accent"

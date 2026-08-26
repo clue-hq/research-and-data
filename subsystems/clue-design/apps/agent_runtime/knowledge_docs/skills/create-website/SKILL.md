@@ -10,6 +10,10 @@ The markup is parsed into a typed tree; **any error rejects the whole batch and
 nothing is stored** — you then repair with `patch_web_page` (see Repairing
 below), not by re-drafting. Warnings do not block, but they are work: resolve
 each one or explicitly justify it in your report — never carry one silently.
+A result's separate `advice` entries are informational: judge them, act only
+where they are right for this page — they are never an obligation, never block,
+and never repair work. Advice rides its own key on accepted results AND on
+rejections; the `diagnostics` list you repair from never contains it.
 
 ## Author once, at structural altitude
 
@@ -57,9 +61,14 @@ node itself, so give it an `id` when later scoped edits need stable identity.
 The delivered website preserves only semantic rich-text markup — no editor
 attributes.
 
-Icon names: `circle dot square diamond triangle-up play star heart bolt check x
-plus minus arrow-right arrow-left arrow-up arrow-down shield lock key user
-layers pencil sparkles download chart-bar lightbulb`.
+**Icon names — the COMPLETE set.** `circle dot square diamond triangle-up play
+star heart bolt check x plus minus arrow-right arrow-left arrow-up arrow-down
+shield lock key user layers pencil sparkles download chart-bar lightbulb`.
+There is no globe, envelope, phone, or chevron. An unknown name is a hard
+error (LUMW0114) that rejects the WHOLE page — a single guessed icon in a
+footer discards every other section you wrote in that call. Use the nearest
+name that IS in the set, or drop the icon; never guess one to see if it
+exists.
 
 Not in the vocabulary (rejected with hints): `nav button main script
 style iframe table`, inline `style=` attributes, event handlers, `aria-*`
@@ -88,6 +97,37 @@ Tailwind palettes (`text-slate-900`, `bg-red-500`) are hard errors.
 the brand's display face, size, and weight with **zero classes**; a
 `data-button="primary"` is already the brand CTA. Add classes only for
 *deviations*: color accents, spacing, width caps, alignment.
+
+**Brand geometry — ten utilities that resolve the kit's own shape.** A brand's
+radii, elevations, hairlines and rhythm are as much its identity as its colors,
+and they are CLASSES, not numbers you pick. Each one resolves the pinned kit's
+measured token:
+
+| Class | Resolves | Write it on |
+|---|---|---|
+| `rounded-button` | `radius.button` | buttons, inputs, chips, small controls |
+| `rounded-card` | `radius.card` | cards, panels, media frames, wells |
+| `rounded-badge` | `radius.badge` | badges, pills, eyebrow chips |
+| `shadow-brand` | `shadow.brand` | the brand's signature elevation (hero card, floating CTA) |
+| `shadow-card` | `shadow.card` | a card's resting elevation |
+| `border-w-card` | `stroke.width.card` | a card/panel border's WIDTH (pair with a color: `border border-w-card border-border`) |
+| `border-w-divider` | `stroke.width.divider` | hairlines and rules between rows |
+| `py-section` | `space.section` | a band's vertical padding |
+| `gap-stack` | `space.stack.default` | gaps between stacked items and grid cells |
+| `p-card` | `space.card.padding` | a card's inner padding |
+
+- **They work on every kit.** When a brand measured nothing (a flat site, the
+  platform default theme), the utility walks the kit's chain and lands on a
+  platform default. It is never an error and never a silent no-op — writing one
+  is always safe, so prefer it over a raw `rounded-2xl` / `shadow-lg` / `py-20`
+  / `p-6` wherever a utility exists.
+- **`border-w-card`, NOT `border-card`.** `card` is a color token, so
+  `border-card` is a border COLOR and will not change any width.
+- **`shadow-brand` / `shadow-card` are elevations, not shadow colors.** They set
+  the brand's real box-shadow; they say nothing about color.
+- Everything geometry-shaped with no utility above — horizontal padding
+  (`px-6`), max-widths, leading, one-off spacing — stays a raw class. That is
+  correct, not a gap.
 
 ## Design guidance
 
@@ -138,11 +178,19 @@ specific to our editor, brands, and formats.
 
 ## Page structure and rhythm
 
-- Wrap each section's content: `<div class="mx-auto max-w-[1180px] px-6 py-20
-  …">` (hero py-24+, header py-4). Keep ONE max-width across the page.
+- Wrap each section's content: `<div class="mx-auto max-w-[1180px] px-6
+  py-section …">` — `py-section` IS the brand's measured band rhythm, so it
+  replaces a raw `py-20`. A hero may go larger (`py-section md:py-32`) and a
+  header stays tight (`py-4`); the horizontal `px-6` and the max-width are raw
+  by design. Keep ONE max-width across the page.
 - Band backgrounds alternate between `bg-light` and `bg-card` (or a
   `bg-dark`/`text-inverse` statement band). Footer usually `bg-dark`.
-- Card grids: `grid gap-6 md:grid-cols-3`, cards `p-6 rounded-2xl bg-…`.
+- Card grids: `grid gap-stack md:grid-cols-3`, cards `p-card rounded-card
+  shadow-card bg-…`. A bordered card is `border border-w-card border-border`
+  instead of the shadow — pick one, not both.
+- Badges and pills carry `rounded-badge`; a button you style at all keeps
+  `rounded-button` (a `data-button` already lands with the brand's radius —
+  only a hand-built control needs the class).
 - Exactly ONE `h1` (the hero). Heading levels never skip.
 
 ## Responsive (mobile-first, no scripts)
@@ -329,3 +377,4 @@ Common diagnostic codes:
 | LUMW0124 (warning) | bad component prop value | defaults applied; fix the `data-*` value |
 | LUMW0133 | invalid slot/variable key | keys are `[a-z0-9_.-]`, ≤64 chars |
 | LUMW0134 | `data-slot-when` on a non-band element | presence gates go on `<section>`/`<div>` only |
+| LUMW0306 (advice) | raw radius/shadow step on a kit whose Creative Brief measured its shape | prefer `rounded-button\|card\|badge` / `shadow-brand\|card` where the shape is a brand decision — informational, never blocking |

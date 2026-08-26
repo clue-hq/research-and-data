@@ -26,8 +26,9 @@ from .roles import (
     assign_light_roles,
     build_dark_colorway,
 )
+from .bands import build_band_surfaces
 from .font_metrics import build_type_size_ramp, glyph_gap_diagnostic
-from .geometry import build_shadows
+from .geometry import MEASURED_CONFIDENCE, build_shadows
 from .scales import build_opacity, build_radii, build_spacing, build_strokes
 from .typography import build_type_styles, resolve_anchors
 
@@ -117,6 +118,24 @@ def normalize_evidence(
         slug = extra_path.rsplit(".", 1)[1]
         if cluster.name and _is_path_safe(cluster.name) and cluster.name != slug:
             builder.add_alias(cluster.name, extra_path, "ingestion alias")
+
+    # Measured band surfaces. The page's background rhythm is measured; a color
+    # the page RECURS on (or stands on for a fifth of its scroll) is a surface
+    # the brand owns, so it gets a name instead of reaching the brief agent as
+    # an unnamed hex. Runs after the extras so the dedupe sees every color the
+    # kit already carries. Geometry-gated: evidence without a measured band
+    # sequence mints nothing and its kit stays byte-identical.
+    for band in build_band_surfaces(
+        evidence.geometry.background_sequence,
+        [entry["value"]["default"]["value"] for entry in builder.colors.values()],
+    ):
+        builder.add_color(
+            band.path,
+            RoleAssignment(band.hex, "measured", band.provenance),
+            None,
+            confidence=MEASURED_CONFIDENCE,
+            description=band.description,
+        )
 
     # accent alias (spec §4).
     builder.add_alias("accent.primary", "surface.accent", "ingestion alias")

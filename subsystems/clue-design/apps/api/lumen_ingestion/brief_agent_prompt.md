@@ -69,8 +69,12 @@ nothing, or say the brand's measured radii are X and Y).
   kind of rule that keeps a generated page on-brand.
 - **background_rhythm** — the section background sequence as observed, in
   order, with a ratio summary ("1 dark sliver : 7 canvas bands"), each band
-  named by its surface token. Note whether differentiation is chromatic
-  (backgrounds change) or compositional (single canvas).
+  named by its surface token. A background color the page recurs on is minted
+  as a `surface.band.*` token (`surface.band.statement` for a dark band,
+  `surface.band.tint` for a light one) — when the kit carries those, name the
+  bands by them rather than by the nearest approximation. Note whether
+  differentiation is chromatic (backgrounds change) or compositional (single
+  canvas).
 - **typographic_posture** — case posture, scale temperament (restrained /
   substantial / stadium), and signature moves you can point at (two-color
   headline splits, accent numerals, tracked uppercase eyebrows). Name the

@@ -92,16 +92,9 @@ def build_evidence(outcome, *, core, store_root: str, reporter) -> BrandEvidence
         sha_bytes[entry.sha256] = base64.b64decode(entry.bytes_b64)
         sha_ct[entry.sha256] = entry.content_type
 
-    # Inline SVG logos captured during parse have no download; register bytes now.
-    inline_svgs = getattr(parsed, "_inline_svgs", [])
-    inline_by_index: list[tuple[str, bytes]] = []
-    for markup in inline_svgs:
-        body = markup.encode("utf-8")
-        sha = hashlib.sha256(body).hexdigest()
-        sha_bytes[sha] = body
-        sha_ct[sha] = "image/svg+xml"
-        inline_by_index.append((sha, body))
-
+    # Inline SVG logos have no download of their own. `_ladder_logos` registers
+    # the bytes for whichever one wins a slot — repaired, so the camelCase
+    # attribute names a strict renderer needs survive the HTML round trip.
     jobs: dict[str, _AssetJob] = {}
 
     def queue(sha: str | None, url: str | None, kind: str, default_name: str) -> str | None:
@@ -163,29 +156,11 @@ def build_evidence(outcome, *, core, store_root: str, reporter) -> BrandEvidence
             )
         )
 
-    # Logos.
-    logos: list[LogoEvidence] = []
-    inline_cursor = 0
-    for asset in parsed.logos:
-        sha = asset.sha256
-        url = asset.source_url
-        if sha is None and url is None and inline_cursor < len(inline_by_index):
-            # inline SVG logo
-            sha, _ = inline_by_index[inline_cursor]
-            inline_cursor += 1
-        asset_id = queue(sha, url, "image", _filename_from_url(url, "logo.svg"))
-        if asset_id is None:
-            continue
-        logos.append(
-            LogoEvidence(
-                asset_id=asset_id,
-                usage_hint=asset.usage_hint,  # type: ignore[arg-type]
-                width=float(asset.width) if asset.width else None,
-                height=float(asset.height) if asset.height else None,
-                background_hint=asset.background_hint,
-                pointer=_pointer(asset.locator),
-            )
-        )
+    # Logos. The ladder — not ``parsed.logos`` — decides which asset fills which
+    # slot. ``parse`` still owns the logo/image split (it is what keeps a logo
+    # out of ``parsed.images``); the ladder owns selection, so only one scorer
+    # ever picks a slot.
+    logos = _ladder_logos(snapshot, sha_bytes, sha_ct, queue, outcome)
 
     # Images.
     images: list[ImageEvidence] = []
@@ -279,6 +254,116 @@ def _sha_for_url(snapshot, url: str) -> str | None:
         if entry.url == url:
             return entry.sha256
     return None
+
+
+# The kit's default dark plate, matching what the uploads path stamps on a
+# reversed logo. A brand's own dark surface is better when the ladder read one
+# off the page, so this is only the floor.
+_DEFAULT_DARK_PLATE = "#121212"
+
+# Which kit slot each ladder slot fills, and in what order. `light` must come
+# first: `emit.add_logos` groups by usage_hint and takes group[0] for
+# `logo.primary`, so a dark-first order would make the reversed mark the kit's
+# primary logo.
+_SLOT_ORDER = (
+    ("light", "primary"),
+    ("dark", "primary"),
+    ("mark", "mark"),
+    ("wordmark", "wordmark"),
+)
+
+
+def _ladder_logos(snapshot, sha_bytes, sha_ct, queue, outcome) -> list[LogoEvidence]:
+    """Resolve the logo family off the captured page and emit it as evidence.
+
+    Every candidate the ladder can consider was downloaded by
+    ``static._collect_assets``, so a winning slot always has bytes — which is
+    what closes the old silent drop (a JSON-LD/og logo the scorer ranked first
+    and the builder discarded without a diagnostic because nobody fetched it).
+    """
+    from .. import logo_ladder
+
+    stylesheets = [(sheet.url, sheet.text) for sheet in snapshot.stylesheets]
+    candidates = logo_ladder.harvest(snapshot.html, snapshot.final_url, stylesheets)
+    fetched = {
+        entry.url: (sha_bytes[entry.sha256], entry.content_type)
+        for entry in snapshot.downloads
+        if entry.sha256 in sha_bytes
+    }
+    logo_ladder.attach_bytes(candidates, fetched)
+
+    page_meta = {
+        "homepage_url": snapshot.final_url,
+        "page_title": snapshot.meta.get("title") or logo_ladder.page_title(snapshot.html),
+        "jsonld_org_names": logo_ladder.jsonld_org_names(snapshot.html),
+        "tier": snapshot.tier,
+    }
+    resolution = logo_ladder.resolve(
+        candidates, page_meta, logo_ladder.host_of(snapshot.final_url)
+    )
+
+    diagnostics = getattr(outcome, "diagnostics", None)
+    if resolution.status != "resolved" and isinstance(diagnostics, list):
+        # The honest replacement for the silent drop: say why no logo family was
+        # accepted, and name the assets a human would choose between.
+        diagnostics.append({
+            "code": "LUMI0510",
+            "severity": "warning",
+            "message": (
+                f"logo ladder returned {resolution.status}: "
+                + "; ".join(resolution.notes[:3])
+            ),
+            "candidates": [c.summary() for c in resolution.ranked[:5]],
+        })
+
+    dark_plate = resolution.theme_surfaces.get("dark_surface") or _DEFAULT_DARK_PLATE
+
+    logos: list[LogoEvidence] = []
+    for slot_name, usage_hint in _SLOT_ORDER:
+        slot = resolution.slots.get(slot_name)
+        if slot is None:
+            continue
+        sha = hashlib.sha256(slot.body).hexdigest()
+        sha_bytes.setdefault(sha, slot.body)
+        sha_ct.setdefault(sha, slot.content_type)
+        asset_id = queue(
+            sha,
+            slot.candidate.url,
+            "image",
+            _filename_from_url(slot.candidate.url, f"logo-{slot_name}.svg"),
+        )
+        if asset_id is None:  # pragma: no cover - the bytes were just registered
+            continue
+        reversed_slot = slot_name == "dark"
+        logos.append(
+            LogoEvidence(
+                asset_id=asset_id,
+                color_mode_hint=_color_mode(slot, reversed_slot),
+                usage_hint=usage_hint,  # type: ignore[arg-type]
+                width=float(slot.candidate.width) if slot.candidate.width else None,
+                height=float(slot.candidate.height) if slot.candidate.height else None,
+                background_hint=dark_plate if reversed_slot else None,
+                pointer=_pointer(_ladder_locator(slot_name, slot)),
+            )
+        )
+    return logos
+
+
+def _color_mode(slot, reversed_slot: bool) -> str:
+    if reversed_slot:
+        return "reversed"
+    # A `currentColor` asset genuinely has one ink and takes it from the page.
+    if slot.candidate.appearance.get("verdict") == "adaptive":
+        return "one_color"
+    return "full_color"
+
+
+def _ladder_locator(slot_name: str, slot) -> str:
+    detail = slot.basis or slot.candidate.lockup
+    return (
+        f"logo-ladder :: {slot_name} <- {slot.candidate.rung} "
+        f"[{slot.provenance}] {detail}"
+    )[:400]
 
 
 def _run_ingest(jobs: list[_AssetJob], *, core, store_root: str, snapshot) -> None:

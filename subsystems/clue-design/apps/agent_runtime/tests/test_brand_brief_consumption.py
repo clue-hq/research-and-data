@@ -249,7 +249,12 @@ def test_the_web_card_renders_the_brief_sections_to_prose() -> None:
         assert heading in rendered, heading
     assert "**precise, expansive, iridescent**" in rendered
     assert "surface.brand violet is the sole solid saturated CTA fill" in rendered
-    assert "radius **radius.button**" in rendered
+    # G3: a recipe slot whose token is a geometry chain head renders the CLASS
+    # the author writes, with the token it resolves in parens — the recipe is
+    # copyable instead of leaving the author to invent a radius. A slot with no
+    # utility (`space.md` is a scale step, not a chain head) is unchanged.
+    assert "radius **rounded-button** (radius.button)" in rendered
+    assert "padding **space.md**" in rendered
     assert "Band 2: **no kit token**" in rendered
 
 

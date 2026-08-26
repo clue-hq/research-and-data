@@ -52,6 +52,7 @@ from .asset_custody import (
     record_digests,
     register_engine_write,
     register_scene_asset_backstop,
+    register_web_asset_backstop,
     write_cache_blob,
 )
 from .core import CoreClient, CoreError, has_error_diagnostics
@@ -8030,6 +8031,20 @@ def run_web_agent_turn(
             # D4: generated imagery must land in (and export from) the request workspace's
             # engine cache, exactly as the scene path pins it.
             config = replace(config, asset_store_root=turn_cache_root)
+        # The agent's in-loop preview resolves every `<img data-asset=…>` against
+        # `config.asset_base_url`. Unlike the HTTP render route above (which derives it from
+        # `request.base_url`), this path has NO request: a web turn is leased fleet work and
+        # runs in a detached worker. So the value is CONFIGURED — `AgentRuntimeConfig.from_env`
+        # reads `settings.asset_base_url` (LUMEN_API_ORIGIN), and it is asserted here rather
+        # than re-derived so there is exactly one home for it. It used to be a hardcoded
+        # `http://127.0.0.1:8000/asset-store` inside the agent substrate, pointing at a port
+        # nothing has listened on since the design API moved to 8010 — which is why the agent
+        # saw broken images in its own screenshots and stripped every asset it placed.
+        if not config.asset_base_url:
+            raise ValueError(
+                "web turn has no asset_base_url — the agent's preview would render every "
+                "placed image broken. Set LUMEN_API_ORIGIN to the design API's origin."
+            )
         if asset_library is not None:
             config = replace(config, asset_library=asset_library)
         if custom_component_registry is not None:
@@ -9022,6 +9037,16 @@ def execute_web_turn_job(
                         )
                     else:
                         try:
+                            # Durable custody BEFORE the governed write, mirroring the
+                            # scene accept seam. An agent tool can ingest bytes mid-turn
+                            # (a fetched account logo), and until this ran the web lane
+                            # had no backstop at all — the document committed citing
+                            # bytes that lived only in a wipeable engine cache.
+                            register_web_asset_backstop(
+                                _turn_blob_store(host, workspace_id),
+                                _host_engine_cache_root(host, workspace_id),
+                                replay["web_doc"],
+                            )
                             # D6 Round B: the worker's persist is the SAME governed write the
                             # /web/operations route makes, with `actor="agent"` on the
                             # invocation (REQ-20 parity) and the envelope's frozen

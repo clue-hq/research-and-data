@@ -35,6 +35,20 @@ PREVIEW_MAX_PX = 512
 #: diagnostic — loud enough to name the cause, bounded so a giant HTML error
 #: page never floods the report.
 FAILURE_EXCERPT_MAX = 300
+#: How many IMAGES one ingestion may caption (design-quality Wave 1, ruling R4).
+#: Describe exactly what the agent will be shown and nothing more: the brand
+#: card lists at most this many images, so a 17th caption is spend nobody ever
+#: reads. Logos are exempt — they are few and they are the brand's mark.
+#:
+#: This is a deliberate MIRROR of ``lumen_agent.brand_card.MAX_IMAGE_LIST``, not
+#: an import: ``apps/api`` does not depend on ``apps/agent_runtime`` (its
+#: pyproject excludes the agent-runtime trio on purpose, and every ``lumen_agent``
+#: reference in this app is a lazy in-function import), so a module-level import
+#: here would break ``lumen-api`` as a standalone distribution. Tests may import
+#: both — ``test_ingestion_describe.py::
+#: test_described_image_cap_mirrors_the_brand_card_constant`` fails the build the
+#: moment the two numbers drift.
+MAX_DESCRIBED_IMAGES = 16
 
 
 # --- contracts ------------------------------------------------------------------
@@ -175,23 +189,33 @@ def apply_descriptions(
     resolve_bytes: Callable[[str], "tuple[bytes, str] | None"],
     reporter: Callable[[str, float], None],
     rasterize_svg: Callable[[str], bytes | None] | None = None,
+    resolve_thumbnail: Callable[[str], "tuple[bytes, str] | None"] | None = None,
     diagnostics: list[dict] | None = None,
     workspace_id: str | None = None,
 ) -> BrandEvidence:
     """Stamp title/description/usage_note/tags onto ``evidence`` logos+images.
 
-    Cache hits (any origin) stamp directly; each miss gets its OWN describe
-    call (one image per request — a timeout or malformed image costs exactly
-    one caption, never a batch; the ``asset_descriptions`` cache makes the
-    per-image latency a once-per-lifetime cost). SVGs raster through the
-    injected ``rasterize_svg`` seam (the engine renderer, in production).
+    Cache hits (any origin) stamp directly; each *selected* miss gets its OWN
+    describe call (one image per request — a timeout or malformed image costs
+    exactly one caption, never a batch; the ``asset_descriptions`` cache makes
+    the per-image latency a once-per-lifetime cost). Vectors raster through
+    their STORED thumbnail when they have one (W1.2 rasterizes every SVG at
+    ingest), else through the injected ``rasterize_svg`` seam.
 
-    Nothing is skipped silently: every miss that ends undescribed appends one
-    named warning to ``diagnostics`` (LUMI0803 describe failed, LUMI0804
-    preview unavailable, LUMI0805 bytes unresolvable), and the final reporter
-    call carries the described-N-of-M summary. An INACTIVE describer (Null, or
-    OpenRouter without the env gate/key) skips the miss pass entirely — off is
-    off, not N failures. Deterministic with ``NullDescriber``.
+    Wave 1 ruling R4 bounds what is captioned: ALL logos, plus the top
+    :data:`MAX_DESCRIBED_IMAGES` images by pixel area. The rest stay
+    undescribed — the card would not have shown them anyway — but they still
+    stamp whatever the description store already holds, so a caption is never
+    lost to the bound.
+
+    Nothing is skipped silently: every *selected* miss that ends undescribed
+    appends one named warning to ``diagnostics`` (LUMI0803 describe failed,
+    LUMI0804 preview unavailable, LUMI0805 bytes unresolvable), and the final
+    reporter call carries the described-N-of-M summary plus the count held back
+    by the bound. An image outside the bound is not a failure and gets no
+    diagnostic. An INACTIVE describer (Null, or OpenRouter without the env
+    gate/key) skips the miss pass entirely — off is off, not N failures.
+    Deterministic with ``NullDescriber``.
     """
     reporter("Describing your assets…", 0.80)
     sink = diagnostics if diagnostics is not None else []
@@ -219,8 +243,8 @@ def apply_descriptions(
     for asset_id, row in cached.items():
         _stamp(targets[asset_id], row)
 
-    misses = [a for a in targets if a not in cached]
-    if not misses or not getattr(describer, "active", True):
+    pending = [a for a in targets if a not in cached]
+    if not pending or not getattr(describer, "active", True):
         reporter(
             f"Asset descriptions: {len(cached)}/{len(targets)} cached"
             + ("" if getattr(describer, "active", True) else " (describe disabled)"),
@@ -228,10 +252,13 @@ def apply_descriptions(
         )
         return evidence
 
+    misses = _select_for_describe(evidence, pending)
+    beyond_bound = len(pending) - len(misses)
+
     described = 0
     failed = 0
     for asset_id, preview in _previews(
-        misses, kinds, resolve_bytes, rasterize_svg, sink
+        misses, kinds, resolve_bytes, rasterize_svg, resolve_thumbnail, sink
     ):
         if preview is None:
             failed += 1
@@ -270,10 +297,82 @@ def apply_descriptions(
 
     reporter(
         f"Asset descriptions: {described + len(cached)}/{len(targets)} "
-        f"({described} new, {len(cached)} cached, {failed} failed)",
+        f"({described} new, {len(cached)} cached, {failed} failed)"
+        + (
+            f", {beyond_bound} beyond the top-{MAX_DESCRIBED_IMAGES} image bound"
+            if beyond_bound
+            else ""
+        ),
         0.85,
     )
     return evidence
+
+
+def _pixel_area(image: ImageEvidence) -> int:
+    """An image's pixel area, or 0 when the capture never measured it — an
+    unmeasured record ranks LAST rather than being guessed at, but it is still
+    eligible for a slot the measured ones leave free.
+
+    Know what these dimensions ARE, because they are not uniform across capture
+    paths and this is the ranking key:
+
+    * uploads and PDF captures measure the decoded image — these are true raster
+      dimensions;
+    * a website ``<img>`` carries the **DOM width/height attribute**
+      (``capture/parse.py`` ``_int_attr``), which is the author's markup, not
+      the asset's real size — a 2400px hero declared ``width="600"`` ranks as
+      600px;
+    * a CSS ``background-image`` carries **no dimensions at all**
+      (``capture/parse.py``'s background branch builds its ``ParsedAsset``
+      without them), so it scores 0 and ranks last — which on a
+      background-hero site means the hero is the first thing the bound drops.
+
+    Ranking off the asset record's true raster dims instead (what
+    ``engine_mirror.record_pixel_dims`` reads, and what W1.3 already puts on the
+    brand card) is the correct fix and is DEFERRED to a later slice by controller
+    ruling — it needs a per-asset record read this seam does not currently have.
+    Until then the cost is bounded and is not a regression: a mis-ranked or
+    dimensionless image goes undescribed, exactly as every image did before this
+    slice existed.
+    """
+    width, height = image.width, image.height
+    if not width or not height:
+        return 0
+    return int(width) * int(height)
+
+
+def _select_for_describe(evidence: BrandEvidence, pending: list[str]) -> list[str]:
+    """The R4 bound: every LOGO, plus the top :data:`MAX_DESCRIBED_IMAGES`
+    images by pixel area. Returns a subset of ``pending`` in ``pending`` order,
+    so downstream ordering (and therefore the diagnostics order) is unchanged.
+
+    An asset that is both a logo and an image is a logo — logos are the brand's
+    mark and are never held back by the image bound. Ties break on evidence
+    order, keeping the selection deterministic for a given kit.
+
+    The ranking runs over the WHOLE image set and is intersected with ``pending``
+    only afterwards — never the other way round. Ranking the cache-miss list
+    instead would make the bound leak across runs: asset ids are content-
+    addressed, so a re-harvest of the same site turns run 1's captions into cache
+    hits and leaves exactly the images the bound excluded outstanding, which
+    would then rank as "the top 16 of what's left" and be captioned after all.
+    Enough re-ingestions and the whole kit is described. The bound is a property
+    of the kit's images, not of one run's misses.
+    """
+    logo_ids = {logo.asset_id for logo in evidence.logos}
+
+    ranked: list[tuple[int, int, str]] = []
+    seen: set[str] = set()
+    for position, image in enumerate(evidence.images):
+        asset_id = image.asset_id
+        if asset_id in logo_ids or asset_id in seen:
+            continue
+        seen.add(asset_id)
+        ranked.append((-_pixel_area(image), position, asset_id))
+    ranked.sort()
+
+    within_bound = logo_ids | {a for _area, _position, a in ranked[:MAX_DESCRIBED_IMAGES]}
+    return [asset_id for asset_id in pending if asset_id in within_bound]
 
 
 def _previews(
@@ -281,6 +380,7 @@ def _previews(
     kinds: dict[str, str],
     resolve_bytes: Callable[[str], "tuple[bytes, str] | None"],
     rasterize_svg: Callable[[str], bytes | None] | None,
+    resolve_thumbnail: Callable[[str], "tuple[bytes, str] | None"] | None,
     sink: list[dict],
 ):
     """Yield (asset_id, preview_b64 | None) per miss, appending one named
@@ -297,7 +397,7 @@ def _previews(
             continue
         data, mime = resolved
         if mime == "image/svg+xml" or _is_svg_bytes(data):
-            raster = rasterize_svg(asset_id) if rasterize_svg is not None else None
+            raster = _vector_raster(asset_id, resolve_thumbnail, rasterize_svg)
             if raster is None:
                 _warn(
                     sink,
@@ -317,6 +417,35 @@ def _previews(
             yield asset_id, None
             continue
         yield asset_id, preview
+
+
+def _vector_raster(
+    asset_id: str,
+    resolve_thumbnail: Callable[[str], "tuple[bytes, str] | None"] | None,
+    rasterize_svg: Callable[[str], bytes | None] | None,
+) -> bytes | None:
+    """Raster bytes for a vector asset, or None when it has none.
+
+    The STORED thumbnail comes first: since W1.2 every ingested SVG carries a
+    real PNG thumbnail on its record, so this is a blob read rather than a
+    fresh engine rasterization. A legacy record with no thumbnail (or one whose
+    'thumbnail' is the vector itself) falls through to the ``rasterize_svg``
+    seam, and a vector with neither keeps today's skip.
+    """
+    if resolve_thumbnail is not None:
+        try:
+            stored = resolve_thumbnail(asset_id)
+        except Exception:  # noqa: BLE001 - a thumbnail read must never sink the asset
+            stored = None
+        if stored is not None:
+            thumbnail, thumbnail_mime = stored
+            if (
+                thumbnail
+                and thumbnail_mime != "image/svg+xml"
+                and not _is_svg_bytes(thumbnail)
+            ):
+                return thumbnail
+    return rasterize_svg(asset_id) if rasterize_svg is not None else None
 
 
 def _warn(sink: list[dict], code: str, message: str) -> None:
@@ -399,8 +528,10 @@ def describe_kit_assets(
         return counts
 
     context = _context(brand_name, "backfill")
+    # The kit backfill is deliberately UNBOUNDED and thumbnail-less: it heals a
+    # published kit's own entries on demand (W1.4 governs the ingestion pass).
     for asset_id, preview in _previews(
-        misses, kinds, resolve_bytes, rasterize_svg, sink
+        misses, kinds, resolve_bytes, rasterize_svg, None, sink
     ):
         if preview is None:
             counts["failed"] += 1

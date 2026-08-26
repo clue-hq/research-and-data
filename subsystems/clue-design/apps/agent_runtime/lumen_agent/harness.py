@@ -407,6 +407,7 @@ def create_design_deepagent(
         tools.inspect,
         tools.compile_dsl_block,
         tools.asset,
+        tools.fetch_logo,
         tools.validate_binding_set,
         tools.preflight_design,
     ]

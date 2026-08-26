@@ -91,6 +91,39 @@ STYLE_REFERENCE_FRAMING = (
     "copy, crop, or edit them."
 )
 
+# --- OpenRouter Images API (IMAGE_MODEL_API_STYLE=images) constants ---------
+# Straight from the founder-supplied OpenRouter reference for openai/gpt-image-2
+# (2026-08-23). `aspect_ratio` is a CLOSED enum — an unsupported string is a 400,
+# i.e. a grey stub — so caller ratios are snapped to the nearest member. Values
+# are the numeric width/height each member denotes.
+IMAGES_API_ASPECT_RATIOS = {
+    "1:1": 1.0,
+    "3:2": 3 / 2,
+    "2:3": 2 / 3,
+    "4:3": 4 / 3,
+    "3:4": 3 / 4,
+    "16:9": 16 / 9,
+    "9:16": 9 / 16,
+    "21:9": 21 / 9,
+}
+# `quality` enum is auto|low|medium|high; the founder's sample and our quality
+# bar both say high.
+IMAGES_API_QUALITY = "high"
+# `background` enum is auto|OPAQUE — there is NO "transparent" member, so an
+# alpha channel cannot be requested structurally at all. FOUNDER RULE 2026-08-23:
+# always send "auto" (which is what both founder sample bodies carry). A
+# transparent request additionally gets a prose hint and no promise; see
+# `_invoke_images_api`.
+IMAGES_API_BACKGROUND = "auto"
+# `input_references` is documented 0-16. Our upstream attachment cap is far
+# lower (REFERENCE_ASSETS_MAX = 4), so exceeding this is a caller bug — asserted
+# rather than assumed, and loud rather than silently truncating the anchors a
+# user attached.
+IMAGES_API_MAX_INPUT_REFERENCES = 16
+# NOT used on this path, deliberately: `n` (default 1 is what we want),
+# `output_compression`, `provider.options`, and `stream` (this client is
+# synchronous).
+
 
 class ImageGenerationError(Exception):
     """Typed failure so the route can return a clean HTTP error + diagnostic
@@ -138,6 +171,7 @@ class ImageModelConfig:
     base_url: str
     api_key: str
     model_id: str
+    api_style: str = "chat"
     timeout_s: float = DEFAULT_TIMEOUT_S
     max_retries: int = DEFAULT_MAX_RETRIES
 
@@ -155,7 +189,11 @@ class ImageModelConfig:
         return cls(
             base_url=base_url,
             api_key=api_key,
+            # Merge of W1.4 + the v2 transport split: the "default" sentinel
+            # still resolves through configured_model_id() (explicit ids pass
+            # through untouched), and the id's TRANSPORT rides api_style.
             model_id=configured_model_id(),
+            api_style=settings.image_model_api_style,
             timeout_s=settings.image_model_timeout_s,
             max_retries=settings.image_model_max_retries,
         )
@@ -576,7 +614,62 @@ def _invoke_model(
     source_images: Optional[List[Tuple[bytes, str]]] = None,
     reference_images: Optional[List[Tuple[bytes, str]]] = None,
 ) -> Tuple[bytes, str]:
-    """ADAPTER SEAM — OpenRouter (raw HTTP).
+    """ADAPTER SEAM — OpenRouter (raw HTTP), two transports.
+
+    OpenRouter exposes image generation two different ways and a given model
+    speaks exactly one of them, so `IMAGE_MODEL_API_STYLE` selects the wire
+    shape: `chat` (the OpenAI-compatible chat-completions endpoint with an image
+    modality — Gemini-class models) or `images` (the dedicated Images endpoint —
+    `openai/gpt-image-2`). Everything above this function is transport-agnostic.
+    """
+    if config.api_style == "images":
+        return _invoke_images_api(
+            config,
+            prompt=prompt,
+            width=width,
+            height=height,
+            aspect_ratio=aspect_ratio,
+            transparent_background=transparent_background,
+            source_images=source_images,
+            reference_images=reference_images,
+        )
+    return _invoke_chat_completions(
+        config,
+        prompt=prompt,
+        aspect_ratio=aspect_ratio,
+        image_size=image_size,
+        transparent_background=transparent_background,
+        source_images=source_images,
+        reference_images=reference_images,
+    )
+
+
+def _openrouter_headers(config: ImageModelConfig) -> dict:
+    headers = {
+        "Authorization": f"Bearer {config.api_key}",
+        "Content-Type": "application/json",
+    }
+    # Optional OpenRouter attribution headers (ranking only; harmless if unset).
+    referer = settings.image_model_http_referer
+    title = settings.image_model_app_title
+    if referer:
+        headers["HTTP-Referer"] = referer
+    if title:
+        headers["X-Title"] = title
+    return headers
+
+
+def _invoke_chat_completions(
+    config: ImageModelConfig,
+    *,
+    prompt: str,
+    aspect_ratio: Optional[str],
+    image_size: Optional[str],
+    transparent_background: Optional[bool],
+    source_images: Optional[List[Tuple[bytes, str]]] = None,
+    reference_images: Optional[List[Tuple[bytes, str]]] = None,
+) -> Tuple[bytes, str]:
+    """Transport A — OpenRouter chat-completions with an image modality.
 
     OpenRouter runs image generation through the OpenAI-compatible
     chat-completions endpoint with an image modality: POST
@@ -648,24 +741,15 @@ def _invoke_model(
     }
     # W1.7(b): the requested ratio, structurally. Omitted entirely when there is
     # no ask (or it cannot be parsed), so a plain generation's body is
-    # byte-identical to before.
+    # byte-identical to before. (Headers moved to `_openrouter_headers` in the
+    # v2 transport split — same content, one home.)
     wire_aspect_ratio = api_aspect_ratio(aspect_ratio)
     if wire_aspect_ratio:
         body["image_config"] = {"aspect_ratio": wire_aspect_ratio}
-    headers = {
-        "Authorization": f"Bearer {config.api_key}",
-        "Content-Type": "application/json",
-    }
-    # Optional OpenRouter attribution headers (ranking only; harmless if unset).
-    referer = settings.image_model_http_referer
-    title = settings.image_model_app_title
-    if referer:
-        headers["HTTP-Referer"] = referer
-    if title:
-        headers["X-Title"] = title
-
     url = config.base_url.rstrip("/") + "/chat/completions"
-    response = httpx.post(url, json=body, headers=headers, timeout=config.timeout_s)
+    response = httpx.post(
+        url, json=body, headers=_openrouter_headers(config), timeout=config.timeout_s
+    )
     if response.status_code >= 400:
         detail = response.text[:300]
         _warn_if_model_not_found(config.model_id, response.status_code, detail)
@@ -706,6 +790,182 @@ def _warn_if_model_not_found(model_id: str, status_code: int, detail: str) -> No
         detail,
         DEFAULT_IMAGE_MODEL_ID,
     )
+
+
+# --- Transport B: the dedicated OpenRouter Images API ----------------------
+
+
+def _snap_aspect_ratio(
+    aspect_ratio: Optional[str], width: Optional[int], height: Optional[int]
+) -> Optional[str]:
+    """The nearest member of the Images API's CLOSED `aspect_ratio` enum, or None
+    when the caller expressed no framing at all (omitting beats asserting — the
+    endpoint's own default is `auto`).
+
+    The requested ratio wins; failing that the ratio is derived from the resolved
+    width/height, which is how `resolve_dimensions` already reasons about frames.
+    A ratio outside the enum (5:2, 4:5, …) is snapped rather than forwarded: an
+    unsupported string is an HTTP 400, which reaches the user as a grey stub.
+
+    In practice only `edit` reaches the None branch: `generate` always resolves
+    concrete dimensions first (defaulting to a 1024-square), so a framing-free
+    generation legitimately asks for `1:1` — the square the rest of the stack is
+    already going to place into. An edit has no target frame of its own, so it
+    stays silent and lets the endpoint follow the source.
+    """
+    parsed = _parse_aspect_ratio(aspect_ratio)
+    if parsed:
+        ratio_w, ratio_h = parsed
+        value = ratio_w / ratio_h
+    elif width and height:
+        value = width / height
+    else:
+        return None
+    return min(
+        IMAGES_API_ASPECT_RATIOS,
+        key=lambda name: abs(IMAGES_API_ASPECT_RATIOS[name] - value),
+    )
+
+
+def _invoke_images_api(
+    config: ImageModelConfig,
+    *,
+    prompt: str,
+    width: Optional[int],
+    height: Optional[int],
+    aspect_ratio: Optional[str],
+    transparent_background: Optional[bool],
+    source_images: Optional[List[Tuple[bytes, str]]] = None,
+    reference_images: Optional[List[Tuple[bytes, str]]] = None,
+) -> Tuple[bytes, str]:
+    """Transport B — OpenRouter's dedicated Images endpoint.
+
+    `POST {base_url}/images` with a top-level `prompt`, a STRUCTURED
+    `aspect_ratio` (no prose hint — the enum is a real parameter here),
+    `quality`, `background`, and, for a reference-conditioned call,
+    `input_references`. The image comes back base64 in `data[*].b64_json`. This
+    is the shape `openai/gpt-image-2` takes; it does not answer the
+    chat-completions call at all.
+
+    Note gpt-image-2's references are SUBJECT-composition oriented by design
+    ("keep this dog's exact face"), so our style-anchor semantics can only ride
+    the prompt — which makes `STYLE_REFERENCE_FRAMING` more load-bearing here
+    than on the chat path, not less.
+    """
+    import httpx  # lazy: only the real network path needs it
+
+    user_prompt = prompt
+    if transparent_background:
+        # `background` is enum auto|opaque — it has NO transparent member, so
+        # asking structurally would be an invalid enum (400 → grey stub), and
+        # `background` still goes out as "auto" per the founder rule. Prose is
+        # the honest best effort: this model CANNOT honor transparency
+        # structurally, so a caller that needs a real alpha channel needs a
+        # different model or a downstream cut-out — not a louder prompt.
+        user_prompt = f"{user_prompt}\n\n(Render with transparent background.)"
+
+    references = list(reference_images or source_images or [])
+    if len(references) > IMAGES_API_MAX_INPUT_REFERENCES:
+        raise ImageGenerationError(
+            "image_model.too_many_references",
+            f"the images API accepts at most {IMAGES_API_MAX_INPUT_REFERENCES} "
+            f"input references; got {len(references)}",
+            status_code=400,
+        )
+    if reference_images:
+        # Same distinction the chat path draws: a GENERATION's references are
+        # style anchors ("make a NEW image"), an EDIT's source is the subject.
+        user_prompt = f"{STYLE_REFERENCE_FRAMING}\n\n{user_prompt}"
+
+    body: dict = {
+        "model": config.model_id,
+        "prompt": user_prompt,
+    }
+    snapped = _snap_aspect_ratio(aspect_ratio, width, height)
+    if snapped:
+        body["aspect_ratio"] = snapped
+    body["quality"] = IMAGES_API_QUALITY
+    body["background"] = IMAGES_API_BACKGROUND
+    if references:
+        body["input_references"] = _image_content_parts(references)
+
+    url = config.base_url.rstrip("/") + "/images"
+    response = httpx.post(
+        url, json=body, headers=_openrouter_headers(config), timeout=config.timeout_s
+    )
+    if response.status_code >= 400:
+        raise ImageGenerationError(
+            "image_model.http_error",
+            f"image model returned HTTP {response.status_code}: {response.text[:300]}",
+            status_code=502,
+        )
+    return _decode_images_api_response(response.json(), timeout_s=config.timeout_s)
+
+
+def _decode_images_api_response(payload: object, *, timeout_s: float) -> Tuple[bytes, str]:
+    """Pull the generated image out of an OpenRouter Images API response.
+
+    Primary — and the shape the API reference's own example loops over —
+    `data[0].b64_json`. Defensive fallback: `data[0].url`, either a base64
+    `data:` URL (the existing decoder) or a plain https URL, which is FETCHED.
+    That fetch is the minimal slice of the URL-result gap this transport needs
+    to function; the chat path's identical gap stays W4.1's to close.
+    """
+    entry: dict = {}
+    if isinstance(payload, dict):
+        data = payload.get("data")
+        if isinstance(data, list) and data and isinstance(data[0], dict):
+            entry = data[0]
+
+    b64 = entry.get("b64_json") or entry.get("image_base64")
+    if isinstance(b64, str) and b64:
+        return _decode_b64(b64, entry.get("mime_type") or DEFAULT_MIME)
+
+    url = entry.get("url")
+    if isinstance(url, str) and url:
+        if url.startswith("data:"):
+            return _decode_data_url(url)
+        return _fetch_image_url(url, timeout_s=timeout_s)
+
+    raise ImageGenerationError(
+        "image_model.bad_response",
+        "images API response contained no data[0].b64_json or data[0].url: "
+        f"{str(payload)[:200]}",
+        status_code=502,
+    )
+
+
+def _fetch_image_url(url: str, *, timeout_s: float) -> Tuple[bytes, str]:
+    """Download an image the Images API returned by reference. Transport errors
+    propagate (the retry wrapper handles them); an HTTP error is typed.
+
+    Two things this must not do, because both end with a corrupt asset ingested
+    under a `generated` provenance stamp — which reads as success and is worse
+    than a clean failure:
+
+    - **Not follow redirects.** A by-reference result is typically a signed CDN
+      URL, and those redirect; httpx defaults `follow_redirects=False`, so the
+      302's empty body would become a zero-byte "image".
+    - **Trust the content-type.** An expired signature, an error page, or a login
+      interstitial answers 200 with `text/html`. Only `image/*` is an image.
+    """
+    import httpx  # lazy: only the real network path needs it
+
+    response = httpx.get(url, timeout=timeout_s, follow_redirects=True)
+    if response.status_code >= 400:
+        raise ImageGenerationError(
+            "image_model.http_error",
+            f"fetching the generated image returned HTTP {response.status_code}",
+            status_code=502,
+        )
+    mime = (response.headers.get("content-type") or DEFAULT_MIME).split(";", 1)[0].strip()
+    if not mime.lower().startswith("image/"):
+        raise ImageGenerationError(
+            "image_model.bad_response",
+            f"the generated-image URL served {mime or 'no content-type'}, not an image",
+            status_code=502,
+        )
+    return response.content, mime
 
 
 def _decode_openrouter_image(payload: object) -> Tuple[bytes, str]:

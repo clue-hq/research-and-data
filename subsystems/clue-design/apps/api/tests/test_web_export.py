@@ -24,6 +24,7 @@ from PIL import Image
 
 from lumen_api.design_store import HybridRepository
 from lumen_api.main import create_app
+from lumen_api.web_export import _CompiledTheme, _build_input_css
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -127,6 +128,45 @@ def find_node(web_doc: dict, kind: str) -> str:
     return next(nid for nid, node in nodes.items() if node.get("kind") == kind)
 
 
+# --- (a0) the input CSS the static compile is fed ---------------------------
+
+
+def test_build_input_css_carries_colors_geometry_and_utility_rules() -> None:
+    """The published page's `@theme` block must carry the SAME three channels
+    the editor's `theme_block` does, or brand geometry silently no-ops on every
+    published page while it works on the canvas."""
+    theme = _CompiledTheme(
+        tokens={"primary": "#4FD3C8"},
+        geometry={
+            "radius-button": "4px",
+            "shadow-brand": "0 15.93px 31.86px -8px #32325D1F",
+            "border-width-card": "1px",
+            "spacing-section": "96px",
+        },
+        utility_css="@utility border-w-card { border-width: var(--border-width-card); }\n",
+    )
+    css = _build_input_css(theme)
+
+    assert "  --color-primary: #4FD3C8;" in css
+    assert "  --radius-button: 4px;" in css
+    assert "  --shadow-brand: 0 15.93px 31.86px -8px #32325D1F;" in css
+    assert "  --border-width-card: 1px;" in css
+    assert "  --spacing-section: 96px;" in css
+    # Every var lands INSIDE the block; `@utility` is top-level, so after it.
+    block = css.index("@theme {")
+    close = css.index("\n}", block)
+    assert css.index("--radius-button") < close
+    assert css.index("@utility border-w-card") > close
+    assert css.endswith("\n")
+
+
+def test_build_input_css_without_geometry_is_unchanged() -> None:
+    """An engine too old to answer `geometry`/`utility_css` still compiles —
+    the export never hard-fails on a thin theme payload."""
+    css = _build_input_css(_CompiledTheme(tokens={"primary": "#000000"}, geometry={}, utility_css=""))
+    assert css == '@import "tailwindcss";\n@theme {\n  --color-primary: #000000;\n}\n'
+
+
 # --- (a) export zip of a seeded doc -----------------------------------------
 
 
@@ -155,6 +195,88 @@ def test_export_zip_has_core_files(client: TestClient) -> None:
     assert manifest["doc_version"] == get_document(client, document["id"])["current_version"]
     assert "index.html" in manifest["files"]
     assert "manifest.json" in manifest["files"]
+
+
+GEOMETRY_HTML = """
+<section id="hero" class="bg-light py-section">
+  <div class="mx-auto max-w-[1200px] px-6 flex flex-col gap-stack">
+    <div class="bg-card p-card rounded-card shadow-brand border border-border border-w-card">
+      <h1 data-variant="h2">Brand geometry</h1>
+      <p class="text-muted">Corners, elevation, hairlines and rhythm, by name.</p>
+      <a data-button="primary" class="rounded-button shadow-card" href="https://acme.test/demo">Get started</a>
+    </div>
+    <div class="border-t border-border border-w-divider"></div>
+    <div class="rounded-badge bg-primary px-3"><p data-variant="small" class="text-inverse">New</p></div>
+  </div>
+</section>
+"""
+
+
+def test_export_css_carries_brand_geometry(client: TestClient) -> None:
+    """A published page uses the SAME geometry mechanism the canvas does — the
+    static compile rebuilds `@theme` from the engine's geometry map, and the
+    `border-w-*` names ride the engine-built `@utility` rules.
+
+    Tailwind v4 tree-shakes unused theme vars, so this asserts only over
+    geometry the page actually authors (same posture as the `--color-primary`
+    assertion above)."""
+    document = create_web_document(client)
+    web_doc = client.get(f"/documents/{document['id']}").json()["scene"]
+    response = client.app.state.core.web_ingest_html(
+        web_doc, "home", GEOMETRY_HTML, None, None
+    )
+    errors = [d for d in response.get("diagnostics", []) if d.get("severity") == "error"]
+    assert not errors, response.get("diagnostics")
+    seed_content(client, document["id"], response["web_doc"])
+
+    files, _html, _manifest = export_zip(client, document["id"])
+    css = files["site.css"].decode("utf-8")
+
+    # The theme vars reached the compile.
+    assert "--radius-button" in css
+    assert "--radius-card" in css
+    assert "--radius-badge" in css
+    assert "--spacing-section" in css
+    assert "--spacing-stack" in css
+    assert "--spacing-card" in css
+    assert "--border-width-card" in css
+    assert "--border-width-divider" in css
+    # The utilities compiled against them.
+    assert "border-radius: var(--radius-button)" in css
+    assert "padding: var(--spacing-card)" in css
+    assert "padding-block: var(--spacing-section)" in css
+    assert "gap: var(--spacing-stack)" in css
+    # `border-w-*` has no Tailwind namespace — it exists only because the
+    # engine's `@utility` rules travelled with the theme.
+    assert "border-width: var(--border-width-card)" in css
+    assert "border-width: var(--border-width-divider)" in css
+    # Shadows compile through Tailwind's own `--tw-shadow` plumbing.
+    assert ".shadow-brand" in css
+    assert ".shadow-card" in css
+    assert "box-shadow" in css
+
+
+def test_publish_html_carries_brand_geometry(
+    client: TestClient, workspace_id: str
+) -> None:
+    """The publish path shares the pipeline, so it inherits geometry too — but
+    it inlines the CSS rather than linking it, so prove it separately."""
+    document = create_web_document(client)
+    web_doc = client.get(f"/documents/{document['id']}").json()["scene"]
+    response = client.app.state.core.web_ingest_html(
+        web_doc, "home", GEOMETRY_HTML, None, None
+    )
+    seed_content(client, document["id"], response["web_doc"])
+
+    published = client.post(
+        f"/documents/{document['id']}/web/publish", json={"slug": "geometry-page"}
+    )
+    assert published.status_code == 200, published.text
+    served = client.get(f"/w/{workspace_id}/p/geometry-page")
+    assert served.status_code == 200, served.text
+    html = served.text
+    assert "--radius-button" in html
+    assert "border-width: var(--border-width-card)" in html
 
 
 def test_export_preserves_semantic_structured_body_without_editor_state(

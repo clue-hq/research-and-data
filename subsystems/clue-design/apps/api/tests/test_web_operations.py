@@ -25,6 +25,7 @@ from lumen_api.main import create_app
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 MINIMAL_SCENE_PATH = REPO_ROOT / "crates/lumen-core/fixtures/minimal_scene.json"
+ACME_KIT_PATH = REPO_ROOT / "crates/lumen-core/fixtures/brand_kits/acme_full.json"
 
 # The same clean landing-page fixture the turn tests ingest (header + hero +
 # footer, tokens only). Ingest yields stable section ids: hero / site_header /
@@ -896,6 +897,72 @@ def test_web_theme_returns_tokens(client: TestClient) -> None:
     assert body["theme"]["display_family"]
     # Diagnostics surface only error-severity entries.
     assert all(d.get("severity") == "error" for d in body["diagnostics"])
+
+
+def seed_briefed_kit() -> dict:
+    """Publish a kit carrying a Creative Brief, verbatim.
+
+    Written through the DAL the way `seed_content` writes the doc, because the
+    `POST /brand-kits` route round-trips the payload through the engine and the
+    engine's `BrandKit` has no `brief` field — the section would be dropped
+    exactly as it is for the agent runtime (which is why the ingestion pipeline
+    re-attaches it after validation). Real briefed kits reach the store the same
+    way: attached to an already-validated kit.
+    """
+    kit = json.loads(ACME_KIT_PATH.read_text(encoding="utf-8"))
+    kit["brief"] = {
+        "schema_version": 1,
+        "characterization": {"words": ["measured", "calm"]},
+    }
+    # `website` is the source a real briefed kit carries: the ingestion pipeline
+    # is the only producer of briefs.
+    HybridRepository().create_brand_kit(kit, {}, [], "website")
+    return kit
+
+
+def test_web_theme_never_leaks_advice_or_warnings(client: TestClient) -> None:
+    """The one human-facing surface that runs the class lint filters to errors.
+
+    Agent-facing advice (LUMW0306 brand geometry) and warnings (LUMW0220) are
+    for the author, not the marketer looking at an Appearance panel. The
+    document here is bound to a REAL stored briefed kit, so the endpoint's own
+    resolve-and-validate path produces both — the filter is what removes them,
+    not an accident of the fixture.
+    """
+    kit = seed_briefed_kit()
+    document = create_web_document(
+        client, brand_kit_ref={"id": kit["id"], "version": kit["version"]}
+    )
+    web_doc = ingest_content(client, document["id"])
+    # A node carrying an unknown utility (warning) and raw brand geometry
+    # (advice, because the document's own kit is briefed).
+    page = web_doc["pages"][0]
+    page["nodes"]["hero"]["classes"] = "bg-light floop-3 rounded-2xl shadow-lg"
+    seed_content(client, document["id"], web_doc)
+
+    # The kit the ENDPOINT will resolve — read back through the same repository
+    # call the endpoint makes — still carries its brief…
+    stored = HybridRepository().require_brand_kit(kit["id"], kit["version"])
+    assert stored["brand_kit"].get("brief"), "the stored kit must carry its brief"
+    # …and validating this document against it really yields both species.
+    raw = client.app.state.core.web_validate(web_doc, stored["brand_kit"])
+    raw_codes = {d.get("code") for d in raw.get("diagnostics") or []}
+    assert "LUMW0220" in raw_codes, raw_codes  # the warning is really there
+    assert "LUMW0306" in raw_codes, raw_codes  # so is the advice
+
+    response = client.get(f"/documents/{document['id']}/web/theme")
+    assert response.status_code == 200, response.text
+    body = response.json()
+    # The endpoint really compiled THIS kit (not the platform default), so the
+    # advice half above is what its own validate produced and then filtered.
+    expected_primary = client.app.state.core.web_validate(
+        web_doc, stored["brand_kit"]
+    )["web_theme"]["tokens"]["primary"]
+    assert body["theme"]["tokens"]["primary"] == expected_primary
+    diagnostics = body["diagnostics"]
+    assert all(d.get("severity") == "error" for d in diagnostics), diagnostics
+    codes = {d.get("code") for d in diagnostics}
+    assert "LUMW0220" not in codes and "LUMW0306" not in codes, codes
 
 
 # --- (h) scene documents are rejected on every new endpoint -----------------

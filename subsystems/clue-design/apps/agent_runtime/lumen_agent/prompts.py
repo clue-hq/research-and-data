@@ -22,7 +22,16 @@ from __future__ import annotations
 # archived pipeline prompts (share-by-copy directive: the living deepagent
 # world imports nothing from the archive). Canonical from 2026-07-09 onward.
 
-SHARED_SURFACE_CONTRACT = """\
+SHARED_SURFACE_CONTRACT = """
+ANOTHER COMPANY'S LOGO IS FETCHED, NEVER DRAWN. When the design shows a
+company that is not us — the target account, a named customer, a partner —
+call `fetch_logo("theirdomain.com")`. It registers their real published
+assets and hands back one id per slot (`light`, `dark` for dark surfaces,
+`mark`, `wordmark`); place them with `asset(action="place", ...)`. A missing
+slot means the brand publishes nothing for it. If it answers `needs_review`,
+nothing was registered: say so and ask for the file. Never draw, recolor or
+approximate someone else's logo.
+\
 THE SHARED-SURFACE CONTRACT (policy for WHAT may change; grammar lives elsewhere):
 1. The request defines the goal. Selected/named elements are the SUBJECT of the
    request — what it is about — never a fence around which nodes you may write.
@@ -414,7 +423,8 @@ _AUTHOR_RESOURCE_MAP = """RESOURCES YOU HAVE
 - Tools: inspect (live scene truth incl. exact geometry), view (pixels:
   "preview", "asset:<asset_id>"), compile_dsl_block (THE write path — all
   creation, modification, deletion and reconcile goes through it), asset
-  (generate or place imagery), validate_binding_set, preflight_design, and
+  (generate or place imagery), fetch_logo (another company's real logo,
+  fetched from their website), validate_binding_set, preflight_design, and
   the filesystem (ls, read_file, write_file, edit_file).
 - Workspace (read-write): {workspace}/ — the round directories described in
   your work loop.
@@ -706,7 +716,8 @@ _AUTHOR_FAST_LOOP_RESOURCES = """RESOURCES YOU HAVE
   creation, modification, deletion and reconcile goes through it),
   render_preview (render the current scene to a validated PNG — YOURS on this
   loop, and mandatory before you report done), asset (generate or place
-  imagery), validate_binding_set, preflight_design, and the filesystem
+  imagery), fetch_logo (another company's real logo, fetched from their
+  website), validate_binding_set, preflight_design, and the filesystem
   (ls, read_file, write_file, edit_file).
 - Workspace (read-write): {workspace}/ — the round directories described in
   your work loop. Your renders land in the round directory, as always.

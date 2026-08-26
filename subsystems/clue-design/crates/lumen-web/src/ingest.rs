@@ -8,7 +8,7 @@
 //! diagnostic blocks the whole ingest — the document is only ever mutated by
 //! markup that parsed clean.
 
-use crate::classes::{lint_classes, ClassLintContext};
+use crate::classes::{extend_deduping_advice, lint_classes, ClassLintContext};
 use crate::derive::{personalization_key_is_valid, WHEN_PREFIX};
 use crate::doc::{
     calendly_url_is_valid, ButtonAction, ButtonCommand, ButtonVariant, ComponentSpec,
@@ -119,8 +119,22 @@ impl DiscardContext {
     }
 }
 
+/// Ingest knobs the caller knows and the parser does not.
+///
+/// Kept as a struct (rather than more parameters) so the pre-existing
+/// `ingest_html` / `ingest_html_into_page` signatures stay exactly as they
+/// were: everything that does not know about briefs keeps calling them.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct IngestOptions {
+    /// The pinned brand kit carries a Creative Brief. See
+    /// `ClassLintContext::briefed` — the only thing this changes is whether the
+    /// class lint may emit LUMW0306 advice.
+    pub briefed: bool,
+}
+
 struct IngestState<'a> {
     theme: &'a WebTheme,
+    options: IngestOptions,
     source: &'a str,
     nodes: Vec<WebNode>,
     roots: Vec<NodeId>,
@@ -132,6 +146,14 @@ struct IngestState<'a> {
 }
 
 pub fn ingest_html(html: &str, theme: &WebTheme) -> IngestOutcome {
+    ingest_html_with(html, theme, IngestOptions::default())
+}
+
+pub fn ingest_html_with(
+    html: &str,
+    theme: &WebTheme,
+    options: IngestOptions,
+) -> IngestOutcome {
     let normalized = self_close_voids(&normalize_entities(html));
     let wrapped = format!("<{ROOT_WRAPPER}>{normalized}</{ROOT_WRAPPER}>");
 
@@ -140,6 +162,7 @@ pub fn ingest_html(html: &str, theme: &WebTheme) -> IngestOutcome {
 
     let mut state = IngestState {
         theme,
+        options,
         source: &wrapped,
         nodes: Vec::new(),
         roots: Vec::new(),
@@ -238,7 +261,17 @@ pub fn ingest_html_into_page(
     html: &str,
     theme: &WebTheme,
 ) -> IngestOutcome {
-    let mut outcome = ingest_html(html, theme);
+    ingest_html_into_page_with(doc, page_id, html, theme, IngestOptions::default())
+}
+
+pub fn ingest_html_into_page_with(
+    doc: &mut WebDoc,
+    page_id: &PageId,
+    html: &str,
+    theme: &WebTheme,
+    options: IngestOptions,
+) -> IngestOutcome {
+    let mut outcome = ingest_html_with(html, theme, options);
     for node in &outcome.nodes {
         let asset_reference = match &node.kind {
             WebNodeKind::Image { asset_id, .. } => Some(("image", asset_id)),
@@ -1398,9 +1431,12 @@ impl<'a> IngestState<'a> {
                 Some(node_id),
                 &ClassLintContext {
                     color_tokens: &self.theme.tokens,
+                    briefed: self.options.briefed,
                 },
             );
-            self.diagnostics.extend(lint);
+            // Advice is deduped across the whole ingest: one line per raw
+            // class, not one per node that carries it.
+            extend_deduping_advice(&mut self.diagnostics, lint);
         }
         classes
     }
@@ -2197,5 +2233,127 @@ mod tests {
             "diagnostics: {:#?}",
             outcome.diagnostics
         );
+    }
+
+    // --- brand-geometry advice on a briefed kit (LUMW0306) ------------------
+    //
+    // A kit that carries a Creative Brief has MEASURED shape, so raw radius and
+    // elevation steps are drift the author can see. The finding is Advice: it
+    // reaches the agent and nothing else, and can never reject a page.
+
+    const RAW_GEOMETRY_PAGE: &str = r##"
+<section id="cards" class="bg-light">
+  <div class="flex flex-col gap-6 px-6 py-20">
+    <div class="rounded-2xl shadow-lg p-6 bg-card">
+      <p class="text-muted">First card.</p>
+    </div>
+    <div class="rounded-2xl shadow-lg p-6 bg-card">
+      <p class="text-muted">Second card.</p>
+    </div>
+  </div>
+</section>
+"##;
+
+    fn advice_codes(outcome: &IngestOutcome, code: &str) -> Vec<String> {
+        outcome
+            .diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.code == code)
+            .map(|diagnostic| diagnostic.message.clone())
+            .collect()
+    }
+
+    #[test]
+    fn briefed_kit_advises_on_raw_geometry() {
+        let outcome = ingest_html_with(
+            RAW_GEOMETRY_PAGE,
+            &theme(),
+            IngestOptions { briefed: true },
+        );
+        assert!(
+            !outcome.has_errors(),
+            "advice must never reject: {:#?}",
+            outcome.diagnostics
+        );
+        let advice: Vec<&Diagnostic> = outcome
+            .diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.code == "LUMW0306")
+            .collect();
+        assert!(
+            advice
+                .iter()
+                .all(|diagnostic| diagnostic.severity == DiagnosticSeverity::Advice),
+            "LUMW0306 must be advice: {advice:#?}"
+        );
+        let messages: Vec<&str> = advice
+            .iter()
+            .map(|diagnostic| diagnostic.message.as_str())
+            .collect();
+        assert!(
+            messages.iter().any(|message| message.contains("`rounded-2xl`")),
+            "expected radius advice, got {messages:?}"
+        );
+        assert!(
+            messages.iter().any(|message| message.contains("`shadow-lg`")),
+            "expected shadow advice, got {messages:?}"
+        );
+    }
+
+    #[test]
+    fn unbriefed_kit_is_byte_identical_to_today() {
+        let plain = ingest_html(RAW_GEOMETRY_PAGE, &theme());
+        let explicit = ingest_html_with(
+            RAW_GEOMETRY_PAGE,
+            &theme(),
+            IngestOptions { briefed: false },
+        );
+        assert_eq!(plain.diagnostics, explicit.diagnostics);
+        assert!(
+            advice_codes(&plain, "LUMW0306").is_empty(),
+            "an unbriefed kit gets no geometry advice: {:#?}",
+            plain.diagnostics
+        );
+        // The representative clean page is untouched too.
+        assert_eq!(
+            ingest_html(GOOD_PAGE, &theme()).diagnostics,
+            ingest_html_with(GOOD_PAGE, &theme(), IngestOptions { briefed: false }).diagnostics
+        );
+    }
+
+    #[test]
+    fn geometry_advice_is_deduped_across_nodes() {
+        let outcome = ingest_html_with(
+            RAW_GEOMETRY_PAGE,
+            &theme(),
+            IngestOptions { briefed: true },
+        );
+        // Two cards, identical classes → one line per raw class, not per node.
+        let radius: Vec<String> = advice_codes(&outcome, "LUMW0306")
+            .into_iter()
+            .filter(|message| message.contains("`rounded-2xl`"))
+            .collect();
+        assert_eq!(radius.len(), 1, "expected one deduped line: {radius:?}");
+    }
+
+    #[test]
+    fn a_page_saturated_with_raw_geometry_still_stores() {
+        let mut doc = WebDoc::new("d1", "Site", None);
+        let theme = theme();
+        let outcome = ingest_html_into_page_with(
+            &mut doc,
+            &PageId::from("home"),
+            RAW_GEOMETRY_PAGE,
+            &theme,
+            IngestOptions { briefed: true },
+        );
+        assert!(
+            !outcome.has_errors(),
+            "geometry advice may never reject: {:#?}",
+            outcome.diagnostics
+        );
+        assert!(!outcome.nodes.is_empty());
+        let page = doc.page_mut(&PageId::from("home")).expect("home page");
+        assert!(page.nodes.contains_key(&NodeId::from("cards")));
     }
 }
