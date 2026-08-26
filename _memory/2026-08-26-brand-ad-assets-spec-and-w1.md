@@ -203,3 +203,40 @@ first, per D6), W4 runtime composition, W5 acceptance.
   Full runtime suite green post-flip (1046 passed).
 - Remaining: W5 acceptance run + demo (three brands, end-to-end through the
   real pipeline) — needs founder go + live stack + Adyntel/OpenRouter keys.
+
+## WAVE A CLOSE-OUT (2026-08-27) — R3-A / R3-B / R3-D merged, verified
+
+- A1 ✅ (PDL identity resolver): resolve-first via PDL (live-proven: apollo.io
+  → linkedin_id 18511550, 1 credit), harvest by verified page_id, advertiser-
+  name cross-check gates custody on ALL paths, `advertiser_mismatch` honest
+  outcome, resolution provenance on job DTO. Deviations accepted: fallback
+  label `ad_library_domain` (seam guard forbids vendor names outside provider
+  modules); `linkedin_page_id` = alias of existing `page_id`. Residuals:
+  cross-check weaker on fallback/explicit paths (pinned); strict-equality
+  risk if PDL name vs LinkedIn advertiser drift (loosening levers noted);
+  failure-path keeps no resolution block (contract shared by 4 kinds; pinned).
+- A2 ✅ (fleet hygiene): named gap — PREAMBLE faults (envelope parse before
+  claim) escaped to fleet-plane-only handling; reaper swept only `running`.
+  Fixes: SQL-side capability-gated claims (TaskCapability jsonb predicate,
+  fail-closed; registry-derived kinds so stale code can't claim unknown
+  lanes) + work-id-keyed reconciliation w/ generation fence, extended to
+  design_agent_run symmetrically; reaper sweeps queued orphans. FOUNDER
+  QUESTION OPEN: unclaimable job now waits forever silently — needs an
+  unclaimable-age surface.
+- A3 ✅ (cancel surface): POST /agent/runs/{id}/cancel; durable
+  `cancel_requested_at` (migration `518a3784f3a4`, new single head); checks
+  at model-call boundaries via raise_error callback on all three roles +
+  pre-graph check; REUSES budget-backstop finalize (extracted
+  `_finalize_interrupted_run`); no new status — terminal `succeeded` +
+  stop_reason `cancelled_by_request` (matches shipped convention); extended
+  to web turns (flagged design call, revert sha `89646146c`). Verification
+  CAUGHT a non-hermetic test (web-cancel needed gateway env) — agent fixed
+  incl. its own theatre guard (settings singleton reads attributes, not env);
+  21/21 in scrubbed shell re-proven by orchestrator. Pre-existing find:
+  test_deepagent_harness stub poisons AgentWorkspaceBackend import-order-wide.
+- Integrated gates: runtime 1271/0 failed; lane+cancel API 107/108 (1 =
+  known order-dependent empty-harvest test, passes isolated); fleet+R3B
+  89/89; alembic single head 518a3784f3a4 (upgraded on dev DB).
+- NEXT: clean-room unseeded apollo.io proof — pure .env config (which now
+  selects the NEVER-LIVE-EXERCISED Images transport for gpt-image-2) +
+  LUMEN_BRAND_AD_ASSETS=1 as the single deliberate feature enable.
