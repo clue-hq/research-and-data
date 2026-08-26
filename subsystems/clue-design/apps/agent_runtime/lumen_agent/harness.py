@@ -23,6 +23,12 @@ from langchain.agents.structured_output import ToolStrategy
 from py_lumen_obs import configure, get_logger
 
 from .budget import BudgetExhausted, RunBudget, attach_budget_callback
+from .cancellation import (
+    CANCELLED_EVENT,
+    CANCELLED_STOP_REASON,
+    TurnCancelled,
+    attach_cancellation_callback,
+)
 from .checkpoint import invoke_turn_graph
 from .config import AgentRuntimeConfig
 from .frame import build_frame_payload
@@ -156,6 +162,8 @@ def _instrument(
     model_id: str,
     role: str,
     budget: Any = None,
+    *,
+    cancel_probe: Any = None,
 ):
     """A role model, role-labelled at the gateway, with trace capture attached.
 
@@ -181,6 +189,22 @@ def _instrument(
     separate from the trace handler on purpose: the tracer's whole contract is
     that it never affects the run, and the budget's whole contract is that it
     does.
+
+    A3 (defect R3-D): `cancel_probe` is the run's "has a human asked this to
+    stop?" callable, and it attaches a THIRD handler on the same seam and for
+    the same reason the budget's is a handler at all — the model call is the
+    only place a running graph can be refused. Deliberately independent of
+    `budget`: a cancel must work whether or not the fast loop (and so the
+    budget) is on, because a human's stop is not a tuning knob. None — every
+    CLI / fixture / offline / synchronous-preview caller — leaves the callback
+    list byte-identical to before.
+
+    KEYWORD-ONLY, and the caller omits it entirely when there is no probe. That
+    is not style: `_instrument` is a monkeypatch seam that shipped suites spy on
+    with a five-parameter signature, so a sixth POSITIONAL argument would break
+    them — and a suite breaking on a parameter its subject never uses is a false
+    alarm about a real seam. A no-probe build therefore calls this with exactly
+    the pre-A3 argument list.
     """
     from .trace_callbacks import attach_trace_callback
 
@@ -188,6 +212,8 @@ def _instrument(
     attach_trace_callback(model, role=role, metrics=getattr(tools, "metrics", None))
     if budget is not None:
         attach_budget_callback(model, budget, role)
+    if cancel_probe is not None:
+        attach_cancellation_callback(model, cancel_probe, role)
     return model
 
 
@@ -227,9 +253,19 @@ def create_design_deepagent(
     clarification_already_requested: bool = False,
     checkpointer: Any = None,
     scene_checkpoint=None,
+    cancel_requested=None,
 ) -> tuple[Any, LumenDesignTools]:
     """Build the v0 deepagent + substrate. Mirrors
     factory.create_lumen_design_agent's signature so callers can swap.
+
+    `cancel_requested` (A3, defect R3-D) is the run's cancellation probe: a
+    zero-argument callable answering "has a human asked this run to stop?". It
+    is consulted immediately before every model call, on all three roles, and a
+    True answer raises `TurnCancelled` out of the graph. `None` — every CLI /
+    fixture / offline path, and the synchronous preview route — keeps the turn
+    uncancellable and byte-identical to before. See `cancellation.py` for why
+    the model call is the only boundary available, and what "cancelled" is
+    therefore allowed to mean.
 
     `scene_checkpoint` (P0.4) is the checkpoint-commit sink: each verified
     authoring round hands it the operation ledger so the caller can make the
@@ -349,11 +385,20 @@ def create_design_deepagent(
         tools.metrics.attach_budget(budget)
         tools.fast_loop_budget = budget
 
+    # A3: passed only when there IS one, so a turn with no probe calls `_instrument` with the
+    # exact pre-A3 argument list — see that function's docstring for why that matters.
+    cancel_kwargs = {} if cancel_requested is None else {"cancel_probe": cancel_requested}
+
     orchestrator_model = _instrument(
-        runtime_config, tools, runtime_config.orchestrator_model, "orchestrator", budget
+        runtime_config,
+        tools,
+        runtime_config.orchestrator_model,
+        "orchestrator",
+        budget,
+        **cancel_kwargs,
     )
     author_model = _instrument(
-        runtime_config, tools, runtime_config.author_model, "author", budget
+        runtime_config, tools, runtime_config.author_model, "author", budget, **cancel_kwargs
     )
     # The reviewer's model is built even when R3 quarantines the subagent below:
     # construction costs nothing (a thin client object, no network), the web
@@ -361,7 +406,12 @@ def create_design_deepagent(
     # REGISTERED with run_metrics — so a quarantined run reports the reviewer at
     # zero calls rather than omitting it, which is the fact worth seeing.
     reviewer_model = _instrument(
-        runtime_config, tools, runtime_config.reviewer_model, "reviewer", budget
+        runtime_config,
+        tools,
+        runtime_config.reviewer_model,
+        "reviewer",
+        budget,
+        **cancel_kwargs,
     )
 
     view = make_view_tool(tools)
@@ -539,58 +589,110 @@ def create_design_deepagent(
 # --- runner (§7) ------------------------------------------------------------
 
 
-def _finalize_on_budget_exhausted(tools: LumenDesignTools, breach: BudgetExhausted) -> dict:
-    """Fast loop §5.6: stop cleanly and finalize the best state HONESTLY.
+def _finalize_interrupted_run(
+    tools: LumenDesignTools,
+    *,
+    gap_summary: str,
+    gap_detail: str,
+    stop_reason: str,
+    headline: str,
+) -> dict:
+    """THE graceful stop. One body, shared by every reason a turn is halted early.
 
-    Three things the spec demands of this path, in order:
+    Extracted at A3 (defect R3-D) from `_finalize_on_budget_exhausted`, which was
+    the only caller when the budget backstop was the only thing that could stop a
+    run. Cancellation is now the second, and it must land the *same* guarantees
+    rather than a look-alike of them — so the two callers below differ only in
+    what they SAY, never in what they do.
+
+    Three things the fast loop §5.6 spec demands of this path, in order:
 
     1. NEVER DISCARD WORK. The 20m42s baseline died on a quota 403 at finalize
        and threw away a fully valid scene, because the only write was
        save-on-finalize. P0.4 changed that: every accepted round is already a
-       document version, so what survives a budget stop survives without this
+       document version, so what survives an early stop survives without this
        function doing anything clever. What this function must not do is
        overwrite that with a `failed` verdict when a real draft stands.
     2. NEVER FABRICATE. A run that never authored anything gets `failed`. A run
        whose scene has nodes gets `completed_with_warnings` and says exactly
        what was cut short. Neither is ever `accepted` — nothing accepted this.
-    3. RECORD THE GAP. One `record_gap` naming the ceiling that was hit and what
+    3. RECORD THE GAP. One `record_gap` naming what stopped the run and what
        remained, so the honest incompleteness is in the ledger the editor reads
        and not only in a log line.
     """
     try:
         tools.record_gap(
             # `agent_protocol` is the GapArea for "the loop itself stopped the
-            # work" — the enum has no budget member and inventing a label would
-            # only earn a "[reported area: …]" prefix from `_coerce_gap_area`.
+            # work" — the enum has no budget or cancellation member and inventing
+            # a label would only earn a "[reported area: …]" prefix from
+            # `_coerce_gap_area`.
             "agent_protocol",
-            f"run stopped by the {breach.kind} budget before the design was accepted",
-            (
-                f"{breach.kind} budget: limit {breach.limit}, observed "
-                f"{breach.observed}. Fast loop §5.6 stops the run at the ceiling "
-                "rather than grinding past it. Any round already accepted was "
-                "checkpointed to the document and stands; the round in flight did "
-                "not complete."
-            ),
+            gap_summary,
+            gap_detail,
         )
     except Exception as error:  # noqa: BLE001 - the gap must not block the finalize
         logger.warning(
-            "budget_gap_record_failed", error=f"{type(error).__name__}: {error}"
+            "interrupted_gap_record_failed",
+            stop_reason=stop_reason,
+            error=f"{type(error).__name__}: {error}",
         )
 
     has_content = bool((tools.scene or {}).get("nodes"))
     status = "completed_with_warnings" if has_content else "failed"
-    summary = (
-        f"Stopped at the {breach.kind} budget ({breach.limit:g} allowed, "
-        f"{breach.observed:g} observed) before the design was accepted. "
-        + (
-            "A draft stands and every accepted round was already saved to the "
-            "document; what remains is recorded as a gap."
-            if has_content
-            else "Nothing had been authored yet, so there is no draft to keep."
-        )
+    summary = headline + (
+        "A draft stands and every accepted round was already saved to the "
+        "document; what remains is recorded as a gap."
+        if has_content
+        else "Nothing had been authored yet, so there is no draft to keep."
     )
-    raw = tools.finalize_run(status, f"budget_exhausted_{breach.kind}", summary)
+    raw = tools.finalize_run(status, stop_reason, summary)
     return json.loads(raw)
+
+
+def _finalize_on_budget_exhausted(tools: LumenDesignTools, breach: BudgetExhausted) -> dict:
+    """Fast loop §5.6: the BACKSTOP's honest stop. Wording only — see the shared body above."""
+    return _finalize_interrupted_run(
+        tools,
+        gap_summary=(
+            f"run stopped by the {breach.kind} budget before the design was accepted"
+        ),
+        gap_detail=(
+            f"{breach.kind} budget: limit {breach.limit}, observed "
+            f"{breach.observed}. Fast loop §5.6 stops the run at the ceiling "
+            "rather than grinding past it. Any round already accepted was "
+            "checkpointed to the document and stands; the round in flight did "
+            "not complete."
+        ),
+        stop_reason=f"budget_exhausted_{breach.kind}",
+        headline=(
+            f"Stopped at the {breach.kind} budget ({breach.limit:g} allowed, "
+            f"{breach.observed:g} observed) before the design was accepted. "
+        ),
+    )
+
+
+def _finalize_on_cancelled(tools: LumenDesignTools, cancelled: TurnCancelled) -> dict:
+    """A3 (defect R3-D): a human asked, so the run stopped. Wording only — shared body above.
+
+    The founder-visible truth is `stop_reason = "cancelled_by_request"`, and it is deliberately
+    the ONE thing this path says differently from the budget's. A cancelled run is not a failed
+    run and is not a runaway run; conflating any two of those in the durable record is exactly
+    the dishonesty the whole result envelope exists to prevent.
+    """
+    requested = f" (requested at {cancelled.requested_at})" if cancelled.requested_at else ""
+    return _finalize_interrupted_run(
+        tools,
+        gap_summary="run cancelled by request before the design was accepted",
+        gap_detail=(
+            f"A human asked this turn to stop{requested}, and it stopped at the next "
+            "model-call boundary rather than running to completion. Any round already "
+            "accepted was checkpointed to the document and stands; the round in flight did "
+            "not complete. Nothing here says the design was wrong — only that it was not "
+            "finished."
+        ),
+        stop_reason=CANCELLED_STOP_REASON,
+        headline=f"Cancelled by request{requested} before the design was accepted. ",
+    )
 
 
 
@@ -604,6 +706,7 @@ def run_deepagent_turn(
     checkpointer: Any = None,
     thread_id: str | None = None,
     scene_checkpoint=None,
+    cancel_requested=None,
 ) -> tuple[dict, LumenDesignTools]:
     """Create + invoke + guarantee an honest finalize payload.
 
@@ -624,6 +727,11 @@ def run_deepagent_turn(
 
     `scene_checkpoint` (P0.4) rides through to the substrate's checkpoint-commit
     seam — see `create_design_deepagent`.
+
+    `cancel_requested` (A3, defect R3-D) is the run's cancellation probe. Supplied
+    by the fleet path, where it reads the run row's durable cancel request; `None`
+    everywhere else. A cancelled turn finalizes through the SAME graceful path the
+    budget backstop uses, with `stop_reason = "cancelled_by_request"`.
     """
     agent, tools = create_design_deepagent(
         prompt,
@@ -633,6 +741,7 @@ def run_deepagent_turn(
         clarification_already_requested=clarification_already_requested,
         checkpointer=checkpointer,
         scene_checkpoint=scene_checkpoint,
+        cancel_requested=cancel_requested,
     )
 
     # Per-run trace substrate (deliverables 2+3): attach THIS run's full-detail
@@ -666,13 +775,40 @@ def run_deepagent_turn(
 
     exception_text: Optional[str] = None
     budget_breach: Optional[BudgetExhausted] = None
+    cancellation: Optional[TurnCancelled] = None
     try:
+        # A3: the boundary BEFORE the first model call. A run cancelled while it sat queued (or
+        # between a lease takeover and its redrive) must not pay for a single call to discover
+        # that; the callback seam can only refuse a call that is already being made, so the graph
+        # is never entered at all in that case. `cancel_requested` is None off the fleet path, so
+        # this is a no-op for every CLI / fixture / preview caller.
+        if cancel_requested is not None and cancel_requested():
+            raise TurnCancelled()
         invoke_turn_graph(
             agent,
             initial_state,
             invoke_config=invoke_config,
             checkpointer=checkpointer,
             thread_id=thread_id,
+        )
+    except TurnCancelled as error:
+        # A3 (defect R3-D). NOT a failure and NOT a runaway — a human asked. Caught above the
+        # generic handler for the same reason BudgetExhausted is: the finalize below has to be
+        # able to say WHY the run ended, and "orchestrator_did_not_finalize" would be a lie
+        # about a run that did exactly what it was told.
+        cancellation = error
+        exception_text = f"{type(error).__name__}: {error}"
+        # `record` is BOTH the file trace and the run's live event stream (see
+        # `LumenDesignTools.record`), so this one call is what an SSE consumer sees the
+        # moment the cancel is honoured — well before the graceful finalize below lands the
+        # terminal `done` frame. `sink_extra` is the only channel that rides the push, which
+        # is why the stop reason is stated there and not only in the trace payload.
+        tools.record(
+            "coordinator",
+            CANCELLED_EVENT,
+            output_summary=str(error)[:500],
+            payload={"stop_reason": CANCELLED_STOP_REASON},
+            sink_extra={"stop_reason": CANCELLED_STOP_REASON},
         )
     except BudgetExhausted as error:
         # Fast loop §5.6. NOT a failure — a deliberate, harness-enforced stop.
@@ -707,6 +843,15 @@ def run_deepagent_turn(
         final_path = tools.trace_dir / "final.json"
         if final_path.exists():
             payload = json.loads(final_path.read_text(encoding="utf-8"))
+            return payload, tools
+
+        # A3: before the budget, because a human's stop outranks a machine's — though the two
+        # are mutually exclusive in practice (the first raise out of the graph wins) and the
+        # `final.json` check above still outranks BOTH: a turn the orchestrator already
+        # finalized is finished, and a cancel that arrived after that is simply too late. It is
+        # honest to say so rather than to rewrite a real result as a cancellation.
+        if cancellation is not None:
+            payload = _finalize_on_cancelled(tools, cancellation)
             return payload, tools
 
         if budget_breach is not None:
