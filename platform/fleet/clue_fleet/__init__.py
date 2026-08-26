@@ -68,6 +68,7 @@ from clue_fleet.queue import (
     DbTaskQueue,
     DbWorkQueue,
     FleetTaskRow,
+    TaskCapability,
     TaskQueue,
     WorkQueue,
     WorkTaskRow,
@@ -92,6 +93,7 @@ from clue_fleet.scheduler import (
     default_tier_priority,
 )
 from clue_fleet.work_worker import (
+    CapabilityGated,
     LeasedWorkWorker,
     WorkContext,
     WorkHandler,
@@ -155,6 +157,7 @@ __all__ = [
     "get_work_lease",
     # task queue
     "DEFAULT_TASK_STALE_AFTER",
+    "TaskCapability",
     "TaskQueue",
     "DbTaskQueue",
     "DbWorkQueue",
@@ -183,6 +186,7 @@ __all__ = [
     "ProjectRunWorkHandler",
     "RunDriver",
     "enqueue_drive",
+    "CapabilityGated",
     "LeasedWorkWorker",
     "WorkContext",
     "WorkHandler",

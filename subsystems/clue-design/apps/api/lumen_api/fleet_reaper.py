@@ -90,6 +90,12 @@ logger = get_logger("lumen_api.fleet_reaper")
 #: grepping for "why did this run fail" gets a single unambiguous answer.
 STRANDED_CODE = "design.stranded"
 
+#: The reconciliation code (R3-B). A row whose backing fleet task is terminal or gone while the
+#: row itself never left ``queued`` was never *stranded* mid-execution — it was orphaned before
+#: execution began — so it gets its own code rather than borrowing ``design.stranded``. An
+#: operator grepping either string gets one unambiguous story about what happened.
+ORPHANED_CODE = "design.task_orphaned"
+
 #: A ``running`` row younger than this is left alone. It is not a correctness knob — every write
 #: is CAS-guarded and the live-lease check is authoritative — but a grace window keeps the reaper
 #: away from the narrow interval in which a worker has claimed a row and not yet landed its first
@@ -179,6 +185,194 @@ async def _reoffer(
         priority=priority,
         reopen_terminal=True,
     )
+
+
+async def reconcile_dispatched_failure(
+    conn: AsyncConnection,
+    *,
+    work_id: UUID,
+    code: str,
+    message: str,
+    lease_generation: Optional[int] = None,
+) -> str:
+    """Fail the design row behind ``work_id`` — the ONE reconciliation both callers use (R3-B).
+
+    Two callers, one policy: the fleet handler's preamble containment (synchronous — the worker
+    that could not run the job says so immediately, under its own lease generation) and the
+    orphan sweeps below (after the fact, judging by task state instead of by a generation).
+
+    It lives here, beside the reaper's other design↔fleet joins, because it *is* one: reading a
+    work id and terminalizing whichever design row owns it needs both DAL twins and — for a run
+    — the terminal stream event, and the handler has no business learning the stream's contract
+    to say "this job died".
+
+    The returned string is the honest outcome, never a bool:
+
+    * ``job_failed`` / ``run_failed`` — the row was terminalized with ``code``.
+    * ``job_refused`` / ``run_refused`` — a row exists but the write was refused: it is already
+      terminal (its real outcome stands) or a newer lease generation owns it (a capable takeover
+      is running it). Both are correct non-actions.
+    * ``unknown_work`` — no design row carries this work id. A poison task; there is nothing to
+      reconcile and nothing is invented.
+    """
+    error: JsonObject = {"code": code, "message": message}
+    job = await design_ingestion.fail_dispatched_job(
+        conn, work_id=work_id, error=error, lease_generation=lease_generation
+    )
+    if job is not None:
+        logger.error(
+            "design_reaper.job_reconciled",
+            job_id=job["job_id"],
+            work_id=str(work_id),
+            workspace_id=job["workspace_id"],
+            code=code,
+        )
+        return "job_failed"
+
+    run = await design_runs.fail_dispatched_run(
+        conn,
+        work_id=work_id,
+        result={"schema_version": 1, "status": "failed", "error": error},
+        lease_generation=lease_generation,
+    )
+    if run is not None:
+        # Same transaction as the result, exactly as the stranded path does it: the editor's SSE
+        # stream settles on the event, so a terminal row with no event is a stream that hangs on
+        # a finished run forever.
+        await run_stream.fenced_emit(
+            conn,
+            workspace_id=run["workspace_id"],
+            run_id=run["run_id"],
+            topic=run_stream.FAILED_TOPIC,
+            payload=run_stream.terminal_payload(
+                "error", {"message": f"{code}: {message}"}, run["result"]
+            ),
+        )
+        logger.error(
+            "design_reaper.run_reconciled",
+            run_id=run["run_id"],
+            work_id=str(work_id),
+            workspace_id=run["workspace_id"],
+            code=code,
+        )
+        return "run_failed"
+
+    if await design_ingestion.get_job_by_work_id(conn, work_id=work_id) is not None:
+        return "job_refused"
+    if await design_runs.get_run_by_work_id(conn, work_id=work_id) is not None:
+        return "run_refused"
+    return "unknown_work"
+
+
+async def _orphan_reason(conn: AsyncConnection, work_id: UUID) -> Optional[str]:
+    """Why this still-``queued`` row is orphaned, or ``None`` when it is simply waiting.
+
+    Deliberately the same judgement as :func:`_is_stranded` — a live lease means someone is
+    driving; a ``queued``/``claimed`` task means a worker is still coming; anything else means
+    the task that was supposed to bring one is terminal or gone. Only the REMEDY differs, and it
+    differs on purpose: a stranded ``running`` row is re-offered once because its work was
+    interrupted mid-flight and may well complete on a retry, whereas an orphaned ``queued`` row's
+    task was already claimed and terminalized by a worker that decided it could not run it. A
+    re-offer would hand the same payload to the same fleet for the same verdict; the honest
+    answer is a failed job with a message that names the reconciliation.
+    """
+    return await _is_stranded(conn, work_id)
+
+
+async def sweep_orphaned_jobs(
+    conn: AsyncConnection, *, stranded_after_s: float = DEFAULT_STRANDED_AFTER_S
+) -> ReaperSweep:
+    """Fail every dispatched ingestion job left ``queued`` behind a dead task (R3-B).
+
+    The backstop for the case the handler's synchronous containment cannot reach: a worker that
+    died outright between claiming the task and reconciling, a row orphaned by a build that
+    predates the containment, or an operator-cancelled task. ``reoffered`` is always 0 — see
+    :func:`_orphan_reason` for why this policy fails rather than re-offers.
+    """
+    considered = skipped_live = skipped_queued = failed = 0
+    for row in await design_ingestion.list_dispatched_queued_jobs(conn):
+        if not _old_enough(row, stranded_after_s):
+            continue
+        considered += 1
+        work_id = UUID(row["work_id"])
+        reason = await _orphan_reason(conn, work_id)
+        if reason is None:
+            skipped_live += 1
+            continue
+        terminal = await design_ingestion.fail_dispatched_job(
+            conn,
+            work_id=work_id,
+            error={
+                "code": ORPHANED_CODE,
+                "message": (
+                    f"the ingestion job's fleet task is {reason.removeprefix('task_')} while the "
+                    "job never left 'queued'; no worker is coming for it"
+                ),
+            },
+        )
+        if terminal is None:
+            skipped_queued += 1
+            continue
+        failed += 1
+        logger.error(
+            "design_reaper.job_orphaned",
+            job_id=row["job_id"],
+            work_id=row["work_id"],
+            workspace_id=row["workspace_id"],
+            kind=row["kind"],
+            reason=reason,
+        )
+    return ReaperSweep(considered, skipped_live, skipped_queued, 0, failed)
+
+
+async def sweep_orphaned_runs(
+    conn: AsyncConnection, *, stranded_after_s: float = DEFAULT_STRANDED_AFTER_S
+) -> ReaperSweep:
+    """The run twin of :func:`sweep_orphaned_jobs` — identical policy, different row."""
+    considered = skipped_live = skipped_queued = failed = 0
+    for row in await design_runs.list_dispatched_queued_runs(conn):
+        if not _old_enough(row, stranded_after_s):
+            continue
+        considered += 1
+        work_id = UUID(row["work_id"])
+        reason = await _orphan_reason(conn, work_id)
+        if reason is None:
+            skipped_live += 1
+            continue
+        message = (
+            f"the design run's fleet task is {reason.removeprefix('task_')} while the run never "
+            "left 'queued'; no worker is coming for it"
+        )
+        terminal = await design_runs.fail_dispatched_run(
+            conn,
+            work_id=work_id,
+            result={
+                "schema_version": 1,
+                "status": "failed",
+                "error": {"code": ORPHANED_CODE, "message": message},
+            },
+        )
+        if terminal is None:
+            skipped_queued += 1
+            continue
+        await run_stream.fenced_emit(
+            conn,
+            workspace_id=row["workspace_id"],
+            run_id=row["run_id"],
+            topic=run_stream.FAILED_TOPIC,
+            payload=run_stream.terminal_payload(
+                "error", {"message": f"{ORPHANED_CODE}: {message}"}, terminal["result"]
+            ),
+        )
+        failed += 1
+        logger.error(
+            "design_reaper.run_orphaned",
+            run_id=row["run_id"],
+            work_id=row["work_id"],
+            workspace_id=row["workspace_id"],
+            reason=reason,
+        )
+    return ReaperSweep(considered, skipped_live, skipped_queued, 0, failed)
 
 
 async def sweep_stranded_runs(
@@ -360,21 +554,31 @@ def _old_enough(row: JsonObject, stranded_after_s: float) -> bool:
 async def run_reaper_pass(
     conn_factory: Callable[[], Any], *, stranded_after_s: float = DEFAULT_STRANDED_AFTER_S
 ) -> ReaperSweep:
-    """Both sweeps in ONE transaction; the combined counts.
+    """All four sweeps in ONE transaction; the combined counts.
 
-    One transaction because the two sweeps read the same ``fleet_task`` / ``work_lease`` rows and
-    a split would let the second see a queue the first had already changed. It is a short,
+    One transaction because the sweeps read the same ``fleet_task`` / ``work_lease`` rows and a
+    split would let a later one see a queue an earlier one had already changed. It is a short,
     read-mostly pass over indexed status predicates — not a long-held lock.
+
+    The ``running`` sweeps go FIRST, and the order is load-bearing: a stranded ``running`` row
+    may be handed back to ``queued`` by its sweep, and the orphan sweeps must not then judge
+    that fresh hand-back as an orphan. They cannot — the hand-back re-enqueues the task to
+    ``queued`` in the same transaction, which reads as healthy — but relying on evaluation order
+    for that would be luck, so the deliberate order is stated rather than assumed.
     """
     async with conn_factory() as conn:
-        runs = await sweep_stranded_runs(conn, stranded_after_s=stranded_after_s)
-        jobs = await sweep_stranded_jobs(conn, stranded_after_s=stranded_after_s)
+        sweeps = (
+            await sweep_stranded_runs(conn, stranded_after_s=stranded_after_s),
+            await sweep_stranded_jobs(conn, stranded_after_s=stranded_after_s),
+            await sweep_orphaned_runs(conn, stranded_after_s=stranded_after_s),
+            await sweep_orphaned_jobs(conn, stranded_after_s=stranded_after_s),
+        )
     return ReaperSweep(
-        considered=runs.considered + jobs.considered,
-        skipped_live=runs.skipped_live + jobs.skipped_live,
-        skipped_queued=runs.skipped_queued + jobs.skipped_queued,
-        reoffered=runs.reoffered + jobs.reoffered,
-        failed=runs.failed + jobs.failed,
+        considered=sum(sweep.considered for sweep in sweeps),
+        skipped_live=sum(sweep.skipped_live for sweep in sweeps),
+        skipped_queued=sum(sweep.skipped_queued for sweep in sweeps),
+        reoffered=sum(sweep.reoffered for sweep in sweeps),
+        failed=sum(sweep.failed for sweep in sweeps),
     )
 
 
@@ -448,12 +652,16 @@ async def stop_reaper(task: Optional["asyncio.Task[None]"]) -> None:
 __all__: List[str] = [
     "DEFAULT_STRANDED_AFTER_S",
     "MAX_REOFFERS",
+    "ORPHANED_CODE",
     "STRANDED_CODE",
     "ReaperSweep",
     "reaper_loop",
+    "reconcile_dispatched_failure",
     "run_reaper_pass",
     "start_reaper",
     "stop_reaper",
+    "sweep_orphaned_jobs",
+    "sweep_orphaned_runs",
     "sweep_stranded_jobs",
     "sweep_stranded_runs",
 ]

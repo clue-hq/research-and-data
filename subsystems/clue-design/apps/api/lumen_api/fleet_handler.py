@@ -55,15 +55,17 @@ from __future__ import annotations
 import asyncio
 import contextlib
 from dataclasses import dataclass
-from typing import Any, Dict, Optional
+from typing import Any, Callable, Dict, Optional
 from uuid import UUID
 
 from clue_design.envelopes import DesignIngestionEnvelope, DesignTurnEnvelope
-from clue_design.enums import DesignRunKind
+from clue_design.enums import DesignIngestionKind, DesignRunKind
 from clue_design.errors import DesignJobFencedError, DesignRunFencedError
 from clue_fleet.enums import FleetTaskKind
+from clue_fleet.queue import TaskCapability
 from clue_fleet.work_worker import WorkContext, WorkResult
 from lumen_ingestion.jobs import IngestionJobStore
+from py_lumen_config import settings
 from py_lumen_obs import get_logger
 from pydantic import TypeAdapter, ValidationError
 
@@ -76,6 +78,42 @@ logger = get_logger("lumen_api.fleet_handler")
 
 #: One parse of the stored envelope, through the tagged union — never a raw dict lookup.
 _ENVELOPE = TypeAdapter(DesignTurnEnvelope | DesignIngestionEnvelope)
+
+#: The envelope field a ``design_job`` payload uses to name its ingestion lane. Named here
+#: because the claim-time capability filter must read it as a raw payload key — the filter runs
+#: in SQL, before anything is claimed, and therefore before there is anything to parse.
+_INGESTION_KIND_FIELD = "ingestion_kind"
+
+#: Ingestion lanes gated behind a deployment flag: lane -> "is it on in this process?".
+#: A lane absent from this map is runnable whenever the build contains it.
+_FLAGGED_INGESTION_KINDS: Dict[str, Callable[[], bool]] = {
+    DesignIngestionKind.AD_ASSETS.value: lambda: settings.lumen_brand_ad_assets,
+}
+
+
+def runnable_ingestion_kinds() -> frozenset[str]:
+    """Which ``design_ingestion_kind`` values THIS process can actually execute (R3-B).
+
+    Two independent reasons a lane is absent, and the first is the one that matters:
+
+    * **The build does not contain it.** The set starts from ``DesignIngestionKind``'s own
+      members, so a worker running older code simply has no member for a lane added after it
+      was built — it cannot name the lane, so it cannot claim the lane. That is the whole
+      mechanism behind the stale-worker guarantee, and it needs no version negotiation, no
+      registry handshake, and no maintenance: a capability list can only ever be built out of
+      what the process knows.
+    * **A deployment flag it needs is off.** ``ad_assets`` needs ``LUMEN_BRAND_AD_ASSETS``;
+      with it off, ``lumen_ingestion.ad_library.onboarding`` refuses the job outright, so
+      claiming one could only ever produce a failure.
+
+    Read live rather than cached, because the flag is a deployment property and a worker should
+    claim under the configuration it would execute under.
+    """
+    kinds = {kind.value for kind in DesignIngestionKind}
+    for kind, is_enabled in _FLAGGED_INGESTION_KINDS.items():
+        if not is_enabled():
+            kinds.discard(kind)
+    return frozenset(kinds)
 
 
 @dataclass(frozen=True)
@@ -136,7 +174,72 @@ class DesignJobWorkHandler:
         self._host_provider = host_provider if host_provider is not None else DesignTurnHost
         self._checkpointer_factory = checkpointer_factory
 
+    @property
+    def task_capabilities(self) -> "tuple[TaskCapability, ...]":
+        """What this process can run within ``design_job`` (``clue_fleet.CapabilityGated``).
+
+        ONE constraint, on the ingestion discriminant. Turn payloads carry no
+        ``ingestion_kind``, so the constraint does not apply to them and every worker that
+        registers this handler still claims every turn — which is right: a turn's runnability
+        does not vary by build the way an ingestion lane's does.
+
+        This is the R3-B fix's load-bearing half. Before it, a two-day-old detached worker with
+        ``LUMEN_BRAND_AD_ASSETS`` unset claimed an ``ad_assets`` ingestion, failed it in half a
+        second, and — because two workers race for every design task — decided at random whether
+        lane onboarding worked at all. Now the capable worker is the only one the row is even
+        visible to.
+        """
+        return (
+            TaskCapability(field=_INGESTION_KIND_FIELD, supported=runnable_ingestion_kinds()),
+        )
+
     async def handle(self, context: WorkContext) -> WorkResult:
+        """Execute one design job, and NEVER raise past this point (R3-B).
+
+        Round C's in-handler containment covered exceptions out of the *executor* — everything
+        after the claim. What it did not cover was its own preamble: parsing the envelope, the
+        work-id check, and the claim read itself all run BEFORE the design row moves out of
+        ``queued``, and a raise there escaped into
+        :meth:`clue_fleet.LeasedWorkWorker._run_task`, whose ``except Exception`` is fleet-plane
+        only — it marks the TASK failed and has no idea a design row exists. The row therefore
+        stayed ``queued`` with ``error_json`` NULL forever. That is the exact nine-minute
+        never-ending job the W5 acceptance walk watched.
+
+        So the preamble is contained too, and by work id rather than by envelope: the work id is
+        the one identifier that survives an envelope that will not parse.
+        """
+        try:
+            return await self._handle(context)
+        except Exception as error:
+            return await self._contain_preamble_failure(context, error)
+
+    async def _contain_preamble_failure(
+        self, context: WorkContext, error: Exception
+    ) -> WorkResult:
+        """Terminalize the design row this task owns, then report honestly."""
+        logger.error(
+            "design_job.preamble_error",
+            work_id=str(context.work_id),
+            worker_id=context.worker_id,
+            lease_generation=int(context.lease_generation),
+            exc_info=error,
+        )
+        outcome = await asyncio.to_thread(_reconcile_dispatched_failure, context, error)
+        logger.warning(
+            "design_job.preamble_reconciled",
+            work_id=str(context.work_id),
+            reconciliation=outcome,
+        )
+        return WorkResult(
+            outcome="preamble_error",
+            references={
+                "work_id": str(context.work_id),
+                "error": str(error),
+                "reconciliation": outcome,
+            },
+        )
+
+    async def _handle(self, context: WorkContext) -> WorkResult:
         envelope = self._parse(context)
         if UUID(str(context.work_id)) != envelope.work_id:
             raise DesignTurnJobError("design work payload widens the leased work id")
@@ -320,6 +423,42 @@ def _claim(envelope: Any, worker_id: str, lease_generation: int) -> Optional[Jso
         )
     except NotFoundError:
         return None
+
+
+def _reconcile_dispatched_failure(context: WorkContext, error: Exception) -> str:
+    """Fail the design row behind this WORK ID, off the event loop. Returns what happened.
+
+    Keyed on the work id and nothing else, because the failure this repairs may be the envelope
+    itself refusing to parse — in which case there is no ``job_id``/``run_id`` to key on, and the
+    work id on the task is the only identifier left. It is enough: both design tables carry it
+    uniquely, which is what ``get_job_by_work_id`` / ``get_run_by_work_id`` already exploit.
+
+    Never raises. A reconciliation that explodes inside the handler's own error path would put
+    the process straight back into the fleet-plane ``except`` this exists to keep it out of; the
+    honest answer is a reported outcome, and the reaper's orphan sweep as the backstop.
+    """
+    from .fleet_reaper import reconcile_dispatched_failure
+
+    try:
+        return str(
+            _fleet_plane_bridge()._run(
+                lambda conn: reconcile_dispatched_failure(
+                    conn,
+                    work_id=UUID(str(context.work_id)),
+                    code="design_job.preamble_error",
+                    message=f"{type(error).__name__}: {error}",
+                    lease_generation=int(context.lease_generation),
+                )
+            )
+        )
+    except Exception:
+        logger.error(
+            "design_job.reconciliation_failed",
+            work_id=str(context.work_id),
+            detail="the design row could not be terminalized; the reaper must recover it",
+            exc_info=True,
+        )
+        return "unreconciled"
 
 
 def _terminalize_failed(envelope: Any, generation: int, error: BaseException) -> bool:

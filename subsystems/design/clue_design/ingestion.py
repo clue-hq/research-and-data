@@ -546,6 +546,95 @@ async def reoffer_stranded_job(
     return None if row is None else _job_execution_from_row(row)
 
 
+async def list_dispatched_queued_jobs(conn: AsyncConnection) -> list[JsonObject]:
+    """Every fleet-DISPATCHED job still ``queued``, across all workspaces — reaper input (R3-B).
+
+    The twin of :func:`list_dispatched_running_jobs`, and it exists because ``running`` is not
+    the only status a job can be abandoned in. A worker that fails *before* the claim CAS — the
+    envelope will not parse in this build, the claim read itself faults — leaves the job exactly
+    where the route left it, ``queued`` with ``error_json`` NULL, while its fleet task ends
+    terminally FAILED. Nothing then re-offers the task and nothing fails the job, so a client
+    polling the documented endpoint waits on a job that died in half a second. The W5 acceptance
+    walk watched one such row for nine minutes.
+
+    Same two honesty filters as the running twin: ``work_id IS NOT NULL`` (a job never offered
+    to the fleet has no task to be judged against) and no staged request in the result.
+    """
+    rows = (
+        await conn.execute(
+            text(
+                "SELECT job_id, workspace_id, kind, work_id, leased_by, lease_generation,"
+                "       leased_at, reoffer_count, updated_at"
+                " FROM design_ingestion_job"
+                " WHERE status = 'queued' AND work_id IS NOT NULL"
+                " ORDER BY updated_at ASC, job_id ASC"
+            )
+        )
+    ).fetchall()
+    return [
+        {
+            "job_id": row.job_id,
+            "workspace_id": row.workspace_id,
+            "kind": row.kind,
+            "work_id": str(row.work_id),
+            "leased_by": row.leased_by,
+            "lease_generation": row.lease_generation,
+            "leased_at": iso(row.leased_at),
+            "reoffer_count": row.reoffer_count,
+            "updated_at": iso(row.updated_at),
+        }
+        for row in rows
+    ]
+
+
+async def fail_dispatched_job(
+    conn: AsyncConnection,
+    *,
+    work_id: UUID,
+    error: JsonObject,
+    lease_generation: int | None = None,
+) -> JsonObject | None:
+    """Terminalize a dispatched job ``failed`` from the FLEET plane, keyed on work id (R3-B).
+
+    The reconciliation write. Unlike :func:`fail` it takes no workspace and no job id — the
+    caller is a worker or a sweep that holds a work id and nothing else — and unlike
+    :func:`fail_stranded_job` it accepts a ``queued`` row as well as a ``running`` one, because
+    the defect it repairs is precisely a job that never left ``queued`` while its task died.
+
+    ``None`` means the write was refused and the caller must not treat the job as failed:
+
+    * the row is already terminal (its real outcome stands — a reconciliation never overwrites
+      one), or
+    * a NEWER lease generation owns it. The fence predicate is the claim CAS's own
+      (``lease_generation IS NULL OR lease_generation <= :gen``), so a worker that could not run
+      this job cannot stamp ``failed`` over the row a capable takeover is already executing.
+      ``lease_generation=None`` skips the fence — the sweep's stance, which judges by task state
+      and live-lease absence instead.
+    """
+    fence = (
+        ""
+        if lease_generation is None
+        else " AND (lease_generation IS NULL OR lease_generation <= :gen)"
+    )
+    params: dict[str, Any] = {"work_id": work_id, "error": dump_json(error)}
+    if lease_generation is not None:
+        params["gen"] = lease_generation
+    row = (
+        await conn.execute(
+            text(
+                "UPDATE design_ingestion_job"
+                " SET status = CAST('failed' AS design_ingestion_status),"
+                "     error_json = CAST(:error AS jsonb), updated_at = now()"
+                " WHERE work_id = :work_id AND status IN ('queued', 'running')"
+                + fence
+                + " RETURNING *"
+            ),
+            params,
+        )
+    ).first()
+    return None if row is None else _job_execution_from_row(row)
+
+
 async def fail_stranded_job(
     conn: AsyncConnection, *, work_id: UUID, error: JsonObject
 ) -> JsonObject | None:
