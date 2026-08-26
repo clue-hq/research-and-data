@@ -185,6 +185,13 @@ def _onboard(
         advertiser_name=advertiser_name,
         resolver=identity_resolver,
     )
+    # KNOWN GAP, recorded rather than papered over: if the ad library then raises (bad
+    # credentials, an outage), this job ends `failed` with an `error_json` and NO evidence at
+    # all — `run_ingestion_job` only persists evidence on the success path — so the page it was
+    # about to read is lost, which is the R3-A question at its least answerable. Fixing it means
+    # teaching `store.fail` to carry partial evidence, which is machinery shared by all four
+    # ingestion kinds and is not this change's to alter. Stamping the block early here would
+    # look like a fix and would not be one, so it is deliberately not done.
 
     # --- step 1: harvest, filter, dedupe, custody -------------------------------------------
     reporter("Reading your published ads…", 0.1)
@@ -201,6 +208,9 @@ def _onboard(
         date_filter=request.get("date_filter"),
     )
     observed_page_id = (pages[0].page_id if pages else None) or harvest_page_id
+    # Now the page the library ACTUALLY answered with can be stamped alongside the one that was
+    # asked for. On the fallback path those two differ, and comparing them is how R3-A was
+    # eventually found at all.
     resolution = replace(resolution, observed_page_id=observed_page_id)
     evidence["resolution"] = resolution.to_json()
 

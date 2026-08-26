@@ -18,6 +18,7 @@ suites can never drift on what a seeded brand kit or a stubbed image model is.
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from json import dumps as json_dumps
 from pathlib import Path
 from typing import Any
 
@@ -769,6 +770,47 @@ def test_the_route_accepts_the_override_under_either_spelling(
     )
     assert ambiguous.status_code == 422
     assert ambiguous.json()["detail"]["code"] == "ad_assets.advertiser_ambiguous"
+
+
+def test_a_harvest_that_dies_in_the_ad_library_loses_its_resolution_block(
+    tmp_path: Path, lane_on: None
+) -> None:
+    """A KNOWN GAP, pinned so it is a decision on record rather than a surprise later.
+
+    `run_ingestion_job` persists evidence only on the success path — `store.fail` writes an
+    `error_json` and nothing else — so a job that dies fetching keeps no resolution block, and
+    the page it was about to read is not recoverable from the job row. That is the R3-A question
+    ("which advertiser was this even about?") at its least answerable.
+
+    It is NOT fixed here on purpose. The fix is to teach `store.fail` to carry partial evidence,
+    which is machinery shared by all four ingestion kinds, and widening a shared failure contract
+    is not this change's call to make. This test exists so that when someone does make it, the
+    behaviour flips loudly instead of silently.
+    """
+    from lumen_ingestion.ad_library.provider import AdLibraryError
+
+    class _BrokenLibrary:
+        name = "stub-library"
+
+        def fetch_page(self, **kwargs: Any) -> AdLibraryPage:
+            raise AdLibraryError("ad_library.http_error", "HTTP 503: the vendor is on fire")
+
+    client = _client(tmp_path)
+    brand_kit_id = _seed_brand_kit(client)
+
+    job = _run(
+        client,
+        tmp_path,
+        request_body=_body(brand_kit_id),
+        provider=_BrokenLibrary(),
+        identity_resolver=_StubIdentityResolver(),
+    )
+
+    assert job["status"] == "failed", "a vendor outage IS a job failure"
+    assert "the vendor is on fire" in json_dumps(job["error"])
+    # The gap. Flip this to an assertion that the block SURVIVES once `store.fail` carries
+    # partial evidence.
+    assert job["resolution"] is None
 
 
 # --- the honest empty is still honest -------------------------------------------------------------
