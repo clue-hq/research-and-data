@@ -54,7 +54,11 @@ C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
     # as PD-part3 P3.4's v24, re-versioned onto the v35 chain at the integration merge). v35
     # preserves the frozen v34 surface and gives Account-focused turns the exact pinned
     # field/source vocabulary needed to launch profiling without model-invented field keys.
-    AgentRole.HEAD_OF_ABM: "v39",
+    # v40 (2026-08-27, demo-night model correction): v39 with ``model_id: x-ai/grok-4.6`` —
+    # the founder's 2026-08-23 grok-everywhere directive finally applied to the conversation
+    # profile (gpt-5.6-terra returned plain-text stops under tool_choice=required and killed
+    # turns as ``missing_finalize``).
+    AgentRole.HEAD_OF_ABM: "v40",
     AgentRole.RESEARCH: "v7",
     AgentRole.CONTENT_DRAFTER: "v5",
     AgentRole.REVIEWER: "v5",
