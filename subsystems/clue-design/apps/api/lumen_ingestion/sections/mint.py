@@ -40,6 +40,7 @@ from urllib.parse import unquote_to_bytes, urljoin
 
 import tinycss2
 from lumen_api.fragments import (
+    FRAGMENT_STATUS_DORMANT,
     WEB_FRAGMENT_SOURCE_KEY,
     FragmentRefused,
     asset_url_digest,
@@ -54,6 +55,7 @@ from selectolax.parser import HTMLParser as SectionParser
 from tinycss2 import ast
 
 from .cssmatch import rules_for_subtree
+from .deadheight import DeadHeight, detect_dead_height
 from .segment import SectionRecord, SectionSegmentation, resolve_section
 from .slotdetect import detect_slots
 
@@ -91,6 +93,13 @@ MINT_CAPPED_CODE = "LUMI0532"
 #: (the id is its content address); the label or the provenance is not, and first writer keeps
 #: them — so the divergence is stated rather than lost.
 MINT_METADATA_DIVERGED_CODE = "LUMI0533"
+#: A section was minted and born ``degraded``: its captured band is mostly artificial scroll
+#: height (F3.0, D-F6). Loud, because it is the repair ladder's trigger — a human or an agent has
+#: to do something about this clone before it goes on a page.
+MINT_DEGRADED_CODE = "LUMI0534"
+#: A section the source site hides was minted ``dormant`` (F3.0, D-F8). Informational: it is off
+#: the page and out of discovery by construction, and it is waiting in the inspector for a human.
+MINT_DORMANT_CODE = "LUMI0535"
 
 _PREVIEW_MEDIA_TYPE = "image/png"
 _DEFAULT_INLINE_MEDIA_TYPE = "application/octet-stream"
@@ -347,12 +356,21 @@ def crop_extent(
 
     Everything else with no geometry gets ``None``. Guessing a middle section's extent would
     show a picture of its neighbour, and a picker that lies is worse than one with a gap.
+
+    **A hidden-on-source section is never inferred** (F3.0). It was not rendered, so the pixels
+    above the first band or below the last belong to the sections that WERE — and here that lie
+    would cost more than a bad thumbnail: D-F8 makes a usable preview the condition on which a
+    human activates a dormant clone, so a borrowed picture would be the evidence the decision is
+    made from. A dormant section with no preview is honestly un-activatable until a capture can
+    render it; a dormant section showing somebody else's picture is a trap.
     """
     geometry = record.geometry
     if geometry is not None and geometry.bottom_px > geometry.top_px:
         return CropExtent(
             top_px=geometry.top_px, bottom_px=geometry.bottom_px, basis=geometry.basis
         )
+    if record.hidden_on_source:
+        return None
 
     measured = [
         section.geometry
@@ -432,6 +450,9 @@ class MintedSection:
     preview_digest: str | None
     preview_basis: str | None
     rules_kept: int
+    degraded: bool = False
+    degraded_reason: str | None = None
+    hidden_on_source: bool = False
 
     def as_job_ref(self) -> dict[str, Any]:
         """The bounded shape recorded on the ingestion job's evidence payload."""
@@ -443,6 +464,11 @@ class MintedSection:
             "status": self.status,
             "preview_digest": self.preview_digest,
             "slots": list(self.slot_keys),
+            # Two facts a human reading the job needs BEFORE they open anything: which clones
+            # arrived broken (F3.0's repair queue) and which arrived asleep (F3.0's dormant ones).
+            "degraded": self.degraded,
+            "degraded_reason": self.degraded_reason,
+            "hidden_on_source": self.hidden_on_source,
         }
 
 
@@ -470,6 +496,11 @@ def mint_sections(
     The two durable seams are injected — ``register_bytes(data, media_type) -> digest`` and the
     F1 creation seam — so this driver is a pure function of its inputs plus two calls, and the
     whole pipeline can be exercised without a database. The pipeline stage passes the real ones.
+
+    **The page's hidden sections are minted too** (F3.0, D-F8), after the visible ones and out of
+    the same budget: they go through this identical path — extract, harvest, sanitize, scope,
+    detect slots — and differ only in being born ``dormant``. The order matters when the budget
+    runs out: a cap should cost the sections nobody can see before it costs the page.
     """
     minted: list[MintedSection] = []
     diagnostics: list[dict[str, Any]] = []
@@ -480,7 +511,7 @@ def mint_sections(
     tree = SectionParser(html or "")
 
     budget = max(0, limit)
-    for record in segmentation.sections:
+    for record in tuple(segmentation.sections) + tuple(segmentation.hidden_sections):
         if len(minted) >= budget:
             break
         try:
@@ -540,7 +571,8 @@ def mint_sections(
         if result is not None:
             minted.append(result)
 
-    remaining = len(segmentation.sections) - len(minted) - _refused_count(diagnostics)
+    offered = len(segmentation.sections) + len(segmentation.hidden_sections)
+    remaining = offered - len(minted) - _refused_count(diagnostics)
     if remaining > 0 and len(minted) >= budget:
         diagnostics.append(
             _diag(
@@ -627,6 +659,24 @@ def _mint_one(
     detected = detect_slots(sanitized.html)
 
     preview, extent = _preview(segmentation, record, screenshot, diagnostics)
+    dead = _dead_height(segmentation, record, preview, extent, diagnostics)
+    # Born dormant, never minted ``draft`` and then demoted: the window between the two is
+    # exactly long enough for a kit approval to release a section the site does not show.
+    status = FRAGMENT_STATUS_DORMANT if record.hidden_on_source else None
+    if record.hidden_on_source:
+        diagnostics.append(
+            _diag(
+                MINT_DORMANT_CODE,
+                f"section {record.index} ({record.role}) of {segmentation.page_url} is hidden on "
+                "the source site, so it was cloned and minted DORMANT: it is off any generated "
+                "page, out of default agent discovery, and waiting for a human to activate it",
+                severity="info",
+                section_index=record.index,
+                role=record.role,
+                evidence=list(record.hidden_evidence),
+            )
+        )
+
     row, artifact = create_fragment(
         html=sanitized.html,
         css=matched.css,
@@ -639,8 +689,11 @@ def _mint_one(
         source_kit_version=source_kit_version,
         preview=preview,
         preview_media_type=_PREVIEW_MEDIA_TYPE,
-        provenance=_provenance(segmentation, record, matched, detected, harvest, extent),
+        provenance=_provenance(segmentation, record, matched, detected, harvest, extent, dead),
         prelude_reference=PRELUDE_REFERENCE_STRIP,
+        status=status,
+        degraded=dead is not None,
+        degraded_reason=dead.reason if dead is not None else None,
     )
     _note_metadata_divergence(row, record, segmentation, diagnostics)
 
@@ -656,7 +709,55 @@ def _mint_one(
         preview_digest=row.get("preview_digest"),
         preview_basis=extent.basis if extent is not None else None,
         rules_kept=matched.rules_kept,
+        degraded=bool(row.get("degraded")),
+        degraded_reason=row.get("degraded_reason"),
+        hidden_on_source=record.hidden_on_source,
     )
+
+
+def _dead_height(
+    segmentation: SectionSegmentation,
+    record: SectionRecord,
+    preview: bytes | None,
+    extent: CropExtent | None,
+    diagnostics: list[dict[str, Any]],
+) -> DeadHeight | None:
+    """Is this section mostly artificial scroll height? (F3.0, D-F6's trigger.)
+
+    Runs on the crop that was ALREADY made for the preview, so noticing costs one image decode
+    and no second opinion about where the section is: the picture judged is the picture a human
+    will see in the picker. A finding is reported loudly — it is the repair ladder's entry
+    condition, and a broken clone that nobody was told about is the exact failure D-F6 names.
+    """
+    finding = detect_dead_height(
+        preview,
+        section_height_px=record.geometry.height_px if record.geometry is not None else None,
+        basis=extent.basis if extent is not None else None,
+    )
+    if finding is None:
+        return None
+    logger.warning(
+        "fragment_mint_dead_height page=%s section=%s role=%s height=%s content_fraction=%.3f",
+        segmentation.page_url,
+        record.index,
+        record.role,
+        finding.section_height_px,
+        finding.content_fraction,
+    )
+    diagnostics.append(
+        _diag(
+            MINT_DEGRADED_CODE,
+            f"section {record.index} ({record.role}) of {segmentation.page_url} was minted "
+            f"DEGRADED: its captured band is {finding.section_height_px:g}px tall and only "
+            f"{finding.content_fraction:.0%} of that shows anything at all, which is dead scroll "
+            "height (a scroll-driven section whose script this clone does not carry). The "
+            "harvested original is kept as evidence; the repair ladder replaces it",
+            section_index=record.index,
+            role=record.role,
+            **finding.as_provenance(),
+        )
+    )
+    return finding
 
 
 #: What counts as something a visitor can SEE, when the section has no words.
@@ -731,11 +832,17 @@ def _provenance(
     detected: Any,
     harvest: ReferenceHarvest,
     extent: CropExtent | None,
+    dead: DeadHeight | None = None,
 ) -> dict[str, Any]:
     """Everything needed to answer "where did this fragment come from, and how sure were we?".
 
     Bounded on purpose: the evidence list is Task 11's own (a handful of entries), the notes are
     capped by their producers, and no markup, CSS or byte string goes in here. This is a row.
+
+    The two F3.0 entries are the *why* behind the two columns beside them. ``degraded_reason`` on
+    the row is a code; ``degraded`` here is the measurement that produced it, so a repair can be
+    argued with rather than merely obeyed. ``hidden_on_source`` is the "hidden on source site"
+    provenance D-F8 asks for, in the words the segmenter used when it decided.
     """
     return {
         "snapshot_id": segmentation.snapshot_id,
@@ -777,6 +884,12 @@ def _provenance(
         "slots": list(detected.keys),
         "slot_notes": list(detected.notes),
         "reference_conflicts": list(harvest.conflicts),
+        "degraded": dead.as_provenance() if dead is not None else None,
+        "hidden_on_source": (
+            {"hidden": True, "evidence": list(record.hidden_evidence)}
+            if record.hidden_on_source
+            else None
+        ),
     }
 
 
@@ -856,6 +969,8 @@ def make_asset_rehoster(blobs: Any) -> Callable[[bytes, str], str]:
 __all__ = [
     "MAX_PREVIEW_WIDTH",
     "MINT_CAPPED_CODE",
+    "MINT_DEGRADED_CODE",
+    "MINT_DORMANT_CODE",
     "MINT_FAILED_CODE",
     "MINT_METADATA_DIVERGED_CODE",
     "MINT_NO_PREVIEW_CODE",

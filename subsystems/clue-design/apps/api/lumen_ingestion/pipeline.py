@@ -1247,9 +1247,27 @@ class _SnapshotView:
         self.page_url = getattr(snapshot, "requested_url", "") or ""
         self.snapshot_id = snapshot_id
         self.viewport_width = _viewport_from_geometry(geometry)
-        from .sections.bands import SNAPSHOT_META_BANDS_KEY, bands_for_meta
+        from .sections.bands import (
+            SNAPSHOT_META_BANDS_KEY,
+            SNAPSHOT_META_SKIPPED_KEY,
+            SNAPSHOT_META_TRUNCATED_KEY,
+            bands_for_meta,
+            skipped_for_meta,
+        )
 
-        self.meta = {SNAPSHOT_META_BANDS_KEY: bands_for_meta(geometry)}
+        # PROJECT THE SAME THREE KEYS the persisted snapshot row carries (`site_snapshot.py`),
+        # not just the bands. The skip records are the browser's own answer to "is this hidden?"
+        # — the strongest evidence the segmenter has, both for binding a band sequence and (F3.0)
+        # for deciding a section is hidden on the source site rather than merely class-named. The
+        # live path was reading the row's shape minus that key, so a real ingestion made those
+        # judgements from markup alone while the persisted snapshot beside it held the answer.
+        self.meta = {
+            SNAPSHOT_META_BANDS_KEY: bands_for_meta(geometry),
+            SNAPSHOT_META_SKIPPED_KEY: skipped_for_meta(geometry),
+            SNAPSHOT_META_TRUNCATED_KEY: bool(
+                isinstance(geometry, dict) and geometry.get("truncated")
+            ),
+        }
 
 
 def _viewport_from_geometry(geometry: Any) -> "int | None":

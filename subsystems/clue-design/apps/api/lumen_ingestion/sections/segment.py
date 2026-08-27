@@ -22,6 +22,13 @@ LABEL — a wrong label sends the agent to reuse a testimonial as a security ban
 merely means "we could not name it". An honest refusal costs a label; a confident mistake costs
 a page.
 
+**What the site hides is kept, apart** (F3.0, founder ruling D-F8). A section the page takes out
+of the layout is not part of the page and is not rubbish either: it is a real subtree with real
+copy and real styling that somebody may want back. It comes out in its own collection
+(``hidden_sections``) with the evidence that says why we believe it is hidden, so the page stays
+exactly the page while nothing is thrown away. What still drops is what cannot be minted at all —
+loose content that is not a section, where preserving would mean inventing a subtree.
+
 **Nothing is invented.** No LLM, no network, no DB. A section's y-extent exists only where the
 browser measured it: on a semantic page the probe roots at ``<main>``, so the nav and the footer
 — the two most-cloned sections of all — carry no geometry, and this module says so in a
@@ -103,6 +110,10 @@ NO_SECTIONS_CODE = "LUMI0523"
 UNMEASURED_SECTION_CODE = "LUMI0524"
 #: Flow children dropped as insignificant that nonetheless carried text.
 SKIPPED_CONTENT_CODE = "LUMI0525"
+#: Sections the source site HIDES, preserved rather than dropped (F3.0, founder ruling D-F8).
+#: Informational, not a warning: preserving them is the correct outcome, and the count is what a
+#: human wants in order to go and look at what is now waiting dormant in the inspector.
+HIDDEN_SECTION_CODE = "LUMI0526"
 
 #: How many items any diagnostic spells out in its human line.
 _NAMED_IN_MESSAGE = 8
@@ -281,6 +292,13 @@ class SectionRecord:
     root element (``<html>``) down to this section, which re-resolves to the same node on any
     re-parse of the same html (:func:`resolve_section`). It survives because it names structure
     rather than styling — unlike a class selector, which a page may repeat a dozen times.
+
+    ``hidden_on_source`` marks a section the source site does not show (F3.0, D-F8), and
+    ``hidden_evidence`` says in words why we believe that — the markup token or attribute that
+    takes it out of the layout, plus the MEASUREMENT that corroborates it (the probe's own skip
+    record, or a measured page on which this eligible child got no band). Both halves are always
+    present when the flag is set: a class name alone is a guess about a stylesheet nobody
+    evaluated, and this module never removes a section from the page on a guess.
     """
 
     index: int
@@ -295,17 +313,32 @@ class SectionRecord:
     heading: str | None
     text_preview: str
     evidence: tuple[SectionEvidence, ...]
+    hidden_on_source: bool = False
+    hidden_evidence: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
 class SectionSegmentation:
-    """Everything one page's segmentation pass found, in document order."""
+    """Everything one page's segmentation pass found, in document order.
+
+    ``sections`` is the page as a visitor sees it. ``hidden_sections`` is what the site is
+    holding back — same records, same shape, deliberately a SEPARATE collection rather than a
+    flag inside the first one (F3.0, D-F8). Two reasons, and the second is the load-bearing one:
+    a consumer that means "the page" should get the page without having to remember to filter,
+    and role calling reads its neighbours (a page has one nav, one hero, one footer; the first
+    section and the last carry positional signals), so letting an invisible section into that
+    conversation would let something the site does not show change what the visible page is
+    called. Their ``index`` is nonetheless drawn from one document-order numbering across both,
+    so "where did this sit on the page" survives — which is exactly what the inspector shows and
+    what a human needs in order to decide whether to activate it.
+    """
 
     page_url: str
     snapshot_id: str | None
     viewport_width: int | None
     sections: tuple[SectionRecord, ...]
     diagnostics: tuple[dict[str, Any], ...]
+    hidden_sections: tuple[SectionRecord, ...] = ()
 
     def by_role(self, role: str) -> tuple[SectionRecord, ...]:
         return tuple(section for section in self.sections if section.role == role)
@@ -341,14 +374,21 @@ def segment_page(
     viewport_width: int | None = None,
     snapshot_id: str | None = None,
 ) -> SectionSegmentation:
-    """The pure pass: html + measured bands ⇒ ordered, typed, evidenced sections."""
+    """The pure pass: html + measured bands ⇒ ordered, typed, evidenced sections.
+
+    Two collections come out (F3.0): the page, and what the page hides. See
+    :class:`SectionSegmentation` for why they are separate and why their indices are shared.
+    """
     tree = HTMLParser(html or "")
     diagnostics: list[dict[str, Any]] = []
     candidates, skipped = _page_flow(tree)
+    hidden: list[_Candidate] = []
 
     if candidates:
         _bind_bands(candidates, tuple(bands), diagnostics, tuple(skips))
-        candidates = _section_shaped(candidates, skipped, tuple(skips))
+        candidates, hidden = _section_shaped(candidates, skipped, tuple(skips))
+
+    _call_hidden_roles(hidden)
 
     if not candidates:
         diagnostics.append(
@@ -364,17 +404,32 @@ def segment_page(
             snapshot_id=snapshot_id,
             viewport_width=viewport_width,
             sections=(),
-            diagnostics=tuple(diagnostics) + tuple(_skip_diagnostic(skipped)),
+            hidden_sections=_records(hidden),
+            diagnostics=tuple(diagnostics)
+            + tuple(_hidden_diagnostic(hidden))
+            + tuple(_skip_diagnostic(skipped)),
         )
 
     _assign_geometry(candidates, viewport_width, diagnostics)
     _call_roles(candidates)
 
+    diagnostics.extend(_hidden_diagnostic(hidden))
     diagnostics.extend(_skip_diagnostic(skipped))
 
-    sections = tuple(
+    return SectionSegmentation(
+        page_url=page_url,
+        snapshot_id=snapshot_id,
+        viewport_width=viewport_width,
+        sections=_records(candidates),
+        hidden_sections=_records(hidden),
+        diagnostics=tuple(diagnostics),
+    )
+
+
+def _records(candidates: list[_Candidate]) -> tuple[SectionRecord, ...]:
+    return tuple(
         SectionRecord(
-            index=index,
+            index=candidate.index,
             role=candidate.role,
             confidence=round(candidate.confidence, 3),
             dom_path=candidate.path,
@@ -386,15 +441,10 @@ def segment_page(
             heading=candidate.heading,
             text_preview=candidate.text[:160],
             evidence=tuple(candidate.evidence),
+            hidden_on_source=candidate.hidden_on_source,
+            hidden_evidence=candidate.hidden_evidence,
         )
-        for index, candidate in enumerate(candidates)
-    )
-    return SectionSegmentation(
-        page_url=page_url,
-        snapshot_id=snapshot_id,
-        viewport_width=viewport_width,
-        sections=sections,
-        diagnostics=tuple(diagnostics),
+        for candidate in candidates
     )
 
 
@@ -470,6 +520,11 @@ class _Candidate:
     evidence: list[SectionEvidence] = None  # type: ignore[assignment]
     role: str = OTHER
     confidence: float = OTHER_CONFIDENCE
+    #: Position in the ONE document-order numbering shared by the visible and hidden collections
+    #: (F3.0). Assigned by :func:`_section_shaped`; ``-1`` means "never survived to be a section".
+    index: int = -1
+    hidden_on_source: bool = False
+    hidden_evidence: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if self.evidence is None:
@@ -504,14 +559,24 @@ def _section_shaped(
     candidates: list[_Candidate],
     skipped: list[tuple[str, str]],
     skips: tuple[SkippedChild, ...] = (),
-) -> list[_Candidate]:
-    """Keep the flow children that are SECTIONS; note the loose content that is not.
+) -> tuple[list[_Candidate], list[_Candidate]]:
+    """Split the flow into the page, what the page hides, and loose content that is neither.
 
     A section is something a page could reuse: a container, a sectioning element, or whatever the
     browser measured as a band. A bare ``<h1>`` or ``<p>`` sitting directly in the body — a
     prototype page, a stripped template, a body whose wrapper never rendered — is real content
     and still not a section, because there is nothing there to clone. Dropping it silently would
     overstate coverage, so each one is named in the skip diagnostic.
+
+    **A hidden section is no longer dropped** (F3.0, founder ruling D-F8). It is not part of the
+    page, so it does not go in with the sections; it IS a real subtree of the snapshot with real
+    markup, real copy and real styling, so throwing it away left the one person who wanted it —
+    the marketer whose pricing band the site is currently hiding — with a diagnostic and nothing
+    to point at. It comes out in its own collection, carrying the evidence that says why we
+    believe the site hides it, and minting gives it a dormant fragment.
+
+    What still drops is what genuinely cannot be minted: loose content that is not a section at
+    all. There is no subtree to preserve, so preserving it would mean inventing one.
     """
     # A class token is a GUESS about a stylesheet nobody here evaluated, so it may only remove a
     # a section when a measurement agrees with it. `hidden md:block` is the standard Tailwind
@@ -521,25 +586,63 @@ def _section_shaped(
     # nothing and therefore have no evidence either way.
     bound_any = any(candidate.band is not None for candidate in candidates)
     kept: list[_Candidate] = []
+    hidden: list[_Candidate] = []
+    position = 0
     for candidate in candidates:
-        if candidate.band is None and _is_hidden_by_class(candidate) and (
-            _probe_skipped(candidate, skips)
-            # The browser measured THIS page and this eligible child got no band: it looked and
-            # did not see it. Restricted to the measured root, because a nav or footer outside it
-            # was never eligible, so "no band" says nothing about whether it renders.
-            or (bound_any and candidate.in_measured_root)
-        ):
-            skipped.append((candidate.tag, candidate.text[:80]))
+        evidence = _hidden_evidence(candidate, skips, bound_any=bound_any)
+        if evidence:
+            candidate.hidden_on_source = True
+            candidate.hidden_evidence = evidence
+            candidate.index = position
+            position += 1
+            hidden.append(candidate)
             continue
         if (
             candidate.band is not None
             or candidate.tag in _SECTION_TAGS
             or _element_children(candidate.node)
         ):
+            candidate.index = position
+            position += 1
             kept.append(candidate)
         else:
             skipped.append((candidate.tag, candidate.text[:80]))
-    return kept
+    return kept, hidden
+
+
+def _hidden_evidence(
+    candidate: _Candidate, skips: tuple[SkippedChild, ...], *, bound_any: bool
+) -> tuple[str, ...]:
+    """Why we believe the source site hides this section — or ``()`` when we do not.
+
+    TWO halves, always, and the pairing is the rule rather than a nicety. The markup half says
+    what the element declares about itself; the measured half is what makes it more than a guess
+    about a stylesheet nobody here evaluated. A candidate the browser DID measure is on the page
+    whatever its class list says, so it never reaches here.
+
+    The strings are the human-readable record that rides into the fragment's provenance and, in
+    F3.2, into the inspector's "hidden on source site" card. They are written once, here, so the
+    reason a section is dormant is worded by the thing that decided it.
+    """
+    if candidate.band is not None:
+        return ()
+    markup = _hidden_markup_evidence(candidate)
+    if not markup:
+        return ()
+    if _probe_skipped(candidate, skips):
+        return markup + (
+            "the capture probe walked this page and recorded that it skipped this child as "
+            "hidden",
+        )
+    # The browser measured THIS page and this eligible child got no band: it looked and did not
+    # see it. Restricted to the measured root, because a nav or footer outside it was never
+    # eligible, so "no band" says nothing about whether it renders.
+    if bound_any and candidate.in_measured_root:
+        return markup + (
+            "the browser measured this page and recorded no band for this child, which sat "
+            "inside the measured root and was eligible for one",
+        )
+    return ()
 
 
 def _probe_skipped(candidate: _Candidate, skips: tuple[SkippedChild, ...]) -> bool:
@@ -549,21 +652,60 @@ def _probe_skipped(candidate: _Candidate, skips: tuple[SkippedChild, ...]) -> bo
     )
 
 
-def _is_hidden_by_class(candidate: _Candidate) -> bool:
-    """Does this element say, in its own attributes, that it is not on the page?
+def _hidden_markup_evidence(candidate: _Candidate) -> tuple[str, ...]:
+    """What this element says, in its own attributes, about not being on the page.
 
     Evidence-backed rather than invented: W1's probe records the children it declined to measure
     and WHY, and `hidden` is one of its reasons — this is the same judgement, made from the
     markup for a capture whose probe never got to make it, and overruled by the probe wherever
     the probe spoke.
     """
+    out: list[str] = []
     if (candidate.node.attributes.get("aria-hidden") or "").strip().lower() == "true":
-        return True
+        out.append('the element carries aria-hidden="true"')
     for token in candidate.class_names:
-        lowered = token.lower()
-        if lowered in _HIDDEN_CLASS_TOKENS:
-            return True
-    return False
+        if token.lower() in _HIDDEN_CLASS_TOKENS:
+            out.append(f'the class token "{token}" takes an element out of the layout')
+    return tuple(out)
+
+
+def _is_hidden_by_class(candidate: _Candidate) -> bool:
+    """Does this element declare itself off the page? (the predicate half of the evidence)"""
+    return bool(_hidden_markup_evidence(candidate))
+
+
+def _hidden_diagnostic(hidden: list[_Candidate]) -> list[dict[str, Any]]:
+    """Say what the site is holding back, and that we kept it.
+
+    Deliberately ``info``: under D-F8 preserving a hidden section is the CORRECT outcome, not a
+    degradation of one. The count is what a human acts on — it is the number of things now
+    waiting dormant in the inspector for someone to decide about.
+    """
+    if not hidden:
+        return []
+    return [
+        _diag(
+            HIDDEN_SECTION_CODE,
+            "info",
+            f"{len(hidden)} section(s) the source site hides were preserved rather than dropped "
+            f"({', '.join(candidate.tag for candidate in hidden[:_NAMED_IN_MESSAGE])}); each is "
+            "minted dormant — off the page, out of agent discovery, and activated only by a "
+            "human with a preview in front of them",
+            count=len(hidden),
+            sections=[
+                {
+                    "index": candidate.index,
+                    "tag": candidate.tag,
+                    "element_id": candidate.element_id,
+                    "class_names": list(candidate.class_names),
+                    "heading": candidate.heading,
+                    "text": candidate.text[:80],
+                    "evidence": list(candidate.hidden_evidence),
+                }
+                for candidate in hidden[:_NAMED_IN_MESSAGE]
+            ],
+        )
+    ]
 
 
 def _skip_diagnostic(skipped: list[tuple[str, str]]) -> list[dict[str, Any]]:
@@ -1117,6 +1259,25 @@ def _call_roles(candidates: list[_Candidate]) -> None:
     _enforce_singular_roles(candidates)
 
     for candidate in candidates:
+        candidate.evidence.sort(key=lambda ev: (-ev.weight, ev.signal, ev.role, ev.detail))
+
+
+def _call_hidden_roles(hidden: list[_Candidate]) -> None:
+    """Name a hidden section from what it DECLARES and what it SAYS — never from where it sits.
+
+    A hidden section has no place on the rendered page, so every positional rule is meaningless
+    for it: it is not "the first section" of anything, it has no measured band to be short or
+    tall, and it is not the page's last. Running those rules anyway would manufacture a role out
+    of an accident of markup order.
+
+    It is also kept out of the singular-role argument for the same reason: the page's one nav,
+    one hero and one footer are decided among the sections the page actually has. A dormant
+    section named ``footer`` does not contest the footer a visitor sees.
+    """
+    for candidate in hidden:
+        candidate.evidence.extend(_declared_signals(candidate))
+        candidate.evidence.extend(_content_signals(candidate))
+        candidate.role, candidate.confidence = _resolve(candidate)
         candidate.evidence.sort(key=lambda ev: (-ev.weight, ev.signal, ev.role, ev.detail))
 
 
