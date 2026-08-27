@@ -32,7 +32,14 @@ from clue_design.storage import (
     read_design_bytes,
     register_design_bytes,
 )
-from clue_design.web_fragments import FRAGMENT_STATUSES
+from clue_design.web_fragments import (
+    FRAGMENT_STATUS_DORMANT,
+    FRAGMENT_STATUSES,
+    require_degraded_pair,
+    require_derivable,
+    require_derived_pair,
+    require_known_status,
+)
 from clue_storage import StorageBackend
 
 from ..design_store import DesignStoreBridge
@@ -105,6 +112,11 @@ def create_web_fragment(
     preview_media_type: str = _DEFAULT_PREVIEW_MEDIA_TYPE,
     provenance: Mapping[str, Any] | None = None,
     prelude_reference: str = PRELUDE_REFERENCE_REFUSE,
+    status: str | None = None,
+    degraded: bool = False,
+    degraded_reason: str | None = None,
+    derived_from: str | None = None,
+    derived_reason: str | None = None,
 ) -> tuple[dict[str, Any], FragmentArtifact]:
     """Mint one fragment and give it durable custody. Returns ``(row, artifact)``.
 
@@ -112,12 +124,28 @@ def create_web_fragment(
     or a bad slot key costs nothing but the exception. Once they pass, the payload blob, the
     preview blob and the row land in ONE transaction — a committed row naming bytes that never
     landed would be a dangling artifact reference nothing downstream could tell from a real one.
+
+    **The three F3.0 birth facts** (``status``, the degraded marker, the lineage pair) are stated
+    HERE because this is the only moment they can be: the row is immutable-except-for-judgements
+    from the next line onward. ``status`` lets a hidden-on-source section be born ``dormant``
+    (D-F8) instead of being minted ``draft`` and then demoted, which would leave a window in
+    which the kit cascade could release it. ``derived_from``/``derived_reason`` is how a repair
+    says whose repair it is (D-F6) — a repair is a NEW fragment through this same path, never an
+    edit of the original.
+
+    The rules those three obey are the DAL's, imported rather than restated: this seam only
+    translates them into the fragment refusal taxonomy the mint pipeline already reports on, so a
+    producer gets ``fragment.*`` codes instead of a raw ``ValueError`` from two layers down.
     """
     if (source_kit_id is None) != (source_kit_version is None):
         raise FragmentRefused(
             "fragment.source_kit_incomplete",
             "a fragment names both its source kit id and version, or neither",
         )
+    if status is not None:
+        _refusing("fragment.status_unknown", require_known_status, status)
+    _refusing("fragment.degraded_reason_missing", require_degraded_pair, degraded, degraded_reason)
+    _refusing("fragment.derived_incomplete", require_derived_pair, derived_from, derived_reason)
 
     preview_digest = _digest(preview) if preview is not None else None
     artifact = build_fragment_artifact(
@@ -130,6 +158,21 @@ def create_web_fragment(
     )
 
     async def _persist(conn: Any) -> dict[str, Any]:
+        # The lineage target is the one birth fact that cannot be checked before I/O — it is a
+        # question about a ROW. Asked first, inside the same transaction, so a refusal aborts
+        # before any byte is registered rather than leaving an orphan blob behind.
+        if derived_from is not None:
+            try:
+                await require_derivable(
+                    conn,
+                    workspace_id=workspace_id,
+                    fragment_id=artifact.fragment_id,
+                    derived_from=derived_from,
+                )
+            except ValueError as error:
+                raise FragmentRefused(
+                    "fragment.derived_from_unresolved", str(error), reference=derived_from
+                ) from error
         await register_design_bytes(
             conn,
             storage,
@@ -159,9 +202,22 @@ def create_web_fragment(
             payload_digest=artifact.payload_digest,
             preview_digest=preview_digest,
             provenance=_with_payload_sizes(provenance, artifact),
+            status=status or "draft",
+            degraded=degraded,
+            degraded_reason=degraded_reason,
+            derived_from=derived_from,
+            derived_reason=derived_reason,
         )
 
     return DesignStoreBridge(workspace_id)._run(_persist), artifact
+
+
+def _refusing(code: str, check: Any, *args: Any) -> None:
+    """Run one DAL rule and re-word its ``ValueError`` as this seam's typed refusal."""
+    try:
+        check(*args)
+    except ValueError as error:
+        raise FragmentRefused(code, str(error)) from error
 
 
 def read_web_fragment(
@@ -207,10 +263,35 @@ def list_web_fragments(
 def set_web_fragment_status(
     *, workspace_id: str, fragment_id: str, status: str
 ) -> dict[str, Any]:
-    """Move one fragment's lifecycle flag. The only mutation this registry has."""
+    """Move one fragment's lifecycle flag — including the human activation of a dormant clone.
+
+    Raises :class:`~clue_design.errors.DesignFragmentActivationError` when a dormant section with
+    no preview is asked to wake (D-F8); see the DAL for why ``draft`` is gated alongside
+    ``approved``.
+    """
     return DesignStoreBridge(workspace_id)._run(
         lambda conn: dal.set_web_fragment_status(
             conn, workspace_id=workspace_id, fragment_id=fragment_id, status=status
+        )
+    )
+
+
+def set_web_fragment_degraded(
+    *, workspace_id: str, fragment_id: str, degraded: bool, reason: str | None = None
+) -> dict[str, Any]:
+    """Mark (or unmark) a harvested clone as broken, with the reason (D-F6).
+
+    The second permitted mutation, and the second one that is a judgement rather than content.
+    Deliberately NOT a status move: a degraded original stays approved and stays pinnable while
+    it is the only thing that exists.
+    """
+    return DesignStoreBridge(workspace_id)._run(
+        lambda conn: dal.set_web_fragment_degraded(
+            conn,
+            workspace_id=workspace_id,
+            fragment_id=fragment_id,
+            degraded=degraded,
+            reason=reason,
         )
     )
 
@@ -245,11 +326,13 @@ def _digest(data: bytes) -> str:
 
 __all__ = [
     "FRAGMENT_STATUSES",
+    "FRAGMENT_STATUS_DORMANT",
     "WEB_FRAGMENT_SOURCE_KEY",
     "LoadedFragment",
     "create_web_fragment",
     "list_web_fragments",
     "read_web_fragment",
+    "set_web_fragment_degraded",
     "set_web_fragment_status",
     "web_fragment_exists",
 ]

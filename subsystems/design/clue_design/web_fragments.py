@@ -10,10 +10,12 @@ which is what makes re-harvesting an unchanged section cost one row and no bytes
 **The id is the content.** ``fragment_id`` is ``frag_`` plus the first sixteen hex characters of
 the sha256 over the artifact's canonical identity, so creation is the ONLY payload write: a
 re-mint of the same section converges onto the row it already wrote, and a section that changed
-at all is a different fragment. The single mutable column is ``status`` (draft / approved /
-deprecated — row-level metadata about whether a human has blessed the section for reuse), and
-the database enforces that split with a trigger, so this module is deliberately INSERT-plus-
-status-only.
+at all is a different fragment. The mutable columns are the ones that are ROW-LEVEL JUDGEMENTS
+rather than content — ``status`` (draft / approved / deprecated / dormant: has a human blessed
+this section for reuse, retired it, or is the source site hiding it?) and, since F3.0, the
+``degraded`` marker that says a harvested clone is broken — and the database enforces that split
+with a trigger. The lineage pair ``derived_from``/``derived_reason`` is born with the row and
+frozen with the artifact: how a fragment came to exist is not a judgement anyone gets to revise.
 
 Workspace-scoped and fail-closed like the rest of the DAL: a foreign-workspace fragment id
 raises the same :class:`DesignNotFoundError` an absent one does, so existence never leaks across
@@ -32,16 +34,38 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_design._codec import JsonObject, dump_json, iso, load_json
-from clue_design.errors import DesignNotFoundError
+from clue_design.errors import DesignFragmentActivationError, DesignNotFoundError
 
 #: The row-level lifecycle, mirroring ``design_brand_approval_status`` (see the migration's
 #: docstring for why ``generated_unreviewed`` is not among them). Kept here as the ONE Python
 #: spelling of the CHECK the migration installs.
-FRAGMENT_STATUSES = ("draft", "approved", "deprecated")
+#:
+#: ``dormant`` is F3.0's addition (founder ruling D-F8): a section the source site HIDES, kept
+#: rather than dropped, and kept where nothing automatic can release it — the kit cascade moves
+#: only ``draft`` ⇄ ``approved``, agent discovery is approved-only, the document-write gate pins
+#: only ``approved``. The one door out is :func:`set_web_fragment_status`, and it is a door a
+#: human opens.
+FRAGMENT_STATUS_DRAFT = "draft"
+FRAGMENT_STATUS_APPROVED = "approved"
+FRAGMENT_STATUS_DEPRECATED = "deprecated"
+FRAGMENT_STATUS_DORMANT = "dormant"
+
+FRAGMENT_STATUSES = (
+    FRAGMENT_STATUS_DRAFT,
+    FRAGMENT_STATUS_APPROVED,
+    FRAGMENT_STATUS_DEPRECATED,
+    FRAGMENT_STATUS_DORMANT,
+)
+
+#: Leaving dormancy for one of these means the section is about to be USABLE — ``approved`` pins
+#: today, ``draft`` is one kit approval away from pinning — so both need the preview D-F8 asks
+#: for. ``deprecated`` is the opposite of use and is always allowed.
+_ACTIVATING_STATUSES = frozenset({FRAGMENT_STATUS_DRAFT, FRAGMENT_STATUS_APPROVED})
 
 _COLUMNS = (
     "fragment_id, workspace_id, source_kit_id, source_kit_version, source_url, section_role, "
-    "label, status, payload_digest, preview_digest, provenance_json, created_at, updated_at"
+    "label, status, payload_digest, preview_digest, provenance_json, degraded, degraded_reason, "
+    "derived_from, derived_reason, created_at, updated_at"
 )
 
 
@@ -58,6 +82,10 @@ def _from_row(row: Any) -> JsonObject:
         "payload_digest": row.payload_digest,
         "preview_digest": row.preview_digest,
         "provenance": load_json(row.provenance_json),
+        "degraded": bool(row.degraded),
+        "degraded_reason": row.degraded_reason,
+        "derived_from": row.derived_from,
+        "derived_reason": row.derived_reason,
         "created_at": iso(row.created_at),
         "updated_at": iso(row.updated_at),
     }
@@ -76,6 +104,11 @@ async def insert_web_fragment(
     payload_digest: str,
     preview_digest: str | None,
     provenance: JsonObject,
+    status: str = FRAGMENT_STATUS_DRAFT,
+    degraded: bool = False,
+    degraded_reason: str | None = None,
+    derived_from: str | None = None,
+    derived_reason: str | None = None,
 ) -> JsonObject:
     """Register one minted fragment. Re-registering the same id in the same workspace CONVERGES.
 
@@ -95,17 +128,38 @@ async def insert_web_fragment(
     the SAME lineage advances to the newer one. It never moves sideways into a different lineage
     (that is another brand's approval authority, not a newer version of this one's) and never
     backwards. ``status`` is untouched by the rebinding — the new kit's own approval decides that.
+
+    **``status``, the degraded marker and the lineage pair are born here and only here** (F3.0).
+    They are not content — the id is the sha256 of the artifact and none of them enters it — so
+    they fall under the same first-writer-wins rule the label and the provenance do. Two
+    consequences worth stating rather than discovering: a section already minted ``draft`` that a
+    later capture finds hidden keeps its ``draft`` (which is right — a human may have activated
+    it since), and a repair whose sanitized output happens to be byte-identical to an existing
+    fragment converges onto that row and keeps ITS lineage. Both are the price of content
+    addressing, and both leave the row honest about what it actually holds.
     """
+    require_known_status(status)
+    require_degraded_pair(degraded, degraded_reason)
+    require_derived_pair(derived_from, derived_reason)
+    if derived_from is not None:
+        await require_derivable(
+            conn,
+            workspace_id=workspace_id,
+            fragment_id=fragment_id,
+            derived_from=derived_from,
+        )
     await conn.execute(
         text(
             """
             INSERT INTO design_web_fragment
               (fragment_id, workspace_id, source_kit_id, source_kit_version, source_url,
-               section_role, label, payload_digest, preview_digest, provenance_json)
+               section_role, label, status, payload_digest, preview_digest, provenance_json,
+               degraded, degraded_reason, derived_from, derived_reason)
             VALUES
               (:fragment_id, :workspace_id, :source_kit_id, :source_kit_version, :source_url,
-               :section_role, :label, :payload_digest, :preview_digest,
-               CAST(:provenance AS jsonb))
+               :section_role, :label, :status, :payload_digest, :preview_digest,
+               CAST(:provenance AS jsonb),
+               :degraded, :degraded_reason, :derived_from, :derived_reason)
             ON CONFLICT (fragment_id, workspace_id) DO NOTHING
             """
         ),
@@ -117,9 +171,14 @@ async def insert_web_fragment(
             "source_url": source_url,
             "section_role": section_role,
             "label": label,
+            "status": status,
             "payload_digest": payload_digest,
             "preview_digest": preview_digest,
             "provenance": dump_json(provenance),
+            "degraded": bool(degraded),
+            "degraded_reason": degraded_reason,
+            "derived_from": derived_from,
+            "derived_reason": derived_reason,
         },
     )
     row = await get_web_fragment(conn, workspace_id=workspace_id, fragment_id=fragment_id)
@@ -143,6 +202,61 @@ async def insert_web_fragment(
         )
         row = await get_web_fragment(conn, workspace_id=workspace_id, fragment_id=fragment_id)
     return row
+
+
+def require_known_status(status: str) -> None:
+    """The status vocabulary, checked in the ONE place it is spelled.
+
+    Public because the registry seam re-raises it as a ``FragmentRefused`` — the rule is written
+    here, worded here, and translated there, rather than being written twice and drifting.
+    """
+    if status not in FRAGMENT_STATUSES:
+        raise ValueError(
+            f"fragment status must be one of {', '.join(FRAGMENT_STATUSES)}: {status!r}"
+        )
+
+
+def require_degraded_pair(degraded: bool, degraded_reason: str | None) -> None:
+    """A degraded marker carries its reason, or it is not a marker (D-F6)."""
+    has_reason = bool((degraded_reason or "").strip())
+    if bool(degraded) != has_reason:
+        raise ValueError(
+            "a degraded fragment names the reason it is degraded, and an undegraded one names "
+            f"none: degraded={bool(degraded)!r}, degraded_reason={degraded_reason!r}"
+        )
+
+
+def require_derived_pair(derived_from: str | None, derived_reason: str | None) -> None:
+    """A repair names what it repairs AND why, or neither (D-F6)."""
+    has_reason = bool((derived_reason or "").strip())
+    if (derived_from is not None) != has_reason:
+        raise ValueError(
+            "a derived fragment names both the fragment it was derived from and the reason, or "
+            f"neither: derived_from={derived_from!r}, derived_reason={derived_reason!r}"
+        )
+
+
+async def require_derivable(
+    conn: AsyncConnection, *, workspace_id: str, fragment_id: str, derived_from: str
+) -> None:
+    """The lineage pointer resolves to a fragment THIS workspace holds, or the write refuses.
+
+    The composite self-FK the migration installs says the same thing structurally; this says it
+    first, so a caller gets a sentence about lineage rather than a driver's constraint name. Both
+    exist on purpose — the FK is what makes it true of every writer, this is what makes it
+    legible to the one writer we have.
+    """
+    if derived_from == fragment_id:
+        raise ValueError(
+            f"fragment {fragment_id} cannot be derived from itself — a repair is a NEW fragment"
+        )
+    found = await find_web_fragment(conn, workspace_id=workspace_id, fragment_id=derived_from)
+    if found is None:
+        raise ValueError(
+            f"derived_from names {derived_from!r}, which this workspace does not hold — a repair "
+            "must point at a fragment that exists here (a fragment id is a global content "
+            "address, so another tenant's id is not this workspace's fragment)"
+        )
 
 
 def _kit_binding_advances(
@@ -247,10 +361,15 @@ async def sync_kit_fragment_approval(
     Called from :func:`clue_design.brand.update_brand_kit_approval` **inside its transaction**,
     so the kit and its fragments cannot end up disagreeing.
 
-    Two deliberate limits:
+    Three deliberate limits:
 
     * only ``draft`` ⇄ ``approved`` move. ``deprecated`` is a decision about ONE section, and a
       kit-wide approval must not quietly undo the narrower, more specific one.
+    * **``dormant`` is untouched, in both directions** (D-F8, F3.0). A section the source site
+      hides is never auto-approved — the whole reason dormancy is a STATUS rather than a flag on
+      a draft is that this query, the only automatic releaser there is, names the statuses it
+      moves and cannot name that one. Waking a dormant section is a human act with its own gate
+      (:func:`set_web_fragment_status`, which asks for a usable preview first).
     * the version matters. Approval is version-specific for kits (a newer draft does not shadow
       an older approved version), and a fragment names the exact version it was minted from, so
       approving v3 says nothing about the sections cloned into v2.
@@ -281,15 +400,34 @@ async def sync_kit_fragment_approval(
 async def set_web_fragment_status(
     conn: AsyncConnection, *, workspace_id: str, fragment_id: str, status: str
 ) -> JsonObject:
-    """The ONE permitted mutation: has a human blessed this section, or retired it.
+    """Move one section's lifecycle flag — the human gate, and the door out of dormancy.
 
     Validated here rather than trusted because ``status`` reaches a CHECK constraint whose
     violation would surface as a raw ``IntegrityError`` — a caller's typo deserves the DAL's own
     typed refusal, and the tuple lives in one place (:data:`FRAGMENT_STATUSES`).
+
+    **Activation has a second condition** (D-F8, F3.0). A ``dormant`` section leaving for
+    ``draft`` or ``approved`` is about to become usable, and the founder ruling is that a human
+    may only make that call with a usable preview in front of them — so a dormant row with no
+    ``preview_digest`` is refused with :class:`DesignFragmentActivationError` rather than woken.
+    ``draft`` is gated alongside ``approved`` because it is one kit approval away from pinning:
+    gating only the last step would leave a route around the gate rather than through it.
+    Retirement (``deprecated``) is never gated — the preview protects USE, and retiring is the
+    opposite of using.
     """
-    if status not in FRAGMENT_STATUSES:
-        raise ValueError(
-            f"fragment status must be one of {', '.join(FRAGMENT_STATUSES)}: {status!r}"
+    require_known_status(status)
+    current = await get_web_fragment(conn, workspace_id=workspace_id, fragment_id=fragment_id)
+    if (
+        current["status"] == FRAGMENT_STATUS_DORMANT
+        and status in _ACTIVATING_STATUSES
+        and not current.get("preview_digest")
+    ):
+        raise DesignFragmentActivationError(
+            fragment_id,
+            "no_preview",
+            f"fragment {fragment_id} is hidden on its source site and carries no preview image, "
+            f"so it cannot be activated to {status!r}: a human activates a dormant clone by "
+            "looking at it, and there is nothing here to look at",
         )
     result = await conn.execute(
         text(
@@ -297,6 +435,46 @@ async def set_web_fragment_status(
             "WHERE fragment_id = :fragment_id AND workspace_id = :workspace_id"
         ),
         {"status": status, "fragment_id": fragment_id, "workspace_id": workspace_id},
+    )
+    if result.rowcount == 0:
+        raise DesignNotFoundError("design_web_fragment", fragment_id)
+    return await get_web_fragment(conn, workspace_id=workspace_id, fragment_id=fragment_id)
+
+
+async def set_web_fragment_degraded(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    fragment_id: str,
+    degraded: bool,
+    reason: str | None = None,
+) -> JsonObject:
+    """Record that this harvested clone is broken, and why — or that it is not (D-F6).
+
+    ORTHOGONAL to ``status`` on purpose, and that is the whole ruling: the harvested original
+    stays IMMUTABLE evidence and stays ``approved`` while it is the only thing that exists, so a
+    page can keep pinning it until its repair is minted. Folding brokenness into the lifecycle
+    would have forced a choice between "a human blessed this" and "this is broken", and the two
+    are both true of a degraded original at the same time.
+
+    Mutable, unlike the lineage pair beside it, because it is a JUDGEMENT rather than an origin:
+    minting makes one from the dead-height detector, and F3.3's behavioural review gate makes
+    later ones from a page it actually walked. The migration's trigger relaxation admits exactly
+    this pair and nothing else.
+    """
+    require_degraded_pair(degraded, reason)
+    result = await conn.execute(
+        text(
+            "UPDATE design_web_fragment "
+            "SET degraded = :degraded, degraded_reason = :reason, updated_at = now() "
+            "WHERE fragment_id = :fragment_id AND workspace_id = :workspace_id"
+        ),
+        {
+            "degraded": bool(degraded),
+            "reason": reason if degraded else None,
+            "fragment_id": fragment_id,
+            "workspace_id": workspace_id,
+        },
     )
     if result.rowcount == 0:
         raise DesignNotFoundError("design_web_fragment", fragment_id)

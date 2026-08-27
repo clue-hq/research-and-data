@@ -42,12 +42,14 @@ from .refs import (
     fragment_wrapper_class,
 )
 from .registry import (
+    FRAGMENT_STATUS_DORMANT,
     FRAGMENT_STATUSES,
     WEB_FRAGMENT_SOURCE_KEY,
     LoadedFragment,
     create_web_fragment,
     list_web_fragments,
     read_web_fragment,
+    set_web_fragment_degraded,
     set_web_fragment_status,
     web_fragment_exists,
 )
@@ -73,6 +75,7 @@ __all__ = [
     "FRAGMENT_ID_RE",
     "FRAGMENT_PAYLOAD_SCHEMA_VERSION",
     "FRAGMENT_STATUSES",
+    "FRAGMENT_STATUS_DORMANT",
     "MAX_FRAGMENT_SLOTS",
     "PRELUDE_REFERENCE_MODES",
     "PRELUDE_REFERENCE_REFUSE",
@@ -100,6 +103,7 @@ __all__ = [
     "read_web_fragment",
     "sanitize_fragment_html",
     "scope_fragment_css",
+    "set_web_fragment_degraded",
     "set_web_fragment_status",
     "slot_key_is_valid",
     "web_fragment_exists",
