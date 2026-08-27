@@ -240,3 +240,44 @@ first, per D6), W4 runtime composition, W5 acceptance.
 - NEXT: clean-room unseeded apollo.io proof — pure .env config (which now
   selects the NEVER-LIVE-EXERCISED Images transport for gpt-image-2) +
   LUMEN_BRAND_AD_ASSETS=1 as the single deliberate feature enable.
+
+## CLEAN-ROOM PROOF (2026-08-27) — partial pass; two causes, both named
+
+Run attempted twice from pure `.env` + LUMEN_BRAND_AD_ASSETS=1 only.
+
+**PASSED unseeded (the Wave A proofs):**
+- PDL resolution live: apollo.io → page **18511550**, `resolver_used: "pdl"`,
+  `advertiser_verified: true` — no hand-verified id, no seeding. R3-A closed.
+- Harvest 4 kept / 4 custodied; advertiser cross-check `ok`
+  (expected "apollo.io" vs observed ["Apollo.io"] — the name-key folding works).
+- Distill ok → card written, 4 style groups.
+- Honest outcome machinery worked: job status `partial` with a summary that
+  NAMES the pregeneration shortfall (R2-C proven in anger).
+- W4 auto-attach fired on both attempts (observed live before each disconnect).
+
+**FAILED, cause 1 — pregeneration 0/8, `image_model.unavailable`. NOT a
+transport bug: THE IMAGES TRANSPORT WORKS.** Orchestrator probe 2026-08-27:
+`openai/gpt-image-2` via `IMAGE_MODEL_API_STYLE=images` returned a real
+1024×1024 PNG (817 KB) in **97 s**, aspect_ratio 1:1 honored. But
+`image_model_timeout_s` default is **60.0** and `.env` sets no override →
+every call times out and burns all 3 retries. `.env.example:287-290` (from the
+v2 merge) already WARNS of exactly this and recommends 240. DEFECT: the shipped
+default is incompatible with the shipped-recommended model.
+FIX = founder adds `IMAGE_MODEL_TIMEOUT_S=240` to `.env`; code-side follow-up
+= make the default derive from the configured transport/model rather than one
+global 60 s.
+
+**FAILED, cause 2 — both design turns died `APIConnectionError: Connection
+error.` / `orchestrator_did_not_finalize`** (runs `run_4b84e050…` 04:51,
+`run_9c2b9eac…` 10:19; 12-13 calls, 1 failed call each, no preview). This is
+the SAME local network outage (ENOTFOUND) that killed the monitoring agent
+twice. Environmental, not code. Network verified healthy afterwards
+(openrouter 200). Runs got as far as node_count 11 / asset_count 3 / 2
+iterations before dying — i.e. auto-attach + authoring were underway.
+
+**Verdict:** Wave A's three fixes are proven; the clean-room ad itself is
+UNPROVEN pending a re-run once the timeout line is added. Re-run is cheap
+(~2 credits + one design run).
+
+Orchestrator note: `CLUE_DATABASE_URL` uses the `postgresql+asyncpg://`
+SQLAlchemy scheme — asyncpg.connect needs it rewritten to `postgresql://`.
