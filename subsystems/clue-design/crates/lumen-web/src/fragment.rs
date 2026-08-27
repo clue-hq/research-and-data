@@ -404,18 +404,32 @@ fn rewrite_tag(
         if drops.iter().any(|drop| *drop == lower) {
             continue;
         }
-        let value = match replacements
+        written.insert(lower.clone());
+        match replacements
             .iter()
             .find(|(replaced, _)| *replaced == lower)
         {
-            Some((_, replacement)) => (*replacement).to_owned(),
-            None => attr
-                .unescape_value()
-                .map(|value| value.into_owned())
-                .unwrap_or_else(|_| String::from_utf8_lossy(attr.value.as_ref()).into_owned()),
-        };
-        written.insert(lower);
-        out.push_str(&format!(" {key}=\"{}\"", escape_attr(&value)));
+            // The injected value is the untrusted half: it is escaped.
+            Some((_, replacement)) => {
+                out.push_str(&format!(" {key}=\"{}\"", escape_attr(replacement)));
+            }
+            // Every OTHER attribute is carried over as the sanitizer wrote it,
+            // without an unescape/re-escape round trip. Round-tripping would
+            // turn `alt="A &nbsp; B"` into a literal `&amp;nbsp;` (quick_xml
+            // resolves only the five XML entities), which is this walk
+            // normalizing markup it was told not to touch. The artifact is
+            // serialized with double quotes and `"` escaped, so a raw value
+            // cannot close the attribute — and if one ever did, it is escaped
+            // instead of emitted.
+            None => {
+                let raw = String::from_utf8_lossy(attr.value.as_ref()).into_owned();
+                if raw.contains('"') {
+                    out.push_str(&format!(" {key}=\"{}\"", escape_attr(&raw)));
+                } else {
+                    out.push_str(&format!(" {key}=\"{raw}\""));
+                }
+            }
+        }
     }
     // An element the manifest calls an href/image slot normally has the
     // attribute already (the annotator refuses one that does not), but a
@@ -743,6 +757,32 @@ mod tests {
         assert!(!out.contains("srcset"), "{out}");
         assert!(out.contains("data-lumen-slot=\"logo\""), "{out}");
         assert!(codes.is_empty(), "{codes:?}");
+    }
+
+    #[test]
+    fn the_other_attributes_of_a_rewritten_tag_survive_as_the_sanitizer_wrote_them() {
+        // Rewriting `src` must not quietly re-encode the neighbours. An
+        // unescape/re-escape round trip would turn `&nbsp;` into a literal
+        // `&amp;nbsp;`, because only the five XML entities survive one.
+        let html = "<img data-lumen-slot=\"logo\" src=\"/asset-store/old\" \
+                    alt=\"Clone&nbsp;Co &amp; sons &quot;quoted&quot;\" width=\"120\">";
+        let doc = doc_with(&[("asset_logo", DIGEST)]);
+        let (out, codes) = run(
+            html,
+            &slots(vec![(
+                "logo",
+                FragmentSlotValue::Asset("asset_logo".to_owned()),
+            )]),
+            &kinds(&[("logo", FragmentSlotKind::Image)]),
+            &doc,
+        );
+        assert!(codes.is_empty(), "{codes:?}");
+        assert!(
+            out.contains("alt=\"Clone&nbsp;Co &amp; sons &quot;quoted&quot;\""),
+            "{out}"
+        );
+        assert!(out.contains("width=\"120\""), "{out}");
+        assert!(!out.contains("&amp;nbsp;"), "{out}");
     }
 
     #[test]
