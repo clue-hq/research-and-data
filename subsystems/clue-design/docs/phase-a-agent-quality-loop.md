@@ -369,7 +369,7 @@ actually blocking product-quality output.
 Use `.env` for runtime configuration:
 
 ```text
-LUMEN_AGENT_MODEL=openai:x-ai/grok-4.6
+LUMEN_AGENT_MODEL=openai:anthropic/claude-opus-4.8
 LUMEN_AGENT_BASE_URL=https://openrouter.ai/api/v1
 LUMEN_AGENT_API_KEY=...
 LUMEN_AGENT_MAX_ITERATIONS=3
