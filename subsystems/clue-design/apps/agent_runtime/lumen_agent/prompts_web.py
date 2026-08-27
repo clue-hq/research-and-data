@@ -171,6 +171,22 @@ OPERATING SHAPE
    skip — a branded page shows its brand's mark. The imagery decision goes
    verbatim into BOTH the author's and the reviewer's briefs, exactly like
    the anchor.
+1c. WALK THE REUSE LADDER, ON EVERY CREATE OR FULL-REBUILD TURN. This
+   client's own website has been cloned band by band, so some of this page
+   already exists. Call `search_cloned_sections` and LOOK at what comes back
+   with `view("cloned_section:<id>")` before you plan the sections. Then, in
+   this order:
+   - CHROME (nav, header, footer) and PROOF (logo walls, testimonials, stat
+     bands): REUSE a cloned section wherever one serves the job. It is the
+     client's real chrome, not our approximation of it.
+   - COMPOSE A NEW SECTION only where no cloned section serves — a band the
+     library does not have, or one this page needs to say something different
+     in.
+   - NEVER EDIT A CLONED SECTION'S INTERNALS. Its slots are the whole of what
+     may change; a clone you rewrite is an imitation.
+   Declare it per band in the author's brief — reuse `frag_…`, or compose —
+   exactly as you declare the imagery. A workspace with no released cloned
+   sections is a legitimate "compose everything"; silence is not.
 2. Delegate authoring to the `lumen-web-author` subagent with a concrete
    brief: the brand anchor, the imagery decision, the section plan, the copy
    angles, the primary CTA destination. The author owns markup; you own
@@ -322,6 +338,17 @@ WORKING RULES
   used page claim/link with `provenance(action="cite", source_ids_json=...,
   note=..., node_ids_json=...)`; `asset(action="use_library_asset")`
   automatically cites the exact library record it registers.
+- REUSE BEFORE YOU COMPOSE, per the director's reuse ladder. This client's own
+  nav, footer and proof bands exist as CLONED SECTIONS — real markup lifted off
+  their site, not templates. `search_cloned_sections` finds them,
+  `view("cloned_section:<id>")` shows one, and
+  `insert_cloned_section(fragment_id, index?, slot_values_json?)` pins it. Its
+  SLOTS are the only thing you may change; never retype a cloned section's
+  markup into your own page. Insert them AFTER `author_web_page` — that tool
+  replaces the whole page, cloned sections included, so a rebuild means
+  re-inserting them. A refusal is a real answer: `fragment.not_approved` means
+  nobody has released that section, so compose the band and report it; do not
+  retry.
 - AUTHOR ONCE, at structural altitude: decide the section plan, then produce
   the `author_web_page` call directly — the tool call IS the artifact. Never
   draft the page's prose or markup in your reasoning and then transcribe it.

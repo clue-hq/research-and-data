@@ -19,6 +19,8 @@ DB-backed with the suite's per-test workspace + disposable ``FsStorage``, like i
 from __future__ import annotations
 
 import hashlib
+import json
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -27,7 +29,12 @@ from clue_storage import FsStorage
 from lumen_api.agent_cloned_sections import DurableAgentClonedSectionRegistry
 from lumen_api.database import FragmentReferenceError
 from lumen_api.design_store import DesignBlobStore, HybridRepository
-from lumen_api.fragments import SlotSpec, create_web_fragment, set_web_fragment_status
+from lumen_api.fragments import (
+    SlotSpec,
+    create_web_fragment,
+    fragment_wrapper_class,
+    set_web_fragment_status,
+)
 
 HERO_HTML = (
     '<section class="hero"><h1 class="head">Care, on your terms</h1>'
@@ -308,3 +315,208 @@ def test_another_tenants_approved_section_is_neither_listed_nor_insertable(
     with pytest.raises(FragmentReferenceError) as caught:
         registry.resolve_insertable(row["fragment_id"])
     assert caught.value.code == "fragment.unresolved"
+
+
+# --------------------------------------------------------------------------- #
+# End to end: the REAL registry driving the REAL tool
+# --------------------------------------------------------------------------- #
+
+
+def _web_tools(workspace_id: str, storage: FsStorage, cache_dir, tmp_path):
+    """One website turn's substrate, wired to the real capability. No LLM, no browser."""
+    from dataclasses import replace as dataclass_replace
+
+    from lumen_agent.config import AgentRuntimeConfig
+    from lumen_agent.tools.web_substrate import LumenWebTools
+
+    repo_root = Path(__file__).resolve().parents[3]
+    config = dataclass_replace(
+        AgentRuntimeConfig.from_env(repo_root),
+        trace_dir=tmp_path / "workspace_root",
+        cloned_section_registry=_registry(workspace_id, storage, cache_dir),
+    )
+    return LumenWebTools(
+        config,
+        "Build a page",
+        initial_web_doc={
+            "schema_version": 1,
+            "id": "doc_cloned_e2e",
+            "title": "Test site",
+            "theme": {},
+            "custom_css": "",
+            "pages": [
+                {
+                    "id": "home",
+                    "name": "Home",
+                    "route": "/",
+                    "root": "root",
+                    "nodes": {
+                        "root": {
+                            "id": "root",
+                            "kind": "container",
+                            "classes": "",
+                            "new_tab": False,
+                            "children": [],
+                        }
+                    },
+                }
+            ],
+            "assets": {},
+        },
+    )
+
+
+def test_the_agents_discovery_shows_the_approved_section_and_hides_the_draft(
+    workspace_id: str, design_storage: FsStorage, tmp_path
+) -> None:
+    approved = _mint(workspace_id, design_storage)
+    draft = _mint(
+        workspace_id,
+        design_storage,
+        html=NAV_HTML,
+        css=NAV_CSS,
+        section_role="nav",
+        label="Nav",
+        slots=(),
+        approved=False,
+    )
+    tools = _web_tools(workspace_id, design_storage, tmp_path / "cache", tmp_path)
+
+    result = json.loads(tools.search_cloned_sections())
+
+    ids = [row["fragment_id"] for row in result["results"]]
+    assert ids == [approved["fragment_id"]]
+    assert draft["fragment_id"] not in ids
+    # The kinds are the artifact's own, read out of its payload — not guessed from the row.
+    assert result["results"][0]["slots"] == [
+        {"key": "cta_href", "kind": "href"},
+        {"key": "headline", "kind": "text"},
+    ]
+
+
+def test_the_agent_can_pin_an_approved_section_and_it_renders(
+    workspace_id: str, design_storage: FsStorage, tmp_path
+) -> None:
+    row = _mint(workspace_id, design_storage)
+    tools = _web_tools(workspace_id, design_storage, tmp_path / "cache", tmp_path)
+
+    result = json.loads(
+        tools.insert_cloned_section(
+            row["fragment_id"],
+            slot_values_json=json.dumps({"headline": "Care, on Privia's terms"}),
+        )
+    )
+
+    assert result["status"] == "ok"
+    page = tools.web_doc["pages"][0]
+    assert page["nodes"][result["section_node_id"]]["kind"] == "section"
+    assert page["nodes"][result["node_id"]]["fragment_id"] == row["fragment_id"]
+    rendered = tools.core.web_render(
+        tools.web_doc,
+        "home",
+        fragments=tools._fragment_render_map(),
+        fragment_css=tools._fragment_css(),
+    )
+    # The SLOT value won, and the section's own scoped CSS travelled with it.
+    assert "Care, on Privia's terms" in (rendered.get("html") or "")
+    assert fragment_wrapper_class(row["fragment_id"]) in (rendered.get("html") or "")
+
+
+def test_the_agent_reading_a_draft_section_gets_the_gates_words_not_a_traceback(
+    workspace_id: str, design_storage: FsStorage, tmp_path
+) -> None:
+    row = _mint(workspace_id, design_storage, approved=False)
+    tools = _web_tools(workspace_id, design_storage, tmp_path / "cache", tmp_path)
+
+    result = json.loads(tools.insert_cloned_section(row["fragment_id"]))
+
+    assert result["status"] == "error"
+    assert result["error_code"] == "fragment.not_approved"
+    assert "approve the brand kit" in result["message"]
+    assert tools.web_doc["pages"][0]["nodes"]["root"]["children"] == []
+
+
+def test_approving_the_kit_turns_the_same_refusal_into_a_pin(
+    workspace_id: str, design_storage: FsStorage, tmp_path
+) -> None:
+    """The whole human gate, from the agent's side: refused, released, accepted."""
+    kit = _seed_kit(workspace_id)
+    row = _mint(
+        workspace_id,
+        design_storage,
+        approved=False,
+        source_kit_id=kit["brand_kit_id"],
+        source_kit_version=int(kit["version"]),
+    )
+    tools = _web_tools(workspace_id, design_storage, tmp_path / "cache", tmp_path)
+    assert (
+        json.loads(tools.insert_cloned_section(row["fragment_id"]))["error_code"]
+        == "fragment.not_approved"
+    )
+
+    # The real human gate: approving the KIT releases the sections cloned into that version.
+    HybridRepository(workspace_id=workspace_id).update_brand_kit_approval(
+        kit["brand_kit_id"], "approved"
+    )
+
+    assert json.loads(tools.insert_cloned_section(row["fragment_id"]))["status"] == "ok"
+
+
+# --------------------------------------------------------------------------- #
+# Composition: the turn is actually handed the capability
+# --------------------------------------------------------------------------- #
+
+
+class _StubBlobs:
+    """The tenant byte store, stubbed. Brand-kit resolution degrades to the default kit on a
+    failure, so a workspace id is all this composition path needs (the pattern
+    ``test_web_turn_asset_base_url`` established)."""
+
+    def __init__(self, workspace_id: str) -> None:
+        self.workspace_id = workspace_id
+        self.storage = None
+
+
+def test_a_web_turn_is_handed_the_workspaces_cloned_section_capability(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Without this wiring both tools refuse for the whole run and nothing says why."""
+    import lumen_agent.harness_web as harness_web
+    import lumen_agent.llm as agent_llm
+    from lumen_api import main as main_mod
+
+    captured: dict = {}
+
+    def _fake_turn(*, prompt, config, initial_web_doc, event_sink, checkpointer, thread_id):
+        captured["config"] = config
+        return {
+            "status": "applied",
+            "outcome": "completed",
+            "summary": "stubbed",
+            "web_doc": initial_web_doc,
+            "operations": [],
+        }
+
+    monkeypatch.setattr(harness_web, "run_deepagent_web_turn", _fake_turn)
+    monkeypatch.setattr(
+        agent_llm, "assert_model_supports_image_input", lambda *a, **k: None
+    )
+
+    response = main_mod.run_web_agent_turn(
+        {"scene": {"schema_version": 1, "id": "doc_x", "theme": {}, "pages": [], "assets": {}}},
+        "Build a landing page",
+        None,
+        Path(__file__).resolve().parents[3],
+        workspace_id="ws_test_cloned_sections",
+        blobs=_StubBlobs("ws_test_cloned_sections"),
+        engine_cache_root=tmp_path / "engine-cache",
+    )
+
+    assert response["status"] == "applied", response
+    registry = captured["config"].cloned_section_registry
+    assert isinstance(registry, DurableAgentClonedSectionRegistry)
+    # It must name THIS turn's tenant and THIS turn's engine cache: a registry pointed at another
+    # workspace would offer another client's website, and one pointed at another cache would
+    # stage preview bytes where the runtime never looks.
+    assert registry.workspace_id == "ws_test_cloned_sections"
+    assert str(registry.cache_dir).startswith(str(tmp_path / "engine-cache"))

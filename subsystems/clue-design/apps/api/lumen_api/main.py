@@ -66,6 +66,7 @@ from .export_policy import (
     has_blocking_export_diagnostics,
     partition_export_diagnostics,
 )
+from .agent_cloned_sections import DurableAgentClonedSectionRegistry
 from .agent_custom_components import DurableAgentCustomComponentRegistry
 from .custom_component_runtime import (
     build_custom_component_runtime_frames,
@@ -8059,7 +8060,12 @@ def run_web_agent_turn(
     `custom_component_registry`: an account/document-bound capability. Unlike
     brand/assets it is not passed by value because source/compile operations
     must be durable between runs; the runtime receives typed methods, never
-    database/store paths."""
+    database/store paths.
+
+    The workspace's CLONED SECTIONS (F2.3) ride the same way, and are built here
+    rather than taken as an argument: unlike the component registry they need no
+    account and no document, only this turn's tenant and its engine cache, both
+    of which are already resolved below."""
     try:
         from lumen_agent.config import AgentRuntimeConfig
         from lumen_agent.harness_web import run_deepagent_web_turn
@@ -8132,6 +8138,18 @@ def run_web_agent_turn(
                     page_id="home",
                 ),
             )
+        # F2.3: the WORKSPACE's released cloned sections, as a capability rather than a value —
+        # the rule `custom_component_registry` follows, for the same reason. The package above
+        # answers "what does this document already pin?"; this answers "what may it pin next?",
+        # and that second question is a PERMISSION question whose answer must come from the
+        # document write's own gate at the moment it is asked, not from a snapshot of the
+        # registry taken when the turn was composed.
+        config = replace(
+            config,
+            cloned_section_registry=DurableAgentClonedSectionRegistry(
+                blobs=turn_blobs, cache_dir=turn_cache_root
+            ),
+        )
         if custom_component_registry is not None:
             config = replace(
                 config,

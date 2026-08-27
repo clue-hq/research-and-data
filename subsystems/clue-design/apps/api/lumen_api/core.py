@@ -503,7 +503,12 @@ class CoreClient:
     ) -> JsonObject:
         """Parse a constrained-HTML fragment against `doc` WITHOUT mutating it.
         Returns `web_fragment: {nodes, roots}` + diagnostics so callers can
-        compose surgical RemoveNode/InsertNode batches (scoped edit turns)."""
+        compose surgical RemoveNode/InsertNode batches (scoped edit turns).
+
+        Nothing to do with CLONED SECTIONS: "fragment" here means a snippet of
+        authored markup being ingested into the tree, while a cloned section's
+        `frag_…` artifact (F1/F2) is a stored verbatim band that never passes
+        through this parser at all."""
         return self._run(
             {
                 "action": "web_ingest_fragment",

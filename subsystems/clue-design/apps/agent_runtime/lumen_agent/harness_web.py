@@ -276,6 +276,11 @@ def create_web_deepagent(
                 tools.fetch_page,
                 tools.fetch_logo,
                 tools.search_assets,
+                # F2.3: the reuse ladder's bottom rung. The AUTHOR gets both halves — chrome and
+                # proof bands are reused where a released clone serves the job, and composing one
+                # from scratch is what happens when none does.
+                tools.search_cloned_sections,
+                tools.insert_cloned_section,
                 tools.provenance,
                 tools.asset,
                 tools.list_custom_components,
@@ -311,6 +316,10 @@ def create_web_deepagent(
         view,
         tools.fetch_page,
         tools.search_assets,
+        # Discovery only, deliberately: the director DECIDES the reuse ladder (which bands are
+        # reused and which are composed) and names the sections in the author's brief; the author
+        # is the only role that writes to the document.
+        tools.search_cloned_sections,
         tools.provenance,
         tools.list_custom_components,
         tools.inspect_custom_component,

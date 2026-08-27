@@ -21,16 +21,16 @@ from pathlib import Path
 
 import pytest
 
+from lumen_agent.config import AgentRuntimeConfig
+from lumen_agent.tools.web_substrate import LumenWebTools
+
+REPO_ROOT = Path(__file__).resolve().parents[3]
+
 #: A real 1x1 PNG. The view path attaches images through PIL, so a byte string that merely LOOKS
 #: like a PNG fails at decode rather than proving anything about the tool.
 PNG_1PX = base64.b64decode(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
 )
-
-from lumen_agent.config import AgentRuntimeConfig
-from lumen_agent.tools.web_substrate import LumenWebTools
-
-REPO_ROOT = Path(__file__).resolve().parents[3]
 
 HERO_ID = "frag_0123456789abcdef"
 NAV_ID = "frag_fedcba9876543210"
@@ -706,3 +706,123 @@ def test_the_preview_render_threads_the_inserted_section(
 
     assert HERO_ID in (captured.get("fragments") or {})
     assert HERO_WRAPPER in (captured.get("fragment_css") or "")
+
+
+# --------------------------------------------------------------------------- #
+# The reuse ladder: the law that makes reuse the default
+# --------------------------------------------------------------------------- #
+
+
+def _director_prompt() -> str:
+    from lumen_agent.prompts_web import build_web_orchestrator_prompt
+
+    return build_web_orchestrator_prompt(
+        doc_title="Acme",
+        has_existing_content=False,
+        brand_card="{}",
+        review_cap=2,
+        author_cap=2,
+    )
+
+
+def _author_prompt() -> str:
+    from lumen_agent.prompts_web import build_web_author_prompt
+
+    return build_web_author_prompt(brand_card="{}", theme_token_names="brand, ink")
+
+
+def test_the_director_must_walk_the_reuse_ladder() -> None:
+    """The three rungs, in order, and the "look before you decide" rule beside them."""
+    prompt = _director_prompt()
+
+    assert "REUSE LADDER" in prompt
+    assert "search_cloned_sections" in prompt
+    ladder = prompt.split("REUSE LADDER", 1)[1]
+    reuse = ladder.index("REUSE a cloned section")
+    compose = ladder.index("COMPOSE A NEW SECTION")
+    never = ladder.index("NEVER EDIT A CLONED SECTION")
+    assert reuse < compose < never
+    lowered = ladder.lower()
+    assert "chrome" in lowered and "proof" in lowered
+
+
+def test_the_reuse_decision_reaches_the_author_brief() -> None:
+    """Same guarantee the imagery decision has: the choice is briefed, not kept in a head."""
+    ladder = _director_prompt().split("REUSE LADDER", 1)[1]
+
+    assert "author's brief" in ladder
+
+
+def test_the_author_is_told_to_reuse_before_composing_and_never_to_rewrite() -> None:
+    prompt = _author_prompt()
+
+    assert "insert_cloned_section" in prompt
+    assert "search_cloned_sections" in prompt
+    assert "SLOTS are the only thing you may change" in prompt
+    # The specific trap: a whole-page author call wipes an already-pinned clone.
+    assert "replaces the whole page, cloned sections included" in prompt
+    # And the refusal is an answer, not a thing to retry.
+    assert "fragment.not_approved" in prompt
+
+
+def test_the_author_holds_both_halves_of_the_ladder_and_the_director_only_discovery(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """The director decides and briefs; the AUTHOR is the only role that writes to the page."""
+    import sys
+    import types
+
+    from lumen_agent.harness_web import create_web_deepagent
+
+    capture: dict = {}
+
+    def fake_create_deep_agent(**kwargs):
+        capture.update(kwargs)
+        return types.SimpleNamespace(invoke=lambda *a, **k: {"messages": []})
+
+    class _FakeFilesystemBackend:
+        def __init__(self, root_dir: str, virtual_mode=None, max_file_size_mb: int = 10) -> None:
+            self.root_dir = root_dir
+
+    class _FakeFilesystemPermission:
+        def __init__(self, operations, paths, mode="allow") -> None:
+            self.operations = operations
+
+    module = types.ModuleType("deepagents")
+    module.create_deep_agent = fake_create_deep_agent
+    module.FilesystemPermission = _FakeFilesystemPermission
+    module.DeepAgentState = dict
+    backends = types.ModuleType("deepagents.backends")
+    filesystem = types.ModuleType("deepagents.backends.filesystem")
+    filesystem.FilesystemBackend = _FakeFilesystemBackend
+    monkeypatch.setitem(sys.modules, "deepagents", module)
+    monkeypatch.setitem(sys.modules, "deepagents.backends", backends)
+    monkeypatch.setitem(sys.modules, "deepagents.backends.filesystem", filesystem)
+    monkeypatch.setattr("lumen_agent.llm.init_model", lambda *a, **k: object(), raising=False)
+    monkeypatch.setattr(
+        "lumen_agent.llm.assert_all_role_models_support_image_input",
+        lambda *a, **k: None,
+        raising=False,
+    )
+
+    create_web_deepagent(
+        "Build a page",
+        config=replace(
+            AgentRuntimeConfig.from_env(REPO_ROOT), trace_dir=tmp_path / "workspace_root"
+        ),
+        initial_web_doc=_seed_doc(),
+    )
+
+    def names(entries):
+        return {
+            getattr(entry, "name", None) or getattr(entry, "__name__", "")
+            for entry in entries
+        }
+
+    author = next(
+        sub for sub in capture["subagents"] if sub["name"] == "lumen-web-author"
+    )
+    assert {"search_cloned_sections", "insert_cloned_section"} <= names(author["tools"])
+    orchestrator = names(capture["tools"])
+    assert "search_cloned_sections" in orchestrator
+    assert "insert_cloned_section" not in orchestrator
