@@ -356,6 +356,177 @@ def test_a_css_url_inside_a_media_query_is_gated_at_the_same_depth() -> None:
 
 
 # --------------------------------------------------------------------------- #
+# Review round 1 — the scoper's markup-breakout and reference-gate holes
+# --------------------------------------------------------------------------- #
+
+
+def test_a_string_token_cannot_close_the_style_element_it_will_be_written_into(
+) -> None:
+    """CRITICAL: stored CSS is written RAW into a ``<style>`` element by render and export.
+
+    A CSS string is raw text to the HTML tokenizer, so ``content: "</style><script>…"`` ends the
+    style element and everything after it becomes live markup — with the published CSP permitting
+    inline script. Sanitize-once means stored bytes are trusted absolutely downstream, so this is
+    THIS module's problem, not the renderer's.
+    """
+    result = scope_fragment_css(
+        '.a { content: "</style><script>alert(1)</script>" }',
+        fragment_id=FRAG_ID,
+        rehosted={},
+    )
+    assert "</" not in result.css
+    assert "<script" not in result.css
+    # Escaped, not destroyed: the section still says what it said.
+    assert "3c" in result.css.lower()
+
+
+def test_a_comment_cannot_close_the_style_element_either() -> None:
+    """Comments are dropped at parse, so this one never reaches the last gate — but it must not
+    reach the OUTPUT either, and that is what is actually being asserted."""
+    out = _scope(".a { color: red /* </style><script>alert(1)</script> */ }")
+    assert "</" not in out
+    assert "script" not in out
+    assert f".{WRAPPER} .a" in out
+
+
+def test_the_last_gate_is_a_whole_output_check_not_a_token_walk() -> None:
+    """The ``</`` refusal runs on the FINAL text, so it covers constructs nobody enumerated.
+
+    Asserted directly rather than only through the constructs that happen to reach it today: the
+    guarantee is "no stored fragment css contains ``</``", and a token walk can always be
+    outflanked by a shape that was not on its list.
+    """
+    from lumen_api.fragments.cssscope import _refuse_markup_breakout
+
+    _refuse_markup_breakout(".a { color: red }")  # does not raise
+    with pytest.raises(FragmentRefused) as excinfo:
+        _refuse_markup_breakout(".a { color: red } </style><script>alert(1)</script>")
+    assert excinfo.value.code == "fragment.css_markup_breakout"
+
+
+def test_a_selector_cannot_close_the_style_element_either() -> None:
+    with pytest.raises(FragmentRefused) as excinfo:
+        _scope('[data-x="</style><script>alert(1)</script>"] { color: red }')
+    assert excinfo.value.code == "fragment.css_markup_breakout"
+
+
+def test_a_media_range_query_keeps_its_less_than_sign() -> None:
+    """The refusal is on ``</``, not on ``<`` — modern media range syntax is legitimate CSS."""
+    out = _scope("@media (400px <= width <= 700px) { .a { color: red } }")
+    assert "<=" in out
+    assert f".{WRAPPER} .a" in out
+
+
+def test_an_unreadable_url_is_refused_not_serialized_as_garbage() -> None:
+    """``url(var(--x))`` is a tinycss2 bad-url token; serializing it stores ``url([bad url]))``."""
+    with pytest.raises(FragmentRefused) as excinfo:
+        _scope(".a { background: url(var(--brand-image)) }")
+    assert excinfo.value.code == "fragment.unreadable_reference"
+
+
+def test_an_unterminated_string_is_refused() -> None:
+    with pytest.raises(FragmentRefused) as excinfo:
+        _scope('.a { content: "unterminated\n }')
+    assert excinfo.value.code == "fragment.unreadable_reference"
+
+
+@pytest.mark.parametrize("function", ["image-set", "-webkit-image-set"])
+def test_an_image_set_candidate_is_gated_like_any_other_reference(function: str) -> None:
+    """``image-set("x.png" 1x)`` loads bytes through a bare STRING, not through ``url()``."""
+    with pytest.raises(FragmentRefused) as excinfo:
+        _scope(f'.hero {{ background: {function}("{HERO_URL}" 1x, url({LOGO_URL}) 2x) }}')
+    assert excinfo.value.reference == HERO_URL
+
+    result = scope_fragment_css(
+        f'.hero {{ background: {function}("{HERO_URL}" 1x, url({LOGO_URL}) 2x) }}',
+        fragment_id=FRAG_ID,
+        rehosted=REHOSTED,
+    )
+    assert f"/asset-store/{HERO_DIGEST}" in result.css
+    assert f"/asset-store/{LOGO_DIGEST}" in result.css
+    assert result.asset_digests == tuple(sorted((HERO_DIGEST, LOGO_DIGEST)))
+
+
+# --------------------------------------------------------------------------- #
+# Review round 1 — the sanitizer's three escape hatches
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.parametrize("tag", ["animate", "set", "animateTransform", "animateMotion"])
+def test_smil_animation_cannot_smuggle_a_javascript_href_into_preserved_svg(tag: str) -> None:
+    """CRITICAL: SMIL rewrites an attribute at runtime, so it walks straight past an
+    attribute-time href gate — ``<set attributeName="href" to="javascript:…">``."""
+    result = sanitize_fragment_html(
+        f'<section><svg><a href="#x">'
+        f'<{tag} attributeName="href" to="javascript:alert(1)"></{tag}>'
+        f"<circle></circle></a></svg></section>",
+        rehosted={},
+    )
+    assert "javascript" not in result.html.lower()
+    assert tag.lower() not in result.html.lower()
+    # The artwork around it survives.
+    assert "<circle" in result.html
+    assert any(tag.lower() in note.lower() for note in result.notes)
+
+
+def test_an_animate_values_list_cannot_smuggle_one_either() -> None:
+    result = sanitize_fragment_html(
+        '<section><svg><a href="#x">'
+        '<animate attributeName="href" values="javascript:alert(1)" dur="1s"></animate>'
+        "</a></svg></section>",
+        rehosted={},
+    )
+    assert "javascript" not in result.html.lower()
+
+
+def test_template_content_is_not_a_blind_spot(
+) -> None:
+    """CRITICAL: lexbor keeps ``<template>`` content off the element walk but SERIALIZES it.
+
+    So a template round-tripped unchanged: stored script text, and an un-rehosted remote
+    reference sailing past a gate that is supposed to be fail-closed.
+    """
+    result = sanitize_fragment_html(
+        "<section><h1>Hi</h1><template>"
+        '<script>steal()</script><img src="https://evil.example/x.png">'
+        "</template></section>",
+        rehosted={},
+    )
+    assert "template" not in result.html
+    assert "steal" not in result.html
+    assert "evil.example" not in result.html
+    assert "<h1>Hi</h1>" in result.html
+    assert any("template" in note for note in result.notes)
+
+
+def test_a_source_planted_slot_marker_is_stripped_so_only_we_mint_them() -> None:
+    """A cloned page may already carry ``data-lumen-slot``. If it survived, a source-chosen key
+    could collide with an annotator-minted one and F1.4 would write tenant content into markup
+    the attacker positioned."""
+    result = sanitize_fragment_html(
+        '<section><h1 data-lumen-slot="headline" data-lumen-anything="x" data-ok="keep">Hi</h1>'
+        "</section>",
+        rehosted={},
+    )
+    assert "data-lumen-slot" not in result.html
+    assert "data-lumen-anything" not in result.html
+    assert 'data-ok="keep"' in result.html
+    assert any("data-lumen" in note for note in result.notes)
+
+
+def test_the_annotator_still_mints_a_marker_on_scrubbed_markup() -> None:
+    """The strip is of SOURCE markers only — ours are stamped after sanitization, and survive."""
+    sanitized = sanitize_fragment_html(
+        '<section><h1 class="head" data-lumen-slot="evil">Hi</h1></section>', rehosted={}
+    )
+    annotated = annotate_fragment_slots(
+        sanitized.html, [SlotSpec(selector=".head", key="headline", kind="text")]
+    )
+    assert 'data-lumen-slot="headline"' in annotated.html
+    assert "evil" not in annotated.html
+
+
+# --------------------------------------------------------------------------- #
 # The slot-marker annotator
 # --------------------------------------------------------------------------- #
 

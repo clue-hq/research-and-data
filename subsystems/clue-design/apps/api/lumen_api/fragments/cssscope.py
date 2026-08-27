@@ -32,9 +32,35 @@ The rulings this file implements, and why:
   Rewriting to the wrapper puts those declarations on the element that actually contains the
   section. A note records it either way.
 
-Every ``url()`` — at any nesting depth — goes through the same fail-closed reference gate the
+Every byte-loading reference — at any nesting depth — goes through the same fail-closed gate the
 HTML sanitizer uses (:func:`~lumen_api.fragments.refs.resolve_asset_reference`), so a section
-whose background image was never rehosted refuses rather than rendering a hole.
+whose background image was never rehosted refuses rather than rendering a hole. That means
+``url()`` in both its token forms, AND the bare string candidates of ``image-set()`` /
+``-webkit-image-set()``, which load bytes through a plain string rather than through ``url()``
+and would otherwise be the one reference shape that walked past a fail-closed gate.
+
+**Stored CSS may not contain ``</``** (:func:`_refuse_markup_breakout`). This is a *markup*
+concern living in a *CSS* module on purpose. The render arm and the export packager write this
+stylesheet RAW into a ``<style>`` element, whose content is raw text to the HTML tokenizer —
+so a CSS string reading ``content: "</style><script>alert(1)</script>"`` ends the style element
+and turns the rest into live markup, on a published page whose CSP permits inline script.
+Sanitize-once means stored bytes are trusted absolutely downstream, so the door is here, at the
+one moment anything about this stylesheet is still checkable. It is the same posture the engine
+takes on its own write door (``theme.rs``'s value gate) rather than at its serializers.
+
+Two layers, so fidelity survives the safety:
+
+* ``<`` inside a string or url token is ESCAPED to the CSS escape ``\\3c ``, which means exactly
+  what it did — a section whose breadcrumb separator is ``content: "<"`` is not refused.
+* whatever ``</`` remains after that is outside any string, which is not meaningful CSS, so the
+  fragment is REFUSED and names the snippet. The check is on ``</`` rather than on ``<`` because
+  the media range syntax (``@media (400px <= width <= 700px)``) is legitimate and common, and
+  because ``</`` is the actual raw-text end condition.
+
+A reference tinycss2 cannot even tokenize (``url(var(--x))`` → a ``bad-url`` parse error;
+an unterminated string → ``bad-string``) is REFUSED rather than serialized: serializing it stores
+the literal text ``url([bad url]))`` in an immutable artifact, which is neither the author's CSS
+nor anything a browser can use.
 """
 
 from __future__ import annotations
@@ -63,6 +89,17 @@ _ANIMATION_PROPERTIES = frozenset(
 #: Selectors that address the document rather than anything inside the section.
 _DOCUMENT_SELECTORS = frozenset({":root", "html", "body", "html body", ":host"})
 
+#: Functions whose bare STRING arguments are URLs by their own grammar, not by ``url()``.
+_IMAGE_SET_FUNCTIONS = frozenset({"image-set", "-webkit-image-set"})
+
+#: The raw-text end condition for a ``<style>`` element. See the module docstring.
+_MARKUP_BREAKOUT = "</"
+
+#: ``<`` as a CSS escape. The trailing space terminates the hex escape and is consumed, so
+#: ``\3c `` + any following character is always correct — including when that character is
+#: itself a space or a hex digit, which is exactly when an unterminated escape would misread.
+_ESCAPED_LT = "\\3c "
+
 
 @dataclass(frozen=True)
 class ScopedCss:
@@ -85,7 +122,28 @@ def scope_fragment_css(
     renames = {name: f"{name}--{wrapper}" for name in keyframe_names}
     body = _scope_rules(rules, wrapper=wrapper, renames=renames, rehosted=rehosted,
                         digests=digests, notes=notes)
+    _refuse_markup_breakout(body)
     return ScopedCss(css=body, asset_digests=tuple(sorted(digests)), notes=tuple(notes))
+
+
+def _refuse_markup_breakout(css: str) -> None:
+    """The last gate: stored CSS may not carry the sequence that ends a ``<style>`` element.
+
+    Runs on the FINAL text rather than per-token, so it covers everything a token walk can miss —
+    comments, at-rule preludes, attribute selectors, escaped idents, and any serializer behaviour
+    that changes under us later. A whole-output assertion is the only form of this check that
+    cannot be outflanked by a construct nobody thought of.
+    """
+    index = css.find(_MARKUP_BREAKOUT)
+    if index == -1:
+        return
+    snippet = css[max(0, index - 20) : index + 40]
+    raise FragmentRefused(
+        "fragment.css_markup_breakout",
+        "fragment css contains '</', which would end the <style> element it is written into: "
+        f"...{snippet}...",
+        reference=snippet,
+    )
 
 
 def rewrite_declaration_urls(
@@ -285,23 +343,65 @@ def _declaration_block(
     return tinycss2.serialize(mutable)
 
 
-def _rewrite_urls(tokens: Sequence[object], *, rehosted: Mapping[str, str], digests: set[str]) -> None:
+def _rewrite_urls(
+    tokens: Sequence[object], *, rehosted: Mapping[str, str], digests: set[str]
+) -> None:
+    """Gate every byte-loading reference, refuse the unreadable, and defuse ``<`` in strings.
+
+    One walk rather than three, because each of the three has to see the same tokens at the same
+    depth: a reference nested two functions down still loads bytes, an unreadable one is still
+    unreadable, and a string that can end a ``<style>`` element does not care where it sits.
+    """
     for token in tokens:
+        if isinstance(token, ast.ParseError):
+            # tinycss2 could not tokenize this at all. Serializing it would store the literal
+            # text `url([bad url]))` in an immutable artifact — neither the author's CSS nor
+            # anything a browser can use — and it is precisely the shape a reference we cannot
+            # read takes (`url(var(--x))`), so it must not pass a fail-closed gate.
+            if token.kind in ("bad-url", "bad-string"):
+                raise FragmentRefused(
+                    "fragment.unreadable_reference",
+                    f"fragment css has an unreadable token ({token.kind}): {token.message}",
+                    reference=token.kind,
+                )
+            continue
+
         if isinstance(token, ast.URLToken):
             digest = resolve_asset_reference(token.value, rehosted)
             if digest is None:
+                # URLToken serializes its `representation`, not its value.
+                token.representation = _defuse(token.representation)
                 continue
             digests.add(digest)
             token.value = asset_url(digest)
-            # URLToken serializes its `representation`, not its value.
             token.representation = f'url("{token.value}")'
+
+        elif isinstance(token, ast.StringToken):
+            token.representation = _defuse(token.representation)
+
         elif isinstance(token, ast.FunctionBlock):
             if token.lower_name == "url":
                 _rewrite_url_function(token, rehosted=rehosted, digests=digests)
+            elif token.lower_name in _IMAGE_SET_FUNCTIONS:
+                _rewrite_image_set(token, rehosted=rehosted, digests=digests)
             else:
                 _rewrite_urls(token.arguments, rehosted=rehosted, digests=digests)
-        elif isinstance(token, (ast.ParenthesesBlock, ast.SquareBracketsBlock, ast.CurlyBracketsBlock)):
+
+        elif isinstance(
+            token, (ast.ParenthesesBlock, ast.SquareBracketsBlock, ast.CurlyBracketsBlock)
+        ):
             _rewrite_urls(token.content, rehosted=rehosted, digests=digests)
+
+
+def _defuse(representation: str) -> str:
+    """``<`` → the CSS escape ``\\3c ``, so a string cannot end the ``<style>`` it is written in.
+
+    Escaped rather than refused because a ``<`` inside a CSS string is ordinary content — a
+    breadcrumb separator, a tooltip caret — and it means exactly the same thing afterwards.
+    Whatever ``</`` survives this is outside any string, and :func:`_refuse_markup_breakout`
+    refuses the fragment for it.
+    """
+    return representation.replace("<", _ESCAPED_LT)
 
 
 def _rewrite_url_function(
@@ -311,6 +411,7 @@ def _rewrite_url_function(
         if isinstance(argument, ast.StringToken):
             digest = resolve_asset_reference(argument.value, rehosted)
             if digest is None:
+                argument.representation = _defuse(argument.representation)
                 continue
             digests.add(digest)
             argument.value = asset_url(digest)
@@ -322,6 +423,30 @@ def _rewrite_url_function(
         f"fragment css has a url() we cannot resolve: {tinycss2.serialize([token])}",
         reference=tinycss2.serialize([token]),
     )
+
+
+def _rewrite_image_set(
+    token: ast.FunctionBlock, *, rehosted: Mapping[str, str], digests: set[str]
+) -> None:
+    """``image-set()`` loads bytes through a BARE STRING, not through ``url()``.
+
+    ``image-set("hero.png" 1x, url(hero@2x.png) 2x)`` — the first candidate is a plain string and
+    is a URL only by this function's own grammar, so a walk that inspects ``url()`` and nothing
+    else lets it straight through the one gate that is supposed to be fail-closed. Each string
+    argument is therefore resolved and rewritten exactly like a ``url()``; the ``url()``
+    candidates in the same list keep going through the generic path.
+    """
+    for argument in token.arguments:
+        if isinstance(argument, ast.StringToken):
+            digest = resolve_asset_reference(argument.value, rehosted)
+            if digest is None:
+                argument.representation = _defuse(argument.representation)
+                continue
+            digests.add(digest)
+            argument.value = asset_url(digest)
+            argument.representation = f'"{argument.value}"'
+        else:
+            _rewrite_urls([argument], rehosted=rehosted, digests=digests)
 
 
 def _rewrite_animation_names(tokens: list[object], *, renames: Mapping[str, str]) -> None:

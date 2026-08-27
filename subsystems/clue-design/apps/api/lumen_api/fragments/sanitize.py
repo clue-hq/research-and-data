@@ -36,8 +36,21 @@ The ruling, construct by construct:
   must resolve to a rehosted digest (see :mod:`lumen_api.fragments.refs`) and are rewritten to
   ``/asset-store/{digest}``. Fail-closed.
 * Inline SVG is PRESERVED — it is the section's artwork, and dropping it would gut most modern
-  hero sections — with ``<script>`` and ``<foreignObject>`` removed and handlers stripped like
-  anywhere else.
+  hero sections — with ``<script>``, ``<foreignObject>`` and the SMIL animation elements removed
+  and handlers stripped like anywhere else.
+* ``data-lumen-*`` attributes present in the SOURCE are stripped. Only the annotator mints those,
+  and it runs after this pass.
+
+Three of those rulings came out of the first review round, and each names a way something got
+PAST an attribute-time gate rather than through it — worth stating, because the pattern is what
+generalises:
+
+* **SMIL** (``<set attributeName="href" to="javascript:…">``) does not carry a dangerous value
+  when we look at it; it rewrites another element's attribute later, at run time.
+* **``<template>``** content lives in a separate document fragment, so it is not on the element
+  walk at all — yet it is serialized on the way out, which made it a hole with no visible edge.
+* **A source-planted ``data-lumen-slot``** is not dangerous by itself; it becomes dangerous when
+  F1.4 later treats it as a marker we minted.
 """
 
 from __future__ import annotations
@@ -70,8 +83,32 @@ DROPPED_ELEMENTS = frozenset(
         "frameset",
         "applet",
         "portal",
+        # SMIL. These do not carry a dangerous value at parse time — they REWRITE another
+        # element's attribute at run time (`<set attributeName="href" to="javascript:…">`,
+        # `<animate … values="javascript:…">`), which walks straight past an attribute-time
+        # href gate. Dropping the elements outright is the only posture that is sound without
+        # re-implementing SMIL's semantics to decide which rewrites are safe; the cost is that
+        # a cloned section loses declarative SVG animation, which is rare and cosmetic.
+        "animate",
+        "set",
+        "animatetransform",
+        "animatemotion",
+        "animatecolor",
+        # `<template>`'s content lives in a SEPARATE document fragment: it is not part of the
+        # element walk below, but it IS serialized on the way out. Left alone, a template round-
+        # tripped unchanged — stored script text and un-rehosted remote references sailing past
+        # a gate that is meant to be fail-closed. Dropping it is sound and cheap; a cloned
+        # section that needs inert markup it never instantiates is not a case worth the risk of
+        # descending into a second tree.
+        "template",
     }
 )
+
+#: Attribute prefix reserved for markers WE mint. A cloned page may already carry a
+#: ``data-lumen-slot``; if it survived, a source-chosen key could collide with an
+#: annotator-minted one, and F1.4's substitution would then write tenant content into markup the
+#: source positioned. Only the annotator mints these, and it runs after this pass.
+_RESERVED_ATTR_PREFIX = "data-lumen-"
 
 #: Attributes whose value loads bytes and therefore must already be in our custody.
 _ASSET_ATTRS = frozenset({"src", "poster", "background"})
@@ -153,6 +190,11 @@ def _clean_attributes(
             notes.append(f"stripped event handler {lowered} on <{tag}>")
             continue
 
+        if lowered.startswith(_RESERVED_ATTR_PREFIX):
+            del node.attrs[name]
+            notes.append(f"stripped source-planted {lowered} on <{tag}> (we mint our own)")
+            continue
+
         if lowered in _ASSET_ATTRS or (
             lowered in ("href", "xlink:href") and tag in _SVG_ASSET_ELEMENTS
         ):
@@ -184,6 +226,12 @@ def _rewrite_srcset(
 
     Gating only the first would let the 2x candidate — the one a retina visitor actually loads —
     stay pointed at somebody else's CDN.
+
+    Splitting on a bare comma is not the full ``srcset`` grammar: a URL may legally contain a
+    comma (``x.png?a=1,2``), and this split would cut it in two. That errs CLOSED — each half is
+    a reference no rehost map contains, so the fragment is refused with a name the producer can
+    read, rather than a wrong URL being stored. Recorded as a known minor rather than fixed here:
+    the honest fix is a real srcset parser, and a refusal is the safe direction to be wrong in.
     """
     candidates: list[str] = []
     for entry in value.split(","):
