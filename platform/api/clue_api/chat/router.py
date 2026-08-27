@@ -546,9 +546,9 @@ def _agent_profile_options() -> tuple[AgentProfileOptionWire, ...]:
     return (
         AgentProfileOptionWire(
             id=PROJECT_CONVERSATION_AGENT_PROFILE_ID,
-            label="GPT-5.6 Terra",
-            short_label="GPT-5.6 Terra",
-            description="Clue's governed GPT-5.6 Terra conversation profile",
+            label="Grok 4.6",
+            short_label="Grok 4.6",
+            description="Clue's governed Grok 4.6 conversation profile",
             model_id=PROJECT_CONVERSATION_MODEL_ID,
         ),
     )

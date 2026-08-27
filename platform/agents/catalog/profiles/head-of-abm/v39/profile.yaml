@@ -2,7 +2,7 @@ schema_version: "1"
 kind: profile
 name: head-of-abm
 version: v39
-status: active
+status: retired
 role: head_of_abm
 prompt:
   name: head-of-abm
