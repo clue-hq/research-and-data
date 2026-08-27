@@ -313,12 +313,18 @@ def test_an_asset_bound_into_a_fragment_slot_reaches_the_zip(
         ),
     )
 
-    files, html, _manifest = _export(client, document["id"])
+    files, html, manifest = _export(client, document["id"])
 
     assert f"assets/{account_digest}.png" in files
     assert f"assets/{account_digest}.png" in html
     # the clone's own logo is no longer displayed, so its bytes are not what the img names
     assert f'src="assets/{logo_digest}' not in html
+
+    # This fixture's hero digest names bytes nobody ever stored (a purge, a half-restored
+    # backup). That is a WARNING and a kept reference, never a failed export: the rest of the
+    # page is a perfectly good deliverable, and a reader online may well still resolve it.
+    assert any("0" * 12 in warning for warning in manifest["warnings"]), manifest["warnings"]
+    assert f"/asset-store/{'0' * 64}" in html
 
 
 def test_a_dead_fragment_pin_still_exports_and_says_so(
