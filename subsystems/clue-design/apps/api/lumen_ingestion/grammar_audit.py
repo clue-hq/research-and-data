@@ -172,7 +172,12 @@ def extract_grammar_audit(
         cadence=_cadence(
             evidence.geometry.background_sequence, bands, dark, brand_kit, measured
         ),
-        color_frequency=_color_frequency(bands, surfaces, brand_kit),
+        color_frequency=_color_frequency(
+            bands,
+            surfaces,
+            brand_kit,
+            len(evidence.geometry.background_sequence) - len(bands),
+        ),
         surface_language=_surface_language(brand_kit, measured, surfaces),
         anti_patterns=_anti_patterns(
             evidence, brand_kit, bands, dark, surfaces, measured
@@ -197,14 +202,29 @@ def _type_treatment(evidence: BrandEvidence, brand_kit: dict[str, Any]) -> Gramm
         if sample is not None:
             anchored.setdefault(f"type.{role}", label)
 
-    rules: list[GrammarRule] = []
+    # The field's LAW leads; the role listing it applies to follows. The injected
+    # block drops a field's tail first, so a type-treatment section that keeps
+    # six role listings and loses "never restate the ramp" has kept the footnotes
+    # and dropped the instruction.
+    rules: list[GrammarRule] = [
+        GrammarRule(
+            rule=(
+                "Headings and body land on the theme's type ramp with no classes of their "
+                "own. Never restate size, weight, leading or tracking on a heading: a raw "
+                "`text-5xl font-bold` replaces the treatment below with a generic one."
+            ),
+            evidence="house rule: the kit's type roles compile into the theme base layer",
+            basis="default",
+        )
+    ]
+    role_rules: list[GrammarRule] = []
     heading_weight: Optional[int] = None
     for role, where in _WEB_TYPE_ROLES:
         style = _style_value(typography.get(role))
         if style is None:
             continue
         label = anchored.get(role)
-        rules.append(
+        role_rules.append(
             GrammarRule(
                 # The `derived` basis is what says "computed, not observed", and
                 # the injected block renders it as a marker — saying it twice in
@@ -247,18 +267,9 @@ def _type_treatment(evidence: BrandEvidence, brand_kit: dict[str, Any]) -> Gramm
             )
         )
 
-    rules.append(
-        GrammarRule(
-            rule=(
-                "Headings and body land on the theme's type ramp with no classes of their "
-                "own. Never restate size, weight, leading or tracking on a heading: a raw "
-                "`text-5xl font-bold` replaces the treatment above with a generic one."
-            ),
-            evidence="house rule: the kit's type roles compile into the theme base layer",
-            basis="default",
-        )
-    )
-    return GrammarField(rules=_capped(rules))
+    # A measured fact about the whole ramp outranks any single role's listing, so
+    # it sits above them and below the law.
+    return GrammarField(rules=_capped(rules + role_rules))
 
 
 def _style_value(entry: Any) -> Optional[dict[str, Any]]:
@@ -326,16 +337,38 @@ def _cadence(
     ]
 
     total = len(bands)
-    if total:
+    unread = len(sequence) - total
+    noun = _band_noun(unread)
+    caveat = _unread_caveat(unread, len(sequence))
+    if not _counts_for_the_page(bands, sequence):
+        # The refusals are the majority (or everything): whatever the readable
+        # minority says about light and dark is not a fact about this page, and a
+        # law built on it would be the opposite of the truth on an ordinary
+        # photo-led brand.
+        rules.append(
+            GrammarRule(
+                rule=(
+                    "This site's light/dark balance is NOT KNOWN: "
+                    f"{unread} of {len(sequence)} bands carry an image, a gradient or a "
+                    "translucent paint, so their color could not be read. Do not read the "
+                    "sequence above as a count."
+                ),
+                evidence=(
+                    f"the capture could read the color of only {total} of {len(sequence)} bands"
+                ),
+                basis="measured",
+            )
+        )
+    elif total:
         count = len(dark)
         if count == 0:
             rules.append(
                 GrammarRule(
                     rule=(
-                        f"No dark band anywhere on this site: all {total} measured bands are "
-                        "light. A dark section would be new to this brand."
+                        f"No dark band among the {total} {noun} on this site: all of them are "
+                        f"light. A dark section would be new to this brand.{caveat}"
                     ),
-                    evidence=f"0 of {total} measured bands below the dark-luminance threshold",
+                    evidence=f"0 of {total} {noun} below the dark-luminance threshold",
                     basis="measured",
                 )
             )
@@ -344,9 +377,10 @@ def _cadence(
                 GrammarRule(
                     rule=(
                         f"A dark band is the exception here — {count} of {total}. Use it as an "
-                        "interval between light sections, never as the page's default surface."
+                        f"interval between light sections, never as the page's default "
+                        f"surface.{caveat}"
                     ),
-                    evidence=f"{count} of {total} measured bands are dark",
+                    evidence=f"{count} of {total} {noun} are dark",
                     basis="measured",
                 )
             )
@@ -354,10 +388,10 @@ def _cadence(
             rules.append(
                 GrammarRule(
                     rule=(
-                        f"Dark is a working surface for this brand — {count} of {total} measured "
-                        "bands. A light-only page would not read as this site."
+                        f"Dark is a working surface for this brand — {count} of {total} {noun}. "
+                        f"A light-only page would not read as this site.{caveat}"
                     ),
-                    evidence=f"{count} of {total} measured bands are dark",
+                    evidence=f"{count} of {total} {noun} are dark",
                     basis="measured",
                 )
             )
@@ -395,6 +429,7 @@ def _color_frequency(
     bands: list[SectionBackground],
     surfaces: list[SurfaceShape],
     brand_kit: dict[str, Any],
+    unread: int,
 ) -> GrammarField:
     controls = _control_fills(surfaces)
     if not bands and not controls:
@@ -419,12 +454,14 @@ def _color_frequency(
         elif token:
             claimed.add(token)
         named = f"`{value}`" + (f" (`{token}`)" if token else "")
-        share = f"{len(members)} of {total}"
+        # The denominator is the bands whose color could be READ, and it says so
+        # when that is not every band the capture saw.
+        share = f"{len(members)} of {total} {_band_noun(unread)}"
         if position == 0:
             rules.append(
                 GrammarRule(
                     rule=(
-                        f"{named} carries {share} measured bands — this page's default canvas. "
+                        f"{named} carries {share} — this page's default canvas. "
                         "A new section stands on it unless it has a reason not to."
                     ),
                     evidence="counted over the measured band sequence",
@@ -434,9 +471,7 @@ def _color_frequency(
         else:
             rules.append(
                 GrammarRule(
-                    rule=(
-                        f"{named} carries {share} measured bands. Use it exactly that sparingly."
-                    ),
+                    rule=f"{named} carries {share}. Use it exactly that sparingly.",
                     evidence="counted over the measured band sequence",
                     basis="measured",
                 )
@@ -450,12 +485,20 @@ def _color_frequency(
         value, count = accent
         token = _surface_token(value, brand_kit)
         named = f"`{value}`" + (f" (`{token}`)" if token else "")
+        # The cross-check can only see the bands whose color was READ, so when
+        # some were not, the claim says which set it checked rather than
+        # implying it looked at the whole page.
+        against = (
+            "and not one band background"
+            if not unread
+            else f"and not one of the {total} band backgrounds whose color could be read"
+        )
         rules.append(
             GrammarRule(
                 rule=(
                     f"{named} fills controls and nothing else — {count} measured button/chip "
-                    "variants, and not one band background. Keep it at control scale; a band "
-                    "painted in it is not this brand."
+                    f"variants, {against}. Keep it at control scale; a band painted in it is "
+                    "not this brand."
                 ),
                 evidence="measured control fills, cross-checked against the band backgrounds",
                 basis="measured",
@@ -636,23 +679,31 @@ def _anti_patterns(
 ) -> GrammarField:
     rules: list[GrammarRule] = []
 
-    if bands and len(dark) * 3 <= len(bands):
+    sequence = list(evidence.geometry.background_sequence)
+    unread = len(sequence) - len(bands)
+    # Same gate as the cadence's dark rule, and for the same reason: this is the
+    # exclusion built on that count, so it may not outlive the count's honesty.
+    if _counts_for_the_page(bands, sequence) and len(dark) * 3 <= len(bands):
         rules.append(
             GrammarRule(
                 rule=(
-                    f"No extra dark sections: {len(dark)} of {len(bands)} measured bands is "
-                    "dark. A second dark band is a rhythm this brand does not have."
+                    f"No extra dark sections: {len(dark)} of {len(bands)} {_band_noun(unread)} "
+                    "is dark. A second dark band is a rhythm this brand does not have."
+                    + _unread_caveat(unread, len(sequence))
                 ),
                 evidence="counted over the measured band sequence",
                 basis="measured",
             )
         )
 
-    if bands and not any(band.gradient for band in evidence.geometry.background_sequence):
+    # Already correct before the refused-band sweep, and the shape the two rules
+    # above were fixed into: it consults the RAW sequence, so "not one" means not
+    # one of the bands the capture saw, refused or otherwise.
+    if bands and not any(band.gradient for band in sequence):
         rules.append(
             GrammarRule(
                 rule="No gradient or mesh band backgrounds: not one measured band on this site uses one.",
-                evidence=f"0 of {len(evidence.geometry.background_sequence)} measured bands is a gradient",
+                evidence=f"0 of {len(sequence)} measured bands is a gradient",
                 basis="measured",
             )
         )
@@ -698,6 +749,45 @@ def _anti_patterns(
 
 
 # --- shared helpers -----------------------------------------------------------------
+
+
+def _counts_for_the_page(
+    bands: list[SectionBackground], sequence: list[SectionBackground]
+) -> bool:
+    """May a count over the READABLE bands be stated as a law about this page?
+
+    Only when the bands whose color could be read are a majority of the sequence.
+    A photo-led brand's four dark hero/feature bands are refused for a good
+    reason (their stored hex is not what the page shows), but the two bands left
+    over are not the page — counting them and calling the result "this site" is
+    how "no dark band anywhere" gets said about a dark site.
+    """
+    return bool(bands) and len(bands) * 2 >= len(sequence)
+
+
+def _band_noun(unread: int) -> str:
+    """What the denominator of a band count is honestly called."""
+    return "readable bands" if unread else "measured bands"
+
+
+def _unread_caveat(unread: int, total: int) -> str:
+    """The sentence a band-count LAW carries when some bands could not be read.
+
+    It rides the rule itself rather than the field, because the injected block
+    can drop rules independently — a caveat one line away is a caveat that may
+    not be there when the law is.
+    """
+    if not unread:
+        return ""
+    if unread == 1:
+        return (
+            f" 1 of the {total} bands carries an image, a gradient or a translucent paint, so "
+            f"its color was not read and this counts the other {total - 1}."
+        )
+    return (
+        f" {unread} of the {total} bands carry an image, a gradient or a translucent paint, so "
+        f"their colors were not read and this counts the other {total - unread}."
+    )
 
 
 def _usable_bands(sequence: Iterable[SectionBackground]) -> list[SectionBackground]:

@@ -122,6 +122,53 @@ def _dark_dominant_evidence() -> BrandEvidence:
     )
 
 
+def _photo_hero_evidence() -> BrandEvidence:
+    """An ordinary photo-led brand: six bands, four of them dark under a photo.
+
+    The four image-backed bands carry no readable color, so the audit may not
+    count them — and must not then speak about "this site" as though the two it
+    could read were the whole page.
+    """
+    bands = [
+        _band(0, "#101018", has_image=True),
+        _band(1, "#FFFFFF"),
+        _band(2, "#0B0B10", has_image=True),
+        _band(3, "#F7F7F7"),
+        _band(4, "#101018", has_image=True),
+        _band(5, "#0B0B10", has_image=True),
+    ]
+    return _evidence().model_copy(
+        update={"geometry": GeometryEvidence(background_sequence=bands, surfaces=[])}
+    )
+
+
+def _one_unread_band_evidence() -> BrandEvidence:
+    """Six readable bands (two dark) plus one gradient the capture could not read."""
+    bands = [
+        _band(0, "#FFFFFF"),
+        _band(1, "#0D1738"),
+        _band(2, "#FFFFFF"),
+        _band(3, "#FFFFFF", gradient=True),
+        _band(4, "#0D1738"),
+        _band(5, "#FFFFFF"),
+        _band(6, "#FFFFFF"),
+    ]
+    surfaces = [
+        SurfaceShape(
+            surface="button",
+            variant="solid.1",
+            count=6,
+            fill="solid",
+            radius_px=[4.0],
+            background="#533AFD",
+            pointer=_pointer(),
+        )
+    ]
+    return _evidence().model_copy(
+        update={"geometry": GeometryEvidence(background_sequence=bands, surfaces=surfaces)}
+    )
+
+
 def _bare_evidence() -> BrandEvidence:
     """A brand the capture learned almost nothing about: no type samples, no
     fonts, no geometry. Every honest answer here is "not known"."""
@@ -233,6 +280,18 @@ def test_the_type_law_forbids_restating_the_ramp_on_a_heading() -> None:
     assert "ramp" in text.lower()
 
 
+def test_the_type_law_leads_its_field_so_a_tight_budget_cannot_eat_it() -> None:
+    """The field's INSTRUCTION comes before the reference data it applies to.
+    The injected block drops a field's tail first, and a type-treatment section
+    that keeps six role listings and loses "never restate the ramp" has kept the
+    footnotes and dropped the law."""
+    evidence = _evidence()
+    audit = extract_grammar_audit(evidence, _kit_for(evidence))
+    first = audit.type_treatment.rules[0]
+    assert first.basis == "default"
+    assert "ramp" in first.rule.lower()
+
+
 # --- 2. cadence --------------------------------------------------------------------
 
 
@@ -268,6 +327,74 @@ def test_a_capture_with_no_measured_bands_says_the_cadence_is_not_known() -> Non
     assert audit.cadence.rules == []
     assert audit.cadence.absent
     assert "band" in audit.cadence.absent.lower()
+
+
+def test_a_photo_led_site_is_never_told_it_has_no_dark_band() -> None:
+    """The refused-band trap. Four of six bands sit under a photo, so their color
+    is unreadable; counting only the two that were readable and calling the
+    result "this site" invents the opposite of the truth."""
+    evidence = _photo_hero_evidence()
+    audit = extract_grammar_audit(evidence, _kit_for(evidence))
+    cadence = _rules_text(audit.cadence)
+    assert "No dark band anywhere" not in cadence
+    assert "all 2 measured bands are light" not in cadence
+    # It says WHY it is not counting, with the number it could not read.
+    assert "NOT KNOWN" in cadence
+    assert "4 of 6" in cadence
+    # And the exclusion built on the same count does not fire either.
+    assert "no extra dark" not in _rules_text(audit.anti_patterns).lower()
+
+
+def test_a_gradient_or_translucent_band_is_unread_for_the_same_reason() -> None:
+    for background, overrides in (
+        ("#0B0B10", {"gradient": True}),
+        ("#0B0B1080", {}),
+    ):
+        bands = [
+            _band(0, background, **overrides),
+            _band(1, background, **overrides),
+            _band(2, background, **overrides),
+            _band(3, background, **overrides),
+            _band(4, "#FFFFFF"),
+        ]
+        evidence = _evidence().model_copy(
+            update={"geometry": GeometryEvidence(background_sequence=bands, surfaces=[])}
+        )
+        audit = extract_grammar_audit(evidence, _kit_for(evidence))
+        assert "NOT KNOWN" in _rules_text(audit.cadence), (background, overrides)
+
+
+def test_one_unread_band_keeps_the_count_but_names_what_it_could_not_read() -> None:
+    """A minority refusal does not cost the rule — it costs the rule's silence
+    about the refusal, so it can never be read as a whole-site law."""
+    evidence = _one_unread_band_evidence()
+    audit = extract_grammar_audit(evidence, _kit_for(evidence))
+    cadence = _rules_text(audit.cadence)
+    assert "2 of 6" in cadence
+    assert "1 of the 7" in cadence
+    exclusions = _rules_text(audit.anti_patterns)
+    assert "No extra dark sections" in exclusions
+    assert "1 of the 7" in exclusions
+
+
+def test_the_accent_claim_says_which_bands_it_could_check() -> None:
+    evidence = _one_unread_band_evidence()
+    audit = extract_grammar_audit(evidence, _kit_for(evidence))
+    accent = next(
+        rule.rule for rule in audit.color_frequency.rules if "#533AFD" in rule.rule
+    )
+    assert "could be read" in accent
+
+
+def test_a_fully_readable_sequence_carries_no_refusal_caveat() -> None:
+    """The discrimination guard: the Stripe harvest reads every band, so nothing
+    about unread bands appears anywhere in its audit."""
+    evidence = _measured_evidence()
+    audit = extract_grammar_audit(evidence, _kit_for(evidence))
+    text = _audit_text(audit)
+    assert "could not be read" not in text
+    assert "could be read" not in text
+    assert "NOT KNOWN" not in text
 
 
 def test_the_section_rhythm_is_named_by_its_kit_token() -> None:

@@ -275,6 +275,53 @@ def test_a_field_that_arrives_with_neither_rules_nor_a_reason_still_says_not_kno
     assert "NOT KNOWN" in body
 
 
+def test_the_type_law_survives_a_budget_that_drops_a_measurement(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The extractor emits a field's LAW first, so the drop — which walks a
+    field's tail — takes a role listing before it takes "never restate the ramp".
+    A field-1 section that keeps six listings and loses its instruction has kept
+    the footnotes and dropped the law."""
+    law = _rule(
+        "Headings land on the theme's type ramp. Never restate size, weight, leading or "
+        "tracking on a heading: a raw `text-5xl font-bold` replaces the treatment below "
+        "with a generic one.",
+        basis="default",
+        evidence="house rule",
+    )
+    audit = _audit(
+        type_treatment={
+            "rules": [law]
+            + [_rule(f"`type.role{index}` is Aeonik / " + "x" * 200) for index in range(6)],
+            "absent": None,
+        }
+    )
+    monkeypatch.setattr(brand_brief, "GRAMMAR_AUDIT_CHAR_BUDGET", 1400)
+    render = brand_brief.render_grammar_audit(audit)
+
+    assert "never restate size, weight, leading or tracking" in render.markdown.lower()
+    assert render.dropped_rules > 0
+    assert "Type treatment" in render.dropped_from
+    # Whole rules only, even under the tighter budget.
+    for line in render.markdown.splitlines():
+        if line.startswith("- ") and "type.role" in line:
+            assert line.rstrip().endswith("x")
+
+    # And the ordering is what saves it, not luck: the same rules with the law
+    # LAST — where the extractor used to put it — lose exactly that line.
+    trailing = _audit(
+        type_treatment={
+            "rules": [_rule(f"`type.role{index}` is Aeonik / " + "x" * 200) for index in range(6)]
+            + [law],
+            "absent": None,
+        }
+    )
+    assert (
+        "never restate size, weight, leading or tracking"
+        not in brand_brief.render_grammar_audit(trailing).markdown.lower()
+    )
+
+
 def test_an_audit_that_fits_is_not_marked_truncated() -> None:
     render = render_grammar_audit(_audit())
     assert not render.truncated
