@@ -32,6 +32,28 @@ pub enum CustomComponentValue {
 pub const MAX_CUSTOM_COMPONENT_PROPS: usize = 128;
 pub const MAX_CUSTOM_COMPONENT_PROP_STRING_BYTES: usize = 65_536;
 
+/// Per-instance values for a cloned fragment's slots. Flat scalars only: the
+/// artifact's slot manifest declares what a slot *means* (an `href` slot rides
+/// `Text`), and the document stores nothing but the scalar — never markup.
+///
+/// Unlike `CustomComponentValue` this enum is serde-TAGGED rather than
+/// untagged, because `Text` and `Asset` are both JSON strings: an untagged
+/// shape cannot tell them apart, so every asset slot would silently come back
+/// as text and the round trip would not be value-preserving. The tag is the
+/// discriminator, not extra structure — `{"text": "Book a call"}`,
+/// `{"asset": "asset_logo_1"}`, `{"visible": false}`.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FragmentSlotValue {
+    Text(String),
+    Asset(String),
+    Visible(bool),
+}
+
+pub const MAX_FRAGMENT_SLOTS: usize = 64;
+pub const MAX_FRAGMENT_SLOT_KEY_CHARS: usize = 64;
+pub const MAX_FRAGMENT_SLOT_VALUE_BYTES: usize = 8_192;
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct WebDoc {
     pub schema_version: u32,
@@ -128,6 +150,17 @@ pub enum WebNodeKind {
         artifact_id: String,
         #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
         props: BTreeMap<String, CustomComponentValue>,
+    },
+    /// A verbatim cloned section, pinned to one immutable fragment artifact.
+    /// Always a leaf, exactly like `CustomComponent`: the sanitized markup and
+    /// the scoped CSS live in the durable registry keyed by `fragment_id`, and
+    /// the node carries only that id plus flat scalar slot values. No raw HTML
+    /// ever enters the document, so no write path can smuggle markup into the
+    /// arena — sanitization happens once, at artifact creation.
+    Fragment {
+        fragment_id: String,
+        #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+        slots: BTreeMap<String, FragmentSlotValue>,
     },
     Image {
         asset_id: AssetId,
@@ -637,6 +670,70 @@ pub fn custom_component_props_issue(
     None
 }
 
+/// Fragment artifact ids are content identities minted by the registry:
+/// `frag_` + exactly 16 lowercase hex characters (a truncated SHA-256).
+///
+/// The shape check is load-bearing beyond identity: the id is interpolated
+/// into a CSS class (`lumen-frag-<id>`) and an HTML wrapper class downstream,
+/// so an id carrying `<`, whitespace, or a quote is refused here rather than
+/// escaped there.
+pub fn fragment_id_is_valid(value: &str) -> bool {
+    value.strip_prefix("frag_").is_some_and(|digest| {
+        digest.len() == 16
+            && digest
+                .bytes()
+                .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
+    })
+}
+
+/// Slot keys come from the artifact's slot manifest, which is machine-minted
+/// from the cloned markup: bounded, ASCII, and free of control characters.
+pub fn fragment_slot_key_is_valid(value: &str) -> bool {
+    !value.is_empty()
+        && value.chars().count() <= MAX_FRAGMENT_SLOT_KEY_CHARS
+        && value.is_ascii()
+        && !value.bytes().any(|byte| byte.is_ascii_control())
+}
+
+/// Bounds for one node's slot map. Every breach is refused (the caller turns
+/// this into a typed error or an Error diagnostic); nothing is truncated.
+pub fn fragment_slots_issue(slots: &BTreeMap<String, FragmentSlotValue>) -> Option<String> {
+    if slots.len() > MAX_FRAGMENT_SLOTS {
+        return Some(format!(
+            "has {} slots; maximum is {MAX_FRAGMENT_SLOTS}",
+            slots.len()
+        ));
+    }
+    for (key, value) in slots {
+        if !fragment_slot_key_is_valid(key) {
+            return Some(format!("slot key `{key:?}` is not a supported key"));
+        }
+        match value {
+            FragmentSlotValue::Text(text) => {
+                if text.len() > MAX_FRAGMENT_SLOT_VALUE_BYTES {
+                    return Some(format!(
+                        "text slot `{key}` exceeds {MAX_FRAGMENT_SLOT_VALUE_BYTES} bytes"
+                    ));
+                }
+            }
+            FragmentSlotValue::Asset(asset_id) => {
+                if asset_id.len() > MAX_FRAGMENT_SLOT_VALUE_BYTES {
+                    return Some(format!(
+                        "asset slot `{key}` exceeds {MAX_FRAGMENT_SLOT_VALUE_BYTES} bytes"
+                    ));
+                }
+                // One asset-id grammar for the whole engine: the stable-id
+                // constructor every other asset reference is built from.
+                if AssetId::new(asset_id.clone()).is_err() {
+                    return Some(format!("asset slot `{key}` is not an asset id"));
+                }
+            }
+            FragmentSlotValue::Visible(_) => {}
+        }
+    }
+    None
+}
+
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MarqueeDirection {
@@ -654,14 +751,17 @@ impl WebNodeKind {
             WebNodeKind::Button { .. } => "button",
             WebNodeKind::Component { .. } => "component",
             WebNodeKind::CustomComponent { .. } => "custom_component",
+            WebNodeKind::Fragment { .. } => "fragment",
             WebNodeKind::Image { .. } => "image",
             WebNodeKind::Icon { .. } => "icon",
             WebNodeKind::Embed { .. } => "embed",
         }
     }
 
-    /// Section, Container, and built-in Component may hold children. A custom
-    /// component is deliberately absent: it is always a leaf.
+    /// Section, Container, and built-in Component may hold children. Custom
+    /// components and fragments are deliberately absent: both are always
+    /// leaves, and this list is the single place leaf-ness is decided (ops
+    /// insert/move and validation's LUMW0007 both read it).
     pub fn is_branch(&self) -> bool {
         matches!(
             self,
@@ -896,6 +996,194 @@ mod tests {
         assert!(!custom_component_prop_name_is_valid(""));
         assert!(!custom_component_prop_name_is_valid("bad-key"));
         assert!(!custom_component_prop_name_is_valid("2bad"));
+    }
+
+    fn fragment_kind(fragment_id: &str, slots: BTreeMap<String, FragmentSlotValue>) -> WebNodeKind {
+        WebNodeKind::Fragment {
+            fragment_id: fragment_id.to_owned(),
+            slots,
+        }
+    }
+
+    #[test]
+    fn fragment_leaf_round_trips_all_three_slot_value_kinds() {
+        let node = WebNode {
+            id: NodeId::from("frg_hero"),
+            kind: fragment_kind(
+                "frag_0123456789abcdef",
+                BTreeMap::from([
+                    (
+                        "headline".to_owned(),
+                        FragmentSlotValue::Text("Book a call".to_owned()),
+                    ),
+                    (
+                        "logo".to_owned(),
+                        FragmentSlotValue::Asset("asset_logo_1".to_owned()),
+                    ),
+                    ("badge".to_owned(), FragmentSlotValue::Visible(false)),
+                ]),
+            ),
+            classes: "w-full".to_owned(),
+            children: Vec::new(),
+            name: Some("Cloned hero".to_owned()),
+            slot_key: None,
+        };
+
+        let json = serde_json::to_string(&node).expect("serialize");
+        let back: WebNode = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(back, node, "every slot value kind survives the round trip");
+        assert_eq!(
+            serde_json::to_string(&back).expect("re-serialize"),
+            json,
+            "re-serialization is byte-identical"
+        );
+
+        let value = serde_json::to_value(&node).expect("serialize");
+        assert_eq!(value["kind"], "fragment");
+        assert_eq!(value["fragment_id"], "frag_0123456789abcdef");
+        assert_eq!(value["slots"]["headline"]["text"], "Book a call");
+        assert_eq!(value["slots"]["logo"]["asset"], "asset_logo_1");
+        assert_eq!(value["slots"]["badge"]["visible"], false);
+        assert!(!back.kind.is_branch(), "a fragment is always a leaf");
+        assert_eq!(back.kind.kind_name(), "fragment");
+    }
+
+    #[test]
+    fn fragment_asset_slot_never_decays_into_a_text_slot() {
+        // The one shape hazard of this vocabulary: Text and Asset are both JSON
+        // strings, so a tag-less encoding would silently reclassify every asset
+        // slot as text on the way back in.
+        let kind = fragment_kind(
+            &format!("frag_{}", "a".repeat(16)),
+            BTreeMap::from([(
+                "logo".to_owned(),
+                FragmentSlotValue::Asset("asset_logo_1".to_owned()),
+            )]),
+        );
+        let back: WebNodeKind =
+            serde_json::from_value(serde_json::to_value(&kind).expect("serialize"))
+                .expect("deserialize");
+        assert_eq!(back, kind);
+    }
+
+    #[test]
+    fn fragment_slots_reject_nested_json_during_deserialization() {
+        for slots in [
+            serde_json::json!({"headline": {"text": {"nested": true}}}),
+            serde_json::json!({"headline": "bare string"}),
+            serde_json::json!({"headline": {"html": "<script>alert(1)</script>"}}),
+            serde_json::json!({"headline": null}),
+        ] {
+            let value = serde_json::json!({
+                "id": "frg_bad",
+                "kind": "fragment",
+                "fragment_id": "frag_0123456789abcdef",
+                "slots": slots,
+                "classes": ""
+            });
+            assert!(
+                serde_json::from_value::<WebNode>(value).is_err(),
+                "only the typed scalar slot vocabulary may enter the document"
+            );
+        }
+    }
+
+    #[test]
+    fn fragment_id_grammar_is_bounded() {
+        assert!(fragment_id_is_valid("frag_0123456789abcdef"));
+        assert!(fragment_id_is_valid(&format!("frag_{}", "f".repeat(16))));
+        for bad in [
+            "",
+            "frag_",
+            "frag",
+            "ccart_0123456789abcdef",
+            "frag_0123456789abcde",   // 15 hex chars
+            "frag_0123456789abcdef0", // 17 hex chars
+            "frag_0123456789ABCDEF",  // uppercase hex
+            "frag_0123456789abcdeg",  // non-hex char
+            "frag_<script>abcdef",
+            "frag_0123456789abcd ef",
+            "frag_\"0123456789abcd",
+            " frag_0123456789abcdef",
+            "frag_0123456789abcdef ",
+        ] {
+            assert!(!fragment_id_is_valid(bad), "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn fragment_slot_bounds_refuse_rather_than_truncate() {
+        let ok = BTreeMap::from([(
+            "headline".to_owned(),
+            FragmentSlotValue::Text("hi".to_owned()),
+        )]);
+        assert_eq!(fragment_slots_issue(&ok), None);
+
+        // Keys: non-empty, ASCII, no control characters, at most 64 chars.
+        for bad_key in [
+            String::new(),
+            "k".repeat(MAX_FRAGMENT_SLOT_KEY_CHARS + 1),
+            "héadline".to_owned(),
+            "head\nline".to_owned(),
+            "head\u{0}line".to_owned(),
+        ] {
+            let slots =
+                BTreeMap::from([(bad_key.clone(), FragmentSlotValue::Text("hi".to_owned()))]);
+            assert!(fragment_slots_issue(&slots).is_some(), "{bad_key:?}");
+        }
+        assert_eq!(
+            fragment_slots_issue(&BTreeMap::from([(
+                "k".repeat(MAX_FRAGMENT_SLOT_KEY_CHARS),
+                FragmentSlotValue::Text("hi".to_owned())
+            )])),
+            None,
+            "exactly at the key bound is accepted"
+        );
+
+        // Values: text and asset scalars are bounded at 8 KB.
+        assert!(fragment_slots_issue(&BTreeMap::from([(
+            "headline".to_owned(),
+            FragmentSlotValue::Text("x".repeat(MAX_FRAGMENT_SLOT_VALUE_BYTES + 1))
+        )]))
+        .is_some());
+        assert_eq!(
+            fragment_slots_issue(&BTreeMap::from([(
+                "headline".to_owned(),
+                FragmentSlotValue::Text("x".repeat(MAX_FRAGMENT_SLOT_VALUE_BYTES))
+            )])),
+            None,
+            "exactly at the value bound is accepted"
+        );
+
+        // Asset slots carry asset ids, not free text.
+        for bad_asset in ["", "asset logo", "asset/logo", "<script>", "asset\"1"] {
+            assert!(
+                fragment_slots_issue(&BTreeMap::from([(
+                    "logo".to_owned(),
+                    FragmentSlotValue::Asset(bad_asset.to_owned())
+                )]))
+                .is_some(),
+                "{bad_asset:?}"
+            );
+        }
+        assert_eq!(
+            fragment_slots_issue(&BTreeMap::from([(
+                "logo".to_owned(),
+                FragmentSlotValue::Asset("asset_logo-1".to_owned())
+            )])),
+            None
+        );
+
+        // At most 64 slots per node.
+        let many: BTreeMap<String, FragmentSlotValue> = (0..=MAX_FRAGMENT_SLOTS)
+            .map(|index| (format!("slot_{index}"), FragmentSlotValue::Visible(true)))
+            .collect();
+        assert_eq!(many.len(), MAX_FRAGMENT_SLOTS + 1);
+        assert!(fragment_slots_issue(&many).is_some());
+        let at_bound: BTreeMap<String, FragmentSlotValue> = (0..MAX_FRAGMENT_SLOTS)
+            .map(|index| (format!("slot_{index}"), FragmentSlotValue::Visible(true)))
+            .collect();
+        assert_eq!(fragment_slots_issue(&at_bound), None);
     }
 
     #[test]

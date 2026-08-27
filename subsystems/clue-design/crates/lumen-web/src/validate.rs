@@ -8,8 +8,8 @@
 use crate::derive::{web_slot_key_is_valid, when_gate_key};
 use crate::doc::{
     calendly_url_is_valid, custom_component_artifact_id_is_valid, custom_component_props_issue,
-    custom_component_slug_is_valid, ButtonAction, ComponentSpec, EmbedProvider, WebDoc,
-    WebNodeKind, MAX_TREE_DEPTH, WEB_SCHEMA_VERSION,
+    custom_component_slug_is_valid, fragment_id_is_valid, fragment_slots_issue, ButtonAction,
+    ComponentSpec, EmbedProvider, WebDoc, WebNodeKind, MAX_TREE_DEPTH, WEB_SCHEMA_VERSION,
 };
 use crate::util::href_is_allowed;
 use lumen_core::{Diagnostic, DiagnosticSubject, NodeId, Phase};
@@ -492,6 +492,32 @@ fn validate_page(doc: &WebDoc, page: &crate::doc::WebPage, diagnostics: &mut Vec
                     ));
                 }
             }
+            WebNodeKind::Fragment { fragment_id, slots } => {
+                if !fragment_id_is_valid(fragment_id) {
+                    diagnostics.push(
+                        Diagnostic::error(
+                            Phase::Web,
+                            "LUMW0033",
+                            format!(
+                                "fragment `{}` has invalid fragment id `{fragment_id}`",
+                                node.id
+                            ),
+                            Some(DiagnosticSubject::Node(node.id.clone())),
+                        )
+                        .with_hint(
+                            "Fragment ids are immutable registry ids in the form frag_<16 lowercase hex chars>.",
+                        ),
+                    );
+                }
+                if let Some(issue) = fragment_slots_issue(slots) {
+                    diagnostics.push(Diagnostic::error(
+                        Phase::Web,
+                        "LUMW0034",
+                        format!("fragment `{}` {issue}", node.id),
+                        Some(DiagnosticSubject::Node(node.id.clone())),
+                    ));
+                }
+            }
             WebNodeKind::Text { variant, content } => {
                 for issue in content.validate() {
                     diagnostics.push(Diagnostic::error(
@@ -761,6 +787,79 @@ mod tests {
         assert!(codes.contains(&"LUMW0030".to_owned()), "{codes:?}");
         assert!(codes.contains(&"LUMW0031".to_owned()), "{codes:?}");
         assert!(codes.contains(&"LUMW0032".to_owned()), "{codes:?}");
+    }
+
+    fn add_fragment(doc: &mut WebDoc) {
+        let page = doc.pages.get_mut(0).expect("page");
+        let container_id = page
+            .nodes
+            .get(&lumen_core::NodeId::from("hero"))
+            .expect("hero")
+            .children[0]
+            .clone();
+        page.nodes
+            .get_mut(&container_id)
+            .expect("hero container")
+            .children
+            .push(lumen_core::NodeId::from("frg_hero"));
+        page.nodes.insert(
+            lumen_core::NodeId::from("frg_hero"),
+            WebNode {
+                id: lumen_core::NodeId::from("frg_hero"),
+                kind: WebNodeKind::Fragment {
+                    fragment_id: "frag_0123456789abcdef".to_owned(),
+                    slots: BTreeMap::from([(
+                        "headline".to_owned(),
+                        crate::doc::FragmentSlotValue::Text("Book a call".to_owned()),
+                    )]),
+                },
+                classes: "w-full".to_owned(),
+                children: Vec::new(),
+                name: None,
+                slot_key: None,
+            },
+        );
+    }
+
+    #[test]
+    fn valid_fragment_leaf_validates() {
+        let mut doc = clean_doc();
+        add_fragment(&mut doc);
+        let diagnostics = validate_web_doc(&doc);
+        assert!(
+            diagnostics
+                .iter()
+                .all(|diagnostic| diagnostic.severity != DiagnosticSeverity::Error),
+            "{diagnostics:#?}"
+        );
+    }
+
+    #[test]
+    fn fragment_id_slots_and_leaf_shape_are_validated() {
+        let mut doc = clean_doc();
+        add_fragment(&mut doc);
+        let node = doc.pages[0]
+            .nodes
+            .get_mut(&lumen_core::NodeId::from("frg_hero"))
+            .expect("fragment");
+        let WebNodeKind::Fragment { fragment_id, slots } = &mut node.kind else {
+            panic!("fragment");
+        };
+        // An id shaped for CSS-class injection is refused, not escaped later.
+        *fragment_id = "frag_\"><style>".to_owned();
+        slots.insert(
+            "bad\nkey".to_owned(),
+            crate::doc::FragmentSlotValue::Visible(true),
+        );
+        node.children.push(lumen_core::NodeId::from("impossible"));
+
+        let codes: Vec<String> = validate_web_doc(&doc)
+            .iter()
+            .map(|diagnostic| diagnostic.code.clone())
+            .collect();
+        assert!(codes.contains(&"LUMW0007".to_owned()), "{codes:?}");
+        assert!(codes.contains(&"LUMW0033".to_owned()), "{codes:?}");
+        assert!(codes.contains(&"LUMW0034".to_owned()), "{codes:?}");
     }
 
     #[test]

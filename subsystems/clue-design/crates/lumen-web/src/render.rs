@@ -809,6 +809,21 @@ fn render_node(
                 ));
             }
         },
+        WebNodeKind::Fragment { .. } => {
+            // Task F1.3 owns the real fragment arm (artifact resolution, the
+            // scoped CSS splice, and the sanitized markup). Until it lands the
+            // kind is deliberately inert: an empty in-flow wrapper that emits
+            // no artifact content — not the markup, not the css, not even the
+            // fragment id or a slot value.
+            out.push_str("<div class=\"lumen-fragment");
+            if !node.classes.trim().is_empty() {
+                out.push(' ');
+                out.push_str(&escape_attr(node.classes.trim()));
+            }
+            out.push('"');
+            node_attr(out);
+            out.push_str("></div>");
+        }
         WebNodeKind::Embed {
             provider,
             url,
@@ -1374,6 +1389,67 @@ mod tests {
             .html
             .contains("data-custom-component-placeholder=\"true\""));
         assert!(!delivery.html.contains("<script"));
+    }
+
+    #[test]
+    fn fragment_renders_an_inert_in_flow_placeholder_until_f1_3() {
+        let (mut doc, theme) = fixture();
+        let page = doc.pages.get_mut(0).expect("page");
+        let host_id = page
+            .nodes
+            .get(&NodeId::from("hero"))
+            .expect("hero")
+            .children[0]
+            .clone();
+        page.nodes
+            .get_mut(&host_id)
+            .expect("host")
+            .children
+            .push(NodeId::from("frg_hero"));
+        page.nodes.insert(
+            NodeId::from("frg_hero"),
+            WebNode {
+                id: NodeId::from("frg_hero"),
+                kind: WebNodeKind::Fragment {
+                    fragment_id: "frag_0123456789abcdef".to_owned(),
+                    slots: std::collections::BTreeMap::from([(
+                        "headline".to_owned(),
+                        crate::doc::FragmentSlotValue::Text("Talk to us".to_owned()),
+                    )]),
+                },
+                classes: "w-full py-12".to_owned(),
+                children: Vec::new(),
+                name: None,
+                slot_key: None,
+            },
+        );
+
+        let editor = render_page(
+            &doc,
+            &PageId::from("home"),
+            &theme,
+            &RenderOptions::editor("/asset-store"),
+        )
+        .expect("editor render");
+        assert!(editor.html.contains(
+            "<div class=\"lumen-fragment w-full py-12\" data-node-id=\"frg_hero\"></div>"
+        ));
+        // Task F1.3 owns artifact resolution: nothing about the artifact —
+        // not even its id — reaches the page from this arm.
+        assert!(!editor.html.contains("frag_0123456789abcdef"));
+        assert!(!editor.html.contains("Talk to us"));
+
+        let delivery = render_page(
+            &doc,
+            &PageId::from("home"),
+            &theme,
+            &RenderOptions::delivery("/asset-store"),
+        )
+        .expect("delivery render");
+        assert!(delivery
+            .html
+            .contains("<div class=\"lumen-fragment w-full py-12\"></div>"));
+        assert!(!delivery.html.contains("data-node-id"));
     }
 
     #[test]
