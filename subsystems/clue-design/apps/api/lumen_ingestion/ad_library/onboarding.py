@@ -40,6 +40,7 @@ from .company_identity import (
     RESOLVER_AD_LIBRARY_DOMAIN,
     RESOLVER_EXPLICIT,
     RESOLVER_PDL,
+    RESOLVER_PDL_THEN_AD_LIBRARY_DOMAIN,
     AdvertiserResolution,
     CompanyIdentityError,
     check_advertiser_names,
@@ -49,6 +50,7 @@ from .distill import AdDnaCard, previews_for, resolve_distiller
 from .harvest import (
     DEFAULT_MAX_CREATIVES,
     DEFAULT_MAX_PAGES,
+    ads_considered,
     creative_provenance,
     custody_creatives,
     fetch_pages,
@@ -196,22 +198,14 @@ def _onboard(
     # --- step 1: harvest, filter, dedupe, custody -------------------------------------------
     reporter("Reading your published ads…", 0.1)
     resolved_provider = provider or resolve_provider()
-    # A resolved id ALWAYS wins the selector. The domain is only ever sent when nothing could
-    # be resolved from it — that is the fallback, and it is recorded as such rather than being
-    # allowed to look like the verified path.
-    harvest_page_id = resolution.linkedin_page_id
-    pages = fetch_pages(
+    pages, resolution = _harvest_pages(
         resolved_provider,
-        company_domain=None if harvest_page_id else company_domain,
-        page_id=harvest_page_id,
+        resolution=resolution,
+        company_domain=company_domain,
         max_pages=max_pages,
         date_filter=request.get("date_filter"),
     )
-    observed_page_id = (pages[0].page_id if pages else None) or harvest_page_id
-    # Now the page the library ACTUALLY answered with can be stamped alongside the one that was
-    # asked for. On the fallback path those two differ, and comparing them is how R3-A was
-    # eventually found at all.
-    resolution = replace(resolution, observed_page_id=observed_page_id)
+    observed_page_id = resolution.observed_page_id
     evidence["resolution"] = resolution.to_json()
 
     selection = select_creatives(
@@ -448,6 +442,111 @@ def _resolve_advertiser(
     )
 
 
+def _harvest_pages(
+    provider: Any,
+    *,
+    resolution: AdvertiserResolution,
+    company_domain: str | None,
+    max_pages: int,
+    date_filter: str | None,
+) -> "tuple[list[Any], AdvertiserResolution]":
+    """Fetch the advertiser's library, with ONE domain retry when a resolved page holds no ads.
+
+    A resolved id ALWAYS wins the selector, exactly as before: the domain is sent only when
+    nothing could be resolved from it. What W-B3 adds is the case where resolution succeeded
+    and was still not enough.
+
+    **The defect.** The identity resolver answered ``cursor.com`` with page ``105610681`` — a
+    real page, correctly belonging to the company, carrying zero ads — while the page Cursor
+    actually advertises from holds 4489. Enrichment records name the LEGAL ENTITY; a company
+    can advertise from a different page, and when it does, every check this lane has says the
+    harvest went fine. The job reads ``empty``, which is a sentence reserved for "this brand
+    has no static ads" and here is simply false.
+
+    **The retry, and its three deliberate limits.**
+
+    * It fires only when the page came back with **NO ADS AT ALL** — ``ads_considered == 0``,
+      not "nothing was kept". A page holding 40 video ads that the filter dropped is the RIGHT
+      page and the lane has already learned what it needed to; retrying it would spend a fetch
+      to be told the same thing by a worse-attested source.
+    * It fires only on the ``pdl`` path. An **explicit** page id is the operator asserting
+      which page to read, and second-guessing an assertion is not a fallback, it is an
+      override. The ``ad_library_domain`` path is already the thing being fallen back TO.
+    * It runs **once**, against one alternative. Scoring a candidate set of pages is a
+      different and unapproved design; this is the cheap version, and its whole cost is one
+      extra vendor page fetch on a harvest that had otherwise found nothing.
+
+    The retry's result is adopted only if it actually found ads. When BOTH come back empty the
+    primary resolution stands — the verified page really is the best answer anyone has, and
+    downgrading it to ``unverified`` on the strength of a second empty page would trade a true
+    statement for a false one. Either way both attempts are recorded.
+    """
+    asked = resolution.linkedin_page_id
+    pages = fetch_pages(
+        provider,
+        company_domain=None if asked else company_domain,
+        page_id=asked,
+        max_pages=max_pages,
+        date_filter=date_filter,
+    )
+    # The page the library ACTUALLY answered with, stamped alongside the one that was asked
+    # for. On the fallback paths those two differ, and comparing them is how R3-A was found.
+    observed = (pages[0].page_id if pages else None) or asked
+    considered = ads_considered(pages)
+    attempts = [_attempt(resolution.resolver_used, asked, observed, considered)]
+
+    domain = (company_domain or "").strip()
+    if not (resolution.resolver_used == RESOLVER_PDL and considered == 0 and domain):
+        return pages, replace(resolution, observed_page_id=observed, attempts=tuple(attempts))
+
+    retry = fetch_pages(
+        provider,
+        company_domain=domain,
+        page_id=None,
+        max_pages=max_pages,
+        date_filter=date_filter,
+    )
+    retry_observed = retry[0].page_id if retry else None
+    retry_considered = ads_considered(retry)
+    attempts.append(
+        _attempt(RESOLVER_AD_LIBRARY_DOMAIN, None, retry_observed, retry_considered)
+    )
+
+    if retry_considered == 0:
+        return pages, replace(resolution, observed_page_id=observed, attempts=tuple(attempts))
+
+    # The retry harvested. `linkedin_page_id` deliberately KEEPS the resolver's empty page —
+    # it is what the identity source said, it is half the diagnosis, and `observed_page_id` is
+    # already the field that means "the page the library answered with". `resolved_name` keeps
+    # the independently-sourced name too, because it is what gates custody, and the whole
+    # reason the cross-check is worth anything on this path is that the name did NOT come from
+    # the page being checked.
+    return retry, replace(
+        resolution,
+        resolver_used=RESOLVER_PDL_THEN_AD_LIBRARY_DOMAIN,
+        verified=False,
+        observed_page_id=retry_observed,
+        attempts=tuple(attempts),
+        note=(
+            f"the identity resolver named LinkedIn page {asked}, which carried no ads at all, "
+            f"so the harvest was retried once against the ad library's own resolution of "
+            f"{domain!r}; the creatives came from that page and NOTHING independent verified it"
+        ),
+    )
+
+
+def _attempt(
+    resolver_used: str, asked: str | None, answered: str | None, considered: int
+) -> JsonObject:
+    """One harvest attempt, as four scalars an operator can read without the evidence body."""
+    return {
+        "resolver_used": resolver_used,
+        "page_id_asked": asked,
+        "page_id_answered": answered,
+        "ads_considered": considered,
+    }
+
+
 def _distil(creatives: list[Any], *, distiller: Any, evidence: JsonObject) -> AdDnaCard | None:
     """One vision pass, and a recorded reason whenever it produces nothing."""
     engine = distiller if distiller is not None else resolve_distiller()
@@ -666,8 +765,11 @@ def _outcome(evidence: JsonObject) -> JsonObject:
 
     sentences: list[str] = []
     # The advertiser sentence leads, because "whose ads are these" is the question every other
-    # number in this summary is conditional on.
+    # number in this summary is conditional on. W-B3's retry sentence follows it immediately,
+    # for the same reason: a harvest that took two pages to find is a harvest whose page number
+    # an operator will otherwise mistrust, and the fix for that is to say what happened.
     sentences.append(_resolution_sentence(resolution))
+    sentences.append(_attempts_sentence(resolution))
     if mismatch:
         sentences.append(str(check.get("conflict") or "The advertiser names did not agree."))
     sentences.append(f"{kept} ad(s) kept, {custodied} custodied.")
@@ -725,6 +827,38 @@ def _resolution_sentence(resolution: JsonObject) -> str:
     return (
         f"Harvested {who}from {where} — resolved by the ad library itself and "
         "UNVERIFIED by an independent identity resolver."
+    )
+
+
+def _attempts_sentence(resolution: JsonObject) -> str:
+    """W-B3: name the retry in plain language, or say nothing at all.
+
+    A one-attempt harvest — every harvest before W-B3, and the overwhelming majority after —
+    gets NO sentence. There is nothing to explain, and a summary that announced "1 attempt" on
+    every job would be noise that trains an operator to skip the line that matters.
+    """
+    attempts = resolution.get("attempts")
+    if not isinstance(attempts, list) or len(attempts) < 2:
+        return ""
+
+    first, second = attempts[0], attempts[-1]
+    if not isinstance(first, dict) or not isinstance(second, dict):
+        return ""
+
+    named = first.get("page_id_answered") or first.get("page_id_asked")
+    found = second.get("ads_considered")
+    landed = second.get("page_id_answered")
+    where = f"page {landed}" if landed else "a page it chose from the domain"
+    if not found:
+        # Both empty. The retry did not rescue the harvest, and pretending the second number
+        # is better than the first would be the R3-A mistake wearing a new hat.
+        return (
+            f"The identity resolver's page {named} had no ads; the ad library's own domain "
+            f"resolution ({where}) had none either."
+        )
+    return (
+        f"The identity resolver's page {named} had no ads; fell back to the ad library's own "
+        f"domain resolution → {where}, with {found} ad(s)."
     )
 
 

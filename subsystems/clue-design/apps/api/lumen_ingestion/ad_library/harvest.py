@@ -29,6 +29,7 @@ __all__ = [
     "DEFAULT_MAX_PAGES",
     "CreativeSelection",
     "HarvestedCreative",
+    "ads_considered",
     "creative_id_for",
     "custody_creatives",
     "download_creative_bytes",
@@ -146,6 +147,18 @@ def fetch_pages(
 # --------------------------------------------------------------------------------------
 
 
+def ads_considered(pages: Sequence[AdLibraryPage]) -> int:
+    """How many raw ads a fetch put in front of the filter — before any rule ran.
+
+    One line, and it has a name because W-B3 gave it a SECOND caller. It is the number
+    :attr:`CreativeSelection.considered` reports, and it is also the number the onboarding
+    lane's domain-retry decides on ("the resolved page held nothing at all", as opposed to
+    "the page held ads and the filter dropped them all"). Those two questions must never be
+    answered by two subtly different counts, so they are answered by this one.
+    """
+    return sum(len(page.ads) for page in pages)
+
+
 def select_creatives(
     pages: Sequence[AdLibraryPage],
     *,
@@ -202,7 +215,7 @@ def select_creatives(
         kept=tuple(kept),
         dropped=tuple(dropped),
         advertiser_name=resolved_name,
-        considered=len(ads),
+        considered=ads_considered(pages),
     )
 
 
