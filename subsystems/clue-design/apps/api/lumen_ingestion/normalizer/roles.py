@@ -64,7 +64,20 @@ def _pointer(cluster: ColorCluster) -> str:
 
 
 def _is_near_neutral(cluster: ColorCluster) -> bool:
-    return hex_to_oklch(cluster.representative)[1] < NEAR_NEUTRAL_C
+    return _is_near_neutral_hex(cluster.representative)
+
+
+def _is_near_neutral_hex(hex_value: str) -> bool:
+    """Is this color a neutral — a black, white or grey — rather than a hue?
+
+    Deliberately `NEAR_NEUTRAL_C` (0.03) and NOT the `_is_saturated` floor (0.07) that the
+    clustered brand search uses. The gate exists to catch a declaration that names a NEUTRAL
+    as the brand, not to impose a saturation minimum: plenty of real brands are muted, and a
+    declaration is exactly the evidence that lets us keep one clustering would have discarded
+    (`_is_saturated` would have refused a slate-blue brand and fallen through to the platform
+    teal — strictly worse than believing the site).
+    """
+    return hex_to_oklch(hex_value)[1] < NEAR_NEUTRAL_C
 
 
 def _is_saturated(cluster: ColorCluster) -> bool:
@@ -182,8 +195,25 @@ def assign_light_roles(
     text = _ensure_contrast_light(text, page.hex, diagnostics)
     assignments["text.primary"] = text
 
-    # 3. brand
+    # 3. brand. Like the text gate above, a DECLARED brand still has to be the kind of color
+    # the role is for. Webflow's Client-First convention names a brand's whole family off one
+    # prefix — `--base-color-brand--black`, `--…--green`, `--…--white` — so "the site called
+    # it brand" is not on its own evidence that a given member IS the brand. Capture already
+    # ranks the family by chroma; if even the most chromatic member is a neutral, the site
+    # named a family and not a brand, and clustering (which has always required saturation)
+    # is the better answer. Loud, never silent.
     declared_brand = stated.get("surface.brand")
+    if declared_brand is not None and _is_near_neutral_hex(declared_brand.value):
+        diagnostics.append(
+            _diag(
+                "LUMI0519",
+                "warning",
+                f"declared brand role {declared_brand.property_name} "
+                f"({declared_brand.value}) is a neutral, not a brand color; "
+                f"clustered evidence used",
+            )
+        )
+        declared_brand = None
     if declared_brand is not None:
         brand = _declared_assignment(declared_brand)
         _claim_matching_clusters(light, brand.hex, chosen_ids)
@@ -212,6 +242,21 @@ def assign_light_roles(
     # carries that hex under its own role, and `surface.accent` exists to be the OTHER one.
     declared_accent = stated.get("surface.accent")
     if declared_accent is not None and declared_accent.value.upper() == brand.hex.upper():
+        declared_accent = None
+    # The accent is the brand's twin: the clustered path only ever filled it from a saturated
+    # cluster, so the same neutrality guard applies for the same reason (`--…-accent--white`
+    # is as real a Client-First name as `--…-brand--white`). Smaller blast radius than brand
+    # — `surface.accent`, `text.accent`, the `accent.primary` alias — but the identical bug.
+    elif declared_accent is not None and _is_near_neutral_hex(declared_accent.value):
+        diagnostics.append(
+            _diag(
+                "LUMI0519",
+                "warning",
+                f"declared accent role {declared_accent.property_name} "
+                f"({declared_accent.value}) is a neutral, not an accent color; "
+                f"clustered evidence used",
+            )
+        )
         declared_accent = None
     if declared_accent is not None:
         assignments["surface.accent"] = _declared_assignment(declared_accent)

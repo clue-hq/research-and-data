@@ -189,6 +189,81 @@ def test_non_semantic_prop_names_keep_todays_weighted_behaviour() -> None:
     assert {a["basis"] for a in report["role_assignments"]} .isdisjoint({"declared"})
 
 
+#: Webflow's Client-First convention names the WHOLE brand family off one prefix — the
+#: neutrals included. The role word `brand` is in every one of them, so all three qualify by
+#: name and only their VALUES can separate them.
+_CLIENT_FIRST_CSS = """
+:root {
+  --base-color-brand--black: #0a0a0a;
+  --base-color-brand--green: #30d8a7;
+  --base-color-brand--white: #ffffff;
+}
+body { background: #ffffff; color: #101418; }
+"""
+
+
+def test_the_most_chromatic_declaration_wins_the_brand_not_the_alphabet() -> None:
+    """Client-First's `--base-color-brand--black` must not beat `…--green` on sort order.
+
+    Names qualify a candidate; among the candidates a name already qualified, the value
+    decides — otherwise the alphabet seats a black brand at 0.9 confidence and takes the
+    primary ramp, brand.subtle, border.brand and focus.ring down with it.
+    """
+    parsed = parse_site(_snapshot(_CLIENT_FIRST_CSS))
+    declared = {d.role: d for d in parsed.declared_roles}
+    assert declared["surface.brand"].value == "#30D8A7"
+    assert declared["surface.brand"].property_name == "--base-color-brand--green"
+
+    report = _report(_evidence(_snapshot(_CLIENT_FIRST_CSS)))
+    assert _assignment(report, "surface.brand") == {
+        "token": "surface.brand",
+        "value": "#30D8A7",
+        "basis": "declared",
+        "pointer": "custom-prop:--base-color-brand--green",
+    }
+
+
+def test_an_all_neutral_brand_family_falls_back_to_clustering() -> None:
+    """A declaration can lie. When every name-qualified brand candidate is a neutral, the
+    site has told us the family, not the brand — refuse it, loudly, and let clustering (which
+    always required saturation) answer."""
+    css = """
+    :root {
+      --base-color-brand--black: #0a0a0a;
+      --base-color-brand--white: #ffffff;
+    }
+    body { background: #ffffff; color: #101418; }
+    .btn { background: #0055ff; }
+    """
+    result = normalize_evidence(
+        _evidence(_snapshot(css)),
+        brand_kit_id="brand_kit_f03",
+        version=1,
+        name="F0.3",
+        created_at="2026-08-27",
+    )
+    brand = _assignment(result.ingestion_report, "surface.brand")
+    assert brand["basis"] != "declared"
+    assert brand["value"] == "#0055FF"  # the clustered, saturated candidate
+    refusals = [d for d in result.diagnostics if d["code"] == "LUMI0519"]
+    assert len(refusals) == 1, result.diagnostics
+    assert refusals[0]["severity"] == "warning"
+    assert "--base-color-brand--black" in refusals[0]["message"]
+
+
+def test_a_muted_but_not_neutral_declared_brand_is_kept() -> None:
+    """The guard targets NEUTRALITY, not a saturation floor: plenty of real brands are
+    muted, and clustering would have thrown those away entirely."""
+    css = """
+    :root { --brand-color: #5a6b8c; }
+    body { background: #ffffff; color: #101418; }
+    """
+    report = _report(_evidence(_snapshot(css)))
+    brand = _assignment(report, "surface.brand")
+    assert brand["basis"] == "declared"
+    assert brand["value"] == "#5A6B8C"
+
+
 def test_a_declared_text_color_that_cannot_be_read_on_the_page_is_refused() -> None:
     """shadcn ships `--primary-foreground` — a foreground, but the INVERSE one.
 
@@ -242,7 +317,7 @@ def test_a_hover_rule_on_a_button_becomes_a_state_style() -> None:
     assert ("a:focus-visible", "focus-visible") in by_selector
     assert ("button:disabled", "disabled") in by_selector
     # a non-interactive selector's hover is not an interaction state we model
-    assert ("​.card:hover", "hover") not in by_selector
+    assert (".card:hover", "hover") not in by_selector
     assert all(not s.selector.startswith(".card") for s in parsed.state_styles)
 
 
