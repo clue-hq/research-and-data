@@ -24,6 +24,17 @@ the head BEFORE any compiled utility sheet. Fragment selectors are all scoped un
 the surrounding document ALSO authors as a utility: the compiled utility then wins the tie and the
 cloned section loses that rule. That is a ledgered, accepted risk — :func:`fragment_collision_diagnostics`
 names it in the render's diagnostics rather than refusing a render over it.
+
+**The whole order in a rendered head**, since three things now style one page (F1.5, recorded
+rather than changed — this is what the engine already does):
+
+1. the theme's base block, with the fragment sheet at its END (so a clone outranks the
+   platform's own element defaults);
+2. ``doc.custom_css``, emitted after it — so at EQUAL specificity the document's own CSS beats a
+   cloned section's, which is the right way round: custom_css is the human's deliberate override;
+3. the compiled utilities — in the editor by the ``@layer base`` wrapper, in delivery by source
+   order (the export links ``site.css`` after the inline blocks). Either way they win ties, which
+   is the plan's ruling and what makes admitting foreign CSS safe at all.
 """
 
 from __future__ import annotations
@@ -39,7 +50,14 @@ from .registry import read_web_fragment
 from .slots import SLOT_KINDS
 
 #: Version of the by-value package shape, so a fleet worker running older code against a newer
-#: API refuses to improvise rather than silently rendering half a page.
+#: API refuses to improvise rather than silently rendering half a page. Read by
+#: :func:`fragment_package_schema_refusal`, which is the ONE place the number is enforced.
+#:
+#: Bump this only for a shape change a previous reader would MISREAD. Adding a key nobody old
+#: looks at is not one — every reader here uses ``.get`` — and bumping for it would refuse
+#: perfectly readable packages in flight during a deploy, which is worse than the nothing it
+#: would have prevented. (F1.4 added ``slot_kinds`` and F1.5 added ``asset_digests`` on those
+#: terms; both stayed at 1.)
 FRAGMENT_RENDER_PACKAGE_SCHEMA_VERSION = 1
 
 #: Class names in a stylesheet: ``.foo``, ``.foo-bar``, ``.md\:flex``. Deliberately a scan, not a
@@ -180,6 +198,11 @@ def build_fragment_render_package(
             "html": loaded.html,
             "css": loaded.css,
             "slot_kinds": slot_kinds(loaded.slot_manifest),
+            # F1.5: the digests of every byte the ARTIFACT displays (its rehosted images and
+            # fonts). The engine never sees these — the markup already names them as
+            # `/asset-store/<digest>` — but a delivery build must put those bytes in the zip,
+            # and the artifact is the only thing that knows which they are.
+            "asset_digests": list(loaded.asset_digests),
         }
     return package
 
@@ -201,6 +224,41 @@ def slot_kinds(slot_manifest: Mapping[str, Any]) -> dict[str, str]:
         str(key): str(entry.get("kind"))
         for key, entry in (slot_manifest or {}).items()
         if isinstance(entry, Mapping) and str(entry.get("kind")) in SLOT_KINDS
+    }
+
+
+def fragment_package_schema_refusal(package: Any) -> dict[str, Any] | None:
+    """A diagnostic when this package's shape is not one this code can read, else ``None``.
+
+    The by-value package rides inside a turn's config, so the process that READS it can be
+    running older code than the API that BUILT it — a fleet worker draining a queue across a
+    deploy. Reading a shape it does not know with rules it does have is improvisation, and the
+    honest move is the one the render arm already makes for an unresolvable pin: drop the map,
+    render placeholders, and say why. A caller that refuses gets a page with visible holes and a
+    named reason instead of a page that is quietly wrong.
+
+    An EMPTY/absent package is not a version problem — it is a page with no fragments — so it
+    passes.
+    """
+    if not isinstance(package, Mapping) or not package:
+        return None
+    version = package.get("schema_version")
+    if version == FRAGMENT_RENDER_PACKAGE_SCHEMA_VERSION:
+        return None
+    return {
+        "severity": "warning",
+        "phase": "web",
+        "code": "fragment.package_schema_unknown",
+        "message": (
+            f"the cloned-section package for this render carries schema_version {version!r}, "
+            f"and this build reads {FRAGMENT_RENDER_PACKAGE_SCHEMA_VERSION}. Every cloned "
+            "section renders its placeholder rather than being read under the wrong rules."
+        ),
+        "subject": None,
+        "hint": (
+            "The process rendering this page is older than the one that resolved its "
+            "artifacts. Re-run the turn on an up-to-date worker."
+        ),
     }
 
 
@@ -339,6 +397,7 @@ __all__ = [
     "fragment_class_collisions",
     "fragment_collision_diagnostics",
     "fragment_css_sheet",
+    "fragment_package_schema_refusal",
     "fragment_render_map",
     "slot_kinds",
     "web_doc_class_tokens",

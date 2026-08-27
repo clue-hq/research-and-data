@@ -215,3 +215,43 @@ def test_a_node_added_mid_turn_that_the_package_never_saw_degrades_rather_than_l
     assert set(captured["fragments"]) == {FRAGMENT_ID}
     response = _replay(tools, captured)
     assert 'data-fragment-placeholder="true"' in (response.get("html") or "")
+
+
+def test_a_package_from_a_shape_this_worker_does_not_know_is_refused_not_improvised(
+    tmp_path: Path,
+):
+    """F1.5: the package's `schema_version` finally MEANS something.
+
+    It was written and never read — a number nobody checked. The shape it guards is real: the
+    package travels by value inside a turn's config, so a worker draining a queue can be running
+    older code than the API that built the package. Reading a newer shape with older rules is
+    exactly the "improvise" this project refuses everywhere else, so the map is dropped whole:
+    the page renders placeholders (loud, LUMW0412) and a diagnostic names the two versions.
+    """
+    tools = _tools(tmp_path, package={**_package(), "schema_version": 999})
+
+    captured = _captured_render_kwargs(tools)
+    assert captured["fragments"] == {}
+    assert captured["fragment_css"] is None
+
+    response = _replay(tools, captured)
+    assert SENTINEL not in (response.get("html") or "")
+    assert 'data-fragment-placeholder="true"' in (response.get("html") or "")
+
+    diagnostics = tools._fragment_diagnostics()
+    assert any(
+        diagnostic["code"] == "fragment.package_schema_unknown"
+        and "999" in diagnostic["message"]
+        for diagnostic in diagnostics
+    ), diagnostics
+
+
+def test_a_package_of_the_known_shape_is_read_normally(tmp_path: Path):
+    """The guard must not fire on the shape it was written for."""
+    tools = _tools(tmp_path, package=_package())
+    assert set(_captured_render_kwargs(tools)["fragments"]) == {FRAGMENT_ID}
+    assert not [
+        diagnostic
+        for diagnostic in tools._fragment_diagnostics()
+        if diagnostic["code"] == "fragment.package_schema_unknown"
+    ]

@@ -40,6 +40,7 @@ from lumen_api.core import CoreClient, CoreError
 from lumen_api.fragments.render import (
     fragment_collision_diagnostics,
     fragment_css_sheet,
+    fragment_package_schema_refusal,
     fragment_render_map,
     web_doc_fragment_ids,
 )
@@ -834,9 +835,18 @@ class LumenWebTools:
         # fragment — a node that appears mid-turn pinning something the package
         # never saw renders the engine's placeholder rather than being guessed
         # at. Read through `_fragment_package`, never directly.
+        # F1.5: and read through the version guard, because THIS is the process the version was
+        # written for — the API resolves the package, a fleet worker renders it, and the two can
+        # be different builds across a deploy. A shape this code does not know is dropped whole
+        # (placeholders + a named diagnostic) rather than read under the wrong rules.
         self._fragment_render_package: Dict[str, Any] = (
             getattr(config, "fragment_render_package", None) or {}
         )
+        self._fragment_package_refusal: Optional[JsonObject] = (
+            fragment_package_schema_refusal(self._fragment_render_package)
+        )
+        if self._fragment_package_refusal is not None:
+            self._fragment_render_package = {}
         # Staleness contract (mirrors the scene view): a monotonic doc-mutation
         # count, and the count stamped at the last successful render. view()
         # refuses a preview older than the current doc.
@@ -4314,10 +4324,20 @@ class LumenWebTools:
         return fragment_css_sheet(self._fragment_render_package, self._fragment_ids())
 
     def _fragment_diagnostics(self) -> List[JsonObject]:
-        """The API-layer cascade warning, recomputed against the current doc."""
-        return fragment_collision_diagnostics(
-            self._fragment_render_package, self.web_doc, self.page_id
+        """The API-layer cascade warning, recomputed against the current doc.
+
+        A package this build cannot read is reported FIRST and every render: the placeholders on
+        the page have a cause, and the cause is not the document.
+        """
+        diagnostics: List[JsonObject] = []
+        if self._fragment_package_refusal is not None:
+            diagnostics.append(dict(self._fragment_package_refusal))
+        diagnostics.extend(
+            fragment_collision_diagnostics(
+                self._fragment_render_package, self.web_doc, self.page_id
+            )
         )
+        return diagnostics
 
     def _font_face_css(self) -> Optional[str]:
         """@font-face CSS embedding the kit's real font faces as data: URLs so

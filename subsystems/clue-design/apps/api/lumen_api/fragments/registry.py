@@ -74,6 +74,18 @@ class LoadedFragment:
     def slot_manifest(self) -> dict[str, Any]:
         return dict(self.payload["slot_manifest"])
 
+    @property
+    def asset_digests(self) -> list[str]:
+        """The digests of every byte this artifact displays — its rehosted images and fonts.
+
+        The markup and the CSS name them as ``/asset-store/<digest>``; this list is the
+        artifact's own record of the set, which is what a delivery build walks to decide which
+        bytes must travel with the page.
+        """
+        return [
+            str(digest) for digest in (self.payload.get("asset_digests") or [])
+        ]
+
 
 def create_web_fragment(
     storage: StorageBackend,

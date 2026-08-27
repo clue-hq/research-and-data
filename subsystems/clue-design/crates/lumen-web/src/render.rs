@@ -319,6 +319,11 @@ pub fn render_page(
     if uses_components {
         html.push_str(&format!("<style>\n{PLATFORM_CSS}\n</style>\n"));
     }
+    // The document's own CSS, AFTER the theme block — which since F1.3 ends with the fragment
+    // sheet. So at equal specificity `custom_css` beats a cloned section's rule, and that is the
+    // right way round: `custom_css` is a human's deliberate override of this page, while a
+    // fragment's CSS came from somebody else's site. (Compiled utilities land after both and win
+    // ties over either.) Recorded here because the order is load-bearing and nothing else says so.
     if !doc.custom_css.trim().is_empty() {
         html.push_str(&format!(
             "<style>\n{}\n</style>\n",

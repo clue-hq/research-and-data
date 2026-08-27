@@ -42,6 +42,15 @@ from .custom_component_runtime import (
 )
 from .database import NotFoundError
 from .design_store import DesignBlobStore
+from .fragments.render import (
+    build_fragment_render_package,
+    css_class_names,
+    empty_fragment_render_package,
+    fragment_class_collisions,
+    fragment_css_sheet,
+    fragment_render_map,
+    web_doc_fragment_ids,
+)
 
 JsonObject = Dict[str, Any]
 
@@ -85,6 +94,26 @@ _IMAGE_EXT_BY_MIME: Dict[str, str] = {
     "image/png": "png",
     "image/jpeg": "jpg",
     "image/svg+xml": "svg",
+}
+
+# Extension by media type for a byte a CLONED SECTION displays. Wider than the image table
+# because a harvested section brings whatever the source site used — a GIF, an AVIF, a webfont
+# behind an `@font-face` in its own CSS — and the type comes from the artifact row rather than
+# from the document's asset record (a fragment's bytes have no document asset record at all).
+# An unlisted type exports without an extension and says so: guessing one would make a static
+# file server serve an image as something else.
+_DELIVERY_EXT_BY_MIME: Dict[str, str] = {
+    **_IMAGE_EXT_BY_MIME,
+    "image/gif": "gif",
+    "image/avif": "avif",
+    "image/x-icon": "ico",
+    "image/vnd.microsoft.icon": "ico",
+    "font/woff2": "woff2",
+    "font/woff": "woff",
+    "font/ttf": "ttf",
+    "font/otf": "otf",
+    "application/font-woff2": "woff2",
+    "application/font-woff": "woff",
 }
 
 
@@ -401,21 +430,80 @@ def _walk_nodes(page: JsonObject):
             stack.append(child_id)
 
 
+def _node_asset_ids(node: JsonObject) -> List[Tuple[str, str]]:
+    """``[(origin, asset_id)]`` for every registered document asset ONE node displays.
+
+    The class of gap this closes (F1.5): the walk below used to ask only "is this an image
+    node", so every other way a node names bytes was invisible to the export — the bytes never
+    entered the zip and the delivered page painted nothing, silently.
+
+    Three ways exist today, and they are enumerated here rather than at the call site so a
+    fourth is added in one place:
+
+    * ``image`` nodes — ``asset_id`` (the original walk).
+    * ``section`` / ``container`` backgrounds — ``background.asset_id``, a typed field the
+      engine renders as a CSS ``background-image``. This is the RECORDED background-image gap.
+    * ``fragment`` nodes — an asset bound into an image slot (``{"asset": "<id>"}``), which is
+      how an account's own logo reaches a cloned section.
+    """
+    found: List[Tuple[str, str]] = []
+    kind = node.get("kind")
+    if kind == "image":
+        asset_id = node.get("asset_id")
+        if isinstance(asset_id, str) and asset_id:
+            found.append(("image", asset_id))
+    background = node.get("background")
+    if isinstance(background, dict):
+        asset_id = background.get("asset_id")
+        if isinstance(asset_id, str) and asset_id:
+            found.append(("background", asset_id))
+    if kind == "fragment":
+        slots = node.get("slots")
+        if isinstance(slots, dict):
+            for value in slots.values():
+                asset_id = value.get("asset") if isinstance(value, dict) else None
+                if isinstance(asset_id, str) and asset_id:
+                    found.append(("fragment_slot", asset_id))
+    return found
+
+
 def _image_asset_ids(web_doc: JsonObject) -> List[str]:
-    """Every distinct asset id referenced by an image node, across all pages,
-    in first-seen order."""
-    ids: List[str] = []
-    seen: set[str] = set()
+    """Every distinct asset id an IMAGE NODE references, across all pages, first-seen order.
+
+    Kept narrow on purpose even though the delivery walk is now wider: this is what decides the
+    page's ``og:image``, and a social preview means "the picture of this page", which a
+    background wash or a cloned section's logo is not.
+    """
+    return _unique_ids(
+        asset_id
+        for origin, asset_id in _document_asset_references(web_doc)
+        if origin == "image"
+    )
+
+
+def _document_asset_references(web_doc: JsonObject) -> List[Tuple[str, str]]:
+    """``[(origin, asset_id)]`` across every page, document order, image nodes first.
+
+    Image nodes lead so that widening the walk cannot reorder what an existing consumer sees
+    first (``og:image``); everything after them is new territory.
+    """
+    found: List[Tuple[str, str]] = []
     for page in web_doc.get("pages") or []:
         if not isinstance(page, dict):
             continue
         for node in _walk_nodes(page):
-            if node.get("kind") == "image":
-                asset_id = node.get("asset_id")
-                if isinstance(asset_id, str) and asset_id and asset_id not in seen:
-                    seen.add(asset_id)
-                    ids.append(asset_id)
-    return ids
+            found.extend(_node_asset_ids(node))
+    return sorted(found, key=lambda entry: entry[0] != "image")
+
+
+def _unique_ids(values: Any) -> List[str]:
+    seen: set[str] = set()
+    out: List[str] = []
+    for value in values:
+        if value not in seen:
+            seen.add(value)
+            out.append(value)
+    return out
 
 
 def _image_ext(mime: Any) -> str:
@@ -428,15 +516,20 @@ class _ImageAsset:
     digest: str
     ext: str
     mime: Optional[str]
+    #: Why this asset ships: ``image`` / ``background`` / ``fragment_slot``.
+    origin: str = "image"
 
 
 def _resolve_images(web_doc: JsonObject) -> List[_ImageAsset]:
-    """The doc's image assets, resolved from the WebDoc's own assets map (the
-    records carry ``media.digest.value`` + ``mime_type``)."""
+    """Every registered document asset the page displays, resolved from the WebDoc's own assets
+    map (the records carry ``media.digest.value`` + ``mime_type``).
+
+    Deduped by DIGEST, not by asset id: two records naming the same bytes are one file.
+    """
     assets = web_doc.get("assets") or {}
     resolved: List[_ImageAsset] = []
     seen: set[str] = set()
-    for asset_id in _image_asset_ids(web_doc):
+    for origin, asset_id in _document_asset_references(web_doc):
         record = assets.get(asset_id)
         if not isinstance(record, dict):
             continue
@@ -449,9 +542,156 @@ def _resolve_images(web_doc: JsonObject) -> List[_ImageAsset]:
         seen.add(digest)
         mime = media.get("mime_type")
         resolved.append(
-            _ImageAsset(asset_id=asset_id, digest=digest, ext=_image_ext(mime), mime=mime)
+            _ImageAsset(
+                asset_id=asset_id,
+                digest=digest,
+                ext=_image_ext(mime),
+                mime=mime,
+                origin=origin,
+            )
         )
     return resolved
+
+
+# --------------------------------------------------------------------------- #
+# Cloned sections (fragments) on the delivery paths                            #
+# --------------------------------------------------------------------------- #
+
+
+class _FragmentDelivery(NamedTuple):
+    """Everything a delivery build needs to know about this page's cloned sections.
+
+    Resolved ONCE per build and threaded into the render, the asset walk and the manifest, so
+    the three cannot disagree about which artifacts the page means. The resolution itself is
+    :func:`lumen_api.fragments.render.build_fragment_render_package` — the same call both
+    preview paths make, deliberately not a second implementation, because a section that
+    renders one way in the editor and another way in the zip is the failure this whole phase is
+    about.
+    """
+
+    ids: List[str]
+    package: JsonObject
+    render_map: Dict[str, Any]
+    css: Optional[str]
+    #: Digests of the bytes the ARTIFACTS themselves display (their rehosted images and fonts).
+    asset_digests: List[str]
+    missing: List[str]
+    warnings: List[str]
+
+    @property
+    def manifest_entry(self) -> JsonObject:
+        return {
+            "ids": list(self.ids),
+            "missing": list(self.missing),
+            "asset_digests": list(self.asset_digests),
+        }
+
+
+def _resolve_fragments(web_doc: JsonObject, blobs: DesignBlobStore) -> _FragmentDelivery:
+    """Resolve this page's fragment artifacts for a delivery build.
+
+    Fail-SOFT, exactly as the preview paths are: an id this workspace cannot resolve is named
+    in ``missing`` (and in a warning that reaches the manifest) and the engine renders its
+    placeholder. Refusing the export would make one dead pin cost the whole deliverable.
+    """
+    ids = web_doc_fragment_ids(web_doc, HOME_PAGE_ID)
+    if not ids:
+        package = empty_fragment_render_package()
+        return _FragmentDelivery(
+            ids=[], package=package, render_map={}, css=None,
+            asset_digests=[], missing=[], warnings=[],
+        )
+    package = build_fragment_render_package(
+        blobs.storage,
+        workspace_id=blobs.workspace_id,
+        web_doc=web_doc,
+        page_id=HOME_PAGE_ID,
+    )
+    missing = [str(value) for value in package.get("missing") or []]
+    digests: List[str] = []
+    for fragment_id in ids:
+        record = package.get("fragments", {}).get(fragment_id)
+        if not isinstance(record, dict):
+            continue
+        for digest in record.get("asset_digests") or []:
+            if isinstance(digest, str) and digest not in digests:
+                digests.append(digest)
+    warnings = [
+        f"cloned section {fragment_id} could not be resolved: the page renders a placeholder"
+        for fragment_id in missing
+    ]
+    return _FragmentDelivery(
+        ids=ids,
+        package=package,
+        render_map=fragment_render_map(package, ids),
+        css=fragment_css_sheet(package, ids),
+        asset_digests=digests,
+        missing=missing,
+        warnings=warnings,
+    )
+
+
+def _embed_fragment_assets(
+    html: str,
+    files: Dict[str, bytes],
+    fragments: _FragmentDelivery,
+    blobs: DesignBlobStore,
+) -> Tuple[str, List[str]]:
+    """Copy every byte the page's cloned sections display into the zip, and point at the copies.
+
+    Returns ``(html, warnings)``. A digest whose bytes are gone is a WARNING, never a refusal:
+    the rest of the page is a perfectly good deliverable, and the reference is left pointing at
+    the digest route (where it may well resolve for anyone reading the page online) rather than
+    at a file that is not there.
+
+    The media type comes from the artifact ROW rather than from a guess at the bytes — the
+    digest route already serves these with that type — and an unrecognised one lands
+    extension-less with a warning, because inventing ``.bin`` for an image would be a confident
+    lie a static file server then acts on.
+    """
+    warnings: List[str] = []
+    for digest in fragments.asset_digests:
+        try:
+            media_type, data = blobs.read_blob(digest)
+        except NotFoundError:
+            warnings.append(
+                f"cloned-section asset {digest[:12]} skipped: bytes missing from the asset "
+                "store; the exported page keeps its /asset-store reference"
+            )
+            continue
+        extension = _DELIVERY_EXT_BY_MIME.get(str(media_type).split(";")[0].strip())
+        if extension is None:
+            warnings.append(
+                f"cloned-section asset {digest[:12]} stored with media type {media_type!r} "
+                "has no known file extension; exported without one"
+            )
+        path = f"assets/{digest}.{extension}" if extension else f"assets/{digest}"
+        files[path] = data
+        html = html.replace(f"/asset-store/{digest}", path)
+    return html, warnings
+
+
+def _fragment_cascade_warnings(fragments: _FragmentDelivery, site_css: str) -> List[str]:
+    """The cascade collision report, checked against the REAL compiled stylesheet.
+
+    A preview can only compare a fragment's classes against the ones the document authors, and
+    guess that the compiler will turn them into utilities. A delivery build does not have to
+    guess: ``site.css`` has been compiled by this point, so "a live utility" means literally
+    "a class this sheet declares". Same accepted risk, same warning-not-refusal posture — the
+    strongest available form of the check.
+    """
+    live = css_class_names(site_css)
+    warnings: List[str] = []
+    for fragment_id, classes in fragment_class_collisions(
+        fragments.package, fragments.ids, live
+    ):
+        joined = ", ".join(classes)
+        warnings.append(
+            f"cloned section {fragment_id} styles {joined}, which the compiled site.css also "
+            "declares; the compiled sheet is applied after the fragment CSS, so it wins and "
+            "the cloned section loses those rules"
+        )
+    return warnings
 
 
 def _seo_description(web_doc: JsonObject, fallback: str) -> str:
@@ -770,6 +1010,7 @@ def _delivery_manifest(
     *,
     kind: str,
     custom_components: JsonObject,
+    fragments: "_FragmentDelivery",
     assets: Dict[str, bytes],
     warnings: List[str],
 ) -> JsonObject:
@@ -786,6 +1027,11 @@ def _delivery_manifest(
             ),
         },
         "custom_components": custom_components,
+        # The cloned sections this page is built from, beside the custom components it is built
+        # from — same question, same place to look. `missing` is listed rather than swallowed:
+        # a pin that would not resolve rendered a placeholder, and the manifest is where a
+        # reader finds out which one.
+        "fragments": fragments.manifest_entry,
         "asset_digests": [
             {
                 "algorithm": "sha256",
@@ -888,7 +1134,10 @@ def build_export_bundle(
     for face in faces:
         files[f"fonts/{face.digest[:12]}.{face.ext}"] = face.data
 
-    # 2. Delivery render against relative asset urls.
+    # 2. Delivery render against relative asset urls — cloned sections resolved out of durable
+    #    custody first, so the zip carries the real section rather than its placeholder.
+    fragments = _resolve_fragments(web_doc, blobs)
+    warnings.extend(fragments.warnings)
     render = core.web_render(
         web_doc,
         HOME_PAGE_ID,
@@ -897,6 +1146,8 @@ def build_export_bundle(
         font_face_css=font_face_css,
         brand_kit=brand_kit,
         custom_component_runtimes=component_package.frames,
+        fragments=fragments.render_map,
+        fragment_css=fragments.css,
     )
     html = render.get("html") or ""
 
@@ -919,16 +1170,31 @@ def build_export_bundle(
         )
         exported_images.append(image)
 
+    # 3b. The bytes a cloned section displays. These are NOT document assets: an artifact's
+    #     markup and CSS name their rehosted bytes directly as `/asset-store/<digest>`, an
+    #     ABSOLUTE path that resolves against a filesystem root once the zip is unpacked. So
+    #     they are copied beside the document's own assets and every reference is rewritten to
+    #     the relative path — in the markup and in the inline fragment CSS at once, since both
+    #     live in this one string.
+    html, fragment_warnings = _embed_fragment_assets(html, files, fragments, blobs)
+    warnings.extend(fragment_warnings)
+
     # 4. Static CSS: compile against the doc theme, link it from the html.
     compiled_theme = _theme_tokens(core, web_doc, brand_kit)
     site_css = _compile_static_css(html, compiled_theme, node_bin)
     files["site.css"] = site_css.encode("utf-8")
+    # The cascade check, now that a REAL compiled sheet exists to check against.
+    warnings.extend(_fragment_cascade_warnings(fragments, site_css))
 
     # 5. SEO metas + the stylesheet link, injected before </head>.
+    #    The og:image stays the first IMAGE NODE's asset: the walk above got wider (backgrounds,
+    #    fragment slots) so more bytes SHIP, but which picture represents the page is a
+    #    different question and its answer is unchanged.
+    og_source = next(
+        (image for image in exported_images if image.origin == "image"), None
+    )
     og_image = (
-        f"assets/{exported_images[0].digest}.{exported_images[0].ext}"
-        if exported_images
-        else None
+        f"assets/{og_source.digest}.{og_source.ext}" if og_source is not None else None
     )
     head = _seo_snippet(
         title=document["title"],
@@ -950,6 +1216,7 @@ def build_export_bundle(
         document,
         kind="export",
         custom_components=component_package.manifest,
+        fragments=fragments,
         assets=component_package.assets,
         warnings=warnings,
     )
@@ -1028,7 +1295,12 @@ def build_publish_package(
         faces, lambda face: f"/asset-store/{face.digest}"
     )
 
-    # Delivery render against the absolute same-origin asset route.
+    # Delivery render against the absolute same-origin asset route. Cloned sections resolve out
+    # of durable custody exactly as they do for the editor preview; their own bytes need no
+    # copy here, because the artifact already names them as `/asset-store/<digest>` and that
+    # route is the one public byte surface this page is served beside.
+    fragments = _resolve_fragments(web_doc, blobs)
+    warnings.extend(fragments.warnings)
     render = core.web_render(
         web_doc,
         HOME_PAGE_ID,
@@ -1037,6 +1309,8 @@ def build_publish_package(
         font_face_css=font_face_css,
         brand_kit=brand_kit,
         custom_component_runtimes=component_package.frames,
+        fragments=fragments.render_map,
+        fragment_css=fragments.css,
     )
     html = render.get("html") or ""
 
@@ -1046,8 +1320,14 @@ def build_publish_package(
     # publish payload).
     compiled_theme = _theme_tokens(core, web_doc, brand_kit)
     site_css = _compile_static_css(html, compiled_theme, node_bin)
+    warnings.extend(_fragment_cascade_warnings(fragments, site_css))
 
-    og_image = f"{base}/asset-store/{images[0].digest}" if images else None
+    # As on the export path: the page's picture is an image node's asset, not a background
+    # wash and not a cloned section's logo.
+    og_source = next((image for image in images if image.origin == "image"), None)
+    og_image = (
+        f"{base}/asset-store/{og_source.digest}" if og_source is not None else None
+    )
     head = _seo_snippet(
         title=document["title"],
         description=_seo_description(web_doc, document["title"]),
@@ -1061,6 +1341,7 @@ def build_publish_package(
             document,
             kind="publish",
             custom_components=component_package.manifest,
+            fragments=fragments,
             assets=component_package.assets,
             warnings=warnings,
         ),
