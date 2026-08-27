@@ -457,6 +457,94 @@ def test_export_font_license_gate(client: TestClient) -> None:
     )
 
 
+def test_the_publish_manifest_stops_discarding_the_font_exclusions(
+    client: TestClient, workspace_id: str
+) -> None:
+    """D-F2 obligation 3: what the gate excludes must be VISIBLE, never dropped.
+
+    The publish path gathered fonts through the same license gate as export and then threw the
+    exclusion list away (`_excluded`), so a family the gate refused left no trace on the one
+    artifact a publish keeps. A page that silently ships in a fallback font is exactly the
+    failure a manifest exists to explain.
+    """
+    ofl_digest = seed_font_asset(client, "asset_font_pub_ofl", b"wOF2" + b"\x00" * 96)
+    seed_font_asset(client, "asset_font_pub_locked", b"wOF2" + b"\x11" * 96)
+    create_font_kit(client, "asset_font_pub_ofl", "asset_font_pub_locked")
+
+    document = create_web_document(
+        client, brand_kit_ref={"id": "kit_export_fonts", "version": 1}
+    )
+    seed_content(client, document["id"], ingest_content(client, document["id"]))
+    published = client.post(
+        f"/documents/{document['id']}/web/publish", json={"slug": "font-exclusions"}
+    )
+    assert published.status_code == 200, published.text
+
+    manifest = client.get(f"/w/{workspace_id}/p/font-exclusions/manifest.json")
+    assert manifest.status_code == 200, manifest.text
+    body = manifest.json()
+
+    assert {"family": "Locked Display", "reason": "license not embeddable"} in body[
+        "font_families_excluded"
+    ]
+    assert "Export Sans" in body["font_families_included"]
+    # The included family's faces really are on the page (the gate let them through), and its
+    # @font-face points at the digest route.
+    served = client.get(f"/w/{workspace_id}/p/font-exclusions")
+    assert f"/asset-store/{ofl_digest}" in served.text
+
+
+def test_the_publish_manifest_names_the_basis_a_family_embeds_under(
+    client: TestClient, workspace_id: str
+) -> None:
+    """D-F2 obligation 2, made visible: a workspace-brand font ships under `platform-terms`,
+    and the manifest says so — the gate reads the basis, so a legal reviewer can see WHY a font
+    with no verifiable license name was embedded."""
+    digest = seed_font_asset(client, "asset_font_basis", b"wOF2" + b"\x22" * 96)
+    kit = json.loads(ACME_KIT_PATH.read_text())
+    kit["id"] = "kit_basis_fonts"
+    kit["version"] = 1
+    family = json.loads(json.dumps(next(iter(kit["assets"]["fonts"].values()))))
+    family["family"] = "Workspace Brand Sans"
+    family["license"] = {
+        "name": "unknown",
+        "embeddable": True,
+        "subsettable": False,
+        "source_url": None,
+        "basis": "platform-terms",
+        "restrictions": ["Off-platform reuse still requires license confirmation."],
+    }
+    family["faces"] = [
+        {"weight": 400, "style": "normal", "asset_id": "asset_font_basis", "source_url": None}
+    ]
+    kit["assets"]["fonts"] = {"brand": family}
+    HybridRepository().create_brand_kit(kit, {}, [], "manual")
+
+    document = create_web_document(
+        client, brand_kit_ref={"id": "kit_basis_fonts", "version": 1}
+    )
+    seed_content(client, document["id"], ingest_content(client, document["id"]))
+    published = client.post(
+        f"/documents/{document['id']}/web/publish", json={"slug": "font-basis"}
+    )
+    assert published.status_code == 200, published.text
+    body = client.get(f"/w/{workspace_id}/p/font-basis/manifest.json").json()
+
+    assert "Workspace Brand Sans" in body["font_families_included"]
+    assert {
+        "family": "Workspace Brand Sans",
+        "basis": "platform-terms",
+    } in body["font_embed_bases"]
+
+    # The same basis rides the export manifest, so the two artifacts agree.
+    _files, _html, manifest = export_zip(client, document["id"])
+    assert {
+        "family": "Workspace Brand Sans",
+        "basis": "platform-terms",
+    } in manifest["font_embed_bases"]
+    assert f"fonts/{digest[:12]}.woff2" in _files
+
+
 # --- (d) SEO ----------------------------------------------------------------
 
 

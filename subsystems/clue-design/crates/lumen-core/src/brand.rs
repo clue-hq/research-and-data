@@ -1403,6 +1403,19 @@ pub struct FontLicense {
     pub source_url: Option<String>,
     #[serde(default)]
     pub restrictions: Vec<String>,
+    /// WHY this font may be embedded, when the answer is not the license `name`
+    /// itself (clone-fidelity D-F2). A font ingested from a workspace's own
+    /// brand material is embeddable on this platform under the platform's Terms
+    /// of Use — `basis: "platform-terms"` — while `name` keeps saying only what
+    /// the source declared, which is usually nothing verifiable. The engine
+    /// never interprets it: producers write it, the publish gate reads it, and
+    /// the field exists so the answer survives the typed round trip instead of
+    /// being smuggled through a restrictions line.
+    ///
+    /// Absent on every kit written before F1.5, and `skip_serializing_if` keeps
+    /// those kits' bytes identical.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub basis: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -2816,6 +2829,7 @@ fn generated_font_assets(font_family: &str) -> BTreeMap<String, FontAsset> {
                 subsettable: true,
                 source_url: None,
                 restrictions: Vec::new(),
+                basis: None,
             },
             provenance: Some(TokenProvenance {
                 source: "brand_seed".to_owned(),
@@ -5488,6 +5502,7 @@ fn compile_font_directive(name: &str, value: &str, kit: &mut BrandKit) -> Result
                 subsettable: true,
                 source_url: None,
                 restrictions: Vec::new(),
+                basis: None,
             },
             provenance: None,
             metrics: None,

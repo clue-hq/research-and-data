@@ -235,7 +235,17 @@ def _valid_style(value: Any) -> str:
 def _family_embeddable(license_obj: Any) -> bool:
     """A family's faces are embeddable when its license is explicitly
     embeddable OR its license name marks the OFL (the whole font library is
-    OFL-licensed, hence always embeddable)."""
+    OFL-licensed, hence always embeddable).
+
+    ``basis`` (D-F2, a real ``FontLicense`` field since F1.5) says WHY a family
+    may embed when the license ``name`` cannot — a workspace's own brand font
+    carries ``basis: "platform-terms"`` beside ``embeddable: true``, and that
+    pair passes here. It is deliberately NOT a third way to pass: a basis on a
+    family whose license says ``embeddable: false`` still fails, because a
+    stated rationale is not permission. The gate reads the basis so it can be
+    REPORTED (:func:`font_license_basis` puts it in the manifest beside the
+    included family) rather than so it can widen the door.
+    """
     if not isinstance(license_obj, dict):
         return False
     if license_obj.get("embeddable"):
@@ -244,21 +254,50 @@ def _family_embeddable(license_obj: Any) -> bool:
     return isinstance(name, str) and name.startswith("OFL")
 
 
+def font_license_basis(license_obj: Any) -> Optional[str]:
+    """The stated basis for a family's embed permission, or ``None``.
+
+    Absent on every kit written before F1.5 and on every font whose license name
+    IS the answer (``OFL-1.1``), which is why an absent value is a fact rather
+    than a defect.
+    """
+    if not isinstance(license_obj, dict):
+        return None
+    basis = license_obj.get("basis")
+    return basis if isinstance(basis, str) and basis.strip() else None
+
+
+class _FontGate(NamedTuple):
+    """What the license gate decided, in one value both build paths report from.
+
+    ``bases`` is ``[{family, basis}]`` for the included families that STATE a basis (D-F2): a
+    workspace's own brand font embeds under ``platform-terms``, and the manifest naming that is
+    what lets a reader see why a font whose license name is ``unknown`` shipped anyway.
+    """
+
+    faces: List[_FontFace]
+    excluded: List[JsonObject]
+    bases: List[JsonObject]
+    warnings: List[str]
+
+
 def _gather_fonts(
     brand_kit: Optional[JsonObject],
     repo: Any,
     blobs: DesignBlobStore,
-) -> Tuple[List[_FontFace], List[JsonObject], List[str]]:
+) -> _FontGate:
     """Resolve the kit's embeddable font faces to bytes.
 
-    Returns ``(faces, excluded, warnings)`` where ``faces`` are the included
-    faces (deduped by digest), ``excluded`` is ``[{family, reason}]`` for
-    license-blocked families, and ``warnings`` mirrors the exclusions (plus any
-    missing-blob notes) for the top-level warning list.
+    ``faces`` are the included faces (deduped by digest), ``excluded`` is
+    ``[{family, reason}]`` for license-blocked families, ``bases`` names the
+    stated embed basis of each included family that has one, and ``warnings``
+    mirrors the exclusions (plus any missing-blob notes) for the top-level
+    warning list.
     """
     fonts = ((brand_kit or {}).get("assets") or {}).get("fonts") or {}
     faces: List[_FontFace] = []
     excluded: List[JsonObject] = []
+    bases: List[JsonObject] = []
     warnings: List[str] = []
     seen: set[str] = set()
     for font in fonts.values():
@@ -273,6 +312,9 @@ def _gather_fonts(
                 f"font family {family} excluded from export: license not embeddable"
             )
             continue
+        basis = font_license_basis(font.get("license"))
+        if basis is not None and not any(entry["family"] == family for entry in bases):
+            bases.append({"family": family, "basis": basis})
         for face in font.get("faces") or []:
             if not (isinstance(face, dict) and face.get("asset_id")):
                 continue
@@ -306,7 +348,7 @@ def _gather_fonts(
                     data=data,
                 )
             )
-    return faces, excluded, warnings
+    return _FontGate(faces=faces, excluded=excluded, bases=bases, warnings=warnings)
 
 
 def _font_face_css(faces: List[_FontFace], url_for: Any) -> Optional[str]:
@@ -756,6 +798,21 @@ def _delivery_manifest(
     }
 
 
+def _font_manifest_entries(gate: _FontGate) -> JsonObject:
+    """The font block BOTH delivery manifests carry.
+
+    One builder because the two paths must not disagree about what shipped. Before F1.5 the
+    publish path discarded ``excluded`` outright (D-F2 obligation 3), so a family the license
+    gate refused left no trace on the only artifact a publish keeps — a page silently rendered
+    in a fallback font with nothing to read about why.
+    """
+    return {
+        "font_families_included": sorted({face.family for face in gate.faces}),
+        "font_families_excluded": list(gate.excluded),
+        "font_embed_bases": list(gate.bases),
+    }
+
+
 def _delivery_csp(public_base: Optional[str] = None) -> str:
     origin = ""
     if public_base:
@@ -822,8 +879,9 @@ def build_export_bundle(
     ).encode("utf-8")
 
     # 1. Fonts (license-gated), embedded as relative fonts/<digest12>.<ext>.
-    faces, excluded, font_warnings = _gather_fonts(brand_kit, repo, blobs)
-    warnings.extend(font_warnings)
+    font_gate = _gather_fonts(brand_kit, repo, blobs)
+    faces = font_gate.faces
+    warnings.extend(font_gate.warnings)
     font_face_css = _font_face_css(
         faces, lambda face: f"fonts/{face.digest[:12]}.{face.ext}"
     )
@@ -904,8 +962,7 @@ def build_export_bundle(
             "version": runtime_version,
         },
         "files": file_names,
-        "font_families_included": sorted({face.family for face in faces}),
-        "font_families_excluded": excluded,
+        **_font_manifest_entries(font_gate),
         "warnings": warnings,
     }
     files["manifest.json"] = (json.dumps(manifest, indent=2) + "\n").encode("utf-8")
@@ -962,9 +1019,11 @@ def build_publish_package(
         brand_kit=brand_kit,
     )
 
-    # Fonts (license-gated) as absolute /asset-store urls; no files emitted.
-    faces, _excluded, font_warnings = _gather_fonts(brand_kit, repo, blobs)
-    warnings.extend(font_warnings)
+    # Fonts (license-gated) as absolute /asset-store urls; no files emitted. The gate's
+    # exclusions ride the manifest below — a publish keeps no other artifact to read them from.
+    font_gate = _gather_fonts(brand_kit, repo, blobs)
+    faces = font_gate.faces
+    warnings.extend(font_gate.warnings)
     font_face_css = _font_face_css(
         faces, lambda face: f"/asset-store/{face.digest}"
     )
@@ -1005,6 +1064,7 @@ def build_publish_package(
             assets=component_package.assets,
             warnings=warnings,
         ),
+        **_font_manifest_entries(font_gate),
         "slug": slug,
         "canonical_url": f"{public_prefix}/p/{slug}",
     }

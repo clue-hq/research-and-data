@@ -47,21 +47,21 @@ _PRINT_FONT_CAUTION = (
 #: (``web_export._family_embeddable``) exclude every ingested family from every web export,
 #: so a brand's own site font never shipped on its own generated pages.
 #:
-#: WHY THE BASIS IS A RESTRICTION LINE AND NOT ITS OWN KEY. The engine's ``FontLicense``
-#: (``crates/lumen-core/src/brand.rs``) is a fixed struct — ``name``, ``embeddable``,
-#: ``subsettable``, ``source_url``, ``restrictions``. Serde ACCEPTS an unknown ``basis`` key
-#: (no ``deny_unknown_fields`` anywhere in the crate), but ``validate_brand_kit`` deserializes
-#: into that struct and RE-SERIALIZES it, and the pipeline persists the returned kit — so an
-#: extra key is silently dropped on the way to the database. Verified against the built helper
-#: 2026-08-27. F0 is Python-only, so the basis is encoded in the shape that survives; adding a
-#: real ``basis`` field to the Rust struct is flagged for Phase F1.
-_PLATFORM_TERMS_BASIS = (
-    "basis: platform-terms — embed permission for this workspace's own brand font comes "
-    "from the platform Terms of Use, not from a license verified at ingestion."
-)
+#: THE BASIS IS ITS OWN FIELD SINCE F1.5. F0 had to encode it inside a ``restrictions`` line:
+#: the engine's ``FontLicense`` (``crates/lumen-core/src/brand.rs``) was a fixed struct, and
+#: while serde ACCEPTS an unknown key, ``validate_brand_kit`` deserializes into that struct and
+#: RE-SERIALIZES it — so the extra key never came back, and the pipeline persists what comes
+#: back. F1.5 added the real ``basis`` field, so the machine-readable answer now rides where a
+#: reader can find it and the round trip is pinned by
+#: ``test_the_basis_survives_the_real_rust_brand_kit_round_trip``.
+#:
+#: The human-readable caveat stays a restriction, because that is what it is: a limit on use,
+#: not an answer to "why may this embed".
+PLATFORM_TERMS_BASIS = "platform-terms"
 _PLATFORM_TERMS_LIMIT = (
-    "Off-platform or print reuse still requires license confirmation; the license name "
-    "above is what the source declared, not a verified license."
+    "Embed permission for this workspace's own brand font comes from the platform Terms of "
+    "Use, not from a license verified at ingestion: off-platform or print reuse still requires "
+    "license confirmation, and the license name above is what the source declared."
 )
 
 
@@ -77,7 +77,8 @@ def _workspace_brand_font_license(license_hint: str | None) -> dict:
         "embeddable": True,
         "subsettable": False,
         "source_url": None,
-        "restrictions": [_PLATFORM_TERMS_BASIS, _PLATFORM_TERMS_LIMIT],
+        "basis": PLATFORM_TERMS_BASIS,
+        "restrictions": [_PLATFORM_TERMS_LIMIT],
     }
 
 

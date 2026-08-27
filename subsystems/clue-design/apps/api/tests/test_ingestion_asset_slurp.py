@@ -31,11 +31,13 @@ import httpx
 import pytest
 from selectolax.parser import HTMLParser
 
+from lumen_api.core import CoreClient
 from lumen_ingestion.capture import CaptureOutcome, build_evidence, capture_website
 from lumen_ingestion.capture.budget import MAX_ASSET_BYTES, MAX_ASSET_COUNT
 from lumen_ingestion.capture.candidates import AssetCandidate, collect_asset_candidates
 from lumen_ingestion.capture.parse import parse_site
 from lumen_ingestion.capture.snapshot import Stylesheet
+from lumen_ingestion.normalizer.emit import PLATFORM_TERMS_BASIS
 
 BASE = "https://example.com/"
 
@@ -696,9 +698,50 @@ def test_a_workspace_brand_font_is_stamped_embeddable_with_an_honest_basis() -> 
     # the NAME stays honest — never a fabricated "OFL"
     assert license_obj["name"] == "Acme Sans (site webfont)"
     assert "OFL" not in license_obj["name"]
+    # F1.5: the basis is its OWN field now (the Rust struct grew one), not a line smuggled
+    # through `restrictions` because serde used to drop the unknown key.
+    assert license_obj["basis"] == PLATFORM_TERMS_BASIS
+    assert not any("basis:" in line for line in license_obj["restrictions"])
+    # …and the human-readable caveat stays where a human reads it.
     restrictions = " ".join(license_obj["restrictions"])
-    assert "platform-terms" in restrictions
     assert "confirm" in restrictions.lower()
+
+
+def test_the_basis_survives_the_real_rust_brand_kit_round_trip() -> None:
+    """The F0 ledger's deferred item, closed: pinned through the REAL engine.
+
+    F0 could not put the basis in its own key because ``validate_brand_kit`` deserializes into
+    the typed ``FontLicense`` and RE-SERIALIZES it — an unknown key never came back, and the
+    pipeline persists what comes back. This drives the real helper over a real emitted kit, so
+    the encoding is pinned where it actually broke rather than at the Python boundary.
+    """
+    from lumen_ingestion import normalize_evidence
+
+    outcome = _capture()
+    evidence, _ = _evidence(outcome)
+    assert evidence.fonts
+    evidence.fonts[0].license_hint = "Acme Sans (site webfont)"
+    result = normalize_evidence(
+        evidence,
+        brand_kit_id="brand_kit_roundtrip",
+        name="Acme",
+        created_at="2026-08-27",
+        version=1,
+    )
+    family = evidence.fonts[0].family
+
+    validation = CoreClient().validate_brand_kit(
+        result.brand_kit, product_ready=False, raise_on_error=False
+    )
+    returned = validation.get("brand_kit") or {}
+    entry = next(
+        font
+        for font in returned["assets"]["fonts"].values()
+        if font["family"] == family
+    )
+    assert entry["license"]["basis"] == PLATFORM_TERMS_BASIS
+    assert entry["license"]["embeddable"] is True
+    assert entry["license"]["name"] == "Acme Sans (site webfont)"
 
 
 def test_an_unknown_license_hint_still_reads_unknown() -> None:
@@ -717,6 +760,32 @@ def test_the_publish_gate_accepts_the_stamp_and_still_refuses_an_unstamped_famil
                 "subsettable": False,
                 "restrictions": [],
             }
+        )
+        is False
+    )
+
+
+def test_the_publish_gate_reads_the_basis_field_and_refuses_nothing_new() -> None:
+    """F1.5 obligation 2: the gate HONORS the basis, and its old refusals are untouched."""
+    from lumen_api.web_export import _family_embeddable, font_license_basis
+
+    stamped = {
+        "name": "unknown",
+        "embeddable": True,
+        "subsettable": False,
+        "basis": PLATFORM_TERMS_BASIS,
+        "restrictions": [],
+    }
+    assert _family_embeddable(stamped) is True
+    assert font_license_basis(stamped) == PLATFORM_TERMS_BASIS
+
+    # An old kit with no basis at all still passes on `embeddable` alone…
+    assert _family_embeddable({"name": "OFL-1.1", "embeddable": False}) is True
+    assert font_license_basis({"name": "OFL-1.1", "embeddable": False}) is None
+    # …and a basis can never talk a NON-embeddable family onto a published page.
+    assert (
+        _family_embeddable(
+            {"name": "Locked Display", "embeddable": False, "basis": PLATFORM_TERMS_BASIS}
         )
         is False
     )
