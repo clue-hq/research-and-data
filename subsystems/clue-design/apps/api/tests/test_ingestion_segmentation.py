@@ -890,12 +890,23 @@ def test_a_shell_whose_only_content_is_source_is_not_a_section():
 
 @pytest.mark.parametrize("token", ["hide", "hidden", "d-none", "sr-only", "w-condition-invisible"])
 def test_a_section_the_page_hides_by_class_is_not_offered_as_a_clone(token: str):
+    """The vocabulary, exercised on an EVIDENCED page. The class token alone never removes a
+    section (N2) — here the browser measured the page and did not measure this child, which is
+    the corroboration the drop requires."""
     html = (
         f'<html><body><main><section class="banner {token}"><h2>Announcing</h2></section>'
         '<section class="real"><h1>Real</h1></section>'
         '<section class="tail"><p>Tail.</p></section></main></body></html>'
     )
-    result = segment_page(html, page_url="https://x.example/")
+    bands = [
+        {"index": 0, "tag": "section", "classes": "real", "top": 0.0, "height": 500.0},
+        {"index": 1, "tag": "section", "classes": "tail", "top": 500.0, "height": 200.0},
+    ]
+    result = segment_page(
+        html,
+        page_url="https://x.example/",
+        bands=measured_bands({SNAPSHOT_META_BANDS_KEY: bands}),
+    )
     assert [s.role for s in result.sections] == ["hero", "other"]
 
 
@@ -929,3 +940,125 @@ def test_the_browser_overrules_the_class_name():
     )
     assert len(result.sections) == 2
     assert result.sections[0].geometry is not None
+
+
+# --------------------------------------------------------------------------- #
+# F2 wave completion — N1 and N2, both defects the wave diff itself introduced
+# --------------------------------------------------------------------------- #
+
+
+def test_the_hidden_class_proposal_never_binds_a_band_to_a_worse_match():
+    """N1 (Critical class). The proposal path removes a class-named candidate and then checks the
+    residue lines up — but ``_band_matches`` compares classes by INTERSECTION, so the token that
+    distinguishes the removed section is exactly the token the line-up ignores.
+
+    Here the `hide`-named section is REALLY ON THE PAGE (the browser measured it and recorded its
+    full class attribute). Removing it leaves two same-class siblings that "line up" on the shared
+    token alone, and band 0 — which names `section hide` verbatim — binds to a plain `section`
+    two positions away. A confident wrong crop, with no feasibility behind it. The old code
+    refused this page; the wave made it worse than the thing it was fixing."""
+    html = """
+    <html><body><main>
+      <section class="section hide"><h1>Actually shown</h1></section>
+      <section class="section"><h2>Second</h2></section>
+      <section class="section"><h2>Third</h2></section>
+    </main></body></html>
+    """
+    bands = [
+        {"index": 0, "tag": "section", "classes": "section hide", "top": 0.0, "height": 500.0},
+        {"index": 1, "tag": "section", "classes": "section", "top": 500.0, "height": 300.0},
+    ]
+    result = segment_page(
+        html,
+        page_url="https://x.example/",
+        bands=measured_bands({SNAPSHOT_META_BANDS_KEY: bands}),
+    )
+    # The band that names `section hide` may never land on a section that is not it.
+    for section in result.sections:
+        if section.geometry is not None:
+            assert "hide" in section.class_names, (
+                f"band bound to {section.class_names!r}, which the band's own classes do not name"
+            )
+
+
+def test_the_proposal_still_binds_when_the_removed_section_is_not_a_better_match():
+    """The guard must discriminate, not blanket-refuse: the walk's real shape — a hidden section
+    whose band nobody recorded — still binds completely."""
+    html = """
+    <html><body><main>
+      <section class="section_hero"><h1>Hero</h1></section>
+      <section class="section hide"><h2>Hidden promo</h2></section>
+      <section class="section_proof"><h2>Proof</h2></section>
+    </main></body></html>
+    """
+    bands = [
+        {"index": 0, "tag": "section", "classes": "section_hero", "top": 0.0, "height": 500.0},
+        {"index": 1, "tag": "section", "classes": "section_proof", "top": 500.0, "height": 300.0},
+    ]
+    result = segment_page(
+        html,
+        page_url="https://x.example/",
+        bands=measured_bands({SNAPSHOT_META_BANDS_KEY: bands}),
+    )
+    assert [s.role for s in result.sections] == ["hero", "proof"]
+    assert all(s.geometry is not None for s in result.sections)
+
+
+def test_a_desktop_only_section_is_not_dropped_on_a_bandless_capture():
+    """N2. `hidden md:block` is the standard Tailwind DESKTOP-visible variant, and captures are
+    taken at desktop width — so the element is on the page the clone is being made from. Dropping
+    it on a bare class token removed a real section from every static-tier capture and every page
+    whose binding was refused, where nothing measured anything and there is no evidence at all."""
+    html = """
+    <html><body><main>
+      <section class="hidden md:block"><h1>Desktop hero</h1></section>
+      <section class="tail"><p>Tail.</p></section>
+    </main></body></html>
+    """
+    result = segment_page(html, page_url="https://x.example/")
+    assert len(result.sections) == 2
+    assert result.sections[0].heading == "Desktop hero"
+
+
+def test_a_hidden_named_section_the_browser_skipped_is_still_dropped():
+    """The evidence-backed half, unchanged: the probe measured this page and did not measure this
+    child, so `hidden` in its class list is corroborated rather than guessed."""
+    html = """
+    <html><body><main>
+      <section class="section_hero"><h1>Hero</h1></section>
+      <section class="banner hide"><h2>Announcing</h2></section>
+      <section class="section_proof"><h2>Proof</h2></section>
+    </main></body></html>
+    """
+    bands = [
+        {"index": 0, "tag": "section", "classes": "section_hero", "top": 0.0, "height": 500.0},
+        {"index": 1, "tag": "section", "classes": "section_proof", "top": 500.0, "height": 300.0},
+    ]
+    result = segment_page(
+        html,
+        page_url="https://x.example/",
+        bands=measured_bands({SNAPSHOT_META_BANDS_KEY: bands}),
+    )
+    assert [s.role for s in result.sections] == ["hero", "proof"]
+
+
+def test_a_probe_skip_record_drops_a_hidden_section_with_no_bands_at_all():
+    """The other evidence path: the browser said so directly, so no binding is needed to believe
+    it."""
+    html = """
+    <html><body><main>
+      <section class="banner hide"><h2>Announcing</h2></section>
+      <section class="tail"><p>Tail.</p></section>
+    </main></body></html>
+    """
+    result = segment_page(
+        html,
+        page_url="https://x.example/",
+        skips=skipped_children(
+            {SNAPSHOT_META_SKIPPED_KEY: [
+                {"tag": "section", "id": None, "classes": "banner hide", "reason": "hidden"}
+            ]}
+        ),
+    )
+    assert [s.heading for s in result.sections] == [None]
+    assert len(result.sections) == 1

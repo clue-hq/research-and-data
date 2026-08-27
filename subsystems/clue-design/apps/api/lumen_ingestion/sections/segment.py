@@ -348,7 +348,7 @@ def segment_page(
 
     if candidates:
         _bind_bands(candidates, tuple(bands), diagnostics, tuple(skips))
-        candidates = _section_shaped(candidates, skipped)
+        candidates = _section_shaped(candidates, skipped, tuple(skips))
 
     if not candidates:
         diagnostics.append(
@@ -501,7 +501,9 @@ def _page_flow(tree: HTMLParser) -> tuple[list[_Candidate], list[tuple[str, str]
 
 
 def _section_shaped(
-    candidates: list[_Candidate], skipped: list[tuple[str, str]]
+    candidates: list[_Candidate],
+    skipped: list[tuple[str, str]],
+    skips: tuple[SkippedChild, ...] = (),
 ) -> list[_Candidate]:
     """Keep the flow children that are SECTIONS; note the loose content that is not.
 
@@ -511,12 +513,22 @@ def _section_shaped(
     and still not a section, because there is nothing there to clone. Dropping it silently would
     overstate coverage, so each one is named in the skip diagnostic.
     """
+    # A class token is a GUESS about a stylesheet nobody here evaluated, so it may only remove a
+    # a section when a measurement agrees with it. `hidden md:block` is the standard Tailwind
+    # DESKTOP-visible variant and captures are taken at desktop width — the element is on the
+    # very page being cloned — so a bare token dropped real sections from every static-tier
+    # capture and every page whose binding was refused, which are exactly the pages that measured
+    # nothing and therefore have no evidence either way.
+    bound_any = any(candidate.band is not None for candidate in candidates)
     kept: list[_Candidate] = []
     for candidate in candidates:
-        if candidate.band is None and _is_hidden_by_class(candidate):
-            # The BROWSER overrules the class name: a section the probe measured is on the page
-            # whatever it calls itself, and a class list is only a guess about a stylesheet we
-            # are not evaluating. So this drops only what the measurement did not vouch for.
+        if candidate.band is None and _is_hidden_by_class(candidate) and (
+            _probe_skipped(candidate, skips)
+            # The browser measured THIS page and this eligible child got no band: it looked and
+            # did not see it. Restricted to the measured root, because a nav or footer outside it
+            # was never eligible, so "no band" says nothing about whether it renders.
+            or (bound_any and candidate.in_measured_root)
+        ):
             skipped.append((candidate.tag, candidate.text[:80]))
             continue
         if (
@@ -528,6 +540,13 @@ def _section_shaped(
         else:
             skipped.append((candidate.tag, candidate.text[:80]))
     return kept
+
+
+def _probe_skipped(candidate: _Candidate, skips: tuple[SkippedChild, ...]) -> bool:
+    """Did the browser itself say it passed this child over for being hidden?"""
+    return any(
+        record.reason == "hidden" and _skip_matches(candidate, record) for record in skips
+    )
 
 
 def _is_hidden_by_class(candidate: _Candidate) -> bool:
@@ -769,7 +788,12 @@ def _bind_bands(
     # hides one of several same-class sections) binds completely instead of contesting.
     if not subtracted:
         proposed = [c for c in measured if not _is_hidden_by_class(c)]
-        if len(proposed) != len(measured) and _lines_up(proposed, bands):
+        removed = [c for c in measured if _is_hidden_by_class(c)]
+        if (
+            removed
+            and _lines_up(proposed, bands)
+            and _proposal_is_safe(proposed, removed, bands)
+        ):
             for candidate, band in zip(proposed, bands):
                 candidate.band = band
             return
@@ -858,6 +882,45 @@ def _lines_up(residue: list[_Candidate], bands: tuple[MeasuredBand, ...]) -> boo
     return len(residue) == len(bands) and all(
         _band_matches(candidate, band) for candidate, band in zip(residue, bands)
     )
+
+
+def _identifies(candidate: _Candidate, band: MeasuredBand) -> bool:
+    """Does this candidate account for EVERY class the browser recorded on that band?
+
+    Stronger than :func:`_band_matches`, which asks only for a shared class. The difference is
+    the whole of N1: `section hide` and `section` intersect, so a line-up built on intersection
+    cannot see that one of them is named exactly and the other merely overlaps.
+    """
+    if candidate.tag != band.tag:
+        return False
+    return set(band.class_names) <= set(candidate.class_names)
+
+
+def _proposal_is_safe(
+    proposed: list[_Candidate], removed: list[_Candidate], bands: tuple[MeasuredBand, ...]
+) -> bool:
+    """Would believing this proposal hand a band to a section the removed one describes better?
+
+    The class hint removes candidates on a GUESS about a stylesheet nobody evaluated, and the
+    line-up that is supposed to check the guess compares classes by intersection — so the token
+    that distinguishes the removed section (`hide`) is exactly the token the check ignores. A
+    section that is really on the page, whose band names it verbatim, could therefore be removed
+    and its band handed two positions down the page to a plain sibling: a confident wrong crop,
+    with no feasibility argument behind it, on a page the old all-or-nothing rule refused.
+
+    So the proposal is believed only when no removed candidate is a BETTER answer than the one
+    taking the band: if a removed candidate accounts for every class the band recorded and the
+    proposed owner does not, the hint has been caught contradicting the measurement, and the
+    measurement wins. Falling through costs the shortcut and nothing else — the feasibility floor
+    below still binds every band that is forced.
+    """
+    for position, band in enumerate(bands):
+        owner = proposed[position]
+        if _identifies(owner, band):
+            continue
+        if any(_identifies(candidate, band) for candidate in removed):
+            return False
+    return True
 
 
 def _subtract_skipped(
