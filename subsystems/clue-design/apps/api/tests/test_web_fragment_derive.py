@@ -31,7 +31,7 @@ from fastapi.testclient import TestClient
 from conftest import make_client
 
 from lumen_api.design_store import HybridRepository
-from lumen_api.fragments import create_web_fragment
+from lumen_api.fragments import create_web_fragment, set_web_fragment_status
 from lumen_api.fragments.slots import SlotSpec
 from lumen_api.main import create_app
 
@@ -77,6 +77,12 @@ def _mint(workspace_id: str, storage: FsStorage):
         source_url=SOURCE_URL,
         section_role="hero",
         slots=SLOT_SPECS,
+    )
+    # Released before it is pinned. A fragment is born `draft` and a document may only pin an
+    # APPROVED one (F2.2's half of the reference gate); this file is about the DERIVE walk, not
+    # about the gate, so it takes the production path — approve, then pin — and gets on with it.
+    set_web_fragment_status(
+        workspace_id=workspace_id, fragment_id=artifact.fragment_id, status="approved"
     )
     return artifact
 
