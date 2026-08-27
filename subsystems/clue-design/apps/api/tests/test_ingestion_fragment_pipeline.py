@@ -500,7 +500,7 @@ def _load_evidence() -> Any:
     return BrandEvidence.model_validate(json.loads(fixture.read_text()))
 
 
-def _snapshot(downloads: list | None = None):
+def _snapshot(downloads: list | None = None, url: str = PAGE_URL):
     import hashlib
 
     from lumen_ingestion.capture.snapshot import Download, SiteSnapshot, Stylesheet
@@ -525,7 +525,7 @@ def _snapshot(downloads: list | None = None):
         ]
     downloads = list(downloads) + [
         Download(
-            url=f"{PAGE_URL}#screenshot",
+            url=f"{url}#screenshot",
             kind="screenshot",
             content_type="image/png",
             bytes_b64=base64.b64encode(shot).decode("ascii"),
@@ -533,8 +533,8 @@ def _snapshot(downloads: list | None = None):
         )
     ]
     return SiteSnapshot(
-        requested_url=PAGE_URL,
-        final_url=PAGE_URL,
+        requested_url=url,
+        final_url=url,
         fetched_at="2026-08-27T10:00:00+00:00",
         tier="rendered",
         html=PAGE_HTML,
@@ -552,3 +552,273 @@ class _FakeOutcome:
         self.escalated = False
         self.escalation_reason: Any = None
         self.diagnostics: list[dict[str, Any]] = diagnostics or []
+
+
+# --------------------------------------------------------------------------- #
+# Fix round 1
+# --------------------------------------------------------------------------- #
+
+
+def test_a_re_mint_under_a_newer_kit_version_moves_the_binding_forward(
+    workspace_id: str, design_storage: FsStorage
+) -> None:
+    """M6. The row is content-addressed, so a re-ingest converges onto the row it already wrote
+    — and used to keep that row pointed at the OLD kit version. Approving the NEW kit then
+    flipped nothing, and the fragment sat draft forever with no surface that could release it.
+
+    The kit binding is bookkeeping about which capture minted this content, not the content,
+    so it moves forward. The payload digest — what the row IS — does not."""
+    repo = HybridRepository(workspace_id=workspace_id)
+    first_kit = _seed_kit(workspace_id)
+    minted = _mint(workspace_id, design_storage, kit=first_kit).minted[0]
+
+    second = repo.create_brand_kit(
+        {"id": first_kit["brand_kit_id"], "version": 2, "name": "Insight", "approval_status": "draft"},
+        {},
+        [],
+        "website",
+        )
+    before = next(
+        row for row in list_web_fragments(workspace_id=workspace_id)
+        if row["fragment_id"] == minted.fragment_id
+    )
+    again = _mint(workspace_id, design_storage, kit=second).minted
+    assert minted.fragment_id in {m.fragment_id for m in again}
+
+    row = next(
+        r for r in list_web_fragments(workspace_id=workspace_id)
+        if r["fragment_id"] == minted.fragment_id
+    )
+    assert row["source_kit_version"] == 2
+    assert row["payload_digest"] == before["payload_digest"]
+
+    # And the new kit's approval now reaches it, which is the whole point.
+    repo.update_brand_kit_approval(first_kit["brand_kit_id"], "approved")
+    row = next(
+        r for r in list_web_fragments(workspace_id=workspace_id)
+        if r["fragment_id"] == minted.fragment_id
+    )
+    assert row["status"] == "approved"
+
+
+def test_a_re_mint_never_drags_a_fragment_back_to_an_older_kit_version(
+    workspace_id: str, design_storage: FsStorage
+) -> None:
+    repo = HybridRepository(workspace_id=workspace_id)
+    kit = _seed_kit(workspace_id)
+    second = repo.create_brand_kit(
+        {"id": kit["brand_kit_id"], "version": 2, "name": "Insight", "approval_status": "draft"},
+        {},
+        [],
+        "website",
+    )
+    minted = _mint(workspace_id, design_storage, kit=second).minted[0]
+    _mint(workspace_id, design_storage, kit=kit)
+    row = next(
+        r for r in list_web_fragments(workspace_id=workspace_id)
+        if r["fragment_id"] == minted.fragment_id
+    )
+    assert row["source_kit_version"] == 2
+
+
+def test_a_re_mint_does_not_move_a_fragment_between_kit_lineages(
+    workspace_id: str, design_storage: FsStorage
+) -> None:
+    """A different lineage is a different decision, not a newer version of the same one, and
+    silently repointing would hand one brand's approval authority over another's material."""
+    mine = _seed_kit(workspace_id, "brand_kit_mine")
+    theirs = _seed_kit(workspace_id, "brand_kit_theirs")
+    minted = _mint(workspace_id, design_storage, kit=mine).minted[0]
+    _mint(workspace_id, design_storage, kit=theirs)
+    row = next(
+        r for r in list_web_fragments(workspace_id=workspace_id)
+        if r["fragment_id"] == minted.fragment_id
+    )
+    assert row["source_kit_id"] == "brand_kit_mine"
+
+
+def test_pages_dropped_by_an_exhausted_budget_are_named(
+    workspace_id: str, design_storage: FsStorage, monkeypatch
+) -> None:
+    """I3. The outer loop broke on an exhausted budget and said nothing, so a multi-page walk
+    could clone page one and drop pages two and three in silence — the exact silent truncation
+    the per-page cap diagnostic exists to prevent, one level up."""
+    from lumen_ingestion import pipeline
+    from lumen_ingestion.sections import mint as section_mint
+
+    monkeypatch.setattr(section_mint, "SECTION_MINT_CAP", 2)
+    kit = _seed_kit(workspace_id)
+    blobs = DesignBlobStore(design_storage, workspace_id)
+    outcome = _FakeOutcome([_snapshot(), _snapshot(url=PAGE_URL + "pricing")])
+
+    refs, diagnostics = pipeline._mint_page_fragments(
+        outcome,
+        repo=HybridRepository(workspace_id=workspace_id),
+        blobs=blobs,
+        brand_kit_id=kit["brand_kit_id"],
+        brand_kit_version=int(kit["version"]),
+        snapshot_refs=[],
+    )
+    assert len(refs) == 2
+    dropped = [d for d in diagnostics if d["code"] == section_mint.MINT_CAPPED_CODE]
+    assert dropped, diagnostics
+    assert any(PAGE_URL + "pricing" in str(d) for d in dropped)
+
+
+# --------------------------------------------------------------------------- #
+# I4 — a derivation inherits its source's pins
+# --------------------------------------------------------------------------- #
+
+
+def _approved_fragment(workspace_id: str, design_storage: FsStorage) -> str:
+    kit = _seed_kit(workspace_id)
+    minted = _mint(workspace_id, design_storage, kit=kit).minted[0]
+    HybridRepository(workspace_id=workspace_id).update_brand_kit_approval(
+        kit["brand_kit_id"], "approved"
+    )
+    return minted.fragment_id
+
+
+def test_a_derivation_inherits_its_templates_pins_even_when_one_is_retired(
+    workspace_id: str, design_storage: FsStorage
+) -> None:
+    """I4 (RULED). Every per-account derivation calls ``create_document``, which validates with
+    an EMPTY before-context — so every pin looks new, and retiring one cloned section would
+    fail every derivation of every template that pins it. A derivation does not CHOOSE a
+    fragment; it inherits one. Deprecation must block a genuinely new pin, not a copy."""
+    repo = HybridRepository(workspace_id=workspace_id)
+    fragment_id = _approved_fragment(workspace_id, design_storage)
+
+    source = repo.create_document(
+        _doc("doc_src", ("n1", fragment_id)), doc_kind="web"
+    )
+    template = repo.create_web_template(
+        _doc("tpl_1", ("n1", fragment_id)), source_document_id=source["id"]
+    )
+
+    set_web_fragment_status(
+        workspace_id=workspace_id, fragment_id=fragment_id, status="deprecated"
+    )
+
+    derived = repo.create_document(
+        _doc("doc_acct_1", ("n1", fragment_id)),
+        doc_kind="web",
+        template_document_id=template["id"],
+        template_doc_version=int(template["current_version"]),
+    )
+    assert derived["id"] == "doc_acct_1"
+
+
+def test_a_genuinely_new_pin_of_that_same_retired_fragment_is_still_refused(
+    workspace_id: str, design_storage: FsStorage
+) -> None:
+    """The other half of the ruling: inheritance is not amnesty."""
+    repo = HybridRepository(workspace_id=workspace_id)
+    fragment_id = _approved_fragment(workspace_id, design_storage)
+    set_web_fragment_status(
+        workspace_id=workspace_id, fragment_id=fragment_id, status="deprecated"
+    )
+    with pytest.raises(FragmentReferenceError) as excinfo:
+        repo.create_document(_doc("doc_fresh", ("n1", fragment_id)), doc_kind="web")
+    assert excinfo.value.code == "fragment.not_approved"
+
+
+def test_a_derivation_may_not_smuggle_in_a_pin_its_template_never_had(
+    workspace_id: str, design_storage: FsStorage
+) -> None:
+    """Inheritance is bounded by what the source actually pins."""
+    repo = HybridRepository(workspace_id=workspace_id)
+    inherited = _approved_fragment(workspace_id, design_storage)
+    template = repo.create_web_template(_doc("tpl_2", ("n1", inherited)))
+    with pytest.raises(FragmentReferenceError) as excinfo:
+        repo.create_document(
+            _doc("doc_smuggle", ("n1", inherited), ("n2", "frag_" + "ab" * 8)),
+            doc_kind="web",
+            template_document_id=template["id"],
+            template_doc_version=int(template["current_version"]),
+        )
+    assert excinfo.value.code == "fragment.unresolved"
+
+
+def test_an_inherited_pin_must_still_exist_in_this_workspace(
+    workspace_id: str, design_storage: FsStorage
+) -> None:
+    """Inheriting a pin excuses its STATUS, never its existence — a derived document that pins
+    a fragment nobody holds renders a hole exactly as a fresh one would."""
+    repo = HybridRepository(workspace_id=workspace_id)
+    fragment_id = _approved_fragment(workspace_id, design_storage)
+    template = repo.create_web_template(_doc("tpl_3", ("n1", fragment_id)))
+    from sqlalchemy import text
+
+    from lumen_api.design_store import DesignStoreBridge
+
+    DesignStoreBridge(workspace_id)._run(
+        lambda conn: conn.execute(
+            text("DELETE FROM design_web_fragment WHERE fragment_id = :f AND workspace_id = :w"),
+            {"f": fragment_id, "w": workspace_id},
+        )
+    )
+    with pytest.raises(FragmentReferenceError) as excinfo:
+        repo.create_document(
+            _doc("doc_gone", ("n1", fragment_id)),
+            doc_kind="web",
+            template_document_id=template["id"],
+            template_doc_version=int(template["current_version"]),
+        )
+    assert excinfo.value.code == "fragment.unresolved"
+
+
+def test_saving_a_document_as_a_template_inherits_that_documents_pins(
+    workspace_id: str, design_storage: FsStorage
+) -> None:
+    repo = HybridRepository(workspace_id=workspace_id)
+    fragment_id = _approved_fragment(workspace_id, design_storage)
+    source = repo.create_document(_doc("doc_live", ("n1", fragment_id)), doc_kind="web")
+    set_web_fragment_status(
+        workspace_id=workspace_id, fragment_id=fragment_id, status="deprecated"
+    )
+    template = repo.create_web_template(
+        _doc("tpl_from_live", ("n1", fragment_id)), source_document_id=source["id"]
+    )
+    assert template["id"] == "tpl_from_live"
+
+
+def _doc(document_id: str, *pins: tuple[str, str]) -> dict[str, Any]:
+    nodes: dict[str, Any] = {
+        "root": {"id": "root", "kind": "container", "children": [node for node, _ in pins]}
+    }
+    for node_id, fragment_id in pins:
+        nodes[node_id] = {"id": node_id, "kind": "fragment", "fragment_id": fragment_id}
+    return {
+        "schema_version": 1,
+        "id": document_id,
+        "title": "T",
+        "pages": [{"id": "page_1", "name": "Home", "route": "/", "root": "root", "nodes": nodes}],
+        "assets": {},
+        "custom_css": "",
+    }
+
+
+@pytest.mark.parametrize("column,value", [("label", "'Renamed'"), ("source_url", "'https://x/'")])
+def test_relaxing_the_trigger_for_the_kit_binding_froze_nothing_else(
+    workspace_id: str, design_storage: FsStorage, column: str, value: str
+) -> None:
+    """M6's migration widened the immutability trigger by exactly two columns. Everything that
+    defines the artifact is still refused by the DATABASE, not by this module's good manners."""
+    from sqlalchemy import text
+
+    from lumen_api.design_store import DesignStoreBridge
+
+    kit = _seed_kit(workspace_id)
+    minted = _mint(workspace_id, design_storage, kit=kit).minted[0]
+    with pytest.raises(Exception) as excinfo:
+        DesignStoreBridge(workspace_id)._run(
+            lambda conn: conn.execute(
+                text(
+                    f"UPDATE design_web_fragment SET {column} = {value} "
+                    "WHERE fragment_id = :f AND workspace_id = :w"
+                ),
+                {"f": minted.fragment_id, "w": workspace_id},
+            )
+        )
+    assert "immutable" in str(excinfo.value)

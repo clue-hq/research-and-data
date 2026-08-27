@@ -1122,12 +1122,34 @@ def _mint_page_fragments(
         return refs, diagnostics
 
     by_index = {ref.page_index: ref for ref in snapshot_refs}
+    snapshots = list(snapshots)
     budget = section_mint.SECTION_MINT_CAP
 
     rehost = section_mint.make_asset_rehoster(blobs)
 
     for page_index, snapshot in enumerate(snapshots):
         if budget <= 0:
+            # The per-page cap already says "this page had more"; nothing said "and these pages
+            # were not looked at" — so a three-page walk could clone page one and drop the rest
+            # in silence, which is the same silent truncation one level up.
+            dropped = [
+                getattr(later, "requested_url", "") or f"page {index}"
+                for index, later in enumerate(snapshots[page_index:], start=page_index)
+            ]
+            diagnostics.append(
+                {
+                    "code": section_mint.MINT_CAPPED_CODE,
+                    "severity": "warning",
+                    "message": (
+                        f"this ingestion's {section_mint.SECTION_MINT_CAP}-section budget was "
+                        f"spent before reaching {len(dropped)} more captured page(s), which were "
+                        f"not cloned at all: {', '.join(dropped[:10])}"
+                    ),
+                    "cap": section_mint.SECTION_MINT_CAP,
+                    "pages_not_minted": dropped[:10],
+                    "remaining_pages": len(dropped),
+                }
+            )
             break
         try:
             segmentation = segment_snapshot(

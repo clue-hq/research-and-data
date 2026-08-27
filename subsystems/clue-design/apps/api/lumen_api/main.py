@@ -4465,6 +4465,10 @@ def create_app(
                 "document_id": new_document_id,
                 "web_doc": web_doc,
                 "account_id": document.get("account_id"),
+                # F2.2: this template is a COPY of `document_id`, so its fragment pins are
+                # inherited, not chosen. Without saying so, retiring one cloned section would
+                # block saving a document that has pinned it since before the retirement.
+                "source_document_id": document_id,
             },
             workspace_id=store_workspace_id(repo),
             refusals=_document_refusals(new_document_id),

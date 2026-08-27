@@ -553,7 +553,14 @@ class HybridRepository:
                 before_web_doc={}, after_web_doc=scene, account_id=account_id
             )
             # F1.2: the same gate for fragment pins, beside its sibling and in the same posture.
-            self.validate_fragment_reference_changes(before_web_doc={}, after_web_doc=scene)
+            # F2.2: a DERIVATION inherits its template's pins — it copies them, it does not
+            # choose them — so a retired fragment must not fail every per-account derivation of
+            # every template that pins it.
+            self.validate_fragment_reference_changes(
+                before_web_doc={},
+                after_web_doc=scene,
+                inherited_fragment_ids=self.pinned_fragment_ids(template_document_id),
+            )
         return self._bridge._run(
             lambda conn: design_documents.create_document(
                 conn,
@@ -705,12 +712,26 @@ class HybridRepository:
         )
 
     def create_web_template(
-        self, web_doc: JsonObject, account_id: Optional[str] = None
+        self,
+        web_doc: JsonObject,
+        account_id: Optional[str] = None,
+        source_document_id: Optional[str] = None,
     ) -> JsonObject:
+        """Clone one website-mode document into a template row.
+
+        ``source_document_id`` (F2.2) names the document being cloned, so the template inherits
+        its fragment pins rather than being read as choosing them fresh. Optional and absent-
+        tolerant: without it the template is validated strictly, which is what a caller that
+        genuinely composed a new document should get.
+        """
         self.validate_custom_component_reference_changes(
             before_web_doc={}, after_web_doc=web_doc, account_id=account_id
         )
-        self.validate_fragment_reference_changes(before_web_doc={}, after_web_doc=web_doc)
+        self.validate_fragment_reference_changes(
+            before_web_doc={},
+            after_web_doc=web_doc,
+            inherited_fragment_ids=self.pinned_fragment_ids(source_document_id),
+        )
         return self._bridge._run(
             lambda conn: design_documents.create_web_template(
                 conn,
@@ -1564,8 +1585,32 @@ class HybridRepository:
             )
         )
 
+    def pinned_fragment_ids(self, document_id: Optional[str]) -> frozenset:
+        """Every fragment id one existing document pins — the inherited context for a copy.
+
+        An absent or unreadable source yields the empty set, which is the STRICT answer: the
+        derivation is then validated as if it chose every pin itself. Failing open here would
+        turn "the template is gone" into a way past the gate.
+        """
+        if not document_id:
+            return frozenset()
+        try:
+            source = self.require_document(document_id)
+        except NotFoundError:
+            return frozenset()
+        scene = source.get("scene") or {}
+        if not isinstance(scene, dict):
+            return frozenset()
+        return frozenset(
+            fragment_id for _node_id, fragment_id in fragment_references(scene).values()
+        )
+
     def validate_fragment_reference_changes(
-        self, *, before_web_doc: JsonObject, after_web_doc: JsonObject
+        self,
+        *,
+        before_web_doc: JsonObject,
+        after_web_doc: JsonObject,
+        inherited_fragment_ids: "frozenset | set | None" = None,
     ) -> None:
         """Resolve every newly introduced/re-pinned fragment id in this workspace's registry.
 
@@ -1592,7 +1637,18 @@ class HybridRepository:
         that already pins a fragment stays loadable, renderable and editable no matter what that
         fragment's status later became — losing the ability to retitle a page because somebody
         retired one section of it would be absurd, and the render path is fail-soft by design.
+
+        ``inherited_fragment_ids`` extends that to COPIES (RULED, F2.2 fix round). A per-account
+        derivation and a save-as-template both create a brand-new row, so every pin in them looks
+        new to a location-keyed diff even though the human chose none of them — and without this,
+        retiring one cloned section would fail every future derivation of every template that
+        pins it, which is a retirement that breaks published work rather than stopping new use.
+        A pin whose fragment the SOURCE document already held is therefore exempt from the status
+        check. It is not exempt from resolution: a copy that pins a fragment nobody holds renders
+        the same hole a fresh one would. And it is bounded by what the source actually pins, so a
+        derivation cannot smuggle a new pin in beside an inherited one.
         """
+        inherited = frozenset(inherited_fragment_ids or ())
         before = fragment_references(before_web_doc)
         after = fragment_references(after_web_doc)
         resolved: set[str] = set()
@@ -1611,7 +1667,7 @@ class HybridRepository:
                     fragment_id=fragment_id,
                 )
             status = str(row.get("status") or "")
-            if status != "approved":
+            if status != "approved" and fragment_id not in inherited:
                 # A separate code from `unresolved` because the repairs differ: one is "mint
                 # it", the other is "approve the brand kit it was cloned into".
                 raise FragmentReferenceError(

@@ -85,6 +85,16 @@ async def insert_web_fragment(
     First writer wins those — re-recording them would be an UPDATE, which the table's trigger
     refuses anyway, and losing a duplicate harvest's provenance is a smaller harm than making the
     second harvest fail.
+
+    **The kit binding is the one exception, and it has to be.** It is not content — it records
+    which capture minted this section, and it is what the brand-kit approval flow reads to decide
+    whose approval releases it. Under first-writer-wins, re-ingesting a site published kit
+    version 2 while the converged row still named version 1, so approving version 2 flipped
+    nothing and the fragment sat ``draft`` with no surface able to release it. So the binding
+    moves FORWARD: an unbound row takes the offered kit, and a row bound to an earlier version of
+    the SAME lineage advances to the newer one. It never moves sideways into a different lineage
+    (that is another brand's approval authority, not a newer version of this one's) and never
+    backwards. ``status`` is untouched by the rebinding — the new kit's own approval decides that.
     """
     await conn.execute(
         text(
@@ -112,7 +122,46 @@ async def insert_web_fragment(
             "provenance": dump_json(provenance),
         },
     )
-    return await get_web_fragment(conn, workspace_id=workspace_id, fragment_id=fragment_id)
+    row = await get_web_fragment(conn, workspace_id=workspace_id, fragment_id=fragment_id)
+    if _kit_binding_advances(row, source_kit_id, source_kit_version):
+        await conn.execute(
+            text(
+                """
+                UPDATE design_web_fragment
+                SET source_kit_id = :source_kit_id,
+                    source_kit_version = :source_kit_version,
+                    updated_at = now()
+                WHERE fragment_id = :fragment_id AND workspace_id = :workspace_id
+                """
+            ),
+            {
+                "source_kit_id": source_kit_id,
+                "source_kit_version": source_kit_version,
+                "fragment_id": fragment_id,
+                "workspace_id": workspace_id,
+            },
+        )
+        row = await get_web_fragment(conn, workspace_id=workspace_id, fragment_id=fragment_id)
+    return row
+
+
+def _kit_binding_advances(
+    row: JsonObject, source_kit_id: str | None, source_kit_version: int | None
+) -> bool:
+    """Is the offered kit binding a step FORWARD from the one this row already holds?
+
+    Three answers, and the two ``False`` ones matter as much as the ``True``: nothing offered
+    changes nothing; a different lineage is a different brand's decision, not a newer version of
+    this one's; and an older version of the same lineage is a re-run of history, which must not
+    drag an already-advanced row backwards.
+    """
+    if source_kit_id is None or source_kit_version is None:
+        return False
+    held_id = row.get("source_kit_id")
+    held_version = row.get("source_kit_version")
+    if held_id is None or held_version is None:
+        return True
+    return held_id == source_kit_id and int(source_kit_version) > int(held_version)
 
 
 async def get_web_fragment(
