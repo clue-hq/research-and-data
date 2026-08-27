@@ -32,6 +32,7 @@ from lumen_api.database import NotFoundError
 from lumen_api.design_store import DesignBlobStore, HybridRepository
 from py_lumen_config import settings
 
+from .grammar_audit import extract_grammar_audit
 from .jobs import IngestionJobStore, StageReporter, run_ingestion_job
 from .normalizer import normalize_evidence
 
@@ -547,6 +548,36 @@ def _maybe_write_brief(
         return None
 
 
+def _maybe_extract_grammar_audit(
+    evidence: Any, brand_kit: JsonObject, *, diagnostics: list
+) -> "JsonObject | None":
+    """The kit's `BrandGrammarAudit@1`, or None with a diagnostic.
+
+    Deterministic arithmetic over evidence already in hand — no agent, no
+    screenshots, nothing to configure — so unlike the brief there is no "silent
+    when unconfigured" branch: a website kit always gets one. It is still never a
+    gate: an extraction that throws publishes the kit auditless and says so, the
+    same posture the brief stage takes.
+    """
+    try:
+        return extract_grammar_audit(evidence, brand_kit).model_dump()
+    except Exception as error:  # noqa: BLE001 - the stage may never fail an ingest
+        logger.warning(
+            "the grammar audit could not be extracted; publishing without one", exc_info=True
+        )
+        diagnostics.append(
+            {
+                "code": "LUMI0910",
+                "severity": "warning",
+                "message": (
+                    "the brand grammar audit could not be extracted "
+                    f"({type(error).__name__}): {error}"
+                ),
+            }
+        )
+        return None
+
+
 def _font_metrics_map(evidence: Any, resolve_bytes) -> dict:
     """K4 rung 2: measured metrics per font family, from the stored face
     bytes. Best-effort — a face that cannot be read or parsed contributes
@@ -1036,12 +1067,23 @@ def _ingest(
     if brief is not None:
         validated_kit = {**validated_kit, "brief": brief}
 
+    # The grammar audit rides the same slot for the same reason (the engine's
+    # BrandKit has no field for it), and is attached after the brief so the two
+    # kit sections land in a stable order.
+    audit_diagnostics: list = []
+    audit = _maybe_extract_grammar_audit(
+        evidence, validated_kit, diagnostics=audit_diagnostics
+    )
+    if audit is not None:
+        validated_kit = {**validated_kit, "grammar_audit": audit}
+
     diagnostics = (
         result.diagnostics
         + _capture_diagnostics(outcome)
         + _validation_diagnostics(validation)
         + describe_diagnostics
         + brief_diagnostics
+        + audit_diagnostics
         + snapshot_diagnostics
     )
 
