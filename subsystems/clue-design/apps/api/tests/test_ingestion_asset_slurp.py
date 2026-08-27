@@ -856,3 +856,31 @@ def test_the_shared_url_reader_handles_hex_escapes_and_an_uppercase_declaration(
     assert list(iter_css_urls("URL(https://cdn.example.com/UP.png)")) == [
         "https://cdn.example.com/UP.png"
     ]
+
+
+def test_ingest_failure_diagnostics_are_capped_and_then_summarized() -> None:
+    """RED CASE (F0 fix wave, rider): the refused-ingest producer bypassed the cap.
+
+    ``_drop_diagnostics`` and the font-rung failures both go through
+    :func:`cap_and_summarize`; ``ingest_failures`` — the same ``LUMI0515`` code, the same
+    per-item bulk failure mode (a store that is down refuses every asset on the page) — was
+    extended onto the outcome raw, so one bad store made the published kit's diagnostics
+    unbounded.
+    """
+    from lumen_ingestion.capture.budget import MAX_NAMED_DROPS
+
+    count = MAX_NAMED_DROPS + 5
+    extra = "".join(
+        f'<img src="/i/refused{i}.png" width="600" height="400">' for i in range(count)
+    )
+    page = PAGE.replace("<p>Acme builds", extra + "<p>Acme builds")
+    outcome = _capture(page_html=page)
+    _evidence(outcome, _StubCore(failing={".png", ".svg", ".woff2"}))
+
+    refused = [d for d in outcome.diagnostics if d["code"] == "LUMI0515"]
+    named = [d for d in refused if d.get("url")]
+    summary = [d for d in refused if not d.get("url")]
+    assert len(named) == MAX_NAMED_DROPS, len(named)
+    assert len(summary) == 1, summary
+    assert summary[0]["context"] == "summary"
+    assert "more" in summary[0]["message"]

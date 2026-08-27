@@ -358,7 +358,16 @@ def build_evidence(outcome, *, core, store_root: str, reporter) -> BrandEvidence
             )
         )
         outcome_diagnostics.extend(_drop_diagnostics(drops))
-        outcome_diagnostics.extend(ingest_failures)
+        # Same cap as its two siblings above: a store that is down refuses EVERY asset on the
+        # page, and these are persisted on the published kit. This producer was the one
+        # LUMI0515 path that went on the outcome raw.
+        outcome_diagnostics.extend(
+            cap_and_summarize(
+                ingest_failures,
+                code="LUMI0515",
+                noun="asset ingest(s) failed",
+            )
+        )
 
     narrative = NarrativeEvidence(
         brand_name=parsed.narrative.brand_name,

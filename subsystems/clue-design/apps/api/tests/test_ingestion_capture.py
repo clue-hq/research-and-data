@@ -729,6 +729,113 @@ def test_an_entry_page_failure_still_fails_the_whole_capture() -> None:
 
 
 # --------------------------------------------------------------------------- #
+# Diagnostics are recorded once (F0 fix wave, FIX 2)
+# --------------------------------------------------------------------------- #
+#
+# A failed fetch is reported twice by construction: `net.BoundedFetcher` puts the diagnostic
+# on the per-item `FetchResult` — which `static._collect_assets` folds into the SNAPSHOT —
+# and on its own accumulating list, which `_capture_page` reads as a delta. The acceptance
+# walk against insighthealth.ai turned three distinct failures into six LUMI0503s. These land
+# on the published kit UNCAPPED (`budget.MAX_NAMED_DROPS` bounds the evidence builder's
+# LUMI0515/LUMI0516 lists, not this one), so the doubling is both twice the noise a human
+# reads and a wrong answer to "how much did this capture lose".
+
+
+_DEAD_ASSET_PAGE = (
+    "<html><head><title>Doubled</title>"
+    '<link rel="stylesheet" href="/css/site.css">'
+    "</head><body>"
+    '<img src="/i/one.png"><img src="/i/two.png">'
+    "<p>enough words on the page that the quality gate has something to read</p>"
+    "</body></html>"
+)
+_DEAD_ASSET_CSS = "body{background-image:url(/i/three.png);color:#123456}"
+_DEAD_ASSETS = ("/i/one.png", "/i/two.png", "/i/three.png")
+_PNG = base64.b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+)
+
+
+def _dead_asset_transport() -> httpx.MockTransport:
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path in _DEAD_ASSETS:
+            return httpx.Response(403)
+        if path == "/css/site.css":
+            return httpx.Response(200, text=_DEAD_ASSET_CSS, headers={"content-type": "text/css"})
+        if path == "/":
+            return httpx.Response(200, html=_DEAD_ASSET_PAGE)
+        if path == "/favicon.ico":
+            # The logo ladder probes this on every page; serving it keeps the three dead
+            # assets the only failures, so the count below means what it says.
+            return httpx.Response(200, content=_PNG, headers={"content-type": "image/png"})
+        return httpx.Response(404)
+
+    return httpx.MockTransport(handler)
+
+
+def test_each_failed_fetch_is_reported_exactly_once_on_the_outcome() -> None:
+    outcome = _capture("https://example.com/", _dead_asset_transport())
+    failures = [d for d in outcome.diagnostics if d["code"] == "LUMI0503"]
+
+    assert sorted(d["url"] for d in failures) == [
+        f"https://example.com{path}" for path in sorted(_DEAD_ASSETS)
+    ], [d["url"] for d in failures]
+    assert len(failures) == len(_DEAD_ASSETS), failures
+
+
+def test_a_fetcher_diagnostic_with_no_snapshot_twin_still_reaches_the_outcome(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The fetcher delta is still READ, not dropped — the dedupe removes twins, not sources.
+
+    The page fetch itself records onto the fetcher, and a future caller can hand the fetcher
+    work whose result never becomes part of a snapshot; an entry with no twin must survive.
+    """
+    from lumen_ingestion import capture as capture_pkg
+    from lumen_ingestion.capture.snapshot import SiteSnapshot
+
+    twinned = {
+        "code": "LUMI0503",
+        "severity": "warning",
+        "message": "fetch failed for https://example.com/i/twinned.png: HTTP 403",
+        "url": "https://example.com/i/twinned.png",
+        "reason": "HTTP 403",
+    }
+    fetcher_only = {
+        "code": "LUMI0502",
+        "severity": "warning",
+        "message": "resource exceeded its cap and was skipped: https://example.com/",
+        "url": "https://example.com/",
+        "reason": "exceeded the cap for its resource class",
+    }
+
+    async def _fake_static(url, fetcher, reporter, *, fetched_at):
+        fetcher.diagnostics.append(fetcher_only)
+        fetcher.diagnostics.append(twinned)
+        return SiteSnapshot(
+            requested_url=url,
+            final_url=url,
+            fetched_at=fetched_at,
+            tier="static",
+            html="<html><body><p>" + ("word " * 80) + "</p></body></html>",
+            diagnostics=[twinned],
+        )
+
+    monkeypatch.setattr(capture_pkg, "fetch_static", _fake_static)
+
+    async def run() -> CaptureOutcome:
+        return await capture_website(
+            "https://example.com/", reporter=_noop, render_available=False
+        )
+
+    outcome = asyncio.run(asyncio.wait_for(run(), timeout=10.0))
+
+    assert outcome.diagnostics.count(twinned) == 1, outcome.diagnostics
+    assert fetcher_only in outcome.diagnostics, outcome.diagnostics
+
+
+# --------------------------------------------------------------------------- #
 # evidence_builder
 # --------------------------------------------------------------------------- #
 

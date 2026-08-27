@@ -12,7 +12,7 @@ from __future__ import annotations
 import importlib.util
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Callable, Literal, Optional, Sequence
+from typing import Callable, Iterable, Literal, Optional, Sequence
 
 import httpx
 
@@ -65,6 +65,59 @@ class _PageCapture:
     escalated: bool
     escalation_reason: str | None
     diagnostics: list[dict]
+
+
+def _diagnostic_key(entry: dict) -> str:
+    """A stable identity for one diagnostic: same fields, same values ⇒ same event.
+
+    Built out of ``repr`` rather than ``json.dumps`` so it is TOTAL — no diagnostic, however
+    oddly shaped, can raise here. This function runs on the honest-partial path whose whole
+    promise is that a failure gets REPORTED; throwing while keying a report would be the one
+    way to lose the capture over it. A shape it cannot key collapses to "not seen before",
+    which keeps a duplicate — the harmless direction.
+    """
+    return repr(sorted((str(key), repr(value)) for key, value in entry.items()))
+
+
+class _Diagnostics:
+    """A capture's diagnostics, each recorded once however many sources report it.
+
+    A failed fetch is reported TWICE by construction. ``net.BoundedFetcher`` puts the
+    diagnostic on the per-item ``FetchResult`` — which ``static._collect_assets`` folds into
+    the SNAPSHOT — *and* on its own accumulating list, which the caller reads as a delta. Both
+    reads are deliberate: the fetcher can record something no snapshot ever carries (a capped
+    page body), and a snapshot carries plenty the fetcher never saw (budget drops, html
+    truncation). So the fix is to drop the TWIN here rather than to stop reading either
+    source. Two further doublings collapse here for free: an escalated capture whose rendered
+    tier re-requests a URL the static tier already failed on gets the identical entry back off
+    the fetch cache, and a multi-page capture replays page one's failures into page two's
+    snapshot the same way.
+
+    Why it matters: these entries reach the PUBLISHED KIT uncapped (``pipeline`` concatenates
+    the outcome's diagnostics verbatim; ``budget.MAX_NAMED_DROPS`` bounds the evidence
+    builder's ``LUMI0515``/``LUMI0516`` lists, not this one). So a doubled report is both
+    twice the noise a human reads and a wrong answer to "how much did this capture lose" —
+    the insighthealth.ai walk turned three dead assets into six ``LUMI0503``.
+
+    Cost of the collapse: two genuinely separate events that are byte-identical become one
+    line. Since a diagnostic carries no page or attempt key, the second copy told a human
+    nothing the first did not.
+    """
+
+    def __init__(self) -> None:
+        self.entries: list[dict] = []
+        self._seen: set[str] = set()
+
+    def record(self, incoming: Iterable[dict]) -> None:
+        for entry in incoming:
+            key = _diagnostic_key(entry)
+            if key in self._seen:
+                continue
+            self._seen.add(key)
+            self.entries.append(entry)
+
+    def record_one(self, entry: dict) -> None:
+        self.record((entry,))
 
 
 def _playwright_available() -> bool:
@@ -128,7 +181,7 @@ async def capture_website(
 
     owns_client = http_client is None
     client = http_client or httpx.AsyncClient(timeout=15.0)
-    diagnostics: list[dict] = []
+    diagnostics = _Diagnostics()
     try:
         fetcher = BoundedFetcher(client)
         pages = _pages_to_capture(url, page_urls)
@@ -141,7 +194,7 @@ async def capture_website(
             render_available=render_available,
             fetched_at=fetched_at,
         )
-        diagnostics.extend(entry.diagnostics)
+        diagnostics.record(entry.diagnostics)
         snapshots = [entry.snapshot]
 
         for page in pages[1:]:
@@ -155,7 +208,7 @@ async def capture_website(
                     fetched_at=fetched_at,
                 )
             except Exception as error:  # noqa: BLE001 — one page is not the job
-                diagnostics.append(
+                diagnostics.record_one(
                     {
                         "code": "LUMI0513",
                         "severity": "warning",
@@ -166,7 +219,7 @@ async def capture_website(
                     }
                 )
                 continue
-            diagnostics.extend(extra.diagnostics)
+            diagnostics.record(extra.diagnostics)
             snapshots.append(extra.snapshot)
 
         return CaptureOutcome(
@@ -174,7 +227,7 @@ async def capture_website(
             tier=entry.tier,
             escalated=entry.escalated,
             escalation_reason=entry.escalation_reason,
-            diagnostics=diagnostics,
+            diagnostics=diagnostics.entries,
             snapshots=snapshots,
         )
     finally:
@@ -197,41 +250,44 @@ async def _capture_page(
     the gate and the diagnostics it emits are untouched. The one thing the split had to be
     careful about is the fetcher's diagnostics: it is SHARED across pages and accumulates, so
     each read is a delta from where this page started rather than the whole list.
+
+    Both the fetcher delta and the snapshot are still read in full, and :class:`_Diagnostics`
+    drops the entries that are the same event seen from both (see its docstring).
     """
-    diagnostics: list[dict] = []
+    diagnostics = _Diagnostics()
     before = len(fetcher.diagnostics)
 
     if force_render:
         from .rendered import fetch_rendered
 
         snapshot = await fetch_rendered(url, fetcher, reporter, fetched_at=fetched_at)
-        diagnostics.extend(fetcher.diagnostics[before:])
-        diagnostics.extend(snapshot.diagnostics)
-        return _PageCapture(snapshot, "rendered", False, None, diagnostics)
+        diagnostics.record(fetcher.diagnostics[before:])
+        diagnostics.record(snapshot.diagnostics)
+        return _PageCapture(snapshot, "rendered", False, None, diagnostics.entries)
 
     snapshot = await fetch_static(url, fetcher, reporter, fetched_at=fetched_at)
     after_static = len(fetcher.diagnostics)
-    diagnostics.extend(fetcher.diagnostics[before:after_static])
-    diagnostics.extend(snapshot.diagnostics)
+    diagnostics.record(fetcher.diagnostics[before:after_static])
+    diagnostics.record(snapshot.diagnostics)
 
     parsed = parse_site(snapshot)
     gate = evaluate(snapshot, parsed)
 
     if not gate.escalate:
-        return _PageCapture(snapshot, "static", False, None, diagnostics)
+        return _PageCapture(snapshot, "static", False, None, diagnostics.entries)
 
     reason = "; ".join(gate.reasons)
     if not render_available:
-        diagnostics.append(
+        diagnostics.record_one(
             {
                 "code": "LUMI0506",
                 "severity": "warning",
                 "message": f"escalation needed but render unavailable — proceeding: {reason}",
             }
         )
-        return _PageCapture(snapshot, "static", False, reason, diagnostics)
+        return _PageCapture(snapshot, "static", False, reason, diagnostics.entries)
 
-    diagnostics.append(
+    diagnostics.record_one(
         {
             "code": "LUMI0505",
             "severity": "info",
@@ -241,9 +297,9 @@ async def _capture_page(
     from .rendered import fetch_rendered
 
     rendered_snapshot = await fetch_rendered(url, fetcher, reporter, fetched_at=fetched_at)
-    diagnostics.extend(fetcher.diagnostics[after_static:])
-    diagnostics.extend(rendered_snapshot.diagnostics)
-    return _PageCapture(rendered_snapshot, "rendered", True, reason, diagnostics)
+    diagnostics.record(fetcher.diagnostics[after_static:])
+    diagnostics.record(rendered_snapshot.diagnostics)
+    return _PageCapture(rendered_snapshot, "rendered", True, reason, diagnostics.entries)
 
 
 # Re-exported here so callers use `from lumen_ingestion.capture import build_evidence`.
