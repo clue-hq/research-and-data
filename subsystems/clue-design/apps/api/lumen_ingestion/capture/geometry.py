@@ -195,6 +195,14 @@ GEOMETRY_JS = r"""
     sections.push({
       index: sections.length,
       tag: el.tagName.toLowerCase(),
+      // The band's IDENTITY and its ABSOLUTE TOP (clone-fidelity F2.1). The color consumers
+      // need neither, but the section harvest needs both: `id`/`class` are what let a stored
+      // band be matched back to an element in a re-parse of the stored html, and `top` is what
+      // turns a band into a crop of the stored screenshot. Read through getAttribute because
+      // `className` is not a string on an SVG root.
+      id: el.getAttribute('id'),
+      classes: el.getAttribute('class'),
+      top: r2(top),
       bg: effectiveBg(el),
       bgImage: bgImage,
       gradient: bgImage ? /gradient\(/i.test(bgImage) : false,

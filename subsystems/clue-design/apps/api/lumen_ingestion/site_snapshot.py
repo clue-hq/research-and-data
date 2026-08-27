@@ -36,6 +36,8 @@ from clue_design.storage import SOURCE_KEY_SITE_SNAPSHOT, read_design_bytes, reg
 from clue_storage import StorageBackend
 from lumen_api.design_store import DesignStoreBridge
 
+from .sections.bands import SNAPSHOT_META_BANDS_KEY, bands_for_meta
+
 #: ``source_key`` on the ``artifact`` rows this seam writes (observability, not identity).
 SITE_SNAPSHOT_SOURCE_KEY = SOURCE_KEY_SITE_SNAPSHOT
 
@@ -326,6 +328,12 @@ def _meta(snapshot: Any) -> dict[str, Any]:
     Nested rather than merged because the page's meta keys are whatever the site put in its
     ``<head>`` — merging our keys in beside them would let a site's ``og:`` block decide what
     ``tier`` or ``final_url`` mean here.
+
+    The MEASURED BAND SEQUENCE rides here too (clone-fidelity F2.1). The rest of the geometry
+    harvest is a color-and-shape finding that the evidence builder already digests into the kit;
+    the bands are the only part phase F2 needs back verbatim, because a section's role and its
+    screenshot crop are read off them long after the browser is gone. Bounded by the probe's own
+    section cap, and ``[]`` for a static-tier capture that measured nothing.
     """
     return {
         "meta": dict(getattr(snapshot, "meta", None) or {}),
@@ -333,4 +341,5 @@ def _meta(snapshot: Any) -> dict[str, Any]:
         "requested_url": getattr(snapshot, "requested_url", None),
         "final_url": getattr(snapshot, "final_url", None),
         "fetched_at": getattr(snapshot, "fetched_at", None),
+        SNAPSHOT_META_BANDS_KEY: bands_for_meta(getattr(snapshot, "geometry", None)),
     }
