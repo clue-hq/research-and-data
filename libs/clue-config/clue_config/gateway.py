@@ -117,6 +117,13 @@ class GatewayConfig(BaseModel):
     # baseline for every agent model this config builds — which is why it is set from exactly one
     # place, ``default_gateway_config`` below, under the dev-only reasoning-trace setting.
     agent_reasoning: ReasoningRequest | None = None
+    # Route non-OpenAI agent models over chat-completions instead of the Responses endpoint.
+    # OpenRouter's ``/responses`` translation for non-OpenAI providers rejects array-shaped
+    # message content (grok-4.6 400s ``invalid_union: expected string, received array`` on the
+    # platform conversation's tool-result follow-ups — live, 2026-08-27). Default OFF so the
+    # design deepagent, whose plain-string turns are proven on the Responses path, keeps its
+    # exact wire shape; the platform's ``default_gateway_config`` opts in.
+    openrouter_chat_completions_fallback: bool = False
 
     def cost_cents(self, model: str, usage: TokenUsage) -> CostCents:
         """Cost of a call to ``model`` with the given usage, from the configured price table.
@@ -156,8 +163,13 @@ def default_gateway_config() -> GatewayConfig:
             synthesis_model=settings.synthesis_model,
             judge_model=settings.judge_model,
             agent_reasoning=reasoning,
+            openrouter_chat_completions_fallback=True,
         )
-    return GatewayConfig(synthesis_model=settings.synthesis_model, agent_reasoning=reasoning)
+    return GatewayConfig(
+        synthesis_model=settings.synthesis_model,
+        agent_reasoning=reasoning,
+        openrouter_chat_completions_fallback=True,
+    )
 
 
 DEFAULT_GATEWAY_CONFIG = default_gateway_config()
