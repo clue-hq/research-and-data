@@ -21,6 +21,7 @@ from .budget import (
     STATE_BUDGET_DIAGNOSTIC_CODE,
     budget_diagnostic,
 )
+from .cssurl import iter_css_urls
 from .declared_roles import DeclaredRole, declared_roles
 from .imgsrc import background_image_urls, image_source_ladder
 from .snapshot import SiteSnapshot
@@ -859,8 +860,13 @@ def _parse_font_face(decls, base_url: str) -> ParsedFontFace | None:
         elif name == "font-style":
             style = value.strip().lower() or "normal"
         elif name == "src":
-            for m in re.finditer(r"url\(\s*['\"]?([^'\")]+)['\"]?\s*\)", value):
-                src_urls.append(_absolutize(base_url, m.group(1)))
+            # `value` is tinycss2's re-serialization, which RE-ESCAPES a url token: a face
+            # declared `url(…/A%20\(1\).woff2)` serializes back with those `\(`/`\)` intact.
+            # So this reads it with the same escape-aware reader the collector uses — which
+            # is also what keeps capture and parse agreeing on the URL to the character, the
+            # invariant `iter_font_faces`'s docstring exists to protect.
+            for raw in iter_css_urls(value):
+                src_urls.append(_absolutize(base_url, raw))
     if family is None:
         return None
     src_urls = list(dict.fromkeys(src_urls))

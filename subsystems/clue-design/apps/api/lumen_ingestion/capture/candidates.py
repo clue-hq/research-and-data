@@ -48,6 +48,7 @@ from urllib.parse import urldefrag, urljoin
 
 from .. import logo_ladder
 from .budget import MAX_ASSET_COUNT, budget_diagnostic
+from .cssurl import iter_css_urls
 from .imgsrc import image_source_ladder, parse_srcset
 from .parse import font_face_source_rungs
 
@@ -73,7 +74,6 @@ _CSS_ASSET_DECL_RE = re.compile(
     r"|background-image|background|mask-image|mask|content|cursor)\s*:\s*([^;{}]*)",
     re.IGNORECASE,
 )
-_CSS_URL_RE = re.compile(r"url\(\s*(?:'([^']*)'|\"([^\"]*)\"|([^)'\"\s]+))\s*\)")
 
 _DARK_MEDIA_RE = re.compile(r"prefers-color-scheme\s*:\s*dark", re.IGNORECASE)
 
@@ -258,9 +258,8 @@ def _css_urls(css_text: str, base: str) -> list[tuple[str, str]]:
     found: list[tuple[str, str]] = []
     for declaration in _CSS_ASSET_DECL_RE.finditer(css_text):
         prop = declaration.group(1).lower()
-        for match in _CSS_URL_RE.finditer(declaration.group(2)):
-            raw = (match.group(1) or match.group(2) or match.group(3) or "").strip()
-            if not raw or raw.startswith("data:") or raw.startswith("#"):
+        for raw in iter_css_urls(declaration.group(2)):
+            if raw.startswith("data:") or raw.startswith("#"):
                 continue
             found.append((urljoin(base, raw), prop))
     return found

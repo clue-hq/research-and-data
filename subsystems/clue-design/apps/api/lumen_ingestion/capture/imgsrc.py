@@ -49,6 +49,8 @@ from __future__ import annotations
 import re
 from urllib.parse import parse_qsl, urlencode, urljoin, urlsplit, urlunsplit
 
+from .cssurl import iter_css_urls
+
 #: The rendition width a CDN width-param upgrade asks for. 2048 is the widest rendition the
 #: live evidence proved a real CDN serves un-asked (``Stripe.jpg?q=80`` → 2048x1024), and
 #: comfortably above any 2x hero on a 1440-wide viewport. Every sane image CDN clamps to the
@@ -79,7 +81,6 @@ MAX_CANDIDATES_PER_IMAGE = 3
 _BACKGROUND_DECL_RE = re.compile(
     r"background(?:-image)?\s*:\s*([^;{}]*)", re.IGNORECASE
 )
-_CSS_URL_RE = re.compile(r"url\(\s*(?:'([^']*)'|\"([^\"]*)\"|([^)'\"\s]+))\s*\)")
 
 _SRCSET_DESCRIPTOR_RE = re.compile(r"^([0-9]*\.?[0-9]+)([wx])$", re.IGNORECASE)
 
@@ -279,9 +280,8 @@ def _background_urls_in_css(css_text: str, base: str) -> list[str]:
         return []
     found: list[str] = []
     for declaration in _BACKGROUND_DECL_RE.finditer(css_text):
-        for match in _CSS_URL_RE.finditer(declaration.group(1)):
-            raw = (match.group(1) or match.group(2) or match.group(3) or "").strip()
-            if not raw or raw.startswith("data:") or raw.startswith("#"):
+        for raw in iter_css_urls(declaration.group(1)):
+            if raw.startswith("data:") or raw.startswith("#"):
                 continue
             found.append(urljoin(base, raw))
     return found

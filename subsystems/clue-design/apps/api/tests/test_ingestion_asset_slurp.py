@@ -720,3 +720,139 @@ def test_the_publish_gate_accepts_the_stamp_and_still_refuses_an_unstamped_famil
         )
         is False
     )
+
+
+# --------------------------------------------------------------------------- #
+# CSS url() escapes (F0 fix wave, FIX 1)
+# --------------------------------------------------------------------------- #
+#
+# RED CASE, taken verbatim off the insighthealth.ai acceptance walk. Webflow escapes the
+# parentheses a Designer-uploaded filename carries, so the hero's two background layers are
+# declared as `…_Ellipse%202%20\(1\).png`. The unquoted branch of the url() regex used to be
+# `[^)'"\s]+`, which stops dead at the backslash before the escaped `)` and never unescapes
+# the `\(` either — every consumer then enumerated `…_Ellipse%202%20\(1\`, the CDN answered
+# 403, and two real hero assets were lost behind a loud-but-wrong LUMI0503. There are three
+# copies of this reading (candidates / imgsrc / the @font-face src in parse), so each is
+# pinned here against the same declaration.
+
+ESCAPED_PAREN_CSS = (
+    ".aura-bg{background-image:"
+    r"url(https://cdn.prod.website-files.com/68a/68b_Ellipse%202%20\(1\).png), "
+    r"url(https://cdn.prod.website-files.com/68a/68b_Ellipse%202%20\(2\).png)"
+    "}"
+)
+ESCAPED_PAREN_URLS = [
+    "https://cdn.prod.website-files.com/68a/68b_Ellipse%202%20(1).png",
+    "https://cdn.prod.website-files.com/68a/68b_Ellipse%202%20(2).png",
+]
+
+#: The quoted branch already handled parens — it is pinned so a fix to the unquoted branch
+#: cannot regress it, and so the `\"` escape (which the old `[^"]*` DID stop at) is covered.
+QUOTED_PAREN_CSS = (
+    '.q{background-image:url("https://cdn.example.com/Ellipse (3).png")}'
+    ".s{background-image:url('https://cdn.example.com/Ellipse (4).png')}"
+    r'.e{background-image:url("https://cdn.example.com/say-\"hi\"-(5).png")}'
+)
+QUOTED_PAREN_URLS = [
+    "https://cdn.example.com/Ellipse (3).png",
+    "https://cdn.example.com/Ellipse (4).png",
+    'https://cdn.example.com/say-"hi"-(5).png',
+]
+
+
+def _candidate_urls(css: str) -> list[str]:
+    harvest = collect_asset_candidates(
+        HTMLParser("<html><body></body></html>"),
+        BASE,
+        [Stylesheet(url="https://cdn.example.com/css/site.css", text=css)],
+    )
+    # The logo ladder contributes a default favicon rung for any page; these fixtures are
+    # about the stylesheet, so only the CDN-hosted references are the subject.
+    return [c.url for c in harvest.candidates if c.url.startswith("https://cdn.")]
+
+
+def test_an_escaped_paren_in_an_unquoted_css_url_survives_the_collector() -> None:
+    urls = _candidate_urls(ESCAPED_PAREN_CSS)
+    assert urls == ESCAPED_PAREN_URLS, urls
+    assert not any("\\" in url for url in urls), urls
+
+
+def test_a_quoted_css_url_carrying_parens_and_escapes_survives_the_collector() -> None:
+    assert _candidate_urls(QUOTED_PAREN_CSS) == QUOTED_PAREN_URLS
+
+
+def test_an_escaped_paren_survives_the_background_image_reader() -> None:
+    from lumen_ingestion.capture.imgsrc import background_image_urls
+
+    assert (
+        background_image_urls(
+            HTMLParser("<html><body></body></html>"),
+            [Stylesheet(url="https://cdn.example.com/css/site.css", text=ESCAPED_PAREN_CSS)],
+            BASE,
+        )
+        == ESCAPED_PAREN_URLS
+    )
+
+
+def test_a_quoted_paren_url_survives_the_background_image_reader() -> None:
+    from lumen_ingestion.capture.imgsrc import background_image_urls
+
+    assert (
+        background_image_urls(
+            HTMLParser("<html><body></body></html>"),
+            [Stylesheet(url="https://cdn.example.com/css/site.css", text=QUOTED_PAREN_CSS)],
+            BASE,
+        )
+        == QUOTED_PAREN_URLS
+    )
+
+
+def test_an_escaped_paren_in_a_font_face_src_survives_the_font_walk() -> None:
+    """The third copy: ``parse._parse_font_face``'s own ``src`` regex.
+
+    A font URL is matched to its bytes by EXACT string, so a mangled one costs the face its
+    ``asset_id`` and the whole kit falls back to Inter — the same failure the one-and-only
+    ``iter_font_faces`` walk exists to prevent.
+    """
+    from lumen_ingestion.capture.parse import font_face_source_rungs
+
+    css = (
+        '@font-face{font-family:"Aura";'
+        r"src:url(https://cdn.example.com/Aura%20\(1\).woff2) format(" '"woff2"),'
+        '''url("https://cdn.example.com/Aura (2).woff") format("woff"),'''
+        r"""url('https://cdn.example.com/Aura \(3\).ttf') format("truetype")}"""
+    )
+    rungs = font_face_source_rungs(
+        [Stylesheet(url="https://cdn.example.com/css/site.css", text=css)], BASE
+    )
+    assert rungs == [
+        "https://cdn.example.com/Aura%20(1).woff2",
+        "https://cdn.example.com/Aura (2).woff",
+        "https://cdn.example.com/Aura (3).ttf",
+    ], rungs
+
+
+def test_the_three_css_url_readers_are_one_shared_reader() -> None:
+    """Structural pin: the regex existed in three copies and drifted. One home, three callers."""
+    from lumen_ingestion.capture import candidates, cssurl, imgsrc, parse
+
+    assert candidates.iter_css_urls is cssurl.iter_css_urls
+    assert imgsrc.iter_css_urls is cssurl.iter_css_urls
+    assert parse.iter_css_urls is cssurl.iter_css_urls
+
+
+def test_the_shared_url_reader_handles_hex_escapes_and_an_uppercase_declaration() -> None:
+    """Two smaller properties of the one reader, pinned directly.
+
+    A CSS hex escape (``\\26`` = ``&``) is how a stylesheet minifier writes a URL that carries
+    a character it would rather not emit literally, and ``URL(…)`` is legal CSS that both
+    previous copies missed — the cheap ``"url(" in text.lower()`` guard in front of them was
+    case-insensitive while the regex was not.
+    """
+    from lumen_ingestion.capture.cssurl import iter_css_urls, unescape_css
+
+    assert unescape_css(r"a\26 b.png") == "a&b.png"
+    assert unescape_css("plain.png") == "plain.png"
+    assert list(iter_css_urls("URL(https://cdn.example.com/UP.png)")) == [
+        "https://cdn.example.com/UP.png"
+    ]
