@@ -908,6 +908,10 @@ class LumenWebTools:
             config.brand_kit,
             source=config.brand_kit_source,
             include_brief=True,
+            # F2.4: and the measured grammar audit — the law for the sections
+            # this turn COMPOSES, beside the brief that says what the brand feels
+            # like. Web lane only, same as the brief.
+            include_grammar_audit=True,
             # W1.3: the manifest is where an asset's pixel dimensions live, so
             # the card's image/logo rows can state a size instead of leaving a
             # 296px crop and a 2460px panel indistinguishable.
