@@ -369,3 +369,29 @@ test_web_export brand_geometry ×2.
 Reports: .context/wave-b-audit-report.md + .context/wave-b-runs-report.md.
 Credits: Adyntel 3, PDL 2. Isolation held (nothing outside colombo touched;
 a third-party workspace using colombo's API was observed and left alone).
+
+## W-B2 ROOT CAUSE SOLVED (2026-08-27 eve, orchestrator forensic)
+
+The Ramp turn's auto-attach never declined — IT NEVER RAN IN A FLAG-ON
+PROCESS. fleet_task.claimed_by shows THREE DIFFERENT worker uuids for the
+three Wave-B turns; the main API (86609, log /tmp/colombo-waveb-api.log) is
+`d47abf5d…` and claimed only the CURSOR turn. The RAMP turn (`cd699651…`)
+and CO-BRAND turn (`8ed69bb9…`) were claimed by the audit agent's TEMPORARY
+sweep APIs (ports 8061-8064) — every uvicorn defaults
+lumen_embedded_fleet_worker=True, so they silently drained the SHARED
+design_job queue. A flag-off claimant hits read_ad_lane's FIRST silent
+`return None` (the settings.lumen_brand_ad_assets check — no log by
+design), hence: no references, no card, no warning, and perfect
+by-hand reproducibility once the temp workers were gone. Likely also
+explains W-B1 (double distill): multiple embedded reapers/workers over one
+queue re-driving a step.
+
+STRUCTURAL LESSON (Wave-C candidate): W4 composition happens at CLAIM time
+in the executor process, so per-process env divergence silently changes
+turn behavior; the R3-B capability gate covers ingestion-job kinds, not
+generic design_job turns (correctly — but the behavior dependency remains).
+Fix directions: compose auto-attach at OFFER time into the envelope (the
+validating process freezes the refs, envelope becomes truth), and/or a loud
+"lane flag off in claiming process" log line. OPERATIONAL RULE NOW: any
+auxiliary/temporary API must set LUMEN_EMBEDDED_FLEET_WORKER=0 (knob
+exists); before the demo, verify EXACTLY ONE design API is running.
