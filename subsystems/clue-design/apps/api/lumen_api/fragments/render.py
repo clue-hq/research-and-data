@@ -36,6 +36,7 @@ from clue_storage import StorageBackend
 from ..database import NotFoundError
 from .refs import FRAGMENT_ID_RE, FragmentRefused, fragment_wrapper_class
 from .registry import read_web_fragment
+from .slots import SLOT_KINDS
 
 #: Version of the by-value package shape, so a fleet worker running older code against a newer
 #: API refuses to improvise rather than silently rendering half a page.
@@ -175,22 +176,50 @@ def build_fragment_render_package(
         except NotFoundError:
             package["missing"].append(fragment_id)
             continue
-        package["fragments"][fragment_id] = {"html": loaded.html, "css": loaded.css}
+        package["fragments"][fragment_id] = {
+            "html": loaded.html,
+            "css": loaded.css,
+            "slot_kinds": slot_kinds(loaded.slot_manifest),
+        }
     return package
+
+
+def slot_kinds(slot_manifest: Mapping[str, Any]) -> dict[str, str]:
+    """``{slot key: kind}`` from an artifact's slot manifest — the half of the manifest the ENGINE
+    needs (F1.4).
+
+    The engine substitutes a node's slot values into the artifact's markers, and it cannot decide
+    what a value MEANS without this: an href and a paragraph both ride the node's ``text`` tag
+    (see :data:`lumen_api.fragments.slots.SLOT_KIND_TO_NODE_TAG`), so without the kind a link
+    target could be written into a heading. The fallbacks stay behind — they are already in the
+    markup, which is where the engine reads them from.
+
+    Unknown kinds are dropped rather than passed on: the engine's enum is closed, and a value
+    whose kind it cannot name falls back loudly instead of failing the whole render.
+    """
+    return {
+        str(key): str(entry.get("kind"))
+        for key, entry in (slot_manifest or {}).items()
+        if isinstance(entry, Mapping) and str(entry.get("kind")) in SLOT_KINDS
+    }
 
 
 def fragment_render_map(
     package: Mapping[str, Any], fragment_ids: Sequence[str]
 ) -> dict[str, dict[str, str]]:
-    """The engine's ``RenderOptions.fragments`` — markup only.
+    """The engine's ``RenderOptions.fragments`` — markup plus each slot's kind.
 
     CSS is deliberately absent: it reaches the page through the head, once per fragment, not once
-    per node that pins it.
+    per node that pins it. The slot kinds ride here rather than in the head because they are read
+    per node, at the moment the node's own values are applied (F1.4).
     """
     fragments = package.get("fragments") if isinstance(package, Mapping) else None
     fragments = fragments if isinstance(fragments, Mapping) else {}
     return {
-        fragment_id: {"html": str(fragments[fragment_id].get("html") or "")}
+        fragment_id: {
+            "html": str(fragments[fragment_id].get("html") or ""),
+            "slot_kinds": dict(fragments[fragment_id].get("slot_kinds") or {}),
+        }
         for fragment_id in _unique(fragment_ids)
         if isinstance(fragments.get(fragment_id), Mapping)
     }
@@ -311,6 +340,7 @@ __all__ = [
     "fragment_collision_diagnostics",
     "fragment_css_sheet",
     "fragment_render_map",
+    "slot_kinds",
     "web_doc_class_tokens",
     "web_doc_fragment_ids",
 ]

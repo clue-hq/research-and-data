@@ -27,6 +27,7 @@ from conftest import make_client
 
 from lumen_api.design_store import HybridRepository
 from lumen_api.fragments import create_web_fragment, fragment_wrapper_class
+from lumen_api.fragments.slots import SlotSpec
 from lumen_api.fragments.render import (
     build_fragment_render_package,
     css_class_names,
@@ -45,6 +46,19 @@ HTML = (
 )
 CSS = ".clone-hero { padding: 64px } .clone-head { color: #123456 }"
 SOURCE_URL = "https://insight.example/"
+
+#: A 64-hex digest standing in for bytes F0 already rehosted.
+CLONE_DIGEST = "11" * 32
+SLOTTED_HTML = (
+    f'<section class="clone-hero"><h1 class="clone-head">{SENTINEL}</h1>'
+    f'<img class="clone-logo" src="/asset-store/{CLONE_DIGEST}" alt="Clone Co">'
+    '<a class="clone-cta" href="https://insight.example/demo">Book a demo</a></section>'
+)
+SLOT_SPECS = (
+    SlotSpec(selector="h1.clone-head", key="headline", kind="text"),
+    SlotSpec(selector="img.clone-logo", key="logo", kind="image"),
+    SlotSpec(selector="a.clone-cta", key="cta", kind="href"),
+)
 
 
 @pytest.fixture()
@@ -202,7 +216,9 @@ def test_the_package_reads_each_artifact_once_and_keeps_it_identifiable(
     # head through the theme, never into a node.
     render_map = fragment_render_map(package, ids)
     assert set(render_map) == {first.fragment_id, second.fragment_id}
-    assert set(render_map[first.fragment_id]) == {"html"}
+    # Markup plus the slot KINDS the engine cannot know on its own (F1.4) —
+    # and still no CSS.
+    assert set(render_map[first.fragment_id]) == {"html", "slot_kinds"}
 
     sheet = fragment_css_sheet(package, ids)
     # Per-fragment identity survives concatenation: a rule in the head can be
@@ -213,6 +229,33 @@ def test_the_package_reads_each_artifact_once_and_keeps_it_identifiable(
     assert second.payload["css"] in sheet
     # Deterministic: same page, same bytes.
     assert fragment_css_sheet(package, ids) == sheet
+
+
+def test_the_render_map_carries_each_slots_kind(
+    workspace_id: str, design_storage: FsStorage
+) -> None:
+    """The engine never sees a slot manifest — it is API-side — but it cannot substitute without
+    the kinds: an href and a paragraph both ride the node's ``text`` tag, so the kind is the only
+    thing that says which one a value is. F1.4 threads them alongside the markup."""
+    _row, artifact = create_web_fragment(
+        design_storage,
+        workspace_id=workspace_id,
+        html=SLOTTED_HTML,
+        css=CSS,
+        rehosted={},
+        source_url=SOURCE_URL,
+        section_role="hero",
+        slots=SLOT_SPECS,
+    )
+    doc = _web_doc("doc_kinds", _fragment_node("n1", artifact.fragment_id))
+    package = build_fragment_render_package(
+        design_storage, workspace_id=workspace_id, web_doc=doc, page_id="home"
+    )
+    entry = package["fragments"][artifact.fragment_id]
+    assert entry["slot_kinds"] == {"headline": "text", "logo": "image", "cta": "href"}
+
+    render_map = fragment_render_map(package, web_doc_fragment_ids(doc, "home"))
+    assert render_map[artifact.fragment_id]["slot_kinds"] == entry["slot_kinds"]
 
 
 def test_an_unresolvable_pin_is_named_not_guessed(
