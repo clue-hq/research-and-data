@@ -6079,8 +6079,10 @@ def make_web_view_tool(tools: LumenWebTools, can_render: bool = True):
     nth interactive STATE capture (dialog opened / accordion expanded) from the
     latest render; "asset:<asset_id>" returns that asset's preview image (from
     the document's own registry, the kit manifest, or the workspace library);
-    "doc" returns a compact section/asset summary; "brand" returns the brand
-    card; "account" returns the target account card (P5).
+    "cloned_section:<fragment_id>" returns the picture of a cloned section
+    `search_cloned_sections` returned (F2.3); "doc" returns a compact
+    section/asset summary; "brand" returns the brand card; "account" returns the
+    target account card (P5).
     Mirrors tools/view.make_view_tool: any failure inside returns an honest error
     STRING so a bad/unreadable image can never kill the turn unfinalized."""
     from langchain_core.tools import tool
@@ -6094,7 +6096,10 @@ def make_web_view_tool(tools: LumenWebTools, can_render: bool = True):
         opened or accordions expanded) from the latest render;
         "asset:<asset_id>" returns that asset's preview image with its SOURCE
         pixel dimensions (a brand kit asset, a `search_assets` library result, or
-        one already registered in the document); "doc" returns a section + asset
+        one already registered in the document);
+        "cloned_section:<fragment_id>" returns the picture of a cloned section
+        `search_cloned_sections` returned, so you can see the band before
+        reusing it; "doc" returns a section + asset
         summary; "brand" returns the brand card; "account" returns the target
         account card. Returns image content so you judge by looking, not
         guessing."""

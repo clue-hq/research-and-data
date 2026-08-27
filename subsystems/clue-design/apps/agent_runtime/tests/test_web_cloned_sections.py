@@ -814,3 +814,14 @@ def test_the_author_holds_both_halves_of_the_ladder_and_the_director_only_discov
     orchestrator = names(capture["tools"])
     assert "search_cloned_sections" in orchestrator
     assert "insert_cloned_section" not in orchestrator
+
+
+def test_the_view_tool_advertises_the_cloned_section_target(
+    tmp_path: Path, registry: FakeRegistry
+) -> None:
+    """A target nothing names is a target nobody uses — the `asset:` precedent."""
+    from lumen_agent.tools.web_substrate import make_web_view_tool
+
+    view = make_web_view_tool(_tools(tmp_path, registry), can_render=False)
+
+    assert "cloned_section:" in (view.description or "")
