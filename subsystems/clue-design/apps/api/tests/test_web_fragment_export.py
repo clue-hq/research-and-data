@@ -41,7 +41,7 @@ from clue_design.storage import SOURCE_KEY_ASSET
 from conftest import make_blob_store, make_client
 from PIL import Image
 
-from lumen_api.design_store import HybridRepository
+from lumen_api.design_store import DesignStoreBridge, HybridRepository
 from lumen_api.fragments import create_web_fragment, fragment_wrapper_class
 from lumen_api.fragments.slots import SlotSpec
 from lumen_api.main import create_app
@@ -672,3 +672,112 @@ def test_the_fragment_region_is_identical_across_render_export_and_publish(
     # …and the comparison is not vacuous: the region really carries the personalized content.
     assert ACCOUNT_HEADLINE in canonical(export_html)
     assert f"<asset:{account_digest[:12]}>" in canonical(export_html)
+
+
+# --------------------------------------------------------------------------- #
+# 5 — a payload this build cannot read (phase fix wave, FIX 2)
+# --------------------------------------------------------------------------- #
+
+
+def _fragment_row_over_a_hand_written_payload(
+    client: TestClient, workspace_id: str, payload: bytes
+) -> str:
+    """A registry row whose payload blob is NOT something `parse_fragment_payload` accepts.
+
+    Reachable for real in two ways: a payload written by a newer build (schema 2) that an older
+    process then reads, and a blob that a restore or a partial write left truncated. Both are
+    "the bytes are there and they are wrong", which is a different failure from "the bytes are
+    gone" — and until this wave the two were handled by exactly one of the four render paths.
+    """
+    from clue_design import web_fragments as dal
+    from clue_design.storage import SOURCE_KEY_WEB_FRAGMENT
+
+    import hashlib
+
+    digest = hashlib.sha256(payload).hexdigest()
+    make_blob_store(client.app).register(
+        payload, media_type="application/json; charset=utf-8", source_key=SOURCE_KEY_WEB_FRAGMENT
+    )
+    fragment_id = "frag_" + digest[:16]
+    DesignStoreBridge(workspace_id)._run(
+        lambda conn: dal.insert_web_fragment(
+            conn,
+            workspace_id=workspace_id,
+            fragment_id=fragment_id,
+            source_kit_id=None,
+            source_kit_version=None,
+            source_url=SOURCE_URL,
+            section_role="hero",
+            label=None,
+            payload_digest=digest,
+            preview_digest=None,
+            provenance={},
+        )
+    )
+    return fragment_id
+
+
+FUTURE_PAYLOAD = json.dumps(
+    {
+        "schema_version": 2,
+        "fragment_id": "frag_" + "0" * 16,
+        "html": "<section>from the future</section>",
+        "css": "",
+        "asset_digests": [],
+        "slot_manifest": {},
+    }
+).encode("utf-8")
+TRUNCATED_PAYLOAD = b'{"schema_version": 1, "html": "<section>tru'
+
+
+@pytest.mark.parametrize(
+    "payload,label", [(FUTURE_PAYLOAD, "future schema"), (TRUNCATED_PAYLOAD, "truncated json")]
+)
+def test_an_unreadable_payload_degrades_on_every_path_and_never_500s(
+    client: TestClient, workspace_id: str, payload: bytes, label: str
+) -> None:
+    """`parse_fragment_payload` refuses fail-closed — correctly. Nothing CAUGHT that refusal.
+
+    The resolver caught `NotFoundError` only, so a blob that exists and cannot be read raised
+    `FragmentRefused` straight through the render route (500), the export (500), the publish
+    (500) and the agent turn's composition. The module's own promise is that an artifact which
+    will not resolve becomes a placeholder and a loud diagnostic, and it applies whether the
+    bytes are absent or unreadable.
+    """
+    fragment_id = _fragment_row_over_a_hand_written_payload(client, workspace_id, payload)
+    document = _seed(
+        client,
+        _web_doc(
+            f"doc_unreadable_{len(payload)}",
+            {"id": "clone", "kind": "fragment", "fragment_id": fragment_id, "classes": ""},
+        ),
+    )
+
+    # 1. the editor render route
+    rendered = client.get(f"/documents/{document['id']}/web/render")
+    assert rendered.status_code == 200, rendered.text
+    assert "lumen-fragment-placeholder" in rendered.json()["html"]
+
+    # 2. the export zip
+    _files, html, manifest = _export(client, document["id"])
+    assert "lumen-fragment-placeholder" in html
+    assert manifest["fragments"]["missing"] == [fragment_id]
+
+    # 3. the published page
+    published, publish_manifest = _publish(
+        client, document["id"], workspace_id, f"unreadable-{len(payload)}"
+    )
+    assert "lumen-fragment-placeholder" in published
+    assert publish_manifest["fragments"]["missing"] == [fragment_id]
+
+    # 4. the agent turn's composition — the same resolver, called where the database is
+    from lumen_api.fragments.render import build_fragment_render_package
+
+    package = build_fragment_render_package(
+        client.app.state.storage,
+        workspace_id=workspace_id,
+        web_doc=client.get(f"/documents/{document['id']}").json()["scene"],
+        page_id="home",
+    )
+    assert package["missing"] == [fragment_id]
+    assert package["fragments"] == {}

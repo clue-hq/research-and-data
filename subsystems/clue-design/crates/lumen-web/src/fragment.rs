@@ -222,6 +222,14 @@ pub(crate) fn substitute_fragment_slots(
 struct Skip {
     /// Names of the not-yet-closed elements INSIDE the marked one, so an
     /// unbalanced artifact cannot desynchronize the walk.
+    ///
+    /// A NAME stack rather than a counter, and it is only ever right because
+    /// the artifact was re-serialized by lexbor at sanitization: the sanitizer
+    /// parses the harvested markup into a tree and writes that tree back, so
+    /// what reaches this walk is balanced by construction. Hand-written markup
+    /// with a stray `</div>` would not be, and this stack is what keeps that
+    /// from swallowing the rest of the page rather than an assumption that it
+    /// cannot happen.
     depth: Vec<String>,
     /// The end tag to emit when the marked element closes (text substitution),
     /// or `None` when the element is being dropped entirely (visibility).
@@ -401,12 +409,14 @@ fn nested_marker_consumed(
         Phase::Web,
         "LUMW0417",
         format!(
-            "fragment node `{node_id}` binds slot `{key}`, whose marker sits {fate}; that value              was not applied"
+            "fragment node `{node_id}` binds slot `{key}`, whose marker sits {fate}; \
+             that value was not applied"
         ),
         Some(DiagnosticSubject::Node(node_id.clone())),
     )
     .with_hint(
-        "A slot inside another slot's element cannot be bound at the same time; bind the outer          slot or the inner one.",
+        "A slot inside another slot's element cannot be bound at the same time; bind the outer \
+         slot or the inner one.",
     )
 }
 
@@ -469,6 +479,12 @@ fn rewrite_tag(
             // serialized with double quotes and `"` escaped, so a raw value
             // cannot close the attribute — and if one ever did, it is escaped
             // instead of emitted.
+            // A bare boolean attribute (`disabled`, `hidden`) re-emits as
+            // `disabled=""`, which is the same HTML. Safe here for the same
+            // upstream reason: lexbor re-serialized this markup at
+            // sanitization, so every attribute already arrives quoted and
+            // normalized, and quick_xml hands back an empty value rather than
+            // the ragged shapes raw harvested HTML can carry.
             None => {
                 let raw = String::from_utf8_lossy(attr.value.as_ref()).into_owned();
                 if raw.contains('"') {
@@ -915,6 +931,13 @@ mod tests {
         let message = &diagnostics[0].message;
         assert!(message.contains('`') && message.contains("`b`"), "{message}");
         assert!(message.contains("`a`"), "{message}");
+        // …and it reads as a sentence. A rejoined line wrap had left a run of
+        // literal spaces mid-message in both this string and its hint, which
+        // an operator sees verbatim. Cheap to pin, invisible otherwise.
+        assert!(!message.contains("  "), "{message}");
+        let hint = diagnostics[0].hint.as_deref().unwrap_or_default();
+        assert!(!hint.contains("  "), "{hint}");
+        assert!(hint.contains("bind the outer slot or the inner one"), "{hint}");
     }
 
     #[test]

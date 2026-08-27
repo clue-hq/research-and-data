@@ -3466,8 +3466,17 @@ def create_app(
                 custom_component_runtimes=runtime_frames,
                 brand_kit=brand_kit,
                 font_face_css=font_face_css,
-                fragments=fragment_render_map(fragment_package, fragment_ids),
-                fragment_css=fragment_css_sheet(fragment_package, fragment_ids),
+                # The artifact's OWN byte references are rebased onto THIS request's origin
+                # (F1.5 fix wave): they are stored root-relative, which the editor's srcDoc
+                # iframe has no origin to resolve, so every image inside a cloned section
+                # rendered broken while slot-bound assets — which go through the engine's
+                # asset_base_url — worked.
+                fragments=fragment_render_map(
+                    fragment_package, fragment_ids, asset_base_url=asset_base_url
+                ),
+                fragment_css=fragment_css_sheet(
+                    fragment_package, fragment_ids, asset_base_url=asset_base_url
+                ),
             )
         except CoreError as error:
             raise core_http_error(error) from error

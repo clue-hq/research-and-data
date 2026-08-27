@@ -45,7 +45,7 @@ from typing import Any, Iterable, Mapping, Sequence
 from clue_storage import StorageBackend
 
 from ..database import NotFoundError
-from .refs import FRAGMENT_ID_RE, FragmentRefused, fragment_wrapper_class
+from .refs import ASSET_URL_PREFIX, FRAGMENT_ID_RE, FragmentRefused, fragment_wrapper_class
 from .registry import read_web_fragment
 from .slots import SLOT_KINDS
 
@@ -64,6 +64,11 @@ FRAGMENT_RENDER_PACKAGE_SCHEMA_VERSION = 1
 #: parser — this feeds a DIAGNOSTIC, so a missed exotic selector costs a warning nobody sees, and
 #: nothing about the render changes.
 _CSS_CLASS_RE = re.compile(r"\.(-?[_a-zA-Z](?:[\w-]|\\.)*)")
+
+#: An artifact-owned byte reference as the sanitizer and the CSS scoper write it: the one public
+#: byte route, then a sha256. Anchored on the digest so nothing else in foreign markup matches.
+_ARTIFACT_ASSET_RE = re.compile(re.escape(ASSET_URL_PREFIX) + r"([0-9a-f]{64})")
+
 
 def empty_fragment_render_package() -> dict[str, Any]:
     """A package that resolves nothing — the honest value for a page with no fragments."""
@@ -179,6 +184,13 @@ def build_fragment_render_package(
     another tenant's, or a purged payload — lands in ``missing`` and the engine renders its
     placeholder. Refusing the whole render instead would make one dead pin cost the entire page,
     and the F1.2 gate exists precisely so a document with a dead pin stays usable.
+
+    **Unreadable counts as unresolvable.** :func:`parse_fragment_payload` refuses fail-closed on
+    a blob that is not a payload this build understands — truncated JSON, a missing key, a
+    ``schema_version`` from a newer writer — and that refusal used to travel straight out of
+    here, past every caller, as a 500 on all four render paths. "The bytes are wrong" is a
+    different fault from "the bytes are gone" but it is the SAME question for a page: this
+    section cannot be shown. So both answers are the same one, and both are visible.
     """
     package = empty_fragment_render_package()
     for fragment_id in web_doc_fragment_ids(web_doc, page_id):
@@ -191,7 +203,7 @@ def build_fragment_render_package(
             loaded = read_web_fragment(
                 storage, workspace_id=workspace_id, fragment_id=fragment_id
             )
-        except NotFoundError:
+        except (NotFoundError, FragmentRefused):
             package["missing"].append(fragment_id)
             continue
         package["fragments"][fragment_id] = {
@@ -262,20 +274,60 @@ def fragment_package_schema_refusal(package: Any) -> dict[str, Any] | None:
     }
 
 
+def rebase_artifact_assets(text: str, asset_base_url: str | None) -> str:
+    """Point an artifact's OWN asset references at the origin THIS render can fetch.
+
+    An artifact stores its bytes as ``/asset-store/<digest>`` — root-relative, deliberately: it
+    is immutable and shared, so baking in an origin would make it wrong for every caller but
+    one. Root-relative is also unresolvable in the two surfaces the previews use (Playwright's
+    ``set_content``, the editor's srcDoc iframe), which have no document origin to resolve
+    against. So every image and CSS background inside a cloned section 404'd there, while a
+    SLOT-bound asset — which resolves through ``doc.assets`` and the engine's own
+    ``asset_base_url`` — rendered fine. One asset kind worked, the other did not, and only the
+    working one was ever probed.
+
+    **This rebase belongs at the API layer and must never move into the engine's render arm.**
+    The export renders with ``asset_base_url="assets"``; an engine-side rebase would emit
+    ``assets/<digest>`` into the artifact's markup, and ``web_export``'s
+    ``html.replace("/asset-store/<digest>", …)`` would then silently match nothing — the zip
+    would ship the bytes as orphans under paths no element names. The delivery paths therefore
+    pass no base at all and keep the stored reference exactly as it is: publish serves that
+    route directly, and the export rewrites it to a relative path itself.
+
+    Only ``/asset-store/`` immediately followed by a 64-hex digest is touched, so nothing else
+    in somebody else's markup can be caught by it.
+    """
+    if not asset_base_url:
+        return text
+    base = asset_base_url.rstrip("/")
+    if base == ASSET_URL_PREFIX.rstrip("/"):
+        # Already the stored spelling — a no-op rather than a doubling.
+        return text
+    return _ARTIFACT_ASSET_RE.sub(lambda match: f"{base}/{match.group(1)}", text)
+
+
 def fragment_render_map(
-    package: Mapping[str, Any], fragment_ids: Sequence[str]
+    package: Mapping[str, Any],
+    fragment_ids: Sequence[str],
+    asset_base_url: str | None = None,
 ) -> dict[str, dict[str, str]]:
     """The engine's ``RenderOptions.fragments`` — markup plus each slot's kind.
 
     CSS is deliberately absent: it reaches the page through the head, once per fragment, not once
     per node that pins it. The slot kinds ride here rather than in the head because they are read
     per node, at the moment the node's own values are applied (F1.4).
+
+    ``asset_base_url`` rebases the artifact's own byte references (see
+    :func:`rebase_artifact_assets`). Preview callers pass their absolute origin; delivery
+    callers pass nothing.
     """
     fragments = package.get("fragments") if isinstance(package, Mapping) else None
     fragments = fragments if isinstance(fragments, Mapping) else {}
     return {
         fragment_id: {
-            "html": str(fragments[fragment_id].get("html") or ""),
+            "html": rebase_artifact_assets(
+                str(fragments[fragment_id].get("html") or ""), asset_base_url
+            ),
             "slot_kinds": dict(fragments[fragment_id].get("slot_kinds") or {}),
         }
         for fragment_id in _unique(fragment_ids)
@@ -284,7 +336,9 @@ def fragment_render_map(
 
 
 def fragment_css_sheet(
-    package: Mapping[str, Any], fragment_ids: Sequence[str]
+    package: Mapping[str, Any],
+    fragment_ids: Sequence[str],
+    asset_base_url: str | None = None,
 ) -> str | None:
     """The concatenated scoped CSS for these fragments, or ``None`` when there is none.
 
@@ -292,6 +346,9 @@ def fragment_css_sheet(
     blocks cannot interact, which makes document order a source of byte churn (moving a section
     would rewrite the sheet) with no cascade meaning. Each block keeps a source comment naming its
     artifact, so a rule in a rendered head can be traced back to the fragment it came from.
+
+    The sheet carries byte references too — a cloned hero's background image lives here, not in
+    the markup — so it is rebased on exactly the same terms as the markup.
     """
     fragments = package.get("fragments") if isinstance(package, Mapping) else None
     fragments = fragments if isinstance(fragments, Mapping) else {}
@@ -303,7 +360,9 @@ def fragment_css_sheet(
         css = str(record.get("css") or "").strip()
         if not css:
             continue
-        blocks.append(f"/* fragment {fragment_id} */\n{css}")
+        blocks.append(
+            f"/* fragment {fragment_id} */\n{rebase_artifact_assets(css, asset_base_url)}"
+        )
     return "\n".join(blocks) if blocks else None
 
 
@@ -399,6 +458,7 @@ __all__ = [
     "fragment_css_sheet",
     "fragment_package_schema_refusal",
     "fragment_render_map",
+    "rebase_artifact_assets",
     "slot_kinds",
     "web_doc_class_tokens",
     "web_doc_fragment_ids",

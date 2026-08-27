@@ -255,3 +255,79 @@ def test_a_package_of_the_known_shape_is_read_normally(tmp_path: Path):
         for diagnostic in tools._fragment_diagnostics()
         if diagnostic["code"] == "fragment.package_schema_unknown"
     ]
+
+
+# --------------------------------------------------------------------------- #
+# The artifact's OWN bytes in the agent's preview (phase fix wave, FIX 1)
+# --------------------------------------------------------------------------- #
+
+OWNED_DIGEST = "ab" * 32
+OWNED_HTML = (
+    '<section class="clone-hero">'
+    f'<img class="clone-art" src="/asset-store/{OWNED_DIGEST}" alt="">'
+    f'<h1 data-lumen-slot="headline">{SENTINEL}</h1></section>'
+)
+OWNED_CSS = (
+    f'.{WRAPPER} .clone-hero {{ background-image: url("/asset-store/{OWNED_DIGEST}") }}'
+)
+
+
+def _owned_package() -> dict:
+    return {
+        "schema_version": 1,
+        "fragments": {
+            FRAGMENT_ID: {
+                "html": OWNED_HTML,
+                "css": OWNED_CSS,
+                "slot_kinds": {},
+                "asset_digests": [OWNED_DIGEST],
+            }
+        },
+        "missing": [],
+    }
+
+
+def test_the_agents_preview_fetches_an_artifacts_own_image_from_the_asset_origin(
+    tmp_path: Path,
+):
+    """The walk caught this in PIXELS: every image inside a cloned section was broken in the
+    screenshots a reviewer judges.
+
+    Playwright renders through `set_content`, which has no document origin, so the artifact's
+    stored root-relative `/asset-store/<digest>` resolved against nothing. A slot-bound asset
+    went through the engine's `asset_base_url` and was always fine — which is precisely how the
+    broken class hid: the one asset kind anybody probed was the one that worked.
+    """
+    tools = _tools(tmp_path, package=_owned_package())
+    captured = _captured_render_kwargs(tools)
+
+    base = tools.asset_base_url.rstrip("/")
+    assert f'src="{base}/{OWNED_DIGEST}"' in captured["fragments"][FRAGMENT_ID]["html"]
+    assert f'url("{base}/{OWNED_DIGEST}")' in captured["fragment_css"]
+    assert f'src="/asset-store/{OWNED_DIGEST}"' not in captured["fragments"][FRAGMENT_ID]["html"]
+
+    # …and the real engine emits what it was handed, so the page carries the fetchable URL.
+    response = _replay(tools, captured)
+    assert f"{base}/{OWNED_DIGEST}" in (response.get("html") or "")
+
+
+def test_the_preflight_probes_an_artifact_owned_reference_not_just_a_slot_asset(
+    tmp_path: Path,
+):
+    """The probe must cover the class that broke.
+
+    The preflight proved the asset ORIGIN serves bytes by building `{base}/{digest}` itself —
+    which is exactly the URL the rebase produces, so it answered 200 whether or not the render
+    map had been rebased at all. It could never have caught this. It now probes the reference as
+    it ACTUALLY APPEARS in the markup this turn will render, so an un-rebased artifact reference
+    is a loud finding rather than a green light.
+    """
+    tools = _tools(tmp_path, package=_owned_package())
+    urls = tools._fragment_asset_probe_urls()
+    assert urls == [f"{tools.asset_base_url.rstrip('/')}/{OWNED_DIGEST}"]
+
+    # The red state — the bug this wave fixed — is recognised as unfetchable rather than probed.
+    assert tools._unfetchable_probe_urls([f"/asset-store/{OWNED_DIGEST}"]) == [
+        f"/asset-store/{OWNED_DIGEST}"
+    ]
+    assert tools._unfetchable_probe_urls(urls) == []

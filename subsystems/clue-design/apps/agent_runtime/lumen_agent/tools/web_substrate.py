@@ -111,6 +111,11 @@ _BRAND_REFERENCE_MIN_LONG_SIDE_PX = 512
 # fine for the user: the agent was blind to its own images working. Any future
 # edit here must keep the value CONFIGURED, and must keep the preflight below.
 _FALLBACK_ASSET_BASE_URL = "http://127.0.0.1:8010/asset-store"
+
+#: A byte reference inside a cloned section's markup or CSS, as the preview will fetch it —
+#: whatever prefix it carries, ending in a sha256. Used by the asset preflight to probe the URL
+#: the page really names rather than one the probe built for itself.
+_ASSET_REFERENCE_RE = re.compile(r"""[^"'()\s]*asset-store/[0-9a-f]{64}""")
 # Seconds allowed for the once-per-turn asset-origin preflight probe. Short: a
 # dead origin is a connection refusal (instant) and a live one is a loopback GET.
 _ASSET_PREFLIGHT_TIMEOUT_S = 5.0
@@ -4318,10 +4323,45 @@ class LumenWebTools:
         return web_doc_fragment_ids(self.web_doc, self.page_id)
 
     def _fragment_render_map(self) -> Dict[str, Any]:
-        return fragment_render_map(self._fragment_render_package, self._fragment_ids())
+        # The artifact's OWN byte references are rebased onto this turn's asset origin (F1.5 fix
+        # wave). Playwright renders through `set_content`, which has no document origin, so the
+        # stored root-relative `/asset-store/<digest>` resolved against nothing and every image
+        # inside a cloned section came out broken in the screenshots the reviewer judges.
+        return fragment_render_map(
+            self._fragment_render_package,
+            self._fragment_ids(),
+            asset_base_url=self.asset_base_url,
+        )
 
     def _fragment_css(self) -> Optional[str]:
-        return fragment_css_sheet(self._fragment_render_package, self._fragment_ids())
+        # Same rebase: a cloned hero's background image lives in the sheet, not in the markup.
+        return fragment_css_sheet(
+            self._fragment_render_package,
+            self._fragment_ids(),
+            asset_base_url=self.asset_base_url,
+        )
+
+    def _fragment_asset_probe_urls(self) -> List[str]:
+        """The asset URLs this turn's cloned sections will ACTUALLY fetch.
+
+        Read out of the composed render map and sheet rather than rebuilt from digests, because
+        the thing worth probing is the reference as it will appear in the markup. A probe that
+        builds `{base}/{digest}` itself answers 200 whether or not anything rebased the markup —
+        which is why the original preflight could not have caught the class this wave fixed.
+        """
+        found: List[str] = []
+        for record in self._fragment_render_map().values():
+            found.extend(_ASSET_REFERENCE_RE.findall(str(record.get("html") or "")))
+        found.extend(_ASSET_REFERENCE_RE.findall(self._fragment_css() or ""))
+        return list(dict.fromkeys(found))
+
+    def _unfetchable_probe_urls(self, urls: List[str]) -> List[str]:
+        """The ones a preview cannot fetch at all: anything without a scheme.
+
+        `set_content` and an srcDoc iframe have no base URL, so a root-relative reference is not
+        "probably fine", it is a guaranteed broken image. Naming it is the whole point.
+        """
+        return [url for url in urls if not re.match(r"[a-zA-Z][a-zA-Z0-9+.-]*:", url)]
 
     def _fragment_diagnostics(self) -> List[JsonObject]:
         """The API-layer cascade warning, recomputed against the current doc.
@@ -4530,6 +4570,72 @@ class LumenWebTools:
                     _take((entry or {}).get("record") if isinstance(entry, dict) else None)
         return list(dict.fromkeys(digests))
 
+    def _preflight_fragment_assets(self, base: str) -> None:
+        """Prove the bytes a CLONED SECTION shows are fetchable — the other asset class.
+
+        The origin probe below builds ``{base}/{digest}`` itself, so it answers 200 whether or
+        not anything ever rebased the artifact's own markup. That is exactly how a whole class of
+        broken imagery reached an acceptance walk: slot-bound assets went through the engine's
+        ``asset_base_url`` and were fine, artifact-owned references were emitted verbatim and
+        404'd, and the only probe anybody ran tested the working kind.
+
+        So this probes the reference AS THE PAGE NAMES IT. A reference with no scheme cannot be
+        fetched by ``set_content`` at all and is reported without a request; one with a scheme is
+        fetched like any other. Non-fatal, like its sibling: broken imagery degrades a turn, it
+        does not invalidate the page.
+        """
+        urls = self._fragment_asset_probe_urls()
+        if not urls:
+            return
+        payload: JsonObject = {"asset_base_url": base, "reference_count": len(urls)}
+        unfetchable = self._unfetchable_probe_urls(urls)
+        if unfetchable:
+            payload["unfetchable"] = unfetchable[:5]
+            logger.warning(
+                "CLONED-SECTION ASSETS UNFETCHABLE: %d reference(s) such as %s carry no origin, "
+                "so every image and background inside a cloned section will render BROKEN in "
+                "this turn's preview screenshots.",
+                len(unfetchable),
+                unfetchable[0],
+            )
+            self.record(
+                "orchestrator",
+                "fragment_asset_references_unfetchable",
+                output_summary=(
+                    f"{len(unfetchable)} cloned-section asset reference(s) have no origin "
+                    "(e.g. {}) — preview screenshots will show broken imagery".format(
+                        unfetchable[0]
+                    )
+                ),
+                payload=payload,
+            )
+            return
+        url = urls[0]
+        payload["probe_url"] = url
+        try:
+            response = httpx.get(url, timeout=_ASSET_PREFLIGHT_TIMEOUT_S)
+            payload["status_code"] = response.status_code
+            payload["reachable"] = response.status_code == 200
+        except Exception as error:  # noqa: BLE001 - a probe must never break a turn
+            payload["reachable"] = False
+            payload["reason"] = f"{error.__class__.__name__}: {error}"
+        summary = (
+            f"cloned-section assets fetchable ({url})"
+            if payload.get("reachable")
+            else f"cloned-section asset {url} did not serve "
+            f"({payload.get('reason') or payload.get('status_code')})"
+        )
+        if not payload.get("reachable"):
+            logger.warning("CLONED-SECTION ASSET UNREACHABLE: %s", summary)
+        self.record(
+            "orchestrator",
+            "fragment_asset_preflight"
+            if payload.get("reachable")
+            else "fragment_asset_unreachable",
+            output_summary=summary,
+            payload=payload,
+        )
+
     def _preflight_asset_base_url(self) -> None:
         """Prove — once per turn, loudly — that `self.asset_base_url` actually
         serves bytes, and record the verdict in the run trace.
@@ -4554,6 +4660,7 @@ class LumenWebTools:
             "asset_base_url": base,
             "source": "config" if self.config.asset_base_url else "fallback",
         }
+        self._preflight_fragment_assets(base)
         digests = self._probe_digests()
         if not digests:
             payload["reachable"] = None

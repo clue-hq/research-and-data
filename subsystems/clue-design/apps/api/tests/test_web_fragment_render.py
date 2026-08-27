@@ -531,3 +531,103 @@ def test_a_document_with_no_fragments_renders_exactly_as_before(
     rendered = _render(client, "doc_none")
     assert "lumen-fragment" not in rendered["html"]
     assert "/* lumen-fragment css */" not in rendered["html"]
+
+
+# --------------------------------------------------------------------------- #
+# The artifact's OWN bytes, on a preview path (phase fix wave, FIX 1)
+# --------------------------------------------------------------------------- #
+
+#: What an artifact's markup and CSS actually carry: a ROOT-RELATIVE reference to the one public
+#: byte route. Root-relative is correct in durable custody — the artifact must not bake in an
+#: origin it cannot know — and it is exactly what makes rebasing at render time necessary.
+OWNED_DIGEST = "ab" * 32
+OWNED_HTML = (
+    f'<section class="clone-hero"><img class="clone-art" src="/asset-store/{OWNED_DIGEST}" alt="">'
+    f"<h1 class=\"clone-head\">{SENTINEL}</h1></section>"
+)
+OWNED_CSS = f".clone-hero {{ background-image: url(/asset-store/{OWNED_DIGEST}) }}"
+
+
+def _owned_package(fragment_id: str) -> dict[str, Any]:
+    return {
+        "schema_version": 1,
+        "fragments": {
+            fragment_id: {
+                "html": OWNED_HTML,
+                "css": f".{fragment_wrapper_class(fragment_id)} {OWNED_CSS[1:]}",
+                "slot_kinds": {},
+                "asset_digests": [OWNED_DIGEST],
+            }
+        },
+        "missing": [],
+    }
+
+
+def test_an_artifacts_own_asset_reference_is_rebased_onto_the_render_origin() -> None:
+    """The class the acceptance walk caught in pixels.
+
+    A SLOT-bound asset resolves through `doc.assets` and the engine's `asset_base_url`, so it
+    always worked. The artifact's OWN imagery does not go through the engine at all — the
+    markup is emitted verbatim — so its root-relative `/asset-store/<digest>` reached a preview
+    that has no origin to resolve it against (Playwright `set_content`, the editor's srcDoc) and
+    404'd. Every image inside a cloned section was broken, in exactly the preview a reviewer
+    judges, while the one asset kind anybody tested rendered fine.
+
+    Rebasing belongs HERE, at the API layer, and not in the engine arm: the export renders with
+    `asset_base_url="assets"`, so an engine-side rebase would emit `assets/<digest>` and the
+    zip's `/asset-store/<digest>` rewrite would silently no-op — orphaned bytes and broken paths
+    in the deliverable.
+    """
+    fragment_id = "frag_" + "cd" * 8
+    package = _owned_package(fragment_id)
+    base = "http://testserver/asset-store"
+
+    rebased = fragment_render_map(package, [fragment_id], asset_base_url=base)
+    assert f'src="{base}/{OWNED_DIGEST}"' in rebased[fragment_id]["html"]
+    assert "/asset-store/" not in rebased[fragment_id]["html"].replace(base, "")
+
+    sheet = fragment_css_sheet(package, [fragment_id], asset_base_url=base)
+    assert f"url({base}/{OWNED_DIGEST})" in sheet
+
+
+def test_delivery_keeps_the_root_relative_reference_untouched() -> None:
+    """No base, no rewrite — byte-identical to what the artifact stored.
+
+    The export and publish builds depend on this: publish serves that exact route, and the
+    export REWRITES the prefix to a relative zip path afterwards. A rebase here would break
+    both.
+    """
+    fragment_id = "frag_" + "cd" * 8
+    package = _owned_package(fragment_id)
+
+    assert (
+        fragment_render_map(package, [fragment_id])[fragment_id]["html"] == OWNED_HTML
+    )
+    assert f"url(/asset-store/{OWNED_DIGEST})" in fragment_css_sheet(package, [fragment_id])
+    # An already-correct base is a no-op rather than a doubling.
+    assert (
+        fragment_render_map(package, [fragment_id], asset_base_url="/asset-store")[fragment_id][
+            "html"
+        ]
+        == OWNED_HTML
+    )
+
+
+def test_the_editor_route_serves_an_artifacts_own_image_from_this_requests_origin(
+    client: TestClient, workspace_id: str, design_storage: FsStorage
+) -> None:
+    artifact = _mint(workspace_id, design_storage, html=OWNED_HTML, css=OWNED_CSS)
+    store = HybridRepository(workspace_id=workspace_id)
+    store.create_document(
+        _web_doc("doc_owned", _fragment_node("n1", artifact.fragment_id)), doc_kind="web"
+    )
+
+    html = _render(client, "doc_owned")["html"]
+
+    # The markup's own <img>…
+    assert f'src="http://testserver/asset-store/{OWNED_DIGEST}"' in html
+    # …and the CSS background, in the spelling the scoper really stores (it quotes its urls).
+    assert f'url("http://testserver/asset-store/{OWNED_DIGEST}")' in html
+    # Nothing root-relative survives on this path, in either place.
+    assert f'src="/asset-store/{OWNED_DIGEST}"' not in html
+    assert f'url("/asset-store/{OWNED_DIGEST}")' not in html
