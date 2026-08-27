@@ -281,6 +281,22 @@ def _fragment_node(node_id: str, fragment_id: str) -> dict[str, Any]:
     return {"id": node_id, "kind": "fragment", "fragment_id": fragment_id}
 
 
+def _pinnable(workspace_id: str, storage: FsStorage, **kwargs: Any):
+    """A fragment a document may actually pin: minted, then approved.
+
+    F2.2 gave the gate its second half — a NEW pin requires ``approved``, because minting mints
+    drafts and a human releases them by approving the brand kit they were cloned into. The tests
+    below are about the RESOLUTION half (does this workspace hold it?), so they say the quiet part
+    out loud here rather than each carrying an approval line. ``test_ingestion_fragment_pipeline``
+    owns the status half.
+    """
+    row, artifact = _create(workspace_id, storage, **kwargs)
+    set_web_fragment_status(
+        workspace_id=workspace_id, fragment_id=artifact.fragment_id, status="approved"
+    )
+    return row, artifact
+
+
 def test_a_new_fragment_node_pinned_to_an_unknown_id_is_refused(
     workspace_id: str, design_storage: FsStorage
 ) -> None:
@@ -296,7 +312,7 @@ def test_a_new_fragment_node_pinned_to_an_unknown_id_is_refused(
 def test_a_new_fragment_node_pinned_to_a_registered_id_is_allowed(
     workspace_id: str, design_storage: FsStorage
 ) -> None:
-    _row, artifact = _create(workspace_id, design_storage)
+    _row, artifact = _pinnable(workspace_id, design_storage)
     store = HybridRepository(workspace_id=workspace_id)
     document = store.create_document(
         _web_doc("doc_f2", _fragment_node("n1", artifact.fragment_id)), doc_kind="web"
@@ -326,7 +342,7 @@ def test_an_existing_missing_pin_stays_loadable_and_editable(
     """
     from sqlalchemy import text
 
-    _row, artifact = _create(workspace_id, design_storage)
+    _row, artifact = _pinnable(workspace_id, design_storage)
     store = HybridRepository(workspace_id=workspace_id)
     before = store.create_document(
         _web_doc("doc_f4", _fragment_node("n1", artifact.fragment_id)), doc_kind="web"
@@ -371,7 +387,7 @@ def test_an_existing_missing_pin_stays_loadable_and_editable(
 def test_re_pointing_an_existing_node_at_an_unknown_fragment_is_refused(
     workspace_id: str, design_storage: FsStorage
 ) -> None:
-    _row, artifact = _create(workspace_id, design_storage)
+    _row, artifact = _pinnable(workspace_id, design_storage)
     store = HybridRepository(workspace_id=workspace_id)
     store.create_document(
         _web_doc("doc_f5", _fragment_node("n1", artifact.fragment_id)), doc_kind="web"
