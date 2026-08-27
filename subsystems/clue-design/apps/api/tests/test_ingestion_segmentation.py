@@ -1062,3 +1062,37 @@ def test_a_probe_skip_record_drops_a_hidden_section_with_no_bands_at_all():
     )
     assert [s.heading for s in result.sections] == [None]
     assert len(result.sections) == 1
+
+
+def test_an_id_only_band_still_triggers_the_proposal_guard():
+    """N1 follow-up. `_identifies` asked only about CLASSES, and an empty band class list is
+    trivially a subset of anything — so a band identified by its `id` alone was "identified" by
+    every candidate, and the guard that exists to catch exactly this could never fire.
+
+    The probe: a visible `<section id="promo" aria-hidden="true">` and two identity-less
+    siblings. The aria hint removes `promo`, the residue lines up (nothing distinguishes the
+    siblings), and `promo`'s own band binds to `Second` — the same wrong-crop class the guard was
+    written for, arriving through the one identifier it did not read.
+    """
+    html = """
+    <html><body><main>
+      <section id="promo" aria-hidden="true"><h1>Promo</h1></section>
+      <section><h2>Second</h2></section>
+      <section><h2>Third</h2></section>
+    </main></body></html>
+    """
+    bands = [
+        {"index": 0, "tag": "section", "id": "promo", "top": 0.0, "height": 500.0},
+        {"index": 1, "tag": "section", "top": 500.0, "height": 300.0},
+    ]
+    result = segment_page(
+        html,
+        page_url="https://x.example/",
+        bands=measured_bands({SNAPSHOT_META_BANDS_KEY: bands}),
+    )
+    # The band the browser recorded against `#promo` may not land on a section that is not it.
+    for section in result.sections:
+        if section.geometry is not None and section.geometry.top_px == 0.0:
+            assert section.element_id == "promo", (
+                f"promo's band bound to {section.element_id!r} / {section.heading!r}"
+            )

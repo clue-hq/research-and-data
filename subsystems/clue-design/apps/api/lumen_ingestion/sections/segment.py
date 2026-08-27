@@ -890,8 +890,17 @@ def _identifies(candidate: _Candidate, band: MeasuredBand) -> bool:
     Stronger than :func:`_band_matches`, which asks only for a shared class. The difference is
     the whole of N1: `section hide` and `section` intersect, so a line-up built on intersection
     cannot see that one of them is named exactly and the other merely overlaps.
+
+    **The id is read first, and it is read even when the candidate has none.** An empty band
+    class list is trivially a subset of anything, so a band the browser identified by its ``id``
+    alone was "identified" by every same-tag candidate on the page — which meant the guard could
+    never fire for it, and a visible `<section id="promo" aria-hidden="true">` had its band handed
+    to an identity-less sibling. That is the same wrong crop N1 is about, arriving through the one
+    identifier this predicate did not read.
     """
     if candidate.tag != band.tag:
+        return False
+    if band.element_id and candidate.element_id != band.element_id:
         return False
     return set(band.class_names) <= set(candidate.class_names)
 
