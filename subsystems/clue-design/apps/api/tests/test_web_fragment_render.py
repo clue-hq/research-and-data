@@ -26,7 +26,11 @@ from fastapi.testclient import TestClient
 from conftest import make_client
 
 from lumen_api.design_store import HybridRepository
-from lumen_api.fragments import create_web_fragment, fragment_wrapper_class
+from lumen_api.fragments import (
+    create_web_fragment,
+    fragment_wrapper_class,
+    set_web_fragment_status,
+)
 from lumen_api.fragments.slots import SlotSpec
 from lumen_api.fragments.render import (
     build_fragment_render_package,
@@ -67,7 +71,16 @@ def client(tmp_path: Path, design_storage: FsStorage) -> TestClient:
 
 
 def _mint(workspace_id: str, storage: FsStorage, *, html: str = HTML, css: str = CSS):
-    _row, artifact = create_web_fragment(
+    """Mint one fragment AND release it, so a document may pin it.
+
+    The release is not decoration. F2.2 added the status half of the document-write reference
+    gate: ingestion mints every cloned section ``draft`` and a human releases it by approving the
+    brand kit it came from, so a NEW pin of a draft is refused. These render tests are about what
+    a released section LOOKS like on a page, which means they have to start from one — the same
+    correction ``test_web_fragments.py::_pinnable`` made for the gate suite. The status rules
+    themselves are pinned next door in ``test_web_fragments.py``.
+    """
+    row, artifact = create_web_fragment(
         storage,
         workspace_id=workspace_id,
         html=html,
@@ -75,6 +88,9 @@ def _mint(workspace_id: str, storage: FsStorage, *, html: str = HTML, css: str =
         rehosted={},
         source_url=SOURCE_URL,
         section_role="hero",
+    )
+    set_web_fragment_status(
+        workspace_id=workspace_id, fragment_id=row["fragment_id"], status="approved"
     )
     return artifact
 

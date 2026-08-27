@@ -769,48 +769,36 @@ def test_the_author_holds_both_halves_of_the_ladder_and_the_director_only_discov
     tmp_path: Path, monkeypatch
 ) -> None:
     """The director decides and briefs; the AUTHOR is the only role that writes to the page."""
-    import sys
-    import types
+    import deepagents
 
-    from lumen_agent.harness_web import create_web_deepagent
+    import lumen_agent.llm as llm
+    from lumen_agent import harness_web
 
     capture: dict = {}
+    marker = object()
 
-    def fake_create_deep_agent(**kwargs):
-        capture.update(kwargs)
-        return types.SimpleNamespace(invoke=lambda *a, **k: {"messages": []})
-
-    class _FakeFilesystemBackend:
-        def __init__(self, root_dir: str, virtual_mode=None, max_file_size_mb: int = 10) -> None:
-            self.root_dir = root_dir
-
-    class _FakeFilesystemPermission:
-        def __init__(self, operations, paths, mode="allow") -> None:
-            self.operations = operations
-
-    module = types.ModuleType("deepagents")
-    module.create_deep_agent = fake_create_deep_agent
-    module.FilesystemPermission = _FakeFilesystemPermission
-    module.DeepAgentState = dict
-    backends = types.ModuleType("deepagents.backends")
-    filesystem = types.ModuleType("deepagents.backends.filesystem")
-    filesystem.FilesystemBackend = _FakeFilesystemBackend
-    monkeypatch.setitem(sys.modules, "deepagents", module)
-    monkeypatch.setitem(sys.modules, "deepagents.backends", backends)
-    monkeypatch.setitem(sys.modules, "deepagents.backends.filesystem", filesystem)
-    monkeypatch.setattr("lumen_agent.llm.init_model", lambda *a, **k: object(), raising=False)
+    # Patch the real module's attribute rather than replacing `sys.modules["deepagents"]`: the
+    # stub-the-module route poisons `lumen_agent.fs_backend`, whose backend class is built from
+    # whatever `FilesystemBackend` was bound at first import, for every later test in the run.
     monkeypatch.setattr(
-        "lumen_agent.llm.assert_all_role_models_support_image_input",
-        lambda *a, **k: None,
-        raising=False,
+        deepagents, "create_deep_agent", lambda **kwargs: capture.update(kwargs) or marker
+    )
+    monkeypatch.setattr(
+        harness_web, "materialize_agent_workspace", lambda _config: None
+    )
+    monkeypatch.setattr(
+        harness_web, "_instrument", lambda _config, _tools, _model, role: f"{role}-model"
+    )
+    monkeypatch.setattr(
+        llm, "assert_all_role_models_support_image_input", lambda _config: None
     )
 
-    create_web_deepagent(
+    harness_web.create_web_deepagent(
         "Build a page",
-        config=replace(
+        replace(
             AgentRuntimeConfig.from_env(REPO_ROOT), trace_dir=tmp_path / "workspace_root"
         ),
-        initial_web_doc=_seed_doc(),
+        _seed_doc(),
     )
 
     def names(entries):
