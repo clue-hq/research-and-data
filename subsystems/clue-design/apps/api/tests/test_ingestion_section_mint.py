@@ -359,3 +359,495 @@ def test_detection_runs_on_sanitized_markup_so_a_dropped_element_is_never_slotte
     )
     annotated = annotate_fragment_slots(sanitized.html, detect_slots(sanitized.html).specs)
     assert annotated.slot_manifest["body"]["fallback"] == "Real"
+
+
+# --------------------------------------------------------------------------- #
+# The reference harvest — raw token → the bytes we hold
+# --------------------------------------------------------------------------- #
+
+from lumen_ingestion.sections.mint import (  # noqa: E402
+    SECTION_MINT_CAP,
+    CapturedAsset,
+    build_reference_harvest,
+    captured_assets,
+    crop_extent,
+    crop_preview,
+    mint_sections,
+)
+
+PAGE_URL = "https://site.example/pricing"
+HERO_JPG = "https://site.example/img/hero.jpg"
+SPRITE_PNG = "https://cdn.example/assets/sprite.png"
+
+
+def test_a_relative_src_is_keyed_on_the_token_the_page_actually_wrote() -> None:
+    """EXACT-MATCH is the reference gate's contract: the key is the spelling the source used,
+    not a canonicalised URL, because normalising here would mean guessing which of two
+    spellings the rehoster meant. Resolution happens only to FIND the bytes."""
+    harvest = build_reference_harvest(
+        subtree_html='<section><img src="/img/hero.jpg"></section>',
+        page_url=PAGE_URL,
+        css_blocks=(),
+        captured={HERO_JPG: CapturedAsset(url=HERO_JPG, data=b"jpg", content_type="image/jpeg")},
+    )
+    assert harvest.resolved == {"/img/hero.jpg": HERO_JPG}
+    assert harvest.missing == ()
+
+
+def test_a_css_url_resolves_against_its_own_stylesheet_not_the_page() -> None:
+    """``/assets/sprite.png`` in a sheet served from a CDN is a CDN url. Resolving it against
+    the page would look up bytes nobody fetched and refuse a section that is perfectly fine."""
+    harvest = build_reference_harvest(
+        subtree_html="<section></section>",
+        page_url=PAGE_URL,
+        css_blocks=(("https://cdn.example/site.css", ".a { background: url(/assets/sprite.png) }"),),
+        captured={
+            SPRITE_PNG: CapturedAsset(url=SPRITE_PNG, data=b"png", content_type="image/png")
+        },
+    )
+    assert harvest.resolved == {"/assets/sprite.png": SPRITE_PNG}
+
+
+def test_an_inline_stylesheet_resolves_against_the_page() -> None:
+    harvest = build_reference_harvest(
+        subtree_html="<section></section>",
+        page_url=PAGE_URL,
+        css_blocks=(("inline:0", ".a { background: url(/img/hero.jpg) }"),),
+        captured={HERO_JPG: CapturedAsset(url=HERO_JPG, data=b"jpg", content_type="image/jpeg")},
+    )
+    assert harvest.resolved == {"/img/hero.jpg": HERO_JPG}
+
+
+def test_every_srcset_rung_is_harvested_not_just_the_first() -> None:
+    two_x = "https://site.example/img/hero@2x.jpg"
+    harvest = build_reference_harvest(
+        subtree_html='<section><img srcset="/img/hero.jpg 1x, /img/hero@2x.jpg 2x"></section>',
+        page_url=PAGE_URL,
+        css_blocks=(),
+        captured={
+            HERO_JPG: CapturedAsset(url=HERO_JPG, data=b"a", content_type=None),
+            two_x: CapturedAsset(url=two_x, data=b"b", content_type=None),
+        },
+    )
+    assert set(harvest.resolved) == {"/img/hero.jpg", "/img/hero@2x.jpg"}
+
+
+def test_an_inline_style_background_is_harvested_like_any_other_reference() -> None:
+    harvest = build_reference_harvest(
+        subtree_html='<section style="background-image:url(/img/hero.jpg)"></section>',
+        page_url=PAGE_URL,
+        css_blocks=(),
+        captured={HERO_JPG: CapturedAsset(url=HERO_JPG, data=b"a", content_type=None)},
+    )
+    assert "/img/hero.jpg" in harvest.resolved
+
+
+def test_a_data_uri_is_carried_as_bytes_to_rehost_rather_than_refused() -> None:
+    """The sanitizer fails closed on a ``data:`` src — self-contained bytes that dodged custody
+    are still bytes we do not hold. F1 recorded the fix as F2's: rehost them at mint time.
+    Webflow and Next put an LQIP placeholder on every image, so this is not an edge case."""
+    uri = "data:image/png;base64,iVBORw0KGgo="
+    harvest = build_reference_harvest(
+        subtree_html=f'<section><img src="{uri}"></section>',
+        page_url=PAGE_URL,
+        css_blocks=(),
+        captured={},
+    )
+    assert uri in harvest.inline
+    payload, media_type = harvest.inline[uri]
+    assert payload == b"\x89PNG\r\n\x1a\n"
+    assert media_type == "image/png"
+    assert harvest.missing == ()
+
+
+def test_a_reference_nothing_was_captured_for_is_named_not_swallowed() -> None:
+    harvest = build_reference_harvest(
+        subtree_html='<section><img src="/img/never-fetched.png"></section>',
+        page_url=PAGE_URL,
+        css_blocks=(),
+        captured={},
+    )
+    assert harvest.missing == ("/img/never-fetched.png",)
+
+
+def test_a_same_document_fragment_reference_is_not_a_byte_reference() -> None:
+    harvest = build_reference_harvest(
+        subtree_html='<section><svg><use href="#icon"></use></svg></section>',
+        page_url=PAGE_URL,
+        css_blocks=(),
+        captured={},
+    )
+    assert harvest.missing == ()
+    assert harvest.resolved == {}
+
+
+def test_an_already_rehosted_reference_needs_no_map_entry() -> None:
+    harvest = build_reference_harvest(
+        subtree_html=f'<section><img src="/asset-store/{_digest("x")}"></section>',
+        page_url=PAGE_URL,
+        css_blocks=(),
+        captured={},
+    )
+    assert harvest.missing == ()
+    assert harvest.resolved == {}
+
+
+def test_one_token_that_would_resolve_two_ways_is_dropped_rather_than_guessed() -> None:
+    """The same spelling in the page and in a CDN stylesheet are two different files. The
+    rehost map is flat by contract, so a token with two answers gets no answer — which makes
+    the fragment refuse loudly instead of serving one file's bytes under the other's name."""
+    page_side = "https://site.example/shared.png"
+    sheet_side = "https://cdn.example/shared.png"
+    harvest = build_reference_harvest(
+        subtree_html='<section><img src="/shared.png"></section>',
+        page_url=PAGE_URL,
+        css_blocks=(("https://cdn.example/site.css", ".a { background: url(/shared.png) }"),),
+        captured={
+            page_side: CapturedAsset(url=page_side, data=b"a", content_type=None),
+            sheet_side: CapturedAsset(url=sheet_side, data=b"b", content_type=None),
+        },
+    )
+    assert harvest.conflicts == ("/shared.png",)
+    assert "/shared.png" not in harvest.resolved
+
+
+def test_captured_assets_reads_a_snapshot_and_leaves_the_screenshot_out_of_it() -> None:
+    class _Download:
+        def __init__(self, url, kind, data, content_type=None):
+            import base64
+
+            self.url = url
+            self.kind = kind
+            self.bytes_b64 = base64.b64encode(data).decode("ascii")
+            self.content_type = content_type
+
+    class _Snapshot:
+        downloads = [
+            _Download(HERO_JPG, "image", b"jpg", "image/jpeg"),
+            _Download("https://site.example/shot.png", "screenshot", b"png", "image/png"),
+        ]
+
+    assets = captured_assets(_Snapshot())
+    assert set(assets) == {HERO_JPG}
+    assert assets[HERO_JPG].data == b"jpg"
+
+
+# --------------------------------------------------------------------------- #
+# Preview crops
+# --------------------------------------------------------------------------- #
+
+
+def _png(width: int, height: int) -> bytes:
+    from io import BytesIO
+
+    from PIL import Image
+
+    buffer = BytesIO()
+    Image.new("RGB", (width, height), (10, 20, 30)).save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
+BANDED_PAGE = (
+    "<html><body>"
+    '<header class="nav_component"><a href="/">Home</a><a href="/x">X</a></header>'
+    '<main><section class="section_home-hero"><h1>Ship</h1><p>Copy</p></section>'
+    '<section class="section_proof"><p>Trusted by</p></section></main>'
+    '<footer class="footer_component"><p>&copy; 2026 Example</p></footer>'
+    "</body></html>"
+)
+
+
+#: The probe records DOCUMENT-absolute tops (`rect.top + scrollY`), and it roots at `<main>` —
+#: so on this semantic page the hero starts below the unmeasured nav, exactly as it does live.
+_BANDS = [
+    {"index": 0, "tag": "section", "id": "", "classes": "section_home-hero", "top": 80.0,
+     "height": 600.0, "bgImage": False},
+    {"index": 1, "tag": "section", "id": "", "classes": "section_proof", "top": 680.0,
+     "height": 300.0, "bgImage": False},
+]
+
+
+def _banded_segmentation():
+    bands = _BANDS
+    from lumen_ingestion.sections.bands import measured_bands
+
+    return segment_page(
+        BANDED_PAGE,
+        page_url=PAGE_URL,
+        bands=measured_bands({"bands": bands}),
+        viewport_width=1200,
+    )
+
+
+def test_a_measured_section_crops_at_the_extent_the_browser_reported() -> None:
+    segmentation = _banded_segmentation()
+    hero = segmentation.by_role("hero")[0]
+    extent = crop_extent(segmentation, hero)
+    assert extent is not None
+    assert (extent.top_px, extent.bottom_px) == (80.0, 680.0)
+    assert extent.basis == "measured"
+
+
+def test_a_nav_with_no_measured_geometry_is_inferred_above_the_first_band() -> None:
+    """LUMI0524, Task 11's carry: the capture probe roots at ``<main>``, so on a semantic page
+    the two most-cloned sections of all — the nav and the footer — are never measured. A
+    fragment with no preview is a fragment nobody picks, so the extent is inferred and the
+    basis says so rather than pretending it was measured."""
+    segmentation = _banded_segmentation()
+    nav = segmentation.by_role("nav")[0]
+    assert nav.geometry is None
+    extent = crop_extent(segmentation, nav)
+    assert extent is not None
+    assert (extent.top_px, extent.bottom_px) == (0.0, 80.0)
+    assert extent.basis == "inferred-above-first-band"
+
+
+def test_a_footer_with_no_measured_geometry_runs_to_the_bottom_of_the_page() -> None:
+    segmentation = _banded_segmentation()
+    footer = segmentation.by_role("footer")[0]
+    extent = crop_extent(segmentation, footer)
+    assert extent is not None
+    assert extent.top_px == 980.0
+    assert extent.bottom_px is None  # "to the end of the screenshot"
+    assert extent.basis == "inferred-below-last-band"
+
+
+def test_an_unmeasured_middle_section_has_no_derivable_crop() -> None:
+    """Guessing a middle section's extent would produce a preview of the wrong section, which
+    is worse than no preview: the picker would show a lie."""
+    segmentation = segment_page(BANDED_PAGE, page_url=PAGE_URL, viewport_width=1200)
+    proof = [s for s in segmentation.sections if s.role not in ("nav", "footer")][-1]
+    assert crop_extent(segmentation, proof) is None
+
+
+def test_the_crop_scales_the_shot_to_the_width_the_page_was_measured_at() -> None:
+    from io import BytesIO
+
+    from PIL import Image
+    from lumen_ingestion.sections.mint import CropExtent
+
+    shot = _png(2400, 1800)  # a 2x device-pixel-ratio full-page screenshot
+    cropped = crop_preview(
+        shot, CropExtent(top_px=0.0, bottom_px=600.0, basis="measured"), viewport_width=1200
+    )
+    assert cropped is not None
+    image = Image.open(BytesIO(cropped))
+    assert image.width / image.height == pytest.approx(2400 / 1200, rel=0.05)
+
+
+def test_a_crop_that_falls_outside_the_screenshot_yields_nothing_rather_than_a_stripe() -> None:
+    from lumen_ingestion.sections.mint import CropExtent
+
+    shot = _png(1200, 400)
+    assert (
+        crop_preview(
+            shot, CropExtent(top_px=900.0, bottom_px=1200.0, basis="measured"), viewport_width=1200
+        )
+        is None
+    )
+
+
+def test_a_tall_crop_is_scaled_down_so_a_preview_is_a_preview() -> None:
+    from io import BytesIO
+
+    from PIL import Image
+    from lumen_ingestion.sections.mint import MAX_PREVIEW_WIDTH, CropExtent
+
+    shot = _png(3000, 2000)
+    cropped = crop_preview(
+        shot, CropExtent(top_px=0.0, bottom_px=1000.0, basis="measured"), viewport_width=1500
+    )
+    assert cropped is not None
+    assert Image.open(BytesIO(cropped)).width <= MAX_PREVIEW_WIDTH
+
+
+# --------------------------------------------------------------------------- #
+# The driver — every stage, with the durable seams injected
+# --------------------------------------------------------------------------- #
+
+
+class _Recorder:
+    """Stands in for the F1 creation seam and the design byte store."""
+
+    def __init__(self) -> None:
+        self.created: list[dict] = []
+        self.registered: dict[str, bytes] = {}
+
+    def register_bytes(self, data: bytes, media_type: str) -> str:
+        digest = hashlib.sha256(data).hexdigest()
+        self.registered[digest] = data
+        return digest
+
+    def create_fragment(self, **kwargs):
+        from lumen_api.fragments import build_fragment_artifact
+
+        preview = kwargs.get("preview")
+        preview_digest = None if preview is None else self.register_bytes(preview, "image/png")
+        artifact = build_fragment_artifact(
+            html=kwargs["html"],
+            css=kwargs["css"],
+            rehosted=kwargs["rehosted"],
+            slots=kwargs["slots"],
+            preview_digest=preview_digest,
+            prelude_reference=kwargs["prelude_reference"],
+        )
+        row = {
+            "fragment_id": artifact.fragment_id,
+            "status": "draft",
+            "label": kwargs.get("label"),
+            "provenance": dict(kwargs.get("provenance") or {}),
+            "preview_digest": preview_digest,
+            "payload_digest": artifact.payload_digest,
+            "source_kit_id": kwargs.get("source_kit_id"),
+            "source_kit_version": kwargs.get("source_kit_version"),
+        }
+        self.created.append({**kwargs, "row": row})
+        return row, artifact
+
+
+def _mint(html: str, *, screenshot: bytes | None = None, recorder=None, **overrides):
+    recorder = recorder or _Recorder()
+    from lumen_ingestion.sections.bands import measured_bands
+
+    bands = measured_bands({"bands": overrides["bands"]}) if "bands" in overrides else ()
+    segmentation = segment_page(html, page_url=PAGE_URL, viewport_width=1200, bands=bands)
+    outcome = mint_sections(
+        segmentation,
+        html=html,
+        stylesheets=overrides.get("stylesheets", []),
+        captured=overrides.get("captured", {}),
+        screenshot=screenshot,
+        source_kit_id=overrides.get("source_kit_id", "brand_kit_x"),
+        source_kit_version=overrides.get("source_kit_version", 1),
+        register_bytes=recorder.register_bytes,
+        create_fragment=recorder.create_fragment,
+        limit=overrides.get("limit", SECTION_MINT_CAP),
+    )
+    return outcome, recorder
+
+
+def test_every_section_of_a_page_becomes_a_fragment_bound_to_the_kit() -> None:
+    outcome, recorder = _mint(
+        BANDED_PAGE, stylesheets=[_Sheet("s.css", ".section_home-hero { padding: 4rem }")]
+    )
+    assert [minted.role for minted in outcome.minted] == ["nav", "hero", "proof", "footer"]
+    assert all(call["source_kit_id"] == "brand_kit_x" for call in recorder.created)
+    assert all(call["source_kit_version"] == 1 for call in recorder.created)
+
+
+def test_a_minted_fragment_carries_its_provenance_back_to_the_page_it_came_from() -> None:
+    outcome, recorder = _mint(BANDED_PAGE)
+    hero = next(call for call in recorder.created if call["section_role"] == "hero")
+    provenance = hero["provenance"]
+    assert provenance["page_url"] == PAGE_URL
+    assert provenance["dom_path"]
+    assert provenance["confidence"] > 0
+    assert provenance["evidence"]
+    assert hero["source_url"] == PAGE_URL
+
+
+def test_a_minted_fragment_is_born_a_draft_and_says_which_section_it_is() -> None:
+    outcome, _ = _mint(BANDED_PAGE)
+    hero = next(minted for minted in outcome.minted if minted.role == "hero")
+    assert hero.status == "draft"
+    assert "Ship" in hero.label
+
+
+def test_one_unmintable_section_costs_that_section_and_no_other() -> None:
+    """Fail-closed per section, never per job: a page with one section whose background image
+    was never captured still yields the other three."""
+    html = BANDED_PAGE.replace(
+        '<section class="section_proof">',
+        '<section class="section_proof" style="background-image:url(/never.png)">',
+    )
+    outcome, _ = _mint(html)
+    roles = [minted.role for minted in outcome.minted]
+    assert "proof" not in roles
+    assert {"nav", "hero", "footer"} <= set(roles)
+    assert any(diag["code"] == "LUMI0530" for diag in outcome.diagnostics)
+    assert any("never.png" in str(diag) for diag in outcome.diagnostics)
+
+
+def test_a_data_uri_placeholder_is_rehosted_and_the_section_mints() -> None:
+    html = BANDED_PAGE.replace(
+        "<h1>Ship</h1>", '<img src="data:image/png;base64,iVBORw0KGgo="><h1>Ship</h1>'
+    )
+    outcome, recorder = _mint(html)
+    assert "hero" in [minted.role for minted in outcome.minted]
+    assert any(data == b"\x89PNG\r\n\x1a\n" for data in recorder.registered.values())
+
+
+def test_the_bytes_a_fragment_cites_are_put_in_custody_before_the_row_is_written() -> None:
+    html = BANDED_PAGE.replace("<h1>Ship</h1>", '<img src="/img/hero.jpg"><h1>Ship</h1>')
+    outcome, recorder = _mint(
+        html,
+        captured={HERO_JPG: CapturedAsset(url=HERO_JPG, data=b"jpg-bytes", content_type="image/jpeg")},
+    )
+    hero = next(call for call in recorder.created if call["section_role"] == "hero")
+    digest = hashlib.sha256(b"jpg-bytes").hexdigest()
+    assert hero["rehosted"]["/img/hero.jpg"] == digest
+    assert recorder.registered[digest] == b"jpg-bytes"
+
+
+def test_a_preview_is_cropped_from_the_screenshot_the_capture_already_took() -> None:
+    outcome, recorder = _mint(BANDED_PAGE, screenshot=_png(1200, 1400), bands=_BANDS)
+    by_role = {minted.role: minted for minted in outcome.minted}
+    assert by_role["hero"].preview_digest is not None
+    assert by_role["hero"].preview_basis == "measured"
+    # And the two sections the probe never measured still get one, from the inferred extents.
+    assert by_role["nav"].preview_basis == "inferred-above-first-band"
+    assert by_role["nav"].preview_digest is not None
+    assert by_role["footer"].preview_basis == "inferred-below-last-band"
+    assert by_role["footer"].preview_digest is not None
+
+
+def test_a_section_with_no_derivable_crop_gets_a_null_preview_and_says_so() -> None:
+    """F1 allows a NULL preview_digest. What it does not allow is a silent one."""
+    outcome, _ = _mint(BANDED_PAGE, screenshot=None)
+    assert all(minted.preview_digest is None for minted in outcome.minted)
+    assert any(diag["code"] == "LUMI0531" for diag in outcome.diagnostics)
+
+
+def test_the_number_of_sections_one_ingest_mints_is_capped_and_summarized() -> None:
+    body = "".join(
+        f'<section class="section_{n}"><h1>H{n}</h1><p>P{n}</p></section>' for n in range(20)
+    )
+    outcome, _ = _mint(f"<html><body><main>{body}</main></body></html>", limit=3)
+    assert len(outcome.minted) == 3
+    capped = [diag for diag in outcome.diagnostics if diag["code"] == "LUMI0532"]
+    assert capped and "17" in capped[0]["message"]
+
+
+def test_minting_the_same_page_twice_converges_on_the_same_fragments() -> None:
+    first, _ = _mint(BANDED_PAGE, stylesheets=[_Sheet("s.css", ".section_proof { color: red }")])
+    second, _ = _mint(BANDED_PAGE, stylesheets=[_Sheet("s.css", ".section_proof { color: red }")])
+    assert [m.fragment_id for m in first.minted] == [m.fragment_id for m in second.minted]
+
+
+def test_a_section_that_drifted_out_of_the_html_refuses_rather_than_minting_a_neighbour() -> None:
+    segmentation = segment_page(BANDED_PAGE, page_url=PAGE_URL, viewport_width=1200)
+    drifted = BANDED_PAGE.replace("<main>", '<main><section class="intruder"><p>New</p></section>')
+    recorder = _Recorder()
+    outcome = mint_sections(
+        segmentation,
+        html=drifted,
+        stylesheets=[],
+        captured={},
+        screenshot=None,
+        source_kit_id=None,
+        source_kit_version=None,
+        register_bytes=recorder.register_bytes,
+        create_fragment=recorder.create_fragment,
+    )
+    assert any(
+        diag["code"] == "LUMI0530" and "could not be re-found" in diag["message"]
+        for diag in outcome.diagnostics
+    )
+
+
+def test_a_fragment_carries_the_slots_detection_found() -> None:
+    outcome, recorder = _mint(BANDED_PAGE)
+    hero = next(minted for minted in outcome.minted if minted.role == "hero")
+    assert "headline" in hero.slot_keys
+    assert "body" in hero.slot_keys
+    assert "visible" in hero.slot_keys

@@ -75,6 +75,11 @@ class MatchedCss:
     rules_kept: int
     sheets_read: int
     notes: tuple[str, ...] = ()
+    #: ``(sheet url, that sheet's kept rules)`` in source order. The joined text is what gets
+    #: stored, but a ``url()`` inside a rule resolves against the sheet it was WRITTEN in — an
+    #: ``/img/x.png`` in a stylesheet served from a CDN is a CDN url, not a page-relative one —
+    #: so the reference harvest needs the blocks kept apart to know each one's base.
+    blocks: tuple[tuple[str, str], ...] = ()
 
     @property
     def byte_length(self) -> int:
@@ -121,7 +126,7 @@ def rules_for_subtree(
     """
     inventory = _Inventory.of(subtree_html)
     counter = _Counter()
-    blocks: list[str] = []
+    blocks: list[tuple[str, str]] = []
     notes: list[str] = []
     sheets_read = 0
     for sheet in stylesheets:
@@ -130,15 +135,17 @@ def rules_for_subtree(
         if not text.strip():
             continue
         rules = tinycss2.parse_stylesheet(text, skip_comments=True, skip_whitespace=True)
-        rendered = _keep_rules(rules, inventory, counter, notes, str(getattr(sheet, "url", "")))
+        sheet_url = str(getattr(sheet, "url", "") or "")
+        rendered = _keep_rules(rules, inventory, counter, notes, sheet_url)
         if rendered:
-            blocks.append(rendered)
+            blocks.append((sheet_url, rendered))
     return MatchedCss(
-        css="\n".join(blocks),
+        css="\n".join(block for _url, block in blocks),
         rules_considered=counter.considered,
         rules_kept=counter.kept,
         sheets_read=sheets_read,
         notes=tuple(notes),
+        blocks=tuple(blocks),
     )
 
 
