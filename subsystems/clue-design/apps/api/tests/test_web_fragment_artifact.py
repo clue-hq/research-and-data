@@ -806,3 +806,96 @@ def test_a_refusal_anywhere_produces_no_partial_artifact() -> None:
         build_fragment_artifact(
             html=f'<section><img src="{LOGO_URL}"></section>', css="", rehosted={}, slots=()
         )
+
+
+# --------------------------------------------------------------------------- #
+# F2.2 ruled amendments — the two F1 carries the minting task closes.
+# --------------------------------------------------------------------------- #
+
+
+def test_a_srcset_url_containing_a_comma_is_read_as_one_candidate() -> None:
+    """The F1 minor, closed: splitting on a bare comma cut a legal URL in half.
+
+    ``x.png?a=1,2`` is one reference. The old split produced ``x.png?a=1`` and ``2`` — two
+    strings no rehost map contains — so a real page's CDN URL refused the whole fragment. That
+    errs closed, which is why it shipped, but on real pages it would starve minting.
+    """
+    comma_url = "https://cdn.example/hero.jpg?fit=crop&rect=0,0,100,100"
+    comma_digest = _digest("comma-bytes")
+    result = sanitize_fragment_html(
+        f'<section><img src="{LOGO_URL}" srcset="{comma_url} 2x"></section>',
+        rehosted={LOGO_URL: LOGO_DIGEST, comma_url: comma_digest},
+    )
+    assert f"/asset-store/{comma_digest} 2x" in result.html
+    assert comma_digest in result.asset_digests
+
+
+def test_a_srcset_candidate_may_end_at_a_comma_with_no_descriptor() -> None:
+    """The other half of the real grammar: a candidate with no descriptor ends AT the comma,
+    and the comma belongs to the separator, not to the URL."""
+    result = sanitize_fragment_html(
+        f'<section><img srcset="{LOGO_URL}, {HERO_URL} 2x"></section>', rehosted=REHOSTED
+    )
+    assert f"/asset-store/{LOGO_DIGEST}, /asset-store/{HERO_DIGEST} 2x" in result.html
+
+
+def test_a_srcset_descriptor_may_itself_contain_a_comma_in_parentheses() -> None:
+    result = sanitize_fragment_html(
+        f'<section><img srcset="{LOGO_URL} 100w, {HERO_URL} 200w"></section>', rehosted=REHOSTED
+    )
+    assert f"/asset-store/{LOGO_DIGEST} 100w" in result.html
+    assert f"/asset-store/{HERO_DIGEST} 200w" in result.html
+
+
+def test_the_minting_path_strips_an_at_rule_whose_prelude_probes_a_url() -> None:
+    """RULED (F2.2): ``@supports (background-image: url(x))`` is a legitimate feature probe.
+
+    Refusing the whole fragment for it — round 2's recorded false positive — costs a real
+    section over syntax that fetches nothing. On the minting path the at-rule is STRIPPED
+    WHOLE with a loud note, exactly as ``@import`` is; the security refusals are unchanged.
+    """
+    result = scope_fragment_css(
+        "@supports (background-image: url(hero.png)) { .a { color: red } }\n.b { color: blue }",
+        fragment_id=FRAG_ID,
+        rehosted={"hero.png": HERO_DIGEST},
+        prelude_reference="strip",
+    )
+    assert "@supports" not in result.css
+    assert "hero.png" not in result.css
+    assert f".{WRAPPER} .b" in result.css
+    assert any("supports" in note for note in result.notes)
+
+
+def test_stripping_a_probing_prelude_does_not_relax_the_unreadable_refusal() -> None:
+    """bad-url / bad-string stay refusals in BOTH modes: security is not what was amended."""
+    with pytest.raises(FragmentRefused) as excinfo:
+        scope_fragment_css(
+            "@supports (background: url(var(--x))) { .a { color: red } }",
+            fragment_id=FRAG_ID,
+            rehosted={},
+            prelude_reference="strip",
+        )
+    assert excinfo.value.code == "fragment.unreadable_reference"
+
+
+def test_a_selector_reference_still_refuses_even_on_the_minting_path() -> None:
+    """The amendment names AT-RULES. A selector cannot be 'stripped whole' without silently
+    dropping a rule that styles the section, so it stays a refusal the producer can read."""
+    with pytest.raises(FragmentRefused) as excinfo:
+        scope_fragment_css(
+            '.a[data-bg=url("hero.png")] { color: red }',
+            fragment_id=FRAG_ID,
+            rehosted={"hero.png": HERO_DIGEST},
+            prelude_reference="strip",
+        )
+    assert excinfo.value.code == "fragment.reference_in_prelude"
+
+
+def test_refusing_is_still_the_default_for_every_caller_that_does_not_ask() -> None:
+    with pytest.raises(FragmentRefused) as excinfo:
+        scope_fragment_css(
+            "@supports (background-image: url(hero.png)) { .a { color: red } }",
+            fragment_id=FRAG_ID,
+            rehosted={"hero.png": HERO_DIGEST},
+        )
+    assert excinfo.value.code == "fragment.reference_in_prelude"

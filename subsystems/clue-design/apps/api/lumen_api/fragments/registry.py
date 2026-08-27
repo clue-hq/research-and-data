@@ -42,6 +42,7 @@ from .artifact import (
     build_fragment_artifact,
     parse_fragment_payload,
 )
+from .cssscope import PRELUDE_REFERENCE_REFUSE
 from .refs import FragmentRefused
 from .slots import SlotSpec
 
@@ -103,6 +104,7 @@ def create_web_fragment(
     preview: bytes | None = None,
     preview_media_type: str = _DEFAULT_PREVIEW_MEDIA_TYPE,
     provenance: Mapping[str, Any] | None = None,
+    prelude_reference: str = PRELUDE_REFERENCE_REFUSE,
 ) -> tuple[dict[str, Any], FragmentArtifact]:
     """Mint one fragment and give it durable custody. Returns ``(row, artifact)``.
 
@@ -119,7 +121,12 @@ def create_web_fragment(
 
     preview_digest = _digest(preview) if preview is not None else None
     artifact = build_fragment_artifact(
-        html=html, css=css, rehosted=rehosted, slots=slots, preview_digest=preview_digest
+        html=html,
+        css=css,
+        rehosted=rehosted,
+        slots=slots,
+        preview_digest=preview_digest,
+        prelude_reference=prelude_reference,
     )
 
     async def _persist(conn: Any) -> dict[str, Any]:

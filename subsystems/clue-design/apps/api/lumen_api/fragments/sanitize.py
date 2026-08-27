@@ -232,24 +232,79 @@ def _rewrite_srcset(
     Gating only the first would let the 2x candidate — the one a retina visitor actually loads —
     stay pointed at somebody else's CDN.
 
-    Splitting on a bare comma is not the full ``srcset`` grammar: a URL may legally contain a
-    comma (``x.png?a=1,2``), and this split would cut it in two. That errs CLOSED — each half is
-    a reference no rehost map contains, so the fragment is refused with a name the producer can
-    read, rather than a wrong URL being stored. Recorded as a known minor rather than fixed here:
-    the honest fix is a real srcset parser, and a refusal is the safe direction to be wrong in.
+    Candidates are split by :func:`parse_srcset_candidates`, the real grammar, not by a bare
+    ``,``. F1 shipped the bare split with its error direction recorded (a URL containing a comma
+    was cut into halves no rehost map contains, so the fragment refused rather than storing a
+    wrong URL) and the honest fix ledgered. F2.2 takes it: a CDN URL with a comma in a crop
+    rectangle (``?rect=0,0,100,100``) is ordinary on real pages, and a refusal there would
+    starve minting of the very sections it exists to clone.
     """
     candidates: list[str] = []
-    for entry in value.split(","):
-        parts = entry.split()
-        if not parts:
-            continue
-        digest = resolve_asset_reference(parts[0], rehosted)
-        if digest is None:
-            candidates.append(" ".join(parts))
-            continue
-        digests.add(digest)
-        candidates.append(" ".join([asset_url(digest), *parts[1:]]))
+    for url, descriptor in parse_srcset_candidates(value):
+        digest = resolve_asset_reference(url, rehosted)
+        target = url if digest is None else asset_url(digest)
+        if digest is not None:
+            digests.add(digest)
+        candidates.append(f"{target} {descriptor}".strip() if descriptor else target)
     return ", ".join(candidates)
 
 
-__all__ = ["DROPPED_ELEMENTS", "FragmentRefused", "SanitizedHtml", "sanitize_fragment_html"]
+def parse_srcset_candidates(value: str) -> list[tuple[str, str]]:
+    """``srcset`` → ``[(url, descriptor), …]``, per the HTML spec's own splitting algorithm.
+
+    The interesting part of that algorithm — and the whole reason a naive ``value.split(",")``
+    is wrong — is that **a comma only separates candidates when it cannot belong to the URL**.
+    The spec resolves that by reading the URL as a run of non-whitespace characters FIRST:
+
+    * ``hero.jpg?rect=0,0,100,100 2x`` — the run is the whole URL (commas and all) and does not
+      end in a comma, so what follows the whitespace is its descriptor;
+    * ``a.png, b.png 2x`` — the run is ``a.png,``; a run ending in a comma means the candidate
+      had no descriptor, the trailing commas are separators, and the next candidate starts after
+      them;
+    * ``a.png 100w, b.png 200w`` — the descriptor is read up to the first comma that is not
+      inside parentheses, so a future descriptor grammar with a function in it still splits.
+
+    Returns the descriptor as the author wrote it (whitespace-collapsed), because this module
+    re-serializes rather than re-authors: a fragment's markup is not ours to normalize beyond
+    the reference rewrite that is the point of the pass.
+    """
+    out: list[tuple[str, str]] = []
+    index, length = 0, len(value)
+    while index < length:
+        while index < length and (value[index].isspace() or value[index] == ","):
+            index += 1
+        if index >= length:
+            break
+        start = index
+        while index < length and not value[index].isspace():
+            index += 1
+        url = value[start:index]
+        if url.endswith(","):
+            out.append((url.rstrip(","), ""))
+            continue
+        descriptor_start = index
+        in_parentheses = False
+        while index < length:
+            char = value[index]
+            if in_parentheses:
+                if char == ")":
+                    in_parentheses = False
+            elif char == "(":
+                in_parentheses = True
+            elif char == ",":
+                break
+            index += 1
+        descriptor = " ".join(value[descriptor_start:index].split())
+        index += 1  # step over the separating comma (or past the end, harmlessly)
+        if url:
+            out.append((url, descriptor))
+    return out
+
+
+__all__ = [
+    "DROPPED_ELEMENTS",
+    "FragmentRefused",
+    "SanitizedHtml",
+    "parse_srcset_candidates",
+    "sanitize_fragment_html",
+]

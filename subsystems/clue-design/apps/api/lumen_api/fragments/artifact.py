@@ -30,7 +30,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from .cssscope import scope_fragment_css
+from .cssscope import PRELUDE_REFERENCE_REFUSE, scope_fragment_css
 from .refs import FragmentRefused, fragment_wrapper_class
 from .sanitize import sanitize_fragment_html
 from .slots import SlotSpec, annotate_fragment_slots
@@ -77,6 +77,7 @@ def build_fragment_artifact(
     rehosted: Mapping[str, str],
     slots: Sequence[SlotSpec] = (),
     preview_digest: str | None = None,
+    prelude_reference: str = PRELUDE_REFERENCE_REFUSE,
 ) -> FragmentArtifact:
     """Sanitize, annotate, scope and address one section, in that order.
 
@@ -87,6 +88,10 @@ def build_fragment_artifact(
     that runs after the fragment has a name.
 
     A refusal anywhere aborts: there is no partial artifact, and nothing is written.
+
+    ``prelude_reference`` is forwarded verbatim to :func:`~lumen_api.fragments.cssscope
+    .scope_fragment_css` — including to the throwaway probe pass below, so the two passes cannot
+    disagree about which rules exist and the identity bytes describe the CSS that will be stored.
     """
     sanitized = sanitize_fragment_html(html, rehosted=rehosted)
     annotated = annotate_fragment_slots(sanitized.html, slots)
@@ -94,7 +99,9 @@ def build_fragment_artifact(
     # The CSS is scoped against the FINAL id, but its references must be resolved before the id
     # exists (they are part of the identity). Scoping under a throwaway id resolves and records
     # them; the real scope pass below re-runs over the same source with the minted id.
-    probe = scope_fragment_css(css, fragment_id=_PROBE_ID, rehosted=rehosted)
+    probe = scope_fragment_css(
+        css, fragment_id=_PROBE_ID, rehosted=rehosted, prelude_reference=prelude_reference
+    )
 
     digests = tuple(sorted(set(sanitized.asset_digests) | set(probe.asset_digests)))
     identity = {
@@ -107,7 +114,9 @@ def build_fragment_artifact(
     }
     fragment_id = "frag_" + hashlib.sha256(canonical_bytes(identity)).hexdigest()[:16]
 
-    scoped = scope_fragment_css(css, fragment_id=fragment_id, rehosted=rehosted)
+    scoped = scope_fragment_css(
+        css, fragment_id=fragment_id, rehosted=rehosted, prelude_reference=prelude_reference
+    )
     payload = {
         "schema_version": FRAGMENT_PAYLOAD_SCHEMA_VERSION,
         "fragment_id": fragment_id,

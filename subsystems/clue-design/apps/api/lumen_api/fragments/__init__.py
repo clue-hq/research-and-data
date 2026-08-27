@@ -25,7 +25,14 @@ from .artifact import (
     canonical_bytes,
     parse_fragment_payload,
 )
-from .cssscope import ScopedCss, rewrite_declaration_urls, scope_fragment_css
+from .cssscope import (
+    PRELUDE_REFERENCE_MODES,
+    PRELUDE_REFERENCE_REFUSE,
+    PRELUDE_REFERENCE_STRIP,
+    ScopedCss,
+    rewrite_declaration_urls,
+    scope_fragment_css,
+)
 from .refs import (
     ASSET_URL_PREFIX,
     FRAGMENT_ID_RE,
@@ -44,7 +51,12 @@ from .registry import (
     set_web_fragment_status,
     web_fragment_exists,
 )
-from .sanitize import DROPPED_ELEMENTS, SanitizedHtml, sanitize_fragment_html
+from .sanitize import (
+    DROPPED_ELEMENTS,
+    SanitizedHtml,
+    parse_srcset_candidates,
+    sanitize_fragment_html,
+)
 from .slots import (
     MAX_FRAGMENT_SLOTS,
     SLOT_KINDS,
@@ -62,6 +74,9 @@ __all__ = [
     "FRAGMENT_PAYLOAD_SCHEMA_VERSION",
     "FRAGMENT_STATUSES",
     "MAX_FRAGMENT_SLOTS",
+    "PRELUDE_REFERENCE_MODES",
+    "PRELUDE_REFERENCE_REFUSE",
+    "PRELUDE_REFERENCE_STRIP",
     "SLOT_KINDS",
     "SLOT_MARKER_ATTR",
     "WEB_FRAGMENT_SOURCE_KEY",
@@ -81,6 +96,7 @@ __all__ = [
     "fragment_wrapper_class",
     "list_web_fragments",
     "parse_fragment_payload",
+    "parse_srcset_candidates",
     "read_web_fragment",
     "sanitize_fragment_html",
     "scope_fragment_css",

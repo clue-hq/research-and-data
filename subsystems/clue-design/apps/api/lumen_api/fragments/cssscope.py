@@ -100,6 +100,27 @@ _MARKUP_BREAKOUT = "</"
 #: itself a space or a hex digit, which is exactly when an unterminated escape would misread.
 _ESCAPED_LT = "\\3c "
 
+#: Refuse the whole fragment for a READABLE url in an at-rule prelude. The F1 default: a
+#: hand-authored caller wants to be told, and an immutable artifact is worth being strict about.
+PRELUDE_REFERENCE_REFUSE = "refuse"
+
+#: Strip the offending AT-RULE whole, with a loud note (F2.2 ruling; the ``@import`` precedent).
+#:
+#: The minting path harvests CSS it did not write, from real pages, and round 2 recorded its own
+#: false positive: ``@supports (background-image: url(x.png))`` is a legitimate feature probe —
+#: it asks whether the browser understands ``url()`` values at all, and nothing ever fetches the
+#: url. Refusing it costs a whole real section over syntax that loads no bytes. Stripping the
+#: at-rule is the treatment ``@import`` already gets for the same reason: the construct means
+#: nothing inside a fragment, removing it is honest, and the note tells a human what went.
+#:
+#: What did NOT change: an unreadable token (``bad-url``/``bad-string``) still refuses in both
+#: modes — that is a token we cannot even read, not a probe we can recognize — and a url in a
+#: SELECTOR still refuses in both modes, because "strip the rule whole" there would silently
+#: delete styling the section actually uses.
+PRELUDE_REFERENCE_STRIP = "strip"
+
+PRELUDE_REFERENCE_MODES = (PRELUDE_REFERENCE_REFUSE, PRELUDE_REFERENCE_STRIP)
+
 
 @dataclass(frozen=True)
 class ScopedCss:
@@ -111,9 +132,24 @@ class ScopedCss:
 
 
 def scope_fragment_css(
-    css: str, *, fragment_id: str, rehosted: Mapping[str, str]
+    css: str,
+    *,
+    fragment_id: str,
+    rehosted: Mapping[str, str],
+    prelude_reference: str = PRELUDE_REFERENCE_REFUSE,
 ) -> ScopedCss:
-    """Scope one fragment's source CSS under its wrapper class. Refuses on a bad reference."""
+    """Scope one fragment's source CSS under its wrapper class. Refuses on a bad reference.
+
+    ``prelude_reference`` decides what a READABLE url in an at-rule prelude costs — see
+    :data:`PRELUDE_REFERENCE_MODES`. The default refuses, which is what every hand-authored
+    caller wants; F2's minting path passes ``"strip"``.
+    """
+    if prelude_reference not in PRELUDE_REFERENCE_MODES:
+        raise FragmentRefused(
+            "fragment.prelude_mode_invalid",
+            f"prelude_reference must be one of {', '.join(PRELUDE_REFERENCE_MODES)}: "
+            f"{prelude_reference!r}",
+        )
     wrapper = fragment_wrapper_class(fragment_id)
     notes: list[str] = []
     digests: set[str] = set()
@@ -121,7 +157,7 @@ def scope_fragment_css(
     keyframe_names = _declared_keyframe_names(rules)
     renames = {name: f"{name}--{wrapper}" for name in keyframe_names}
     body = _scope_rules(rules, wrapper=wrapper, renames=renames, rehosted=rehosted,
-                        digests=digests, notes=notes)
+                        digests=digests, notes=notes, prelude_reference=prelude_reference)
     _refuse_markup_breakout(body)
     return ScopedCss(css=body, asset_digests=tuple(sorted(digests)), notes=tuple(notes))
 
@@ -174,11 +210,13 @@ def _scope_rules(
     rehosted: Mapping[str, str],
     digests: set[str],
     notes: list[str],
+    prelude_reference: str,
 ) -> str:
     out: list[str] = []
     for rule in rules:
         rendered = _scope_rule(
-            rule, wrapper=wrapper, renames=renames, rehosted=rehosted, digests=digests, notes=notes
+            rule, wrapper=wrapper, renames=renames, rehosted=rehosted, digests=digests,
+            notes=notes, prelude_reference=prelude_reference,
         )
         if rendered:
             out.append(rendered)
@@ -193,6 +231,7 @@ def _scope_rule(
     rehosted: Mapping[str, str],
     digests: set[str],
     notes: list[str],
+    prelude_reference: str,
 ) -> str:
     if isinstance(rule, ast.QualifiedRule):
         selector = _scope_selector(rule.prelude, wrapper=wrapper, notes=notes)
@@ -205,7 +244,8 @@ def _scope_rule(
 
     if isinstance(rule, ast.AtRule):
         return _scope_at_rule(
-            rule, wrapper=wrapper, renames=renames, rehosted=rehosted, digests=digests, notes=notes
+            rule, wrapper=wrapper, renames=renames, rehosted=rehosted, digests=digests,
+            notes=notes, prelude_reference=prelude_reference,
         )
 
     if isinstance(rule, ast.ParseError):
@@ -222,6 +262,7 @@ def _scope_at_rule(
     rehosted: Mapping[str, str],
     digests: set[str],
     notes: list[str],
+    prelude_reference: str,
 ) -> str:
     keyword = rule.lower_at_keyword
 
@@ -232,7 +273,13 @@ def _scope_at_rule(
         notes.append(f"stripped @{keyword} — a fragment may not pull in document-level css")
         return ""
 
-    _refuse_references_in_prelude(rule.prelude, where=f"the @{keyword} prelude")
+    if not _gate_prelude(
+        rule.prelude,
+        where=f"the @{keyword} prelude",
+        prelude_reference=prelude_reference,
+        notes=notes,
+    ):
+        return ""
     prelude = tinycss2.serialize(rule.prelude).strip()
 
     if rule.content is None:
@@ -253,8 +300,16 @@ def _scope_at_rule(
         inner = tinycss2.parse_rule_list(rule.content, skip_comments=True, skip_whitespace=True)
         for frame in inner:
             if isinstance(frame, ast.QualifiedRule):
-                # `from`/`to`/`50%` — no url belongs here either, and the gate is free.
-                _refuse_references_in_prelude(frame.prelude, where=f"an @{keyword} selector")
+                # `from`/`to`/`50%` — no url belongs here either, and the gate is free. A frame
+                # prelude is part of THIS at-rule, so on the minting path the strip takes the
+                # whole `@keyframes` block rather than half a timeline.
+                if not _gate_prelude(
+                    frame.prelude,
+                    where=f"an @{keyword} selector",
+                    prelude_reference=prelude_reference,
+                    notes=notes,
+                ):
+                    return ""
         frames = [
             f"{tinycss2.serialize(frame.prelude).strip()} "
             f"{{{_declaration_block(frame.content, renames=renames, rehosted=rehosted, digests=digests)}}}"
@@ -267,10 +322,36 @@ def _scope_at_rule(
     # preserve the condition and scope what is inside it, at any depth.
     inner = tinycss2.parse_rule_list(rule.content, skip_comments=True, skip_whitespace=True)
     body = _scope_rules(
-        inner, wrapper=wrapper, renames=renames, rehosted=rehosted, digests=digests, notes=notes
+        inner, wrapper=wrapper, renames=renames, rehosted=rehosted, digests=digests, notes=notes,
+        prelude_reference=prelude_reference,
     )
     head = f"@{keyword} {prelude}".rstrip()
     return f"{head} {{ {body} }}"
+
+
+def _gate_prelude(
+    tokens: Sequence[object], *, where: str, prelude_reference: str, notes: list[str]
+) -> bool:
+    """Run the prelude gate; ``False`` means "strip this at-rule whole and say so".
+
+    The mode only ever softens :data:`fragment.reference_in_prelude` — a url we can READ, in a
+    place nothing fetches from. Everything else the gate raises (an unreadable token) propagates
+    in both modes, because a token we cannot read is not a construct we can claim to recognize.
+    """
+    try:
+        _refuse_references_in_prelude(tokens, where=where)
+    except FragmentRefused as refusal:
+        if (
+            prelude_reference != PRELUDE_REFERENCE_STRIP
+            or refusal.code != "fragment.reference_in_prelude"
+        ):
+            raise
+        notes.append(
+            f"stripped the at-rule carrying {where} — it names {refusal.reference!r} in a place "
+            "nothing fetches from, so the rule could be neither rehosted nor honestly kept"
+        )
+        return False
+    return True
 
 
 def _refuse_references_in_prelude(tokens: Sequence[object], *, where: str) -> None:
