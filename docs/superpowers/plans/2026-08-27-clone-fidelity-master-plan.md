@@ -1,5 +1,22 @@
 # Clone-Fidelity Master Plan — verbatim fragments, Ploy-grade output (Phases F0–F5)
 
+> **STATUS 2026-08-27 (latest) — PHASE F1 COMPLETE.** Executed via SDD (Tasks 5–9 = F1.1–F1.5 +
+> acceptance walk, 5 fix rounds across tasks + one final fix wave; Opus implementers, Opus-only
+> reviewers per founder standing rule), commits `1d04b46df..5b68e1b13` (23) on
+> `integration/frontend-design-part-iv-v2`, local only. Live acceptance walk: **all 7 criteria
+> PASS** — a hand-built fragment renders in-flow with IDENTICAL fragment-markup and CSS digests
+> across editor render / agent screenshot / export ZIP / published page; slots substitute (all 4
+> kinds); account derive personalizes name/logo/domain through the real route; sanitizer
+> red-cases refuse/strip live as ruled; HANDSHAKE OK (stamp `2f8c4edaf3b6`, `FontLicense.basis`
+> moved lumen-core). D-F2 Rust obligations landed (real `basis` field, publish gate honors it,
+> manifest lists font exclusions + fragment ids + missing digests). Focused suite gate green
+> (founder-ruled: no full-suite run at phase close). Evidence + full triage register with owners
+> (F2/F3/F4/F5): `.superpowers/sdd/2026-08-27-clone-fidelity-master-plan/progress.md` +
+> `_memory/2026-08-27-f1-fragment-engine-complete.md`. Notable F2 carries: status-gate wiring
+> (draft/approved read by nothing yet), fragment-vocabulary rename (insert_fragment vs the
+> unrelated web_ingest_fragment), Tailwind-scanner amplification ruling, prelude fail-closed
+> false-positive ruling, srsset comma-URL case.
+>
 > **STATUS 2026-08-27 (later still) — PHASE F0 COMPLETE.** Executed via SDD (3 tasks, 5 fix
 > rounds, independent review per task, final whole-phase review + one fix wave), commits
 > `7c11f0eb6..298abe98d` on `integration/frontend-design-part-iv-v2`, local only. Live acceptance
