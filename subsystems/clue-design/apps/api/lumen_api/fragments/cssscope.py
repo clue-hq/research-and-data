@@ -288,9 +288,16 @@ def _scope_at_rule(
 
     if keyword in _GLOBAL_BLOCK_AT_RULES:
         # Global by nature — declarations only, no selectors to scope. References still gated.
-        content = _declaration_block(
-            rule.content, renames=renames, rehosted=rehosted, digests=digests
-        )
+        if keyword == "font-face":
+            content = _font_face_block(
+                rule.content, renames=renames, rehosted=rehosted, digests=digests, notes=notes
+            )
+            if content is None:
+                return ""
+        else:
+            content = _declaration_block(
+                rule.content, renames=renames, rehosted=rehosted, digests=digests
+            )
         head = f"@{keyword} {prelude}".rstrip()
         return f"{head} {{{content}}}"
 
@@ -352,6 +359,69 @@ def _gate_prelude(
         )
         return False
     return True
+
+
+def _font_face_block(
+    tokens: Sequence[object],
+    *,
+    renames: Mapping[str, str],
+    rehosted: Mapping[str, str],
+    digests: set[str],
+    notes: list[str],
+) -> str | None:
+    """An ``@font-face`` body, with an unrehostable ``src`` DROPPED rather than refused.
+
+    RULED (F2 wave W2), and narrow on purpose. Everywhere else in this module an unrehosted
+    reference refuses the whole fragment, and that stays: an ``<img>`` we cannot serve is a hole
+    in the section, and a hole is the failure a clone can least afford.
+
+    A font is not a hole. A face whose file we do not hold falls back to the next family in the
+    stack — the section still renders, still lays out, still reads. And the cost of the hard
+    refusal here was measured on the F2 acceptance walk: ONE ``@media``-wrapped ``@font-face`` in
+    a site's global stylesheet, whose file the capture layer never fetched, refused **every
+    section of that site**. A hundred per cent loss to protect against a fallback typeface is not
+    a trade anyone would choose.
+
+    So: a ``src`` descriptor that cannot be resolved is dropped with a loud note, and if that
+    leaves the face with no ``src`` at all the whole rule goes (a face that declares no source
+    defines nothing). This mirrors ``PRELUDE_REFERENCE_STRIP`` exactly — construct-scoped
+    degradation with a note, never a silent one — and it is the only reference in a fragment that
+    degrades. ``None`` means "drop this rule".
+    """
+    segments = _split_declarations(list(tokens))
+    kept: list[str] = []
+    sources = 0
+    dropped: list[str] = []
+    for segment in segments:
+        property_name = _declaration_property(segment)
+        try:
+            rendered = _declaration_block(
+                segment, renames=renames, rehosted=rehosted, digests=digests
+            )
+        except FragmentRefused as refusal:
+            if property_name != "src" or refusal.code != "fragment.unrehosted_reference":
+                raise
+            dropped.append(refusal.reference or "an unrehosted font file")
+            continue
+        if property_name == "src":
+            sources += 1
+        if rendered.strip():
+            kept.append(rendered)
+    if dropped:
+        notes.append(
+            "dropped an @font-face src naming "
+            + ", ".join(sorted(set(dropped))[:3])
+            + " — the file was never rehosted, so the face is defined by whatever source "
+            "survives and otherwise falls back to the next family in the stack"
+        )
+    if not sources:
+        if dropped:
+            notes.append(
+                "dropped the whole @font-face rule: none of its sources were rehosted, so it "
+                "would have defined a family with no file behind it"
+            )
+        return None if dropped else ";".join(kept)
+    return ";".join(kept)
 
 
 def _refuse_references_in_prelude(tokens: Sequence[object], *, where: str) -> None:
@@ -422,9 +492,67 @@ def _scope_selector(prelude: Sequence[object], *, wrapper: str, notes: list[str]
                 "(its declarations, including custom properties, now apply to the section)"
             )
             parts.append(f".{wrapper}")
+            continue
+        leading, remainder = _split_leading_compound(text)
+        if remainder and _is_root_qualified(leading):
+            # `html.dark .btn` is a THEME rule: the leading compound qualifies the document, the
+            # rest addresses the section. Prefixing the whole thing produces
+            # `.lumen-frag-x html.dark .btn` — an `<html>` inside the wrapper, which can never
+            # match — so the qualifier keeps its place at the front and the wrapper goes where
+            # the section actually begins. The F2 walk found Webflow's whole interaction layer
+            # (`html.w-mod-js:not(.w-mod-ix) [data-w-id]`) dead this way; they were `opacity: 0`
+            # pre-animation states, so the page stayed readable and the rules were pure weight.
+            notes.append(
+                f"kept the document qualifier {leading!r} in front of the fragment wrapper "
+                "(a root-qualified rule addresses the page's state, not the section)"
+            )
+            parts.append(f"{leading} .{wrapper} {remainder}")
         else:
             parts.append(f".{wrapper} {text}")
     return ", ".join(parts)
+
+
+#: The element part of a compound that names the document root.
+_ROOT_COMPOUND_HEADS = ("html", "body", ":root", ":host")
+
+
+def _is_root_qualified(compound: str) -> bool:
+    """Does this compound address the DOCUMENT (``html``, ``html.dark``, ``:root[data-t=x]``)?"""
+    lowered = compound.strip().lower()
+    for head in _ROOT_COMPOUND_HEADS:
+        if lowered == head:
+            return True
+        if lowered.startswith(head):
+            rest = lowered[len(head) :]
+            if rest[:1] in (".", "#", "[", ":"):
+                return True
+    return False
+
+
+def _split_leading_compound(selector: str) -> tuple[str, str]:
+    """``html.dark .a > .b`` → ``("html.dark", ".a > .b")``. No combinator ⇒ empty remainder.
+
+    Depth- and quote-aware, so a combinator inside ``:not(…)`` or ``[href*=" "]`` is not one.
+    """
+    depth = 0
+    quote: str | None = None
+    for index, char in enumerate(selector):
+        if quote is not None:
+            if char == quote:
+                quote = None
+            continue
+        if char in "\"'":
+            quote = char
+            continue
+        if char in "([":
+            depth += 1
+            continue
+        if char in ")]":
+            depth = max(0, depth - 1)
+            continue
+        if depth == 0 and (char.isspace() or char in ">+~"):
+            return selector[:index].strip(), selector[index:].strip()
+    return selector.strip(), ""
 
 
 def _split_on_commas(tokens: Sequence[object]) -> list[list[object]]:

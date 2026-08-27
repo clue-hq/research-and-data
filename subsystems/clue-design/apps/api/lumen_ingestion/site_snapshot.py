@@ -36,7 +36,13 @@ from clue_design.storage import SOURCE_KEY_SITE_SNAPSHOT, read_design_bytes, reg
 from clue_storage import StorageBackend
 from lumen_api.design_store import DesignStoreBridge
 
-from .sections.bands import SNAPSHOT_META_BANDS_KEY, bands_for_meta
+from .sections.bands import (
+    SNAPSHOT_META_BANDS_KEY,
+    SNAPSHOT_META_SKIPPED_KEY,
+    SNAPSHOT_META_TRUNCATED_KEY,
+    bands_for_meta,
+    skipped_for_meta,
+)
 
 #: ``source_key`` on the ``artifact`` rows this seam writes (observability, not identity).
 SITE_SNAPSHOT_SOURCE_KEY = SOURCE_KEY_SITE_SNAPSHOT
@@ -342,4 +348,10 @@ def _meta(snapshot: Any) -> dict[str, Any]:
         "final_url": getattr(snapshot, "final_url", None),
         "fetched_at": getattr(snapshot, "fetched_at", None),
         SNAPSHOT_META_BANDS_KEY: bands_for_meta(getattr(snapshot, "geometry", None)),
+        SNAPSHOT_META_SKIPPED_KEY: skipped_for_meta(getattr(snapshot, "geometry", None)),
+        SNAPSHOT_META_TRUNCATED_KEY: bool(
+            (getattr(snapshot, "geometry", None) or {}).get("truncated")
+            if isinstance(getattr(snapshot, "geometry", None), dict)
+            else False
+        ),
     }

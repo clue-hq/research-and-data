@@ -83,6 +83,10 @@ MINT_FAILED_CODE = "LUMI0530"
 MINT_NO_PREVIEW_CODE = "LUMI0531"
 #: The per-ingest section cap was reached; the tail was not minted.
 MINT_CAPPED_CODE = "LUMI0532"
+#: A section whose sanitized markup shows nothing. Same code as any other per-section refusal —
+#: it is a refusal — with its own reason so the population is countable.
+#:
+#: (No new code: ``LUMI0530`` with ``reason="empty_after_sanitize"``.)
 #: A re-mint met a row that already exists with different metadata. The content is the same
 #: (the id is its content address); the label or the provenance is not, and first writer keeps
 #: them — so the divergence is stated rather than lost.
@@ -590,6 +594,24 @@ def _mint_one(
     # about to remove, and so an image slot's fallback is a digest the gate already vouched for.
     # An unrehostable reference raises here — the fail-closed refusal, per section.
     sanitized = sanitize_fragment_html(subtree, rehosted=rehosted)
+    if not _shows_anything(sanitized.html):
+        # A `<script>`/`<style>`/iframe embed sanitizes down to an empty wrapper. The F2
+        # acceptance walk offered four of those to the agent as approved, reusable clones — each
+        # one a row in a human's picker, ~28 KB of CSS at rest, and nothing at all on the page.
+        # A fragment that renders nothing is not a faithful copy of a section; it is the absence
+        # of one, and saying so is cheaper than storing it.
+        diagnostics.append(
+            _diag(
+                MINT_FAILED_CODE,
+                f"section {record.index} ({record.role}) of {segmentation.page_url} was not "
+                "minted: after sanitizing, its markup shows nothing — no text and no image, "
+                "video, canvas or svg (it was a script, style or embed shell)",
+                section_index=record.index,
+                role=record.role,
+                reason="empty_after_sanitize",
+            )
+        )
+        return None
     detected = detect_slots(sanitized.html)
 
     preview, extent = _preview(segmentation, record, screenshot, diagnostics)
@@ -623,6 +645,26 @@ def _mint_one(
         preview_basis=extent.basis if extent is not None else None,
         rules_kept=matched.rules_kept,
     )
+
+
+#: What counts as something a visitor can SEE, when the section has no words.
+_MEDIA_TAGS = ("img", "svg", "video", "canvas", "picture", "iframe", "object")
+
+
+def _shows_anything(html: str) -> bool:
+    """Does this sanitized markup put anything on the page — words or a picture?
+
+    Text first, because most sections are copy; media second, because a logo wall or a bare
+    hero image is a real section with no prose in it at all. Anything that satisfies neither is
+    an empty wrapper whatever its class list says.
+    """
+    tree = LexborHTMLParser(html or "")
+    body = tree.body
+    if body is None:
+        return False
+    if (body.text(deep=True) or "").strip():
+        return True
+    return any(body.css_first(tag) is not None for tag in _MEDIA_TAGS)
 
 
 def _preview(

@@ -674,15 +674,15 @@ def _collect_custom_props(stylesheets, existing: dict[str, str]) -> dict[str, st
         rules = tinycss2.parse_stylesheet(
             sheet.text, skip_comments=True, skip_whitespace=True
         )
-        for rule in rules:
-            if rule.type != "qualified-rule":
+        # Through the shared iterator (W2), so a `:root` block inside `@layer base` — how a
+        # Tailwind-era site ships its palette — is not invisible here while being visible to
+        # the dark walker three functions down.
+        for selectors, decls, theme in _iter_qualified_rules(rules, "light"):
+            if theme == "dark":
+                continue  # `_collect_dark_custom_props` owns those; the two tables never merge
+            if not any(_is_root_selector(selector) for selector in selectors):
                 continue
-            selector = tinycss2.serialize(rule.prelude).strip().lower()
-            if not any(part.strip() in ("html", ":root") for part in selector.split(",")):
-                continue
-            for decl in tinycss2.parse_declaration_list(
-                rule.content, skip_comments=True, skip_whitespace=True
-            ):
+            for decl in decls:
                 if getattr(decl, "type", None) == "declaration" and decl.name.startswith("--"):
                     props[decl.name] = _decl_value_text(decl)
     return props
@@ -720,8 +720,33 @@ def _collect_dark_custom_props(stylesheets) -> dict[str, str]:
     return props
 
 
-def _iter_qualified_rules(rules, theme: str):
-    """Yield (selector_list, declarations, theme) flattening dark-scheme media."""
+#: At-rules whose block holds NESTED RULES rather than declarations. Every structure-aware CSS
+#: walker in this module descends into them (clone-fidelity F2 wave W2). The bug this closes had
+#: already been found and fixed once, narrowly, for dark custom properties
+#: (:func:`_collect_dark_custom_props`) and never generalized — so ``iter_font_faces`` stayed the
+#: one non-recursive walker here, and a single ``@media``-wrapped ``@font-face`` on stripe.com
+#: meant its brand font was never fetched and every section of the site refused to mint.
+CONDITIONAL_GROUP_AT_RULES = frozenset({"media", "supports", "layer", "container", "scope"})
+
+#: How deep the descent goes. Real stylesheets nest two or three of these (`@layer` inside
+#: `@supports` inside `@media` is a shipped Tailwind/Next shape); the cap is a guard against a
+#: pathological or hostile sheet, not a judgement about how sites are written.
+MAX_AT_RULE_DEPTH = 8
+
+
+def _nested_rules(rule, depth: int):
+    """The rule list inside one conditional group at-rule, or ``None`` if it is not one."""
+    if rule.type != "at-rule" or rule.content is None:
+        return None
+    if rule.lower_at_keyword not in CONDITIONAL_GROUP_AT_RULES:
+        return None
+    if depth >= MAX_AT_RULE_DEPTH:
+        return None
+    return tinycss2.parse_rule_list(rule.content, skip_comments=True, skip_whitespace=True)
+
+
+def _iter_qualified_rules(rules, theme: str, depth: int = 0):
+    """Yield (selector_list, declarations, theme) flattening every conditional group at-rule."""
     for rule in rules:
         if rule.type == "qualified-rule":
             selectors = [
@@ -733,17 +758,16 @@ def _iter_qualified_rules(rules, theme: str):
                 rule.content, skip_comments=True, skip_whitespace=True
             )
             yield selectors, decls, theme
-        elif rule.type == "at-rule" and (rule.lower_at_keyword == "media"):
+            continue
+        inner = _nested_rules(rule, depth)
+        if inner is None:
+            continue
+        inner_theme = theme
+        if rule.lower_at_keyword == "media":
             prelude = tinycss2.serialize(rule.prelude).lower()
-            inner_theme = theme
             if "prefers-color-scheme" in prelude and "dark" in prelude:
                 inner_theme = "dark"
-            if rule.content is None:
-                continue
-            inner = tinycss2.parse_rule_list(
-                rule.content, skip_comments=True, skip_whitespace=True
-            )
-            yield from _iter_qualified_rules(inner, inner_theme)
+        yield from _iter_qualified_rules(inner, inner_theme, depth + 1)
 
 
 def _px_from_length(value: str) -> float | None:
@@ -930,14 +954,29 @@ def iter_font_faces(stylesheets, page_url: str):
         rules = tinycss2.parse_stylesheet(
             sheet.text, skip_comments=True, skip_whitespace=True
         )
-        for rule in rules:
-            if rule.type == "at-rule" and rule.lower_at_keyword == "font-face":
-                decls = tinycss2.parse_declaration_list(
-                    rule.content or [], skip_comments=True, skip_whitespace=True
-                )
-                face = _parse_font_face(decls, base)
-                if face is not None:
-                    yield sheet.url, face
+        for face in _font_faces_in(rules, base, 0):
+            yield sheet.url, face
+
+
+def _font_faces_in(rules, base: str, depth: int):
+    """Every ``@font-face`` at any conditional-group depth, resolved against ITS OWN sheet.
+
+    A media-wrapped face is the ordinary modern shape — a responsive or `@layer`-scoped font
+    stack — and it declares a real file the page really loads. The base URL stays the sheet's,
+    which is the capture↔parse exact-URL invariant this function exists to keep.
+    """
+    for rule in rules:
+        if rule.type == "at-rule" and rule.lower_at_keyword == "font-face":
+            decls = tinycss2.parse_declaration_list(
+                rule.content or [], skip_comments=True, skip_whitespace=True
+            )
+            face = _parse_font_face(decls, base)
+            if face is not None:
+                yield face
+            continue
+        inner = _nested_rules(rule, depth)
+        if inner is not None:
+            yield from _font_faces_in(inner, base, depth + 1)
 
 
 def font_face_source_rungs(stylesheets, page_url: str) -> list[str]:

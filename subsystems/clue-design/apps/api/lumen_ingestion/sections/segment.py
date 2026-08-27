@@ -37,7 +37,7 @@ from typing import Any, Sequence
 
 from selectolax.parser import HTMLParser, Node
 
-from .bands import MeasuredBand, measured_bands
+from .bands import MeasuredBand, SkippedChild, measured_bands, skipped_children
 
 # --- the vocabulary -------------------------------------------------------------------------
 
@@ -190,6 +190,22 @@ _PROOF_TEXT = re.compile(
 )
 _FOOTER_TEXT = re.compile(r"(©|\(c\)\s?\d{4}|copyright|all rights reserved)", re.IGNORECASE)
 
+#: Class tokens whose whole job is to take an element out of the layout. A page that ships one
+#: of these is telling us the section is not on the page — the F2 acceptance walk minted a
+#: `class="hide"` announcement banner as an approved, reusable clone.
+#:
+#: A CLOSED list of the shared vocabulary (Bootstrap, Tailwind, Webflow, the a11y convention),
+#: matched as whole tokens. It was briefly a suffix rule (`*-hidden`) and that was wrong in the
+#: most instructive way: `overflow-hidden` is an OVERFLOW utility, and treating it as a
+#: visibility one dropped a real testimonials band on the very page this list was written from.
+#: A site's own private spelling (`ih-home-pricing-hidden`) is deliberately NOT chased — guessing
+#: at one company's naming is exactly the site-tuning this wave is forbidden; the probe's own
+#: `hidden` skip record (W1) is the general answer, and the feasibility floor covers captures
+#: taken before the probe learned to write it down.
+_HIDDEN_CLASS_TOKENS = frozenset(
+    {"hide", "hidden", "is-hidden", "d-none", "sr-only", "visually-hidden", "w-condition-invisible"}
+)
+
 #: Tags that never render a band of their own.
 _SKIP_TAGS = frozenset(
     {
@@ -310,6 +326,7 @@ def segment_snapshot(snapshot: Any) -> SectionSegmentation:
         getattr(snapshot, "html", "") or "",
         page_url=getattr(snapshot, "page_url", "") or "",
         bands=measured_bands(getattr(snapshot, "meta", None)),
+        skips=skipped_children(getattr(snapshot, "meta", None)),
         viewport_width=getattr(snapshot, "viewport_width", None),
         snapshot_id=getattr(snapshot, "snapshot_id", None),
     )
@@ -320,6 +337,7 @@ def segment_page(
     *,
     page_url: str,
     bands: Sequence[MeasuredBand] = (),
+    skips: Sequence[SkippedChild] = (),
     viewport_width: int | None = None,
     snapshot_id: str | None = None,
 ) -> SectionSegmentation:
@@ -329,7 +347,7 @@ def segment_page(
     candidates, skipped = _page_flow(tree)
 
     if candidates:
-        _bind_bands(candidates, tuple(bands), diagnostics)
+        _bind_bands(candidates, tuple(bands), diagnostics, tuple(skips))
         candidates = _section_shaped(candidates, skipped)
 
     if not candidates:
@@ -495,6 +513,12 @@ def _section_shaped(
     """
     kept: list[_Candidate] = []
     for candidate in candidates:
+        if candidate.band is None and _is_hidden_by_class(candidate):
+            # The BROWSER overrules the class name: a section the probe measured is on the page
+            # whatever it calls itself, and a class list is only a guess about a stylesheet we
+            # are not evaluating. So this drops only what the measurement did not vouch for.
+            skipped.append((candidate.tag, candidate.text[:80]))
+            continue
         if (
             candidate.band is not None
             or candidate.tag in _SECTION_TAGS
@@ -504,6 +528,23 @@ def _section_shaped(
         else:
             skipped.append((candidate.tag, candidate.text[:80]))
     return kept
+
+
+def _is_hidden_by_class(candidate: _Candidate) -> bool:
+    """Does this element say, in its own attributes, that it is not on the page?
+
+    Evidence-backed rather than invented: W1's probe records the children it declined to measure
+    and WHY, and `hidden` is one of its reasons — this is the same judgement, made from the
+    markup for a capture whose probe never got to make it, and overruled by the probe wherever
+    the probe spoke.
+    """
+    if (candidate.node.attributes.get("aria-hidden") or "").strip().lower() == "true":
+        return True
+    for token in candidate.class_names:
+        lowered = token.lower()
+        if lowered in _HIDDEN_CLASS_TOKENS:
+            return True
+    return False
 
 
 def _skip_diagnostic(skipped: list[tuple[str, str]]) -> list[dict[str, Any]]:
@@ -585,7 +626,7 @@ def _candidate(node: Node, path: tuple[int, ...], *, in_measured_root: bool) -> 
     class_names = tuple((attributes.get("class") or "").split())
     element_id = (attributes.get("id") or "").strip() or None
     tokens = _tokenize(" ".join(class_names) + " " + (element_id or ""))
-    text = _WHITESPACE.sub(" ", node.text(deep=True, separator=" ", strip=True) or "").strip()
+    text = rendered_text(node)
     return _Candidate(
         node=node,
         path=path,
@@ -639,8 +680,9 @@ def _bind_bands(
     candidates: list[_Candidate],
     bands: tuple[MeasuredBand, ...],
     diagnostics: list[dict[str, Any]],
+    skips: tuple[SkippedChild, ...] = (),
 ) -> None:
-    """Line the measured bands up with the parsed sections, or use none of them.
+    """Line the measured bands up with the parsed sections — band by band, not all or nothing.
 
     The bands are, by construction, a SUBSEQUENCE of the measured root's children: the browser
     skipped whatever was hidden, under 40px tall, or narrower than half the viewport, and this
@@ -652,12 +694,32 @@ def _bind_bands(
     That is not hypothetical. Three sections named alike with the middle one hidden by a class
     (`w-condition-invisible` on a Webflow page) binds the third band's geometry to the second
     section, and every downstream consumer then crops a picture of the wrong part of the page.
-    So the walk is run in BOTH directions and the two answers must agree. Where they do, there is
-    exactly one way to line the sequence up and it is that one; where they differ, the evidence
-    genuinely does not say which section the band belongs to, and the whole binding is refused.
+    So the walk is run in BOTH directions: forward gives each band the EARLIEST candidate it
+    could take in any valid alignment, backward the LATEST.
 
-    Refusing costs geometry. Guessing costs a wrong picture that looks right, which is the
-    failure this phase exists to prevent.
+    **Where the two agree, that band is forced** — no valid alignment can place it anywhere else,
+    because there is nothing earlier and nothing later available to it — so it binds, and it binds
+    with the same certainty whole-list agreement used to demand. Where they differ, the evidence
+    genuinely does not say, and only THAT band goes unbound.
+
+    This is the floor guarantee, and the F2 acceptance walk is why it exists. The first real site
+    walked hid one of three same-class sections; whole-list agreement saw the divergence and
+    refused the page's entire binding, so thirteen fragments got no preview because two bands were
+    contested. Per-band feasibility loses those two and keeps the other four. Refusing costs
+    geometry; guessing costs a wrong picture that looks right; refusing MORE than the evidence
+    requires costs geometry nobody had to lose.
+
+    Two things narrow it, deliberately:
+
+    * ``skips`` — what the browser tells us it declined to measure — is subtracted
+      first. When the residue lines up one-for-one, the alignment is not merely forced band by
+      band, it is *known*, and the page binds completely. That is the real fix; the feasibility
+      floor is what carries a capture taken before the probe learned to say so.
+    * partial binding is allowed only when every band carries a measured ``top``. The
+      running-sum fallback in :func:`_assign_geometry` reconstructs tops by accumulating heights,
+      which is only true when the bound set is contiguous — with holes in it, it would place
+      every later section at the wrong offset. So a top-less sequence keeps the old
+      all-or-nothing rule rather than producing confidently wrong extents.
     """
     if not bands:
         diagnostics.append(
@@ -692,52 +754,157 @@ def _bind_bands(
             )
             return
 
-    forward = _greedy_alignment(measured, bands)
-    if forward is None:
-        unmatched = _first_unmatched_band(measured, bands)
+    # What the browser said it skipped is subtracted before anything is inferred. A skip record
+    # is matched by the same rule a band is, and consumed once, in order.
+    residue, subtracted = _subtract_skipped(measured, skips)
+    if subtracted and _lines_up(residue, bands):
+        for candidate, band in zip(residue, bands):
+            candidate.band = band
+        return
+
+    # A capture whose probe never learned to report its skips can still often be resolved: the
+    # markup itself says which sections are not on the page. That hint only ever PROPOSES a
+    # residue, and the proposal has to line up one-for-one before it is believed — so a class
+    # named `hide` that the stylesheet ignores costs nothing, while the common case (a page that
+    # hides one of several same-class sections) binds completely instead of contesting.
+    if not subtracted:
+        proposed = [c for c in measured if not _is_hidden_by_class(c)]
+        if len(proposed) != len(measured) and _lines_up(proposed, bands):
+            for candidate, band in zip(proposed, bands):
+                candidate.band = band
+            return
+
+    forward = _greedy_alignment(residue, bands)
+    backward = _greedy_alignment(residue, bands, reverse=True)
+    if forward is None or backward is None:
+        # Which direction failed is a real distinction and used to be lost: a `None` backward
+        # walk fell into the ambiguity branch, where `zip(forward, backward or [])` compared
+        # nothing and the diagnostic reported "ambiguous" with the first band as the culprit —
+        # a confident answer to a question that had not been asked.
+        unmatched = _first_unmatched_band(residue, bands)
         diagnostics.append(
             _diag(
                 BAND_ALIGNMENT_REFUSED_CODE,
                 "warning",
                 f"the measured band sequence ({len(bands)} bands) could not be aligned with the "
-                f"{len(measured)} parsed section(s) of the measured root; band {unmatched} "
+                f"{len(residue)} parsed section(s) of the measured root; band {unmatched} "
                 "matched no section — no geometry was bound",
                 reason="unmatched",
                 bands=len(bands),
-                measured_sections=len(measured),
+                measured_sections=len(residue),
                 unmatched_band=unmatched,
+                direction="forward" if forward is None else "backward",
             )
         )
         return
 
-    backward = _greedy_alignment(measured, bands, reverse=True)
-    if backward != forward:
-        contested = next(
-            (
-                bands[position].index
-                for position, (left, right) in enumerate(zip(forward, backward or []))
-                if left != right
-            ),
-            bands[0].index,
-        )
+    forced = [position for position in range(len(bands)) if forward[position] == backward[position]]
+    contested = [position for position in range(len(bands)) if forward[position] != backward[position]]
+
+    if not contested:
+        for position, band in enumerate(bands):
+            residue[forward[position]].band = band
+        return
+
+    tops_measured = all(band.top_px is not None for band in bands)
+    if not forced or not tops_measured:
         diagnostics.append(
             _diag(
                 BAND_ALIGNMENT_REFUSED_CODE,
                 "warning",
                 f"the measured band sequence has more than one way to line up with the "
-                f"{len(measured)} parsed section(s) of the measured root — band {contested} "
-                "could belong to either of two sections that name themselves alike, and the "
-                "capture kept nothing that tells them apart, so no geometry was bound",
+                f"{len(residue)} parsed section(s) of the measured root — "
+                f"band {bands[contested[0]].index} could belong to either of two sections that "
+                "name themselves alike, and "
+                + (
+                    "no band could be placed with certainty"
+                    if not forced
+                    else "the capture recorded no absolute tops, so a partial binding could not "
+                    "be turned into honest extents"
+                )
+                + " — no geometry was bound",
                 reason="ambiguous",
                 bands=len(bands),
-                measured_sections=len(measured),
-                contested_band=contested,
+                measured_sections=len(residue),
+                contested_band=bands[contested[0]].index,
+                contested_bands=[bands[position].index for position in contested],
+                bound_bands=[],
             )
         )
         return
 
-    for position, band in enumerate(bands):
-        measured[forward[position]].band = band
+    for position in forced:
+        residue[forward[position]].band = bands[position]
+    diagnostics.append(
+        _diag(
+            BAND_ALIGNMENT_REFUSED_CODE,
+            "warning",
+            f"{len(contested)} of {len(bands)} measured band(s) could belong to more than one of "
+            f"the {len(residue)} parsed section(s) that name themselves alike, so those band(s) "
+            f"bound nothing; the other {len(forced)} were placed with certainty and carry their "
+            "measured geometry",
+            reason="partial",
+            bands=len(bands),
+            measured_sections=len(residue),
+            contested_band=bands[contested[0]].index,
+            contested_bands=[bands[position].index for position in contested],
+            bound_bands=[bands[position].index for position in forced],
+        )
+    )
+
+
+def _lines_up(residue: list[_Candidate], bands: tuple[MeasuredBand, ...]) -> bool:
+    """Is this residue the band sequence exactly — same length, every pair identifiable?"""
+    return len(residue) == len(bands) and all(
+        _band_matches(candidate, band) for candidate, band in zip(residue, bands)
+    )
+
+
+def _subtract_skipped(
+    measured: list[_Candidate], skipped: tuple[SkippedChild, ...]
+) -> tuple[list[_Candidate], bool]:
+    """Remove exactly the candidates the browser said it declined to measure.
+
+    In order and once each: the probe walks the same children in the same order this module
+    parses them, so a skip record is consumed by the first not-yet-consumed candidate it
+    identifies. A record that identifies nothing is simply not subtracted — it costs the
+    certainty shortcut, never a wrong removal.
+    """
+    if not skipped:
+        return list(measured), False
+    remaining = list(skipped)
+    residue: list[_Candidate] = []
+    removed = False
+    for candidate in measured:
+        match = next(
+            (record for record in remaining if _skip_matches(candidate, record)), None
+        )
+        if match is None:
+            residue.append(candidate)
+            continue
+        remaining.remove(match)
+        removed = True
+    return residue, removed
+
+
+def _skip_matches(candidate: _Candidate, record: SkippedChild) -> bool:
+    """Is this the candidate the probe declined to measure?
+
+    Stricter than :func:`_band_matches` on purpose, and the difference matters. A BAND is matched
+    by class INTERSECTION because the page's own JS toggles a class between the html snapshot and
+    the probe, and refusing a page's geometry over one modifier would be absurd. A SKIP is a
+    subtraction: getting it wrong removes the wrong section from the alignment, so it must carry
+    ALL of the record's classes — otherwise a record for `section pricing-not-shown` would
+    happily remove the first plain `section` it met. A record that identifies nothing is simply
+    not subtracted, which costs the certainty shortcut and nothing else.
+    """
+    if candidate.tag != record.tag:
+        return False
+    if record.element_id and candidate.element_id and candidate.element_id != record.element_id:
+        return False
+    if record.class_names:
+        return set(record.class_names) <= set(candidate.class_names)
+    return not candidate.class_names
 
 
 def _greedy_alignment(
@@ -1159,7 +1326,7 @@ def _is_significant(node: Node) -> bool:
         return False
     if _HIDDEN_STYLE.search(attributes.get("style") or ""):
         return False
-    if (node.text(deep=True, strip=True) or "").strip():
+    if rendered_text(node):
         return True
     return bool(node.css(_MEDIA_SELECTOR))
 
@@ -1168,17 +1335,52 @@ def _note_skip(node: Node, skipped: list[tuple[str, str]]) -> None:
     tag = (node.tag or "").lower()
     if tag in _SKIP_TAGS or tag.startswith("_") or tag.startswith("-"):
         return
-    text = _WHITESPACE.sub(" ", node.text(deep=True, separator=" ", strip=True) or "").strip()
-    skipped.append((tag, text[:80]))
+    skipped.append((tag, rendered_text(node, limit=80)))
+
+
+def rendered_text(node: Node, *, limit: int | None = None) -> str:
+    """The text a visitor would READ — never the source of what the sanitizer will throw away.
+
+    ``selectolax``'s ``text(deep=True)`` returns every text node under an element, which on a
+    real page includes ``<script>`` bodies and ``<style>`` rules. The F2 acceptance walk showed
+    exactly what that costs: the nav — the single most valuable clone on the page — was labelled
+    ``Nav — document.querySelectorAll('.w-dropdown').forEach(dropdown => …``, an empty Webflow
+    ``<style>`` embed scored ``security`` @0.65 off a CSS comment, and a ``<script>`` shell was
+    admitted as a section because its JavaScript read as prose.
+
+    All three are one defect: the segmenter judged sections by text that will not exist in the
+    artifact. This is the one place that answers "what does this element say?", so labels, role
+    signals and significance can no longer disagree about it, and none of them can read source.
+
+    ``_SKIP_TAGS`` is the same list every other consumer here uses, so a tag that never renders a
+    band also never contributes a word.
+    """
+    parts: list[str] = []
+    _collect_rendered_text(node, parts)
+    text = _WHITESPACE.sub(" ", " ".join(parts)).strip()
+    return text[:limit] if limit is not None else text
+
+
+def _collect_rendered_text(node: Node, out: list[str]) -> None:
+    for child in node.iter(include_text=True):
+        tag = (child.tag or "").lower()
+        if tag == "-text":
+            fragment = child.text() or ""
+            if fragment.strip():
+                out.append(fragment)
+            continue
+        if tag in _SKIP_TAGS or tag.startswith("_") or tag.startswith("-"):
+            continue
+        _collect_rendered_text(child, out)
 
 
 def _first_heading(node: Node) -> str | None:
     for tag in ("h1", "h2", "h3"):
         found = node.css_first(tag)
         if found is not None:
-            text = _WHITESPACE.sub(" ", found.text(deep=True, separator=" ", strip=True) or "")
-            if text.strip():
-                return text.strip()[:160]
+            text = rendered_text(found, limit=160)
+            if text:
+                return text
     return None
 
 

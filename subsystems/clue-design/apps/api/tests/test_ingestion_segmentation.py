@@ -341,11 +341,12 @@ def test_a_second_hero_is_demoted_rather_than_named_twice():
     assert any("already" in ev.detail for ev in result.sections[1].evidence)
 
 
-def test_sibling_bands_that_share_a_class_refuse_rather_than_bind_by_luck():
-    # Three sections named alike; the browser measured two of them, because the middle one is
-    # hidden by a class we cannot evaluate without the stylesheet. In-order greedy matching binds
-    # the testimonial's band to the hidden promo — a plausible, wrong crop. There is no evidence
-    # that tells the two apart, so the honest answer is no geometry at all.
+def test_sibling_bands_that_share_a_class_bind_once_the_hidden_one_is_named():
+    # Three sections named alike; the browser measured two, because the middle one is hidden by
+    # a class. Greedy in-order matching would bind the testimonial's band to the hidden promo —
+    # a plausible, wrong crop — and the F2 wave's predecessor answered that by refusing the whole
+    # page. There IS evidence here, though: the markup says which section is not on the page. So
+    # the hidden one is subtracted, the residue lines up one-for-one, and both bands bind.
     html = """
     <html><body><main>
       <section class="section"><h1>Care that keeps up</h1><p>Copy.</p></section>
@@ -362,12 +363,11 @@ def test_sibling_bands_that_share_a_class_refuse_rather_than_bind_by_luck():
         page_url="https://x.example/",
         bands=measured_bands({SNAPSHOT_META_BANDS_KEY: bands}),
     )
-    assert all(section.geometry is None for section in result.sections)
-    assert all(section.band_index is None for section in result.sections)
-    refusal = next(d for d in result.diagnostics if d["code"] == BAND_ALIGNMENT_REFUSED_CODE)
-    assert refusal["reason"] == "ambiguous"
-    # The role calls survive the refusal.
-    assert _roles(result) == ["hero", "other", "testimonial"]
+    # The hidden promo is not a section at all any more, and the two real ones carry geometry.
+    assert _roles(result) == ["hero", "testimonial"]
+    assert [s.band_index for s in result.sections] == [0, 1]
+    assert all(s.geometry is not None and s.geometry.basis == "measured" for s in result.sections)
+    assert not [d for d in result.diagnostics if d["code"] == BAND_ALIGNMENT_REFUSED_CODE]
 
 
 def test_repeated_section_names_still_bind_when_the_alignment_is_the_only_one():
@@ -401,7 +401,7 @@ def test_a_section_the_browser_skipped_is_reported_for_what_it_is():
     html = """
     <html><body><main>
       <section class="section_a"><h1>Care that keeps up</h1></section>
-      <section class="section_b w-condition-invisible"><h2>Promo</h2></section>
+      <section class="section_b"><h2>A band the browser skipped for being short</h2></section>
       <section class="section_c"><blockquote>Quote.</blockquote></section>
     </main></body></html>
     """
@@ -702,3 +702,230 @@ def test_every_named_role_is_reachable_from_the_vocabulary(role):
 
     assert role in SECTION_ROLES
     assert "other" in SECTION_ROLES
+
+
+# --------------------------------------------------------------------------- #
+# F2 fix wave — W1 (the floor guarantee), W3 (rendered text), W4 (hidden class)
+# --------------------------------------------------------------------------- #
+
+from lumen_ingestion.sections.bands import (  # noqa: E402
+    SNAPSHOT_META_SKIPPED_KEY,
+    bands_were_truncated,
+    skipped_children,
+    skipped_for_meta,
+)
+from lumen_ingestion.sections.segment import rendered_text  # noqa: E402
+
+_AMBIGUOUS_PAGE = """
+<html><body><main>
+  <section class="section_home-hero"><h1>Ship faster</h1></section>
+  <section class="section"><h2>Featured in</h2></section>
+  <section class="section_products"><h2>Products</h2></section>
+  <section class="section"><h2>Safe and compliant</h2></section>
+  <section class="section"><h2>Dr Medress</h2></section>
+  <section class="section pricing-not-shown"><h2>Pricing</h2></section>
+  <section class="overflow-hidden"><h2>Testimonials</h2></section>
+</main></body></html>
+"""
+
+#: Six bands for seven same-shaped sections: the walk's real shape, with the site's own private
+#: hidden-class spelling (which nothing here is allowed to know about).
+_AMBIGUOUS_BANDS = [
+    {"index": 0, "tag": "section", "classes": "section_home-hero", "top": 0.0, "height": 600.0},
+    {"index": 1, "tag": "section", "classes": "section", "top": 600.0, "height": 200.0},
+    {"index": 2, "tag": "section", "classes": "section_products", "top": 800.0, "height": 400.0},
+    {"index": 3, "tag": "section", "classes": "section", "top": 1200.0, "height": 200.0},
+    {"index": 4, "tag": "section", "classes": "section", "top": 1400.0, "height": 200.0},
+    {"index": 5, "tag": "section", "classes": "overflow-hidden", "top": 1600.0, "height": 300.0},
+]
+
+
+def _ambiguous(**kwargs):
+    return segment_page(
+        _AMBIGUOUS_PAGE,
+        page_url="https://x.example/",
+        bands=measured_bands({SNAPSHOT_META_BANDS_KEY: _AMBIGUOUS_BANDS}),
+        **kwargs,
+    )
+
+
+def test_the_bands_that_are_forced_bind_even_when_others_are_contested():
+    """THE FLOOR GUARANTEE (W1b). Whole-list agreement cost the F2 acceptance walk every preview
+    on its primary site: two contested bands out of six refused all thirteen sections' geometry.
+    A band whose earliest and latest feasible candidate are the same candidate is FORCED — no
+    valid alignment can place it anywhere else — so it binds, and only the genuinely contested
+    span goes without."""
+    result = _ambiguous()
+    bound = [s for s in result.sections if s.geometry is not None]
+    assert len(bound) >= 4
+    refusal = next(d for d in result.diagnostics if d["code"] == BAND_ALIGNMENT_REFUSED_CODE)
+    assert refusal["reason"] == "partial"
+    assert refusal["bound_bands"] and refusal["contested_bands"]
+    assert len(refusal["bound_bands"]) + len(refusal["contested_bands"]) == 6
+    # Every bound band's geometry is the browser's own measurement, never a reconstruction.
+    assert all(s.geometry.basis == "measured" for s in bound)
+
+
+def test_a_contested_page_with_no_measured_tops_still_refuses_whole():
+    """Partial binding is restricted to measured tops: the running-sum fallback reconstructs a
+    section's top by accumulating the heights before it, which is only true when the bound set is
+    contiguous. With holes it would place every later section at the wrong offset — confidently."""
+    topless = [{k: v for k, v in band.items() if k != "top"} for band in _AMBIGUOUS_BANDS]
+    result = segment_page(
+        _AMBIGUOUS_PAGE,
+        page_url="https://x.example/",
+        bands=measured_bands({SNAPSHOT_META_BANDS_KEY: topless}),
+    )
+    assert all(s.geometry is None for s in result.sections)
+    refusal = next(d for d in result.diagnostics if d["code"] == BAND_ALIGNMENT_REFUSED_CODE)
+    assert refusal["reason"] == "ambiguous"
+
+
+def test_the_probes_own_skip_records_resolve_the_page_completely():
+    """W1a. The browser is the only thing that can answer "is this hidden?". When it says so, the
+    residue lines up one-for-one and every band binds with certainty — no feasibility argument
+    needed."""
+    skips = skipped_children(
+        {
+            SNAPSHOT_META_SKIPPED_KEY: [
+                {"tag": "section", "id": None, "classes": "section pricing-not-shown",
+                 "reason": "hidden"}
+            ]
+        }
+    )
+    result = _ambiguous(skips=skips)
+    assert not [d for d in result.diagnostics if d["code"] == BAND_ALIGNMENT_REFUSED_CODE]
+    assert len([s for s in result.sections if s.geometry is not None]) == 6
+
+
+def test_a_skip_record_that_identifies_nothing_costs_only_the_shortcut():
+    result = _ambiguous(
+        skips=skipped_children(
+            {SNAPSHOT_META_SKIPPED_KEY: [
+                {"tag": "aside", "id": None, "classes": "nope", "reason": "hidden"}
+            ]}
+        )
+    )
+    assert len([s for s in result.sections if s.geometry is not None]) >= 4
+
+
+def test_a_backward_walk_that_matches_nothing_is_not_reported_as_ambiguous():
+    """The zip backward-None conflation: a `None` backward walk fell into the ambiguity branch,
+    where `zip(forward, backward or [])` compared nothing and the diagnostic named the first band
+    as contested — a confident answer to a question nobody asked."""
+    html = """
+    <html><body><main>
+      <section class="only"><h1>One</h1></section>
+      <section class="other"><p>Two</p></section>
+    </main></body></html>
+    """
+    bands = [
+        {"index": 0, "tag": "section", "classes": "only", "top": 0.0, "height": 300.0},
+        {"index": 1, "tag": "section", "classes": "nowhere", "top": 300.0, "height": 300.0},
+    ]
+    result = segment_page(
+        html, page_url="https://x.example/",
+        bands=measured_bands({SNAPSHOT_META_BANDS_KEY: bands}),
+    )
+    refusal = next(d for d in result.diagnostics if d["code"] == BAND_ALIGNMENT_REFUSED_CODE)
+    assert refusal["reason"] == "unmatched"
+    assert refusal["direction"] in ("forward", "backward")
+
+
+def test_the_skip_whitelist_projects_and_bounds_what_the_probe_wrote():
+    raw = {"skipped": [
+        {"tag": "SECTION", "id": "x", "classes": "a " + "b" * 900, "reason": "hidden",
+         "outerHTML": "<section>…</section>"},
+        {"tag": "div", "reason": "made-up"},
+    ]}
+    kept = skipped_for_meta(raw)
+    assert len(kept) == 1
+    assert set(kept[0]) <= {"tag", "id", "classes", "reason"}
+    assert len(kept[0]["classes"]) <= 512
+
+
+def test_a_truncated_probe_says_so_on_the_snapshot():
+    assert bands_were_truncated({"bands_truncated": True}) is True
+    assert bands_were_truncated({}) is False
+
+
+# --- W3: rendered text -------------------------------------------------------------------- #
+
+
+def test_rendered_text_never_reads_script_or_style_source():
+    """The F2 walk labelled the nav — the most valuable clone on the page —
+    `Nav — document.querySelectorAll('.w-dropdown')…`, scored an empty style embed `security`
+    off a CSS comment, and admitted a script shell as a section. One defect, three symptoms:
+    the segmenter judged sections by text that will never exist in the artifact."""
+    html = (
+        '<html><body><main><section class="nav_component">'
+        "<script>document.querySelectorAll('.w-dropdown').forEach(d => d.addEventListener())</script>"
+        "<style>/* Ensure all elements inherit the color */</style>"
+        '<a href="/">Brand Assets</a></section>'
+        '<section class="tail"><p>Tail copy.</p></section></main></body></html>'
+    )
+    node = HTMLParser(html).css_first("section")
+    assert rendered_text(node) == "Brand Assets"
+
+    result = segment_page(html, page_url="https://x.example/")
+    label = result.sections[0].heading or result.sections[0].text_preview
+    assert "querySelectorAll" not in label
+    assert "Ensure all elements" not in label
+    assert "Brand Assets" in label
+
+
+def test_a_shell_whose_only_content_is_source_is_not_a_section():
+    html = (
+        '<html><body><main><div class="w-embed w-script">'
+        "<script>(function(w,d){ if(w.__router)return; })()</script></div>"
+        '<section class="real"><h1>Real</h1></section>'
+        '<section class="tail"><p>Tail.</p></section></main></body></html>'
+    )
+    result = segment_page(html, page_url="https://x.example/")
+    assert [s.role for s in result.sections] == ["hero", "other"]
+
+
+# --- W4: hidden by class ------------------------------------------------------------------ #
+
+
+@pytest.mark.parametrize("token", ["hide", "hidden", "d-none", "sr-only", "w-condition-invisible"])
+def test_a_section_the_page_hides_by_class_is_not_offered_as_a_clone(token: str):
+    html = (
+        f'<html><body><main><section class="banner {token}"><h2>Announcing</h2></section>'
+        '<section class="real"><h1>Real</h1></section>'
+        '<section class="tail"><p>Tail.</p></section></main></body></html>'
+    )
+    result = segment_page(html, page_url="https://x.example/")
+    assert [s.role for s in result.sections] == ["hero", "other"]
+
+
+def test_an_overflow_utility_is_not_a_visibility_one():
+    """`overflow-hidden` is a Tailwind OVERFLOW utility. A suffix rule (`*-hidden`) read it as a
+    visibility one and dropped a real testimonials band on the very page the list was written
+    from — which is why the vocabulary is a closed set of whole tokens."""
+    html = (
+        '<html><body><main><section class="overflow-hidden">'
+        "<blockquote>It changed our practice.</blockquote></section>"
+        '<section class="tail"><p>Tail.</p></section></main></body></html>'
+    )
+    result = segment_page(html, page_url="https://x.example/")
+    assert result.sections[0].role == "testimonial"
+
+
+def test_the_browser_overrules_the_class_name():
+    """A class named `hide` that the stylesheet never acts on is a guess; a measured band is a
+    fact. Where the probe measured the section, it stays."""
+    html = (
+        '<html><body><main><section class="section hide"><h1>Actually shown</h1></section>'
+        '<section class="tail"><p>Tail.</p></section></main></body></html>'
+    )
+    bands = [
+        {"index": 0, "tag": "section", "classes": "section hide", "top": 0.0, "height": 500.0},
+        {"index": 1, "tag": "section", "classes": "tail", "top": 500.0, "height": 200.0},
+    ]
+    result = segment_page(
+        html, page_url="https://x.example/",
+        bands=measured_bands({SNAPSHOT_META_BANDS_KEY: bands}),
+    )
+    assert len(result.sections) == 2
+    assert result.sections[0].geometry is not None

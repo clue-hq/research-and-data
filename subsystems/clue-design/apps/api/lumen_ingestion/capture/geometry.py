@@ -184,12 +184,28 @@ GEOMETRY_JS = r"""
   const sections = [];
   const bands = [];
   const sectionEls = [];
+  // Every flow child the probe DECLINED to measure, and why (clone-fidelity F2 wave W1).
+  // Without this the band sequence is a subsequence of the root's children with no record of
+  // what was removed, so a page that hides one of several same-class sections leaves the
+  // harvest ambiguous — and ambiguity costs the whole page its geometry. The browser is the
+  // only thing that can answer "is this hidden?", so it answers here, once, compactly.
+  const skipped = [];
+  let truncated = false;
+  const noteSkip = (el, reason) => {
+    if (skipped.length >= MAX_SECTIONS) return;
+    skipped.push({
+      tag: el.tagName.toLowerCase(),
+      id: el.getAttribute('id'),
+      classes: el.getAttribute('class'),
+      reason: reason,
+    });
+  };
   for (const el of Array.from(root.children)) {
-    if (sections.length >= MAX_SECTIONS) break;
+    if (sections.length >= MAX_SECTIONS) { truncated = true; noteSkip(el, 'cap'); continue; }
     const cs = getComputedStyle(el);
-    if (cs.display === 'none' || cs.visibility === 'hidden') continue;
+    if (cs.display === 'none' || cs.visibility === 'hidden') { noteSkip(el, 'hidden'); continue; }
     const rect = el.getBoundingClientRect();
-    if (rect.height < 40 || rect.width < innerWidth * 0.5) continue;
+    if (rect.height < 40 || rect.width < innerWidth * 0.5) { noteSkip(el, 'small'); continue; }
     const bgImage = notNone(cs.backgroundImage);
     const top = rect.top + window.scrollY;
     sections.push({
@@ -275,6 +291,8 @@ GEOMETRY_JS = r"""
     viewport: innerWidth,
     surfaces: surfaces,
     sections: sections,
+    skipped: skipped,
+    truncated: truncated,
     gaps: gaps,
     rhythm: rhythm,
     focus: focus,

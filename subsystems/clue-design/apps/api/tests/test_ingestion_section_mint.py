@@ -1008,3 +1008,126 @@ def test_the_backstop_is_the_capture_probes_own_section_ceiling() -> None:
     from lumen_ingestion.sections.bands import MAX_PERSISTED_BANDS
 
     assert SECTION_MINT_CAP == MAX_PERSISTED_BANDS == 40
+
+
+# --------------------------------------------------------------------------- #
+# F2 fix wave — W2 (@font-face degradation), W4 (empty shells), W6 (leading compound)
+# --------------------------------------------------------------------------- #
+
+from lumen_api.fragments import fragment_wrapper_class  # noqa: E402
+
+FRAG_ID = "frag_0123456789abcdef"
+WRAPPER = fragment_wrapper_class(FRAG_ID)
+
+
+def test_a_font_file_we_never_fetched_costs_the_face_and_not_the_section() -> None:
+    """W2 (RULED). One `@media`-wrapped `@font-face` in stripe.com's global stylesheet, whose
+    file the capture layer never fetched, refused EVERY section of the site on the F2 acceptance
+    walk. A font is not a hole: the face falls back to the next family in the stack and the
+    section still renders. So an unrehostable `src` degrades; every other unrehosted reference
+    keeps the hard refusal."""
+    from lumen_api.fragments import scope_fragment_css
+
+    result = scope_fragment_css(
+        "@font-face { font-family: sohne; src: url(/Sohne.woff2) format('woff2') }\n"
+        ".btn { color: red }",
+        fragment_id=FRAG_ID,
+        rehosted={},
+    )
+    assert "Sohne.woff2" not in result.css
+    assert "@font-face" not in result.css
+    assert f".{WRAPPER} .btn" in result.css
+    assert any("@font-face" in note for note in result.notes)
+
+
+def test_a_rehostable_font_still_travels_with_the_fragment() -> None:
+    from lumen_api.fragments import scope_fragment_css
+
+    digest = _digest("woff2-bytes")
+    result = scope_fragment_css(
+        "@font-face { font-family: sohne; src: url(/Sohne.woff2) }",
+        fragment_id=FRAG_ID,
+        rehosted={"/Sohne.woff2": digest},
+    )
+    assert f"/asset-store/{digest}" in result.css
+    assert result.asset_digests == (digest,)
+
+
+def test_an_unrehosted_image_is_still_a_hard_refusal() -> None:
+    """The degradation is font-shaped and stays font-shaped: an `<img>` we cannot serve is a
+    hole in the section, which is the one thing a clone can least afford."""
+    from lumen_api.fragments import FragmentRefused, scope_fragment_css
+
+    with pytest.raises(FragmentRefused) as excinfo:
+        scope_fragment_css(
+            ".hero { background-image: url(/never.png) }", fragment_id=FRAG_ID, rehosted={}
+        )
+    assert excinfo.value.code == "fragment.unrehosted_reference"
+
+
+def test_a_root_qualified_rule_keeps_its_qualifier_in_front_of_the_wrapper() -> None:
+    """W6. `.lumen-frag-x html.w-mod-js [data-w-id]` is an `<html>` INSIDE the wrapper, which can
+    never match — the F2 walk found Webflow's whole interaction layer dead that way. The leading
+    compound addresses the page's state; the wrapper belongs where the section begins."""
+    from lumen_api.fragments import scope_fragment_css
+
+    result = scope_fragment_css(
+        "html.w-mod-js:not(.w-mod-ix) [data-w-id] { opacity: 0 }",
+        fragment_id=FRAG_ID,
+        rehosted={},
+    )
+    assert result.css.startswith("html.w-mod-js:not(.w-mod-ix) ")
+    assert f".{WRAPPER} [data-w-id]" in result.css
+
+
+def test_a_bare_document_selector_still_becomes_the_wrapper() -> None:
+    from lumen_api.fragments import scope_fragment_css
+
+    result = scope_fragment_css(":root { --brand: #0af }", fragment_id=FRAG_ID, rehosted={})
+    assert result.css.startswith(f".{WRAPPER} {{")
+
+
+def test_an_ordinary_selector_is_untouched_by_the_leading_compound_rule() -> None:
+    from lumen_api.fragments import scope_fragment_css
+
+    result = scope_fragment_css(".card .btn:hover { color: red }", fragment_id=FRAG_ID, rehosted={})
+    assert result.css == f".{WRAPPER} .card .btn:hover {{ color: red }}"
+
+
+def test_a_section_that_shows_nothing_after_sanitizing_is_refused() -> None:
+    """W4. The F2 walk offered four empty shells — `<script>`/`<style>`/iframe embeds that
+    sanitize down to a bare `<div>` — as approved, reusable clones, each a row in a human's
+    picker and ~28 KB of CSS at rest. A fragment that renders nothing is not a faithful copy of
+    a section; it is the absence of one."""
+    html = (
+        '<html><body><main>'
+        '<div class="w-embed w-script"><script>pwn()</script></div>'
+        '<section class="real"><h1>Real</h1><p>Copy.</p></section>'
+        '<section class="tail"><p>Tail.</p></section>'
+        "</main></body></html>"
+    )
+    segmentation = segment_page(html, page_url=PAGE_URL, viewport_width=1200)
+    recorder = _Recorder()
+    outcome = mint_sections(
+        segmentation,
+        html=html,
+        stylesheets=[],
+        captured={},
+        screenshot=None,
+        source_kit_id=None,
+        source_kit_version=None,
+        register_bytes=recorder.register_bytes,
+        create_fragment=recorder.create_fragment,
+    )
+    assert "Real" in " ".join(minted.label for minted in outcome.minted)
+    assert not [call for call in recorder.created if "w-script" in call["html"]]
+
+
+def test_an_image_only_section_is_not_mistaken_for_an_empty_shell() -> None:
+    """A logo wall or a bare hero image is a real section with no prose in it at all."""
+    from lumen_ingestion.sections.mint import _shows_anything
+
+    assert _shows_anything(f'<section><img src="/asset-store/{_digest("x")}"></section>')
+    assert _shows_anything("<section><svg><circle></circle></svg></section>")
+    assert not _shows_anything('<section><div class="w-embed"></div></section>')
+    assert not _shows_anything("")
