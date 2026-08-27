@@ -97,3 +97,10 @@ ask-before-interpreting-product-terms, scrapling-is-default-scraper.
 Open at close: old broken Apollo test project (prj_19a43a55…, terra-era failures) — founder not
 yet ruled on deletion; ngrok authtoken still founder-owned; OpenRouter credit top-up still
 recommended; editor-openai-demo/ + editors 3001/3210 disposable.
+
+### Söhne addendum: the accepted Stripe artifact now shapes with the real face
+Kit face REBOUND to the TTF (asset_ing_e3ac358a2cb252f5, woff2→TTF via fontTools — the editor
+canvas requires TTF/OTF; server skia reads it too). POST /documents/doc_c451f16c…/export
+(format png) re-rendered and applied the recomputed text geometry (headline reflowed 2 lines→1,
+proving the new metrics; doc at current_version 93). Re-render saved to the fallback deck
+(stripe-chat-generated-REAL-SOHNE.png). Any open editor tab needs ⌘⇧R to pick the face up.
