@@ -208,6 +208,10 @@ _SKIP_TAGS = frozenset(
         "head",
     }
 )
+#: Elements that are a section by their own tag, however little they contain.
+_SECTION_TAGS = frozenset(
+    {"nav", "header", "footer", "main", "section", "article", "aside", "form", "table"}
+)
 #: Content that counts even when an element carries no text.
 _MEDIA_SELECTOR = "img, svg, picture, video, canvas, iframe, input, button, form"
 _HIDDEN_STYLE = re.compile(r"(display\s*:\s*none|visibility\s*:\s*hidden)", re.IGNORECASE)
@@ -321,13 +325,17 @@ def segment_page(
     diagnostics: list[dict[str, Any]] = []
     candidates, skipped = _page_flow(tree)
 
+    if candidates:
+        _bind_bands(candidates, tuple(bands), diagnostics)
+        candidates = _section_shaped(candidates, skipped)
+
     if not candidates:
         diagnostics.append(
             _diag(
                 NO_SECTIONS_CODE,
                 "warning",
-                "no top-level section survived segmentation — the page's flow is empty or "
-                "entirely non-rendering",
+                "no top-level section survived segmentation — the page's flow is empty, "
+                "entirely non-rendering, or nothing but loose content",
             )
         )
         return SectionSegmentation(
@@ -335,25 +343,13 @@ def segment_page(
             snapshot_id=snapshot_id,
             viewport_width=viewport_width,
             sections=(),
-            diagnostics=tuple(diagnostics),
+            diagnostics=tuple(diagnostics) + tuple(_skip_diagnostic(skipped)),
         )
 
-    _bind_bands(candidates, tuple(bands), diagnostics)
     _assign_geometry(candidates, viewport_width, diagnostics)
     _call_roles(candidates)
 
-    if skipped:
-        with_text = [entry for entry in skipped if entry[1]]
-        diagnostics.append(
-            _diag(
-                SKIPPED_CONTENT_CODE,
-                "warning" if with_text else "info",
-                f"{len(skipped)} flow child(ren) were not segmented "
-                f"({', '.join(tag for tag, _ in skipped[:_NAMED_IN_MESSAGE])})"
-                + (f"; {len(with_text)} carried text" if with_text else ""),
-                skipped=[{"tag": tag, "text": text} for tag, text in skipped],
-            )
-        )
+    diagnostics.extend(_skip_diagnostic(skipped))
 
     sections = tuple(
         SectionRecord(
@@ -453,6 +449,46 @@ def _page_flow(tree: HTMLParser) -> tuple[list[_Candidate], list[tuple[str, str]
     if measured[1] == body_path:
         return _children_as_candidates(body_node, body_path, True, skipped), skipped
     return _expand(body_node, body_path, measured[1], skipped), skipped
+
+
+def _section_shaped(
+    candidates: list[_Candidate], skipped: list[tuple[str, str]]
+) -> list[_Candidate]:
+    """Keep the flow children that are SECTIONS; note the loose content that is not.
+
+    A section is something a page could reuse: a container, a sectioning element, or whatever the
+    browser measured as a band. A bare ``<h1>`` or ``<p>`` sitting directly in the body — a
+    prototype page, a stripped template, a body whose wrapper never rendered — is real content
+    and still not a section, because there is nothing there to clone. Dropping it silently would
+    overstate coverage, so each one is named in the skip diagnostic.
+    """
+    kept: list[_Candidate] = []
+    for candidate in candidates:
+        if (
+            candidate.band is not None
+            or candidate.tag in _SECTION_TAGS
+            or _element_children(candidate.node)
+        ):
+            kept.append(candidate)
+        else:
+            skipped.append((candidate.tag, candidate.text[:80]))
+    return kept
+
+
+def _skip_diagnostic(skipped: list[tuple[str, str]]) -> list[dict[str, Any]]:
+    if not skipped:
+        return []
+    with_text = [entry for entry in skipped if entry[1]]
+    return [
+        _diag(
+            SKIPPED_CONTENT_CODE,
+            "warning" if with_text else "info",
+            f"{len(skipped)} flow child(ren) were not segmented "
+            f"({', '.join(tag for tag, _ in skipped[:_NAMED_IN_MESSAGE])})"
+            + (f"; {len(with_text)} carried text" if with_text else ""),
+            skipped=[{"tag": tag, "text": text} for tag, text in skipped],
+        )
+    ]
 
 
 def _expand(
@@ -566,6 +602,26 @@ def _bind_bands(
         return
 
     measured = [candidate for candidate in candidates if candidate.in_measured_root]
+    if not any(band.element_id or band.class_names for band in bands):
+        # An ANONYMOUS sequence (a pre-F2.1 harvest recorded tags and heights only) carries
+        # nothing to tell one <div> from the next, so in-order tag matching would cheerfully bind
+        # the hero's band to a nav div the browser had skipped. Demand that it account for every
+        # parsed section instead: a 1:1 sequence is checkable, a subsequence is a guess.
+        if len(bands) != len(measured):
+            diagnostics.append(
+                _diag(
+                    BAND_ALIGNMENT_REFUSED_CODE,
+                    "warning",
+                    f"the measured band sequence carries no element identity and its "
+                    f"{len(bands)} band(s) do not line up one-for-one with the "
+                    f"{len(measured)} parsed section(s) of the measured root — no geometry "
+                    "was bound",
+                    bands=len(bands),
+                    measured_sections=len(measured),
+                )
+            )
+            return
+
     bound: list[tuple[_Candidate, MeasuredBand]] = []
     cursor = 0
     for band in bands:
@@ -593,12 +649,22 @@ def _bind_bands(
 
 
 def _band_matches(candidate: _Candidate, band: MeasuredBand) -> bool:
+    """Is this parsed section the element the browser measured as that band?
+
+    Class lists are compared by INTERSECTION rather than equality on purpose: the capture
+    serializes the html before it runs the geometry probe, so the page's own JS can add or drop
+    a class in between (a sticky nav gaining ``is-scrolled`` is the everyday case). Sharing a
+    class is still decisive — two different sections of a real page do not share their names —
+    while demanding an identical list would refuse a whole page's geometry over one toggled
+    modifier.
+    """
     if candidate.tag != band.tag:
         return False
-    if band.element_id and candidate.element_id != band.element_id:
+    if band.element_id and candidate.element_id and candidate.element_id != band.element_id:
         return False
-    if band.class_names and candidate.class_names != band.class_names:
-        return False
+    if band.class_names and candidate.class_names:
+        if not set(band.class_names) & set(candidate.class_names):
+            return False
     return True
 
 

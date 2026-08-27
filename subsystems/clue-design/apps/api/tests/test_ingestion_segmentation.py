@@ -30,6 +30,7 @@ from lumen_ingestion.sections.segment import (
     ESTIMATED_GEOMETRY_CODE,
     NO_BAND_EVIDENCE_CODE,
     NO_SECTIONS_CODE,
+    SKIPPED_CONTENT_CODE,
     UNMEASURED_SECTION_CODE,
     resolve_section,
     segment_page,
@@ -340,6 +341,46 @@ def test_a_second_hero_is_demoted_rather_than_named_twice():
     assert any("already" in ev.detail for ev in result.sections[1].evidence)
 
 
+def test_a_flat_page_keeps_its_containers_and_names_the_loose_content_it_dropped():
+    # The shape of this repo's own rendered snapshot fixture: a body whose children are a
+    # header and then bare <h1>/<p>/<button>/<img> elements. A lone heading is not a section —
+    # nothing about it can be reused as a fragment — but silently losing the page's copy would
+    # be a lie about coverage, so the drop is named.
+    html = """
+    <html><body>
+      <header class="site-header"><a href="/">Home</a><a href="/a">A</a><a href="/b">B</a></header>
+      <h1>Clinical intelligence for modern care</h1>
+      <p>Insight Health turns raw clinical data into confident decisions.</p>
+      <button class="btn">Book a demo</button>
+    </body></html>
+    """
+    result = segment_page(html, page_url="https://x.example/")
+    assert _roles(result) == ["nav"]
+    skipped = next(d for d in result.diagnostics if d["code"] == SKIPPED_CONTENT_CODE)
+    assert {entry["tag"] for entry in skipped["skipped"]} == {"h1", "p", "button"}
+    assert any("Clinical intelligence" in entry["text"] for entry in skipped["skipped"])
+
+
+def test_a_measured_band_makes_even_a_leaf_element_a_section():
+    html = """
+    <html><body>
+      <h1>Clinical intelligence for modern care</h1>
+      <p>Insight Health turns raw clinical data into confident decisions.</p>
+    </body></html>
+    """
+    bands = [
+        {"index": 0, "tag": "h1", "top": 0.0, "height": 420.0},
+        {"index": 1, "tag": "p", "top": 420.0, "height": 300.0},
+    ]
+    result = segment_page(
+        html,
+        page_url="https://x.example/",
+        bands=measured_bands({SNAPSHOT_META_BANDS_KEY: bands}),
+    )
+    assert [s.tag for s in result.sections] == ["h1", "p"]
+    assert result.sections[0].geometry.bottom_px == 420.0
+
+
 def test_a_page_with_nothing_in_it_yields_no_sections_and_says_so():
     result = segment_page("<html><body></body></html>", page_url="https://x.example/")
     assert result.sections == ()
@@ -387,6 +428,76 @@ def test_measured_bands_tolerate_a_pre_f21_probe_record():
     )
     assert measured_bands({}) == ()
     assert measured_bands(None) == ()
+
+
+def test_a_band_whose_class_list_drifted_since_the_html_was_captured_still_matches():
+    # The capture serializes the html BEFORE it runs the geometry probe, so a page's own JS can
+    # add or drop a class in between (a sticky nav's `is-scrolled` is the everyday case). A band
+    # that still shares a class with the element is the same band.
+    drifted = [dict(band) for band in WEBFLOW_BANDS]
+    drifted[0]["classes"] = "section_home-hero is-scrolled"
+    drifted[1]["classes"] = "section_home-logos w-condition-invisible"
+    result = segment_page(
+        WEBFLOW_HTML,
+        page_url="https://x.example/",
+        bands=measured_bands({SNAPSHOT_META_BANDS_KEY: drifted}),
+    )
+    hero = next(s for s in result.sections if s.role == "hero")
+    assert hero.band_index == 0
+    assert hero.geometry.top_px == 96.0
+    assert BAND_ALIGNMENT_REFUSED_CODE not in [d["code"] for d in result.diagnostics]
+
+
+def test_bands_that_identify_nothing_must_line_up_one_for_one():
+    # A pre-F2.1 harvest recorded tags and heights only. Tag-order matching alone would happily
+    # bind the hero's band to a nav <div> the browser skipped, so an anonymous sequence has to
+    # account for every parsed section or it is refused outright.
+    anonymous = [
+        {"index": index, "tag": "section", "height": 200.0}
+        for index in range(len(WEBFLOW_BANDS) - 1)
+    ]
+    refused = segment_page(
+        WEBFLOW_HTML,
+        page_url="https://x.example/",
+        bands=measured_bands({SNAPSHOT_META_BANDS_KEY: anonymous}),
+    )
+    assert BAND_ALIGNMENT_REFUSED_CODE in [d["code"] for d in refused.diagnostics]
+    assert all(section.geometry is None for section in refused.sections)
+
+    complete = [
+        {"index": index, "tag": "section", "height": 200.0}
+        for index in range(len(WEBFLOW_BANDS))
+    ]
+    bound = segment_page(
+        WEBFLOW_HTML,
+        page_url="https://x.example/",
+        bands=measured_bands({SNAPSHOT_META_BANDS_KEY: complete}),
+    )
+    assert next(s for s in bound.sections if s.role == "hero").band_index == 0
+
+
+def test_a_role_declared_only_in_aria_is_still_a_landmark():
+    html = """
+    <html><body>
+      <div role="navigation"><a href="/">Home</a><a href="/a">A</a><a href="/b">B</a></div>
+      <div><h1>Hello</h1><p>Copy.</p></div>
+      <div role="contentinfo"><p>© 2026 Someone</p></div>
+    </body></html>
+    """
+    result = segment_page(html, page_url="https://x.example/")
+    assert _roles(result) == ["nav", "hero", "footer"]
+    assert all(
+        any(ev.signal == "landmark" for ev in section.evidence)
+        for section in result.sections
+        if section.role in {"nav", "footer"}
+    )
+
+
+def test_resolving_a_section_against_different_html_refuses_rather_than_guesses():
+    result = segment_page(WEBFLOW_HTML, page_url="https://x.example/")
+    footer = next(s for s in result.sections if s.role == "footer")
+    assert resolve_section("<html><body><p>different page</p></body></html>", footer) is None
+    assert result.by_role("footer") == (footer,)
 
 
 def test_a_persisted_snapshot_carries_the_bands_the_probe_measured():
