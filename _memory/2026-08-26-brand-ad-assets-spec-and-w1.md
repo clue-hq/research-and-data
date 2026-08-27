@@ -281,3 +281,40 @@ UNPROVEN pending a re-run once the timeout line is added. Re-run is cheap
 
 Orchestrator note: `CLUE_DATABASE_URL` uses the `postgresql+asyncpg://`
 SQLAlchemy scheme — asyncpg.connect needs it rewritten to `postgresql://`.
+
+## CLEAN-ROOM RE-RUN (2026-08-27 late morning) — FULL PASS, program complete
+
+Pure `.env` (zero overrides), tip d0f8cd390. Every W5 criterion passed:
+- R3-A: `resolver_used: pdl` found 18511550 autonomously; advertiser_verified.
+- Harvest converged idempotently on the same 4 creatives (URL-derived
+  creative_id; 1 credit); card v2. NOTE: 20/24 Apollo ads dropped
+  `not_static:video` — the card describes a narrow slice (product q: video
+  stills as references someday?).
+- IMAGES TRANSPORT PROVEN IN PRODUCTION: 8/8 pregenerated, aspect_ratio
+  HONORED (16:9 → 1536×864 exact), cost visible ($0.13–0.21/img,
+  upstream_inference_cost). Prior failure = 60s client timeout vs 71–122s
+  real latency (~$3–5 burned on 24 abandoned requests). input_references
+  still UNRESOLVED (400 came back as a safety rejection, ambiguous; never
+  exercised by pregeneration which passes no refs).
+- R2-D closed in anger: agent viewed all 8 pregenerated grounds and PLACED
+  one — zero image_generated events; the lane's own imagery finally used.
+- Unseeded turn accepted: 58/90 calls, 1071s/1800s, exhausted null, TTFP
+  293s, `reference_fidelity: 3 TYPED` — first 3 ever, earned via round-2
+  self-correction. Real Apollo wordmark placed (D8 kit clean — OpenAI glyph
+  GONE from the family); fonts paint, zero preflight diagnostics.
+- A3 cancel live: requested → stopped 59s later at call boundary,
+  stop_reason cancelled_by_request, honest event + gap. PASS.
+- Setup killed FOUR stale projections_main workers (Aug 20/22/24, design
+  runtime enabled) — the R3-B hazard class again; capability gating merged
+  but stale-process hygiene remains operational, not structural.
+
+NEW/REMAINING LEDGER: R4-A (low) one transient APIConnectionError kills the
+whole turn (orchestrator loop doesn't retry; leaf calls do); input_references
+unproven; SVG kit assets still unviewable in RUNS (D3 merged — check why
+live path still refused: possibly needs API restart w/ new code — it WAS
+restarted at d0f8cd390... investigate); WOFF2-in-SVG export; brand preflight
+overwrites style($type.*) sizes; unclaimable-job silence (A2 founder q);
+pregeneration spend cap decision; video-heavy advertisers coverage.
+
+Preview: run_a4cc5e8b…/iterations/007/preview.png — yellow holographic wash
+(PLACED pregenerated ground), serif 97%, real wordmark, dark CTA. The demo ad.
