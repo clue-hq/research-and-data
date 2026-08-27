@@ -15,6 +15,11 @@ from .candidates import collect_asset_candidates
 from .net import BoundedFetcher, FetchRequest
 from .snapshot import Download, SiteSnapshot, Stylesheet, HTML_MAX_BYTES
 
+#: Same defect class as the ``url()`` readers ``cssurl`` consolidated — it stops at an
+#: escaped ``)``, never unescapes, and truncates a quoted token at its first space. It is
+#: deliberately NOT routed through ``cssurl``: a bare-string ``@import "sheet.css";`` carries
+#: no ``url()`` and so is invisible to that reader. See ``cssurl``'s docstring for the full
+#: analysis and the residual. Owner: unassigned.
 _IMPORT_RE = re.compile(
     r"@import\s+(?:url\(\s*)?['\"]?([^'\")\s]+)['\"]?", re.IGNORECASE
 )

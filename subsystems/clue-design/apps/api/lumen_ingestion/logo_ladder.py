@@ -393,6 +393,17 @@ def discover_brand_pages(html_or_tree, base_url: str, domain: str) -> list[str]:
 #: A ``background`` / ``background-image`` declaration; group 1 is its value, which ends at
 #: the ``;`` that closes the declaration. The value is handed WHOLE to the shared
 #: escape-aware reader instead of being scanned for ``url(`` here — see ``_parse_css``.
+#:
+#: This is NOT byte-identical scoping to the regex it replaced. The old pattern hopped over
+#: ``[^;}]*`` to reach ``url(`` but then captured with ``[^'\")]+``, a class that does NOT
+#: exclude ``;`` — so a literal semicolon INSIDE a url token (``url(/a;b.png)``) survived
+#: there and truncates here. That is a deliberate alignment, not a regression: this is now
+#: the same declaration scoping ``candidates._CSS_ASSET_DECL_RE`` and
+#: ``imgsrc._BACKGROUND_DECL_RE`` already use (both ``[^;{}]*``), so a ``;``-bearing url is a
+#: pre-existing package-wide limitation shared by all three scopers rather than a ladder
+#: quirk. Before, the ladder could rank a candidate the collector never fetched bytes for.
+#: Fixing it properly means teaching all three to skip a ``;`` inside a ``url()`` token —
+#: recorded for F2, deliberately not done here.
 _BG_DECL_RE = re.compile(r"background(?:-image)?\s*:([^;}]*)", re.I)
 
 
@@ -2586,8 +2597,21 @@ async def fetch_logo_family(
     Every request goes through the shared SSRF/redirect/size guard in
     `capture.net`, which re-guards redirect hops and caps a logo at 15 MB.
     """
-    # Deferred import: `capture.static` imports this module, so a module-scope
-    # import of `capture.net` would be a cycle.
+    # Deferred import: `capture.candidates` imports this module, so a module-scope import of
+    # `capture.net` would be a cycle — importing `capture.net` runs the `capture` package
+    # `__init__`, which imports `.static` → `.candidates` → back here.
+    #
+    # The `from .capture.cssurl import iter_css_urls` at the top of this module runs that
+    # same `__init__` and is nonetheless safe, for two reasons that are worth stating because
+    # they are not obvious: `cssurl` is a LEAF (it imports only `re` and `typing`, nothing
+    # intra-package), and `candidates` touches `logo_ladder` only at CALL time, so the
+    # partially-initialized module it binds during the cycle is fully built long before
+    # anything reads an attribute off it. Verified in all three entry orders
+    # (logo_ladder-first, capture-first, candidates-first).
+    #
+    # The fragility: that safety is a property of `cssurl` staying a leaf. If it ever grows
+    # an intra-package import, the candidates-first order breaks — `capture.net` is only the
+    # more obvious version of the same hazard.
     import httpx
 
     from .capture.net import (
