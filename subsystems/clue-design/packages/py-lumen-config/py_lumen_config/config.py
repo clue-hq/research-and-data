@@ -117,7 +117,12 @@ class Settings(BaseSettings):
     # A typo must fail at startup, not silently post the wrong shape to a paid
     # endpoint forever, so the value is enum-validated below.
     image_model_api_style: str = "chat"
-    image_model_timeout_s: float = 60.0
+    # Raised 60 → 240 (founder ruling 2026-08-27): the clean-room W5 run proved
+    # the old default incompatible with the founder-ordered `openai/gpt-image-2`
+    # (measured 67–97s/image at quality=high) — every call timed out and burned
+    # all retries, so pre-generation shipped 0/8 while looking like a model
+    # outage. A generous ceiling costs fast chat-path models (~14s) nothing.
+    image_model_timeout_s: float = 240.0
     image_model_max_retries: int = 2
     # Optional OpenRouter attribution headers (ranking only; harmless if unset).
     image_model_http_referer: str | None = None
