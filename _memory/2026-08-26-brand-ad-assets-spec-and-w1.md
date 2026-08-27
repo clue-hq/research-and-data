@@ -318,3 +318,54 @@ pregeneration spend cap decision; video-heavy advertisers coverage.
 
 Preview: run_a4cc5e8b…/iterations/007/preview.png — yellow holographic wash
 (PLACED pregenerated ground), serif 97%, real wordmark, dark CTA. The demo ad.
+
+## WAVE B CLOSE-OUT (2026-08-27 evening) — validation complete; generalization NOT achieved
+
+**Headline: Apollo's clean-room pass did not generalize. Each new brand broke
+a different stage.** Ramp: harvest/card fine (9 kept, excellent card) but
+W-B1 double-distill orphaned all 10 pregen assets (stamped card_version 1,
+lane serves v2 → 0 visible) and W-B2 auto-attach silently declined
+(unreproducible; selector returns an id when run by hand; THE PATH IS SILENT
+WHEN IT DECLINES). Cursor: W-B3 PDL resolved cursor.com → 105610681
+("anysphere" legal entity, 0 ads) not 105614038 ("Cursor", paid-for-by-
+Anysphere, 4489 ads) — advertiser-page vs legal-entity distinction; W-B3b
+advertiser_verified:true is VACUOUS on a 0-ad harvest (mis-resolution
+presents as "brand has no ads" — most dangerous shape); W-B3c even the right
+page is 24/24 SPONSORED_INMAILS (static-only coverage fails for Cursor
+regardless). W-B4 dark Cursor ad placed an unlabelled harvested look-alike
+image as the logo — LUMB0810 guards kit slots only. W-B5 fetch_logo assets
+NOT in library (view 404s; agent shipped a logo it couldn't see) — though
+orchestrator EYEBALLED the B2b preview: it IS Shopify's real mark, correct
+co-brand etiquette. Window crowding: NOT the cause (21/24; headroom thin).
+
+**B4 probes:** (a) input_references on Images endpoint: WORKS — our exact
+chat-part data:-URL shape returns 200; round-4's 400 was content-safety on a
+2x2 test image (correction recorded). Safe for production refs. (b)
+transparent_background: NO — RGB, no alpha, painted grey field; the Images
+transport CANNOT do transparent spot illustrations → the generative-imagery
+skill §4 teaches something currently unachievable (skill-honesty fix needed,
+D6 review).
+
+**B1 sweep (audit agent):** 12/12 ingest without crashes; D8 anchor refuses
+foreign glyphs BUT is artwork-blind — 3 regressions (intercom wordmark =
+12-customer-logo montage; cursor primary = wallpaper painting named
+"cursor"; notion primary = Calendar "31" icon from logo-light.svg).
+reversed slot empty 12/12 (website path can't fill it — color-mode gap now
+quantified 100%); wordmark 0/12 correct; ramp captured only 1 asset while
+"succeeding". **B2a: fetch_logo = SHARED/protected** (routes through
+logo_ladder.resolve; inherited D8 free). **B5 forensic: D3 never worked** —
+re-implemented raster node dropped required `corner` field; bare except
+swallowed CoreError; D3 tests used stub core (never met real engine).
+One-field fix + read-through + real-engine test named.
+
+**B6:** Rust minus visual_regression: 498 passed, 4 failed = documented
+lumen-skia golden class. Full apps/api: 32 failed → 17 documented
+custom-component/custody cluster + ~10 proven env-VALUE contamination
+(sourced .env forces images transport over chat-body assertions) + **5
+persist post-env-cleanup, UNCLASSIFIED (need base A/B):**
+test_web_turn_asset_base_url ×2, test_web_operations theme-leak,
+test_web_export brand_geometry ×2.
+
+Reports: .context/wave-b-audit-report.md + .context/wave-b-runs-report.md.
+Credits: Adyntel 3, PDL 2. Isolation held (nothing outside colombo touched;
+a third-party workspace using colombo's API was observed and left alone).
