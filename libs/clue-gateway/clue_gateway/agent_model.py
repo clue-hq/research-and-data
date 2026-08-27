@@ -572,6 +572,34 @@ class OpenRouterAgentModelProvider:
             extra_body["provider"] = {"sort": self._config.openrouter_provider_sort}
         if self._config.openrouter_usage_include:
             extra_body["usage"] = {"include": True}
+        if self._config.openrouter_chat_completions_fallback and not model_id.startswith(
+            "openai/"
+        ):
+            # OpenRouter's ``/responses`` translation for non-OpenAI providers rejects the
+            # platform conversation's array-shaped message content (grok-4.6 400s
+            # ``invalid_union: expected string, received array`` on the tool-result follow-up —
+            # live, 2026-08-27; the design deepagent's plain-string turns pass, which is why
+            # this is config-scoped, not unconditional). On chat-completions the reasoning
+            # request rides ``extra_body`` — Responses-only keys (``summary``) stripped.
+            if reasoning is not None:
+                chat_reasoning = {
+                    k: v for k, v in reasoning.items() if k in ("effort", "max_tokens")
+                }
+                if chat_reasoning:
+                    extra_body["reasoning"] = chat_reasoning
+            return ChatOpenAI(  # type: ignore[call-arg]
+                model=model_id,
+                api_key=self._api_key,
+                base_url=self._config.base_url,
+                timeout=timeout_s,
+                max_retries=max_retries,
+                max_tokens=max_output_tokens,
+                temperature=temperature,
+                stream_usage=True,
+                http_client=self._http_client,
+                http_async_client=self._http_async_client,
+                extra_body=extra_body or None,
+            )
         # Runtime aliases are intentionally friendlier than ChatOpenAI's generated static type.
         return ChatOpenAI(  # type: ignore[call-arg]
             model=model_id,
