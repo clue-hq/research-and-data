@@ -1,5 +1,18 @@
 # Clone-Fidelity Master Plan — verbatim fragments, Ploy-grade output (Phases F0–F5)
 
+> **STATUS 2026-08-27 (later still) — PHASE F0 COMPLETE.** Executed via SDD (3 tasks, 5 fix
+> rounds, independent review per task, final whole-phase review + one fix wave), commits
+> `7c11f0eb6..298abe98d` on `integration/frontend-design-part-iv-v2`, local only. Live acceptance
+> walk on insighthealth.ai: **all four criteria PASS** (durable snapshot+screenshot; 212/215
+> assets captured with 3 loud drops and 0 silent; Aeonik binaries + ToU embed stamp; mint
+> `#30D8A7` seated as `surface.brand` at `basis: declared`). Full apps/api suite: 1054 tests,
+> 17 failures — all the pre-existing custom-component family (missing node dep in this
+> workspace), zero F0-owned. Evidence trail: `.superpowers/sdd/2026-08-27-clone-fidelity-master-plan/`
+> (preserved) + `_memory/2026-08-27-f0-clone-capture-complete.md`. Carried to F1: Rust
+> `FontLicense.basis` field + publish exclusions manifest (per D-F2), the F2 deferral register in
+> the ledger, and the logo_ladder `url()` fourth-copy defect (needs owner). FOUNDER FLAGS open:
+> trial-font embeddability under ToU basis; colombo live-worker shutdown for suite runs.
+>
 > **STATUS 2026-08-27 (later) — RATIFIED. Founder ruled all §2 decision points (see RULED entries);
 > the plan is COMPLETE and awaiting dispatch order. Nothing dispatched yet.**
 >
