@@ -208,6 +208,9 @@ _SKIP_TAGS = frozenset(
         "head",
     }
 )
+#: The ancestors that make a nested ``<header>``/``<footer>`` that thing's header rather than the
+#: page's (the HTML standard's own scoping rule for the ``banner``/``contentinfo`` landmarks).
+_LANDMARK_SCOPING_TAGS = frozenset({"article", "aside", "main", "nav", "section"})
 #: Elements that are a section by their own tag, however little they contain.
 _SECTION_TAGS = frozenset(
     {"nav", "header", "footer", "main", "section", "article", "aside", "form", "table"}
@@ -380,9 +383,16 @@ def segment_page(
 def resolve_section(source: HTMLParser | str, record: SectionRecord) -> Node | None:
     """Re-find a section's element in a fresh parse of the same html — or ``None``.
 
-    ``None`` rather than an exception because a caller holding a record and different html has a
-    real decision to make (re-segment, or refuse the mint), and an exception here would only
-    move it.
+    A path is a POSITION, and positions move: insert one section above the hero and the hero's
+    path now points at its neighbour. Walking the path alone would hand that neighbour back with
+    every appearance of success, and minting extracts ``resolve_section(...).html`` — so a silent
+    shift mints the wrong subtree, which is precisely the failure a durable handle exists to
+    prevent. The path therefore only proposes; the element has to still LOOK like the section
+    that was recorded (same tag, and the same id or a shared class name) before it is returned.
+
+    ``None`` rather than an exception because a caller holding a record and drifted html has a
+    real decision to make — re-segment, or refuse the mint — and an exception here would only
+    move that decision somewhere less informed.
     """
     tree = source if isinstance(source, HTMLParser) else HTMLParser(source)
     node = tree.root
@@ -393,7 +403,27 @@ def resolve_section(source: HTMLParser | str, record: SectionRecord) -> Node | N
         if index >= len(children):
             return None
         node = children[index][1]
-    return node
+    return node if _matches_record(node, record) else None
+
+
+def _matches_record(node: Node, record: SectionRecord) -> bool:
+    """Is the element at the end of the path still the section the record describes?
+
+    Identity is checked in the order it is trustworthy: an id is unique on a page, so a recorded
+    id must be the id found; otherwise a shared class name settles it (INTERSECTION, for the same
+    reason band matching uses it — a page's own JS toggles classes between the html snapshot and
+    anything that re-parses it). A section that had neither is checked on its tag alone, which is
+    all it ever offered.
+    """
+    if (node.tag or "").lower() != record.tag:
+        return False
+    found_id = (node.attributes.get("id") or "").strip() or None
+    if record.element_id:
+        return found_id == record.element_id
+    if record.class_names:
+        found = set((node.attributes.get("class") or "").split())
+        return bool(found & set(record.class_names))
+    return True
 
 
 # --- candidates ------------------------------------------------------------------------------
@@ -416,6 +446,7 @@ class _Candidate:
     has_h1: bool
     has_quote: bool
     in_measured_root: bool
+    is_page_scoped: bool = True
     band: MeasuredBand | None = None
     geometry: SectionGeometry | None = None
     evidence: list[SectionEvidence] = None  # type: ignore[assignment]
@@ -571,7 +602,34 @@ def _candidate(node: Node, path: tuple[int, ...], *, in_measured_root: bool) -> 
         has_h1=bool(node.css("h1")),
         has_quote=bool(node.css("blockquote")) or bool(node.css("q")),
         in_measured_root=in_measured_root,
+        is_page_scoped=_is_page_scoped(node),
     )
+
+
+def _is_page_scoped(node: Node) -> bool:
+    """Does a ``<header>``/``<footer>`` here belong to the PAGE, or to a section of it?
+
+    The HTML standard already answers this and it is worth following literally: a ``<header>`` is
+    the ``banner`` landmark, and a ``<footer>`` the ``contentinfo`` landmark, only when it is not
+    inside an ``article``, ``aside``, ``main``, ``nav`` or ``section``. Inside one of those it is
+    that thing's own header — a section heading block, not the site's masthead.
+
+    This replaced a proxy that looked equivalent and was not: "outside the capture probe's
+    measured root" agrees with the standard on a page that HAS a ``<main>``, and on a page
+    without one — which is most Webflow pages, where the wrapper is a plain ``<div>`` — it marks
+    every body child as in-root, so the site header lost its landmark and a class token like
+    `masthead` was left to name it a hero. Ancestry is the fact; root membership was a stand-in
+    for it that quietly stopped being true.
+    """
+    parent = node.parent
+    while parent is not None:
+        tag = (parent.tag or "").lower()
+        if tag in _LANDMARK_SCOPING_TAGS:
+            return False
+        if tag in {"body", "html"}:
+            break
+        parent = parent.parent
+    return True
 
 
 # --- band alignment --------------------------------------------------------------------------
@@ -584,11 +642,22 @@ def _bind_bands(
 ) -> None:
     """Line the measured bands up with the parsed sections, or use none of them.
 
-    The bands are, by construction, a SUBSEQUENCE of the measured root's children (the browser
-    dropped the invisible and the tiny), so the match is a greedy in-order walk that may skip a
-    parsed section but may never reorder one. Anything less than a total match is refused: a band
-    bound to the wrong element would hand minting a crop of the neighbouring section, and a
-    plausible wrong picture is the failure this whole phase exists to prevent.
+    The bands are, by construction, a SUBSEQUENCE of the measured root's children: the browser
+    skipped whatever was hidden, under 40px tall, or narrower than half the viewport, and this
+    module cannot reproduce any of those judgements without the stylesheet and a layout engine.
+    So the alignment is a greedy in-order walk that may skip a parsed section but may never
+    reorder one — and a greedy walk has one failure mode, which is that it takes the FIRST thing
+    that matches whether or not it was the only one.
+
+    That is not hypothetical. Three sections named alike with the middle one hidden by a class
+    (`w-condition-invisible` on a Webflow page) binds the third band's geometry to the second
+    section, and every downstream consumer then crops a picture of the wrong part of the page.
+    So the walk is run in BOTH directions and the two answers must agree. Where they do, there is
+    exactly one way to line the sequence up and it is that one; where they differ, the evidence
+    genuinely does not say which section the band belongs to, and the whole binding is refused.
+
+    Refusing costs geometry. Guessing costs a wrong picture that looks right, which is the
+    failure this phase exists to prevent.
     """
     if not bands:
         diagnostics.append(
@@ -616,36 +685,95 @@ def _bind_bands(
                     f"{len(bands)} band(s) do not line up one-for-one with the "
                     f"{len(measured)} parsed section(s) of the measured root — no geometry "
                     "was bound",
+                    reason="anonymous-count-mismatch",
                     bands=len(bands),
                     measured_sections=len(measured),
                 )
             )
             return
 
-    bound: list[tuple[_Candidate, MeasuredBand]] = []
+    forward = _greedy_alignment(measured, bands)
+    if forward is None:
+        unmatched = _first_unmatched_band(measured, bands)
+        diagnostics.append(
+            _diag(
+                BAND_ALIGNMENT_REFUSED_CODE,
+                "warning",
+                f"the measured band sequence ({len(bands)} bands) could not be aligned with the "
+                f"{len(measured)} parsed section(s) of the measured root; band {unmatched} "
+                "matched no section — no geometry was bound",
+                reason="unmatched",
+                bands=len(bands),
+                measured_sections=len(measured),
+                unmatched_band=unmatched,
+            )
+        )
+        return
+
+    backward = _greedy_alignment(measured, bands, reverse=True)
+    if backward != forward:
+        contested = next(
+            (
+                bands[position].index
+                for position, (left, right) in enumerate(zip(forward, backward or []))
+                if left != right
+            ),
+            bands[0].index,
+        )
+        diagnostics.append(
+            _diag(
+                BAND_ALIGNMENT_REFUSED_CODE,
+                "warning",
+                f"the measured band sequence has more than one way to line up with the "
+                f"{len(measured)} parsed section(s) of the measured root — band {contested} "
+                "could belong to either of two sections that name themselves alike, and the "
+                "capture kept nothing that tells them apart, so no geometry was bound",
+                reason="ambiguous",
+                bands=len(bands),
+                measured_sections=len(measured),
+                contested_band=contested,
+            )
+        )
+        return
+
+    for position, band in enumerate(bands):
+        measured[forward[position]].band = band
+
+
+def _greedy_alignment(
+    measured: list[_Candidate], bands: tuple[MeasuredBand, ...], *, reverse: bool = False
+) -> list[int] | None:
+    """Bands ⇒ the index of the section each one binds to, or ``None`` if one matches nothing.
+
+    ``reverse`` walks the same greedy rule from the end of both sequences. Comparing the two
+    answers is what makes an ambiguous alignment visible: a sequence with exactly one valid
+    alignment produces the same list either way, and one with several does not.
+    """
+    order = range(len(bands) - 1, -1, -1) if reverse else range(len(bands))
+    cursor = len(measured) - 1 if reverse else 0
+    out: dict[int, int] = {}
+    for position in order:
+        band = bands[position]
+        while 0 <= cursor < len(measured) and not _band_matches(measured[cursor], band):
+            cursor += -1 if reverse else 1
+        if not 0 <= cursor < len(measured):
+            return None
+        out[position] = cursor
+        cursor += -1 if reverse else 1
+    return [out[position] for position in range(len(bands))]
+
+
+def _first_unmatched_band(
+    measured: list[_Candidate], bands: tuple[MeasuredBand, ...]
+) -> int:
     cursor = 0
     for band in bands:
         while cursor < len(measured) and not _band_matches(measured[cursor], band):
             cursor += 1
         if cursor >= len(measured):
-            diagnostics.append(
-                _diag(
-                    BAND_ALIGNMENT_REFUSED_CODE,
-                    "warning",
-                    f"the measured band sequence ({len(bands)} bands) could not be aligned with "
-                    f"the {len(measured)} parsed section(s) of the measured root; band "
-                    f"{band.index} (<{band.tag}>) matched nothing — no geometry was bound",
-                    bands=len(bands),
-                    measured_sections=len(measured),
-                    unmatched_band=band.index,
-                )
-            )
-            return
-        bound.append((measured[cursor], band))
+            return band.index
         cursor += 1
-
-    for candidate, band in bound:
-        candidate.band = band
+    return bands[-1].index if bands else -1
 
 
 def _band_matches(candidate: _Candidate, band: MeasuredBand) -> bool:
@@ -702,19 +830,38 @@ def _assign_geometry(
         )
 
     unmeasured = [candidate for candidate in candidates if candidate.geometry is None]
-    if unmeasured:
-        diagnostics.append(
-            _diag(
-                UNMEASURED_SECTION_CODE,
-                "info",
-                f"{len(unmeasured)} section(s) lie outside the capture probe's measured root "
-                f"(<{', '.join(sorted({c.tag for c in unmeasured}))}>) and carry no geometry — "
-                "the probe roots at <main>, so a semantic page's nav and footer are never "
-                "measured",
-                tags=sorted({candidate.tag for candidate in unmeasured}),
-                count=len(unmeasured),
-            )
+    if not unmeasured:
+        return
+
+    # Two different facts, and the diagnostic has to keep them apart. A section OUTSIDE the
+    # probe's root was never eligible to be measured; a section INSIDE it was eligible and the
+    # browser skipped it, which is a statement about the section (hidden, tiny, narrow), not
+    # about the root. One sentence covering both would be false about one of them.
+    outside = [candidate for candidate in unmeasured if not candidate.in_measured_root]
+    inside = [candidate for candidate in unmeasured if candidate.in_measured_root]
+    reasons: list[str] = []
+    if outside:
+        reasons.append(
+            f"{len(outside)} sit outside the capture probe's measured root (the probe roots at "
+            "<main>, so a page that has one never measures its nav or footer)"
         )
+    if inside:
+        reasons.append(
+            f"{len(inside)} sit inside the measured root and the browser measured no band for "
+            "them (it skips a band that is hidden, under 40px tall, or narrower than half the "
+            "viewport)"
+        )
+    diagnostics.append(
+        _diag(
+            UNMEASURED_SECTION_CODE,
+            "info",
+            f"{len(unmeasured)} section(s) carry no geometry: " + "; ".join(reasons),
+            tags=sorted({candidate.tag for candidate in unmeasured}),
+            count=len(unmeasured),
+            outside_measured_root=len(outside),
+            inside_measured_root=len(inside),
+        )
+    )
 
 
 # --- role calling ----------------------------------------------------------------------------
@@ -739,14 +886,18 @@ def _declared_signals(candidate: _Candidate) -> list[SectionEvidence]:
     out: list[SectionEvidence] = []
     if candidate.tag == NAV:
         out.append(SectionEvidence("landmark", NAV, LANDMARK_WEIGHT, "<nav> element"))
-    elif candidate.tag == "header" and not candidate.in_measured_root:
+    elif candidate.tag == "header" and candidate.is_page_scoped:
         out.append(
             SectionEvidence(
-                "landmark", NAV, LANDMARK_WEIGHT, "<header> element at the page's top level"
+                "landmark", NAV, LANDMARK_WEIGHT, "<header> element scoped to the whole page"
             )
         )
-    elif candidate.tag == FOOTER:
-        out.append(SectionEvidence("landmark", FOOTER, LANDMARK_WEIGHT, "<footer> element"))
+    elif candidate.tag == FOOTER and candidate.is_page_scoped:
+        out.append(
+            SectionEvidence(
+                "landmark", FOOTER, LANDMARK_WEIGHT, "<footer> element scoped to the whole page"
+            )
+        )
 
     aria = _ARIA_ROLES.get(candidate.aria_role or "")
     if aria:

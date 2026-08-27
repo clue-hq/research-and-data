@@ -29,6 +29,26 @@ SNAPSHOT_META_BANDS_KEY = "bands"
 #: or replayed harvest from putting an unbounded list on the row.
 MAX_PERSISTED_BANDS = 40
 
+#: The only probe keys a persisted band record carries — everything :func:`measured_bands` reads,
+#: and nothing else. ``padding`` and any future harvest key are dropped rather than stored on the
+#: chance someone wants them, because this row is durable and a page controls its own contents.
+_PERSISTED_KEYS: tuple[str, ...] = (
+    "index",
+    "tag",
+    "id",
+    "classes",
+    "top",
+    "height",
+    "bg",
+    "gradient",
+    "bgImage",
+)
+
+#: How long a stored string value may be. A class attribute on a utility-CSS page runs long
+#: legitimately, so this is generous rather than tight; the bounding that matters is dropping
+#: ``bgImage``'s raw value, which has no upper size at all.
+MAX_BAND_TEXT = 512
+
 
 @dataclass(frozen=True)
 class MeasuredBand:
@@ -53,16 +73,58 @@ class MeasuredBand:
 def bands_for_meta(geometry: Mapping[str, Any] | None) -> list[dict[str, Any]]:
     """The band records worth persisting out of one raw geometry harvest.
 
-    Kept RAW (the probe's own dicts, not ``MeasuredBand``) so a key the probe learns to record
-    tomorrow survives a snapshot written today — the normalization happens on read. A static-tier
-    capture measured nothing and contributes ``[]``.
+    PROJECTED, not copied. The probe's own dicts carry things a durable row must not: ``bgImage``
+    is a raw CSS value, so a single band can arrive holding a base64 ``data:`` URI or a
+    five-layer gradient, and there can be forty of them on one row. Nothing that reads these
+    records wants more than "was there a background image at all", so that is all that is kept —
+    the same reduction the evidence layer has always applied to it.
+
+    The other keys are kept as the probe wrote them, with strings capped: a class attribute is
+    the one field that is legitimately long (a utility-CSS page routinely runs past 200
+    characters), so the cap is generous and the cut is made on a space, never mid-token, because
+    a half-written class name is a name that matches nothing and could in principle match the
+    wrong thing.
+
+    The cost of projecting is that a key the probe learns to record tomorrow does NOT survive a
+    snapshot written today until it is named here — paid deliberately, because the alternative is
+    an unbounded row. A static-tier capture measured nothing and contributes ``[]``.
     """
     if not isinstance(geometry, Mapping):
         return []
     sections = geometry.get("sections")
     if not isinstance(sections, list):
         return []
-    return [entry for entry in sections if isinstance(entry, dict)][:MAX_PERSISTED_BANDS]
+    kept: list[dict[str, Any]] = []
+    for entry in sections[: MAX_PERSISTED_BANDS * 2]:
+        if not isinstance(entry, dict):
+            continue
+        kept.append(_project(entry))
+        if len(kept) >= MAX_PERSISTED_BANDS:
+            break
+    return kept
+
+
+def _project(entry: Mapping[str, Any]) -> dict[str, Any]:
+    record: dict[str, Any] = {}
+    for key in _PERSISTED_KEYS:
+        if key not in entry:
+            continue
+        value = entry[key]
+        if key == "bgImage":
+            record[key] = bool(value)
+        elif isinstance(value, str):
+            record[key] = _cap(value)
+        elif isinstance(value, (bool, int, float)) or value is None:
+            record[key] = value
+    return record
+
+
+def _cap(value: str) -> str:
+    if len(value) <= MAX_BAND_TEXT:
+        return value
+    cut = value[:MAX_BAND_TEXT]
+    boundary = cut.rfind(" ")
+    return cut[:boundary] if boundary > 0 else cut
 
 
 def measured_bands(meta: Mapping[str, Any] | None) -> tuple[MeasuredBand, ...]:

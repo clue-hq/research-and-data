@@ -341,6 +341,119 @@ def test_a_second_hero_is_demoted_rather_than_named_twice():
     assert any("already" in ev.detail for ev in result.sections[1].evidence)
 
 
+def test_sibling_bands_that_share_a_class_refuse_rather_than_bind_by_luck():
+    # Three sections named alike; the browser measured two of them, because the middle one is
+    # hidden by a class we cannot evaluate without the stylesheet. In-order greedy matching binds
+    # the testimonial's band to the hidden promo — a plausible, wrong crop. There is no evidence
+    # that tells the two apart, so the honest answer is no geometry at all.
+    html = """
+    <html><body><main>
+      <section class="section"><h1>Care that keeps up</h1><p>Copy.</p></section>
+      <section class="section w-condition-invisible"><h2>Promo</h2><p>Limited time.</p></section>
+      <section class="section"><blockquote>It changed our practice.</blockquote></section>
+    </main></body></html>
+    """
+    bands = [
+        {"index": 0, "tag": "section", "classes": "section", "top": 0.0, "height": 720.0},
+        {"index": 1, "tag": "section", "classes": "section", "top": 700.0, "height": 400.0},
+    ]
+    result = segment_page(
+        html,
+        page_url="https://x.example/",
+        bands=measured_bands({SNAPSHOT_META_BANDS_KEY: bands}),
+    )
+    assert all(section.geometry is None for section in result.sections)
+    assert all(section.band_index is None for section in result.sections)
+    refusal = next(d for d in result.diagnostics if d["code"] == BAND_ALIGNMENT_REFUSED_CODE)
+    assert refusal["reason"] == "ambiguous"
+    # The role calls survive the refusal.
+    assert _roles(result) == ["hero", "other", "testimonial"]
+
+
+def test_repeated_section_names_still_bind_when_the_alignment_is_the_only_one():
+    # The same-name case that must NOT be refused: two identically-named feature bands, both
+    # measured, in the same order. There is exactly one way to line them up.
+    html = """
+    <html><body><main>
+      <section class="section_home-feature"><h2>One</h2><p>Copy.</p></section>
+      <section class="section_home-feature"><h2>Two</h2><p>Copy.</p></section>
+    </main></body></html>
+    """
+    bands = [
+        {"index": 0, "tag": "section", "classes": "section_home-feature", "top": 0.0,
+         "height": 400.0},
+        {"index": 1, "tag": "section", "classes": "section_home-feature", "top": 400.0,
+         "height": 400.0},
+    ]
+    result = segment_page(
+        html,
+        page_url="https://x.example/",
+        bands=measured_bands({SNAPSHOT_META_BANDS_KEY: bands}),
+    )
+    assert [s.band_index for s in result.sections] == [0, 1]
+    assert result.sections[1].geometry.top_px == 400.0
+
+
+def test_a_section_the_browser_skipped_is_reported_for_what_it_is():
+    # A middle section the browser never measured, with names distinctive enough that the
+    # alignment is unambiguous. The unmeasured-section diagnostic must not claim the section
+    # "lies outside the measured root" — it is inside it; the browser simply skipped it.
+    html = """
+    <html><body><main>
+      <section class="section_a"><h1>Care that keeps up</h1></section>
+      <section class="section_b w-condition-invisible"><h2>Promo</h2></section>
+      <section class="section_c"><blockquote>Quote.</blockquote></section>
+    </main></body></html>
+    """
+    bands = [
+        {"index": 0, "tag": "section", "classes": "section_a", "top": 0.0, "height": 720.0},
+        {"index": 1, "tag": "section", "classes": "section_c", "top": 720.0, "height": 400.0},
+    ]
+    result = segment_page(
+        html,
+        page_url="https://x.example/",
+        bands=measured_bands({SNAPSHOT_META_BANDS_KEY: bands}),
+    )
+    assert [s.band_index for s in result.sections] == [0, None, 1]
+    unmeasured = next(d for d in result.diagnostics if d["code"] == UNMEASURED_SECTION_CODE)
+    assert unmeasured["inside_measured_root"] == 1
+    assert unmeasured["outside_measured_root"] == 0
+    assert "outside" not in unmeasured["message"]
+
+
+def test_a_page_without_main_still_knows_its_header_is_the_nav():
+    # No <main>, so every body-flow child sits in the measured root — which used to disqualify
+    # the <header> landmark and let `masthead` name the header a hero, demoting the real one.
+    html = """
+    <html><body><div class="page-wrapper">
+      <header class="masthead"><a href="/">Insight</a></header>
+      <section class="section_home-hero"><h1>Care that keeps up</h1><p>Copy.</p></section>
+      <footer class="footer_component"><p>© 2026 Insight Health</p></footer>
+    </div></body></html>
+    """
+    result = segment_page(html, page_url="https://x.example/")
+    assert _roles(result) == ["nav", "hero", "footer"]
+    assert any(
+        ev.signal == "landmark" and ev.role == "nav" for ev in result.sections[0].evidence
+    )
+    assert any(
+        ev.signal == "landmark" and ev.role == "footer" for ev in result.sections[2].evidence
+    )
+
+
+def test_a_header_inside_the_main_content_is_not_the_page_banner():
+    html = """
+    <html><body><main>
+      <header class="page-intro"><h2>Introducing</h2><p>Copy.</p></header>
+      <section class="section_home-hero"><h1>Care that keeps up</h1><p>Copy.</p></section>
+    </main></body></html>
+    """
+    result = segment_page(html, page_url="https://x.example/")
+    assert result.sections[0].role != "nav"
+    assert not any(ev.signal == "landmark" for ev in result.sections[0].evidence)
+    assert result.sections[1].role == "hero"
+
+
 def test_a_flat_page_keeps_its_containers_and_names_the_loose_content_it_dropped():
     # The shape of this repo's own rendered snapshot fixture: a body whose children are a
     # header and then bare <h1>/<p>/<button>/<img> elements. A lone heading is not a section —
@@ -408,6 +521,40 @@ def test_bands_for_meta_keeps_the_probe_records_and_bounds_them():
     assert bands_for_meta({"sections": "nonsense"}) == []
     flood = [{"index": i, "tag": "section", "height": 10.0} for i in range(120)]
     assert len(bands_for_meta({"sections": flood})) == 40
+
+
+def test_bands_for_meta_refuses_to_carry_an_unbounded_background_image():
+    # `bgImage` is a raw CSS value: a data: URI or a multi-layer gradient, up to 40 of them on
+    # one row. Nothing downstream reads more than "is there one", so only that is kept.
+    import json
+
+    harvest = {
+        "sections": [
+            {
+                "index": 0,
+                "tag": "section",
+                "classes": "hero " + "utility-class " * 200,
+                "bgImage": "url(data:image/png;base64," + "A" * 60_000 + ")",
+                "gradient": False,
+                "top": 0.0,
+                "height": 720.0,
+                "bg": "#ffffff",
+                "padding": [10, 20, 10, 20],
+                "somethingElse": "x" * 5_000,
+            }
+        ]
+    }
+    kept = bands_for_meta(harvest)
+    assert kept[0]["bgImage"] is True
+    assert "padding" not in kept[0] and "somethingElse" not in kept[0]
+    assert len(kept[0]["classes"]) <= 512
+    assert kept[0]["classes"].split()[0] == "hero"
+    assert len(json.dumps(kept)) < 2_000
+    # …and what survives still reads back as a band.
+    band = measured_bands({SNAPSHOT_META_BANDS_KEY: kept})[0]
+    assert band.has_image is True
+    assert band.class_names[0] == "hero"
+    assert band.top_px == 0.0
 
 
 def test_measured_bands_tolerate_a_pre_f21_probe_record():
@@ -498,6 +645,22 @@ def test_resolving_a_section_against_different_html_refuses_rather_than_guesses(
     footer = next(s for s in result.sections if s.role == "footer")
     assert resolve_section("<html><body><p>different page</p></body></html>", footer) is None
     assert result.by_role("footer") == (footer,)
+
+
+def test_resolving_a_section_after_the_page_shifted_refuses_rather_than_returning_a_neighbour():
+    # A path is a position, and positions move. Minting extracts `resolve_section(...).html`, so
+    # a silently shifted path mints the WRONG subtree — the one failure mode a durable handle
+    # exists to prevent.
+    result = segment_page(WEBFLOW_HTML, page_url="https://x.example/")
+    hero = next(s for s in result.sections if s.role == "hero")
+    shifted = WEBFLOW_HTML.replace(
+        "<main>",
+        '<main><section class="section_home-banner"><p>New announcement.</p></section>',
+        1,
+    )
+    assert resolve_section(shifted, hero) is None
+    # The same html still resolves, so the check discriminates rather than just refusing.
+    assert resolve_section(WEBFLOW_HTML, hero) is not None
 
 
 def test_a_persisted_snapshot_carries_the_bands_the_probe_measured():
