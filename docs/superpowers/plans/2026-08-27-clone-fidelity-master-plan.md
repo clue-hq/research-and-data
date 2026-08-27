@@ -1,6 +1,23 @@
 # Clone-Fidelity Master Plan — verbatim fragments, Ploy-grade output (Phases F0–F5)
 
-> **STATUS 2026-08-27 (latest) — PHASE F1 COMPLETE.** Executed via SDD (Tasks 5–9 = F1.1–F1.5 +
+> **STATUS 2026-08-28 (latest) — PHASE F2 COMPLETE.** Executed via SDD (Tasks 11–15 = F2.1–F2.4
+> + acceptance; one fix round per task; final whole-phase review → ONE general fix wave +
+> completion round after the FIRST live acceptance walk FAILED on both sites), commits through
+> `61fa11db7`, local only. **Re-walk PASS on both named sites**: insighthealth.ai 9 minted /
+> 9 approved / 8 previews (1 honest `empty_after_sanitize` refusal — the only refusal reason
+> anywhere), stripe.com 10/10/10 previews; all bands bound by probe-skip EVIDENCE (the exact
+> hidden section that silently absorbed a band in walk 1 now arrives as a capture record);
+> Stripe's `@media`-nested Sohne font fetched and durable (was: one missing font fail-closed
+> 100% of the site); labels human; the draft→approve gate and the agent list/insert path proven
+> live on both sites; the founder's floor-not-cap ruling honored (mint backstop 40 = capture
+> ceiling, never approached). Focused gates green (API 438/438, runtime 84/84; full-suite runs
+> founder-waived). Evidence + full rulings ledger + F3/F4 carry register:
+> `.superpowers/sdd/2026-08-27-clone-fidelity-master-plan/progress.md`, both walk reports, and
+> `_memory/2026-08-28-f2-section-harvesting-complete.md`. FOUNDER QUEUE: reuse-ladder + grammar-
+> audit prompt wording (drafts, quoted on real output in the re-walk report); the
+> reviewer/exit-judge untaught-about-cloned-sections decision; the hidden-section product ruling.
+>
+> **STATUS 2026-08-27 (earlier) — PHASE F1 COMPLETE.** Executed via SDD (Tasks 5–9 = F1.1–F1.5 +
 > acceptance walk, 5 fix rounds across tasks + one final fix wave; Opus implementers, Opus-only
 > reviewers per founder standing rule), commits `1d04b46df..5b68e1b13` (23) on
 > `integration/frontend-design-part-iv-v2`, local only. Live acceptance walk: **all 7 criteria
