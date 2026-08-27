@@ -94,6 +94,11 @@ DROPPED_ELEMENTS = frozenset(
         "animatetransform",
         "animatemotion",
         "animatecolor",
+        # SVG2 `<discard>` cannot retarget an href — it deletes its target at a time offset — so
+        # it is not the same hazard. It is the same FAMILY, though, and a cloned section that
+        # deletes parts of itself on a timer is not something we want stored either. Dropping it
+        # costs nothing.
+        "discard",
         # `<template>`'s content lives in a SEPARATE document fragment: it is not part of the
         # element walk below, but it IS serialized on the way out. Left alone, a template round-
         # tripped unchanged — stored script text and un-rehosted remote references sailing past

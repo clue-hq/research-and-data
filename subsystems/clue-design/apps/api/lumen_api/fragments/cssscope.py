@@ -224,11 +224,16 @@ def _scope_at_rule(
     notes: list[str],
 ) -> str:
     keyword = rule.lower_at_keyword
-    prelude = tinycss2.serialize(rule.prelude).strip()
 
     if keyword in _REFUSED_AT_RULES:
+        # Checked BEFORE the prelude gate below, deliberately: `@import`'s and `@namespace`'s
+        # preludes ARE urls by definition, and they are handled by removal (with a loud note),
+        # not by refusing the whole fragment for containing one.
         notes.append(f"stripped @{keyword} — a fragment may not pull in document-level css")
         return ""
+
+    _refuse_references_in_prelude(rule.prelude, where=f"the @{keyword} prelude")
+    prelude = tinycss2.serialize(rule.prelude).strip()
 
     if rule.content is None:
         # A statement at-rule we have no opinion about (`@layer a, b;`): pass it through.
@@ -246,6 +251,10 @@ def _scope_at_rule(
         name = _keyframes_name(rule.prelude)
         renamed = renames.get(name, name)
         inner = tinycss2.parse_rule_list(rule.content, skip_comments=True, skip_whitespace=True)
+        for frame in inner:
+            if isinstance(frame, ast.QualifiedRule):
+                # `from`/`to`/`50%` — no url belongs here either, and the gate is free.
+                _refuse_references_in_prelude(frame.prelude, where=f"an @{keyword} selector")
         frames = [
             f"{tinycss2.serialize(frame.prelude).strip()} "
             f"{{{_declaration_block(frame.content, renames=renames, rehosted=rehosted, digests=digests)}}}"
@@ -264,7 +273,63 @@ def _scope_at_rule(
     return f"{head} {{ {body} }}"
 
 
+def _refuse_references_in_prelude(tokens: Sequence[object], *, where: str) -> None:
+    """No at-rule prelude or selector may carry a URL, readable or not.
+
+    Preludes and selectors were the one place the reference machinery never reached: they are
+    serialized straight to text, so both halves of the round-1 gate — the rehost check and the
+    bad-url refusal — skipped them entirely. Two consequences, and the second is the worse one:
+
+    * an unreadable reference (``@supports (background: url(var(--x)))``) serialized to the
+      literal ``url([bad url]))``, whose unbalanced ``)`` swallows every rule the at-rule wraps.
+      Stored immutably, discovered only at render, and silent — the exact shape this phase's
+      loud-never-silent rule exists to prevent;
+    * a readable one (``@supports (background: url(hero.png))``) passed through un-rehosted.
+
+    Both REFUSE rather than being rewritten, because a URL in a prelude or a selector is never a
+    URL we can rehost: nothing fetches it (a feature query is a syntax probe; an attribute
+    selector is a string comparison), so pointing it at our blob store would change what the
+    stylesheet MEANS while pretending to preserve it.
+
+    Known false positive, recorded so a future relaxation is a decision rather than a
+    rediscovery: ``@supports (background-image: url(x.png))`` is legitimate CSS testing whether
+    the browser understands ``url()`` values at all. It is refused here. It is also vanishingly
+    rare, and fail-closed is the right default for a gate whose output is immutable.
+    """
+    for token in tokens:
+        if isinstance(token, ast.ParseError):
+            if token.kind in ("bad-url", "bad-string"):
+                raise FragmentRefused(
+                    "fragment.unreadable_reference",
+                    f"fragment css has an unreadable token ({token.kind}) in {where}: "
+                    f"{token.message}",
+                    reference=where,
+                )
+            continue
+        if isinstance(token, ast.URLToken):
+            raise FragmentRefused(
+                "fragment.reference_in_prelude",
+                f"fragment css references {token.value!r} from {where}, where a url can be "
+                "neither fetched nor rehosted",
+                reference=token.value,
+            )
+        if isinstance(token, ast.FunctionBlock):
+            if token.lower_name == "url" or token.lower_name in _IMAGE_SET_FUNCTIONS:
+                raise FragmentRefused(
+                    "fragment.reference_in_prelude",
+                    f"fragment css calls {token.lower_name}() from {where}, where a url can be "
+                    "neither fetched nor rehosted",
+                    reference=token.lower_name,
+                )
+            _refuse_references_in_prelude(token.arguments, where=where)
+        elif isinstance(
+            token, (ast.ParenthesesBlock, ast.SquareBracketsBlock, ast.CurlyBracketsBlock)
+        ):
+            _refuse_references_in_prelude(token.content, where=where)
+
+
 def _scope_selector(prelude: Sequence[object], *, wrapper: str, notes: list[str]) -> str:
+    _refuse_references_in_prelude(prelude, where="a selector")
     parts: list[str] = []
     for group in _split_on_commas(prelude):
         text = tinycss2.serialize(group).strip()

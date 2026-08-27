@@ -448,11 +448,78 @@ def test_an_image_set_candidate_is_gated_like_any_other_reference(function: str)
 
 
 # --------------------------------------------------------------------------- #
+# Review round 2 — preludes and selectors were outside the reference machinery
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.parametrize(
+    "css",
+    [
+        "@supports (background: url(var(--x))) { .a { color: red } }",
+        "@media screen and (background: url(var(--x))) { .a { color: red } }",
+        "@layer url(var(--x));",
+        ".a[x=url(var(--y))] { color: red }",
+    ],
+)
+def test_an_unreadable_reference_in_a_prelude_or_selector_is_refused(css: str) -> None:
+    """IMPORTANT: preludes and selectors were serialized straight out, skipping the gate.
+
+    The stored result was `url([bad url]))` — corrupted, with an unbalanced `)` that swallows
+    every rule the at-rule wraps. Silently, immutably, and only at render. Loud-never-silent says
+    the fragment refuses at creation instead.
+    """
+    with pytest.raises(FragmentRefused) as excinfo:
+        _scope(css)
+    assert excinfo.value.code == "fragment.unreadable_reference"
+
+
+@pytest.mark.parametrize(
+    "css",
+    [
+        "@supports (background: url(hero.png)) { .a { color: red } }",
+        "@media (min-width: 40em) and (background: url(hero.png)) { .a { color: red } }",
+        '.a[data-bg=url("hero.png")] { color: red }',
+    ],
+)
+def test_even_a_readable_reference_in_a_prelude_or_selector_is_refused(css: str) -> None:
+    """A URL in a prelude or a selector is never a URL we can rehost — nothing fetches it, and
+    nothing would know where to point it. Refusing names it; rewriting it would be a lie."""
+    with pytest.raises(FragmentRefused) as excinfo:
+        _scope(css, {"hero.png": HERO_DIGEST})
+    assert excinfo.value.code == "fragment.reference_in_prelude"
+
+
+def test_the_refusal_names_the_rule_it_came_from() -> None:
+    with pytest.raises(FragmentRefused) as excinfo:
+        _scope("@supports (background: url(var(--x))) { .a { color: red } }")
+    assert "supports" in str(excinfo.value)
+
+
+def test_an_import_is_still_stripped_rather_than_refused() -> None:
+    """``@import``'s prelude is a url by definition. It is handled BEFORE the prelude gate, so
+    the round-1 behaviour (strip + loud note) survives this round's refusal."""
+    result = scope_fragment_css(
+        '@import url("https://evil.example/x.css"); .btn { color: red }',
+        fragment_id=FRAG_ID,
+        rehosted={},
+    )
+    assert "@import" not in result.css
+    assert f".{WRAPPER} .btn" in result.css
+    assert any("@import" in note for note in result.notes)
+
+
+def test_an_ordinary_media_prelude_is_untouched_by_the_new_gate() -> None:
+    out = _scope("@media screen and (max-width: 600px) { .btn:hover { color: red } }")
+    assert "@media screen and (max-width: 600px)" in out
+    assert f".{WRAPPER} .btn:hover" in out
+
+
+# --------------------------------------------------------------------------- #
 # Review round 1 — the sanitizer's three escape hatches
 # --------------------------------------------------------------------------- #
 
 
-@pytest.mark.parametrize("tag", ["animate", "set", "animateTransform", "animateMotion"])
+@pytest.mark.parametrize("tag", ["animate", "set", "animateTransform", "animateMotion", "discard"])
 def test_smil_animation_cannot_smuggle_a_javascript_href_into_preserved_svg(tag: str) -> None:
     """CRITICAL: SMIL rewrites an attribute at runtime, so it walks straight past an
     attribute-time href gate — ``<set attributeName="href" to="javascript:…">``."""
