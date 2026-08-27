@@ -1,0 +1,202 @@
+"""The one-time fragment sanitizer (clone-fidelity F1.2, ruling D-F4).
+
+**Sanitization happens exactly once, at artifact creation.** Everything downstream — the F1.3
+render arm, the F1.4 derive path, the F1.5 export/publish package — may trust stored artifact
+HTML absolutely, because no write path can put markup into a fragment except this one. That is
+the same guarantee shape the engine uses on its own write path (``lumen-web``'s
+``canonicalize_incoming_kind`` in ``ops.rs``: an operation's payload is canonicalized once, on
+the way in, so every reader downstream is reading canonical data by construction), and the same
+philosophy as ``inline.rs``'s rich-text allowlist — decide what may exist at the door.
+
+It differs from ``inline.rs`` in exactly one way, and the difference is deliberate. Inline
+sanitization NEVER fails: a disallowed span is unwrapped, and unparseable input becomes escaped
+plain text, because a user typing into a text field must never be told "no". A fragment is not
+user typing — it is a claim that we hold a faithful, self-contained copy of somebody's section —
+so a reference we cannot honour REFUSES the fragment (``fragment.unrehosted_reference``) rather
+than producing an artifact that renders a hole. Everything that is merely *unwanted* rather than
+*unrepresentable* is still stripped and reported, exactly as ``inline.rs`` does.
+
+The ruling, construct by construct:
+
+* ``<script>`` — dropped with its content. Refusing instead would make cloning any real page
+  impossible; scripts are on every one of them, and a clone does not want the behaviour.
+* ``on*`` attributes — dropped. ALL of them, by prefix, not by a list of the ones we thought of.
+* ``<iframe> <object> <embed> <form>`` — dropped with their subtrees. A form in a clone posts a
+  visitor's data to somebody else's endpoint; the others are arbitrary third-party execution.
+* ``<meta> <base> <link>`` — dropped. Document-level elements have no meaning in a section, and
+  ``<base>`` silently re-points every relative URL in the page it lands in.
+* ``<style>`` — dropped, with its rules going nowhere. Not in the ruled list, and it is the hole
+  that would swallow the CSS scoper: an inline ``<style>`` block is unscoped global CSS smuggled
+  in through the markup door. Its rules belong in the artifact's ``css``, which IS scoped.
+* ``<noscript>`` — dropped. Its content is markup for a world we do not render into, and it
+  would otherwise carry un-rehosted references past the reference gate.
+* ``javascript:``/``data:`` (and any other non-allowlisted scheme) in a link — the ATTRIBUTE is
+  dropped and the element stays. The visible text is section content; only the target is unsafe.
+* ``src``/``srcset``/``poster``, SVG ``<use href>``, and every ``url()`` in an inline ``style`` —
+  must resolve to a rehosted digest (see :mod:`lumen_api.fragments.refs`) and are rewritten to
+  ``/asset-store/{digest}``. Fail-closed.
+* Inline SVG is PRESERVED — it is the section's artwork, and dropping it would gut most modern
+  hero sections — with ``<script>`` and ``<foreignObject>`` removed and handlers stripped like
+  anywhere else.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Mapping
+from dataclasses import dataclass
+
+from selectolax.lexbor import LexborHTMLParser, LexborNode
+
+from .cssscope import rewrite_declaration_urls
+from .refs import FragmentRefused, asset_url, link_scheme_allowed, resolve_asset_reference
+
+#: Elements removed with everything inside them. See the module docstring for the reasoning on
+#: each; `foreignobject` is the SVG escape hatch back into arbitrary HTML (and, historically,
+#: into script), so it goes with the rest.
+DROPPED_ELEMENTS = frozenset(
+    {
+        "script",
+        "iframe",
+        "object",
+        "embed",
+        "form",
+        "meta",
+        "base",
+        "link",
+        "style",
+        "noscript",
+        "foreignobject",
+        "frame",
+        "frameset",
+        "applet",
+        "portal",
+    }
+)
+
+#: Attributes whose value loads bytes and therefore must already be in our custody.
+_ASSET_ATTRS = frozenset({"src", "poster", "background"})
+_ASSET_LIST_ATTRS = frozenset({"srcset", "imagesrcset"})
+
+#: SVG elements on which ``href``/``xlink:href`` loads bytes rather than linking a page.
+_SVG_ASSET_ELEMENTS = frozenset({"use", "image", "feimage", "textpath", "mpath", "pattern"})
+
+_LINK_ATTRS = frozenset({"href", "xlink:href", "ping", "formaction", "action", "cite"})
+
+
+@dataclass(frozen=True)
+class SanitizedHtml:
+    """One fragment's markup after the single sanitization pass."""
+
+    html: str
+    asset_digests: tuple[str, ...]
+    notes: tuple[str, ...]
+
+
+def sanitize_fragment_html(html: str, *, rehosted: Mapping[str, str]) -> SanitizedHtml:
+    """Sanitize one captured section subtree. Refuses on an unrehostable reference.
+
+    ``rehosted`` maps a reference EXACTLY as the source wrote it to the sha256 of the bytes F0
+    stored for it. A reference already written ``/asset-store/{digest}`` needs no entry, which is
+    what makes running this over its own output a no-op.
+    """
+    tree = LexborHTMLParser(html)
+    body = tree.body
+    notes: list[str] = []
+    digests: set[str] = set()
+    if body is None:
+        return SanitizedHtml(html="", asset_digests=(), notes=("input had no content",))
+
+    _drop_banned_elements(body, notes)
+    for node in body.traverse(include_text=False):
+        if node.tag and node.tag.lower() != "body":
+            _clean_attributes(node, rehosted=rehosted, digests=digests, notes=notes)
+
+    rendered = "".join(child.html or "" for child in body.iter(include_text=True))
+    return SanitizedHtml(
+        html=rendered, asset_digests=tuple(sorted(digests)), notes=tuple(notes)
+    )
+
+
+def _drop_banned_elements(body: LexborNode, notes: list[str]) -> None:
+    """Remove every banned element, outermost first.
+
+    Re-scanning after each removal rather than collecting a list up front: decomposing a node
+    invalidates its descendants, and a ``<form>`` containing an ``<iframe>`` is not exotic.
+    Fragments are one section's markup, so the repeated scan costs nothing worth optimising.
+    """
+    while True:
+        target = None
+        for node in body.traverse(include_text=False):
+            if node.tag and node.tag.lower() in DROPPED_ELEMENTS:
+                target = node
+                break
+        if target is None:
+            return
+        notes.append(f"dropped <{target.tag.lower()}> and its content")
+        target.decompose()
+
+
+def _clean_attributes(
+    node: LexborNode,
+    *,
+    rehosted: Mapping[str, str],
+    digests: set[str],
+    notes: list[str],
+) -> None:
+    tag = (node.tag or "").lower()
+    for name, value in list(node.attributes.items()):
+        lowered = name.lower()
+        raw = value or ""
+
+        if lowered.startswith("on"):
+            del node.attrs[name]
+            notes.append(f"stripped event handler {lowered} on <{tag}>")
+            continue
+
+        if lowered in _ASSET_ATTRS or (
+            lowered in ("href", "xlink:href") and tag in _SVG_ASSET_ELEMENTS
+        ):
+            digest = resolve_asset_reference(raw, rehosted)
+            if digest is not None:
+                digests.add(digest)
+                node.attrs[name] = asset_url(digest)
+            continue
+
+        if lowered in _ASSET_LIST_ATTRS:
+            node.attrs[name] = _rewrite_srcset(raw, rehosted=rehosted, digests=digests)
+            continue
+
+        if lowered == "style":
+            rewritten, found = rewrite_declaration_urls(raw, rehosted)
+            digests.update(found)
+            node.attrs[name] = rewritten
+            continue
+
+        if lowered in _LINK_ATTRS and not link_scheme_allowed(raw):
+            del node.attrs[name]
+            notes.append(f"stripped disallowed {lowered} on <{tag}>: {raw.strip()[:80]}")
+
+
+def _rewrite_srcset(
+    value: str, *, rehosted: Mapping[str, str], digests: set[str]
+) -> str:
+    """Every candidate in a ``srcset`` is its own reference; all of them are gated.
+
+    Gating only the first would let the 2x candidate — the one a retina visitor actually loads —
+    stay pointed at somebody else's CDN.
+    """
+    candidates: list[str] = []
+    for entry in value.split(","):
+        parts = entry.split()
+        if not parts:
+            continue
+        digest = resolve_asset_reference(parts[0], rehosted)
+        if digest is None:
+            candidates.append(" ".join(parts))
+            continue
+        digests.add(digest)
+        candidates.append(" ".join([asset_url(digest), *parts[1:]]))
+    return ", ".join(candidates)
+
+
+__all__ = ["DROPPED_ELEMENTS", "FragmentRefused", "SanitizedHtml", "sanitize_fragment_html"]
