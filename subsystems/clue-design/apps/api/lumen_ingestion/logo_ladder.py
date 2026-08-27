@@ -40,6 +40,8 @@ from urllib.parse import urljoin, urlsplit, urlunsplit
 
 from selectolax.parser import HTMLParser
 
+from .capture.cssurl import iter_css_urls
+
 __all__ = [
     "LadderCandidate",
     "LadderResolution",
@@ -388,6 +390,12 @@ def discover_brand_pages(html_or_tree, base_url: str, domain: str) -> list[str]:
     return found
 
 
+#: A ``background`` / ``background-image`` declaration; group 1 is its value, which ends at
+#: the ``;`` that closes the declaration. The value is handed WHOLE to the shared
+#: escape-aware reader instead of being scanned for ``url(`` here — see ``_parse_css``.
+_BG_DECL_RE = re.compile(r"background(?:-image)?\s*:([^;}]*)", re.I)
+
+
 def _parse_css(css_text: str, base_url: str):
     """Return (background-image urls by selector, background-color by selector)."""
     images, colors = [], {}
@@ -396,12 +404,11 @@ def _parse_css(css_text: str, base_url: str):
         if len(selector) > 300:
             continue
         selectors = [s.strip() for s in selector.split(",")]
-        for found in re.finditer(
-            r"background(?:-image)?\s*:[^;}]*url\(\s*['\"]?([^'\")]+)", body, re.I
-        ):
-            absolute = norm_url(base_url, found.group(1))
-            if absolute:
-                images.append((selectors, absolute))
+        for declaration in _BG_DECL_RE.finditer(body):
+            for token in iter_css_urls(declaration.group(1)):
+                absolute = norm_url(base_url, token)
+                if absolute:
+                    images.append((selectors, absolute))
         background = _extract_bg(body)
         if background:
             for one in selectors:

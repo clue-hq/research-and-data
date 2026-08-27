@@ -19,9 +19,23 @@ font path the same defect is worse than a lost image: the evidence builder match
 its bytes by EXACT URL string, so a mangled ``@font-face`` src costs the face its
 ``asset_id`` and every render falls back to Inter.
 
-One reading, in one place, so the three cannot drift again. Deliberately NOT in scope: the
-``@import`` regex in ``static.py`` (a stylesheet URL, not an asset reference) and
-``logo_ladder``'s own background reader, both of which are their own owners' business.
+One reading, in one place, so the three cannot drift again.
+
+Fourth caller, added 2026-08-27: ``logo_ladder._parse_css``. The wave left the ladder's own
+background reader alone as its owner's business; a follow-up review found it carried BOTH
+defects above, on the path where they cost the most — a Webflow brand whose logo is a CSS
+background with escaped parens was enumerated under a URL its CDN answers 403 to, so the
+mark went silently missing from the ladder.
+
+Still deliberately NOT in scope: the ``@import`` regex in ``static.py``. Its defects are the
+same class, but ``@import`` admits a second token form this module does not read — the bare
+``@import "sheet.css";`` string, with no ``url()`` around it — so routing it through here
+would drop every bare-string import (including the common
+``@import "https://fonts.googleapis.com/css2?…"``, which the existing regex reads correctly
+today). Fixing it properly needs a quoted-string reader, i.e. either a fourth copy of the
+thing this module exists to delete or a widening of this module's contract. Left to its
+owner; the residual is a mangled stylesheet URL, which fails loudly as a fetch diagnostic
+rather than silently as a missing logo.
 """
 
 from __future__ import annotations
