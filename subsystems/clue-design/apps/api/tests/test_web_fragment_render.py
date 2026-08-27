@@ -334,6 +334,113 @@ def test_the_editor_route_reports_a_class_collision_without_refusing_the_render(
     assert "clone-hero" in collisions[0]["message"]
 
 
+# --------------------------------------------------------------------------- #
+# Preview path 2: the agent turn's composition
+# --------------------------------------------------------------------------- #
+
+
+def test_the_web_turn_hands_the_agent_runtime_the_resolved_package(
+    tmp_path: Path,
+    workspace_id: str,
+    design_storage: FsStorage,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The agent's preview must see the same artifacts the editor's does.
+
+    A web turn is leased fleet work with no HTTP request and no database handle of its own, so
+    the API resolves at composition and the package rides the runtime config by value — exactly
+    as `asset_library` does. The agent-side half of this seam is pinned in the runtime's own
+    suite (`tests/test_web_fragment_preview.py`).
+    """
+    import lumen_agent.harness_web as harness_web
+    import lumen_agent.llm as agent_llm
+
+    from lumen_api import main as main_mod
+
+    artifact = _mint(workspace_id, design_storage)
+    captured: dict[str, Any] = {}
+
+    def _fake_turn(*, prompt, config, initial_web_doc, event_sink, checkpointer, thread_id):
+        captured["config"] = config
+        return {
+            "status": "applied",
+            "outcome": "completed",
+            "summary": "stubbed",
+            "web_doc": initial_web_doc,
+            "operations": [],
+        }
+
+    monkeypatch.setattr(harness_web, "run_deepagent_web_turn", _fake_turn)
+    monkeypatch.setattr(agent_llm, "assert_model_supports_image_input", lambda *a, **k: None)
+
+    class _Blobs:
+        workspace_id = None
+        storage = design_storage
+
+    blobs = _Blobs()
+    blobs.workspace_id = workspace_id
+
+    response = main_mod.run_web_agent_turn(
+        {"scene": _web_doc("doc_turn", _fragment_node("n1", artifact.fragment_id))},
+        "Refresh the hero copy",
+        None,
+        Path(__file__).resolve().parents[3],
+        workspace_id=workspace_id,
+        blobs=blobs,
+        engine_cache_root=tmp_path / "engine-cache",
+    )
+    assert response["status"] == "applied", response
+    package = captured["config"].fragment_render_package
+    assert set(package["fragments"]) == {artifact.fragment_id}
+    assert package["fragments"][artifact.fragment_id]["html"] == artifact.payload["html"]
+    assert package["missing"] == []
+
+
+def test_a_web_turn_on_a_fragmentless_document_carries_no_package(
+    tmp_path: Path,
+    workspace_id: str,
+    design_storage: FsStorage,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import lumen_agent.harness_web as harness_web
+    import lumen_agent.llm as agent_llm
+
+    from lumen_api import main as main_mod
+
+    captured: dict[str, Any] = {}
+
+    def _fake_turn(*, prompt, config, initial_web_doc, event_sink, checkpointer, thread_id):
+        captured["config"] = config
+        return {
+            "status": "applied",
+            "outcome": "completed",
+            "summary": "stubbed",
+            "web_doc": initial_web_doc,
+            "operations": [],
+        }
+
+    monkeypatch.setattr(harness_web, "run_deepagent_web_turn", _fake_turn)
+    monkeypatch.setattr(agent_llm, "assert_model_supports_image_input", lambda *a, **k: None)
+
+    class _Blobs:
+        workspace_id = None
+        storage = design_storage
+
+    blobs = _Blobs()
+    blobs.workspace_id = workspace_id
+
+    main_mod.run_web_agent_turn(
+        {"scene": _web_doc("doc_turn_plain", {"id": "n1", "kind": "container", "classes": ""})},
+        "Refresh the hero copy",
+        None,
+        Path(__file__).resolve().parents[3],
+        workspace_id=workspace_id,
+        blobs=blobs,
+        engine_cache_root=tmp_path / "engine-cache",
+    )
+    assert captured["config"].fragment_render_package is None
+
+
 def test_a_document_with_no_fragments_renders_exactly_as_before(
     client: TestClient, workspace_id: str, design_storage: FsStorage
 ) -> None:

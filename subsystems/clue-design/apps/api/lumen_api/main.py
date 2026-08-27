@@ -8104,6 +8104,21 @@ def run_web_agent_turn(
             )
         if asset_library is not None:
             config = replace(config, asset_library=asset_library)
+        # F1.3: resolve this document's cloned-section artifacts HERE, where the database is,
+        # and hand them to the runtime BY VALUE — the same rule asset_library follows, because a
+        # fleet worker never reads the API database. Resolved once per turn is sound: nothing in
+        # a turn can mint a fragment, and a node that appears mid-turn pinning something this
+        # package never saw renders the engine's placeholder rather than being improvised.
+        if web_doc_fragment_ids(web_doc, "home"):
+            config = replace(
+                config,
+                fragment_render_package=build_fragment_render_package(
+                    turn_blobs.storage,
+                    workspace_id=turn_workspace_id,
+                    web_doc=web_doc,
+                    page_id="home",
+                ),
+            )
         if custom_component_registry is not None:
             config = replace(
                 config,

@@ -161,6 +161,13 @@ class AgentRuntimeConfig:
     custom_component_registry: Any | None = None
     custom_component_account_id: str | None = None
     custom_component_document_id: str | None = None
+    # F1.3: the cloned-section artifacts this turn's document pins, resolved by the API at
+    # composition and carried BY VALUE — the same rule `asset_library` follows, and for the same
+    # reason: the runtime is fleet work that never reads the API database. Shape is
+    # `lumen_api.fragments.render`'s package: {schema_version, fragments{id:{html,css}}, missing[]}.
+    # None means nothing was resolved for this turn; every fragment node then renders the
+    # engine's placeholder, which is honest rather than empty.
+    fragment_render_package: dict | None = None
     # Brief-clarification headless/eval mode (LUMEN_AGENT_AUTO_DEFAULTS=1). When
     # true, the harness does NOT register `request_clarification` on the
     # orchestrator: it applies the skill's defaults and ledgers each assumption

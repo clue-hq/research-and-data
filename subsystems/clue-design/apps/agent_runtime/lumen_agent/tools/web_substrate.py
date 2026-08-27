@@ -37,6 +37,12 @@ from selectolax.parser import HTMLParser
 from py_lumen_obs import bind_run_id, get_logger
 
 from lumen_api.core import CoreClient, CoreError
+from lumen_api.fragments.render import (
+    fragment_collision_diagnostics,
+    fragment_css_sheet,
+    fragment_render_map,
+    web_doc_fragment_ids,
+)
 from lumen_ingestion.capture.net import (
     REQUEST_TIMEOUT_SECONDS,
     BoundedFetcher,
@@ -822,6 +828,15 @@ class LumenWebTools:
         # Cached @font-face data-URL CSS (fonts cannot change mid-run). The
         # sentinel distinguishes "not computed" from a resolved None.
         self._font_face_css_cache: Any = _FONT_CSS_UNSET
+        # F1.3: the API-resolved cloned-section artifacts for this turn's
+        # document, by value (the runtime reads no database). Resolved ONCE at
+        # composition, which is sound because nothing in a turn can mint a
+        # fragment — a node that appears mid-turn pinning something the package
+        # never saw renders the engine's placeholder rather than being guessed
+        # at. Read through `_fragment_package`, never directly.
+        self._fragment_render_package: Dict[str, Any] = (
+            getattr(config, "fragment_render_package", None) or {}
+        )
         # Staleness contract (mirrors the scene view): a monotonic doc-mutation
         # count, and the count stamped at the last successful render. view()
         # refuses a preview older than the current doc.
@@ -4280,6 +4295,30 @@ class LumenWebTools:
         )
         return json.dumps(result, indent=2)
 
+    # --- cloned sections (F1.3) ---------------------------------------------
+
+    def _fragment_ids(self) -> List[str]:
+        """The artifact ids the CURRENT document pins, recomputed per render.
+
+        Per render rather than once, because the document moves under this
+        object: a section the author deleted must stop pulling its CSS into the
+        head, and a section they added must be looked up (and, when the package
+        has never heard of it, render the placeholder).
+        """
+        return web_doc_fragment_ids(self.web_doc, self.page_id)
+
+    def _fragment_render_map(self) -> Dict[str, Any]:
+        return fragment_render_map(self._fragment_render_package, self._fragment_ids())
+
+    def _fragment_css(self) -> Optional[str]:
+        return fragment_css_sheet(self._fragment_render_package, self._fragment_ids())
+
+    def _fragment_diagnostics(self) -> List[JsonObject]:
+        """The API-layer cascade warning, recomputed against the current doc."""
+        return fragment_collision_diagnostics(
+            self._fragment_render_package, self.web_doc, self.page_id
+        )
+
     def _font_face_css(self) -> Optional[str]:
         """@font-face CSS embedding the kit's real font faces as data: URLs so
         the preview render shapes in the brand fonts, not the fallback stack.
@@ -4640,6 +4679,11 @@ class LumenWebTools:
                 tailwind_runtime_src=None,
                 brand_kit=self.config.brand_kit,
                 font_face_css=self._font_face_css(),
+                # F1.3: the same two things the editor render route threads, so
+                # a cloned section cannot render in one preview and vanish from
+                # the other.
+                fragments=self._fragment_render_map(),
+                fragment_css=self._fragment_css(),
             )
         except CoreError as error:
             self.record(
@@ -4653,7 +4697,9 @@ class LumenWebTools:
             )
 
         html = response.get("html") or ""
-        diagnostics = response.get("diagnostics") or []
+        # The engine's diagnostics plus the API-layer cascade warning, in one
+        # list — the author reads one surface, not two.
+        diagnostics = list(response.get("diagnostics") or []) + self._fragment_diagnostics()
 
         # Inline the vendored Tailwind browser runtime so the editor-mode
         # `<style type="text/tailwindcss">` block is processed at set_content

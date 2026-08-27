@@ -272,8 +272,8 @@ const defaultLayoutManagedEditingSaver = (documentId: string, enabled: boolean) 
  * (LUMEN_AGENT_MODEL format, OpenRouter-routed); "" = the runtime default. */
 const AGENT_MODEL_OPTIONS = [
   { value: "", label: "Auto", hint: "default" },
-  { value: "openai:anthropic/claude-opus-4.8", label: "Opus 4.8", hint: "quality" },
-  { value: "openai:anthropic/claude-sonnet-5", label: "Sonnet 5", hint: "balanced" },
+  { value: "openai:x-ai/grok-4.6", label: "Grok 4.6", hint: "quality" },
+  { value: "openai:x-ai/grok-4.6", label: "Grok 4.6", hint: "balanced" },
   { value: "openai:google/gemini-3-pro", label: "Gemini 3 Pro", hint: "fast" }
 ];
 
