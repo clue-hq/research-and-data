@@ -687,12 +687,21 @@ pub fn fragment_id_is_valid(value: &str) -> bool {
 }
 
 /// Slot keys come from the artifact's slot manifest, which is machine-minted
-/// from the cloned markup: bounded, ASCII, and free of control characters.
+/// from the cloned markup, so the grammar can be narrow: 1–64 characters of
+/// `[a-z0-9_-]` and nothing else.
+///
+/// Narrow on purpose. A key is later interpolated into markup and selectors,
+/// and the only way to be sure that is safe on every downstream path is to
+/// refuse anything needing escaping at the door — no uppercase, no dots or
+/// slashes, no whitespace, no quotes or angle brackets. This was tightened
+/// from "printable ASCII" before any stored document carried a fragment key;
+/// tightening later would have been a breaking validation change.
 pub fn fragment_slot_key_is_valid(value: &str) -> bool {
     !value.is_empty()
-        && value.chars().count() <= MAX_FRAGMENT_SLOT_KEY_CHARS
-        && value.is_ascii()
-        && !value.bytes().any(|byte| byte.is_ascii_control())
+        && value.len() <= MAX_FRAGMENT_SLOT_KEY_CHARS
+        && value
+            .bytes()
+            .all(|byte| matches!(byte, b'a'..=b'z' | b'0'..=b'9' | b'_' | b'-'))
 }
 
 /// Bounds for one node's slot map. Every breach is refused (the caller turns
@@ -706,7 +715,9 @@ pub fn fragment_slots_issue(slots: &BTreeMap<String, FragmentSlotValue>) -> Opti
     }
     for (key, value) in slots {
         if !fragment_slot_key_is_valid(key) {
-            return Some(format!("slot key `{key:?}` is not a supported key"));
+            return Some(format!(
+                "slot key {key:?} is not a supported key; keys are 1–{MAX_FRAGMENT_SLOT_KEY_CHARS} characters of [a-z0-9_-]"
+            ));
         }
         match value {
             FragmentSlotValue::Text(text) => {
@@ -1067,6 +1078,35 @@ mod tests {
     }
 
     #[test]
+    fn fragment_with_no_slots_round_trips_and_omits_the_empty_map() {
+        // The shape the registry mints most often: a cloned section with
+        // nothing parameterized yet. `slots` is skipped on the way out and
+        // defaults on the way back in, so the absent map is not a special case.
+        let node = WebNode {
+            id: NodeId::from("frg_plain"),
+            kind: fragment_kind("frag_00112233445566ff", BTreeMap::new()),
+            classes: String::new(),
+            children: Vec::new(),
+            name: None,
+            slot_key: None,
+        };
+        let json = serde_json::to_string(&node).expect("serialize");
+        assert!(!json.contains("slots"), "{json}");
+        let back: WebNode = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(back, node);
+        assert_eq!(
+            serde_json::to_string(&back).expect("re-serialize"),
+            json,
+            "re-serialization is byte-identical"
+        );
+        let WebNodeKind::Fragment { slots, .. } = &back.kind else {
+            panic!("fragment");
+        };
+        assert!(slots.is_empty());
+        assert_eq!(fragment_slots_issue(slots), None);
+    }
+
+    #[test]
     fn fragment_slots_reject_nested_json_during_deserialization() {
         for slots in [
             serde_json::json!({"headline": {"text": {"nested": true}}}),
@@ -1119,17 +1159,36 @@ mod tests {
         )]);
         assert_eq!(fragment_slots_issue(&ok), None);
 
-        // Keys: non-empty, ASCII, no control characters, at most 64 chars.
+        // Keys: non-empty, at most 64 chars, and strictly [a-z0-9_-]. The
+        // grammar is narrow because keys are machine-minted by the artifact
+        // annotator and then interpolated into markup and selectors — nothing
+        // that needs escaping downstream may enter the document at all.
         for bad_key in [
             String::new(),
             "k".repeat(MAX_FRAGMENT_SLOT_KEY_CHARS + 1),
             "héadline".to_owned(),
             "head\nline".to_owned(),
             "head\u{0}line".to_owned(),
+            "head line".to_owned(),
+            "head<line".to_owned(),
+            "head\"line".to_owned(),
+            "head'line".to_owned(),
+            "Headline".to_owned(),
+            "head.line".to_owned(),
+            "head/line".to_owned(),
+            "head:line".to_owned(),
+            "{headline}".to_owned(),
         ] {
             let slots =
                 BTreeMap::from([(bad_key.clone(), FragmentSlotValue::Text("hi".to_owned()))]);
             assert!(fragment_slots_issue(&slots).is_some(), "{bad_key:?}");
+        }
+        for good_key in ["headline", "cta-primary", "logo_2", "s", "0"] {
+            let slots = BTreeMap::from([(
+                good_key.to_owned(),
+                FragmentSlotValue::Text("hi".to_owned()),
+            )]);
+            assert_eq!(fragment_slots_issue(&slots), None, "{good_key}");
         }
         assert_eq!(
             fragment_slots_issue(&BTreeMap::from([(
