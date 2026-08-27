@@ -822,3 +822,70 @@ def test_relaxing_the_trigger_for_the_kit_binding_froze_nothing_else(
             )
         )
     assert "immutable" in str(excinfo.value)
+
+
+def test_the_row_records_what_was_actually_stored_not_only_what_was_matched(
+    workspace_id: str, design_storage: FsStorage
+) -> None:
+    """W8. A fragment's CSS is scoped under an id derived from its own content, so the stored
+    bytes do not exist until the artifact is built — one call after the mint stage assembled its
+    provenance. The creation seam knows the answer and stamps it, rather than the producer
+    minting twice to measure once."""
+    kit = _seed_kit(workspace_id)
+    minted = _mint(workspace_id, design_storage, kit=kit).minted[0]
+    row = next(
+        r for r in list_web_fragments(workspace_id=workspace_id)
+        if r["fragment_id"] == minted.fragment_id
+    )
+    payload_sizes = row["provenance"]["payload"]
+    loaded = read_web_fragment(
+        design_storage, workspace_id=workspace_id, fragment_id=minted.fragment_id
+    )
+    assert payload_sizes["css_bytes"] == len(loaded.css.encode("utf-8"))
+    assert payload_sizes["html_bytes"] == len(loaded.html.encode("utf-8"))
+    assert payload_sizes["bytes"] > payload_sizes["css_bytes"]
+    # The matched (pre-scope) figure the mint stage recorded is still there, and is a DIFFERENT
+    # number — scoping prefixes every selector, so what is stored is larger than what matched.
+    assert row["provenance"]["css"]["byte_length"] <= payload_sizes["css_bytes"]
+
+
+def test_an_unresolvable_pin_tells_the_operator_which_kind_of_broken_it_is(
+    workspace_id: str, design_storage: FsStorage, caplog
+) -> None:
+    """W8. "This section cannot be shown" is one sentence to a page and two different repairs to
+    whoever maintains the pipeline: a purged blob is a custody problem, an unparseable payload is
+    a schema or write problem. The refusal's own code is what separates them."""
+    import logging
+
+    from lumen_api.fragments.render import build_fragment_render_package
+
+    kit = _seed_kit(workspace_id)
+    minted = _mint(workspace_id, design_storage, kit=kit).minted[0]
+    web_doc = _doc("doc_log", ("n1", minted.fragment_id))
+
+    with caplog.at_level(logging.WARNING, logger="lumen_api.fragments.render"):
+        package = build_fragment_render_package(
+            design_storage,
+            workspace_id=workspace_id,
+            web_doc={**web_doc, "pages": [{**web_doc["pages"][0], "id": "home"}]},
+            page_id="home",
+        )
+    assert package["missing"] == []
+
+    # Now break the custody and look again: the log names the reason, not just the id.
+    DesignBlobStore(design_storage, workspace_id).delete(
+        next(
+            r for r in list_web_fragments(workspace_id=workspace_id)
+            if r["fragment_id"] == minted.fragment_id
+        )["payload_digest"]
+    )
+    caplog.clear()
+    with caplog.at_level(logging.WARNING, logger="lumen_api.fragments.render"):
+        package = build_fragment_render_package(
+            design_storage,
+            workspace_id=workspace_id,
+            web_doc={**web_doc, "pages": [{**web_doc["pages"][0], "id": "home"}]},
+            page_id="home",
+        )
+    assert package["missing"] == [minted.fragment_id]
+    assert any("reason=fragment." in record.getMessage() for record in caplog.records)

@@ -42,7 +42,11 @@ from conftest import make_blob_store, make_client
 from PIL import Image
 
 from lumen_api.design_store import DesignStoreBridge, HybridRepository
-from lumen_api.fragments import create_web_fragment, fragment_wrapper_class
+from lumen_api.fragments import (
+    create_web_fragment,
+    fragment_wrapper_class,
+    set_web_fragment_status,
+)
 from lumen_api.fragments.slots import SlotSpec
 from lumen_api.main import create_app
 from lumen_api.web_export import build_export_bundle
@@ -122,6 +126,12 @@ def _mint_fragment(
         source_url=SOURCE_URL,
         section_role="hero",
         slots=slots,
+    )
+    # A fragment is born `draft` and a document may only pin an APPROVED one (F2.2's half of the
+    # reference gate). This file is about delivery, not about the gate, so it releases the
+    # fragment the way a human would and gets on with it.
+    set_web_fragment_status(
+        workspace_id=workspace_id, fragment_id=artifact.fragment_id, status="approved"
     )
     return artifact
 
@@ -745,6 +755,11 @@ def test_an_unreadable_payload_degrades_on_every_path_and_never_500s(
     bytes are absent or unreadable.
     """
     fragment_id = _fragment_row_over_a_hand_written_payload(client, workspace_id, payload)
+    # Released like any other, so the document may pin it: this test is about a CORRUPT payload,
+    # not about the approval gate.
+    set_web_fragment_status(
+        workspace_id=workspace_id, fragment_id=fragment_id, status="approved"
+    )
     document = _seed(
         client,
         _web_doc(
@@ -781,3 +796,76 @@ def test_an_unreadable_payload_degrades_on_every_path_and_never_500s(
     )
     assert package["missing"] == [fragment_id]
     assert package["fragments"] == {}
+
+
+# --------------------------------------------------------------------------- #
+# W7 — the Tailwind scan reads the DOCUMENT, never the clone
+# --------------------------------------------------------------------------- #
+
+#: `mt-24` is a live Tailwind utility that this document never authors. It reaches the page only
+#: as a class on the CLONED section's own markup — a class name lifted verbatim from somebody
+#: else's site.
+CLONE_ONLY_UTILITY_HTML = (
+    '<section class="clone-hero mt-24">'
+    f'<h1 class="clone-head">{CLONE_HEADLINE}</h1>'
+    "</section>"
+)
+
+
+def test_a_class_that_only_the_clone_carries_does_not_enter_the_documents_stylesheet(
+    client: TestClient, workspace_id: str
+) -> None:
+    """W7. The compiler scans whatever html it is handed and mints a utility for every class that
+    looks like one — so scanning the DELIVERED page let a cloned section decide what the
+    DOCUMENT's stylesheet contains. A source-site `mt-24` became a live utility that then applied
+    to the document's own markup: a fragment whose styling is supposed to be sealed inside its
+    scoped sheet, leaking outward, invisibly, until a document class happened to collide."""
+    artifact = _mint_fragment(
+        client, workspace_id, html=CLONE_ONLY_UTILITY_HTML, css=".clone-head{color:#123456}",
+        slots=(),
+    )
+    document = _seed(
+        client,
+        _web_doc(
+            "doc_scan",
+            {
+                "id": "clone",
+                "kind": "fragment",
+                "fragment_id": artifact.fragment_id,
+                "classes": "text-center",
+            },
+        ),
+    )
+
+    files, html, _manifest = _export(client, document["id"])
+    site_css = files["site.css"].decode("utf-8")
+
+    # The clone-only utility is NOT in the document's sheet…
+    assert ".mt-24" not in site_css
+    # …while the class the DOCUMENT authors still is, so the scan did not simply go blind.
+    assert ".text-center" in site_css
+    # …and the delivered page still carries the clone's own markup verbatim.
+    assert "mt-24" in html
+    assert CLONE_HEADLINE in html
+
+
+def test_the_cascade_report_no_longer_counts_utilities_our_own_scan_invented(
+    client: TestClient, workspace_id: str
+) -> None:
+    """The same change de-noises the collision report: "a live utility" now means one the
+    document really asked for, not one the compiler minted from the very fragment being checked."""
+    artifact = _mint_fragment(
+        client, workspace_id, html=CLONE_ONLY_UTILITY_HTML,
+        css=".mt-24 { margin-top: 1px }", slots=(),
+    )
+    document = _seed(
+        client,
+        _web_doc(
+            "doc_scan_noise",
+            {"id": "clone", "kind": "fragment", "fragment_id": artifact.fragment_id},
+        ),
+    )
+    _files, _html, manifest = _export(client, document["id"])
+    assert not [
+        warning for warning in manifest["warnings"] if "mt-24" in warning
+    ], manifest["warnings"]

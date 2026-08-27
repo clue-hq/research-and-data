@@ -498,6 +498,18 @@ def mint_sections(
                 diagnostics=diagnostics,
             )
         except FragmentRefused as refusal:
+            # The diagnostic is for the human reading the job; this is for the operator reading
+            # the logs, and it carries the refusal's own CODE — an unrehosted reference and an
+            # unreadable stylesheet are one sentence to a marketer and two different repairs to
+            # whoever has to fix the pipeline.
+            logger.warning(
+                "fragment_mint_refused page=%s section=%s role=%s code=%s reference=%s",
+                segmentation.page_url,
+                record.index,
+                record.role,
+                refusal.code,
+                refusal.reference,
+            )
             diagnostics.append(
                 _diag(
                     MINT_FAILED_CODE,

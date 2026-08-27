@@ -91,7 +91,13 @@ def test_creating_a_fragment_writes_one_row_two_blobs_and_round_trips(
     assert row["status"] == "draft"
     assert row["payload_digest"] == _sha(artifact.payload_bytes)
     assert row["preview_digest"] == _sha(PNG)
-    assert row["provenance"] == {"job_id": "job_1", "page_index": 0}
+    # The caller's provenance survives verbatim, and the creation seam stamps what was actually
+    # STORED beside it — the producer cannot know that, because the css is scoped under an id
+    # derived from the artifact it is still building (F2 wave W8).
+    assert row["provenance"]["job_id"] == "job_1"
+    assert row["provenance"]["page_index"] == 0
+    assert set(row["provenance"]["payload"]) == {"bytes", "css_bytes", "html_bytes"}
+    assert row["provenance"]["payload"]["bytes"] > 0
 
     blobs = DesignBlobStore(design_storage, workspace_id)
     assert blobs.exists(row["payload_digest"])

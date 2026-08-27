@@ -158,7 +158,7 @@ def create_web_fragment(
             label=label,
             payload_digest=artifact.payload_digest,
             preview_digest=preview_digest,
-            provenance=dict(provenance or {}),
+            provenance=_with_payload_sizes(provenance, artifact),
         )
 
     return DesignStoreBridge(workspace_id)._run(_persist), artifact
@@ -213,6 +213,30 @@ def set_web_fragment_status(
             conn, workspace_id=workspace_id, fragment_id=fragment_id, status=status
         )
     )
+
+
+def _with_payload_sizes(
+    provenance: Mapping[str, Any] | None, artifact: FragmentArtifact
+) -> dict[str, Any]:
+    """Stamp what was actually STORED onto the provenance the caller supplied.
+
+    The producer cannot record this itself. A fragment's ``css`` is scoped under an id derived
+    from the fragment's own content, so the stored bytes do not exist until the artifact is
+    built — and the artifact is built HERE, one call after the provenance was assembled. Asking
+    the producer for it would mean minting twice to measure once.
+
+    So the seam that knows the answer writes it. The mint stage records what it MATCHED
+    (``css.byte_length``, pre-scoping); this records what a reader will actually load, which is
+    the number that matters when a picker offering a dozen sections is asked what it costs.
+    """
+    return {
+        **dict(provenance or {}),
+        "payload": {
+            "bytes": len(artifact.payload_bytes),
+            "css_bytes": len(str(artifact.payload.get("css") or "").encode("utf-8")),
+            "html_bytes": len(str(artifact.payload.get("html") or "").encode("utf-8")),
+        },
+    }
 
 
 def _digest(data: bytes) -> str:

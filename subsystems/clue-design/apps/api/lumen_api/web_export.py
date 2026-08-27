@@ -900,6 +900,29 @@ def _build_input_css(theme: _CompiledTheme) -> str:
     return css
 
 
+def _document_only_html(core: Any, web_doc: JsonObject, rendered: str, **render_kwargs: Any) -> str:
+    """The page WITHOUT its cloned sections — the Tailwind scanner's input (clone-fidelity W7).
+
+    A cloned fragment carries the class names of somebody else's site. The Tailwind compiler
+    scans whatever html it is given and mints a utility for every class that looks like one, so
+    scanning the delivered page makes the CLONE decide what the DOCUMENT's stylesheet contains:
+    a source-site `hidden` or `mt-8` becomes a live utility that then applies to the document's
+    own markup. A fragment is supposed to arrive with its styling sealed inside its own scoped
+    sheet; this is the one place that seal leaked, and it leaked in the direction that is hardest
+    to see, because the page still looks right until a document class happens to collide.
+
+    So the scan runs over the document alone — the same render with no fragments and no fragment
+    css — while the DELIVERED html is unchanged. It also makes `_fragment_cascade_warnings`
+    honest: "a live utility" now means one the document really asked for, not one our own scan
+    invented from the fragment we are checking.
+
+    Falls back to the rendered page if the second render produces nothing, because a missing
+    stylesheet is a worse failure than an over-broad one.
+    """
+    second = core.web_render(web_doc, HOME_PAGE_ID, fragments={}, fragment_css="", **render_kwargs)
+    return (second.get("html") or "") or rendered
+
+
 def _compile_static_css(html: str, theme: _CompiledTheme, node_bin: str) -> str:
     """Run the editor's Tailwind v4 toolchain over ``html`` against the doc's
     ``@theme`` tokens. Raises ``WebExportCompileError`` (stderr attached) on a
@@ -1173,16 +1196,19 @@ def build_export_bundle(
         ),
     )
     warnings.extend(fragments.warnings)
-    render = core.web_render(
-        web_doc,
-        HOME_PAGE_ID,
+    render_kwargs = dict(
         mode="delivery",
         asset_base_url="assets",
         font_face_css=font_face_css,
         brand_kit=brand_kit,
         custom_component_runtimes=component_package.frames,
+    )
+    render = core.web_render(
+        web_doc,
+        HOME_PAGE_ID,
         fragments=fragments.render_map,
         fragment_css=fragments.css,
+        **render_kwargs,
     )
     html = render.get("html") or ""
 
@@ -1216,7 +1242,9 @@ def build_export_bundle(
 
     # 4. Static CSS: compile against the doc theme, link it from the html.
     compiled_theme = _theme_tokens(core, web_doc, brand_kit)
-    site_css = _compile_static_css(html, compiled_theme, node_bin)
+    site_css = _compile_static_css(
+        _document_only_html(core, web_doc, html, **render_kwargs), compiled_theme, node_bin
+    )
     files["site.css"] = site_css.encode("utf-8")
     # The cascade check, now that a REAL compiled sheet exists to check against.
     warnings.extend(_fragment_cascade_warnings(fragments, site_css))
@@ -1340,16 +1368,19 @@ def build_publish_package(
         consequence="the published page will serve a 404 where that image or font goes",
     )
     warnings.extend(fragments.warnings)
-    render = core.web_render(
-        web_doc,
-        HOME_PAGE_ID,
+    render_kwargs = dict(
         mode="delivery",
         asset_base_url="/asset-store",
         font_face_css=font_face_css,
         brand_kit=brand_kit,
         custom_component_runtimes=component_package.frames,
+    )
+    render = core.web_render(
+        web_doc,
+        HOME_PAGE_ID,
         fragments=fragments.render_map,
         fragment_css=fragments.css,
+        **render_kwargs,
     )
     html = render.get("html") or ""
 
@@ -1358,7 +1389,9 @@ def build_publish_package(
     # Static CSS compiled and INLINED (no external stylesheet for a single-file
     # publish payload).
     compiled_theme = _theme_tokens(core, web_doc, brand_kit)
-    site_css = _compile_static_css(html, compiled_theme, node_bin)
+    site_css = _compile_static_css(
+        _document_only_html(core, web_doc, html, **render_kwargs), compiled_theme, node_bin
+    )
     warnings.extend(_fragment_cascade_warnings(fragments, site_css))
 
     # As on the export path: the page's picture is an image node's asset, not a background

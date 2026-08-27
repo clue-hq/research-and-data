@@ -394,15 +394,22 @@ def _font_face_block(
     dropped: list[str] = []
     for segment in segments:
         property_name = _declaration_property(segment)
+        # Collected per DESCRIPTOR, merged only if the descriptor survives. A `src` listing two
+        # rungs resolves the first and then refuses on the second; if the shared set were written
+        # straight through, the dropped descriptor would leave the first rung's digest behind and
+        # the artifact would claim to display bytes its stored CSS no longer names — a delivery
+        # build would then ship a font file nothing references.
+        found: set[str] = set()
         try:
             rendered = _declaration_block(
-                segment, renames=renames, rehosted=rehosted, digests=digests
+                segment, renames=renames, rehosted=rehosted, digests=found
             )
         except FragmentRefused as refusal:
             if property_name != "src" or refusal.code != "fragment.unrehosted_reference":
                 raise
             dropped.append(refusal.reference or "an unrehosted font file")
             continue
+        digests.update(found)
         if property_name == "src":
             sources += 1
         if rendered.strip():
@@ -493,8 +500,8 @@ def _scope_selector(prelude: Sequence[object], *, wrapper: str, notes: list[str]
             )
             parts.append(f".{wrapper}")
             continue
-        leading, remainder = _split_leading_compound(text)
-        if remainder and _is_root_qualified(leading):
+        leading, remainder = _split_root_prefix(text)
+        if leading and remainder:
             # `html.dark .btn` is a THEME rule: the leading compound qualifies the document, the
             # rest addresses the section. Prefixing the whole thing produces
             # `.lumen-frag-x html.dark .btn` — an `<html>` inside the wrapper, which can never
@@ -527,6 +534,40 @@ def _is_root_qualified(compound: str) -> bool:
             if rest[:1] in (".", "#", "[", ":"):
                 return True
     return False
+
+
+def _split_root_prefix(selector: str) -> tuple[str, str]:
+    """The run of leading DOCUMENT compounds, and what addresses the section after them.
+
+    ``html.dark .btn`` → ``("html.dark", ".btn")``; ``html > body .y`` → ``("html > body", ".y")``.
+    A selector with no root prefix, or one that is nothing BUT a root prefix, returns ``("", …)``
+    so the caller falls back to its ordinary handling.
+
+    The run matters. Splitting only the first compound left `body` inside the wrapper for
+    ``html > body .y`` — an element that can never appear there, which is the same dead-rule
+    shape this rewrite exists to prevent, one compound further along.
+    """
+    prefix: list[str] = []
+    rest = selector.strip()
+    while rest:
+        leading, remainder = _split_leading_compound(rest)
+        if not _is_root_qualified(leading) or not remainder:
+            break
+        prefix.append(leading)
+        combinator = ""
+        if remainder[:1] in ">+~":
+            combinator = remainder[0]
+            remainder = remainder[1:].strip()
+        if combinator:
+            prefix.append(combinator)
+        rest = remainder
+    if not prefix or not rest:
+        return "", selector
+    # A trailing combinator described the ROOT's relationship to what follows; after re-anchoring
+    # it describes the WRAPPER's, which is the closest honest analogue inside a section.
+    if prefix[-1] in ">+~":
+        return " ".join(prefix[:-1]), f"{prefix[-1]} {rest}"
+    return " ".join(prefix), rest
 
 
 def _split_leading_compound(selector: str) -> tuple[str, str]:

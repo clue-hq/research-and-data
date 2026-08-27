@@ -1131,3 +1131,50 @@ def test_an_image_only_section_is_not_mistaken_for_an_empty_shell() -> None:
     assert _shows_anything("<section><svg><circle></circle></svg></section>")
     assert not _shows_anything('<section><div class="w-embed"></div></section>')
     assert not _shows_anything("")
+
+
+def test_a_chain_of_document_compounds_all_stays_outside_the_wrapper() -> None:
+    """Splitting only the FIRST compound left `body` inside the wrapper for `html > body .y` —
+    an element that can never appear there, which is the same dead-rule shape the leading-compound
+    rewrite exists to prevent, one compound further along."""
+    from lumen_api.fragments import scope_fragment_css
+
+    result = scope_fragment_css("html > body .y { color: red }", fragment_id=FRAG_ID, rehosted={})
+    assert result.css.startswith("html > body ")
+    assert f"html > body .{WRAPPER} .y" in result.css
+
+
+def test_a_child_combinator_on_the_document_root_re_anchors_onto_the_wrapper() -> None:
+    from lumen_api.fragments import scope_fragment_css
+
+    result = scope_fragment_css("body > .x { color: red }", fragment_id=FRAG_ID, rehosted={})
+    assert f"body .{WRAPPER} > .x" in result.css
+
+
+def test_a_dropped_font_descriptor_leaves_no_digest_behind() -> None:
+    """A `src` listing two rungs resolves the first and then refuses on the second. Writing
+    straight into the shared digest set left the first rung behind on a descriptor that was then
+    dropped — so the artifact claimed to display bytes its stored CSS no longer names, and a
+    delivery build would ship a font file nothing references."""
+    from lumen_api.fragments import scope_fragment_css
+
+    digest = _digest("woff2-bytes")
+    result = scope_fragment_css(
+        "@font-face { font-family: s; src: url(/ok.woff2), url(/never.woff2) }",
+        fragment_id=FRAG_ID,
+        rehosted={"/ok.woff2": digest},
+    )
+    assert result.asset_digests == ()
+    assert "@font-face" not in result.css
+
+
+def test_a_font_descriptor_that_fully_resolves_still_reports_its_digests() -> None:
+    from lumen_api.fragments import scope_fragment_css
+
+    digest = _digest("woff2-bytes")
+    result = scope_fragment_css(
+        "@font-face { font-family: s; src: url(/ok.woff2) }",
+        fragment_id=FRAG_ID,
+        rehosted={"/ok.woff2": digest},
+    )
+    assert result.asset_digests == (digest,)

@@ -39,6 +39,7 @@ rather than changed — this is what the engine already does):
 
 from __future__ import annotations
 
+import logging
 import re
 from typing import Any, Iterable, Mapping, Sequence
 
@@ -48,6 +49,8 @@ from ..database import NotFoundError
 from .refs import ASSET_URL_PREFIX, FRAGMENT_ID_RE, FragmentRefused, fragment_wrapper_class
 from .registry import read_web_fragment
 from .slots import SLOT_KINDS
+
+logger = logging.getLogger(__name__)
 
 #: Version of the by-value package shape, so a fleet worker running older code against a newer
 #: API refuses to improvise rather than silently rendering half a page. Read by
@@ -191,6 +194,11 @@ def build_fragment_render_package(
     here, past every caller, as a 500 on all four render paths. "The bytes are wrong" is a
     different fault from "the bytes are gone" but it is the SAME question for a page: this
     section cannot be shown. So both answers are the same one, and both are visible.
+
+    They are the same answer to the PAGE and two different answers to an operator, though, and
+    the log keeps them apart: a purged blob is a custody problem, a payload this build cannot
+    parse is a schema or a write problem, and "the section did not render" is the same sentence
+    for both. The refusal's own ``code`` is what tells them apart, so it is what gets logged.
     """
     package = empty_fragment_render_package()
     for fragment_id in web_doc_fragment_ids(web_doc, page_id):
@@ -203,7 +211,22 @@ def build_fragment_render_package(
             loaded = read_web_fragment(
                 storage, workspace_id=workspace_id, fragment_id=fragment_id
             )
-        except (NotFoundError, FragmentRefused):
+        except NotFoundError:
+            logger.warning(
+                "fragment_unresolved fragment_id=%s workspace_id=%s reason=fragment.not_held",
+                fragment_id,
+                workspace_id,
+            )
+            package["missing"].append(fragment_id)
+            continue
+        except FragmentRefused as refusal:
+            logger.warning(
+                "fragment_unresolved fragment_id=%s workspace_id=%s reason=%s detail=%s",
+                fragment_id,
+                workspace_id,
+                refusal.code,
+                refusal.message,
+            )
             package["missing"].append(fragment_id)
             continue
         package["fragments"][fragment_id] = {
