@@ -17,7 +17,14 @@ __pycache__/
 apps/api/*.sqlite3
 apps/editor/public/canvaskit/
 apps/editor/public/fonts/
-apps/editor/public/wasm/
+# The browser engine is a release input for the Railway-hosted platform
+# frontend. Track its two wasm-pack outputs so a clean remote build can verify
+# the source-content stamp and ship an editable canvas. Other files in the
+# directory remain generated/local-only.
+apps/editor/public/wasm/*
+!apps/editor/public/wasm/.gitignore
+!apps/editor/public/wasm/lumen_wasm.js
+!apps/editor/public/wasm/lumen_wasm_bg.wasm
 reference_docs/*
 !reference_docs/
 !reference_docs/ABM-Design-Engine-Temporary-Spec.md

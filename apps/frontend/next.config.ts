@@ -6,6 +6,9 @@ import type { NextConfig } from "next";
 const CANVASKIT_STUB = "./src/features/design-editor/engine/scene/empty-module.ts";
 
 const nextConfig: NextConfig = {
+  // Railway's runtime image copies only Next's traced production server rather
+  // than the full dependency tree. `next start` remains available locally.
+  output: "standalone",
   // Keep local visual reviews faithful to the Figma canvas.
   devIndicators: false,
   // This monorepo checkout may live below an unrelated user-level package-lock.json. Without an
