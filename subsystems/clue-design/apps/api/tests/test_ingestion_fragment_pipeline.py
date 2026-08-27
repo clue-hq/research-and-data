@@ -850,7 +850,7 @@ def test_the_row_records_what_was_actually_stored_not_only_what_was_matched(
 
 
 def test_an_unresolvable_pin_tells_the_operator_which_kind_of_broken_it_is(
-    workspace_id: str, design_storage: FsStorage, caplog
+    workspace_id: str, design_storage: FsStorage
 ) -> None:
     """W8. "This section cannot be shown" is one sentence to a page and two different repairs to
     whoever maintains the pipeline: a purged blob is a custody problem, an unparseable payload is
@@ -859,33 +859,47 @@ def test_an_unresolvable_pin_tells_the_operator_which_kind_of_broken_it_is(
 
     from lumen_api.fragments.render import build_fragment_render_package
 
+    # A handler of our own rather than `caplog`: that fixture belongs to pytest's logging
+    # plugin, so a gate invoked with `-p no:logging` — a reasonable thing to do when a suite is
+    # noisy — turned this test into an ERROR rather than a skip. A test that only runs under one
+    # harness flag is a test that quietly stops running.
+    captured: list[str] = []
+
+    class _Sink(logging.Handler):
+        def emit(self, record: logging.LogRecord) -> None:
+            captured.append(record.getMessage())
+
+    sink = _Sink(level=logging.WARNING)
+    render_logger = logging.getLogger("lumen_api.fragments.render")
+    render_logger.addHandler(sink)
+    previous_level = render_logger.level
+    render_logger.setLevel(logging.WARNING)
+
     kit = _seed_kit(workspace_id)
     minted = _mint(workspace_id, design_storage, kit=kit).minted[0]
     web_doc = _doc("doc_log", ("n1", minted.fragment_id))
 
-    with caplog.at_level(logging.WARNING, logger="lumen_api.fragments.render"):
+    page = {**web_doc, "pages": [{**web_doc["pages"][0], "id": "home"}]}
+    try:
         package = build_fragment_render_package(
-            design_storage,
-            workspace_id=workspace_id,
-            web_doc={**web_doc, "pages": [{**web_doc["pages"][0], "id": "home"}]},
-            page_id="home",
+            design_storage, workspace_id=workspace_id, web_doc=page, page_id="home"
         )
-    assert package["missing"] == []
+        assert package["missing"] == []
+        assert not captured
 
-    # Now break the custody and look again: the log names the reason, not just the id.
-    DesignBlobStore(design_storage, workspace_id).delete(
-        next(
-            r for r in list_web_fragments(workspace_id=workspace_id)
-            if r["fragment_id"] == minted.fragment_id
-        )["payload_digest"]
-    )
-    caplog.clear()
-    with caplog.at_level(logging.WARNING, logger="lumen_api.fragments.render"):
-        package = build_fragment_render_package(
-            design_storage,
-            workspace_id=workspace_id,
-            web_doc={**web_doc, "pages": [{**web_doc["pages"][0], "id": "home"}]},
-            page_id="home",
+        # Now break the custody and look again: the log names the reason, not just the id.
+        DesignBlobStore(design_storage, workspace_id).delete(
+            next(
+                r for r in list_web_fragments(workspace_id=workspace_id)
+                if r["fragment_id"] == minted.fragment_id
+            )["payload_digest"]
         )
+        package = build_fragment_render_package(
+            design_storage, workspace_id=workspace_id, web_doc=page, page_id="home"
+        )
+    finally:
+        render_logger.removeHandler(sink)
+        render_logger.setLevel(previous_level)
+
     assert package["missing"] == [minted.fragment_id]
-    assert any("reason=fragment." in record.getMessage() for record in caplog.records)
+    assert any("reason=fragment." in message for message in captured), captured
