@@ -1580,6 +1580,18 @@ class HybridRepository:
         belong to, so the fail-closed workspace-scoped read is the whole check. A fragment
         registered to another tenant resolves to ``None`` here exactly as an absent one does,
         which is what keeps a global content address from leaking across workspaces.
+
+        **A new pin also needs an APPROVED fragment** (clone-fidelity F2.2). Ingestion mints
+        cloned sections as ``draft``; a human releases them by approving the brand kit they came
+        from. Until then they exist, they are listable, and they are simply not something a
+        document may start using — which is the whole point of a draft. ``deprecated`` is
+        refused for the mirror-image reason: it is a retirement, and a retirement that still
+        accepted new users would not be one.
+
+        The check is on NEW pins only, exactly like the resolution check beside it. A document
+        that already pins a fragment stays loadable, renderable and editable no matter what that
+        fragment's status later became — losing the ability to retitle a page because somebody
+        retired one section of it would be absurd, and the render path is fail-soft by design.
         """
         before = fragment_references(before_web_doc)
         after = fragment_references(after_web_doc)
@@ -1590,10 +1602,22 @@ class HybridRepository:
                 continue
             if fragment_id in resolved:
                 continue
-            if self.find_web_fragment(fragment_id) is None:
+            row = self.find_web_fragment(fragment_id)
+            if row is None:
                 raise FragmentReferenceError(
                     "fragment.unresolved",
                     f"fragment {fragment_id!r} was not found in this workspace",
+                    node_id=node_id,
+                    fragment_id=fragment_id,
+                )
+            status = str(row.get("status") or "")
+            if status != "approved":
+                # A separate code from `unresolved` because the repairs differ: one is "mint
+                # it", the other is "approve the brand kit it was cloned into".
+                raise FragmentReferenceError(
+                    "fragment.not_approved",
+                    f"fragment {fragment_id!r} is {status or 'unknown'}; a document may only pin "
+                    "an approved fragment (approve the brand kit it was cloned from)",
                     node_id=node_id,
                     fragment_id=fragment_id,
                 )

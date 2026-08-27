@@ -408,6 +408,23 @@ def test_a_css_url_resolves_against_its_own_stylesheet_not_the_page() -> None:
     assert harvest.resolved == {"/assets/sprite.png": SPRITE_PNG}
 
 
+def test_a_relative_stylesheet_url_is_itself_resolved_against_the_page_first() -> None:
+    """A capture records a sheet's url as the page wrote it, so ``<link href="/s.css">`` arrives
+    here as ``/s.css``. Using that raw as a base makes every reference inside the sheet resolve
+    to nothing, and every section that cites a webfont refuses."""
+    harvest = build_reference_harvest(
+        subtree_html="<section></section>",
+        page_url=PAGE_URL,
+        css_blocks=(("/s.css", "@font-face { src: url(/fonts/inter.woff2) }"),),
+        captured={
+            "https://site.example/fonts/inter.woff2": CapturedAsset(
+                url="https://site.example/fonts/inter.woff2", data=b"woff2", content_type=None
+            )
+        },
+    )
+    assert harvest.resolved == {"/fonts/inter.woff2": "https://site.example/fonts/inter.woff2"}
+
+
 def test_an_inline_stylesheet_resolves_against_the_page() -> None:
     harvest = build_reference_harvest(
         subtree_html="<section></section>",

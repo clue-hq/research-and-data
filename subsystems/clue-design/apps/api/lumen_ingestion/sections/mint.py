@@ -40,8 +40,8 @@ from urllib.parse import unquote_to_bytes, urljoin
 
 import tinycss2
 from lumen_api.fragments import (
+    WEB_FRAGMENT_SOURCE_KEY,
     FragmentRefused,
-    SlotSpec,
     asset_url_digest,
     create_web_fragment,
     parse_srcset_candidates,
@@ -192,7 +192,14 @@ def build_reference_harvest(
 
     _harvest_html(subtree_html, page_url, offer)
     for sheet_url, text in css_blocks:
-        base = page_url if (not sheet_url or sheet_url.startswith("inline:")) else sheet_url
+        # A sheet's own url is itself resolved against the page first: the capture records it
+        # as the page wrote it, so a `<link href="/s.css">` arrives here as `/s.css`, and using
+        # that raw as a base would make every reference inside it page-relative-to-nothing.
+        base = (
+            page_url
+            if (not sheet_url or sheet_url.startswith("inline:"))
+            else urljoin(page_url, sheet_url)
+        )
         _harvest_css(text, base, offer)
 
     resolved: dict[str, str] = {}
@@ -763,6 +770,23 @@ def make_fragment_writer(
     return _create
 
 
+def make_asset_rehoster(blobs: Any) -> Callable[[bytes, str], str]:
+    """Give one captured byte string durable custody, and answer with its **digest**.
+
+    ``DesignBlobStore.register`` answers with the storage KEY (``{workspace}/design/{sha256}``),
+    which is the storage layer's business and is emphatically not what a fragment cites — the
+    artifact names ``/asset-store/<digest>``, and the reference gate refuses anything that is
+    not a bare sha256. Computing the digest here rather than parsing it back out of a key keeps
+    the two layers from having to agree on a key's shape.
+    """
+
+    def _rehost(data: bytes, media_type: str) -> str:
+        blobs.register(data, media_type=media_type, source_key=WEB_FRAGMENT_SOURCE_KEY)
+        return hashlib.sha256(data).hexdigest()
+
+    return _rehost
+
+
 __all__ = [
     "MAX_PREVIEW_WIDTH",
     "MINT_CAPPED_CODE",
@@ -779,6 +803,7 @@ __all__ = [
     "captured_assets",
     "crop_extent",
     "crop_preview",
+    "make_asset_rehoster",
     "make_fragment_writer",
     "mint_sections",
 ]

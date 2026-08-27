@@ -179,6 +179,56 @@ async def list_web_fragments(
     return [_from_row(row) for row in rows]
 
 
+async def sync_kit_fragment_approval(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    brand_kit_id: str,
+    brand_kit_version: int,
+    approved: bool,
+) -> int:
+    """Move one kit VERSION's fragments between ``draft`` and ``approved``. Returns the count.
+
+    This is the human gate, and it deliberately has no surface of its own. A fragment is minted
+    at website-ingestion time against the DRAFT kit that same ingestion published, so the
+    decision "these cloned sections are fit to reuse" is the same decision as "this brand kit is
+    fit to use" — made by the same person, about the same capture, on the screen that already
+    exists. Giving fragments a second approval queue would be a second thing to forget.
+
+    Called from :func:`clue_design.brand.update_brand_kit_approval` **inside its transaction**,
+    so the kit and its fragments cannot end up disagreeing.
+
+    Two deliberate limits:
+
+    * only ``draft`` ⇄ ``approved`` move. ``deprecated`` is a decision about ONE section, and a
+      kit-wide approval must not quietly undo the narrower, more specific one.
+    * the version matters. Approval is version-specific for kits (a newer draft does not shadow
+      an older approved version), and a fragment names the exact version it was minted from, so
+      approving v3 says nothing about the sections cloned into v2.
+    """
+    target, current = ("approved", "draft") if approved else ("draft", "approved")
+    result = await conn.execute(
+        text(
+            """
+            UPDATE design_web_fragment
+            SET status = :target, updated_at = now()
+            WHERE workspace_id = :workspace_id
+              AND source_kit_id = :brand_kit_id
+              AND source_kit_version = :brand_kit_version
+              AND status = :current
+            """
+        ),
+        {
+            "target": target,
+            "current": current,
+            "workspace_id": workspace_id,
+            "brand_kit_id": brand_kit_id,
+            "brand_kit_version": brand_kit_version,
+        },
+    )
+    return int(result.rowcount or 0)
+
+
 async def set_web_fragment_status(
     conn: AsyncConnection, *, workspace_id: str, fragment_id: str, status: str
 ) -> JsonObject:

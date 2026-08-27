@@ -1055,7 +1055,24 @@ def _ingest(
         job_derived_id=requested_kit_id is None,
     )
 
-    evidence_json = _evidence_dump(evidence, site_snapshots=snapshot_refs)
+    # Clone the pages' sections into fragments (clone-fidelity F2.2). AFTER the publish, because
+    # a fragment is bound to the kit VERSION it was cloned into and an existing lineage's version
+    # is allocated inside that write — so this is the first moment the binding can be honest.
+    mint_refs, mint_diagnostics = _mint_page_fragments(
+        outcome,
+        repo=repo,
+        blobs=blobs,
+        brand_kit_id=str(record["brand_kit_id"]),
+        brand_kit_version=int(record["version"]),
+        snapshot_refs=snapshot_refs,
+    )
+
+    evidence_json = _evidence_dump(
+        evidence,
+        site_snapshots=snapshot_refs,
+        web_fragments=mint_refs,
+        fragment_diagnostics=mint_diagnostics,
+    )
     return (record["brand_kit_id"], int(record["version"]), evidence_json)
 
 
@@ -1070,7 +1087,137 @@ def _kit_name(evidence: Any, url: str) -> str:
     return host or url
 
 
-def _evidence_dump(evidence: Any, *, site_snapshots: "list[Any] | None" = None) -> Optional[str]:
+def _mint_page_fragments(
+    outcome: Any,
+    *,
+    repo: HybridRepository,
+    blobs: DesignBlobStore,
+    brand_kit_id: str,
+    brand_kit_version: int,
+    snapshot_refs: "list[Any]",
+) -> "tuple[list[JsonObject], list[JsonObject]]":
+    """Mint one fragment per section of every page this capture produced (clone-fidelity F2.2).
+
+    **Additive, and never fatal.** The ingestion's product is the brand kit; a cloned section is
+    a bonus on top of it. So this runs after the publish, per page, inside a guard — a byte store
+    that hiccups or a page whose markup defeats the segmenter costs diagnostics on the job's
+    evidence payload and a line in the worker log, never the kit a human was waiting for. It is
+    the same posture ``_persist_site_snapshots`` takes, for the same reason.
+
+    The BUDGET is per ingest, not per page: an eight-page walk must not mint ninety-six sections
+    because each page was individually under the cap. Pages are minted entry-page first, so what
+    the cap keeps is the homepage — which is what anyone cloning a site wants.
+
+    Reads the LIVE capture rather than the persisted snapshot, deliberately: the rehost map needs
+    the downloaded BYTES, and ``design_site_snapshot`` stores the html, the stylesheets and the
+    screenshot but not the assets. Re-reading them would mean re-fetching somebody's site.
+    """
+    from lumen_ingestion.sections import mint as section_mint
+    from lumen_ingestion.sections.segment import segment_snapshot
+
+    refs: list[JsonObject] = []
+    diagnostics: list[JsonObject] = []
+    snapshots = _outcome_snapshots(outcome)
+    if not snapshots:
+        return refs, diagnostics
+
+    by_index = {ref.page_index: ref for ref in snapshot_refs}
+    budget = section_mint.SECTION_MINT_CAP
+
+    rehost = section_mint.make_asset_rehoster(blobs)
+
+    for page_index, snapshot in enumerate(snapshots):
+        if budget <= 0:
+            break
+        try:
+            segmentation = segment_snapshot(
+                _SnapshotView(snapshot, snapshot_id=getattr(by_index.get(page_index), "snapshot_id", None))
+            )
+            diagnostics.extend(dict(entry) for entry in segmentation.diagnostics)
+            result = section_mint.mint_sections(
+                segmentation,
+                html=snapshot.html,
+                stylesheets=list(getattr(snapshot, "stylesheets", None) or []),
+                captured=section_mint.captured_assets(snapshot),
+                screenshot=_screenshot_bytes(snapshot),
+                source_kit_id=brand_kit_id,
+                source_kit_version=brand_kit_version,
+                register_bytes=rehost,
+                create_fragment=section_mint.make_fragment_writer(
+                    blobs.storage, workspace_id=repo.workspace_id
+                ),
+                limit=budget,
+            )
+        except Exception as error:  # noqa: BLE001 — cloning must not kill an ingestion
+            logger.exception("fragment minting failed for page %s", page_index)
+            diagnostics.append(
+                {
+                    "code": section_mint.MINT_FAILED_CODE,
+                    "severity": "error",
+                    "message": (
+                        f"no sections were cloned from page {page_index}: "
+                        f"{type(error).__name__}: {error}"
+                    ),
+                    "page_index": page_index,
+                }
+            )
+            continue
+        budget -= len(result.minted)
+        refs.extend(minted.as_job_ref() for minted in result.minted)
+        diagnostics.extend(dict(entry) for entry in result.diagnostics)
+    return refs, diagnostics
+
+
+class _SnapshotView:
+    """The shape :func:`segment_snapshot` reads, over a LIVE capture rather than a stored row.
+
+    The segmenter is duck-typed on ``LoadedSiteSnapshot`` (Task 11's D2), and a ``SiteSnapshot``
+    is nearly that shape already — it just spells its geometry differently and does not know its
+    own persisted id. Three lines of adapter beats either loading the row back (bytes we already
+    hold, a round trip we already paid for) or teaching the segmenter a second input shape.
+    """
+
+    def __init__(self, snapshot: Any, *, snapshot_id: "str | None") -> None:
+        geometry = getattr(snapshot, "geometry", None)
+        self.html = getattr(snapshot, "html", "") or ""
+        self.page_url = getattr(snapshot, "requested_url", "") or ""
+        self.snapshot_id = snapshot_id
+        self.viewport_width = _viewport_from_geometry(geometry)
+        from .sections.bands import SNAPSHOT_META_BANDS_KEY, bands_for_meta
+
+        self.meta = {SNAPSHOT_META_BANDS_KEY: bands_for_meta(geometry)}
+
+
+def _viewport_from_geometry(geometry: Any) -> "int | None":
+    if not isinstance(geometry, dict):
+        return None
+    try:
+        width = int(geometry.get("viewport"))  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+    return width if width > 0 else None
+
+
+def _screenshot_bytes(snapshot: Any) -> "bytes | None":
+    import base64 as _base64
+
+    for download in getattr(snapshot, "downloads", None) or []:
+        if getattr(download, "kind", None) != "screenshot":
+            continue
+        try:
+            return _base64.b64decode(getattr(download, "bytes_b64", "") or "")
+        except Exception:  # noqa: BLE001 — a corrupt shot costs a preview, not the job
+            return None
+    return None
+
+
+def _evidence_dump(
+    evidence: Any,
+    *,
+    site_snapshots: "list[Any] | None" = None,
+    web_fragments: "list[JsonObject] | None" = None,
+    fragment_diagnostics: "list[JsonObject] | None" = None,
+) -> Optional[str]:
     """Dump BrandEvidence to JSON for the job row (it carries no raw bytes).
 
     ``site_snapshots`` (clone-fidelity F0.1) rides along on the website lane: the bounded refs
@@ -1085,6 +1232,10 @@ def _evidence_dump(evidence: Any, *, site_snapshots: "list[Any] | None" = None) 
     payload = evidence.model_dump() if hasattr(evidence, "model_dump") else evidence
     if site_snapshots is not None:
         payload = {**payload, "site_snapshots": [ref.as_job_ref() for ref in site_snapshots]}
+    if web_fragments is not None:
+        payload = {**payload, "web_fragments": list(web_fragments)}
+    if fragment_diagnostics:
+        payload = {**payload, "web_fragment_diagnostics": list(fragment_diagnostics)}
     return json.dumps(payload, sort_keys=True, separators=(",", ":"))
 
 

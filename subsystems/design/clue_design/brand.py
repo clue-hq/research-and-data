@@ -33,6 +33,7 @@ from typing import Any
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_design import web_fragments as _web_fragments
 from clue_design._codec import JsonObject, dump_json, iso, load_json
 from clue_design.errors import DesignNotFoundError, DesignVersionConflictError
 from clue_design.joins import resolve_brand_id
@@ -306,6 +307,12 @@ async def update_brand_kit_approval(
     Writes BOTH the ``approval_status`` column and the mirrored
     ``brand_kit_json.approval_status`` so the persisted kit JSON stays consistent with its row.
     An unknown kit raises :class:`DesignNotFoundError`.
+
+    **The cloned sections ride along** (clone-fidelity F2.2). Website ingestion mints a
+    ``design_web_fragment`` per section it captured, bound to the kit version it published and
+    born ``draft``; this flip is the human gate that releases them. Same transaction, because a
+    kit that says "approved" while the sections cloned out of the same capture still say "draft"
+    is a state nobody asked for and everybody would have to reason about.
     """
     record = await get_brand_kit(
         conn, workspace_id=workspace_id, brand_kit_id=brand_kit_id, for_update=True
@@ -329,6 +336,13 @@ async def update_brand_kit_approval(
             "v": version,
             "w": workspace_id,
         },
+    )
+    await _web_fragments.sync_kit_fragment_approval(
+        conn,
+        workspace_id=workspace_id,
+        brand_kit_id=brand_kit_id,
+        brand_kit_version=version,
+        approved=approval_status == "approved",
     )
     return await get_brand_kit(
         conn, workspace_id=workspace_id, brand_kit_id=brand_kit_id, version=version
