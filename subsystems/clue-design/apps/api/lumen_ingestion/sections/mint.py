@@ -55,7 +55,12 @@ from selectolax.parser import HTMLParser as SectionParser
 from tinycss2 import ast
 
 from .cssmatch import rules_for_subtree
-from .deadheight import DeadHeight, detect_dead_height
+from .deadheight import (
+    DEAD_HEIGHT_REASON,
+    DeadHeight,
+    DeadHeightAssessment,
+    assess_dead_height,
+)
 from .segment import SectionRecord, SectionSegmentation, resolve_section
 from .slotdetect import detect_slots
 
@@ -100,6 +105,11 @@ MINT_DEGRADED_CODE = "LUMI0534"
 #: A section the source site hides was minted ``dormant`` (F3.0, D-F8). Informational: it is off
 #: the page and out of discovery by construction, and it is waiting in the inspector for a human.
 MINT_DORMANT_CODE = "LUMI0535"
+#: A re-mint converged onto an existing row whose degraded marker disagreed with what THIS
+#: capture measured, and the newer measurement won (F3.0, ruling R-I1). Says both readings and
+#: whether the row was actually updated, because a divergence nobody could write is still a
+#: divergence somebody has to know about.
+MINT_DEGRADED_RECONCILED_CODE = "LUMI0536"
 
 _PREVIEW_MEDIA_TYPE = "image/png"
 _DEFAULT_INLINE_MEDIA_TYPE = "application/octet-stream"
@@ -490,19 +500,27 @@ def mint_sections(
     register_bytes: Callable[[bytes, str], str],
     create_fragment: Callable[..., tuple[dict[str, Any], Any]],
     limit: int = SECTION_MINT_CAP,
+    dormant_limit: int = SECTION_MINT_CAP,
+    mark_degraded: Callable[..., dict[str, Any]] | None = None,
 ) -> MintOutcome:
-    """Mint every section of one captured page, up to ``limit``. Never raises.
+    """Mint every section of one captured page. Never raises.
 
-    The two durable seams are injected — ``register_bytes(data, media_type) -> digest`` and the
-    F1 creation seam — so this driver is a pure function of its inputs plus two calls, and the
-    whole pipeline can be exercised without a database. The pipeline stage passes the real ones.
+    The durable seams are injected — ``register_bytes(data, media_type) -> digest``, the F1
+    creation seam, and (F3.0) the degraded-marker writer — so this driver is a pure function of
+    its inputs plus those calls, and the whole pipeline can be exercised without a database. The
+    pipeline stage passes the real ones.
 
-    **The page's hidden sections are minted too** (F3.0, D-F8), after the visible ones and out of
-    the same budget: they go through this identical path — extract, harvest, sanitize, scope,
-    detect slots — and differ only in being born ``dormant``. The order matters when the budget
-    runs out: a cap should cost the sections nobody can see before it costs the page.
+    **The page's hidden sections are minted too** (F3.0, D-F8): the identical path — extract,
+    harvest, sanitize, scope, detect slots — differing only in being born ``dormant``.
+
+    **They draw on their OWN budget** (ruling R-I2), which is the whole reason there are two
+    limits rather than one. The mint cap is ingestion-wide, spent across pages, so a single CMS
+    homepage carrying a dozen ``w-condition-invisible`` variants could exhaust it and leave later
+    pages' VISIBLE sections uncloned — the clone would lose the thing it exists for in order to
+    keep sections nobody can see. A separate pool makes that structurally impossible: a hidden
+    section can never starve a visible one, on this page or any later one, and each pool reports
+    its own exhaustion.
     """
-    minted: list[MintedSection] = []
     diagnostics: list[dict[str, Any]] = []
 
     # ONE parse for the whole page, shared by every section's re-find. `resolve_section` reads
@@ -510,80 +528,94 @@ def mint_sections(
     # times to extract twelve subtrees would be the most expensive thing this module does.
     tree = SectionParser(html or "")
 
-    budget = max(0, limit)
-    for record in tuple(segmentation.sections) + tuple(segmentation.hidden_sections):
-        if len(minted) >= budget:
-            break
-        try:
-            result = _mint_one(
-                segmentation,
-                record,
-                tree=tree,
-                stylesheets=stylesheets,
-                captured=captured,
-                screenshot=screenshot,
-                source_kit_id=source_kit_id,
-                source_kit_version=source_kit_version,
-                register_bytes=register_bytes,
-                create_fragment=create_fragment,
-                diagnostics=diagnostics,
-            )
-        except FragmentRefused as refusal:
-            # The diagnostic is for the human reading the job; this is for the operator reading
-            # the logs, and it carries the refusal's own CODE — an unrehosted reference and an
-            # unreadable stylesheet are one sentence to a marketer and two different repairs to
-            # whoever has to fix the pipeline.
-            logger.warning(
-                "fragment_mint_refused page=%s section=%s role=%s code=%s reference=%s",
-                segmentation.page_url,
-                record.index,
-                record.role,
-                refusal.code,
-                refusal.reference,
-            )
-            diagnostics.append(
-                _diag(
-                    MINT_FAILED_CODE,
-                    f"section {record.index} ({record.role}) of {segmentation.page_url} was not "
-                    f"minted: {refusal.message}",
-                    section_index=record.index,
-                    role=record.role,
-                    reason=refusal.code,
-                    reference=refusal.reference,
+    def _mint_bounded(
+        records: Sequence[SectionRecord], budget: int, scope: str
+    ) -> list[MintedSection]:
+        minted: list[MintedSection] = []
+        refused = 0
+        for record in records:
+            if len(minted) >= budget:
+                break
+            try:
+                result = _mint_one(
+                    segmentation,
+                    record,
+                    tree=tree,
+                    stylesheets=stylesheets,
+                    captured=captured,
+                    screenshot=screenshot,
+                    source_kit_id=source_kit_id,
+                    source_kit_version=source_kit_version,
+                    register_bytes=register_bytes,
+                    create_fragment=create_fragment,
+                    mark_degraded=mark_degraded,
+                    diagnostics=diagnostics,
                 )
-            )
-            continue
-        except Exception as error:  # noqa: BLE001 — one section is not the ingest
-            logger.exception(
-                "fragment minting failed for section %s of %s", record.index, segmentation.page_url
-            )
-            diagnostics.append(
-                _diag(
-                    MINT_FAILED_CODE,
-                    f"section {record.index} ({record.role}) of {segmentation.page_url} was not "
-                    f"minted: {type(error).__name__}: {error}",
-                    section_index=record.index,
-                    role=record.role,
-                    reason="unexpected_error",
+            except FragmentRefused as refusal:
+                # The diagnostic is for the human reading the job; this is for the operator
+                # reading the logs, and it carries the refusal's own CODE — an unrehosted
+                # reference and an unreadable stylesheet are one sentence to a marketer and two
+                # different repairs to whoever has to fix the pipeline.
+                logger.warning(
+                    "fragment_mint_refused page=%s section=%s role=%s code=%s reference=%s",
+                    segmentation.page_url,
+                    record.index,
+                    record.role,
+                    refusal.code,
+                    refusal.reference,
                 )
-            )
-            continue
-        if result is not None:
-            minted.append(result)
+                diagnostics.append(
+                    _diag(
+                        MINT_FAILED_CODE,
+                        f"section {record.index} ({record.role}) of {segmentation.page_url} was "
+                        f"not minted: {refusal.message}",
+                        section_index=record.index,
+                        role=record.role,
+                        reason=refusal.code,
+                        reference=refusal.reference,
+                    )
+                )
+                refused += 1
+                continue
+            except Exception as error:  # noqa: BLE001 — one section is not the ingest
+                logger.exception(
+                    "fragment minting failed for section %s of %s",
+                    record.index,
+                    segmentation.page_url,
+                )
+                diagnostics.append(
+                    _diag(
+                        MINT_FAILED_CODE,
+                        f"section {record.index} ({record.role}) of {segmentation.page_url} was "
+                        f"not minted: {type(error).__name__}: {error}",
+                        section_index=record.index,
+                        role=record.role,
+                        reason="unexpected_error",
+                    )
+                )
+                refused += 1
+                continue
+            if result is not None:
+                minted.append(result)
 
-    offered = len(segmentation.sections) + len(segmentation.hidden_sections)
-    remaining = offered - len(minted) - _refused_count(diagnostics)
-    if remaining > 0 and len(minted) >= budget:
-        diagnostics.append(
-            _diag(
-                MINT_CAPPED_CODE,
-                f"minted the first {len(minted)} sections of {segmentation.page_url} and stopped; "
-                f"{remaining} more were segmented and not cloned",
-                page_url=segmentation.page_url,
-                cap=budget,
-                remaining=remaining,
+        remaining = len(records) - len(minted) - refused
+        if remaining > 0 and len(minted) >= budget:
+            diagnostics.append(
+                _diag(
+                    MINT_CAPPED_CODE,
+                    f"minted the first {len(minted)} {scope} section(s) of "
+                    f"{segmentation.page_url} and stopped; {remaining} more were segmented and "
+                    "not cloned",
+                    page_url=segmentation.page_url,
+                    scope=scope,
+                    cap=budget,
+                    remaining=remaining,
+                )
             )
-        )
+        return minted
+
+    minted = _mint_bounded(segmentation.sections, max(0, limit), "visible")
+    minted += _mint_bounded(segmentation.hidden_sections, max(0, dormant_limit), "dormant")
     return MintOutcome(minted=tuple(minted), diagnostics=tuple(diagnostics))
 
 
@@ -599,6 +631,7 @@ def _mint_one(
     source_kit_version: int | None,
     register_bytes: Callable[[bytes, str], str],
     create_fragment: Callable[..., tuple[dict[str, Any], Any]],
+    mark_degraded: Callable[..., dict[str, Any]] | None,
     diagnostics: list[dict[str, Any]],
 ) -> MintedSection | None:
     node = resolve_section(tree, record)
@@ -659,7 +692,8 @@ def _mint_one(
     detected = detect_slots(sanitized.html)
 
     preview, extent = _preview(segmentation, record, screenshot, diagnostics)
-    dead = _dead_height(segmentation, record, preview, extent, diagnostics)
+    assessment = _dead_height(segmentation, record, preview, extent, diagnostics)
+    dead = assessment.finding
     # Born dormant, never minted ``draft`` and then demoted: the window between the two is
     # exactly long enough for a kit approval to release a section the site does not show.
     status = FRAGMENT_STATUS_DORMANT if record.hidden_on_source else None
@@ -696,6 +730,9 @@ def _mint_one(
         degraded_reason=dead.reason if dead is not None else None,
     )
     _note_metadata_divergence(row, record, segmentation, diagnostics)
+    row = _reconcile_degraded(
+        row, assessment, record, segmentation, mark_degraded, diagnostics
+    )
 
     return MintedSection(
         fragment_id=str(row["fragment_id"]),
@@ -721,21 +758,27 @@ def _dead_height(
     preview: bytes | None,
     extent: CropExtent | None,
     diagnostics: list[dict[str, Any]],
-) -> DeadHeight | None:
+) -> DeadHeightAssessment:
     """Is this section mostly artificial scroll height? (F3.0, D-F6's trigger.)
 
     Runs on the crop that was ALREADY made for the preview, so noticing costs one image decode
     and no second opinion about where the section is: the picture judged is the picture a human
     will see in the picker. A finding is reported loudly — it is the repair ladder's entry
     condition, and a broken clone that nobody was told about is the exact failure D-F6 names.
+
+    Returns the whole ASSESSMENT rather than the finding, because the caller needs to know the
+    difference between "looked, and it is fine" and "could not look" — see
+    :func:`_reconcile_degraded`.
     """
-    finding = detect_dead_height(
+    assessment = assess_dead_height(
         preview,
         section_height_px=record.geometry.height_px if record.geometry is not None else None,
         basis=extent.basis if extent is not None else None,
+        viewport_width=segmentation.viewport_width,
     )
+    finding = assessment.finding
     if finding is None:
-        return None
+        return assessment
     logger.warning(
         "fragment_mint_dead_height page=%s section=%s role=%s height=%s content_fraction=%.3f",
         segmentation.page_url,
@@ -757,7 +800,80 @@ def _dead_height(
             **finding.as_provenance(),
         )
     )
-    return finding
+    return assessment
+
+
+def _reconcile_degraded(
+    row: Mapping[str, Any],
+    assessment: DeadHeightAssessment,
+    record: SectionRecord,
+    segmentation: SectionSegmentation,
+    mark_degraded: Callable[..., dict[str, Any]] | None,
+    diagnostics: list[dict[str, Any]],
+) -> Mapping[str, Any]:
+    """Make an already-existing row agree with what THIS pass saw (F3.0, ruling R-I1).
+
+    ``insert_web_fragment`` is ``ON CONFLICT DO NOTHING``, so a re-mint that converges keeps the
+    FIRST writer's birth facts — which is right for the label and the provenance and quietly
+    wrong for this one. The failure it caused: a page ingested at static tier has no screenshot,
+    so the scroll-jacked band is born clean (correctly — nothing looked at it). The site is
+    re-ingested with a dynamic capture, the band is measured, dead height is detected, the job
+    says the section "was minted DEGRADED" — and because the markup is byte-identical the mint
+    converges onto the existing row, which still says ``degraded = false``. The ladder reads the
+    column, so it never sees it, and the two surfaces disagree with nobody saying so.
+
+    The marker is a JUDGEMENT, and the trigger already admits it, so the newer look wins — **in
+    both directions, but only on MEASURED evidence** (the ruling's condition, and the reason
+    :class:`DeadHeightAssessment` distinguishes "judged" from "abstained"). A pass that could not
+    look — no screenshot, an inferred crop, a crop the screenshot cut short — never CLEARS an
+    existing marker: honest absence is not a clean bill of health, and treating it as one would
+    silently retire a repair the ladder had been told to make.
+
+    **And it only ever reconciles its OWN reason.** ``degraded`` is one column with several
+    future authors — F3.3's behavioural gate will mark a clone broken for a blank mobile
+    viewport or a dead control, reasons this detector knows nothing about and cannot re-measure.
+    Clearing on "the band is full of content" would then quietly overrule a verdict that was
+    never about the band. So a marker whose reason is not ``dead_height`` is left exactly as it
+    is, whatever this pass saw.
+    """
+    existing = bool(row.get("degraded"))
+    wanted = assessment.finding is not None
+    if existing == wanted:
+        return row
+    if not wanted and not assessment.judged:
+        return row  # no evidence this pass — the marker stands
+    if existing and str(row.get("degraded_reason") or "") != DEAD_HEIGHT_REASON:
+        return row  # somebody else's verdict, about something this detector cannot measure
+
+    fragment_id = str(row.get("fragment_id") or "")
+    reason = assessment.finding.reason if assessment.finding is not None else None
+    applied = False
+    if mark_degraded is not None and fragment_id:
+        row = mark_degraded(fragment_id, degraded=wanted, reason=reason)
+        applied = True
+    diagnostics.append(
+        _diag(
+            MINT_DEGRADED_RECONCILED_CODE,
+            f"section {record.index} ({record.role}) of {segmentation.page_url} is byte-identical "
+            f"to a fragment already held, whose degraded marker said {existing!r} while this "
+            f"capture measured {wanted!r}"
+            + (
+                f"; the row was updated to {wanted!r}"
+                if applied
+                else "; NOTHING was updated — this mint path was given no marker writer, so the "
+                "row and this job now disagree"
+            ),
+            severity="warning" if wanted or not applied else "info",
+            section_index=record.index,
+            role=record.role,
+            fragment_id=fragment_id,
+            degraded=wanted,
+            was_degraded=existing,
+            reason=reason,
+            applied=applied,
+        )
+    )
+    return row
 
 
 #: What counts as something a visitor can SEE, when the section has no words.
@@ -929,10 +1045,6 @@ def _note_metadata_divergence(
     )
 
 
-def _refused_count(diagnostics: Sequence[Mapping[str, Any]]) -> int:
-    return sum(1 for diag in diagnostics if diag.get("code") == MINT_FAILED_CODE)
-
-
 def _diag(code: str, message: str, *, severity: str = "warning", **extra: Any) -> dict[str, Any]:
     """The same ``{code, severity, message, **extra}`` shape every ingestion diagnostic uses."""
     return {"code": code, "severity": severity, "message": message, **extra}
@@ -947,6 +1059,27 @@ def make_fragment_writer(
         return create_web_fragment(storage, workspace_id=workspace_id, **kwargs)
 
     return _create
+
+
+def make_degraded_marker(*, workspace_id: str) -> Callable[..., dict[str, Any]]:
+    """The real F3.0 degraded-marker seam, bound to one workspace.
+
+    Separate from the creation seam because it is used at a different moment and only sometimes:
+    creation states a NEW row's birth facts, this reconciles an EXISTING row with a later look
+    (see :func:`_reconcile_degraded`). Injected like the other two so the driver stays a pure
+    function of its inputs plus its calls.
+    """
+    from lumen_api.fragments import set_web_fragment_degraded
+
+    def _mark(fragment_id: str, *, degraded: bool, reason: str | None) -> dict[str, Any]:
+        return set_web_fragment_degraded(
+            workspace_id=workspace_id,
+            fragment_id=fragment_id,
+            degraded=degraded,
+            reason=reason,
+        )
+
+    return _mark
 
 
 def make_asset_rehoster(blobs: Any) -> Callable[[bytes, str], str]:
@@ -970,6 +1103,7 @@ __all__ = [
     "MAX_PREVIEW_WIDTH",
     "MINT_CAPPED_CODE",
     "MINT_DEGRADED_CODE",
+    "MINT_DEGRADED_RECONCILED_CODE",
     "MINT_DORMANT_CODE",
     "MINT_FAILED_CODE",
     "MINT_METADATA_DIVERGED_CODE",
@@ -985,6 +1119,7 @@ __all__ = [
     "crop_extent",
     "crop_preview",
     "make_asset_rehoster",
+    "make_degraded_marker",
     "make_fragment_writer",
     "mint_sections",
 ]

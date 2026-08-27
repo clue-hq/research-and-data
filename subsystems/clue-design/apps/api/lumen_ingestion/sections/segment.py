@@ -589,24 +589,25 @@ def _section_shaped(
     hidden: list[_Candidate] = []
     position = 0
     for candidate in candidates:
-        evidence = _hidden_evidence(candidate, skips, bound_any=bound_any)
-        if evidence:
-            candidate.hidden_on_source = True
-            candidate.hidden_evidence = evidence
-            candidate.index = position
-            position += 1
-            hidden.append(candidate)
-            continue
-        if (
+        # SECTION-SHAPE FIRST, hidden-ness second. Preserving is only ever the right answer for
+        # something there is a subtree to preserve: a bare `<p class="hide">Cookie note</p>` is
+        # loose content whether or not the page shows it, and minting it dormant would spend a
+        # fragment row, a picker entry and a slice of the mint budget on a paragraph. Testing
+        # hidden-ness first quietly promoted exactly that case out of the honest LUMI0525 drop.
+        if not (
             candidate.band is not None
             or candidate.tag in _SECTION_TAGS
             or _element_children(candidate.node)
         ):
-            candidate.index = position
-            position += 1
-            kept.append(candidate)
-        else:
             skipped.append((candidate.tag, candidate.text[:80]))
+            continue
+        evidence = _hidden_evidence(candidate, skips, bound_any=bound_any)
+        if evidence:
+            candidate.hidden_on_source = True
+            candidate.hidden_evidence = evidence
+        candidate.index = position
+        position += 1
+        (hidden if evidence else kept).append(candidate)
     return kept, hidden
 
 
@@ -615,10 +616,20 @@ def _hidden_evidence(
 ) -> tuple[str, ...]:
     """Why we believe the source site hides this section — or ``()`` when we do not.
 
-    TWO halves, always, and the pairing is the rule rather than a nicety. The markup half says
-    what the element declares about itself; the measured half is what makes it more than a guess
-    about a stylesheet nobody here evaluated. A candidate the browser DID measure is on the page
-    whatever its class list says, so it never reaches here.
+    **The probe's own word is enough by itself** (F3.0, ruling R-I3). When the browser walked the
+    page and recorded ``{"reason": "hidden"}`` against this child, that is the strongest evidence
+    there is, and demanding a recognised markup token beside it made the rule miss the commonest
+    spelling of all — an inline ``style="display:none"``, which carries no class token and no
+    aria attribute. Such a section fell through to the visible page, was minted ``draft``, was
+    released by the next kit approval, and was offered to the agent as a normal clone of a
+    section the site does not show: exactly the population D-F8 is about.
+
+    F2 required the markup half *because the outcome was a DROP* — never remove a section from a
+    page on a guess. F3.0 changed the outcome to preservation-as-dormant, which costs nothing if
+    wrong (a row and a picker entry nobody has to accept), so the conjunction no longer earns its
+    keep on this side. It still earns it on the other: a class token with no measurement behind
+    it stays a guess about a stylesheet nobody evaluated, and a candidate the browser DID measure
+    is on the page whatever its class list says (guarded first, below).
 
     The strings are the human-readable record that rides into the fragment's provenance and, in
     F3.2, into the inspector's "hidden on source site" card. They are written once, here, so the
@@ -627,13 +638,18 @@ def _hidden_evidence(
     if candidate.band is not None:
         return ()
     markup = _hidden_markup_evidence(candidate)
-    if not markup:
-        return ()
     if _probe_skipped(candidate, skips):
         return markup + (
             "the capture probe walked this page and recorded that it skipped this child as "
             "hidden",
         )
+    # `hidden` / inline `display:none` need nothing beside them — see
+    # `_self_declared_hidden_evidence` for why those two are statements rather than guesses.
+    self_declared = _self_declared_hidden_evidence(candidate.node)
+    if self_declared:
+        return markup
+    if not markup:
+        return ()
     # The browser measured THIS page and this eligible child got no band: it looked and did not
     # see it. Restricted to the measured root, because a nav or footer outside it was never
     # eligible, so "no band" says nothing about whether it renders.
@@ -660,12 +676,36 @@ def _hidden_markup_evidence(candidate: _Candidate) -> tuple[str, ...]:
     markup for a capture whose probe never got to make it, and overruled by the probe wherever
     the probe spoke.
     """
-    out: list[str] = []
+    out = list(_self_declared_hidden_evidence(candidate.node))
     if (candidate.node.attributes.get("aria-hidden") or "").strip().lower() == "true":
         out.append('the element carries aria-hidden="true"')
     for token in candidate.class_names:
         if token.lower() in _HIDDEN_CLASS_TOKENS:
             out.append(f'the class token "{token}" takes an element out of the layout')
+    return tuple(out)
+
+
+def _self_declared_hidden_evidence(node: Node) -> tuple[str, ...]:
+    """The two statements an element makes about itself that need nothing to corroborate them.
+
+    A class token is a GUESS about a stylesheet nobody here evaluated, which is why it needs a
+    measurement beside it. ``hidden`` and an inline ``display:none`` are not guesses — they are
+    the element saying so in the only two places a stylesheet cannot contradict, and F2 already
+    treated them as certain: :func:`_is_significant` threw such a child away outright, before it
+    could even become a candidate.
+
+    F3.0 keeps the certainty and changes the outcome. Under D-F8 a section the site hides is
+    material somebody may want back, so "certainly hidden" now means DORMANT rather than gone —
+    strictly more conservative than the drop it replaces, and the population is a large one
+    (an inline ``display:none`` is the commonest way a CMS parks a section it is not showing).
+    """
+    attributes = node.attributes
+    out: list[str] = []
+    if "hidden" in attributes:
+        out.append("the element carries the HTML `hidden` attribute")
+    style = _HIDDEN_STYLE.search(attributes.get("style") or "")
+    if style is not None:
+        out.append(f'the element\'s own inline style says "{style.group(0)}"')
     return tuple(out)
 
 
@@ -737,7 +777,7 @@ def _expand(
             out.extend(_children_as_candidates(child, child_path, True, skipped))
         elif measured_path[: len(child_path)] == child_path:
             out.extend(_expand(child, child_path, measured_path, skipped))
-        elif _is_significant(child):
+        elif _is_candidate(child):
             out.append(_candidate(child, child_path, in_measured_root=False))
         else:
             _note_skip(child, skipped)
@@ -752,7 +792,7 @@ def _children_as_candidates(
 ) -> list[_Candidate]:
     out: list[_Candidate] = []
     for index, child in _element_children(node):
-        if _is_significant(child):
+        if _is_candidate(child):
             out.append(_candidate(child, path + (index,), in_measured_root=in_measured_root))
         else:
             _note_skip(child, skipped)
@@ -1551,6 +1591,12 @@ def _find_first(
 
 
 def _is_significant(node: Node) -> bool:
+    """Would the browser have seen anything here? The probe's own filter, mirrored.
+
+    Kept exactly as F2 wrote it, and used where mirroring the probe is the whole point:
+    :func:`_measured_root` replays ``capture/geometry.py``'s single-child descent, and a
+    disagreement there mis-roots the page.
+    """
     tag = (node.tag or "").lower()
     if tag in _SKIP_TAGS or tag.startswith("_") or tag.startswith("-"):
         return False
@@ -1562,6 +1608,31 @@ def _is_significant(node: Node) -> bool:
     if rendered_text(node):
         return True
     return bool(node.css(_MEDIA_SELECTOR))
+
+
+def _is_candidate(node: Node) -> bool:
+    """Is this flow child worth carrying forward — including because the page HIDES it?
+
+    The one place F3.0 parts company with :func:`_is_significant`. That predicate answers "did
+    the browser see this?", and F2 used the same answer for two different questions: which root
+    to descend, and which children to keep. For the second question the answer is now wrong,
+    because a child that declares itself off the page (``hidden``, inline ``display:none``) is
+    exactly the D-F8 population — real markup, real copy, real styling, deliberately not shown —
+    and dropping it here meant it could never even reach the hidden collection.
+
+    So a self-declared-hidden child survives candidacy when it is substantive on its own terms,
+    and :func:`_hidden_evidence` then routes it to ``hidden_sections``. It can never land among
+    the visible ones: its own attributes are the evidence, and they are read before anything
+    else. An element that is insignificant for any OTHER reason is still dropped, loudly.
+    """
+    if _is_significant(node):
+        return True
+    if not _self_declared_hidden_evidence(node):
+        return False
+    tag = (node.tag or "").lower()
+    if tag in _SKIP_TAGS or tag.startswith("_") or tag.startswith("-"):
+        return False
+    return bool(rendered_text(node)) or bool(node.css(_MEDIA_SELECTOR))
 
 
 def _note_skip(node: Node, skipped: list[tuple[str, str]]) -> None:

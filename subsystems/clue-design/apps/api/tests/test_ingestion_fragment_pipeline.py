@@ -903,3 +903,91 @@ def test_an_unresolvable_pin_tells_the_operator_which_kind_of_broken_it_is(
 
     assert package["missing"] == [minted.fragment_id]
     assert any("reason=fragment." in message for message in captured), captured
+
+
+# --------------------------------------------------------------------------- #
+# A hidden section, all the way to a durable dormant row (clone-fidelity F3.0)
+# --------------------------------------------------------------------------- #
+
+
+HIDDEN_PAGE_HTML = (
+    "<html><body><main>"
+    '<section class="section_home-hero"><h1 class="heading-xl">Care, on your terms</h1></section>'
+    '<section class="section_pricing w-condition-invisible"><h2>Pricing</h2>'
+    "<p>From $99 a month.</p></section>"
+    '<section class="section_proof"><p>Trusted by 400 clinics</p></section>'
+    "</main></body></html>"
+)
+
+HIDDEN_PAGE_BANDS = [
+    {"index": 0, "tag": "section", "classes": "section_home-hero", "top": 0.0, "height": 600.0},
+    {"index": 1, "tag": "section", "classes": "section_proof", "top": 600.0, "height": 300.0},
+]
+
+
+def _mint_hidden_page(workspace_id: str, storage: FsStorage, *, kit: dict[str, Any]):
+    from lumen_ingestion.sections.bands import measured_bands
+
+    blobs = DesignBlobStore(storage, workspace_id)
+    segmentation = segment_page(
+        HIDDEN_PAGE_HTML,
+        page_url=PAGE_URL,
+        bands=measured_bands({"bands": HIDDEN_PAGE_BANDS}),
+        viewport_width=1200,
+        snapshot_id="snap_hidden",
+    )
+    assert len(segmentation.hidden_sections) == 1
+    return mint_sections(
+        segmentation,
+        html=HIDDEN_PAGE_HTML,
+        stylesheets=[_Sheet("/s.css", ".section_pricing { display: grid }")],
+        captured={},
+        screenshot=None,
+        source_kit_id=kit["brand_kit_id"],
+        source_kit_version=int(kit["version"]),
+        register_bytes=make_asset_rehoster(blobs),
+        create_fragment=make_fragment_writer(storage, workspace_id=workspace_id),
+    )
+
+
+def test_a_hidden_section_becomes_a_real_dormant_row_the_kit_approval_cannot_wake(
+    workspace_id: str, design_storage: FsStorage
+) -> None:
+    """The whole D-F8 path through the REAL creation seam, not a stub: a section the site hides is
+    minted dormant, its provenance carries the evidence, the human gate steps over it, and the
+    document-write gate refuses to pin it. The stubbed mint tests prove the driver's decisions;
+    this proves the row those decisions actually produce."""
+    kit = _seed_kit(workspace_id)
+    outcome = _mint_hidden_page(workspace_id, design_storage, kit=kit)
+
+    dormant = [minted for minted in outcome.minted if minted.hidden_on_source]
+    assert [minted.status for minted in dormant] == ["dormant"]
+
+    rows = {row["fragment_id"]: row for row in list_web_fragments(workspace_id=workspace_id)}
+    row = rows[dormant[0].fragment_id]
+    assert row["status"] == "dormant"
+    assert row["degraded"] is False
+    assert row["preview_digest"] is None  # never rendered, so never previewed — honestly
+    assert row["provenance"]["hidden_on_source"]["hidden"] is True
+    assert row["provenance"]["hidden_on_source"]["evidence"]
+    # The artifact is a real clone, not a stub: the payload holds the section's own markup.
+    loaded = read_web_fragment(
+        design_storage, workspace_id=workspace_id, fragment_id=row["fragment_id"]
+    )
+    assert "From $99 a month." in loaded.html
+
+    HybridRepository(workspace_id=workspace_id).update_brand_kit_approval(
+        kit["brand_kit_id"], "approved"
+    )
+    after = {r["fragment_id"]: r["status"] for r in list_web_fragments(workspace_id=workspace_id)}
+    assert after[row["fragment_id"]] == "dormant"
+    assert all(
+        status == "approved"
+        for fid, status in after.items()
+        if fid != row["fragment_id"]
+    )
+
+    store = HybridRepository(workspace_id=workspace_id)
+    with pytest.raises(FragmentReferenceError) as excinfo:
+        store.create_document(_doc("doc_dormant_e2e", ("n1", row["fragment_id"])), doc_kind="web")
+    assert excinfo.value.code == "fragment.not_approved"

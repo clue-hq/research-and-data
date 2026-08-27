@@ -1166,8 +1166,16 @@ def _mint_page_fragments(
     by_index = {ref.page_index: ref for ref in snapshot_refs}
     snapshots = list(snapshots)
     budget = section_mint.SECTION_MINT_CAP
+    # A SEPARATE ingestion-wide pool for the sections the site hides (F3.0, ruling R-I2). Sharing
+    # one budget let a single CMS homepage carrying a dozen `w-condition-invisible` variants
+    # exhaust the cap and leave later pages' VISIBLE sections uncloned — the clone losing the
+    # thing it exists for in order to keep sections nobody can see. Same size, because it is the
+    # same runaway backstop and not a working limit; separate, so it can never take from the
+    # visible one.
+    dormant_budget = section_mint.SECTION_MINT_CAP
 
     rehost = section_mint.make_asset_rehoster(blobs)
+    mark_degraded = section_mint.make_degraded_marker(workspace_id=repo.workspace_id)
 
     for page_index, snapshot in enumerate(snapshots):
         if budget <= 0:
@@ -1210,7 +1218,9 @@ def _mint_page_fragments(
                 create_fragment=section_mint.make_fragment_writer(
                     blobs.storage, workspace_id=repo.workspace_id
                 ),
+                mark_degraded=mark_degraded,
                 limit=budget,
+                dormant_limit=dormant_budget,
             )
         except Exception as error:  # noqa: BLE001 — cloning must not kill an ingestion
             logger.exception("fragment minting failed for page %s", page_index)
@@ -1226,7 +1236,9 @@ def _mint_page_fragments(
                 }
             )
             continue
-        budget -= len(result.minted)
+        dormant = sum(1 for minted in result.minted if minted.hidden_on_source)
+        budget -= len(result.minted) - dormant
+        dormant_budget -= dormant
         refs.extend(minted.as_job_ref() for minted in result.minted)
         diagnostics.extend(dict(entry) for entry in result.diagnostics)
     return refs, diagnostics

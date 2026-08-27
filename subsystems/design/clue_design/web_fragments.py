@@ -62,6 +62,18 @@ FRAGMENT_STATUSES = (
 #: for. ``deprecated`` is the opposite of use and is always allowed.
 _ACTIVATING_STATUSES = frozenset({FRAGMENT_STATUS_DRAFT, FRAGMENT_STATUS_APPROVED})
 
+#: What a fragment may be BORN as (F3.0, ruling R-I5). A narrower set than the vocabulary, and
+#: deliberately so: ``approved`` is what a HUMAN says by approving the brand kit a section was
+#: cloned into, and the document-write pin gate is built on that meaning. A producer that could
+#: mint straight to ``approved`` would put a cloned section on a page without anybody having
+#: looked at it — not by defeating the gate but by walking around it. ``deprecated`` is excluded
+#: for the mirror reason: retiring something at the moment of its creation is not a lifecycle,
+#: it is a write nobody needed.
+#:
+#: A repair (F3.1) is therefore born ``draft`` like every other clone and released through the
+#: same human surface. If that turns out to need its own release path, it gets one explicitly.
+BIRTH_STATUSES = (FRAGMENT_STATUS_DRAFT, FRAGMENT_STATUS_DORMANT)
+
 _COLUMNS = (
     "fragment_id, workspace_id, source_kit_id, source_kit_version, source_url, section_role, "
     "label, status, payload_digest, preview_digest, provenance_json, degraded, degraded_reason, "
@@ -138,7 +150,7 @@ async def insert_web_fragment(
     fragment converges onto that row and keeps ITS lineage. Both are the price of content
     addressing, and both leave the row honest about what it actually holds.
     """
-    require_known_status(status)
+    require_birth_status(status)
     require_degraded_pair(degraded, degraded_reason)
     require_derived_pair(derived_from, derived_reason)
     if derived_from is not None:
@@ -213,6 +225,22 @@ def require_known_status(status: str) -> None:
     if status not in FRAGMENT_STATUSES:
         raise ValueError(
             f"fragment status must be one of {', '.join(FRAGMENT_STATUSES)}: {status!r}"
+        )
+
+
+def require_birth_status(status: str) -> None:
+    """A fragment is born ``draft`` or ``dormant`` — never straight into a human's decision.
+
+    Separate from :func:`require_known_status` because they answer different questions: that one
+    asks "is this a status?", this asks "may a producer CREATE a row in it?". See
+    :data:`BIRTH_STATUSES`.
+    """
+    require_known_status(status)
+    if status not in BIRTH_STATUSES:
+        raise ValueError(
+            f"a fragment is born one of {', '.join(BIRTH_STATUSES)} — {status!r} is a decision "
+            "about an existing section (a human approves cloned sections by approving the brand "
+            "kit they came from, and retires them one at a time)"
         )
 
 

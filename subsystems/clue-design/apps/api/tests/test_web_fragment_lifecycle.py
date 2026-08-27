@@ -116,6 +116,38 @@ def test_a_fragment_cannot_be_born_into_a_status_nobody_defined(
     assert list_web_fragments(workspace_id=workspace_id) == []
 
 
+@pytest.mark.parametrize("status", ["approved", "deprecated"])
+def test_a_producer_may_not_mint_straight_into_a_humans_decision(
+    workspace_id: str, design_storage: FsStorage, status: str
+) -> None:
+    """A NARROWER rule than the vocabulary, and the pin gate depends on it. ``approved`` is what
+    a human says by approving the brand kit a section was cloned into; a producer that could mint
+    into it would put a cloned section on a page with nobody having looked — not by defeating the
+    gate but by walking around it. The obvious one-line move for a repair, so it is closed now
+    rather than hoped about."""
+    with pytest.raises(FragmentRefused) as excinfo:
+        _create(workspace_id, design_storage, status=status)
+    assert excinfo.value.code == "fragment.status_not_birthable"
+    assert "draft" in str(excinfo.value) and "dormant" in str(excinfo.value)
+    assert list_web_fragments(workspace_id=workspace_id) == []
+
+
+def test_a_repair_is_born_draft_like_every_other_clone(
+    workspace_id: str, design_storage: FsStorage
+) -> None:
+    """The consequence for Task 17, stated here so it is a decision rather than a surprise: a
+    repair rides the same human release surface as the section it repairs."""
+    _row, original = _create(workspace_id, design_storage, marker="original")
+    row, _repair = _create(
+        workspace_id,
+        design_storage,
+        marker="repair",
+        derived_from=original.fragment_id,
+        derived_reason="dead_height repaired to a compact static fallback",
+    )
+    assert row["status"] == "draft"
+
+
 # --------------------------------------------------------------------------- #
 # 2. The kit cascade steps over a dormant section
 # --------------------------------------------------------------------------- #

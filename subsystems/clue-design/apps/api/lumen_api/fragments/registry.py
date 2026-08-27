@@ -35,6 +35,7 @@ from clue_design.storage import (
 from clue_design.web_fragments import (
     FRAGMENT_STATUS_DORMANT,
     FRAGMENT_STATUSES,
+    require_birth_status,
     require_degraded_pair,
     require_derivable,
     require_derived_pair,
@@ -144,6 +145,9 @@ def create_web_fragment(
         )
     if status is not None:
         _refusing("fragment.status_unknown", require_known_status, status)
+        # And narrower than the vocabulary: a producer may not mint straight into a human's
+        # decision (ruling R-I5). See `BIRTH_STATUSES`.
+        _refusing("fragment.status_not_birthable", require_birth_status, status)
     _refusing("fragment.degraded_reason_missing", require_degraded_pair, degraded, degraded_reason)
     _refusing("fragment.derived_incomplete", require_derived_pair, derived_from, derived_reason)
 
