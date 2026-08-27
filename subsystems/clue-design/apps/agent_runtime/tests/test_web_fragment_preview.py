@@ -31,15 +31,21 @@ FRAGMENT_HTML = (
 FRAGMENT_CSS = f".{WRAPPER} .clone-hero {{ padding: 64px }}"
 
 
-def _package() -> dict:
+def _package(slot_kinds: dict | None = None) -> dict:
     return {
         "schema_version": 1,
-        "fragments": {FRAGMENT_ID: {"html": FRAGMENT_HTML, "css": FRAGMENT_CSS}},
+        "fragments": {
+            FRAGMENT_ID: {
+                "html": FRAGMENT_HTML,
+                "css": FRAGMENT_CSS,
+                "slot_kinds": dict(slot_kinds or {}),
+            }
+        },
         "missing": [],
     }
 
 
-def _seed(*, with_fragment: bool = True) -> dict:
+def _seed(*, with_fragment: bool = True, slots: dict | None = None) -> dict:
     nodes: dict = {
         "root": {
             "id": "root",
@@ -55,6 +61,7 @@ def _seed(*, with_fragment: bool = True) -> dict:
             "kind": "fragment",
             "classes": "w-full py-12",
             "fragment_id": FRAGMENT_ID,
+            "slots": dict(slots or {}),
         }
     return {
         "schema_version": 1,
@@ -69,13 +76,23 @@ def _seed(*, with_fragment: bool = True) -> dict:
     }
 
 
-def _tools(tmp_path: Path, *, with_fragment: bool = True, package: dict | None = None):
+def _tools(
+    tmp_path: Path,
+    *,
+    with_fragment: bool = True,
+    package: dict | None = None,
+    slots: dict | None = None,
+):
     config = replace(
         AgentRuntimeConfig.from_env(REPO_ROOT),
         trace_dir=tmp_path / "workspace_root",
         fragment_render_package=package,
     )
-    return LumenWebTools(config, "Build a page", initial_web_doc=_seed(with_fragment=with_fragment))
+    return LumenWebTools(
+        config,
+        "Build a page",
+        initial_web_doc=_seed(with_fragment=with_fragment, slots=slots),
+    )
 
 
 def _captured_render_kwargs(tools) -> dict:
@@ -122,7 +139,10 @@ def test_the_config_carries_the_resolved_package_by_value():
 def test_the_preview_render_is_handed_the_artifact_map_and_the_scoped_sheet(tmp_path: Path):
     tools = _tools(tmp_path, package=_package())
     captured = _captured_render_kwargs(tools)
-    assert captured["fragments"] == {FRAGMENT_ID: {"html": FRAGMENT_HTML}}
+    # Markup plus the slot kinds the engine cannot know on its own (F1.4).
+    assert captured["fragments"] == {
+        FRAGMENT_ID: {"html": FRAGMENT_HTML, "slot_kinds": {}}
+    }
     assert FRAGMENT_CSS in captured["fragment_css"]
     assert f"/* fragment {FRAGMENT_ID} */" in captured["fragment_css"]
 
@@ -137,6 +157,23 @@ def test_the_agent_preview_actually_renders_the_cloned_section(tmp_path: Path):
     assert SENTINEL in html
     css_at = html.index(FRAGMENT_CSS)
     assert css_at < html.index("</head>"), "scoped CSS belongs in the head"
+
+
+def test_the_agent_preview_substitutes_a_bound_slot_like_the_editor_does(tmp_path: Path):
+    """F1.4 on the second preview path. A section that personalizes in the editor and shows the
+    clone's own words in the agent's screenshot would have the agent iterating against a page no
+    visitor ever sees."""
+    tools = _tools(
+        tmp_path,
+        package=_package({"headline": "text"}),
+        slots={"headline": {"text": "Talk to us"}},
+    )
+    captured = _captured_render_kwargs(tools)
+    assert captured["fragments"][FRAGMENT_ID]["slot_kinds"] == {"headline": "text"}
+
+    html = _replay(tools, captured).get("html") or ""
+    assert '<h1 data-lumen-slot="headline">Talk to us</h1>' in html
+    assert SENTINEL not in html
 
 
 def test_a_turn_with_no_fragment_package_renders_exactly_as_before(tmp_path: Path):
