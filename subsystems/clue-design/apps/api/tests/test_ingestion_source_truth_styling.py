@@ -223,6 +223,51 @@ def test_the_most_chromatic_declaration_wins_the_brand_not_the_alphabet() -> Non
     }
 
 
+def test_the_least_qualified_name_outranks_a_more_chromatic_qualified_one() -> None:
+    """`--brand` beats `--brand-secondary` even though the secondary is far more chromatic.
+
+    Chroma is a TIE-BREAK among equally-qualified names, not the lead key. A real brand is
+    routinely a deep, muted teal while the site's secondary is a hot pink, and letting chroma
+    lead silently seated the secondary as `surface.brand`. Name specificity leading gets this
+    right, and its own counter-case — a genuinely neutral `--brand` — exits LOUDLY through the
+    `LUMI0519` gate into clustering rather than silently mis-seating anything.
+    """
+    css = """
+    :root { --brand: #0b5d51; --brand-secondary: #ff2d55; }
+    body { background: #ffffff; color: #101418; }
+    """
+    parsed = parse_site(_snapshot(css))
+    declared = {d.role: d for d in parsed.declared_roles}
+    assert declared["surface.brand"].property_name == "--brand"
+    assert declared["surface.brand"].value == "#0B5D51"
+
+    report = _report(_evidence(_snapshot(css)))
+    brand = _assignment(report, "surface.brand")
+    assert brand["basis"] == "declared"
+    assert brand["value"] == "#0B5D51"
+
+
+def test_a_neutral_least_qualified_brand_still_exits_loudly() -> None:
+    """The counter-case the precedence ruling accepts: `--brand: #000` outranks
+    `--brand-green` on name specificity, and the neutrality gate turns that into a loud
+    refusal into clustering rather than a silently black brand."""
+    css = """
+    :root { --brand: #000000; --brand-green: #30d8a7; }
+    body { background: #ffffff; color: #101418; }
+    .btn { background: #0055ff; }
+    """
+    result = normalize_evidence(
+        _evidence(_snapshot(css)),
+        brand_kit_id="brand_kit_f03",
+        version=1,
+        name="F0.3",
+        created_at="2026-08-27",
+    )
+    brand = _assignment(result.ingestion_report, "surface.brand")
+    assert brand["basis"] != "declared"
+    assert [d["code"] for d in result.diagnostics if d["code"] == "LUMI0519"] == ["LUMI0519"]
+
+
 def test_an_all_neutral_brand_family_falls_back_to_clustering() -> None:
     """A declaration can lie. When every name-qualified brand candidate is a neutral, the
     site has told us the family, not the brand — refuse it, loudly, and let clustering (which

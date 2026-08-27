@@ -40,16 +40,18 @@ ordinary evidence.
 and ``--brand-500`` all describe a *derivative* of a role. They are disqualified outright,
 which is what keeps a pale 100-step tint from being crowned the brand color.
 
-**Names QUALIFY; among the qualified, the value may RANK.** The two rules above are about
-what a name is allowed to *trigger* — and nothing here lets a hex trigger anything. Choosing
-between several names that all legitimately declared the same role is a different question,
-and there the value earns a vote: Webflow's Client-First convention names a brand's whole
-family off one prefix, neutrals included (``--base-color-brand--black`` /
-``--base-color-brand--green`` / ``--base-color-brand--white``), so all three qualify by name
-and only chroma can tell the brand from its neutrals. See :func:`_rank`. Whether the winner
-is *fit* for the role at all remains the normalizer's call, not this module's — a family with
-no chromatic member still has a most-chromatic one, and `normalizer.roles` refuses it
-(``LUMI0519``) rather than letting this ranking quietly demote it.
+**Names QUALIFY and names RANK; the value only breaks a tie.** The two rules above are about
+what a name is allowed to *trigger*, and nothing here lets a hex trigger anything. Choosing
+between several names that all legitimately declared the same role is a separate question,
+and the plainest name still wins it — ``--brand`` is the site's statement of its brand even
+when ``--brand-secondary`` is the more colorful of the two. Only once names rank EQUALLY does
+the value get a vote: Webflow's Client-First convention names a brand's whole family off one
+prefix, neutrals included (``--base-color-brand--black`` / ``--…--green`` / ``--…--white``),
+and those are equally qualified, so chroma is all that separates the brand from its neutrals.
+See :func:`_rank`. Whether the winner is *fit* for the role at all remains the normalizer's
+call, not this module's — a family with no chromatic member still has a most-chromatic one,
+and `normalizer.roles` refuses it (``LUMI0519``) rather than letting this ranking quietly
+demote it.
 
 The four roles here are exactly the anchors ``normalizer.roles.assign_light_roles`` derives
 everything else from — this module cannot mint a role the normalizer does not already own.
@@ -170,9 +172,9 @@ _DISQUALIFYING_WORDS = frozenset(
 #: page-surface declarations, never to create a match (the brief's `white`/`light` hint).
 _LIGHT_HINT_WORDS = frozenset({"white", "light", "lightest", "paper"})
 
-#: The roles whose whole job is to be a COLOR rather than a neutral, and which are therefore
-#: ranked by chroma once names have qualified the field. Both are the roles the clustering
-#: path would only ever fill from a saturated cluster (`roles._is_saturated`).
+#: The roles whose whole job is to be a COLOR rather than a neutral, and which therefore
+#: break a rank TIE by chroma. Both are the roles the clustering path would only ever fill
+#: from a saturated cluster (`roles._is_saturated`).
 _CHROMA_RANKED_ROLES = frozenset({ROLE_SURFACE_BRAND, ROLE_SURFACE_ACCENT})
 
 #: Chroma is rounded before it becomes a sort key so two colors that differ only in
@@ -229,26 +231,37 @@ class DeclaredRole:
         return f"custom-prop:{self.property_name}"
 
 
-def _rank(property_name: str, role: str, hex_value: str) -> tuple[float, int, int, str]:
+def _rank(property_name: str, role: str, hex_value: str) -> tuple[int, int, float, str]:
     """Sort key deciding which of several declarations of one role is THE declaration.
 
-    Names QUALIFY a candidate; among the candidates a name has already qualified, the value
-    is allowed to rank them. Order:
+    Names QUALIFY a candidate, and the name also RANKS it; the value only breaks a tie
+    between names that rank equally. Order:
 
-    1. **chroma, most colorful first — brand and accent only.** Webflow's Client-First
-       convention names a brand's whole family off one prefix, neutrals included
-       (``--base-color-brand--black`` / ``--…--green`` / ``--…--white``), so every one of
-       them qualifies by name and only the value can separate them. Ranking these
-       alphabetically seated a BLACK brand at ``declared``/0.9 — more authority than the
-       clustered path it displaced, which had always required saturation — and took the
-       primary ramp, ``surface.brand.subtle``, ``border.brand`` and ``focus.ring`` with it.
-       Neutrality itself is still a matter for the normalizer's gate, not for this ranking:
-       an all-neutral family has a most-chromatic member too, and it must be refused rather
-       than quietly demoted here.
-    2. the light hint, for the page surface only (a ``white``/``light`` name is the light
+    1. the light hint, for the page surface only (a ``white``/``light`` name is the light
        colorway's page);
-    3. least-qualified name (``--background`` beats ``--background-secondary-area``);
+    2. **least-qualified name** (``--background`` beats ``--background-secondary-area``) —
+       the plainest name for a role is the site's own statement of that role;
+    3. **chroma, most colorful first — brand and accent only.** Webflow's Client-First
+       convention names a brand's whole family off one prefix, neutrals included
+       (``--base-color-brand--black`` / ``--…--green`` / ``--…--white``). Those names are
+       equally qualified, so without this key the ALPHABET decided and seated a BLACK brand
+       at ``declared``/0.9 — more authority than the clustered path it displaced, which had
+       always required saturation — taking the primary ramp, ``surface.brand.subtle``,
+       ``border.brand`` and ``focus.ring`` with it.
     4. the name itself, so the choice is deterministic across runs and stylesheet orderings.
+
+    **Why chroma is the tie-break and not the lead.** Leading with it inverts a very ordinary
+    pair: ``--brand: #0b5d51`` (a real, deep, muted teal, C≈0.075) against
+    ``--brand-secondary: #ff2d55`` (a hot pink, C≈0.238, and ``secondary`` is only a weak word
+    so the strong ``brand`` still qualifies it). Chroma-first SILENTLY seats the secondary as
+    the brand. Name-first's counter-case — a genuinely neutral ``--brand`` outranking a
+    ``--brand-green`` — is caught by the normalizer's neutrality gate and exits LOUDLY into
+    clustering (``LUMI0519``). A loud wrong-looking answer beats a quiet wrong one, so name
+    specificity leads.
+
+    Neutrality itself remains the normalizer's call, never this ranking's: an all-neutral
+    family has a most-chromatic member too, and it must be refused rather than quietly
+    demoted here.
     """
     words = _words(property_name)
     chroma_rank = 0.0
@@ -257,7 +270,7 @@ def _rank(property_name: str, role: str, hex_value: str) -> tuple[float, int, in
     hinted = 0
     if role == ROLE_SURFACE_PAGE and any(word in _LIGHT_HINT_WORDS for word in words):
         hinted = -1
-    return (chroma_rank, hinted, len(words), property_name)
+    return (hinted, len(words), chroma_rank, property_name)
 
 
 def declared_roles(
@@ -272,7 +285,7 @@ def declared_roles(
 
     Returns at most one declaration per role, ordered by :data:`DECLARED_ROLES`.
     """
-    candidates: dict[str, list[tuple[tuple[float, int, int, str], str, str]]] = {}
+    candidates: dict[str, list[tuple[tuple[int, int, float, str], str, str]]] = {}
     for name, raw in custom_props.items():
         role = role_for_property_name(name)
         if role is None:
