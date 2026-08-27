@@ -105,10 +105,21 @@ pub(crate) fn substitute_fragment_slots(
                     continue;
                 }
                 if let Some(state) = skip.as_mut() {
-                    // Still record the marker: a bound key inside a hidden
+                    // Still record the marker: a bound key inside a consumed
                     // subtree IS present in the artifact, and reporting it as
-                    // absent would send an operator chasing a phantom.
+                    // absent (LUMW0416) would send an operator chasing a
+                    // phantom. But a BOUND one has just lost its value — the
+                    // element it would have been applied to is not in the
+                    // output — so the loss is named rather than swallowed.
                     if let Some(key) = attr_value(start, SLOT_ATTR) {
+                        if slots.contains_key(&key) {
+                            diagnostics.push(nested_marker_consumed(
+                                node_id,
+                                &key,
+                                &state.owner,
+                                state.close.is_none(),
+                            ));
+                        }
                         seen.insert(key);
                     }
                     if !empty && !is_void(&name) {
@@ -215,6 +226,9 @@ struct Skip {
     /// The end tag to emit when the marked element closes (text substitution),
     /// or `None` when the element is being dropped entirely (visibility).
     close: Option<String>,
+    /// The slot key whose value consumed this subtree, so a bound marker found
+    /// inside it can say what swallowed it.
+    owner: String,
 }
 
 struct Marker<'a> {
@@ -268,6 +282,7 @@ fn apply_marker(
             *skip = Some(Skip {
                 depth: Vec::new(),
                 close: Some(format!("</{name}>")),
+                owner: key.to_owned(),
             });
         }
         (FragmentSlotKind::Href, FragmentSlotValue::Text(target)) => {
@@ -333,6 +348,7 @@ fn apply_marker(
             *skip = Some(Skip {
                 depth: Vec::new(),
                 close: None,
+                owner: key.to_owned(),
             });
         }
         _ => {
@@ -360,6 +376,38 @@ fn kind_mismatch(
         Some(DiagnosticSubject::Node(node_id.clone())),
     )
     .with_hint("text/href slots take {\"text\": …}, image slots {\"asset\": …}, visibility slots {\"visible\": …}.")
+}
+
+/// A bound marker whose element sits inside another slot's consumed subtree.
+///
+/// The artifact declares both slots, and both are legal to declare — `slots.py`
+/// refuses two slots on one ELEMENT, not a slot inside another slot's element —
+/// so this is a real authoring shape, and one F2's automatic selector detection
+/// will produce. The inner value simply cannot be applied: the element it names
+/// is not in the output. Naming both keys is the difference between "that
+/// binding does nothing" being discoverable and being a mystery.
+fn nested_marker_consumed(
+    node_id: &NodeId,
+    key: &str,
+    owner: &str,
+    hidden: bool,
+) -> Diagnostic {
+    let fate = if hidden {
+        format!("inside slot `{owner}`, which this node hides")
+    } else {
+        format!("inside slot `{owner}`, whose bound value replaced it")
+    };
+    Diagnostic::warning(
+        Phase::Web,
+        "LUMW0417",
+        format!(
+            "fragment node `{node_id}` binds slot `{key}`, whose marker sits {fate}; that value              was not applied"
+        ),
+        Some(DiagnosticSubject::Node(node_id.clone())),
+    )
+    .with_hint(
+        "A slot inside another slot's element cannot be bound at the same time; bind the outer          slot or the inner one.",
+    )
 }
 
 fn kind_unknown(node_id: &NodeId, key: &str) -> Diagnostic {
@@ -826,6 +874,82 @@ mod tests {
             &doc,
         );
         assert_eq!(shown, html);
+        assert!(codes.is_empty(), "{codes:?}");
+    }
+
+    #[test]
+    fn a_marker_consumed_by_another_slot_is_reported_not_silently_lost() {
+        // The reviewer's probe. `slots.py` refuses two slots on ONE element,
+        // but a text slot on `h1` and an href slot on `h1 a` is an accepted
+        // spec pair — and F2's automatic selector detection is exactly where
+        // that shape appears. The inner value cannot be applied (its element
+        // is gone with the outer substitution), so the loss is named.
+        let html = "<div data-lumen-slot=\"a\">x<span data-lumen-slot=\"b\">y</span></div>";
+        let doc = doc_with(&[]);
+        let (out, codes) = run(
+            html,
+            &slots(vec![
+                ("a", FragmentSlotValue::Text("A".to_owned())),
+                ("b", FragmentSlotValue::Text("B".to_owned())),
+            ]),
+            &kinds(&[("a", FragmentSlotKind::Text), ("b", FragmentSlotKind::Text)]),
+            &doc,
+        );
+        assert_eq!(out, "<div data-lumen-slot=\"a\">A</div>");
+        assert_eq!(codes, vec!["LUMW0417"]);
+
+        let mut diagnostics = Vec::new();
+        substitute_fragment_slots(
+            html,
+            &slots(vec![
+                ("a", FragmentSlotValue::Text("A".to_owned())),
+                ("b", FragmentSlotValue::Text("B".to_owned())),
+            ]),
+            &kinds(&[("a", FragmentSlotKind::Text), ("b", FragmentSlotKind::Text)]),
+            &doc,
+            "/asset-store",
+            &NodeId::from("frg_hero"),
+            &mut diagnostics,
+        );
+        // Both keys named: which value was lost, and what consumed it.
+        let message = &diagnostics[0].message;
+        assert!(message.contains('`') && message.contains("`b`"), "{message}");
+        assert!(message.contains("`a`"), "{message}");
+    }
+
+    #[test]
+    fn a_marker_inside_a_hidden_subtree_is_reported_the_same_way() {
+        let html = "<div data-lumen-slot=\"badge\"><a href=\"/x\" data-lumen-slot=\"cta\">Go</a></div>";
+        let doc = doc_with(&[]);
+        let (out, codes) = run(
+            html,
+            &slots(vec![
+                ("badge", FragmentSlotValue::Visible(false)),
+                ("cta", FragmentSlotValue::Text("https://x.test".to_owned())),
+            ]),
+            &kinds(&[
+                ("badge", FragmentSlotKind::Visibility),
+                ("cta", FragmentSlotKind::Href),
+            ]),
+            &doc,
+        );
+        assert_eq!(out, "");
+        assert_eq!(codes, vec!["LUMW0417"]);
+    }
+
+    #[test]
+    fn an_unbound_marker_inside_a_consumed_subtree_says_nothing() {
+        // Nothing was lost: the inner marker had no value to apply, and it is
+        // still present in the artifact, so LUMW0416 must not fire either.
+        let html = "<div data-lumen-slot=\"a\">x<span data-lumen-slot=\"b\">y</span></div>";
+        let doc = doc_with(&[]);
+        let (out, codes) = run(
+            html,
+            &slots(vec![("a", FragmentSlotValue::Text("A".to_owned()))]),
+            &kinds(&[("a", FragmentSlotKind::Text), ("b", FragmentSlotKind::Text)]),
+            &doc,
+        );
+        assert_eq!(out, "<div data-lumen-slot=\"a\">A</div>");
         assert!(codes.is_empty(), "{codes:?}");
     }
 

@@ -667,21 +667,32 @@ fn apply_fragment_slots(
         }
 
         // Backstop: whatever the substitution produced still has to satisfy the
-        // node's own bounds. It cannot fail today (keys and count are carried
-        // over untouched and each value is checked above), so a failure means a
-        // future change broke an invariant — keep the authored slots rather
-        // than emit a document the validator would reject.
+        // node's own bounds. Reachable only through a value this pass carried
+        // over untouched — an authored override that was already out of bounds
+        // on a hand-built or legacy document — since every value this pass
+        // WRITES is checked above.
+        //
+        // When it fires, every slot on the node is dropped, and that direction
+        // is the whole point: keeping the authored map would leave the
+        // template's own `{{…}}` values on the node, and this module's ruling
+        // is that template syntax must never reach a rendered page. An empty
+        // map renders the artifact's own content — the same fallback an unbound
+        // slot gets — and validates, so one bad slot costs the section its
+        // personalization rather than costing the derive.
         if let Some(issue) = fragment_slots_issue(&updated) {
             diagnostics.push(
                 Diagnostic::warning(
                     Phase::Web,
                     "LUMW0606",
-                    format!("derived fragment slots on `{id}` {issue}; the template's own slot values were kept"),
+                    format!(
+                        "derived fragment slots on `{id}` {issue}; every slot on this node was \
+                         dropped and the cloned section renders its own content"
+                    ),
                     Some(DiagnosticSubject::Node(id.clone())),
                 )
                 .with_hint("Derived slot values obey the same bounds as authored ones."),
             );
-            continue;
+            updated = BTreeMap::new();
         }
 
         if let Some(WebNodeKind::Fragment { slots, .. }) =
@@ -1629,6 +1640,64 @@ mod tests {
             .diagnostics
             .iter()
             .any(|diagnostic| diagnostic.code == "LUMW0606"));
+    }
+
+    #[test]
+    fn the_backstop_drops_every_slot_rather_than_leaving_a_template_on_the_page() {
+        // The bounds backstop's failure mode has to be the module's own ruling:
+        // template syntax must never reach a rendered page. Keeping the
+        // AUTHORED slots on the node is the one thing it may not do, because
+        // those are exactly the `{{…}}` values it was asked to replace.
+        //
+        // Reached here by an authored value that is already over the node
+        // bound (a hand-built or legacy document): it passes through as an
+        // override, and the resulting map is out of bounds as a whole.
+        let tmpl = template_with_fragment(vec![
+            (
+                "headline",
+                FragmentSlotValue::Text("{{account.name}}".to_owned()),
+            ),
+            (
+                "blurb",
+                FragmentSlotValue::Text("x".repeat(MAX_FRAGMENT_SLOT_VALUE_BYTES + 1)),
+            ),
+        ]);
+        let mut values = BTreeMap::new();
+        values.insert("account.name".to_owned(), text_value("Privia Health"));
+
+        let derived = derive_web_doc(&tmpl, &values, &[], &opts());
+        // Dropping the slots leaves a document that validates, so one bad slot
+        // costs the section its personalization — not the whole derive.
+        assert!(!derived.has_errors(), "{:#?}", derived.diagnostics);
+        assert!(fragment_slots(&derived.doc).is_empty());
+        assert!(derived
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "LUMW0606"));
+
+        // And what renders is the artifact's own content — no `{{…}}`.
+        let fragment_id = "frag_0123456789abcdef";
+        let mut options = crate::render::RenderOptions::delivery("/asset-store");
+        options.fragments.insert(
+            fragment_id.to_owned(),
+            crate::render::FragmentContent {
+                html: "<h1 data-lumen-slot=\"headline\">Clone's own words</h1>".to_owned(),
+                slot_kinds: BTreeMap::from([(
+                    "headline".to_owned(),
+                    crate::render::FragmentSlotKind::Text,
+                )]),
+            },
+        );
+        let html = crate::render::render_page(
+            &derived.doc,
+            &PageId::from("home"),
+            &theme(),
+            &options,
+        )
+        .expect("render")
+        .html;
+        assert!(html.contains("Clone's own words"), "{html}");
+        assert!(!html.contains("{{"), "{html}");
     }
 
     #[test]
