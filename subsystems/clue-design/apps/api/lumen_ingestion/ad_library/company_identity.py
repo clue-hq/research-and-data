@@ -43,6 +43,7 @@ __all__ = [
     "RESOLVER_AD_LIBRARY_DOMAIN",
     "RESOLVER_EXPLICIT",
     "RESOLVER_PDL",
+    "RESOLVER_PDL_THEN_AD_LIBRARY_DOMAIN",
     "check_advertiser_names",
     "company_name_key",
     "resolve_company_identity_resolver",
@@ -62,6 +63,22 @@ JsonObject = dict[str, Any]
 RESOLVER_PDL = "pdl"
 RESOLVER_AD_LIBRARY_DOMAIN = "ad_library_domain"
 RESOLVER_EXPLICIT = "explicit"
+
+#: W-B3 adds a FOURTH label, for a harvest that took two attempts to find an advertiser.
+#:
+#: The identity resolver can name a page that genuinely exists and genuinely belongs to the
+#: company, and STILL be the wrong page to harvest: for ``cursor.com`` it answered the legal
+#: entity's page (105610681, zero ads) while the advertiser's page carried 4489. That is a
+#: different failure from R3-A's — nothing was misresolved, the company simply advertises from
+#: a page other than the one its enrichment record names — and it is invisible to every check
+#: the lane already has, because an empty page is an honest answer.
+#:
+#: So when a ``pdl``-resolved page holds NO ADS AT ALL, the harvest is retried once against the
+#: ad library's own domain resolution. This label records that it took both, and it is
+#: deliberately NOT ``pdl``: the creatives came from a page nothing independent verified, which
+#: is exactly what ``ad_library_domain`` has always meant, so it cannot borrow the verified
+#: path's word. Compound rather than plain so the first attempt does not vanish from the record.
+RESOLVER_PDL_THEN_AD_LIBRARY_DOMAIN = "pdl_then_ad_library_domain"
 
 
 class CompanyIdentityError(RuntimeError):
@@ -186,6 +203,13 @@ class AdvertiserResolution:
     #: was asked for — on the fallback path it is the vendor's own resolution, and comparing
     #: the two is exactly how R3-A was eventually found.
     observed_page_id: str | None = None
+    #: W-B3: every page the harvest actually asked for, in order, with what came back. Usually
+    #: one entry; two when a resolved page held no ads and the domain retry ran. It exists
+    #: because the compound outcome above collapses two facts into one word, and an operator
+    #: diagnosing "why did this brand harvest from an unverified page" needs BOTH — the page
+    #: the identity resolver named and found empty, and the page the retry read instead.
+    #: Bounded by construction: at most two entries, each four scalars.
+    attempts: tuple[JsonObject, ...] = ()
 
     def to_json(self) -> JsonObject:
         return {
@@ -196,6 +220,7 @@ class AdvertiserResolution:
             "verified": self.verified,
             "note": self.note,
             "observed_page_id": self.observed_page_id,
+            "attempts": [dict(attempt) for attempt in self.attempts],
         }
 
 

@@ -423,6 +423,9 @@ def test_the_resolution_serializes_every_field_an_operator_needs() -> None:
         "verified": True,
         "note": None,
         "observed_page_id": APOLLO_TRUE_PAGE_ID,
+        # W-B3. Empty on a one-attempt harvest, which is almost all of them; the two-attempt
+        # shape is proven end to end in `test_ad_assets_advertiser_resolution`.
+        "attempts": [],
     }
 
 

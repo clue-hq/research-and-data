@@ -17,6 +17,7 @@ suites can never drift on what a seeded brand kit or a stubbed image model is.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, datetime
 from json import dumps as json_dumps
 from pathlib import Path
@@ -844,3 +845,372 @@ def test_a_verified_page_that_genuinely_has_no_ads_still_reads_empty(
     assert "0 ad(s) kept" in outcome["summary"]
     # The critical difference from the W5 run: the page that was checked is IN the summary.
     assert APOLLO_TRUE_PAGE_ID in outcome["summary"]
+
+
+# ======================================================================================
+# W-B3 — the resolved page that is real, correct, and still the wrong place to harvest
+# ======================================================================================
+#
+# R3-A assumed that resolving the advertiser independently was enough. It is not. For
+# `cursor.com` the identity resolver answered page 105610681 — a real page, genuinely the
+# company's — carrying zero ads, while the page Cursor actually advertises from holds 4489.
+# Enrichment records name the LEGAL ENTITY, and a company may advertise from a different page.
+#
+# Nothing in the lane could see this: an empty page is an honest answer, so the job read
+# `empty`, which is a sentence reserved for "this brand has no static ads" and was flatly
+# false. The fix is one retry against the ad library's own domain resolution, fired only when
+# the resolved page held NO ADS AT ALL.
+
+
+#: The identity resolver's answer for cursor.com, as recorded in the W-B3 run: a real page,
+#: correctly the company's, carrying zero ads.
+CURSOR_LEGAL_ENTITY_PAGE_ID = "105610681"
+
+#: The page the ad library's own domain resolution answers with instead. The W-B3 run found
+#: 4489 ads behind it; its NUMBER is not reproduced here as a fact, because these tests assert
+#: which page the harvest reached, not what that page is called.
+CURSOR_ADVERTISER_PAGE_ID = "cursor-advertiser-page"
+
+
+class _CursorLibrary:
+    """The ad library on the W-B3 shape: the resolver's page is empty, the vendor's is not.
+
+    Asked for a PAGE ID it serves that page (empty unless seeded). Asked for a DOMAIN it
+    answers its own resolution — a different page, and the one with the ads on it. That
+    asymmetry is the whole defect, and it is the reverse of R3-A's, where the vendor's own
+    resolution was the wrong one.
+    """
+
+    name = "stub-library"
+
+    def __init__(self, *, ads_by_page: dict[str, tuple[AdLibraryAd, ...]] | None = None) -> None:
+        self.calls: list[dict[str, Any]] = []
+        self._ads_by_page = (
+            ads_by_page
+            if ads_by_page is not None
+            else {
+                CURSOR_ADVERTISER_PAGE_ID: tuple(
+                    _ad(f"44890{n}", "Cursor", f"https://cdn.example/cursor-{n}.jpg")
+                    for n in range(4)
+                )
+            }
+        )
+
+    def fetch_page(self, **kwargs: Any) -> AdLibraryPage:
+        self.calls.append(kwargs)
+        page_id = kwargs.get("page_id") or CURSOR_ADVERTISER_PAGE_ID
+        return _page(page_id, self._ads_by_page.get(page_id, ()))
+
+
+def _cursor_identity(page_id: str | None = CURSOR_LEGAL_ENTITY_PAGE_ID) -> _StubIdentityResolver:
+    return _StubIdentityResolver(
+        CompanyIdentity(
+            domain="cursor.com",
+            name="Cursor",
+            linkedin_id=page_id,
+            linkedin_url="linkedin.com/company/cursor",
+            provider="stub-identity",
+        )
+    )
+
+
+def _cursor_body(brand_kit_id: str, **overrides: Any) -> dict:
+    return _body(brand_kit_id, company_domain="cursor.com", **overrides)
+
+
+def test_the_resolved_page_is_real_correct_and_empty_while_the_ads_live_elsewhere(
+    tmp_path: Path, lane_on: None
+) -> None:
+    """RED CASE, proving the stub is not rigged: R3-A's own fix produces the W-B3 empty.
+
+    Driven the post-R3-A way — resolve first, harvest the resolved id, no retry — the identity
+    resolver's page answers with nothing at all. Not "nothing kept": nothing CONSIDERED. That
+    is the number the retry keys on, and this is what it looks like before the retry exists.
+    """
+    from lumen_ingestion.ad_library.harvest import ads_considered, fetch_pages, select_creatives
+
+    library = _CursorLibrary()
+    pages = fetch_pages(
+        library, company_domain=None, page_id=CURSOR_LEGAL_ENTITY_PAGE_ID, max_pages=1
+    )
+
+    assert library.calls[0]["page_id"] == CURSOR_LEGAL_ENTITY_PAGE_ID
+    assert pages[0].page_id == CURSOR_LEGAL_ENTITY_PAGE_ID
+    assert ads_considered(pages) == 0, "the legal entity's page holds nothing at all"
+    assert select_creatives(pages).kept == ()
+    # And the ads were there the whole time, one domain resolution away.
+    assert ads_considered(fetch_pages(library, company_domain="cursor.com", max_pages=1)) == 4
+
+
+def test_an_empty_resolved_page_retries_once_against_the_ad_librarys_own_domain(
+    tmp_path: Path, lane_on: None
+) -> None:
+    """THE FIX. Same request, same library, same resolver — and the harvest now finds the ads.
+
+    Exactly two vendor page fetches: the resolved page, then the domain. No loop, no candidate
+    set. The provenance carries BOTH attempts, and the summary says in plain language which
+    page came up empty and which one the creatives actually came from.
+    """
+    client = _client(tmp_path)
+    brand_kit_id = _seed_brand_kit(client)
+    library = _CursorLibrary()
+
+    job = _run(
+        client,
+        tmp_path,
+        request_body=_cursor_body(brand_kit_id),
+        provider=library,
+        identity_resolver=_cursor_identity(),
+    )
+
+    # The retry, and its cost: one extra page fetch, on a harvest that had found nothing.
+    assert len(library.calls) == 2, library.calls
+    assert library.calls[0] == {
+        "company_domain": None,
+        "page_id": CURSOR_LEGAL_ENTITY_PAGE_ID,
+        "continuation_token": None,
+        "date_filter": None,
+    }
+    assert library.calls[1] == {
+        "company_domain": "cursor.com",
+        "page_id": None,
+        "continuation_token": None,
+        "date_filter": None,
+    }
+
+    assert job["status"] == "succeeded"
+    assert job["evidence"]["steps"]["harvest"]["ads_considered"] == 4
+    assert job["evidence"]["steps"]["harvest"]["kept"] == 4
+    assert job["outcome"]["creatives_custodied"] == 4
+
+    # --- honest provenance: both attempts, named ---
+    resolution = job["resolution"]
+    assert resolution["resolver_used"] == "pdl_then_ad_library_domain"
+    assert resolution["linkedin_page_id"] == CURSOR_LEGAL_ENTITY_PAGE_ID, "the empty page stays"
+    assert resolution["observed_page_id"] == CURSOR_ADVERTISER_PAGE_ID, "the page that harvested"
+    assert resolution["verified"] is False, "nothing independent verified the page that served"
+    assert resolution["resolved_name"] == "Cursor", "the resolver's name still gates custody"
+    assert resolution["attempts"] == [
+        {
+            "resolver_used": "pdl",
+            "page_id_asked": CURSOR_LEGAL_ENTITY_PAGE_ID,
+            "page_id_answered": CURSOR_LEGAL_ENTITY_PAGE_ID,
+            "ads_considered": 0,
+        },
+        {
+            "resolver_used": "ad_library_domain",
+            "page_id_asked": None,
+            "page_id_answered": CURSOR_ADVERTISER_PAGE_ID,
+            "ads_considered": 4,
+        },
+    ]
+
+    outcome = job["outcome"]
+    assert outcome["status"] == "ok"
+    assert outcome["resolver_used"] == "pdl_then_ad_library_domain"
+    assert outcome["linkedin_page_id"] == CURSOR_ADVERTISER_PAGE_ID
+    assert outcome["advertiser_verified"] is False
+    # The sentence a human reads. Both pages, in order, with what each held.
+    summary = outcome["summary"]
+    assert f"page {CURSOR_LEGAL_ENTITY_PAGE_ID} had no ads" in summary
+    assert "fell back to the ad library's own domain resolution" in summary
+    assert CURSOR_ADVERTISER_PAGE_ID in summary
+    assert "UNVERIFIED" in summary
+
+    lane = client.get(f"/brand-ad-assets/{brand_kit_id}").json()
+    assert len(lane["creatives"]) == 4
+    assert lane["creatives"][0]["provenance"]["advertiser_page_id"] == CURSOR_ADVERTISER_PAGE_ID
+
+
+def test_a_resolved_page_that_holds_ads_the_filter_dropped_does_not_retry(
+    tmp_path: Path, lane_on: None
+) -> None:
+    """THE LIMIT THAT MATTERS MOST. `kept == 0` is not the trigger; `considered == 0` is.
+
+    This page holds three video ads. The filter drops all three, so nothing is kept — and the
+    page is nevertheless the RIGHT page: it is where this advertiser publishes, it simply
+    publishes video. Retrying it would spend a vendor fetch to be told the same thing by a
+    source with weaker provenance, and would downgrade a verified resolution for nothing.
+    """
+    client = _client(tmp_path)
+    brand_kit_id = _seed_brand_kit(client)
+    library = _CursorLibrary(
+        ads_by_page={
+            CURSOR_LEGAL_ENTITY_PAGE_ID: tuple(
+                replace(_ad(f"5100{n}", "Cursor", f"https://cdn.example/v-{n}.mp4"), kind="video")
+                for n in range(3)
+            ),
+            CURSOR_ADVERTISER_PAGE_ID: (
+                _ad("6100", "Cursor", "https://cdn.example/never-reached.jpg"),
+            ),
+        }
+    )
+
+    job = _run(
+        client,
+        tmp_path,
+        request_body=_cursor_body(brand_kit_id),
+        provider=library,
+        identity_resolver=_cursor_identity(),
+    )
+
+    assert len(library.calls) == 1, "no retry — the page had ads, they were simply not static"
+    harvest = job["evidence"]["steps"]["harvest"]
+    assert harvest["ads_considered"] == 3
+    assert harvest["kept"] == 0
+    assert harvest["dropped"] == {"not_static:video": 3}
+
+    resolution = job["resolution"]
+    assert resolution["resolver_used"] == "pdl", "the verified path is not downgraded"
+    assert resolution["verified"] is True
+    assert len(resolution["attempts"]) == 1
+    assert job["outcome"]["status"] == "empty"
+    assert job["outcome"]["linkedin_page_id"] == CURSOR_LEGAL_ENTITY_PAGE_ID
+    # One attempt gets no retry sentence: there is nothing to explain.
+    assert "fell back" not in job["outcome"]["summary"]
+
+
+def test_an_explicit_page_id_with_no_ads_never_falls_back(
+    tmp_path: Path, lane_on: None
+) -> None:
+    """The operator asserted this page. Second-guessing an assertion is an override, not a
+    fallback — so an explicitly-requested page that comes back empty stays empty.
+    """
+    client = _client(tmp_path)
+    brand_kit_id = _seed_brand_kit(client)
+    library = _CursorLibrary()  # the domain WOULD answer with four ads, if anyone asked
+
+    job = _run(
+        client,
+        tmp_path,
+        request_body=_body(
+            brand_kit_id,
+            company_domain=None,
+            page_id=CURSOR_LEGAL_ENTITY_PAGE_ID,
+            advertiser_name="Cursor",
+        ),
+        provider=library,
+        identity_resolver=None,
+    )
+
+    assert len(library.calls) == 1, "the operator's page was read once and believed"
+    assert job["resolution"]["resolver_used"] == "explicit"
+    assert len(job["resolution"]["attempts"]) == 1
+    assert job["outcome"]["status"] == "empty"
+    assert job["outcome"]["creatives_kept"] == 0
+
+
+def test_a_keyless_harvest_that_comes_back_empty_does_not_re_ask_the_same_question(
+    tmp_path: Path, lane_on: None
+) -> None:
+    """The `ad_library_domain` path is the thing being fallen back TO — it cannot fall back.
+
+    A deployment with no identity key already sends the domain on the first call. If that came
+    back empty, retrying it would ask the identical question of the identical source and spend
+    a second vendor fetch to be told the same thing. This is the other half of "only on the
+    `pdl` path", and without it the retry would double the cost of every empty keyless harvest.
+    """
+    client = _client(tmp_path)
+    brand_kit_id = _seed_brand_kit(client)
+    library = _CursorLibrary(ads_by_page={})
+
+    job = _run(
+        client,
+        tmp_path,
+        request_body=_cursor_body(brand_kit_id),
+        provider=library,
+        identity_resolver=None,  # no key -> the ad library resolves the domain itself
+    )
+
+    assert len(library.calls) == 1, "asking the same source the same question twice is not a fix"
+    assert job["resolution"]["resolver_used"] == "ad_library_domain"
+    assert len(job["resolution"]["attempts"]) == 1
+    assert job["outcome"]["status"] == "empty"
+
+
+def test_when_the_fallback_is_also_empty_the_zero_is_honest_and_both_attempts_are_recorded(
+    tmp_path: Path, lane_on: None
+) -> None:
+    """Two empty pages are still an empty harvest — and the verified answer stands.
+
+    The retry ran and found nothing either. The resolution is NOT downgraded to unverified on
+    the strength of a second empty page: the identity resolver's page really is the best
+    answer anyone has, and calling it unverified would trade a true statement for a false one.
+    Both attempts are on the record, and the summary says both came up empty rather than
+    quietly reporting one number.
+    """
+    client = _client(tmp_path)
+    brand_kit_id = _seed_brand_kit(client)
+    library = _CursorLibrary(ads_by_page={})  # nothing anywhere
+
+    job = _run(
+        client,
+        tmp_path,
+        request_body=_cursor_body(brand_kit_id),
+        provider=library,
+        identity_resolver=_cursor_identity(),
+    )
+
+    assert len(library.calls) == 2, "the retry ran"
+    assert job["status"] == "succeeded"
+
+    resolution = job["resolution"]
+    assert resolution["resolver_used"] == "pdl"
+    assert resolution["verified"] is True
+    assert resolution["observed_page_id"] == CURSOR_LEGAL_ENTITY_PAGE_ID
+    assert [a["ads_considered"] for a in resolution["attempts"]] == [0, 0]
+    assert [a["resolver_used"] for a in resolution["attempts"]] == ["pdl", "ad_library_domain"]
+
+    outcome = job["outcome"]
+    assert outcome["status"] == "empty"
+    assert outcome["creatives_kept"] == 0
+    summary = outcome["summary"]
+    assert f"page {CURSOR_LEGAL_ENTITY_PAGE_ID} had no ads" in summary
+    assert "had none either" in summary
+    assert "fell back" not in summary, "nothing was fallen back TO — both were empty"
+
+
+def test_the_cross_check_still_gates_custody_on_the_fallback_page(
+    tmp_path: Path, lane_on: None
+) -> None:
+    """RED CASE: the retry can land on a stranger's page, and the guard must still hold.
+
+    This is the risk the retry introduces — the ad library's own domain resolution is exactly
+    the source R3-A proved can be wrong, and the retry hands it authority again. What keeps it
+    safe is that the identity resolver's NAME survives the fallback, so the cross-check is
+    still comparing the harvested ads against an independently-sourced name rather than
+    against the page's own account of itself. Nothing is kept.
+    """
+    client = _client(tmp_path)
+    brand_kit_id = _seed_brand_kit(client)
+    library = _CursorLibrary(
+        ads_by_page={
+            CURSOR_ADVERTISER_PAGE_ID: tuple(
+                _ad(f"7200{n}", "Windsurf", f"https://cdn.example/stranger-{n}.jpg")
+                for n in range(2)
+            )
+        }
+    )
+
+    job = _run(
+        client,
+        tmp_path,
+        request_body=_cursor_body(brand_kit_id),  # no advertiser_name: the resolver supplies it
+        provider=library,
+        identity_resolver=_cursor_identity(),
+    )
+
+    assert len(library.calls) == 2
+    steps = job["evidence"]["steps"]
+    assert steps["harvest"]["status"] == "advertiser_mismatch"
+    assert steps["harvest"]["kept"] == 0
+    assert "custody" not in steps, "KEEP NOTHING — custody was never reached"
+
+    outcome = job["outcome"]
+    assert outcome["status"] == "advertiser_mismatch"
+    conflict = outcome["advertiser_conflict"]
+    assert "Windsurf" in conflict and "Cursor" in conflict
+    # Both pages are in the conflict sentence, which is what makes it diagnosable.
+    assert CURSOR_LEGAL_ENTITY_PAGE_ID in conflict
+    assert CURSOR_ADVERTISER_PAGE_ID in conflict
+    assert client.get(f"/brand-ad-assets/{brand_kit_id}").json()["creatives"] == []
