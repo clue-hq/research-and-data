@@ -370,10 +370,11 @@ def test_a_dead_fragment_pin_still_exports_and_says_so(
 def test_a_section_background_image_reaches_the_export_zip(client: TestClient) -> None:
     """The RECORDED gap, fixed as a class rather than as one instance.
 
-    `_image_asset_ids` walked IMAGE NODES only. A Section/Container painted through
+    The export asset walk used to ask IMAGE NODES only. A Section/Container painted through
     `background.asset_id` — a registered document asset, rendered as a CSS `background-image`
     by the engine's own typed field — was invisible to it, so its bytes never entered the zip
-    and the exported page painted nothing.
+    and the exported page painted nothing. The live seam is `_node_asset_ids`, which enumerates
+    every way one node names registered bytes.
     """
     background = _upload_asset(client, _png((9, 9, 9)), "hero-bg.png")
     digest = background["media"]["digest"]["value"]
@@ -556,6 +557,52 @@ def test_the_published_page_renders_the_fragment_and_the_manifest_lists_it(
         {hero_digest, logo_digest}
     )
     assert client.get(f"/asset-store/{logo_digest}").status_code == 200
+
+
+def test_a_published_page_says_when_a_cloned_asset_has_no_bytes(
+    client: TestClient, workspace_id: str
+) -> None:
+    """The publish path must be as loud as the export path about the same defect.
+
+    An artifact is immutable, but the bytes it names are not immortal: a DSAR erasure, a purge,
+    a half-restored backup. Minted with bytes, published without them, the page renders a broken
+    image — and the publish path used to say NOTHING, because it copies no files and therefore
+    never touched the blobs at all. A clean manifest over a broken page is worse than a broken
+    page, so both paths now sweep custody before they build, and both report the same finding.
+    """
+    hero_digest = _register(client, _png((10, 20, 30)))
+    logo_digest = _register(client, _png((40, 50, 60)))
+    artifact = _mint_fragment(
+        client,
+        workspace_id,
+        rehosted={CLONE_HERO_URL: hero_digest, CLONE_LOGO_URL: logo_digest},
+    )
+    document = _seed(
+        client,
+        _web_doc(
+            "doc_publish_purged",
+            {
+                "id": "clone",
+                "kind": "fragment",
+                "fragment_id": artifact.fragment_id,
+                "classes": "",
+            },
+        ),
+    )
+    # The bytes go away AFTER the artifact was minted — the only way this state is reachable.
+    assert make_blob_store(client.app).delete(logo_digest) is True
+
+    html, manifest = _publish(client, document["id"], workspace_id, "purged-asset")
+
+    assert manifest["fragments"]["missing_asset_digests"] == [logo_digest]
+    assert any(logo_digest[:12] in warning for warning in manifest["warnings"]), manifest[
+        "warnings"
+    ]
+    # The page still publishes, and still names the byte route — the section is otherwise fine,
+    # and the reference is the only honest thing left to point at.
+    assert f"/asset-store/{logo_digest}" in html
+    # The digest that DID survive is not slandered.
+    assert hero_digest not in str(manifest["fragments"]["missing_asset_digests"])
 
 
 def test_the_fragment_region_is_identical_across_render_export_and_publish(

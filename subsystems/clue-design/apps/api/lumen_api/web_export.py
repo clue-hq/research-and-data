@@ -41,7 +41,7 @@ from .custom_component_runtime import (
     web_doc_uses_custom_components,
 )
 from .database import NotFoundError
-from .design_store import DesignBlobStore
+from .design_store import CustodyState, DesignBlobStore
 from .fragments.render import (
     build_fragment_render_package,
     css_class_names,
@@ -467,20 +467,6 @@ def _node_asset_ids(node: JsonObject) -> List[Tuple[str, str]]:
     return found
 
 
-def _image_asset_ids(web_doc: JsonObject) -> List[str]:
-    """Every distinct asset id an IMAGE NODE references, across all pages, first-seen order.
-
-    Kept narrow on purpose even though the delivery walk is now wider: this is what decides the
-    page's ``og:image``, and a social preview means "the picture of this page", which a
-    background wash or a cloned section's logo is not.
-    """
-    return _unique_ids(
-        asset_id
-        for origin, asset_id in _document_asset_references(web_doc)
-        if origin == "image"
-    )
-
-
 def _document_asset_references(web_doc: JsonObject) -> List[Tuple[str, str]]:
     """``[(origin, asset_id)]`` across every page, document order, image nodes first.
 
@@ -494,16 +480,6 @@ def _document_asset_references(web_doc: JsonObject) -> List[Tuple[str, str]]:
         for node in _walk_nodes(page):
             found.extend(_node_asset_ids(node))
     return sorted(found, key=lambda entry: entry[0] != "image")
-
-
-def _unique_ids(values: Any) -> List[str]:
-    seen: set[str] = set()
-    out: List[str] = []
-    for value in values:
-        if value not in seen:
-            seen.add(value)
-            out.append(value)
-    return out
 
 
 def _image_ext(mime: Any) -> str:
@@ -575,6 +551,9 @@ class _FragmentDelivery(NamedTuple):
     css: Optional[str]
     #: Digests of the bytes the ARTIFACTS themselves display (their rehosted images and fonts).
     asset_digests: List[str]
+    #: The subset of those whose bytes are no longer readable — filled by
+    #: :func:`_sweep_fragment_asset_custody`, which BOTH delivery paths run.
+    missing_asset_digests: List[str]
     missing: List[str]
     warnings: List[str]
 
@@ -584,6 +563,7 @@ class _FragmentDelivery(NamedTuple):
             "ids": list(self.ids),
             "missing": list(self.missing),
             "asset_digests": list(self.asset_digests),
+            "missing_asset_digests": list(self.missing_asset_digests),
         }
 
 
@@ -599,7 +579,7 @@ def _resolve_fragments(web_doc: JsonObject, blobs: DesignBlobStore) -> _Fragment
         package = empty_fragment_render_package()
         return _FragmentDelivery(
             ids=[], package=package, render_map={}, css=None,
-            asset_digests=[], missing=[], warnings=[],
+            asset_digests=[], missing_asset_digests=[], missing=[], warnings=[],
         )
     package = build_fragment_render_package(
         blobs.storage,
@@ -626,8 +606,53 @@ def _resolve_fragments(web_doc: JsonObject, blobs: DesignBlobStore) -> _Fragment
         render_map=fragment_render_map(package, ids),
         css=fragment_css_sheet(package, ids),
         asset_digests=digests,
+        missing_asset_digests=[],
         missing=missing,
         warnings=warnings,
+    )
+
+
+def _sweep_fragment_asset_custody(
+    fragments: _FragmentDelivery, blobs: DesignBlobStore, *, consequence: str
+) -> _FragmentDelivery:
+    """Check that the bytes each cloned section names are still THERE, on both delivery paths.
+
+    An artifact is immutable; the bytes it names are not immortal. A DSAR erasure, a purge, a
+    backup restored without its object store — any of them leaves a fragment pointing at a
+    digest that answers 404. The export path noticed only because it happens to READ every byte
+    it copies; the publish path copies nothing, so it used to publish a page with a broken image
+    and a manifest that looked clean. A clean manifest over a broken page is worse than a broken
+    page, so the probe is explicit and shared, and the finding is identical on both sides.
+
+    :meth:`DesignBlobStore.custody_states` is the right probe rather than a row check: the
+    dangerous state is ``ROW_ONLY``, where the row claims custody the backend cannot honour and
+    every row-level question answers "fine" while every byte route 404s.
+
+    Neither path refuses. The section is otherwise sound, the rest of the page is a good
+    deliverable, and the reference is left naming the digest route — which is the only honest
+    thing left to point at. ``consequence`` is the one part that legitimately differs between
+    the two builds, so it is the one part the caller supplies.
+    """
+    if not fragments.asset_digests:
+        return fragments
+    states = blobs.custody_states(fragments.asset_digests)
+    missing = [
+        digest
+        for digest in fragments.asset_digests
+        if states.get(digest) is not CustodyState.READABLE
+    ]
+    if not missing:
+        return fragments
+    return fragments._replace(
+        missing_asset_digests=missing,
+        warnings=[
+            *fragments.warnings,
+            *(
+                f"cloned-section asset {digest[:12]} has no readable bytes in the asset "
+                f"store; {consequence}"
+                for digest in missing
+            ),
+        ],
     )
 
 
@@ -639,10 +664,11 @@ def _embed_fragment_assets(
 ) -> Tuple[str, List[str]]:
     """Copy every byte the page's cloned sections display into the zip, and point at the copies.
 
-    Returns ``(html, warnings)``. A digest whose bytes are gone is a WARNING, never a refusal:
-    the rest of the page is a perfectly good deliverable, and the reference is left pointing at
-    the digest route (where it may well resolve for anyone reading the page online) rather than
-    at a file that is not there.
+    Returns ``(html, warnings)``. Missing bytes were already found and reported by
+    :func:`_sweep_fragment_asset_custody`, which both delivery paths run — so a digest it named
+    is skipped silently HERE rather than warned about twice, and the ``except`` below covers only
+    the narrow race where a blob disappears between the sweep and this read (same outcome either
+    way: no file, and the reference left naming the digest route).
 
     The media type comes from the artifact ROW rather than from a guess at the bytes — the
     digest route already serves these with that type — and an unrecognised one lands
@@ -650,13 +676,16 @@ def _embed_fragment_assets(
     lie a static file server then acts on.
     """
     warnings: List[str] = []
+    known_missing = set(fragments.missing_asset_digests)
     for digest in fragments.asset_digests:
+        if digest in known_missing:
+            continue
         try:
             media_type, data = blobs.read_blob(digest)
         except NotFoundError:
             warnings.append(
-                f"cloned-section asset {digest[:12]} skipped: bytes missing from the asset "
-                "store; the exported page keeps its /asset-store reference"
+                f"cloned-section asset {digest[:12]} vanished between the custody sweep and "
+                "the copy; the exported page keeps its /asset-store reference"
             )
             continue
         extension = _DELIVERY_EXT_BY_MIME.get(str(media_type).split(";")[0].strip())
@@ -1136,7 +1165,13 @@ def build_export_bundle(
 
     # 2. Delivery render against relative asset urls — cloned sections resolved out of durable
     #    custody first, so the zip carries the real section rather than its placeholder.
-    fragments = _resolve_fragments(web_doc, blobs)
+    fragments = _sweep_fragment_asset_custody(
+        _resolve_fragments(web_doc, blobs),
+        blobs,
+        consequence=(
+            "it is not in this zip, and the exported page keeps its /asset-store reference"
+        ),
+    )
     warnings.extend(fragments.warnings)
     render = core.web_render(
         web_doc,
@@ -1299,7 +1334,11 @@ def build_publish_package(
     # of durable custody exactly as they do for the editor preview; their own bytes need no
     # copy here, because the artifact already names them as `/asset-store/<digest>` and that
     # route is the one public byte surface this page is served beside.
-    fragments = _resolve_fragments(web_doc, blobs)
+    fragments = _sweep_fragment_asset_custody(
+        _resolve_fragments(web_doc, blobs),
+        blobs,
+        consequence="the published page will serve a 404 where that image or font goes",
+    )
     warnings.extend(fragments.warnings)
     render = core.web_render(
         web_doc,
