@@ -168,6 +168,15 @@ class AgentRuntimeConfig:
     # None means nothing was resolved for this turn; every fragment node then renders the
     # engine's placeholder, which is honest rather than empty.
     fragment_render_package: dict | None = None
+    # F2.3: the WORKSPACE's released cloned sections, as a capability rather than a value.
+    # Discovery and the insert action reach the registry through it —
+    # `lumen_api.agent_cloned_sections.DurableAgentClonedSectionRegistry`, supplied by the API
+    # worker exactly as `custom_component_registry` is. A capability rather than a manifest
+    # because the insert's permission question ("has a human released this section?") must be
+    # answered by the document write's OWN gate, not by a copy of its rules taken at composition
+    # time. None means this turn cannot see the library at all; the tools say so and refuse,
+    # never invent.
+    cloned_section_registry: Any | None = None
     # Brief-clarification headless/eval mode (LUMEN_AGENT_AUTO_DEFAULTS=1). When
     # true, the harness does NOT register `request_clarification` on the
     # orchestrator: it applies the skill's defaults and ledgers each assumption

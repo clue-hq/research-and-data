@@ -38,12 +38,14 @@ from py_lumen_obs import bind_run_id, get_logger
 
 from lumen_api.core import CoreClient, CoreError
 from lumen_api.fragments.render import (
+    FRAGMENT_RENDER_PACKAGE_SCHEMA_VERSION,
     fragment_collision_diagnostics,
     fragment_css_sheet,
     fragment_package_schema_refusal,
     fragment_render_map,
     web_doc_fragment_ids,
 )
+from lumen_api.fragments.slots import SLOT_KIND_TO_NODE_TAG
 from lumen_ingestion.capture.net import (
     REQUEST_TIMEOUT_SECONDS,
     BoundedFetcher,
@@ -288,6 +290,13 @@ _NAMED_ENDPOINT_RE = re.compile(
 _GROUNDED_PAGE_TEXT_MAX_CHARS = 30_000
 _GROUNDED_PAGE_LINK_MAX = 100
 _ASSET_SEARCH_LIMIT_MAX = 20
+#: F2.3. Same ceiling as the asset search for the same reason — a discovery result is something
+#: the model READS, and twenty sections is already more than a page has room for.
+_CLONED_SECTION_SEARCH_LIMIT_MAX = 20
+#: The wrapper section a pinned cloned section lives inside. `w-full` and nothing else: the clone
+#: brings its own padding, background and rhythm (that is what makes it a clone), so a wrapper
+#: that imposed the platform's section rhythm on top would double it.
+_CLONED_SECTION_WRAPPER_CLASSES = "w-full"
 _GROUNDED_SOURCE_MAX = 64
 _GROUNDED_PAGE_SOURCE_MAX = 8
 _GROUNDED_CITATION_MAX = 100
@@ -852,6 +861,13 @@ class LumenWebTools:
         )
         if self._fragment_package_refusal is not None:
             self._fragment_render_package = {}
+        # F2.3: what `search_cloned_sections` has already looked up this turn, so
+        # `view("cloned_section:<id>")` can show real pixels without a second registry round
+        # trip — the same "search hands the view its target" contract `search_assets` has.
+        # Written by discovery AND by a successful insert (the agent may want to look at what it
+        # just pinned), never invented: an id absent here has genuinely not been resolved.
+        self._cloned_section_previews: Dict[str, Optional[str]] = {}
+        self._cloned_section_labels: Dict[str, str] = {}
         # Staleness contract (mirrors the scene view): a monotonic doc-mutation
         # count, and the count stamped at the last successful render. view()
         # refuses a preview older than the current doc.
@@ -4310,7 +4326,571 @@ class LumenWebTools:
         )
         return json.dumps(result, indent=2)
 
-    # --- cloned sections (F1.3) ---------------------------------------------
+    # --- cloned sections: discovery + the insert action (F2.3) ---------------
+    #
+    # A cloned section is one verbatim band lifted off a site the client already owns, minted at
+    # ingestion time and released by a human approving the brand kit it came from (F2.2). These
+    # two tools are the whole of the agent's access to them: find one, pin one. The registry is a
+    # capability, not a manifest, because the pin's permission question is answered by the
+    # DOCUMENT WRITE's own gate — see `lumen_api.agent_cloned_sections`.
+
+    def _cloned_section_registry(self):
+        return getattr(self.config, "cloned_section_registry", None)
+
+    def _cloned_section_registry_missing(self) -> str:
+        return self._tool_error(
+            "cloned_section.registry_unavailable",
+            "This turn was passed no cloned-section library, so there is nothing to reuse. "
+            "Compose the section instead.",
+        )
+
+    def search_cloned_sections(
+        self, q: str = "", role: Optional[str] = None, limit: int = 8
+    ) -> str:
+        """Find CLONED SECTIONS — real bands lifted verbatim off this client's own website.
+
+        A cloned section is not a template and not generated markup: it is the client's actual
+        nav, footer, proof band or hero, with its own markup, its own CSS and its own images,
+        pinned by id. Reusing one is how a page gets chrome that is right by construction instead
+        of approximated.
+
+        ONLY RELEASED SECTIONS ARE LISTED. Ingestion mints every section it clones as a draft; a
+        human releases them by approving the brand kit they came from. A draft or a retired
+        section is not offered here, because pinning one is refused.
+
+        `q` is optional — call it with no query to see everything this workspace has released.
+        With a query it matches over the label, the role, the page it came from and the slot
+        names. Naming a `frag_…` id anywhere in the query returns that section first.
+        `role` filters to one section role (`nav`, `hero`, `footer`, `proof`, …).
+
+        EACH ROW carries:
+          - `fragment_id`   — what `insert_cloned_section` takes;
+          - `section_role` + `label` — what the band is and what it says;
+          - `slots`         — every spot in it you may re-fill, as `{key, kind}`; `text` and
+            `href` take a string, `image` takes an asset id, `visibility` takes true/false.
+            A section with no slots is reusable exactly as it is;
+          - `view`          — paste into `view("cloned_section:<id>")` to SEE the real band
+            before choosing it. A row whose `preview` is `"none"` has no image to show;
+          - `source_url` and `brand_kit` — which page it came from and whose approval released it.
+
+        NEVER EDIT A CLONED SECTION'S INTERNALS. Its markup is the client's, verbatim; the slots
+        are the whole of what may change. If a band needs different structure, compose a new
+        section instead of trying to rewrite a clone.
+        """
+        registry = self._cloned_section_registry()
+        if registry is None:
+            return self._cloned_section_registry_missing()
+        if (
+            not isinstance(limit, int)
+            or isinstance(limit, bool)
+            or limit < 1
+            or limit > _CLONED_SECTION_SEARCH_LIMIT_MAX
+        ):
+            return self._tool_error(
+                "cloned_section.bad_limit",
+                f"limit must be an integer from 1 to {_CLONED_SECTION_SEARCH_LIMIT_MAX}.",
+            )
+        requested_role = (role or "").strip().lower() or None
+        try:
+            listing = registry.list_sections(requested_role)
+        except Exception as error:  # noqa: BLE001 - capability boundary
+            self.record(
+                "author",
+                "cloned_sections_search_failed",
+                input_summary=f"q={q!r} role={requested_role or '*'}",
+                output_summary=f"{type(error).__name__}: {error}"[:500],
+            )
+            return self._tool_error(
+                "cloned_section.registry_failed",
+                f"the cloned-section library could not be read: "
+                f"{type(error).__name__}: {error}",
+            )
+        candidates = [
+            section
+            for section in (listing or {}).get("sections") or []
+            if isinstance(section, dict) and section.get("fragment_id")
+        ]
+        ordered = self._rank_cloned_sections(candidates, q or "")[:limit]
+        # DESCRIBE ONLY WHAT IS RETURNED. The slot kinds live in each artifact's payload and the
+        # preview lives in durable storage, so describing the whole library to answer one query
+        # would read a blob per section the agent never sees.
+        described: Dict[str, Any] = {}
+        if ordered:
+            try:
+                described = registry.describe(
+                    [str(section["fragment_id"]) for section, _id_match in ordered]
+                )
+            except Exception as error:  # noqa: BLE001 - detail is a bonus, never the answer
+                self._obs_log.warning(
+                    "cloned_section_describe_failed",
+                    error=str(error),
+                    error_type=type(error).__name__,
+                )
+                described = {}
+
+        results: List[JsonObject] = []
+        for section, id_match in ordered:
+            fragment_id = str(section["fragment_id"])
+            detail = described.get(fragment_id) or {}
+            preview_path = detail.get("preview_path")
+            self._cloned_section_previews[fragment_id] = preview_path
+            self._cloned_section_labels[fragment_id] = str(
+                section.get("label") or section.get("section_role") or fragment_id
+            )
+            row: JsonObject = {
+                "fragment_id": fragment_id,
+                "section_role": section.get("section_role"),
+                "label": section.get("label"),
+                # The kinds are authoritative (they come out of the artifact); the row's
+                # `slot_keys` is only what the harvest recorded, so it is the fallback.
+                "slots": detail.get("slots")
+                or [{"key": key, "kind": "unknown"} for key in section.get("slot_keys") or []],
+                "source_url": section.get("source_url"),
+                "brand_kit": {
+                    "id": section.get("source_kit_id"),
+                    "version": section.get("source_kit_version"),
+                },
+                "view": f"cloned_section:{fragment_id}",
+                "preview": "available" if preview_path else "none",
+            }
+            if id_match:
+                row["id_match"] = True
+            results.append(row)
+
+        payload: JsonObject = {
+            "status": "ok",
+            "query": q or None,
+            "role": requested_role,
+            "count": len(results),
+            "results": results,
+        }
+        if not results:
+            payload["note"] = self._cloned_section_empty_note(
+                q or "", requested_role, len(candidates)
+            )
+        self.record(
+            "author",
+            "cloned_sections_searched",
+            input_summary=f"q={q!r} role={requested_role or '*'}",
+            output_summary=f"{len(results)} released cloned section(s)",
+            payload={"fragment_ids": [row["fragment_id"] for row in results]},
+            sink_extra={"result_count": len(results)},
+        )
+        return json.dumps(payload, indent=2)
+
+    @staticmethod
+    def _cloned_section_text(section: JsonObject) -> str:
+        """The searchable text of one section row — everything a human would recognise it by."""
+        parts = [
+            section.get("fragment_id"),
+            section.get("label"),
+            section.get("section_role"),
+            section.get("source_url"),
+            section.get("page_url"),
+            *(section.get("slot_keys") or []),
+        ]
+        return " ".join(str(part) for part in parts if part).lower()
+
+    def _rank_cloned_sections(
+        self, candidates: List[JsonObject], query: str
+    ) -> List[tuple]:
+        """`[(section, id_match), …]`, best first. The `search_assets` ranking, one library.
+
+        An EMPTY query keeps the registry's own order (newest first) rather than inventing one:
+        "show me what I have" is a legitimate call, and reordering an unfiltered list by a
+        relevance score computed from nothing would be noise dressed as ranking.
+        """
+        query_lower = query.strip().lower()
+        if not query_lower:
+            return [(section, False) for section in candidates]
+        by_id = {str(section["fragment_id"]): section for section in candidates}
+        tokens = _asset_search_tokens(query_lower)
+        named = [
+            token for token in dict.fromkeys([query_lower, *tokens]) if token in by_id
+        ]
+        ranked: List[tuple] = [(by_id[fragment_id], True) for fragment_id in named]
+        scored: List[tuple] = []
+        for section in candidates:
+            fragment_id = str(section["fragment_id"])
+            if fragment_id in named:
+                continue
+            haystack = self._cloned_section_text(section)
+            words = frozenset(word for word in re.split(r"\W+", haystack) if word)
+            hits = sum(1 for token in tokens if _asset_text_hit(token, haystack, words))
+            phrase = 1 if _asset_text_hit(query_lower, haystack, words) else 0
+            if not phrase and not hits:
+                continue
+            scored.append((-phrase, -hits, fragment_id, section))
+        scored.sort(key=lambda item: item[:3])
+        return ranked + [(item[3], False) for item in scored]
+
+    def _cloned_section_empty_note(
+        self, query: str, role: Optional[str], released: int
+    ) -> str:
+        """Why zero, in the terms that decide what to do next.
+
+        "This client has no released cloned sections" and "none of them match your words" are
+        different facts with different remedies (compose the band vs. try another query), and a
+        bare empty list reads as the first no matter which it was.
+        """
+        if not released:
+            return (
+                "This workspace has no cloned sections released for reuse"
+                + (f" with role {role!r}" if role else "")
+                + ". Either its website has not been ingested, or the brand kit those sections "
+                "were cloned into has not been approved yet. Compose the section instead."
+            )
+        filters = f" with role {role!r}" if role else ""
+        return (
+            f"0 of {released} released cloned section(s) matched {query!r}{filters}. "
+            "Try the band's role (nav, hero, footer, proof), a word from its heading, or call "
+            "this tool with no query to see everything."
+        )
+
+    def insert_cloned_section(
+        self,
+        fragment_id: str,
+        index: Optional[int] = None,
+        slot_values_json: Optional[str] = None,
+        parent_node_id: Optional[str] = None,
+    ) -> str:
+        """Pin one cloned section into the page. The band arrives verbatim; slots re-fill it.
+
+        `fragment_id` is a `frag_…` id from `search_cloned_sections` — never one you composed.
+        `index` places it among the page's top-level sections (0 is first; omit to append).
+        `parent_node_id` is for the rare nested case; omit it and the section lands on the page.
+
+        `slot_values_json` is a JSON OBJECT of `{slot key: value}` using the section's OWN slot
+        keys (`search_cloned_sections` lists them with their kinds). Values are plain, and the
+        artifact's kind decides how each is bound: a `text` or `href` slot takes a string, an
+        `image` slot takes a registered asset id, a `visibility` slot takes true/false. Omit a
+        slot and the clone keeps what the original page said there, which is usually right.
+
+        THE SECTION IS WRAPPED for you: a fragment may not be a direct child of the page root, so
+        this composes a section container around it. You get both ids back.
+
+        REFUSALS ARE REAL ANSWERS. `fragment.not_approved` means a human has not released that
+        section yet — say so and compose the band instead; do not retry. `fragment.unresolved`
+        means the id is not one this workspace holds — search again rather than guessing an id.
+        """
+        refusal = self._consume_round_budget("insert_cloned_section")
+        if refusal is not None:
+            return refusal
+        registry = self._cloned_section_registry()
+        if registry is None:
+            return self._cloned_section_registry_missing()
+        clean_id = (fragment_id or "").strip()
+
+        raw_slots: JsonObject = {}
+        if slot_values_json is not None:
+            try:
+                decoded = json.loads(slot_values_json)
+            except (TypeError, json.JSONDecodeError) as error:
+                return self._tool_error(
+                    "cloned_section.bad_slot_values",
+                    f"slot_values_json must be a JSON object: {error}",
+                )
+            if not isinstance(decoded, dict):
+                return self._tool_error(
+                    "cloned_section.bad_slot_values",
+                    "slot_values_json must be a JSON object of {slot key: value}.",
+                )
+            raw_slots = decoded
+
+        # THE GATE. Not re-implemented here: the registry asks the same check the document write
+        # will make, so a section this refuses is exactly a section that commit would refuse —
+        # and the agent learns it now, in words, instead of at the end of the turn.
+        try:
+            resolved = registry.resolve_insertable(clean_id)
+        except Exception as error:  # noqa: BLE001 - the gate's refusal, whatever its type
+            code = getattr(error, "code", None) or "cloned_section.not_insertable"
+            message = getattr(error, "message", None) or str(error)
+            self.record(
+                "author",
+                "cloned_section_insert_refused",
+                input_summary=clean_id,
+                output_summary=f"{code}: {message}"[:500],
+                payload={"fragment_id": clean_id, "error_code": code},
+            )
+            return self._tool_error(str(code), str(message), fragment_id=clean_id)
+
+        slot_kinds = (resolved.get("render") or {}).get("slot_kinds") or {}
+        slots, slot_error = self._tagged_slot_values(raw_slots, slot_kinds, clean_id)
+        if slot_error is not None:
+            return slot_error
+
+        page = self._home_page()
+        nodes = page.get("nodes") or {}
+        root_id = page.get("root")
+        root = nodes.get(root_id) if isinstance(root_id, str) else None
+        root_children = list(root.get("children") or []) if isinstance(root, dict) else []
+        parent = parent_node_id if isinstance(parent_node_id, str) and parent_node_id else root_id
+        if parent not in nodes:
+            return self._tool_error(
+                "cloned_section.parent_unknown",
+                f"parent node {parent!r} is not on page {self.page_id!r}.",
+                section_ids=root_children,
+            )
+        siblings = list((nodes.get(parent) or {}).get("children") or [])
+        if index is None:
+            position = len(siblings)
+        elif not isinstance(index, int) or isinstance(index, bool) or index < 0:
+            return self._tool_error(
+                "cloned_section.bad_index",
+                "index must be a non-negative integer, or omitted to append.",
+            )
+        else:
+            position = min(index, len(siblings))
+
+        section_id, node_id = self._cloned_section_node_ids(set(nodes))
+        # LUMW0011: the page root holds sections and nothing else, and a fragment node is a LEAF.
+        # Wrapping is therefore not a style choice — it is the only shape the engine accepts.
+        section_node: JsonObject = {
+            "id": section_id,
+            "kind": "section",
+            "tag": "section",
+            "classes": _CLONED_SECTION_WRAPPER_CLASSES,
+            "children": [node_id],
+        }
+        fragment_node: JsonObject = {
+            "id": node_id,
+            "kind": "fragment",
+            "classes": "",
+            "fragment_id": clean_id,
+            "slots": slots,
+        }
+        operations = [
+            {
+                "kind": "insert_node",
+                "page_id": self.page_id,
+                "parent": parent,
+                "index": position,
+                "nodes": [section_node, fragment_node],
+                "root": section_id,
+            }
+        ]
+
+        try:
+            response = self.core.web_apply_ops(self.web_doc, operations)
+        except CoreError as error:
+            diagnostics = list(error.diagnostics or [])
+            self.record(
+                "author",
+                "cloned_section_insert_rejected",
+                input_summary=clean_id,
+                output_summary=error.message[:500],
+                diagnostics=diagnostics,
+                payload={"fragment_id": clean_id},
+            )
+            return self._rejected(diagnostics)
+        if not response.get("ok"):
+            return self._rejected(response.get("diagnostics") or [])
+
+        self.web_doc = response["web_doc"]
+        self._record_operations(operations)
+        self._doc_version += 1
+        # F1.3's package is resolved ONCE, at composition, from what the document pinned THEN —
+        # so without this the section the agent just pinned would render as the engine's
+        # placeholder in the agent's own screenshots, and the visual reviewer would judge a page
+        # with a hole in it. The artifact travels with the resolution that let it be pinned.
+        self._admit_fragment_artifact(clean_id, resolved.get("render") or {})
+        self._cloned_section_previews[clean_id] = resolved.get("preview_path")
+        self._cloned_section_labels[clean_id] = str(
+            resolved.get("label") or resolved.get("section_role") or clean_id
+        )
+        warnings, advice = _split_non_error_diagnostics(response.get("diagnostics"))
+        self.record(
+            "author",
+            "cloned_section_inserted",
+            input_summary=f"{clean_id} -> {parent}[{position}]",
+            output_summary=f"{section_id} > {node_id}",
+            diagnostics=response.get("diagnostics") or [],
+            payload={
+                "fragment_id": clean_id,
+                "section_role": resolved.get("section_role"),
+                "page_id": self.page_id,
+                "section_node_id": section_id,
+                "node_id": node_id,
+                "slots_bound": sorted(slots),
+                "operations": copy.deepcopy(operations),
+            },
+            sink_extra={"fragment_id": clean_id},
+        )
+        return json.dumps(
+            {
+                "status": "ok",
+                "fragment_id": clean_id,
+                "section_role": resolved.get("section_role"),
+                "label": resolved.get("label"),
+                "page_id": self.page_id,
+                "section_node_id": section_id,
+                "node_id": node_id,
+                "index": position,
+                "slots_bound": sorted(slots),
+                "view": f"cloned_section:{clean_id}",
+                "warnings": warnings,
+                "advice": advice,
+            },
+            indent=2,
+        )
+
+    def _tagged_slot_values(
+        self, raw: JsonObject, slot_kinds: Dict[str, Any], fragment_id: str
+    ) -> tuple[JsonObject, Optional[str]]:
+        """Plain agent-supplied values → the engine's TAGGED slot values, by the artifact's kinds.
+
+        The tag is load-bearing and cannot be inferred from the value: an href and a paragraph are
+        both JSON strings, so `{"text": …}` from an href slot is how a link target avoids being
+        written into a heading (`FragmentSlotValue` is serde-tagged precisely because of this).
+        The artifact's manifest is the only thing that knows, which is why an unknown key is
+        refused here rather than passed on — the engine would accept it as a well-formed key and
+        it would simply never bind, which is a silent nothing.
+
+        Everything the ENGINE can judge is left to the engine: key grammar, the 64-slot ceiling,
+        the 8 KB value bound and asset-id shape are all checked by the same `insert_node`
+        validation a human's operation goes through.
+        """
+        tagged: JsonObject = {}
+        for key, value in raw.items():
+            kind = slot_kinds.get(key)
+            if kind is None:
+                available = ", ".join(sorted(slot_kinds)) or "none"
+                return {}, self._tool_error(
+                    "cloned_section.unknown_slot",
+                    f"cloned section {fragment_id} has no slot {key!r}. Its slots are: "
+                    f"{available}.",
+                    fragment_id=fragment_id,
+                    slots=sorted(slot_kinds),
+                )
+            tag = SLOT_KIND_TO_NODE_TAG.get(str(kind))
+            if tag is None:
+                return {}, self._tool_error(
+                    "cloned_section.unknown_slot",
+                    f"slot {key!r} has kind {kind!r}, which this build cannot bind.",
+                    fragment_id=fragment_id,
+                )
+            if tag == "visible":
+                if not isinstance(value, bool):
+                    return {}, self._tool_error(
+                        "cloned_section.bad_slot_value",
+                        f"slot {key!r} controls whether part of the section is shown, so it "
+                        "takes true or false.",
+                        fragment_id=fragment_id,
+                    )
+            elif not isinstance(value, str):
+                expected = "an asset id" if tag == "asset" else "a string"
+                return {}, self._tool_error(
+                    "cloned_section.bad_slot_value",
+                    f"slot {key!r} is a {kind} slot, so it takes {expected}.",
+                    fragment_id=fragment_id,
+                )
+            tagged[key] = {tag: value}
+        return tagged, None
+
+    def _cloned_section_node_ids(self, taken: set) -> tuple[str, str]:
+        """A fresh `(section id, fragment node id)` pair, deterministic per run + ledger position.
+
+        The digest recipe `place_custom_component` uses, for the same reason: ids must be stable
+        for a replay of this turn's operations and unique against everything already on the page.
+        """
+        salt = 0
+        while True:
+            digest = hashlib.sha256(
+                (
+                    f"{self.run_id}\0cloned_section\0"
+                    f"{len(self.operations_ledger)}\0{salt}"
+                ).encode("utf-8")
+            ).hexdigest()[:8]
+            section_id, node_id = f"sec_{digest}", f"frg_{digest}"
+            if section_id not in taken and node_id not in taken:
+                return section_id, node_id
+            salt += 1
+
+    def _admit_fragment_artifact(self, fragment_id: str, render: JsonObject) -> None:
+        """Add one just-pinned artifact to this turn's render package, in the package's own shape.
+
+        Deliberately the same dict `build_fragment_render_package` writes — html, css, slot_kinds,
+        asset_digests — so there is exactly one artifact shape in the runtime and no second render
+        path to keep in step.
+        """
+        package = self._fragment_render_package
+        if not isinstance(package, dict) or not package:
+            package = {
+                "schema_version": FRAGMENT_RENDER_PACKAGE_SCHEMA_VERSION,
+                "fragments": {},
+                "missing": [],
+            }
+            self._fragment_render_package = package
+        fragments = package.setdefault("fragments", {})
+        if not isinstance(fragments, dict):
+            fragments = {}
+            package["fragments"] = fragments
+        fragments[fragment_id] = {
+            "html": str(render.get("html") or ""),
+            "css": str(render.get("css") or ""),
+            "slot_kinds": dict(render.get("slot_kinds") or {}),
+            "asset_digests": list(render.get("asset_digests") or []),
+        }
+        missing = package.get("missing")
+        if isinstance(missing, list) and fragment_id in missing:
+            # It resolved. A stale "missing" entry beside a live artifact would make the
+            # collision/missing diagnostics contradict the page.
+            package["missing"] = [item for item in missing if item != fragment_id]
+
+    def _view_cloned_section(self, target: str) -> list:
+        """The view content for a `cloned_section:<fragment_id>` target — the real band's pixels.
+
+        A cloned section is chosen by LOOK. Its label says "Proof — Trusted by 400 clinics"; only
+        the preview says whether it is a logo wall, a quote card or a stat row, and that decides
+        whether it belongs on this page. Every non-viewable outcome is an honest text block: an id
+        this turn has not resolved (with the ones it has), a section minted without a preview, or
+        a preview whose bytes are gone.
+        """
+        fragment_id = target[len("cloned_section:") :]
+        if fragment_id not in self._cloned_section_previews:
+            self.record(
+                "agent",
+                "web_view_called",
+                input_summary=target,
+                output_summary="cloned_section_unknown",
+            )
+            known = _capped_id_list(sorted(self._cloned_section_previews))
+            return [
+                _text_block(
+                    f"view: cloned section {fragment_id!r} has not been looked up in this turn. "
+                    f"Call search_cloned_sections first. Resolved so far: {known}"
+                )
+            ]
+        label = self._cloned_section_labels.get(fragment_id, fragment_id)
+        preview_path = self._cloned_section_previews.get(fragment_id)
+        if not preview_path or not Path(preview_path).exists():
+            self.record(
+                "agent",
+                "web_view_called",
+                input_summary=target,
+                output_summary="cloned_section_no_preview",
+            )
+            return [
+                _text_block(
+                    f"view: cloned section {fragment_id} — {label}. It has no preview image to "
+                    "look at (the capture it came from stored no screenshot of this band). "
+                    "Judge it from its role, its label and its slots."
+                )
+            ]
+        self.record(
+            "agent",
+            "web_view_called",
+            input_summary=target,
+            output_summary="cloned_section_viewed",
+        )
+        return [
+            _text_block(f"view: cloned section {fragment_id} — {label}"),
+            # G5: every web view image rides the many-image ceiling — these accumulate in the
+            # same conversation as the page captures.
+            _image_block(Path(preview_path), max_px=_VISION_MANY_IMAGE_MAX_PX),
+        ]
+
+    # --- cloned sections: rendering (F1.3) -----------------------------------
 
     def _fragment_ids(self) -> List[str]:
         """The artifact ids the CURRENT document pins, recomputed per render.
@@ -5192,6 +5772,8 @@ class LumenWebTools:
             return self._view_state(target)
         if target.startswith("asset:"):
             return self._view_asset(target)
+        if target.startswith("cloned_section:"):
+            return self._view_cloned_section(target)
         self.record(
             "agent", "web_view_called", input_summary=target, output_summary="unknown_target"
         )
@@ -5199,7 +5781,7 @@ class LumenWebTools:
             _text_block(
                 f"view: unknown target {target!r}. Use \"preview:1440\", "
                 '"preview:768", "preview:375", "state:<n>", "asset:<asset_id>", '
-                '"doc", "brand", or "account".'
+                '"cloned_section:<fragment_id>", "doc", "brand", or "account".'
             )
         ]
 
