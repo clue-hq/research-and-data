@@ -16,7 +16,10 @@
 //!
 //! Diagnostics namespace: `LUMW06xx`.
 
-use crate::doc::{WebDoc, WebNode, WebNodeKind, WebPage};
+use crate::doc::{
+    fragment_slots_issue, FragmentSlotValue, WebDoc, WebNode, WebNodeKind, WebPage,
+    MAX_FRAGMENT_SLOT_VALUE_BYTES,
+};
 use crate::inline::sanitize_inline;
 use crate::util::escape_text;
 use crate::validate::validate_web_doc;
@@ -335,6 +338,19 @@ fn apply_slots(
     ctx: &mut Ctx,
     diagnostics: &mut Vec<Diagnostic>,
 ) {
+    // A cloned section's slots are the same pass, keyed differently: its
+    // carriers are entries in the node's own `slots` map rather than a
+    // `slot_key` on the node, because one fragment node holds many of them.
+    apply_fragment_slots(
+        page,
+        values,
+        provided,
+        existing_asset_ids,
+        upserts,
+        ctx,
+        diagnostics,
+    );
+
     let targets: Vec<(NodeId, String)> = page
         .nodes
         .iter()
@@ -421,6 +437,257 @@ fn apply_slots(
                 );
             }
             (None, _) => {}
+        }
+    }
+}
+
+/// Opening/closing of the fragment slot template form, `{{account.name}}`.
+///
+/// Fragment slots need their own marker family because the value lives on the
+/// NODE, not in markup: the artifact's HTML is immutable and shared by every
+/// node that pins it, so a `data-var` span inside it could never be
+/// per-account. `{{…}}` reads the SAME `values` map every other substitution
+/// in this module reads, so account derive binds a cloned section with no new
+/// plumbing on either side.
+const TEMPLATE_OPEN: &str = "{{";
+const TEMPLATE_CLOSE: &str = "}}";
+
+enum Piece<'a> {
+    Literal(&'a str),
+    Var(&'a str),
+}
+
+/// What a fragment slot value becomes after derivation.
+enum SlotBinding {
+    /// No template in it — an authored override, left exactly as written.
+    Unchanged,
+    Text(String),
+    Asset(AssetId),
+    /// Drop the slot, so the ARTIFACT's own content shows. Unbound keys and
+    /// refused bindings both land here: a half-substituted value would put
+    /// `{{account.name}}` on a live page, which is worse than the clone's own
+    /// words.
+    Fallback,
+}
+
+/// Split a slot value into literals and `{{key}}` references. An unclosed
+/// `{{` is literal text, not a broken template.
+fn template_pieces(source: &str) -> Vec<Piece<'_>> {
+    let mut pieces = Vec::new();
+    let mut cursor = 0usize;
+    while let Some(open) = source[cursor..].find(TEMPLATE_OPEN) {
+        let open = cursor + open;
+        let after_open = open + TEMPLATE_OPEN.len();
+        let Some(close) = source[after_open..].find(TEMPLATE_CLOSE) else {
+            break;
+        };
+        let close = after_open + close;
+        if open > cursor {
+            pieces.push(Piece::Literal(&source[cursor..open]));
+        }
+        pieces.push(Piece::Var(source[after_open..close].trim()));
+        cursor = close + TEMPLATE_CLOSE.len();
+    }
+    if cursor < source.len() {
+        pieces.push(Piece::Literal(&source[cursor..]));
+    }
+    pieces
+}
+
+/// Resolve one fragment slot's template against the derive values.
+fn resolve_fragment_template(
+    source: &str,
+    values: &BTreeMap<String, WebBoundValue>,
+    key: &str,
+    node_id: &NodeId,
+    ctx: &mut Ctx,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> SlotBinding {
+    let pieces = template_pieces(source);
+    if !pieces.iter().any(|piece| matches!(piece, Piece::Var(_))) {
+        return SlotBinding::Unchanged;
+    }
+
+    // A value that is EXACTLY one reference takes the bound value's own kind,
+    // which is the only way an account's logo can reach an image slot: the
+    // engine's asset-id grammar has no room for `{{…}}`, so an asset binding
+    // has to be authored as a whole-value text template and become an asset
+    // here.
+    if let [Piece::Var(var)] = pieces.as_slice() {
+        ctx.reference(var);
+        return match values.get(*var) {
+            Some(WebBoundValue::Text { value }) => {
+                ctx.bind(var);
+                SlotBinding::Text(value.clone())
+            }
+            Some(WebBoundValue::Asset { asset_id, .. }) => {
+                ctx.bind(var);
+                SlotBinding::Asset(asset_id.clone())
+            }
+            Some(other) => {
+                diagnostics.push(fragment_slot_kind_warning(node_id, key, var, other));
+                SlotBinding::Fallback
+            }
+            None => {
+                ctx.unbound_slot(var, node_id);
+                SlotBinding::Fallback
+            }
+        };
+    }
+
+    let mut out = String::with_capacity(source.len());
+    let mut bound: Vec<&str> = Vec::new();
+    for piece in &pieces {
+        match piece {
+            Piece::Literal(text) => out.push_str(text),
+            Piece::Var(var) => {
+                ctx.reference(var);
+                match values.get(*var) {
+                    Some(WebBoundValue::Text { value }) => {
+                        out.push_str(value);
+                        bound.push(var);
+                    }
+                    Some(other) => {
+                        // An asset or a list cannot be spliced into a sentence.
+                        diagnostics.push(fragment_slot_kind_warning(node_id, key, var, other));
+                        return SlotBinding::Fallback;
+                    }
+                    None => {
+                        ctx.unbound_slot(var, node_id);
+                        return SlotBinding::Fallback;
+                    }
+                }
+            }
+        }
+    }
+    for var in bound {
+        ctx.bind(var);
+    }
+    SlotBinding::Text(out)
+}
+
+fn fragment_slot_kind_warning(
+    node_id: &NodeId,
+    key: &str,
+    var: &str,
+    value: &WebBoundValue,
+) -> Diagnostic {
+    Diagnostic::warning(
+        Phase::Web,
+        "LUMW0602",
+        format!(
+            "fragment slot `{key}` on `{node_id}` reads `{var}`, which binds a {} value that \
+             cannot be written into it (slot left to the artifact's own content)",
+            value.kind_name()
+        ),
+        Some(DiagnosticSubject::Node(node_id.clone())),
+    )
+    .with_hint("A whole-value `{{key}}` takes an asset; mixed text takes text values only.")
+}
+
+/// Pass 2b: bind every fragment node's slot values from the same value map.
+#[allow(clippy::too_many_arguments)]
+fn apply_fragment_slots(
+    page: &mut WebPage,
+    values: &BTreeMap<String, WebBoundValue>,
+    provided: &BTreeMap<&AssetId, &AssetRecord>,
+    existing_asset_ids: &BTreeSet<AssetId>,
+    upserts: &mut BTreeMap<AssetId, AssetRecord>,
+    ctx: &mut Ctx,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    let targets: Vec<NodeId> = page
+        .nodes
+        .iter()
+        .filter(|(_, node)| matches!(node.kind, WebNodeKind::Fragment { .. }))
+        .map(|(id, _)| id.clone())
+        .collect();
+
+    for id in targets {
+        let Some(WebNodeKind::Fragment { slots, .. }) = page.nodes.get(&id).map(|node| &node.kind)
+        else {
+            continue;
+        };
+        if slots.is_empty() {
+            continue;
+        }
+        let original = slots.clone();
+        let mut updated: BTreeMap<String, FragmentSlotValue> = BTreeMap::new();
+        for (key, value) in &original {
+            let FragmentSlotValue::Text(source) = value else {
+                // Assets and visibility flags are authored, not templated: the
+                // asset-id grammar has no room for `{{…}}` and a boolean has
+                // nothing to substitute.
+                updated.insert(key.clone(), value.clone());
+                continue;
+            };
+            match resolve_fragment_template(source, values, key, &id, ctx, diagnostics) {
+                SlotBinding::Unchanged => {
+                    updated.insert(key.clone(), value.clone());
+                }
+                SlotBinding::Fallback => {}
+                SlotBinding::Text(text) => {
+                    // A derived value obeys exactly the bound an ops-written
+                    // one does — a derive must not be able to store a slot
+                    // value no write path would accept.
+                    if text.len() > MAX_FRAGMENT_SLOT_VALUE_BYTES {
+                        diagnostics.push(
+                            Diagnostic::warning(
+                                Phase::Web,
+                                "LUMW0606",
+                                format!(
+                                    "fragment slot `{key}` on `{id}` derives {} bytes; the \
+                                     maximum is {MAX_FRAGMENT_SLOT_VALUE_BYTES} (slot left to \
+                                     the artifact's own content)",
+                                    text.len()
+                                ),
+                                Some(DiagnosticSubject::Node(id.clone())),
+                            )
+                            .with_hint("Bind a shorter value, or move the copy into the clone."),
+                        );
+                        continue;
+                    }
+                    updated.insert(key.clone(), FragmentSlotValue::Text(text));
+                }
+                SlotBinding::Asset(asset_id) => {
+                    ensure_asset(
+                        &asset_id,
+                        provided,
+                        existing_asset_ids,
+                        upserts,
+                        &id,
+                        diagnostics,
+                    );
+                    updated.insert(
+                        key.clone(),
+                        FragmentSlotValue::Asset(asset_id.as_str().to_owned()),
+                    );
+                }
+            }
+        }
+
+        // Backstop: whatever the substitution produced still has to satisfy the
+        // node's own bounds. It cannot fail today (keys and count are carried
+        // over untouched and each value is checked above), so a failure means a
+        // future change broke an invariant — keep the authored slots rather
+        // than emit a document the validator would reject.
+        if let Some(issue) = fragment_slots_issue(&updated) {
+            diagnostics.push(
+                Diagnostic::warning(
+                    Phase::Web,
+                    "LUMW0606",
+                    format!("derived fragment slots on `{id}` {issue}; the template's own slot values were kept"),
+                    Some(DiagnosticSubject::Node(id.clone())),
+                )
+                .with_hint("Derived slot values obey the same bounds as authored ones."),
+            );
+            continue;
+        }
+
+        if let Some(WebNodeKind::Fragment { slots, .. }) =
+            page.nodes.get_mut(&id).map(|node| &mut node.kind)
+        {
+            *slots = updated;
         }
     }
 }
@@ -1175,6 +1442,193 @@ mod tests {
             panic!("text node `{id}`");
         };
         content.to_inline_html()
+    }
+
+    // --- fragment slots (F1.4) --------------------------------------------
+
+    fn template_with_fragment(entries: Vec<(&str, FragmentSlotValue)>) -> WebDoc {
+        let mut doc = template(r#"<section id="hero"><h1 id="head">Hi</h1></section>"#);
+        let page = doc.pages.get_mut(0).expect("page");
+        page.nodes
+            .get_mut(&NodeId::from("hero"))
+            .expect("hero")
+            .children
+            .push(NodeId::from("frg_hero"));
+        page.nodes.insert(
+            NodeId::from("frg_hero"),
+            WebNode {
+                id: NodeId::from("frg_hero"),
+                kind: WebNodeKind::Fragment {
+                    fragment_id: "frag_0123456789abcdef".to_owned(),
+                    slots: entries
+                        .into_iter()
+                        .map(|(key, value)| (key.to_owned(), value))
+                        .collect(),
+                },
+                classes: String::new(),
+                children: Vec::new(),
+                name: None,
+                slot_key: None,
+            },
+        );
+        doc
+    }
+
+    fn fragment_slots(doc: &WebDoc) -> BTreeMap<String, FragmentSlotValue> {
+        let page = doc.page(&PageId::from("home")).expect("page");
+        let WebNodeKind::Fragment { slots, .. } =
+            &page.node(&NodeId::from("frg_hero")).expect("fragment").kind
+        else {
+            panic!("fragment node");
+        };
+        slots.clone()
+    }
+
+    #[test]
+    fn fragment_slot_templates_bind_from_the_same_account_values() {
+        let tmpl = template_with_fragment(vec![
+            (
+                "headline",
+                FragmentSlotValue::Text("{{account.name}}".to_owned()),
+            ),
+            (
+                "cta",
+                FragmentSlotValue::Text("https://{{account.domain}}/demo".to_owned()),
+            ),
+            (
+                "logo",
+                FragmentSlotValue::Text("{{account.logo}}".to_owned()),
+            ),
+        ]);
+        let mut values = BTreeMap::new();
+        values.insert("account.name".to_owned(), text_value("Privia Health"));
+        values.insert("account.domain".to_owned(), text_value("priviahealth.com"));
+        values.insert(
+            "account.logo".to_owned(),
+            WebBoundValue::Asset {
+                asset_id: AssetId::from("acct_logo"),
+                alt: Some("Privia Health logo".to_owned()),
+            },
+        );
+
+        let derived = derive_web_doc(&tmpl, &values, &[logo_record("acct_logo")], &opts());
+        assert!(!derived.has_errors(), "{:#?}", derived.diagnostics);
+
+        let slots = fragment_slots(&derived.doc);
+        assert_eq!(
+            slots.get("headline"),
+            Some(&FragmentSlotValue::Text("Privia Health".to_owned()))
+        );
+        assert_eq!(
+            slots.get("cta"),
+            Some(&FragmentSlotValue::Text(
+                "https://priviahealth.com/demo".to_owned()
+            ))
+        );
+        // A whole-value template bound to an ASSET becomes an asset slot —
+        // the one way the account's logo reaches a cloned section.
+        assert_eq!(
+            slots.get("logo"),
+            Some(&FragmentSlotValue::Asset("acct_logo".to_owned()))
+        );
+        // …and the record rode along, so the render can resolve it.
+        assert!(derived.doc.assets.contains_key(&AssetId::from("acct_logo")));
+
+        for key in ["account.name", "account.domain", "account.logo"] {
+            assert!(
+                derived.coverage.bound.contains(&key.to_owned()),
+                "{:?}",
+                derived.coverage.bound
+            );
+        }
+        // The template is never mutated.
+        assert_eq!(
+            fragment_slots(&tmpl).get("headline"),
+            Some(&FragmentSlotValue::Text("{{account.name}}".to_owned()))
+        );
+    }
+
+    #[test]
+    fn an_unbound_fragment_template_falls_back_to_the_artifacts_own_content() {
+        let tmpl = template_with_fragment(vec![(
+            "headline",
+            FragmentSlotValue::Text("Meet {{account.name}}".to_owned()),
+        )]);
+        let derived = derive_web_doc(&tmpl, &BTreeMap::new(), &[], &opts());
+        assert!(!derived.has_errors(), "{:#?}", derived.diagnostics);
+        // The slot is REMOVED rather than left holding `{{…}}`: the artifact's
+        // own marker content is the fallback, and template syntax must never
+        // reach a rendered page.
+        assert!(fragment_slots(&derived.doc).is_empty());
+        assert_eq!(
+            derived.coverage.unbound_slots,
+            vec![UnboundEntry {
+                key: "account.name".to_owned(),
+                node_ids: vec!["frg_hero".to_owned()],
+            }]
+        );
+    }
+
+    #[test]
+    fn a_literal_fragment_slot_value_is_left_exactly_as_authored() {
+        let tmpl = template_with_fragment(vec![
+            (
+                "headline",
+                FragmentSlotValue::Text("Book a call".to_owned()),
+            ),
+            ("badge", FragmentSlotValue::Visible(false)),
+            ("logo", FragmentSlotValue::Asset("tmpl_logo".to_owned())),
+        ]);
+        let mut values = BTreeMap::new();
+        values.insert("account.name".to_owned(), text_value("Privia"));
+        let derived = derive_web_doc(&tmpl, &values, &[], &opts());
+        assert!(!derived.has_errors(), "{:#?}", derived.diagnostics);
+        assert_eq!(fragment_slots(&derived.doc), fragment_slots(&tmpl));
+        assert!(derived.coverage.unbound_slots.is_empty());
+    }
+
+    #[test]
+    fn a_fragment_template_bound_to_the_wrong_kind_warns_and_falls_back() {
+        let tmpl = template_with_fragment(vec![(
+            "headline",
+            FragmentSlotValue::Text("Meet {{account.logo}} today".to_owned()),
+        )]);
+        let mut values = BTreeMap::new();
+        values.insert(
+            "account.logo".to_owned(),
+            WebBoundValue::Asset {
+                asset_id: AssetId::from("acct_logo"),
+                alt: None,
+            },
+        );
+        let derived = derive_web_doc(&tmpl, &values, &[logo_record("acct_logo")], &opts());
+        assert!(!derived.has_errors(), "{:#?}", derived.diagnostics);
+        assert!(fragment_slots(&derived.doc).is_empty());
+        assert!(derived
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "LUMW0602"));
+    }
+
+    #[test]
+    fn a_derived_fragment_slot_value_cannot_break_the_node_bound() {
+        let tmpl = template_with_fragment(vec![(
+            "headline",
+            FragmentSlotValue::Text("{{account.name}}".to_owned()),
+        )]);
+        let mut values = BTreeMap::new();
+        values.insert(
+            "account.name".to_owned(),
+            text_value(&"x".repeat(crate::doc::MAX_FRAGMENT_SLOT_VALUE_BYTES + 1)),
+        );
+        let derived = derive_web_doc(&tmpl, &values, &[], &opts());
+        // The derive must not produce a document its own validator rejects.
+        assert!(!derived.has_errors(), "{:#?}", derived.diagnostics);
+        assert!(fragment_slots(&derived.doc).is_empty());
+        assert!(derived
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "LUMW0606"));
     }
 
     #[test]

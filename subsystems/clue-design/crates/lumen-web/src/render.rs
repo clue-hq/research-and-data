@@ -68,8 +68,46 @@ pub struct CustomComponentRuntimeFrame {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct FragmentContent {
     /// The artifact's sanitized HTML. Slot markers are intact; the marker's
-    /// own content is the fallback content until F1.4 substitutes into it.
+    /// own content is the fallback whenever the node binds that key to
+    /// nothing, or binds it to something the walk refuses.
     pub html: String,
+    /// What each of this artifact's slots MEANS, keyed by slot key — the
+    /// artifact's `slot_manifest` kinds, threaded in by the API because the
+    /// engine never sees a manifest (F1.4).
+    ///
+    /// A slot key with no kind here cannot be substituted: the node's value
+    /// tag alone cannot distinguish an href from a paragraph (both ride
+    /// `Text`), and guessing would let a link target be written into a
+    /// heading — or worse, the reverse. Absent ⇒ the artifact's own content,
+    /// plus a diagnostic.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub slot_kinds: BTreeMap<String, FragmentSlotKind>,
+}
+
+/// What one fragment slot holds, from the artifact's slot manifest. The Python
+/// side's `lumen_api.fragments.slots.SLOT_KINDS` is the same four names, and
+/// `SLOT_KIND_TO_NODE_TAG` is the mapping this enum enforces against the
+/// node's tagged `FragmentSlotValue`:
+/// `text`→`{"text":…}`, `image`→`{"asset":…}`, `href`→`{"text":…}`,
+/// `visibility`→`{"visible":…}`.
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, Eq, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum FragmentSlotKind {
+    Text,
+    Image,
+    Href,
+    Visibility,
+}
+
+impl FragmentSlotKind {
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Text => "text",
+            Self::Image => "image",
+            Self::Href => "href",
+            Self::Visibility => "visibility",
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -862,7 +900,7 @@ fn render_node(
                 ));
             }
         },
-        WebNodeKind::Fragment { fragment_id, .. } => {
+        WebNodeKind::Fragment { fragment_id, slots } => {
             // The wrapper is the ONLY markup this arm authors. Everything
             // inside it is the artifact's own sanitized HTML, emitted
             // verbatim: the fragment was made safe ONCE, at creation, and
@@ -943,7 +981,18 @@ fn render_node(
             out.push('"');
             node_attr(out);
             out.push('>');
-            out.push_str(&content.html);
+            // F1.4: the artifact's markup with this NODE's slot values applied.
+            // With nothing bound the walk is the identity function, so an
+            // unpersonalized fragment still renders byte-for-byte as stored.
+            out.push_str(&crate::fragment::substitute_fragment_slots(
+                &content.html,
+                slots,
+                &content.slot_kinds,
+                doc,
+                &options.asset_base_url,
+                &node.id,
+                diagnostics,
+            ));
             out.push_str("</div>");
         }
         WebNodeKind::Embed {
@@ -1265,7 +1314,7 @@ fn css_style_safe(css: &str) -> String {
     out
 }
 
-fn asset_src(record: &lumen_core::AssetRecord, asset_base_url: &str) -> Option<String> {
+pub(crate) fn asset_src(record: &lumen_core::AssetRecord, asset_base_url: &str) -> Option<String> {
     if let Some(digest) = &record.media.digest {
         let base = asset_base_url.trim_end_matches('/');
         return Some(format!("{base}/{}", digest.value));
@@ -1513,8 +1562,11 @@ mod tests {
         assert!(!delivery.html.contains("<script"));
     }
 
-    /// Attach one fragment node to the fixture page and return the doc.
-    fn fixture_with_fragment(fragment_id: &str) -> (WebDoc, WebTheme) {
+    /// Attach one fragment node carrying `slots` to the fixture page.
+    fn fixture_with_fragment_slots(
+        fragment_id: &str,
+        slots: BTreeMap<String, crate::doc::FragmentSlotValue>,
+    ) -> (WebDoc, WebTheme) {
         let (mut doc, theme) = fixture();
         let page = doc.pages.get_mut(0).expect("page");
         let host_id = page
@@ -1534,10 +1586,7 @@ mod tests {
                 id: NodeId::from("frg_hero"),
                 kind: WebNodeKind::Fragment {
                     fragment_id: fragment_id.to_owned(),
-                    slots: std::collections::BTreeMap::from([(
-                        "headline".to_owned(),
-                        crate::doc::FragmentSlotValue::Text("Talk to us".to_owned()),
-                    )]),
+                    slots,
                 },
                 classes: "w-full py-12".to_owned(),
                 children: Vec::new(),
@@ -1548,10 +1597,24 @@ mod tests {
         (doc, theme)
     }
 
+    /// The same page with a fragment node that binds NOTHING — the shape that
+    /// proves the artifact is emitted verbatim when no slot is bound.
+    fn fixture_with_fragment(fragment_id: &str) -> (WebDoc, WebTheme) {
+        fixture_with_fragment_slots(fragment_id, BTreeMap::new())
+    }
+
     const FRAGMENT_HTML: &str =
         "<section class=\"hero\"><h1 data-lumen-slot=\"headline\">Care, on your terms</h1></section>";
 
     fn fragment_options(mode: RenderMode, fragment_id: &str) -> RenderOptions {
+        fragment_options_with_kinds(mode, fragment_id, BTreeMap::new())
+    }
+
+    fn fragment_options_with_kinds(
+        mode: RenderMode,
+        fragment_id: &str,
+        slot_kinds: BTreeMap<String, FragmentSlotKind>,
+    ) -> RenderOptions {
         let mut options = match mode {
             RenderMode::Editor => RenderOptions::editor("/asset-store"),
             RenderMode::Delivery => RenderOptions::delivery("/asset-store"),
@@ -1560,9 +1623,63 @@ mod tests {
             fragment_id.to_owned(),
             FragmentContent {
                 html: FRAGMENT_HTML.to_owned(),
+                slot_kinds,
             },
         );
         options
+    }
+
+    #[test]
+    fn fragment_slot_values_are_substituted_at_render_and_the_document_is_untouched() {
+        let fragment_id = "frag_0123456789abcdef";
+        let (doc, theme) = fixture_with_fragment_slots(
+            fragment_id,
+            BTreeMap::from([(
+                "headline".to_owned(),
+                crate::doc::FragmentSlotValue::Text("Talk to us".to_owned()),
+            )]),
+        );
+        let before = serde_json::to_string(&doc).expect("doc json");
+        let options = fragment_options_with_kinds(
+            RenderMode::Editor,
+            fragment_id,
+            BTreeMap::from([("headline".to_owned(), FragmentSlotKind::Text)]),
+        );
+
+        let rendered = render_page(&doc, &PageId::from("home"), &theme, &options)
+            .expect("editor render");
+        assert!(
+            rendered
+                .html
+                .contains("<h1 data-lumen-slot=\"headline\">Talk to us</h1>"),
+            "{}",
+            rendered.html
+        );
+        // The artifact's own words are the FALLBACK; a bound slot replaces
+        // them, and only in the rendered bytes.
+        assert!(!rendered.html.contains("Care, on your terms"));
+        assert!(rendered.diagnostics.is_empty(), "{:#?}", rendered.diagnostics);
+        assert_eq!(
+            serde_json::to_string(&doc).expect("doc json"),
+            before,
+            "substitution must never touch the stored document"
+        );
+
+        // Delivery renders the same substitution (no instrumentation).
+        let delivery = render_page(
+            &doc,
+            &PageId::from("home"),
+            &theme,
+            &fragment_options_with_kinds(
+                RenderMode::Delivery,
+                fragment_id,
+                BTreeMap::from([("headline".to_owned(), FragmentSlotKind::Text)]),
+            ),
+        )
+        .expect("delivery render");
+        assert!(delivery
+            .html
+            .contains("<h1 data-lumen-slot=\"headline\">Talk to us</h1>"));
     }
 
     #[test]
@@ -1627,7 +1744,13 @@ mod tests {
         // deliberately keeps a document with a dead pin loadable, so render
         // must degrade loudly rather than fail the page.
         let fragment_id = "frag_0123456789abcdef";
-        let (doc, theme) = fixture_with_fragment(fragment_id);
+        let (doc, theme) = fixture_with_fragment_slots(
+            fragment_id,
+            BTreeMap::from([(
+                "headline".to_owned(),
+                crate::doc::FragmentSlotValue::Text("Talk to us".to_owned()),
+            )]),
+        );
         let output = render_page(
             &doc,
             &PageId::from("home"),
@@ -1670,6 +1793,7 @@ mod tests {
             hostile.to_owned(),
             FragmentContent {
                 html: FRAGMENT_HTML.to_owned(),
+                slot_kinds: BTreeMap::new(),
             },
         );
         let output = render_page(&doc, &PageId::from("home"), &theme, &options).expect("render");

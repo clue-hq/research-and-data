@@ -1065,6 +1065,26 @@ mod tests {
         assert_eq!(error.code, "op.parent_not_branch");
     }
 
+    /// A document whose asset registry holds the logo a fragment slot binds.
+    /// An asset slot resolves through `doc.assets` at render (LUMW0035, the
+    /// F1.4 ruling), exactly as an Image node's `asset_id` does, so the
+    /// document has to hold the record before a write path may name it.
+    fn fixture_with_logo() -> WebDoc {
+        let mut doc = fixture();
+        doc.assets.insert(
+            lumen_core::AssetId::from("asset_logo_1"),
+            serde_json::from_value(serde_json::json!({
+                "id": "asset_logo_1",
+                "label": "Logo",
+                "kind": "logo",
+                "status": "ready",
+                "source": {"kind": "generated", "model": "m", "request_id": null},
+            }))
+            .expect("asset record"),
+        );
+        doc
+    }
+
     fn fragment_node(id: &str, digest_char: char) -> WebNode {
         WebNode {
             id: NodeId::from(id),
@@ -1094,7 +1114,7 @@ mod tests {
 
     #[test]
     fn fragment_insert_edit_move_duplicate_delete_and_inverses_are_total() {
-        let base = fixture();
+        let base = fixture_with_logo();
         let mut doc = base.clone();
 
         let insert = WebOperation::InsertNode {
@@ -1186,7 +1206,7 @@ mod tests {
 
     #[test]
     fn fragment_is_never_a_move_parent() {
-        let mut doc = fixture();
+        let mut doc = fixture_with_logo();
         apply_operations_checked(
             &mut doc,
             &[WebOperation::InsertNode {

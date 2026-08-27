@@ -9,10 +9,11 @@ use crate::derive::{web_slot_key_is_valid, when_gate_key};
 use crate::doc::{
     calendly_url_is_valid, custom_component_artifact_id_is_valid, custom_component_props_issue,
     custom_component_slug_is_valid, fragment_id_is_valid, fragment_slots_issue, ButtonAction,
-    ComponentSpec, EmbedProvider, WebDoc, WebNodeKind, MAX_TREE_DEPTH, WEB_SCHEMA_VERSION,
+    ComponentSpec, EmbedProvider, FragmentSlotValue, WebDoc, WebNodeKind, MAX_TREE_DEPTH,
+    WEB_SCHEMA_VERSION,
 };
 use crate::util::href_is_allowed;
-use lumen_core::{Diagnostic, DiagnosticSubject, NodeId, Phase};
+use lumen_core::{AssetId, Diagnostic, DiagnosticSubject, NodeId, Phase};
 use std::collections::{BTreeMap, BTreeSet};
 
 pub fn validate_web_doc(doc: &WebDoc) -> Vec<Diagnostic> {
@@ -517,6 +518,33 @@ fn validate_page(doc: &WebDoc, page: &crate::doc::WebPage, diagnostics: &mut Vec
                         Some(DiagnosticSubject::Node(node.id.clone())),
                     ));
                 }
+                // An asset slot resolves through `doc.assets` at render, which
+                // is the same requirement LUMW0014 places on an Image node —
+                // so it is checked at the same door. F1.1 left this open
+                // deliberately (deviation 2) rather than guess the semantics;
+                // F1.4 settles it by mirroring what the render actually needs.
+                for (key, value) in slots {
+                    if let FragmentSlotValue::Asset(asset_id) = value {
+                        if !doc.assets.contains_key(&AssetId::from(asset_id.as_str())) {
+                            diagnostics.push(
+                                Diagnostic::error(
+                                    Phase::Web,
+                                    "LUMW0035",
+                                    format!(
+                                        "fragment `{}` slot `{key}` references unknown asset \
+                                         `{asset_id}`",
+                                        node.id
+                                    ),
+                                    Some(DiagnosticSubject::Node(node.id.clone())),
+                                )
+                                .with_hint(
+                                    "Register the asset on the document before binding it to a \
+                                     fragment slot (derive upserts the account's own record).",
+                                ),
+                            );
+                        }
+                    }
+                }
             }
             WebNodeKind::Text { variant, content } => {
                 for issue in content.validate() {
@@ -860,6 +888,52 @@ mod tests {
         assert!(codes.contains(&"LUMW0007".to_owned()), "{codes:?}");
         assert!(codes.contains(&"LUMW0033".to_owned()), "{codes:?}");
         assert!(codes.contains(&"LUMW0034".to_owned()), "{codes:?}");
+    }
+
+    #[test]
+    fn a_fragment_asset_slot_must_name_an_asset_the_document_holds() {
+        // The render resolves an image slot exactly as the Image node arm does
+        // — through `doc.assets` — so an asset slot naming nothing the document
+        // holds is the same defect LUMW0014 catches for an image, and is
+        // refused at the same door rather than degrading at render time.
+        let mut doc = clean_doc();
+        add_fragment(&mut doc);
+        let node = doc.pages[0]
+            .nodes
+            .get_mut(&lumen_core::NodeId::from("frg_hero"))
+            .expect("fragment");
+        let WebNodeKind::Fragment { slots, .. } = &mut node.kind else {
+            panic!("fragment");
+        };
+        slots.insert(
+            "logo".to_owned(),
+            crate::doc::FragmentSlotValue::Asset("asset_ghost".to_owned()),
+        );
+
+        let codes: Vec<String> = validate_web_doc(&doc)
+            .iter()
+            .map(|diagnostic| diagnostic.code.clone())
+            .collect();
+        assert!(codes.contains(&"LUMW0035".to_owned()), "{codes:?}");
+
+        // With the record present it validates.
+        doc.assets.insert(
+            lumen_core::AssetId::from("asset_ghost"),
+            serde_json::from_value(serde_json::json!({
+                "id": "asset_ghost",
+                "label": "Logo",
+                "kind": "logo",
+                "status": "ready",
+                "source": {"kind": "generated", "model": "m", "request_id": null},
+            }))
+            .expect("asset record"),
+        );
+        assert!(
+            validate_web_doc(&doc)
+                .iter()
+                .all(|diagnostic| diagnostic.code != "LUMW0035"),
+            "a registered asset must validate"
+        );
     }
 
     #[test]
