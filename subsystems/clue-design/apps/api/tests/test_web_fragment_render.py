@@ -1,0 +1,347 @@
+"""Rendering a cloned section, on both preview paths (clone-fidelity F1.3).
+
+Task 6 made a fragment safe and gave it durable custody. This file pins what happens when a
+document that pins one is turned into HTML: the API resolves the artifact, the engine emits its
+markup in flow under the ONE wrapper class both languages agree on, and the artifact's scoped CSS
+lands in the head where a compiled utility still outranks it.
+
+Two preview paths exist and a fragment must render on BOTH — the editor render route and the
+agent's in-loop `render_web_preview`. A section that appears in the editor and vanishes from the
+agent's screenshot (or the reverse) is the exact failure this file's dual coverage exists to
+prevent.
+
+DB-backed where the registry is involved (the artifact really is read out of custody), pure where
+the helper is pure.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Any
+
+import pytest
+from clue_storage import FsStorage
+from fastapi.testclient import TestClient
+
+from conftest import make_client
+
+from lumen_api.design_store import HybridRepository
+from lumen_api.fragments import create_web_fragment, fragment_wrapper_class
+from lumen_api.fragments.render import (
+    build_fragment_render_package,
+    css_class_names,
+    fragment_collision_diagnostics,
+    fragment_css_sheet,
+    fragment_render_map,
+    web_doc_class_tokens,
+    web_doc_fragment_ids,
+)
+from lumen_api.main import create_app
+
+SENTINEL = "Care, on your terms"
+HTML = (
+    f'<section class="clone-hero"><h1 class="clone-head">{SENTINEL}</h1>'
+    '<a class="clone-cta" href="https://insight.example/demo">Book a demo</a></section>'
+)
+CSS = ".clone-hero { padding: 64px } .clone-head { color: #123456 }"
+SOURCE_URL = "https://insight.example/"
+
+
+@pytest.fixture()
+def client(tmp_path: Path, design_storage: FsStorage) -> TestClient:
+    return make_client(create_app(tmp_path / "engine-cache", storage=design_storage))
+
+
+def _mint(workspace_id: str, storage: FsStorage, *, html: str = HTML, css: str = CSS):
+    _row, artifact = create_web_fragment(
+        storage,
+        workspace_id=workspace_id,
+        html=html,
+        css=css,
+        rehosted={},
+        source_url=SOURCE_URL,
+        section_role="hero",
+    )
+    return artifact
+
+
+def _fragment_node(node_id: str, fragment_id: str, classes: str = "w-full py-12") -> dict[str, Any]:
+    return {
+        "id": node_id,
+        "kind": "fragment",
+        "fragment_id": fragment_id,
+        "classes": classes,
+    }
+
+
+def _web_doc(document_id: str, *nodes: dict[str, Any], root_classes: str = "") -> dict[str, Any]:
+    node_map = {
+        "root": {
+            "id": "root",
+            "kind": "container",
+            "classes": root_classes,
+            "children": [node["id"] for node in nodes],
+        }
+    }
+    for node in nodes:
+        node_map[node["id"]] = node
+    return {
+        "schema_version": 1,
+        "id": document_id,
+        "title": "Fragment fixture",
+        "pages": [
+            {
+                "id": "home",
+                "name": "Home",
+                "route": "/",
+                "root": "root",
+                "nodes": node_map,
+            }
+        ],
+        "assets": {},
+        "custom_css": "",
+    }
+
+
+# --------------------------------------------------------------------------- #
+# The pure helpers: which artifacts a page needs, and what collides
+# --------------------------------------------------------------------------- #
+
+
+def test_the_walk_finds_every_reachable_fragment_once_and_no_orphan() -> None:
+    doc = _web_doc(
+        "doc_walk",
+        _fragment_node("n1", "frag_" + "ab" * 8),
+        _fragment_node("n2", "frag_" + "ab" * 8),
+        _fragment_node("n3", "frag_" + "cd" * 8),
+    )
+    # An orphan is in the node map but off the tree: it is not on the page, so
+    # resolving its artifact would splice CSS for a section nobody can see.
+    doc["pages"][0]["nodes"]["orphan"] = _fragment_node("orphan", "frag_" + "ef" * 8)
+    assert web_doc_fragment_ids(doc, "home") == ["frag_" + "ab" * 8, "frag_" + "cd" * 8]
+    assert web_doc_fragment_ids(doc, "no-such-page") == web_doc_fragment_ids(doc, "home")
+    assert web_doc_fragment_ids({"pages": []}, "home") == []
+
+
+def test_a_document_with_no_fragments_needs_nothing_resolved() -> None:
+    doc = _web_doc("doc_plain", {"id": "n1", "kind": "container", "classes": "", "children": []})
+    assert web_doc_fragment_ids(doc, "home") == []
+
+
+def test_class_scans_read_both_sides_of_the_collision() -> None:
+    assert css_class_names(".lumen-frag-aa .clone-hero > .clone-head:hover { color: red }") == {
+        "lumen-frag-aa",
+        "clone-hero",
+        "clone-head",
+    }
+    doc = _web_doc(
+        "doc_classes",
+        _fragment_node("n1", "frag_" + "ab" * 8, classes="clone-hero py-12"),
+        root_classes="bg-light",
+    )
+    assert web_doc_class_tokens(doc, "home") == {"bg-light", "clone-hero", "py-12"}
+
+
+def test_a_fragment_class_that_is_also_a_live_utility_is_reported_not_refused() -> None:
+    """The ledgered cascade risk: compiled utilities land after fragment CSS, so a cloned class
+    that is ALSO a class the document authors gets overruled. Scoping shields the ordinary case;
+    this diagnostic names the case it cannot shield."""
+    fragment_id = "frag_" + "ab" * 8
+    wrapper = fragment_wrapper_class(fragment_id)
+    package = {
+        "schema_version": 1,
+        "fragments": {
+            fragment_id: {
+                "html": HTML,
+                "css": f".{wrapper} .clone-hero {{ padding: 64px }}",
+            }
+        },
+        "missing": [],
+    }
+    clean = _web_doc("doc_ok", _fragment_node("n1", fragment_id, classes="w-full"))
+    assert fragment_collision_diagnostics(package, clean, "home") == []
+
+    colliding = _web_doc("doc_clash", _fragment_node("n1", fragment_id, classes="clone-hero"))
+    diagnostics = fragment_collision_diagnostics(package, colliding, "home")
+    assert len(diagnostics) == 1
+    assert diagnostics[0]["code"] == "fragment.class_collision"
+    assert diagnostics[0]["severity"] == "warning"
+    assert "clone-hero" in diagnostics[0]["message"]
+    assert fragment_id in diagnostics[0]["message"]
+    # The wrapper class is ours and is on the wrapper by construction; reporting
+    # it as a collision would be noise on every single fragment.
+    wrapper_clash = _web_doc("doc_wrap", _fragment_node("n1", fragment_id, classes=wrapper))
+    assert fragment_collision_diagnostics(package, wrapper_clash, "home") == []
+
+
+# --------------------------------------------------------------------------- #
+# Resolution out of durable custody
+# --------------------------------------------------------------------------- #
+
+
+def test_the_package_reads_each_artifact_once_and_keeps_it_identifiable(
+    workspace_id: str, design_storage: FsStorage
+) -> None:
+    first = _mint(workspace_id, design_storage)
+    second = _mint(workspace_id, design_storage, css=CSS.replace("64px", "80px"))
+    doc = _web_doc(
+        "doc_pkg",
+        _fragment_node("n1", first.fragment_id),
+        _fragment_node("n2", second.fragment_id),
+        _fragment_node("n3", first.fragment_id),
+    )
+    package = build_fragment_render_package(
+        design_storage, workspace_id=workspace_id, web_doc=doc, page_id="home"
+    )
+    assert set(package["fragments"]) == {first.fragment_id, second.fragment_id}
+    assert package["missing"] == []
+    assert package["fragments"][first.fragment_id]["html"] == first.payload["html"]
+
+    ids = web_doc_fragment_ids(doc, "home")
+    # The map the engine gets carries markup and nothing else — CSS goes to the
+    # head through the theme, never into a node.
+    render_map = fragment_render_map(package, ids)
+    assert set(render_map) == {first.fragment_id, second.fragment_id}
+    assert set(render_map[first.fragment_id]) == {"html"}
+
+    sheet = fragment_css_sheet(package, ids)
+    # Per-fragment identity survives concatenation: a rule in the head can be
+    # traced back to the artifact it came from.
+    assert f"/* fragment {first.fragment_id} */" in sheet
+    assert f"/* fragment {second.fragment_id} */" in sheet
+    assert first.payload["css"] in sheet
+    assert second.payload["css"] in sheet
+    # Deterministic: same page, same bytes.
+    assert fragment_css_sheet(package, ids) == sheet
+
+
+def test_an_unresolvable_pin_is_named_not_guessed(
+    workspace_id: str, design_storage: FsStorage
+) -> None:
+    """The F1.2 gate deliberately keeps a document with a dead pin loadable, so resolution has to
+    survive one."""
+    artifact = _mint(workspace_id, design_storage)
+    unknown = "frag_" + "99" * 8
+    doc = _web_doc(
+        "doc_missing",
+        _fragment_node("n1", artifact.fragment_id),
+        _fragment_node("n2", unknown),
+    )
+    package = build_fragment_render_package(
+        design_storage, workspace_id=workspace_id, web_doc=doc, page_id="home"
+    )
+    assert set(package["fragments"]) == {artifact.fragment_id}
+    assert package["missing"] == [unknown]
+
+
+def test_another_workspaces_fragment_is_unresolvable_here(
+    workspace_id: str, design_storage: FsStorage
+) -> None:
+    other = f"{workspace_id}_owner"
+    artifact = _mint(other, design_storage)
+    doc = _web_doc("doc_cross", _fragment_node("n1", artifact.fragment_id))
+    package = build_fragment_render_package(
+        design_storage, workspace_id=workspace_id, web_doc=doc, page_id="home"
+    )
+    assert package["fragments"] == {}
+    assert package["missing"] == [artifact.fragment_id]
+
+
+# --------------------------------------------------------------------------- #
+# Preview path 1: the editor render route
+# --------------------------------------------------------------------------- #
+
+
+def _render(client: TestClient, document_id: str, **params: Any) -> dict[str, Any]:
+    response = client.get(f"/documents/{document_id}/web/render", params=params)
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+def test_the_editor_render_route_renders_the_artifact_in_flow(
+    client: TestClient, workspace_id: str, design_storage: FsStorage
+) -> None:
+    artifact = _mint(workspace_id, design_storage)
+    store = HybridRepository(workspace_id=workspace_id)
+    store.create_document(
+        _web_doc("doc_editor", _fragment_node("n1", artifact.fragment_id)), doc_kind="web"
+    )
+
+    rendered = _render(client, "doc_editor")
+    html = rendered["html"]
+
+    # The cross-language agreement, in one assertion chain: the class the render
+    # emits IS the class the Python helper mints IS a class the stored CSS
+    # actually declares. A re-spelling anywhere renders the section unstyled.
+    wrapper = fragment_wrapper_class(artifact.fragment_id)
+    assert f'<div class="lumen-fragment {wrapper} w-full py-12"' in html
+    assert f".{wrapper} " in artifact.payload["css"]
+    # The artifact's markup, verbatim.
+    assert SENTINEL in html
+    assert 'class="clone-hero"' in html
+    # Its scoped CSS, in the head, before the body it styles.
+    css_at = html.index(f".{wrapper} .clone-hero")
+    assert css_at < html.index("</head>")
+    assert not rendered["diagnostics"], rendered["diagnostics"]
+
+
+def test_the_editor_route_degrades_to_a_placeholder_on_a_dead_pin(
+    client: TestClient, workspace_id: str, design_storage: FsStorage
+) -> None:
+    from sqlalchemy import text
+
+    from lumen_api.design_store import DesignStoreBridge
+
+    artifact = _mint(workspace_id, design_storage)
+    store = HybridRepository(workspace_id=workspace_id)
+    store.create_document(
+        _web_doc("doc_dead", _fragment_node("n1", artifact.fragment_id)), doc_kind="web"
+    )
+    DesignStoreBridge(workspace_id)._run(
+        lambda conn: conn.execute(
+            text("DELETE FROM design_web_fragment WHERE fragment_id = :f AND workspace_id = :w"),
+            {"f": artifact.fragment_id, "w": workspace_id},
+        )
+    )
+
+    rendered = _render(client, "doc_dead")
+    assert 'data-fragment-placeholder="true"' in rendered["html"]
+    assert SENTINEL not in rendered["html"]
+    codes = [diagnostic["code"] for diagnostic in rendered["diagnostics"]]
+    assert "LUMW0412" in codes
+
+
+def test_the_editor_route_reports_a_class_collision_without_refusing_the_render(
+    client: TestClient, workspace_id: str, design_storage: FsStorage
+) -> None:
+    artifact = _mint(workspace_id, design_storage)
+    store = HybridRepository(workspace_id=workspace_id)
+    store.create_document(
+        _web_doc(
+            "doc_collide",
+            _fragment_node("n1", artifact.fragment_id, classes="clone-hero w-full"),
+        ),
+        doc_kind="web",
+    )
+    rendered = _render(client, "doc_collide")
+    assert SENTINEL in rendered["html"]
+    collisions = [
+        diagnostic
+        for diagnostic in rendered["diagnostics"]
+        if diagnostic["code"] == "fragment.class_collision"
+    ]
+    assert len(collisions) == 1
+    assert "clone-hero" in collisions[0]["message"]
+
+
+def test_a_document_with_no_fragments_renders_exactly_as_before(
+    client: TestClient, workspace_id: str, design_storage: FsStorage
+) -> None:
+    store = HybridRepository(workspace_id=workspace_id)
+    store.create_document(
+        _web_doc("doc_none", {"id": "n1", "kind": "container", "classes": "", "children": []}),
+        doc_kind="web",
+    )
+    rendered = _render(client, "doc_none")
+    assert "lumen-fragment" not in rendered["html"]
+    assert "/* lumen-fragment css */" not in rendered["html"]

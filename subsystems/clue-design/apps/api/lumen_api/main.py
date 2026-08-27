@@ -72,6 +72,14 @@ from .custom_component_runtime import (
     default_runtime_host_path,
     web_doc_uses_custom_components,
 )
+from .fragments.render import (
+    build_fragment_render_package,
+    empty_fragment_render_package,
+    fragment_collision_diagnostics,
+    fragment_css_sheet,
+    fragment_render_map,
+    web_doc_fragment_ids,
+)
 from .custom_components import (
     CUSTOM_COMPONENT_MEMBER_MEDIA_TYPES,
     resolve_custom_component_artifact_blob,
@@ -3432,6 +3440,21 @@ def create_app(
                     detail={"code": "web_render.bad_nonce", "message": str(error)},
                 ) from error
         asset_base_url = str(request.base_url).rstrip("/") + "/asset-store"
+        # F1.3: resolve the page's cloned-section artifacts out of durable custody and hand the
+        # engine the markup map + the concatenated scoped CSS. An id that will not resolve is
+        # left OUT of the map on purpose — the engine renders its placeholder and says so
+        # (LUMW0412), which is what keeps a document with a dead pin editable.
+        fragment_ids = web_doc_fragment_ids(web_doc, "home")
+        fragment_package = (
+            build_fragment_render_package(
+                app.state.storage,
+                workspace_id=store_workspace_id(repo),
+                web_doc=web_doc,
+                page_id="home",
+            )
+            if fragment_ids
+            else empty_fragment_render_package()
+        )
         try:
             response = app.state.core.web_render(
                 web_doc,
@@ -3443,13 +3466,21 @@ def create_app(
                 custom_component_runtimes=runtime_frames,
                 brand_kit=brand_kit,
                 font_face_css=font_face_css,
+                fragments=fragment_render_map(fragment_package, fragment_ids),
+                fragment_css=fragment_css_sheet(fragment_package, fragment_ids),
             )
         except CoreError as error:
             raise core_http_error(error) from error
+        diagnostics = list(response.get("diagnostics", []))
+        # The ledgered cascade risk, reported not refused: compiled utilities land after fragment
+        # CSS, so a cloned class the document also authors is overruled.
+        diagnostics.extend(
+            fragment_collision_diagnostics(fragment_package, web_doc, "home")
+        )
         return {
             "schema_version": 1,
             "html": response.get("html"),
-            "diagnostics": response.get("diagnostics", []),
+            "diagnostics": diagnostics,
         }
 
     @app.post("/documents/{document_id}/web/operations")
