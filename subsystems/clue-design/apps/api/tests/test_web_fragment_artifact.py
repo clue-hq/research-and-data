@@ -387,6 +387,24 @@ def test_a_marked_element_carries_its_key_and_the_manifest_carries_its_fallback(
     }
 
 
+def test_the_manifest_kinds_map_onto_the_engines_tagged_slot_values() -> None:
+    """F1.4 binds these; the mapping is data here so it cannot be re-derived differently there.
+
+    ``href`` and ``text`` deliberately share the engine's ``text`` tag — an href IS a string to
+    the node — which is exactly why the manifest kind has to survive: it is the only record that
+    a slot is a link target rather than copy.
+    """
+    from lumen_api.fragments.slots import SLOT_KIND_TO_NODE_TAG, SLOT_KINDS
+
+    assert set(SLOT_KIND_TO_NODE_TAG) == set(SLOT_KINDS)
+    assert SLOT_KIND_TO_NODE_TAG == {
+        "text": "text",
+        "image": "asset",
+        "href": "text",
+        "visibility": "visible",
+    }
+
+
 @pytest.mark.parametrize(
     "key", ["Headline", "head line", "head.line", "héadline", "", "x" * 65, "head/line", 'a"b']
 )

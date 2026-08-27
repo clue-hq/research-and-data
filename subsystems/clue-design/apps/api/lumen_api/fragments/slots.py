@@ -54,6 +54,18 @@ SLOT_MARKER_ATTR = "data-lumen-slot"
 
 SLOT_KINDS = ("text", "image", "href", "visibility")
 
+#: How a manifest kind becomes an engine slot-value tag (``lumen_web::doc::FragmentSlotValue``,
+#: which is serde-TAGGED: ``{"text": …}`` / ``{"asset": …}`` / ``{"visible": …}``). Note that
+#: ``href`` and ``text`` share a tag — an href IS a string to the node — so the manifest kind is
+#: the ONLY place that remembers a slot is a link target rather than copy. Stated here as data so
+#: F1.4's binding reads the mapping instead of re-deriving it.
+SLOT_KIND_TO_NODE_TAG = {
+    "text": "text",
+    "image": "asset",
+    "href": "text",
+    "visibility": "visible",
+}
+
 
 @dataclass(frozen=True)
 class SlotSpec:
