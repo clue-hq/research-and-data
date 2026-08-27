@@ -8123,11 +8123,17 @@ def run_web_agent_turn(
             )
         if asset_library is not None:
             config = replace(config, asset_library=asset_library)
-        # F1.3: resolve this document's cloned-section artifacts HERE, where the database is,
-        # and hand them to the runtime BY VALUE — the same rule asset_library follows, because a
-        # fleet worker never reads the API database. Resolved once per turn is sound: nothing in
-        # a turn can mint a fragment, and a node that appears mid-turn pinning something this
-        # package never saw renders the engine's placeholder rather than being improvised.
+        # F1.3: resolve the artifacts this document ALREADY pins HERE, where the database is, and
+        # hand them to the runtime BY VALUE — the same rule asset_library follows, because a fleet
+        # worker never reads the API database.
+        #
+        # This is the turn's STARTING package, not its final one (amended F2.3). Nothing in a turn
+        # can mint a fragment, but a turn CAN now pin one: `insert_cloned_section` adds the
+        # artifact it just resolved to this package (`_admit_fragment_artifact`), so a band the
+        # agent placed renders in its own screenshots instead of coming back as the engine's
+        # placeholder for the visual reviewer to judge. A pin that reaches the document by any
+        # OTHER route mid-turn — hand-built ops naming an id nothing resolved — still renders the
+        # placeholder, which is the honest answer rather than an improvised one.
         if web_doc_fragment_ids(web_doc, "home"):
             config = replace(
                 config,

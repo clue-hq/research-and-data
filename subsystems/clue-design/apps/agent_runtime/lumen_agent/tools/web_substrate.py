@@ -37,6 +37,7 @@ from selectolax.parser import HTMLParser
 from py_lumen_obs import bind_run_id, get_logger
 
 from lumen_api.core import CoreClient, CoreError
+from lumen_api.database import FragmentReferenceError
 from lumen_api.fragments.render import (
     FRAGMENT_RENDER_PACKAGE_SCHEMA_VERSION,
     fragment_collision_diagnostics,
@@ -293,6 +294,10 @@ _ASSET_SEARCH_LIMIT_MAX = 20
 #: F2.3. Same ceiling as the asset search for the same reason — a discovery result is something
 #: the model READS, and twenty sections is already more than a page has room for.
 _CLONED_SECTION_SEARCH_LIMIT_MAX = 20
+#: The diagnostic code for "this rewrite took cloned sections off the page". `LUMA` because it is
+#: the AGENT substrate speaking, not the engine (whose codes are `LUMW`/`LUMI`) — nothing in the
+#: engine can know that a lost pin was something a human released and a director chose.
+_CLONED_SECTION_DROPPED_CODE = "LUMA0601"
 #: The wrapper section a pinned cloned section lives inside. `w-full` and nothing else: the clone
 #: brings its own padding, background and rhythm (that is what makes it a clone), so a wrapper
 #: that imposed the platform's section rhythm on top would double it.
@@ -866,8 +871,10 @@ class LumenWebTools:
         # trip — the same "search hands the view its target" contract `search_assets` has.
         # Written by discovery AND by a successful insert (the agent may want to look at what it
         # just pinned), never invented: an id absent here has genuinely not been resolved.
+        # `_cloned_section_seen` carries `{label, section_role}` for the same ids, which is what
+        # lets a drop report say WHICH band went rather than only which id.
         self._cloned_section_previews: Dict[str, Optional[str]] = {}
-        self._cloned_section_labels: Dict[str, str] = {}
+        self._cloned_section_seen: Dict[str, JsonObject] = {}
         # Staleness contract (mirrors the scene view): a monotonic doc-mutation
         # count, and the count stamped at the last successful render. view()
         # refuses a preview older than the current doc.
@@ -1671,6 +1678,9 @@ class LumenWebTools:
             "warnings": warnings,
             "advice": advice,
         }
+        # F2.3: this tool replaces the WHOLE page, so any cloned section that was pinned on it is
+        # gone. Say which ones, in the bucket the author owes an answer for.
+        self._report_dropped_cloned_sections(result, before)
         self._decorate_success(result, origin, patch_count)
         return json.dumps(result, indent=2)
 
@@ -1729,6 +1739,7 @@ class LumenWebTools:
         root = nodes.get(root_id) or {}
         root_children = list(root.get("children") or [])
 
+        before = copy.deepcopy(self.web_doc)
         target_section = self._enclosing_section(node_id, nodes, root_children)
         if target_section is None:
             return self._tool_error(
@@ -1905,6 +1916,9 @@ class LumenWebTools:
             "warnings": warnings,
             "advice": advice,
         }
+        # F2.3: the same wipe, narrower — recomposing a section that HELD a cloned section drops
+        # it exactly as a whole-page rewrite does. One report, both doors.
+        self._report_dropped_cloned_sections(result, before)
         self._decorate_success(result, origin, patch_count)
         return json.dumps(result, indent=2)
 
@@ -4434,9 +4448,10 @@ class LumenWebTools:
             detail = described.get(fragment_id) or {}
             preview_path = detail.get("preview_path")
             self._cloned_section_previews[fragment_id] = preview_path
-            self._cloned_section_labels[fragment_id] = str(
-                section.get("label") or section.get("section_role") or fragment_id
-            )
+            self._cloned_section_seen[fragment_id] = {
+                "label": section.get("label"),
+                "section_role": section.get("section_role"),
+            }
             row: JsonObject = {
                 "fragment_id": fragment_id,
                 "section_role": section.get("section_role"),
@@ -4572,6 +4587,8 @@ class LumenWebTools:
         REFUSALS ARE REAL ANSWERS. `fragment.not_approved` means a human has not released that
         section yet — say so and compose the band instead; do not retry. `fragment.unresolved`
         means the id is not one this workspace holds — search again rather than guessing an id.
+        `cloned_section.registry_failed` is NOT a refusal: the library could not be read at all,
+        so the section may be perfectly reusable — retry before you give up on it.
         """
         refusal = self._consume_round_budget("insert_cloned_section")
         if refusal is not None:
@@ -4600,19 +4617,38 @@ class LumenWebTools:
         # THE GATE. Not re-implemented here: the registry asks the same check the document write
         # will make, so a section this refuses is exactly a section that commit would refuse —
         # and the agent learns it now, in words, instead of at the end of the turn.
+        #
+        # The two failures are told apart by TYPE, and the distinction is the whole point. A
+        # PERMISSION refusal says "nobody released this band; compose it instead" and the agent
+        # is right to stop asking. A database blip says the opposite, and an agent that read one
+        # for the other would abandon the client's real chrome over a timeout.
         try:
             resolved = registry.resolve_insertable(clean_id)
-        except Exception as error:  # noqa: BLE001 - the gate's refusal, whatever its type
-            code = getattr(error, "code", None) or "cloned_section.not_insertable"
-            message = getattr(error, "message", None) or str(error)
+        except FragmentReferenceError as error:
+            code = error.code or "cloned_section.not_insertable"
             self.record(
                 "author",
                 "cloned_section_insert_refused",
                 input_summary=clean_id,
-                output_summary=f"{code}: {message}"[:500],
+                output_summary=f"{code}: {error.message}"[:500],
                 payload={"fragment_id": clean_id, "error_code": code},
             )
-            return self._tool_error(str(code), str(message), fragment_id=clean_id)
+            return self._tool_error(str(code), str(error.message), fragment_id=clean_id)
+        except Exception as error:  # noqa: BLE001 - capability boundary, same as search's
+            self.record(
+                "author",
+                "cloned_section_insert_failed",
+                input_summary=clean_id,
+                output_summary=f"{type(error).__name__}: {error}"[:500],
+                payload={"fragment_id": clean_id},
+            )
+            return self._tool_error(
+                "cloned_section.registry_failed",
+                f"the cloned-section library could not be read: "
+                f"{type(error).__name__}: {error}. This is not a refusal — the section may be "
+                "perfectly reusable; try again before composing the band instead.",
+                fragment_id=clean_id,
+            )
 
         slot_kinds = (resolved.get("render") or {}).get("slot_kinds") or {}
         slots, slot_error = self._tagged_slot_values(raw_slots, slot_kinds, clean_id)
@@ -4695,9 +4731,10 @@ class LumenWebTools:
         # with a hole in it. The artifact travels with the resolution that let it be pinned.
         self._admit_fragment_artifact(clean_id, resolved.get("render") or {})
         self._cloned_section_previews[clean_id] = resolved.get("preview_path")
-        self._cloned_section_labels[clean_id] = str(
-            resolved.get("label") or resolved.get("section_role") or clean_id
-        )
+        self._cloned_section_seen[clean_id] = {
+            "label": resolved.get("label"),
+            "section_role": resolved.get("section_role"),
+        }
         warnings, advice = _split_non_error_diagnostics(response.get("diagnostics"))
         self.record(
             "author",
@@ -4837,6 +4874,124 @@ class LumenWebTools:
             # collision/missing diagnostics contradict the page.
             package["missing"] = [item for item in missing if item != fragment_id]
 
+    def _pinned_cloned_sections(self, web_doc: JsonObject) -> Dict[str, str]:
+        """`{fragment id: node id}` for every cloned section reachable on this page.
+
+        Node-keyed rather than a bare set, because a drop report that cannot say WHERE the band
+        was is much harder to act on than one that can.
+        """
+        page = next(
+            (
+                item
+                for item in (web_doc.get("pages") or [])
+                if isinstance(item, dict) and item.get("id") == self.page_id
+            ),
+            None,
+        )
+        if not isinstance(page, dict):
+            return {}
+        pinned: Dict[str, str] = {}
+        nodes = page.get("nodes")
+        if not isinstance(nodes, dict):
+            return {}
+        for fragment_id in web_doc_fragment_ids(web_doc, self.page_id):
+            node_id = next(
+                (
+                    key
+                    for key, node in nodes.items()
+                    if isinstance(node, dict)
+                    and node.get("kind") == "fragment"
+                    and node.get("fragment_id") == fragment_id
+                ),
+                None,
+            )
+            if node_id is not None:
+                pinned[fragment_id] = node_id
+        return pinned
+
+    def _dropped_cloned_sections(
+        self, before: JsonObject, after: JsonObject
+    ) -> List[JsonObject]:
+        """Which cloned sections an accepted rewrite just took off the page.
+
+        `author_web_page` replaces the whole page and `author_web_subtree` replaces one section,
+        and a cloned section cannot be expressed in the constrained-HTML wire format — so a
+        rewrite over a band that was pinned simply loses it. That is the correct behaviour for
+        now (where a clone belongs in freshly authored markup is genuinely ambiguous, so
+        preserving it through a rewrite is deferred), but it must never be SILENT: the page still
+        renders, just without the client's own chrome, and nothing downstream notices.
+
+        `label`/`section_role` are filled from what this turn has resolved, and are ``None`` when
+        the pin came from a stored document an earlier turn wrote. Naming the id alone is honest;
+        inventing a label for a band this process never looked up would not be.
+        """
+        gone = self._pinned_cloned_sections(before)
+        surviving = self._pinned_cloned_sections(after)
+        dropped: List[JsonObject] = []
+        for fragment_id, node_id in gone.items():
+            if fragment_id in surviving:
+                continue
+            seen = self._cloned_section_seen.get(fragment_id) or {}
+            dropped.append(
+                {
+                    "fragment_id": fragment_id,
+                    "node_id": node_id,
+                    "label": seen.get("label"),
+                    "section_role": seen.get("section_role"),
+                }
+            )
+        return dropped
+
+    @staticmethod
+    def _dropped_cloned_section_warning(dropped: List[JsonObject]) -> JsonObject:
+        """The drop, as a WARNING — the bucket the author prompt calls mandatory work.
+
+        Not `advice`: advice is an observation to judge, and a page that quietly lost the
+        client's real nav is not a matter of taste. Not an error either — the rewrite itself
+        succeeded and refusing it would make a whole-page repair impossible on any page holding
+        a clone.
+        """
+        named = ", ".join(
+            f"{entry['fragment_id']}"
+            + (f" ({entry['label']})" if entry.get("label") else "")
+            for entry in dropped
+        )
+        return {
+            "severity": "warning",
+            "phase": "agent",
+            "code": _CLONED_SECTION_DROPPED_CODE,
+            "message": (
+                f"this rewrite replaced markup that held {len(dropped)} cloned section(s), so "
+                f"they are no longer on the page: {named}"
+            ),
+            "hint": (
+                "A cloned section cannot be written as page markup, so a rewrite always loses "
+                "it. Re-pin each one you still want with "
+                "insert_cloned_section(fragment_id, index?), and report any you deliberately "
+                "dropped."
+            ),
+            "dropped_cloned_sections": copy.deepcopy(dropped),
+        }
+
+    def _report_dropped_cloned_sections(
+        self, result: JsonObject, before: JsonObject
+    ) -> None:
+        """Fold the drop into an accepted authoring result, or leave it byte-identical."""
+        dropped = self._dropped_cloned_sections(before, self.web_doc)
+        if not dropped:
+            return
+        result["dropped_cloned_sections"] = dropped
+        result.setdefault("warnings", []).insert(
+            0, self._dropped_cloned_section_warning(dropped)
+        )
+        self.record(
+            "author",
+            "cloned_sections_dropped",
+            output_summary=", ".join(entry["fragment_id"] for entry in dropped),
+            payload={"dropped_cloned_sections": copy.deepcopy(dropped)},
+            sink_extra={"dropped_count": len(dropped)},
+        )
+
     def _view_cloned_section(self, target: str) -> list:
         """The view content for a `cloned_section:<fragment_id>` target — the real band's pixels.
 
@@ -4861,7 +5016,8 @@ class LumenWebTools:
                     f"Call search_cloned_sections first. Resolved so far: {known}"
                 )
             ]
-        label = self._cloned_section_labels.get(fragment_id, fragment_id)
+        seen = self._cloned_section_seen.get(fragment_id) or {}
+        label = seen.get("label") or seen.get("section_role") or fragment_id
         preview_path = self._cloned_section_previews.get(fragment_id)
         if not preview_path or not Path(preview_path).exists():
             self.record(

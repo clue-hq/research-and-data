@@ -168,15 +168,18 @@ class FakeRegistry:
         }
 
 
-class _FakeGateRefusal(RuntimeError):
-    """The shape ``FragmentReferenceError`` presents: a code, a message, and the id."""
+def _FakeGateRefusal(code: str, message: str, fragment_id: str):
+    """The REAL gate exception, built by hand.
 
-    def __init__(self, code: str, message: str, fragment_id: str) -> None:
-        super().__init__(message)
-        self.code = code
-        self.message = message
-        self.node_id = "probe_cloned_section"
-        self.fragment_id = fragment_id
+    Not a look-alike: the substrate tells a permission refusal from a database outage by TYPE, so
+    a fake that merely quacked like `FragmentReferenceError` would prove the wrong thing — it
+    would pass whether or not the narrow catch existed.
+    """
+    from lumen_api.database import FragmentReferenceError
+
+    return FragmentReferenceError(
+        code, message, node_id="probe_cloned_section", fragment_id=fragment_id
+    )
 
 
 def _seed_doc() -> dict:
@@ -754,15 +757,21 @@ def test_the_reuse_decision_reaches_the_author_brief() -> None:
 
 
 def test_the_author_is_told_to_reuse_before_composing_and_never_to_rewrite() -> None:
+    """The DISCIPLINE, not the prose. A founder rewrite that keeps these four rules stays green;
+    one that drops a rule goes red, which is the only thing worth guarding."""
     prompt = _author_prompt()
+    rule = prompt.split("REUSE BEFORE YOU COMPOSE", 1)[1].split("\n- ", 1)[0]
 
-    assert "insert_cloned_section" in prompt
-    assert "search_cloned_sections" in prompt
-    assert "SLOTS are the only thing you may change" in prompt
-    # The specific trap: a whole-page author call wipes an already-pinned clone.
-    assert "replaces the whole page, cloned sections included" in prompt
-    # And the refusal is an answer, not a thing to retry.
-    assert "fragment.not_approved" in prompt
+    # 1. It knows both tools.
+    assert "search_cloned_sections" in rule and "insert_cloned_section" in rule
+    # 2. Slots are the boundary — a clone's internals are not the author's to rewrite.
+    lowered = rule.lower()
+    assert "slot" in lowered
+    # 3. The whole-page trap: a rewrite loses pinned clones, and the result names them.
+    assert "author_web_page" in rule
+    assert "dropped_cloned_sections" in rule
+    # 4. A refusal is an answer, not a thing to retry.
+    assert "fragment.not_approved" in rule
 
 
 def test_the_author_holds_both_halves_of_the_ladder_and_the_director_only_discovery(
@@ -825,3 +834,209 @@ def test_the_view_tool_advertises_the_cloned_section_target(
     view = make_web_view_tool(_tools(tmp_path, registry), can_render=False)
 
     assert "cloned_section:" in (view.description or "")
+
+
+# --------------------------------------------------------------------------- #
+# A whole-page rewrite drops every pinned clone — LOUDLY
+# --------------------------------------------------------------------------- #
+
+TWO_SECTIONS = """
+<section id="alpha" class="bg-light"><h2 id="alpha_title">Alpha</h2></section>
+<section id="beta" class="bg-card"><h2 id="beta_title">Beta</h2></section>
+"""
+
+
+def _seed_doc_with_pin(fragment_id: str = HERO_ID) -> dict:
+    """A page that already carries a cloned section, as a stored document would."""
+    doc = _seed_doc()
+    page = doc["pages"][0]
+    page["nodes"]["root"]["children"] = ["sec_pinned"]
+    page["nodes"]["sec_pinned"] = {
+        "id": "sec_pinned",
+        "kind": "section",
+        "tag": "section",
+        "classes": "w-full",
+        "children": ["frg_pinned"],
+    }
+    page["nodes"]["frg_pinned"] = {
+        "id": "frg_pinned",
+        "kind": "fragment",
+        "classes": "",
+        "fragment_id": fragment_id,
+        "slots": {},
+    }
+    del page["nodes"]["sec_existing"]
+    return doc
+
+
+def _tools_with(tmp_path: Path, registry: FakeRegistry | None, doc: dict) -> LumenWebTools:
+    config = replace(
+        AgentRuntimeConfig.from_env(REPO_ROOT),
+        trace_dir=tmp_path / "workspace_root",
+        cloned_section_registry=registry,
+    )
+    return LumenWebTools(config, "Build a page", initial_web_doc=doc)
+
+
+def test_a_whole_page_rewrite_names_every_cloned_section_it_dropped(
+    tmp_path: Path, registry: FakeRegistry
+) -> None:
+    tools = _tools(tmp_path, registry)
+    pinned = json.loads(tools.insert_cloned_section(HERO_ID))
+
+    result = json.loads(tools.author_web_page(TWO_SECTIONS))
+
+    assert result["status"] == "ok"
+    dropped = result["dropped_cloned_sections"]
+    assert [entry["fragment_id"] for entry in dropped] == [HERO_ID]
+    assert dropped[0]["node_id"] == pinned["node_id"]
+    assert dropped[0]["label"] == "Hero — Care, on your terms"
+    assert dropped[0]["section_role"] == "hero"
+
+
+def test_the_drop_rides_the_warnings_bucket_the_author_must_answer_for(
+    tmp_path: Path, registry: FakeRegistry
+) -> None:
+    """`warnings` is the lane's "this is work" bucket; `advice` is the "judge it" one."""
+    tools = _tools(tmp_path, registry)
+    tools.insert_cloned_section(HERO_ID)
+
+    result = json.loads(tools.author_web_page(TWO_SECTIONS))
+
+    warning = next(
+        entry
+        for entry in result["warnings"]
+        if entry.get("code") == "LUMA0601"
+    )
+    assert HERO_ID in warning["message"]
+    assert "insert_cloned_section" in warning["hint"]
+    assert not [
+        entry for entry in result["advice"] if entry.get("code") == "LUMA0601"
+    ]
+
+
+def test_a_pin_this_turn_never_looked_up_is_still_named(
+    tmp_path: Path, registry: FakeRegistry
+) -> None:
+    """A clone pinned by an EARLIER turn has no label in this turn's memory. Name it anyway."""
+    tools = _tools_with(tmp_path, registry, _seed_doc_with_pin())
+
+    result = json.loads(tools.author_web_page(TWO_SECTIONS))
+
+    dropped = result["dropped_cloned_sections"]
+    assert [entry["fragment_id"] for entry in dropped] == [HERO_ID]
+    assert dropped[0]["node_id"] == "frg_pinned"
+    # Honest about what it does not know, rather than inventing a label.
+    assert dropped[0]["label"] is None
+    assert dropped[0]["section_role"] is None
+
+
+def test_a_page_with_no_clones_gains_no_drop_report(
+    tmp_path: Path, registry: FakeRegistry
+) -> None:
+    result = json.loads(_tools(tmp_path, registry).author_web_page(TWO_SECTIONS))
+
+    assert result["status"] == "ok"
+    assert "dropped_cloned_sections" not in result
+    assert not [
+        entry for entry in result["warnings"] if entry.get("code") == "LUMA0601"
+    ]
+
+
+def test_replacing_a_clones_own_section_names_the_drop_too(
+    tmp_path: Path, registry: FakeRegistry
+) -> None:
+    """The same wipe arrives through the scoped path when the target section holds a clone."""
+    tools = _tools_with(tmp_path, registry, _seed_doc_with_pin())
+
+    result = json.loads(
+        tools.author_web_subtree(
+            "sec_pinned", '<section id="sec_pinned"><h2 id="t">Replaced</h2></section>'
+        )
+    )
+
+    assert result["status"] == "ok"
+    assert [entry["fragment_id"] for entry in result["dropped_cloned_sections"]] == [
+        HERO_ID
+    ]
+
+
+def test_a_scoped_edit_that_keeps_the_clone_reports_no_drop(
+    tmp_path: Path, registry: FakeRegistry
+) -> None:
+    """Discrimination guard: only a pin that actually LEFT the page is reported."""
+    doc = _seed_doc_with_pin()
+    page = doc["pages"][0]
+    page["nodes"]["root"]["children"] = ["sec_pinned", "sec_other"]
+    page["nodes"]["sec_other"] = {
+        "id": "sec_other",
+        "kind": "section",
+        "tag": "section",
+        "classes": "",
+        "children": [],
+    }
+    tools = _tools_with(tmp_path, registry, doc)
+
+    result = json.loads(
+        tools.author_web_subtree(
+            "sec_other", '<section id="sec_other"><h2 id="t">Other</h2></section>'
+        )
+    )
+
+    assert result["status"] == "ok"
+    assert "dropped_cloned_sections" not in result
+
+
+def test_a_rejected_rewrite_reports_no_drop_because_nothing_was_replaced(
+    tmp_path: Path, registry: FakeRegistry
+) -> None:
+    tools = _tools_with(tmp_path, registry, _seed_doc_with_pin())
+
+    result = json.loads(tools.author_web_page('<section id="a"><i data-icon="globe"></i></section>'))
+
+    assert result["status"] == "rejected"
+    assert "dropped_cloned_sections" not in result
+    # The page is untouched, so the clone is still there.
+    assert "frg_pinned" in tools.web_doc["pages"][0]["nodes"]
+
+
+def test_a_registry_outage_reads_as_an_outage_not_as_a_permission_refusal(
+    tmp_path: Path, registry: FakeRegistry
+) -> None:
+    """A blip must not arrive wearing "nobody released this, compose instead" clothes.
+
+    The permission envelope tells the agent to stop asking and compose the band. A database
+    that was briefly unreachable is the opposite instruction, and a turn that took the first
+    answer for the second would abandon the client's real chrome over a timeout.
+    """
+
+    def _boom(_fragment_id):
+        raise TimeoutError("connection to the design database timed out")
+
+    registry.resolve_insertable = _boom  # type: ignore[assignment]
+    tools = _tools(tmp_path, registry)
+
+    result = json.loads(tools.insert_cloned_section(HERO_ID))
+
+    assert result["error_code"] == "cloned_section.registry_failed"
+    assert "TimeoutError" in result["message"]
+    assert _page(tools)["nodes"]["root"]["children"] == ["sec_existing"]
+
+
+def test_a_gate_refusal_carrying_no_code_still_reads_as_a_permission_answer(
+    tmp_path: Path, registry: FakeRegistry
+) -> None:
+    """The narrow catch is on the TYPE, so a gate error is never mistaken for an outage."""
+    from lumen_api.database import FragmentReferenceError
+
+    def _refuse(_fragment_id):
+        error = FragmentReferenceError(
+            "", "nope", node_id="n", fragment_id=HERO_ID
+        )
+        raise error
+
+    registry.resolve_insertable = _refuse  # type: ignore[assignment]
+
+    result = json.loads(_tools(tmp_path, registry).insert_cloned_section(HERO_ID))
+
+    assert result["error_code"] == "cloned_section.not_insertable"

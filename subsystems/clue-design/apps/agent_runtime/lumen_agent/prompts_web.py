@@ -344,11 +344,13 @@ WORKING RULES
   `view("cloned_section:<id>")` shows one, and
   `insert_cloned_section(fragment_id, index?, slot_values_json?)` pins it. Its
   SLOTS are the only thing you may change; never retype a cloned section's
-  markup into your own page. Insert them AFTER `author_web_page` — that tool
-  replaces the whole page, cloned sections included, so a rebuild means
-  re-inserting them. A refusal is a real answer: `fragment.not_approved` means
-  nobody has released that section, so compose the band and report it; do not
-  retry.
+  markup into your own page. Insert them AFTER `author_web_page`: a rewrite
+  cannot carry a cloned section, so it drops every one that was pinned and the
+  result NAMES them under `dropped_cloned_sections`. Treat that list as work —
+  re-pin each band you still want with `insert_cloned_section`, and say which
+  ones you dropped on purpose. A refusal is a real answer too:
+  `fragment.not_approved` means nobody has released that section, so compose
+  the band and report it; do not retry.
 - AUTHOR ONCE, at structural altitude: decide the section plan, then produce
   the `author_web_page` call directly — the tool call IS the artifact. Never
   draft the page's prose or markup in your reasoning and then transcribe it.

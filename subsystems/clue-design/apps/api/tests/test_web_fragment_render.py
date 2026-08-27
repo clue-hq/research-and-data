@@ -78,7 +78,9 @@ def _mint(workspace_id: str, storage: FsStorage, *, html: str = HTML, css: str =
     brand kit it came from, so a NEW pin of a draft is refused. These render tests are about what
     a released section LOOKS like on a page, which means they have to start from one — the same
     correction ``test_web_fragments.py::_pinnable`` made for the gate suite. The status rules
-    themselves are pinned next door in ``test_web_fragments.py``.
+    themselves — the kit-approval cascade and every arm of the reference gate — are pinned in
+    ``test_ingestion_fragment_pipeline.py`` ("the human gate" / "the reference gate"), and the
+    row-level lifecycle flag in ``test_web_fragments.py``.
     """
     row, artifact = create_web_fragment(
         storage,
