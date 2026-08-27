@@ -82,9 +82,23 @@ export interface WebNode {
   slug?: string;
   artifact_id?: string;
   props?: Record<string, CustomComponentPropValue>;
+  // fragment (leaf, clone-fidelity F1.1): one immutable registry artifact pin
+  // plus flat slot values. There is NO inspector UI for a fragment yet — that
+  // is Phase F3 — but the fields are named here so a document carrying one
+  // round-trips through the editor with its identity intact instead of losing
+  // the only thing that says which cloned section it is.
+  fragment_id?: string;
+  slots?: Record<string, WebFragmentSlotValue>;
   // personalization hedge — carried by the schema, ignored by every v0 path.
   slot_key?: string | null;
 }
+
+/** A fragment slot's value: exactly one flat scalar, externally tagged by the
+ * engine so an asset slot can never decay into a text slot on the wire. */
+export type WebFragmentSlotValue =
+  | { text: string }
+  | { asset: string }
+  | { visible: boolean };
 
 export interface RichTextDocument {
   schema_version: 1;

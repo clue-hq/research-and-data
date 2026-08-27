@@ -334,6 +334,42 @@ def test_the_editor_route_reports_a_class_collision_without_refusing_the_render(
     assert "clone-hero" in collisions[0]["message"]
 
 
+def test_the_selection_bridge_tolerates_a_fragment_node(
+    client: TestClient, workspace_id: str, design_storage: FsStorage
+) -> None:
+    """The other Python surface that enumerates node kinds.
+
+    `render_bridge_script` builds the editor's movable/droppable/resizable id lists from a kind
+    allowlist. A fragment is in none of them — the canvas gestures for one are Phase F3's — and
+    what this pins is that an unlisted kind is simply not offered, rather than breaking the
+    script that carries the rest of the page's gestures.
+    """
+    artifact = _mint(workspace_id, design_storage)
+    store = HybridRepository(workspace_id=workspace_id)
+    store.create_document(
+        _web_doc(
+            "doc_bridge",
+            {"id": "sec_a", "kind": "section", "classes": "", "children": ["n1"]},
+            _fragment_node("n1", artifact.fragment_id),
+        ),
+        doc_kind="web",
+    )
+    rendered = _render(client, "doc_bridge", bridge=1, nonce="f1-3-bridge-1")
+    assert SENTINEL in rendered["html"]
+
+    from lumen_api.web_bridge import _bridge_page_capabilities
+
+    document = store.require_document("doc_bridge")
+    movable, drop_parents, resizable, root_id = _bridge_page_capabilities(
+        document["scene"], "home"
+    )
+    assert root_id == "root"
+    assert "sec_a" in movable, "the section is still gesture-capable"
+    assert "n1" not in movable
+    assert "n1" not in resizable
+    assert "n1" not in drop_parents
+
+
 # --------------------------------------------------------------------------- #
 # Preview path 2: the agent turn's composition
 # --------------------------------------------------------------------------- #
