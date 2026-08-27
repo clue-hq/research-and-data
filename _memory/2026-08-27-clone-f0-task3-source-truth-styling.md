@@ -1,7 +1,8 @@
 # 2026-08-27 — clone-fidelity F0 Task 3: source-truth styling (design ingestion)
 
 Branch `integration/frontend-design-part-iv-v2`. Base `446e7ff01` → commits `8a07e4419`
-(slice), `4b117abef` (regression pin), `0b3599bed` (fix round 1 — review I1+M1). Full report:
+(slice), `4b117abef` (regression pin), `0b3599bed` (fix round 1 — review I1+M1),
+`ce63691ba` (fix round 2 — ranking precedence ruling). Full report:
 `.superpowers/sdd/2026-08-27-clone-fidelity-master-plan/task-3-report.md`.
 
 ## What changed
@@ -14,8 +15,8 @@ no Rust). The site's own CSS declarations now outrank our clustering heuristics.
    `normalizer/roles.assign_light_roles(clusters, declared)` applies it as
    `basis="declared"`, provenance `custom-prop:<name>`, confidence 0.9
    (`normalizer/roles.DECLARED_ROLE_CONFIDENCE`), above the clustered candidate. NAMES
-   QUALIFY, never values — but among names that all qualified for the SAME role, the value is
-   allowed to rank (see fix round 1). Strong words (background/text/brand/accent families)
+   QUALIFY and names RANK; the value only breaks a tie between equally-qualified names (see
+   fix rounds 1 and 2). Strong words (background/text/brand/accent families)
    beat weak ones (primary/secondary); two strong families or any variant word
    (hover/muted/border/dark/…) or any numeric token (`--brand-500`) → no role, keep today's
    weight-3.0 evidence path.
@@ -40,6 +41,9 @@ New diagnostics: **`LUMI0517`** (state-style budget), **`LUMI0518`** (a declared
 **`LUMI0519`** (a declared brand/accent that is a NEUTRAL is refused the same way — fix
 round 1). Next free code: **LUMI0520**.
 
+Round-1 note below says "`_rank` adds a chroma key"; round 2 then fixed WHERE that key sits.
+Read the two round sections together — §"Fix round 2" carries the final ordering.
+
 ## Fix round 1 (`0b3599bed`) — review findings I1 + M1
 **I1, the one worth remembering.** Webflow's Client-First convention names a brand's WHOLE
 family off one prefix, neutrals included (`--base-color-brand--black` / `--…--green` /
@@ -50,8 +54,8 @@ ramp, `surface.brand.subtle`, `border.brand`, `focus.ring`, and the >30-degree h
 picks the derived accent).
 
 Fix is two-part and the split matters:
-- **Names QUALIFY; among the qualified, the value may RANK.** `_rank` leads with chroma for
-  `surface.brand`/`surface.accent` (rounded 4dp so float noise falls through to the
+- **Names QUALIFY and names RANK; the value only breaks a tie.** `_rank` adds a chroma key
+  for `surface.brand`/`surface.accent` (rounded 4dp so float noise falls through to the
   deterministic name key). No change to which names TRIGGER a role — a hex still triggers
   nothing.
 - **Fitness stays the normalizer's call.** An all-neutral family still has a most-chromatic
@@ -70,11 +74,26 @@ M1: deleted a U+200B in a test assertion that made it vacuous (the adjacent `all
 already covering the case). Only remaining zero-width/nbsp chars in `lumen_ingestion/` are
 intentional BOM-stripping literals in `describe.py` and `capture/uploads.py`.
 
+## Fix round 2 (`ce63691ba`) — ranking precedence, ruled
+Round 1 put chroma FIRST in `_rank`. Wrong, and the review measured why: `--brand: #0b5d51`
+(a real deep muted teal, C=0.0748) vs `--brand-secondary: #ff2d55` (hot pink, C=0.2383;
+`secondary` is only a weak word so the strong `brand` still qualifies it) — chroma-first
+SILENTLY seats the secondary as `surface.brand`. Final order is
+**`(light-hint, len(words), chroma, name)`**: least-qualified name leads, chroma is the
+tie-break. Name-first's counter-case (a neutral `--brand` outranking `--brand-green`) exits
+LOUDLY via the `LUMI0519` gate into clustering — a loud wrong-looking answer beats a quiet
+wrong one, which is the trade.
+
+The Client-First case still works because it never depended on precedence: all three of
+`--base-color-brand--{black,green,white}` are four-word names, so they tie on specificity and
+chroma decides. **If you touch `_rank`, keep both cases green — they pull in opposite
+directions and only this ordering satisfies both.**
+
 ## Verification
-- 22 tests in `apps/api/tests/test_ingestion_source_truth_styling.py` (19 + 3 from fix round 1), red-first
+- 24 tests in `apps/api/tests/test_ingestion_source_truth_styling.py` (19 + 3 round 1 + 2 round 2), red-first
   (first run failed at collection).
-- 22 ingestion/logo suites green: **438 tests, 0 failures, 0 errors, 4 skipped, exit 0** at
-  `0b3599bed` (435 before fix round 1 added three). Run against a dedicated throwaway DB
+- 22 ingestion/logo suites green: **440 tests, 0 failures, 0 errors, 4 skipped, exit 0** at
+  `ce63691ba` (435 at first submission; +3 round 1, +2 round 2). Run against a dedicated throwaway DB
   `postgresql+asyncpg://clue:clue@localhost:55040/clue_f0_task3` (created + `alembic upgrade
   head` for this task; still present, drop freely). Design tests run WITHOUT the platform
   `.env`.
