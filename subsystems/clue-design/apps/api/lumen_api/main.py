@@ -82,6 +82,7 @@ from .database import (
     CustomComponentReferenceError,
     CustomComponentSourceVersionConflict,
     DesignResourceVersionConflict,
+    FragmentReferenceError,
     NotFoundError,
     WebDocumentVersionConflict,
     WebPublishRevisionConflict,
@@ -816,6 +817,22 @@ def create_app(
                     "message": error.message,
                     "node_id": error.node_id,
                     "artifact_id": error.artifact_id,
+                }
+            },
+        )
+
+    @app.exception_handler(FragmentReferenceError)
+    def fragment_reference_handler(
+        _request: Request, error: FragmentReferenceError
+    ) -> JSONResponse:
+        return JSONResponse(
+            status_code=422,
+            content={
+                "detail": {
+                    "code": error.code,
+                    "message": error.message,
+                    "node_id": error.node_id,
+                    "fragment_id": error.fragment_id,
                 }
             },
         )
@@ -9097,6 +9114,15 @@ def execute_web_turn_job(
                                 (
                                     f"Node {error.node_id} references "
                                     f"artifact {error.artifact_id}."
+                                ),
+                            )
+                        except FragmentReferenceError as error:
+                            response = failed_agent_turn_response(
+                                error.code,
+                                error.message,
+                                (
+                                    f"Node {error.node_id} references "
+                                    f"fragment {error.fragment_id}."
                                 ),
                             )
                         else:

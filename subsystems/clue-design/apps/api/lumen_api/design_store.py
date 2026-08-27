@@ -113,6 +113,7 @@ from clue_design import publishes as design_publishes
 from clue_design import runs as design_runs
 from clue_design import snapshots as design_snapshots
 from clue_design import storage as design_storage
+from clue_design import web_fragments as design_web_fragments
 from clue_design.enums import DesignRunKind
 from clue_design.errors import (
     DesignArtifactConflictError,
@@ -130,6 +131,7 @@ from .database import (
     CustomComponentReferenceError,
     CustomComponentSourceVersionConflict,
     DesignResourceVersionConflict,
+    FragmentReferenceError,
     NotFoundError,
     WebDocumentVersionConflict,
     WebPublishRevisionConflict,
@@ -138,6 +140,7 @@ from .database import (
     custom_component_props_schema_issue,
     custom_component_references,
     custom_component_source_candidate,
+    fragment_references,
 )
 from .observability import log_event
 
@@ -549,6 +552,8 @@ class HybridRepository:
             self.validate_custom_component_reference_changes(
                 before_web_doc={}, after_web_doc=scene, account_id=account_id
             )
+            # F1.2: the same gate for fragment pins, beside its sibling and in the same posture.
+            self.validate_fragment_reference_changes(before_web_doc={}, after_web_doc=scene)
         return self._bridge._run(
             lambda conn: design_documents.create_document(
                 conn,
@@ -657,6 +662,9 @@ class HybridRepository:
             after_web_doc=web_doc,
             account_id=before.get("account_id"),
         )
+        self.validate_fragment_reference_changes(
+            before_web_doc=before["scene"], after_web_doc=web_doc
+        )
         return self._bridge._run(
             lambda conn: design_documents.update_web_document(
                 conn,
@@ -702,6 +710,7 @@ class HybridRepository:
         self.validate_custom_component_reference_changes(
             before_web_doc={}, after_web_doc=web_doc, account_id=account_id
         )
+        self.validate_fragment_reference_changes(before_web_doc={}, after_web_doc=web_doc)
         return self._bridge._run(
             lambda conn: design_documents.create_web_template(
                 conn,
@@ -1525,6 +1534,70 @@ class HybridRepository:
                     node_id=node_id,
                     artifact_id=artifact_id,
                 )
+
+    # --- fragment registry (clone-fidelity F1.2) ----------------------------------------------
+
+    def find_web_fragment(self, fragment_id: str) -> Optional[JsonObject]:
+        """Workspace-scoped fragment lookup by id alone — the reference-validation read."""
+        return self._bridge._run(
+            lambda conn: design_web_fragments.find_web_fragment(
+                conn, workspace_id=self.workspace_id, fragment_id=fragment_id
+            )
+        )
+
+    def require_web_fragment(self, fragment_id: str) -> JsonObject:
+        return self._bridge._run(
+            lambda conn: design_web_fragments.get_web_fragment(
+                conn, workspace_id=self.workspace_id, fragment_id=fragment_id
+            )
+        )
+
+    def list_web_fragments(
+        self, section_role: Optional[str] = None, status: Optional[str] = None
+    ) -> List[JsonObject]:
+        return self._bridge._run(
+            lambda conn: design_web_fragments.list_web_fragments(
+                conn,
+                workspace_id=self.workspace_id,
+                section_role=section_role,
+                status=status,
+            )
+        )
+
+    def validate_fragment_reference_changes(
+        self, *, before_web_doc: JsonObject, after_web_doc: JsonObject
+    ) -> None:
+        """Resolve every newly introduced/re-pinned fragment id in this workspace's registry.
+
+        The custom-component gate's twin, with the same semantics deliberately: existing missing
+        pins remain loadable (they render as a placeholder) so an unrelated edit does not become
+        impossible because registry data went away, while a new node, a duplicate, or a changed
+        fragment id must resolve.
+
+        Simpler than its sibling in exactly two ways, both because a fragment is content-addressed
+        and workspace-scoped rather than account-scoped: there is no slug to agree with (the id IS
+        the content, so a "wrong slug for this artifact" state cannot exist) and no account to
+        belong to, so the fail-closed workspace-scoped read is the whole check. A fragment
+        registered to another tenant resolves to ``None`` here exactly as an absent one does,
+        which is what keeps a global content address from leaking across workspaces.
+        """
+        before = fragment_references(before_web_doc)
+        after = fragment_references(after_web_doc)
+        resolved: set[str] = set()
+
+        for location, (node_id, fragment_id) in after.items():
+            if before.get(location) == (node_id, fragment_id):
+                continue
+            if fragment_id in resolved:
+                continue
+            if self.find_web_fragment(fragment_id) is None:
+                raise FragmentReferenceError(
+                    "fragment.unresolved",
+                    f"fragment {fragment_id!r} was not found in this workspace",
+                    node_id=node_id,
+                    fragment_id=fragment_id,
+                )
+            resolved.add(fragment_id)
 
     # --- retired surfaces ---------------------------------------------------------------------
 

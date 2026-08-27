@@ -59,6 +59,11 @@ SOURCE_KEY_INGEST_STAGING = "design_ingest_staging"  # uploaded bytes awaiting a
 #: and the full-page screenshot. Cited by ``design_site_snapshot`` rows, never by an asset record:
 #: these are the SOURCE a later clone tier reads, not library media a document places.
 SOURCE_KEY_SITE_SNAPSHOT = "design_site_snapshot"
+#: Clone-fidelity F1.2 — one cloned section's immutable artifact: the canonical JSON payload
+#: (sanitized html, scoped css, asset digests, slot manifest, preview digest) and the preview
+#: image itself. Cited by ``design_web_fragment`` rows. Distinct from the snapshot key because a
+#: snapshot is what a site LOOKED like and a fragment is what we now hold and will render.
+SOURCE_KEY_WEB_FRAGMENT = "design_web_fragment"
 
 #: The ``media.location.provider`` label a D4 asset record carries (ruling R-D4-4). The bytes it
 #: names live in platform storage under :func:`design_storage_key`, never on a local disk.

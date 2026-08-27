@@ -34,6 +34,16 @@ from .refs import (
     asset_url_digest,
     fragment_wrapper_class,
 )
+from .registry import (
+    FRAGMENT_STATUSES,
+    WEB_FRAGMENT_SOURCE_KEY,
+    LoadedFragment,
+    create_web_fragment,
+    list_web_fragments,
+    read_web_fragment,
+    set_web_fragment_status,
+    web_fragment_exists,
+)
 from .sanitize import DROPPED_ELEMENTS, SanitizedHtml, sanitize_fragment_html
 from .slots import (
     MAX_FRAGMENT_SLOTS,
@@ -50,12 +60,15 @@ __all__ = [
     "DROPPED_ELEMENTS",
     "FRAGMENT_ID_RE",
     "FRAGMENT_PAYLOAD_SCHEMA_VERSION",
+    "FRAGMENT_STATUSES",
     "MAX_FRAGMENT_SLOTS",
     "SLOT_KINDS",
     "SLOT_MARKER_ATTR",
+    "WEB_FRAGMENT_SOURCE_KEY",
     "AnnotatedHtml",
     "FragmentArtifact",
     "FragmentRefused",
+    "LoadedFragment",
     "SanitizedHtml",
     "ScopedCss",
     "SlotSpec",
@@ -64,9 +77,14 @@ __all__ = [
     "asset_url_digest",
     "build_fragment_artifact",
     "canonical_bytes",
+    "create_web_fragment",
     "fragment_wrapper_class",
+    "list_web_fragments",
     "parse_fragment_payload",
+    "read_web_fragment",
     "sanitize_fragment_html",
     "scope_fragment_css",
+    "set_web_fragment_status",
     "slot_key_is_valid",
+    "web_fragment_exists",
 ]
