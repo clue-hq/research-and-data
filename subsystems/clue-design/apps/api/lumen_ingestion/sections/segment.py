@@ -939,6 +939,25 @@ def _bind_bands(
         # nothing to tell one <div> from the next, so in-order tag matching would cheerfully bind
         # the hero's band to a nav div the browser had skipped. Demand that it account for every
         # parsed section instead: a 1:1 sequence is checkable, a subsequence is a guess.
+        #
+        # F3.0's widened candidacy (`_is_candidate`) puts self-declared-hidden children into this
+        # list, and on an anonymous page that is ruinous: the count stops being 1:1, this branch
+        # refuses, and EVERY visible section on the page loses its geometry — no preview crops, no
+        # dead-height judgement — because of one `style="display:none"` sibling. So they are
+        # subtracted here, before the count AND before the alignment below.
+        #
+        # The subtraction is the probe's own rule, not a convenience: `_is_significant` mirrors
+        # `capture/geometry.py`'s filter, and it excludes exactly these children — the browser
+        # would not have measured one, so it cannot be the owner of a band. This is the ONE branch
+        # where that has to be assumed rather than checked; where the bands carry an id or a class
+        # the identity is real evidence, so they stay in and a band the browser genuinely recorded
+        # against such an element still binds to it (the everyday cause being JS revealing a
+        # section between the html snapshot and the probe).
+        measured = [
+            candidate
+            for candidate in measured
+            if not _self_declared_hidden_evidence(candidate.node)
+        ]
         if len(bands) != len(measured):
             diagnostics.append(
                 _diag(

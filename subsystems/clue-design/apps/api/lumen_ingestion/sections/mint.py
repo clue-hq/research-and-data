@@ -532,7 +532,11 @@ def mint_sections(
         records: Sequence[SectionRecord], budget: int, scope: str
     ) -> list[MintedSection]:
         minted: list[MintedSection] = []
-        refused = 0
+        # Everything this pool ALREADY reported on, whether it raised or merely declined. Both
+        # kinds have a `LUMI0530` line naming them, so counting only the raisers made the cap's
+        # `remaining` — "segmented and not cloned, and not otherwise reported" — announce sections
+        # the job had already explained twice over.
+        reported = 0
         for record in records:
             if len(minted) >= budget:
                 break
@@ -575,7 +579,7 @@ def mint_sections(
                         reference=refusal.reference,
                     )
                 )
-                refused += 1
+                reported += 1
                 continue
             except Exception as error:  # noqa: BLE001 — one section is not the ingest
                 logger.exception(
@@ -593,12 +597,16 @@ def mint_sections(
                         reason="unexpected_error",
                     )
                 )
-                refused += 1
+                reported += 1
                 continue
-            if result is not None:
-                minted.append(result)
+            if result is None:
+                # A declined section (unresolvable handle, empty after sanitizing) already has
+                # its own LUMI0530 line — accounted for, not missing.
+                reported += 1
+                continue
+            minted.append(result)
 
-        remaining = len(records) - len(minted) - refused
+        remaining = len(records) - len(minted) - reported
         if remaining > 0 and len(minted) >= budget:
             diagnostics.append(
                 _diag(
@@ -730,9 +738,36 @@ def _mint_one(
         degraded_reason=dead.reason if dead is not None else None,
     )
     _note_metadata_divergence(row, record, segmentation, diagnostics)
-    row = _reconcile_degraded(
-        row, assessment, record, segmentation, mark_degraded, diagnostics
-    )
+    # PAST THE POINT OF NO RETURN. The row is committed; everything from here is bookkeeping ON
+    # a fragment that exists. A raise escaping into the driver's broad `except` would report
+    # `LUMI0530` — "this section was not minted" — and drop the ref, which claims absence where a
+    # durable row sits. So the reconciliation's failure is reported as what it is.
+    try:
+        row = _reconcile_degraded(
+            row, assessment, record, segmentation, mark_degraded, diagnostics
+        )
+    except Exception as error:  # noqa: BLE001 — the fragment is real; only the marker is not
+        logger.exception(
+            "fragment degraded-marker reconciliation failed for section %s of %s",
+            record.index,
+            segmentation.page_url,
+        )
+        diagnostics.append(
+            _diag(
+                MINT_DEGRADED_RECONCILED_CODE,
+                f"section {record.index} ({record.role}) of {segmentation.page_url} WAS minted, "
+                "but its degraded marker could not be brought into line with what this capture "
+                f"measured: {type(error).__name__}: {error}. The fragment is real and usable; "
+                "the row's marker is the stale one",
+                section_index=record.index,
+                role=record.role,
+                fragment_id=row.get("fragment_id"),
+                degraded=assessment.finding is not None,
+                was_degraded=bool(row.get("degraded")),
+                applied=False,
+                error=f"{type(error).__name__}: {error}",
+            )
+        )
 
     return MintedSection(
         fragment_id=str(row["fragment_id"]),

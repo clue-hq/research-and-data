@@ -1195,6 +1195,9 @@ def _mint_page_fragments(
                         f"spent before reaching {len(dropped)} more captured page(s), which were "
                         f"not cloned at all: {', '.join(dropped[:10])}"
                     ),
+                    # Every LUMI0532 says which pool it is about: the mint path emits
+                    # "visible"/"dormant" per page, and this one is the whole-pages case.
+                    "scope": "pages",
                     "cap": section_mint.SECTION_MINT_CAP,
                     "pages_not_minted": dropped[:10],
                     "remaining_pages": len(dropped),

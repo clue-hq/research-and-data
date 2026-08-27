@@ -641,6 +641,32 @@ def test_a_first_mint_never_pays_for_a_reconciliation_it_does_not_need() -> None
     assert not [d for d in outcome.diagnostics if d["code"] == MINT_DEGRADED_RECONCILED_CODE]
 
 
+def test_a_failed_reconciliation_never_claims_the_section_was_not_minted() -> None:
+    """Reconciliation runs AFTER the row is committed, so a raise there is bookkeeping failing on
+    a fragment that exists. Letting it reach the driver's broad `except` reported LUMI0530 —
+    "this section was not minted" — and dropped the ref, claiming absence where a durable row
+    sits. The job must be able to tell "no fragment" from "a fragment with a stale marker"."""
+    recorder, jacked = _held_after(DEAD_SHOT)
+    recorder.held[jacked].update({"degraded": False, "degraded_reason": None})
+
+    def _explode(fragment_id: str, *, degraded: bool, reason: str | None):
+        raise RuntimeError("the row went away")
+
+    recorder.mark_degraded = _explode  # type: ignore[assignment]
+    outcome = _remint(recorder, DEAD_SHOT)
+
+    assert jacked in {minted.fragment_id for minted in outcome.minted}
+    assert not [d for d in outcome.diagnostics if d["code"] == "LUMI0530"]
+    failed = next(
+        d
+        for d in outcome.diagnostics
+        if d["code"] == MINT_DEGRADED_RECONCILED_CODE and d.get("error")
+    )
+    assert failed["applied"] is False
+    assert failed["fragment_id"] == jacked
+    assert "RuntimeError" in failed["error"]
+
+
 def test_a_divergence_nobody_can_write_is_still_said_out_loud() -> None:
     """A mint path with no marker writer (the pure-driver case) must not swallow the disagreement
     — a job and a row that quietly contradict each other is the defect, not the write."""
@@ -676,6 +702,27 @@ def test_hidden_sections_draw_on_their_own_budget_and_cannot_starve_the_page() -
     capped = [d for d in outcome.diagnostics if d["code"] == MINT_CAPPED_CODE]
     assert [d["scope"] for d in capped] == ["dormant"]
     assert capped[0]["remaining"] == 1
+
+
+def test_the_caps_remaining_count_does_not_double_report_a_declined_section() -> None:
+    """`remaining` means "segmented and not cloned, and not otherwise reported". A section that
+    DECLINED rather than raised — an empty-after-sanitize shell — already has its own LUMI0530
+    line, so counting it again announced sections the job had explained twice over."""
+    html = (
+        "<html><body><main>"
+        '<section class="embed"><iframe src="/player"></iframe></section>'
+        '<section class="section_hero"><h1>Ship</h1></section>'
+        '<section class="section_proof"><p>Trusted</p></section>'
+        '<section class="section_tail"><p>Tail</p></section>'
+        "</main></body></html>"
+    )
+    _segmentation, outcome, _recorder = _mint(html, limit=1)
+    declined = [d for d in outcome.diagnostics if d["code"] == "LUMI0530"]
+    capped = next(d for d in outcome.diagnostics if d["code"] == MINT_CAPPED_CODE)
+    # Four sections offered: one minted, one declined and named (the embed shell sanitizes down
+    # to nothing), two never reached.
+    assert [d["reason"] for d in declined] == ["empty_after_sanitize"]
+    assert capped["remaining"] == 2
 
 
 def test_the_visible_cap_is_reported_in_its_own_right() -> None:
@@ -769,6 +816,59 @@ def test_an_inline_style_hidden_section_is_dormant_even_with_no_probe_record_at_
     assert [section.heading for section in result.hidden_sections] == ["Pricing"]
     assert [section.role for section in result.sections] == ["hero", "proof"]
     assert any("inline style" in note for note in result.hidden_sections[0].hidden_evidence)
+
+
+def test_a_hidden_sibling_never_costs_the_page_its_geometry_on_an_anonymous_capture() -> None:
+    """The regression the widened candidacy introduced, and the reason it is worth a test of its
+    own. `_bind_bands` refuses everything when the bands carry no id or class and the count is not
+    1:1 — and that check runs BEFORE the skip subtraction and before the class-hint proposal, so
+    neither guard can absorb a newly-admitted hidden candidate. One `style="display:none"` sibling
+    therefore cost EVERY visible section on the page its geometry: no preview crops, no
+    dead-height judgement, exactly the "fragments with no preview" outcome F2's acceptance walk
+    was about."""
+    anonymous = measured_bands(
+        {
+            SNAPSHOT_META_BANDS_KEY: [
+                {"index": 0, "tag": "div", "top": 0.0, "height": 500.0},
+                {"index": 1, "tag": "div", "top": 500.0, "height": 300.0},
+            ]
+        }
+    )
+    html = (
+        "<html><body><main>"
+        "<div><h1>Hero</h1></div>"
+        '<div style="display:none"><h2>Parked</h2></div>'
+        "<div><h2>Proof</h2></div>"
+        "</main></body></html>"
+    )
+    result = segment_page(html, page_url=PAGE_URL, bands=anonymous, viewport_width=1200)
+
+    assert [section.heading for section in result.hidden_sections] == ["Parked"]
+    bound = {section.heading: section.geometry for section in result.sections}
+    assert bound["Hero"] is not None and bound["Hero"].top_px == 0.0
+    assert bound["Proof"] is not None and bound["Proof"].top_px == 500.0
+    assert not [d for d in result.diagnostics if d["code"] == "LUMI0521"]
+
+
+def test_an_anonymous_capture_that_genuinely_does_not_line_up_is_still_refused() -> None:
+    """The guard must discriminate, not blanket-pass: subtracting the hidden ones does not make
+    a mismatched anonymous sequence line up, and a page that cannot be aligned still binds
+    nothing rather than guessing a crop."""
+    anonymous = measured_bands(
+        {SNAPSHOT_META_BANDS_KEY: [{"index": 0, "tag": "div", "top": 0.0, "height": 500.0}]}
+    )
+    html = (
+        "<html><body><main>"
+        "<div><h1>Hero</h1></div>"
+        '<div style="display:none"><h2>Parked</h2></div>'
+        "<div><h2>Proof</h2></div>"
+        "</main></body></html>"
+    )
+    result = segment_page(html, page_url=PAGE_URL, bands=anonymous, viewport_width=1200)
+    refusal = next(d for d in result.diagnostics if d["code"] == "LUMI0521")
+    assert refusal["reason"] == "anonymous-count-mismatch"
+    assert refusal["measured_sections"] == 2  # the hidden one is not counted against the page
+    assert all(section.geometry is None for section in result.sections)
 
 
 def test_a_markup_token_alone_still_never_removes_a_section_from_the_page() -> None:
