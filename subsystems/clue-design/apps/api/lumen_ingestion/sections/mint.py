@@ -49,6 +49,7 @@ from lumen_api.fragments import (
 from lumen_api.fragments.cssscope import PRELUDE_REFERENCE_STRIP
 from lumen_api.fragments.sanitize import sanitize_fragment_html
 from selectolax.lexbor import LexborHTMLParser
+from selectolax.parser import HTMLParser as SectionParser
 from tinycss2 import ast
 
 from .cssmatch import rules_for_subtree
@@ -463,6 +464,11 @@ def mint_sections(
     minted: list[MintedSection] = []
     diagnostics: list[dict[str, Any]] = []
 
+    # ONE parse for the whole page, shared by every section's re-find. `resolve_section` reads
+    # and never mutates, and a marketing page's html runs to megabytes — re-parsing it twelve
+    # times to extract twelve subtrees would be the most expensive thing this module does.
+    tree = SectionParser(html or "")
+
     budget = max(0, limit)
     for record in segmentation.sections:
         if len(minted) >= budget:
@@ -471,7 +477,7 @@ def mint_sections(
             result = _mint_one(
                 segmentation,
                 record,
-                html=html,
+                tree=tree,
                 stylesheets=stylesheets,
                 captured=captured,
                 screenshot=screenshot,
@@ -531,7 +537,7 @@ def _mint_one(
     segmentation: SectionSegmentation,
     record: SectionRecord,
     *,
-    html: str,
+    tree: SectionParser,
     stylesheets: Sequence[Any],
     captured: Mapping[str, CapturedAsset],
     screenshot: bytes | None,
@@ -541,7 +547,7 @@ def _mint_one(
     create_fragment: Callable[..., tuple[dict[str, Any], Any]],
     diagnostics: list[dict[str, Any]],
 ) -> MintedSection | None:
-    node = resolve_section(html, record)
+    node = resolve_section(tree, record)
     if node is None:
         diagnostics.append(
             _diag(
