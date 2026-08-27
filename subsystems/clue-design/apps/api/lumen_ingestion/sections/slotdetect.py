@@ -17,12 +17,22 @@ class names are not unique inside one section — ``.button_label`` appears thre
 pricing table — and ``css_first`` would silently take the first. A structural path names exactly
 one element, and it is computed from the SAME parse the annotator will make.
 
-**Nesting: the rule is consumption, not containment.** ``LUMW0417`` fires when a bound marker
-sits inside a slot whose value *replaced or hid* its subtree. Only ``text`` (which replaces the
-element's content) and ``visibility`` (which removes it) consume; ``href`` and ``image`` rewrite
-one attribute and consume nothing. So detection refuses to mint inside a TEXT slot's subtree —
-an ``<img>`` inside the headline is not offered — while ``cta_label`` inside the anchor that
-holds ``cta_href`` is perfectly legal and is exactly the shape real markup takes.
+**Nesting: the rule is consumption, not containment — and it runs BOTH WAYS.** ``LUMW0417``
+fires when a bound marker sits inside a slot whose value *replaced or hid* its subtree. Only
+``text`` (which replaces the element's content) and ``visibility`` (which removes it) consume;
+``href`` and ``image`` rewrite one attribute and consume nothing. So detection refuses to mint
+inside a TEXT slot's subtree — an ``<img>`` inside the headline is not offered — while
+``cta_label`` inside the anchor that holds ``cta_href`` is perfectly legal and is exactly the
+shape real markup takes.
+
+The second direction matters just as much, and is easy to miss because detection has an order.
+``<p>Look <img> and <a class="btn"><span>Go</span></a></p>`` mints the image and the CTA first;
+the paragraph is only reached afterwards, and slotting it would put a CONSUMING slot on the
+PARENT of two markers already minted inside it. Binding the body then discards both — the same
+``LUMW0417``, arriving from above instead of below. So a consuming candidate is also refused
+when its own subtree already contains ANY marker (not merely a consuming one: a text slot's
+substitution swallows an ``href`` marker just as completely as it swallows a text one). First
+minted wins, which keeps the result deterministic, and the refusal is reported.
 
 The section-level ``visible`` slot is the one deliberate exception, and it has to be: it covers
 the whole section by definition, so treating it as a consumer would mean a section could hold
@@ -56,6 +66,39 @@ _BODY_TAGS = ("p",)
 _CTA_CLASS_RE = re.compile(r"(?:^|[-_])(?:btn|button|cta)(?:$|[-_])|button|btn|cta", re.I)
 
 
+class _Marks:
+    """Which elements already carry a slot, and which of those swallow what is inside them.
+
+    Two sets rather than one because the two directions of the nesting check ask different
+    questions: "is an ancestor going to swallow me?" is about CONSUMING slots only, while "am I
+    about to swallow something?" is about EVERY marker already minted below.
+    """
+
+    def __init__(self) -> None:
+        self.marked: set[int] = set()
+        self.consumed: set[int] = set()
+
+    def add(self, node: LexborNode, *, consumes: bool) -> None:
+        self.marked.add(node.mem_id)
+        if consumes:
+            self.consumed.add(node.mem_id)
+
+    def blocked(self, node: LexborNode, *, consuming: bool) -> bool:
+        """Would minting a slot on this element hit the LUMW0417 class, either way round?"""
+        current = node.parent
+        while current is not None:
+            if current.mem_id in self.consumed:
+                return True
+            current = current.parent
+        if not consuming:
+            return False
+        return any(
+            descendant.mem_id in self.marked
+            for descendant in node.traverse(include_text=False)
+            if descendant.mem_id != node.mem_id
+        )
+
+
 @dataclass(frozen=True)
 class DetectedSlots:
     """The slots one section offers, and what detection could not offer and why."""
@@ -84,12 +127,12 @@ def detect_slots(sanitized_html: str) -> DetectedSlots:
 
     specs: list[SlotSpec] = []
     notes: list[str] = []
-    consumed: set[int] = set()
+    marks = _Marks()
 
-    _detect_headline(body, specs, consumed)
-    _detect_cta(body, specs, notes, consumed)
-    _detect_images(body, specs, notes, consumed)
-    _detect_body(body, specs, notes, consumed)
+    _detect_headline(body, specs, marks)
+    _detect_cta(body, specs, notes, marks)
+    _detect_images(body, specs, notes, marks)
+    _detect_body(body, specs, notes, marks)
     _detect_visibility(body, specs, notes)
 
     if len(specs) > MAX_FRAGMENT_SLOTS:
@@ -106,19 +149,19 @@ def detect_slots(sanitized_html: str) -> DetectedSlots:
 # --------------------------------------------------------------------------- #
 
 
-def _detect_headline(body: LexborNode, specs: list[SlotSpec], consumed: set[int]) -> None:
+def _detect_headline(body: LexborNode, specs: list[SlotSpec], marks: _Marks) -> None:
     """One headline per section: the strongest heading tag present, first of that tag."""
     for tag in _HEADING_TAGS:
         for node in body.css(tag):
-            if not _visible_text(node) or _inside_consumed(node, consumed):
+            if not _visible_text(node) or marks.blocked(node, consuming=True):
                 continue
             specs.append(SlotSpec(selector=_selector(node), key="headline", kind="text"))
-            consumed.add(node.mem_id)
+            marks.add(node, consumes=True)
             return
 
 
 def _detect_cta(
-    body: LexborNode, specs: list[SlotSpec], notes: list[str], consumed: set[int]
+    body: LexborNode, specs: list[SlotSpec], notes: list[str], marks: _Marks
 ) -> None:
     """The section's call to action: its target first, then its words if they have an element.
 
@@ -128,24 +171,25 @@ def _detect_cta(
     when the anchor's words are its own text node there is nowhere to put it, and that is said
     out loud rather than left as a mysteriously missing key.
     """
-    anchor = _cta_anchor(body, consumed)
+    anchor = _cta_anchor(body, marks)
     if anchor is None:
         return
     specs.append(SlotSpec(selector=_selector(anchor), key="cta_href", kind="href"))
+    marks.add(anchor, consumes=False)
 
     label = _label_element(anchor)
-    if label is None:
+    if label is None or marks.blocked(label, consuming=True):
         notes.append(
             "no cta_label slot: the call to action's words are the anchor's own text, and the "
             "anchor already carries cta_href (one element holds one slot marker)"
         )
         return
     specs.append(SlotSpec(selector=_selector(label), key="cta_label", kind="text"))
-    consumed.add(label.mem_id)
+    marks.add(label, consumes=True)
 
 
 def _detect_images(
-    body: LexborNode, specs: list[SlotSpec], notes: list[str], consumed: set[int]
+    body: LexborNode, specs: list[SlotSpec], notes: list[str], marks: _Marks
 ) -> None:
     """Every ``<img>`` whose src is already a rehosted digest, capped.
 
@@ -155,7 +199,7 @@ def _detect_images(
     """
     found = 0
     for node in body.css("img"):
-        if _inside_consumed(node, consumed):
+        if marks.blocked(node, consuming=False):
             continue
         if asset_url_digest(node.attributes.get("src") or "") is None:
             continue
@@ -167,16 +211,22 @@ def _detect_images(
             return
         found += 1
         specs.append(SlotSpec(selector=_selector(node), key=_numbered("image", found), kind="image"))
-        consumed.add(node.mem_id)
+        marks.add(node, consumes=False)
 
 
 def _detect_body(
-    body: LexborNode, specs: list[SlotSpec], notes: list[str], consumed: set[int]
+    body: LexborNode, specs: list[SlotSpec], notes: list[str], marks: _Marks
 ) -> None:
     found = 0
     for tag in _BODY_TAGS:
         for node in body.css(tag):
-            if not _visible_text(node) or _inside_consumed(node, consumed):
+            if not _visible_text(node):
+                continue
+            if marks.blocked(node, consuming=True):
+                notes.append(
+                    f"no {_numbered('body', found + 1)!r} slot on a <{tag}> that wraps slots "
+                    "already minted inside it: replacing its copy would discard their values"
+                )
                 continue
             if found >= MAX_BODY_SLOTS:
                 notes.append(
@@ -188,11 +238,18 @@ def _detect_body(
             specs.append(
                 SlotSpec(selector=_selector(node), key=_numbered("body", found), kind="text")
             )
-            consumed.add(node.mem_id)
+            marks.add(node, consumes=True)
 
 
 def _detect_visibility(body: LexborNode, specs: list[SlotSpec], notes: list[str]) -> None:
-    """The whole section, shown or not — one slot, on the section's own root element."""
+    """The whole section, shown or not — one slot, on the section's own root element.
+
+    Deliberately outside :class:`_Marks` in both directions. The section root contains every
+    other slot by definition, so a containment check here would mean a section could hold this
+    slot or all the others and never both; and its fallback is "shown", so it consumes nothing
+    until a human hides the whole section — at which point every inner binding being moot is
+    precisely what was asked for.
+    """
     roots = [node for node in body.iter(include_text=False) if node.tag]
     if len(roots) != 1:
         notes.append(
@@ -208,9 +265,9 @@ def _detect_visibility(body: LexborNode, specs: list[SlotSpec], notes: list[str]
 # --------------------------------------------------------------------------- #
 
 
-def _cta_anchor(body: LexborNode, consumed: set[int]) -> LexborNode | None:
+def _cta_anchor(body: LexborNode, marks: _Marks) -> LexborNode | None:
     for node in body.css("a"):
-        if _inside_consumed(node, consumed) or node.mem_id in consumed:
+        if node.mem_id in marks.marked or marks.blocked(node, consuming=False):
             continue
         href = (node.attributes.get("href") or "").strip()
         if not href or href == "#":
@@ -245,16 +302,6 @@ def _label_element(anchor: LexborNode) -> LexborNode | None:
 
 def _visible_text(node: LexborNode) -> str:
     return " ".join((node.text(deep=True) or "").split())
-
-
-def _inside_consumed(node: LexborNode, consumed: set[int]) -> bool:
-    """Would this element be swallowed by a slot already minted above it?"""
-    current = node.parent
-    while current is not None:
-        if current.mem_id in consumed:
-            return True
-        current = current.parent
-    return False
 
 
 def _numbered(base: str, ordinal: int) -> str:

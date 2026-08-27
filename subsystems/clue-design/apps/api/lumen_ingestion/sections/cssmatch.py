@@ -213,9 +213,12 @@ def _keep_at_rule(
         return f"@{keyword} {prelude};".strip()
 
     if keyword in _GLOBAL_BLOCK_AT_RULES:
-        return f"@{keyword} {prelude} {{{tinycss2.serialize(rule.content)}}}".replace(
-            "  ", " "
-        )
+        # `rstrip`, never a `"  " -> " "` sweep over the whole rendered rule: an `@font-face`
+        # legitimately contains `local("My  Font")`, and a family whose real name has two spaces
+        # in it is not ours to tidy. The only double space this ever had to fix was the one
+        # BETWEEN the keyword and an empty prelude, which is exactly what rstrip removes.
+        head = f"@{keyword} {prelude}".rstrip()
+        return f"{head} {{{tinycss2.serialize(rule.content)}}}"
 
     if keyword in _CONDITIONAL_AT_RULES:
         inner = tinycss2.parse_rule_list(rule.content, skip_comments=True, skip_whitespace=True)
@@ -250,12 +253,21 @@ def _selector_could_match(selector: str, inventory: _Inventory) -> bool:
 
 
 def _split_selector_list(selector: str) -> list[str]:
-    """Split on top-level commas — the ones outside ``(``/``[``/quotes."""
+    """Split on top-level commas — the ones outside ``(``/``[``/quotes, and unescaped."""
     parts: list[str] = []
     depth = 0
     quote: str | None = None
     current: list[str] = []
-    for char in selector:
+    index = 0
+    while index < len(selector):
+        char = selector[index]
+        index += 1
+        if quote is None and char == "\\":
+            # An escaped character is part of an identifier and never a delimiter.
+            _decoded, next_index = _read_escape(selector, index - 1)
+            current.append(selector[index - 1 : next_index])
+            index = next_index
+            continue
         if quote is not None:
             current.append(char)
             if char == quote:
@@ -287,7 +299,14 @@ def _rightmost_compound(selector: str) -> str:
     depth = 0
     quote: str | None = None
     cut = 0
-    for index, char in enumerate(selector):
+    index = 0
+    while index < len(selector):
+        char = selector[index]
+        if quote is None and char == "\\":
+            # `\ ` is an escaped SPACE inside an identifier, not a descendant combinator.
+            _decoded, index = _read_escape(selector, index)
+            continue
+        index += 1
         if quote is not None:
             if char == quote:
                 quote = None
@@ -302,7 +321,7 @@ def _rightmost_compound(selector: str) -> str:
             depth = max(0, depth - 1)
             continue
         if depth == 0 and char in _COMBINATORS:
-            cut = index + 1
+            cut = index
     return selector[cut:].strip()
 
 
@@ -332,13 +351,26 @@ def _compound_could_match(compound: str, inventory: _Inventory) -> bool:
 
 
 def _strip_pseudos_and_attributes(compound: str) -> tuple[str, bool]:
-    """Remove ``[…]`` and every pseudo; report whether any pseudo carried an argument list."""
+    """Remove ``[…]`` and every pseudo; report whether any pseudo carried an argument list.
+
+    Escapes are carried through UNTOUCHED (``\\`` plus whatever it escapes), because a
+    backslash-escaped character is part of an identifier, not a delimiter. Tailwind's whole
+    responsive and fractional vocabulary is written that way — ``.md\\:flex``, ``.w-1\\/2``,
+    ``.\\32 xl\\:grid`` — so reading an escaped ``:`` as the start of a pseudo-class dropped
+    every one of those rules from every real page, silently. :func:`_parse_simple_compound` is
+    where the escapes are finally decoded, once the delimiters are known.
+    """
     out: list[str] = []
     index = 0
     length = len(compound)
     functional = False
     while index < length:
         char = compound[index]
+        if char == "\\":
+            _decoded, next_index = _read_escape(compound, index)
+            out.append(compound[index:next_index])
+            index = next_index
+            continue
         if char == "[":
             index = _skip_balanced(compound, index, "[", "]")
             continue
@@ -355,6 +387,32 @@ def _strip_pseudos_and_attributes(compound: str) -> tuple[str, bool]:
         out.append(char)
         index += 1
     return "".join(out), functional
+
+
+def _read_escape(text: str, index: int) -> tuple[str, int]:
+    """Decode one CSS identifier escape starting at the backslash. → ``(text, next index)``.
+
+    Two forms, per the CSS syntax spec: one to six hex digits naming a code point, optionally
+    followed by ONE whitespace character that terminates the escape and is consumed
+    (``\\32 xl`` is ``2xl``, and that trailing space is why a naive split on whitespace also gets
+    these wrong); or a backslash before any other character, which is that character literally.
+    A trailing backslash is not an escape and is returned as itself.
+    """
+    index += 1
+    if index >= len(text):
+        return "\\", index
+    digits = ""
+    while index < len(text) and len(digits) < 6 and text[index] in "0123456789abcdefABCDEF":
+        digits += text[index]
+        index += 1
+    if digits:
+        if index < len(text) and text[index] in " \t\n\r\f":
+            index += 1
+        try:
+            return chr(int(digits, 16)), index
+        except (ValueError, OverflowError):
+            return "�", index
+    return text[index], index + 1
 
 
 def _skip_balanced(text: str, start: int, opener: str, closer: str) -> int:
@@ -382,13 +440,23 @@ def _parse_simple_compound(compound: str) -> tuple[str | None, list[str], list[s
     """``a.button.is-primary#x`` → ``("a", ["x"], ["button", "is-primary"])``.
 
     Runs only over a compound that has already had its ``[…]`` and pseudos removed, so the
-    alphabet is exactly: an optional type selector, then ``.``- and ``#``-introduced names.
+    alphabet is exactly: an optional type selector, then ``.``- and ``#``-introduced names —
+    plus escapes, which are decoded HERE. Decoding last is what makes ``.a\\.b`` one class
+    called ``a.b`` rather than two called ``a`` and ``b``: by this point an unescaped ``.`` is
+    the only ``.`` that separates names.
     """
     tag: list[str] = []
     ids: list[list[str]] = []
     classes: list[list[str]] = []
     target: list[str] = tag
-    for char in compound:
+    index = 0
+    while index < len(compound):
+        char = compound[index]
+        if char == "\\":
+            decoded, index = _read_escape(compound, index)
+            target.append(decoded)
+            continue
+        index += 1
         if char == ".":
             classes.append([])
             target = classes[-1]

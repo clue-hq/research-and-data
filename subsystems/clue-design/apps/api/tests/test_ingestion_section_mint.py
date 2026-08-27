@@ -868,3 +868,143 @@ def test_a_fragment_carries_the_slots_detection_found() -> None:
     assert "headline" in hero.slot_keys
     assert "body" in hero.slot_keys
     assert "visible" in hero.slot_keys
+
+
+# --------------------------------------------------------------------------- #
+# Fix round 1
+# --------------------------------------------------------------------------- #
+
+
+TAILWIND_HTML = (
+    '<section class="hero md:flex w-1/2">'
+    '<h1 class="text-4xl">Ship</h1><p class="lg:mt-8">Copy</p></section>'
+)
+
+
+def test_an_escaped_class_selector_is_read_as_the_class_it_names() -> None:
+    """I1. Tailwind writes ``.md\\:flex`` and ``.w-1\\/2`` — the backslash is a CSS identifier
+    escape, and the character after it is part of the NAME. Reading the escaped ``:`` as a
+    pseudo-class start silently dropped every responsive and fractional utility a real page has:
+    invisible under-inclusion, which is the one failure this module exists to prevent."""
+    sheets = [
+        _Sheet(
+            "s.css",
+            ".md\\:flex { display: flex }\n"
+            ".w-1\\/2 { width: 50% }\n"
+            ".text-4xl { font-size: 2.25rem }\n"
+            ".xl\\:hidden { display: none }\n",
+        )
+    ]
+    matched = rules_for_subtree(sheets, subtree_html=TAILWIND_HTML)
+    assert ".md\\:flex" in matched.css
+    assert ".w-1\\/2" in matched.css
+    assert ".text-4xl" in matched.css
+    assert ".xl\\:hidden" not in matched.css
+    assert matched.rules_kept == 3
+
+
+def test_an_escaped_class_still_honours_a_real_pseudo_beside_it() -> None:
+    sheets = [_Sheet("s.css", ".md\\:flex:hover { color: red }\n.nope\\:x:hover { color: blue }")]
+    matched = rules_for_subtree(sheets, subtree_html=TAILWIND_HTML)
+    assert ".md\\:flex:hover" in matched.css
+    assert ".nope\\:x:hover" not in matched.css
+
+
+def test_a_hex_escape_in_a_class_name_is_decoded_before_matching() -> None:
+    """``.\\32 xl\\:flex`` is how a name that starts with a digit is written."""
+    sheets = [_Sheet("s.css", ".\\32 xl\\:flex { display: flex }")]
+    matched = rules_for_subtree(
+        sheets, subtree_html='<section class="2xl:flex"><p>x</p></section>'
+    )
+    assert matched.rules_kept == 1
+
+
+def test_an_escaped_comma_does_not_split_a_selector_list() -> None:
+    sheets = [_Sheet("s.css", ".a\\,b { color: red }")]
+    matched = rules_for_subtree(sheets, subtree_html='<section class="a,b"></section>')
+    assert matched.rules_kept == 1
+
+
+def test_a_font_face_keeps_the_double_spaces_inside_its_own_strings() -> None:
+    """M5. ``local("My  Font")`` names a font whose family really has two spaces in it.
+    Collapsing them rewrites the stylesheet's meaning to tidy up our own serialization."""
+    sheets = [
+        _Sheet("s.css", '@font-face { font-family: X; src: local("My  Font"), url(x.woff2) }')
+    ]
+    matched = rules_for_subtree(sheets, subtree_html=HERO_HTML)
+    assert 'local("My  Font")' in matched.css
+
+
+def test_a_consuming_slot_is_not_minted_over_slots_already_inside_it() -> None:
+    """I2 (reviewer probe). The ancestry check ran one way only, so a paragraph detected LAST
+    could be slotted as the PARENT of an image and a CTA already marked inside it. Binding the
+    body then replaces the subtree and both inner values are discarded — LUMW0417, the exact
+    class the check exists to prevent, arriving from the other direction."""
+    digest = _digest("inline")
+    html = (
+        "<section><p>Look <img src=\"/asset-store/"
+        + digest
+        + '"> and <a class="btn" href="/d"><span>Go</span></a></p></section>'
+    )
+    detected = detect_slots(html)
+    keys = {spec.key for spec in detected.specs}
+    assert "image" in keys
+    assert "cta_label" in keys
+    assert "body" not in keys
+    assert any("body" in note for note in detected.notes)
+
+
+def test_a_paragraph_that_contains_nothing_slotted_is_still_body_copy() -> None:
+    """The guard must discriminate, not blanket-refuse: an ordinary paragraph beside a slotted
+    image is still editable copy."""
+    digest = _digest("inline")
+    html = f'<section><img src="/asset-store/{digest}"><p>Real copy</p></section>'
+    keys = {spec.key for spec in detect_slots(html).specs}
+    assert {"image", "body"} <= keys
+
+
+def test_a_non_consuming_slot_may_still_sit_over_one_that_consumes() -> None:
+    """An href slot rewrites one attribute and swallows nothing, so ``cta_href`` on the anchor
+    and ``cta_label`` on its span remain the ruled, correct shape."""
+    specs = {spec.key for spec in detect_slots(HERO_HTML).specs}
+    assert {"cta_href", "cta_label"} <= specs
+
+
+def test_the_whole_section_visibility_slot_survives_the_containment_guard() -> None:
+    """The section root contains every other slot by definition. It is the one exception, and
+    it costs nothing: its fallback is shown, so it consumes nothing until a human hides it."""
+    assert "visible" in {spec.key for spec in detect_slots(HERO_HTML).specs}
+
+
+def test_a_bidirectionally_guarded_section_still_annotates_cleanly() -> None:
+    digest = _digest("inline")
+    html = (
+        "<section><h1>Ship</h1><p>Look <img src=\"/asset-store/"
+        + digest
+        + '"></p><p>Plain copy</p></section>'
+    )
+    detected = detect_slots(html)
+    annotated = annotate_fragment_slots(html, detected.specs)
+    assert set(annotated.slot_manifest) == {spec.key for spec in detected.specs}
+    assert annotated.slot_manifest["body"]["fallback"] == "Plain copy"
+
+
+def test_a_long_page_mints_every_section_it_honestly_offers() -> None:
+    """FOUNDER RULING 2026-08-27: the acceptance's "at least five" is a FLOOR. The budget is a
+    runaway backstop, not a working limit, so a page with more sections than the old default
+    (12) now yields all of them — extraction is never the layer that decides a real page had
+    fewer sections than it did."""
+    body = "".join(
+        f'<section class="section_{n}"><h1>H{n}</h1><p>P{n}</p></section>' for n in range(18)
+    )
+    outcome, _ = _mint(f"<html><body><main>{body}</main></body></html>")
+    assert len(outcome.minted) == 18
+    assert not [d for d in outcome.diagnostics if d["code"] == "LUMI0532"]
+
+
+def test_the_backstop_is_the_capture_probes_own_section_ceiling() -> None:
+    """One ceiling, not two: minting must not be able to truncate a page the capture layer was
+    willing to measure in full."""
+    from lumen_ingestion.sections.bands import MAX_PERSISTED_BANDS
+
+    assert SECTION_MINT_CAP == MAX_PERSISTED_BANDS == 40

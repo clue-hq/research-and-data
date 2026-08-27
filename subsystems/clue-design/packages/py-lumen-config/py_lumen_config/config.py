@@ -94,6 +94,14 @@ class Settings(BaseSettings):
     # Deliberately slow: it is a safety net over a rare failure, not a control loop, and every
     # pass is a query against three indexed status predicates.
     lumen_design_reaper_interval_s: float = 300.0
+    # Clone-fidelity F2.2: the RUNAWAY BACKSTOP on how many website sections one ingestion may
+    # mint as fragments. FOUNDER RULING (2026-08-27): extraction yields as many fragments as the
+    # page honestly offers — the acceptance's "at least five" is a floor, not a target — so this
+    # must never be the thing that truncates a real page. 40 is the capture probe's own
+    # MAX_SECTIONS (capture/geometry.py) and the persisted-band ceiling (sections/bands.py), so
+    # minting cannot be a SECOND, tighter ceiling on a page the capture layer was willing to
+    # measure in full. Tripping it is reported loudly (LUMI0532), never silently truncated.
+    lumen_fragment_mint_cap: int = 40
 
     # --- Image generation (image_provider) ---
     # Blank base_url/api_key → /assets/generate returns a clean 503.

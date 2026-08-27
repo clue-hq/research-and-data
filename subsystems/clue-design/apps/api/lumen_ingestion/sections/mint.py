@@ -48,6 +48,7 @@ from lumen_api.fragments import (
 )
 from lumen_api.fragments.cssscope import PRELUDE_REFERENCE_STRIP
 from lumen_api.fragments.sanitize import sanitize_fragment_html
+from py_lumen_config import settings
 from selectolax.lexbor import LexborHTMLParser
 from selectolax.parser import HTMLParser as SectionParser
 from tinycss2 import ast
@@ -58,14 +59,19 @@ from .slotdetect import detect_slots
 
 logger = logging.getLogger(__name__)
 
-#: How many sections ONE ingestion may mint, across every page it captured.
+#: The RUNAWAY BACKSTOP on how many sections one ingestion mints, across every page it captured.
 #:
-#: A fragment is not free: a payload blob, a preview blob, a row, and — much more expensively —
-#: a line in a human's picker. Twelve is one homepage's worth of real sections (nav, hero, three
-#: or four feature bands, proof, testimonial, pricing, FAQ, CTA, footer), which is the shape
-#: this phase targets. Reaching it is reported, never silently truncated: an ingest that clones
-#: twelve of forty sections and does not say so is an ingest nobody can trust.
-SECTION_MINT_CAP = 12
+#: **Not a working limit.** FOUNDER RULING 2026-08-27: extraction yields as many fragments as the
+#: page honestly offers, and the F2 acceptance's "at least five" is a floor, not a target. This
+#: number exists so a pathological page cannot mint without bound; it must never be the reason a
+#: real one comes back short. That is why it is the capture probe's own ``MAX_SECTIONS``
+#: (``capture/geometry.py``), which is also the persisted-band ceiling (``sections/bands.py``),
+#: rather than a guess about how many sections a homepage "should" have — minting is then
+#: incapable of being a SECOND, tighter ceiling on a page the capture layer measured in full.
+#:
+#: Configurable as ``LUMEN_FRAGMENT_MINT_CAP``. Tripping it is reported loudly (``LUMI0532``),
+#: for the sections of a page that were skipped and for whole later pages never reached.
+SECTION_MINT_CAP = int(settings.lumen_fragment_mint_cap)
 
 #: A preview is a thumbnail in a picker, not a rendition. A 2x full-page shot of a tall hero is
 #: megabytes; nothing that reads this blob wants them.
