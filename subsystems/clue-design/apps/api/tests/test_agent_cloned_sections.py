@@ -67,6 +67,7 @@ def _mint(
     slots: Any = HERO_SLOTS,
     preview: bytes | None = PNG,
     approved: bool = True,
+    provenance: dict | None = None,
     **kwargs: Any,
 ) -> dict:
     row, _artifact = create_web_fragment(
@@ -80,7 +81,8 @@ def _mint(
         label=label,
         slots=slots,
         preview=preview,
-        provenance={"page_url": SOURCE_URL, "slots": [spec.key for spec in slots]},
+        provenance=provenance
+        or {"page_url": SOURCE_URL, "slots": [spec.key for spec in slots]},
         **kwargs,
     )
     if approved:
@@ -520,3 +522,39 @@ def test_a_web_turn_is_handed_the_workspaces_cloned_section_capability(
     # stage preview bytes where the runtime never looks.
     assert registry.workspace_id == "ws_test_cloned_sections"
     assert str(registry.cache_dir).startswith(str(tmp_path / "engine-cache"))
+
+
+# --------------------------------------------------------------------------- #
+# F2 fix wave — W5: discovery reads like the page it came from
+# --------------------------------------------------------------------------- #
+
+
+def test_discovery_lists_sections_in_document_order_not_registry_recency(
+    workspace_id: str, design_storage: FsStorage, tmp_path
+) -> None:
+    """A picker's rows are a page read top to bottom. "Newest first" scattered that into the
+    order the minter happened to write rows in, which carries no meaning a human can use."""
+    kit = _seed_kit(workspace_id)
+    for index, (role, heading) in enumerate(
+        [("footer", "Footer"), ("nav", "Nav"), ("hero", "Hero")]
+    ):
+        _mint(
+            workspace_id,
+            design_storage,
+            section_role=role,
+            html=f'<section class="s{index}"><h1>{heading}</h1><p>Copy {index}.</p></section>',
+            slots=(),
+            source_kit_id=kit["brand_kit_id"],
+            source_kit_version=int(kit["version"]),
+            provenance={"page_url": "https://x.example/", "section_index": 2 - index},
+        )
+
+    listed = _registry(workspace_id, design_storage, tmp_path / "cache").list_sections()
+    indexes = [
+        section["section_index"]
+        for section in listed["sections"]
+        if section["section_index"] is not None
+    ]
+    assert indexes == sorted(indexes)
+    assert "total" in listed
+    assert listed["total"] >= len(listed["sections"])

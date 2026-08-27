@@ -136,12 +136,31 @@ class DurableAgentClonedSectionRegistry:
         rows = self._repository().list_web_fragments(
             section_role=section_role, status="approved"
         )
-        sections = [self._section_row(row) for row in rows[:CLONED_SECTION_LIST_MAX]]
+        # DOCUMENT ORDER, not registry recency (W5). A picker's rows are a page read top to
+        # bottom — nav, hero, proof, footer — and "newest first" scattered that into the order
+        # the minter happened to write rows in, which carries no meaning a human can use. Page
+        # first so a multi-page walk stays grouped, then the section's own index within it.
+        ordered = sorted(rows, key=self._document_order)
+        sections = [self._section_row(row) for row in ordered[:CLONED_SECTION_LIST_MAX]]
         return {
             "schema_version": CLONED_SECTION_SCHEMA_VERSION,
             "workspace_id": self.workspace_id,
             "sections": sections,
+            # What EXISTS, beside what is shown. A caller that sees eight rows and no total
+            # cannot tell a complete answer from a truncated one.
+            "total": len(rows),
         }
+
+    @staticmethod
+    def _document_order(row: JsonObject) -> tuple:
+        provenance = row.get("provenance")
+        provenance = provenance if isinstance(provenance, dict) else {}
+        index = provenance.get("section_index")
+        return (
+            str(provenance.get("page_url") or row.get("source_url") or ""),
+            int(index) if isinstance(index, int) else 1_000_000,
+            str(row.get("fragment_id") or ""),
+        )
 
     @staticmethod
     def _section_row(row: JsonObject) -> JsonObject:
@@ -161,6 +180,9 @@ class DurableAgentClonedSectionRegistry:
             if isinstance(slot_keys, list)
             else [],
             "page_url": provenance.get("page_url"),
+            # Where this section sat on its page — the one fact that makes a list of clones read
+            # like the page it came from rather than like a registry dump.
+            "section_index": provenance.get("section_index"),
             "created_at": row.get("created_at"),
         }
 

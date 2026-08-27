@@ -1040,3 +1040,19 @@ def test_a_gate_refusal_carrying_no_code_still_reads_as_a_permission_answer(
     result = json.loads(_tools(tmp_path, registry).insert_cloned_section(HERO_ID))
 
     assert result["error_code"] == "cloned_section.not_insertable"
+
+
+def test_search_says_how_many_matched_not_only_how_many_it_showed(
+    tmp_path: Path, registry: FakeRegistry
+) -> None:
+    """W5. `count` alone cannot tell a complete answer from a truncated one, and the default
+    limit is 8 — so on the F2 acceptance walk's own site an unqualified call showed 8 of 13
+    approved sections with nothing saying the other five existed."""
+    result = json.loads(_tools(tmp_path, registry).search_cloned_sections())
+    assert result["total"] >= result["count"]
+    assert "total" in result
+
+    narrowed = json.loads(_tools(tmp_path, registry).search_cloned_sections(limit=1))
+    assert narrowed["count"] == 1
+    assert narrowed["total"] > 1
+    assert "of" in narrowed["note"] and "limit" in narrowed["note"]

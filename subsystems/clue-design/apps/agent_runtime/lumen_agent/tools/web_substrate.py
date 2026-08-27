@@ -4428,7 +4428,8 @@ class LumenWebTools:
             for section in (listing or {}).get("sections") or []
             if isinstance(section, dict) and section.get("fragment_id")
         ]
-        ordered = self._rank_cloned_sections(candidates, q or "")[:limit]
+        ranked = self._rank_cloned_sections(candidates, q or "")
+        ordered = ranked[:limit]
         # DESCRIBE ONLY WHAT IS RETURNED. The slot kinds live in each artifact's payload and the
         # preview lives in durable storage, so describing the whole library to answer one query
         # would read a blob per section the agent never sees.
@@ -4481,8 +4482,18 @@ class LumenWebTools:
             "query": q or None,
             "role": requested_role,
             "count": len(results),
+            # What MATCHED, beside what is shown (W5). `count` alone cannot tell a complete
+            # answer from a truncated one, and the default limit is 8 — so on the F2 walk's own
+            # site an unqualified call showed 8 of 13 with nothing saying the other 5 existed.
+            "total": len(ranked),
             "results": results,
         }
+        if len(ranked) > len(results):
+            payload["note"] = (
+                f"showing {len(results)} of {len(ranked)} matching cloned section(s) — raise "
+                "`limit` (max "
+                f"{_CLONED_SECTION_SEARCH_LIMIT_MAX}) or narrow the query to see the rest."
+            )
         if not results:
             payload["note"] = self._cloned_section_empty_note(
                 q or "", requested_role, len(candidates)
@@ -5033,8 +5044,8 @@ class LumenWebTools:
             return [
                 _text_block(
                     f"view: cloned section {fragment_id} — {label}. It has no preview image to "
-                    "look at (the capture it came from stored no screenshot of this band). "
-                    "Judge it from its role, its label and its slots."
+                    "look at: no crop could be derived for this band from what the browser "
+                    "measured. Judge it from its role, its label and its slots."
                 )
             ]
         self.record(

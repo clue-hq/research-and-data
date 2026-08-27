@@ -683,7 +683,12 @@ def _anti_patterns(
     unread = len(sequence) - len(bands)
     # Same gate as the cadence's dark rule, and for the same reason: this is the
     # exclusion built on that count, so it may not outlive the count's honesty.
-    if _counts_for_the_page(bands, sequence) and len(dark) * 3 <= len(bands):
+    # ZERO dark bands is not this rule's case (W8). "No EXTRA dark sections… a SECOND dark band"
+    # is wrong when there is no first, and the cadence field one heading above already says the
+    # right thing for that page ("A dark section would be new to this brand"). So the exclusion
+    # speaks only where there IS a dark band to be extra to; otherwise it abstains rather than
+    # legislating from a count of nothing.
+    if _counts_for_the_page(bands, sequence) and dark and len(dark) * 3 <= len(bands):
         rules.append(
             GrammarRule(
                 rule=(
