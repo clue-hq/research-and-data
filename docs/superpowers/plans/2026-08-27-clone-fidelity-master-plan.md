@@ -201,6 +201,38 @@ default. A dedicated fragment inspector card (slot values from the manifest) lan
   absent from all site navigation, marked `noindex`, and tracked separately in the batch
   publication manifest. Accepted disadvantage: less elegant URL until Part-IV item 5
   (tenant-subdomain serving) lands — recorded as the CP2 URL-polish dependency, not a blocker.
+- **D-F6 — the clone-repair ladder: RULED 2026-08-28 (founder; amends the F2-era "never edit a
+  cloned section's internals" law, which protected brokenness).** Governing principle, verbatim:
+  *"A clone is the starting reference, not an untouchable artifact. Never preserve a broken
+  result merely because it came from the original site."* When a cloned section is broken, the
+  agent repairs in order: **(1)** reproduce the original experience with supported primitives;
+  **(2)** build an equivalent interaction serving the same storytelling purpose; **(3)** a
+  deliberate, compact static fallback — artificial scroll height removed entirely; blank dead
+  space is never acceptable. Whatever the rung, the repair preserves: content hierarchy and
+  order, typography and colors, image treatment, proportions and density, spacing, section
+  rhythm, the interaction's storytelling purpose, and the brand's character — the Brand Grammar
+  Audit governs the adaptation. **Mechanics:** the harvested original stays IMMUTABLE (evidence),
+  marked `degraded` with the reason; the repair is a NEW fragment carrying `derived_from` +
+  reason provenance; the page pins the repaired one. Amended law: *"Never casually rewrite a
+  working cloned section. When a clone is visibly or functionally broken, preserve the original
+  artifact and repair, rebuild, or replace it through the clone-repair ladder."* Expectation
+  set honestly: rung 1 is often unreachable (the engine's interaction vocabulary is deliberately
+  bounded); rungs 2–3 are the common case, as with Ploy.
+- **D-F7 — the review function: RULED 2026-08-28 (founder).** Clone/audit review knowledge lives
+  in a SHARED RUBRIC artifact, never inside one agent's private prompt: soft on minor
+  differences (animation timing), STRICT on brokenness (blank space, missing content, broken
+  controls, unusable height, invisible elements, failed mobile behavior), STRICT on brand
+  coherence after repair (measured spacing, density, typography, colors, rhythm). A
+  fast-loop-style flag (scene-lane precedent: reviewer removed, orchestrator self-reviews,
+  ~2× faster) quarantines the separate reviewer agent; the orchestrator then self-reviews
+  against the SAME rubric. The flag changes WHO checks, never WHAT is checked.
+- **D-F8 — hidden source sections: RULED 2026-08-28 (founder) — mintable-but-dormant.** A
+  section the source site hides is: preserved with "hidden on source site" provenance; NEVER
+  auto-approved by the kit cascade; excluded from default agent discovery; shown in the
+  fragment inspector as "hidden on source site"; activated only by a human; activation requires
+  a usable preview. Agent behavior: a dormant section never appears on a generated page by
+  default and the agent never proactively offers it — it surfaces only when the user asks for
+  something it serves.
 
 ---
 
@@ -283,19 +315,44 @@ sanitizer red-cases (script, onclick, remote img, form) all refuse or strip as r
 **Acceptance:** ingesting insighthealth.ai or stripe.com yields ≥5 approved fragments with slots
 and previews; the agent can list and insert them.
 
-## Phase F3 — CHECKPOINT 1: one perfect cloned homepage
+## Phase F3 — CHECKPOINT 1: one perfect cloned homepage (AMENDED 2026-08-28 per D-F6/D-F7/D-F8)
 
+- **F3.0 Substrate deltas for the three rulings** (one migration; the F1 immutability discipline
+  unchanged): fragment status vocabulary gains `dormant` (D-F8) — minted for hidden-on-source
+  sections (probe-skip/outside-root class evidence) instead of dropped-or-offered, never
+  cascade-approved, excluded from default discovery, human-activated only, activation requires
+  a usable preview; a `degraded` marker + reason on originals and `derived_from` + reason
+  provenance on repairs (D-F6); **dead-height detection at mint** (section height vastly
+  exceeding visible content ⇒ born `degraded` with reason — the repair ladder's trigger).
 - **F3.1** Chat-driven walk: "recreate our homepage" → agent assembles fragments in source order,
-  fills slots, adds nothing; publish at one slug.
+  fills slots, adds nothing; **degraded clones go through the D-F6 repair ladder** (compose the
+  replacement under the Grammar Audit → mint as a derived fragment → pin the repair, lineage
+  recorded); publish at one slug. The reuse-ladder prompt law is amended to D-F6's wording.
 - **F3.2** Fragment inspector card (slot values: text fields, asset picker, visibility toggles;
-  dev shell first, FE parity after) + D-F3 mobility ruling wired into the bridge allowlists.
-- **F3.3** The review gate: full-page screenshot vs F0's reference screenshot — structured
-  coherence critique (agent-facing, advice-only per standing carve-outs) + a blind side-by-side
-  as the founder acceptance walk.
+  dev shell first, FE parity after) + D-F3 mobility ruling wired into the bridge allowlists +
+  D-F8 affordances ("hidden on source site" display, human activation with preview) + the
+  degraded→repaired lineage visible.
+- **F3.3** The review gate — **behavioral, not just pixel** (D-F6's detector half + D-F7's
+  rubric): full-page screenshot vs F0's reference PLUS scroll-through capture (interaction
+  states at several positions), mobile viewport, console errors, artificial-height-collapse
+  check, reduced-motion; the SHARED clone-review rubric artifact (soft on minor differences /
+  strict on brokenness / strict on post-repair coherence) consumed by the reviewer agent — and,
+  behind the **fast-loop flag**, by the orchestrator self-reviewing with the reviewer
+  quarantined (D-F7); structured critique agent-facing, advice-only per standing carve-outs;
+  a blind side-by-side as the founder acceptance walk.
+- **F3.4** F2 quality carries (bounded wave, not scope creep): compound-band segmentation
+  refinement; role-recall re-measure on real inventory; CSS byte + preview-bytes budgets;
+  the prose round (grammar-audit wording per founder direction, n≥2 dark wording, implausible-
+  leading abstention); ledgered minors (LUMW0606 split, diagnostic id escaping, fragmentless
+  second-render guard, duplicate-pin instance drop).
 
 **Acceptance (CP1):** a published page a reviewer cannot reliably distinguish from the client's
 real homepage at 1440px; fonts present (per D-F2 ruling); every asset served from our origin;
-zero console errors; homepage remains re-derivable (markers intact).
+zero console errors; **no dead scroll-height regions — every degraded clone repaired through
+the ladder with lineage recorded (D-F6)**; dormant sections absent from the page and from
+default discovery yet visible in the inspector (D-F8); the review gate exercises the behavioral
+walk under the shared rubric in BOTH flag states (D-F7); homepage remains re-derivable
+(markers intact).
 
 ## Phase F4 — CHECKPOINT 2: ABM campaign pages, explicit-URL-only
 
