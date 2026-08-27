@@ -207,6 +207,25 @@ def test_a_brand_with_no_type_evidence_reports_no_measured_type_treatment() -> N
     assert "measured" not in bases
 
 
+def test_an_absurd_font_family_cannot_blow_the_rule_length_bound() -> None:
+    """The one place unbounded captured text reaches a length-capped field: a
+    site declaring a whole CSS stack as its family must not cost the WHOLE audit
+    (the schema would refuse it, and the kit would publish auditless)."""
+    stack = ", ".join(f"Family{index}" for index in range(60))
+    evidence = _evidence()
+    evidence = evidence.model_copy(
+        update={
+            "type_samples": [
+                sample.model_copy(update={"family": stack})
+                for sample in evidence.type_samples
+            ]
+        }
+    )
+    audit = extract_grammar_audit(evidence, _kit_for(evidence))
+    assert audit.type_treatment.rules
+    assert all(len(rule.rule) <= 400 for rule in audit.type_treatment.rules)
+
+
 def test_the_type_law_forbids_restating_the_ramp_on_a_heading() -> None:
     evidence = _evidence()
     audit = extract_grammar_audit(evidence, _kit_for(evidence))

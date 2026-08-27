@@ -63,6 +63,7 @@ _MAX_TEXT = 400
 _MAX_SEQUENCE = 20
 _MAX_TOKENS_PER_LINE = 6
 _MAX_SURFACE_RULES = 3
+_MAX_FAMILY = 60
 
 #: A provenance pointer that begins here was MEASURED off the brand's live site;
 #: anything else is an engine scale default. Same prefix the consumption side
@@ -266,7 +267,11 @@ def _style_value(entry: Any) -> Optional[dict[str, Any]]:
 
 
 def _style_text(style: dict[str, Any]) -> str:
-    parts = [str(style.get("font_family") or "").strip()]
+    # The family is the one part of this line that comes from unbounded captured
+    # text — a site can declare its whole CSS stack as one family — and the rule
+    # is length-capped, so an uncapped family would cost the entire audit rather
+    # than one long word.
+    parts = [str(style.get("font_family") or "").strip()[:_MAX_FAMILY]]
     size = style.get("font_size")
     if isinstance(size, (int, float)):
         parts.append(f"{_trim(size)}px")
