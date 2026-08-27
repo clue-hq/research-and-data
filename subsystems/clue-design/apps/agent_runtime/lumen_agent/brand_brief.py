@@ -259,7 +259,12 @@ def render_grammar_audit(audit: JsonObject) -> GrammarAuditRender:
         for index, line in enumerate(lines):
             entries.append((position, heading, index, line))
         if not lines:
-            absences[heading] = _text(field.get("absent"))
+            # A field with no rules is an absence — the extractor guarantees a
+            # reason, and a payload that arrives without one still says NOT KNOWN
+            # rather than inventing a cause.
+            absences[heading] = (
+                _text(field.get("absent")) or "no rule was recorded for this field."
+            )
 
     # The drop order: latest rule within a field first, later field breaking ties.
     order = sorted(
@@ -326,8 +331,10 @@ def _assemble_audit(
         if kept:
             body = kept
         elif heading in absences:
-            body = [f"NOT KNOWN — {absences[heading] or 'no evidence supported a rule here.'}"]
+            body = [f"NOT KNOWN — {absences[heading]}"]
         else:
+            # The field HAD rules and the budget took all of them. Saying NOT
+            # KNOWN here would be a lie: the kit knows, this rendering does not.
             body = [
                 "(every rule in this field was dropped to fit the budget — treat it as "
                 "unknown, not as absent)"

@@ -27,6 +27,7 @@ from pathlib import Path
 
 import pytest
 
+from lumen_agent import brand_brief
 from lumen_agent.brand_brief import (
     GRAMMAR_AUDIT_CHAR_BUDGET,
     GRAMMAR_AUDIT_SCHEMA_VERSION,
@@ -249,6 +250,29 @@ def test_the_cut_takes_the_tail_of_a_field_before_the_head_of_another() -> None:
     render = render_grammar_audit(_fat_audit())
     for name in ("type_treatment", "cadence", "color_frequency", "surface_language", "anti_patterns"):
         assert f"{name} rule 0 " in render.markdown
+
+
+def test_a_budget_too_small_for_any_rule_says_so_instead_of_lying(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The floor case. Dropping every rule must not read as "this brand has no
+    cadence" — the kit knows, this rendering does not, and it says which."""
+    monkeypatch.setattr(brand_brief, "GRAMMAR_AUDIT_CHAR_BUDGET", 400)
+    render = brand_brief.render_grammar_audit(_audit())
+    assert render.dropped_rules == 8
+    sections = "## " + render.markdown.split("## ", 1)[1]
+    assert "NOT KNOWN" not in sections
+    assert sections.count("dropped to fit the budget") == 5
+    # Never half a rule, even here.
+    assert not [line for line in render.markdown.splitlines() if line.startswith("- ")]
+
+
+def test_a_field_that_arrives_with_neither_rules_nor_a_reason_still_says_not_known() -> None:
+    """Defence against a hand-built or future payload the extractor's own XOR
+    would have refused: absence is reported, never silently skipped."""
+    markdown = render_grammar_audit(_audit(cadence={"rules": [], "absent": None})).markdown
+    body = markdown.split("## Cadence", 1)[1].split("## ", 1)[0]
+    assert "NOT KNOWN" in body
 
 
 def test_an_audit_that_fits_is_not_marked_truncated() -> None:
