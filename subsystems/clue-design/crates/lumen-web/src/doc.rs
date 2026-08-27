@@ -686,6 +686,23 @@ pub fn fragment_id_is_valid(value: &str) -> bool {
     })
 }
 
+/// The ONE class a fragment's wrapper and its stored CSS agree on:
+/// `lumen-frag-<16 hex>` — the `frag_` prefix stripped, because
+/// `.lumen-frag-frag_…` says "frag" twice and the prefix carries no
+/// information a class name needs.
+///
+/// `None` for any id that is not a valid fragment id, which is what makes the
+/// re-check structural rather than a habit: a document loaded straight from
+/// storage may never have been through `validate_web_doc`, and this class is
+/// interpolated into live markup. The Python side's
+/// `lumen_api.fragments.fragment_wrapper_class` is the same spelling on the
+/// other side of the seam — the artifact's CSS is scoped under whatever IT
+/// returns, so a divergence here renders the section unstyled.
+pub fn fragment_wrapper_class(fragment_id: &str) -> Option<String> {
+    fragment_id_is_valid(fragment_id)
+        .then(|| format!("lumen-frag-{}", &fragment_id["frag_".len()..]))
+}
+
 /// Slot keys come from the artifact's slot manifest, which is machine-minted
 /// from the cloned markup, so the grammar can be narrow: 1–64 characters of
 /// `[a-z0-9_-]` and nothing else.

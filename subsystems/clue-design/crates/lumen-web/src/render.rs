@@ -9,8 +9,8 @@
 //! layer's styling hooks, not instrumentation.
 
 use crate::doc::{
-    calendly_url_is_valid, ButtonAction, ComponentSpec, EmbedProvider, MarqueeDirection,
-    WebBackgroundImage, WebDoc, WebNode, WebNodeKind,
+    calendly_url_is_valid, fragment_wrapper_class, ButtonAction, ComponentSpec, EmbedProvider,
+    MarqueeDirection, WebBackgroundImage, WebDoc, WebNode, WebNodeKind,
 };
 use crate::runtime::{PLATFORM_CSS, PLATFORM_RUNTIME_JS};
 use crate::theme::WebTheme;
@@ -50,6 +50,28 @@ pub struct CustomComponentRuntimeFrame {
     pub warning_count: usize,
 }
 
+/// One API-resolved fragment artifact, keyed in `RenderOptions::fragments` by
+/// its `frag_<16 hex>` id (clone-fidelity F1.3).
+///
+/// The canonical document stores only the id. The artifact — sanitized once at
+/// creation and frozen — is resolved outside the engine from the registry and
+/// arrives here as markup the renderer emits VERBATIM. The renderer never
+/// sanitizes, never rewrites, and never manufactures a fragment it was not
+/// handed: a missing entry renders the placeholder, exactly as a missing
+/// custom-component pin does.
+///
+/// Keyed by FRAGMENT id rather than node id (the custom-component frame map's
+/// key) because a fragment artifact is content-addressed: two nodes pinning
+/// the same section share one artifact, so one entry serves both and the API
+/// reads each artifact once. Per-node divergence is the slot layer's, and
+/// slots live on the node — F1.4 substitutes them at this arm's call site.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct FragmentContent {
+    /// The artifact's sanitized HTML. Slot markers are intact; the marker's
+    /// own content is the fallback content until F1.4 substitutes into it.
+    pub html: String,
+}
+
 #[derive(Clone, Debug)]
 pub struct RenderOptions {
     pub mode: RenderMode,
@@ -62,6 +84,10 @@ pub struct RenderOptions {
     /// API-resolved runtime frames keyed by canonical node id. Missing entries
     /// preserve the explicit P6.1 placeholder.
     pub custom_component_runtimes: BTreeMap<String, CustomComponentRuntimeFrame>,
+    /// API-resolved fragment artifacts keyed by `frag_<16 hex>` id. Missing
+    /// entries render the F1.3 placeholder.
+    #[allow(clippy::doc_markdown)]
+    pub fragments: BTreeMap<String, FragmentContent>,
 }
 
 impl RenderOptions {
@@ -72,6 +98,7 @@ impl RenderOptions {
             tailwind_runtime_src: None,
             bridge_script: None,
             custom_component_runtimes: BTreeMap::new(),
+            fragments: BTreeMap::new(),
         }
     }
 
@@ -82,6 +109,7 @@ impl RenderOptions {
             tailwind_runtime_src: None,
             bridge_script: None,
             custom_component_runtimes: BTreeMap::new(),
+            fragments: BTreeMap::new(),
         }
     }
 }
@@ -110,6 +138,31 @@ pub fn page_uses_components(doc: &WebDoc, page_id: &PageId) -> bool {
             )
         )
     })
+}
+
+/// Every fragment artifact id the page REFERENCES, in reachable order, once
+/// each — the engine's own answer to "which artifacts must be resolved before
+/// this page can render", and the analog of `page_uses_components` for the
+/// F1.3 fragment map + the fragment CSS sheet.
+///
+/// Reachable-only, because an orphaned node is not on the page: resolving its
+/// artifact would splice CSS for a section nobody can see. Deduped, because
+/// two nodes pinning the same section share one artifact.
+pub fn page_fragment_ids(doc: &WebDoc, page_id: &PageId) -> Vec<String> {
+    let Some(page) = doc.page(page_id) else {
+        return Vec::new();
+    };
+    let mut ids: Vec<String> = Vec::new();
+    for id in page.reachable_ids() {
+        if let Some(WebNodeKind::Fragment { fragment_id, .. }) =
+            page.node(&id).map(|node| &node.kind)
+        {
+            if !ids.iter().any(|seen| seen == fragment_id) {
+                ids.push(fragment_id.clone());
+            }
+        }
+    }
+    ids
 }
 
 /// Reachable features whose behavior needs the platform interaction runtime:
@@ -809,20 +862,89 @@ fn render_node(
                 ));
             }
         },
-        WebNodeKind::Fragment { .. } => {
-            // Task F1.3 owns the real fragment arm (artifact resolution, the
-            // scoped CSS splice, and the sanitized markup). Until it lands the
-            // kind is deliberately inert: an empty in-flow wrapper that emits
-            // no artifact content — not the markup, not the css, not even the
-            // fragment id or a slot value.
-            out.push_str("<div class=\"lumen-fragment");
+        WebNodeKind::Fragment { fragment_id, .. } => {
+            // The wrapper is the ONLY markup this arm authors. Everything
+            // inside it is the artifact's own sanitized HTML, emitted
+            // verbatim: the fragment was made safe ONCE, at creation, and
+            // re-processing it here would make the render path a second
+            // sanitizer that could disagree with the first.
+            //
+            // Two things are interpolated and nothing else: the wrapper class
+            // derived from a RE-CHECKED fragment id, and that artifact HTML.
+            // The id is re-checked because a document loaded from storage may
+            // never have been through `validate_web_doc` — an unchecked id
+            // would land in a class attribute in live markup.
+            //
+            // F1.4 substitutes slot values into `content.html` at this call
+            // site; the marker content standing in the artifact today IS the
+            // fallback, so the shape does not change when it does.
+            let wrapper_class = fragment_wrapper_class(fragment_id);
+            let content = wrapper_class
+                .as_ref()
+                .and_then(|_| options.fragments.get(fragment_id));
+            let Some((wrapper_class, content)) = wrapper_class.as_ref().zip(content) else {
+                // Placeholder, never a hole and never a hard error: the F1.2
+                // reference gate deliberately keeps a document with a dead pin
+                // loadable, so the render must degrade the way the
+                // custom-component missing-pin path does — visibly, and loud
+                // in diagnostics.
+                out.push_str("<div class=\"lumen-fragment lumen-fragment-placeholder");
+                if !node.classes.trim().is_empty() {
+                    out.push(' ');
+                    out.push_str(&escape_attr(node.classes.trim()));
+                }
+                out.push('"');
+                out.push_str(" role=\"status\" data-fragment-placeholder=\"true\"");
+                if wrapper_class.is_some() {
+                    // Safe to name: `frag_` + 16 hex characters, already
+                    // re-checked, and the one thing an operator needs to
+                    // chase the missing artifact. An INVALID id is never
+                    // echoed, not even escaped — the point of the re-check is
+                    // that such an id does not travel.
+                    out.push_str(&format!(" data-fragment-id=\"{fragment_id}\""));
+                }
+                node_attr(out);
+                out.push_str(" aria-label=\"Cloned section unavailable\">");
+                out.push_str("<span>Cloned section unavailable</span>");
+                out.push_str("</div>");
+                let (code, message) = if wrapper_class.is_none() {
+                    (
+                        "LUMW0411",
+                        format!(
+                            "fragment node `{}` carries an id that is not a `frag_<16 hex>` \
+                             artifact address; rendered as a safe placeholder",
+                            node.id
+                        ),
+                    )
+                } else {
+                    (
+                        "LUMW0412",
+                        format!(
+                            "fragment node `{}` pins artifact `{fragment_id}`, which was not \
+                             resolved for this render; rendered as a safe placeholder",
+                            node.id
+                        ),
+                    )
+                };
+                diagnostics.push(Diagnostic::warning(
+                    Phase::Web,
+                    code,
+                    message,
+                    Some(DiagnosticSubject::Node(node.id.clone())),
+                ));
+                return;
+            };
+            out.push_str("<div class=\"lumen-fragment ");
+            out.push_str(wrapper_class);
             if !node.classes.trim().is_empty() {
                 out.push(' ');
                 out.push_str(&escape_attr(node.classes.trim()));
             }
             out.push('"');
             node_attr(out);
-            out.push_str("></div>");
+            out.push('>');
+            out.push_str(&content.html);
+            out.push_str("</div>");
         }
         WebNodeKind::Embed {
             provider,
@@ -1391,8 +1513,8 @@ mod tests {
         assert!(!delivery.html.contains("<script"));
     }
 
-    #[test]
-    fn fragment_renders_an_inert_in_flow_placeholder_until_f1_3() {
+    /// Attach one fragment node to the fixture page and return the doc.
+    fn fixture_with_fragment(fragment_id: &str) -> (WebDoc, WebTheme) {
         let (mut doc, theme) = fixture();
         let page = doc.pages.get_mut(0).expect("page");
         let host_id = page
@@ -1411,7 +1533,7 @@ mod tests {
             WebNode {
                 id: NodeId::from("frg_hero"),
                 kind: WebNodeKind::Fragment {
-                    fragment_id: "frag_0123456789abcdef".to_owned(),
+                    fragment_id: fragment_id.to_owned(),
                     slots: std::collections::BTreeMap::from([(
                         "headline".to_owned(),
                         crate::doc::FragmentSlotValue::Text("Talk to us".to_owned()),
@@ -1423,33 +1545,252 @@ mod tests {
                 slot_key: None,
             },
         );
+        (doc, theme)
+    }
+
+    const FRAGMENT_HTML: &str =
+        "<section class=\"hero\"><h1 data-lumen-slot=\"headline\">Care, on your terms</h1></section>";
+
+    fn fragment_options(mode: RenderMode, fragment_id: &str) -> RenderOptions {
+        let mut options = match mode {
+            RenderMode::Editor => RenderOptions::editor("/asset-store"),
+            RenderMode::Delivery => RenderOptions::delivery("/asset-store"),
+        };
+        options.fragments.insert(
+            fragment_id.to_owned(),
+            FragmentContent {
+                html: FRAGMENT_HTML.to_owned(),
+            },
+        );
+        options
+    }
+
+    #[test]
+    fn fragment_renders_its_artifact_html_in_flow_under_the_wrapper_class() {
+        let fragment_id = "frag_0123456789abcdef";
+        let (doc, theme) = fixture_with_fragment(fragment_id);
 
         let editor = render_page(
             &doc,
             &PageId::from("home"),
             &theme,
-            &RenderOptions::editor("/asset-store"),
+            &fragment_options(RenderMode::Editor, fragment_id),
         )
         .expect("editor render");
-        assert!(editor.html.contains(
-            "<div class=\"lumen-fragment w-full py-12\" data-node-id=\"frg_hero\"></div>"
-        ));
-        // Task F1.3 owns artifact resolution: nothing about the artifact —
-        // not even its id — reaches the page from this arm.
-        assert!(!editor.html.contains("frag_0123456789abcdef"));
-        assert!(!editor.html.contains("Talk to us"));
+        // The wrapper carries the platform hook, the SCOPED class the
+        // artifact's own CSS is written under, and the node's own utilities.
+        assert!(
+            editor.html.contains(
+                "<div class=\"lumen-fragment lumen-frag-0123456789abcdef w-full py-12\" \
+                 data-node-id=\"frg_hero\">"
+            ),
+            "{}",
+            editor.html
+        );
+        // The artifact's markup lands VERBATIM, slot markers intact — the
+        // marker's own content IS the fallback until F1.4 substitutes.
+        assert!(editor.html.contains(FRAGMENT_HTML));
+        // In flow: the wrapper is a plain block in the body, not an iframe.
+        assert!(!editor.html.contains("lumen-fragment-placeholder"));
+        assert!(editor.diagnostics.is_empty(), "{:#?}", editor.diagnostics);
 
         let delivery = render_page(
             &doc,
             &PageId::from("home"),
             &theme,
-            &RenderOptions::delivery("/asset-store"),
+            &fragment_options(RenderMode::Delivery, fragment_id),
         )
         .expect("delivery render");
-        assert!(delivery
-            .html
-            .contains("<div class=\"lumen-fragment w-full py-12\"></div>"));
+        assert!(delivery.html.contains(
+            "<div class=\"lumen-fragment lumen-frag-0123456789abcdef w-full py-12\">"
+        ));
+        assert!(delivery.html.contains(FRAGMENT_HTML));
         assert!(!delivery.html.contains("data-node-id"));
+    }
+
+    #[test]
+    fn fragment_wrapper_class_is_derived_from_the_id_not_re_spelled() {
+        // The Python side mints `lumen-frag-<16 hex>` (fragment_wrapper_class)
+        // and scopes the stored CSS under exactly that. A re-spelling here —
+        // `lumen-frag-frag_…`, or the whole id — renders the section unstyled.
+        assert_eq!(
+            fragment_wrapper_class("frag_abcdef0123456789").as_deref(),
+            Some("lumen-frag-abcdef0123456789")
+        );
+        assert_eq!(fragment_wrapper_class("frag_nothex").as_deref(), None);
+        assert_eq!(fragment_wrapper_class("ccart_0123456789abcdef"), None);
+    }
+
+    #[test]
+    fn an_unresolved_fragment_renders_a_placeholder_not_a_hole() {
+        // Mirrors the custom-component missing-pin behavior: the F1.2 gate
+        // deliberately keeps a document with a dead pin loadable, so render
+        // must degrade loudly rather than fail the page.
+        let fragment_id = "frag_0123456789abcdef";
+        let (doc, theme) = fixture_with_fragment(fragment_id);
+        let output = render_page(
+            &doc,
+            &PageId::from("home"),
+            &theme,
+            &RenderOptions::editor("/asset-store"),
+        )
+        .expect("render");
+        assert!(
+            output
+                .html
+                .contains("data-fragment-placeholder=\"true\""),
+            "{}",
+            output.html
+        );
+        assert!(output.html.contains("data-node-id=\"frg_hero\""));
+        // The id is a validated 16-hex address, so naming it is safe and it
+        // is the one thing an operator needs to chase the missing artifact.
+        assert!(output
+            .html
+            .contains("data-fragment-id=\"frag_0123456789abcdef\""));
+        // No slot value and no invented markup.
+        assert!(!output.html.contains("Talk to us"));
+        let codes: Vec<&str> = output
+            .diagnostics
+            .iter()
+            .map(|diagnostic| diagnostic.code.as_str())
+            .collect();
+        assert_eq!(codes, vec!["LUMW0412"]);
+    }
+
+    #[test]
+    fn an_invalid_fragment_id_is_never_interpolated_into_the_wrapper() {
+        // A document loaded from storage may never have been through
+        // validate_web_doc, so the arm re-checks the grammar before the id
+        // reaches a class attribute.
+        let hostile = "frag_\"><style>";
+        let (doc, theme) = fixture_with_fragment(hostile);
+        let mut options = RenderOptions::editor("/asset-store");
+        options.fragments.insert(
+            hostile.to_owned(),
+            FragmentContent {
+                html: FRAGMENT_HTML.to_owned(),
+            },
+        );
+        let output = render_page(&doc, &PageId::from("home"), &theme, &options).expect("render");
+        // Not escaped — absent. The id never reaches the body at all.
+        let body = output.html.split("<body").nth(1).expect("body");
+        assert!(!body.contains("<style"));
+        assert!(!output.html.contains("frag_\""));
+        assert!(!output.html.contains("frag_&quot;"));
+        assert!(!output.html.contains("lumen-frag-"));
+        assert!(!output.html.contains(FRAGMENT_HTML));
+        assert!(output.html.contains("data-fragment-placeholder=\"true\""));
+        let codes: Vec<&str> = output
+            .diagnostics
+            .iter()
+            .map(|diagnostic| diagnostic.code.as_str())
+            .collect();
+        assert_eq!(codes, vec!["LUMW0411"]);
+    }
+
+    #[test]
+    fn page_fragment_ids_lists_every_reachable_fragment_once() {
+        let fragment_id = "frag_0123456789abcdef";
+        let (mut doc, _theme) = fixture_with_fragment(fragment_id);
+        assert_eq!(
+            page_fragment_ids(&doc, &PageId::from("home")),
+            vec![fragment_id.to_owned()]
+        );
+        // A second node on the SAME artifact resolves once; an unreachable
+        // node is not a reference at all.
+        let page = doc.pages.get_mut(0).expect("page");
+        let host_id = page
+            .nodes
+            .get(&NodeId::from("hero"))
+            .expect("hero")
+            .children[0]
+            .clone();
+        page.nodes
+            .get_mut(&host_id)
+            .expect("host")
+            .children
+            .push(NodeId::from("frg_twin"));
+        page.nodes.insert(
+            NodeId::from("frg_twin"),
+            WebNode {
+                id: NodeId::from("frg_twin"),
+                kind: WebNodeKind::Fragment {
+                    fragment_id: fragment_id.to_owned(),
+                    slots: Default::default(),
+                },
+                classes: String::new(),
+                children: Vec::new(),
+                name: None,
+                slot_key: None,
+            },
+        );
+        page.nodes.insert(
+            NodeId::from("frg_orphan"),
+            WebNode {
+                id: NodeId::from("frg_orphan"),
+                kind: WebNodeKind::Fragment {
+                    fragment_id: "frag_fedcba9876543210".to_owned(),
+                    slots: Default::default(),
+                },
+                classes: String::new(),
+                children: Vec::new(),
+                name: None,
+                slot_key: None,
+            },
+        );
+        assert_eq!(
+            page_fragment_ids(&doc, &PageId::from("home")),
+            vec![fragment_id.to_owned()]
+        );
+    }
+
+    #[test]
+    fn fragment_css_lands_in_the_head_where_compiled_utilities_outrank_it() {
+        // The cascade ruling: fragment CSS is spliced through the theme's base
+        // layer, so it sits in the head BEFORE any compiled utility sheet and
+        // (in editor mode) inside `@layer base` — a Tailwind utility therefore
+        // wins a tie. Fragment selectors are scoped, which is what makes that
+        // acceptable; the collision diagnostic at the API layer is the guard.
+        let fragment_css = ".lumen-frag-0123456789abcdef .hero { padding: 64px }";
+        let (theme, _) = compile_web_theme(
+            None,
+            &WebThemeRef::default(),
+            &WebThemeOptions {
+                font_face_css: None,
+                fragment_css: Some(fragment_css.to_owned()),
+            },
+        );
+        assert!(theme.base_css.contains(fragment_css));
+
+        let fragment_id = "frag_0123456789abcdef";
+        let (doc, _) = fixture_with_fragment(fragment_id);
+        let editor = render_page(
+            &doc,
+            &PageId::from("home"),
+            &theme,
+            &fragment_options(RenderMode::Editor, fragment_id),
+        )
+        .expect("editor render");
+        let css_at = editor.html.find(fragment_css).expect("fragment css in head");
+        let head_end = editor.html.find("</head>").expect("head");
+        assert!(css_at < head_end, "fragment css must be in the head");
+        // Inside the editor's base layer, which the Tailwind runtime's
+        // utilities layer outranks.
+        let layer_at = editor.html.find("@layer base").expect("base layer");
+        assert!(layer_at < css_at);
+        // ...and before the custom-css / platform blocks that follow it.
+        assert!(css_at < editor.html.find("</body>").expect("body"));
+
+        let delivery = render_page(
+            &doc,
+            &PageId::from("home"),
+            &theme,
+            &fragment_options(RenderMode::Delivery, fragment_id),
+        )
+        .expect("delivery render");
+        let delivery_css_at = delivery.html.find(fragment_css).expect("fragment css");
+        assert!(delivery_css_at < delivery.html.find("</head>").expect("head"));
     }
 
     #[test]

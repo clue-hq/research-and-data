@@ -173,6 +173,18 @@ pub struct WebTheme {
 pub struct WebThemeOptions {
     /// Pre-built `@font-face` CSS (the API owns font-serving URLs).
     pub font_face_css: Option<String>,
+    /// Pre-concatenated, ALREADY-SCOPED CSS for the cloned-section fragments
+    /// this render references (clone-fidelity F1.3). The API owns fragment
+    /// resolution — it reads each artifact from the registry, keeps the
+    /// per-fragment blocks identifiable, and hands the whole sheet here.
+    ///
+    /// It rides the theme's base layer deliberately: that puts it in the head
+    /// BEFORE any compiled utility sheet (and, in editor mode, inside
+    /// `@layer base`), so a compiled Tailwind utility wins a tie. That is
+    /// acceptable only because every fragment selector is scoped under
+    /// `.lumen-frag-<hex>`; the API emits a diagnostic when a fragment class
+    /// is also a live utility, which is the one case the scoping cannot save.
+    pub fragment_css: Option<String>,
 }
 
 struct ResolvedType {
@@ -772,6 +784,15 @@ fn build_base_css(
          animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; \
          transition-duration: 0.01ms !important; scroll-behavior: auto !important; }\n}\n",
     );
+    // LAST inside the base layer, on purpose: a cloned section's own rules
+    // must beat the platform's element-level defaults above (`img { … }`,
+    // `[data-tv] { … }`) so the clone looks like what was cloned. It stays
+    // inside the base layer, so a compiled utility still outranks it.
+    if let Some(fragment_css) = &options.fragment_css {
+        css.push_str("/* lumen-fragment css */\n");
+        css.push_str(fragment_css);
+        css.push('\n');
+    }
     css
 }
 

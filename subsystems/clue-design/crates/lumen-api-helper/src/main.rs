@@ -413,6 +413,14 @@ enum CoreRequest {
         /// into the theme base layer so kit typography renders everywhere.
         #[serde(default)]
         font_face_css: Option<String>,
+        /// API-resolved fragment artifacts keyed by `frag_<16 hex>` id
+        /// (clone-fidelity F1.3). An unresolved id renders the placeholder.
+        #[serde(default)]
+        fragments: std::collections::BTreeMap<String, lumen_web::FragmentContent>,
+        /// The concatenated, already-scoped CSS of those fragments; folded
+        /// into the theme base layer, so a compiled utility outranks it.
+        #[serde(default)]
+        fragment_css: Option<String>,
     },
     /// Parse a constrained-HTML fragment against `doc` WITHOUT mutating it:
     /// returns the would-be nodes + roots so callers can compose surgical
@@ -2353,7 +2361,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
         CoreRequest::WebValidate { doc, brand_kit } => {
             let doc = parse_web_doc(doc)?;
             let briefed = kit_is_briefed(brand_kit.as_ref());
-            let (theme, mut diagnostics) = web_theme_for(&doc, brand_kit, None)?;
+            let (theme, mut diagnostics) = web_theme_for(&doc, brand_kit, None, None)?;
             diagnostics.extend(lumen_web::validate_web_doc(&doc));
             diagnostics.extend(lint_web_doc_classes(&doc, &theme, briefed));
             let mut response = ok_web(Some(&doc), None, None, None, diagnostics);
@@ -2371,7 +2379,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
         } => {
             let mut doc = parse_web_doc(doc)?;
             let briefed = kit_is_briefed(brand_kit.as_ref());
-            let (theme, mut diagnostics) = web_theme_for(&doc, brand_kit, None)?;
+            let (theme, mut diagnostics) = web_theme_for(&doc, brand_kit, None, None)?;
             let outcome = lumen_web::ingest_html_into_page_with(
                 &mut doc,
                 &lumen_core::PageId::from(page_id),
@@ -2430,9 +2438,12 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
             custom_component_runtimes,
             brand_kit,
             font_face_css,
+            fragments,
+            fragment_css,
         } => {
             let doc = parse_web_doc(doc)?;
-            let (theme, theme_diagnostics) = web_theme_for(&doc, brand_kit, font_face_css)?;
+            let (theme, theme_diagnostics) =
+                web_theme_for(&doc, brand_kit, font_face_css, fragment_css)?;
             let mode = match mode.as_str() {
                 "editor" => lumen_web::RenderMode::Editor,
                 "delivery" => lumen_web::RenderMode::Delivery,
@@ -2449,6 +2460,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 tailwind_runtime_src,
                 bridge_script,
                 custom_component_runtimes,
+                fragments,
             };
             let output = lumen_web::render_page(
                 &doc,
@@ -2474,7 +2486,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
         } => {
             let doc = parse_web_doc(doc)?;
             let briefed = kit_is_briefed(brand_kit.as_ref());
-            let (theme, mut diagnostics) = web_theme_for(&doc, brand_kit, None)?;
+            let (theme, mut diagnostics) = web_theme_for(&doc, brand_kit, None, None)?;
             let outcome =
                 lumen_web::ingest_html_with(&html, &theme, lumen_web::IngestOptions { briefed });
             // Same asset-reference discipline as the page ingest: a fragment
@@ -2567,12 +2579,16 @@ fn web_theme_for(
     doc: &lumen_web::WebDoc,
     brand_kit: Option<Value>,
     font_face_css: Option<String>,
+    fragment_css: Option<String>,
 ) -> Result<(lumen_web::WebTheme, Vec<Diagnostic>), CoreError> {
     let kit = brand_kit.map(parse_brand_kit).transpose()?;
     Ok(lumen_web::compile_web_theme(
         kit.as_ref(),
         &doc.theme,
-        &lumen_web::WebThemeOptions { font_face_css },
+        &lumen_web::WebThemeOptions {
+            font_face_css,
+            fragment_css,
+        },
     ))
 }
 
