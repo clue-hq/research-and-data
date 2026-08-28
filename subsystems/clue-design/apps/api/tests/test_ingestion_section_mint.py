@@ -1330,3 +1330,33 @@ def test_the_shipped_budgets_sit_above_the_heaviest_capture_this_project_has_mea
     # …and a page minting at the floor width can never be refused by the page budget for the
     # sake of a handful of thumbnails.
     assert mint_module.MAX_PAGE_PREVIEW_BYTES > 8 * mint_module.MAX_PREVIEW_BYTES
+
+
+def test_a_section_that_is_refused_never_spends_the_pages_css_budget(monkeypatch) -> None:
+    """The budget is about bytes AT REST. An embed shell that matches a megabyte of rules and is
+    then refused for showing nothing must not spend the page's budget on a fragment that does not
+    exist."""
+    monkeypatch.setattr(mint_module, "MAX_PAGE_CSS_BYTES", 100)
+    page = (
+        "<html><body><main>"
+        '<section class="section_shell">'
+        '<iframe src="https://player.example/x"></iframe></section>'
+        '<section class="section_home-hero"><h1>Ship</h1><p>Copy</p></section>'
+        "</main></body></html>"
+    )
+    sheet = _Sheet(
+        "s.css",
+        ".section_shell { padding: 4rem; " + "margin: 0; " * 40 + "}\n"
+        ".section_home-hero { padding: 1rem }\n",
+    )
+    outcome, _ = _mint(page, stylesheets=[sheet])
+
+    # The shell was refused…
+    assert [minted.role for minted in outcome.minted] == ["hero"]
+    assert any(
+        diagnostic.get("reason") == "empty_after_sanitize"
+        for diagnostic in outcome.diagnostics
+    )
+    # …so the only CSS charged is the hero's, which is nowhere near the budget.
+    assert _budget_lines(outcome, "page scoped CSS bytes") == []
+    assert _budget_lines(outcome, "fragment scoped CSS bytes") == []

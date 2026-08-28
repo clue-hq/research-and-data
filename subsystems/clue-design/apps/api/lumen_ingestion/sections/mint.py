@@ -682,7 +682,6 @@ def _mint_one(
     subtree = node.html or ""
 
     matched = rules_for_subtree(stylesheets, subtree_html=subtree)
-    _charge_css(matched.css, segmentation, record, weight, diagnostics)
     harvest = build_reference_harvest(
         subtree_html=subtree,
         page_url=segmentation.page_url,
@@ -722,6 +721,13 @@ def _mint_one(
         )
         return None
     detected = detect_slots(sanitized.html)
+
+    # Charged HERE, after the two refusal doors above (F3.4). The budget is about bytes AT REST —
+    # what this page's clones carry — so a section that matched a megabyte of rules and was then
+    # refused for showing nothing must not spend the page's budget on a fragment that does not
+    # exist. Everything past this point either writes a row or raises into the driver's error
+    # path, which is the one remaining over-count and is the rare case.
+    _charge_css(matched.css, segmentation, record, weight, diagnostics)
 
     preview, extent = _preview(segmentation, record, screenshot, diagnostics, weight)
     assessment = _dead_height(segmentation, record, preview, extent, diagnostics)
