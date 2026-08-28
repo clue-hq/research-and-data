@@ -1345,6 +1345,13 @@ class LumenDesignTools:
         missing when the brand publishes nothing for it — that is a real answer,
         and it is never filled by recoloring another slot.
 
+        In an account-personalized or co-branded design, the OTHER company's
+        logo must be its COMPLETE lockup — symbol + wordmark together (the
+        `light`/`dark` slot for the surface you are placing on). The bare
+        `mark` is a fallback for when the brand publishes no lockup, or the
+        placement is genuinely too small to hold one — never the first choice:
+        a naked symbol does not identify an account the way its full logo does.
+
         If it comes back `needs_review`, nothing was registered because no asset
         could be attributed to that company with confidence. Say so and ask for
         the file. Never draw, recolor or approximate a logo.
