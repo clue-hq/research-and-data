@@ -80,7 +80,15 @@ MAX_CONFIDENCE = 0.95
 #: What a residual ``other`` carries — low, because it is an absence of evidence, not a finding.
 OTHER_CONFIDENCE = 0.30
 #: Two named roles this close, with no landmark behind the leader, is a tie we refuse to break.
+#: "This close" means STRICTLY closer than this — see :func:`_within_contest_margin` for why a
+#: gap of exactly one rung of the ladder above has to be decisive rather than a tie.
 CONTEST_MARGIN = 0.10
+#: Decimal places the contest comparison rounds to before it decides (F3.4 fix round, R20-1).
+#: The weights above are decimals held in binary floats, so the SAME nominal gap answered the
+#: contest question two different ways depending on the operands: ``0.80 - 0.10`` is
+#: 0.7000000000000001 and ``0.70 - 0.10`` is 0.5999999999999999. Six places is far finer than any
+#: weight or bonus on the ladder and far coarser than the representation error.
+_MARGIN_PRECISION = 6
 
 #: A first band shorter than this is page chrome, not a content section.
 NAV_BAND_MAX_PX = 180.0
@@ -101,6 +109,9 @@ FOOTER_LINK_DENSE = 4
 #: past — four long words, or one very long word.
 HEADING_LABEL_MAX_WORDS = 4
 HEADING_LABEL_MAX_CHARS = 40
+#: The signal family a heading-derived vote carries. Named once because `_resolve` has to be able
+#: to ask "what would the rest of the evidence have said?" (ruling R20-1).
+HEADING_SIGNAL = "heading"
 
 # --- diagnostics ------------------------------------------------------------------------------
 
@@ -196,6 +207,12 @@ _PHRASE_HINTS: tuple[tuple[str, str], ...] = (
     ("social proof", PROOF),
     ("as seen in", PROOF),
     ("case study", TESTIMONIAL),
+    # The PLURAL is the ordinary spelling of the label ("Case studies", `class="case-studies"`),
+    # and the rest of this vocabulary already carries both numbers — `testimonial`/`testimonials`,
+    # `quote`/`quotes`, `review`/`reviews`. The singular-only entry was the outlier, and it was
+    # the reason `<h2>Case studies</h2>` matched nothing (F3.4 fix round, F-7). Helps the
+    # class/id path identically, which is the point of one shared vocabulary.
+    ("case studies", TESTIMONIAL),
     ("trust center", SECURITY),
     ("soc 2", SECURITY),
     ("iso 27001", SECURITY),
@@ -256,11 +273,26 @@ _SECTION_TAGS = frozenset(
     {"nav", "header", "footer", "main", "section", "article", "aside", "form", "table"}
 )
 #: The HTML standard's SECTIONING CONTENT, plus the two landmark wrappers that behave like it at
-#: the top level of a page. Narrower than ``_SECTION_TAGS`` on purpose: this set is the one the
-#: compound-band split reads, and it must contain only tags whose presence is the AUTHOR saying
-#: "this is a section of the document". ``main``/``form``/``table`` are not that — a form is a
-#: control group and a table is content — so they are section-SHAPED without being a declaration.
+#: the top level of a page. Read by the compound-band split to answer ONE question: is this
+#: candidate itself a unit its author declared? If it is, it is never taken apart.
 _SECTIONING_CONTENT_TAGS = frozenset({"section", "article", "aside", "nav", "header", "footer"})
+#: The tags whose presence among a wrapper's children is the AUTHOR SAYING "these are sections of
+#: this document" — the other question the split asks, and a strictly narrower one (F3.4 fix
+#: round, ruling R20-2). Three tags are deliberately NOT here, each for a reason the spec gives:
+#:
+#: * ``<article>`` is the standard's SELF-CONTAINED composition — a blog card, a news teaser, a
+#:   product card. A ``<div class="posts">`` holding three ``<article>`` cards is one reusable
+#:   band, and splitting it minted three preview-less, geometry-less "sections", each spending a
+#:   fragment row and a slot of the mint cap. Card grids are the common case for this markup;
+#:   groups of top-level page sections are not.
+#: * ``<header>`` and ``<footer>`` are **not sectioning content at all** in the standard — they
+#:   are the ``banner``/``contentinfo`` landmarks, and inside anything else they are that thing's
+#:   own header. A wrapper holding a ``<header>`` and a ``<footer>`` is one band with a top and a
+#:   bottom, not two sections of a page.
+#:
+#: ``main``/``form``/``table`` were never in either set: a form is a control group and a table is
+#: content, so they are section-SHAPED without being a declaration.
+_AUTHORED_SECTION_TAGS = frozenset({"section", "aside", "nav"})
 #: How many authored sections a wrapper needs before it is a GROUP of them rather than one of
 #: them wearing an extra div. One is a wrapper; two is a compound band.
 _COMPOUND_MIN_PARTS = 2
@@ -613,12 +645,16 @@ def _split_compound_bands(
     all. The author declared ONE section there, so it stays one; splitting it would be this
     module deciding it knows the page better than the person who wrote it.
 
-    **What the split costs, stated rather than hidden.** The band belongs to the wrapper. The
-    parts were never children of the measured root, so the browser never measured them, and their
-    heights inside the wrapper are not derivable from its total — so they carry no geometry and
-    mint without a crop. That is honest absence, and since F3.2 it is also recoverable: an
-    isolation render (ruling P-7) photographs any fragment from its own bytes on demand. The
-    diagnostic says all of it.
+    **What the split costs, stated rather than hidden.** Two things. The band belongs to the
+    wrapper: the parts were never children of the measured root, so the browser never measured
+    them, and their heights inside the wrapper are not derivable from its total — they carry no
+    geometry and mint without a crop. And the WRAPPER'S OWN BOX goes with it: a part is minted
+    from its own subtree, so a rule written against the wrapper element (its background, its
+    padding, its ``overflow``) no longer applies to it. Rules reaching THROUGH the wrapper survive
+    — ``cssmatch`` keeps a rule on its rightmost compound, so a descendant selector is unaffected
+    — which bounds that cost without making it zero. Both are honest absences, and since F3.2 the
+    first is recoverable: an isolation render (ruling P-7) photographs any fragment from its own
+    bytes on demand. The diagnostic says all of it.
 
     Ordered after :func:`_bind_bands` for a reason that is not stylistic: the bands are matched
     against the measured root's own children, so splitting first would leave the wrapper's band
@@ -665,6 +701,14 @@ def _split_compound_bands(
                 "info",
                 f"a <{wrapper.tag}> wrapper held {len(replacements)} authored sections and "
                 f"nothing else, so it was split into them rather than minted as one fragment"
+                + "; the wrapper's own box goes with it, so a rule written against "
+                + (
+                    f"<{wrapper.tag}"
+                    + ("" if not wrapper.class_names else f" class=\"{wrapper.class_names[0]}\"")
+                    + ">"
+                )
+                + " itself (a background, a padding, an overflow) no longer applies — rules "
+                "reaching THROUGH it still do"
                 + (
                     ""
                     if wrapper.band is None
@@ -705,8 +749,12 @@ def _compound_parts(candidate: _Candidate) -> list[tuple[int, Node]] | None:
     Four conditions, and each one is a way the split could be wrong:
 
     * the candidate is **not itself sectioning content**. A ``<section>`` full of ``<section>``s
-      is a section with subsections, which is what its author said it was.
-    * **every** element child is sectioning content. One stray ``<div>`` among them means the
+      is a section with subsections, which is what its author said it was — and an ``<article>``
+      full of anything is a self-contained composition, which is why the guard reads the WIDE
+      set here while the next condition reads the narrow one.
+    * **every** element child is an AUTHORED SECTION — ``<section>``/``<aside>``/``<nav>``, not
+      the whole of sectioning content (see :data:`_AUTHORED_SECTION_TAGS` for why ``<article>``,
+      ``<header>`` and ``<footer>`` are excluded). One stray ``<div>`` among them means the
       wrapper holds something besides sections, and splitting would orphan it.
     * there are **at least two**, because one is a wrapper, not a group.
     * the wrapper has **no direct text of its own**. A heading or a line of copy sitting between
@@ -720,7 +768,7 @@ def _compound_parts(candidate: _Candidate) -> list[tuple[int, Node]] | None:
     children = _element_children(candidate.node)
     if len(children) < _COMPOUND_MIN_PARTS:
         return None
-    if not all((child.tag or "").lower() in _SECTIONING_CONTENT_TAGS for _, child in children):
+    if not all((child.tag or "").lower() in _AUTHORED_SECTION_TAGS for _, child in children):
         return None
     if not all(_is_candidate(child) for _, child in children):
         return None
@@ -1598,12 +1646,19 @@ def _heading_signals(candidate: _Candidate) -> list[SectionEvidence]:
     shape, and never once read the word the page puts at the top of the section. The class list
     was ``class="section"``, which says nothing; the heading said everything.
 
-    Same vocabulary as the class/id hints, deliberately: a role word means the same thing wherever
-    the author wrote it, and a second vocabulary would be a second answer. What differs is WHERE
-    it may be read — only from a heading short enough to be a label (see
-    :data:`HEADING_LABEL_MAX_WORDS`) — and the weight, which is one step down from the same word
-    in a class name. A class token is machinery and is written for a machine; a heading is prose
-    and may be a pun, a product name, or a joke.
+    Same vocabulary as the class/id hints, deliberately — the single-word hints AND the phrase
+    hints (F3.4 fix round, F-7: without them ``<h2>Case studies</h2>`` said nothing, and "Case
+    studies" is the second example in :data:`HEADING_LABEL_MAX_WORDS`'s own comment of a label
+    this rule exists for). A role word means the same thing wherever the author wrote it, and a
+    second vocabulary would be a second answer.
+
+    What differs is WHERE it may be read — only from a heading short enough to be a label — and
+    the weight. **A STRONG hint is one rung down here; a WEAK one is not** (F-6): weak is already
+    the bottom of the hint ladder, and stepping it further would put a heading below
+    ``POSITION_WEIGHT``, which would say that where a section sits on the page is better evidence
+    of what it is than the word printed at the top of it. A class token is machinery written for
+    a machine; a heading is prose and may be a pun, a product name or a joke — that is worth one
+    rung, not two.
     """
     heading = (candidate.heading or "").strip()
     if not heading or len(heading) > HEADING_LABEL_MAX_CHARS:
@@ -1612,7 +1667,20 @@ def _heading_signals(candidate: _Candidate) -> list[SectionEvidence]:
         return []
     out: list[SectionEvidence] = []
     seen: set[tuple[str, str]] = set()
-    for token in _tokenize(heading):
+    tokens = _tokenize(heading)
+    blob = " ".join(tokens)
+    for phrase, phrase_role in _PHRASE_HINTS:
+        if phrase in blob and (phrase_role, phrase) not in seen:
+            seen.add((phrase_role, phrase))
+            out.append(
+                SectionEvidence(
+                    HEADING_SIGNAL,
+                    phrase_role,
+                    HEADLINE_WEIGHT,
+                    f'"{phrase}" in the section\'s own heading, "{heading}"',
+                )
+            )
+    for token in tokens:
         role = _STRONG_TOKEN_HINTS.get(token)
         weight = HEADLINE_WEIGHT
         if role is None:
@@ -1622,7 +1690,12 @@ def _heading_signals(candidate: _Candidate) -> list[SectionEvidence]:
             continue
         seen.add((role, token))
         out.append(
-            SectionEvidence("heading", role, weight, f'the section is headed "{heading}"')
+            SectionEvidence(
+                HEADING_SIGNAL,
+                role,
+                weight,
+                f'"{token}" in the section\'s own heading, "{heading}"',
+            )
         )
     return out
 
@@ -1743,17 +1816,46 @@ def _positional_signals(candidates: list[_Candidate]) -> None:
         )
 
 
-def _resolve(candidate: _Candidate) -> tuple[str, float]:
-    """The winning role and its confidence — or ``other`` when the evidence is contested."""
+def _within_contest_margin(leader: float, runner_up: float) -> bool:
+    """Is the runner-up close enough that we refuse to break the tie? (F3.4 fix round, R20-1.)
+
+    **Strictly** closer than :data:`CONTEST_MARGIN`, and that is a decision, not a detail. The
+    weight ladder's adjacent rungs are exactly one margin apart, and the ladder exists so that
+    "inference never outranks a declaration" means something — if one whole rung counted as a
+    tie, a declaration beating an inference would ALWAYS be a tie and the ladder would decide
+    nothing. The margin is for sub-rung ambiguity: a corroboration bonus, a half-step.
+
+    **Rounded before comparing**, because these are decimals living in binary floats and the
+    boundary used to be decided by which way the representation error happened to fall.
+    ``0.80 - 0.10`` is 0.7000000000000001, so a 0.80 leader beat a 0.70 runner-up outright;
+    ``0.70 - 0.10`` is 0.5999999999999999, so a 0.70 leader was tied by a 0.60 runner-up. Same
+    nominal one-rung gap, opposite answers. A future retune of any weight would have flipped an
+    entire class of sections to ``other`` with nothing to notice it.
+    """
+    return round(leader - runner_up, _MARGIN_PRECISION) < CONTEST_MARGIN
+
+
+@dataclass(frozen=True)
+class _Verdict:
+    """One weighing of one evidence list. ``contested`` names the runner-up that forced ``other``."""
+
+    role: str
+    confidence: float
+    contested: tuple[str, float] | None = None
+    leader: tuple[str, float] | None = None
+
+
+def _weigh(evidence: Sequence[SectionEvidence]) -> _Verdict:
+    """The pure tally: strongest signal per role, a small bonus for agreement, contest or not."""
     tallies: dict[str, tuple[float, int]] = {}
-    for evidence in candidate.evidence:
-        if evidence.weight <= 0:
+    for item in evidence:
+        if item.weight <= 0:
             continue
-        strongest, supporting = tallies.get(evidence.role, (0.0, 0))
-        tallies[evidence.role] = (max(strongest, evidence.weight), supporting + 1)
+        strongest, supporting = tallies.get(item.role, (0.0, 0))
+        tallies[item.role] = (max(strongest, item.weight), supporting + 1)
 
     if not tallies:
-        return OTHER, OTHER_CONFIDENCE
+        return _Verdict(role=OTHER, confidence=OTHER_CONFIDENCE)
 
     scores = {
         role: min(MAX_CONFIDENCE, strongest + CORROBORATION_BONUS * (supporting - 1))
@@ -1761,18 +1863,74 @@ def _resolve(candidate: _Candidate) -> tuple[str, float]:
     }
     ranked = sorted(scores.items(), key=lambda item: (-item[1], SECTION_ROLES.index(item[0])))
     role, score = ranked[0]
-    if len(ranked) > 1 and score < LANDMARK_WEIGHT and ranked[1][1] >= score - CONTEST_MARGIN:
+    if (
+        len(ranked) > 1
+        and score < LANDMARK_WEIGHT
+        and _within_contest_margin(score, ranked[1][1])
+    ):
+        return _Verdict(
+            role=OTHER,
+            confidence=OTHER_CONFIDENCE,
+            contested=ranked[1],
+            leader=(role, score),
+        )
+    return _Verdict(role=role, confidence=score, leader=(role, score))
+
+
+def _resolve(candidate: _Candidate) -> tuple[str, float]:
+    """The winning role and its confidence — or ``other`` when the evidence is contested.
+
+    **A heading may promote a section and may re-name it; it may never UNNAME one** (ruling
+    R20-1). The heading signal was added to reduce the `other` population, and read naively it
+    could grow it instead: a short heading naming a role the class list does not agree with
+    creates a contest that did not exist, and a contest resolves to `other`. A page whose
+    `class="stats-band"` proof strip is headed "Customer reviews" would have gone
+    ``proof`` → ``other`` — the very failure the signal exists to fix, running backwards.
+
+    So a contest that only exists BECAUSE of the heading is resolved by asking the rest of the
+    evidence, and the rest of the evidence's answer stands. A contest the declarations and the
+    content would have had anyway is untouched, and still resolves to `other`.
+    """
+    verdict = _weigh(candidate.evidence)
+    if verdict.contested is None:
+        return verdict.role, verdict.confidence
+
+    without_heading = _weigh(
+        [item for item in candidate.evidence if item.signal != HEADING_SIGNAL]
+    )
+    if without_heading.role != OTHER:
+        # Name the side the HEADING put up, which is whichever of the two contenders is not the
+        # answer the rest of the evidence gives — the heading may have led the contested tally or
+        # merely have come within the margin of it, and the note has to be true either way.
+        contenders = [side for side in (verdict.leader, verdict.contested) if side is not None]
+        argued = next(
+            (side for side in contenders if side[0] != without_heading.role),
+            (OTHER, 0.0),
+        )
         candidate.evidence.append(
             SectionEvidence(
                 "resolution",
-                OTHER,
+                without_heading.role,
                 0.0,
-                f"contested: {role} ({score:.2f}) vs {ranked[1][0]} ({ranked[1][1]:.2f}) with no "
-                "landmark to settle it — named `other` rather than risk the wrong role",
+                f"the heading argued for {argued[0]} ({argued[1]:.2f}), which would have "
+                f"contested {without_heading.role} ({without_heading.confidence:.2f}) down to "
+                "`other` — a heading never unnames a section, so the declared reading stands",
             )
         )
-        return OTHER, OTHER_CONFIDENCE
-    return role, score
+        return without_heading.role, without_heading.confidence
+
+    leader = verdict.leader or (OTHER, 0.0)
+    runner_up = verdict.contested
+    candidate.evidence.append(
+        SectionEvidence(
+            "resolution",
+            OTHER,
+            0.0,
+            f"contested: {leader[0]} ({leader[1]:.2f}) vs {runner_up[0]} ({runner_up[1]:.2f}) "
+            "with no landmark to settle it — named `other` rather than risk the wrong role",
+        )
+    )
+    return OTHER, OTHER_CONFIDENCE
 
 
 def _enforce_singular_roles(candidates: list[_Candidate]) -> None:

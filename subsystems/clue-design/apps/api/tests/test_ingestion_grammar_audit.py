@@ -754,6 +754,23 @@ def test_a_font_the_kit_does_hold_binaries_for_draws_no_caveat() -> None:
     )
 
 
+def test_a_kit_that_declares_a_font_and_holds_no_binaries_draws_the_caveat() -> None:
+    """F-5: the strongest case the caveat exists for, and it was the one being abstained on.
+    This is stripe's first walk exactly — the kit KNEW about `sohne-var` and had zero faces for
+    it. "Nothing paintable" and "nothing declared" were being tested with one condition; they are
+    two different facts."""
+    evidence = _evidence()
+    kit = _kit_for(evidence)
+    role = next(iter(kit["tokens"]["typography"]))
+    kit["tokens"]["typography"][role]["value"]["default"]["font_family"] = "sohne-var"
+    kit.setdefault("assets", {})["fonts"] = {"brand": {"family": "sohne-var", "faces": []}}
+
+    treatment = _rules_text(extract_grammar_audit(evidence, kit).type_treatment)
+
+    assert "CAVEAT" in treatment
+    assert "`sohne-var`" in treatment
+
+
 def test_a_kit_that_declares_no_fonts_at_all_draws_no_caveat_either() -> None:
     """"Nothing is known about this kit's faces" is not "this kit can paint nothing", and a
     caveat off no evidence is the confident wrongness the whole audit is written against."""
@@ -764,3 +781,18 @@ def test_a_kit_that_declares_no_fonts_at_all_draws_no_caveat_either() -> None:
     assert "CAVEAT" not in _rules_text(
         extract_grammar_audit(evidence, kit).type_treatment
     )
+
+
+def test_a_system_font_needs_no_binaries_and_draws_no_caveat() -> None:
+    """The third case, found by the F-5 fix's own regression: the normalizer records
+    `source.kind == "system"` for a family it found no webfont for — the engine's Inter default
+    is the everyday one — and such a family needs no bytes from us because nothing is served.
+    Caveating it would tell a brand it cannot paint the font it is already painting in."""
+    evidence = _bare_evidence()
+    kit = _kit_for(evidence)
+    (brand,) = kit["assets"]["fonts"].values()
+    assert brand["faces"] == [] and brand["source"]["kind"] == "system"
+
+    treatment = extract_grammar_audit(evidence, kit).type_treatment
+    assert "CAVEAT" not in _rules_text(treatment)
+    assert "measured" not in {rule.basis for rule in treatment.rules}

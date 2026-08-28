@@ -157,12 +157,11 @@ def _card(
             else None
         ),
         # RULING R18-1: every repair in the family, from the card of ANY member — not just this
-        # row's direct children. `repairs` above is the parent/child relation and stays what it
-        # is; this is the FAMILY, which is what a retire affordance has to be built on. A repair
-        # is on no page unless somebody pinned it, so "select the repair" is not a way to reach
-        # one, and a grandchild leaf listed under nobody had a Retire button nowhere at all —
-        # leaving the contested-lineage dead end R17-2 exists to end still a dead end, with the
-        # affordance built and unreachable.
+        # row's direct children, which is why the direct-children list above it is gone (F3.4).
+        # A repair is on no page unless somebody pinned it, so "select the repair" is not a way
+        # to reach one, and a grandchild leaf listed under nobody had a Retire button nowhere at
+        # all — leaving the contested-lineage dead end R17-2 exists to end still a dead end, with
+        # the affordance built and unreachable.
         "lineage_root": verdict.root,
         "family": _family(fragment_id, rows=rows, lineages=lineages),
         "superseded_by": (

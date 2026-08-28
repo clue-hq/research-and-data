@@ -123,6 +123,13 @@ MINT_DORMANT_CODE = "LUMI0535"
 #: whether the row was actually updated, because a divergence nobody could write is still a
 #: divergence somebody has to know about.
 MINT_DEGRADED_RECONCILED_CODE = "LUMI0536"
+#: A QUALITY CHECK did not run on a section that was minted anyway (F3.4 fix round, ruling
+#: R20-3). Its own code because it is its own fact: `LUMI0537` says a budget refused some bytes,
+#: and this says what stopped working as a result. A section minted `degraded=False` because
+#: nobody could look at it must never read like a section that was looked at and found sound —
+#: that is the honest-absence posture the whole detector is built on (`DeadHeightAssessment.judged`
+#: exists for exactly this distinction), and the one place it could still be silent was here.
+MINT_CHECK_NOT_RUN_CODE = "LUMI0538"
 
 _PREVIEW_MEDIA_TYPE = "image/png"
 _DEFAULT_INLINE_MEDIA_TYPE = "application/octet-stream"
@@ -729,8 +736,12 @@ def _mint_one(
     # path, which is the one remaining over-count and is the rare case.
     _charge_css(matched.css, segmentation, record, weight, diagnostics)
 
-    preview, extent = _preview(segmentation, record, screenshot, diagnostics, weight)
-    assessment = _dead_height(segmentation, record, preview, extent, diagnostics)
+    preview, extent, preview_refused_by = _preview(
+        segmentation, record, screenshot, diagnostics, weight
+    )
+    assessment = _dead_height(
+        segmentation, record, preview, extent, diagnostics, preview_refused_by
+    )
     dead = assessment.finding
     # Born dormant, never minted ``draft`` and then demoted: the window between the two is
     # exactly long enough for a kit approval to release a section the site does not show.
@@ -761,7 +772,9 @@ def _mint_one(
         source_kit_version=source_kit_version,
         preview=preview,
         preview_media_type=_PREVIEW_MEDIA_TYPE,
-        provenance=_provenance(segmentation, record, matched, detected, harvest, extent, dead),
+        provenance=_provenance(
+            segmentation, record, matched, detected, harvest, extent, dead, assessment
+        ),
         prelude_reference=PRELUDE_REFERENCE_STRIP,
         status=status,
         degraded=dead is not None,
@@ -828,6 +841,7 @@ def _dead_height(
     preview: bytes | None,
     extent: CropExtent | None,
     diagnostics: list[dict[str, Any]],
+    preview_refused_by: str | None = None,
 ) -> DeadHeightAssessment:
     """Is this section mostly artificial scroll height? (F3.0, D-F6's trigger.)
 
@@ -846,6 +860,29 @@ def _dead_height(
         basis=extent.basis if extent is not None else None,
         viewport_width=segmentation.viewport_width,
     )
+    if not assessment.judged and preview_refused_by is not None:
+        # RULING R20-3: a check that did not run is SAID. The byte budget is already loud about
+        # the bytes (`LUMI0537`), but the knock-on was silent — this section is about to be
+        # written `degraded=False`, and without this line that is indistinguishable from a band
+        # somebody looked at and found sound. A dead-height finding is the repair ladder's entry
+        # condition, so a silent clean bill here is a broken clone nobody is ever told about.
+        diagnostics.append(
+            _diag(
+                MINT_CHECK_NOT_RUN_CODE,
+                f"section {record.index} ({record.role}) of {segmentation.page_url} was minted "
+                "WITHOUT its dead-height check: the check reads the preview crop, and the "
+                f"{preview_refused_by} budget refused to store one "
+                f"({assessment.abstained_because}). This section is not marked degraded because "
+                "nobody looked at it, which is not the same as looking and finding it sound — "
+                "photograph it with an isolation render if the band looks tall on the page",
+                section_index=record.index,
+                role=record.role,
+                check="dead_height",
+                because=assessment.abstained_because,
+                budget=preview_refused_by,
+            )
+        )
+
     finding = assessment.finding
     if finding is None:
         return assessment
@@ -1003,13 +1040,17 @@ def _charge_css(
         diagnostics.append(
             budget_diagnostic(
                 budget="page scoped CSS bytes",
-                limit=MAX_PAGE_CSS_BYTES,
+                # The limit the WEIGHT enforced, not the module constant (F3.4 fix round, F-4).
+                # `PageWeight` carries its limits so a caller can hand it different ones; a
+                # diagnostic that reported the constant instead would name a number that did not
+                # decide anything the moment anybody used that.
+                limit=weight.css_limit,
                 measured=weight.css_bytes,
                 outcome=OUTCOME_WARNED,
                 message=(
                     f"the clones of {segmentation.page_url} now carry {weight.css_bytes} bytes of "
                     f"scoped CSS between {weight.fragment_count} fragment(s), over the "
-                    f"{MAX_PAGE_CSS_BYTES}-byte per-page budget; every section is still minted in "
+                    f"{weight.css_limit}-byte per-page budget; every section is still minted in "
                     "full, and this page is an expensive one to clone"
                 ),
                 page_url=segmentation.page_url,
@@ -1024,7 +1065,7 @@ def _fit_preview(
     record: SectionRecord,
     weight: PageWeight,
     diagnostics: list[dict[str, Any]],
-) -> bytes | None:
+) -> tuple[bytes | None, str | None]:
     """Bring one preview inside the byte budgets, or give it up loudly (F3.4).
 
     A preview is a THUMBNAIL, so the first answer to "too many bytes" is fewer pixels: it is
@@ -1035,6 +1076,10 @@ def _fit_preview(
     The page total is checked last and separately, because it is a different fact: a preview that
     fits perfectly well can still be the one that puts this page over its budget, and refusing it
     is not a statement about the picture.
+
+    Returns ``(bytes-or-None, the budget that refused it)``. The second half exists because a
+    refusal here does not only cost a thumbnail — it switches off the dead-height check, which
+    reads the crop (ruling R20-3), and the caller has to be able to say so.
     """
     from PIL import Image, UnidentifiedImageError
 
@@ -1087,7 +1132,7 @@ def _fit_preview(
                     encoded_width=width,
                 )
             )
-            return None
+            return None, "preview bytes"
         diagnostics.append(
             budget_diagnostic(
                 budget="preview bytes",
@@ -1111,14 +1156,16 @@ def _fit_preview(
         diagnostics.append(
             budget_diagnostic(
                 budget="page preview bytes",
-                limit=MAX_PAGE_PREVIEW_BYTES,
+                # The enforced limit, for the same reason (F-4): `preview_fits` asked
+                # `weight.preview_limit`.
+                limit=weight.preview_limit,
                 measured=weight.preview_bytes + len(preview),
                 outcome=OUTCOME_REFUSED,
                 message=(
                     f"section {record.index} ({record.role}) of {segmentation.page_url} was "
                     f"minted WITHOUT a preview: {segmentation.page_url} already holds "
                     f"{weight.preview_bytes} bytes of preview images and this one would take it "
-                    f"past the {MAX_PAGE_PREVIEW_BYTES}-byte per-page budget. The section itself "
+                    f"past the {weight.preview_limit}-byte per-page budget. The section itself "
                     "is minted in full"
                 ),
                 section_index=record.index,
@@ -1126,9 +1173,9 @@ def _fit_preview(
                 page_url=segmentation.page_url,
             )
         )
-        return None
+        return None, "page preview bytes"
     weight.add_preview(len(preview))
-    return preview
+    return preview, None
 
 
 def _preview(
@@ -1137,7 +1184,13 @@ def _preview(
     screenshot: bytes | None,
     diagnostics: list[dict[str, Any]],
     weight: PageWeight | None = None,
-) -> tuple[bytes | None, CropExtent | None]:
+) -> tuple[bytes | None, CropExtent | None, str | None]:
+    """``(the picture, its extent, the budget that refused it)``.
+
+    The third value is ``None`` in every ordinary case. It is set only when a crop EXISTED and a
+    byte budget would not store it, which is the one shape where "no preview" is not a statement
+    about the capture — and which switches off a quality check downstream (ruling R20-3).
+    """
     extent = crop_extent(segmentation, record)
     preview = (
         crop_preview(screenshot, extent, viewport_width=segmentation.viewport_width)
@@ -1145,7 +1198,7 @@ def _preview(
         else None
     )
     if preview is not None:
-        preview = _fit_preview(
+        preview, refused_by = _fit_preview(
             preview,
             segmentation,
             record,
@@ -1155,7 +1208,7 @@ def _preview(
         # A preview refused by a BUDGET has already said so, with the number and the budget. The
         # generic no-preview line below is about the capture, and repeating it here would report
         # a missing screenshot the capture actually took.
-        return preview, extent
+        return preview, extent, refused_by
     if preview is None:
         diagnostics.append(
             _diag(
@@ -1172,7 +1225,7 @@ def _preview(
                 basis=extent.basis if extent is not None else None,
             )
         )
-    return preview, extent
+    return preview, extent, None
 
 
 def _label(record: SectionRecord) -> str:
@@ -1197,6 +1250,7 @@ def _provenance(
     harvest: ReferenceHarvest,
     extent: CropExtent | None,
     dead: DeadHeight | None = None,
+    assessment: DeadHeightAssessment | None = None,
 ) -> dict[str, Any]:
     """Everything needed to answer "where did this fragment come from, and how sure were we?".
 
@@ -1249,6 +1303,15 @@ def _provenance(
         "slot_notes": list(detected.notes),
         "reference_conflicts": list(harvest.conflicts),
         "degraded": dead.as_provenance() if dead is not None else None,
+        # Present ONLY when the dead-height check did not run (F3.4 fix round, ruling R20-3), so
+        # a row with no marker can be told apart from a row that was looked at. `degraded: null`
+        # beside `dead_height_check: {"assessed": false, …}` is "nobody looked"; `degraded: null`
+        # alone is "looked, and it is fine".
+        "dead_height_check": (
+            {"assessed": False, "because": assessment.abstained_because}
+            if assessment is not None and not assessment.judged
+            else None
+        ),
         "hidden_on_source": (
             {"hidden": True, "evidence": list(record.hidden_evidence)}
             if record.hidden_on_source
@@ -1350,6 +1413,7 @@ def make_asset_rehoster(blobs: Any) -> Callable[[bytes, str], str]:
 __all__ = [
     "MAX_PREVIEW_WIDTH",
     "MINT_BUDGET_CODE",
+    "MINT_CHECK_NOT_RUN_CODE",
     "MINT_CAPPED_CODE",
     "MINT_DEGRADED_CODE",
     "MINT_DEGRADED_RECONCILED_CODE",

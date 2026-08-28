@@ -1361,3 +1361,81 @@ def test_a_section_that_is_refused_never_spends_the_pages_css_budget(monkeypatch
     # …so the only CSS charged is the hero's, which is nowhere near the budget.
     assert _budget_lines(outcome, "page scoped CSS bytes") == []
     assert _budget_lines(outcome, "fragment scoped CSS bytes") == []
+
+
+def test_a_budget_refused_preview_says_the_dead_height_check_did_not_run(monkeypatch) -> None:
+    """Ruling R20-3. The byte budget is loud about the BYTES; the knock-on was silent. The
+    dead-height check reads the preview crop, so a refused crop switches it off — and the section
+    is then written `degraded=False`, which is indistinguishable from a band somebody looked at
+    and found sound. A dead-height finding is the repair ladder's entry condition, so a silent
+    clean bill here is a broken clone nobody is ever told about."""
+    monkeypatch.setattr(mint_module, "MAX_PREVIEW_BYTES", 10_000)
+    outcome, recorder = _mint(
+        BANDED_PAGE, screenshot=_noisy_png(1200, 1400), bands=_BANDS
+    )
+
+    assert _budget_lines(outcome, "preview bytes")  # the bytes were refused, loudly
+    not_run = [
+        diagnostic
+        for diagnostic in outcome.diagnostics
+        if diagnostic["code"] == mint_module.MINT_CHECK_NOT_RUN_CODE
+    ]
+    assert not_run, "a disabled check has to say so"
+    assert all(line["check"] == "dead_height" for line in not_run)
+    assert all(line["budget"] == "preview bytes" for line in not_run)
+    assert all(line["because"] == "no_preview" for line in not_run)
+    assert "not marked degraded because nobody looked at it" in not_run[0]["message"]
+    # …and the row's own provenance keeps the distinction, so it survives the diagnostics.
+    hero = next(call for call in recorder.created if call["section_role"] == "hero")
+    assert hero["provenance"]["degraded"] is None
+    assert hero["provenance"]["dead_height_check"] == {
+        "assessed": False,
+        "because": "no_preview",
+    }
+
+
+def test_a_page_budget_refusal_names_the_page_budget_as_what_stopped_the_check(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(mint_module, "MAX_PAGE_PREVIEW_BYTES", 400_000)
+    outcome, _ = _mint(BANDED_PAGE, screenshot=_noisy_png(1200, 1400), bands=_BANDS)
+
+    not_run = [
+        diagnostic
+        for diagnostic in outcome.diagnostics
+        if diagnostic["code"] == mint_module.MINT_CHECK_NOT_RUN_CODE
+    ]
+    assert not_run
+    assert {line["budget"] for line in not_run} == {"page preview bytes"}
+
+
+def test_a_section_the_check_did_run_on_carries_no_not_assessed_note() -> None:
+    """The other half of the distinction: `degraded: null` with nothing beside it means looked
+    at and sound."""
+    outcome, recorder = _mint(BANDED_PAGE, screenshot=_png(1200, 1400), bands=_BANDS)
+
+    assert [
+        diagnostic
+        for diagnostic in outcome.diagnostics
+        if diagnostic["code"] == mint_module.MINT_CHECK_NOT_RUN_CODE
+    ] == []
+    hero = next(call for call in recorder.created if call["section_role"] == "hero")
+    assert hero["provenance"]["dead_height_check"] is None
+
+
+def test_the_budget_diagnostics_report_the_limit_they_actually_enforced() -> None:
+    """F-4. `PageWeight` carries its limits so a caller can hand it different ones; a diagnostic
+    that reported the module constant instead would name a number that decided nothing."""
+    from lumen_ingestion.sections.budget import PageWeight
+
+    weight = PageWeight(css_limit=10, preview_limit=10)
+    diagnostics: list[dict] = []
+    segmentation = _banded_segmentation()
+    record = segmentation.sections[1]
+    mint_module._charge_css("x" * 50, segmentation, record, weight, diagnostics)
+
+    (page_line,) = [
+        line for line in diagnostics if line["budget"] == "page scoped CSS bytes"
+    ]
+    assert page_line["limit"] == 10
+    assert "10-byte per-page budget" in page_line["message"]

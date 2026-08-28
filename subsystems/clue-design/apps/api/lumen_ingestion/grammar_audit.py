@@ -314,9 +314,22 @@ def _families_without_binaries(
     kit writes ``sohne-var`` and a stylesheet writes ``"Sohne Var"`` for the same thing often
     enough that an exact match would report a caveat about every site.
 
-    Returns ``[]`` when the kit declares no font assets at all — that is "nothing is known about
+    Returns ``[]`` when the kit declares no font assets AT ALL — that is "nothing is known about
     this kit's faces", not "this kit cannot paint anything", and a caveat off no evidence is the
     kind of confident wrongness the whole audit is written against.
+
+    A kit that DOES declare fonts and holds no binaries for any of them is the opposite case, and
+    it is the strongest case this caveat exists for — it is stripe's first walk exactly: the kit
+    knew about ``sohne-var`` and had zero faces for it. That used to fall through the same
+    early return, because "nothing paintable" and "nothing declared" were being tested with one
+    condition (F3.4 fix round, F-5). They are now two.
+
+    **A SYSTEM font is paintable with no faces at all**, and that is the third case. The
+    normalizer records ``source.kind == "system"`` for a family it found no webfont for — the
+    engine's own Inter default is the everyday one — and such a family needs no binaries from us
+    because nothing is being served. Caveating it would say a brand cannot paint the font it is
+    already painting in, which is the confident wrongness this function's own last paragraph is
+    about.
     """
     fonts = ((brand_kit.get("assets") or {}).get("fonts")) or {}
     if not isinstance(fonts, dict) or not fonts:
@@ -324,11 +337,9 @@ def _families_without_binaries(
     paintable = {
         _family_key(font.get("family"))
         for font in fonts.values()
-        if isinstance(font, dict) and (font.get("faces") or [])
+        if isinstance(font, dict) and _is_paintable(font)
     }
     paintable.discard("")
-    if not paintable:
-        return []
     missing: list[str] = []
     for role, _where in _WEB_TYPE_ROLES:
         style = _style_value(typography.get(role))
@@ -340,6 +351,18 @@ def _families_without_binaries(
             continue
         missing.append(family)
     return missing
+
+
+def _is_paintable(font: Any) -> bool:
+    """Can this declared family be rendered — either because we hold its bytes, or because it
+    needs none? See :func:`_families_without_binaries` for the three cases."""
+    if not isinstance(font, dict):
+        return False
+    if font.get("faces"):
+        return True
+    source = font.get("source")
+    kind = source.get("kind") if isinstance(source, dict) else None
+    return kind == "system"
 
 
 def _first_family(stack: Any) -> str:

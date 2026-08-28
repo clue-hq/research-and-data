@@ -28,6 +28,14 @@ from lumen_ingestion.sections.bands import (
 from lumen_ingestion.sections.segment import (
     BAND_ALIGNMENT_REFUSED_CODE,
     COMPOUND_BAND_SPLIT_CODE,
+    CONTENT_WEIGHT,
+    CONTEST_MARGIN,
+    CORROBORATION_BONUS,
+    HEADLINE_WEIGHT,
+    POSITION_WEIGHT,
+    STRONG_HINT_WEIGHT,
+    WEAK_HINT_WEIGHT,
+    _within_contest_margin,
     ESTIMATED_GEOMETRY_CODE,
     NO_BAND_EVIDENCE_CODE,
     NO_SECTIONS_CODE,
@@ -1163,6 +1171,11 @@ def test_a_wrapper_holding_only_authored_sections_is_split_into_them():
     assert split[0]["band_index"] == 1
     assert split[0]["band_height_px"] == 2286.78
     assert "isolation render" in split[0]["message"]
+    # …and the OTHER cost the split has, which the first version of this sentence left out (F-9):
+    # a part is minted from its own subtree, so a rule written against the wrapper element itself
+    # stops applying to it. Rules reaching THROUGH the wrapper survive, and the sentence says so.
+    assert 'against <div class="overflow-hidden"> itself' in split[0]["message"]
+    assert "rules reaching THROUGH it still do" in split[0]["message"]
     # …and the unmeasured-section diagnostic keeps the three facts apart rather than telling the
     # reader the browser looked at these three and skipped them.
     unmeasured = [d for d in result.diagnostics if d["code"] == UNMEASURED_SECTION_CODE][0]
@@ -1208,6 +1221,47 @@ def test_a_section_that_declares_itself_one_is_never_split_into_its_subsections(
         "Powering businesses of all sizes.",
         "Tail",
     ]
+    assert [d for d in result.diagnostics if d["code"] == COMPOUND_BAND_SPLIT_CODE] == []
+
+
+def test_a_grid_of_article_cards_is_one_band_not_three_sections():
+    """Ruling R20-2, reproduced live by the reviewer. `<article>` is the standard's SELF-CONTAINED
+    composition — a blog card, a news teaser, a product card — so a `<div class="posts">` holding
+    three of them is one reusable band. Splitting it minted three preview-less, geometry-less
+    "sections", each spending a fragment row and a slot of the mint cap, on the ordinary markup of
+    every blog index there is."""
+    cards = "".join(
+        f'<article class="card"><h2>Post {name}</h2><p>Words.</p></article>'
+        for name in ("one", "two", "three")
+    )
+    html = f"""
+    <html><body><main>
+      <section class="hero"><h1>Blog</h1></section>
+      <div class="posts">{cards}</div>
+    </main></body></html>
+    """
+    result = segment_page(html, page_url="https://x.example/")
+
+    assert [section.tag for section in result.sections] == ["section", "div"]
+    assert [d for d in result.diagnostics if d["code"] == COMPOUND_BAND_SPLIT_CODE] == []
+
+
+def test_a_wrapper_holding_a_header_and_a_footer_is_one_band_with_a_top_and_a_bottom():
+    """The other two tags ruling R20-2 excludes. `<header>`/`<footer>` are not sectioning content
+    in the standard at all — they are the banner/contentinfo landmarks, and inside anything else
+    they are that thing's own header. Two of them in a wrapper is one band, not two sections."""
+    html = """
+    <html><body><main>
+      <section class="hero"><h1>Home</h1></section>
+      <div class="panel">
+        <header class="panel-top"><h2>Plans</h2></header>
+        <footer class="panel-foot"><p>Terms apply.</p></footer>
+      </div>
+    </main></body></html>
+    """
+    result = segment_page(html, page_url="https://x.example/")
+
+    assert [section.tag for section in result.sections] == ["section", "div"]
     assert [d for d in result.diagnostics if d["code"] == COMPOUND_BAND_SPLIT_CODE] == []
 
 
@@ -1381,3 +1435,94 @@ def test_a_hidden_section_is_named_from_its_heading_too():
     )
     result = segment_page(html, page_url="https://x.example/")
     assert [section.role for section in result.hidden_sections] == ["testimonial"]
+
+
+# --------------------------------------------------------------------------- #
+# F3.4 fix round — R20-1: a heading may promote or re-name, never UNNAME
+# --------------------------------------------------------------------------- #
+
+
+def _second_section(class_names: str, heading: str, copy: str = "Words about it.") -> str:
+    return (
+        '<html><body><main><section class="hero_wrap"><h1>Ship faster</h1></section>'
+        f'<section class="{class_names}"><h2>{heading}</h2><p>{copy}</p></section>'
+        "</main></body></html>"
+    )
+
+
+def _role_of_second(html: str):
+    section = segment_page(html, page_url="https://x.example/").sections[1]
+    return section.role, section.confidence
+
+
+def test_a_heading_never_turns_a_named_section_into_other() -> None:
+    """The reviewer's live repro. A `stats-band` proof strip headed "Customer reviews" resolved
+    proof@0.60 → other@0.30: the heading created a contest that did not exist, and a contest
+    resolves to `other`. That is the exact failure the heading signal was added to REDUCE,
+    running backwards."""
+    role, confidence = _role_of_second(_second_section("stats-band", "Customer reviews"))
+    assert role != "other"
+    assert confidence >= WEAK_HINT_WEIGHT
+
+
+def test_a_heading_that_contests_a_stronger_declaration_leaves_the_declaration_standing() -> None:
+    """The sub-rung case, where the margin genuinely does catch a tie: two heading tokens
+    corroborate to 0.75 against a strong class token at 0.80. Without the guard this is `other`;
+    with it the class name — the thing the author wrote for a machine — stands, and the evidence
+    says the heading argued otherwise."""
+    html = _second_section("compliance-band", "Reviews quotes")
+    role, confidence = _role_of_second(html)
+
+    assert (role, confidence) == ("security", STRONG_HINT_WEIGHT)
+    section = segment_page(html, page_url="https://x.example/").sections[1]
+    (note,) = [item for item in section.evidence if item.signal == "resolution"]
+    assert "the heading argued for testimonial" in note.detail
+    assert "never unnames a section" in note.detail
+
+
+def test_a_contest_the_declarations_would_have_had_anyway_still_resolves_to_other() -> None:
+    """The guard is narrow on purpose: it rescues a contest the HEADING created, not every
+    contest. Two class tokens a half-rung apart still refuse to be broken."""
+    role, _confidence = _role_of_second(
+        _second_section("stats-band story-block", "Ship faster today")
+    )
+    assert role == "other"
+
+
+# --- the contest margin itself: both sides, exactly ----------------------------------------- #
+
+
+def test_one_whole_rung_of_the_weight_ladder_is_decisive_at_both_ends() -> None:
+    """The boundary used to be decided by floating-point luck, in opposite directions for the
+    same nominal gap: `0.80 - 0.10` is 0.7000000000000001 so a strong class token beat a heading
+    outright, while `0.70 - 0.10` is 0.5999999999999999 so a heading was tied by a weak one. Same
+    one-rung gap, two answers. It is now one rule, and the rule is that a whole rung decides —
+    the ladder exists so that "inference never outranks a declaration" means something, and if
+    one rung were a tie it would mean nothing."""
+    assert not _within_contest_margin(STRONG_HINT_WEIGHT, HEADLINE_WEIGHT)
+    assert not _within_contest_margin(HEADLINE_WEIGHT, WEAK_HINT_WEIGHT)
+    assert not _within_contest_margin(WEAK_HINT_WEIGHT, POSITION_WEIGHT)
+    # …and anything closer than a rung is still a tie, which is what the margin is for.
+    assert _within_contest_margin(STRONG_HINT_WEIGHT, HEADLINE_WEIGHT + CORROBORATION_BONUS)
+    assert _within_contest_margin(HEADLINE_WEIGHT, CONTENT_WEIGHT)
+    assert _within_contest_margin(HEADLINE_WEIGHT, HEADLINE_WEIGHT)
+
+
+@pytest.mark.parametrize(
+    "leader, runner_up",
+    [
+        (STRONG_HINT_WEIGHT, HEADLINE_WEIGHT),
+        (HEADLINE_WEIGHT, WEAK_HINT_WEIGHT),
+        (WEAK_HINT_WEIGHT, POSITION_WEIGHT),
+        (0.85, 0.75),
+        (0.75, 0.65),
+    ],
+)
+def test_the_margin_answers_the_same_way_whatever_the_operands_are(
+    leader: float, runner_up: float
+) -> None:
+    """The property the float boundary did not have: a gap of exactly one margin gets one answer,
+    for every pair of weights that produces it. A retune of any weight can no longer flip a whole
+    class of sections to `other` with nothing noticing."""
+    assert round(leader - runner_up, 6) == CONTEST_MARGIN
+    assert _within_contest_margin(leader, runner_up) is False
