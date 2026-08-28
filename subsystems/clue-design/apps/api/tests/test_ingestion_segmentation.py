@@ -1526,3 +1526,48 @@ def test_the_margin_answers_the_same_way_whatever_the_operands_are(
     class of sections to `other` with nothing noticing."""
     assert round(leader - runner_up, 6) == CONTEST_MARGIN
     assert _within_contest_margin(leader, runner_up) is False
+
+
+def test_a_weaker_newly_named_band_never_steals_a_singular_role_from_a_stronger_claim():
+    """The keeper of a singular role is the STRONGEST claim; position only breaks ties.
+
+    (F3.4 fix round 2, finding N-1.) The strict contest margin can newly name an opening band
+    — a page ``<h1>`` beside a ``<blockquote>`` resolves ``hero`` where it used to tie into
+    ``other`` — and a first-wins-by-position enforcer then stripped the role from the FOLLOWING
+    band whose author declared it (``class="hero-section"``, class-hint 0.80 > 0.75). The
+    author's declaration is the stronger claim and keeps the name; the earlier band returns to
+    ``other``.
+    """
+    html = """
+    <html><body><main>
+      <section class="intro-band">
+        <h1>Care that keeps up</h1>
+        <blockquote>It changed how our practice runs.</blockquote>
+      </section>
+      <section class="hero-section">
+        <p>The platform neurology practices run on.</p>
+        <a class="button" href="/demo">Book a demo</a>
+      </section>
+    </main></body></html>
+    """
+    result = segment_page(html, page_url="https://x.example/")
+    roles = [section.role for section in result.sections]
+    assert roles.count("hero") == 1, roles
+    intro, declared = result.sections[0], result.sections[1]
+    assert declared.role == "hero", roles
+    assert intro.role != "hero", roles
+
+
+def test_between_equal_singular_claims_the_positional_one_still_wins():
+    """Ties keep the old rule: a page's first plausible hero is THE hero (F2.1 design)."""
+    html = """
+    <html><body><main>
+      <section class="hero-section"><p>First.</p><a href="/a">Go</a></section>
+      <section class="hero-section"><p>Second.</p><a href="/b">Go</a></section>
+    </main></body></html>
+    """
+    result = segment_page(html, page_url="https://x.example/")
+    roles = [section.role for section in result.sections]
+    assert roles.count("hero") == 1, roles
+    assert result.sections[0].role == "hero"
+    assert result.sections[1].role != "hero"

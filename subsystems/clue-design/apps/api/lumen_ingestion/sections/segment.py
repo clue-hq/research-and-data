@@ -1936,15 +1936,26 @@ def _resolve(candidate: _Candidate) -> tuple[str, float]:
 def _enforce_singular_roles(candidates: list[_Candidate]) -> None:
     """A page has one nav, one hero and one footer; the runners-up become ``other``.
 
-    Which one keeps the name is decided by the role's own end of the document (a page's nav and
-    hero are its first; its footer is its last) and ties on confidence never arise because the
-    keeper is chosen by position, not score.
+    Which one keeps the name: the STRONGEST claim, with the role's own end of the document (a
+    page's nav and hero are its first; its footer is its last) breaking ties. Position alone
+    decided until the F3.4 fix round, and the strict contest margin turned that into a theft
+    (finding N-1): an opening band NEWLY resolving ``hero`` at 0.75 stripped the role from the
+    following band whose author had declared it (``class="hero-section"``, 0.80). A weaker claim
+    never displaces a stronger one; between equals, the positional rule is unchanged.
+    Confidences are compared at :data:`_MARGIN_PRECISION`, the same rounding the contest itself
+    decides at, so the float representation of a rung can never pick the keeper.
     """
     for role, which in _SINGULAR_ROLES.items():
         holders = [candidate for candidate in candidates if candidate.role == role]
         if len(holders) < 2:
             continue
-        keeper = holders[0] if which == "first" else holders[-1]
+        best = max(round(holder.confidence, _MARGIN_PRECISION) for holder in holders)
+        strongest = [
+            holder
+            for holder in holders
+            if round(holder.confidence, _MARGIN_PRECISION) == best
+        ]
+        keeper = strongest[0] if which == "first" else strongest[-1]
         for candidate in holders:
             if candidate is keeper:
                 continue
