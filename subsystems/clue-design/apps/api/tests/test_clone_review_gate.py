@@ -650,6 +650,14 @@ class _FakePage:
     def wait_for_timeout(self, _ms: int) -> None:
         pass
 
+    def wait_for_function(self, script: str, *, timeout: int = 0) -> None:
+        from lumen_api.clone_review.walk import STYLES_READY_SCRIPT
+
+        assert script == STYLES_READY_SCRIPT
+        self.owner.waits.append(timeout)
+        if self.owner.styles_ready is not True:
+            raise TimeoutError("styles never became ready")
+
     def evaluate(self, script: str, arg: Any = None) -> Any:
         from lumen_api.clone_review.walk import (
             DOCUMENT_HEIGHT_SCRIPT,
@@ -690,6 +698,7 @@ class _FakeBrowser:
         self.styles_ready = styles_ready
         self.fail_passes = fail_passes
         self.pages: list[_FakePage] = []
+        self.waits: list[int] = []
         self.html = ""
 
     def new_context(self, *, viewport: dict, reduced_motion: str) -> "_FakeBrowser":
@@ -1036,3 +1045,119 @@ def test_an_unsamplable_whole_page_delta_is_none_rather_than_maximally_different
     )
     assert result["status"] == "ok"
     assert result["whole_page_pixel_delta"] is None
+
+
+# =================================================================================================
+# Round-2 fixes — the readiness gate must fail CLOSED, and the wrapper must not swallow the extent
+# =================================================================================================
+
+
+def test_the_readiness_predicate_is_anchored_on_our_own_script():
+    """It can only ever answer `true` about a page that HAS the runtime.
+
+    The first version asked "is head's last element child an untyped, non-empty style?", which the
+    engine's own unconditional `@layer base` block satisfies — so a render with NO Tailwind
+    runtime, and therefore no utility CSS at all, read as ready. The predicate now names the
+    script we inject.
+    """
+    from lumen_api.clone_review.walk import STYLES_READY_SCRIPT, TAILWIND_RUNTIME_MARKER
+
+    assert f"script[{TAILWIND_RUNTIME_MARKER}]" in STYLES_READY_SCRIPT
+    assert "if (!runtime) return false;" in STYLES_READY_SCRIPT
+    # It looks FORWARD from the anchor, so nothing the engine emitted before it can satisfy it.
+    assert "nextElementSibling" in STYLES_READY_SCRIPT
+    assert "lastElementChild" not in STYLES_READY_SCRIPT
+
+
+def test_readiness_is_waited_for_not_sampled(tmp_path):
+    """Ruling R19-1 asked for a deterministic signal, not a deterministic signal after a sleep."""
+    from lumen_api.clone_review.walk import STYLES_READY_TIMEOUT_MS
+
+    ready = _FakeBrowser(styles_ready=True)
+    _run(ready, tmp_path / "ready")
+    assert ready.waits == [STYLES_READY_TIMEOUT_MS, STYLES_READY_TIMEOUT_MS]
+
+    # A page that never becomes ready waits to the deadline and then answers honestly.
+    slow = _FakeBrowser(styles_ready=False)
+    walk = _run(slow, tmp_path / "slow")
+    assert slow.waits == [STYLES_READY_TIMEOUT_MS, STYLES_READY_TIMEOUT_MS]
+    assert walk.by_class(WALK_CLASS_HEIGHT_COLLAPSE).notes["styles_ready"] is False
+
+
+def test_a_wrapper_with_a_stray_text_node_can_still_be_convicted_of_dead_height():
+    """The M1 fix must not disable the detector it sits next to.
+
+    Letting `consider(el)` set the ink extent made `content_fraction` exactly 1.0 for any band
+    with a direct text node — so a band with one heading and 3,000px of emptiness could never be
+    called dead height, which is the defect D-F6 says is never acceptable at any rung. The probe
+    now measures the TEXT, not the band, while still counting the band as non-blank.
+    """
+    from lumen_api.clone_review.walk import SECTION_PROBE_SCRIPT
+
+    # The wrapper's own box is the DENOMINATOR; only a covering background may claim it.
+    assert "considerRect(el.getBoundingClientRect());" in SECTION_PROBE_SCRIPT
+    assert "hasBackgroundImage(own)" in SECTION_PROBE_SCRIPT
+    # Direct text on the wrapper is measured through a Range, i.e. the text's own rect.
+    assert "range.selectNode(child);" in SECTION_PROBE_SCRIPT
+
+    # And the arithmetic downstream still convicts: one heading's worth of ink in a 3200px band.
+    band = _measurement("frag_stray", height_px=3200.0, content_extent_px=64.0, ink_nodes=1)
+    assert [item.reason for item in broken_clones((band,))] == [
+        DEGRADED_REASON_RUNTIME_DEAD_HEIGHT
+    ]
+    # ...while a band whose ink really does cover it is left alone.
+    covered = _measurement("frag_photo", height_px=3200.0, content_extent_px=3200.0, ink_nodes=1)
+    assert broken_clones((covered,)) == ()
+
+
+def test_a_band_whose_only_ink_is_on_the_wrapper_is_not_called_blank():
+    """M1's original intent, kept: counted as ink, so never `blank_render`."""
+    band = _measurement("frag_bg", height_px=900.0, content_extent_px=900.0, ink_nodes=1)
+    assert broken_clones((band,)) == ()
+
+
+def test_the_console_note_names_every_pass_whose_console_was_actually_heard(tmp_path):
+    """Round-2 rider: handlers attach before `set_content`, so a pass that failed to open can
+    still have contributed entries. The note now reports what was heard, with `opened` beside it."""
+    from lumen_api.clone_review.browser import run_walk
+
+    browser = _FakeBrowser(fail_passes=("mobile",))
+
+    class _Message:
+        type = "error"
+        text = "boom"
+        location = {"url": "https://cdn.test/a.png", "lineNumber": 1}
+
+    original = browser.new_page
+
+    def _new_page():
+        page = original()
+        real = page.set_content
+
+        def _set_content(html, wait_until="load"):
+            real(html, wait_until)
+            page.handlers["console"](_Message())
+
+        page.set_content = _set_content
+        return page
+
+    browser.new_page = _new_page
+    walk = run_walk(
+        "<html></html>", walk_plan(), output_dir=tmp_path, browser_factory=_factory(browser)
+    )
+    console = walk.by_class(WALK_CLASS_CONSOLE)
+    # The mobile pass never opened, so it neither opened nor was heard.
+    assert console.notes["opened"] == ["desktop", "reduced_motion"]
+    assert console.notes["passes"] == ["desktop", "reduced_motion"]
+    assert {entry.pass_name for entry in console.console} == {"desktop", "reduced_motion"}
+
+
+def test_the_result_shapes_carry_their_new_version(tmp_path):
+    """Round-2 rider: fields were added, so the versions move."""
+    from lumen_api.clone_review import CRITIQUE_SCHEMA_VERSION, WALK_SCHEMA_VERSION
+
+    assert WALK_SCHEMA_VERSION == 2
+    assert CRITIQUE_SCHEMA_VERSION == 2
+    walk = _run(_FakeBrowser(), tmp_path)
+    assert walk.as_result()["schema_version"] == 2
+    assert compose_critique(walk).as_result()["schema_version"] == 2

@@ -76,7 +76,11 @@ WALK_CLASS_LABELS = {
     WALK_CLASS_REDUCED_MOTION: "reduced-motion variant",
 }
 
-WALK_SCHEMA_VERSION = 1
+#: Bumped to 2 in the round-2 fix: an observation's ``measurements`` gained ``measured`` and a
+#: console entry gained ``source``. Additive, but a reader that branched on either would misread a
+#: v1 payload as "measured, page-attributed" by omission, which is the thing a version exists to
+#: prevent.
+WALK_SCHEMA_VERSION = 2
 
 
 # --- viewports and stops -----------------------------------------------------------------------
@@ -115,6 +119,13 @@ SCROLL_STOPS = (0.0, 0.25, 0.5, 0.75, 1.0)
 #: CSS transitions all land inside it, and a screenshot taken before they do reports a defect
 #: that does not exist.
 SETTLE_MS = 400
+
+#: How long a probe pass WAITS for the shell's Tailwind JIT to compile this page's utilities
+#: before calling the evidence unsettled (ruling R19-1; round-2 re-review breakage #2). Five
+#: seconds is generous for a cold compile on a loaded host and a small fraction of the walk
+#: ceiling below, so a page that will never be ready costs this once per probe pass rather than
+#: holding a turn open.
+STYLES_READY_TIMEOUT_MS = 5_000
 
 #: The whole walk's per-operation ceiling. Generous, because a long cloned page carries real
 #: bytes; bounded, because a wedged browser must not hold a turn open.
@@ -462,34 +473,63 @@ SECTION_PROBE_SCRIPT = """
     let inkTop = null;
     let inkBottom = null;
     let inkNodes = 0;
-    const consider = (node) => {
-      const r = node.getBoundingClientRect();
+    const considerRect = (r) => {
       if (r.width <= 0 || r.height <= 0) return;
-      const s = getComputedStyle(node);
-      if (invisible(s)) return;
       const top = r.top + window.scrollY;
       const bottom = r.bottom + window.scrollY;
       inkNodes += 1;
       if (inkTop === null || top < inkTop) inkTop = top;
       if (inkBottom === null || bottom > inkBottom) inkBottom = bottom;
     };
-    const isInk = (node, style) => {
-      if (node.matches(INK_TAGS)) return true;
-      const bg = style.backgroundImage || 'none';
-      if (bg !== 'none' && bg.indexOf('url(') !== -1) return true;
+    const consider = (node) => {
+      const s = getComputedStyle(node);
+      if (invisible(s)) return;
+      considerRect(node.getBoundingClientRect());
+    };
+    const hasDirectText = (node) => {
       for (const child of node.childNodes) {
         if (child.nodeType === 3 && child.textContent.trim().length > 0) return true;
       }
       return false;
     };
-    // The WRAPPER itself is asked first (review finding M1). `cssscope` rewrites a source page's
-    // `:root`/`html`/`body` declarations onto this class, so a band whose only visible content is
-    // a full-bleed background image lands its ink exactly here — and a walk that only looked at
-    // descendants would report `ink_nodes: 0` and convict it of rendering nothing.
-    if (isInk(el, own)) consider(el);
+    const hasBackgroundImage = (style) => {
+      const bg = style.backgroundImage || 'none';
+      return bg !== 'none' && bg.indexOf('url(') !== -1;
+    };
+    // --- the WRAPPER itself -------------------------------------------------------------------
+    // It is asked, because `cssscope` rewrites a source page's `:root`/`html`/`body` declarations
+    // onto this class, so a band whose only visible content is a full-bleed background image
+    // lands its ink exactly here (review finding M1) — but it is asked CAREFULLY, because its box
+    // IS the band (round-2 re-review, breakage #3). Letting the wrapper's rect set the ink extent
+    // made `content_fraction` exactly 1.0 for any band with a stray text node on it, which turned
+    // dead-height detection off for that band entirely — the one defect D-F6 calls never
+    // acceptable at any rung.
+    //
+    // So the two cases are separated by what they actually cover:
+    //   * a background IMAGE covers the whole box, so the whole box is genuinely ink (this is
+    //     also what the mint's pixel detector sees: every row of a photograph varies);
+    //   * DIRECT TEXT covers only the text, so each text node is measured through a Range and
+    //     contributes its own rect. The wrapper still counts toward `ink_nodes` — it is not a
+    //     blank band — while 3000px of emptiness below the words stays emptiness.
+    if (!invisible(own)) {
+      if (el.matches(INK_TAGS) || hasBackgroundImage(own)) {
+        considerRect(el.getBoundingClientRect());
+      } else if (hasDirectText(el)) {
+        for (const child of el.childNodes) {
+          if (child.nodeType !== 3 || child.textContent.trim().length === 0) continue;
+          const range = document.createRange();
+          range.selectNode(child);
+          considerRect(range.getBoundingClientRect());
+          range.detach && range.detach();
+        }
+      }
+    }
+    // --- everything inside it ------------------------------------------------------------------
     el.querySelectorAll('*').forEach((node) => {
       const s = getComputedStyle(node);
-      if (isInk(node, s)) consider(node);
+      if (node.matches(INK_TAGS) || hasBackgroundImage(s) || hasDirectText(node)) {
+        consider(node);
+      }
     });
     const clamp = (value) => Math.max(pageTop, Math.min(pageTop + rect.height, value));
     const extent =
@@ -510,34 +550,54 @@ SECTION_PROBE_SCRIPT = """
 }
 """
 
+#: The attribute the preview shell stamps on the ``<script>`` it injects to carry the Tailwind
+#: browser JIT. Declared HERE, in the module the predicate below lives in, because the two are one
+#: mechanism: the renderer that stamps it (``LumenWebTools._render_page_html``) and the check that
+#: looks for it must never be able to disagree about the spelling.
+TAILWIND_RUNTIME_MARKER = "data-lumen-tailwind-runtime"
+
 #: Has the preview shell's Tailwind JIT finished compiling this page's utilities? (Review finding
-#: I1(b), ruling R19-1: a DURABLE degraded write requires SETTLED evidence — a deterministic
-#: signal, not a sleep.)
+#: I1(b), ruling R19-1: a DURABLE degraded write requires SETTLED evidence.)
 #:
-#: **Derived from the vendored runtime's own bytes, not guessed at.** `apps/editor/public/vendor/
-#: tailwind-browser.js` creates exactly one `<style>` element, sets its `textContent` to the built
-#: utilities, and — as its very last statement — does `document.head.append(fr)`. Every other
-#: `<style>` in the document (the engine's theme layer, the fragment sheet, the authored
-#: `type="text/tailwindcss"` source) is present at parse time, and our runtime `<script>` is
-#: injected immediately before `</head>`, so nothing else is appended to `<head>` afterwards. The
-#: last element child of `<head>` being an untyped, non-empty `<style>` therefore means the JIT
-#: has run and produced output.
+#: **Anchored on OUR OWN script element, and this is the whole correction** (round-2 re-review,
+#: breakage #1). The first version of this predicate asked "is head's last element child an
+#: untyped, non-empty ``<style>``?", which is sound while the runtime is present and catastrophic
+#: when it is not: the engine's editor-mode head ends with an unconditional untyped ``@layer
+#: base`` block (`crates/lumen-web/src/render.rs`), so a page with the runtime MISSING — and no
+#: utility CSS at all — answered ``true``. It failed OPEN, in exactly the case the ruling exists
+#: to catch, and the vendored runtime is untracked in git, so runtime-absent is a reachable
+#: deployment state rather than a hypothetical.
 #:
-#: The answer is deliberately TRI-STATE. `false` (the runtime is absent, or has not built yet)
-#: and `null` (the check itself could not run) both mean **not settled**, and a not-settled walk
-#: writes no durable marker at all — it reports the same findings as advice. Every way this
-#: signal can be wrong therefore errs toward writing nothing, which is the direction a marker the
-#: gate can never clear demands.
+#: The rule is now: find the script we injected; then look for an untyped, non-empty ``<style>``
+#: that FOLLOWS it. The vendored runtime creates exactly one ``<style>`` and its final synchronous
+#: statement is ``document.head.append(fr)``, so the compiled output can only ever land after our
+#: script — and every style the engine emitted is before it. With no runtime there is no anchor
+#: and the answer is ``false``, permanently, which is what "fail closed" means here.
+#:
+#: The answer is deliberately TRI-STATE at the Python boundary. ``false`` and ``null`` (the check
+#: could not run) both mean **not settled**, and a not-settled walk writes no durable marker at
+#: all — it reports the same findings as advice. Every way this signal can be wrong therefore errs
+#: toward writing nothing.
 STYLES_READY_SCRIPT = """
 () => {
   const head = document.head;
   if (!head) return false;
-  const last = head.lastElementChild;
-  if (!last || last.tagName !== 'STYLE') return false;
-  if (last.getAttribute('type')) return false;
-  return (last.textContent || '').trim().length > 0;
+  const runtime = head.querySelector('script[%s]');
+  if (!runtime) return false;
+  let node = runtime.nextElementSibling;
+  while (node) {
+    if (
+      node.tagName === 'STYLE' &&
+      !node.getAttribute('type') &&
+      (node.textContent || '').trim().length > 0
+    ) {
+      return true;
+    }
+    node = node.nextElementSibling;
+  }
+  return false;
 }
-"""
+""" % TAILWIND_RUNTIME_MARKER
 
 #: The document's own scroll height, read once per pass. The reduced-motion comparison is made of
 #: it: a page whose content only exists once an animation has run is SHORTER with motion off.
@@ -706,6 +766,8 @@ __all__ = [
     "SECTION_PROBE_SCRIPT",
     "SETTLE_MS",
     "STYLES_READY_SCRIPT",
+    "STYLES_READY_TIMEOUT_MS",
+    "TAILWIND_RUNTIME_MARKER",
     "WALK_CLASSES",
     "WALK_CLASS_CONSOLE",
     "WALK_CLASS_FULL_PAGE",

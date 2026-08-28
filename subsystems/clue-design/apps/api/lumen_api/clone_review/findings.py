@@ -50,7 +50,9 @@ from .walk import (
     SectionMeasurement,
 )
 
-CRITIQUE_SCHEMA_VERSION = 1
+#: Bumped to 2 in the round-2 fix: the critique gained `evidence_settled`, and a measurement
+#: gained `measured`. A reader branching on the first would read a v1 critique as settled.
+CRITIQUE_SCHEMA_VERSION = 2
 
 #: A band shorter than this at mobile width has effectively collapsed. Four pixels rather than
 #: zero: a band whose only remaining content is a hairline border is not a band.

@@ -37,6 +37,7 @@ from py_lumen_obs import get_logger
 
 from .walk import (
     DOCUMENT_HEIGHT_SCRIPT,
+    STYLES_READY_TIMEOUT_MS,
     SECTION_PROBE_SCRIPT,
     STYLES_READY_SCRIPT,
     WALK_CLASS_CONSOLE,
@@ -65,6 +66,11 @@ BROWSER_LAUNCH_FAILED_CODE = "review.browser_launch_failed"
 #: The `because` code the console class abstains with when not one pass opened a page.
 CONSOLE_NO_PASS_OPENED = "no_pass_opened"
 
+#: How long a probe pass waits for the page's utilities to compile before giving up and calling
+#: the evidence unsettled. Generous enough for a cold JIT on a loaded CI host, and a small
+#: fraction of `WALK_TIMEOUT_MS`, so a page that will never be ready costs this once per probe
+#: pass rather than holding the turn open.
+#:
 #: The names the three passes are recorded under, in walk order.
 PASS_DESKTOP = "desktop"
 PASS_MOBILE = "mobile"
@@ -158,20 +164,22 @@ def console_observation(
 
     Now the note lists the real passes, and no pass opening is an abstention.
     """
-    names = tuple(
-        name
-        for name, outcome in zip(
-            (PASS_DESKTOP, PASS_MOBILE, PASS_REDUCED_MOTION), passes
-        )
-        if outcome.opened
-    )
-    if not names:
+    order = (PASS_DESKTOP, PASS_MOBILE, PASS_REDUCED_MOTION)
+    opened = tuple(name for name, outcome in zip(order, passes) if outcome.opened)
+    # The console handlers are attached BEFORE `set_content`, so a pass whose load timed out can
+    # already have put real lines on the console (round-2 re-review, breakage #5). Discarding that
+    # evidence would be worse than keeping it, and keeping it under a note that does not name the
+    # pass makes the two disagree — so the note reports what was actually observed, and `opened`
+    # is carried beside it for the passes that also finished.
+    heard = {entry.pass_name for entry in console}
+    observed = tuple(name for name in order if name in heard or name in opened)
+    if not observed:
         return abstained(WALK_CLASS_CONSOLE, CONSOLE_NO_PASS_OPENED)
     return WalkObservation(
         walk_class=WALK_CLASS_CONSOLE,
         made=True,
         console=tuple(console),
-        notes={"passes": list(names)},
+        notes={"passes": list(observed), "opened": list(opened)},
     )
 
 
@@ -462,13 +470,31 @@ def _reduced_motion_pass(
     return outcome
 
 
-def _styles_ready(page: Any) -> bool | None:
-    """Has the preview shell's Tailwind JIT produced output yet? Tri-state (ruling R19-1).
+def _styles_ready(page: Any, *, timeout_ms: int = STYLES_READY_TIMEOUT_MS) -> bool | None:
+    """WAIT for the preview shell's Tailwind JIT to produce output. Tri-state (ruling R19-1).
+
+    **Waited for, not sampled** (round-2 re-review, breakage #2). The first version read the
+    predicate once, immediately after the 400ms settle — which is a deterministic signal read
+    after a sleep, not the deterministic signal the ruling asked for. A JIT slower than 400ms then
+    made the gate permanently advice-only AND left the advice itself false: `broken_clones` still
+    carried `mobile_unusable` for healthy bands, under a hint telling the agent to re-run, which a
+    systematically slow compile can never satisfy.
+
+    So this polls to a bounded deadline. A page that becomes ready inside it produces measurements
+    that are TRUE, not merely unwritable. A page that does not gets one honest final sample and
+    then ``False``/``None`` — unsettled — which costs the deadline once per probe pass and is the
+    price of never writing a marker off an unstyled page.
 
     ``None`` means the check itself could not run, which is not the same as "no" and is certainly
-    not "yes". Both non-True answers make the walk's evidence UNSETTLED, and an unsettled walk
-    writes no durable marker.
+    not "yes".
     """
+    waiter = getattr(page, "wait_for_function", None)
+    if waiter is not None:
+        try:
+            waiter(STYLES_READY_SCRIPT, timeout=timeout_ms)
+            return True
+        except Exception:  # noqa: BLE001 — a timeout is an answer, not a failure
+            pass
     try:
         value = page.evaluate(STYLES_READY_SCRIPT)
     except Exception:  # noqa: BLE001
