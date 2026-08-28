@@ -485,10 +485,12 @@ UNHIDE_VISIBILITY = "visibility: visible !important;"
 
 UNHIDE_BLOCK_HEADER = (
     "/* lumen un-hide (D-F8): the source site hides this section, and its harvested CSS carries\n"
-    "   the very rules that hide it. Each rule below countermands one of them FOR THE ROOT ONLY,\n"
-    "   appended last so source order wins at equal specificity — an activated clone renders on\n"
-    "   the page and in its isolation preview alike, off one sheet. Descendant hiding is the\n"
-    "   section's own design and is left alone. */"
+    "   the very rules that hide it. Each rule below countermands one that hid the ROOT —\n"
+    "   selected only when its selector positively names the root, appended last so source\n"
+    "   order wins at equal specificity — an activated clone renders on the page and in its\n"
+    "   isolation preview alike, off one sheet. A counter on a name the root shares with a\n"
+    "   descendant reaches that descendant too; hiding that names only the section's own\n"
+    "   internals is left alone. */"
 )
 
 
@@ -636,33 +638,45 @@ def unhide_root_markup(html: str) -> tuple[str, tuple[str, ...]]:
     """
     tree = HTMLParser(html or "")
     body = tree.body
-    root = None
+    elements: list[Any] = []
     if body is not None:
-        for child in body.iter(include_text=False):
-            root = child
-            break
-    if root is None:
+        elements = list(body.iter(include_text=False))
+    if not elements:
         return html, ()
+    if len(elements) > 1:
+        # This function re-serializes the ROOT's outerHTML, so a multi-root fragment would
+        # silently lose its siblings (wave round 2, N1). The mint never produces one today;
+        # if one ever arrives, leaving it hidden-and-whole beats un-hiding half of it.
+        return html, ()
+    root = elements[0]
     removed: list[str] = []
     if "hidden" in root.attributes:
         del root.attrs["hidden"]
         removed.append("hidden attribute")
     style = root.attributes.get("style") or ""
     if style:
+        # Parsed, not split on ";" (wave round 2, N2): a value can contain a semicolon
+        # (`content: 'a;b'`, a data: URI) and a naive split would mangle it into a bad-url.
         kept: list[str] = []
-        for declaration in style.split(";"):
-            name, _, value = declaration.partition(":")
-            name_l = name.strip().lower()
-            value_l = value.strip().lower()
-            if name_l == "display" and "none" in value_l:
+        stripped_any = False
+        for declaration in tinycss2.parse_declaration_list(
+            style, skip_comments=True, skip_whitespace=True
+        ):
+            if getattr(declaration, "type", "") != "declaration":
+                continue
+            value = tinycss2.serialize(declaration.value).strip()
+            name = declaration.lower_name
+            if name == "display" and "none" in value.lower():
                 removed.append("inline display: none")
+                stripped_any = True
                 continue
-            if name_l == "visibility" and "hidden" in value_l:
+            if name == "visibility" and "hidden" in value.lower():
                 removed.append("inline visibility: hidden")
+                stripped_any = True
                 continue
-            if declaration.strip():
-                kept.append(declaration.strip())
-        if len(kept) != len([d for d in style.split(";") if d.strip()]):
+            bang = " !important" if declaration.important else ""
+            kept.append(f"{declaration.name}: {value}{bang}")
+        if stripped_any:
             if kept:
                 root.attrs["style"] = "; ".join(kept)
             else:

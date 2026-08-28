@@ -1227,3 +1227,28 @@ def test_a_countermand_requires_a_selector_that_positively_names_the_root() -> N
     ]
     assert ":not(" not in counter_block
     assert "body .hide" not in counter_block
+
+
+def test_the_markup_strip_refuses_a_multi_root_fragment_and_parses_style_values() -> None:
+    """Wave round-2 residuals N1 + N2: re-serializing the root's outerHTML would silently drop a
+    multi-root fragment's siblings — leaving it hidden-and-whole beats un-hiding half of it —
+    and a value containing a semicolon (`content:'a;b'`) must survive the strip un-mangled."""
+    from lumen_ingestion.sections.cssmatch import unhide_root_markup
+
+    multi = '<section class="a" hidden><p>One</p></section><section class="b"><p>KEEPME</p></section>'
+    html, removed = unhide_root_markup(multi)
+    assert html == multi
+    assert removed == ()
+
+    tricky = (
+        '<section class="hide" style="display:none; content:\'a;b\'; color: navy">'
+        "<p>Body</p></section>"
+    )
+    html, removed = unhide_root_markup(tricky)
+    root_tag = html[: html.index(">") + 1]
+    assert "display" not in root_tag
+    # The semicolon-bearing value survives as ONE declaration (the old split would have cut it
+    # into `content: 'a` + a stray `b'`); the serializer may normalize the quote style.
+    assert "a;b" in html
+    assert "color: navy" in html
+    assert removed == ("inline display: none",)
