@@ -860,3 +860,27 @@ def test_discovery_lists_sections_in_document_order_not_registry_recency(
     assert indexes == sorted(indexes)
     assert "total" in listed
     assert listed["total"] >= len(listed["sections"])
+
+
+def test_a_row_with_no_recorded_page_url_reports_the_page_it_is_sorted_onto(
+    workspace_id: str, design_storage: FsStorage, tmp_path
+) -> None:
+    """Ledger T17-M3. The ordering fell back to `source_url` when the mint recorded no
+    `provenance.page_url`; the projection did not. Such a row therefore sorted under its source
+    url and then reported `page_url: None` — which the recreate reads as a page named "" and
+    refuses as ambiguous. One fallback, so the page a section is sorted onto is the page it
+    reports."""
+    _seed_kit(workspace_id)
+    row = _mint(
+        workspace_id,
+        design_storage,
+        provenance={"section_index": 2, "slots": ["headline"]},
+    )
+
+    (section,) = _registry(workspace_id, design_storage, tmp_path / "cache").list_sections()[
+        "sections"
+    ]
+
+    assert section["fragment_id"] == row["fragment_id"]
+    assert section["page_url"] == SOURCE_URL
+    assert section["source_url"] == SOURCE_URL

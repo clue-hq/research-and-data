@@ -955,3 +955,27 @@ def test_a_live_capture_now_binds_by_the_probes_own_skip_record() -> None:
     bound = {section.heading: section.geometry for section in result.sections}
     assert bound["Hero"] is not None and bound["Hero"].top_px == 0.0
     assert bound["Third"] is not None and bound["Third"].top_px == 500.0
+
+
+def test_a_failed_reconciliation_carries_the_reason_key_its_sibling_carries() -> None:
+    """Ledger T16-N5. Every OTHER `LUMI0536` carries `reason`; a consumer doing `d["reason"]`
+    KeyError'd on whichever of the two emitters it happened to meet."""
+    recorder, jacked = _held_after(DEAD_SHOT)
+    recorder.held[jacked].update({"degraded": False, "degraded_reason": None})
+
+    def _explode(fragment_id: str, *, degraded: bool, reason: str | None):
+        raise RuntimeError("the row went away")
+
+    recorder.mark_degraded = _explode  # type: ignore[assignment]
+    outcome = _remint(recorder, DEAD_SHOT)
+
+    for diagnostic in outcome.diagnostics:
+        if diagnostic["code"] == MINT_DEGRADED_RECONCILED_CODE:
+            assert "reason" in diagnostic
+    failed = next(
+        d
+        for d in outcome.diagnostics
+        if d["code"] == MINT_DEGRADED_RECONCILED_CODE and d.get("error")
+    )
+    # The measurement DID find dead height here, so the reason is the code it found.
+    assert failed["reason"] == DEAD_HEIGHT_REASON

@@ -896,3 +896,36 @@ def test_the_static_css_toolchain_refuses_by_name_when_it_is_not_installed(
 
     # And the section compile is bounded far tighter than the export's own.
     assert web_export.SECTION_CSS_TIMEOUT_SECONDS < 120
+
+
+# --------------------------------------------------------------------------- #
+# F3.4 — the repair label counts instead of stacking
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.parametrize(
+    "original_label, expected",
+    [
+        ("Hero — Care, on your terms", "Repaired — Hero — Care, on your terms"),
+        ("Repaired — Hero — Care, on your terms", "Repaired ×2 — Hero — Care, on your terms"),
+        ("Repaired ×2 — Hero — Care, on your terms", "Repaired ×3 — Hero — Care, on your terms"),
+        ("Repaired ×9 — Hero — Care", "Repaired ×10 — Hero — Care"),
+        # A label that merely STARTS with the word is not a marker.
+        ("Repairs — Hero", "Repaired — Repairs — Hero"),
+    ],
+)
+def test_a_repair_of_a_repair_counts_rather_than_stacking_the_prefix(
+    original_label: str, expected: str
+) -> None:
+    """Ledger T17-M6. Three rounds of repair produced "Repaired — Repaired — Repaired — Hero — …",
+    a picker row that is mostly bookkeeping — and bookkeeping the LINEAGE already carries exactly,
+    where this could only approximate it."""
+    from lumen_api.agent_cloned_sections import _repair_label
+
+    assert _repair_label({"label": original_label}) == expected
+
+
+def test_a_repair_of_a_clone_with_no_label_falls_back_to_its_role() -> None:
+    from lumen_api.agent_cloned_sections import _repair_label
+
+    assert _repair_label({"section_role": "hero"}) == "Repaired — hero"
