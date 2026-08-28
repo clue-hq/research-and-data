@@ -4576,6 +4576,10 @@ class LumenWebTools:
             self._cloned_section_seen[fragment_id] = {
                 "label": section.get("label"),
                 "section_role": section.get("section_role"),
+                # The view tool's no-preview sentence branches on this (fix-round N1): without
+                # it the M2 fix was dead code and a composed shell still claimed a browser
+                # had measured it.
+                "composed": section.get("composed"),
             }
             row: JsonObject = {
                 "fragment_id": fragment_id,
@@ -5802,6 +5806,17 @@ class LumenWebTools:
                 "shell could be. The shells are the SELLER's header and footer — composed from "
                 "their kit's own mark and tokens — and cannot be invented without one.",
             )
+        if not brand_kit.get("id"):
+            # Refused by name BEFORE anything is spent (fix-round N5): the engine itself
+            # refuses a kit with no id at ingest, and without one the legal-evidence read
+            # cannot be scoped to this brand — an unscoped read in a multi-brand workspace
+            # would take another brand's footer as this seller's law.
+            return self._tool_error(
+                "shell.no_brand_kit",
+                "the attached brand kit carries no id, so it can neither be named to the "
+                "engine nor scope the legal-evidence read to this brand. Attach an "
+                "identified brand kit and call this again.",
+            )
         seller_name = str(
             brand_kit.get("name") or brand_kit.get("brand_name") or ""
         ).strip()
@@ -5826,11 +5841,16 @@ class LumenWebTools:
             placeholder = registry.campaign_shell_placeholder()
             # Evidence is this KIT's released footers (fix-round I3), and a legal-looking link
             # on a third party's host is dropped and named (fix-round C1) rather than shipped.
-            legal_links = discover_legal_links(
-                registry.legal_link_evidence(
-                    kit_id=str(brand_kit["id"]) if brand_kit.get("id") else None
-                ),
-                dropped_foreign=dropped_foreign,
+            # A kit with no id cannot scope that read, so it gets NO evidence rather than the
+            # whole workspace's (fix-round N5): in a multi-brand workspace an unscoped read is
+            # another brand's law, and an honestly-empty footer is the correct answer.
+            legal_links = (
+                discover_legal_links(
+                    registry.legal_link_evidence(kit_id=str(brand_kit["id"])),
+                    dropped_foreign=dropped_foreign,
+                )
+                if brand_kit.get("id")
+                else ()
             )
         except Exception as error:  # noqa: BLE001 - capability boundary
             return self._tool_error(

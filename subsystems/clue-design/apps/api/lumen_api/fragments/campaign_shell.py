@@ -226,14 +226,25 @@ def _classify_legal_path(path: str) -> str | None:
 
 
 def _same_site(candidate_host: str, base_host: str) -> bool:
-    """Is this the seller's own host? Equal or subdomain-of, ``www.`` disregarded.
+    """Is this the seller's own host? Equal or related-by-subdomain, ``www.``/port disregarded.
 
     Deliberately suffix-of rather than a registrable-domain guess: without a public-suffix list,
-    "last two labels" would call every ``*.co.uk`` pair the same site. Suffix-of errs the safe
-    way — a genuine sibling host is dropped (and reported) rather than a stranger shipped.
+    "last two labels" would call every ``*.co.uk`` pair the same site. Both directions are
+    accepted on purpose — evidence on ``blog.seller.example`` may link ``seller.example/privacy``
+    (parent-of), and apex evidence may link a subdomain (child-of). The residual acceptance that
+    buys (fix-round N2, recorded): footer evidence served from ``shop.host.example`` whose
+    author linked the LANDLORD's ``host.example/privacy`` ships it — reachable only through the
+    seller's own footer linking its platform's policy, which is also what their live site shows.
+    Ports are stripped (a same-host link with an explicit port is the same site, not a
+    stranger); genuinely unrelated hosts are dropped and reported.
     """
-    trimmed_candidate = candidate_host.lower().removeprefix("www.")
-    trimmed_base = base_host.lower().removeprefix("www.")
+
+    def _fold(host: str) -> str:
+        bare = host.lower().rpartition("@")[2].partition(":")[0]
+        return bare.removeprefix("www.")
+
+    trimmed_candidate = _fold(candidate_host)
+    trimmed_base = _fold(base_host)
     if not trimmed_candidate or not trimmed_base:
         return False
     return (

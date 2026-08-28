@@ -1122,3 +1122,49 @@ def test_a_shell_repair_that_loses_the_marker_classes_refuses(
         )
 
     assert refusal.value.code == "fragment.slot_selector_unmatched"
+
+
+# --------------------------------------------------------------------------- #
+# Fix round 2 — the re-review's pins (N2, N4)
+# --------------------------------------------------------------------------- #
+
+
+def test_the_composed_cta_carries_the_kits_measured_button_radius() -> None:
+    """Fix-round I4/N4: the one control the shell has wears `rounded-button` — the engine
+    resolves it through the kit's measured `radius.button` chain, so the Grammar Audit's corner
+    law governs it. Reverting to a platform radius goes red here."""
+    html = compose_campaign_header(seller_name="Insight Health", seller_logo_asset_id="logo_1")
+
+    assert "rounded-button" in html
+    assert "rounded-md" not in html
+
+
+def test_a_shell_carrying_a_second_control_or_an_image_map_is_refused() -> None:
+    """Fix-round M3/N4: an `<input>`/`<textarea>` is a second control, and a `<map>`/`<area>` is
+    a navigation target `css(\"a\")` never counts."""
+    for extra in (
+        '<input type="text">',
+        "<textarea></textarea>",
+        '<map name="m"><area href="/pricing" shape="default"></map>',
+    ):
+        with pytest.raises(FragmentRefused) as refusal:
+            assert_campaign_shell_shape(CAMPAIGN_SHELL_HEADER, _rendered_header(extra=extra))
+        assert refusal.value.code == "fragment.shell_escape_route", extra
+
+
+def test_a_same_host_link_with_an_explicit_port_is_the_sellers_own() -> None:
+    """Fix-round N2: `insight.example:443` is the same site, not a stranger — a port must never
+    make a real legal link report as foreign."""
+    dropped: list[str] = []
+    links = discover_legal_links(
+        [
+            (
+                '<footer><a href="https://insight.example:443/privacy">Privacy</a></footer>',
+                PAGE,
+            )
+        ],
+        dropped_foreign=dropped,
+    )
+
+    assert [link.kind for link in links] == ["privacy"]
+    assert dropped == []

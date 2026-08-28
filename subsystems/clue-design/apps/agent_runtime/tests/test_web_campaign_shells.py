@@ -687,3 +687,51 @@ def test_an_only_inverse_mark_kit_composes_but_says_so(tmp_path: Path) -> None:
 def test_a_full_colour_mark_carries_no_dark_surface_warning(minted: dict) -> None:
     """The note is about the inverse-only kit, never noise on a healthy one."""
     assert "seller_mark_note" not in minted["result"]
+
+
+def test_a_viewed_shell_with_no_preview_says_composed_not_measured(tmp_path: Path) -> None:
+    """Fix-round N1 (the re-review found the M2 fix shipped unreachable): a composed shell was
+    never photographed off a site, and the no-preview sentence must not claim a browser measured
+    it. The seen-row now records `composed`, which is what makes the branch reachable."""
+    tools = _tools(tmp_path, FakeRegistry(tmp_path))
+    tools._cloned_section_previews["frag_shell01"] = None
+    tools._cloned_section_seen["frag_shell01"] = {
+        "label": "Campaign header — Insight Health",
+        "section_role": CAMPAIGN_SHELL_HEADER,
+        "composed": COMPOSED_CAMPAIGN_SHELL,
+    }
+    tools._cloned_section_previews["frag_band01"] = None
+    tools._cloned_section_seen["frag_band01"] = {
+        "label": "Hero — Care, on your terms",
+        "section_role": "hero",
+        "composed": None,
+    }
+
+    shell_text = tools._view_cloned_section("cloned_section:frag_shell01")[0]["text"]
+    band_text = tools._view_cloned_section("cloned_section:frag_band01")[0]["text"]
+
+    assert "composed from the brand kit" in shell_text
+    assert "browser measured" not in shell_text
+    assert "no crop could be derived" in band_text
+
+
+def test_a_kit_with_no_id_refuses_before_reading_any_evidence(tmp_path: Path) -> None:
+    """Fix-round N5: a kit with no id cannot scope the evidence read (an unscoped read in a
+    multi-brand workspace is another brand's law) and the engine refuses an id-less kit at
+    ingest anyway — so the tool refuses by name BEFORE spending, and the evidence read never
+    happens."""
+    registry = FakeRegistry(
+        tmp_path, legal_html='<section><a href="/privacy">Privacy</a></section>'
+    )
+    kit = _brand_kit()
+    kit.pop("id")
+    tools = _tools(tmp_path, registry, brand_kit=kit)
+
+    result = json.loads(tools.mint_campaign_shells())
+
+    assert result["status"] == "error"
+    assert result["error_code"] == "shell.no_brand_kit"
+    assert "no id" in result["message"]
+    # The evidence read never happened — nothing to scope it to.
+    assert getattr(registry, "legal_kit_ids", []) == []
+    assert registry.mint_calls == []
