@@ -54,6 +54,19 @@ from selectolax.lexbor import LexborHTMLParser
 from selectolax.parser import HTMLParser as SectionParser
 from tinycss2 import ast
 
+from .budget import (
+    MAX_FRAGMENT_CSS_BYTES,
+    MAX_PAGE_CSS_BYTES,
+    MAX_PAGE_PREVIEW_BYTES,
+    MAX_PREVIEW_BYTES,
+    MIN_PREVIEW_WIDTH,
+    MINT_BUDGET_CODE,
+    OUTCOME_DEGRADED,
+    OUTCOME_REFUSED,
+    OUTCOME_WARNED,
+    PageWeight,
+    budget_diagnostic,
+)
 from .cssmatch import rules_for_subtree
 from .deadheight import (
     DEAD_HEIGHT_REASON,
@@ -522,6 +535,13 @@ def mint_sections(
     its own exhaustion.
     """
     diagnostics: list[dict[str, Any]] = []
+    # ONE running weight for the page (F3.4). `mint_sections` is called once per captured page,
+    # so this object's life is exactly the scope of the per-page byte budgets it accounts for —
+    # and the hidden pool shares it deliberately: bytes at rest are bytes at rest, whether or not
+    # a human ever activates the section they belong to.
+    weight = PageWeight(
+        css_limit=MAX_PAGE_CSS_BYTES, preview_limit=MAX_PAGE_PREVIEW_BYTES
+    )
 
     # ONE parse for the whole page, shared by every section's re-find. `resolve_section` reads
     # and never mutates, and a marketing page's html runs to megabytes — re-parsing it twelve
@@ -554,6 +574,7 @@ def mint_sections(
                     create_fragment=create_fragment,
                     mark_degraded=mark_degraded,
                     diagnostics=diagnostics,
+                    weight=weight,
                 )
             except FragmentRefused as refusal:
                 # The diagnostic is for the human reading the job; this is for the operator
@@ -641,7 +662,9 @@ def _mint_one(
     create_fragment: Callable[..., tuple[dict[str, Any], Any]],
     mark_degraded: Callable[..., dict[str, Any]] | None,
     diagnostics: list[dict[str, Any]],
+    weight: PageWeight | None = None,
 ) -> MintedSection | None:
+    weight = weight if weight is not None else PageWeight()
     node = resolve_section(tree, record)
     if node is None:
         diagnostics.append(
@@ -659,6 +682,7 @@ def _mint_one(
     subtree = node.html or ""
 
     matched = rules_for_subtree(stylesheets, subtree_html=subtree)
+    _charge_css(matched.css, segmentation, record, weight, diagnostics)
     harvest = build_reference_harvest(
         subtree_html=subtree,
         page_url=segmentation.page_url,
@@ -699,7 +723,7 @@ def _mint_one(
         return None
     detected = detect_slots(sanitized.html)
 
-    preview, extent = _preview(segmentation, record, screenshot, diagnostics)
+    preview, extent = _preview(segmentation, record, screenshot, diagnostics, weight)
     assessment = _dead_height(segmentation, record, preview, extent, diagnostics)
     dead = assessment.finding
     # Born dormant, never minted ``draft`` and then demoted: the window between the two is
@@ -931,11 +955,168 @@ def _shows_anything(html: str) -> bool:
     return any(body.css_first(tag) is not None for tag in _MEDIA_TAGS)
 
 
+def _charge_css(
+    css: str,
+    segmentation: SectionSegmentation,
+    record: SectionRecord,
+    weight: PageWeight,
+    diagnostics: list[dict[str, Any]],
+) -> None:
+    """Count this fragment's scoped CSS against both budgets, and SAY so when it is over (F3.4).
+
+    Warned about, never truncated. The scoped stylesheet is what makes a cloned section look like
+    itself, so dropping rules out of it would produce a fragment that renders subtly wrong and
+    reports nothing — a silent cap, which is exactly what the register forbids. Saying "this
+    clone carries 1.3 MB of CSS" with the number is the honest answer; what to do about a site
+    that heavy is a judgement, and it belongs to a human.
+    """
+    size = len(css.encode("utf-8"))
+    if size > MAX_FRAGMENT_CSS_BYTES:
+        diagnostics.append(
+            budget_diagnostic(
+                budget="fragment scoped CSS bytes",
+                limit=MAX_FRAGMENT_CSS_BYTES,
+                measured=size,
+                outcome=OUTCOME_WARNED,
+                message=(
+                    f"section {record.index} ({record.role}) of {segmentation.page_url} carries "
+                    f"{size} bytes of scoped CSS, over the {MAX_FRAGMENT_CSS_BYTES}-byte "
+                    "per-fragment budget; it was minted in full — a truncated stylesheet would "
+                    "render this section wrong and say nothing"
+                ),
+                section_index=record.index,
+                role=record.role,
+            )
+        )
+    if weight.add_css(size):
+        diagnostics.append(
+            budget_diagnostic(
+                budget="page scoped CSS bytes",
+                limit=MAX_PAGE_CSS_BYTES,
+                measured=weight.css_bytes,
+                outcome=OUTCOME_WARNED,
+                message=(
+                    f"the clones of {segmentation.page_url} now carry {weight.css_bytes} bytes of "
+                    f"scoped CSS between {weight.fragment_count} fragment(s), over the "
+                    f"{MAX_PAGE_CSS_BYTES}-byte per-page budget; every section is still minted in "
+                    "full, and this page is an expensive one to clone"
+                ),
+                page_url=segmentation.page_url,
+                fragments=weight.fragment_count,
+            )
+        )
+
+
+def _fit_preview(
+    preview: bytes,
+    segmentation: SectionSegmentation,
+    record: SectionRecord,
+    weight: PageWeight,
+    diagnostics: list[dict[str, Any]],
+) -> bytes | None:
+    """Bring one preview inside the byte budgets, or give it up loudly (F3.4).
+
+    A preview is a THUMBNAIL, so the first answer to "too many bytes" is fewer pixels: it is
+    re-encoded at successively narrower widths until it fits. Only when it will not fit even at
+    :data:`MIN_PREVIEW_WIDTH` is it dropped — and since F3.2 that is recoverable, because an
+    isolation render photographs any fragment from its own bytes on demand.
+
+    The page total is checked last and separately, because it is a different fact: a preview that
+    fits perfectly well can still be the one that puts this page over its budget, and refusing it
+    is not a statement about the picture.
+    """
+    from PIL import Image, UnidentifiedImageError
+
+    original = len(preview)
+    width: int | None = None
+    if original > MAX_PREVIEW_BYTES:
+        try:
+            image = Image.open(io.BytesIO(preview))
+            image.load()
+        except (UnidentifiedImageError, OSError, ValueError):
+            image = None
+        while image is not None and len(preview) > MAX_PREVIEW_BYTES:
+            # Halve, floored at the minimum and never above what the crop already is: a preview
+            # narrower than the floor is not worth keeping, and one "re-encoded" wider would be
+            # this function inventing pixels to save bytes.
+            width = min(image.width, max(MIN_PREVIEW_WIDTH, (width or image.width) // 2))
+            height = max(1, round(image.height * width / image.width))
+            buffer = io.BytesIO()
+            image.resize((width, height), Image.LANCZOS).save(
+                buffer, format="PNG", optimize=True
+            )
+            preview = buffer.getvalue()
+            if width <= MIN_PREVIEW_WIDTH:
+                break
+        if len(preview) > MAX_PREVIEW_BYTES:
+            diagnostics.append(
+                budget_diagnostic(
+                    budget="preview bytes",
+                    limit=MAX_PREVIEW_BYTES,
+                    measured=original,
+                    outcome=OUTCOME_REFUSED,
+                    message=(
+                        f"section {record.index} ({record.role}) of {segmentation.page_url} was "
+                        f"minted WITHOUT a preview: its crop was {original} bytes and would not "
+                        f"fit the {MAX_PREVIEW_BYTES}-byte budget even re-encoded at "
+                        f"{MIN_PREVIEW_WIDTH}px wide. An isolation render can photograph it on "
+                        "demand"
+                    ),
+                    section_index=record.index,
+                    role=record.role,
+                    encoded_width=width,
+                )
+            )
+            return None
+        diagnostics.append(
+            budget_diagnostic(
+                budget="preview bytes",
+                limit=MAX_PREVIEW_BYTES,
+                measured=original,
+                outcome=OUTCOME_DEGRADED,
+                severity="info",
+                message=(
+                    f"section {record.index} ({record.role}) of {segmentation.page_url} had a "
+                    f"{original}-byte preview crop, over the {MAX_PREVIEW_BYTES}-byte budget; it "
+                    f"was re-encoded {width}px wide at {len(preview)} bytes. A preview is a "
+                    "thumbnail, so this costs pixels rather than the picture"
+                ),
+                section_index=record.index,
+                role=record.role,
+                encoded_width=width,
+                stored=len(preview),
+            )
+        )
+    if not weight.preview_fits(len(preview)):
+        diagnostics.append(
+            budget_diagnostic(
+                budget="page preview bytes",
+                limit=MAX_PAGE_PREVIEW_BYTES,
+                measured=weight.preview_bytes + len(preview),
+                outcome=OUTCOME_REFUSED,
+                message=(
+                    f"section {record.index} ({record.role}) of {segmentation.page_url} was "
+                    f"minted WITHOUT a preview: {segmentation.page_url} already holds "
+                    f"{weight.preview_bytes} bytes of preview images and this one would take it "
+                    f"past the {MAX_PAGE_PREVIEW_BYTES}-byte per-page budget. The section itself "
+                    "is minted in full"
+                ),
+                section_index=record.index,
+                role=record.role,
+                page_url=segmentation.page_url,
+            )
+        )
+        return None
+    weight.add_preview(len(preview))
+    return preview
+
+
 def _preview(
     segmentation: SectionSegmentation,
     record: SectionRecord,
     screenshot: bytes | None,
     diagnostics: list[dict[str, Any]],
+    weight: PageWeight | None = None,
 ) -> tuple[bytes | None, CropExtent | None]:
     extent = crop_extent(segmentation, record)
     preview = (
@@ -943,6 +1124,18 @@ def _preview(
         if (screenshot and extent is not None)
         else None
     )
+    if preview is not None:
+        preview = _fit_preview(
+            preview,
+            segmentation,
+            record,
+            weight if weight is not None else PageWeight(),
+            diagnostics,
+        )
+        # A preview refused by a BUDGET has already said so, with the number and the budget. The
+        # generic no-preview line below is about the capture, and repeating it here would report
+        # a missing screenshot the capture actually took.
+        return preview, extent
     if preview is None:
         diagnostics.append(
             _diag(
@@ -1136,6 +1329,7 @@ def make_asset_rehoster(blobs: Any) -> Callable[[bytes, str], str]:
 
 __all__ = [
     "MAX_PREVIEW_WIDTH",
+    "MINT_BUDGET_CODE",
     "MINT_CAPPED_CODE",
     "MINT_DEGRADED_CODE",
     "MINT_DEGRADED_RECONCILED_CODE",

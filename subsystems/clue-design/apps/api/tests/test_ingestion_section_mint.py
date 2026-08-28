@@ -14,6 +14,8 @@ import hashlib
 
 import pytest
 
+from lumen_ingestion.sections import mint as mint_module
+from lumen_ingestion.sections.budget import MINT_BUDGET_CODE
 from lumen_ingestion.sections.cssmatch import MatchedCss, rules_for_subtree
 from lumen_ingestion.sections.segment import segment_page
 
@@ -1178,3 +1180,153 @@ def test_a_font_descriptor_that_fully_resolves_still_reports_its_digests() -> No
         rehosted={"/ok.woff2": digest},
     )
     assert result.asset_digests == (digest,)
+
+
+# --------------------------------------------------------------------------- #
+# F3.4 — the byte budgets: loud, never silent, and explicit about the outcome
+# --------------------------------------------------------------------------- #
+
+
+def _noisy_png(width: int, height: int) -> bytes:
+    """A PNG that does NOT compress — a flat colour encodes to a couple of kilobytes however
+    large it is, and a byte budget cannot be exercised with an image that has no bytes."""
+    import os
+    from io import BytesIO
+
+    from PIL import Image
+
+    buffer = BytesIO()
+    Image.frombytes("RGB", (width, height), os.urandom(width * height * 3)).save(
+        buffer, format="PNG"
+    )
+    return buffer.getvalue()
+
+
+def _budget_lines(outcome, budget: str) -> list[dict]:
+    return [
+        diagnostic
+        for diagnostic in outcome.diagnostics
+        if diagnostic["code"] == MINT_BUDGET_CODE and diagnostic["budget"] == budget
+    ]
+
+
+def test_a_fragment_over_the_css_budget_is_reported_with_its_number_and_minted_in_full(
+    monkeypatch,
+) -> None:
+    """Warned about, never truncated: a stylesheet with rules missing renders the section subtly
+    wrong and says nothing, which is the silent cap the register forbids."""
+    monkeypatch.setattr(mint_module, "MAX_FRAGMENT_CSS_BYTES", 200)
+    sheet = _Sheet("s.css", ".section_home-hero { padding: 4rem; " + "margin: 0; " * 40 + "}")
+    outcome, recorder = _mint(BANDED_PAGE, stylesheets=[sheet])
+
+    lines = _budget_lines(outcome, "fragment scoped CSS bytes")
+    assert len(lines) == 1
+    assert lines[0]["outcome"] == "warned"
+    assert lines[0]["limit"] == 200
+    assert lines[0]["measured"] > 200
+    assert str(lines[0]["measured"]) in lines[0]["message"]
+    # …and the hero still carries every rule that matched it.
+    hero = next(call for call in recorder.created if call["section_role"] == "hero")
+    assert hero["css"].count("margin: 0") == 40
+
+
+def test_a_page_over_the_css_budget_says_so_once_however_many_sections_follow(
+    monkeypatch,
+) -> None:
+    """The stripe shape: no single fragment is remarkable and the page is heavy everywhere. A
+    per-fragment budget alone would have stayed silent about it forever."""
+    monkeypatch.setattr(mint_module, "MAX_PAGE_CSS_BYTES", 100)
+    sheet = _Sheet(
+        "s.css",
+        ".section_home-hero { padding: 4rem }\n"
+        ".section_proof { padding: 2rem }\n"
+        ".nav_component { display: flex }\n"
+        ".footer_component { display: grid }\n",
+    )
+    outcome, _ = _mint(BANDED_PAGE, stylesheets=[sheet])
+
+    lines = _budget_lines(outcome, "page scoped CSS bytes")
+    assert len(lines) == 1
+    assert lines[0]["outcome"] == "warned"
+    assert lines[0]["measured"] > 100
+    # Every section is still minted: the budget reports, it does not refuse.
+    assert len(outcome.minted) == 4
+
+
+def test_an_over_budget_preview_is_made_smaller_rather_than_dropped(monkeypatch) -> None:
+    """A preview is a thumbnail, so the first answer to "too many bytes" is fewer pixels."""
+    from io import BytesIO
+
+    from PIL import Image
+
+    monkeypatch.setattr(mint_module, "MAX_PREVIEW_BYTES", 400_000)
+    outcome, recorder = _mint(
+        BANDED_PAGE, screenshot=_noisy_png(1200, 1400), bands=_BANDS
+    )
+
+    lines = _budget_lines(outcome, "preview bytes")
+    assert lines and all(line["outcome"] == "degraded" for line in lines)
+    hero_line = next(line for line in lines if line["role"] == "hero")
+    assert hero_line["encoded_width"] < 1200
+    assert hero_line["stored"] <= 400_000
+    assert hero_line["measured"] > 400_000
+    # The picture is still a picture, and it is the one that was stored.
+    hero = next(call for call in recorder.created if call["section_role"] == "hero")
+    assert len(hero["preview"]) <= 400_000
+    assert Image.open(BytesIO(hero["preview"])).width == hero_line["encoded_width"]
+
+
+def test_a_preview_that_will_not_fit_even_at_the_floor_width_is_dropped_and_says_so(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(mint_module, "MAX_PREVIEW_BYTES", 10_000)
+    outcome, recorder = _mint(
+        BANDED_PAGE, screenshot=_noisy_png(1200, 1400), bands=_BANDS
+    )
+
+    lines = _budget_lines(outcome, "preview bytes")
+    assert lines and all(line["outcome"] == "refused" for line in lines)
+    assert lines[0]["encoded_width"] == mint_module.MIN_PREVIEW_WIDTH
+    assert "isolation render" in lines[0]["message"]
+    # Minted in full, without a picture — never refused for want of a thumbnail.
+    assert len(outcome.minted) == 4
+    hero = next(call for call in recorder.created if call["section_role"] == "hero")
+    assert hero["preview"] is None
+
+
+def test_a_page_that_fills_its_preview_budget_still_mints_the_rest_of_its_sections(
+    monkeypatch,
+) -> None:
+    """The per-page budget is a different fact from the per-preview one: a picture that fits
+    perfectly well can still be the one that takes the page over."""
+    monkeypatch.setattr(mint_module, "MAX_PAGE_PREVIEW_BYTES", 400_000)
+    outcome, recorder = _mint(
+        BANDED_PAGE, screenshot=_noisy_png(1200, 1400), bands=_BANDS
+    )
+
+    lines = _budget_lines(outcome, "page preview bytes")
+    assert lines and all(line["outcome"] == "refused" for line in lines)
+    assert lines[0]["limit"] == 400_000
+    assert lines[0]["measured"] > 400_000
+    assert len(outcome.minted) == 4
+    stored = [call for call in recorder.created if call["preview"] is not None]
+    assert stored, "the previews that fit before the budget ran out were kept"
+    assert sum(len(call["preview"]) for call in stored) <= 400_000
+
+
+def test_the_shipped_budgets_sit_above_the_heaviest_capture_this_project_has_measured() -> None:
+    """The numbers are tunables, and their rationale is a measurement — so the measurement is
+    here, where a retune has to look at it. From the F2 acceptance re-walk (2026-08-28):
+    stripe.com's heaviest cloned section carried 172,197 bytes of scoped CSS, its whole homepage
+    1,353,811 across ten fragments; insighthealth's homepage 417,586 across nine.
+
+    The preview budget is deliberately BELOW its measurement (insighthealth's largest crop was
+    1,036,801 bytes, stripe's 1,921,123) because those numbers are the defect the budget exists
+    to answer, and the outcome there is fewer pixels rather than fewer pictures.
+    """
+    assert mint_module.MAX_FRAGMENT_CSS_BYTES > 172_197
+    assert mint_module.MAX_PAGE_CSS_BYTES > 1_353_811
+    assert mint_module.MAX_PREVIEW_BYTES < 1_036_801
+    # …and a page minting at the floor width can never be refused by the page budget for the
+    # sake of a handful of thumbnails.
+    assert mint_module.MAX_PAGE_PREVIEW_BYTES > 8 * mint_module.MAX_PREVIEW_BYTES
