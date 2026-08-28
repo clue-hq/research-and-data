@@ -30,6 +30,7 @@ from typing import Any
 
 from lumen_ingestion.sections.deadheight import (
     DEAD_HEIGHT_MAX_CONTENT_FRACTION,
+    DEAD_HEIGHT_MAX_GAP_PX,
     DEAD_HEIGHT_MIN_SECTION_PX,
 )
 
@@ -52,7 +53,9 @@ from .walk import (
 
 #: Bumped to 2 in the round-2 fix: the critique gained `evidence_settled`, and a measurement
 #: gained `measured`. A reader branching on the first would read a v1 critique as settled.
-CRITIQUE_SCHEMA_VERSION = 2
+#: Bumped to 3 in the phase fix wave: a measurement gained `largest_gap_px` (the F-1 second
+#: dead-height condition), and its absence in an older row means "not measured that way", not 0.
+CRITIQUE_SCHEMA_VERSION = 3
 
 #: A band shorter than this at mobile width has effectively collapsed. Four pixels rather than
 #: zero: a band whose only remaining content is a hairline border is not a band.
@@ -135,12 +138,21 @@ def _blank(measurement: SectionMeasurement) -> bool:
 
 
 def _collapsed(measurement: SectionMeasurement) -> bool:
-    """Is this band's box far taller than anything in it? The runtime half of D-F6's trigger."""
+    """Is this band's box far taller than anything in it? The runtime half of D-F6's trigger.
+
+    Two independent conditions, mirroring the mint detector exactly (walk finding F-1): a band
+    mostly empty end to end (the extent fraction), and a band with one contiguous internal hole
+    a reader drags through (the largest merged-interval gap) — which the fraction is
+    structurally blind to when ink sits at both ends. Shared constants, so the two detectors'
+    stated must-agree invariant survives the fix.
+    """
     if not measurement.present or not measurement.measured or not measurement.visible:
         return False
     if measurement.height_px < DEAD_HEIGHT_MIN_SECTION_PX:
         return False
-    return measurement.content_fraction <= DEAD_HEIGHT_MAX_CONTENT_FRACTION
+    if measurement.content_fraction <= DEAD_HEIGHT_MAX_CONTENT_FRACTION:
+        return True
+    return measurement.largest_gap_px > DEAD_HEIGHT_MAX_GAP_PX
 
 
 def _mobile_broken(measurement: SectionMeasurement) -> bool:

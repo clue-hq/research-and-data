@@ -96,6 +96,16 @@ DEAD_HEIGHT_JUDGED_BASIS = "measured"
 #: 1.0 because rounding between CSS pixels and device pixels legitimately costs a row or two.
 DEAD_HEIGHT_MIN_CROP_COVERAGE = 0.9
 
+#: The SECOND condition (phase fix wave, walk finding F-1): the largest INTERNAL ink-free run —
+#: contiguous rows showing nothing, between the band's first and last content rows — in CSS px.
+#: The extent fraction is structurally blind to a hole in the middle: the walk's real defect was
+#: a ~6,100px ink-free hole in a band with content at both ends, which the extent read as 0.990
+#: full. No threshold on a fraction of first-to-last can see it. A run of two desktop viewports
+#: of contiguous nothing is scroll cost by exactly the argument `DEAD_HEIGHT_MIN_SECTION_PX`
+#: makes, so the two floors share the number. The walk's healthy pages measured ≤145px runs —
+#: an order of magnitude under the floor from the safe side.
+DEAD_HEIGHT_MAX_GAP_PX = 1600.0
+
 
 @dataclass(frozen=True)
 class DeadHeight:
@@ -106,18 +116,23 @@ class DeadHeight:
     content_fraction: float
     preview_rows: int
     content_rows: int
+    #: The largest internal ink-free run, in CSS px (the F-1 condition). 0.0 on findings made
+    #: by the extent condition alone.
+    largest_gap_px: float = 0.0
 
     def as_provenance(self) -> dict[str, object]:
         """The bounded shape the fragment row records — a handful of numbers, no pixels."""
         return {
             "reason": self.reason,
-            "detector": "dead_height@1",
+            "detector": "dead_height@2",
             "section_height_px": self.section_height_px,
             "content_fraction": round(self.content_fraction, 4),
             "preview_rows": self.preview_rows,
             "content_rows": self.content_rows,
+            "largest_gap_px": round(self.largest_gap_px, 1),
             "max_content_fraction": DEAD_HEIGHT_MAX_CONTENT_FRACTION,
             "min_section_px": DEAD_HEIGHT_MIN_SECTION_PX,
+            "max_gap_px": DEAD_HEIGHT_MAX_GAP_PX,
         }
 
 
@@ -167,13 +182,14 @@ def assess_dead_height(
     measured = _content_extent(preview)
     if measured is None:
         return DeadHeightAssessment(judged=False, abstained_because="preview_unreadable")
-    rows, width, content_rows = measured
+    rows, width, content_rows, gap_rows = measured
     if rows <= 0 or width <= 0:
         return DeadHeightAssessment(judged=False, abstained_because="preview_unreadable")
 
     # The crop is the full page width downscaled to at most MAX_PREVIEW_WIDTH, so one preview row
     # is `viewport_width / preview_width` CSS pixels tall.
-    covered_px = rows * (viewport_width / width)
+    px_per_row = viewport_width / width
+    covered_px = rows * px_per_row
     if covered_px < section_height_px * DEAD_HEIGHT_MIN_CROP_COVERAGE:
         return DeadHeightAssessment(judged=False, abstained_because="crop_clipped")
 
@@ -181,8 +197,16 @@ def assess_dead_height(
     if section_height_px < DEAD_HEIGHT_MIN_SECTION_PX:
         return DeadHeightAssessment(judged=True)
 
+    # Two independent conditions (walk finding F-1): a band that is mostly empty end to end
+    # (the extent fraction), and a band with one contiguous hole a reader drags through (the
+    # largest internal gap) — which the fraction is structurally blind to when content sits at
+    # both ends. Either alone is dead height.
     fraction = content_rows / rows
-    if fraction > DEAD_HEIGHT_MAX_CONTENT_FRACTION:
+    largest_gap_px = gap_rows * px_per_row
+    if (
+        fraction > DEAD_HEIGHT_MAX_CONTENT_FRACTION
+        and largest_gap_px <= DEAD_HEIGHT_MAX_GAP_PX
+    ):
         return DeadHeightAssessment(judged=True)
     return DeadHeightAssessment(
         judged=True,
@@ -192,6 +216,7 @@ def assess_dead_height(
             content_fraction=fraction,
             preview_rows=rows,
             content_rows=content_rows,
+            largest_gap_px=largest_gap_px,
         ),
     )
 
@@ -212,8 +237,8 @@ def detect_dead_height(
     ).finding
 
 
-def _content_extent(preview: bytes) -> tuple[int, int, int] | None:
-    """``(rows, width, rows from the first showing something to the last)``, or ``None``.
+def _content_extent(preview: bytes) -> tuple[int, int, int, int] | None:
+    """``(rows, width, first-to-last content extent, largest internal gap in rows)`` or ``None``.
 
     A wholly featureless crop answers ``…, 0`` rather than ``None``: "there is nothing in this
     band" is a finding, and the loudest one this module can make. ``None`` is reserved for "the
@@ -233,15 +258,24 @@ def _content_extent(preview: bytes) -> tuple[int, int, int] | None:
 
     first: int | None = None
     last: int | None = None
+    previous: int | None = None
+    largest_gap = 0
     for y in range(height):
         row = data[y * width : (y + 1) * width]
         if max(row) - min(row) >= DEAD_HEIGHT_ROW_VARIATION:
             if first is None:
                 first = y
+            elif previous is not None:
+                # A gap is the run of nothing BETWEEN two content rows, so measuring only here
+                # makes it internal by construction — top and bottom padding never enter.
+                gap = y - previous - 1
+                if gap > largest_gap:
+                    largest_gap = gap
             last = y
+            previous = y
     if first is None or last is None:
-        return height, width, 0
-    return height, width, last - first + 1
+        return height, width, 0, 0
+    return height, width, last - first + 1, largest_gap
 
 
 def _buffer(data: bytes):
@@ -253,6 +287,7 @@ def _buffer(data: bytes):
 __all__ = [
     "DEAD_HEIGHT_JUDGED_BASIS",
     "DEAD_HEIGHT_MAX_CONTENT_FRACTION",
+    "DEAD_HEIGHT_MAX_GAP_PX",
     "DEAD_HEIGHT_MIN_CROP_COVERAGE",
     "DEAD_HEIGHT_MIN_SECTION_PX",
     "DEAD_HEIGHT_REASON",

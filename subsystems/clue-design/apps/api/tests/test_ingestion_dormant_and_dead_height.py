@@ -979,3 +979,59 @@ def test_a_failed_reconciliation_carries_the_reason_key_its_sibling_carries() ->
     )
     # The measurement DID find dead height here, so the reason is the code it found.
     assert failed["reason"] == DEAD_HEIGHT_REASON
+
+
+# --- the middle hole (phase fix wave, walk finding F-1) -------------------------------------------
+
+
+def _shot_bands(height: int, bands: list[tuple[int, int]], *, width: int = 1200) -> bytes:
+    """Like :func:`_shot`, but content in SEVERAL row ranges — the shape F-1 is about."""
+    from PIL import Image
+
+    image = Image.new("RGB", (width, height), (245, 245, 247))
+    pixels = image.load()
+    for top, bottom in bands:
+        for y in range(max(0, top), min(height, bottom)):
+            for x in range(0, width, 2):
+                pixels[x, y] = (20, 20, 20)
+    buffer = BytesIO()
+    image.save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
+def test_a_hole_in_the_middle_of_a_band_is_dead_height_even_when_the_extent_looks_full() -> None:
+    """The walk's F-1, with its numbers: the client's real Products band carries a ~6,100px
+    ink-free hole between content at its top and bottom. The EXTENT measure reads that band as
+    0.990 full — content at both ends means first-to-last covers everything — so no threshold
+    on the fraction can ever see the hole. The largest INTERNAL ink-free run can: ~6,072 CSS px
+    of contiguous nothing is scroll cost by exactly the argument the section floor makes.
+    """
+    height = 6758  # ~8,110 CSS px band at 1440/1200 scale (1 row = 1.2 px)
+    preview = _shot_bands(height, [(0, 800), (5860, height)])
+    assessment = assess_dead_height(
+        preview,
+        section_height_px=8110.0,
+        basis="measured",
+        viewport_width=1440,
+    )
+    assert assessment.judged is True
+    assert assessment.finding is not None, "the middle hole must be a finding"
+    assert assessment.finding.largest_gap_px > 6000.0
+    # The extent fraction genuinely cannot see it — that is the point of the second condition.
+    assert assessment.finding.content_fraction > 0.9
+
+
+def test_ordinary_gaps_between_content_do_not_trip_the_internal_gap_condition() -> None:
+    """The walk's healthy side: our own published page's longest ink-free run was 145px. A band
+    whose content is spaced by ordinary design gaps is not dead height."""
+    height = 3000
+    bands = [(y, y + 80) for y in range(0, height - 80, 200)]  # gaps of 120 rows = 144 px
+    preview = _shot_bands(height, bands)
+    assessment = assess_dead_height(
+        preview,
+        section_height_px=3600.0,
+        basis="measured",
+        viewport_width=1440,
+    )
+    assert assessment.judged is True
+    assert assessment.finding is None

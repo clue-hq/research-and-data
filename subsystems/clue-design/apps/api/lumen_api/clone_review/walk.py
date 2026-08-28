@@ -237,6 +237,13 @@ class SectionMeasurement:
     content_extent_px: float = 0.0
     ink_nodes: int = 0
     scroll_width_px: float = 0.0
+    #: The largest INTERNAL ink-free run inside the band, in CSS px (phase fix wave, walk
+    #: finding F-1): the extent above is structurally blind to a hole in the middle of a band
+    #: with content at both ends, and the walk's one real defect was exactly that shape. The
+    #: probe computes it by merging every ink rect's vertical interval and taking the widest
+    #: gap between merged intervals — the same question the mint detector's row-gap measure
+    #: asks of a crop, so the two detectors keep their stated agreement.
+    largest_gap_px: float = 0.0
 
     @property
     def content_fraction(self) -> float:
@@ -261,6 +268,7 @@ class SectionMeasurement:
             "content_fraction": round(self.content_fraction, 4),
             "ink_nodes": self.ink_nodes,
             "scroll_width_px": round(self.scroll_width_px, 1),
+            "largest_gap_px": round(self.largest_gap_px, 1),
         }
 
 
@@ -473,6 +481,7 @@ SECTION_PROBE_SCRIPT = """
     let inkTop = null;
     let inkBottom = null;
     let inkNodes = 0;
+    const intervals = [];
     const considerRect = (r) => {
       if (r.width <= 0 || r.height <= 0) return;
       const top = r.top + window.scrollY;
@@ -480,6 +489,7 @@ SECTION_PROBE_SCRIPT = """
       inkNodes += 1;
       if (inkTop === null || top < inkTop) inkTop = top;
       if (inkBottom === null || bottom > inkBottom) inkBottom = bottom;
+      intervals.push([top, bottom]);
     };
     const consider = (node) => {
       const s = getComputedStyle(node);
@@ -534,6 +544,25 @@ SECTION_PROBE_SCRIPT = """
     const clamp = (value) => Math.max(pageTop, Math.min(pageTop + rect.height, value));
     const extent =
       inkTop === null || inkBottom === null ? 0 : clamp(inkBottom) - clamp(inkTop);
+    // The largest INTERNAL ink-free run (walk finding F-1): merge every ink interval, then take
+    // the widest gap BETWEEN merged intervals — internal by construction, so the band's top and
+    // bottom padding never enter. This is the same question the mint detector's row-gap measure
+    // asks of a crop; the two detectors state in their docs that they must agree.
+    let largestGap = 0;
+    if (intervals.length > 1) {
+      const clamped = intervals
+        .map(([t, b]) => [clamp(t), clamp(b)])
+        .filter(([t, b]) => b > t)
+        .sort((a, b) => a[0] - b[0]);
+      let coveredTo = null;
+      for (const [t, b] of clamped) {
+        if (coveredTo !== null && t > coveredTo) {
+          const gap = t - coveredTo;
+          if (gap > largestGap) largestGap = gap;
+        }
+        if (coveredTo === null || b > coveredTo) coveredTo = b;
+      }
+    }
     return {
       fragment_id: probe.fragment_id,
       selector: probe.selector,
@@ -545,6 +574,7 @@ SECTION_PROBE_SCRIPT = """
       content_extent_px: Math.max(0, extent),
       ink_nodes: inkNodes,
       scroll_width_px: el.scrollWidth,
+      largest_gap_px: largestGap,
     };
   });
 }
@@ -668,6 +698,7 @@ def measurements_from_probe(
                 content_extent_px=numbers["content_extent_px"] or 0.0,
                 ink_nodes=int(numbers["ink_nodes"] or 0.0),
                 scroll_width_px=numbers["scroll_width_px"] or 0.0,
+                largest_gap_px=numbers["largest_gap_px"] or 0.0,
             )
         )
     return tuple(measurements)
@@ -682,6 +713,7 @@ MEASURED_KEYS = (
     "content_extent_px",
     "ink_nodes",
     "scroll_width_px",
+    "largest_gap_px",
 )
 
 

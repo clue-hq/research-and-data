@@ -85,6 +85,7 @@ def _measurement(fragment_id: str, **overrides: Any) -> SectionMeasurement:
         "content_extent_px": 600.0,
         "ink_nodes": 12,
         "scroll_width_px": 1440.0,
+        "largest_gap_px": 0.0,
     }
     base.update(overrides)
     return SectionMeasurement(**base)  # type: ignore[arg-type]
@@ -1013,6 +1014,7 @@ def test_a_complete_row_is_measured_and_judged_normally():
                 "content_extent_px": 300,
                 "ink_nodes": 4,
                 "scroll_width_px": 1440,
+                "largest_gap_px": 0,
             }
         ],
         viewport="desktop",
@@ -1306,11 +1308,42 @@ def test_the_console_note_names_every_pass_whose_console_was_actually_heard(tmp_
 
 
 def test_the_result_shapes_carry_their_new_version(tmp_path):
-    """Round-2 rider: fields were added, so the versions move."""
+    """Round-2 rider (and the phase fix wave): fields were added, so the versions move.
+
+    The critique moved to 3 when measurements gained `largest_gap_px` (walk finding F-1); the
+    walk shape itself did not change fields, so it stays at 2.
+    """
     from lumen_api.clone_review import CRITIQUE_SCHEMA_VERSION, WALK_SCHEMA_VERSION
 
     assert WALK_SCHEMA_VERSION == 2
-    assert CRITIQUE_SCHEMA_VERSION == 2
+    assert CRITIQUE_SCHEMA_VERSION == 3
     walk = _run(_FakeBrowser(), tmp_path)
     assert walk.as_result()["schema_version"] == 2
-    assert compose_critique(walk).as_result()["schema_version"] == 2
+    assert compose_critique(walk).as_result()["schema_version"] == 3
+
+
+# --- the middle hole, runtime half (phase fix wave, walk finding F-1) -----------------------------
+
+
+def test_a_band_with_an_internal_hole_is_convicted_even_when_its_extent_reads_full():
+    """The walk's F-1 at the runtime gate, with its numbers: the real defect was a ~6,100px
+    ink-free hole inside a band with content at both ends — extent fraction 0.990, so the old
+    single-condition rule read it healthy. The largest merged-interval gap sees it."""
+    from lumen_api.clone_review.findings import broken_clones
+
+    holed = _measurement(
+        "frag_00000000000000aa",
+        height_px=8110.0,
+        content_extent_px=8030.0,  # content at both ends: extent ~0.990 of the band
+        largest_gap_px=6115.0,
+    )
+    verdicts = broken_clones((holed,))
+    assert [v.reason for v in verdicts] == [DEGRADED_REASON_RUNTIME_DEAD_HEIGHT]
+
+    ordinary = _measurement(
+        "frag_00000000000000ab",
+        height_px=8110.0,
+        content_extent_px=8030.0,
+        largest_gap_px=145.0,  # the walk's healthy-page maximum
+    )
+    assert broken_clones((ordinary,)) == ()
