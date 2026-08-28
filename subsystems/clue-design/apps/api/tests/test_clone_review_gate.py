@@ -14,6 +14,7 @@ acceptance walk.
 from __future__ import annotations
 
 from io import BytesIO
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -386,11 +387,19 @@ def test_an_injected_console_error_is_captured_and_attributed_to_its_source():
     assert findings[0].detail["level"] == "error"
 
 
-def test_an_uncaught_page_error_with_no_source_is_attributed_to_the_document():
+def test_an_uncaught_page_error_is_blamed_on_the_only_scripts_present_which_are_ours():
+    """A cloned band carries no scripts, so nothing the page contains CAN throw.
+
+    Amended in the fix round (review finding I1 / ruling R19-2): this used to be reported as a
+    console error "from the document itself", indistinguishable from a genuine page fault. On the
+    page the gate walks the only script is our preview shell's Tailwind runtime, so an uncaught
+    exception is ours and is reported as such.
+    """
     findings = console_findings(
         (ConsoleEntry(level="error", text="uncaught: boom", url=None, line=None),)
     )
-    assert "the document itself" in findings[0].message
+    assert findings[0].code == "review.shell_console_error"
+    assert "our own tooling" in findings[0].message
 
 
 # --- reduced motion --------------------------------------------------------------------------------
@@ -604,3 +613,426 @@ def test_a_very_tall_page_is_cropped_and_the_key_says_so():
     )
     assert blind.key["cropped"][SIDE_PUBLISHED] is True
     assert blind.key["cropped"][SIDE_REFERENCE] is False
+
+
+# =================================================================================================
+# Fix round — the review's C1 / I1 / I2 and the minors folded in with them
+# =================================================================================================
+
+
+class _FakePage:
+    """Enough of a Playwright page for `run_walk` to be exercised with no chromium.
+
+    Deliberately dumb: it records what was asked of it and answers from a script the test wrote.
+    Nothing here pretends to render — what these tests are about is which passes opened, how the
+    six observations are assembled from them, and what happens when one of them dies.
+    """
+
+    def __init__(self, owner: "_FakeBrowser", viewport: dict, reduced_motion: str) -> None:
+        self.owner = owner
+        self.viewport = viewport
+        self.reduced_motion = reduced_motion
+        self.handlers: dict[str, Any] = {}
+        self.scrolled: list[float] = []
+        self.screenshots: list[str] = []
+        self.context = self
+
+    # --- the surface run_walk touches ---
+    def set_default_timeout(self, _ms: int) -> None:
+        pass
+
+    def on(self, event: str, handler: Any) -> None:
+        self.handlers[event] = handler
+
+    def set_content(self, html: str, wait_until: str = "load") -> None:
+        self.owner.html = html
+
+    def wait_for_timeout(self, _ms: int) -> None:
+        pass
+
+    def evaluate(self, script: str, arg: Any = None) -> Any:
+        from lumen_api.clone_review.walk import (
+            DOCUMENT_HEIGHT_SCRIPT,
+            SECTION_PROBE_SCRIPT,
+            STYLES_READY_SCRIPT,
+        )
+
+        if script == DOCUMENT_HEIGHT_SCRIPT:
+            return dict(self.owner.geometry)
+        if script == STYLES_READY_SCRIPT:
+            return self.owner.styles_ready
+        if script == SECTION_PROBE_SCRIPT:
+            return [dict(row) for row in self.owner.probe_rows]
+        if "scrollTo" in script:
+            self.scrolled.append(float(arg or 0.0))
+            return None
+        raise AssertionError(f"unexpected evaluate: {script[:40]}")
+
+    def screenshot(self, *, path: str, full_page: bool = False) -> None:
+        Path(path).write_bytes(b"\x89PNG\r\n\x1a\nfake")
+        self.screenshots.append(path)
+
+    def close(self) -> None:
+        pass
+
+
+class _FakeBrowser:
+    def __init__(
+        self,
+        *,
+        geometry: dict | None = None,
+        probe_rows: list | None = None,
+        styles_ready: Any = True,
+        fail_passes: tuple[str, ...] = (),
+    ) -> None:
+        self.geometry = geometry or {"height": 4000, "width": 1440, "viewport": 1440}
+        self.probe_rows = probe_rows or []
+        self.styles_ready = styles_ready
+        self.fail_passes = fail_passes
+        self.pages: list[_FakePage] = []
+        self.html = ""
+
+    def new_context(self, *, viewport: dict, reduced_motion: str) -> "_FakeBrowser":
+        # The pass identity a test can refuse on: desktop / mobile / reduced-motion.
+        if viewport["width"] == 375:
+            name = "mobile"
+        elif reduced_motion == "reduce":
+            name = "reduced_motion"
+        else:
+            name = "desktop"
+        if name in self.fail_passes:
+            raise RuntimeError(f"{name} context refused")
+        self._pending = (viewport, reduced_motion)
+        return self
+
+    def new_page(self) -> _FakePage:
+        page = _FakePage(self, *self._pending)
+        self.pages.append(page)
+        return page
+
+    # `page.context.close()` lands here.
+    def close(self) -> None:
+        pass
+
+
+def _factory(browser: _FakeBrowser):
+    from contextlib import contextmanager
+
+    @contextmanager
+    def _make():
+        yield browser
+
+    return _make
+
+
+def _run(browser: _FakeBrowser, tmp_path, plan=None):
+    from lumen_api.clone_review.browser import run_walk
+
+    return run_walk(
+        "<html></html>",
+        plan or walk_plan(),
+        output_dir=tmp_path,
+        browser_factory=_factory(browser),
+    )
+
+
+# --- C1: the console class may not report a pass that never happened -----------------------------
+
+
+def test_the_console_class_abstains_when_not_one_pass_opened_a_page(tmp_path):
+    walk = _run(
+        _FakeBrowser(fail_passes=("desktop", "mobile", "reduced_motion")), tmp_path
+    )
+    console = walk.by_class(WALK_CLASS_CONSOLE)
+    assert console.made is False
+    assert console.because == "no_pass_opened"
+    # ...and it is not silently absent from the review's own list of gaps.
+    assert WALK_CLASS_CONSOLE in [item.walk_class for item in walk.abstentions]
+    assert len(walk.abstentions) == 6
+
+
+def test_the_console_note_names_only_the_passes_that_actually_opened(tmp_path):
+    walk = _run(_FakeBrowser(fail_passes=("mobile",)), tmp_path)
+    console = walk.by_class(WALK_CLASS_CONSOLE)
+    assert console.made is True
+    assert console.notes["passes"] == ["desktop", "reduced_motion"]
+    assert walk.by_class(WALK_CLASS_MOBILE).made is False
+
+
+def test_a_walk_where_every_pass_opened_reports_all_three(tmp_path):
+    walk = _run(_FakeBrowser(), tmp_path)
+    assert walk.by_class(WALK_CLASS_CONSOLE).notes["passes"] == [
+        "desktop",
+        "mobile",
+        "reduced_motion",
+    ]
+    assert all(observation.made for observation in walk.observations)
+
+
+def test_a_console_error_from_a_pass_that_opened_still_arrives(tmp_path):
+    browser = _FakeBrowser()
+    walk_result: dict = {}
+
+    class _Message:
+        type = "error"
+        text = "Failed to load resource"
+        location = {"url": "https://cdn.test/logo.png", "lineNumber": 0}
+
+    from lumen_api.clone_review.browser import run_walk
+
+    original_new_page = browser.new_page
+
+    def _new_page():
+        page = original_new_page()
+        real_set_content = page.set_content
+
+        def _set_content(html, wait_until="load"):
+            real_set_content(html, wait_until)
+            page.handlers["console"](_Message())
+
+        page.set_content = _set_content
+        return page
+
+    browser.new_page = _new_page
+    walk_result["walk"] = run_walk(
+        "<html></html>",
+        walk_plan(),
+        output_dir=tmp_path,
+        browser_factory=_factory(browser),
+    )
+    console = walk_result["walk"].by_class(WALK_CLASS_CONSOLE)
+    assert console.made is True
+    assert len(console.console) == 3  # one per pass
+    assert {entry.pass_name for entry in console.console} == {
+        "desktop",
+        "mobile",
+        "reduced_motion",
+    }
+
+
+# --- I3's other dividends: scroll arithmetic and per-class degradation ---------------------------
+
+
+def test_a_page_shorter_than_the_viewport_is_photographed_once_not_five_times(tmp_path):
+    from lumen_api.clone_review.browser import scroll_offsets
+
+    assert scroll_offsets(600.0, 900, (0.0, 0.25, 0.5, 0.75, 1.0)) == ((0.0, 0.0),)
+    walk = _run(_FakeBrowser(geometry={"height": 600, "width": 1440}), tmp_path)
+    scroll = walk.by_class(WALK_CLASS_SCROLL_THROUGH)
+    assert len(scroll.shots) == 1
+    assert scroll.shots[0].scroll_fraction == 0.0
+    assert scroll.notes["distinct_positions"] == 1
+
+
+def test_a_long_page_gets_every_stop(tmp_path):
+    from lumen_api.clone_review.browser import scroll_offsets
+
+    positions = scroll_offsets(5000.0, 900, (0.0, 0.25, 0.5, 0.75, 1.0))
+    assert [stop for stop, _ in positions] == [0.0, 0.25, 0.5, 0.75, 1.0]
+    assert [offset for _, offset in positions] == [0.0, 1025.0, 2050.0, 3075.0, 4100.0]
+
+
+def test_one_class_failing_does_not_take_the_pass_down_with_it(tmp_path):
+    browser = _FakeBrowser()
+    walk = _run(browser, tmp_path, plan=walk_plan())
+    # A page that refuses to be photographed at all still yields its other observations.
+    broken = _FakeBrowser()
+
+    def _boom(*args, **kwargs):
+        raise RuntimeError("screenshot refused")
+
+    original = broken.new_page
+
+    def _new_page():
+        page = original()
+        page.screenshot = _boom
+        return page
+
+    broken.new_page = _new_page
+    degraded = _run(broken, tmp_path / "b")
+    assert degraded.by_class(WALK_CLASS_FULL_PAGE).made is False
+    assert degraded.by_class(WALK_CLASS_FULL_PAGE).because == "browser_error"
+    assert degraded.by_class(WALK_CLASS_HEIGHT_COLLAPSE).made is True
+    assert degraded.by_class(WALK_CLASS_CONSOLE).made is True
+    assert walk.by_class(WALK_CLASS_FULL_PAGE).made is True
+
+
+# --- I2: a present row with no numbers is an abstention, never a conviction ----------------------
+
+
+def test_a_present_row_with_no_numbers_is_measured_false():
+    measurements = measurements_from_probe(
+        [{"fragment_id": "frag_c", "selector": ".c", "present": True, "visible": True}],
+        viewport="desktop",
+    )
+    assert measurements[0].present is True
+    assert measurements[0].measured is False
+
+
+def test_an_unmeasured_band_is_never_convicted_of_anything():
+    """The last call the previous round's tolerance test stopped short of."""
+    unmeasured = measurements_from_probe(
+        [{"fragment_id": "frag_c", "selector": ".c", "present": True, "visible": True}],
+        viewport="desktop",
+    )
+    assert broken_clones(unmeasured) == ()
+    # It is reported as a gap instead, so the silence is not silent.
+    walk = _walk(desktop=unmeasured)
+    critique = compose_critique(walk)
+    assert critique.broken == ()
+    assert [f.code for f in critique.page_findings] == ["review.section_unmeasured"]
+
+
+def test_a_row_whose_numbers_are_junk_is_also_unmeasured():
+    measurements = measurements_from_probe(
+        [
+            {
+                "fragment_id": "frag_c",
+                "selector": ".c",
+                "present": True,
+                "visible": True,
+                "width_px": 1440,
+                "height_px": "tall",
+                "content_extent_px": 10,
+                "ink_nodes": 2,
+                "scroll_width_px": 1440,
+            }
+        ],
+        viewport="desktop",
+    )
+    assert measurements[0].measured is False
+    assert broken_clones(measurements) == ()
+
+
+def test_a_complete_row_is_measured_and_judged_normally():
+    measurements = measurements_from_probe(
+        [
+            {
+                "fragment_id": "frag_c",
+                "selector": ".c",
+                "present": True,
+                "visible": True,
+                "top_px": 10,
+                "width_px": 1440,
+                "height_px": 3200,
+                "content_extent_px": 300,
+                "ink_nodes": 4,
+                "scroll_width_px": 1440,
+            }
+        ],
+        viewport="desktop",
+    )
+    assert measurements[0].measured is True
+    assert [item.reason for item in broken_clones(measurements)] == [
+        DEGRADED_REASON_RUNTIME_DEAD_HEIGHT
+    ]
+
+
+# --- I1(a): the shell's console errors are not the page's ---------------------------------------
+
+
+def test_a_console_error_from_our_own_shell_is_blamed_on_the_shell():
+    from lumen_api.clone_review.walk import CONSOLE_SOURCE_PAGE, CONSOLE_SOURCE_SHELL
+
+    shell = ConsoleEntry(level="error", text="tailwind blew up", url="about:blank", line=3)
+    page = ConsoleEntry(level="error", text="404", url="https://cdn.test/hero.jpg")
+    assert shell.source == CONSOLE_SOURCE_SHELL
+    assert page.source == CONSOLE_SOURCE_PAGE
+    assert ConsoleEntry(level="error", text="uncaught: boom").source == CONSOLE_SOURCE_SHELL
+
+    findings = console_findings((shell, page))
+    codes = [finding.code for finding in findings]
+    assert codes == ["review.shell_console_error", "review.console_error"]
+    assert findings[0].severity == "warning"
+    assert "not the page" in findings[0].message
+    assert findings[1].severity == "error"
+    assert "hero.jpg" in findings[1].message
+
+
+# --- I1(b) / R19-1: a durable verdict needs settled evidence ------------------------------------
+
+
+def _settled_walk(styles_ready, *, desktop=(), mobile=()):
+    return BehaviouralWalk(
+        observations=(
+            WalkObservation(walk_class=WALK_CLASS_FULL_PAGE, made=True),
+            WalkObservation(walk_class=WALK_CLASS_SCROLL_THROUGH, made=True),
+            WalkObservation(
+                walk_class=WALK_CLASS_MOBILE,
+                made=True,
+                measurements=mobile,
+                notes={"styles_ready": styles_ready},
+            ),
+            WalkObservation(walk_class=WALK_CLASS_CONSOLE, made=True),
+            WalkObservation(
+                walk_class=WALK_CLASS_HEIGHT_COLLAPSE,
+                made=True,
+                measurements=desktop,
+                notes={"styles_ready": styles_ready},
+            ),
+            WalkObservation(walk_class=WALK_CLASS_REDUCED_MOTION, made=True, notes={}),
+        )
+    )
+
+
+@pytest.mark.parametrize("ready,settled", [(True, True), (False, False), (None, False)])
+def test_only_a_page_that_says_it_is_ready_yields_settled_evidence(ready, settled):
+    from lumen_api.clone_review.findings import evidence_settled
+
+    dead = _measurement("frag_dead", height_px=3200.0, content_extent_px=200.0)
+    walk = _settled_walk(ready, desktop=(dead,))
+    assert evidence_settled(walk) is settled
+    critique = compose_critique(walk)
+    # The FINDING is made either way — what changes is whether it may be written down.
+    assert [item.reason for item in critique.broken] == [DEGRADED_REASON_RUNTIME_DEAD_HEIGHT]
+    assert critique.settled is settled
+    assert critique.as_result()["evidence_settled"] is settled
+    unsettled_notes = [
+        f for f in critique.page_findings if f.code == "review.evidence_unsettled"
+    ]
+    assert bool(unsettled_notes) is (not settled)
+
+
+def test_a_walk_that_measured_nothing_is_settled_by_default():
+    from lumen_api.clone_review.findings import evidence_settled
+
+    assert evidence_settled(_settled_walk(None)) is True
+
+
+def test_the_readiness_probe_answers_a_tri_state(tmp_path):
+    for ready in (True, False, None):
+        walk = _run(_FakeBrowser(styles_ready=ready), tmp_path / f"r_{ready}")
+        assert walk.by_class(WALK_CLASS_HEIGHT_COLLAPSE).notes["styles_ready"] is ready
+        assert walk.by_class(WALK_CLASS_MOBILE).notes["styles_ready"] is ready
+
+
+def test_a_readiness_check_that_answers_nonsense_reads_as_unknown(tmp_path):
+    walk = _run(_FakeBrowser(styles_ready="yes please"), tmp_path)
+    assert walk.by_class(WALK_CLASS_HEIGHT_COLLAPSE).notes["styles_ready"] is None
+
+
+# --- M4 / M9: the comparison's two honesty fixes -------------------------------------------------
+
+
+def test_a_reference_captured_at_a_different_width_is_not_compared_through():
+    result = compare_to_reference(
+        reference_png=_png(1280, 900),
+        capture_png=_png(1440, 900),
+        reference_viewport_width=1280,
+        rendered_viewport_width=1440,
+    )
+    assert result["status"] == "unavailable"
+    assert result["because"] == "reference_viewport_mismatch"
+    assert result["reference_viewport_width"] == 1280
+
+
+def test_an_unsamplable_whole_page_delta_is_none_rather_than_maximally_different():
+    # A capture one pixel tall cannot fill the comparison grid; the honest answer is "no number".
+    result = compare_to_reference(
+        reference_png=_png(1440, 2000),
+        capture_png=_png(1440, 1),
+        reference_viewport_width=1440,
+        rendered_viewport_width=1440,
+    )
+    assert result["status"] == "ok"
+    assert result["whole_page_pixel_delta"] is None

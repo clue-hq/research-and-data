@@ -43,6 +43,11 @@ COMPARE_GRID = 24
 #: a cell by a couple of levels; a band that has genuinely changed moves by dozens.
 DRIFT_PIXEL_DELTA = 0.08
 
+#: How far the reference's capture width may differ from ours before the two are not comparable
+#: at all. Zero slack in practice — both sides are meant to be 1440 — but stated as a tolerance
+#: rather than an equality so a capture recorded as 1439 by a scrollbar does not void a review.
+VIEWPORT_MATCH_SLACK_PX = 8
+
 #: How far a band's rendered height may differ from the reference's before the same. 15%: brand
 #: fonts, a slot filled with a longer string and a repaired band are all legitimate reasons for a
 #: band to breathe differently, and none of them is a fidelity defect.
@@ -93,6 +98,14 @@ def compare_to_reference(
         return _unavailable("no_page_capture")
     if not reference_viewport_width or reference_viewport_width <= 0:
         return _unavailable("reference_viewport_unknown")
+    if abs(int(reference_viewport_width) - int(rendered_viewport_width)) > VIEWPORT_MATCH_SLACK_PX:
+        # Two different widths are two different layouts (review finding M4). Comparing them
+        # measures the page's responsiveness, not the clone's fidelity, and every band would come
+        # back "drifted" with nothing in the payload saying why.
+        return _unavailable("reference_viewport_mismatch") | {
+            "reference_viewport_width": int(reference_viewport_width),
+            "rendered_viewport_width": int(rendered_viewport_width),
+        }
 
     reference = _open_grey(reference_png)
     capture = _open_grey(capture_png)
@@ -130,6 +143,9 @@ def compare_to_reference(
             skipped.append({"fragment_id": fragment_id, "because": "outside_capture"})
             continue
         delta = _cell_delta(left, right)
+        if delta is None:
+            skipped.append({"fragment_id": fragment_id, "because": "not_comparable"})
+            continue
         height_ratio = rendered.height_px / reference_band.height_px
         bands.append(
             {
@@ -147,6 +163,7 @@ def compare_to_reference(
 
     reference_css_height = reference.height / reference_scale if reference_scale else 0.0
     capture_css_height = capture.height / capture_scale if capture_scale else 0.0
+    whole_page = _whole_page_delta(reference, capture)
     return {
         "schema_version": COMPARISON_SCHEMA_VERSION,
         "status": "ok",
@@ -165,7 +182,8 @@ def compare_to_reference(
             if reference_css_height
             else None
         ),
-        "whole_page_pixel_delta": round(_whole_page_delta(reference, capture), 4),
+        # `None` means "could not be sampled", never "maximally different" (M9).
+        "whole_page_pixel_delta": round(whole_page, 4) if whole_page is not None else None,
         "bands": bands,
         "skipped_bands": skipped,
         "thresholds": {
@@ -252,19 +270,22 @@ def _open_grey(data: bytes) -> _Grey | None:
 _NORMALIZED_WIDTH = 960
 
 
-def _cell_delta(left: Sequence[float], right: Sequence[float]) -> float:
+def _cell_delta(left: Sequence[float] | None, right: Sequence[float] | None) -> float | None:
+    """The mean cell difference, or ``None`` for "these two could not be compared".
+
+    ``None`` rather than ``1.0`` (review finding M9): 1.0 is the strongest drift signal this
+    module can emit, and emitting it for an unmeasurable comparison turns "we could not look" into
+    "these are nothing alike" — the same class of error the walk's abstentions exist to prevent,
+    on the one number an agent is most likely to quote.
+    """
     if not left or not right or len(left) != len(right):
-        return 1.0
+        return None
     total = sum(abs(a - b) for a, b in zip(left, right))
     return total / (len(left) * 255.0)
 
 
-def _whole_page_delta(reference: _Grey, capture: _Grey) -> float:
-    left = reference.cells(0, reference.height)
-    right = capture.cells(0, capture.height)
-    if left is None or right is None:
-        return 1.0
-    return _cell_delta(left, right)
+def _whole_page_delta(reference: _Grey, capture: _Grey) -> float | None:
+    return _cell_delta(reference.cells(0, reference.height), capture.cells(0, capture.height))
 
 
 def reference_bands_from_fragments(
@@ -318,6 +339,7 @@ def reference_bands_from_fragments(
 
 __all__ = [
     "COMPARE_GRID",
+    "VIEWPORT_MATCH_SLACK_PX",
     "COMPARISON_SCHEMA_VERSION",
     "DRIFT_HEIGHT_TOLERANCE",
     "DRIFT_PIXEL_DELTA",

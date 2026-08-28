@@ -6,18 +6,30 @@ all. That is the F3.2 isolation-render seam again, and the reason it is worth re
 walk's value is entirely in what it REFUSES to claim, and a refusal you can only reach by
 launching a browser is a refusal nobody tests.
 
-**No fabrication, ever.** Each of the six classes is attempted independently and each one that
-fails comes back abstained with a code. The one thing that raises is a browser that will not
-open at all, because a walk with no browser is not a partial walk — it is no walk.
+**The browser is INJECTED** (review finding I3). :func:`run_walk` takes a factory returning a
+context-managed browser handle; the default one launches chromium. Most of what lives in this
+file is not browser logic at all — it is which passes opened, how the six observations are
+assembled from them, how a console line is levelled and blamed, and the scroll arithmetic — and
+before the seam existed none of it could be reached by a test. The bug that taught the lesson
+(C1: the console class reporting "observed, no errors" for a page nobody opened) sat here for a
+whole review round precisely because nothing could call this function.
 
-**Every pass is a fresh page on one browser.** A viewport change mid-page re-lays-out a document
-that has already had its transitions run, which is not the state a reader arrives in; the phone
-pass has to be a phone from the first paint. The browser itself is shared across the passes, so
-the cost is one launch.
+**No fabrication, ever.** Each of the six classes is attempted independently and each one that
+fails comes back abstained with a code. The console class is now built only from the passes that
+actually opened a page, and abstains when none did. The one thing that raises is a browser that
+will not open at all, because a walk with no browser is not a partial walk — it is no walk.
+
+**Every pass is a fresh context.** A viewport change mid-page re-lays-out a document that has
+already had its transitions run, which is not the state a reader arrives in; the phone pass has
+to be a phone from the first paint. The browser itself is shared across the passes, so the cost
+is one launch.
 """
 
 from __future__ import annotations
 
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -26,12 +38,13 @@ from py_lumen_obs import get_logger
 from .walk import (
     DOCUMENT_HEIGHT_SCRIPT,
     SECTION_PROBE_SCRIPT,
+    STYLES_READY_SCRIPT,
     WALK_CLASS_CONSOLE,
     WALK_CLASS_FULL_PAGE,
     WALK_CLASS_HEIGHT_COLLAPSE,
+    WALK_CLASS_LABELS,
     WALK_CLASS_MOBILE,
     WALK_CLASS_REDUCED_MOTION,
-    WALK_CLASS_LABELS,
     WALK_CLASS_SCROLL_THROUGH,
     WALK_TIMEOUT_MS,
     BehaviouralWalk,
@@ -49,17 +62,23 @@ logger = get_logger("lumen_api.clone_review.browser")
 
 BROWSER_LAUNCH_FAILED_CODE = "review.browser_launch_failed"
 
+#: The `because` code the console class abstains with when not one pass opened a page.
+CONSOLE_NO_PASS_OPENED = "no_pass_opened"
 
-def run_walk(page_html: str, plan: WalkPlan, *, output_dir: Path) -> BehaviouralWalk:
-    """Open one browser, make the six observations, close it. See the module docstring."""
+#: The names the three passes are recorded under, in walk order.
+PASS_DESKTOP = "desktop"
+PASS_MOBILE = "mobile"
+PASS_REDUCED_MOTION = "reduced_motion"
+
+
+@contextmanager
+def chromium_browser() -> Iterator[Any]:
+    """The default browser: one headless chromium, closed on the way out.
+
+    A launch that fails is a typed refusal rather than an exception, because "this host has the
+    package but not the browser binary" is a deployment fact an operator can act on.
+    """
     from playwright.sync_api import sync_playwright
-
-    output_dir.mkdir(parents=True, exist_ok=True)
-    console: list[ConsoleEntry] = []
-    probes = [
-        {"fragment_id": probe.fragment_id, "selector": probe.selector}
-        for probe in plan.sections
-    ]
 
     with sync_playwright() as pw:
         try:
@@ -71,42 +90,89 @@ def run_walk(page_html: str, plan: WalkPlan, *, output_dir: Path) -> Behavioural
                 "nothing is reported — run `playwright install chromium` on this host",
             ) from error
         try:
-            desktop = _desktop_pass(browser, page_html, plan, probes, console, output_dir)
-            mobile = _mobile_pass(browser, page_html, plan, probes, console, output_dir)
-            reduced = _reduced_motion_pass(
-                browser, page_html, plan, probes, console, output_dir, desktop
-            )
+            yield browser
         finally:
             browser.close()
 
-    observations = (
-        desktop.full_page,
-        desktop.scroll_through,
-        mobile,
-        WalkObservation(
-            walk_class=WALK_CLASS_CONSOLE,
-            made=True,
-            console=tuple(console),
-            notes={"passes": ["desktop", "mobile", "reduced_motion"]},
+
+@dataclass
+class _PassOutcome:
+    """What one pass produced, and — the part C1 turned on — whether it ever opened a page."""
+
+    opened: bool = False
+    observations: dict[str, WalkObservation] = field(default_factory=dict)
+    document_height: float | None = None
+    styles_ready: bool | None = None
+
+
+def run_walk(
+    page_html: str,
+    plan: WalkPlan,
+    *,
+    output_dir: Path,
+    browser_factory: Callable[[], Any] = chromium_browser,
+) -> BehaviouralWalk:
+    """Open one browser, make the six observations, close it. See the module docstring.
+
+    ``browser_factory`` returns a context manager yielding something with ``new_context``. The
+    default launches chromium; a test passes a fake and exercises everything except chromium.
+    """
+    output_dir.mkdir(parents=True, exist_ok=True)
+    console: list[ConsoleEntry] = []
+    probes = [
+        {"fragment_id": probe.fragment_id, "selector": probe.selector}
+        for probe in plan.sections
+    ]
+
+    with browser_factory() as browser:
+        desktop = _desktop_pass(browser, page_html, plan, probes, console, output_dir)
+        mobile = _mobile_pass(browser, page_html, plan, probes, console, output_dir)
+        reduced = _reduced_motion_pass(
+            browser, page_html, plan, probes, console, output_dir, desktop
+        )
+
+    return BehaviouralWalk(
+        observations=(
+            desktop.observations[WALK_CLASS_FULL_PAGE],
+            desktop.observations[WALK_CLASS_SCROLL_THROUGH],
+            mobile.observations[WALK_CLASS_MOBILE],
+            console_observation(console, (desktop, mobile, reduced)),
+            desktop.observations[WALK_CLASS_HEIGHT_COLLAPSE],
+            reduced.observations[WALK_CLASS_REDUCED_MOTION],
         ),
-        desktop.height_collapse,
-        reduced,
+        plan=plan,
     )
-    return BehaviouralWalk(observations=observations, plan=plan)
 
 
-class _DesktopResult:
-    """The three observations the desktop pass produces, plus what the next pass needs."""
+def console_observation(
+    console: list[ConsoleEntry], passes: tuple[_PassOutcome, ...]
+) -> WalkObservation:
+    """The console class, built from the passes that ACTUALLY opened a page (review finding C1).
 
-    def __init__(self) -> None:
-        self.full_page: WalkObservation = abstained(WALK_CLASS_FULL_PAGE, "not_attempted")
-        self.scroll_through: WalkObservation = abstained(
-            WALK_CLASS_SCROLL_THROUGH, "not_attempted"
+    The console is the one class with no pass of its own — it is a side effect of the other three
+    — so it was previously assembled unconditionally, and a walk in which chromium launched but
+    every `set_content` timed out reported "console observed, zero entries" for a page nobody had
+    opened. That is a fabricated clean bill of exactly the kind this module's opening paragraph
+    forbids, and a *partial* failure was worse: the note still named a pass that never ran, so a
+    phone-only error was silently absent from a "made" observation.
+
+    Now the note lists the real passes, and no pass opening is an abstention.
+    """
+    names = tuple(
+        name
+        for name, outcome in zip(
+            (PASS_DESKTOP, PASS_MOBILE, PASS_REDUCED_MOTION), passes
         )
-        self.height_collapse: WalkObservation = abstained(
-            WALK_CLASS_HEIGHT_COLLAPSE, "not_attempted"
-        )
-        self.document_height: float | None = None
+        if outcome.opened
+    )
+    if not names:
+        return abstained(WALK_CLASS_CONSOLE, CONSOLE_NO_PASS_OPENED)
+    return WalkObservation(
+        walk_class=WALK_CLASS_CONSOLE,
+        made=True,
+        console=tuple(console),
+        notes={"passes": list(names)},
+    )
 
 
 def _open(
@@ -150,7 +216,9 @@ def _record_console(message: Any, console: list[ConsoleEntry], pass_name: str) -
 
 def _record_page_error(error: Any, console: list[ConsoleEntry], pass_name: str) -> None:
     # An uncaught exception is reported at `error` severity with no location of its own — the
-    # page threw, which is the strongest console signal there is.
+    # page threw, which is the strongest console signal there is. It is blamed on the SHELL by
+    # `ConsoleEntry.source` (no url), which on this page is correct by construction: a cloned
+    # band carries no scripts, so the only code that can throw here is ours.
     console.append(
         ConsoleEntry(
             level="error",
@@ -169,36 +237,41 @@ def _desktop_pass(
     probes: list[dict[str, str]],
     console: list[ConsoleEntry],
     output_dir: Path,
-) -> _DesktopResult:
-    result = _DesktopResult()
+) -> _PassOutcome:
+    outcome = _PassOutcome()
     try:
-        page = _open(browser, html, plan.desktop, console, pass_name="desktop")
+        page = _open(browser, html, plan.desktop, console, pass_name=PASS_DESKTOP)
     except Exception as error:  # noqa: BLE001
         because = _because(error)
-        result.full_page = abstained(WALK_CLASS_FULL_PAGE, because)
-        result.scroll_through = abstained(WALK_CLASS_SCROLL_THROUGH, because)
-        result.height_collapse = abstained(WALK_CLASS_HEIGHT_COLLAPSE, because)
-        return result
+        for walk_class in (
+            WALK_CLASS_FULL_PAGE,
+            WALK_CLASS_SCROLL_THROUGH,
+            WALK_CLASS_HEIGHT_COLLAPSE,
+        ):
+            outcome.observations[walk_class] = abstained(walk_class, because)
+        return outcome
+    outcome.opened = True
     try:
         page.wait_for_timeout(plan.settle_ms)
         geometry = _geometry(page)
-        result.document_height = geometry.get("height")
+        outcome.document_height = geometry.get("height")
+        outcome.styles_ready = _styles_ready(page)
 
-        result.full_page = _try(
+        outcome.observations[WALK_CLASS_FULL_PAGE] = _try(
             WALK_CLASS_FULL_PAGE,
             lambda: _full_page(page, plan, output_dir, geometry),
         )
-        result.scroll_through = _try(
+        outcome.observations[WALK_CLASS_SCROLL_THROUGH] = _try(
             WALK_CLASS_SCROLL_THROUGH,
             lambda: _scroll_through(page, plan, output_dir, geometry),
         )
-        result.height_collapse = _try(
+        outcome.observations[WALK_CLASS_HEIGHT_COLLAPSE] = _try(
             WALK_CLASS_HEIGHT_COLLAPSE,
-            lambda: _height_collapse(page, plan, probes),
+            lambda: _height_collapse(page, plan, probes, outcome.styles_ready),
         )
     finally:
         page.context.close()
-    return result
+    return outcome
 
 
 def _full_page(page: Any, plan: WalkPlan, output_dir: Path, geometry: dict) -> WalkObservation:
@@ -219,14 +292,31 @@ def _full_page(page: Any, plan: WalkPlan, output_dir: Path, geometry: dict) -> W
     )
 
 
+def scroll_offsets(
+    document_height: float, viewport_height: int, stops: tuple[float, ...]
+) -> tuple[tuple[float, float], ...]:
+    """``((stop, offset), …)`` — the DISTINCT positions this page actually has.
+
+    A page shorter than the viewport has exactly one position, and photographing it five times
+    under the captions "25%", "50%", "75%" and "100%" would claim four states the page does not
+    have (review finding M3). Deduped on the offset, so a short page yields one honest capture
+    and a long one yields all five.
+    """
+    scrollable = max(0.0, document_height - float(viewport_height))
+    seen: dict[float, float] = {}
+    for stop in stops:
+        offset = round(scrollable * stop, 1)
+        seen.setdefault(offset, stop)
+    return tuple((stop, offset) for offset, stop in seen.items())
+
+
 def _scroll_through(
     page: Any, plan: WalkPlan, output_dir: Path, geometry: dict
 ) -> WalkObservation:
     document_height = float(geometry.get("height") or 0.0)
-    scrollable = max(0.0, document_height - plan.desktop.height)
+    positions = scroll_offsets(document_height, plan.desktop.height, plan.scroll_stops)
     shots: list[CaptureShot] = []
-    for stop in plan.scroll_stops:
-        offset = scrollable * stop
+    for stop, offset in positions:
         page.evaluate("(y) => window.scrollTo(0, y)", offset)
         page.wait_for_timeout(plan.settle_ms)
         destination = output_dir / f"walk_scroll_{int(round(stop * 100)):03d}.png"
@@ -245,17 +335,22 @@ def _scroll_through(
         walk_class=WALK_CLASS_SCROLL_THROUGH,
         made=True,
         shots=tuple(shots),
-        notes={"scrollable_px": round(scrollable, 1)},
+        notes={
+            "scrollable_px": round(max(0.0, document_height - plan.desktop.height), 1),
+            "distinct_positions": len(positions),
+        },
     )
 
 
-def _height_collapse(page: Any, plan: WalkPlan, probes: list[dict[str, str]]) -> WalkObservation:
+def _height_collapse(
+    page: Any, plan: WalkPlan, probes: list[dict[str, str]], styles_ready: bool | None
+) -> WalkObservation:
     raw = page.evaluate(SECTION_PROBE_SCRIPT, probes) if probes else []
     return WalkObservation(
         walk_class=WALK_CLASS_HEIGHT_COLLAPSE,
         made=True,
         measurements=measurements_from_probe(raw, viewport=plan.desktop.name),
-        notes={"sections_probed": len(probes)},
+        notes={"sections_probed": len(probes), "styles_ready": styles_ready},
     )
 
 
@@ -266,18 +361,24 @@ def _mobile_pass(
     probes: list[dict[str, str]],
     console: list[ConsoleEntry],
     output_dir: Path,
-) -> WalkObservation:
+) -> _PassOutcome:
+    outcome = _PassOutcome()
     try:
-        page = _open(browser, html, plan.mobile, console, pass_name="mobile")
+        page = _open(browser, html, plan.mobile, console, pass_name=PASS_MOBILE)
     except Exception as error:  # noqa: BLE001
-        return abstained(WALK_CLASS_MOBILE, _because(error))
+        outcome.observations[WALK_CLASS_MOBILE] = abstained(
+            WALK_CLASS_MOBILE, _because(error)
+        )
+        return outcome
+    outcome.opened = True
     try:
         page.wait_for_timeout(plan.settle_ms)
         geometry = _geometry(page)
+        outcome.styles_ready = _styles_ready(page)
         destination = output_dir / "walk_mobile.png"
         page.screenshot(path=str(destination), full_page=True)
         raw = page.evaluate(SECTION_PROBE_SCRIPT, probes) if probes else []
-        return WalkObservation(
+        outcome.observations[WALK_CLASS_MOBILE] = WalkObservation(
             walk_class=WALK_CLASS_MOBILE,
             made=True,
             shots=(
@@ -292,12 +393,16 @@ def _mobile_pass(
             notes={
                 "viewport_width": plan.mobile.width,
                 "document_scroll_width_px": geometry.get("width"),
+                "styles_ready": outcome.styles_ready,
             },
         )
     except Exception as error:  # noqa: BLE001
-        return abstained(WALK_CLASS_MOBILE, _because(error))
+        outcome.observations[WALK_CLASS_MOBILE] = abstained(
+            WALK_CLASS_MOBILE, _because(error)
+        )
     finally:
         page.context.close()
+    return outcome
 
 
 def _reduced_motion_pass(
@@ -307,19 +412,24 @@ def _reduced_motion_pass(
     probes: list[dict[str, str]],
     console: list[ConsoleEntry],
     output_dir: Path,
-    desktop: _DesktopResult,
-) -> WalkObservation:
+    desktop: _PassOutcome,
+) -> _PassOutcome:
+    outcome = _PassOutcome()
     try:
         page = _open(
             browser,
             html,
             plan.desktop,
             console,
-            pass_name="reduced_motion",
+            pass_name=PASS_REDUCED_MOTION,
             reduced_motion=True,
         )
     except Exception as error:  # noqa: BLE001
-        return abstained(WALK_CLASS_REDUCED_MOTION, _because(error))
+        outcome.observations[WALK_CLASS_REDUCED_MOTION] = abstained(
+            WALK_CLASS_REDUCED_MOTION, _because(error)
+        )
+        return outcome
+    outcome.opened = True
     try:
         page.wait_for_timeout(plan.settle_ms)
         geometry = _geometry(page)
@@ -329,7 +439,7 @@ def _reduced_motion_pass(
         notes: dict[str, Any] = {"document_height_px": geometry.get("height")}
         if desktop.document_height:
             notes["motion_document_height_px"] = desktop.document_height
-        return WalkObservation(
+        outcome.observations[WALK_CLASS_REDUCED_MOTION] = WalkObservation(
             walk_class=WALK_CLASS_REDUCED_MOTION,
             made=True,
             shots=(
@@ -344,9 +454,26 @@ def _reduced_motion_pass(
             notes=notes,
         )
     except Exception as error:  # noqa: BLE001
-        return abstained(WALK_CLASS_REDUCED_MOTION, _because(error))
+        outcome.observations[WALK_CLASS_REDUCED_MOTION] = abstained(
+            WALK_CLASS_REDUCED_MOTION, _because(error)
+        )
     finally:
         page.context.close()
+    return outcome
+
+
+def _styles_ready(page: Any) -> bool | None:
+    """Has the preview shell's Tailwind JIT produced output yet? Tri-state (ruling R19-1).
+
+    ``None`` means the check itself could not run, which is not the same as "no" and is certainly
+    not "yes". Both non-True answers make the walk's evidence UNSETTLED, and an unsettled walk
+    writes no durable marker.
+    """
+    try:
+        value = page.evaluate(STYLES_READY_SCRIPT)
+    except Exception:  # noqa: BLE001
+        return None
+    return value if isinstance(value, bool) else None
 
 
 def _geometry(page: Any) -> dict:
@@ -357,7 +484,7 @@ def _geometry(page: Any) -> dict:
     return value if isinstance(value, dict) else {}
 
 
-def _try(walk_class: str, make) -> WalkObservation:
+def _try(walk_class: str, make: Callable[[], WalkObservation]) -> WalkObservation:
     try:
         return make()
     except Exception as error:  # noqa: BLE001 — one class abstains; the pass continues
@@ -381,4 +508,14 @@ def _because(error: Exception) -> str:
     return "browser_error"
 
 
-__all__ = ["BROWSER_LAUNCH_FAILED_CODE", "run_walk"]
+__all__ = [
+    "BROWSER_LAUNCH_FAILED_CODE",
+    "CONSOLE_NO_PASS_OPENED",
+    "PASS_DESKTOP",
+    "PASS_MOBILE",
+    "PASS_REDUCED_MOTION",
+    "chromium_browser",
+    "console_observation",
+    "run_walk",
+    "scroll_offsets",
+]

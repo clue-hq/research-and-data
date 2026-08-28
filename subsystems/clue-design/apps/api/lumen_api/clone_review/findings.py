@@ -40,6 +40,7 @@ from ..fragments.degraded import (
     degraded_headline,
 )
 from .walk import (
+    CONSOLE_SOURCE_SHELL,
     WALK_CLASS_CONSOLE,
     WALK_CLASS_HEIGHT_COLLAPSE,
     WALK_CLASS_MOBILE,
@@ -117,10 +118,12 @@ class PageFinding:
 
 def _blank(measurement: SectionMeasurement) -> bool:
     """Does this band show a reader nothing at all?"""
-    if not measurement.present:
+    if not measurement.present or not measurement.measured:
         # Absent from the DOM is NOT a brokenness verdict about the artifact: the commonest cause
         # is that the band is no longer pinned on the page being walked, which is an author's
-        # decision, not a defect. It is reported as a page finding instead.
+        # decision, not a defect. A band the probe could not measure is not a verdict either
+        # (review finding I2) — its numbers would all be zero, which is precisely the shape of
+        # this finding. Both are reported as page findings instead.
         return False
     if not measurement.visible:
         return True
@@ -131,7 +134,7 @@ def _blank(measurement: SectionMeasurement) -> bool:
 
 def _collapsed(measurement: SectionMeasurement) -> bool:
     """Is this band's box far taller than anything in it? The runtime half of D-F6's trigger."""
-    if not measurement.present or not measurement.visible:
+    if not measurement.present or not measurement.measured or not measurement.visible:
         return False
     if measurement.height_px < DEAD_HEIGHT_MIN_SECTION_PX:
         return False
@@ -139,7 +142,7 @@ def _collapsed(measurement: SectionMeasurement) -> bool:
 
 
 def _mobile_broken(measurement: SectionMeasurement) -> bool:
-    if not measurement.present:
+    if not measurement.present or not measurement.measured:
         return False
     if not measurement.visible or measurement.height_px < MIN_USABLE_HEIGHT_PX:
         return True
@@ -239,25 +242,53 @@ FINDING_SECTION_ABSENT = "review.section_absent"
 FINDING_REDUCED_MOTION = "review.reduced_motion_divergence"
 FINDING_NOT_OBSERVED = "review.not_observed"
 FINDING_REFERENCE_DRIFT = "review.reference_drift"
+#: A console error raised by our own preview shell rather than by the page (I1 / R19-2).
+FINDING_SHELL_ERROR = "review.shell_console_error"
+#: A band that IS on the page but came back without its numbers (I2).
+FINDING_SECTION_UNMEASURED = "review.section_unmeasured"
+#: The walk's evidence is not settled, so no durable marker may be written from it (R19-1).
+FINDING_EVIDENCE_UNSETTLED = "review.evidence_unsettled"
 
 
 def console_findings(entries: Iterable[ConsoleEntry]) -> tuple[PageFinding, ...]:
-    """One finding per console ERROR, attributed to where it came from.
+    """One finding per console ERROR, blamed on whoever actually caused it.
 
     Warnings are dropped rather than reported: the acceptance bar is *zero console errors*, and a
-    third-party stylesheet's deprecation notice is not that. An error with no source url is
-    attributed to the document — which is what an uncaught page exception genuinely is.
+    third-party stylesheet's deprecation notice is not that.
 
-    A page whose clones are JS-free (the sanitizer strips ``script`` and every ``on*`` handler at
-    mint, fail-closed) has nothing that CAN throw, so the honest answer for a healthy cloned page
-    is an empty tuple.
+    **The page's errors and the preview shell's are different findings** (review finding I1,
+    ruling R19-2). The gate walks the EDITOR render, which carries our vendored Tailwind browser
+    JIT as an inline script; a cloned band carries no scripts at all, because the mint sanitizer
+    strips them fail-closed. So on this page every script-originated line is OURS, and the only
+    console lines the page's own content can produce are resource-load failures naming the
+    resource. :func:`~lumen_api.clone_review.walk.console_source` draws that line, and a shell
+    error is reported under its own code as a fault in the harness rather than in the page —
+    which is what keeps the rubric's "a cloned band carries no scripts" clause TRUE of the
+    entries it is talking about.
+
+    A page whose clones are JS-free and whose bytes all load therefore reports an empty tuple,
+    which is the honest answer for a healthy cloned page.
     """
     findings: list[PageFinding] = []
     for entry in entries:
         if entry.level != "error":
             continue
-        source = entry.url or "the document itself"
-        where = f"{source}:{entry.line}" if entry.line is not None else source
+        if entry.source == CONSOLE_SOURCE_SHELL:
+            findings.append(
+                PageFinding(
+                    code=FINDING_SHELL_ERROR,
+                    severity="warning",
+                    message=(
+                        f"the PREVIEW SHELL raised a console error during the {entry.pass_name} "
+                        f"pass: {entry.text}. This is our own tooling (the render's Tailwind "
+                        "runtime), not the page — do not brief a repair for it, and do not count "
+                        "it toward the page's console-error bar"
+                    ),
+                    detail=entry.as_result(),
+                )
+            )
+            continue
+        where = f"{entry.url}:{entry.line}" if entry.line is not None else str(entry.url)
         findings.append(
             PageFinding(
                 code=FINDING_CONSOLE_ERROR,
@@ -281,20 +312,35 @@ def absent_section_findings(
     author took off the page, and marking the ARTIFACT broken because the PAGE does not carry it
     would be the gate inventing a defect out of an editorial decision.
     """
-    return tuple(
-        PageFinding(
-            code=FINDING_SECTION_ABSENT,
-            severity="warning",
-            message=(
-                f"the walk expected cloned section {item.fragment_id} at {item.selector!r} and "
-                "found nothing there — either it is no longer pinned on this page, or it did "
-                "not render"
-            ),
-            detail={"fragment_id": item.fragment_id, "selector": item.selector},
-        )
-        for item in measurements
-        if not item.present
-    )
+    findings: list[PageFinding] = []
+    for item in measurements:
+        if not item.present:
+            findings.append(
+                PageFinding(
+                    code=FINDING_SECTION_ABSENT,
+                    severity="warning",
+                    message=(
+                        f"the walk expected cloned section {item.fragment_id} at "
+                        f"{item.selector!r} and found nothing there — either it is no longer "
+                        "pinned on this page, or it did not render"
+                    ),
+                    detail={"fragment_id": item.fragment_id, "selector": item.selector},
+                )
+            )
+        elif not item.measured:
+            findings.append(
+                PageFinding(
+                    code=FINDING_SECTION_UNMEASURED,
+                    severity="warning",
+                    message=(
+                        f"cloned section {item.fragment_id} is on the page but the probe brought "
+                        "back no usable numbers for it, so this review makes NO judgement about "
+                        "it — not a good one and not a bad one"
+                    ),
+                    detail={"fragment_id": item.fragment_id, "selector": item.selector},
+                )
+            )
+    return tuple(findings)
 
 
 def reduced_motion_findings(walk: BehaviouralWalk) -> tuple[PageFinding, ...]:
@@ -374,16 +420,47 @@ class CloneReviewCritique:
     broken: tuple[BrokenClone, ...]
     page_findings: tuple[PageFinding, ...]
     comparison: Mapping[str, Any] | None = None
+    #: Whether the numbers behind ``broken`` were taken from a page whose styling had SETTLED
+    #: (ruling R19-1). ``False`` does not make the findings wrong — it makes them unfit to be
+    #: written down: the caller reports them as advice and records no durable marker. See
+    #: :func:`evidence_settled`.
+    settled: bool = True
 
     def as_result(self) -> dict[str, Any]:
         return {
             "schema_version": CRITIQUE_SCHEMA_VERSION,
             "advice_only": True,
+            "evidence_settled": self.settled,
             "walk": self.walk.as_result(),
             "broken_clones": [item.as_result() for item in self.broken],
             "page_findings": [item.as_result() for item in self.page_findings],
             "comparison": dict(self.comparison) if self.comparison else None,
         }
+
+
+def evidence_settled(walk: BehaviouralWalk) -> bool:
+    """Were these numbers taken from a page that had finished styling itself? (Ruling R19-1.)
+
+    The gate walks the EDITOR render, whose utility CSS is compiled IN THE BROWSER by our
+    vendored Tailwind JIT. Before that compile lands the page has no layout utilities at all: a
+    band's images sit at their natural width, its blocks are unconstrained, and at 375px it
+    overflows trivially. `_mobile_broken` would then fire on a perfectly healthy band — and
+    unlike the preview beside it, whose output is a picture a human judges and discards, this
+    walk's output is a marker `mark_degraded` can never clear.
+
+    So a durable verdict requires a page that SAYS it is ready, not a page that has been asleep
+    for 400ms. Every probe pass reports `styles_ready` as a tri-state, and only ``True`` from
+    every pass that contributed measurements counts. ``False`` (not compiled) and ``None`` (the
+    check could not run) both mean unsettled, so every way the signal can be wrong errs toward
+    writing nothing.
+    """
+    for walk_class in (WALK_CLASS_HEIGHT_COLLAPSE, WALK_CLASS_MOBILE):
+        observation = walk.by_class(walk_class)
+        if not observation.made or not observation.measurements:
+            continue
+        if observation.notes.get("styles_ready") is not True:
+            return False
+    return True
 
 
 def compose_critique(
@@ -396,6 +473,8 @@ def compose_critique(
 
     desktop_measurements = collapse.measurements if collapse.made else ()
     mobile_measurements = mobile.measurements if mobile.made else ()
+    broken = broken_clones(desktop_measurements, mobile_measurements)
+    settled = evidence_settled(walk)
 
     findings: list[PageFinding] = []
     findings.extend(console_findings(console.console if console.made else ()))
@@ -403,12 +482,33 @@ def compose_critique(
     findings.extend(reduced_motion_findings(walk))
     findings.extend(abstention_findings(walk))
     findings.extend(comparison_findings(comparison))
+    if broken and not settled:
+        findings.append(
+            PageFinding(
+                code=FINDING_EVIDENCE_UNSETTLED,
+                severity="warning",
+                message=(
+                    f"the walk measured {len(broken)} cloned section(s) as broken, but the page's "
+                    "styling had not finished compiling when it looked — so NOTHING was recorded "
+                    "in the library. Treat these as advice: look at the captures, and re-run the "
+                    "review before briefing a repair on the strength of them"
+                ),
+                detail={
+                    "fragment_ids": [item.fragment_id for item in broken],
+                    "styles_ready": {
+                        walk_class: walk.by_class(walk_class).notes.get("styles_ready")
+                        for walk_class in (WALK_CLASS_HEIGHT_COLLAPSE, WALK_CLASS_MOBILE)
+                    },
+                },
+            )
+        )
 
     return CloneReviewCritique(
         walk=walk,
-        broken=broken_clones(desktop_measurements, mobile_measurements),
+        broken=broken,
         page_findings=tuple(findings),
         comparison=comparison,
+        settled=settled,
     )
 
 
@@ -478,6 +578,9 @@ __all__ = [
     "ADVICE_UNAVAILABLE_CODE",
     "CRITIQUE_SCHEMA_VERSION",
     "FINDING_CONSOLE_ERROR",
+    "FINDING_EVIDENCE_UNSETTLED",
+    "FINDING_SECTION_UNMEASURED",
+    "FINDING_SHELL_ERROR",
     "FINDING_NOT_OBSERVED",
     "FINDING_REDUCED_MOTION",
     "FINDING_REFERENCE_DRIFT",
@@ -494,6 +597,7 @@ __all__ = [
     "comparison_findings",
     "compose_critique",
     "console_findings",
+    "evidence_settled",
     "reduced_motion_findings",
     "safe_critique",
 ]

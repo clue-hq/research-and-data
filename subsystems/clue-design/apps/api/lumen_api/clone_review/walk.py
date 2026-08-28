@@ -207,6 +207,15 @@ class SectionMeasurement:
     selector: str
     viewport: str
     present: bool
+    #: Whether the probe actually brought numbers back for this band (review finding I2).
+    #:
+    #: Separate from ``present`` because they fail differently and mean different things. A band
+    #: that is not on the page is an editorial fact; a band that IS on the page and came back
+    #: without its numbers is a MEASUREMENT that did not happen — and every number below then
+    #: defaults to zero, which reads as "renders nothing at all" and would convict a healthy band
+    #: of ``blank_render``. The absence of a measurement must never become a verdict, so this
+    #: flag gates every judgement in `findings.py` and the gap is reported as advice instead.
+    measured: bool = True
     visible: bool = False
     #: Where the band's box starts, in page coordinates. Carried because the reference
     #: comparison has to crop OUR capture at the same band it crops the reference at, and the
@@ -232,6 +241,7 @@ class SectionMeasurement:
             "selector": self.selector,
             "viewport": self.viewport,
             "present": self.present,
+            "measured": self.measured,
             "visible": self.visible,
             "top_px": round(self.top_px, 1),
             "width_px": round(self.width_px, 1),
@@ -241,6 +251,34 @@ class SectionMeasurement:
             "ink_nodes": self.ink_nodes,
             "scroll_width_px": round(self.scroll_width_px, 1),
         }
+
+
+#: What a console entry is blamed on.
+#:
+#: The distinction is forced by a fact about the walked page (review finding I1): it is the
+#: EDITOR render, which carries our vendored Tailwind browser JIT as an inline ``<script>``. A
+#: cloned band, by contrast, carries no scripts at all — the mint sanitizer strips ``script`` and
+#: every ``on*`` handler, fail-closed — so on this page **every script-originated console line is
+#: OURS**, and the only console lines the page's own content can produce are resource-load
+#: failures, which name the failing resource's url.
+#:
+#: That is the discriminator, and it is a consequence rather than a heuristic: an entry with no
+#: url, or whose url is the document itself, came from the only scripts present, which are the
+#: preview shell's. An entry naming a fetched resource is the page's own.
+CONSOLE_SOURCE_PAGE = "page"
+CONSOLE_SOURCE_SHELL = "shell"
+
+#: Urls that mean "the document itself" rather than "a resource this page fetched". A page loaded
+#: through ``set_content`` has no document url, so an inline script's errors are reported against
+#: one of these (or against nothing at all).
+_DOCUMENT_URLS = ("", "about:blank", "about:srcdoc")
+
+
+def console_source(url: str | None) -> str:
+    """Whose console line is this — the page's, or the preview shell's? See above."""
+    if not url or url.strip().lower() in _DOCUMENT_URLS:
+        return CONSOLE_SOURCE_SHELL
+    return CONSOLE_SOURCE_PAGE
 
 
 @dataclass(frozen=True)
@@ -255,6 +293,10 @@ class ConsoleEntry:
     #: a different fact from one that fires everywhere.
     pass_name: str = DESKTOP_VIEWPORT.name
 
+    @property
+    def source(self) -> str:
+        return console_source(self.url)
+
     def as_result(self) -> dict[str, Any]:
         return {
             "level": self.level,
@@ -262,6 +304,7 @@ class ConsoleEntry:
             "url": self.url,
             "line": self.line,
             "pass": self.pass_name,
+            "source": self.source,
         }
 
 
@@ -430,17 +473,23 @@ SECTION_PROBE_SCRIPT = """
       if (inkTop === null || top < inkTop) inkTop = top;
       if (inkBottom === null || bottom > inkBottom) inkBottom = bottom;
     };
-    el.querySelectorAll('*').forEach((node) => {
-      if (node.matches(INK_TAGS)) { consider(node); return; }
-      const s = getComputedStyle(node);
-      const bg = s.backgroundImage || 'none';
-      if (bg !== 'none' && bg.indexOf('url(') !== -1) { consider(node); return; }
+    const isInk = (node, style) => {
+      if (node.matches(INK_TAGS)) return true;
+      const bg = style.backgroundImage || 'none';
+      if (bg !== 'none' && bg.indexOf('url(') !== -1) return true;
       for (const child of node.childNodes) {
-        if (child.nodeType === 3 && child.textContent.trim().length > 0) {
-          consider(node);
-          return;
-        }
+        if (child.nodeType === 3 && child.textContent.trim().length > 0) return true;
       }
+      return false;
+    };
+    // The WRAPPER itself is asked first (review finding M1). `cssscope` rewrites a source page's
+    // `:root`/`html`/`body` declarations onto this class, so a band whose only visible content is
+    // a full-bleed background image lands its ink exactly here — and a walk that only looked at
+    // descendants would report `ink_nodes: 0` and convict it of rendering nothing.
+    if (isInk(el, own)) consider(el);
+    el.querySelectorAll('*').forEach((node) => {
+      const s = getComputedStyle(node);
+      if (isInk(node, s)) consider(node);
     });
     const clamp = (value) => Math.max(pageTop, Math.min(pageTop + rect.height, value));
     const extent =
@@ -458,6 +507,35 @@ SECTION_PROBE_SCRIPT = """
       scroll_width_px: el.scrollWidth,
     };
   });
+}
+"""
+
+#: Has the preview shell's Tailwind JIT finished compiling this page's utilities? (Review finding
+#: I1(b), ruling R19-1: a DURABLE degraded write requires SETTLED evidence — a deterministic
+#: signal, not a sleep.)
+#:
+#: **Derived from the vendored runtime's own bytes, not guessed at.** `apps/editor/public/vendor/
+#: tailwind-browser.js` creates exactly one `<style>` element, sets its `textContent` to the built
+#: utilities, and — as its very last statement — does `document.head.append(fr)`. Every other
+#: `<style>` in the document (the engine's theme layer, the fragment sheet, the authored
+#: `type="text/tailwindcss"` source) is present at parse time, and our runtime `<script>` is
+#: injected immediately before `</head>`, so nothing else is appended to `<head>` afterwards. The
+#: last element child of `<head>` being an untyped, non-empty `<style>` therefore means the JIT
+#: has run and produced output.
+#:
+#: The answer is deliberately TRI-STATE. `false` (the runtime is absent, or has not built yet)
+#: and `null` (the check itself could not run) both mean **not settled**, and a not-settled walk
+#: writes no durable marker at all — it reports the same findings as advice. Every way this
+#: signal can be wrong therefore errs toward writing nothing, which is the direction a marker the
+#: gate can never clear demands.
+STYLES_READY_SCRIPT = """
+() => {
+  const head = document.head;
+  if (!head) return false;
+  const last = head.lastElementChild;
+  if (!last || last.tagName !== 'STYLE') return false;
+  if (last.getAttribute('type')) return false;
+  return (last.textContent || '').trim().length > 0;
 }
 """
 
@@ -494,6 +572,23 @@ def measurements_from_probe(
                     selector=selector,
                     viewport=viewport,
                     present=False,
+                    measured=False,
+                )
+            )
+            continue
+        numbers = {key: _maybe_number(row.get(key)) for key in MEASURED_KEYS}
+        if any(value is None for value in numbers.values()):
+            # Present, and not measured. Reported as such rather than defaulted to zeros: every
+            # judgement in `findings.py` reads these numbers, and a zero height with no ink is
+            # exactly the shape of `blank_render` (review finding I2).
+            measurements.append(
+                SectionMeasurement(
+                    fragment_id=fragment_id,
+                    selector=selector,
+                    viewport=viewport,
+                    present=True,
+                    measured=False,
+                    visible=bool(row.get("visible")),
                 )
             )
             continue
@@ -503,25 +598,45 @@ def measurements_from_probe(
                 selector=selector,
                 viewport=viewport,
                 present=True,
+                measured=True,
                 visible=bool(row.get("visible")),
-                top_px=_number(row.get("top_px")),
-                width_px=_number(row.get("width_px")),
-                height_px=_number(row.get("height_px")),
-                content_extent_px=_number(row.get("content_extent_px")),
-                ink_nodes=int(_number(row.get("ink_nodes"))),
-                scroll_width_px=_number(row.get("scroll_width_px")),
+                top_px=_maybe_number(row.get("top_px")) or 0.0,
+                width_px=numbers["width_px"] or 0.0,
+                height_px=numbers["height_px"] or 0.0,
+                content_extent_px=numbers["content_extent_px"] or 0.0,
+                ink_nodes=int(numbers["ink_nodes"] or 0.0),
+                scroll_width_px=numbers["scroll_width_px"] or 0.0,
             )
         )
     return tuple(measurements)
 
 
-def _number(value: Any) -> float:
+#: The numbers a `present` row MUST carry before any verdict may be read off it. ``top_px`` is not
+#: among them: zero is a legitimate value for a band at the top of the page, and nothing judges it
+#: — it exists so the reference comparison can crop our capture where the browser put the band.
+MEASURED_KEYS = (
+    "width_px",
+    "height_px",
+    "content_extent_px",
+    "ink_nodes",
+    "scroll_width_px",
+)
+
+
+def _maybe_number(value: Any) -> float | None:
+    """A finite float, or ``None`` for "this is not a number I can use".
+
+    ``None`` rather than ``0.0`` is the whole of review finding I2: a default silently turns a
+    missing measurement into the most damning measurement there is.
+    """
+    if isinstance(value, bool) or value is None:
+        return None
     try:
         number = float(value)
     except (TypeError, ValueError):
-        return 0.0
+        return None
     if number != number or number in (float("inf"), float("-inf")):  # NaN / inf
-        return 0.0
+        return None
     return number
 
 
@@ -533,6 +648,7 @@ def capture_behavioural_walk(
     plan: WalkPlan,
     *,
     output_dir: str | Path,
+    browser_factory: Any = None,
 ) -> BehaviouralWalk:
     """Walk one rendered page in a real browser and bring back all six classes.
 
@@ -541,24 +657,33 @@ def capture_behavioural_walk(
     function does not compose, rewrite or invent a single byte of it. What is walked is what was
     rendered, which is the only reason the verdicts mean anything.
 
+    ``browser_factory`` is the injection seam (review finding I3): a callable returning a
+    context-managed browser handle. ``None`` — every production caller — means "launch chromium",
+    and is the only path that probes for Playwright at all, so a test supplying a fake never
+    needs one installed.
+
     Raises :class:`CloneReviewRefused` when there is no browser to walk with, and when the walk
     itself fails outright. A partial walk does NOT raise: each class that could not be observed
     comes back abstained, because a mobile pass that timed out must not throw away a desktop pass
     that succeeded.
     """
-    try:
-        from playwright.sync_api import sync_playwright  # noqa: F401
-    except Exception as error:  # noqa: BLE001 — one refusal, whatever the import fault is
-        raise CloneReviewRefused(
-            BROWSER_UNAVAILABLE_CODE,
-            f"the behavioural review walk needs a browser and playwright is not available: "
-            f"{error}",
-        ) from error
+    from .browser import chromium_browser, run_walk  # lazy: no Playwright in this import graph
 
-    from .browser import run_walk  # lazy: keeps Playwright out of this module's import graph
+    if browser_factory is None:
+        try:
+            from playwright.sync_api import sync_playwright  # noqa: F401
+        except Exception as error:  # noqa: BLE001 — one refusal, whatever the import fault is
+            raise CloneReviewRefused(
+                BROWSER_UNAVAILABLE_CODE,
+                f"the behavioural review walk needs a browser and playwright is not available: "
+                f"{error}",
+            ) from error
+        browser_factory = chromium_browser
 
     try:
-        return run_walk(page_html, plan, output_dir=Path(output_dir))
+        return run_walk(
+            page_html, plan, output_dir=Path(output_dir), browser_factory=browser_factory
+        )
     except CloneReviewRefused:
         raise
     except Exception as error:  # noqa: BLE001 — a browser fault is one refusal to the caller
@@ -572,11 +697,15 @@ def capture_behavioural_walk(
 __all__ = [
     "BROWSER_UNAVAILABLE_CODE",
     "DESKTOP_VIEWPORT",
+    "CONSOLE_SOURCE_PAGE",
+    "CONSOLE_SOURCE_SHELL",
     "DOCUMENT_HEIGHT_SCRIPT",
+    "MEASURED_KEYS",
     "MOBILE_VIEWPORT",
     "SCROLL_STOPS",
     "SECTION_PROBE_SCRIPT",
     "SETTLE_MS",
+    "STYLES_READY_SCRIPT",
     "WALK_CLASSES",
     "WALK_CLASS_CONSOLE",
     "WALK_CLASS_FULL_PAGE",
@@ -599,6 +728,7 @@ __all__ = [
     "WalkPlan",
     "abstained",
     "capture_behavioural_walk",
+    "console_source",
     "measurements_from_probe",
     "walk_plan",
 ]
