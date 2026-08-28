@@ -38,6 +38,7 @@ fail-closed answer an absent one gets.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
@@ -45,6 +46,7 @@ from .asset_custody import cache_blob_path, ensure_materialized
 from .database import NotFoundError
 from .design_store import DesignBlobStore, HybridRepository
 from .fragments import (
+    FRAGMENT_STATUS_DORMANT,
     REPAIR_NOTE_MAX_CHARS,
     FragmentRefused,
     build_fragment_artifact,
@@ -125,19 +127,103 @@ def _probe_web_doc(fragment_id: str) -> JsonObject:
     }
 
 
-def _preferred_repair(repairs: List[JsonObject]) -> Optional[str]:
-    """The repair a page should pin instead of the clone it replaces, or ``None``.
+@dataclass(frozen=True)
+class LineageVerdict:
+    """One repair lineage, resolved to the single section a page should carry (ruling R-C1).
 
-    Approved (the pin gate accepts nothing else) and not itself degraded (a repair that a later
-    pass found broken is not an improvement on the thing it replaced). ``repairs`` arrives
-    oldest-first, so the last match is the newest.
+    A lineage is a clone and everything descended from it: the harvested original, the repair
+    that replaced it, the repair that later replaced THAT. Every member is an ordinary approved
+    row once a human releases it, so a page assembled by walking the listing one row at a time
+    puts the same band down more than once. This type is the answer to "of this whole family,
+    which ONE section belongs on the page?".
+
+    ``representative`` is ``None`` only when the family cannot answer that question with one id —
+    two sibling repairs both released, neither superseding the other — and then ``ambiguous``
+    names the candidates. That is a decision for a human (retire one), never something to guess
+    at by picking the newest: both are somebody's deliberate repair of the same band.
     """
-    releasable = [
-        repair
-        for repair in repairs
-        if repair.get("status") == "approved" and not repair.get("degraded")
-    ]
-    return str(releasable[-1]["fragment_id"]) if releasable else None
+
+    root: str
+    representative: Optional[str]
+    ambiguous: tuple[str, ...] = ()
+
+
+def _resolve_lineages(rows: List[JsonObject]) -> Dict[str, LineageVerdict]:
+    """``{fragment id: the verdict for its lineage}`` over every row this workspace holds.
+
+    Three passes, and each answers a question the one before it could not:
+
+    1. **Roots.** Walk ``derived_from`` up through every row REGARDLESS of status, so a lineage
+       whose original was retired still resolves to one family rather than fragmenting into one
+       family per surviving repair.
+    2. **Approved children.** Only an approved row can supersede anything — the pin gate accepts
+       nothing else — so leaf-ness is computed over approved rows alone. A draft repair does not
+       stop its parent from being the answer, which is right: it is not releasable yet.
+    3. **The representative.** The single approved, un-degraded LEAF of the family: the end of
+       the chain, transitively, so a repair-of-a-repair wins over its own parent and a degraded
+       intermediate is stepped over rather than dragging the broken original back onto the page.
+       No such leaf (every repair itself broken, or none released) falls back to the family's
+       oldest approved member — the original, in the case that matters. Two or more, and the
+       family is ``ambiguous``.
+
+    Cycles cannot exist (``derived_from`` must resolve to an existing row at insert time and the
+    column is frozen), but the walk carries a seen-set anyway: a lineage walk that could loop
+    forever on corrupt data is not a thing to leave to an invariant.
+    """
+    by_id = {str(row["fragment_id"]): row for row in rows}
+
+    def root_of(fragment_id: str) -> str:
+        seen: set = set()
+        current = fragment_id
+        while current not in seen:
+            seen.add(current)
+            row = by_id.get(current)
+            parent = row.get("derived_from") if isinstance(row, dict) else None
+            if not isinstance(parent, str) or parent not in by_id:
+                return current
+            current = parent
+        return current
+
+    families: Dict[str, List[JsonObject]] = {}
+    roots: Dict[str, str] = {}
+    for fragment_id in by_id:
+        root = root_of(fragment_id)
+        roots[fragment_id] = root
+        families.setdefault(root, []).append(by_id[fragment_id])
+
+    approved_parents: set = {
+        str(row["derived_from"])
+        for row in rows
+        if row.get("status") == "approved" and isinstance(row.get("derived_from"), str)
+    }
+
+    verdicts: Dict[str, LineageVerdict] = {}
+    for root, members in families.items():
+        approved = [row for row in members if row.get("status") == "approved"]
+        # Oldest first, so "the family's oldest approved member" and "the newest leaf" are both
+        # read off one ordering rather than two sorts that could disagree.
+        approved.sort(key=lambda row: (str(row.get("created_at") or ""), str(row["fragment_id"])))
+        leaves = [
+            row
+            for row in approved
+            if not row.get("degraded") and str(row["fragment_id"]) not in approved_parents
+        ]
+        if len(leaves) == 1:
+            verdict = LineageVerdict(root=root, representative=str(leaves[0]["fragment_id"]))
+        elif len(leaves) > 1:
+            verdict = LineageVerdict(
+                root=root,
+                representative=None,
+                ambiguous=tuple(sorted(str(row["fragment_id"]) for row in leaves)),
+            )
+        else:
+            verdict = LineageVerdict(
+                root=root,
+                representative=str(approved[0]["fragment_id"]) if approved else None,
+            )
+        for row in members:
+            verdicts[str(row["fragment_id"])] = verdict
+    return verdicts
 
 
 def _slot_summary(slot_manifest: Any) -> List[JsonObject]:
@@ -189,6 +275,7 @@ class DurableAgentClonedSectionRegistry:
         """
         all_rows = self._repository().list_web_fragments()
         repairs = self._repair_index(all_rows)
+        lineages = _resolve_lineages(all_rows)
         rows = [
             row
             for row in all_rows
@@ -201,7 +288,8 @@ class DurableAgentClonedSectionRegistry:
         # first so a multi-page walk stays grouped, then the section's own index within it.
         ordered = sorted(rows, key=self._document_order)
         sections = [
-            self._section_row(row, repairs) for row in ordered[:CLONED_SECTION_LIST_MAX]
+            self._section_row(row, repairs, lineages)
+            for row in ordered[:CLONED_SECTION_LIST_MAX]
         ]
         return {
             "schema_version": CLONED_SECTION_SCHEMA_VERSION,
@@ -214,14 +302,22 @@ class DurableAgentClonedSectionRegistry:
 
     @staticmethod
     def _repair_index(rows: List[JsonObject]) -> Dict[str, List[JsonObject]]:
-        """``{repaired fragment id: [the repairs of it]}`` — every status, oldest first.
+        """``{repaired fragment id: [the repairs of it]}`` — oldest first, dormant excluded.
 
-        Built over ALL rows on purpose. A repair is born ``draft`` (ruling R-I5), so an index of
-        approved rows only would say "nothing has repaired this" about a clone somebody repaired
-        an hour ago, and the next turn would compose the same replacement again.
+        Built over draft, approved and deprecated rows on purpose. A repair is born ``draft``
+        (ruling R-I5), so an index of approved rows only would say "nothing has repaired this"
+        about a clone somebody repaired an hour ago, and the next turn would compose the same
+        replacement again.
+
+        ``dormant`` is the one status left out, and it is left out because D-F8's rule is
+        absolute: a dormant section is never offered to the agent, and a repair listed under
+        another section's ``repairs`` is being offered. Nothing mints a dormant repair today
+        (review finding M4) — this keeps the rule true rather than true-by-accident.
         """
         index: Dict[str, List[JsonObject]] = {}
         for row in rows:
+            if row.get("status") == FRAGMENT_STATUS_DORMANT:
+                continue
             parent = row.get("derived_from")
             if isinstance(parent, str) and parent:
                 index.setdefault(parent, []).append(row)
@@ -242,7 +338,9 @@ class DurableAgentClonedSectionRegistry:
 
     @staticmethod
     def _section_row(
-        row: JsonObject, repairs: Optional[Dict[str, List[JsonObject]]] = None
+        row: JsonObject,
+        repairs: Optional[Dict[str, List[JsonObject]]] = None,
+        lineages: Optional[Dict[str, LineageVerdict]] = None,
     ) -> JsonObject:
         provenance = row.get("provenance")
         provenance = provenance if isinstance(provenance, dict) else {}
@@ -250,6 +348,9 @@ class DurableAgentClonedSectionRegistry:
         fragment_id = str(row["fragment_id"])
         mine = list((repairs or {}).get(fragment_id) or [])
         degraded = bool(row.get("degraded"))
+        verdict = (lineages or {}).get(fragment_id) or LineageVerdict(
+            root=fragment_id, representative=fragment_id
+        )
         return {
             "fragment_id": row["fragment_id"],
             "section_role": row.get("section_role"),
@@ -285,13 +386,25 @@ class DurableAgentClonedSectionRegistry:
                 }
                 for repair in mine
             ],
-            # The repair that should be pinned INSTEAD of this row, when one is releasable. The
-            # newest approved, un-degraded repair wins: repairs accumulate (a rung-3 fallback can
-            # itself be replaced by a rung-2 rebuild later) and the last one a human released is
-            # the one they meant. `None` is the honest answer for a clone with only a draft
-            # repair waiting — it says "somebody has done this work; go and release it", which is
-            # a different instruction from "compose a replacement".
-            "superseded_by": _preferred_repair(mine),
+            # --- the lineage verdict (ruling R-C1) -------------------------------------------
+            # `lineage_root` is what an ASSEMBLY groups by: every member of one repair family
+            # answers with the same root, so a page can put exactly one of them down however many
+            # of them the listing happens to contain.
+            "lineage_root": verdict.root,
+            # The section that should be pinned INSTEAD of this row, or `None` when this row IS
+            # the one. Resolved transitively over the whole family — a repair-of-a-repair wins
+            # over its own parent, and a degraded intermediate is stepped over rather than
+            # letting the broken original back onto the page. `None` on an unrepaired clone with
+            # only a DRAFT repair waiting is the honest answer: it says "somebody has done this
+            # work; go and release it", which is a different instruction from "compose one".
+            "superseded_by": (
+                verdict.representative
+                if verdict.representative and verdict.representative != fragment_id
+                else None
+            ),
+            # Two released repairs of one band, neither superseding the other. A human retires
+            # one; nothing here picks for them, because both are somebody's deliberate work.
+            "lineage_ambiguous": list(verdict.ambiguous),
         }
 
     def describe(self, fragment_ids: Iterable[str]) -> Dict[str, JsonObject]:
@@ -352,6 +465,7 @@ class DurableAgentClonedSectionRegistry:
             fragment_id=fragment_id,
         )
         row = loaded.row
+        degraded = bool(row.get("degraded"))
         return {
             "fragment_id": fragment_id,
             "section_role": row.get("section_role"),
@@ -359,6 +473,13 @@ class DurableAgentClonedSectionRegistry:
             "source_url": row.get("source_url"),
             "slots": _slot_summary(loaded.slot_manifest),
             "preview_path": self._preview_path(row.get("preview_digest")),
+            # D-F6 travels with the PIN, not only with the picker (review finding I4). Every path
+            # that puts a cloned section on a page comes through here, so this is the one place
+            # that can tell all of them the band is broken.
+            "degraded": degraded,
+            "degraded_reason": row.get("degraded_reason") if degraded else None,
+            "degraded_note": degraded_headline(row.get("degraded_reason")) if degraded else None,
+            "derived_from": row.get("derived_from"),
             # Exactly the entry `build_fragment_render_package` writes, so a section inserted
             # mid-turn renders in the agent's own preview through the map that is already
             # threaded — no second render path, and no shape for the two to disagree on.
@@ -367,6 +488,11 @@ class DurableAgentClonedSectionRegistry:
                 "css": loaded.css,
                 "slot_kinds": slot_kinds(loaded.slot_manifest),
                 "asset_digests": list(loaded.asset_digests),
+                # Same key `build_fragment_render_package` writes, for the same one reader: a
+                # section pinned mid-turn must reach the collision report as what it is, or a
+                # repair would be reported as losing styling in the agent's own preview while
+                # the identical publish said nothing (ruling R-I1).
+                "derived": bool(row.get("derived_from")),
             },
         }
 
@@ -555,4 +681,5 @@ __all__ = [
     "CLONED_SECTION_LIST_MAX",
     "CLONED_SECTION_SCHEMA_VERSION",
     "DurableAgentClonedSectionRegistry",
+    "LineageVerdict",
 ]

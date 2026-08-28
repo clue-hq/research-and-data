@@ -233,6 +233,11 @@ def build_fragment_render_package(
             "html": loaded.html,
             "css": loaded.css,
             "slot_kinds": slot_kinds(loaded.slot_manifest),
+            # F3.1: is this a REPAIR (a fragment we composed) rather than a harvested clone? The
+            # collision report below is the only reader, and it needs the distinction because a
+            # repair's stylesheet is written in the platform's OWN class vocabulary — see
+            # `fragment_class_collisions`.
+            "derived": bool(loaded.row.get("derived_from")),
             # F1.5: the digests of every byte the ARTIFACT displays (its rehosted images and
             # fonts). The engine never sees these — the markup already names them as
             # `/asset-store/<digest>` — but a delivery build must put those bytes in the zip,
@@ -405,6 +410,19 @@ def fragment_class_collisions(
     utility class. The compiled utility lands after the fragment CSS, so it wins — the cloned
     section quietly loses that rule. The wrapper class is excluded: it is ours, it is on the
     wrapper by construction, and reporting it would fire on every fragment ever rendered.
+
+    **A REPAIR is excluded whole** (F3.1, ruling R-I1), and the reason is that for a repair this
+    report would be false rather than merely noisy. Until F3.1 every fragment carried somebody
+    else's stylesheet, so a shared class name was a coincidence worth naming. A repair's sheet is
+    a compile of the platform's own vocabulary against the document's own theme, so it declares
+    `.rounded-card`, `.py-section`, `.gap-stack` — a dozen classes the document declares too, on
+    every single repair. Two things would then be wrong at once: the report would fire
+    systematically on sections that are fine, and its claim would be untrue, because the value
+    the utility "wins" with is the value the fragment already had, compiled from the same theme
+    by the same compiler.
+
+    A package written by an older build carries no ``derived`` key and reads as ``False``, which
+    is the pre-F3.1 behaviour — the honest default for a reader that cannot tell.
     """
     fragments = package.get("fragments") if isinstance(package, Mapping) else None
     fragments = fragments if isinstance(fragments, Mapping) else {}
@@ -413,6 +431,8 @@ def fragment_class_collisions(
     for fragment_id in _unique(fragment_ids):
         record = fragments.get(fragment_id)
         if not isinstance(record, Mapping):
+            continue
+        if record.get("derived"):
             continue
         declared = css_class_names(str(record.get("css") or ""))
         try:

@@ -24,6 +24,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import shutil
 import subprocess
 import tempfile
 from dataclasses import dataclass, field
@@ -128,6 +129,15 @@ class WebExportCompileError(WebExportError):
     def __init__(self, message: str) -> None:
         super().__init__(message)
         self.stderr = message
+
+
+class WebExportToolchainMissing(WebExportCompileError):
+    """The node toolchain the static compile shells out to is not installed here.
+
+    A subclass rather than a flag, because the two failures need different words from whoever
+    reports them: "the compile ran and rejected your CSS" is about the input, and "there is no
+    compiler on this machine" is about the environment. A caller that only knows
+    ``WebExportCompileError`` still catches it and is no worse off than before."""
 
 
 def persist_publish_assets(
@@ -923,10 +933,49 @@ def _document_only_html(core: Any, web_doc: JsonObject, rendered: str, **render_
     return (second.get("html") or "") or rendered
 
 
-def _compile_static_css(html: str, theme: _CompiledTheme, node_bin: str) -> str:
+def require_static_css_toolchain(node_bin: str = "node") -> None:
+    """Refuse, typed and by name, when the Tailwind compile cannot possibly run.
+
+    The compile is a subprocess into the EDITOR app's own node toolchain
+    (``scripts/web_static_css.mjs`` + ``apps/editor/node_modules/@tailwindcss/*``), which is a
+    dependency no ``pyproject.toml`` can declare. Publish has always needed it and has always
+    been run from a full checkout; F3.1 put it behind an agent tool call
+    (:func:`compile_section_css`), where "node is not installed" is a plausible environment
+    rather than a broken one.
+
+    So the missing piece is named BEFORE anything is spent, and named specifically — "node is not
+    on PATH" and "the editor's node_modules were never installed" are different problems with
+    different fixes, and a caller that reports "compile failed" for both sends its operator
+    looking in the wrong place.
+    """
+    if shutil.which(node_bin) is None:
+        raise WebExportToolchainMissing(
+            f"the static CSS compile needs node on PATH (looked for {node_bin!r}). "
+            "Install node, or point the caller at a node binary."
+        )
+    script = REPO_ROOT / STATIC_CSS_SCRIPT
+    if not script.is_file():
+        raise WebExportToolchainMissing(
+            f"the static CSS compile script is missing: {script}"
+        )
+    toolchain = REPO_ROOT / "apps/editor/node_modules/@tailwindcss/node"
+    if not toolchain.is_dir():
+        raise WebExportToolchainMissing(
+            "the editor app's Tailwind toolchain is not installed "
+            f"({toolchain} is absent). Run `npm install` in apps/editor."
+        )
+
+
+def _compile_static_css(
+    html: str, theme: _CompiledTheme, node_bin: str, timeout_seconds: int = 120
+) -> str:
     """Run the editor's Tailwind v4 toolchain over ``html`` against the doc's
     ``@theme`` tokens. Raises ``WebExportCompileError`` (stderr attached) on a
-    non-zero exit — never returns an empty/unstyled stylesheet silently."""
+    non-zero exit — never returns an empty/unstyled stylesheet silently.
+
+    ``timeout_seconds`` defaults to the export's own long bound (a whole page's worth of markup,
+    run as a build step nobody is waiting on). A caller compiling one SECTION inside a tool call
+    passes something far shorter — see :func:`compile_section_css`."""
     input_css = _build_input_css(theme)
     with tempfile.TemporaryDirectory() as tmp:
         tmp_path = Path(tmp)
@@ -941,7 +990,7 @@ def _compile_static_css(html: str, theme: _CompiledTheme, node_bin: str) -> str:
                 cwd=str(REPO_ROOT),
                 capture_output=True,
                 text=True,
-                timeout=120,
+                timeout=timeout_seconds,
             )
         except (OSError, subprocess.TimeoutExpired) as error:
             raise WebExportCompileError(f"static css compile failed to run: {error}") from error
@@ -953,6 +1002,16 @@ def _compile_static_css(html: str, theme: _CompiledTheme, node_bin: str) -> str:
         return out_file.read_text(encoding="utf-8")
 
 
+#: How long ONE section's utility compile may take before it is killed.
+#:
+#: Two orders of magnitude below the export's own 120 s, and deliberately: this runs inside an
+#: agent tool call with a user waiting on the turn, over a single section rather than a whole
+#: page (measured at ~0.07 s on the F3.1 walk's rung-3 band). The export's bound is right for a
+#: build step nobody is watching; inheriting it here would mean a wedged node process holding a
+#: turn open for two minutes.
+SECTION_CSS_TIMEOUT_SECONDS = 20
+
+
 def compile_section_css(
     core: Any,
     web_doc: JsonObject,
@@ -960,6 +1019,7 @@ def compile_section_css(
     brand_kit: Optional[JsonObject],
     section_html: str,
     node_bin: str = "node",
+    timeout_seconds: int = SECTION_CSS_TIMEOUT_SECONDS,
 ) -> str:
     """The utilities ONE rendered section needs, compiled against this document's own theme.
 
@@ -971,12 +1031,22 @@ def compile_section_css(
     is the worst shape a bug can have, so the repair pays the compile at mint and ships sealed.
 
     The SAME toolchain the export uses, not a second one, so a repaired section styles identically
-    to the page it was composed on. Raises :class:`WebExportCompileError` when node or the
-    compile is unavailable — a repair that cannot be styled refuses rather than minting an
+    to the page it was composed on. **That toolchain is node plus the editor app's own
+    `node_modules`** — a dependency no Python package metadata can declare, which publish has
+    always had because it is only ever run from a full checkout. F3.1 put it behind an agent tool
+    call, so it is checked BY NAME first (:func:`require_static_css_toolchain` →
+    :class:`WebExportToolchainMissing`) and bounded far tighter than the export's own compile.
+
+    Raises :class:`WebExportCompileError` (or its ``WebExportToolchainMissing`` subclass) rather
+    than returning an empty sheet — a repair that cannot be styled refuses, rather than minting an
     artifact that looks fine until somebody publishes it.
     """
+    require_static_css_toolchain(node_bin)
     return _compile_static_css(
-        section_html, _theme_tokens(core, web_doc, brand_kit), node_bin
+        section_html,
+        _theme_tokens(core, web_doc, brand_kit),
+        node_bin,
+        timeout_seconds=timeout_seconds,
     )
 
 

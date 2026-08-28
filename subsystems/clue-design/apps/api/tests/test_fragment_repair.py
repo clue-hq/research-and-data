@@ -35,6 +35,7 @@ from lumen_api.fragments import (
     FragmentRefused,
     SlotSpec,
     create_web_fragment,
+    set_web_fragment_degraded,
     set_web_fragment_status,
 )
 
@@ -509,5 +510,211 @@ def test_a_degraded_clone_is_still_pinnable_while_it_is_the_only_thing_released(
     resolved = registry.resolve_insertable(broken["fragment_id"])
 
     assert resolved["fragment_id"] == broken["fragment_id"]
+    # ...and the PIN answer says the band is broken, so every door that pins one can say so
+    # (ruling R-I4), not only the recreate walk's own listing.
+    assert resolved["degraded"] is True
+    assert resolved["degraded_reason"] == "dead_height"
+    assert "artificial scroll height" in resolved["degraded_note"]
+    assert resolved["derived_from"] is None
     with pytest.raises(FragmentReferenceError):
         registry.resolve_insertable("frag_00000000deadbeef")
+
+
+# --------------------------------------------------------------------------- #
+# One section per lineage (ruling R-C1)
+# --------------------------------------------------------------------------- #
+
+
+def _second_repair(
+    workspace_id: str,
+    design_storage: FsStorage,
+    registry,
+    *,
+    replaces: str,
+    marker: str,
+    rung: int = 2,
+    approve: bool = True,
+) -> dict:
+    """A second, differently-worded repair, so its bytes (and therefore its id) differ."""
+    html = REPAIR_HTML.replace("Three numbers that matter.", marker)
+    minted = registry.mint_repair(
+        replaces=replaces, html=html, css=REPAIR_CSS, rung=rung, note=marker
+    )
+    if approve:
+        set_web_fragment_status(
+            workspace_id=workspace_id, fragment_id=minted["fragment_id"], status="approved"
+        )
+    return minted
+
+
+def test_two_released_repairs_of_one_band_are_reported_as_ambiguous_not_ranked(
+    workspace_id: str, design_storage: FsStorage, tmp_path
+) -> None:
+    """Both are somebody's deliberate repair of the same band; ranking them would discard one."""
+    broken = _mint_broken(workspace_id, design_storage)
+    registry = _registry(workspace_id, design_storage, tmp_path / "cache")
+    first = _second_repair(
+        workspace_id, design_storage, registry, replaces=broken["fragment_id"], marker="One"
+    )
+    second = _second_repair(
+        workspace_id, design_storage, registry, replaces=broken["fragment_id"], marker="Two"
+    )
+
+    rows = {row["fragment_id"]: row for row in registry.list_sections()["sections"]}
+
+    original = rows[broken["fragment_id"]]
+    assert original["lineage_root"] == broken["fragment_id"]
+    assert original["superseded_by"] is None
+    assert sorted(original["lineage_ambiguous"]) == sorted(
+        [first["fragment_id"], second["fragment_id"]]
+    )
+    # And every member of the family answers with the same root, which is what lets an assembly
+    # plant the family once however many of its members it meets.
+    for fragment_id in (first["fragment_id"], second["fragment_id"]):
+        assert rows[fragment_id]["lineage_root"] == broken["fragment_id"]
+        assert rows[fragment_id]["lineage_ambiguous"] == original["lineage_ambiguous"]
+
+
+def test_a_repair_of_a_repair_supersedes_transitively_over_a_degraded_middle(
+    workspace_id: str, design_storage: FsStorage, tmp_path
+) -> None:
+    """The shape that used to put the BROKEN ORIGINAL back on the page beside the healthy repair."""
+    broken = _mint_broken(workspace_id, design_storage)
+    registry = _registry(workspace_id, design_storage, tmp_path / "cache")
+    middle = _second_repair(
+        workspace_id, design_storage, registry, replaces=broken["fragment_id"], marker="One"
+    )
+    set_web_fragment_degraded(
+        workspace_id=workspace_id,
+        fragment_id=middle["fragment_id"],
+        degraded=True,
+        reason="dead_height",
+    )
+    leaf = _second_repair(
+        workspace_id, design_storage, registry, replaces=middle["fragment_id"], marker="Two"
+    )
+
+    rows = {row["fragment_id"]: row for row in registry.list_sections()["sections"]}
+
+    assert rows[broken["fragment_id"]]["superseded_by"] == leaf["fragment_id"]
+    assert rows[middle["fragment_id"]]["superseded_by"] == leaf["fragment_id"]
+    assert rows[leaf["fragment_id"]]["superseded_by"] is None
+    assert rows[leaf["fragment_id"]]["lineage_root"] == broken["fragment_id"]
+    assert rows[broken["fragment_id"]]["lineage_ambiguous"] == []
+
+
+def test_a_lineage_whose_only_repair_is_unreleased_still_points_at_the_original(
+    workspace_id: str, design_storage: FsStorage, tmp_path
+) -> None:
+    """A draft repair supersedes nothing — it cannot be pinned — but it is still NAMED."""
+    broken = _mint_broken(workspace_id, design_storage)
+    registry = _registry(workspace_id, design_storage, tmp_path / "cache")
+    draft = registry.mint_repair(
+        replaces=broken["fragment_id"], html=REPAIR_HTML, css=REPAIR_CSS, rung=3, note="fallback"
+    )
+
+    (row,) = registry.list_sections()["sections"]
+
+    assert row["fragment_id"] == broken["fragment_id"]
+    assert row["superseded_by"] is None
+    assert [entry["fragment_id"] for entry in row["repairs"]] == [draft["fragment_id"]]
+
+
+def test_a_dormant_repair_is_never_offered_under_the_band_it_repairs(
+    workspace_id: str, design_storage: FsStorage, tmp_path
+) -> None:
+    """D-F8's rule is absolute, and `repairs` was the one place it was true only by accident."""
+    broken = _mint_broken(workspace_id, design_storage)
+    registry = _registry(workspace_id, design_storage, tmp_path / "cache")
+    hidden = registry.mint_repair(
+        replaces=broken["fragment_id"], html=REPAIR_HTML, css=REPAIR_CSS, rung=3, note="fallback"
+    )
+    set_web_fragment_status(
+        workspace_id=workspace_id, fragment_id=hidden["fragment_id"], status="deprecated"
+    )
+    set_web_fragment_status(
+        workspace_id=workspace_id, fragment_id=hidden["fragment_id"], status="dormant"
+    )
+
+    (row,) = registry.list_sections()["sections"]
+
+    assert row["repairs"] == []
+    assert row["superseded_by"] is None
+
+
+# --------------------------------------------------------------------------- #
+# The sealed sheet and the cascade report (ruling R-I1)
+# --------------------------------------------------------------------------- #
+
+
+def test_a_repairs_own_class_vocabulary_is_not_reported_as_lost_styling(
+    workspace_id: str, design_storage: FsStorage, tmp_path
+) -> None:
+    """A repair's sheet is the platform's own vocabulary, so the collision report would fire on
+    every released repair — and its claim would be untrue, because the fragment's rules are
+    scoped and the "winning" utility carries the same value anyway."""
+    from lumen_api.fragments.render import (
+        build_fragment_render_package,
+        fragment_class_collisions,
+    )
+
+    broken = _mint_broken(workspace_id, design_storage)
+    registry = _registry(workspace_id, design_storage, tmp_path / "cache")
+    repair = registry.mint_repair(
+        replaces=broken["fragment_id"], html=REPAIR_HTML, css=REPAIR_CSS, rung=3, note="fallback"
+    )
+    web_doc = {
+        "pages": [
+            {
+                "id": "home",
+                "root": "root",
+                "nodes": {
+                    "root": {"id": "root", "kind": "container", "children": ["a", "b"]},
+                    "a": {"id": "a", "kind": "fragment", "fragment_id": repair["fragment_id"]},
+                    "b": {"id": "b", "kind": "fragment", "fragment_id": broken["fragment_id"]},
+                },
+            }
+        ]
+    }
+    package = build_fragment_render_package(
+        design_storage, workspace_id=workspace_id, web_doc=web_doc, page_id="home"
+    )
+
+    # The fact the report reads, stamped where the row is.
+    assert package["fragments"][repair["fragment_id"]]["derived"] is True
+    assert package["fragments"][broken["fragment_id"]]["derived"] is False
+
+    # Both sheets declare `.text-3xl` / `.head`; the document authors both as utilities.
+    collisions = dict(
+        fragment_class_collisions(
+            package,
+            [repair["fragment_id"], broken["fragment_id"]],
+            {"text-3xl", "text-primary", "head", "proof"},
+        )
+    )
+    assert repair["fragment_id"] not in collisions
+    # ...and the harvested clone is still reported, so the diagnostic is narrowed, not retired.
+    assert sorted(collisions[broken["fragment_id"]]) == ["head", "proof"]
+
+
+def test_the_static_css_toolchain_refuses_by_name_when_it_is_not_installed(
+    monkeypatch,
+) -> None:
+    """Ruling R-I3: "no compiler here" is a different sentence from "the compile failed"."""
+    from lumen_api import web_export
+
+    monkeypatch.setattr(web_export.shutil, "which", lambda _name: None)
+    with pytest.raises(web_export.WebExportToolchainMissing) as missing:
+        web_export.require_static_css_toolchain("node")
+    assert "node on PATH" in str(missing.value)
+    # Still a compile error to any caller that only knows the old class.
+    assert isinstance(missing.value, web_export.WebExportCompileError)
+
+    monkeypatch.setattr(web_export.shutil, "which", lambda _name: "/usr/bin/node")
+    monkeypatch.setattr(web_export, "STATIC_CSS_SCRIPT", "scripts/does_not_exist.mjs")
+    with pytest.raises(web_export.WebExportToolchainMissing) as gone:
+        web_export.require_static_css_toolchain("node")
+    assert "script is missing" in str(gone.value)
+
+    # And the section compile is bounded far tighter than the export's own.
+    assert web_export.SECTION_CSS_TIMEOUT_SECONDS < 120

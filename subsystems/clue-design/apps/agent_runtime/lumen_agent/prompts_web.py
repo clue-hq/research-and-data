@@ -378,8 +378,10 @@ WORKING RULES
   their site, not templates. `search_cloned_sections` finds them,
   `view("cloned_section:<id>")` shows one, and
   `insert_cloned_section(fragment_id, index?, slot_values_json?)` pins it. On a
-  healthy clone its SLOTS are the only thing you change; never retype a cloned
-  section's markup into your own page. Insert them AFTER `author_web_page`: a
+  healthy clone its SLOTS are the only thing you change: never retype a WORKING
+  cloned section's markup into your own page — a clone you rewrite for no reason
+  is an imitation. (A BROKEN one is a different question entirely; see the
+  repair rule below.) Insert them AFTER `author_web_page`: a
   rewrite cannot carry a cloned section, so it drops every one that was pinned
   and the result NAMES them under `dropped_cloned_sections`. Treat that list as
   work — re-pin each band you still want with `insert_cloned_section`, and say

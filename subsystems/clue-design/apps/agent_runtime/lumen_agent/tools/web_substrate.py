@@ -49,7 +49,12 @@ from lumen_api.fragments.render import (
     web_doc_fragment_ids,
 )
 from lumen_api.fragments.slots import SLOT_KIND_TO_NODE_TAG
-from lumen_api.web_export import compile_section_css
+# The repair mint's styling half. NOTE the dependency this brings into the AGENT RUNTIME: the
+# compile shells out to `node` plus the EDITOR app's `node_modules` (F3.1, ruling R-I3). It is
+# checked by name before it is used and refuses typed when absent, so a worker without the
+# toolchain says so instead of failing obscurely — but a fleet worker that is expected to repair
+# clones needs a full checkout, not just this package's Python dependencies.
+from lumen_api.web_export import WebExportToolchainMissing, compile_section_css
 from lumen_ingestion.capture.net import (
     REQUEST_TIMEOUT_SECONDS,
     BoundedFetcher,
@@ -4813,23 +4818,28 @@ class LumenWebTools:
             },
             sink_extra={"fragment_id": clean_id},
         )
-        return json.dumps(
-            {
-                "status": "ok",
-                "fragment_id": clean_id,
-                "section_role": resolved.get("section_role"),
-                "label": resolved.get("label"),
-                "page_id": self.page_id,
-                "section_node_id": section_id,
-                "node_id": node_id,
-                "index": position,
-                "slots_bound": sorted(slots),
-                "view": f"cloned_section:{clean_id}",
-                "warnings": warnings,
-                "advice": advice,
-            },
-            indent=2,
+        result: JsonObject = {
+            "status": "ok",
+            "fragment_id": clean_id,
+            "section_role": resolved.get("section_role"),
+            "label": resolved.get("label"),
+            "page_id": self.page_id,
+            "section_node_id": section_id,
+            "node_id": node_id,
+            "index": position,
+            "slots_bound": sorted(slots),
+            "view": f"cloned_section:{clean_id}",
+            "warnings": warnings,
+            "advice": advice,
+        }
+        # D-F6 reaches this door too (ruling R-I4). Pinning a band the pipeline has already
+        # measured as broken used to return a clean `ok`, leaving nothing between it and a
+        # published page full of dead space but a picker attribute the model saw turns ago.
+        broken = self._degraded_pin_entry(
+            resolved, index=position, section_node_id=section_id
         )
+        self._note_degraded_pins(result, [broken] if broken is not None else [])
+        return json.dumps(result, indent=2)
 
     def _tagged_slot_values(
         self, raw: JsonObject, slot_kinds: Dict[str, Any], fragment_id: str
@@ -5016,33 +5026,54 @@ class LumenWebTools:
         # it). This walk keeps that order and does not re-sort: the order the page had is the
         # whole point, and a second opinion about it here could only disagree with the registry.
         #
-        # A released repair is an approved cloned section in its own right, so it comes back in
-        # the listing beside the clone it replaces. It is planned ONCE, at the position of that
-        # clone — pinning it again on its own row would put the same band on the page twice,
-        # which is precisely the "adds nothing" property this tool exists to guarantee.
-        substitutes = {
-            str(section["superseded_by"])
-            for section in sections
-            if section.get("superseded_by")
-        }
+        # ONE SECTION PER LINEAGE (ruling R-C1). A released repair is an ordinary approved cloned
+        # section, so a clone and every repair of it all come back in the listing side by side.
+        # Walking rows and skipping "the one thing `superseded_by` names" is not enough: a second
+        # released repair is named by nobody and gets pinned on its own row (the same band
+        # twice), and a chain whose middle repair is itself degraded leaves the BROKEN ORIGINAL
+        # named by nobody and back on the page. So the unit of assembly is the LINEAGE, resolved
+        # by the registry over the whole family, and this loop plants each family exactly once,
+        # at the position of whichever of its members the page order reaches first.
+        by_id = {str(section["fragment_id"]): section for section in sections}
         plan: List[JsonObject] = []
-        planned: set = set()
+        planned_roots: set = set()
         for section in sections:
             fragment_id = str(section["fragment_id"])
-            if fragment_id in substitutes:
+            root = str(section.get("lineage_root") or fragment_id)
+            if root in planned_roots:
                 continue
+            planned_roots.add(root)
+            ambiguous = [str(item) for item in section.get("lineage_ambiguous") or []]
+            if ambiguous:
+                # Two released repairs of one band, neither superseding the other. Picking one
+                # would silently discard somebody's deliberate work and picking both would put
+                # the band down twice, so this is a human's decision and the assembly stops.
+                return self._tool_error(
+                    "recreate.lineage_ambiguous",
+                    f"cloned section {root} has {len(ambiguous)} released repairs and none of "
+                    "them replaces the others, so which one belongs on the page is not something "
+                    "this can decide: "
+                    + ", ".join(ambiguous)
+                    + ". Nothing was pinned. Ask the user which repair to keep and retire the "
+                    "rest (a retired section is never offered), or pin one explicitly with "
+                    "insert_cloned_section.",
+                    lineage_root=root,
+                    candidates=ambiguous,
+                )
             # D-F6: a clone somebody has already repaired and released is pinned INSTEAD of the
-            # broken original. The repair inherits the original's page position (its provenance
-            # copies `section_index`), so this substitution never moves a band.
+            # broken original, transitively — a repair of a repair wins over its own parent. The
+            # repair inherits the original's page position (its provenance copies
+            # `section_index`), so this substitution never moves a band.
             target = str(section.get("superseded_by") or fragment_id)
-            if target in planned:
-                continue
-            planned.add(target)
+            # The TARGET's own row decides whether this band is still broken; the row the page
+            # order happened to reach first may be the original, the repair, or a superseded
+            # middle of the chain.
+            source = by_id.get(target) or section
             plan.append(
                 {
                     "fragment_id": target,
-                    "substituted_for": fragment_id if target != fragment_id else None,
-                    "section": section,
+                    "substituted_for": root if target != root else None,
+                    "section": source,
                 }
             )
 
@@ -5098,7 +5129,6 @@ class LumenWebTools:
                     "root": section_id,
                 }
             )
-            source = entry["section"]
             pinned.append(
                 {
                     "fragment_id": fragment_id,
@@ -5109,9 +5139,10 @@ class LumenWebTools:
                     "node_id": node_id,
                     "slots_bound": sorted(slots),
                     "substituted_for": entry["substituted_for"],
-                    "degraded": bool(source.get("degraded"))
-                    if entry["substituted_for"] is None
-                    else False,
+                    # The band that is actually ON the page decides this, not the row the page
+                    # order happened to reach first: after a substitution the pinned section is
+                    # the repair, and it is the repair's own marker that matters.
+                    "degraded": bool(resolved.get("degraded")),
                     "resolved": resolved,
                 }
             )
@@ -5134,6 +5165,7 @@ class LumenWebTools:
         self.web_doc = response["web_doc"]
         self._record_operations(operations)
         self._doc_version += 1
+        degraded_pins: List[JsonObject] = []
         for entry in pinned:
             resolved = entry.pop("resolved")
             fragment_id = entry["fragment_id"]
@@ -5143,51 +5175,91 @@ class LumenWebTools:
                 "label": resolved.get("label"),
                 "section_role": resolved.get("section_role"),
             }
+            broken = self._degraded_pin_entry(
+                resolved, index=entry["index"], section_node_id=entry["section_node_id"]
+            )
+            if broken is not None:
+                degraded_pins.append(broken)
 
-        needs_repair = [
-            {
-                "fragment_id": entry["fragment_id"],
-                "index": entry["index"],
-                "section_node_id": entry["section_node_id"],
-                "label": entry["label"],
-                "reason": source.get("degraded_reason"),
-                "note": source.get("degraded_note"),
-            }
-            for entry, source in zip(pinned, [item["section"] for item in plan])
-            if entry["degraded"]
-        ]
         substituted = [entry for entry in pinned if entry["substituted_for"]]
         warnings, advice = _split_non_error_diagnostics(response.get("diagnostics"))
-        if needs_repair:
-            warnings.insert(0, self._degraded_pin_warning(needs_repair))
         self.record(
             "author",
             "cloned_page_recreated",
             input_summary=f"page_url={page_url or pages[0]}",
             output_summary=(
                 f"{len(pinned)} cloned section(s) in source order; "
-                f"{len(substituted)} substituted by a repair; {len(needs_repair)} still broken"
+                f"{len(substituted)} substituted by a repair; "
+                f"{len(degraded_pins)} still broken"
             ),
             diagnostics=response.get("diagnostics") or [],
             payload={
                 "fragment_ids": [entry["fragment_id"] for entry in pinned],
-                "needs_repair": copy.deepcopy(needs_repair),
+                "needs_repair": copy.deepcopy(degraded_pins),
                 "operations": copy.deepcopy(operations),
             },
             sink_extra={"pinned_count": len(pinned)},
         )
-        return json.dumps(
-            {
-                "status": "ok",
-                "page_id": self.page_id,
-                "page_url": page_url or pages[0],
-                "pinned": pinned,
-                "substituted": substituted,
-                "needs_repair": needs_repair,
-                "warnings": warnings,
-                "advice": advice,
-            },
-            indent=2,
+        result: JsonObject = {
+            "status": "ok",
+            "page_id": self.page_id,
+            "page_url": page_url or pages[0],
+            "pinned": pinned,
+            "substituted": substituted,
+            "warnings": warnings,
+            "advice": advice,
+        }
+        self._note_degraded_pins(result, degraded_pins)
+        return json.dumps(result, indent=2)
+
+    # --- the one place a degraded pin is reported (ruling R-I4) --------------------------------
+    #
+    # D-F6's trigger has to reach the author from EVERY door that puts a cloned section on a page,
+    # not only from the recreate walk: composing a page and reaching for one broken band with
+    # `insert_cloned_section` is the commoner shape, and it used to return a clean `ok`. So the
+    # entry and the warning are built here, once, from what `resolve_insertable` says — the same
+    # answer both doors already hold.
+
+    @staticmethod
+    def _degraded_pin_entry(
+        resolved: JsonObject, *, index: Optional[int], section_node_id: str
+    ) -> Optional[JsonObject]:
+        """One `needs_repair` entry for a band that was just pinned, or None if it is healthy."""
+        if not resolved.get("degraded"):
+            return None
+        return {
+            "fragment_id": resolved.get("fragment_id"),
+            "index": index,
+            "section_node_id": section_node_id,
+            "label": resolved.get("label"),
+            "reason": resolved.get("degraded_reason"),
+            "note": resolved.get("degraded_note"),
+        }
+
+    def _note_degraded_pins(
+        self, result: JsonObject, degraded_pins: List[JsonObject]
+    ) -> None:
+        """Fold degraded pins into an accepted result, or leave it byte-identical.
+
+        `needs_repair` is always present on a result that could carry one, empty or not: a key
+        that appears only in the bad case teaches a reader that its absence means "fine", when it
+        equally means "this build did not look".
+        """
+        result["needs_repair"] = degraded_pins
+        if not degraded_pins:
+            return
+        result.setdefault("warnings", []).insert(
+            0, self._degraded_pin_warning(degraded_pins)
+        )
+        self.record(
+            "author",
+            "cloned_section_degraded_pinned",
+            output_summary=", ".join(
+                f"{entry['fragment_id']} ({entry.get('reason') or 'broken'})"
+                for entry in degraded_pins
+            ),
+            payload={"needs_repair": copy.deepcopy(degraded_pins)},
+            sink_extra={"degraded_count": len(degraded_pins)},
         )
 
     @staticmethod
@@ -5356,6 +5428,16 @@ class LumenWebTools:
                 self.web_doc,
                 brand_kit=self.config.brand_kit,
                 section_html=subtree,
+            )
+        except WebExportToolchainMissing as error:
+            # The ENVIRONMENT, not the markup. Told apart from a compile failure because the
+            # remedy is somebody else's (install the toolchain) and retrying is pointless.
+            return self._tool_error(
+                "repair.toolchain_unavailable",
+                f"this worker cannot compile a section's styling, so no durable repair was "
+                f"minted: {error}. The page still carries your replacement section and renders "
+                "correctly; report that the repair could not be saved to the library. Do not "
+                "retry — nothing about this call will change the answer.",
             )
         except Exception as error:  # noqa: BLE001 - the toolchain boundary
             return self._tool_error(
@@ -5600,6 +5682,9 @@ class LumenWebTools:
             "css": str(render.get("css") or ""),
             "slot_kinds": dict(render.get("slot_kinds") or {}),
             "asset_digests": list(render.get("asset_digests") or []),
+            # F3.1: carried through so the collision report sees a repair as a repair mid-turn,
+            # exactly as it does at publish (ruling R-I1).
+            "derived": bool(render.get("derived")),
         }
         missing = package.get("missing")
         if isinstance(missing, list) and fragment_id in missing:

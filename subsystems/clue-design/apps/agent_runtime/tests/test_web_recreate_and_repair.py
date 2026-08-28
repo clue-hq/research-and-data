@@ -29,6 +29,7 @@ import pytest
 
 from lumen_agent.config import AgentRuntimeConfig
 from lumen_agent.tools.web_substrate import LumenWebTools
+from lumen_api.agent_cloned_sections import _resolve_lineages
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
@@ -64,6 +65,11 @@ class FakeRegistry:
     ``mint_repair`` records what it was handed rather than inventing an artifact: the whole
     question this file asks about the mint is *what reaches it*, and the durable half of that
     question has its own DB-backed file.
+
+    **The lineage verdict is not re-implemented here** — ``list_sections`` calls the registry's
+    own :func:`_resolve_lineages` over these rows. A fake that computed "which repair supersedes
+    which" for itself would be asserting its own arithmetic, and ruling R-C1 is precisely about
+    that arithmetic being right.
     """
 
     def __init__(self, tmp_path: Path) -> None:
@@ -72,6 +78,7 @@ class FakeRegistry:
         self.mint_calls: list[dict] = []
         #: What `mint_repair` answers, per repaired id. Absent → a fresh draft repair.
         self.mint_result: dict | None = None
+        self._minted = 0
 
     def add(
         self,
@@ -103,7 +110,10 @@ class FakeRegistry:
             "slots": list(slots or []),
             "page_url": page_url,
             "section_index": index,
-            "created_at": "2026-08-28T00:00:00Z",
+            # Distinct and increasing, because the lineage resolver's "oldest approved member"
+            # fallback is an ordering over these — a fixture where every row is born at the same
+            # instant would make that tie-break untestable.
+            "created_at": f"2026-08-28T00:00:{len(self.rows):02d}Z",
             "degraded": degraded,
             "degraded_reason": degraded_reason,
             "degraded_note": (
@@ -118,27 +128,26 @@ class FakeRegistry:
     # --- the capability -----------------------------------------------------------------------
 
     def list_sections(self, section_role=None):
-        """Approved rows in document order, each carrying its repairs — the real shape."""
+        """Approved rows in document order, with the REAL lineage verdict on each."""
+        rows = list(self.rows.values())
         repairs: dict[str, list[dict]] = {}
-        for row in self.rows.values():
-            if row.get("derived_from"):
+        for row in rows:
+            if row.get("derived_from") and row["status"] != "dormant":
                 repairs.setdefault(row["derived_from"], []).append(row)
+        lineages = _resolve_lineages(rows)
         sections = []
         for row in sorted(
             (
                 row
-                for row in self.rows.values()
+                for row in rows
                 if row["status"] == "approved"
                 and (section_role is None or row["section_role"] == section_role)
             ),
-            key=lambda row: (row["page_url"], row["section_index"]),
+            key=lambda row: (row["page_url"], row["section_index"], row["fragment_id"]),
         ):
-            mine = repairs.get(row["fragment_id"]) or []
-            releasable = [
-                repair
-                for repair in mine
-                if repair["status"] == "approved" and not repair["degraded"]
-            ]
+            fragment_id = row["fragment_id"]
+            mine = repairs.get(fragment_id) or []
+            verdict = lineages[fragment_id]
             sections.append(
                 {
                     key: row[key]
@@ -172,7 +181,14 @@ class FakeRegistry:
                         }
                         for repair in mine
                     ],
-                    "superseded_by": releasable[-1]["fragment_id"] if releasable else None,
+                    "lineage_root": verdict.root,
+                    "superseded_by": (
+                        verdict.representative
+                        if verdict.representative
+                        and verdict.representative != fragment_id
+                        else None
+                    ),
+                    "lineage_ambiguous": list(verdict.ambiguous),
                 }
             )
         return {
@@ -209,11 +225,16 @@ class FakeRegistry:
             "source_url": row["source_url"],
             "slots": list(row["slots"]),
             "preview_path": row["preview_path"],
+            "degraded": row["degraded"],
+            "degraded_reason": row["degraded_reason"],
+            "degraded_note": row["degraded_note"],
+            "derived_from": row["derived_from"],
             "render": {
                 "html": row["html"],
                 "css": row["css"],
                 "slot_kinds": {slot["key"]: slot["kind"] for slot in row["slots"]},
                 "asset_digests": [],
+                "derived": bool(row["derived_from"]),
             },
         }
 
@@ -418,6 +439,79 @@ def test_a_released_repair_is_pinned_instead_of_the_clone_it_replaces(
     assert [entry["substituted_for"] for entry in result["substituted"]] == [PROOF_ID]
     # The repair inherited the original's page position, so nothing moved.
     assert result["substituted"][0]["index"] == 2
+
+
+# --------------------------------------------------------------------------- #
+# One section per lineage (ruling R-C1) — both shapes the review reproduced
+# --------------------------------------------------------------------------- #
+
+
+def test_two_released_repairs_of_one_band_refuse_rather_than_pinning_it_twice(
+    tmp_path: Path, registry: FakeRegistry
+) -> None:
+    """Repro A. A repair is an ordinary approved row, so a second one is named by nobody.
+
+    Before R-C1 this pinned FIVE sections where the page had four — the band twice and the
+    footer displaced — and reported none of it. Picking one of the two would silently discard
+    somebody's deliberate repair, so the answer is a human's.
+    """
+    registry.add("frag_00000000000000b2", role="proof", label="Repair one", index=2,
+                 derived_from=PROOF_ID)
+    registry.add("frag_00000000000000b3", role="proof", label="Repair two", index=2,
+                 derived_from=PROOF_ID)
+    tools = _tools(tmp_path, registry)
+
+    result = json.loads(tools.recreate_cloned_page())
+
+    assert result["error_code"] == "recreate.lineage_ambiguous"
+    assert result["lineage_root"] == PROOF_ID
+    assert sorted(result["candidates"]) == ["frag_00000000000000b2", "frag_00000000000000b3"]
+    # Nothing was pinned: a half-built homepage is worse than none.
+    assert _sections(tools) == []
+
+
+def test_a_repair_of_a_repair_wins_and_never_lets_the_broken_original_back(
+    tmp_path: Path, registry: FakeRegistry
+) -> None:
+    """Repro B. The chain is walked transitively, and a degraded middle is stepped OVER.
+
+    Before R-C1 the degraded intermediate stopped being anybody's `superseded_by`, so the
+    original — the band D-F6 marked broken in the first place — went back on the page beside the
+    healthy repair.
+    """
+    registry.add("frag_00000000000000b2", role="proof", label="Repair one", index=2,
+                 derived_from=PROOF_ID, degraded=True, degraded_reason="dead_height")
+    registry.add("frag_00000000000000b3", role="proof", label="Repair two", index=2,
+                 derived_from="frag_00000000000000b2")
+    tools = _tools(tmp_path, registry)
+
+    result = json.loads(tools.recreate_cloned_page())
+
+    assert result["status"] == "ok"
+    assert _pinned_in_order(tools) == [
+        NAV_ID,
+        HERO_ID,
+        "frag_00000000000000b3",
+        FOOTER_ID,
+    ]
+    assert PROOF_ID not in _pinned_in_order(tools)
+    assert "frag_00000000000000b2" not in _pinned_in_order(tools)
+    assert result["needs_repair"] == []
+    assert [entry["substituted_for"] for entry in result["substituted"]] == [PROOF_ID]
+
+
+def test_a_lineage_whose_only_repair_is_itself_broken_falls_back_to_the_original(
+    tmp_path: Path, registry: FakeRegistry
+) -> None:
+    """"Else the original" — and the original goes on the page flagged, not silently."""
+    registry.add("frag_00000000000000b2", role="proof", label="Repair one", index=2,
+                 derived_from=PROOF_ID, degraded=True, degraded_reason="dead_height")
+    tools = _tools(tmp_path, registry)
+
+    result = json.loads(tools.recreate_cloned_page())
+
+    assert _pinned_in_order(tools) == [NAV_ID, HERO_ID, PROOF_ID, FOOTER_ID]
+    assert [entry["fragment_id"] for entry in result["needs_repair"]] == [PROOF_ID]
 
 
 def test_the_recreate_fills_the_slots_it_is_given_and_leaves_the_rest_verbatim(
@@ -719,6 +813,293 @@ def test_the_repair_refuses_an_empty_note_because_the_lineage_is_permanent(
     assert registry.mint_calls == []
 
 
+def test_pinning_a_broken_band_the_ordinary_way_reports_it_too(
+    tmp_path: Path, registry: FakeRegistry
+) -> None:
+    """Ruling R-I4: the degraded warning fires from EVERY door, not only the recreate walk.
+
+    Composing a page and reaching for one clone with `insert_cloned_section` is the commoner
+    shape, and it used to return a clean `ok` — leaving nothing between a measured-broken band
+    and a published page full of dead space but a picker attribute seen several turns ago.
+    """
+    tools = _tools(tmp_path, registry)
+
+    result = json.loads(tools.insert_cloned_section(PROOF_ID))
+
+    assert result["status"] == "ok"
+    assert [entry["fragment_id"] for entry in result["needs_repair"]] == [PROOF_ID]
+    assert result["needs_repair"][0]["reason"] == "dead_height"
+    assert result["needs_repair"][0]["section_node_id"] == result["section_node_id"]
+    warning = result["warnings"][0]
+    assert warning["code"] == "LUMA0602"
+    assert "repair_cloned_section" in warning["hint"]
+
+
+def test_pinning_a_healthy_band_the_ordinary_way_says_nothing_new(
+    tmp_path: Path, registry: FakeRegistry
+) -> None:
+    """The key is always present and empty — an absent key reads as "fine" when it means
+    "this build did not look"."""
+    tools = _tools(tmp_path, registry)
+
+    result = json.loads(tools.insert_cloned_section(NAV_ID))
+
+    assert result["needs_repair"] == []
+    assert [w.get("code") for w in result["warnings"]] == []
+
+
+# --------------------------------------------------------------------------- #
+# The mint's failure branches (ruling R-I3)
+# --------------------------------------------------------------------------- #
+
+
+def test_a_replacement_that_is_two_sections_is_refused_before_the_mint(
+    tmp_path: Path, registry: FakeRegistry
+) -> None:
+    tools = _recreated(tmp_path, registry)
+
+    result = json.loads(
+        tools.repair_cloned_section(
+            PROOF_ID,
+            '<section id="sec_a" class="w-full"><p>One</p></section>'
+            '<section id="sec_b" class="w-full"><p>Two</p></section>',
+            3,
+            "two bands where the page had one",
+        )
+    )
+
+    assert result["error_code"] == "repair.not_one_section"
+    assert len(result["roots"]) == 2
+    assert registry.mint_calls == []
+
+
+def test_a_render_that_fails_leaves_the_page_repaired_and_mints_nothing(
+    tmp_path: Path, registry: FakeRegistry, monkeypatch
+) -> None:
+    """The swap has already happened by then, so the page is FINE — only the artifact is lost."""
+    from lumen_api.core import CoreError
+
+    tools = _recreated(tmp_path, registry)
+    real_render = tools.core.web_render
+    monkeypatch.setattr(
+        tools.core,
+        "web_render",
+        lambda *a, **k: (_ for _ in ()).throw(CoreError("helper died", [])),
+    )
+
+    result = json.loads(
+        tools.repair_cloned_section(PROOF_ID, REPLACEMENT_HTML, 3, "compact fallback")
+    )
+
+    assert result["error_code"] == "repair.render_failed"
+    assert registry.mint_calls == []
+    # The broken clone is OFF the page and the composed section is on it: the repair happened,
+    # only its durable record did not.
+    assert PROOF_ID not in _pinned_in_order(tools)
+    assert "sec_repaired_proof" in _sections(tools)
+    assert real_render is not None
+
+
+def test_a_section_missing_from_the_render_mints_nothing_rather_than_the_nearest_thing(
+    tmp_path: Path, registry: FakeRegistry, monkeypatch
+) -> None:
+    from lumen_agent.tools import web_substrate
+
+    tools = _recreated(tmp_path, registry)
+    monkeypatch.setattr(web_substrate, "_section_subtree", lambda *a, **k: "")
+
+    result = json.loads(
+        tools.repair_cloned_section(PROOF_ID, REPLACEMENT_HTML, 3, "compact fallback")
+    )
+
+    assert result["error_code"] == "repair.section_not_rendered"
+    assert registry.mint_calls == []
+
+
+def test_a_worker_with_no_css_toolchain_refuses_by_name_and_does_not_retry(
+    tmp_path: Path, registry: FakeRegistry, monkeypatch
+) -> None:
+    """Ruling R-I3: the environment failure is told apart from a compile failure.
+
+    "There is no compiler on this machine" and "the compile rejected your CSS" have different
+    remedies, and only one of them is worth another round.
+    """
+    from lumen_agent.tools import web_substrate
+    from lumen_api.web_export import WebExportToolchainMissing
+
+    tools = _recreated(tmp_path, registry)
+    monkeypatch.setattr(
+        web_substrate,
+        "compile_section_css",
+        lambda *a, **k: (_ for _ in ()).throw(
+            WebExportToolchainMissing("node is not on PATH (looked for 'node')")
+        ),
+    )
+
+    result = json.loads(
+        tools.repair_cloned_section(PROOF_ID, REPLACEMENT_HTML, 3, "compact fallback")
+    )
+
+    assert result["error_code"] == "repair.toolchain_unavailable"
+    assert "node is not on PATH" in result["message"]
+    assert "Do not retry" in result["message"]
+    assert registry.mint_calls == []
+    assert PROOF_ID not in _pinned_in_order(tools)
+
+
+def test_a_compile_that_rejects_the_css_mints_nothing_rather_than_an_unstyled_artifact(
+    tmp_path: Path, registry: FakeRegistry, monkeypatch
+) -> None:
+    from lumen_agent.tools import web_substrate
+    from lumen_api.web_export import WebExportCompileError
+
+    tools = _recreated(tmp_path, registry)
+    monkeypatch.setattr(
+        web_substrate,
+        "compile_section_css",
+        lambda *a, **k: (_ for _ in ()).throw(WebExportCompileError("tailwind exploded")),
+    )
+
+    result = json.loads(
+        tools.repair_cloned_section(PROOF_ID, REPLACEMENT_HTML, 3, "compact fallback")
+    )
+
+    assert result["error_code"] == "repair.css_compile_failed"
+    assert "publish unstyled" in result["message"]
+    assert registry.mint_calls == []
+
+
+def test_a_registry_refusal_reaches_the_author_as_the_registrys_own_code(
+    tmp_path: Path, registry: FakeRegistry
+) -> None:
+    """`fragment.repair_unchanged` / `fragment.unrehosted_reference` are the registry's words."""
+    from lumen_api.fragments import FragmentRefused
+
+    tools = _recreated(tmp_path, registry)
+
+    def refuse(**kwargs):
+        raise FragmentRefused(
+            "fragment.repair_unchanged", "this repair's markup is identical to the original"
+        )
+
+    registry.mint_repair = refuse
+
+    result = json.loads(
+        tools.repair_cloned_section(PROOF_ID, REPLACEMENT_HTML, 3, "changed nothing")
+    )
+
+    assert result["error_code"] == "fragment.repair_unchanged"
+    assert "still carries your replacement section" in result["message"]
+
+
+def test_an_unexpected_mint_failure_says_the_page_is_still_fine(
+    tmp_path: Path, registry: FakeRegistry
+) -> None:
+    tools = _recreated(tmp_path, registry)
+
+    def explode(**kwargs):
+        raise RuntimeError("the database went away")
+
+    registry.mint_repair = explode
+
+    result = json.loads(
+        tools.repair_cloned_section(PROOF_ID, REPLACEMENT_HTML, 3, "compact fallback")
+    )
+
+    assert result["error_code"] == "repair.mint_failed"
+    assert "RuntimeError" in result["message"]
+    assert "still carries your replacement section" in result["message"]
+
+
+def test_a_pin_that_the_gate_refuses_reports_it_and_keeps_the_composed_section(
+    tmp_path: Path, registry: FakeRegistry
+) -> None:
+    """`_pin_repair_in_place` failing costs the artifact's reuse, never the page's pixels."""
+    tools = _tools(tmp_path, registry)
+    assert json.loads(tools.insert_cloned_section(PROOF_ID))["status"] == "ok"
+    registry.mint_result = {
+        "fragment_id": REPAIR_ID,
+        "replaces": PROOF_ID,
+        "status": "approved",
+        "derived_from": PROOF_ID,
+        "derived_reason": "repair rung 3 (...)",
+        "slot_keys": [],
+        "asset_digests": [],
+        "sanitizer_notes": [],
+        "converged": True,
+        "lineage_kept": True,
+        "insertable": True,
+    }
+    # The repair id was never added to the fake, so the gate cannot resolve it.
+
+    result = json.loads(
+        tools.repair_cloned_section(PROOF_ID, REPLACEMENT_HTML, 3, "compact fallback")
+    )
+
+    assert result["status"] == "ok"
+    assert result["pinned"] is False
+    assert "FragmentReferenceError" in result["pin_refusal"]
+    assert "sec_repaired_proof" in _sections(tools)
+
+
+# --------------------------------------------------------------------------- #
+# A repair that carries an image (review rider)
+# --------------------------------------------------------------------------- #
+
+
+def test_an_image_in_a_repair_reaches_the_mint_as_the_artifacts_own_byte_reference(
+    tmp_path: Path, registry: FakeRegistry
+) -> None:
+    """The asset half of ruling R17-1, end to end rather than on paper.
+
+    The mint runs the fail-closed reference gate with an EMPTY rehost map, so the only reason a
+    repair may carry an image at all is that the render is asked for the artifact's own spelling
+    (`asset_base_url="/asset-store"`). If that ever changed, the engine would emit the turn's
+    absolute origin, `resolve_asset_reference` would find no entry, and every repair with a
+    picture in it would refuse.
+    """
+    digest = "c" * 64
+    doc = _empty_doc()
+    doc["assets"]["asset_hero_1"] = {
+        "id": "asset_hero_1",
+        "label": "Clinic",
+        "kind": "raster_image",
+        "status": "ready",
+        "source": {"kind": "generated", "model": "test-model", "request_id": None},
+        "media": {
+            "mime_type": "image/png",
+            "digest": {"algorithm": "sha256", "value": digest},
+            "location": {
+                "provider": "local-store",
+                "opaque_ref": f"sha256/cc/{digest}",
+                "url": None,
+            },
+        },
+    }
+    tools = _tools(tmp_path, registry, doc)
+    assert json.loads(tools.recreate_cloned_page())["status"] == "ok"
+
+    result = json.loads(
+        tools.repair_cloned_section(
+            PROOF_ID,
+            '<section id="sec_repaired_proof" class="w-full py-section">'
+            '<div class="mx-auto max-w-5xl px-6">'
+            '<h2 class="text-3xl font-semibold text-primary">Trusted by 400 clinics</h2>'
+            '<img data-asset="asset_hero_1" alt="A clinic">'
+            "</div></section>",
+            3,
+            "the same proof band with its photograph, at its natural height",
+        )
+    )
+
+    assert result["status"] == "ok"
+    (call,) = registry.mint_calls
+    # The engine emitted the artifact's own spelling, so the sanitizer resolves it with no
+    # rehost map — which is the whole reason a repair needs none.
+    assert f'src="/asset-store/{digest}"' in call["html"]
+    assert "127.0.0.1" not in call["html"]
+
+
 # --------------------------------------------------------------------------- #
 # The amended law (ruling D-F6)
 # --------------------------------------------------------------------------- #
@@ -748,11 +1129,28 @@ def test_the_old_absolutist_law_that_protected_brokenness_is_gone(prompt_of: str
 
     Asserted on both prompts because both carried it, and a law removed from one surface while
     it still governs on the other is worse than not removing it at all.
+
+    **Whitespace-collapsed, and that is not cosmetic** (review finding I2). These prompts are
+    hard-wrapped, so a raw `not in` can pass merely because the clause it forbids happens to be
+    broken across two lines — an absence test that a prose reflow can flip is worse than none.
+    What D-F6 forbids is the BLANKET ban; a rule protecting a WORKING clone is allowed to stay,
+    so the second half asserts that every surviving "never rewrite/retype" clause carries its
+    qualifier rather than asserting the clause away.
     """
     prompt = _director_prompt() if prompt_of == "director" else _author_prompt()
+    flat = " ".join(prompt.lower().split())
 
-    assert "NEVER EDIT A CLONED SECTION" not in prompt
-    assert "never retype a cloned section" not in prompt.lower()
+    # The absolutist law, in either of the two spellings it had.
+    assert "never edit a cloned section's internals" not in flat
+    assert "never edit a cloned section" not in flat
+    assert "its slots are the whole of what may change" not in flat
+    # Every surviving prohibition on rewriting a clone names the case it governs.
+    for clause, qualifier in (
+        ("never retype a", "never retype a working cloned section"),
+        ("never casually rewrite", "never casually rewrite a working cloned section"),
+    ):
+        if clause in flat:
+            assert qualifier in flat, clause
 
 
 @pytest.mark.parametrize("prompt_of", ["director", "author"])
@@ -801,6 +1199,29 @@ def test_the_amended_law_and_the_whole_ladder_reach_both_composing_roles(
     assert "grammar audit" in lowered
     # 8. The mechanics: one tool, and the original survives it.
     assert "repair_cloned_section" in prompt
+
+
+def test_the_tool_docstrings_carry_the_amendment_too() -> None:
+    """A tool's docstring IS prompt text — it is the description the model reads at call time.
+
+    Report §7 claimed the amendment was "gone from every surface, asserted by test" when only
+    the two prompts were asserted (review finding M8). This makes the claim true.
+    """
+    for tool in (
+        LumenWebTools.search_cloned_sections,
+        LumenWebTools.insert_cloned_section,
+        LumenWebTools.repair_cloned_section,
+        LumenWebTools.recreate_cloned_page,
+    ):
+        flat = " ".join((tool.__doc__ or "").lower().split())
+        assert "never edit a cloned section" not in flat, tool.__name__
+        if "its slots are the whole of what may change" in flat:
+            assert "on a healthy one" in flat, tool.__name__
+    ladder = " ".join(
+        (LumenWebTools.search_cloned_sections.__doc__ or "").lower().split()
+    )
+    assert "never casually rewrite a working cloned section" in ladder
+    assert "repair_cloned_section" in ladder
 
 
 def test_the_recreate_walk_is_law_on_both_composing_roles() -> None:
