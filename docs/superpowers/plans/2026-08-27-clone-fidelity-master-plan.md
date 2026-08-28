@@ -1,6 +1,21 @@
 # Clone-Fidelity Master Plan — verbatim fragments, Ploy-grade output (Phases F0–F5)
 
-> **STATUS 2026-08-28 (latest) — PHASE F2 COMPLETE.** Executed via SDD (Tasks 11–15 = F2.1–F2.4
+> **STATUS 2026-08-28 (latest) — PHASE F3 / CHECKPOINT 1 CLOSED by founder acceptance.** Executed
+> via SDD (Tasks 16–21 = F3.0–F3.4 + the LIVE CP1 walk; Opus primary implementers + Opus-only
+> reviewers; SECONDARY fix rounds orchestrator-implemented per founder directive, confirmed as the
+> standing split), commits `d20e335dc..0c637dcc7`, local only. Live walk on insighthealth.ai:
+> 7 criteria PASS, criterion 1 = the founder's blind side-by-side (OPEN, `/tmp/f3_walk/BLIND/`),
+> and the walk's two blocking-class findings — the dead-height extent measure blind to a 6,115px
+> middle hole, and dormant activation defeated by the source's own hiding CSS — were fixed in the
+> orchestrator's post-final-review wave (dead-height second condition in BOTH detectors; un-hide
+> counter-rules at the artifact CSS seam; skipped checks and gate coverage now SAID; meta-CSP
+> console error dead). The wave's independent review was in flight at close; the wave's live
+> re-walk is DEFERRED BY FOUNDER ACCEPTANCE and rides the F4.4 CP2 walk. Evidence + full rulings:
+> `.superpowers/sdd/2026-08-27-clone-fidelity-master-plan/progress.md`, `task-21-walk-report.md`,
+> `f3-final-review.md`, and `_memory/2026-08-28-f3-checkpoint1-close.md`. FOUNDER QUEUE carried
+> there (headline: role-vocabulary extension; X4/X9 repair-release rulings = F4 entry conditions).
+>
+> **STATUS 2026-08-28 — PHASE F2 COMPLETE.** Executed via SDD (Tasks 11–15 = F2.1–F2.4
 > + acceptance; one fix round per task; final whole-phase review → ONE general fix wave +
 > completion round after the FIRST live acceptance walk FAILED on both sites), commits through
 > `61fa11db7`, local only. **Re-walk PASS on both named sites**: insighthealth.ai 9 minted /
