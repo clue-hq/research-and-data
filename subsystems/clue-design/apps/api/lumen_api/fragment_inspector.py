@@ -63,7 +63,12 @@ def fragment_card(
     """
     loaded = read_web_fragment(storage, workspace_id=workspace_id, fragment_id=fragment_id)
     rows = list_web_fragments(workspace_id=workspace_id)
-    return _card(loaded.row, rows=rows, slot_manifest=loaded.slot_manifest)
+    return _card(
+        loaded.row,
+        rows=rows,
+        lineages=resolve_fragment_lineages(rows),
+        slot_manifest=loaded.slot_manifest,
+    )
 
 
 def dormant_fragment_cards(
@@ -80,6 +85,10 @@ def dormant_fragment_cards(
     hidden sections and dozens of visible ones.
     """
     rows = list_web_fragments(workspace_id=workspace_id)
+    # Resolved ONCE for the whole listing rather than once per card: the resolver is a pure
+    # function of the same row set every card in this call shares, so re-running it per dormant
+    # section would be N full lineage resolutions to answer the same question N times.
+    lineages = resolve_fragment_lineages(rows)
     dormant = [row for row in rows if row.get("status") == FRAGMENT_STATUS_DORMANT]
     dormant.sort(key=_document_order)
     cards: List[JsonObject] = []
@@ -87,18 +96,29 @@ def dormant_fragment_cards(
         loaded = read_web_fragment(
             storage, workspace_id=workspace_id, fragment_id=str(row["fragment_id"])
         )
-        cards.append(_card(loaded.row, rows=rows, slot_manifest=loaded.slot_manifest))
+        cards.append(
+            _card(
+                loaded.row,
+                rows=rows,
+                lineages=lineages,
+                slot_manifest=loaded.slot_manifest,
+            )
+        )
     return cards
 
 
 def _card(
-    row: JsonObject, *, rows: List[JsonObject], slot_manifest: JsonObject
+    row: JsonObject,
+    *,
+    rows: List[JsonObject],
+    lineages: Dict[str, LineageVerdict],
+    slot_manifest: JsonObject,
 ) -> JsonObject:
     fragment_id = str(row["fragment_id"])
     provenance = row.get("provenance")
     provenance = provenance if isinstance(provenance, dict) else {}
     by_id = {str(candidate["fragment_id"]): candidate for candidate in rows}
-    verdict = resolve_fragment_lineages(rows).get(fragment_id) or LineageVerdict(
+    verdict = lineages.get(fragment_id) or LineageVerdict(
         root=fragment_id, representative=fragment_id
     )
     degraded = bool(row.get("degraded"))
@@ -146,7 +166,15 @@ def _card(
             and str(row["derived_from"]) in by_id
             else None
         ),
+        # RULING R18-1: every repair in the family, from the card of ANY member — not just this
+        # row's direct children. `repairs` above is the parent/child relation and stays what it
+        # is; this is the FAMILY, which is what a retire affordance has to be built on. A repair
+        # is on no page unless somebody pinned it, so "select the repair" is not a way to reach
+        # one, and a grandchild leaf listed under nobody had a Retire button nowhere at all —
+        # leaving the contested-lineage dead end R17-2 exists to end still a dead end, with the
+        # affordance built and unreachable.
         "lineage_root": verdict.root,
+        "family": _family(fragment_id, rows=rows, lineages=lineages),
         "superseded_by": (
             verdict.representative
             if verdict.representative and verdict.representative != fragment_id
@@ -171,7 +199,12 @@ def _preview(row: JsonObject, provenance: JsonObject) -> JsonObject:
     return {
         "path": f"{ASSET_URL_PREFIX}{digest}" if digest else None,
         "digest": digest,
-        "basis": provenance.get("preview_basis"),
+        # The ROW's own answer wins, and it is only ever set by the attach: it describes the
+        # picture that is actually there. Falling through to the mint's provenance is right for
+        # every row whose picture the mint made — and only for those, which is why the row is
+        # asked first. See `attach_web_fragment_preview` for the two rows the fallback would
+        # mislabel.
+        "basis": row.get("preview_basis") or provenance.get("preview_basis"),
     }
 
 
@@ -191,6 +224,53 @@ def _slots(slot_manifest: JsonObject) -> List[JsonObject]:
             fallback = fallback[:SLOT_FALLBACK_MAX_CHARS] + "…"
         entries.append({"key": str(key), "kind": entry.get("kind"), "fallback": fallback})
     return entries
+
+
+def _family(
+    fragment_id: str, *, rows: List[JsonObject], lineages: Dict[str, LineageVerdict]
+) -> List[JsonObject]:
+    """Every member of THIS row's lineage, oldest first, each with its own retire verdict.
+
+    **Ruling R18-1**: every repair in a family must be retire-reachable from the card of any
+    family member that is selectable on the page. The parent/child list cannot deliver that —
+    a repair-of-a-repair is nobody's direct child except its own parent's, and its parent is
+    typically on no page — so the card carries the family instead.
+
+    Membership is the RESOLVER's, not this module's: two rows are family iff they share a
+    ``lineage_root``, which is the answer `_resolve_lineages` already computed by walking
+    ``derived_from`` up through rows of every status (ruling R-X1). Nothing here re-derives it —
+    the same rule computed twice is two rules, and this one moved three times before it settled.
+
+    Each entry carries `derived_from` and its own `retirement`, so the surface renders a button
+    where one is lawful and a reason where it is not, without knowing R17-3.
+    """
+    root = (lineages.get(fragment_id) or LineageVerdict(root=fragment_id, representative=None)).root
+    members = [
+        candidate
+        for candidate in rows
+        if (
+            lineages.get(str(candidate["fragment_id"]))
+            or LineageVerdict(
+                root=str(candidate["fragment_id"]), representative=None
+            )
+        ).root
+        == root
+    ]
+    members.sort(
+        key=lambda candidate: (
+            str(candidate.get("created_at") or ""),
+            str(candidate["fragment_id"]),
+        )
+    )
+    return [
+        {
+            **_lineage_entry(candidate),
+            "derived_from": candidate.get("derived_from"),
+            "is_root": str(candidate["fragment_id"]) == root,
+            "retirement": retirement_verdict(candidate),
+        }
+        for candidate in members
+    ]
 
 
 def _lineage_entry(row: JsonObject) -> JsonObject:

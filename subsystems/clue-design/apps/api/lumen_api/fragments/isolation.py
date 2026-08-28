@@ -34,13 +34,20 @@ import hashlib
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import urlsplit
 
 from .refs import fragment_wrapper_class
 from .render import rebase_artifact_assets, slot_kinds
 
-#: The label an isolation render carries wherever it is described. P-7 is explicit that this is
-#: an isolation render and NOT a source-site screenshot crop, and a human deciding whether to
-#: activate a hidden section deserves to be told which kind of picture they are looking at.
+#: The label an isolation render carries wherever it is described, and — since the F3.2 fix round
+#: — the value written into ``design_web_fragment.preview_basis`` when one is attached.
+#:
+#: P-7 is explicit that this is an isolation render and NOT a source-site screenshot crop, and a
+#: human deciding whether to activate a hidden section is deciding on the strength of one of those
+#: two things. The label therefore has to be DURABLE and has to be a fact about the picture: the
+#: mint's ``provenance.preview_basis`` is about the mint, and taking its word for a photograph
+#: taken later says nothing for a repair and says "measured" for a section the capture measured
+#: but could not crop — which would present our own render as a crop of the live site.
 ISOLATION_RENDER_BASIS = "isolation_render"
 
 ISOLATION_PREVIEW_MEDIA_TYPE = "image/png"
@@ -81,6 +88,9 @@ class IsolationPage:
     #: The CSS selector the screenshot is taken of — the fragment's own wrapper, so the picture
     #: is the band and not the page chrome around it.
     element_selector: str
+    #: What kind of picture this is (P-7). Carried on the page rather than assumed by the caller,
+    #: so the value that reaches the row comes from the thing that made it.
+    basis: str = ISOLATION_RENDER_BASIS
 
 
 def isolation_web_doc(fragment_id: str) -> dict[str, Any]:
@@ -172,6 +182,22 @@ def build_isolation_page(core: Any, loaded: Any, *, brand_kit: Any = None) -> Is
     )
 
 
+def held_isolation_asset(
+    url: str, assets: Mapping[str, tuple[str, bytes]]
+) -> tuple[str, bytes] | None:
+    """The bytes this request is asking for, or ``None`` — which means abort.
+
+    Split out of the route handler so the fail-closed rule is testable without a browser: it is
+    the thing standing between "a picture of the artifact" and "a picture of the internet", and
+    it was previously reachable only by launching Chromium.
+    """
+    path = urlsplit(url).path
+    if not path.startswith(_ASSET_PATH_PREFIX):
+        return None
+    digest = path[len(_ASSET_PATH_PREFIX) :]
+    return assets.get(digest)
+
+
 async def _shoot(page_html: str, selector: str, assets: Mapping[str, tuple[str, bytes]]) -> bytes:
     from playwright.async_api import async_playwright  # lazy: never at import time
 
@@ -191,9 +217,12 @@ async def _shoot(page_html: str, selector: str, assets: Mapping[str, tuple[str, 
                 # already holds. Everything else — a font from a CDN the sanitizer left as a
                 # reference, an analytics beacon in somebody's markup — is aborted, so the
                 # picture can only ever be of what we have.
-                url = route.request.url
-                _, _, tail = url.partition(_ASSET_PATH_PREFIX)
-                held = assets.get(tail) if _ASSET_PATH_PREFIX in url else None
+                #
+                # Matched on the PATH, not on the whole url: a query string or a fragment after
+                # the digest would otherwise land in the lookup key and abort a legitimate asset,
+                # which fails in the quiet direction (a hole in the picture) rather than the loud
+                # one.
+                held = held_isolation_asset(route.request.url, assets)
                 if held is None:
                     await route.abort()
                     return
@@ -281,6 +310,7 @@ __all__ = [
     "IsolationPage",
     "IsolationRenderFailed",
     "build_isolation_page",
+    "held_isolation_asset",
     "isolation_web_doc",
     "preview_digest",
     "render_isolation_preview",

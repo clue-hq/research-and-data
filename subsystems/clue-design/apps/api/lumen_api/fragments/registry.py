@@ -306,6 +306,7 @@ def attach_web_fragment_preview(
     workspace_id: str,
     fragment_id: str,
     preview: bytes,
+    preview_basis: str,
     media_type: str = _DEFAULT_PREVIEW_MEDIA_TYPE,
 ) -> dict[str, Any]:
     """Store an isolation-render PNG and hang it on a fragment that had no preview (F3.2, P-7).
@@ -318,6 +319,10 @@ def attach_web_fragment_preview(
     is in the artifact's identity bytes, so a different picture is a different fragment — while
     this one is a picture taken of an already-minted artifact, after the fact, because nothing
     photographed it at birth. The DAL enforces the difference: once, never replaced.
+
+    ``preview_basis`` is required rather than defaulted, and that is deliberate: P-7's whole
+    labelling clause is that an isolation render must never pass for a source-site crop, and a
+    default would be a caller forgetting to say which one this is.
     """
     digest = _digest(preview)
 
@@ -335,6 +340,7 @@ def attach_web_fragment_preview(
             workspace_id=workspace_id,
             fragment_id=fragment_id,
             preview_digest=digest,
+            preview_basis=preview_basis,
         )
 
     return DesignStoreBridge(workspace_id)._run(_persist)

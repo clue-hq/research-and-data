@@ -80,8 +80,8 @@ BIRTH_STATUSES = (FRAGMENT_STATUS_DRAFT, FRAGMENT_STATUS_DORMANT)
 
 _COLUMNS = (
     "fragment_id, workspace_id, source_kit_id, source_kit_version, source_url, section_role, "
-    "label, status, payload_digest, preview_digest, provenance_json, degraded, degraded_reason, "
-    "derived_from, derived_reason, created_at, updated_at"
+    "label, status, payload_digest, preview_digest, preview_basis, provenance_json, degraded, "
+    "degraded_reason, derived_from, derived_reason, created_at, updated_at"
 )
 
 
@@ -97,6 +97,11 @@ def _from_row(row: Any) -> JsonObject:
         "status": row.status,
         "payload_digest": row.payload_digest,
         "preview_digest": row.preview_digest,
+        # How the picture that is actually THERE was made (F3.2, ruling P-7). NULL means "the
+        # mint's own crop"; the mint's account of it is in the provenance. A picture attached
+        # later says so here, because the provenance is frozen and is about the mint, not
+        # about a photograph taken afterwards.
+        "preview_basis": row.preview_basis,
         "provenance": load_json(row.provenance_json),
         "degraded": bool(row.degraded),
         "degraded_reason": row.degraded_reason,
@@ -474,14 +479,27 @@ async def set_web_fragment_status(
 
 
 async def attach_web_fragment_preview(
-    conn: AsyncConnection, *, workspace_id: str, fragment_id: str, preview_digest: str
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    fragment_id: str,
+    preview_digest: str,
+    preview_basis: str,
 ) -> JsonObject:
     """Give a fragment that has no preview one — once, and never again (F3.2, ruling P-7).
 
-    The third permitted write, and the narrowest: NULL → a digest. A row that already carries a
-    preview is refused HERE with a sentence, and refused again by the trigger the migration
-    installs, for the same reason the lineage rule is written twice — one makes it legible to the
-    writer we have, the other makes it true of every writer.
+    The third permitted write, and the narrowest: NULL → a digest **and the kind of picture it
+    is**. A row that already carries a preview is refused HERE with a sentence, and refused again
+    by the trigger the migration installs, for the same reason the lineage rule is written twice —
+    one makes it legible to the writer we have, the other makes it true of every writer.
+
+    **The basis is written here because it is a fact about THIS picture.** ``provenance_json``
+    records what the MINT saw and is frozen with the artifact, which is right — but a picture
+    taken afterwards is not the mint's picture, and reading the mint's word for it mislabels two
+    real rows: a repair, whose provenance names no basis at all, and a section the capture
+    measured but could not crop, whose provenance says ``measured`` while it holds no picture. On
+    the second one, taking provenance's word would present an isolation render our own engine drew
+    as a crop of the live site, which is the exact substitution P-7 forbids.
 
     **Why the column can move at all.** ``preview_digest`` is part of the artifact's identity
     bytes, so it is content in the sense that changing it at MINT time makes a different fragment.
@@ -497,28 +515,55 @@ async def attach_web_fragment_preview(
     """
     if not (preview_digest or "").strip():
         raise ValueError("a preview digest is the sha256 of the bytes stored, not an empty string")
+    if not (preview_basis or "").strip():
+        raise ValueError(
+            "an attached preview names how it was made — an unlabelled picture is the thing "
+            "ruling P-7 exists to prevent"
+        )
     current = await get_web_fragment(conn, workspace_id=workspace_id, fragment_id=fragment_id)
     if current.get("preview_digest"):
-        raise DesignFragmentPreviewError(
-            fragment_id,
-            "preview_present",
-            f"fragment {fragment_id} already carries a preview: a preview is attached once and "
-            "never replaced, because a human's decision was made against the picture that is "
-            "there. Mint a new fragment rather than re-picturing this one",
-        )
-    await conn.execute(
+        raise _preview_present(fragment_id)
+    result = await conn.execute(
         text(
-            "UPDATE design_web_fragment SET preview_digest = :preview_digest, updated_at = now() "
+            "UPDATE design_web_fragment "
+            "SET preview_digest = :preview_digest, preview_basis = :preview_basis, "
+            "    updated_at = now() "
             "WHERE fragment_id = :fragment_id AND workspace_id = :workspace_id "
             "AND preview_digest IS NULL"
         ),
         {
             "preview_digest": preview_digest,
+            "preview_basis": preview_basis,
             "fragment_id": fragment_id,
             "workspace_id": workspace_id,
         },
     )
+    if result.rowcount == 0:
+        # The read above passed and the write matched nothing, so a concurrent attach won the
+        # race between them: the predicate is re-evaluated under the row lock, and the loser's
+        # UPDATE quietly matches zero rows without the trigger ever firing (no row changed).
+        # Left unchecked this is the one path that returns 200 carrying somebody ELSE'S picture,
+        # with neither refusal this function promises. Both pictures are of the same artifact, so
+        # the harm is small — but "attached once" is a claim, and a claim that is silently false
+        # under concurrency is worse than a slower one that is true.
+        raise _preview_present(fragment_id)
     return await get_web_fragment(conn, workspace_id=workspace_id, fragment_id=fragment_id)
+
+
+def _preview_present(fragment_id: str) -> DesignFragmentPreviewError:
+    """The one refusal for "this row already has a picture", however it was discovered.
+
+    Written once because :func:`attach_web_fragment_preview` discovers it twice — by reading the
+    row, and by an UPDATE that matches nothing because somebody else got there in between — and
+    the caller is owed the same sentence either way.
+    """
+    return DesignFragmentPreviewError(
+        fragment_id,
+        "preview_present",
+        f"fragment {fragment_id} already carries a preview: a preview is attached once and "
+        "never replaced, because a human's decision was made against the picture that is "
+        "there. Mint a new fragment rather than re-picturing this one",
+    )
 
 
 async def set_web_fragment_degraded(

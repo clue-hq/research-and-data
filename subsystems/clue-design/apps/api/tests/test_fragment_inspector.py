@@ -86,7 +86,10 @@ def _mint(
     provenance: dict[str, Any] = {
         "page_url": SOURCE_URL,
         "section_index": section_index,
-        "preview_basis": "measured" if not hidden else None,
+        # A repair's provenance (`_repair_provenance`) names no basis at all — it was composed,
+        # not cropped — and a hidden section was never rendered, so neither carries one. Only a
+        # harvested visible section does, which is what makes the mislabel path above reachable.
+        "preview_basis": None if (hidden or derived_from) else "measured",
     }
     if hidden:
         provenance["hidden_on_source"] = {
@@ -265,6 +268,66 @@ def test_a_section_that_is_not_hidden_has_nothing_to_activate(
     assert refusal.json()["detail"]["code"] == "fragment.not_dormant"
 
 
+def test_an_isolation_render_is_never_reported_as_a_crop_of_the_live_site(
+    client: TestClient, workspace_id: str, design_storage: FsStorage
+) -> None:
+    """P-7's labelling clause, on the row that would otherwise lie about it.
+
+    A section the capture MEASURED but could not crop (no screenshot stored — a branch the mint
+    handles explicitly) is born with no picture and `provenance.preview_basis = "measured"`.
+    Reading the mint's word for a photograph taken afterwards would present an isolation render
+    our own engine drew as a crop of the live site, which is exactly the substitution the ruling
+    forbids. The row's own basis, written by the attach, is what the card reports.
+    """
+    row = _mint(workspace_id, design_storage, sentinel="Measured but never cropped")
+    before = client.get(f"/web/fragments/{row['fragment_id']}").json()
+    assert before["preview"]["path"] is None
+    assert before["preview"]["basis"] == "measured"  # the mint's own account, and it is stale
+
+    after = client.post(f"/web/fragments/{row['fragment_id']}/preview").json()
+    assert after["preview"]["path"].startswith("/asset-store/")
+    assert after["preview"]["basis"] == "isolation_render"
+    assert after["preview"]["basis"] != "measured"
+
+
+def test_a_repairs_isolation_render_is_labelled_rather_than_left_blank(
+    client: TestClient, workspace_id: str, design_storage: FsStorage
+) -> None:
+    """The other half: a repair's provenance names no basis at all, so an unlabelled picture is
+    what the human releasing it would otherwise be shown."""
+    _original, repair = _degraded_original_with_repair(workspace_id, design_storage)
+    assert client.get(f"/web/fragments/{repair['fragment_id']}").json()["preview"]["basis"] is None
+    after = client.post(f"/web/fragments/{repair['fragment_id']}/preview").json()
+    assert after["preview"]["basis"] == "isolation_render"
+
+
+def test_a_picture_the_mint_itself_took_keeps_the_mints_own_account_of_it(
+    client: TestClient, workspace_id: str, design_storage: FsStorage
+) -> None:
+    """The fallback is right for exactly the rows it is about, and this pins that direction.
+
+    A harvested section whose crop the mint made reports the mint's basis — the row's own column
+    is NULL, because nothing was attached to it after the fact.
+    """
+    row, _artifact = create_web_fragment(
+        design_storage,
+        workspace_id=workspace_id,
+        html=_html("A section the capture cropped"),
+        css=".band { padding: 96px }",
+        rehosted={f"/asset-store/{CLONE_DIGEST}": CLONE_DIGEST},
+        source_url=SOURCE_URL,
+        section_role="hero",
+        slots=SLOTS,
+        preview=b"\x89PNG\r\n\x1a\n-a-real-crop",
+        provenance={"page_url": SOURCE_URL, "section_index": 2, "preview_basis": "measured"},
+    )
+    card = client.get(f"/web/fragments/{row['fragment_id']}").json()
+    assert card["preview"]["path"].startswith("/asset-store/")
+    assert card["preview"]["basis"] == "measured"
+    # …and it cannot be re-pictured, so the label can never be overwritten either.
+    assert client.post(f"/web/fragments/{row['fragment_id']}/preview").status_code == 409
+
+
 # --------------------------------------------------------------------------- #
 # D-F6 — the degraded → repaired lineage, and R17-2's retire
 # --------------------------------------------------------------------------- #
@@ -368,6 +431,58 @@ def test_two_released_repairs_are_reported_as_contested_and_one_can_be_retired(
     settled = client.get(f"/web/fragments/{original['fragment_id']}").json()
     assert settled["lineage_ambiguous"] == []
     assert settled["superseded_by"] == first["fragment_id"]
+
+
+def test_every_repair_in_the_family_is_retirable_from_any_members_card(
+    client: TestClient, workspace_id: str, design_storage: FsStorage
+) -> None:
+    """RULING R18-1, and the shape that made the old direct-children list unreachable.
+
+    A repair-of-a-repair is nobody's direct child except its own parent's, and its parent is
+    typically on no page — so a grandchild leaf got a Retire button nowhere at all, and the
+    contested-lineage dead end R17-2 exists to end stayed a dead end with the affordance built.
+    The card now carries the FAMILY, resolved by the lineage resolver, from every member.
+    """
+    original, child = _degraded_original_with_repair(workspace_id, design_storage)
+    grandchild = _mint(
+        workspace_id,
+        design_storage,
+        sentinel="A repair of the repair",
+        label="Repaired — Repaired — Products",
+        derived_from=child["fragment_id"],
+        derived_reason="repair rung 2 (an equivalent interaction); trigger dead_height; carousel",
+    )
+    ids = {original["fragment_id"], child["fragment_id"], grandchild["fragment_id"]}
+
+    for member in (original, child, grandchild):
+        card = client.get(f"/web/fragments/{member['fragment_id']}").json()
+        family = {entry["fragment_id"]: entry for entry in card["family"]}
+        # Every member sees the whole family, from any end of the chain.
+        assert set(family) == ids, member["fragment_id"]
+        # The root is named, and it is the harvested original.
+        assert card["lineage_root"] == original["fragment_id"]
+        assert family[original["fragment_id"]]["is_root"] is True
+        # Both repairs carry a lawful retire verdict; the original carries the refusal (R17-3).
+        assert family[child["fragment_id"]]["retirement"]["retirable"] is True
+        assert family[grandchild["fragment_id"]]["retirement"]["retirable"] is True
+        assert family[original["fragment_id"]]["retirement"]["reason"] == "not_a_repair"
+        # …and each names its own parent, so the chain is readable rather than a flat list.
+        assert family[grandchild["fragment_id"]]["derived_from"] == child["fragment_id"]
+
+    # The button the family offers is the one the route honours.
+    retired = client.post(f"/web/fragments/{grandchild['fragment_id']}/retire")
+    assert retired.status_code == 200, retired.text
+    assert retired.json()["status"] == "deprecated"
+
+
+def test_a_clone_with_no_repairs_is_a_family_of_one(
+    client: TestClient, workspace_id: str, design_storage: FsStorage
+) -> None:
+    row = _mint(workspace_id, design_storage, sentinel="An only child")
+    card = client.get(f"/web/fragments/{row['fragment_id']}").json()
+    assert [entry["fragment_id"] for entry in card["family"]] == [row["fragment_id"]]
+    assert card["family"][0]["is_root"] is True
+    assert card["family"][0]["retirement"]["retirable"] is False
 
 
 def test_the_harvested_original_is_never_retired(

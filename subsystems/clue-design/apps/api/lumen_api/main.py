@@ -4603,12 +4603,24 @@ def create_app(
         loaded = read_web_fragment(
             app.state.storage, workspace_id=workspace_id, fragment_id=fragment_id
         )
+        # Asked BEFORE the render, off the row that was just read. The attach refuses this
+        # anyway, but discovering it there means a browser launch and up to
+        # ISOLATION_TIMEOUT_MS of work whose only possible outcome is a 409 and an orphan blob.
+        # The verdict is free here; the picture is not.
+        if loaded.row.get("preview_digest"):
+            raise DesignFragmentPreviewError(
+                fragment_id,
+                "preview_present",
+                f"fragment {fragment_id} already carries a preview: a preview is attached once "
+                "and never replaced, because a human's decision was made against the picture "
+                "that is there",
+            )
         # No brand kit is threaded in: a harvested clone carries all of its own styling, and a
         # repair's artifact carries a stylesheet compiled against its kit at repair time —
         # including the theme's own custom properties (F3.1 §1.3). Handing a kit here would be a
         # second opinion about how the section looks.
         try:
-            png, _page = render_isolation_preview(
+            png, page = render_isolation_preview(
                 app.state.core, loaded, read_blob=blob_store(repo).read_blob
             )
         except IsolationRenderFailed as failure:
@@ -4625,6 +4637,11 @@ def create_app(
             workspace_id=workspace_id,
             fragment_id=fragment_id,
             preview=png,
+            # P-7's labelling clause, made durable: the kind of picture comes from the thing
+            # that MADE it, and lands on the row beside the digest — never inferred later from
+            # the mint's provenance, which is about the mint's own crop and would say nothing
+            # for a repair and "measured" for a section the capture measured but never cropped.
+            preview_basis=page.basis,
             media_type=ISOLATION_PREVIEW_MEDIA_TYPE,
         )
         return fragment_card(

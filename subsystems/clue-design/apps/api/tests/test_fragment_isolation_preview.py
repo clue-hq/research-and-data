@@ -37,7 +37,13 @@ from lumen_api.fragments import (
     render_isolation_preview,
     set_web_fragment_status,
 )
-from lumen_api.fragments.isolation import IsolationPage, build_isolation_page, isolation_web_doc
+from lumen_api.fragments.isolation import (
+    IsolationPage,
+    build_isolation_page,
+    held_isolation_asset,
+    isolation_web_doc,
+    screenshot_isolation_page,
+)
 from lumen_api.fragments.slots import SlotSpec
 
 SENTINEL = "The clinic nobody was shown"
@@ -196,9 +202,92 @@ def test_a_byte_the_workspace_no_longer_holds_leaves_a_gap_not_a_failure(
     assert seen["assets"] == {}
 
 
-def test_the_basis_says_which_kind_of_picture_this_is() -> None:
-    """P-7 is explicit that this is an isolation render, NOT a source-site screenshot crop."""
-    assert ISOLATION_RENDER_BASIS == "isolation_render"
+def test_the_page_carries_the_kind_of_picture_it_is(
+    workspace_id: str, design_storage: FsStorage
+) -> None:
+    """P-7's labelling clause: the label comes from the thing that MADE the picture.
+
+    Replaces an earlier version of this test that compared the constant to its own literal —
+    which passed while the value reached no row and no reader (review finding M-9).
+    """
+    row = _mint_dormant(workspace_id, design_storage)
+    loaded = read_web_fragment(
+        design_storage, workspace_id=workspace_id, fragment_id=row["fragment_id"]
+    )
+    page = build_isolation_page(_FakeCore(), loaded)
+    assert page.basis == ISOLATION_RENDER_BASIS
+
+    attached = attach_web_fragment_preview(
+        design_storage,
+        workspace_id=workspace_id,
+        fragment_id=row["fragment_id"],
+        preview=PNG,
+        preview_basis=page.basis,
+    )
+    # …and it is DURABLE: the row itself now says what kind of picture it holds.
+    assert attached["preview_basis"] == ISOLATION_RENDER_BASIS
+
+
+def test_an_unlabelled_picture_is_refused_rather_than_stored(
+    workspace_id: str, design_storage: FsStorage
+) -> None:
+    """An unlabelled picture is the state P-7 exists to prevent, so it is not a valid write."""
+    row = _mint_dormant(workspace_id, design_storage)
+    with pytest.raises(ValueError):
+        attach_web_fragment_preview(
+            design_storage,
+            workspace_id=workspace_id,
+            fragment_id=row["fragment_id"],
+            preview=PNG,
+            preview_basis="",
+        )
+
+
+def test_only_bytes_this_workspace_holds_may_be_served_to_the_render() -> None:
+    """The fail-closed rule, without a browser.
+
+    It is the thing standing between "a picture of the artifact" and "a picture of the internet",
+    and it used to be reachable only by launching Chromium (review finding M-8).
+    """
+    held = {CLONE_DIGEST: ("image/png", b"ward")}
+    assert held_isolation_asset(f"https://x.invalid/asset-store/{CLONE_DIGEST}", held) == (
+        "image/png",
+        b"ward",
+    )
+    # A query string after the digest is still this digest — matching on the whole URL used to
+    # abort a legitimate asset here, which fails quietly as a hole in the picture.
+    assert held_isolation_asset(
+        f"https://x.invalid/asset-store/{CLONE_DIGEST}?v=2", held
+    ) == ("image/png", b"ward")
+    # Everything else is aborted: another origin's font, a beacon, a digest we do not hold.
+    assert held_isolation_asset("https://fonts.example/x.woff2", held) is None
+    assert held_isolation_asset(f"https://x.invalid/asset-store/{'ff' * 32}", held) is None
+    assert held_isolation_asset("https://x.invalid/asset-store/", held) is None
+
+
+def test_a_missing_browser_refuses_typed_rather_than_escaping_as_a_500(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The deploy note's claim, tested: an API process with no Playwright refuses by name."""
+    import builtins
+
+    real_import = builtins.__import__
+
+    def _no_playwright(name: str, *args: Any, **kwargs: Any) -> Any:
+        if name.startswith("playwright"):
+            raise ModuleNotFoundError("No module named 'playwright'")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", _no_playwright)
+    page = IsolationPage(
+        fragment_id="frag_" + "ab" * 8,
+        html="<html></html>",
+        asset_digests=(),
+        element_selector=".lumen-frag-x",
+    )
+    with pytest.raises(IsolationRenderFailed) as refusal:
+        screenshot_isolation_page(page, {})
+    assert refusal.value.code == "isolation.render_failed"
 
 
 # --------------------------------------------------------------------------- #
@@ -217,6 +306,7 @@ def test_a_dormant_clone_with_a_preview_can_finally_be_activated(
         workspace_id=workspace_id,
         fragment_id=row["fragment_id"],
         preview=PNG,
+        preview_basis=ISOLATION_RENDER_BASIS,
     )
     assert attached["preview_digest"]
     # …and the gate that refused before now lets the human through.
@@ -237,6 +327,7 @@ def test_the_attached_bytes_are_readable_back_out_of_custody(
         workspace_id=workspace_id,
         fragment_id=row["fragment_id"],
         preview=PNG,
+        preview_basis=ISOLATION_RENDER_BASIS,
     )
     blobs = DesignBlobStore(design_storage, workspace_id)
     media_type, data = blobs.read_blob(attached["preview_digest"])
@@ -249,7 +340,11 @@ def test_a_preview_is_attached_once_and_never_replaced(
 ) -> None:
     row = _mint_dormant(workspace_id, design_storage)
     attach_web_fragment_preview(
-        design_storage, workspace_id=workspace_id, fragment_id=row["fragment_id"], preview=PNG
+        design_storage,
+        workspace_id=workspace_id,
+        fragment_id=row["fragment_id"],
+        preview=PNG,
+        preview_basis=ISOLATION_RENDER_BASIS,
     )
     with pytest.raises(DesignFragmentPreviewError) as refusal:
         attach_web_fragment_preview(
@@ -257,6 +352,7 @@ def test_a_preview_is_attached_once_and_never_replaced(
             workspace_id=workspace_id,
             fragment_id=row["fragment_id"],
             preview=PNG + b"-different",
+            preview_basis=ISOLATION_RENDER_BASIS,
         )
     assert refusal.value.reason == "preview_present"
     assert row["fragment_id"] in str(refusal.value)
@@ -268,7 +364,11 @@ def test_attaching_a_preview_changes_nothing_else_about_the_row(
     """The relaxation is one column in one direction; the artifact stays as frozen as it was."""
     row = _mint_dormant(workspace_id, design_storage)
     attached = attach_web_fragment_preview(
-        design_storage, workspace_id=workspace_id, fragment_id=row["fragment_id"], preview=PNG
+        design_storage,
+        workspace_id=workspace_id,
+        fragment_id=row["fragment_id"],
+        preview=PNG,
+        preview_basis=ISOLATION_RENDER_BASIS,
     )
     for key in (
         "fragment_id",
@@ -296,4 +396,5 @@ def test_a_foreign_workspaces_fragment_cannot_be_given_a_preview(
             workspace_id=workspace_id + "_neighbour",
             fragment_id=row["fragment_id"],
             preview=PNG,
+            preview_basis=ISOLATION_RENDER_BASIS,
         )
