@@ -788,6 +788,11 @@ def _mint_one(
                 fragment_id=row.get("fragment_id"),
                 degraded=assessment.finding is not None,
                 was_degraded=bool(row.get("degraded")),
+                # Carried on the failure emission too (ledger T16-N5): every OTHER `LUMI0536`
+                # has a `reason`, and a consumer reading `d["reason"]` should not KeyError on
+                # whichever of the two emitters it happens to meet. `None` here is the honest
+                # value — there is no reason code when the measurement found nothing wrong.
+                reason=assessment.finding.reason if assessment.finding is not None else None,
                 applied=False,
                 error=f"{type(error).__name__}: {error}",
             )

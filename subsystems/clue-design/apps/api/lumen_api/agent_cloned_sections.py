@@ -306,6 +306,21 @@ def _resolve_lineages(rows: List[JsonObject]) -> Dict[str, LineageVerdict]:
 resolve_fragment_lineages = _resolve_lineages
 
 
+def _page_url(row: JsonObject) -> Optional[str]:
+    """Which page a cloned section came from, read ONE way (ledger T17-M3).
+
+    The mint records it in provenance; a row from a producer that did not falls back to the
+    fragment's ``source_url``, which is the same page by construction. Written here rather than
+    inline at each reader because the listing had two readers and they disagreed — the ordering
+    fell back and the projection did not, so a row with no recorded page url sorted under its
+    source url and then reported no page at all.
+    """
+    provenance = row.get("provenance")
+    provenance = provenance if isinstance(provenance, dict) else {}
+    page_url = provenance.get("page_url") or row.get("source_url")
+    return str(page_url) if isinstance(page_url, str) and page_url else None
+
+
 def _slot_summary(slot_manifest: Any) -> List[JsonObject]:
     """``[{key, kind}, …]`` — the half of an artifact's slot manifest an author must see.
 
@@ -411,7 +426,7 @@ class DurableAgentClonedSectionRegistry:
         provenance = provenance if isinstance(provenance, dict) else {}
         index = provenance.get("section_index")
         return (
-            str(provenance.get("page_url") or row.get("source_url") or ""),
+            _page_url(row) or "",
             int(index) if isinstance(index, int) else 1_000_000,
             str(row.get("fragment_id") or ""),
         )
@@ -443,7 +458,12 @@ class DurableAgentClonedSectionRegistry:
             "slot_keys": [str(key) for key in slot_keys]
             if isinstance(slot_keys, list)
             else [],
-            "page_url": provenance.get("page_url"),
+            # Same fallback the ORDERING uses (ledger T17-M3). They disagreed: `_document_order`
+            # falls back to `source_url` when the mint recorded no `page_url`, and this did not —
+            # so such a row sorted under its source url and then projected `page_url: None`,
+            # which the recreate reads as a page named "" and refuses as ambiguous. One fallback,
+            # written once, so the page a section is sorted onto is the page it reports.
+            "page_url": _page_url(row),
             # Where this section sat on its page — the one fact that makes a list of clones read
             # like the page it came from rather than like a registry dump.
             "section_index": provenance.get("section_index"),
@@ -745,7 +765,6 @@ class DurableAgentClonedSectionRegistry:
         css: str,
         rung: int,
         note: str,
-        label: str | None = None,
     ) -> JsonObject:
         """Mint the replacement for a broken clone as a NEW, lineage-carrying fragment.
 
@@ -841,7 +860,7 @@ class DurableAgentClonedSectionRegistry:
             slots=list(detected.specs),
             source_url=str(original.get("source_url") or ""),
             section_role=str(original.get("section_role") or "other"),
-            label=label or _repair_label(original),
+            label=_repair_label(original),
             source_kit_id=original.get("source_kit_id"),
             source_kit_version=original.get("source_kit_version"),
             preview=None,
@@ -878,14 +897,38 @@ class DurableAgentClonedSectionRegistry:
         }
 
 
+#: What a repair's label says it is, before the clone's own words.
+_REPAIR_LABEL_PREFIX = "Repaired"
+
+
 def _repair_label(original: JsonObject) -> str:
     """A repair's human label, anchored on the clone it replaces.
 
     The original's own label is a page's words ("Hero — Care, on your terms"); a repair that
     invented a new one would sit in the picker looking like a different section entirely.
+
+    **The prefix does not stack** (ledger T17-M6). Repairing a repair used to produce
+    "Repaired — Repaired — Hero — Care, on your terms", and a third round another one — a picker
+    row whose label is mostly bookkeeping, and bookkeeping the LINEAGE already carries exactly
+    and this could only approximate. So the count is stated once: ``Repaired ×2 — Hero — …``,
+    and a reader who wants the chain reads the family on the card.
     """
     base = str(original.get("label") or original.get("section_role") or "section").strip()
-    return f"Repaired — {base}"[:200]
+    generation = 1
+    while True:
+        prefix, separator, rest = base.partition(" — ")
+        if not separator or not prefix.startswith(_REPAIR_LABEL_PREFIX):
+            break
+        suffix = prefix[len(_REPAIR_LABEL_PREFIX) :].strip()
+        if suffix:
+            if not (suffix.startswith("×") and suffix[1:].isdigit()):
+                break
+            generation += int(suffix[1:])
+        else:
+            generation += 1
+        base = rest.strip()
+    marker = _REPAIR_LABEL_PREFIX if generation == 1 else f"{_REPAIR_LABEL_PREFIX} ×{generation}"
+    return f"{marker} — {base}"[:200]
 
 
 def _repair_provenance(

@@ -911,12 +911,12 @@ def test_the_drop_rides_the_warnings_bucket_the_author_must_answer_for(
     warning = next(
         entry
         for entry in result["warnings"]
-        if entry.get("code") == "LUMA0601"
+        if entry.get("code") == "LUMA0810"
     )
     assert HERO_ID in warning["message"]
     assert "insert_cloned_section" in warning["hint"]
     assert not [
-        entry for entry in result["advice"] if entry.get("code") == "LUMA0601"
+        entry for entry in result["advice"] if entry.get("code") == "LUMA0810"
     ]
 
 
@@ -944,7 +944,7 @@ def test_a_page_with_no_clones_gains_no_drop_report(
     assert result["status"] == "ok"
     assert "dropped_cloned_sections" not in result
     assert not [
-        entry for entry in result["warnings"] if entry.get("code") == "LUMA0601"
+        entry for entry in result["warnings"] if entry.get("code") == "LUMA0810"
     ]
 
 
@@ -1061,3 +1061,69 @@ def test_search_says_how_many_matched_not_only_how_many_it_showed(
     assert narrowed["count"] == 1
     assert narrowed["total"] > 1
     assert "of" in narrowed["note"] and "limit" in narrowed["note"]
+
+
+def _seed_doc_with_two_pins_of_one_band(fragment_id: str = HERO_ID) -> dict:
+    """One band pinned TWICE — the same CTA above and below a long section is an ordinary page."""
+    doc = _seed_doc_with_pin(fragment_id)
+    page = doc["pages"][0]
+    page["nodes"]["root"]["children"] = ["sec_pinned", "sec_second"]
+    page["nodes"]["sec_second"] = {
+        "id": "sec_second",
+        "kind": "section",
+        "tag": "section",
+        "classes": "w-full",
+        "children": ["frg_second"],
+    }
+    page["nodes"]["frg_second"] = {
+        "id": "frg_second",
+        "kind": "fragment",
+        "classes": "",
+        "fragment_id": fragment_id,
+        "slots": {},
+    }
+    return doc
+
+
+def test_losing_one_of_two_pins_of_the_same_band_is_reported(
+    tmp_path: Path, registry: FakeRegistry
+) -> None:
+    """F3.4, the structural fix the F1 wave carried. The drop report was keyed by fragment id, so
+    a rewrite that removed ONE of two instances left the id present on both sides and said
+    nothing at all: the band-level truth held, and the page had silently lost half of it."""
+    tools = _tools_with(tmp_path, registry, _seed_doc_with_two_pins_of_one_band())
+
+    result = json.loads(
+        tools.author_web_subtree(
+            "sec_pinned", '<section id="sec_pinned"><h2 id="t">Replaced</h2></section>'
+        )
+    )
+
+    assert result["status"] == "ok"
+    (dropped,) = result["dropped_cloned_sections"]
+    assert dropped["fragment_id"] == HERO_ID
+    assert dropped["node_ids"] == ["frg_pinned"]
+    assert dropped["surviving_pins"] == 1
+    warning = next(
+        entry for entry in result["warnings"] if entry.get("code") == "LUMA0810"
+    )
+    # The sentence says which happened: "no longer on the page" would be false here.
+    assert "1 of its pins, 1 still on the page" in warning["message"]
+    assert "0 of them are no longer on the page at all" in warning["message"]
+
+
+def test_losing_both_pins_of_one_band_still_reads_as_a_whole_drop(
+    tmp_path: Path, registry: FakeRegistry
+) -> None:
+    tools = _tools_with(tmp_path, registry, _seed_doc_with_two_pins_of_one_band())
+
+    result = json.loads(tools.author_web_page(TWO_SECTIONS))
+
+    (dropped,) = result["dropped_cloned_sections"]
+    assert sorted(dropped["node_ids"]) == ["frg_pinned", "frg_second"]
+    assert dropped["surviving_pins"] == 0
+    warning = next(
+        entry for entry in result["warnings"] if entry.get("code") == "LUMA0810"
+    )
+    assert "1 of them are no longer on the page at all" in warning["message"]
+    assert "still on the page" not in warning["message"]

@@ -679,11 +679,19 @@ fn apply_fragment_slots(
         // map renders the artifact's own content — the same fallback an unbound
         // slot gets — and validates, so one bad slot costs the section its
         // personalization rather than costing the derive.
+        //
+        // ITS OWN CODE (clone-fidelity F3.4). This and the per-slot bound above
+        // both used to be `LUMW0606`, and they are not the same event: one slot
+        // falling back to the clone's own words is a personalization that did
+        // not land, while THIS drops every slot on the node — including the ones
+        // that substituted perfectly — so the whole section renders
+        // unpersonalized. A consumer filtering by code alone must not get two
+        // entries that mean different things.
         if let Some(issue) = fragment_slots_issue(&updated) {
             diagnostics.push(
                 Diagnostic::warning(
                     Phase::Web,
-                    "LUMW0606",
+                    "LUMW0607",
                     format!(
                         "derived fragment slots on `{id}` {issue}; every slot on this node was \
                          dropped and the cloned section renders its own content"
@@ -1636,10 +1644,58 @@ mod tests {
         // The derive must not produce a document its own validator rejects.
         assert!(!derived.has_errors(), "{:#?}", derived.diagnostics);
         assert!(fragment_slots(&derived.doc).is_empty());
+        // The PER-SLOT code: this one slot fell back to the clone's own words,
+        // and nothing else on the node was touched (F3.4).
         assert!(derived
             .diagnostics
             .iter()
             .any(|diagnostic| diagnostic.code == "LUMW0606"));
+        assert!(!derived
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "LUMW0607"));
+    }
+
+    #[test]
+    fn one_slot_over_the_bound_does_not_cost_the_node_its_other_slots() {
+        // The discriminating case for the F3.4 split: `headline` derives a value
+        // past the per-slot bound and falls back, while `blurb` substitutes and
+        // STAYS. Under one code a reader could not tell this from the backstop,
+        // which drops everything.
+        let tmpl = template_with_fragment(vec![
+            (
+                "headline",
+                FragmentSlotValue::Text("{{account.name}}".to_owned()),
+            ),
+            (
+                "blurb",
+                FragmentSlotValue::Text("{{account.blurb}}".to_owned()),
+            ),
+        ]);
+        let mut values = BTreeMap::new();
+        values.insert(
+            "account.name".to_owned(),
+            text_value(&"x".repeat(crate::doc::MAX_FRAGMENT_SLOT_VALUE_BYTES + 1)),
+        );
+        values.insert("account.blurb".to_owned(), text_value("Care, on your terms"));
+
+        let derived = derive_web_doc(&tmpl, &values, &[], &opts());
+
+        assert!(!derived.has_errors(), "{:#?}", derived.diagnostics);
+        let slots = fragment_slots(&derived.doc);
+        assert_eq!(
+            slots.get("blurb"),
+            Some(&FragmentSlotValue::Text("Care, on your terms".to_owned()))
+        );
+        assert!(!slots.contains_key("headline"));
+        assert!(derived
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "LUMW0606"));
+        assert!(!derived
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "LUMW0607"));
     }
 
     #[test]
@@ -1670,7 +1726,13 @@ mod tests {
         // costs the section its personalization — not the whole derive.
         assert!(!derived.has_errors(), "{:#?}", derived.diagnostics);
         assert!(fragment_slots(&derived.doc).is_empty());
+        // The BACKSTOP's own code, not the per-slot one (F3.4): this dropped
+        // `headline` too, and `headline` substituted perfectly.
         assert!(derived
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "LUMW0607"));
+        assert!(!derived
             .diagnostics
             .iter()
             .any(|diagnostic| diagnostic.code == "LUMW0606"));

@@ -250,6 +250,11 @@ FINDING_SHELL_ERROR = "review.shell_console_error"
 FINDING_SECTION_UNMEASURED = "review.section_unmeasured"
 #: The walk's evidence is not settled, so no durable marker may be written from it (R19-1).
 FINDING_EVIDENCE_UNSETTLED = "review.evidence_unsettled"
+#: The reduced-motion pass RAN and its two heights could not be compared (F3.4). Its own code
+#: rather than an abstention: the pass was made, so `abstention_findings` — which walks the
+#: classes that were never observed — cannot speak for it, and without this line a reader cannot
+#: tell "motion costs this page nothing" from "we did not find out".
+FINDING_REDUCED_MOTION_NOT_COMPARED = "review.reduced_motion_not_compared"
 
 
 def console_findings(entries: Iterable[ConsoleEntry]) -> tuple[PageFinding, ...]:
@@ -356,12 +361,19 @@ def reduced_motion_findings(walk: BehaviouralWalk) -> tuple[PageFinding, ...]:
     observation = walk.by_class(WALK_CLASS_REDUCED_MOTION)
     if not observation.made:
         return ()
+    # A pass that RAN and did not compare is not an abstention — `walk.abstentions` holds the
+    # classes that were never observed, and this one was — so it used to return nothing at all
+    # and read exactly like "no divergence" (F3.4). Both ways out say so instead.
     if observation.notes.get("heights_settled") is not True:
-        return ()
+        return (_reduced_motion_not_compared("neither height was read off a settled page"),)
     still = _positive(observation.notes.get("document_height_px"))
     moving = _positive(observation.notes.get("motion_document_height_px"))
     if still is None or moving is None or moving <= 0:
-        return ()
+        return (
+            _reduced_motion_not_compared(
+                "the pass came back without a usable document height for one or both states"
+            ),
+        )
     shortfall = (moving - still) / moving
     if shortfall <= REDUCED_MOTION_HEIGHT_TOLERANCE:
         return ()
@@ -381,6 +393,20 @@ def reduced_motion_findings(walk: BehaviouralWalk) -> tuple[PageFinding, ...]:
                 "tolerance": REDUCED_MOTION_HEIGHT_TOLERANCE,
             },
         ),
+    )
+
+
+def _reduced_motion_not_compared(because: str) -> PageFinding:
+    """The honest note for a reduced-motion pass that ran and measured nothing usable."""
+    return PageFinding(
+        code=FINDING_REDUCED_MOTION_NOT_COMPARED,
+        severity="warning",
+        message=(
+            f"the reduced-motion comparison was NOT made ({because}) — this review says nothing "
+            "about whether content on this page depends on an animation having run, which is not "
+            "the same as saying it does not"
+        ),
+        detail={"class": WALK_CLASS_REDUCED_MOTION, "because": because},
     )
 
 
@@ -589,6 +615,7 @@ __all__ = [
     "CRITIQUE_SCHEMA_VERSION",
     "FINDING_CONSOLE_ERROR",
     "FINDING_EVIDENCE_UNSETTLED",
+    "FINDING_REDUCED_MOTION_NOT_COMPARED",
     "FINDING_SECTION_UNMEASURED",
     "FINDING_SHELL_ERROR",
     "FINDING_NOT_OBSERVED",

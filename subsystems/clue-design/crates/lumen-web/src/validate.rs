@@ -12,7 +12,7 @@ use crate::doc::{
     ComponentSpec, EmbedProvider, FragmentSlotValue, WebDoc, WebNodeKind, MAX_TREE_DEPTH,
     WEB_SCHEMA_VERSION,
 };
-use crate::util::href_is_allowed;
+use crate::util::{href_is_allowed, quoted_id};
 use lumen_core::{AssetId, Diagnostic, DiagnosticSubject, NodeId, Phase};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -474,8 +474,9 @@ fn validate_page(doc: &WebDoc, page: &crate::doc::WebPage, diagnostics: &mut Vec
                             Phase::Web,
                             "LUMW0031",
                             format!(
-                                "custom component `{}` has invalid artifact id `{artifact_id}`",
-                                node.id
+                                "custom component `{}` has invalid artifact id `{}`",
+                                node.id,
+                                quoted_id(artifact_id)
                             ),
                             Some(DiagnosticSubject::Node(node.id.clone())),
                         )
@@ -500,8 +501,9 @@ fn validate_page(doc: &WebDoc, page: &crate::doc::WebPage, diagnostics: &mut Vec
                             Phase::Web,
                             "LUMW0033",
                             format!(
-                                "fragment `{}` has invalid fragment id `{fragment_id}`",
-                                node.id
+                                "fragment `{}` has invalid fragment id `{}`",
+                                node.id,
+                                quoted_id(fragment_id)
                             ),
                             Some(DiagnosticSubject::Node(node.id.clone())),
                         )

@@ -422,7 +422,7 @@ def test_a_degraded_clone_is_pinned_and_reported_as_work_not_as_a_note(
     assert result["needs_repair"][0]["reason"] == "dead_height"
     assert "artificial scroll height" in result["needs_repair"][0]["note"]
     warning = result["warnings"][0]
-    assert warning["code"] == "LUMA0602"
+    assert warning["code"] == "LUMA0811"
     assert warning["severity"] == "warning"
     assert "repair_cloned_section" in warning["hint"]
     # And it IS on the page: D-F6 keeps the harvested original pinnable while it is the only
@@ -637,14 +637,14 @@ def test_when_every_released_version_is_broken_the_ranking_is_stated(
     ]
     # ADVICE, not a warning: the band is already reported as work through `needs_repair`. And its
     # OWN code (ruling X4) — a consumer filtering by code alone must not get two entries under
-    # LUMA0602 meaning different things.
-    (advice,) = [item for item in result["advice"] if item.get("code") == "LUMA0603"]
+    # LUMA0811 meaning different things.
+    (advice,) = [item for item in result["advice"] if item.get("code") == "LUMA0812"]
     assert advice["severity"] == "advice"
     assert "oldest was pinned rather than none" in advice["message"]
     codes = [item.get("code") for item in result["warnings"] + result["advice"]]
-    assert codes.count("LUMA0602") == 1
+    assert codes.count("LUMA0811") == 1
     assert {item["severity"] for item in result["warnings"] + result["advice"]
-            if item.get("code") == "LUMA0602"} == {"warning"}
+            if item.get("code") == "LUMA0811"} == {"warning"}
 
 
 def test_the_picker_says_when_a_family_has_two_released_repairs(
@@ -861,7 +861,7 @@ def test_the_repair_does_not_report_the_clone_it_replaced_as_an_accidental_loss(
     )
 
     codes = [warning.get("code") for warning in result.get("warnings") or []]
-    assert "LUMA0601" not in codes
+    assert "LUMA0810" not in codes
     assert "dropped_cloned_sections" not in result
 
 
@@ -970,7 +970,7 @@ def test_a_repair_that_converges_onto_a_BROKEN_released_row_reports_it_rather_th
     assert _pinned_in_order(tools) == [REPAIR_ID]
     # The band that landed is itself broken, and the third door says so like the other two.
     assert [entry["fragment_id"] for entry in result["needs_repair"]] == [REPAIR_ID]
-    assert any(w.get("code") == "LUMA0602" for w in result["warnings"])
+    assert any(w.get("code") == "LUMA0811" for w in result["warnings"])
 
 
 def test_the_repair_refuses_a_clone_that_is_not_on_the_page(
@@ -1045,7 +1045,7 @@ def test_pinning_a_broken_band_the_ordinary_way_reports_it_too(
     assert result["needs_repair"][0]["reason"] == "dead_height"
     assert result["needs_repair"][0]["section_node_id"] == result["section_node_id"]
     warning = result["warnings"][0]
-    assert warning["code"] == "LUMA0602"
+    assert warning["code"] == "LUMA0811"
     assert "repair_cloned_section" in warning["hint"]
 
 
@@ -1067,7 +1067,7 @@ def test_the_broken_pin_warning_never_claims_a_repair_does_not_exist_when_it_doe
     result = json.loads(tools.insert_cloned_section(PROOF_ID))
 
     warning = result["warnings"][0]
-    assert warning["code"] == "LUMA0602"
+    assert warning["code"] == "LUMA0811"
     assert "no released repair" not in warning["message"]
     assert "ALREADY HAVE a released repair" in warning["hint"]
     assert f"{PROOF_ID} -> {REPAIR_ID}" in warning["hint"]
@@ -1096,7 +1096,7 @@ def test_the_broken_pin_warning_never_advises_a_THIRD_repair_of_a_contested_band
     result = json.loads(tools.insert_cloned_section(PROOF_ID))
 
     warning = result["warnings"][0]
-    assert warning["code"] == "LUMA0602"
+    assert warning["code"] == "LUMA0811"
     assert "no released repair" not in warning["message"]
     assert "MORE THAN ONE released repair" in warning["hint"]
     assert "frag_00000000000000b2" in warning["hint"]

@@ -869,3 +869,34 @@ def test_the_cascade_report_no_longer_counts_utilities_our_own_scan_invented(
     assert not [
         warning for warning in manifest["warnings"] if "mt-24" in warning
     ], manifest["warnings"]
+
+
+def test_a_page_with_no_cloned_sections_is_not_rendered_a_second_time() -> None:
+    """F3.4, the guard the F2 wave deferred. The second render exists only to take fragments OUT,
+    so on a document that pins none it returns the html already in hand — and asking the engine
+    for it costs a whole extra round trip on every export and publish of every ordinary page."""
+    from lumen_api.web_export import _document_only_html
+
+    class _CountingCore:
+        def __init__(self) -> None:
+            self.renders = 0
+
+        def web_render(self, *args, **kwargs):
+            self.renders += 1
+            return {"html": "<main>document only</main>"}
+
+    plain = _web_doc("doc_plain", {"id": "copy", "kind": "text", "text": "Hello"})
+    core = _CountingCore()
+    assert _document_only_html(core, plain, "<main>rendered</main>") == "<main>rendered</main>"
+    assert core.renders == 0
+
+    # …and a document that DOES pin one still gets its fragment-free render.
+    pinned = _web_doc(
+        "doc_pinned",
+        {"id": "clone", "kind": "fragment", "fragment_id": "frag_0123456789abcdef"},
+    )
+    core = _CountingCore()
+    assert _document_only_html(core, pinned, "<main>rendered</main>") == (
+        "<main>document only</main>"
+    )
+    assert core.renders == 1

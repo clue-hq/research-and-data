@@ -928,7 +928,16 @@ def _document_only_html(core: Any, web_doc: JsonObject, rendered: str, **render_
 
     Falls back to the rendered page if the second render produces nothing, because a missing
     stylesheet is a worse failure than an over-broad one.
+
+    **A page with no cloned sections is not re-rendered at all** (F3.4; the guard the F2 wave
+    deferred). The second render exists only to take fragments OUT, so on a document that pins
+    none it produces, by construction, the html already in hand — at the cost of a whole extra
+    engine round trip on every export and publish of every ordinary page, which is most of them.
+    Skipping it is not an optimisation of the scan's input; it is the same input, arrived at
+    without asking twice.
     """
+    if not web_doc_fragment_ids(web_doc, HOME_PAGE_ID):
+        return rendered
     second = core.web_render(web_doc, HOME_PAGE_ID, fragments={}, fragment_css="", **render_kwargs)
     return (second.get("html") or "") or rendered
 

@@ -48,6 +48,7 @@ from lumen_api.clone_review.findings import (
     FINDING_CONSOLE_ERROR,
     FINDING_NOT_OBSERVED,
     FINDING_REDUCED_MOTION,
+    FINDING_REDUCED_MOTION_NOT_COMPARED,
     FINDING_SECTION_ABSENT,
 )
 from lumen_api.clone_review.walk import (
@@ -97,6 +98,19 @@ def _walk(
     reduced_notes: dict | None = None,
     mobile_made: bool = True,
 ) -> BehaviouralWalk:
+    # A SETTLED, equal-height reduced-motion pair by default. The old default was an empty notes
+    # dict, which is the "the pass ran and compared nothing" shape — and since F3.4 that shape is
+    # a finding of its own, which is the whole point: a fake whose default silently means "we did
+    # not find out" is the confusion the note exists to end.
+    reduced_notes = (
+        reduced_notes
+        if reduced_notes is not None
+        else {
+            "document_height_px": 9000.0,
+            "motion_document_height_px": 9000.0,
+            "heights_settled": True,
+        }
+    )
     return BehaviouralWalk(
         observations=(
             WalkObservation(
@@ -126,7 +140,7 @@ def _walk(
             WalkObservation(
                 walk_class=WALK_CLASS_REDUCED_MOTION,
                 made=True,
-                notes=reduced_notes or {},
+                notes=reduced_notes,
             ),
         )
     )
@@ -431,8 +445,11 @@ def test_a_page_that_is_the_same_height_without_motion_says_nothing():
     assert [f for f in critique.page_findings if f.code == FINDING_REDUCED_MOTION] == []
 
 
-def test_an_unsettled_height_pair_is_never_compared():
-    """The divergence ratio is only as good as its worst half (round-3 re-review)."""
+def test_an_unsettled_height_pair_is_never_compared_and_the_review_says_so():
+    """The divergence ratio is only as good as its worst half (round-3 re-review) — and the
+    silence that leaves is itself reported (F3.4). The pass RAN, so `abstention_findings` cannot
+    speak for it, and without a line of its own a reader cannot tell "motion costs this page
+    nothing" from "we did not find out"."""
     walk = _walk(
         reduced_notes={
             "document_height_px": 4000.0,
@@ -442,6 +459,43 @@ def test_an_unsettled_height_pair_is_never_compared():
     )
     critique = compose_critique(walk)
     assert [f for f in critique.page_findings if f.code == FINDING_REDUCED_MOTION] == []
+    (note,) = [
+        f
+        for f in critique.page_findings
+        if f.code == FINDING_REDUCED_MOTION_NOT_COMPARED
+    ]
+    assert note.severity == "warning"
+    assert "NOT made" in note.message
+    assert "settled" in note.detail["because"]
+    # …and it is not an abstention: the class was observed.
+    assert [f for f in critique.page_findings if f.code == "review.not_observed"] == []
+
+
+def test_a_reduced_motion_pass_with_no_usable_heights_says_so_too():
+    walk = _walk(reduced_notes={"heights_settled": True})
+    critique = compose_critique(walk)
+    (note,) = [
+        f
+        for f in critique.page_findings
+        if f.code == FINDING_REDUCED_MOTION_NOT_COMPARED
+    ]
+    assert "document height" in note.detail["because"]
+
+
+def test_a_compared_reduced_motion_pass_leaves_no_not_compared_note():
+    walk = _walk(
+        reduced_notes={
+            "document_height_px": 8900.0,
+            "motion_document_height_px": 9000.0,
+            "heights_settled": True,
+        }
+    )
+    critique = compose_critique(walk)
+    assert [
+        f
+        for f in critique.page_findings
+        if f.code == FINDING_REDUCED_MOTION_NOT_COMPARED
+    ] == []
 
 
 # --- red case 5: advice-only ---------------------------------------------------------------------

@@ -316,31 +316,44 @@ _ASSET_SEARCH_LIMIT_MAX = 20
 #: F2.3. Same ceiling as the asset search for the same reason — a discovery result is something
 #: the model READS, and twenty sections is already more than a page has room for.
 _CLONED_SECTION_SEARCH_LIMIT_MAX = 20
-#: The diagnostic code for "this rewrite took cloned sections off the page". `LUMA` because it is
-#: the AGENT substrate speaking, not the engine (whose codes are `LUMW`/`LUMI`) — nothing in the
-#: engine can know that a lost pin was something a human released and a director chose.
-_CLONED_SECTION_DROPPED_CODE = "LUMA0601"
-#: The diagnostic code for "a cloned section on this page is marked broken and has no released
-#: repair" (F3.1, ruling D-F6). `LUMA` for the same reason as its neighbour: the engine renders a
-#: degraded band exactly as it renders a healthy one and cannot know the difference — the
-#: judgement is the registry's, and this is the agent substrate relaying it as work.
-_CLONED_SECTION_DEGRADED_CODE = "LUMA0602"
+#: THE AGENT SUBSTRATE'S OWN BLOCK — ``LUMA08xx``, and the whole of it (F3.4).
+#:
+#: These three lived at ``LUMA0601``–``LUMA0603`` and COLLIDED, code for code, with the
+#: asset-ingest family the Rust asset crate emits and
+#: ``docs/phase-e-asset-runtime-implementation.md`` documents (``LUMA0600``–``LUMA0605``). Both
+#: streams surface as ``diagnostics`` entries with a ``code``, and a reader filtering by code
+#: alone got "this cloned section is broken" and "this asset's declared MIME contradicts its
+#: bytes" under one label — the exact defect ruling X4 split ``LUMA0603`` off ``LUMA0602`` to
+#: avoid, one level up. ``apps/api/tests/test_api.py`` asserts the ASSET meaning of ``LUMA0603``,
+#: so the collision was live in the tree rather than theoretical.
+#:
+#: Task 19 took ``LUMA0800``–``LUMA0803`` for the review gate precisely because ``LUMA08xx`` was
+#: unallocated in both registries; the sweep it deferred to F3.4 is this, and it moves the three
+#: older codes into the same block rather than renumbering the documented asset family, which is
+#: older, is Rust, and is nobody's to move. ``LUMA0810``–``LUMA0812`` keeps the two agent families
+#: adjacent and separately readable: ``080x`` is the review gate, ``081x`` is cloned sections.
+#:
+#: "this rewrite took cloned sections off the page". ``LUMA`` because it is the AGENT substrate
+#: speaking, not the engine (whose codes are ``LUMW``/``LUMI``) — nothing in the engine can know
+#: that a lost pin was something a human released and a director chose.
+_CLONED_SECTION_DROPPED_CODE = "LUMA0810"
+#: "a cloned section on this page is marked broken and has no released repair" (F3.1, ruling
+#: D-F6). ``LUMA`` for the same reason as its neighbour: the engine renders a degraded band
+#: exactly as it renders a healthy one and cannot know the difference — the judgement is the
+#: registry's, and this is the agent substrate relaying it as work.
+_CLONED_SECTION_DEGRADED_CODE = "LUMA0811"
 #: A band whose every released version is broken, so the fallback had to RANK them (F3.1, ruling
-#: N4). Its own code rather than a second severity on `LUMA0602` (ruling X4): a consumer filtering
-#: by code alone must not get two entries that mean different things, and "this band is broken"
-#: (work) and "here is which broken version was chosen" (a note) are different things.
-_CLONED_SECTION_RANKED_CODE = "LUMA0603"
-#: The behavioural review gate's four codes (F3.3). `LUMA08xx` rather than a continuation of the
-#: `LUMA060x` block above, deliberately: that block already COLLIDES with the asset-ingest
-#: family documented in `docs/phase-e-asset-runtime-implementation.md` (`LUMA0600`–`LUMA0605`),
-#: a collision F3.4 owns the sweep of. `LUMA08xx` is unallocated in both registries, so this
-#: gate does not add a third clash to the pile the sweep has to untangle.
+#: N4). Its own code rather than a second severity on its neighbour (ruling X4): a consumer
+#: filtering by code alone must not get two entries that mean different things, and "this band is
+#: broken" (work) and "here is which broken version was chosen" (a note) are different things.
+_CLONED_SECTION_RANKED_CODE = "LUMA0812"
+#: The behavioural review gate's four codes (F3.3), the first tenants of this block.
 #:
 #: `_REVIEW_BROKEN_CODE` is WORK; `_REVIEW_INCOMPLETE_CODE` is a gap in the review itself;
 #: `_REVIEW_ADVICE_UNAVAILABLE_CODE` is "the walk ran and has no opinion"; and
 #: `_REVIEW_MARK_FAILED_CODE` is a measured verdict the library never received. Four codes
 #: because a consumer filtering by code alone must not get two entries that mean different
-#: things — the same rule that split `LUMA0603` off `LUMA0602` (ruling X4).
+#: things — the same rule that gave the ranked-fallback note its own code (ruling X4).
 _REVIEW_BROKEN_CODE = "LUMA0800"
 _REVIEW_INCOMPLETE_CODE = "LUMA0801"
 _REVIEW_ADVICE_UNAVAILABLE_CODE = "LUMA0802"
@@ -4984,6 +4997,11 @@ class LumenWebTools:
         would be adding to somebody's work — clear it first or pin sections individually.
         `recreate.nothing_released` means this workspace has no released cloned sections at all.
         """
+        # CHARGED FIRST, before the preconditions below are known (ledger T17-M7). A refusal
+        # therefore costs a mutation, and that is deliberate rather than an oversight: the budget
+        # exists to end a round that is churning, and a tool that refuses for free is one a model
+        # can call forever inside a round it should already have ended. The cost of the choice is
+        # that a page which was never going to recreate spends one of five edits saying so.
         refusal = self._consume_round_budget("recreate_cloned_page")
         if refusal is not None:
             return refusal
@@ -5512,8 +5530,9 @@ class LumenWebTools:
         #    clone this deliberately takes off the page is not reported as a lost pin — that
         #    report exists for rewrites that lose a band by accident, and this is the opposite.
         self._repair_replacing = clean_id
+        instances = pinned[clean_id]
         try:
-            swapped = json.loads(self.author_web_subtree(pinned[clean_id], html))
+            swapped = json.loads(self.author_web_subtree(instances[0], html))
         finally:
             self._repair_replacing = None
         if swapped.get("status") != "ok":
@@ -5632,6 +5651,28 @@ class LumenWebTools:
             "warnings": swapped.get("warnings") or [],
             "advice": swapped.get("advice") or [],
         }
+        # A band pinned in more than one place is repaired in ONE of them, and the others still
+        # carry the broken clone (F3.4). Said, because "repaired" about a page that still shows
+        # the defect two screens down is the kind of half-truth the ladder exists to prevent —
+        # and the remedy is the same tool again, so this is a note rather than a refusal.
+        if len(instances) > 1:
+            result["other_pins_of_this_band"] = instances[1:]
+            result["advice"] = list(result["advice"]) + [
+                {
+                    "severity": "warning",
+                    "phase": "agent",
+                    "code": _CLONED_SECTION_DEGRADED_CODE,
+                    "message": (
+                        f"cloned section {clean_id} is pinned {len(instances)} times on this "
+                        f"page; this repair replaced ONE of them ({instances[0]}). The others "
+                        f"still carry the broken clone: {', '.join(instances[1:])}"
+                    ),
+                    "hint": (
+                        "Repair or re-pin each remaining instance, or remove the ones that were "
+                        "duplicates."
+                    ),
+                }
+            ]
         # Content addressing, said out loud (F3.0 §6.4): an identical repair converges onto the
         # row that already holds those bytes and keeps ITS lineage, so the id that comes back may
         # record somebody else's repair of the same clone. Reporting it is the difference between
@@ -5695,6 +5736,13 @@ class LumenWebTools:
         Only ever called for a repair the gate will accept. Returns an error envelope when the
         swap itself fails, in which case the page keeps the composed section — which renders the
         same pixels, so the failure costs the artifact's reuse, never the page.
+
+        **Charges no round budget of its own** (ledger T17-M7), though it runs a second
+        ``web_apply_ops``. Also deliberate, and the mirror of the charge on the caller: this is
+        not a call the model made, it is the second half of the one it did make — the composed
+        section is swapped for its own artifact at the same position, and the page after is the
+        page the model already paid for. Charging it would mean a repair costs twice what an
+        insert costs for producing the same band.
         """
         try:
             resolved = self._cloned_section_registry().resolve_insertable(repair_id)
@@ -5842,11 +5890,24 @@ class LumenWebTools:
             # collision/missing diagnostics contradict the page.
             package["missing"] = [item for item in missing if item != fragment_id]
 
-    def _pinned_cloned_sections(self, web_doc: JsonObject) -> Dict[str, str]:
-        """`{fragment id: node id}` for every cloned section reachable on this page.
+    def _pinned_cloned_sections(self, web_doc: JsonObject) -> Dict[str, List[str]]:
+        """`{fragment id: [node id, …]}` for every cloned section reachable on this page.
 
         Node-keyed rather than a bare set, because a drop report that cannot say WHERE the band
         was is much harder to act on than one that can.
+
+        **Every instance, not the first one** (F3.4; the structural fix the F1 wave carried).
+        One fragment may legitimately be pinned twice — the same CTA band above and below a long
+        section is an ordinary page — and this used to keep only whichever node id it met first.
+        The drop report is built by differencing these maps, so a rewrite that removed one of the
+        two instances left the fragment id present on both sides and said nothing at all: the
+        band-level truth ("this section is still on the page") held, and the page had silently
+        lost half of it.
+
+        Instances stay in the document's own node order — the order `nodes` was written in, which
+        is the order the previous single-value version happened to take its one answer from. So
+        ``[0]`` is the same node the old code returned, and a caller that has to act on one
+        instance acts on the same one it always did.
         """
         page = next(
             (
@@ -5858,23 +5919,18 @@ class LumenWebTools:
         )
         if not isinstance(page, dict):
             return {}
-        pinned: Dict[str, str] = {}
         nodes = page.get("nodes")
         if not isinstance(nodes, dict):
             return {}
-        for fragment_id in web_doc_fragment_ids(web_doc, self.page_id):
-            node_id = next(
-                (
-                    key
-                    for key, node in nodes.items()
-                    if isinstance(node, dict)
-                    and node.get("kind") == "fragment"
-                    and node.get("fragment_id") == fragment_id
-                ),
-                None,
-            )
-            if node_id is not None:
-                pinned[fragment_id] = node_id
+        wanted = set(web_doc_fragment_ids(web_doc, self.page_id))
+        pinned: Dict[str, List[str]] = {}
+        for key, node in nodes.items():
+            if not isinstance(node, dict) or node.get("kind") != "fragment":
+                continue
+            fragment_id = node.get("fragment_id")
+            if not isinstance(fragment_id, str) or fragment_id not in wanted:
+                continue
+            pinned.setdefault(fragment_id, []).append(str(key))
         return pinned
 
     def _dropped_cloned_sections(
@@ -5896,14 +5952,26 @@ class LumenWebTools:
         gone = self._pinned_cloned_sections(before)
         surviving = self._pinned_cloned_sections(after)
         dropped: List[JsonObject] = []
-        for fragment_id, node_id in gone.items():
-            if fragment_id in surviving or fragment_id == self._repair_replacing:
+        for fragment_id, node_ids in gone.items():
+            if fragment_id == self._repair_replacing:
+                continue
+            remaining = surviving.get(fragment_id) or []
+            lost = [node_id for node_id in node_ids if node_id not in remaining]
+            if not lost:
                 continue
             seen = self._cloned_section_seen.get(fragment_id) or {}
             dropped.append(
                 {
                     "fragment_id": fragment_id,
-                    "node_id": node_id,
+                    # The first lost node, kept under its old key so every existing reader of
+                    # this report still finds a place to point at.
+                    "node_id": lost[0],
+                    "node_ids": lost,
+                    # How many of this band's pins survived. Zero is the ordinary drop; anything
+                    # else is an INSTANCE drop — the band is still on the page and one of the
+                    # places it appeared is gone, which the fragment-id-keyed report used to miss
+                    # entirely (F3.4).
+                    "surviving_pins": len(remaining),
                     "label": seen.get("label"),
                     "section_role": seen.get("section_role"),
                 }
@@ -5922,15 +5990,32 @@ class LumenWebTools:
         named = ", ".join(
             f"{entry['fragment_id']}"
             + (f" ({entry['label']})" if entry.get("label") else "")
+            # An INSTANCE drop reads differently from a whole one, and the sentence has to say
+            # which happened (F3.4): "no longer on the page" is false about a band that is still
+            # pinned somewhere else, and a reader told that would go looking for the wrong thing.
+            + (
+                f" — {len(entry['node_ids'])} of its pins, {entry['surviving_pins']} still on "
+                "the page"
+                if entry.get("surviving_pins")
+                else ""
+            )
             for entry in dropped
         )
+        wholly = [entry for entry in dropped if not entry.get("surviving_pins")]
         return {
             "severity": "warning",
             "phase": "agent",
             "code": _CLONED_SECTION_DROPPED_CODE,
             "message": (
-                f"this rewrite replaced markup that held {len(dropped)} cloned section(s), so "
-                f"they are no longer on the page: {named}"
+                f"this rewrite replaced markup that held cloned sections; "
+                f"{len(wholly)} of them are no longer on the page at all"
+                + (
+                    ""
+                    if len(wholly) == len(dropped)
+                    else f" and {len(dropped) - len(wholly)} lost some of the places they "
+                    "appeared"
+                )
+                + f": {named}"
             ),
             "hint": (
                 "A cloned section cannot be written as page markup, so a rewrite always loses "
