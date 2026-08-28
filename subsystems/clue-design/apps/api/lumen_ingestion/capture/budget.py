@@ -27,14 +27,21 @@ not capture completeness) and is deliberately untouched by this module.
 from __future__ import annotations
 
 #: How many distinct assets one page capture may fetch. A dense marketing page with a
-#: srcset-heavy gallery lands around 120-180 candidates once every rung is enumerated; 400
-#: leaves room for a page twice that size before anything is dropped.
-MAX_ASSET_COUNT = 400
+#: srcset-heavy gallery lands around 120-180 candidates once every rung is enumerated; the
+#: original 400 left room for a page twice that size. Raised ×10 alongside the byte ceiling
+#: below (founder ruling, 2026-08-28): a dropped asset IS a lost-quality event, and the byte
+#: ceiling bounds runaway fetching on its own.
+MAX_ASSET_COUNT = 4_000
 
-#: How many bytes of asset bodies one page capture may carry. The per-resource caps in
-#: ``net.py`` (15 MB an image, 10 MB a font) still apply on top of this; 100 MB is roughly
-#: 400 assets averaging 250 KB, i.e. the count budget's worth of unusually heavy assets.
-MAX_ASSET_BYTES = 100 * 1024 * 1024
+#: How many bytes of asset bodies one page capture may carry. FOUNDER RULING (2026-08-28), in
+#: the founder's words: storage of high-quality images and assets is not a concern right now;
+#: quality is all that matters. 5 GiB — the same ceiling the F3.4 mint-side byte budgets
+#: carry, applied here in the same spirit — so no real page's assets are ever dropped on
+#: byte grounds. A deliberate policy number, not an engineering estimate; the machinery and
+#: its LUMI0514 reporting stay, and the per-resource caps in ``net.py`` (15 MB an image,
+#: 10 MB a font — as much a network-safety bound as a storage one) are deliberately left to
+#: a separate ruling.
+MAX_ASSET_BYTES = 5 * 1024 ** 3
 
 #: The one code every ASSET budget drop pays. Warning severity: the ingestion completes, but
 #: a human is told exactly what the page referenced and we did not keep.
