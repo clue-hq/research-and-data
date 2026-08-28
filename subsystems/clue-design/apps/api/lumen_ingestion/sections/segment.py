@@ -625,8 +625,8 @@ def _split_compound_bands(
     matching nothing, and a band that matches nothing refuses the WHOLE page's alignment. The
     alignment runs on the flow the browser saw; the split changes what we mint out of it.
     """
-    compound = {id(candidate): _compound_parts(candidate) for candidate in candidates}
-    if all(parts is None for parts in compound.values()):
+    examined = [(candidate, _compound_parts(candidate)) for candidate in candidates]
+    if all(parts is None for _candidate_, parts in examined):
         return candidates
     # The running-sum fallback in `_assign_geometry` reconstructs tops by accumulating the bound
     # candidates' heights in order, which is only true while the bound set is the whole measured
@@ -637,8 +637,7 @@ def _split_compound_bands(
     out: list[_Candidate] = []
     split: list[tuple[_Candidate, list[_Candidate]]] = []
     withheld: list[_Candidate] = []
-    for candidate in candidates:
-        parts = compound[id(candidate)]
+    for candidate, parts in examined:
         if parts is None:
             out.append(candidate)
             continue
@@ -656,7 +655,6 @@ def _split_compound_bands(
         ]
         for replacement in replacements:
             replacement.from_compound_band = True
-            replacement.is_page_scoped = _is_page_scoped(replacement.node)
         split.append((candidate, replacements))
         out.extend(replacements)
 
