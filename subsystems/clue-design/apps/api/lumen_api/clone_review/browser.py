@@ -444,11 +444,21 @@ def _reduced_motion_pass(
     outcome.opened = True
     try:
         page.wait_for_timeout(plan.settle_ms)
+        # Same order as the other passes — and load-bearing HERE because of what this pass is
+        # for: its height is DIVIDED by the desktop's, and the desktop's is post-readiness. One
+        # settled height over one unstyled height is a divergence measurement of nothing but the
+        # clock (round-3 re-review), so the pair records whether both halves were settled and
+        # `reduced_motion_findings` refuses to compare an unsettled pair.
+        outcome.styles_ready = _styles_ready(page)
         geometry = _geometry(page)
         destination = output_dir / "walk_reduced_motion.png"
         page.screenshot(path=str(destination), full_page=True)
         raw = page.evaluate(SECTION_PROBE_SCRIPT, probes) if probes else []
-        notes: dict[str, Any] = {"document_height_px": geometry.get("height")}
+        notes: dict[str, Any] = {
+            "document_height_px": geometry.get("height"),
+            "styles_ready": outcome.styles_ready,
+            "heights_settled": desktop.styles_ready is True and outcome.styles_ready is True,
+        }
         if desktop.document_height:
             notes["motion_document_height_px"] = desktop.document_height
         outcome.observations[WALK_CLASS_REDUCED_MOTION] = WalkObservation(

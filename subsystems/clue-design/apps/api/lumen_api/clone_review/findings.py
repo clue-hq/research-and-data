@@ -346,9 +346,17 @@ def absent_section_findings(
 
 
 def reduced_motion_findings(walk: BehaviouralWalk) -> tuple[PageFinding, ...]:
-    """Did switching motion off cost the page content?"""
+    """Did switching motion off cost the page content?
+
+    Compared only when BOTH heights were read off a settled page (`heights_settled`, stamped by
+    the reduced-motion pass). One settled height over one unstyled height measures nothing but
+    the clock: on a slow JIT it fabricated this exact warning about a compiled-taller page and
+    would have suppressed a real one about a compiled-shorter page (round-3 re-review).
+    """
     observation = walk.by_class(WALK_CLASS_REDUCED_MOTION)
     if not observation.made:
+        return ()
+    if observation.notes.get("heights_settled") is not True:
         return ()
     still = _positive(observation.notes.get("document_height_px"))
     moving = _positive(observation.notes.get("motion_document_height_px"))

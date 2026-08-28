@@ -407,7 +407,11 @@ def test_an_uncaught_page_error_is_blamed_on_the_only_scripts_present_which_are_
 
 def test_a_page_that_shrinks_without_motion_is_reported_as_advice():
     walk = _walk(
-        reduced_notes={"document_height_px": 4000.0, "motion_document_height_px": 9000.0}
+        reduced_notes={
+            "document_height_px": 4000.0,
+            "motion_document_height_px": 9000.0,
+            "heights_settled": True,
+        }
     )
     critique = compose_critique(walk)
     finding = next(f for f in critique.page_findings if f.code == FINDING_REDUCED_MOTION)
@@ -417,7 +421,24 @@ def test_a_page_that_shrinks_without_motion_is_reported_as_advice():
 
 def test_a_page_that_is_the_same_height_without_motion_says_nothing():
     walk = _walk(
-        reduced_notes={"document_height_px": 8900.0, "motion_document_height_px": 9000.0}
+        reduced_notes={
+            "document_height_px": 8900.0,
+            "motion_document_height_px": 9000.0,
+            "heights_settled": True,
+        }
+    )
+    critique = compose_critique(walk)
+    assert [f for f in critique.page_findings if f.code == FINDING_REDUCED_MOTION] == []
+
+
+def test_an_unsettled_height_pair_is_never_compared():
+    """The divergence ratio is only as good as its worst half (round-3 re-review)."""
+    walk = _walk(
+        reduced_notes={
+            "document_height_px": 4000.0,
+            "motion_document_height_px": 9000.0,
+            "heights_settled": False,
+        }
     )
     critique = compose_critique(walk)
     assert [f for f in critique.page_findings if f.code == FINDING_REDUCED_MOTION] == []
@@ -636,6 +657,9 @@ class _FakePage:
         self.scrolled: list[float] = []
         self.screenshots: list[str] = []
         self.context = self
+        # Geometry is PAGE-LOCAL, like a real browser's: each pass opens its own page, and that
+        # page's height settles when ITS readiness wait resolves — not when a sibling's did.
+        self.geometry = dict(owner.geometry)
 
     # --- the surface run_walk touches ---
     def set_default_timeout(self, _ms: int) -> None:
@@ -659,9 +683,10 @@ class _FakePage:
             raise TimeoutError("styles never became ready")
         # The JIT finishing is exactly when a real page's geometry settles: a test that hands
         # `geometry_after_ready` is describing a page whose unstyled height differs from its
-        # compiled one, which is the page the readiness wait exists for.
+        # compiled one, which is the page the readiness wait exists for. Page-local, so a pass
+        # that never waited keeps seeing the unstyled height.
         if self.owner.geometry_after_ready is not None:
-            self.owner.geometry = dict(self.owner.geometry_after_ready)
+            self.geometry = dict(self.owner.geometry_after_ready)
 
     def evaluate(self, script: str, arg: Any = None) -> Any:
         from lumen_api.clone_review.walk import (
@@ -671,7 +696,7 @@ class _FakePage:
         )
 
         if script == DOCUMENT_HEIGHT_SCRIPT:
-            return dict(self.owner.geometry)
+            return dict(self.geometry)
         if script == STYLES_READY_SCRIPT:
             return self.owner.styles_ready
         if script == SECTION_PROBE_SCRIPT:
@@ -1082,12 +1107,14 @@ def test_readiness_is_waited_for_not_sampled(tmp_path):
 
     ready = _FakeBrowser(styles_ready=True)
     _run(ready, tmp_path / "ready")
-    assert ready.waits == [STYLES_READY_TIMEOUT_MS, STYLES_READY_TIMEOUT_MS]
+    # All three probe passes wait: desktop, mobile, and (since the round-3 asymmetry fix)
+    # reduced motion, whose height is divided by the desktop's post-readiness one.
+    assert ready.waits == [STYLES_READY_TIMEOUT_MS] * 3
 
     # A page that never becomes ready waits to the deadline and then answers honestly.
     slow = _FakeBrowser(styles_ready=False)
     walk = _run(slow, tmp_path / "slow")
-    assert slow.waits == [STYLES_READY_TIMEOUT_MS, STYLES_READY_TIMEOUT_MS]
+    assert slow.waits == [STYLES_READY_TIMEOUT_MS] * 3
     assert walk.by_class(WALK_CLASS_HEIGHT_COLLAPSE).notes["styles_ready"] is False
 
 
@@ -1121,6 +1148,39 @@ def test_the_scroll_plan_is_built_from_post_readiness_geometry(tmp_path):
 
     full_page = walk.by_class(WALK_CLASS_FULL_PAGE)
     assert full_page.notes["document_height_px"] == 4_000
+
+
+def test_the_reduced_motion_height_pair_is_measured_at_the_same_moment(tmp_path):
+    """Both halves of the divergence ratio must describe the COMPILED page.
+
+    Moving only the desktop height to post-readiness (fix round 3) made the pair temporally
+    asymmetric: on a compiled-TALLER page the reduced pass, read at settle time, still saw the
+    unstyled height — a fabricated "content depends on an animation having run" warning about a
+    page whose only difference was when it was measured. Now the reduced pass waits too, and the
+    finding is gated on both heights being settled.
+    """
+    from lumen_api.clone_review.findings import compose_critique as compose
+
+    browser = _FakeBrowser(
+        geometry={"height": 4_000, "width": 1440, "viewport": 1440},
+        geometry_after_ready={"height": 12_000, "width": 1440, "viewport": 1440},
+    )
+    walk = _run(browser, tmp_path)
+    reduced = walk.by_class(WALK_CLASS_REDUCED_MOTION)
+    assert reduced.notes["document_height_px"] == 12_000
+    assert reduced.notes["motion_document_height_px"] == 12_000
+    assert reduced.notes["heights_settled"] is True
+    critique = compose(walk)
+    assert [f for f in critique.page_findings if f.code == FINDING_REDUCED_MOTION] == []
+
+    # A pair that never settled is no basis for the warning either — unsettled heights compare
+    # two unstyled layouts, which is not what the finding claims to be about.
+    slow = _FakeBrowser(
+        geometry={"height": 4_000, "width": 1440, "viewport": 1440},
+        styles_ready=False,
+    )
+    walk = _run(slow, tmp_path / "slow")
+    assert walk.by_class(WALK_CLASS_REDUCED_MOTION).notes["heights_settled"] is False
 
 
 def test_a_wrapper_with_a_stray_text_node_can_still_be_convicted_of_dead_height():
