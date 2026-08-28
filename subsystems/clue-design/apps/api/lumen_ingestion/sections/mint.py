@@ -55,10 +55,6 @@ from selectolax.parser import HTMLParser as SectionParser
 from tinycss2 import ast
 
 from .budget import (
-    MAX_FRAGMENT_CSS_BYTES,
-    MAX_PAGE_CSS_BYTES,
-    MAX_PAGE_PREVIEW_BYTES,
-    MAX_PREVIEW_BYTES,
     MIN_PREVIEW_WIDTH,
     MINT_BUDGET_CODE,
     OUTCOME_DEGRADED,
@@ -522,6 +518,7 @@ def mint_sections(
     limit: int = SECTION_MINT_CAP,
     dormant_limit: int = SECTION_MINT_CAP,
     mark_degraded: Callable[..., dict[str, Any]] | None = None,
+    weight: PageWeight | None = None,
 ) -> MintOutcome:
     """Mint every section of one captured page. Never raises.
 
@@ -542,13 +539,15 @@ def mint_sections(
     its own exhaustion.
     """
     diagnostics: list[dict[str, Any]] = []
-    # ONE running weight for the page (F3.4). `mint_sections` is called once per captured page,
-    # so this object's life is exactly the scope of the per-page byte budgets it accounts for —
-    # and the hidden pool shares it deliberately: bytes at rest are bytes at rest, whether or not
-    # a human ever activates the section they belong to.
-    weight = PageWeight(
-        css_limit=MAX_PAGE_CSS_BYTES, preview_limit=MAX_PAGE_PREVIEW_BYTES
-    )
+    # ONE running weight for the page (F3.4), carrying all four byte limits. `mint_sections` is
+    # called once per captured page, so this object's life is exactly the scope of the per-page
+    # budgets it accounts for — and the hidden pool shares it deliberately: bytes at rest are
+    # bytes at rest, whether or not a human ever activates the section they belong to.
+    #
+    # INJECTABLE, and that is the whole test seam. The production ceilings are 5 GiB by founder
+    # ruling, so no real page can drive a single budget branch; a caller hands in small limits to
+    # exercise them, rather than reaching in and rewriting a module constant.
+    weight = weight if weight is not None else PageWeight()
 
     # ONE parse for the whole page, shared by every section's re-find. `resolve_section` reads
     # and never mutates, and a marketing page's html runs to megabytes — re-parsing it twelve
@@ -1019,16 +1018,16 @@ def _charge_css(
     that heavy is a judgement, and it belongs to a human.
     """
     size = len(css.encode("utf-8"))
-    if size > MAX_FRAGMENT_CSS_BYTES:
+    if not weight.fragment_css_fits(size):
         diagnostics.append(
             budget_diagnostic(
                 budget="fragment scoped CSS bytes",
-                limit=MAX_FRAGMENT_CSS_BYTES,
+                limit=weight.fragment_css_limit,
                 measured=size,
                 outcome=OUTCOME_WARNED,
                 message=(
                     f"section {record.index} ({record.role}) of {segmentation.page_url} carries "
-                    f"{size} bytes of scoped CSS, over the {MAX_FRAGMENT_CSS_BYTES}-byte "
+                    f"{size} bytes of scoped CSS, over the {weight.fragment_css_limit}-byte "
                     "per-fragment budget; it was minted in full — a truncated stylesheet would "
                     "render this section wrong and say nothing"
                 ),
@@ -1040,18 +1039,17 @@ def _charge_css(
         diagnostics.append(
             budget_diagnostic(
                 budget="page scoped CSS bytes",
-                # The limit the WEIGHT enforced, not the module constant (F3.4 fix round, F-4).
-                # `PageWeight` carries its limits so a caller can hand it different ones; a
-                # diagnostic that reported the constant instead would name a number that did not
-                # decide anything the moment anybody used that.
-                limit=weight.css_limit,
+                # The limit the WEIGHT enforced (F3.4 fix round, F-4). Since the founder
+                # ruling there is no other kind — every limit lives on the weight, and the
+                # module constants are only its defaults.
+                limit=weight.page_css_limit,
                 measured=weight.css_bytes,
                 outcome=OUTCOME_WARNED,
                 message=(
                     f"the clones of {segmentation.page_url} now carry {weight.css_bytes} bytes of "
                     f"scoped CSS between {weight.fragment_count} fragment(s), over the "
-                    f"{weight.css_limit}-byte per-page budget; every section is still minted in "
-                    "full, and this page is an expensive one to clone"
+                    f"{weight.page_css_limit}-byte per-page budget; every section is still minted "
+                    "in full, and this page is an expensive one to clone"
                 ),
                 page_url=segmentation.page_url,
                 fragments=weight.fragment_count,
@@ -1085,13 +1083,13 @@ def _fit_preview(
 
     original = len(preview)
     width: int | None = None
-    if original > MAX_PREVIEW_BYTES:
+    if original > weight.preview_limit:
         try:
             image = Image.open(io.BytesIO(preview))
             image.load()
         except (UnidentifiedImageError, OSError, ValueError):
             image = None
-        while image is not None and len(preview) > MAX_PREVIEW_BYTES:
+        while image is not None and len(preview) > weight.preview_limit:
             # Halve, floored at the minimum and never above what the crop already is: a preview
             # narrower than the floor is not worth keeping, and one "re-encoded" wider would be
             # this function inventing pixels to save bytes.
@@ -1104,17 +1102,17 @@ def _fit_preview(
             preview = buffer.getvalue()
             if width <= MIN_PREVIEW_WIDTH:
                 break
-        if len(preview) > MAX_PREVIEW_BYTES:
+        if len(preview) > weight.preview_limit:
             diagnostics.append(
                 budget_diagnostic(
                     budget="preview bytes",
-                    limit=MAX_PREVIEW_BYTES,
+                    limit=weight.preview_limit,
                     measured=original,
                     outcome=OUTCOME_REFUSED,
                     message=(
                         f"section {record.index} ({record.role}) of {segmentation.page_url} was "
                         f"minted WITHOUT a preview: its crop was {original} bytes and does not "
-                        f"fit the {MAX_PREVIEW_BYTES}-byte budget"
+                        f"fit the {weight.preview_limit}-byte budget"
                         + (
                             f", even re-encoded at {MIN_PREVIEW_WIDTH}px wide"
                             if width is not None
@@ -1136,13 +1134,13 @@ def _fit_preview(
         diagnostics.append(
             budget_diagnostic(
                 budget="preview bytes",
-                limit=MAX_PREVIEW_BYTES,
+                limit=weight.preview_limit,
                 measured=original,
                 outcome=OUTCOME_DEGRADED,
                 severity="info",
                 message=(
                     f"section {record.index} ({record.role}) of {segmentation.page_url} had a "
-                    f"{original}-byte preview crop, over the {MAX_PREVIEW_BYTES}-byte budget; it "
+                    f"{original}-byte preview crop, over the {weight.preview_limit}-byte budget; it "
                     f"was re-encoded {width}px wide at {len(preview)} bytes. A preview is a "
                     "thumbnail, so this costs pixels rather than the picture"
                 ),
@@ -1156,16 +1154,15 @@ def _fit_preview(
         diagnostics.append(
             budget_diagnostic(
                 budget="page preview bytes",
-                # The enforced limit, for the same reason (F-4): `preview_fits` asked
-                # `weight.preview_limit`.
-                limit=weight.preview_limit,
+                # The enforced limit, for the same reason (F-4).
+                limit=weight.page_preview_limit,
                 measured=weight.preview_bytes + len(preview),
                 outcome=OUTCOME_REFUSED,
                 message=(
                     f"section {record.index} ({record.role}) of {segmentation.page_url} was "
                     f"minted WITHOUT a preview: {segmentation.page_url} already holds "
                     f"{weight.preview_bytes} bytes of preview images and this one would take it "
-                    f"past the {weight.preview_limit}-byte per-page budget. The section itself "
+                    f"past the {weight.page_preview_limit}-byte per-page budget. The section itself "
                     "is minted in full"
                 ),
                 section_index=record.index,
