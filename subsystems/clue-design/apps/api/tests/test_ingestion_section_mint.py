@@ -1357,10 +1357,14 @@ def test_a_real_pages_heaviest_measurements_trip_no_budget_at_all() -> None:
         for diagnostic in outcome.diagnostics
         if diagnostic["code"] == MINT_BUDGET_CODE
     ] == []
+    # No check was stopped BY A BUDGET. (Since final-review X2, LUMI0538 also reports checks
+    # skipped for non-budget reasons — an inferred nav/footer crop — which is honesty about
+    # coverage, not a budget trip; those lines carry no `budget` key.)
     assert [
         diagnostic
         for diagnostic in outcome.diagnostics
         if diagnostic["code"] == mint_module.MINT_CHECK_NOT_RUN_CODE
+        and "budget" in diagnostic
     ] == []
     # Every section keeps the crop it was given, at the size it was taken — including the two
     # over a megabyte, which an earlier draft of this module would have re-encoded smaller.
@@ -1461,6 +1465,7 @@ def test_a_page_budget_refusal_names_the_page_budget_as_what_stopped_the_check()
         diagnostic
         for diagnostic in outcome.diagnostics
         if diagnostic["code"] == mint_module.MINT_CHECK_NOT_RUN_CODE
+        and "budget" in diagnostic
     ]
     assert not_run
     assert {line["budget"] for line in not_run} == {"page preview bytes"}
@@ -1471,12 +1476,16 @@ def test_a_section_the_check_did_run_on_carries_no_not_assessed_note() -> None:
     at and sound."""
     outcome, recorder = _mint(BANDED_PAGE, screenshot=_png(1200, 1400), bands=_BANDS)
 
+    hero = next(call for call in recorder.created if call["section_role"] == "hero")
+    hero_index = hero["provenance"]["section_index"]
+    # The hero's check RAN, so no not-run note names it. (Other sections — an inferred
+    # nav/footer crop — may honestly carry one since final-review X2.)
     assert [
         diagnostic
         for diagnostic in outcome.diagnostics
         if diagnostic["code"] == mint_module.MINT_CHECK_NOT_RUN_CODE
+        and diagnostic.get("section_index") == hero_index
     ] == []
-    hero = next(call for call in recorder.created if call["section_role"] == "hero")
     assert hero["provenance"]["dead_height_check"] is None
 
 

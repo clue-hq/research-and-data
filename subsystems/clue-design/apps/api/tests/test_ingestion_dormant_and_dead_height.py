@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import hashlib
 from io import BytesIO
+from types import SimpleNamespace
 
 from lumen_ingestion.sections.bands import (
     SNAPSHOT_META_BANDS_KEY,
@@ -1035,3 +1036,86 @@ def test_ordinary_gaps_between_content_do_not_trip_the_internal_gap_condition() 
     )
     assert assessment.judged is True
     assert assessment.finding is None
+
+
+# --- the un-hide block (phase fix wave, walk finding F-3 / final-review X3) -----------------------
+
+
+def test_a_dormant_fragment_carries_a_counter_rule_for_the_css_that_hid_its_root() -> None:
+    """A section is dormant BECAUSE the source hides it, so its harvested CSS carries the very
+    rules that make it invisible — and an activated clone that still obeys them renders as
+    nothing on the page, while its isolation render times out on an invisible element (the walk's
+    F-3). The artifact therefore appends a same-selector counter-rule for each rule that hides
+    the ROOT — the picture and the page read the same sheet, so they agree by construction.
+    A rule hiding a DESCENDANT is left alone: that hiding is the section's own design.
+    """
+    from lumen_ingestion.sections.mint import mint_sections
+    from lumen_ingestion.sections.segment import segment_page
+
+    page = HIDDEN_PAGE.replace(
+        "<p>From $99.</p>", '<p>From $99.</p><span class="fine-print">Terms apply.</span>'
+    )
+    recorder = _Recorder()
+    segmentation = segment_page(
+        page,
+        page_url=PAGE_URL,
+        bands=measured_bands({SNAPSHOT_META_BANDS_KEY: HIDDEN_PAGE_BANDS}),
+    )
+    mint_sections(
+        segmentation,
+        html=page,
+        stylesheets=[
+            SimpleNamespace(
+                url="https://site.example/site.css",
+                text=(
+                    ".hide { display: none !important; }\n"
+                    ".section_pricing .fine-print { display: none; }\n"
+                    ".section_pricing { visibility: hidden; }\n"
+                ),
+            )
+        ],
+        captured={},
+        screenshot=None,
+        source_kit_id="brand_kit_x",
+        source_kit_version=1,
+        register_bytes=recorder.register_bytes,
+        create_fragment=recorder.create_fragment,
+        mark_degraded=recorder.mark_degraded,
+        limit=SECTION_MINT_CAP,
+        dormant_limit=SECTION_MINT_CAP,
+    )
+    dormant = [call for call in recorder.created if call.get("status") == "dormant"]
+    assert len(dormant) == 1
+    css = dormant[0]["css"]
+    # Both root-hiding rules are countermanded, in an appended block that says why...
+    assert "display: revert !important" in css
+    assert "visibility: visible !important" in css
+    # ...the descendant-hiding rule is not.
+    assert css.count(".fine-print") == 1
+    # The provenance names what was un-hidden, so a human can argue with it.
+    unhidden = dormant[0]["provenance"]["hidden_on_source"].get("unhidden_selectors")
+    assert unhidden and ".hide" in unhidden and ".section_pricing" in unhidden
+
+    # A VISIBLE section's sheet is never touched — the counter-block is dormant-only.
+    for call in recorder.created:
+        if call.get("status") != "dormant":
+            assert "revert !important" not in call["css"]
+
+
+def test_every_unjudged_mint_says_its_dead_height_check_did_not_run() -> None:
+    """Final-review X2: R20-3's honesty line fired only on the byte-budget branch, which the
+    founder's 5GiB ruling made unreachable — while the REACHABLE branch (no screenshot, an
+    inferred crop, a compound-band part) skipped the check in silence. The walk minted five
+    sections whose dead-height check never ran, and LUMI0538 said nothing. Now every unjudged
+    mint says so, with a because a reader can act on."""
+    _segmentation, outcome, _recorder = _mint(
+        HIDDEN_PAGE,
+        bands=measured_bands({SNAPSHOT_META_BANDS_KEY: HIDDEN_PAGE_BANDS}),
+        screenshot=None,  # the reachable shape: nothing to crop, nothing to judge
+    )
+    not_run = [d for d in outcome.diagnostics if d["code"] == "LUMI0538"]
+    assert not_run, "an unjudged mint must say its check did not run"
+    for diagnostic in not_run:
+        assert diagnostic["check"] == "dead_height"
+        assert diagnostic["because"]
+        assert "budget" not in diagnostic

@@ -63,7 +63,7 @@ from .budget import (
     PageWeight,
     budget_diagnostic,
 )
-from .cssmatch import rules_for_subtree
+from .cssmatch import rules_for_subtree, unhide_root_rules
 from .deadheight import (
     DEAD_HEIGHT_REASON,
     DeadHeight,
@@ -745,6 +745,20 @@ def _mint_one(
     # Born dormant, never minted ``draft`` and then demoted: the window between the two is
     # exactly long enough for a kit approval to release a section the site does not show.
     status = FRAGMENT_STATUS_DORMANT if record.hidden_on_source else None
+    # A dormant section's harvested CSS carries the very rules that hide it (that is WHY it is
+    # dormant), so the artifact appends counter-rules for the ones that hide its ROOT — the
+    # isolation preview and any page an activated clone lands on read the same sheet, so they
+    # agree by construction (walk finding F-3, final-review X3; shell-side un-hiding alone would
+    # preview something the page never shows, which is P-7's forbidden shape one level up).
+    css_for_artifact = matched.css
+    unhidden_selectors: tuple[str, ...] = ()
+    if record.hidden_on_source:
+        css_for_artifact, unhidden_selectors = unhide_root_rules(
+            matched.css,
+            tag=record.tag,
+            element_id=record.element_id,
+            classes=record.class_names,
+        )
     if record.hidden_on_source:
         diagnostics.append(
             _diag(
@@ -759,9 +773,14 @@ def _mint_one(
             )
         )
 
+    provenance = _provenance(
+        segmentation, record, matched, detected, harvest, extent, dead, assessment
+    )
+    if record.hidden_on_source:
+        provenance["hidden_on_source"]["unhidden_selectors"] = list(unhidden_selectors)
     row, artifact = create_fragment(
         html=sanitized.html,
-        css=matched.css,
+        css=css_for_artifact,
         rehosted=rehosted,
         slots=list(detected.specs),
         source_url=segmentation.page_url,
@@ -771,9 +790,7 @@ def _mint_one(
         source_kit_version=source_kit_version,
         preview=preview,
         preview_media_type=_PREVIEW_MEDIA_TYPE,
-        provenance=_provenance(
-            segmentation, record, matched, detected, harvest, extent, dead, assessment
-        ),
+        provenance=provenance,
         prelude_reference=PRELUDE_REFERENCE_STRIP,
         status=status,
         degraded=dead is not None,
@@ -859,26 +876,40 @@ def _dead_height(
         basis=extent.basis if extent is not None else None,
         viewport_width=segmentation.viewport_width,
     )
-    if not assessment.judged and preview_refused_by is not None:
-        # RULING R20-3: a check that did not run is SAID. The byte budget is already loud about
-        # the bytes (`LUMI0537`), but the knock-on was silent — this section is about to be
-        # written `degraded=False`, and without this line that is indistinguishable from a band
-        # somebody looked at and found sound. A dead-height finding is the repair ladder's entry
+    if not assessment.judged:
+        # RULING R20-3, widened by final-review X2: a check that did not run is SAID — on EVERY
+        # branch, not only the byte-budget one (which the founder's 5GiB ruling made
+        # unreachable while the reachable branches — no screenshot, an inferred crop, a
+        # compound-band part with no geometry — skipped in silence; the live walk minted five
+        # such sections and nothing said so). This section is about to be written
+        # `degraded=False`, and without this line that is indistinguishable from a band somebody
+        # looked at and found sound. A dead-height finding is the repair ladder's entry
         # condition, so a silent clean bill here is a broken clone nobody is ever told about.
+        if preview_refused_by is not None:
+            why = (
+                "the check reads the preview crop, and the "
+                f"{preview_refused_by} budget refused to store one "
+                f"({assessment.abstained_because})"
+            )
+        else:
+            why = (
+                "the check reads the preview crop, and this section has none it can trust "
+                f"({assessment.abstained_because})"
+            )
+        extra = {"budget": preview_refused_by} if preview_refused_by is not None else {}
         diagnostics.append(
             _diag(
                 MINT_CHECK_NOT_RUN_CODE,
                 f"section {record.index} ({record.role}) of {segmentation.page_url} was minted "
-                "WITHOUT its dead-height check: the check reads the preview crop, and the "
-                f"{preview_refused_by} budget refused to store one "
-                f"({assessment.abstained_because}). This section is not marked degraded because "
-                "nobody looked at it, which is not the same as looking and finding it sound — "
-                "photograph it with an isolation render if the band looks tall on the page",
+                f"WITHOUT its dead-height check: {why}. This section is not marked degraded "
+                "because nobody looked at it, which is not the same as looking and finding it "
+                "sound — photograph it with an isolation render if the band looks tall on the "
+                "page",
                 section_index=record.index,
                 role=record.role,
                 check="dead_height",
                 because=assessment.abstained_because,
-                budget=preview_refused_by,
+                **extra,
             )
         )
 

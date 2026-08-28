@@ -472,4 +472,104 @@ def _parse_simple_compound(compound: str) -> tuple[str | None, list[str], list[s
     )
 
 
-__all__ = ["MatchedCss", "rules_for_subtree"]
+# --- the un-hide block (phase fix wave, walk finding F-3 / final-review X3) ----------------------
+
+#: The counter-declarations. ``revert`` rather than a guessed ``block``/``flex``: it returns the
+#: element to what it would have been WITHOUT the hiding rule, which is the honest opposite of
+#: "the source hid it" — guessing a display type would be a small fabrication.
+UNHIDE_DECLARATIONS = "display: revert !important; visibility: visible !important;"
+
+UNHIDE_BLOCK_HEADER = (
+    "/* lumen un-hide (D-F8): the source site hides this section, and its harvested CSS carries\n"
+    "   the very rules that hide it. Each rule below countermands one of them FOR THE ROOT ONLY,\n"
+    "   appended last so source order wins at equal specificity — an activated clone renders on\n"
+    "   the page and in its isolation preview alike, off one sheet. Descendant hiding is the\n"
+    "   section's own design and is left alone. */"
+)
+
+
+def unhide_root_rules(
+    css: str, *, tag: str, element_id: str | None, classes: Sequence[str]
+) -> tuple[str, tuple[str, ...]]:
+    """Counter every rule in ``css`` that hides the fragment's ROOT element.
+
+    Returns ``(css with the appended un-hide block, the selectors countermanded)`` — unchanged
+    ``css`` and ``()`` when nothing hides the root. "Hides" is ``display: none`` or
+    ``visibility: hidden``; "the root" is matched with the same could-match reading the keeper
+    logic above uses, over an inventory of exactly one element.
+    """
+    inventory = _Inventory(
+        tags=frozenset(part for part in ((tag or "").strip().lower(),) if part),
+        ids=frozenset(part for part in ((element_id or "").strip(),) if part),
+        classes=frozenset(name for name in classes if name),
+    )
+    rules = tinycss2.parse_stylesheet(css or "", skip_comments=True, skip_whitespace=True)
+    counters: list[str] = []
+    selectors: list[str] = []
+    _collect_unhide(rules, inventory, counters, selectors, media_prelude=None)
+    if not counters:
+        return css, ()
+    block = UNHIDE_BLOCK_HEADER + "\n" + "\n".join(counters)
+    return f"{css}\n{block}\n", tuple(dict.fromkeys(selectors))
+
+
+def _collect_unhide(
+    rules: Iterable[object],
+    inventory: _Inventory,
+    out: list[str],
+    selectors: list[str],
+    media_prelude: str | None,
+) -> None:
+    for rule in rules:
+        if isinstance(rule, ast.QualifiedRule):
+            if not _declarations_hide(rule.content):
+                continue
+            prelude = tinycss2.serialize(rule.prelude).strip()
+            matching = [
+                part
+                for part in _split_selector_list(prelude)
+                if _selector_could_match(part, inventory)
+            ]
+            if not matching:
+                continue
+            counter = f"{', '.join(matching)} {{ {UNHIDE_DECLARATIONS} }}"
+            if media_prelude is not None:
+                # The hiding rule applies only under its media condition, so the counter-rule
+                # rides the same condition — un-hiding wider than the hiding would be a change,
+                # not a countermand.
+                counter = f"@media {media_prelude} {{ {counter} }}"
+            out.append(counter)
+            selectors.extend(matching)
+        elif (
+            isinstance(rule, ast.AtRule)
+            and rule.lower_at_keyword == "media"
+            and rule.content is not None
+        ):
+            inner = tinycss2.parse_stylesheet(
+                tinycss2.serialize(rule.content), skip_comments=True, skip_whitespace=True
+            )
+            _collect_unhide(
+                inner,
+                inventory,
+                out,
+                selectors,
+                media_prelude=tinycss2.serialize(rule.prelude).strip(),
+            )
+
+
+def _declarations_hide(content: Sequence[object]) -> bool:
+    declarations = tinycss2.parse_declaration_list(
+        tinycss2.serialize(list(content)), skip_comments=True, skip_whitespace=True
+    )
+    for declaration in declarations:
+        if getattr(declaration, "type", "") != "declaration":
+            continue
+        value = tinycss2.serialize(declaration.value).strip().lower()
+        if declaration.lower_name == "display" and "none" in value:
+            return True
+        if declaration.lower_name == "visibility" and "hidden" in value:
+            return True
+    return False
+
+
+__all__ = ["MatchedCss", "rules_for_subtree", "unhide_root_rules"]
