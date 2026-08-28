@@ -27,6 +27,7 @@ from lumen_ingestion.sections.bands import (
 )
 from lumen_ingestion.sections.segment import (
     BAND_ALIGNMENT_REFUSED_CODE,
+    COMPOUND_BAND_SPLIT_CODE,
     ESTIMATED_GEOMETRY_CODE,
     NO_BAND_EVIDENCE_CODE,
     NO_SECTIONS_CODE,
@@ -1096,3 +1097,270 @@ def test_an_id_only_band_still_triggers_the_proposal_guard():
             assert section.element_id == "promo", (
                 f"promo's band bound to {section.element_id!r} / {section.heading!r}"
             )
+
+
+# --------------------------------------------------------------------------- #
+# F3.4 — compound bands split into the sections their author declared
+# --------------------------------------------------------------------------- #
+
+
+def test_a_wrapper_holding_only_authored_sections_is_split_into_them():
+    """The F2 walk minted insighthealth's Testimonials + Blog + Get-Started as ONE fragment.
+
+    The page wraps three `<section>`s in a `<div class="overflow-hidden">`, and that div is what
+    the browser measured as a band — so a library of reusable sections held "those three, in that
+    order", and none of them could be inserted without the other two.
+    """
+    html = """
+    <html><body><main>
+      <section class="hero"><h1>Care, on your terms</h1></section>
+      <div class="overflow-hidden">
+        <section class="section"><h2>Testimonials</h2><p>Real results.</p></section>
+        <section class="section"><h2>From Our Blog</h2><p>Latest writing.</p></section>
+        <section class="section_cta"><h2>Get Started</h2><p>Book a demo.</p></section>
+      </div>
+    </main></body></html>
+    """
+    bands = [
+        {"index": 0, "tag": "section", "classes": "hero", "top": 0.0, "height": 900.0},
+        {
+            "index": 1,
+            "tag": "div",
+            "classes": "overflow-hidden",
+            "top": 900.0,
+            "height": 2286.78,
+        },
+    ]
+    result = segment_page(
+        html,
+        page_url="https://x.example/",
+        bands=measured_bands({SNAPSHOT_META_BANDS_KEY: bands}),
+    )
+
+    assert [section.heading for section in result.sections] == [
+        "Care, on your terms",
+        "Testimonials",
+        "From Our Blog",
+        "Get Started",
+    ]
+    # The hero keeps its own measured geometry: the split changes what is minted out of the flow,
+    # never the alignment, which ran against the flow the browser actually saw.
+    assert result.sections[0].geometry is not None
+    assert result.sections[0].geometry.top_px == 0.0
+    # The parts carry none, because the browser measured their WRAPPER and their own heights
+    # inside it are not derivable from its total. Honest absence, said out loud.
+    assert [section.geometry for section in result.sections[1:]] == [None, None, None]
+    split = [d for d in result.diagnostics if d["code"] == COMPOUND_BAND_SPLIT_CODE]
+    assert len(split) == 1
+    assert split[0]["parts"] == 3
+    assert split[0]["band_index"] == 1
+    assert split[0]["band_height_px"] == 2286.78
+    assert "isolation render" in split[0]["message"]
+    # …and the unmeasured-section diagnostic keeps the three facts apart rather than telling the
+    # reader the browser looked at these three and skipped them.
+    unmeasured = [d for d in result.diagnostics if d["code"] == UNMEASURED_SECTION_CODE][0]
+    assert unmeasured["from_compound_band"] == 3
+    assert "measured their wrapper rather than them" in unmeasured["message"]
+
+
+def test_a_section_that_declares_itself_one_is_never_split_into_its_subsections():
+    """The other compound band the F2 walk named — stripe's 4,598px `business-sizes-section`.
+
+    It carries its own `<h2>` and three `<section>`s that are its SUBSECTIONS, two `<div>`s deep,
+    interleaved with dividers that are not sections at all. The author declared one section, so
+    it stays one: the same evidence that justifies the split forbids this one.
+    """
+    html = """
+    <html><body><main>
+      <section class="business-sizes-section">
+        <div class="section-container">
+          <div class="section-title"><h2>Powering businesses of all sizes.</h2></div>
+          <span class="section-header-divider"></span>
+          <div class="section-row">
+            <section class="row"><h3>Enterprise</h3><p>Agile finance.</p></section>
+            <div class="divider-wrapper"></div>
+            <section class="row"><h3>Startups</h3><p>A foundation.</p></section>
+          </div>
+        </div>
+      </section>
+      <section class="tail"><h2>Tail</h2><p>Tail.</p></section>
+    </main></body></html>
+    """
+    result = segment_page(html, page_url="https://x.example/")
+    assert [section.heading for section in result.sections] == [
+        "Powering businesses of all sizes.",
+        "Tail",
+    ]
+    assert [d for d in result.diagnostics if d["code"] == COMPOUND_BAND_SPLIT_CODE] == []
+
+
+def test_a_wrapper_with_copy_of_its_own_is_not_split_out_from_under_it():
+    """A heading or a line between the sections belongs to the WRAPPER, and the parts would leave
+    it behind — which is content loss, not finer segmentation."""
+    html = """
+    <html><body><main>
+      <div class="group">
+        What our customers say
+        <section class="a"><h2>Testimonials</h2><p>One.</p></section>
+        <section class="b"><h2>Reviews</h2><p>Two.</p></section>
+      </div>
+      <section class="tail"><h2>Tail</h2><p>Tail.</p></section>
+    </main></body></html>
+    """
+    result = segment_page(html, page_url="https://x.example/")
+    assert [section.tag for section in result.sections] == ["div", "section"]
+    assert [d for d in result.diagnostics if d["code"] == COMPOUND_BAND_SPLIT_CODE] == []
+
+
+def test_a_wrapper_holding_one_stray_div_beside_its_sections_is_not_split():
+    """One `<div>` among them means the wrapper holds something besides sections, and splitting
+    would orphan it."""
+    html = """
+    <html><body><main>
+      <div class="group">
+        <section class="a"><h2>Testimonials</h2><p>One.</p></section>
+        <div class="promo"><p>A banner nobody declared a section.</p></div>
+        <section class="b"><h2>Reviews</h2><p>Two.</p></section>
+      </div>
+      <section class="tail"><h2>Tail</h2><p>Tail.</p></section>
+    </main></body></html>
+    """
+    result = segment_page(html, page_url="https://x.example/")
+    assert [section.tag for section in result.sections] == ["div", "section"]
+    assert [d for d in result.diagnostics if d["code"] == COMPOUND_BAND_SPLIT_CODE] == []
+
+
+def test_a_wrapper_around_a_single_section_is_a_wrapper_not_a_group():
+    html = """
+    <html><body><main>
+      <div class="group"><section class="a"><h2>Testimonials</h2><p>One.</p></section></div>
+      <section class="tail"><h2>Tail</h2><p>Tail.</p></section>
+    </main></body></html>
+    """
+    result = segment_page(html, page_url="https://x.example/")
+    assert [section.tag for section in result.sections] == ["div", "section"]
+    assert [d for d in result.diagnostics if d["code"] == COMPOUND_BAND_SPLIT_CODE] == []
+
+
+def test_a_compound_band_is_not_split_when_the_extents_are_a_running_sum():
+    """`_assign_geometry` reconstructs tops by accumulating the bound heights when the capture
+    recorded none, which is only true while the bound set is the whole measured sequence.
+    Dropping a bound wrapper out of it would move every section below it up by 2,286px and report
+    the result as geometry. Refuse the split and say why."""
+    html = """
+    <html><body><main>
+      <div class="overflow-hidden">
+        <section class="a"><h2>Testimonials</h2><p>One.</p></section>
+        <section class="b"><h2>Reviews</h2><p>Two.</p></section>
+      </div>
+      <section class="tail"><h2>Tail</h2><p>Tail.</p></section>
+    </main></body></html>
+    """
+    bands = [
+        {"index": 0, "tag": "div", "classes": "overflow-hidden", "height": 2286.78},
+        {"index": 1, "tag": "section", "classes": "tail", "height": 400.0},
+    ]
+    result = segment_page(
+        html,
+        page_url="https://x.example/",
+        bands=measured_bands({SNAPSHOT_META_BANDS_KEY: bands}),
+    )
+    assert [section.tag for section in result.sections] == ["div", "section"]
+    withheld = [d for d in result.diagnostics if d["code"] == COMPOUND_BAND_SPLIT_CODE]
+    assert len(withheld) == 1
+    assert withheld[0]["reason"] == "estimated_geometry"
+    assert withheld[0]["parts"] == 0
+    # The tail is still where the running sum puts it, which is the whole point of refusing.
+    assert result.sections[1].geometry.top_px == 2286.78
+
+
+def test_a_part_of_a_compound_band_is_never_called_hidden_for_having_no_band():
+    """A part was never a CHILD of the measured root, so the browser was never offered it. Its
+    silence is not the "the browser looked and saw nothing" evidence that makes a section dormant
+    — and a part that carries a stray hidden-ish class would otherwise be parked dormant on it."""
+    html = """
+    <html><body><main>
+      <section class="hero"><h1>Care</h1></section>
+      <div class="overflow-hidden">
+        <section class="section hide"><h2>Testimonials</h2><p>One.</p></section>
+        <section class="section"><h2>Reviews</h2><p>Two.</p></section>
+      </div>
+    </main></body></html>
+    """
+    bands = [
+        {"index": 0, "tag": "section", "classes": "hero", "top": 0.0, "height": 900.0},
+        {"index": 1, "tag": "div", "classes": "overflow-hidden", "top": 900.0, "height": 800.0},
+    ]
+    result = segment_page(
+        html,
+        page_url="https://x.example/",
+        bands=measured_bands({SNAPSHOT_META_BANDS_KEY: bands}),
+    )
+    assert [section.heading for section in result.sections] == [
+        "Care",
+        "Testimonials",
+        "Reviews",
+    ]
+    assert result.hidden_sections == ()
+
+
+# --------------------------------------------------------------------------- #
+# F3.4 — the section's own heading, read as the label the author put on it
+# --------------------------------------------------------------------------- #
+
+
+def test_a_section_headed_testimonials_is_called_one():
+    """Measured on the F2 re-walk's insighthealth capture: `<section class="section">` with
+    `<h2>Testimonials</h2>` came out `other` at 0.30. The class list said nothing and the role
+    caller never read the word the page puts at the top of the section."""
+    html = (
+        '<html><body><main><section class="hero"><h1>Care</h1></section>'
+        '<section class="section"><h2>Testimonials</h2>'
+        "<p>Real results from real clinicians.</p></section></main></body></html>"
+    )
+    result = segment_page(html, page_url="https://x.example/")
+    assert result.sections[1].role == "testimonial"
+    assert result.sections[1].confidence >= 0.70
+    assert any(
+        evidence.signal == "heading" and evidence.role == "testimonial"
+        for evidence in result.sections[1].evidence
+    )
+
+
+def test_a_hint_word_inside_a_sentence_headline_is_not_a_label():
+    """`Trusted by the world's best teams` is a hero's MESSAGE. Reading `trusted` out of it would
+    hand the page's hero to `proof` — which is why the rule reads only a heading short enough to
+    be a label."""
+    html = (
+        '<html><body><main><section class="hero">'
+        "<h1>Trusted by the world's best engineering teams</h1>"
+        "<p>Start building today.</p></section>"
+        '<section class="tail"><h2>Tail</h2><p>Tail.</p></section></main></body></html>'
+    )
+    result = segment_page(html, page_url="https://x.example/")
+    assert result.sections[0].role == "hero"
+    assert not any(evidence.signal == "heading" for evidence in result.sections[0].evidence)
+
+
+def test_a_heading_never_outranks_the_class_name_the_author_wrote():
+    """A class token is machinery written for a machine; a heading is prose and may be a pun. So
+    the same word is worth one step less in a heading, and the declaration wins the argument."""
+    html = (
+        '<html><body><main><section class="hero"><h1>Care</h1></section>'
+        '<section class="testimonials"><h2>Security</h2>'
+        "<p>What our customers say about us.</p></section></main></body></html>"
+    )
+    result = segment_page(html, page_url="https://x.example/")
+    assert result.sections[1].role == "testimonial"
+
+
+def test_a_hidden_section_is_named_from_its_heading_too():
+    """`_call_hidden_roles` reads the same declarations and content the visible caller does; a
+    dormant section a human is deciding about needs its name as much as a shown one."""
+    html = (
+        '<html><body><main><section class="a"><h1>Care</h1></section>'
+        '<section class="b" style="display:none"><h2>Reviews</h2>'
+        "<p>What people said.</p></section></main></body></html>"
+    )
+    result = segment_page(html, page_url="https://x.example/")
+    assert [section.role for section in result.hidden_sections] == ["testimonial"]

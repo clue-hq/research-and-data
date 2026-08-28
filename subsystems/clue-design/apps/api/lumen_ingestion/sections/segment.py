@@ -93,6 +93,15 @@ LOGO_WALL_MIN_IMAGES = 3
 LINK_DENSE = 3
 FOOTER_LINK_DENSE = 4
 
+#: A heading no longer than this is a LABEL the author put on the section — "Testimonials",
+#: "Case studies", "Security & compliance". Past it, the heading is the section's MESSAGE, and a
+#: hint word inside a sentence is saying something else entirely: "Trusted by the world's best
+#: teams" is a hero's headline, not a proof strip's name, and reading `trusted` out of it would
+#: hand the hero to `proof`. Two limits rather than one because either alone is easy to slip
+#: past — four long words, or one very long word.
+HEADING_LABEL_MAX_WORDS = 4
+HEADING_LABEL_MAX_CHARS = 40
+
 # --- diagnostics ------------------------------------------------------------------------------
 
 #: The snapshot carried no measured bands (static tier, or captured before F2.1 persisted them):
@@ -114,6 +123,10 @@ SKIPPED_CONTENT_CODE = "LUMI0525"
 #: Informational, not a warning: preserving them is the correct outcome, and the count is what a
 #: human wants in order to go and look at what is now waiting dormant in the inspector.
 HIDDEN_SECTION_CODE = "LUMI0526"
+#: A grouping wrapper whose children were all AUTHORED SECTIONS, split into them (F3.4). Carries
+#: what the split cost: the wrapper's measured band does not carry to the parts, so each part
+#: mints without a crop and is photographed on demand through the F3.2 isolation render.
+COMPOUND_BAND_SPLIT_CODE = "LUMI0527"
 
 #: How many items any diagnostic spells out in its human line.
 _NAMED_IN_MESSAGE = 8
@@ -242,6 +255,15 @@ _LANDMARK_SCOPING_TAGS = frozenset({"article", "aside", "main", "nav", "section"
 _SECTION_TAGS = frozenset(
     {"nav", "header", "footer", "main", "section", "article", "aside", "form", "table"}
 )
+#: The HTML standard's SECTIONING CONTENT, plus the two landmark wrappers that behave like it at
+#: the top level of a page. Narrower than ``_SECTION_TAGS`` on purpose: this set is the one the
+#: compound-band split reads, and it must contain only tags whose presence is the AUTHOR saying
+#: "this is a section of the document". ``main``/``form``/``table`` are not that — a form is a
+#: control group and a table is content — so they are section-SHAPED without being a declaration.
+_SECTIONING_CONTENT_TAGS = frozenset({"section", "article", "aside", "nav", "header", "footer"})
+#: How many authored sections a wrapper needs before it is a GROUP of them rather than one of
+#: them wearing an extra div. One is a wrapper; two is a compound band.
+_COMPOUND_MIN_PARTS = 2
 #: Content that counts even when an element carries no text.
 _MEDIA_SELECTOR = "img, svg, picture, video, canvas, iframe, input, button, form"
 _HIDDEN_STYLE = re.compile(r"(display\s*:\s*none|visibility\s*:\s*hidden)", re.IGNORECASE)
@@ -386,6 +408,9 @@ def segment_page(
 
     if candidates:
         _bind_bands(candidates, tuple(bands), diagnostics, tuple(skips))
+        # AFTER the alignment, never before: the bands are the measured root's own children, so a
+        # wrapper that has been replaced by its parts matches no band and refuses the whole page.
+        candidates = _split_compound_bands(candidates, tuple(bands), diagnostics)
         candidates, hidden = _section_shaped(candidates, skipped, tuple(skips))
 
     _call_hidden_roles(hidden)
@@ -525,6 +550,12 @@ class _Candidate:
     index: int = -1
     hidden_on_source: bool = False
     hidden_evidence: tuple[str, ...] = ()
+    #: This candidate is one AUTHORED SECTION lifted out of a compound band (F3.4). It was never
+    #: a child of the measured root, so the browser was never offered it and never measured it —
+    #: which is a different fact from "the browser looked at this and skipped it", and two rules
+    #: below have to keep them apart: the hidden-evidence rule (no band would otherwise read as
+    #: evidence the site hides it) and the unmeasured-section diagnostic.
+    from_compound_band: bool = False
 
     def __post_init__(self) -> None:
         if self.evidence is None:
@@ -553,6 +584,161 @@ def _page_flow(tree: HTMLParser) -> tuple[list[_Candidate], list[tuple[str, str]
     if measured[1] == body_path:
         return _children_as_candidates(body_node, body_path, True, skipped), skipped
     return _expand(body_node, body_path, measured[1], skipped), skipped
+
+
+def _split_compound_bands(
+    candidates: list[_Candidate],
+    bands: tuple[MeasuredBand, ...],
+    diagnostics: list[dict[str, Any]],
+) -> list[_Candidate]:
+    """Replace a wrapper whose children are ALL authored sections with those sections (F3.4).
+
+    The F2 acceptance walk minted insighthealth's Testimonials, Blog and Get-Started bands as ONE
+    fragment, because the page wraps the three of them in a ``<div class="overflow-hidden">`` and
+    that div is what the browser measured as a band. A library of reusable sections that holds
+    "those three, together, in that order" holds something nobody asked for: the three are the
+    reusable units, and one of them cannot be inserted without the other two.
+
+    **The evidence is the author's own markup, and only that.** The wrapper is split when every
+    one of its element children is HTML *sectioning content* — ``<section>``, ``<article>``,
+    ``<aside>``, ``<nav>``, ``<header>``, ``<footer>`` — there are at least two of them, and the
+    wrapper contributes nothing of its own between them (no direct text). Writing that markup is
+    the author saying "these are separate sections of this document"; nothing here reads a class
+    name, a height, a heading count or a site.
+
+    **A wrapper that is itself sectioning content is never split**, and that is the same evidence
+    read the other way. stripe.com's 4,598px ``<section class="business-sizes-section">`` — the
+    other compound band the F2 walk named — carries its own ``<h2>`` and three ``<section>``s that
+    are its subsections, two ``<div>``s deep, interleaved with dividers that are not sections at
+    all. The author declared ONE section there, so it stays one; splitting it would be this
+    module deciding it knows the page better than the person who wrote it.
+
+    **What the split costs, stated rather than hidden.** The band belongs to the wrapper. The
+    parts were never children of the measured root, so the browser never measured them, and their
+    heights inside the wrapper are not derivable from its total — so they carry no geometry and
+    mint without a crop. That is honest absence, and since F3.2 it is also recoverable: an
+    isolation render (ruling P-7) photographs any fragment from its own bytes on demand. The
+    diagnostic says all of it.
+
+    Ordered after :func:`_bind_bands` for a reason that is not stylistic: the bands are matched
+    against the measured root's own children, so splitting first would leave the wrapper's band
+    matching nothing, and a band that matches nothing refuses the WHOLE page's alignment. The
+    alignment runs on the flow the browser saw; the split changes what we mint out of it.
+    """
+    if not any(
+        candidate for candidate in candidates if _compound_parts(candidate) is not None
+    ):
+        return candidates
+    # The running-sum fallback in `_assign_geometry` reconstructs tops by accumulating the bound
+    # candidates' heights in order, which is only true while the bound set is the whole measured
+    # sequence. Dropping a bound wrapper out of it would move every later section up by the
+    # wrapper's height and report the result as geometry. Where the capture recorded absolute
+    # tops there is no such coupling and the split is free.
+    estimated = bool(bands) and any(band.top_px is None for band in bands)
+    out: list[_Candidate] = []
+    split: list[tuple[_Candidate, list[_Candidate]]] = []
+    withheld: list[_Candidate] = []
+    for candidate in candidates:
+        parts = _compound_parts(candidate)
+        if parts is None:
+            out.append(candidate)
+            continue
+        if estimated and candidate.band is not None:
+            withheld.append(candidate)
+            out.append(candidate)
+            continue
+        replacements = [
+            _candidate(
+                child,
+                candidate.path + (index,),
+                in_measured_root=candidate.in_measured_root,
+            )
+            for index, child in parts
+        ]
+        for replacement in replacements:
+            replacement.from_compound_band = True
+            replacement.is_page_scoped = _is_page_scoped(replacement.node)
+        split.append((candidate, replacements))
+        out.extend(replacements)
+
+    for wrapper, replacements in split:
+        diagnostics.append(
+            _diag(
+                COMPOUND_BAND_SPLIT_CODE,
+                "info",
+                f"a <{wrapper.tag}> wrapper held {len(replacements)} authored sections and "
+                f"nothing else, so it was split into them rather than minted as one fragment"
+                + (
+                    ""
+                    if wrapper.band is None
+                    else f"; the measured band {wrapper.band.index} belongs to the wrapper and "
+                    "does not carry to the parts, so each mints without a crop and is "
+                    "photographed on demand by an isolation render"
+                ),
+                wrapper_tag=wrapper.tag,
+                wrapper_class_names=list(wrapper.class_names),
+                parts=len(replacements),
+                part_tags=[part.tag for part in replacements],
+                band_index=wrapper.band.index if wrapper.band else None,
+                band_height_px=wrapper.band.height_px if wrapper.band else None,
+            )
+        )
+    for wrapper in withheld:
+        diagnostics.append(
+            _diag(
+                COMPOUND_BAND_SPLIT_CODE,
+                "info",
+                f"a <{wrapper.tag}> wrapper holds several authored sections and was NOT split: "
+                "the capture recorded band heights but no absolute tops, so the page's extents "
+                "are a running sum and removing a measured band from it would misplace every "
+                "section below",
+                wrapper_tag=wrapper.tag,
+                wrapper_class_names=list(wrapper.class_names),
+                parts=0,
+                reason="estimated_geometry",
+                band_index=wrapper.band.index if wrapper.band else None,
+            )
+        )
+    return out
+
+
+def _compound_parts(candidate: _Candidate) -> list[tuple[int, Node]] | None:
+    """The authored sections this candidate is a bare wrapper around — or ``None``.
+
+    Four conditions, and each one is a way the split could be wrong:
+
+    * the candidate is **not itself sectioning content**. A ``<section>`` full of ``<section>``s
+      is a section with subsections, which is what its author said it was.
+    * **every** element child is sectioning content. One stray ``<div>`` among them means the
+      wrapper holds something besides sections, and splitting would orphan it.
+    * there are **at least two**, because one is a wrapper, not a group.
+    * the wrapper has **no direct text of its own**. A heading or a line of copy sitting between
+      the sections belongs to the wrapper, and the parts would leave it behind.
+
+    Every child must also be a candidate in its own right (:func:`_is_candidate`), so the split
+    can never produce a part the top level would have refused.
+    """
+    if candidate.tag in _SECTIONING_CONTENT_TAGS:
+        return None
+    children = _element_children(candidate.node)
+    if len(children) < _COMPOUND_MIN_PARTS:
+        return None
+    if not all((child.tag or "").lower() in _SECTIONING_CONTENT_TAGS for _, child in children):
+        return None
+    if not all(_is_candidate(child) for _, child in children):
+        return None
+    if _direct_text(candidate.node):
+        return None
+    return children
+
+
+def _direct_text(node: Node) -> str:
+    """The text this element holds ITSELF, outside any child element."""
+    parts: list[str] = []
+    for child in node.iter(include_text=True):
+        if (child.tag or "") == "-text":
+            parts.append((child.text() or "").strip())
+    return " ".join(part for part in parts if part)
 
 
 def _section_shaped(
@@ -652,8 +838,10 @@ def _hidden_evidence(
         return ()
     # The browser measured THIS page and this eligible child got no band: it looked and did not
     # see it. Restricted to the measured root, because a nav or footer outside it was never
-    # eligible, so "no band" says nothing about whether it renders.
-    if bound_any and candidate.in_measured_root:
+    # eligible, so "no band" says nothing about whether it renders — and excluded for a part
+    # lifted out of a compound band (F3.4), which is inside the root but was never one of its
+    # CHILDREN, so the browser was never offered it and its silence is not a judgement.
+    if bound_any and candidate.in_measured_root and not candidate.from_compound_band:
         return markup + (
             "the browser measured this page and recorded no band for this child, which sat "
             "inside the measured root and was eligible for one",
@@ -1273,12 +1461,16 @@ def _assign_geometry(
     if not unmeasured:
         return
 
-    # Two different facts, and the diagnostic has to keep them apart. A section OUTSIDE the
+    # THREE different facts, and the diagnostic has to keep them apart. A section OUTSIDE the
     # probe's root was never eligible to be measured; a section INSIDE it was eligible and the
     # browser skipped it, which is a statement about the section (hidden, tiny, narrow), not
-    # about the root. One sentence covering both would be false about one of them.
-    outside = [candidate for candidate in unmeasured if not candidate.in_measured_root]
-    inside = [candidate for candidate in unmeasured if candidate.in_measured_root]
+    # about the root; and a part lifted out of a compound band (F3.4) is inside the root but was
+    # never one of its children, so the browser was never offered it at all. One sentence
+    # covering all three would be false about two of them.
+    parts = [candidate for candidate in unmeasured if candidate.from_compound_band]
+    rest = [candidate for candidate in unmeasured if not candidate.from_compound_band]
+    outside = [candidate for candidate in rest if not candidate.in_measured_root]
+    inside = [candidate for candidate in rest if candidate.in_measured_root]
     reasons: list[str] = []
     if outside:
         reasons.append(
@@ -1291,6 +1483,11 @@ def _assign_geometry(
             "them (it skips a band that is hidden, under 40px tall, or narrower than half the "
             "viewport)"
         )
+    if parts:
+        reasons.append(
+            f"{len(parts)} were lifted out of a compound band, so the browser measured their "
+            "wrapper rather than them and their own extents are not derivable from its total"
+        )
     diagnostics.append(
         _diag(
             UNMEASURED_SECTION_CODE,
@@ -1300,6 +1497,7 @@ def _assign_geometry(
             count=len(unmeasured),
             outside_measured_root=len(outside),
             inside_measured_root=len(inside),
+            from_compound_band=len(parts),
         )
     )
 
@@ -1310,6 +1508,7 @@ def _assign_geometry(
 def _call_roles(candidates: list[_Candidate]) -> None:
     for candidate in candidates:
         candidate.evidence.extend(_declared_signals(candidate))
+        candidate.evidence.extend(_heading_signals(candidate))
         candidate.evidence.extend(_content_signals(candidate))
     _positional_signals(candidates)
 
@@ -1335,6 +1534,7 @@ def _call_hidden_roles(hidden: list[_Candidate]) -> None:
     """
     for candidate in hidden:
         candidate.evidence.extend(_declared_signals(candidate))
+        candidate.evidence.extend(_heading_signals(candidate))
         candidate.evidence.extend(_content_signals(candidate))
         candidate.role, candidate.confidence = _resolve(candidate)
         candidate.evidence.sort(key=lambda ev: (-ev.weight, ev.signal, ev.role, ev.detail))
@@ -1389,6 +1589,44 @@ def _declared_signals(candidate: _Candidate) -> list[SectionEvidence]:
                     f'"{phrase}" in the class/id vocabulary',
                 )
             )
+    return out
+
+
+def _heading_signals(candidate: _Candidate) -> list[SectionEvidence]:
+    """The section's own heading, read as the LABEL the author put on it (F3.4).
+
+    The gap this closes was measured, not imagined. On the F2 re-walk's insighthealth capture a
+    section headed ``<h2>Testimonials</h2>`` came out ``other`` at 0.30 — because the role caller
+    read the class/id vocabulary, the semantic tag, ARIA, a few text patterns and the band's
+    shape, and never once read the word the page puts at the top of the section. The class list
+    was ``class="section"``, which says nothing; the heading said everything.
+
+    Same vocabulary as the class/id hints, deliberately: a role word means the same thing wherever
+    the author wrote it, and a second vocabulary would be a second answer. What differs is WHERE
+    it may be read — only from a heading short enough to be a label (see
+    :data:`HEADING_LABEL_MAX_WORDS`) — and the weight, which is one step down from the same word
+    in a class name. A class token is machinery and is written for a machine; a heading is prose
+    and may be a pun, a product name, or a joke.
+    """
+    heading = (candidate.heading or "").strip()
+    if not heading or len(heading) > HEADING_LABEL_MAX_CHARS:
+        return []
+    if len(heading.split()) > HEADING_LABEL_MAX_WORDS:
+        return []
+    out: list[SectionEvidence] = []
+    seen: set[tuple[str, str]] = set()
+    for token in _tokenize(heading):
+        role = _STRONG_TOKEN_HINTS.get(token)
+        weight = HEADLINE_WEIGHT
+        if role is None:
+            role = _WEAK_TOKEN_HINTS.get(token)
+            weight = WEAK_HINT_WEIGHT
+        if role is None or (role, token) in seen:
+            continue
+        seen.add((role, token))
+        out.append(
+            SectionEvidence("heading", role, weight, f'the section is headed "{heading}"')
+        )
     return out
 
 
