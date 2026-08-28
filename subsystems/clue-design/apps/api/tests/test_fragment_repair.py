@@ -603,6 +603,107 @@ def test_a_repair_of_a_repair_supersedes_transitively_over_a_degraded_middle(
     assert rows[broken["fragment_id"]]["lineage_ambiguous"] == []
 
 
+def test_a_degraded_newest_repair_does_not_supersede_its_own_healthy_parent(
+    workspace_id: str, design_storage: FsStorage, tmp_path
+) -> None:
+    """Ruling N1: a repair nobody should pin supersedes nothing.
+
+    `A(broken) → R1(approved, healthy) → R2(approved, later marked degraded)`. Counting every
+    approved child as superseding let R2 knock its own healthy parent out of the leaf set; the
+    leaf set emptied and the fallback jumped past R1 to the broken original, so the band D-F6
+    marked broken went back on the page while a human-released healthy repair of it sat unused.
+    """
+    broken = _mint_broken(workspace_id, design_storage)
+    registry = _registry(workspace_id, design_storage, tmp_path / "cache")
+    healthy = _second_repair(
+        workspace_id, design_storage, registry, replaces=broken["fragment_id"], marker="One"
+    )
+    newest = _second_repair(
+        workspace_id, design_storage, registry, replaces=healthy["fragment_id"], marker="Two"
+    )
+    set_web_fragment_degraded(
+        workspace_id=workspace_id,
+        fragment_id=newest["fragment_id"],
+        degraded=True,
+        reason="dead_height",
+    )
+
+    rows = {row["fragment_id"]: row for row in registry.list_sections()["sections"]}
+
+    assert rows[broken["fragment_id"]]["superseded_by"] == healthy["fragment_id"]
+    assert rows[newest["fragment_id"]]["superseded_by"] == healthy["fragment_id"]
+    assert rows[healthy["fragment_id"]]["superseded_by"] is None
+    assert rows[broken["fragment_id"]]["lineage_ambiguous"] == []
+    assert rows[broken["fragment_id"]]["lineage_ranked_over"] == []
+
+
+def test_a_family_with_no_releasable_version_names_what_the_fallback_passed_over(
+    workspace_id: str, design_storage: FsStorage, tmp_path
+) -> None:
+    """Ruling N4: it cannot refuse when every candidate is broken, so it states the ranking."""
+    broken = _mint_broken(workspace_id, design_storage)
+    registry = _registry(workspace_id, design_storage, tmp_path / "cache")
+    for marker in ("One", "Two"):
+        repair = _second_repair(
+            workspace_id, design_storage, registry, replaces=broken["fragment_id"], marker=marker
+        )
+        set_web_fragment_degraded(
+            workspace_id=workspace_id,
+            fragment_id=repair["fragment_id"],
+            degraded=True,
+            reason="dead_height",
+        )
+
+    rows = {row["fragment_id"]: row for row in registry.list_sections()["sections"]}
+
+    original = rows[broken["fragment_id"]]
+    # The original is the oldest approved member, so it is the fallback...
+    assert original["superseded_by"] is None
+    assert original["lineage_ambiguous"] == []
+    # ...and the two broken repairs it beat are named rather than silently dropped.
+    assert len(original["lineage_ranked_over"]) == 2
+    assert broken["fragment_id"] not in original["lineage_ranked_over"]
+
+
+def test_the_pin_gate_resolves_lineage_only_for_a_broken_band(
+    workspace_id: str, design_storage: FsStorage, tmp_path
+) -> None:
+    """Ruling N2: whoever pins a broken band must be able to say whether a repair already exists.
+
+    Gated on ``degraded`` because the verdict costs a row scan and nothing else reads it — a page
+    of healthy clones resolves lineage exactly zero times.
+    """
+    broken = _mint_broken(workspace_id, design_storage)
+    # A second, DIFFERENT band that is fine — different bytes, so a different fragment.
+    healthy, _artifact = create_web_fragment(
+        design_storage,
+        workspace_id=workspace_id,
+        html=BROKEN_HTML.replace("Trusted by 400 clinics", "Featured in"),
+        css=BROKEN_CSS,
+        rehosted={},
+        source_url=PAGE,
+        section_role="proof",
+        label="Proof — Featured in",
+        slots=BROKEN_SLOTS,
+        preview=PNG,
+        provenance={"page_url": PAGE, "section_index": 3},
+    )
+    healthy = set_web_fragment_status(
+        workspace_id=workspace_id, fragment_id=healthy["fragment_id"], status="approved"
+    )
+    registry = _registry(workspace_id, design_storage, tmp_path / "cache")
+    repair = _second_repair(
+        workspace_id, design_storage, registry, replaces=broken["fragment_id"], marker="One"
+    )
+
+    assert registry.resolve_insertable(broken["fragment_id"])["superseded_by"] == (
+        repair["fragment_id"]
+    )
+    # A healthy pin is not looked up at all, and says None rather than a claim it did not make.
+    assert registry.resolve_insertable(healthy["fragment_id"])["superseded_by"] is None
+    assert registry.resolve_insertable(healthy["fragment_id"])["lineage_ambiguous"] == []
+
+
 def test_a_lineage_whose_only_repair_is_unreleased_still_points_at_the_original(
     workspace_id: str, design_storage: FsStorage, tmp_path
 ) -> None:

@@ -141,11 +141,18 @@ class LineageVerdict:
     two sibling repairs both released, neither superseding the other — and then ``ambiguous``
     names the candidates. That is a decision for a human (retire one), never something to guess
     at by picking the newest: both are somebody's deliberate repair of the same band.
+
+    ``ranked_over`` is the other half of that honesty. When NO releasable repair exists the family
+    falls back to its oldest approved member, and if more than one approved member was in the
+    running that fallback is a ranking — of BROKEN candidates, so it cannot refuse the way
+    ``ambiguous`` does (refusing would leave the page with a hole where the band goes). It names
+    what it passed over instead, so a silent choice becomes a stated one.
     """
 
     root: str
     representative: Optional[str]
     ambiguous: tuple[str, ...] = ()
+    ranked_over: tuple[str, ...] = ()
 
 
 def _resolve_lineages(rows: List[JsonObject]) -> Dict[str, LineageVerdict]:
@@ -156,15 +163,19 @@ def _resolve_lineages(rows: List[JsonObject]) -> Dict[str, LineageVerdict]:
     1. **Roots.** Walk ``derived_from`` up through every row REGARDLESS of status, so a lineage
        whose original was retired still resolves to one family rather than fragmenting into one
        family per surviving repair.
-    2. **Approved children.** Only an approved row can supersede anything — the pin gate accepts
-       nothing else — so leaf-ness is computed over approved rows alone. A draft repair does not
-       stop its parent from being the answer, which is right: it is not releasable yet.
+    2. **Superseding children.** A child only takes its parent's place if it could actually go on
+       a page in the parent's stead: approved (the pin gate accepts nothing else) **and not
+       itself degraded**. That second half is the one this file got wrong first (ruling N1): a
+       degraded newest repair was counted as superseding, so it knocked its own HEALTHY parent
+       out of the leaf set, the leaf set emptied, and the fallback jumped past that healthy
+       released repair all the way to the broken original. A repair nobody should pin supersedes
+       nothing.
     3. **The representative.** The single approved, un-degraded LEAF of the family: the end of
        the chain, transitively, so a repair-of-a-repair wins over its own parent and a degraded
-       intermediate is stepped over rather than dragging the broken original back onto the page.
-       No such leaf (every repair itself broken, or none released) falls back to the family's
-       oldest approved member — the original, in the case that matters. Two or more, and the
-       family is ``ambiguous``.
+       link — middle or newest — is stepped over rather than dragging the broken original back
+       onto the page. No such leaf (every repair itself broken, or none released) falls back to
+       the family's oldest approved member — the original, in the case that matters — and NAMES
+       what it passed over. Two or more leaves, and the family is ``ambiguous``.
 
     Cycles cannot exist (``derived_from`` must resolve to an existing row at insert time and the
     column is frozen), but the walk carries a seen-set anyway: a lineage walk that could loop
@@ -185,16 +196,15 @@ def _resolve_lineages(rows: List[JsonObject]) -> Dict[str, LineageVerdict]:
         return current
 
     families: Dict[str, List[JsonObject]] = {}
-    roots: Dict[str, str] = {}
     for fragment_id in by_id:
-        root = root_of(fragment_id)
-        roots[fragment_id] = root
-        families.setdefault(root, []).append(by_id[fragment_id])
+        families.setdefault(root_of(fragment_id), []).append(by_id[fragment_id])
 
-    approved_parents: set = {
+    superseded: set = {
         str(row["derived_from"])
         for row in rows
-        if row.get("status") == "approved" and isinstance(row.get("derived_from"), str)
+        if row.get("status") == "approved"
+        and not row.get("degraded")
+        and isinstance(row.get("derived_from"), str)
     }
 
     verdicts: Dict[str, LineageVerdict] = {}
@@ -206,7 +216,7 @@ def _resolve_lineages(rows: List[JsonObject]) -> Dict[str, LineageVerdict]:
         leaves = [
             row
             for row in approved
-            if not row.get("degraded") and str(row["fragment_id"]) not in approved_parents
+            if not row.get("degraded") and str(row["fragment_id"]) not in superseded
         ]
         if len(leaves) == 1:
             verdict = LineageVerdict(root=root, representative=str(leaves[0]["fragment_id"]))
@@ -217,9 +227,16 @@ def _resolve_lineages(rows: List[JsonObject]) -> Dict[str, LineageVerdict]:
                 ambiguous=tuple(sorted(str(row["fragment_id"]) for row in leaves)),
             )
         else:
+            # Nothing releasable in the whole family. Fall back, and say what lost — with two or
+            # more broken candidates this pick is a ranking, and an unstated ranking is the thing
+            # the ambiguity refusal exists to avoid. It cannot refuse here (every candidate is
+            # broken, and a hole where the band goes is worse than a flagged band), so it states.
             verdict = LineageVerdict(
                 root=root,
                 representative=str(approved[0]["fragment_id"]) if approved else None,
+                ranked_over=tuple(
+                    sorted(str(row["fragment_id"]) for row in approved[1:])
+                ),
             )
         for row in members:
             verdicts[str(row["fragment_id"])] = verdict
@@ -405,6 +422,9 @@ class DurableAgentClonedSectionRegistry:
             # Two released repairs of one band, neither superseding the other. A human retires
             # one; nothing here picks for them, because both are somebody's deliberate work.
             "lineage_ambiguous": list(verdict.ambiguous),
+            # The broken candidates the fallback passed over, when it had to rank. Empty in every
+            # ordinary shape; present only when the whole family is broken.
+            "lineage_ranked_over": list(verdict.ranked_over),
         }
 
     def describe(self, fragment_ids: Iterable[str]) -> Dict[str, JsonObject]:
@@ -452,6 +472,14 @@ class DurableAgentClonedSectionRegistry:
         Raises :class:`~lumen_api.database.FragmentReferenceError` — the document write's own
         exception, with the document write's own code — when it may not. Nothing about status is
         re-decided here; see the module docstring.
+
+        **A DEGRADED answer also carries its lineage verdict** (ruling N2), and only a degraded
+        one. Whoever pins a broken band is about to be told so, and that warning has to be able
+        to say whether a released repair already exists — otherwise it tells an author to compose
+        a second repair of a band that already has one, which is how two released siblings (and
+        the ambiguity refusal that follows) get made. Gated on ``degraded`` because the verdict
+        costs a row scan and the answer is used nowhere else: an ordinary healthy pin pays
+        nothing, and a page of nine healthy clones still resolves lineage exactly zero times.
         """
         repository = self._repository()
         # THE GATE. Not a status comparison of our own: the same call `update_web_document` makes,
@@ -466,6 +494,9 @@ class DurableAgentClonedSectionRegistry:
         )
         row = loaded.row
         degraded = bool(row.get("degraded"))
+        verdict = None
+        if degraded:
+            verdict = _resolve_lineages(repository.list_web_fragments()).get(fragment_id)
         return {
             "fragment_id": fragment_id,
             "section_role": row.get("section_role"),
@@ -480,6 +511,16 @@ class DurableAgentClonedSectionRegistry:
             "degraded_reason": row.get("degraded_reason") if degraded else None,
             "degraded_note": degraded_headline(row.get("degraded_reason")) if degraded else None,
             "derived_from": row.get("derived_from"),
+            # `None` on a healthy pin means "not looked up", not "no repair exists" — nothing
+            # reads it there. On a degraded pin it is the resolved answer.
+            "superseded_by": (
+                verdict.representative
+                if verdict is not None
+                and verdict.representative
+                and verdict.representative != fragment_id
+                else None
+            ),
+            "lineage_ambiguous": list(verdict.ambiguous) if verdict is not None else [],
             # Exactly the entry `build_fragment_render_package` writes, so a section inserted
             # mid-turn renders in the agent's own preview through the map that is already
             # threaded — no second render path, and no shape for the two to disagree on.

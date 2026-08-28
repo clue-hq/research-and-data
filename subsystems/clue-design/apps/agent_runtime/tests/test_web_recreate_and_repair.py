@@ -189,6 +189,7 @@ class FakeRegistry:
                         else None
                     ),
                     "lineage_ambiguous": list(verdict.ambiguous),
+                    "lineage_ranked_over": list(verdict.ranked_over),
                 }
             )
         return {
@@ -218,6 +219,14 @@ class FakeRegistry:
                 f"fragment {fragment_id!r} is {row['status']}",
                 fragment_id,
             )
+        # The real gate resolves lineage only for a DEGRADED answer (it costs a scan and nothing
+        # else reads it); so does this, or the fake would prove the cheaper path works.
+        superseded_by, ambiguous = None, []
+        if row["degraded"]:
+            verdict = _resolve_lineages(list(self.rows.values()))[fragment_id]
+            if verdict.representative and verdict.representative != fragment_id:
+                superseded_by = verdict.representative
+            ambiguous = list(verdict.ambiguous)
         return {
             "fragment_id": fragment_id,
             "section_role": row["section_role"],
@@ -229,6 +238,8 @@ class FakeRegistry:
             "degraded_reason": row["degraded_reason"],
             "degraded_note": row["degraded_note"],
             "derived_from": row["derived_from"],
+            "superseded_by": superseded_by,
+            "lineage_ambiguous": ambiguous,
             "render": {
                 "html": row["html"],
                 "css": row["css"],
@@ -500,6 +511,87 @@ def test_a_repair_of_a_repair_wins_and_never_lets_the_broken_original_back(
     assert [entry["substituted_for"] for entry in result["substituted"]] == [PROOF_ID]
 
 
+def test_a_degraded_NEWEST_repair_never_costs_the_family_its_healthy_one(
+    tmp_path: Path, registry: FakeRegistry
+) -> None:
+    """Ruling N1 — C1's Repro B one rung deeper, and it failed the same guarantee.
+
+    `A(broken) → R1(approved, healthy) → R2(approved, later marked degraded)`. Counting EVERY
+    approved child as superseding meant R2 knocked its own healthy parent R1 out of the leaf set;
+    the leaf set emptied and the fallback jumped past R1 all the way to the broken original. The
+    shipped tool pinned `nav, hero, PROOF(broken), footer` while a human-released healthy repair
+    of that band sat unused. A repair nobody should pin supersedes nothing.
+    """
+    registry.add("frag_00000000000000b2", role="proof", label="Repair one", index=2,
+                 derived_from=PROOF_ID)
+    registry.add("frag_00000000000000b3", role="proof", label="Repair two", index=2,
+                 derived_from="frag_00000000000000b2", degraded=True,
+                 degraded_reason="dead_height")
+    tools = _tools(tmp_path, registry)
+
+    result = json.loads(tools.recreate_cloned_page())
+
+    assert _pinned_in_order(tools) == [
+        NAV_ID,
+        HERO_ID,
+        "frag_00000000000000b2",
+        FOOTER_ID,
+    ]
+    assert PROOF_ID not in _pinned_in_order(tools)
+    assert result["needs_repair"] == []
+    assert [entry["substituted_for"] for entry in result["substituted"]] == [PROOF_ID]
+
+
+def test_when_every_released_version_is_broken_the_ranking_is_stated(
+    tmp_path: Path, registry: FakeRegistry
+) -> None:
+    """Ruling N4. It cannot refuse — a hole where the band goes is worse than a flagged band —
+    so it says which broken candidate it pinned and what that beat."""
+    registry.add("frag_00000000000000b2", role="proof", label="Repair one", index=2,
+                 derived_from=PROOF_ID, degraded=True, degraded_reason="dead_height")
+    registry.add("frag_00000000000000b3", role="proof", label="Repair two", index=2,
+                 derived_from=PROOF_ID, degraded=True, degraded_reason="dead_height")
+    tools = _tools(tmp_path, registry)
+
+    result = json.loads(tools.recreate_cloned_page())
+
+    # The original is the oldest approved member, so it is what goes on the page — flagged.
+    assert PROOF_ID in _pinned_in_order(tools)
+    assert [entry["fragment_id"] for entry in result["needs_repair"]] == [PROOF_ID]
+    (ranked,) = result["ranked"]
+    assert ranked["fragment_id"] == PROOF_ID
+    assert sorted(ranked["ranked_over"]) == [
+        "frag_00000000000000b2",
+        "frag_00000000000000b3",
+    ]
+    # ADVICE, not a warning: the band is already reported as work through `needs_repair`.
+    (advice,) = [item for item in result["advice"] if item.get("code") == "LUMA0602"]
+    assert advice["severity"] == "advice"
+    assert "oldest was pinned rather than none" in advice["message"]
+
+
+def test_the_picker_says_when_a_family_has_two_released_repairs(
+    tmp_path: Path, registry: FakeRegistry
+) -> None:
+    """Ruling N5: the first contact with an ambiguous family should not be a total refusal."""
+    registry.add("frag_00000000000000b2", role="proof", label="Repair one", index=2,
+                 derived_from=PROOF_ID)
+    registry.add("frag_00000000000000b3", role="proof", label="Repair two", index=2,
+                 derived_from=PROOF_ID)
+    tools = _tools(tmp_path, registry)
+
+    result = json.loads(tools.search_cloned_sections(limit=20))
+
+    proof = next(row for row in result["results"] if row["fragment_id"] == PROOF_ID)
+    assert sorted(proof["lineage_ambiguous"]) == [
+        "frag_00000000000000b2",
+        "frag_00000000000000b3",
+    ]
+    assert "retires all but one" in proof["lineage_note"]
+    healthy = next(row for row in result["results"] if row["fragment_id"] == NAV_ID)
+    assert "lineage_ambiguous" not in healthy
+
+
 def test_a_lineage_whose_only_repair_is_itself_broken_falls_back_to_the_original(
     tmp_path: Path, registry: FakeRegistry
 ) -> None:
@@ -759,6 +851,51 @@ def test_a_repair_that_converges_onto_a_released_fragment_is_pinned_as_the_artif
     assert _pinned_in_order(tools) == [REPAIR_ID]
 
 
+def test_a_repair_that_converges_onto_a_BROKEN_released_row_reports_it_rather_than_pinning_quietly(
+    tmp_path: Path, registry: FakeRegistry
+) -> None:
+    """Ruling N3 — the third pin door.
+
+    `fragment.repair_unchanged` blocks convergence onto the ORIGINAL and nothing else, so a mint
+    whose bytes converge onto some other already-approved row can land on one a later pass marked
+    broken. That row is `insertable`, so the tool pins it — and used to report a clean repair.
+    """
+    registry.add(
+        REPAIR_ID,
+        role="proof",
+        label="Repaired — Proof",
+        index=2,
+        derived_from=PROOF_ID,
+        degraded=True,
+        degraded_reason="dead_height",
+    )
+    tools = _tools(tmp_path, registry)
+    assert json.loads(tools.insert_cloned_section(PROOF_ID))["status"] == "ok"
+    registry.mint_result = {
+        "fragment_id": REPAIR_ID,
+        "replaces": PROOF_ID,
+        "status": "approved",
+        "derived_from": PROOF_ID,
+        "derived_reason": "repair rung 3 (...)",
+        "slot_keys": [],
+        "asset_digests": [],
+        "sanitizer_notes": [],
+        "converged": True,
+        "lineage_kept": True,
+        "insertable": True,
+    }
+
+    result = json.loads(
+        tools.repair_cloned_section(PROOF_ID, REPLACEMENT_HTML, 3, "compact fallback")
+    )
+
+    assert result["pinned"] is True
+    assert _pinned_in_order(tools) == [REPAIR_ID]
+    # The band that landed is itself broken, and the third door says so like the other two.
+    assert [entry["fragment_id"] for entry in result["needs_repair"]] == [REPAIR_ID]
+    assert any(w.get("code") == "LUMA0602" for w in result["warnings"])
+
+
 def test_the_repair_refuses_a_clone_that_is_not_on_the_page(
     tmp_path: Path, registry: FakeRegistry
 ) -> None:
@@ -833,6 +970,47 @@ def test_pinning_a_broken_band_the_ordinary_way_reports_it_too(
     warning = result["warnings"][0]
     assert warning["code"] == "LUMA0602"
     assert "repair_cloned_section" in warning["hint"]
+
+
+def test_the_broken_pin_warning_never_claims_a_repair_does_not_exist_when_it_does(
+    tmp_path: Path, registry: FakeRegistry
+) -> None:
+    """Ruling N2. The old text said "and have no released repair" from every door.
+
+    That is true by construction of the recreate walk, which substitutes one when it exists, and
+    a guess anywhere else. Told it from the insert door, an author composes a SECOND repair of a
+    band that already has one — and after the next bulk kit approval that leaves two released
+    siblings and a whole-page assembly that refuses.
+    """
+    registry.add(
+        REPAIR_ID, role="proof", label="Repaired — Proof", index=2, derived_from=PROOF_ID
+    )
+    tools = _tools(tmp_path, registry)
+
+    result = json.loads(tools.insert_cloned_section(PROOF_ID))
+
+    warning = result["warnings"][0]
+    assert warning["code"] == "LUMA0602"
+    assert "no released repair" not in warning["message"]
+    assert "ALREADY HAVE a released repair" in warning["hint"]
+    assert f"{PROOF_ID} -> {REPAIR_ID}" in warning["hint"]
+    # ...and it does NOT tell the author to compose another one.
+    assert "repair_cloned_section" not in warning["hint"]
+    assert result["needs_repair"][0]["superseded_by"] == REPAIR_ID
+
+
+def test_the_broken_pin_warning_still_says_so_when_no_repair_exists(
+    tmp_path: Path, registry: FakeRegistry
+) -> None:
+    """The claim is allowed once it has been resolved — and then it IS the right instruction."""
+    tools = _tools(tmp_path, registry)
+
+    result = json.loads(tools.insert_cloned_section(PROOF_ID))
+
+    warning = result["warnings"][0]
+    assert "none of them has a released repair" in warning["message"]
+    assert "repair_cloned_section" in warning["hint"]
+    assert result["needs_repair"][0]["superseded_by"] is None
 
 
 def test_pinning_a_healthy_band_the_ordinary_way_says_nothing_new(

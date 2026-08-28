@@ -4532,6 +4532,16 @@ class LumenWebTools:
                 row["degraded_note"] = section.get("degraded_note")
             if section.get("superseded_by"):
                 row["superseded_by"] = section.get("superseded_by")
+            if section.get("lineage_ambiguous"):
+                # Where the human is actually looking (ruling N5). Without it, the first contact
+                # with a family that has two released repairs is the recreate's total refusal,
+                # and the picker gives no hint that the escape hatch is to retire one.
+                row["lineage_ambiguous"] = section.get("lineage_ambiguous")
+                row["lineage_note"] = (
+                    f"{len(section['lineage_ambiguous'])} released repairs of this band exist "
+                    "and none replaces the others, so a whole-page recreate refuses until a "
+                    "human retires all but one. Pin the one you want explicitly, or ask."
+                )
             if section.get("repairs"):
                 row["repairs"] = section.get("repairs")
             if section.get("derived_from"):
@@ -5073,6 +5083,13 @@ class LumenWebTools:
                 {
                     "fragment_id": target,
                     "substituted_for": root if target != root else None,
+                    # When the whole family is broken there is no leaf to choose, so the
+                    # fallback ranks — and a ranking nobody is told about is exactly what the
+                    # ambiguity refusal exists to prevent (ruling N4). It cannot refuse here (a
+                    # hole where the band goes is worse than a flagged band), so it says.
+                    "ranked_over": [
+                        str(item) for item in source.get("lineage_ranked_over") or []
+                    ],
                     "section": source,
                 }
             )
@@ -5143,6 +5160,7 @@ class LumenWebTools:
                     # order happened to reach first: after a substitution the pinned section is
                     # the repair, and it is the repair's own marker that matters.
                     "degraded": bool(resolved.get("degraded")),
+                    "ranked_over": entry["ranked_over"],
                     "resolved": resolved,
                 }
             )
@@ -5200,15 +5218,39 @@ class LumenWebTools:
             },
             sink_extra={"pinned_count": len(pinned)},
         )
+        ranked = [entry for entry in pinned if entry["ranked_over"]]
         result: JsonObject = {
             "status": "ok",
             "page_id": self.page_id,
             "page_url": page_url or pages[0],
             "pinned": pinned,
             "substituted": substituted,
+            "ranked": ranked,
             "warnings": warnings,
             "advice": advice,
         }
+        if ranked:
+            # ADVICE, not a warning: the band is already reported as work through `needs_repair`
+            # (every candidate in a ranked family is broken), so this is the second half of the
+            # story — which broken candidate was chosen and what it beat — and the house rule is
+            # that advice is judged, never obligatory.
+            advice.append(
+                {
+                    "severity": "advice",
+                    "phase": "agent",
+                    "code": _CLONED_SECTION_DEGRADED_CODE,
+                    "message": (
+                        "every released version of "
+                        + ", ".join(
+                            f"{entry['fragment_id']} (over {', '.join(entry['ranked_over'])})"
+                            for entry in ranked
+                        )
+                        + " is marked broken, so the oldest was pinned rather than none. If the "
+                        "one you want is not the one on the page, pin it explicitly."
+                    ),
+                    "hint": "",
+                }
+            )
         self._note_degraded_pins(result, degraded_pins)
         return json.dumps(result, indent=2)
 
@@ -5234,6 +5276,11 @@ class LumenWebTools:
             "label": resolved.get("label"),
             "reason": resolved.get("degraded_reason"),
             "note": resolved.get("degraded_note"),
+            # The lineage answer the gate resolved for this band (ruling N2). It is what stops
+            # the warning from telling an author to compose a repair for a band that already has
+            # a released one — the mistake that manufactures two sibling repairs and, after the
+            # next bulk kit approval, an assembly that refuses.
+            "superseded_by": resolved.get("superseded_by"),
         }
 
     def _note_degraded_pins(
@@ -5270,26 +5317,48 @@ class LumenWebTools:
         already measured as broken is not a matter of taste, and the page renders either way — so
         the only thing standing between this and a published page full of dead space is the
         author being told, in the bucket the prompt calls mandatory.
+
+        **What it says is computed from what was actually resolved, not from which door called**
+        (ruling N2). The old text claimed every pinned broken band "has no released repair" —
+        true by construction of the recreate walk, which substitutes one when it exists, and a
+        guess anywhere else. A band that DOES have a released repair now gets the instruction
+        that fixes it in one call (pin the repair) instead of the instruction that makes the
+        problem worse (compose a second repair, which after the next bulk kit approval leaves two
+        released siblings and an assembly that refuses).
         """
         named = ", ".join(
             f"{entry['fragment_id']} ({entry.get('reason') or 'broken'})"
             for entry in needs_repair
         )
-        return {
-            "severity": "warning",
-            "phase": "agent",
-            "code": _CLONED_SECTION_DEGRADED_CODE,
-            "message": (
-                f"{len(needs_repair)} cloned section(s) on this page are marked BROKEN and have "
-                f"no released repair: {named}"
-            ),
-            "hint": (
-                "Repair each one with repair_cloned_section(fragment_id, html, rung, note): "
+        replaceable = [entry for entry in needs_repair if entry.get("superseded_by")]
+        unrepaired = len(needs_repair) - len(replaceable)
+        message = f"{len(needs_repair)} cloned section(s) on this page are marked BROKEN: {named}"
+        if not replaceable:
+            message += " — and none of them has a released repair"
+        hint_parts = []
+        if replaceable:
+            swaps = "; ".join(
+                f"{entry['fragment_id']} -> {entry['superseded_by']}" for entry in replaceable
+            )
+            hint_parts.append(
+                f"{len(replaceable)} of these ALREADY HAVE a released repair. Do not compose "
+                f"another one: remove the broken pin and insert_cloned_section the repair "
+                f"instead ({swaps})."
+            )
+        if unrepaired:
+            hint_parts.append(
+                "Repair the rest with repair_cloned_section(fragment_id, html, rung, note): "
                 "compose the replacement with engine primitives under the brand's Grammar "
                 "Audit, preserving the original's content order, typography, colors, imagery "
                 "treatment, proportions, spacing and rhythm. The original clone is preserved as "
                 "evidence; your replacement is minted as a new section with the lineage recorded."
-            ),
+            )
+        return {
+            "severity": "warning",
+            "phase": "agent",
+            "code": _CLONED_SECTION_DEGRADED_CODE,
+            "message": message,
+            "hint": " ".join(hint_parts),
             "needs_repair": copy.deepcopy(needs_repair),
         }
 
@@ -5608,6 +5677,16 @@ class LumenWebTools:
         result["pinned"] = True
         result["section_node_id"] = wrapper_id
         result["node_id"] = node_id
+        # The THIRD pin door, through the same seam as the other two (ruling N3). Benign for a
+        # fresh repair, which is born un-degraded — but this branch only runs on CONVERGENCE, and
+        # a mint whose bytes converge onto some OTHER already-approved row can land on one that a
+        # later pass marked broken. `fragment.repair_unchanged` blocks convergence onto the
+        # original and nothing else, so without this the tool would pin a broken band and report
+        # a clean repair.
+        broken = self._degraded_pin_entry(
+            resolved, index=index, section_node_id=wrapper_id
+        )
+        self._note_degraded_pins(result, [broken] if broken is not None else [])
         return None
 
     def _cloned_section_pin_nodes(
