@@ -176,7 +176,9 @@ def test_the_flag_quarantines_the_reviewer_and_the_kill_switch_puts_it_back() ->
     assert replace(base, fast_loop=True).web_reviewer_enabled is True
 
 
-def test_the_default_prompt_is_byte_identical_to_the_pre_f33_delegated_shape() -> None:
+def test_the_default_prompt_keeps_the_delegated_review_shape_and_no_rubric() -> None:
+    """Renamed in the fix round (review finding M7): this asserts three properties, not byte
+    identity — there is no golden of the pre-F3.3 prompt to be identical to."""
     prompt = _orchestrator(web_reviewer=True)
     assert "Delegate `lumen-web-reviewer` for the structured pass" in prompt
     assert str(WEB_REVIEW_DELEGATION_CAP) in prompt
@@ -354,6 +356,7 @@ def _fake_walk(
     mobile=(),
     console=(),
     mobile_made: bool = True,
+    styles_ready: object = True,
 ) -> BehaviouralWalk:
     shot = tmp_path / "walk_full_page.png"
     shot.parent.mkdir(parents=True, exist_ok=True)
@@ -374,13 +377,21 @@ def _fake_walk(
             ),
             WalkObservation(walk_class=WALK_CLASS_SCROLL_THROUGH, made=True),
             (
-                WalkObservation(walk_class=WALK_CLASS_MOBILE, made=True, measurements=mobile)
+                WalkObservation(
+                    walk_class=WALK_CLASS_MOBILE,
+                    made=True,
+                    measurements=mobile,
+                    notes={"styles_ready": styles_ready},
+                )
                 if mobile_made
                 else abstained(WALK_CLASS_MOBILE, "timed_out")
             ),
             WalkObservation(walk_class=WALK_CLASS_CONSOLE, made=True, console=console),
             WalkObservation(
-                walk_class=WALK_CLASS_HEIGHT_COLLAPSE, made=True, measurements=desktop
+                walk_class=WALK_CLASS_HEIGHT_COLLAPSE,
+                made=True,
+                measurements=desktop,
+                notes={"styles_ready": styles_ready},
             ),
             WalkObservation(walk_class=WALK_CLASS_REDUCED_MOTION, made=True, notes={}),
         )
@@ -611,3 +622,72 @@ def test_a_workspace_with_no_reference_capture_says_which_half_is_missing(
     gap = next(item for item in result["diagnostics"] if item["code"] == "LUMA0801")
     assert "the client's own page" in gap["message"]
     assert "blind_side_by_side" not in result
+
+
+# =================================================================================================
+# Fix round — R19-1: a durable write requires settled evidence
+# =================================================================================================
+
+
+def test_an_unsettled_walk_reports_the_finding_and_writes_nothing(tmp_path, monkeypatch) -> None:
+    """The false `mobile_unusable` the review found: a page whose utilities have not compiled
+    overflows 375px trivially, and the marker it would write can never be cleared."""
+    registry = FakeRegistry()
+    tools = _tools(tmp_path, registry)
+    _patch_walk(
+        monkeypatch,
+        _fake_walk(
+            tmp_path,
+            desktop=(_measurement(),),
+            mobile=(
+                _measurement(
+                    viewport="mobile", width_px=375.0, scroll_width_px=900.0, height_px=600.0
+                ),
+            ),
+            styles_ready=False,
+        ),
+    )
+
+    result = json.loads(tools.review_cloned_page())
+
+    assert result["evidence_settled"] is False
+    # The finding is STILL made — it is advice this round, not a secret.
+    assert result["broken_clones"][0]["reason"] == DEGRADED_REASON_MOBILE_UNUSABLE
+    assert registry.marked == []
+    assert result["marked_degraded"] == []
+    assert any(
+        item["code"] == "review.evidence_unsettled" for item in result["page_findings"]
+    )
+    work = next(item for item in result["diagnostics"] if item["code"] == "LUMA0800")
+    assert "NOTHING was recorded" in work["hint"]
+
+
+def test_a_settled_walk_writes_as_before(tmp_path, monkeypatch) -> None:
+    registry = FakeRegistry()
+    tools = _tools(tmp_path, registry)
+    _patch_walk(
+        monkeypatch,
+        _fake_walk(
+            tmp_path,
+            desktop=(_measurement(height_px=3200.0, content_extent_px=400.0),),
+            styles_ready=True,
+        ),
+    )
+
+    result = json.loads(tools.review_cloned_page())
+
+    assert result["evidence_settled"] is True
+    assert registry.marked == [(FRAGMENT_ID, DEGRADED_REASON_RUNTIME_DEAD_HEIGHT)]
+    assert not any(
+        item["code"] == "review.evidence_unsettled" for item in result["page_findings"]
+    )
+
+
+def test_the_rubric_no_longer_claims_the_walked_page_is_script_free() -> None:
+    """Ruling R19-2: no false premise ships. The page the gate walks carries our Tailwind JIT."""
+    rubric = load_clone_review_rubric()
+    assert "console errors ATTRIBUTED TO THE PAGE" in rubric
+    assert "does run scripts of its own" in rubric
+    assert "are not the page's fault" in rubric
+    # The old, false, unqualified claim is gone.
+    assert "A cloned band carries no scripts, so an error has a real cause." not in rubric

@@ -32,7 +32,11 @@ STRICT — this is BROKEN and it is work, not taste:
 - invisible elements: present in the markup, not visible to a reader;
 - failed mobile behaviour: a band that collapses, disappears, or runs off the side of
   the screen at phone width;
-- console errors. A cloned band carries no scripts, so an error has a real cause.
+- console errors ATTRIBUTED TO THE PAGE. A cloned band carries no scripts — the mint
+  strips them — so the page's own console errors are real resource failures: an
+  image, a font or a stylesheet that did not load. The preview shell we render
+  through does run scripts of its own, and its errors are reported separately and
+  are not the page's fault. Judge the page's; ignore the shell's.
 
 STRICT — brand coherence AFTER a repair. A repaired band is judged against the band it
 replaced, on measurements, not on impressions:

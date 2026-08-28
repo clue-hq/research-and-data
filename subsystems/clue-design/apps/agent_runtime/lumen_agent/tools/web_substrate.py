@@ -6045,12 +6045,23 @@ class LumenWebTools:
                 "web_render.failed", error.message, diagnostics=list(error.diagnostics or [])
             )
 
-        plan = walk_plan(
-            [
-                {"fragment_id": fragment_id, "selector": f".{fragment_wrapper_class(fragment_id)}"}
-                for fragment_id in fragment_ids
-            ]
-        )
+        try:
+            plan = walk_plan(
+                [
+                    {
+                        "fragment_id": fragment_id,
+                        "selector": f".{fragment_wrapper_class(fragment_id)}",
+                    }
+                    for fragment_id in fragment_ids
+                ]
+            )
+        except FragmentRefused as refusal:
+            # The one call in this tool that can raise at the agent (review finding M8): the id
+            # comes from the validated document, so this is latent — but a tool that throws
+            # instead of answering is a turn that dies, and the whole gate is advice.
+            return self._tool_error(
+                refusal.code, str(refusal), diagnostics=diagnostics
+            )
         review_dir = self.trace_dir / f"review_{self._review_iteration}"
         try:
             walk = capture_behavioural_walk(html, plan, output_dir=review_dir)
@@ -6074,7 +6085,13 @@ class LumenWebTools:
         )
 
         broken = critique.broken if critique is not None else ()
-        marked, mark_failures = self._record_broken_clones(registry, broken)
+        # RULING R19-1: a DURABLE degraded write requires SETTLED evidence. An unsettled walk's
+        # findings are still reported — as advice, with their numbers — but nothing is written to
+        # a marker the gate can never clear. `compose_critique` has already said so in words.
+        settled = critique.settled if critique is not None else False
+        marked, mark_failures = (
+            self._record_broken_clones(registry, broken) if settled else ([], [])
+        )
 
         result: JsonObject = {
             "status": "ok",
@@ -6084,6 +6101,9 @@ class LumenWebTools:
                 observation.as_result() for observation in walk.observations
             ],
             "broken_clones": [item.as_result() for item in broken],
+            # False means the findings above are ADVICE ONLY this round: the page's styling had
+            # not settled when the walk measured it, so nothing was written down (R19-1).
+            "evidence_settled": settled,
             "marked_degraded": marked,
             "page_findings": (
                 [item.as_result() for item in critique.page_findings]
@@ -6092,7 +6112,7 @@ class LumenWebTools:
             ),
             "comparison": comparison,
             "diagnostics": diagnostics + self._review_diagnostics(
-                walk, broken, advice_failure, mark_failures, reference_note
+                walk, broken, advice_failure, mark_failures, reference_note, settled
             ),
         }
         if advice_failure is not None:
@@ -6224,6 +6244,7 @@ class LumenWebTools:
         advice_failure: Any,
         mark_failures: List[str],
         reference_note: Optional[str],
+        settled: bool = True,
     ) -> List[JsonObject]:
         """The gate's own diagnostics — work, gaps, and the two ways it can fall short."""
         diagnostics: List[JsonObject] = []
@@ -6239,7 +6260,14 @@ class LumenWebTools:
                         f"BROKEN on the rendered page: {named}"
                     ),
                     "hint": (
-                        "Each one is recorded on the section itself. Brief the author to repair "
+                        (
+                            "Each one is recorded on the section itself. "
+                            if settled
+                            else "NOTHING was recorded: the page's styling had not settled when "
+                            "the walk measured it, so these are advice this round and a re-run "
+                            "is what settles them. "
+                        )
+                        + "Brief the author to repair "
                         "it with repair_cloned_section(fragment_id, html, rung, note), climbing "
                         "D-F6's ladder in order and preserving the original's content order, "
                         "typography, colors, imagery treatment, proportions, spacing and rhythm."
