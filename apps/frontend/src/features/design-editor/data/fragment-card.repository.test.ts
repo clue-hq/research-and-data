@@ -15,6 +15,7 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
 
+import { DESIGN_API_BFF_PREFIX } from "./design-bff";
 import {
   FIXTURE_FRAGMENT_CARDS,
   FragmentCardError,
@@ -71,7 +72,9 @@ test("an isolation render gives it a picture, and then a human may activate it",
   const pictured = await repository.generatePreview(DORMANT);
   assert.ok(pictured.previewPath);
   // P-7: an isolation render and a crop of the source site are not the same evidence, so the
-  // card keeps them distinguishable.
+  // card keeps them distinguishable. This is a SHAPE THE SERVER PRODUCES, not the fixture's
+  // invention — the backend writes `preview_basis` on the row at attach time and the wire test
+  // below reads it back off the wire, so fixture mode and HTTP mode agree.
   assert.equal(pictured.previewBasis, "isolation_render");
   assert.equal(pictured.activation.allowed, true);
 
@@ -130,6 +133,30 @@ test("the fixture seed is a valid card set", () => {
   assert.equal(FIXTURE_FRAGMENT_CARDS.length, 3);
 });
 
+test("every repair in a family is retire-reachable from any member's card (R18-1)", async () => {
+  const repository = fixtureFragmentCardRepository();
+  // From the ORIGINAL's card and from the REPAIR's card alike, the whole family is present with
+  // a per-member retire verdict — because a repair is on no page unless pinned, so a card that
+  // listed only direct children left one unreachable from anywhere.
+  for (const id of [ORIGINAL, REPAIR]) {
+    const card = await repository.get(id);
+    const family = new Map(card.family.map((entry) => [entry.fragmentId, entry]));
+    assert.deepEqual([...family.keys()].sort(), [ORIGINAL, REPAIR].sort());
+    assert.equal(card.lineageRoot, ORIGINAL);
+    assert.equal(family.get(ORIGINAL)?.isRoot, true);
+    // The repair is retirable from either card; the harvested original never is (R17-3).
+    assert.equal(family.get(REPAIR)?.retirement.allowed, true);
+    assert.equal(family.get(ORIGINAL)?.retirement.reason, "not_a_repair");
+    assert.equal(family.get(REPAIR)?.derivedFrom, ORIGINAL);
+  }
+  // …and retiring through it keeps the family self-consistent.
+  const retired = await repository.retire(REPAIR);
+  assert.equal(
+    retired.family.find((entry) => entry.fragmentId === REPAIR)?.status,
+    "deprecated",
+  );
+});
+
 // --- the HTTP adapter -------------------------------------------------------
 
 function respond(body: unknown, status = 200): Response {
@@ -139,6 +166,12 @@ function respond(body: unknown, status = 200): Response {
   });
 }
 
+/** The backend's own attach-time answer, read back off the wire: the picture's basis is a row
+ * fact, so fixture mode and HTTP mode cannot disagree about the label P-7 requires. */
+const WIRE_PICTURED = {
+  preview: { path: "/asset-store/abc", basis: "isolation_render" },
+};
+
 const WIRE_CARD = {
   fragment_id: DORMANT,
   label: "Proof — Pricing",
@@ -147,6 +180,18 @@ const WIRE_CARD = {
   page_url: "https://insighthealth.example/",
   section_index: 7,
   preview: { path: null, basis: null },
+  lineage_root: DORMANT,
+  family: [
+    {
+      fragment_id: DORMANT,
+      label: "Proof — Pricing",
+      status: "dormant",
+      degraded: false,
+      derived_from: null,
+      is_root: true,
+      retirement: { retirable: false, reason: "not_a_repair", message: null },
+    },
+  ],
   slots: [{ key: "headline", kind: "text", fallback: "Pricing" }],
   degraded: false,
   hidden_on_source: { hidden: true, evidence: ["class token 'hide'"] },
@@ -157,6 +202,21 @@ const WIRE_CARD = {
   },
   retirement: { retirable: false, reason: "not_a_repair", message: null },
 };
+
+test("the HTTP adapter is mounted on the DESIGN BFF, not the platform catch-all", async () => {
+  // `/web/fragments/*` are design-FastAPI routes. The platform catch-all (`/api/clue`) proxies to
+  // the Clue platform API, which does not serve them — defaulting there 404s every call.
+  const seen: string[] = [];
+  const repository = httpFragmentCardRepository({
+    fetchImpl: async (input) => {
+      seen.push(String(input));
+      return respond({ sections: [] });
+    },
+  });
+  await repository.listDormant();
+  assert.equal(seen[0], `${DESIGN_API_BFF_PREFIX}/web/fragments/dormant`);
+  assert.ok(seen[0]?.startsWith(DESIGN_API_BFF_PREFIX));
+});
 
 test("the HTTP adapter parses the backend's card and calls the four routes", async () => {
   const seen: { url: string; method: string }[] = [];
@@ -178,6 +238,12 @@ test("the HTTP adapter parses the backend's card and calls the four routes", asy
   assert.equal(card.activation.allowed, false);
   assert.equal(card.activation.reason, "no_preview");
   assert.deepEqual(card.hiddenOnSource, { hidden: true, evidence: ["class token 'hide'"] });
+  // The family arrives off the wire in the same shape the fixture serves (R18-1).
+  assert.equal(card.lineageRoot, DORMANT);
+  assert.deepEqual(
+    card.family.map((entry) => [entry.fragmentId, entry.isRoot, entry.retirement.allowed]),
+    [[DORMANT, true, false]],
+  );
 
   assert.equal((await repository.listDormant()).length, 1);
   await repository.generatePreview(DORMANT);
@@ -191,6 +257,15 @@ test("the HTTP adapter parses the backend's card and calls the four routes", asy
     { url: `/api/clue/web/fragments/${DORMANT}/activate`, method: "POST" },
     { url: `/api/clue/web/fragments/${DORMANT}/retire`, method: "POST" },
   ]);
+});
+
+test("the label on an attached picture survives the wire", async () => {
+  const repository = httpFragmentCardRepository({
+    fetchImpl: async () => respond({ ...WIRE_CARD, ...WIRE_PICTURED }),
+  });
+  const card = await repository.generatePreview(DORMANT);
+  assert.equal(card.previewPath, "/asset-store/abc");
+  assert.equal(card.previewBasis, "isolation_render");
 });
 
 test("a refusal reaches the caller as the sentence the backend wrote", async () => {

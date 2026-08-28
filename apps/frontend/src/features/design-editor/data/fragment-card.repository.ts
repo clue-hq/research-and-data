@@ -1,8 +1,10 @@
+import { DESIGN_API_BFF_PREFIX } from "./design-bff";
 import {
   DormantFragmentListWireSchema,
   FragmentCardSchema,
   FragmentCardWireSchema,
   type FragmentCard,
+  type FragmentFamilyEntry,
 } from "../model/fragment-card";
 
 /**
@@ -179,15 +181,67 @@ export function fixtureFragmentCardRepository(
     return card;
   };
 
+  /**
+   * The R18-1 family, computed from the seeded cards so it cannot drift out of step with a
+   * retire the fixture just performed.
+   *
+   * This walks parent links to find the root — the structural half, which is what the backend
+   * resolver does too. It deliberately does NOT re-derive the JUDGEMENT half (which repair
+   * supersedes which): `supersededBy` and `lineageAmbiguous` stay whatever the seed says,
+   * because that rule is the resolver's and a fixture answering it for itself would be a second
+   * answer to the question ruling R-X1 settled.
+   */
+  const rootOf = (fragmentId: string): string => {
+    const seen = new Set<string>();
+    let current = fragmentId;
+    while (!seen.has(current)) {
+      seen.add(current);
+      const parent = cards.get(current)?.derivedFrom;
+      if (!parent || !cards.has(parent)) {
+        return current;
+      }
+      current = parent;
+    }
+    return current;
+  };
+
+  const familyOf = (fragmentId: string): FragmentFamilyEntry[] => {
+    const root = rootOf(fragmentId);
+    return [...cards.values()]
+      .filter((candidate) => rootOf(candidate.fragmentId) === root)
+      .sort((left, right) => left.fragmentId.localeCompare(right.fragmentId))
+      .map((candidate) => ({
+        fragmentId: candidate.fragmentId,
+        label: candidate.label,
+        status: candidate.status,
+        degraded: candidate.degraded,
+        degradedReason: candidate.degradedReason,
+        derivedReason: candidate.derivedReason,
+        previewPath: candidate.previewPath,
+        createdAt: null,
+        derivedFrom: candidate.derivedFrom,
+        isRoot: candidate.fragmentId === root,
+        retirement: candidate.retirement,
+      }));
+  };
+
+  /** Every card leaves this adapter carrying the family it belongs to, exactly as the server's
+   * card does — so a component written against one works against the other. */
+  const served = (card: FragmentCard): FragmentCard => ({
+    ...card,
+    lineageRoot: rootOf(card.fragmentId),
+    family: familyOf(card.fragmentId),
+  });
+
   return {
     async get(fragmentId) {
-      return { ...require(fragmentId) };
+      return served(require(fragmentId));
     },
     async listDormant() {
       return [...cards.values()]
         .filter((card) => card.status === "dormant")
         .sort((left, right) => (left.sectionIndex ?? 0) - (right.sectionIndex ?? 0))
-        .map((card) => ({ ...card }));
+        .map(served);
     },
     async generatePreview(fragmentId) {
       const card = require(fragmentId);
@@ -207,7 +261,7 @@ export function fixtureFragmentCardRepository(
             : card.activation,
       };
       cards.set(fragmentId, next);
-      return { ...next };
+      return served(next);
     },
     async activate(fragmentId) {
       const card = require(fragmentId);
@@ -230,7 +284,7 @@ export function fixtureFragmentCardRepository(
         activation: { allowed: false, reason: "not_dormant", message: null },
       };
       cards.set(fragmentId, next);
-      return { ...next };
+      return served(next);
     },
     async retire(fragmentId) {
       const card = require(fragmentId);
@@ -258,13 +312,21 @@ export function fixtureFragmentCardRepository(
           ),
         });
       }
-      return { ...next };
+      return served(next);
     },
   };
 }
 
+/**
+ * `baseUrl` defaults to the **design** BFF mount, not the platform one.
+ *
+ * `/web/fragments/*` are design-FastAPI routes. The sibling artifact repository legitimately
+ * defaults to `/api/clue` because ITS paths (`/api/v1/projects/…`) are platform routes served by
+ * the catch-all proxy — which does not serve these four and would 404 every call. The design API
+ * is mounted at `DESIGN_API_BFF_PREFIX`, where the proxy stamps the workspace header server-side.
+ */
 export function httpFragmentCardRepository({
-  baseUrl = "/api/clue",
+  baseUrl = DESIGN_API_BFF_PREFIX,
   fetchImpl,
 }: {
   baseUrl?: string;

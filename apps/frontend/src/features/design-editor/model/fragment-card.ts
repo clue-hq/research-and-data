@@ -48,6 +48,27 @@ export const FragmentLineageEntrySchema = z.object({
 
 export type FragmentLineageEntry = z.infer<typeof FragmentLineageEntrySchema>;
 
+/**
+ * One member of the whole lineage — **ruling R18-1**: every repair in a family must be
+ * retire-reachable from the card of any family member selectable on the page.
+ *
+ * The parent/child list (`repairs`) cannot deliver that. A repair is on no page unless somebody
+ * pinned it, so "select the repair" is not a way to reach one, and a repair-of-a-repair is
+ * nobody's direct child except its own parent's — so a grandchild leaf had a retire affordance
+ * nowhere at all, and the contested-lineage dead end stayed a dead end with the button built.
+ *
+ * Membership and the root are the backend resolver's answers (ruling R-X1), never re-derived
+ * here. Each entry carries its own `retirement` verdict, so a surface renders a button where one
+ * is lawful and a reason where it is not, without knowing R17-3.
+ */
+export const FragmentFamilyEntrySchema = FragmentLineageEntrySchema.extend({
+  derivedFrom: z.string().nullable().default(null),
+  isRoot: z.boolean().default(false),
+  retirement: z.lazy(() => FragmentVerdictSchema),
+});
+
+export type FragmentFamilyEntry = z.infer<typeof FragmentFamilyEntrySchema>;
+
 /** A verdict about an action, with the sentence a human reads when it is `false`. Carrying the
  * message rather than a bare boolean is the point: "no" and "no, and here is the button that
  * fixes it" are different answers. */
@@ -80,6 +101,8 @@ export const FragmentCardSchema = z.object({
   repairsWhat: FragmentLineageEntrySchema.nullable().default(null),
   supersededBy: z.string().nullable().default(null),
   lineageAmbiguous: z.array(z.string()).default([]),
+  lineageRoot: z.string().nullable().default(null),
+  family: z.array(FragmentFamilyEntrySchema).default([]),
   hiddenOnSource: z
     .object({
       hidden: z.boolean(),
@@ -147,6 +170,28 @@ export const FragmentCardWireSchema = z
     repairs_what: FragmentLineageEntryWireSchema.nullish(),
     superseded_by: z.string().nullish(),
     lineage_ambiguous: z.array(z.string()).optional(),
+    lineage_root: z.string().nullish(),
+    family: z
+      .array(
+        z.object({
+          fragment_id: z.string().min(1),
+          label: z.string().nullish(),
+          status: z.string().min(1),
+          degraded: z.boolean().optional(),
+          degraded_reason: z.string().nullish(),
+          derived_reason: z.string().nullish(),
+          preview_path: z.string().nullish(),
+          created_at: z.string().nullish(),
+          derived_from: z.string().nullish(),
+          is_root: z.boolean().optional(),
+          retirement: z.object({
+            retirable: z.boolean(),
+            reason: z.string().nullish(),
+            message: z.string().nullish(),
+          }),
+        }),
+      )
+      .optional(),
     hidden_on_source: z
       .object({
         hidden: z.boolean(),
@@ -188,6 +233,24 @@ export const FragmentCardWireSchema = z
       repairsWhat: wire.repairs_what ?? null,
       supersededBy: wire.superseded_by ?? null,
       lineageAmbiguous: wire.lineage_ambiguous ?? [],
+      lineageRoot: wire.lineage_root ?? null,
+      family: (wire.family ?? []).map((entry) => ({
+        fragmentId: entry.fragment_id,
+        label: entry.label ?? null,
+        status: entry.status,
+        degraded: entry.degraded ?? false,
+        degradedReason: entry.degraded_reason ?? null,
+        derivedReason: entry.derived_reason ?? null,
+        previewPath: entry.preview_path ?? null,
+        createdAt: entry.created_at ?? null,
+        derivedFrom: entry.derived_from ?? null,
+        isRoot: entry.is_root ?? false,
+        retirement: {
+          allowed: entry.retirement.retirable,
+          reason: entry.retirement.reason ?? null,
+          message: entry.retirement.message ?? null,
+        },
+      })),
       hiddenOnSource: wire.hidden_on_source
         ? {
             hidden: wire.hidden_on_source.hidden,
