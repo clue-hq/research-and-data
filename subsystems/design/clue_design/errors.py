@@ -147,3 +147,43 @@ class DesignSourceVersionConflictError(DesignStoreError):
         self.slug = slug
         self.expected_version = expected_version
         self.current_version = current_version
+
+
+class DesignFragmentActivationError(DesignStoreError):
+    """A dormant cloned section was asked to wake up, and it has nothing to be judged on.
+
+    Founder ruling D-F8 (2026-08-28): a section the source site hides is preserved rather than
+    dropped, is never released by the kit approval cascade, and is *activated only by a human* —
+    with the standing condition that **activation requires a usable preview**. A dormant row with
+    no ``preview_digest`` is therefore not activatable: approving a section nobody can see is not
+    a human decision about a clone, it is a click on a name.
+
+    Kept separate from the ``ValueError`` a bad status string gets, because the two are different
+    conversations: one is a caller typo, this is a human being told "go and get a preview first",
+    and a surface that renders them the same way would render the second one uselessly.
+    """
+
+    def __init__(self, fragment_id: str, reason: str, message: str) -> None:
+        super().__init__(message)
+        self.fragment_id = fragment_id
+        self.reason = reason
+
+
+class DesignFragmentPreviewError(DesignStoreError):
+    """A preview was offered to a fragment that already has one (F3.2, ruling P-7).
+
+    The mirror of :class:`DesignFragmentActivationError`, and deliberately its sibling rather
+    than a ``ValueError``: both are refusals a HUMAN reads on the way to a decision about a
+    cloned section, and both carry a ``reason`` code the surface renders rather than a sentence
+    it has to parse.
+
+    A preview is attached once. The row's ``preview_digest`` is part of the artifact's identity
+    bytes, so replacing it would rewrite the picture somebody's activation or release decision was
+    made against, while leaving the id — the content address of what was actually minted —
+    unchanged. Re-picturing a section is minting a new one.
+    """
+
+    def __init__(self, fragment_id: str, reason: str, message: str) -> None:
+        super().__init__(message)
+        self.fragment_id = fragment_id
+        self.reason = reason

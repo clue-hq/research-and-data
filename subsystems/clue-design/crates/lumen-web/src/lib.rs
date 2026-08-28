@@ -19,6 +19,7 @@
 pub mod classes;
 pub mod derive;
 pub mod doc;
+pub mod fragment;
 pub mod ingest;
 pub mod inline;
 pub mod ops;
@@ -37,8 +38,10 @@ pub use derive::{
 pub use doc::{
     calendly_url_is_valid, custom_component_artifact_id_is_valid,
     custom_component_prop_name_is_valid, custom_component_props_issue,
-    custom_component_slug_is_valid, ButtonAction, ButtonCommand, ButtonVariant,
-    ComponentSpec, CustomComponentValue, EmbedProvider, MarqueeDirection, SectionTag,
+    custom_component_slug_is_valid, fragment_id_is_valid, fragment_slot_key_is_valid,
+    fragment_slots_issue, fragment_wrapper_class, ButtonAction, ButtonCommand, ButtonVariant,
+    ComponentSpec, CustomComponentValue, EmbedProvider, FragmentSlotValue, MarqueeDirection,
+    SectionTag,
     TextVariant, WebDoc, WebNode, WebNodeKind, WebPage, WebThemeRef,
     MAX_CUSTOM_COMPONENT_PROPS, MAX_CUSTOM_COMPONENT_PROP_STRING_BYTES,
     WEB_SCHEMA_VERSION,
@@ -53,7 +56,8 @@ pub use rich_text::{
     RichTextListItem, RichTextListType, RichTextMarks, RICH_TEXT_SCHEMA_VERSION,
 };
 pub use render::{
-    render_page, CustomComponentRuntimeFrame, RenderMode, RenderOptions, RenderOutput,
+    page_fragment_ids, render_page, CustomComponentRuntimeFrame, FragmentContent, FragmentSlotKind,
+    RenderMode, RenderOptions, RenderOutput,
 };
 pub use runtime::{PLATFORM_CSS, PLATFORM_RUNTIME_JS, PLATFORM_RUNTIME_VERSION};
 pub use theme::{compile_web_theme, WebTheme, WebThemeOptions};

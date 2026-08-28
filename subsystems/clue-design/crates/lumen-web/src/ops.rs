@@ -9,8 +9,8 @@
 use crate::derive::web_slot_key_is_valid;
 use crate::doc::{
     calendly_url_is_valid, custom_component_artifact_id_is_valid, custom_component_props_issue,
-    custom_component_slug_is_valid, ButtonAction, EmbedProvider, TextVariant, WebDoc, WebNode,
-    WebNodeKind, WebThemeRef,
+    custom_component_slug_is_valid, fragment_id_is_valid, fragment_slots_issue, ButtonAction,
+    EmbedProvider, TextVariant, WebDoc, WebNode, WebNodeKind, WebThemeRef,
 };
 use crate::inline::sanitize_inline;
 use crate::rich_text::RichTextDocument;
@@ -284,6 +284,24 @@ fn canonicalize_incoming_kind(kind: &mut WebNodeKind) -> Result<(), WebOpError> 
                 return Err(WebOpError::new(
                     "op.custom_component_props_invalid",
                     format!("custom component {issue}"),
+                ));
+            }
+        }
+        WebNodeKind::Fragment { fragment_id, slots } => {
+            // Both the artifact pin and the slot values are checked here, so
+            // InsertNode and SetNodeProps (which routes props through this
+            // function) enforce the same bounds: props arriving via an op are
+            // exactly as untrusted as a node arriving via one.
+            if !fragment_id_is_valid(fragment_id) {
+                return Err(WebOpError::new(
+                    "op.fragment_id_invalid",
+                    format!("fragment id is invalid: {fragment_id}"),
+                ));
+            }
+            if let Some(issue) = fragment_slots_issue(slots) {
+                return Err(WebOpError::new(
+                    "op.fragment_slots_invalid",
+                    format!("fragment {issue}"),
                 ));
             }
         }
@@ -1045,6 +1063,302 @@ mod tests {
         )
         .expect_err("leaf rejects children");
         assert_eq!(error.code, "op.parent_not_branch");
+    }
+
+    /// A document whose asset registry holds the logo a fragment slot binds.
+    /// An asset slot resolves through `doc.assets` at render (LUMW0035, the
+    /// F1.4 ruling), exactly as an Image node's `asset_id` does, so the
+    /// document has to hold the record before a write path may name it.
+    fn fixture_with_logo() -> WebDoc {
+        let mut doc = fixture();
+        doc.assets.insert(
+            lumen_core::AssetId::from("asset_logo_1"),
+            serde_json::from_value(serde_json::json!({
+                "id": "asset_logo_1",
+                "label": "Logo",
+                "kind": "logo",
+                "status": "ready",
+                "source": {"kind": "generated", "model": "m", "request_id": null},
+            }))
+            .expect("asset record"),
+        );
+        doc
+    }
+
+    fn fragment_node(id: &str, digest_char: char) -> WebNode {
+        WebNode {
+            id: NodeId::from(id),
+            kind: WebNodeKind::Fragment {
+                fragment_id: format!("frag_{}", digest_char.to_string().repeat(16)),
+                slots: BTreeMap::from([
+                    (
+                        "headline".to_owned(),
+                        crate::doc::FragmentSlotValue::Text("Book a call".to_owned()),
+                    ),
+                    (
+                        "logo".to_owned(),
+                        crate::doc::FragmentSlotValue::Asset("asset_logo_1".to_owned()),
+                    ),
+                    (
+                        "badge".to_owned(),
+                        crate::doc::FragmentSlotValue::Visible(true),
+                    ),
+                ]),
+            },
+            classes: "w-full".to_owned(),
+            children: Vec::new(),
+            name: None,
+            slot_key: None,
+        }
+    }
+
+    #[test]
+    fn fragment_insert_edit_move_duplicate_delete_and_inverses_are_total() {
+        let base = fixture_with_logo();
+        let mut doc = base.clone();
+
+        let insert = WebOperation::InsertNode {
+            page_id: page_id(),
+            parent: NodeId::from("stack"),
+            index: 2,
+            nodes: vec![fragment_node("frg_hero", 'a')],
+            root: NodeId::from("frg_hero"),
+        };
+        let (insert_inverse, _) =
+            apply_operations_checked(&mut doc, std::slice::from_ref(&insert)).expect("insert");
+
+        let edit_batch = vec![
+            // SetNodeProps is the slot-value write path.
+            WebOperation::SetNodeProps {
+                page_id: page_id(),
+                id: NodeId::from("frg_hero"),
+                props: WebNodeKind::Fragment {
+                    fragment_id: format!("frag_{}", "a".repeat(16)),
+                    slots: BTreeMap::from([
+                        (
+                            "headline".to_owned(),
+                            crate::doc::FragmentSlotValue::Text("Choose a time".to_owned()),
+                        ),
+                        (
+                            "badge".to_owned(),
+                            crate::doc::FragmentSlotValue::Visible(false),
+                        ),
+                    ]),
+                },
+            },
+            WebOperation::SetNodeClasses {
+                page_id: page_id(),
+                id: NodeId::from("frg_hero"),
+                classes: "w-full py-12".to_owned(),
+            },
+            WebOperation::MoveNode {
+                page_id: page_id(),
+                id: NodeId::from("frg_hero"),
+                new_parent: NodeId::from("grid"),
+                index: 1,
+            },
+            WebOperation::InsertNode {
+                page_id: page_id(),
+                parent: NodeId::from("grid"),
+                index: 2,
+                nodes: vec![fragment_node("frg_copy", 'b')],
+                root: NodeId::from("frg_copy"),
+            },
+            WebOperation::RemoveNode {
+                page_id: page_id(),
+                id: NodeId::from("frg_copy"),
+            },
+        ];
+        let (edit_inverse, diagnostics) =
+            apply_operations_checked(&mut doc, &edit_batch).expect("edit batch");
+        assert!(diagnostics
+            .iter()
+            .all(|diagnostic| diagnostic.severity != DiagnosticSeverity::Error));
+
+        let node = doc.pages[0]
+            .node(&NodeId::from("frg_hero"))
+            .expect("fragment");
+        assert_eq!(node.classes, "w-full py-12");
+        let WebNodeKind::Fragment { slots, .. } = &node.kind else {
+            panic!("fragment");
+        };
+        assert_eq!(
+            slots.get("headline"),
+            Some(&crate::doc::FragmentSlotValue::Text(
+                "Choose a time".to_owned()
+            ))
+        );
+        assert_eq!(
+            slots.get("badge"),
+            Some(&crate::doc::FragmentSlotValue::Visible(false))
+        );
+        assert_eq!(slots.get("logo"), None, "props replacement is whole-map");
+        assert_eq!(
+            doc.pages[0].parent_of(&NodeId::from("frg_hero")),
+            Some(&NodeId::from("grid"))
+        );
+        assert!(doc.pages[0].node(&NodeId::from("frg_copy")).is_none());
+
+        apply_operations_checked(&mut doc, &edit_inverse).expect("undo edit batch");
+        apply_operations_checked(&mut doc, &insert_inverse).expect("undo insert");
+        assert_eq!(doc, base);
+    }
+
+    #[test]
+    fn fragment_is_never_a_move_parent() {
+        let mut doc = fixture_with_logo();
+        apply_operations_checked(
+            &mut doc,
+            &[WebOperation::InsertNode {
+                page_id: page_id(),
+                parent: NodeId::from("stack"),
+                index: 2,
+                nodes: vec![fragment_node("frg_hero", 'a')],
+                root: NodeId::from("frg_hero"),
+            }],
+        )
+        .expect("insert");
+        let error = apply_operations_checked(
+            &mut doc,
+            &[WebOperation::MoveNode {
+                page_id: page_id(),
+                id: NodeId::from("sub"),
+                new_parent: NodeId::from("frg_hero"),
+                index: 0,
+            }],
+        )
+        .expect_err("leaf rejects children");
+        assert_eq!(error.code, "op.parent_not_branch");
+    }
+
+    #[test]
+    fn fragment_ops_refuse_bad_ids_and_out_of_bounds_slots() {
+        let base = fixture();
+
+        // Insert path: the id shape is enforced before the node lands.
+        for bad_id in [
+            "latest",
+            "frag_0123456789ABCDEF",
+            "frag_\"><style>x",
+            "frag_short",
+        ] {
+            let mut doc = base.clone();
+            let mut node = fragment_node("frg_hero", 'a');
+            let WebNodeKind::Fragment { fragment_id, .. } = &mut node.kind else {
+                panic!("fragment");
+            };
+            *fragment_id = bad_id.to_owned();
+            let error = apply_operations(
+                &mut doc,
+                &[WebOperation::InsertNode {
+                    page_id: page_id(),
+                    parent: NodeId::from("stack"),
+                    index: 2,
+                    nodes: vec![node],
+                    root: NodeId::from("frg_hero"),
+                }],
+            )
+            .expect_err("bad fragment id");
+            assert_eq!(error.code, "op.fragment_id_invalid", "{bad_id}");
+            assert_eq!(doc, base, "rejected op must not mutate");
+        }
+
+        // Insert path: slot bounds.
+        let mut doc = base.clone();
+        let mut node = fragment_node("frg_hero", 'a');
+        let WebNodeKind::Fragment { slots, .. } = &mut node.kind else {
+            panic!("fragment");
+        };
+        slots.insert(
+            "headline".to_owned(),
+            crate::doc::FragmentSlotValue::Text(
+                "x".repeat(crate::doc::MAX_FRAGMENT_SLOT_VALUE_BYTES + 1),
+            ),
+        );
+        let error = apply_operations(
+            &mut doc,
+            &[WebOperation::InsertNode {
+                page_id: page_id(),
+                parent: NodeId::from("stack"),
+                index: 2,
+                nodes: vec![node],
+                root: NodeId::from("frg_hero"),
+            }],
+        )
+        .expect_err("oversized slot value");
+        assert_eq!(error.code, "op.fragment_slots_invalid");
+        assert_eq!(doc, base, "rejected op must not mutate");
+
+        // Props path: props arriving via ops are as untrusted as nodes are.
+        let mut doc = base.clone();
+        apply_operations(
+            &mut doc,
+            &[WebOperation::InsertNode {
+                page_id: page_id(),
+                parent: NodeId::from("stack"),
+                index: 2,
+                nodes: vec![fragment_node("frg_hero", 'a')],
+                root: NodeId::from("frg_hero"),
+            }],
+        )
+        .expect("insert");
+        let inserted = doc.clone();
+        for (props, expected) in [
+            (
+                WebNodeKind::Fragment {
+                    fragment_id: "frag_not_hex_at_all".to_owned(),
+                    slots: BTreeMap::new(),
+                },
+                "op.fragment_id_invalid",
+            ),
+            (
+                WebNodeKind::Fragment {
+                    fragment_id: format!("frag_{}", "a".repeat(16)),
+                    slots: BTreeMap::from([(
+                        "logo".to_owned(),
+                        crate::doc::FragmentSlotValue::Asset("not an asset id".to_owned()),
+                    )]),
+                },
+                "op.fragment_slots_invalid",
+            ),
+            (
+                WebNodeKind::Fragment {
+                    fragment_id: format!("frag_{}", "a".repeat(16)),
+                    slots: BTreeMap::from([(
+                        "k".repeat(crate::doc::MAX_FRAGMENT_SLOT_KEY_CHARS + 1),
+                        crate::doc::FragmentSlotValue::Visible(true),
+                    )]),
+                },
+                "op.fragment_slots_invalid",
+            ),
+            (
+                WebNodeKind::Fragment {
+                    fragment_id: format!("frag_{}", "a".repeat(16)),
+                    slots: (0..=crate::doc::MAX_FRAGMENT_SLOTS)
+                        .map(|index| {
+                            (
+                                format!("slot_{index}"),
+                                crate::doc::FragmentSlotValue::Visible(true),
+                            )
+                        })
+                        .collect(),
+                },
+                "op.fragment_slots_invalid",
+            ),
+        ] {
+            let mut doc = inserted.clone();
+            let error = apply_operations(
+                &mut doc,
+                &[WebOperation::SetNodeProps {
+                    page_id: page_id(),
+                    id: NodeId::from("frg_hero"),
+                    props,
+                }],
+            )
+            .expect_err("invalid fragment props");
+            assert_eq!(error.code, expected);
+            assert_eq!(doc, inserted, "rejected op must not mutate");
+        }
     }
 
     #[test]

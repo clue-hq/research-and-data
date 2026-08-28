@@ -250,6 +250,11 @@ class CreateWebTemplateInput(ToolInput):
     document_id: str
     web_doc: JsonObject
     account_id: str | None = None
+    #: The document this template is a COPY of (F2.2). Additive and optional so every existing
+    #: caller keeps working; supplying it lets the fragment reference gate treat the template's
+    #: pins as inherited rather than newly chosen, which is what stops a retired cloned section
+    #: from failing a save-as-template of a document that has pinned it all along.
+    source_document_id: str | None = None
 
 
 class CreateWebTemplateTool(DesignTool):
@@ -275,7 +280,7 @@ class CreateWebTemplateTool(DesignTool):
     )
     effect_class: ClassVar[ToolEffectClass] = ToolEffectClass.WRITE
     parameter_policy: ClassVar[JournalParameterPolicy] = JournalParameterPolicy(
-        safe_display_fields=("document_id", "account_id")
+        safe_display_fields=("document_id", "account_id", "source_document_id")
     )
 
     def check(self, inputs: ToolInput, ctx: ToolContext) -> tuple[PreconditionFailure, ...]:
@@ -285,7 +290,7 @@ class CreateWebTemplateTool(DesignTool):
     def run(self, inputs: ToolInput, ctx: ToolContext) -> ToolOutput:
         assert isinstance(inputs, CreateWebTemplateInput)
         template = self.host.repository(ctx.workspace_id).create_web_template(
-            inputs.web_doc, inputs.account_id
+            inputs.web_doc, inputs.account_id, source_document_id=inputs.source_document_id
         )
         return DocumentRef(
             document_id=template["id"],

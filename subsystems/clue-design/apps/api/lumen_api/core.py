@@ -446,7 +446,12 @@ class CoreClient:
         custom_component_runtimes: Optional[Dict[str, JsonObject]] = None,
         brand_kit: Optional[JsonObject] = None,
         font_face_css: Optional[str] = None,
+        fragments: Optional[Dict[str, JsonObject]] = None,
+        fragment_css: Optional[str] = None,
     ) -> JsonObject:
+        # `fragments` / `fragment_css` (clone-fidelity F1.3): API-resolved cloned-section
+        # artifacts keyed by `frag_<16 hex>` id, and their concatenated already-scoped CSS.
+        # The engine resolves neither — an id absent from the map renders the placeholder.
         return self._run(
             {
                 "action": "web_render",
@@ -459,6 +464,8 @@ class CoreClient:
                 "custom_component_runtimes": custom_component_runtimes or {},
                 "brand_kit": brand_kit,
                 "font_face_css": font_face_css,
+                "fragments": fragments or {},
+                "fragment_css": fragment_css,
             }
         )
 
@@ -496,7 +503,12 @@ class CoreClient:
     ) -> JsonObject:
         """Parse a constrained-HTML fragment against `doc` WITHOUT mutating it.
         Returns `web_fragment: {nodes, roots}` + diagnostics so callers can
-        compose surgical RemoveNode/InsertNode batches (scoped edit turns)."""
+        compose surgical RemoveNode/InsertNode batches (scoped edit turns).
+
+        Nothing to do with CLONED SECTIONS: "fragment" here means a snippet of
+        authored markup being ingested into the tree, while a cloned section's
+        `frag_…` artifact (F1/F2) is a stored verbatim band that never passes
+        through this parser at all."""
         return self._run(
             {
                 "action": "web_ingest_fragment",

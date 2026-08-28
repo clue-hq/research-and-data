@@ -83,9 +83,23 @@ export interface WebNode {
   slug?: string;
   artifact_id?: string;
   props?: Record<string, CustomComponentPropValue>;
+  // fragment (leaf, clone-fidelity F1.1): one immutable registry artifact pin
+  // plus flat slot values. There is NO inspector UI for a fragment yet — that
+  // is Phase F3 — but the fields are named here so a document carrying one
+  // round-trips through the editor with its identity intact instead of losing
+  // the only thing that says which cloned section it is.
+  fragment_id?: string;
+  slots?: Record<string, WebFragmentSlotValue>;
   // personalization hedge — carried by the schema, ignored by every v0 path.
   slot_key?: string | null;
 }
+
+/** A fragment slot's value: exactly one flat scalar, externally tagged by the
+ * engine so an asset slot can never decay into a text slot on the wire. */
+export type WebFragmentSlotValue =
+  | { text: string }
+  | { asset: string }
+  | { visible: boolean };
 
 export interface RichTextDocument {
   schema_version: 1;
@@ -591,7 +605,18 @@ export type WebNodeProps =
   | { kind: "icon"; icon: string }
   | WebEmbedProps
   | WebComponentProps
-  | WebCustomComponentProps;
+  | WebCustomComponentProps
+  | WebFragmentProps;
+
+/** A cloned section's whole-props write (clone-fidelity F3.2). The artifact pin is repeated
+ * because SetNodeProps replaces the node's props wholesale — and it is the ONE thing the
+ * inspector never varies: editing a frozen artifact's identity would produce a different
+ * fragment wearing this one's name (D-F3 / R1: slot VALUES only). */
+export interface WebFragmentProps {
+  kind: "fragment";
+  fragment_id: string;
+  slots: Record<string, WebFragmentSlotValue>;
+}
 
 /** The three actions a button can take — the inspector's "Action" control. */
 export type WebButtonAction = "link" | "show_modal" | "close";
@@ -1367,13 +1392,22 @@ export interface CanvasNodeMovePlan {
   intent: "reorder_node" | "reparent_node";
 }
 
+// `fragment` is movable and is in NEITHER set below — founder ruling D-F3 (Option A, top-level
+// reordering only), the same one wired into the bridge's allowlists (`web_bridge.py`). A whole
+// cloned band moves up or down the page; it is never manually resized (its proportions ARE the
+// clone), never a drop target (an ordinary node dropped inside would be an internal edit of
+// somebody else's section), and it stays a leaf, so there is nothing in it to re-lay-out.
+// These two sides must agree: the bridge decides which nodes the iframe OFFERS a gesture, this
+// decides which gestures become an operation, and a fragment offered a drag the planner then
+// refuses is a dead handle.
 const CANVAS_MOVABLE_KINDS = new Set([
   "section",
   "container",
   "text",
   "button",
   "image",
-  "custom_component"
+  "custom_component",
+  "fragment"
 ]);
 const CANVAS_DROP_PARENT_KINDS = new Set(["section", "container"]);
 const CANVAS_RESIZABLE_KINDS = new Set([

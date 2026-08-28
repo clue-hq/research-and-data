@@ -62,6 +62,51 @@ fn brand_kit_fixture_round_trips_and_validates() {
 }
 
 #[test]
+fn a_font_licenses_embed_basis_survives_the_kit_round_trip() {
+    // D-F2 (clone-fidelity F0, carried to F1.5). A font ingested from a workspace's OWN brand
+    // material is embeddable on this platform, and the BASIS for that permission is the
+    // platform's Terms of Use — not a license anybody read off the site. F0 could not say so in
+    // its own field: `FontLicense` was a fixed struct, serde dropped the unknown `basis` key on
+    // the validate round trip, and the basis had to ride inside a restrictions LINE instead.
+    // This is that round trip, with the real field.
+    let mut value: serde_json::Value = serde_json::from_str(ACME_BRAND_KIT).unwrap();
+    value["assets"]["fonts"]["brand"]["license"]["basis"] =
+        serde_json::Value::String("platform-terms".to_owned());
+
+    let brand_kit: BrandKit = serde_json::from_value(value).unwrap();
+    assert_eq!(
+        brand_kit.assets.fonts["brand"].license.basis.as_deref(),
+        Some("platform-terms")
+    );
+
+    let json = serde_json::to_string(&brand_kit).unwrap();
+    let decoded: BrandKit = serde_json::from_str(&json).unwrap();
+    assert_eq!(
+        decoded.assets.fonts["brand"].license.basis.as_deref(),
+        Some("platform-terms"),
+        "the basis must survive serialization, or the pipeline persists a kit that lost it"
+    );
+    assert_eq!(brand_kit, decoded);
+}
+
+#[test]
+fn a_font_license_with_no_basis_serializes_exactly_as_it_did_before() {
+    // Every kit that exists today lacks the field. Tolerated absent, and absent on the way out
+    // too — `skip_serializing_if` keeps a pre-F1 kit's bytes identical, so adding the field
+    // re-writes nothing at rest.
+    let brand_kit: BrandKit = serde_json::from_str(ACME_BRAND_KIT).unwrap();
+    assert!(brand_kit.assets.fonts["brand"].license.basis.is_none());
+
+    let value = serde_json::to_value(&brand_kit).unwrap();
+    assert!(
+        value["assets"]["fonts"]["brand"]["license"]
+            .get("basis")
+            .is_none(),
+        "an absent basis must not serialize as null"
+    );
+}
+
+#[test]
 fn platform_default_is_product_ready_for_phase_c_contract() {
     let brand_kit = platform_default_brand_kit().unwrap();
 
@@ -1991,6 +2036,7 @@ fn acme_brand_kit() -> BrandKit {
                 subsettable: true,
                 source_url: None,
                 restrictions: Vec::new(),
+                basis: None,
             },
             provenance: None,
             metrics: None,

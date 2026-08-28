@@ -1196,6 +1196,12 @@ def _bridge_page_capabilities(
     nodes = page.get("nodes")
     nodes = nodes if isinstance(nodes, dict) else {}
     root_id = page.get("root") if isinstance(page.get("root"), str) else "root"
+    # `fragment` is here and in NEITHER set below — founder ruling D-F3 (Option A, top-level
+    # reordering only), wired at the one place the three allowlists are spelled. A whole cloned
+    # band can be moved up or down the page; it can never be manually resized (its proportions
+    # ARE the clone), never be a drop target (an ordinary node dropped inside it would be an
+    # internal edit of somebody else's section), and it stays a leaf in the engine, so there is
+    # nothing inside it to re-lay-out or detach. Pinned by `tests/test_fragment_mobility.py`.
     movable_kinds = {
         "section",
         "container",
@@ -1203,6 +1209,7 @@ def _bridge_page_capabilities(
         "button",
         "image",
         "custom_component",
+        "fragment",
     }
     parent_kinds = {"section", "container"}
     resizable_kinds = {

@@ -21,8 +21,11 @@ _DEFAULT_BODY_WEIGHT = 400
 _HEADING_LABELS = {"h1", "h2", "h3"}
 _BODY_LABELS = {"body", "p"}
 
-# Label -> role mapping for anchoring.
-_ANCHOR_LABELS: dict[str, str] = {
+# Label -> role mapping for anchoring. PUBLIC because it is the only statement
+# of which type roles a real sample can anchor, and the F2.4 grammar audit
+# (`lumen_ingestion.grammar_audit`) has to say measured-vs-computed per role
+# without re-deriving that table and drifting from it.
+ANCHOR_LABELS: dict[str, str] = {
     "h1": "headline",
     "h2": "title",
     "body": "body",
@@ -244,7 +247,7 @@ def build_type_styles(
 
 
 def _anchor_for(role: str, anchors: TypeAnchors) -> TypeSample | None:
-    for label, mapped in _ANCHOR_LABELS.items():
+    for label, mapped in ANCHOR_LABELS.items():
         if mapped == role and label in anchors.samples:
             return anchors.samples[label]
     return None

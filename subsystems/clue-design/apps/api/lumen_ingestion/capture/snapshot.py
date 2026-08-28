@@ -32,6 +32,15 @@ class Download(BaseModel):
     content_type: str | None = None
     bytes_b64: str
     sha256: str
+    # How the page referenced this asset (clone-fidelity F0.2) — one of
+    # ``candidates.ORIGINS``, or absent on a screenshot and on every pre-F0.2 fixture, which
+    # is why both fields are optional with defaults rather than required.
+    origin: str | None = None
+    # True only when EVERY reference to this URL came from a
+    # ``prefers-color-scheme: dark`` source. The signal has to survive the snapshot to be
+    # worth harvesting: parse stamps it into the asset's locator, so the evidence — and the
+    # human reading it — keeps knowing which rendition is the dark one.
+    dark_scheme: bool = False
 
 
 class SiteSnapshot(BaseModel):

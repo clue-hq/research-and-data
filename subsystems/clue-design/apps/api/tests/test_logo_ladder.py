@@ -270,6 +270,68 @@ def test_aria_landmarks_are_chrome_zones_too():
 
 
 # ---------------------------------------------------------------------------
+# lesson 6b — the ladder reads a CSS url() the same way everything else does
+#
+# The F0 fix wave replaced three hand-rolled `url()` regexes with one shared
+# escape-aware reader (`capture.cssurl.iter_css_urls`) and deliberately left the
+# ladder's own copy alone. That copy carried BOTH defects the wave killed: the
+# unquoted branch (`[^'\")]+`) stopped dead at the backslash-escaped `)` Webflow
+# writes into a Designer-uploaded filename and never unescaped it, and the
+# `['\"]?` "quoted" branch was decorative — the character class ended the token at
+# the first space or paren INSIDE the quotes. On this path a mangled url is not a
+# lost decoration: it is the brand's own logo, enumerated under a URL its CDN
+# answers 403 to, so the mark is silently missing from the ladder.
+# ---------------------------------------------------------------------------
+
+
+def test_an_escaped_paren_in_a_background_url_survives_enumeration():
+    """Webflow escapes the parens in `Logo (1).svg`. The old reader returned
+    `https://cdn/Logo%20\\(1\\` — a 403."""
+    css = r".logo{background-image:url(https://cdn/Logo%20\(1\).svg)}"
+
+    images, _ = ladder._parse_css(css, "https://acme.com/")
+
+    assert [url for _, url in images] == ["https://cdn/Logo%20(1).svg"]
+
+
+def test_a_quoted_background_url_containing_spaces_and_parens_is_not_truncated():
+    """The old reader returned `https://cdn/Logo (2` for both quote styles."""
+    double = r'.logo{background-image:url("https://cdn/Logo (2).svg")}'
+    single = r".logo{background-image:url('https://cdn/Logo (2).svg')}"
+
+    for css in (double, single):
+        images, _ = ladder._parse_css(css, "https://acme.com/")
+        assert [url for _, url in images] == ["https://cdn/Logo (2).svg"]
+
+
+def test_every_layer_of_a_multi_image_background_is_enumerated():
+    """The greedy `[^;}]*` hop in the old reader skipped to the LAST `url(` in a
+    declaration, so the first of two stacked background layers vanished — the
+    exact shape of the insighthealth.ai hero."""
+    css = ".hero-logo{background-image:url(/mark.svg), url(/glow.png)}"
+
+    images, _ = ladder._parse_css(css, "https://acme.com/")
+
+    assert [url for _, url in images] == [
+        "https://acme.com/mark.svg",
+        "https://acme.com/glow.png",
+    ]
+
+
+def test_a_webflow_escaped_header_background_reaches_the_css_bg_rung():
+    """End to end: the candidate the ladder ranks carries the real URL."""
+    html = (
+        "<style>.header-logo{background-image:"
+        r"url(https://cdn.acme.com/Acme%20Logo%20\(1\).svg)}"
+        '</style><div class="header-logo"></div>'
+    )
+
+    urls = {c.url for c in ladder.harvest(html, "https://acme.com/") if c.rung == "CSS_BG"}
+
+    assert urls == {"https://cdn.acme.com/Acme%20Logo%20(1).svg"}
+
+
+# ---------------------------------------------------------------------------
 # guard 1 — asset-level identity (the AWS incident)
 # ---------------------------------------------------------------------------
 

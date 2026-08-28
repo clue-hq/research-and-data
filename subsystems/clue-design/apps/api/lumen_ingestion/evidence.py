@@ -143,6 +143,69 @@ class ImageEvidence(BaseModel):
         return [_normalize_hex(item) for item in value]
 
 
+class DeclaredRoleEvidence(BaseModel):
+    """A role the site DECLARED, in its own stylesheet, via a named custom property.
+
+    Clone-fidelity F0.3. ``--base-color-brand--green: #30d8a7`` is not a swatch to be
+    clustered with everything else on the page — it is the site stating what its brand color
+    is. The normalizer applies these as direct role assignments (basis ``declared``) that
+    outrank the clustered candidate; the name→role table and its refusals live in
+    ``capture/declared_roles.py``.
+
+    Additive and optional: ``schema_version`` stays 1 and pre-F0.3 evidence deserializes
+    unchanged (the list defaults empty, which is also what every non-website capture emits).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    #: One of the four anchors `normalizer.roles.assign_light_roles` derives the kit from.
+    role: Literal["surface.page", "text.primary", "surface.brand", "surface.accent"]
+    #: The custom property that stated it, `--` prefix included.
+    property_name: str
+    value: str
+    pointer: EvidencePointer
+
+    @field_validator("value")
+    @classmethod
+    def _hex(cls, value: str) -> str:
+        return _normalize_hex(value)
+
+
+class StateStyle(BaseModel):
+    """One interaction state, read off the site's own CSS rule (clone-fidelity F0.3).
+
+    A clone that renders a site's buttons in the right color but does nothing on hover is
+    visibly not the site. These are the site's *declared* states — ``.btn:hover { … }`` — not
+    a guess derived from the resting style, and only the properties the rule actually sets
+    are recorded (everything else stays ``None``, never a fabricated default).
+
+    Evidence only: F0.3 deliberately mints no kit tokens from these. The design-brief agent
+    and the F2 fragment harvest are the consumers.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    #: The selector verbatim, e.g. ``.btn:hover`` — F2 matches harvested markup against it.
+    selector: str
+    state: Literal["hover", "focus", "focus-visible", "active", "disabled"]
+    #: ``dark`` when the rule sits inside ``@media (prefers-color-scheme: dark)``.
+    scheme: Literal["light", "dark"] = "light"
+    background: str | None = None
+    color: str | None = None
+    border_color: str | None = None
+    #: Kept as the declared CSS text: a shadow is a composite value the kit models
+    #: separately, and re-serializing it here would lose more than it gained.
+    box_shadow: str | None = None
+    opacity: float | None = None
+    text_decoration: str | None = None
+    pointer: EvidencePointer
+
+    @field_validator("background", "color", "border_color")
+    @classmethod
+    def _colors(cls, value: str | None) -> str | None:
+        return _normalize_hex(value) if value else value
+
+
 class NumberSample(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -289,6 +352,10 @@ class BrandEvidence(BaseModel):
     images: list[ImageEvidence] = []
     numbers: list[NumberSample] = []
     shadows: list[ShadowSample] = []
+    # Source-truth styling (clone-fidelity F0.3). Both additive and both empty for every
+    # pre-F0.3 bundle and every non-website capture, so `schema_version` stays 1.
+    declared_roles: list[DeclaredRoleEvidence] = []
+    state_styles: list[StateStyle] = []
     geometry: GeometryEvidence = GeometryEvidence()
     rules: list[RuleEvidence] = []
     screenshots: list[str] = []

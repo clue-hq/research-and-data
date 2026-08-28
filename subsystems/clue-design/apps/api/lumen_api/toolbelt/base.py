@@ -19,7 +19,7 @@ side of the contract:
 coroutine. D6 does not re-shape that (Part IV / Part-I Step-2 own the async surface work), so a
 tool body runs the same synchronous core the route used to call inline, handed to
 ``asyncio.to_thread`` so the invoker's loop is never blocked and so the core's own bridge calls
-land on a thread that owns no loop (``DesignStoreBridge._run_isolated``'s fast path).
+land on a thread that owns no loop (``design_store.run_isolated``'s fast path).
 
 **Reference-only outputs (Doc A §3a).** A design tool returns ids/keys/digests/versions — never
 HTML, never a scene, never component bytes. The REST routes re-read the rows they need to

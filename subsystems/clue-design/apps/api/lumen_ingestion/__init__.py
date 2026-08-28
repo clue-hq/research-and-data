@@ -12,6 +12,7 @@ from __future__ import annotations
 from .evidence import (
     BrandEvidence,
     ColorEvidence,
+    DeclaredRoleEvidence,
     EvidencePointer,
     FontEvidence,
     FontFaceEvidence,
@@ -23,6 +24,7 @@ from .evidence import (
     RuleEvidence,
     SectionBackground,
     ShadowSample,
+    StateStyle,
     SurfaceShape,
     TypeSample,
 )
@@ -31,6 +33,7 @@ from .normalizer import NormalizeResult, normalize_evidence
 __all__ = [
     "BrandEvidence",
     "ColorEvidence",
+    "DeclaredRoleEvidence",
     "EvidencePointer",
     "FontEvidence",
     "FontFaceEvidence",
@@ -42,6 +45,7 @@ __all__ = [
     "RuleEvidence",
     "SectionBackground",
     "ShadowSample",
+    "StateStyle",
     "SurfaceShape",
     "TypeSample",
     "NormalizeResult",

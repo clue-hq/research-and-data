@@ -66,11 +66,36 @@ from .export_policy import (
     has_blocking_export_diagnostics,
     partition_export_diagnostics,
 )
+from .agent_cloned_sections import DurableAgentClonedSectionRegistry
 from .agent_custom_components import DurableAgentCustomComponentRegistry
 from .custom_component_runtime import (
     build_custom_component_runtime_frames,
     default_runtime_host_path,
     web_doc_uses_custom_components,
+)
+from .fragments.render import (
+    build_fragment_render_package,
+    empty_fragment_render_package,
+    fragment_collision_diagnostics,
+    fragment_css_sheet,
+    fragment_render_map,
+    web_doc_fragment_ids,
+)
+from .fragments import (
+    ISOLATION_PREVIEW_MEDIA_TYPE,
+    IsolationRenderFailed,
+    attach_web_fragment_preview,
+    read_web_fragment,
+    render_isolation_preview,
+    screenshot_isolation_page,
+    set_web_fragment_status,
+)
+from .fragment_inspector import (
+    FRAGMENT_CARD_SCHEMA_VERSION,
+    activation_target,
+    dormant_fragment_cards,
+    fragment_card,
+    retirement_verdict,
 )
 from .custom_components import (
     CUSTOM_COMPONENT_MEMBER_MEDIA_TYPES,
@@ -82,6 +107,7 @@ from .database import (
     CustomComponentReferenceError,
     CustomComponentSourceVersionConflict,
     DesignResourceVersionConflict,
+    FragmentReferenceError,
     NotFoundError,
     WebDocumentVersionConflict,
     WebPublishRevisionConflict,
@@ -176,6 +202,7 @@ from clue_db import db_lifespan, get_engine
 from clue_design import storage as design_storage
 from clue_design.envelopes import DesignIngestionEnvelope, DesignTurnEnvelope
 from clue_design.enums import DesignIngestionKind
+from clue_design.errors import DesignFragmentActivationError, DesignFragmentPreviewError
 from clue_design.leg_context import render_leg_turn_prompt
 from clue_design.runs import work_id_for_run as design_work_id_for_run
 from clue_design.storage import location_digest
@@ -707,6 +734,12 @@ def create_app(
     )
     app.state.custom_component_runtime_host = default_runtime_host_path()
     app.state.core = CoreClient()
+    # The isolation render's BROWSER half, injected at the composition root (F3.4, ledger
+    # T18-M-13). Production takes the Playwright shutter; a test hands in its own callable and
+    # gets the real render — the real engine page, the real fail-closed asset route — without a
+    # Chromium. Previously a test reached in and rebound `main.render_isolation_preview`, which
+    # worked and taught nothing about how the browser dependency is actually supplied.
+    app.state.isolation_shooter = screenshot_isolation_page
     app.state.agent_turn_runner = None
     # Website-mode turn test seam: a callable (document, prompt, model, root) ->
     # envelope that replaces the real run_web_agent_turn in tests. None = live.
@@ -816,6 +849,62 @@ def create_app(
                     "message": error.message,
                     "node_id": error.node_id,
                     "artifact_id": error.artifact_id,
+                }
+            },
+        )
+
+    @app.exception_handler(FragmentReferenceError)
+    def fragment_reference_handler(
+        _request: Request, error: FragmentReferenceError
+    ) -> JSONResponse:
+        return JSONResponse(
+            status_code=422,
+            content={
+                "detail": {
+                    "code": error.code,
+                    "message": error.message,
+                    "node_id": error.node_id,
+                    "fragment_id": error.fragment_id,
+                }
+            },
+        )
+
+    @app.exception_handler(DesignFragmentActivationError)
+    def fragment_activation_handler(
+        _request: Request, error: DesignFragmentActivationError
+    ) -> JSONResponse:
+        """D-F8's refusal, worded for the person who has to act on it (T16 §6.6).
+
+        409 rather than 422: nothing about the request is malformed — the section simply is not
+        in a state where waking it is a decision anybody could make. The ``reason`` code is the
+        whole point of the mapping: a human must read "get a preview first", never a 500 and
+        never a sentence a surface has to parse to find the button it should offer.
+        """
+        return JSONResponse(
+            status_code=409,
+            content={
+                "detail": {
+                    "code": f"fragment.activation_{error.reason}",
+                    "reason": error.reason,
+                    "message": str(error),
+                    "fragment_id": error.fragment_id,
+                }
+            },
+        )
+
+    @app.exception_handler(DesignFragmentPreviewError)
+    def fragment_preview_handler(
+        _request: Request, error: DesignFragmentPreviewError
+    ) -> JSONResponse:
+        """A preview is attached once (F3.2). Its sibling refusal, mapped on the same terms."""
+        return JSONResponse(
+            status_code=409,
+            content={
+                "detail": {
+                    "code": f"fragment.preview_{error.reason}",
+                    "reason": error.reason,
+                    "message": str(error),
+                    "fragment_id": error.fragment_id,
                 }
             },
         )
@@ -1705,7 +1794,7 @@ def create_app(
         #
         # The ``run_in_threadpool`` dance that used to wrap the store call is gone with it: it
         # existed because this is the one ASYNC ingestion endpoint and the sync store facade
-        # cannot ``asyncio.run`` inside a live loop. ``DesignStoreBridge._run_isolated`` has
+        # cannot ``asyncio.run`` inside a live loop. ``design_store.run_isolated`` has
         # handled exactly that since D2.3 by handing the coroutine to a one-shot worker thread,
         # so the extra hop was doing nothing the bridge does not already do.
         job = _offer_ingestion(repo, "website", payload.model_dump())
@@ -3469,6 +3558,21 @@ def create_app(
                     detail={"code": "web_render.bad_nonce", "message": str(error)},
                 ) from error
         asset_base_url = str(request.base_url).rstrip("/") + "/asset-store"
+        # F1.3: resolve the page's cloned-section artifacts out of durable custody and hand the
+        # engine the markup map + the concatenated scoped CSS. An id that will not resolve is
+        # left OUT of the map on purpose — the engine renders its placeholder and says so
+        # (LUMW0412), which is what keeps a document with a dead pin editable.
+        fragment_ids = web_doc_fragment_ids(web_doc, "home")
+        fragment_package = (
+            build_fragment_render_package(
+                app.state.storage,
+                workspace_id=store_workspace_id(repo),
+                web_doc=web_doc,
+                page_id="home",
+            )
+            if fragment_ids
+            else empty_fragment_render_package()
+        )
         try:
             response = app.state.core.web_render(
                 web_doc,
@@ -3480,13 +3584,30 @@ def create_app(
                 custom_component_runtimes=runtime_frames,
                 brand_kit=brand_kit,
                 font_face_css=font_face_css,
+                # The artifact's OWN byte references are rebased onto THIS request's origin
+                # (F1.5 fix wave): they are stored root-relative, which the editor's srcDoc
+                # iframe has no origin to resolve, so every image inside a cloned section
+                # rendered broken while slot-bound assets — which go through the engine's
+                # asset_base_url — worked.
+                fragments=fragment_render_map(
+                    fragment_package, fragment_ids, asset_base_url=asset_base_url
+                ),
+                fragment_css=fragment_css_sheet(
+                    fragment_package, fragment_ids, asset_base_url=asset_base_url
+                ),
             )
         except CoreError as error:
             raise core_http_error(error) from error
+        diagnostics = list(response.get("diagnostics", []))
+        # The ledgered cascade risk, reported not refused: compiled utilities land after fragment
+        # CSS, so a cloned class the document also authors is overruled.
+        diagnostics.extend(
+            fragment_collision_diagnostics(fragment_package, web_doc, "home")
+        )
         return {
             "schema_version": 1,
             "html": response.get("html"),
-            "diagnostics": response.get("diagnostics", []),
+            "diagnostics": diagnostics,
         }
 
     @app.post("/documents/{document_id}/web/operations")
@@ -4462,6 +4583,10 @@ def create_app(
                 "document_id": new_document_id,
                 "web_doc": web_doc,
                 "account_id": document.get("account_id"),
+                # F2.2: this template is a COPY of `document_id`, so its fragment pins are
+                # inherited, not chosen. Without saying so, retiring one cloned section would
+                # block saving a document that has pinned it since before the retirement.
+                "source_document_id": document_id,
             },
             workspace_id=store_workspace_id(repo),
             refusals=_document_refusals(new_document_id),
@@ -4489,6 +4614,172 @@ def create_app(
             for doc in repo.list_web_templates()
         ]
         return {"templates": templates}
+
+    # --- the fragment inspector card (clone-fidelity F3.2) ------------------------------------
+    # Four thin routes over machinery that already exists: the registry reads, the F3.0
+    # activation gate, the F3.1 lineage resolver, and P-7's isolation render. No rule is
+    # restated here — the routes are a surface, and every refusal below is somebody else's,
+    # translated into a status code.
+    #
+    # The literal-segment route is registered BEFORE the `{fragment_id}` one for the same reason
+    # the ingestion routes are (FastAPI matches in registration order).
+
+    @app.get("/web/fragments/dormant")
+    def list_dormant_fragments(repo: HybridRepository = Depends(repository)) -> JsonObject:
+        """Every section the source site HIDES (D-F8).
+
+        Dormant sections are on no page, so nothing can select one — and D-F8 makes the inspector
+        the one place a human sees and activates them. This is how the inspector reaches them.
+        """
+        return {
+            "schema_version": FRAGMENT_CARD_SCHEMA_VERSION,
+            "sections": dormant_fragment_cards(
+                app.state.storage, workspace_id=store_workspace_id(repo)
+            ),
+        }
+
+    @app.get("/web/fragments/{fragment_id}")
+    def read_fragment_card(
+        fragment_id: str, repo: HybridRepository = Depends(repository)
+    ) -> JsonObject:
+        return fragment_card(
+            app.state.storage,
+            workspace_id=store_workspace_id(repo),
+            fragment_id=fragment_id,
+        )
+
+    @app.post("/web/fragments/{fragment_id}/preview")
+    def generate_fragment_preview(
+        fragment_id: str, repo: HybridRepository = Depends(repository)
+    ) -> JsonObject:
+        """Photograph this section's own bytes in isolation, and keep the picture (P-7).
+
+        The two rows that reach here are the two nothing ever photographed: a hidden-on-source
+        clone (D-F8 asks for a preview before a human may activate it) and a composed repair
+        (ruling R17-2 — otherwise the human releasing it is approving a section nobody can see).
+        A row that already has a preview is refused: a preview is attached once, because a
+        decision was made against the picture that is there.
+        """
+        workspace_id = store_workspace_id(repo)
+        loaded = read_web_fragment(
+            app.state.storage, workspace_id=workspace_id, fragment_id=fragment_id
+        )
+        # Asked BEFORE the render, off the row that was just read. The attach refuses this
+        # anyway, but discovering it there means a browser launch and up to
+        # ISOLATION_TIMEOUT_MS of work whose only possible outcome is a 409 and an orphan blob.
+        # The verdict is free here; the picture is not.
+        if loaded.row.get("preview_digest"):
+            raise DesignFragmentPreviewError(
+                fragment_id,
+                "already_present",
+                f"fragment {fragment_id} already carries a preview: a preview is attached once "
+                "and never replaced, because a human's decision was made against the picture "
+                "that is there",
+            )
+        # No brand kit is threaded in: a harvested clone carries all of its own styling, and a
+        # repair's artifact carries a stylesheet compiled against its kit at repair time —
+        # including the theme's own custom properties (F3.1 §1.3). Handing a kit here would be a
+        # second opinion about how the section looks.
+        try:
+            png, page = render_isolation_preview(
+                app.state.core,
+                loaded,
+                read_blob=blob_store(repo).read_blob,
+                shoot=app.state.isolation_shooter,
+            )
+        except IsolationRenderFailed as failure:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": failure.code,
+                    "message": failure.message,
+                    "fragment_id": fragment_id,
+                },
+            ) from failure
+        attach_web_fragment_preview(
+            app.state.storage,
+            workspace_id=workspace_id,
+            fragment_id=fragment_id,
+            preview=png,
+            # P-7's labelling clause, made durable: the kind of picture comes from the thing
+            # that MADE it, and lands on the row beside the digest — never inferred later from
+            # the mint's provenance, which is about the mint's own crop and would say nothing
+            # for a repair and "measured" for a section the capture measured but never cropped.
+            preview_basis=page.basis,
+            media_type=ISOLATION_PREVIEW_MEDIA_TYPE,
+        )
+        return fragment_card(
+            app.state.storage, workspace_id=workspace_id, fragment_id=fragment_id
+        )
+
+    @app.post("/web/fragments/{fragment_id}/activate")
+    def activate_fragment(
+        fragment_id: str, repo: HybridRepository = Depends(repository)
+    ) -> JsonObject:
+        """A human wakes a hidden-on-source section (D-F8). The gate is the DAL's, not this.
+
+        Straight to ``approved``, deliberately: the person pressing this IS the approval D-F8
+        asks for, and leaving it ``draft`` would mean the next brand-kit approval released it as
+        a side effect of an unrelated decision — the automatic release dormancy exists to prevent.
+        """
+        workspace_id = store_workspace_id(repo)
+        row = read_web_fragment(
+            app.state.storage, workspace_id=workspace_id, fragment_id=fragment_id
+        ).row
+        target = activation_target(row)
+        if target is None:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "fragment.not_dormant",
+                    "message": (
+                        f"fragment {fragment_id} is {row.get('status')!r}, not a section the "
+                        "source site hides — there is nothing to activate."
+                    ),
+                    "fragment_id": fragment_id,
+                },
+            )
+        set_web_fragment_status(
+            workspace_id=workspace_id, fragment_id=fragment_id, status=target
+        )
+        return fragment_card(
+            app.state.storage, workspace_id=workspace_id, fragment_id=fragment_id
+        )
+
+    @app.post("/web/fragments/{fragment_id}/retire")
+    def retire_fragment(
+        fragment_id: str, repo: HybridRepository = Depends(repository)
+    ) -> JsonObject:
+        """Retire a REPAIR (ruling R17-2). Never the harvested original (ruling R17-3).
+
+        The only in-product way out of a lineage holding two released repairs, which the recreate
+        walk refuses to assemble — correctly, since ranking two deliberate repairs of the same
+        band silently would discard one. Retire is not release: no new approval granularity is
+        introduced, this is the ``deprecated`` move every section has always had.
+
+        The original is refused because it is the EVIDENCE D-F6 preserves: retiring it to settle
+        an argument between two of its repairs throws away the thing the argument is about.
+        """
+        workspace_id = store_workspace_id(repo)
+        row = read_web_fragment(
+            app.state.storage, workspace_id=workspace_id, fragment_id=fragment_id
+        ).row
+        verdict = retirement_verdict(row)
+        if not verdict["retirable"]:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": f"fragment.{verdict['reason']}",
+                    "message": verdict["message"],
+                    "fragment_id": fragment_id,
+                },
+            )
+        set_web_fragment_status(
+            workspace_id=workspace_id, fragment_id=fragment_id, status="deprecated"
+        )
+        return fragment_card(
+            app.state.storage, workspace_id=workspace_id, fragment_id=fragment_id
+        )
 
     @app.post("/documents/{document_id}/web/derive")
     def derive_web_document(
@@ -8059,7 +8350,12 @@ def run_web_agent_turn(
     `custom_component_registry`: an account/document-bound capability. Unlike
     brand/assets it is not passed by value because source/compile operations
     must be durable between runs; the runtime receives typed methods, never
-    database/store paths."""
+    database/store paths.
+
+    The workspace's CLONED SECTIONS (F2.3) ride the same way, and are built here
+    rather than taken as an argument: unlike the component registry they need no
+    account and no document, only this turn's tenant and its engine cache, both
+    of which are already resolved below."""
     try:
         from lumen_agent.config import AgentRuntimeConfig
         from lumen_agent.harness_web import run_deepagent_web_turn
@@ -8117,6 +8413,39 @@ def run_web_agent_turn(
             )
         if asset_library is not None:
             config = replace(config, asset_library=asset_library)
+        # F1.3: resolve the artifacts this document ALREADY pins HERE, where the database is, and
+        # hand them to the runtime BY VALUE — the same rule asset_library follows, because a fleet
+        # worker never reads the API database.
+        #
+        # This is the turn's STARTING package, not its final one (amended F2.3). Nothing in a turn
+        # can mint a fragment, but a turn CAN now pin one: `insert_cloned_section` adds the
+        # artifact it just resolved to this package (`_admit_fragment_artifact`), so a band the
+        # agent placed renders in its own screenshots instead of coming back as the engine's
+        # placeholder for the visual reviewer to judge. A pin that reaches the document by any
+        # OTHER route mid-turn — hand-built ops naming an id nothing resolved — still renders the
+        # placeholder, which is the honest answer rather than an improvised one.
+        if web_doc_fragment_ids(web_doc, "home"):
+            config = replace(
+                config,
+                fragment_render_package=build_fragment_render_package(
+                    turn_blobs.storage,
+                    workspace_id=turn_workspace_id,
+                    web_doc=web_doc,
+                    page_id="home",
+                ),
+            )
+        # F2.3: the WORKSPACE's released cloned sections, as a capability rather than a value —
+        # the rule `custom_component_registry` follows, for the same reason. The package above
+        # answers "what does this document already pin?"; this answers "what may it pin next?",
+        # and that second question is a PERMISSION question whose answer must come from the
+        # document write's own gate at the moment it is asked, not from a snapshot of the
+        # registry taken when the turn was composed.
+        config = replace(
+            config,
+            cloned_section_registry=DurableAgentClonedSectionRegistry(
+                blobs=turn_blobs, cache_dir=turn_cache_root
+            ),
+        )
         if custom_component_registry is not None:
             config = replace(
                 config,
@@ -9187,6 +9516,15 @@ def execute_web_turn_job(
                                 (
                                     f"Node {error.node_id} references "
                                     f"artifact {error.artifact_id}."
+                                ),
+                            )
+                        except FragmentReferenceError as error:
+                            response = failed_agent_turn_response(
+                                error.code,
+                                error.message,
+                                (
+                                    f"Node {error.node_id} references "
+                                    f"fragment {error.fragment_id}."
                                 ),
                             )
                         else:
