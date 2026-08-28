@@ -311,6 +311,11 @@ _CLONED_SECTION_DROPPED_CODE = "LUMA0601"
 #: degraded band exactly as it renders a healthy one and cannot know the difference — the
 #: judgement is the registry's, and this is the agent substrate relaying it as work.
 _CLONED_SECTION_DEGRADED_CODE = "LUMA0602"
+#: A band whose every released version is broken, so the fallback had to RANK them (F3.1, ruling
+#: N4). Its own code rather than a second severity on `LUMA0602` (ruling X4): a consumer filtering
+#: by code alone must not get two entries that mean different things, and "this band is broken"
+#: (work) and "here is which broken version was chosen" (a note) are different things.
+_CLONED_SECTION_RANKED_CODE = "LUMA0603"
 #: The wrapper section a pinned cloned section lives inside. `w-full` and nothing else: the clone
 #: brings its own padding, background and rhythm (that is what makes it a clone), so a wrapper
 #: that imposed the platform's section rhythm on top would double it.
@@ -5238,7 +5243,7 @@ class LumenWebTools:
                 {
                     "severity": "advice",
                     "phase": "agent",
-                    "code": _CLONED_SECTION_DEGRADED_CODE,
+                    "code": _CLONED_SECTION_RANKED_CODE,
                     "message": (
                         "every released version of "
                         + ", ".join(
@@ -5281,6 +5286,11 @@ class LumenWebTools:
             # a released one — the mistake that manufactures two sibling repairs and, after the
             # next bulk kit approval, an assembly that refuses.
             "superseded_by": resolved.get("superseded_by"),
+            # ...and BOTH halves of it (ruling X2). `superseded_by` alone is `None` in two
+            # different worlds — "no repair exists" and "two released repairs exist and neither
+            # replaces the other" — and reading the second as the first is how the warning ended
+            # up advising a THIRD repair of the one band that could least afford another.
+            "lineage_ambiguous": list(resolved.get("lineage_ambiguous") or []),
         }
 
     def _note_degraded_pins(
@@ -5330,10 +5340,19 @@ class LumenWebTools:
             f"{entry['fragment_id']} ({entry.get('reason') or 'broken'})"
             for entry in needs_repair
         )
+        # THREE worlds, not two (ruling X2). `superseded_by` being falsy does not mean "nothing
+        # has repaired this": it is also what an AMBIGUOUS family answers, and that is the one
+        # band on the page that can least afford another repair — a third sibling deepens an
+        # ambiguity that already refuses the whole-page assembly.
         replaceable = [entry for entry in needs_repair if entry.get("superseded_by")]
-        unrepaired = len(needs_repair) - len(replaceable)
+        contested = [
+            entry
+            for entry in needs_repair
+            if not entry.get("superseded_by") and entry.get("lineage_ambiguous")
+        ]
+        unrepaired = len(needs_repair) - len(replaceable) - len(contested)
         message = f"{len(needs_repair)} cloned section(s) on this page are marked BROKEN: {named}"
-        if not replaceable:
+        if unrepaired == len(needs_repair):
             message += " — and none of them has a released repair"
         hint_parts = []
         if replaceable:
@@ -5345,9 +5364,23 @@ class LumenWebTools:
                 f"another one: remove the broken pin and insert_cloned_section the repair "
                 f"instead ({swaps})."
             )
+        if contested:
+            choices = "; ".join(
+                f"{entry['fragment_id']} -> one of "
+                + ", ".join(str(item) for item in entry["lineage_ambiguous"])
+                for entry in contested
+            )
+            hint_parts.append(
+                f"{len(contested)} of these have MORE THAN ONE released repair and none of them "
+                f"replaces the others ({choices}). Do not compose another — a third would only "
+                "deepen it, and a whole-page recreate already refuses on this band. Pin one of "
+                "the existing repairs explicitly with insert_cloned_section, and ask the user "
+                "which one to keep so the rest can be retired."
+            )
         if unrepaired:
             hint_parts.append(
-                "Repair the rest with repair_cloned_section(fragment_id, html, rung, note): "
+                f"Repair {'the rest' if hint_parts else 'each one'} with "
+                "repair_cloned_section(fragment_id, html, rung, note): "
                 "compose the replacement with engine primitives under the brand's Grammar "
                 "Audit, preserving the original's content order, typography, colors, imagery "
                 "treatment, proportions, spacing and rhythm. The original clone is preserved as "

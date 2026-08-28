@@ -542,6 +542,77 @@ def test_a_degraded_NEWEST_repair_never_costs_the_family_its_healthy_one(
     assert [entry["substituted_for"] for entry in result["substituted"]] == [PROOF_ID]
 
 
+@pytest.mark.parametrize("middle_status", ["approved", "deprecated"])
+def test_a_healthy_original_is_never_ambiguous_with_its_own_healthy_descendant(
+    tmp_path: Path, registry: FakeRegistry, middle_status: str
+) -> None:
+    """Ruling R-X1 — supersession is transitive over DESCENDANTS, not children.
+
+    `A(healthy) → M(broken) → L(healthy)`. Asking about children made the degraded middle stop
+    shielding its ancestors, so the original AND its own grandchild both looked like ends of the
+    chain: the family was declared ambiguous BETWEEN THEM, the whole page refused, and the
+    message named the original as one of its own "2 released repairs". `L` supersedes `A`
+    transitively; there is nothing ambiguous about it.
+
+    The `deprecated` middle is the same bug wearing a different status, and it predates the
+    round-2 regression — so it is parametrized rather than left for somebody to rediscover.
+    """
+    registry.add(
+        "frag_00000000000000b2",
+        role="nav",
+        label="Repair one",
+        index=0,
+        derived_from=NAV_ID,
+        status=middle_status,
+        degraded=middle_status == "approved",
+        degraded_reason="dead_height" if middle_status == "approved" else None,
+    )
+    registry.add("frag_00000000000000b3", role="nav", label="Repair two", index=0,
+                 derived_from="frag_00000000000000b2")
+    tools = _tools(tmp_path, registry)
+
+    result = json.loads(tools.recreate_cloned_page())
+
+    assert result["status"] == "ok", result.get("message")
+    assert _pinned_in_order(tools) == [
+        "frag_00000000000000b3",
+        HERO_ID,
+        PROOF_ID,
+        FOOTER_ID,
+    ]
+    assert NAV_ID not in _pinned_in_order(tools)
+    assert [entry["substituted_for"] for entry in result["substituted"]] == [NAV_ID]
+    # And the picker no longer tells the same false story about the healthy original.
+    listing = json.loads(tools.search_cloned_sections(limit=20))
+    nav = next(row for row in listing["results"] if row["fragment_id"] == NAV_ID)
+    assert "lineage_ambiguous" not in nav
+    assert nav["superseded_by"] == "frag_00000000000000b3"
+
+
+def test_a_chain_of_broken_middles_is_stepped_over_however_deep(
+    tmp_path: Path, registry: FakeRegistry
+) -> None:
+    """Transitivity is not a special case for depth 2."""
+    registry.add("frag_00000000000000b2", role="proof", label="M1", index=2,
+                 derived_from=PROOF_ID, degraded=True, degraded_reason="dead_height")
+    registry.add("frag_00000000000000b3", role="proof", label="M2", index=2,
+                 derived_from="frag_00000000000000b2", degraded=True,
+                 degraded_reason="dead_height")
+    registry.add("frag_00000000000000b4", role="proof", label="L", index=2,
+                 derived_from="frag_00000000000000b3")
+    tools = _tools(tmp_path, registry)
+
+    result = json.loads(tools.recreate_cloned_page())
+
+    assert _pinned_in_order(tools) == [
+        NAV_ID,
+        HERO_ID,
+        "frag_00000000000000b4",
+        FOOTER_ID,
+    ]
+    assert result["needs_repair"] == []
+
+
 def test_when_every_released_version_is_broken_the_ranking_is_stated(
     tmp_path: Path, registry: FakeRegistry
 ) -> None:
@@ -564,10 +635,16 @@ def test_when_every_released_version_is_broken_the_ranking_is_stated(
         "frag_00000000000000b2",
         "frag_00000000000000b3",
     ]
-    # ADVICE, not a warning: the band is already reported as work through `needs_repair`.
-    (advice,) = [item for item in result["advice"] if item.get("code") == "LUMA0602"]
+    # ADVICE, not a warning: the band is already reported as work through `needs_repair`. And its
+    # OWN code (ruling X4) — a consumer filtering by code alone must not get two entries under
+    # LUMA0602 meaning different things.
+    (advice,) = [item for item in result["advice"] if item.get("code") == "LUMA0603"]
     assert advice["severity"] == "advice"
     assert "oldest was pinned rather than none" in advice["message"]
+    codes = [item.get("code") for item in result["warnings"] + result["advice"]]
+    assert codes.count("LUMA0602") == 1
+    assert {item["severity"] for item in result["warnings"] + result["advice"]
+            if item.get("code") == "LUMA0602"} == {"warning"}
 
 
 def test_the_picker_says_when_a_family_has_two_released_repairs(
@@ -997,6 +1074,42 @@ def test_the_broken_pin_warning_never_claims_a_repair_does_not_exist_when_it_doe
     # ...and it does NOT tell the author to compose another one.
     assert "repair_cloned_section" not in warning["hint"]
     assert result["needs_repair"][0]["superseded_by"] == REPAIR_ID
+
+
+def test_the_broken_pin_warning_never_advises_a_THIRD_repair_of_a_contested_band(
+    tmp_path: Path, registry: FakeRegistry
+) -> None:
+    """Ruling X2 — `superseded_by is None` is two different worlds.
+
+    "No repair exists" and "two released repairs exist and neither replaces the other" both
+    answer `None`, and reading the second as the first pointed the author at
+    `repair_cloned_section` for the ONE band that could least afford another: a third sibling
+    deepens an ambiguity that already refuses the whole-page assembly. It is also the path the
+    product steers onto, because the ambiguity refusal itself says "pin one explicitly".
+    """
+    registry.add("frag_00000000000000b2", role="proof", label="Repair one", index=2,
+                 derived_from=PROOF_ID)
+    registry.add("frag_00000000000000b3", role="proof", label="Repair two", index=2,
+                 derived_from=PROOF_ID)
+    tools = _tools(tmp_path, registry)
+
+    result = json.loads(tools.insert_cloned_section(PROOF_ID))
+
+    warning = result["warnings"][0]
+    assert warning["code"] == "LUMA0602"
+    assert "no released repair" not in warning["message"]
+    assert "MORE THAN ONE released repair" in warning["hint"]
+    assert "frag_00000000000000b2" in warning["hint"]
+    assert "frag_00000000000000b3" in warning["hint"]
+    # The instruction that would deepen it is withheld, exactly as in the single-repair branch.
+    assert "repair_cloned_section" not in warning["hint"]
+    assert "ask the user" in warning["hint"]
+    entry = result["needs_repair"][0]
+    assert entry["superseded_by"] is None
+    assert sorted(entry["lineage_ambiguous"]) == [
+        "frag_00000000000000b2",
+        "frag_00000000000000b3",
+    ]
 
 
 def test_the_broken_pin_warning_still_says_so_when_no_repair_exists(

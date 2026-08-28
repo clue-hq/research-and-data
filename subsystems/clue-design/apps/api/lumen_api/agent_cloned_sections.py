@@ -163,25 +163,35 @@ def _resolve_lineages(rows: List[JsonObject]) -> Dict[str, LineageVerdict]:
     1. **Roots.** Walk ``derived_from`` up through every row REGARDLESS of status, so a lineage
        whose original was retired still resolves to one family rather than fragmenting into one
        family per surviving repair.
-    2. **Superseding children.** A child only takes its parent's place if it could actually go on
-       a page in the parent's stead: approved (the pin gate accepts nothing else) **and not
-       itself degraded**. That second half is the one this file got wrong first (ruling N1): a
-       degraded newest repair was counted as superseding, so it knocked its own HEALTHY parent
-       out of the leaf set, the leaf set emptied, and the fallback jumped past that healthy
-       released repair all the way to the broken original. A repair nobody should pin supersedes
-       nothing.
-    3. **The representative.** The single approved, un-degraded LEAF of the family: the end of
-       the chain, transitively, so a repair-of-a-repair wins over its own parent and a degraded
-       link — middle or newest — is stepped over rather than dragging the broken original back
-       onto the page. No such leaf (every repair itself broken, or none released) falls back to
-       the family's oldest approved member — the original, in the case that matters — and NAMES
-       what it passed over. Two or more leaves, and the family is ``ambiguous``.
+    2. **Supersession is transitive over DESCENDANTS, not children** (ruling R-X1). Call a member
+       *healthy* when it is approved and un-degraded — the two conditions that make it pinnable
+       and worth pinning. A healthy member is superseded **iff any descendant of it is healthy**,
+       at any depth and through links of any status.
+
+       Both halves of that sentence are scar tissue. Asking about CHILDREN got it wrong twice in
+       opposite directions: counting every approved child made a degraded newest repair evict its
+       own healthy parent (ruling N1), and then counting only un-degraded children stopped a
+       degraded middle shielding its ancestors, so a healthy original and its own healthy
+       grandchild both looked like ends of the chain and the family was declared ambiguous
+       between them (ruling X1). Descendants answer both at once: a degraded middle is stepped
+       over in BOTH directions — it supersedes nothing itself, and it does not hide the healthy
+       repair below it from superseding what is above it.
+    3. **The representative.** The healthy members with no healthy descendant — the live ends of
+       the chain. Exactly one is the answer. Two or more is ``ambiguous``: they are necessarily
+       an antichain (a member with a healthy descendant is not in the set at all, so none of them
+       can be an ancestor of another), which is what makes "neither replaces the other" true
+       rather than merely unproven. None — every repair itself broken, or none released — falls
+       back to the family's oldest approved member, exactly ONE, and NAMES what it passed over,
+       so the pin is reported through ``needs_repair`` rather than chosen in silence.
 
     Cycles cannot exist (``derived_from`` must resolve to an existing row at insert time and the
-    column is frozen), but the walk carries a seen-set anyway: a lineage walk that could loop
+    column is frozen), but both walks carry a seen-set anyway: a lineage walk that could loop
     forever on corrupt data is not a thing to leave to an invariant.
     """
     by_id = {str(row["fragment_id"]): row for row in rows}
+
+    def is_healthy(row: JsonObject) -> bool:
+        return row.get("status") == "approved" and not row.get("degraded")
 
     def root_of(fragment_id: str) -> str:
         seen: set = set()
@@ -196,28 +206,42 @@ def _resolve_lineages(rows: List[JsonObject]) -> Dict[str, LineageVerdict]:
         return current
 
     families: Dict[str, List[JsonObject]] = {}
-    for fragment_id in by_id:
-        families.setdefault(root_of(fragment_id), []).append(by_id[fragment_id])
+    children: Dict[str, List[str]] = {}
+    for fragment_id, row in by_id.items():
+        families.setdefault(root_of(fragment_id), []).append(row)
+        parent = row.get("derived_from")
+        if isinstance(parent, str) and parent in by_id:
+            children.setdefault(parent, []).append(fragment_id)
 
-    superseded: set = {
-        str(row["derived_from"])
-        for row in rows
-        if row.get("status") == "approved"
-        and not row.get("degraded")
-        and isinstance(row.get("derived_from"), str)
-    }
+    healthy_below: Dict[str, bool] = {}
+
+    def has_healthy_descendant(fragment_id: str) -> bool:
+        """Is anything at all below this row pinnable? Memoised, so a family costs one pass."""
+        cached = healthy_below.get(fragment_id)
+        if cached is not None:
+            return cached
+        # Iterative rather than recursive: a lineage is shallow in practice, but a walk whose
+        # depth limit is the interpreter's is a walk that fails in an unhelpful way.
+        healthy_below[fragment_id] = False  # cycle guard: a row is not below itself
+        found = False
+        for child_id in children.get(fragment_id, ()):
+            if is_healthy(by_id[child_id]) or has_healthy_descendant(child_id):
+                found = True
+                break
+        healthy_below[fragment_id] = found
+        return found
 
     verdicts: Dict[str, LineageVerdict] = {}
     for root, members in families.items():
         approved = [row for row in members if row.get("status") == "approved"]
-        # Oldest first, so "the family's oldest approved member" and "the newest leaf" are both
-        # read off one ordering rather than two sorts that could disagree.
+        # Oldest first, so the fallback's "oldest approved member" is read off one ordering.
         approved.sort(key=lambda row: (str(row.get("created_at") or ""), str(row["fragment_id"])))
         leaves = [
             row
-            for row in approved
-            if not row.get("degraded") and str(row["fragment_id"]) not in superseded
+            for row in members
+            if is_healthy(row) and not has_healthy_descendant(str(row["fragment_id"]))
         ]
+        leaves.sort(key=lambda row: (str(row.get("created_at") or ""), str(row["fragment_id"])))
         if len(leaves) == 1:
             verdict = LineageVerdict(root=root, representative=str(leaves[0]["fragment_id"]))
         elif len(leaves) > 1:

@@ -122,6 +122,26 @@ def _mint_broken(
     return row
 
 
+def _mint_other_band(workspace_id: str, storage: FsStorage) -> dict:
+    """A second, healthy, UNRELATED band. Different bytes, so a genuinely different fragment."""
+    row, _artifact = create_web_fragment(
+        storage,
+        workspace_id=workspace_id,
+        html=BROKEN_HTML.replace("Trusted by 400 clinics", "Featured in"),
+        css=BROKEN_CSS,
+        rehosted={},
+        source_url=PAGE,
+        section_role="proof",
+        label="Proof — Featured in",
+        slots=BROKEN_SLOTS,
+        preview=PNG,
+        provenance={"page_url": PAGE, "section_index": 3},
+    )
+    return set_web_fragment_status(
+        workspace_id=workspace_id, fragment_id=row["fragment_id"], status="approved"
+    )
+
+
 def _registry(workspace_id: str, storage: FsStorage, cache_dir):
     return DurableAgentClonedSectionRegistry(
         blobs=DesignBlobStore(storage, workspace_id), cache_dir=cache_dir
@@ -665,32 +685,89 @@ def test_a_family_with_no_releasable_version_names_what_the_fallback_passed_over
     assert broken["fragment_id"] not in original["lineage_ranked_over"]
 
 
+def test_a_healthy_original_is_not_ambiguous_with_its_own_healthy_descendant(
+    workspace_id: str, design_storage: FsStorage, tmp_path
+) -> None:
+    """Ruling R-X1, DB-backed: `A(healthy) → M(broken) → L(healthy)` answers `L`.
+
+    Asking about children rather than descendants made the degraded middle stop shielding its
+    ancestors, so `A` and its own grandchild both looked like ends of the chain and the family
+    came back ambiguous between them — which refused the whole page and named the original as
+    one of its own repairs.
+    """
+    healthy_original = _mint_broken(workspace_id, design_storage, degraded=False)
+    registry = _registry(workspace_id, design_storage, tmp_path / "cache")
+    middle = _second_repair(
+        workspace_id,
+        design_storage,
+        registry,
+        replaces=healthy_original["fragment_id"],
+        marker="One",
+    )
+    set_web_fragment_degraded(
+        workspace_id=workspace_id,
+        fragment_id=middle["fragment_id"],
+        degraded=True,
+        reason="dead_height",
+    )
+    leaf = _second_repair(
+        workspace_id, design_storage, registry, replaces=middle["fragment_id"], marker="Two"
+    )
+
+    rows = {row["fragment_id"]: row for row in registry.list_sections()["sections"]}
+
+    assert rows[healthy_original["fragment_id"]]["superseded_by"] == leaf["fragment_id"]
+    assert rows[healthy_original["fragment_id"]]["lineage_ambiguous"] == []
+    assert rows[middle["fragment_id"]]["superseded_by"] == leaf["fragment_id"]
+    assert rows[leaf["fragment_id"]]["superseded_by"] is None
+
+
+def test_the_pin_gate_does_not_resolve_lineage_for_a_healthy_band(
+    workspace_id: str, design_storage: FsStorage, tmp_path, monkeypatch
+) -> None:
+    """The GATE, not its answer — the round-2 version of this test was mutation-disproved.
+
+    It asserted `superseded_by is None` on a standalone healthy band, which is what an UNGATED
+    resolve returns for that fixture too, so deleting `if degraded:` left it green. This counts
+    the resolutions instead, which is the thing the gate is: a healthy pin must cost zero.
+    """
+    from lumen_api import agent_cloned_sections as module
+
+    broken = _mint_broken(workspace_id, design_storage)
+    # A DIFFERENT band, and un-degraded. Re-minting the same markup would converge onto the row
+    # above (the id is the content) and first-writer-wins would keep its marker — so the "healthy"
+    # half of this test would silently be the broken one.
+    healthy = _mint_other_band(workspace_id, design_storage)
+    registry = _registry(workspace_id, design_storage, tmp_path / "cache")
+    _second_repair(
+        workspace_id, design_storage, registry, replaces=broken["fragment_id"], marker="One"
+    )
+
+    calls: list[int] = []
+    real = module._resolve_lineages
+    monkeypatch.setattr(
+        module,
+        "_resolve_lineages",
+        lambda rows: (calls.append(1), real(rows))[1],
+    )
+
+    registry.resolve_insertable(healthy["fragment_id"])
+    assert calls == []
+
+    registry.resolve_insertable(broken["fragment_id"])
+    assert len(calls) == 1
+
+
 def test_the_pin_gate_resolves_lineage_only_for_a_broken_band(
     workspace_id: str, design_storage: FsStorage, tmp_path
 ) -> None:
     """Ruling N2: whoever pins a broken band must be able to say whether a repair already exists.
 
     Gated on ``degraded`` because the verdict costs a row scan and nothing else reads it — a page
-    of healthy clones resolves lineage exactly zero times.
+    of healthy clones resolves lineage exactly zero times (pinned by the counting test above).
     """
     broken = _mint_broken(workspace_id, design_storage)
-    # A second, DIFFERENT band that is fine — different bytes, so a different fragment.
-    healthy, _artifact = create_web_fragment(
-        design_storage,
-        workspace_id=workspace_id,
-        html=BROKEN_HTML.replace("Trusted by 400 clinics", "Featured in"),
-        css=BROKEN_CSS,
-        rehosted={},
-        source_url=PAGE,
-        section_role="proof",
-        label="Proof — Featured in",
-        slots=BROKEN_SLOTS,
-        preview=PNG,
-        provenance={"page_url": PAGE, "section_index": 3},
-    )
-    healthy = set_web_fragment_status(
-        workspace_id=workspace_id, fragment_id=healthy["fragment_id"], status="approved"
-    )
+    healthy = _mint_other_band(workspace_id, design_storage)
     registry = _registry(workspace_id, design_storage, tmp_path / "cache")
     repair = _second_repair(
         workspace_id, design_storage, registry, replaces=broken["fragment_id"], marker="One"
