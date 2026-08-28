@@ -1168,6 +1168,16 @@ def test_a_wrapper_holding_only_authored_sections_is_split_into_them():
     unmeasured = [d for d in result.diagnostics if d["code"] == UNMEASURED_SECTION_CODE][0]
     assert unmeasured["from_compound_band"] == 3
     assert "measured their wrapper rather than them" in unmeasured["message"]
+    # THE LOAD-BEARING PROPERTY: minting extracts `resolve_section(...).html`, so a part whose
+    # dom_path did not re-find its own subtree would mint the wrong markup with every appearance
+    # of success. Each part re-finds itself, and each finds something different.
+    resolved = [resolve_section(html, section) for section in result.sections]
+    assert all(node is not None for node in resolved)
+    assert [node.css_first("h2").text() for node in resolved[1:]] == [
+        "Testimonials",
+        "From Our Blog",
+        "Get Started",
+    ]
 
 
 def test_a_section_that_declares_itself_one_is_never_split_into_its_subsections():
