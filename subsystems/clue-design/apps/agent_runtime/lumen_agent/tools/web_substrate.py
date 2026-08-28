@@ -48,6 +48,17 @@ from lumen_api.clone_review import (
 )
 from lumen_api.clone_review.blind import PANEL_LABELS as _BLIND_PANEL_LABELS
 from lumen_api.clone_review.walk import TAILWIND_RUNTIME_MARKER, capture_behavioural_walk
+from lumen_api.fragments.abm_page import (
+    ABM_SECTION_ID_PREFIX,
+    ACCOUNT_LOGO_MARKER,
+    GUARANTEED_ACCOUNT_MARKERS,
+    AbmAssemblyRefused,
+    account_slot_binding,
+    is_abm_section_id,
+    is_escape_route_role,
+    newest_released_shell,
+    shell_slot_bindings,
+)
 from lumen_api.fragments.campaign_shell import (
     CAMPAIGN_SHELL_FOOTER,
     CAMPAIGN_SHELL_HEADER,
@@ -362,6 +373,11 @@ _CLONED_SECTION_DEGRADED_CODE = "LUMA0811"
 #: filtering by code alone must not get two entries that mean different things, and "this band is
 #: broken" (work) and "here is which broken version was chosen" (a note) are different things.
 _CLONED_SECTION_RANKED_CODE = "LUMA0812"
+#: "a section on this ABM page is not named `abm_…`" (F4.2, ruling R24-3). Its own code for the
+#: same reason as its neighbours: a consumer filtering by code must not confuse "this band is
+#: broken" with "this band cannot be told apart from cloned chrome". It renames nothing — a
+#: section id is an anchor somebody may have linked — so the finding is work, not an edit.
+_ABM_SECTION_NAMING_CODE = "LUMA0813"
 #: The behavioural review gate's four codes (F3.3), the first tenants of this block.
 #:
 #: `_REVIEW_BROKEN_CODE` is WORK; `_REVIEW_INCOMPLETE_CODE` is a gap in the review itself;
@@ -977,8 +993,12 @@ class LumenWebTools:
         # trip — the same "search hands the view its target" contract `search_assets` has.
         # Written by discovery AND by a successful insert (the agent may want to look at what it
         # just pinned), never invented: an id absent here has genuinely not been resolved.
-        # `_cloned_section_seen` carries `{label, section_role}` for the same ids, which is what
-        # lets a drop report say WHICH band went rather than only which id.
+        # `_cloned_section_seen` carries `{label, section_role, composed}` for the same ids, which
+        # is what lets a drop report say WHICH band went rather than only which id — and what
+        # lets the view tell a COMPOSED shell (never photographed off a site) from a harvested
+        # band the browser could not crop. Every writer records all three (T23 finding N6): the
+        # three pin doors used to rebuild the row from `resolve_insertable` and ERASE `composed`,
+        # so a shell viewed right after pinning claimed a browser had measured it.
         self._cloned_section_previews: Dict[str, Optional[str]] = {}
         self._cloned_section_seen: Dict[str, JsonObject] = {}
         # F3.1: the clone a repair is DELIBERATELY taking off the page, for the length of that
@@ -4894,6 +4914,11 @@ class LumenWebTools:
         self._cloned_section_seen[clean_id] = {
             "label": resolved.get("label"),
             "section_role": resolved.get("section_role"),
+            # T23 finding N6: the pin doors used to rebuild this row without `composed` and
+            # therefore ERASE it, so a shell viewed right after being pinned answered the
+            # harvested-clone sentence ("no crop could be derived … from what the browser
+            # measured") about something no browser ever saw.
+            "composed": resolved.get("composed"),
         }
         warnings, advice = _split_non_error_diagnostics(response.get("diagnostics"))
         self.record(
@@ -5290,6 +5315,8 @@ class LumenWebTools:
             self._cloned_section_seen[fragment_id] = {
                 "label": resolved.get("label"),
                 "section_role": resolved.get("section_role"),
+                # T23 finding N6, same fix as the other two pin doors.
+                "composed": resolved.get("composed"),
             }
             broken = self._degraded_pin_entry(
                 resolved, index=entry["index"], section_node_id=entry["section_node_id"]
@@ -6154,6 +6181,578 @@ class LumenWebTools:
             )
         return subtree, css
 
+    # --- the ABM assembly walk (clone-fidelity F4.2) -------------------------------------------
+    #
+    # "Build the page for this account" is an ASSEMBLY with a shape, exactly as the recreate is:
+    # the seller's campaign chrome around a personalized hero, with the new sections composed by
+    # the ordinary authoring vocabulary in between. Two of that shape's properties are the whole
+    # reason this is a tool rather than a paragraph of prompt:
+    #
+    #   * an ABM page NEVER wears the cloned nav, and a rule that lives only in a prompt is a
+    #     rule the model obeys most of the time;
+    #   * the page is a TEMPLATE — its slots hold `{{account.*}}` markers rather than one
+    #     account's values — so Task 25's batch derive personalizes one document per account
+    #     instead of the agent building fifty pages.
+    #
+    # It mints nothing (F4.1's tool does that) and composes nothing (the author does that). It
+    # pins what exists, in the order the recipe requires, and says what it found.
+
+    def assemble_abm_page(
+        self,
+        hero_fragment_id: Optional[str] = None,
+        hero_slots_json: Optional[str] = None,
+        cta_href: Optional[str] = None,
+        cta_label: Optional[str] = None,
+    ) -> str:
+        """Put the ABM page's chrome on: campaign header FIRST, campaign footer LAST.
+
+        Call this on an account page AFTER `author_web_page` has composed the page's own
+        sections — a whole-page rewrite cannot carry a pinned cloned section, so chrome pinned
+        before it would simply be dropped.
+
+        WHAT IT PINS. The workspace's released CAMPAIGN SHELLS (`mint_campaign_shells` makes
+        them) as the first and last sections of the page, and — when you name one — a released
+        cloned HERO between them. Everything else on the page stays where it is.
+
+        IT NEVER PINS THE CLIENT'S NAV OR SITE FOOTER. Every link in a nav is a way off the one
+        page written for this account. A workspace with no released shells is REFUSED
+        (`abm.no_campaign_shells`) and told to mint them; naming a `nav`- or `footer`-role clone
+        as the hero is REFUSED (`abm.escape_route_chrome`); and a page that already carries one
+        stops the assembly before anything lands. There is no fallback to the cloned nav.
+
+        THE PAGE IS A TEMPLATE, NOT ONE ACCOUNT'S PAGE. The header's `prepared_for` and
+        `target_logo` are bound to `{{account.name}}` and `{{account.logo}}`, which the account
+        derive substitutes per account. `hero_slots_json` is a JSON object of
+        `{slot key: value}` using the hero's OWN slot keys, and a value may carry the same
+        markers — `"Clinical notes, written for {{account.name}}"`. Only `{{account.…}}` markers
+        work: they are the values the derive builds. AN EMPTY TARGET LOGO IS CORRECT — we never
+        invent a company's mark, and an account we hold none for renders a clean header.
+
+        `cta_href` / `cta_label` bind the header's one call to action for this campaign. Omit
+        them and the shell keeps its own default, which is page-local and can never be an escape
+        route.
+
+        NEW SECTIONS ARE NAMED. Every section you compose for this page takes a section id
+        beginning `abm_` (`<section id="abm_peer_proof">`), so a reviewer can tell a new band
+        from cloned chrome without guessing. This walk reports which of the page's sections broke
+        the convention; it renames nothing, because a section id is an anchor somebody may link.
+
+        RUN IT TWICE AND IT CONVERGES: a shell already on the page is reported under `converged`
+        rather than pinned a second time.
+        """
+        # CHARGED FIRST, like the recreate and for the same reason (ledger T17-M7): a tool that
+        # refuses for free is one a model can call forever inside a round it should have ended.
+        refusal = self._consume_round_budget("assemble_abm_page")
+        if refusal is not None:
+            return refusal
+        registry = self._cloned_section_registry()
+        if registry is None:
+            return self._cloned_section_registry_missing()
+
+        raw_hero_slots: JsonObject = {}
+        if hero_slots_json is not None:
+            try:
+                decoded = json.loads(hero_slots_json)
+            except (TypeError, json.JSONDecodeError) as error:
+                return self._tool_error(
+                    "cloned_section.bad_slot_values",
+                    f"hero_slots_json must be a JSON object: {error}",
+                )
+            if not isinstance(decoded, dict):
+                return self._tool_error(
+                    "cloned_section.bad_slot_values",
+                    "hero_slots_json must be a JSON object of {slot key: value}.",
+                )
+            raw_hero_slots = decoded
+
+        try:
+            listing = registry.list_sections()
+        except Exception as error:  # noqa: BLE001 - capability boundary, same as search's
+            self.record(
+                "author",
+                "abm_assembly_failed",
+                input_summary=f"hero={hero_fragment_id or '-'}",
+                output_summary=f"{type(error).__name__}: {error}"[:500],
+            )
+            return self._tool_error(
+                "cloned_section.registry_failed",
+                f"the cloned-section library could not be read: "
+                f"{type(error).__name__}: {error}",
+            )
+        sections = [
+            section
+            for section in (listing or {}).get("sections") or []
+            if isinstance(section, dict) and section.get("fragment_id")
+        ]
+        by_id = {str(section["fragment_id"]): section for section in sections}
+
+        # --- the chrome. No shells, no ABM page: the refusal is the honest answer -------------
+        #
+        # SCOPED TO THIS TURN'S BRAND (the shape T23's fix round gave the legal-evidence read).
+        # Brand B's shell is brand B's chrome, and wearing it on brand A's account page dresses
+        # the page as the wrong company. A turn with no identified kit cannot scope, so it picks
+        # workspace-wide and SAYS so rather than pretending the choice was informed.
+        brand_kit = self.config.brand_kit if isinstance(self.config.brand_kit, dict) else {}
+        kit_id = str(brand_kit.get("id") or "").strip() or None
+        chosen: Dict[str, JsonObject] = {}
+        siblings: Dict[str, List[str]] = {}
+        missing: List[str] = []
+        for role in CAMPAIGN_SHELL_ROLES:
+            shell, stepped_over = newest_released_shell(sections, role, kit_id=kit_id)
+            if shell is None:
+                missing.append(role)
+                continue
+            chosen[role] = shell
+            if stepped_over:
+                siblings[role] = stepped_over
+        if missing:
+            return self._tool_error(
+                "abm.no_campaign_shells",
+                "this workspace has no released "
+                + " or ".join(missing)
+                + " shell"
+                + (f" for brand kit {kit_id}" if kit_id else "")
+                + ", and an ABM page wears its own chrome — never the client's cloned "
+                "navigation, because every link in a nav is a way off the one page written for "
+                "this account. Call mint_campaign_shells to compose them from the brand kit, "
+                "then a human releases them by re-approving the brand kit. Nothing was pinned.",
+                missing_shell_roles=missing,
+                brand_kit=kit_id,
+            )
+
+        # --- the escape-route rule, over the PAGE and over this call's arguments ---------------
+        page = self._home_page()
+        nodes = page.get("nodes") or {}
+        root_id = page.get("root")
+        root = nodes.get(root_id) if isinstance(root_id, str) else None
+        children = list(root.get("children") or []) if isinstance(root, dict) else []
+        pinned_now = self._pinned_cloned_sections(self.web_doc)
+        for fragment_id in sorted(pinned_now):
+            row = by_id.get(fragment_id) or {}
+            if is_escape_route_role(row.get("section_role")):
+                return self._tool_error(
+                    "abm.escape_route_chrome",
+                    f"this page already carries {fragment_id} — the client's own "
+                    f"{row.get('section_role')} — and every link in it is a way off the one page "
+                    "written for this account. Remove it before assembling the ABM chrome; the "
+                    "campaign shells replace it. Nothing was pinned.",
+                    fragment_id=fragment_id,
+                    section_role=row.get("section_role"),
+                    section_node_ids=list(pinned_now[fragment_id]),
+                )
+
+        hero: Optional[JsonObject] = None
+        hero_slots: JsonObject = {}
+        clean_hero = (hero_fragment_id or "").strip()
+        if clean_hero:
+            hero = by_id.get(clean_hero)
+            if hero is None:
+                return self._tool_error(
+                    "abm.hero_unknown",
+                    f"{clean_hero!r} is not a released cloned section this workspace holds. "
+                    "Search for one with search_cloned_sections, or leave the hero out and "
+                    "compose it. Nothing was pinned.",
+                    fragment_id=clean_hero,
+                )
+            if is_escape_route_role(hero.get("section_role")):
+                return self._tool_error(
+                    "abm.escape_route_chrome",
+                    f"{clean_hero} is the client's own {hero.get('section_role')}, and an ABM "
+                    "page never wears one: every link in it is a way off the one page written "
+                    "for this account. The campaign shells are this page's chrome. Nothing was "
+                    "pinned.",
+                    fragment_id=clean_hero,
+                    section_role=hero.get("section_role"),
+                )
+            if raw_hero_slots:
+                # The AUTHORITATIVE kinds, out of the artifact. Fail LOUD rather than soft here,
+                # unlike the picker's `describe`: an empty kinds map would refuse every named
+                # slot with "its slots are: none", which is a confident lie about a hero that has
+                # four — and the agent would go and compose a band it did not need to.
+                described: JsonObject = {}
+                try:
+                    described = registry.describe([clean_hero]).get(clean_hero) or {}
+                except Exception as error:  # noqa: BLE001 - capability boundary
+                    return self._tool_error(
+                        "cloned_section.registry_failed",
+                        f"the hero's slots could not be read: {type(error).__name__}: {error}. "
+                        "This is not a refusal — try again before composing the band instead. "
+                        "Nothing was pinned.",
+                        fragment_id=clean_hero,
+                    )
+                slot_kinds = {
+                    str(entry.get("key")): entry.get("kind")
+                    for entry in described.get("slots") or []
+                    if isinstance(entry, dict) and entry.get("key")
+                }
+                hero_slots, slot_error = self._abm_slot_values(
+                    raw_hero_slots, slot_kinds, clean_hero
+                )
+                if slot_error is not None:
+                    return slot_error
+
+        # The shells' own bindings come from the ONE contract module, so the walk and the derive
+        # cannot disagree about what "personalized" means.
+        try:
+            header_slots = shell_slot_bindings(
+                CAMPAIGN_SHELL_HEADER, cta_href=cta_href, cta_label=cta_label
+            )
+            footer_slots = shell_slot_bindings(CAMPAIGN_SHELL_FOOTER)
+        except AbmAssemblyRefused as refused:
+            return self._tool_error(str(refused.code), str(refused.message))
+
+        # --- the plan: header first, hero next, footer last; already-pinned bands converge -----
+        plan: List[JsonObject] = [
+            {
+                "fragment_id": str(chosen[CAMPAIGN_SHELL_HEADER]["fragment_id"]),
+                "role": CAMPAIGN_SHELL_HEADER,
+                "slots": header_slots,
+                "place": "first",
+            }
+        ]
+        if hero is not None:
+            plan.append(
+                {
+                    "fragment_id": clean_hero,
+                    "role": str(hero.get("section_role") or "hero"),
+                    "slots": hero_slots,
+                    "place": "after_header",
+                }
+            )
+        plan.append(
+            {
+                "fragment_id": str(chosen[CAMPAIGN_SHELL_FOOTER]["fragment_id"]),
+                "role": CAMPAIGN_SHELL_FOOTER,
+                "slots": footer_slots,
+                "place": "last",
+            }
+        )
+
+        operations: List[JsonObject] = []
+        pinned: List[JsonObject] = []
+        converged: List[JsonObject] = []
+        taken = set(nodes)
+        # The running length of the page's top-level sections: each `insert_node` in this batch
+        # is applied in order, so "last" has to know what the earlier ones added.
+        length = len(children)
+        for entry in plan:
+            fragment_id = entry["fragment_id"]
+            if fragment_id in pinned_now:
+                # RE-RUN CONVERGENCE (red case 9). Already on the page: pinning it again would
+                # give the page two headers, and moving it would fight an author who reordered
+                # deliberately. Reported, not repeated.
+                converged.append(
+                    {
+                        "fragment_id": fragment_id,
+                        "role": entry["role"],
+                        "section_node_ids": list(pinned_now[fragment_id]),
+                    }
+                )
+                continue
+            try:
+                resolved = registry.resolve_insertable(fragment_id)
+            except FragmentReferenceError as error:
+                code = error.code or "cloned_section.not_insertable"
+                self.record(
+                    "author",
+                    "abm_assembly_refused",
+                    input_summary=fragment_id,
+                    output_summary=f"{code}: {error.message}"[:500],
+                    payload={"fragment_id": fragment_id, "error_code": code},
+                )
+                return self._tool_error(
+                    str(code),
+                    f"the assembly stopped at {fragment_id}: {error.message} Nothing was pinned.",
+                    fragment_id=fragment_id,
+                )
+            except Exception as error:  # noqa: BLE001 - capability boundary
+                return self._tool_error(
+                    "cloned_section.registry_failed",
+                    f"the cloned-section library could not be read: "
+                    f"{type(error).__name__}: {error}. This is not a refusal — try again.",
+                    fragment_id=fragment_id,
+                )
+            section_id, node_id, pin_nodes = self._cloned_section_pin_nodes(
+                fragment_id, entry["slots"], taken
+            )
+            taken.update({section_id, node_id})
+            index = {"first": 0, "after_header": 1}.get(entry["place"], length)
+            index = min(index, length)
+            operations.append(
+                {
+                    "kind": "insert_node",
+                    "page_id": self.page_id,
+                    "parent": root_id,
+                    "index": index,
+                    "nodes": pin_nodes,
+                    "root": section_id,
+                }
+            )
+            length += 1
+            pinned.append(
+                {
+                    "fragment_id": fragment_id,
+                    "role": entry["role"],
+                    "index": index,
+                    "section_role": resolved.get("section_role"),
+                    "label": resolved.get("label"),
+                    "section_node_id": section_id,
+                    "node_id": node_id,
+                    "slots_bound": sorted(entry["slots"]),
+                    "resolved": resolved,
+                }
+            )
+
+        if operations:
+            try:
+                response = self.core.web_apply_ops(self.web_doc, operations)
+            except CoreError as error:
+                diagnostics = list(error.diagnostics or [])
+                self.record(
+                    "author",
+                    "abm_assembly_rejected",
+                    input_summary=f"{len(operations)} section(s)",
+                    output_summary=error.message[:500],
+                    diagnostics=diagnostics,
+                )
+                return self._rejected(diagnostics)
+            if not response.get("ok"):
+                return self._rejected(response.get("diagnostics") or [])
+            self.web_doc = response["web_doc"]
+            self._record_operations(operations)
+            self._doc_version += 1
+            warnings, advice = _split_non_error_diagnostics(response.get("diagnostics"))
+        else:
+            warnings, advice = [], []
+
+        degraded_pins: List[JsonObject] = []
+        for entry in pinned:
+            resolved = entry.pop("resolved")
+            self._admit_fragment_artifact(entry["fragment_id"], resolved.get("render") or {})
+            self._cloned_section_previews[entry["fragment_id"]] = resolved.get("preview_path")
+            self._cloned_section_seen[entry["fragment_id"]] = {
+                "label": resolved.get("label"),
+                "section_role": resolved.get("section_role"),
+                # R24-7 / T23 finding N6: without this a shell VIEWED AFTER PINNING claims a
+                # browser measured it, which is false of anything composed from the brand kit.
+                "composed": resolved.get("composed"),
+            }
+            broken = self._degraded_pin_entry(
+                resolved, index=entry["index"], section_node_id=entry["section_node_id"]
+            )
+            if broken is not None:
+                degraded_pins.append(broken)
+
+        result = self._abm_assembly_report(
+            pinned=pinned,
+            converged=converged,
+            hero=hero,
+            sections=sections,
+            siblings=siblings,
+            kit_id=kit_id,
+            warnings=warnings,
+            advice=advice,
+        )
+        self._note_degraded_pins(result, degraded_pins)
+        self.record(
+            "author",
+            "abm_page_assembled",
+            input_summary=f"hero={clean_hero or '-'}",
+            output_summary=(
+                f"{len(pinned)} pinned, {len(converged)} already on the page; "
+                f"{len(result['off_convention'])} section(s) off the abm_ convention"
+            ),
+            diagnostics=warnings + advice,
+            payload={
+                "pinned": [entry["fragment_id"] for entry in pinned],
+                "converged": [entry["fragment_id"] for entry in converged],
+                "operations": copy.deepcopy(operations),
+            },
+            sink_extra={"pinned_count": len(pinned)},
+        )
+        return json.dumps(result, indent=2)
+
+    def _abm_slot_values(
+        self, raw: JsonObject, slot_kinds: Dict[str, Any], fragment_id: str
+    ) -> tuple[JsonObject, Optional[str]]:
+        """Agent-supplied hero slot values → tagged values, MARKER-AWARE (ruling R24-2).
+
+        The ordinary tagging is `_tagged_slot_values`' — the artifact's kind decides, because an
+        href and a paragraph are both strings. A TEMPLATE MARKER is the one exception and it is
+        not a convenience: `derive.rs` substitutes `FragmentSlotValue::Text` and nothing else, so
+        `{{account.logo}}` on an image slot has to ride as text or it never binds at all. That
+        rule lives in `lumen_api.fragments.abm_page`, with the derive's own reasoning beside it,
+        rather than being re-decided here.
+        """
+        tagged: JsonObject = {}
+        for key, value in raw.items():
+            kind = slot_kinds.get(key)
+            if kind is None:
+                available = ", ".join(sorted(slot_kinds)) or "none"
+                return {}, self._tool_error(
+                    "cloned_section.unknown_slot",
+                    f"cloned section {fragment_id} has no slot {key!r}. Its slots are: "
+                    f"{available}.",
+                    fragment_id=fragment_id,
+                    slots=sorted(slot_kinds),
+                )
+            try:
+                tagged[key] = account_slot_binding(key, kind, value)
+            except AbmAssemblyRefused as refused:
+                return {}, self._tool_error(
+                    str(refused.code), str(refused.message), fragment_id=fragment_id
+                )
+        return tagged, None
+
+    def _abm_assembly_report(
+        self,
+        *,
+        pinned: List[JsonObject],
+        converged: List[JsonObject],
+        hero: Optional[JsonObject],
+        sections: List[JsonObject],
+        siblings: Dict[str, List[str]],
+        kit_id: Optional[str],
+        warnings: List[JsonObject],
+        advice: List[JsonObject],
+    ) -> JsonObject:
+        """What the walk did, and the three things it owes the author afterwards."""
+        page = self._home_page()
+        nodes = page.get("nodes") or {}
+        root_id = page.get("root")
+        root = nodes.get(root_id) if isinstance(root_id, str) else None
+        children = list(root.get("children") or []) if isinstance(root, dict) else []
+        # A section is a PINNED CLONE when its only child is a fragment node; anything else on
+        # this page is a section somebody composed. That is the whole classification, and it is
+        # read off the document rather than tracked, so it stays true for sections pinned in an
+        # earlier turn.
+        new_sections: List[str] = []
+        for section_id in children:
+            section = nodes.get(section_id) or {}
+            kids = [nodes.get(child) or {} for child in section.get("children") or []]
+            if any(child.get("kind") == "fragment" for child in kids):
+                continue
+            new_sections.append(str(section_id))
+        off_convention = [
+            section_id for section_id in new_sections if not is_abm_section_id(section_id)
+        ]
+
+        result: JsonObject = {
+            "status": "ok",
+            "page_id": self.page_id,
+            "pinned": pinned,
+            "converged": converged,
+            "hero": (
+                {
+                    "fragment_id": str(hero["fragment_id"]),
+                    "label": hero.get("label"),
+                    "section_role": hero.get("section_role"),
+                }
+                if hero is not None
+                else None
+            ),
+            # R24-3: the convention, in the report, so the review and the T26 walk can tell a new
+            # ABM band from cloned chrome mechanically instead of by reading the markup.
+            "new_section_convention": {
+                "prefix": ABM_SECTION_ID_PREFIX,
+                "note": (
+                    f"every section this page composes carries a section id beginning "
+                    f"{ABM_SECTION_ID_PREFIX!r} (<section id=\"{ABM_SECTION_ID_PREFIX}"
+                    "peer_proof\">), so a new ABM band is tellable from cloned chrome without "
+                    "guessing. Cloned sections keep their own ids."
+                ),
+            },
+            "new_sections": new_sections,
+            "off_convention": off_convention,
+            # R24-2, said where the author is looking rather than only in the prompt.
+            "personalization": (
+                "this page is a TEMPLATE, not one account's page. Its slots hold "
+                + ", ".join(GUARANTEED_ACCOUNT_MARKERS)
+                + " markers, which the account derive substitutes per account — so one document "
+                "serves every account and stays re-derivable. Never bake one account's name or "
+                "logo into the markup."
+            ),
+            "target_logo": (
+                f"the target's logo reaches the page ONLY through the ladder: the "
+                f"{ACCOUNT_LOGO_MARKER} marker at derive time, or fetch_logo binding a real "
+                "asset while you author. AN EMPTY LOGO SLOT IS CORRECT — an account we hold no "
+                "logo for renders a clean header with the seller's mark alone. Never draw, "
+                "letter, recolour or approximate a company's mark."
+            ),
+            "warnings": warnings,
+            "advice": advice,
+        }
+        if kit_id is None:
+            # The pick could not be scoped to a brand. Harmless in the single-brand workspace
+            # every walk so far has run in, and wrong in a multi-brand one — so it is SAID rather
+            # than assumed away (the shape T23's fix round gave the legal-evidence read).
+            result["chrome_scope_note"] = (
+                "this turn carries no identified brand kit, so the campaign shells were chosen "
+                "from every released shell in the workspace rather than from this brand's. In a "
+                "workspace with one brand that is the same answer; in a multi-brand one it may "
+                "be another brand's chrome. Check the header before this page ships."
+            )
+        if hero is None:
+            candidates = [
+                str(section["fragment_id"])
+                for section in sections
+                if str(section.get("section_role") or "") == "hero"
+                and not section.get("composed")
+            ]
+            result["hero_candidates"] = candidates
+            result["hero_note"] = (
+                "no hero was named, so none was pinned — the page's hero is either one of these "
+                "released cloned heroes (pass hero_fragment_id) or a section you compose. An "
+                "ABM hero names the ACCOUNT, so bind its slots to the account markers either "
+                "way." + (f" Released heroes: {', '.join(candidates)}." if candidates else "")
+            )
+        if converged:
+            result["converged_note"] = (
+                ", ".join(entry["fragment_id"] for entry in converged)
+                + " is already on this page, so it was not pinned again — the chrome is where it "
+                "was. Nothing about the page moved."
+            )
+        if siblings:
+            result["chrome_siblings"] = siblings
+            # The I6 interim law, said out loud. Shells carry no supersession marker, so this is
+            # a deterministic CHOICE we are making, not a fact we read.
+            result["chrome_siblings_note"] = (
+                "this workspace holds more than one released shell for "
+                + ", ".join(sorted(siblings))
+                + "; the NEWEST was pinned and the older one(s) — "
+                + ", ".join(
+                    fragment_id for role in sorted(siblings) for fragment_id in siblings[role]
+                )
+                + " — were stepped over. A shell records no supersession, so this is a "
+                "deterministic choice rather than a fact: if an older one is the one you want, "
+                "pin it explicitly, and ask a human to retire the rest."
+            )
+        if off_convention:
+            # WORK, in the bucket the prompt calls mandatory — not a note nobody reads. It
+            # renames nothing: a section id is an anchor somebody may already have linked.
+            warnings.insert(
+                0,
+                {
+                    "severity": "warning",
+                    "phase": "agent",
+                    "code": _ABM_SECTION_NAMING_CODE,
+                    "message": (
+                        f"{len(off_convention)} section(s) on this ABM page do not carry the "
+                        f"{ABM_SECTION_ID_PREFIX!r} id convention: "
+                        + ", ".join(off_convention)
+                        + ". A reviewer cannot then tell a new ABM band from cloned chrome."
+                    ),
+                    "hint": (
+                        "Re-author each one with a section id beginning "
+                        f"{ABM_SECTION_ID_PREFIX!r} (author_web_subtree keeps the rest of the "
+                        "page byte-identical). Nothing was renamed for you — a section id is an "
+                        "anchor somebody may have linked."
+                    ),
+                    "sections": list(off_convention),
+                },
+            )
+        return result
+
     def _anchor_id(self, node_id: str) -> str:
         """The `id` attribute the engine renders for a section node.
 
@@ -6228,6 +6827,9 @@ class LumenWebTools:
         self._cloned_section_seen[repair_id] = {
             "label": resolved.get("label"),
             "section_role": resolved.get("section_role"),
+            # T23 finding N6. A shell repair inherits `composed` (ruling R23-F1), so a repaired
+            # shell viewed after the swap must read as composed too.
+            "composed": resolved.get("composed"),
         }
         result["pinned"] = True
         result["section_node_id"] = wrapper_id

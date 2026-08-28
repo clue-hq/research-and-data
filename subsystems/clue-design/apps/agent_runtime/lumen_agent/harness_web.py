@@ -292,6 +292,12 @@ def create_web_deepagent(
                 # the same reason the other two do: the author is the role that decides what a
                 # page wears, and the shells exist to be worn INSTEAD of the cloned nav.
                 tools.mint_campaign_shells,
+                # F4.2: the assembly. `mint_campaign_shells` makes the chrome; this is what puts
+                # it on — header first, footer last, hero between, everything bound to the
+                # account MARKERS rather than to one account's values. It writes to the document,
+                # so it is the author's, and it refuses rather than falling back to the cloned
+                # nav, which is the campaign-shell rule made structural instead of prompted.
+                tools.assemble_abm_page,
                 tools.provenance,
                 tools.asset,
                 tools.list_custom_components,

@@ -1,6 +1,11 @@
 <!--
-version: 1
+version: 2
 DRAFT — founder review pending (standing rule for prompt/rubric wording).
+
+v2 (clone-fidelity F4.2, ruling R24-4) adds the ABM / seller-dominance section at the end. It is
+in THIS artifact rather than in the ABM recipe because D-F7's rule is about where review
+knowledge lives: both readers — the reviewer subagent and the orchestrator self-reviewing behind
+the fast-loop flag — must judge an account page by the same words.
 
 This file is THE clone-review rubric (founder ruling D-F7). It is read at prompt-composition
 time by BOTH the web reviewer subagent and — behind the web lane's fast-loop flag — the
@@ -10,7 +15,7 @@ readers change. Do not paste any of it into a prompt builder.
 Everything below the marker line is what those readers receive, verbatim.
 -->
 --- rubric ---
-CLONE-REVIEW RUBRIC (v1) — how a cloned or repaired page is judged.
+CLONE-REVIEW RUBRIC (v2) — how a cloned or repaired page is judged.
 
 This rubric is the same for every reviewer of this page, whoever that is. It is not a
 style opinion; it is where the line sits between "different" and "broken".
@@ -72,6 +77,32 @@ rungs 2 and 3 are the normal answer and a well-made rung-3 band is a good outcom
 Whatever the rung, the repair preserves content hierarchy and order, typography and
 colors, image treatment, proportions and density, spacing, section rhythm, the
 interaction's storytelling purpose, and the brand's character.
+
+ON AN ABM (ACCOUNT) PAGE — the seller's page, addressed to one company. Everything above
+still applies; these are the extra questions, and the first is the acceptance test:
+
+  Would it still look like the seller's site without the target logo?
+
+If the answer is no, the page has adopted the target's brand and that is BLOCKING. The page
+renders in the SELLER's theme: their type, their palette, their spacing, their chrome. Judge:
+- SELLER CHROME DOMINATES. The campaign header and footer are the seller's, and the page
+  reads as a page of the seller's site that happens to name this account.
+- THE EXACT TARGET LOGO is the only target-brand element on the page, and it is the target's
+  real published mark. A redrawn, recoloured, re-lettered or approximated logo is BLOCKING —
+  it is the never-synthesize rule, and it is not a matter of taste. AN EMPTY LOGO SLOT IS
+  CORRECT: we do not always hold a mark, and a header with the seller's mark alone is a clean
+  header, never a defect. Flag a placeholder, a grey box or the words "logo here"; never flag
+  an absence.
+- ONE RESTRAINED ACCENT at most from the target's palette. Two is a restyle. Zero is fine.
+- NO ESCAPE ROUTES. An ABM page carries the campaign shells, not the client's global nav or
+  site footer. A nav, a link menu, or a second call to action going somewhere else is
+  BLOCKING — the page exists to hold one visitor on one argument.
+- NO RELATIONSHIP THAT DOES NOT EXIST. The framing is "Prepared for <account>". "Partner",
+  "partnership", "customer", "trusted by <account>", a target logo in a logo wall, or a
+  testimonial attributed to the target are all BLOCKING: they are claims, and they are false.
+  The target's name belongs in the prepared-for line and in the copy written for them.
+- NEW SECTIONS carry `abm_` section ids and obey the Brand Grammar Audit exactly as any other
+  new section does. An unnamed new band is a review finding, not a defect in the page.
 
 CLASSIFY HONESTLY. Blocking means the page cannot ship as it is — that is the STRICT list
 above. Everything on the SOFT list is advisory: it belongs in the final summary, not in

@@ -597,6 +597,8 @@ class DurableAgentClonedSectionRegistry:
             fragment_id=fragment_id,
         )
         row = loaded.row
+        provenance = row.get("provenance")
+        provenance = provenance if isinstance(provenance, dict) else {}
         degraded = bool(row.get("degraded"))
         verdict = None
         if degraded:
@@ -621,6 +623,17 @@ class DurableAgentClonedSectionRegistry:
             "degraded_reason": row.get("degraded_reason") if degraded else None,
             "degraded_note": degraded_headline(row.get("degraded_reason")) if degraded else None,
             "derived_from": row.get("derived_from"),
+            # --- F4.1's composed marker, on the PIN path too (T23 finding N6) -----------------
+            # The picker projects it (`_section_row`), but every door that puts a section on a
+            # page rebuilds its turn-local row from THIS answer — so without it the marker was
+            # erased at the exact moment an author is most likely to look at what they just
+            # pinned, and the view tool told them a browser had measured a shell that was
+            # composed from the brand kit. The provenance is already read here; this costs a key.
+            "composed": (
+                str(provenance["composed"])
+                if isinstance(provenance.get("composed"), str) and provenance["composed"]
+                else None
+            ),
             # `None` on a healthy pin means "not looked up", not "no repair exists" — nothing
             # reads it there. On a degraded pin it is the resolved answer.
             "superseded_by": (
