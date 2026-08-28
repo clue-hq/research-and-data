@@ -587,7 +587,10 @@ def _section_subtree(page_html: str, anchor_id: str) -> str:
     `""` when the id is not in the render, which the caller treats as "there is nothing to mint"
     rather than as "mint whatever was closest".
     """
-    if not page_html or not anchor_id:
+    if not page_html or not anchor_id or '"' in anchor_id or "\\" in anchor_id:
+        # An id that could break out of the attribute selector is not one the engine mints, and
+        # guessing at an escaping scheme to accommodate it would be a worse answer than "not
+        # found" — which the caller already handles as "there is nothing to mint".
         return ""
     node = HTMLParser(page_html).css_first(f'[id="{anchor_id}"]')
     return node.html or "" if node is not None else ""
@@ -5264,7 +5267,11 @@ class LumenWebTools:
         registry = self._cloned_section_registry()
         if registry is None:
             return self._cloned_section_registry_missing()
-        if rung not in REPAIR_RUNGS:
+        # A tool call that arrives with the rung as `"3"` means the same thing as `3` and should
+        # not cost a round to say so. Anything that is not a plain integer still refuses.
+        if isinstance(rung, str) and rung.strip().isdigit():
+            rung = int(rung.strip())
+        if isinstance(rung, bool) or rung not in REPAIR_RUNGS:
             return self._tool_error(
                 "repair.bad_rung",
                 f"rung must be 1, 2 or 3 (D-F6's ladder), not {rung!r}: "

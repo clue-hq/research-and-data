@@ -678,7 +678,7 @@ def test_the_repair_refuses_a_clone_that_is_not_on_the_page(
     assert registry.mint_calls == []
 
 
-@pytest.mark.parametrize("rung", [0, 4, "two"])
+@pytest.mark.parametrize("rung", [0, 4, "two", True, 2.5])
 def test_the_repair_refuses_a_rung_outside_the_ladder(
     tmp_path: Path, registry: FakeRegistry, rung
 ) -> None:
@@ -691,6 +691,21 @@ def test_the_repair_refuses_a_rung_outside_the_ladder(
     assert result["error_code"] == "repair.bad_rung"
     assert registry.mint_calls == []
     assert PROOF_ID in _pinned_in_order(tools)
+
+
+def test_a_rung_that_arrives_as_a_string_means_what_it_says(
+    tmp_path: Path, registry: FakeRegistry
+) -> None:
+    """A tool call carrying `"3"` should not cost a round to be told it meant 3."""
+    tools = _recreated(tmp_path, registry)
+
+    result = json.loads(
+        tools.repair_cloned_section(PROOF_ID, REPLACEMENT_HTML, "3", "compact static fallback")
+    )
+
+    assert result["status"] == "ok"
+    assert result["rung"] == 3
+    assert registry.mint_calls[0]["rung"] == 3
 
 
 def test_the_repair_refuses_an_empty_note_because_the_lineage_is_permanent(
