@@ -74,7 +74,7 @@ export function WebFragmentInspector({
         cardStatus={cardStatus}
         cardError={cardError}
       />
-      {card?.degraded || card?.derivedFrom || (card?.repairs.length ?? 0) > 0 ? (
+      {card?.degraded || card?.derivedFrom || (card?.family.length ?? 0) > 1 ? (
         <FragmentLineageCard
           card={card as FragmentCard}
           busy={actionBusy}
@@ -411,6 +411,8 @@ function FragmentLineageCard({
   onGeneratePreview: (fragmentId: string) => void;
   onRetire: (fragmentId: string) => void;
 }): React.ReactElement {
+  // A family of one is this row alone and says nothing worth a list; two or more is a lineage.
+  const family = card.family.length > 1 ? card.family : [];
   return (
     <section className="brand-card web-insp-card">
       <h3 className="web-insp-card-title">Condition &amp; repairs</h3>
@@ -438,37 +440,51 @@ function FragmentLineageCard({
           cannot choose between them. Retire the one you do not want.
         </p>
       ) : null}
-      {card.repairs.length > 0 ? (
+      {/* RULING R18-1: the WHOLE family, from whichever member happens to be selectable — not
+          this row's direct children. A repair is on no page unless somebody pinned it, so
+          "select the repair" is not a way to reach one, and a repair-of-a-repair listed under
+          nobody had a Retire button nowhere at all. Membership and the per-member verdict are
+          the backend's; this renders them. */}
+      {family.length > 0 ? (
         <ul className="web-insp-frag-lineage">
-          {card.repairs.map((repair) => (
-            <li key={repair.fragmentId}>
+          {family.map((member) => (
+            <li key={member.fragmentId}>
               <span className="web-insp-frag-lineage-head">
-                {repair.label ?? repair.fragmentId} · {repair.status}
-                {repair.degraded ? " · broken" : ""}
+                {member.label ?? member.fragmentId} · {member.status}
+                {member.degraded ? " · broken" : ""}
+                {member.isRoot ? " · original" : ""}
               </span>
-              {repair.derivedReason ? (
-                <span className="web-insp-hint">{repair.derivedReason}</span>
+              {member.derivedReason ? (
+                <span className="web-insp-hint">{member.derivedReason}</span>
               ) : null}
               <span className="web-insp-frag-actions">
-                {repair.previewPath ? null : (
+                {member.previewPath ? null : (
                   <button
                     type="button"
                     className="web-insp-action"
                     disabled={busy}
-                    onClick={() => onGeneratePreview(repair.fragmentId)}
+                    onClick={() => onGeneratePreview(member.fragmentId)}
                   >
                     Render preview
                   </button>
                 )}
-                {repair.status === "deprecated" ? null : (
+                {/* The refusal reason comes from the row, so the harvested original explains
+                    itself (R17-3) rather than silently offering nothing. */}
+                {member.retirement.allowed ? (
                   <button
                     type="button"
                     className="web-insp-action is-danger"
                     disabled={busy}
-                    onClick={() => onRetire(repair.fragmentId)}
+                    onClick={() => onRetire(member.fragmentId)}
                   >
                     Retire repair
                   </button>
+                ) : (
+                  <span className="web-insp-hint">
+                    {member.retirement.reason === "not_a_repair"
+                      ? "the original — kept as evidence"
+                      : "retired"}
+                  </span>
                 )}
               </span>
             </li>

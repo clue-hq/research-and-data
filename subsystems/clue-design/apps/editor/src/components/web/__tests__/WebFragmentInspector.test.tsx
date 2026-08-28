@@ -54,6 +54,8 @@ function card(overrides: Partial<FragmentCard> = {}): FragmentCard {
     repairsWhat: null,
     supersededBy: null,
     lineageAmbiguous: [],
+    lineageRoot: FRAGMENT_ID,
+    family: [],
     hiddenOnSource: null,
     activation: { allowed: false, reason: "not_dormant", message: null },
     retirement: { allowed: false, reason: "not_a_repair", message: null },
@@ -154,13 +156,26 @@ describe("the cloned-section card", () => {
     expect(screen.getByText("Position on page").nextSibling).toHaveTextContent("4");
   });
 
-  it("says a clone is broken, what that means, and lists its repairs", () => {
+  it("says a clone is broken, what that means, and lists its family", () => {
     const { onRetire } = mount({
       card: card({
         degraded: true,
         degradedReason: "dead_height",
         degradedNote: "the captured band is mostly artificial scroll height.",
-        repairs: [
+        family: [
+          {
+            fragmentId: FRAGMENT_ID,
+            label: "Products",
+            status: "approved",
+            degraded: true,
+            degradedReason: "dead_height",
+            derivedReason: null,
+            previewPath: null,
+            createdAt: null,
+            derivedFrom: null,
+            isRoot: true,
+            retirement: { allowed: false, reason: "not_a_repair", message: null }
+          },
           {
             fragmentId: "frag_repaired00000001",
             label: "Repaired — Products",
@@ -169,7 +184,10 @@ describe("the cloned-section card", () => {
             degradedReason: null,
             derivedReason: "repair rung 3; trigger dead_height; natural height",
             previewPath: "/asset-store/" + "bb".repeat(32),
-            createdAt: "2026-08-28T00:00:00Z"
+            createdAt: "2026-08-28T00:00:00Z",
+            derivedFrom: FRAGMENT_ID,
+            isRoot: false,
+            retirement: { allowed: true, reason: null, message: null }
           }
         ]
       })
@@ -180,6 +198,44 @@ describe("the cloned-section card", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Retire repair" }));
     expect(onRetire).toHaveBeenCalledWith("frag_repaired00000001");
+    // R17-3: the harvested original is in the list but gets no button, and says why.
+    expect(screen.getAllByRole("button", { name: "Retire repair" })).toHaveLength(1);
+    expect(screen.getByText(/kept as evidence/)).toBeTruthy();
+  });
+
+  it("offers a grandchild repair its own retire button from the original's card (R18-1)", () => {
+    // A repair-of-a-repair is nobody's direct child except its own parent's, and its parent is
+    // on no page — so a card built from direct children left it with a button nowhere at all.
+    const member = (id: string, parent: string | null, isRoot: boolean) => ({
+      fragmentId: id,
+      label: id,
+      status: "approved",
+      degraded: false,
+      degradedReason: null,
+      derivedReason: null,
+      previewPath: "/asset-store/" + "cc".repeat(32),
+      createdAt: null,
+      derivedFrom: parent,
+      isRoot,
+      retirement: { allowed: !isRoot, reason: isRoot ? "not_a_repair" : null, message: null }
+    });
+    const { onRetire } = mount({
+      card: card({
+        degraded: true,
+        degradedReason: "dead_height",
+        degradedNote: "broken.",
+        lineageRoot: FRAGMENT_ID,
+        family: [
+          member(FRAGMENT_ID, null, true),
+          member("frag_child000000001", FRAGMENT_ID, false),
+          member("frag_grandchild0001", "frag_child000000001", false)
+        ]
+      })
+    });
+    const buttons = screen.getAllByRole("button", { name: "Retire repair" });
+    expect(buttons).toHaveLength(2);
+    fireEvent.click(buttons[1] as HTMLElement);
+    expect(onRetire).toHaveBeenCalledWith("frag_grandchild0001");
   });
 
   it("says which clone a repair repairs and why", () => {
@@ -265,7 +321,7 @@ describe("the cloned-section card", () => {
   });
 
   it("offers no lineage card at all for a healthy, never-repaired clone", () => {
-    mount();
+    mount({ card: card({ family: [] }) });
     expect(screen.queryByText("Condition & repairs")).toBeNull();
     expect(screen.queryByText("Hidden on source site")).toBeNull();
   });

@@ -31,6 +31,23 @@ export interface FragmentSlotSpec {
   fallback: string | boolean | null;
 }
 
+/**
+ * One member of the whole lineage — **ruling R18-1**: every repair in a family must be
+ * retire-reachable from the card of any family member selectable on the page.
+ *
+ * The parent/child list cannot deliver that. A repair is on no page unless somebody pinned it, so
+ * "select the repair" is not a way to reach one, and a repair-of-a-repair is nobody's direct child
+ * except its own parent's — so a grandchild leaf had a retire affordance nowhere at all, and the
+ * contested-lineage dead end R17-2 exists to end stayed a dead end with the button built.
+ *
+ * Membership and the root are the backend resolver's answers (ruling R-X1), never re-derived here.
+ */
+export interface FragmentFamilyEntry extends FragmentLineageEntry {
+  derivedFrom: string | null;
+  isRoot: boolean;
+  retirement: FragmentVerdict;
+}
+
 /** One member of a repair lineage, as the card lists it. */
 export interface FragmentLineageEntry {
   fragmentId: string;
@@ -72,6 +89,9 @@ export interface FragmentCard {
   repairsWhat: FragmentLineageEntry | null;
   supersededBy: string | null;
   lineageAmbiguous: string[];
+  lineageRoot: string | null;
+  /** The whole family, from any member's card (R18-1). */
+  family: FragmentFamilyEntry[];
   hiddenOnSource: { hidden: boolean; evidence: string[] } | null;
   activation: FragmentVerdict;
   retirement: FragmentVerdict;
@@ -87,6 +107,20 @@ function readVerdict(value: unknown, allowedKey: string): FragmentVerdict {
     allowed: record[allowedKey] === true,
     reason: text(record.reason),
     message: text(record.message)
+  };
+}
+
+function readFamilyEntry(value: unknown): FragmentFamilyEntry | null {
+  const base = readLineageEntry(value);
+  if (!base) {
+    return null;
+  }
+  const record = (value ?? {}) as Record<string, unknown>;
+  return {
+    ...base,
+    derivedFrom: text(record.derived_from),
+    isRoot: record.is_root === true,
+    retirement: readVerdict(record.retirement, "retirable")
   };
 }
 
@@ -152,6 +186,10 @@ export function readFragmentCard(value: unknown): FragmentCard | null {
       .filter((entry): entry is FragmentLineageEntry => entry !== null),
     repairsWhat: readLineageEntry(record.repairs_what),
     supersededBy: text(record.superseded_by),
+    lineageRoot: text(record.lineage_root),
+    family: (Array.isArray(record.family) ? record.family : [])
+      .map(readFamilyEntry)
+      .filter((entry): entry is FragmentFamilyEntry => entry !== null),
     lineageAmbiguous: (Array.isArray(record.lineage_ambiguous)
       ? record.lineage_ambiguous
       : []
