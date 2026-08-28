@@ -28,8 +28,48 @@ from __future__ import annotations
 #: Ploy case: a scroll-jacked section whose height came from JavaScript that is not in the clone.
 DEGRADED_REASON_DEAD_HEIGHT = "dead_height"
 
+# --- what the F3.3 BEHAVIOURAL REVIEW GATE writes (D-F6's detector half, at runtime) ----------
+#
+# The mint-time detector above judges a CROP of the source site's screenshot. The gate judges the
+# page OUR engine rendered, in a real browser, at two viewports. They are the same trigger seen
+# from two sides, and they are deliberately spelled differently — see :data:`GATE_REASONS`.
+
+#: The runtime sibling of ``dead_height``: on the page we render, this band's box is far taller
+#: than anything visible inside it. Measured in the DOM (the union extent of the band's own
+#: visible ink), not in pixels, against the same two thresholds the mint detector uses.
+DEGRADED_REASON_RUNTIME_DEAD_HEIGHT = "runtime_dead_height"
+
+#: The band renders, and shows nothing: no visible ink at all, or a box with no height, or a
+#: subtree the browser computed as invisible. D-F7's "blank space / invisible elements", measured.
+DEGRADED_REASON_BLANK_RENDER = "blank_render"
+
+#: The band is broken at the platform's mobile width — collapsed, invisible, or overflowing the
+#: viewport by more than rounding can explain. D-F7's "failed mobile behavior", measured.
+DEGRADED_REASON_MOBILE_UNUSABLE = "mobile_unusable"
+
 #: The codes this build can describe. NOT a closed vocabulary — see the module docstring.
-DEGRADED_REASONS = (DEGRADED_REASON_DEAD_HEIGHT,)
+DEGRADED_REASONS = (
+    DEGRADED_REASON_DEAD_HEIGHT,
+    DEGRADED_REASON_RUNTIME_DEAD_HEIGHT,
+    DEGRADED_REASON_BLANK_RENDER,
+    DEGRADED_REASON_MOBILE_UNUSABLE,
+)
+
+#: The codes the behavioural gate OWNS — the only ones it may write, and the only ones it may
+#: ever clear.
+#:
+#: ``dead_height`` is absent, and its absence is the point (orchestrator ruling, F3.3). The
+#: mint-time reconciler (``sections/mint.py::_reconcile_degraded``) re-measures ``dead_height``
+#: from a fresh capture and will clear a marker carrying that code — so a gate finding spelled
+#: ``dead_height`` would be silently retired by the next re-ingestion of the site, which measured
+#: the SOURCE page and knows nothing about how ours renders. The reconciler already refuses to
+#: touch a marker whose reason is not its own (the R-I1-narrow rule); giving the gate its own
+#: codes is what makes that refusal protect these findings.
+GATE_REASONS = (
+    DEGRADED_REASON_RUNTIME_DEAD_HEIGHT,
+    DEGRADED_REASON_BLANK_RENDER,
+    DEGRADED_REASON_MOBILE_UNUSABLE,
+)
 
 #: One sentence per known code, in the terms the repair decision actually turns on. Written for
 #: an agent that has to choose a ladder rung, not for a log.
@@ -38,6 +78,21 @@ _HEADLINES = {
         "the captured band is mostly artificial scroll height — a screenful of content "
         "followed by dead space, because the source page animated through it with JavaScript "
         "the clone does not carry. The repair must remove the empty height entirely."
+    ),
+    DEGRADED_REASON_RUNTIME_DEAD_HEIGHT: (
+        "on the page we actually render, this band's box is far taller than anything visible "
+        "inside it — the reader drags through dead space. The repair must remove the empty "
+        "height entirely, keeping the content that IS there in its original order and rhythm."
+    ),
+    DEGRADED_REASON_BLANK_RENDER: (
+        "on the page we actually render, this band shows nothing at all: no visible text, no "
+        "image, or a box the browser gives no height. Whatever the original said here is not "
+        "reaching the reader, so the repair rebuilds the band's content rather than its height."
+    ),
+    DEGRADED_REASON_MOBILE_UNUSABLE: (
+        "this band is broken at mobile width — it collapses, disappears, or runs off the side "
+        "of the screen. The repair must make the band read on a phone, in the original's "
+        "content order, without introducing a horizontal scroll."
     ),
 }
 
@@ -90,7 +145,11 @@ def repair_reason(*, rung: int, trigger: str | None, note: str) -> str:
 
 __all__ = [
     "DEGRADED_REASONS",
+    "DEGRADED_REASON_BLANK_RENDER",
     "DEGRADED_REASON_DEAD_HEIGHT",
+    "DEGRADED_REASON_MOBILE_UNUSABLE",
+    "DEGRADED_REASON_RUNTIME_DEAD_HEIGHT",
+    "GATE_REASONS",
     "REPAIR_NOTE_MAX_CHARS",
     "REPAIR_RUNGS",
     "degraded_headline",
