@@ -58,11 +58,29 @@ test("the inspector falls back to layout-only rather than failing to resolve a s
   assert.equal(selection.layoutOnly, true);
 });
 
-test("the canvas offers a fragment neither drag-move nor resize", () => {
-  // F3 decides what a fragment can be gestured into; until then the honest
-  // answer is "not this", which is also what an embed gets today.
+test("the canvas reorders a fragment but never resizes it (D-F3)", () => {
+  // Founder ruling D-F3, Option A: top-level reordering only. A whole cloned band moves up or
+  // down the page; it is never manually resized, never a drop target, and stays a leaf.
+  const page = {
+    page_root: "root",
+    root: "root",
+    nodes: {
+      root: { id: "root", kind: "container", classes: "", children: ["sec_a"] },
+      sec_a: {
+        id: "sec_a",
+        kind: "section",
+        classes: "",
+        children: ["txt_a", "frg_hero"]
+      },
+      txt_a: { id: "txt_a", kind: "text", classes: "" },
+      frg_hero: FRAGMENT
+    } as Record<string, WebNode>
+  };
+  assert.equal(planCanvasNodeMove(page, "frg_hero", "sec_a", 0)?.intent, "reorder_node");
+  assert.equal(planCanvasNodeResize(page, "frg_hero", 640, null), null);
+  // An ordinary node dropped INSIDE the clone would be an internal edit of somebody else's
+  // section; and the page root holds sections only, so the wrapper travels, not the fragment.
   assert.equal(planCanvasNodeMove(PAGE, "frg_hero", "root", 0), null);
-  assert.equal(planCanvasNodeResize(PAGE, "frg_hero", 640, null), null);
 });
 
 test("a fragment inside a section does not stop its siblings from working", () => {

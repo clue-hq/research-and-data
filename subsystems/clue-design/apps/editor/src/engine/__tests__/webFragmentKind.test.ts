@@ -1,14 +1,15 @@
 /**
- * The editor tolerates a `fragment` node (clone-fidelity F1.3).
+ * What a `fragment` node may be gestured into (clone-fidelity F1.3, amended by F3.2).
  *
- * F1.1 added `WebNodeKind::Fragment` to the engine's node union, and F1.3 makes it render. The
- * inspector UI for a fragment is Phase F3's — but a document that carries one is handed to this
- * editor by every read path it has the moment it exists, so "nothing here crashes or rejects it"
- * has to be true between the phases, not after them.
+ * F1.1 added `WebNodeKind::Fragment` to the engine's node union and F1.3 made it render; between
+ * those phases this file pinned the DEGRADE — a fragment was offered no gesture at all, the way
+ * an embed is not.
  *
- * This pins the degrade, not a feature: the node's identity survives the type, and the canvas
- * gesture planners refuse it the way they already refuse an embed. When F3 gives fragments real
- * affordances these expectations change on purpose, and the change is visible here.
+ * F3.2 replaces half of that with founder ruling **D-F3 (Option A, top-level reordering only)**:
+ * a whole cloned band CAN be moved up or down the page, and can never be manually resized, be a
+ * drop target for ordinary nodes, be internally re-laid-out, or be detached into editable nested
+ * elements. So the move expectation flips on purpose and the resize expectation does not — which
+ * is exactly the change this file's older wording said would become visible here.
  */
 import { describe, expect, it } from "vitest";
 
@@ -43,9 +44,53 @@ describe("a fragment node in the editor", () => {
     expect(FRAGMENT.slots?.headline).toEqual({ text: "Talk to us" });
   });
 
-  it("is offered neither drag-move nor resize on the canvas", () => {
-    expect(planCanvasNodeMove(PAGE, "frg_hero", "root", 0)).toBeNull();
-    expect(planCanvasNodeResize(PAGE, "frg_hero", 640, null)).toBeNull();
+  it("reorders inside its parent but is never resized (D-F3)", () => {
+    const page = {
+      id: "home",
+      root: "root",
+      nodes: {
+        root: { id: "root", kind: "container", classes: "", children: ["sec_a"] },
+        sec_a: {
+          id: "sec_a",
+          kind: "section",
+          classes: "",
+          children: ["txt_a", "frg_hero"]
+        },
+        txt_a: { id: "txt_a", kind: "text", classes: "" },
+        frg_hero: FRAGMENT
+      }
+    } as unknown as WebPageSummary;
+    // Moved UP the page, past its sibling — the positive half of the ruling.
+    const up = planCanvasNodeMove(page, "frg_hero", "sec_a", 0);
+    expect(up?.intent).toBe("reorder_node");
+    // …and back down again.
+    expect(planCanvasNodeMove(page, "frg_hero", "sec_a", 0)?.operation).toBeTruthy();
+    // Never resized: a cloned band's proportions are the clone.
+    expect(planCanvasNodeResize(page, "frg_hero", 640, null)).toBeNull();
+  });
+
+  it("is never a drop target, and never a direct child of the page root", () => {
+    const page = {
+      id: "home",
+      root: "root",
+      nodes: {
+        root: { id: "root", kind: "container", classes: "", children: ["sec_a"] },
+        sec_a: {
+          id: "sec_a",
+          kind: "section",
+          classes: "",
+          children: ["frg_hero", "txt_a"]
+        },
+        frg_hero: FRAGMENT,
+        txt_a: { id: "txt_a", kind: "text", classes: "" }
+      }
+    } as unknown as WebPageSummary;
+    // Dropping an ordinary node INSIDE the clone would be an internal edit of somebody else's
+    // section — refused, and the fragment stays a leaf.
+    expect(planCanvasNodeMove(page, "txt_a", "frg_hero", 0)).toBeNull();
+    // The page root holds sections and nothing else (LUMW0011), so the wrapper moves, not the
+    // fragment: "top-level reordering" is the wrapper's job, and the pair travels together.
+    expect(planCanvasNodeMove(page, "frg_hero", "root", 0)).toBeNull();
   });
 
   it("does not stop its siblings from being planned", () => {

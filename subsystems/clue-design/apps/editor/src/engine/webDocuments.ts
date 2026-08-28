@@ -1381,13 +1381,22 @@ export interface CanvasNodeMovePlan {
   intent: "reorder_node" | "reparent_node";
 }
 
+// `fragment` is movable and is in NEITHER set below — founder ruling D-F3 (Option A, top-level
+// reordering only), the same one wired into the bridge's allowlists (`web_bridge.py`). A whole
+// cloned band moves up or down the page; it is never manually resized (its proportions ARE the
+// clone), never a drop target (an ordinary node dropped inside would be an internal edit of
+// somebody else's section), and it stays a leaf, so there is nothing in it to re-lay-out.
+// These two sides must agree: the bridge decides which nodes the iframe OFFERS a gesture, this
+// decides which gestures become an operation, and a fragment offered a drag the planner then
+// refuses is a dead handle.
 const CANVAS_MOVABLE_KINDS = new Set([
   "section",
   "container",
   "text",
   "button",
   "image",
-  "custom_component"
+  "custom_component",
+  "fragment"
 ]);
 const CANVAS_DROP_PARENT_KINDS = new Set(["section", "container"]);
 const CANVAS_RESIZABLE_KINDS = new Set([
