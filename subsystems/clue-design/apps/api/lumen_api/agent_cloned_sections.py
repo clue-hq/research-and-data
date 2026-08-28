@@ -38,6 +38,7 @@ fail-closed answer an absent one gets.
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence
@@ -55,11 +56,20 @@ from .clone_review import (
 from .database import NotFoundError
 from .design_store import DesignBlobStore, DesignStoreBridge, HybridRepository
 from .fragments import (
+    CAMPAIGN_SHELL_ROLES,
+    CAMPAIGN_SHELL_SOURCE_URL,
+    COBRAND_PLACEHOLDER_ASSET_ID,
+    COBRAND_PLACEHOLDER_MEDIA_TYPE,
+    COBRAND_PLACEHOLDER_PNG,
+    COMPOSED_CAMPAIGN_SHELL,
     FRAGMENT_STATUS_DORMANT,
     GATE_REASONS,
     REPAIR_NOTE_MAX_CHARS,
+    WEB_FRAGMENT_SOURCE_KEY,
     FragmentRefused,
+    assert_campaign_shell_shape,
     build_fragment_artifact,
+    campaign_shell_slots,
     create_web_fragment,
     degraded_headline,
     read_web_fragment,
@@ -467,6 +477,17 @@ class DurableAgentClonedSectionRegistry:
             # Where this section sat on its page — the one fact that makes a list of clones read
             # like the page it came from rather than like a registry dump.
             "section_index": provenance.get("section_index"),
+            # --- F4.1: was this section COMPOSED rather than harvested? ----------------------
+            # `campaign_shell` for the two ABM shells (ruling R23-1's provenance marker), `None`
+            # for every band lifted off a real page. Two readers depend on it: the picker, so an
+            # author can tell the client's own footer from the campaign one, and the whole-page
+            # recreate, which must not plant a shell on a recreated homepage or let one make the
+            # workspace's page set look ambiguous.
+            "composed": (
+                str(provenance["composed"])
+                if isinstance(provenance.get("composed"), str) and provenance["composed"]
+                else None
+            ),
             "created_at": row.get("created_at"),
             # --- D-F6: is this clone broken, is it a repair, and has it been repaired? --------
             "degraded": degraded,
@@ -893,6 +914,187 @@ class DurableAgentClonedSectionRegistry:
             and row.get("derived_reason") == reason,
             # A fresh repair is `draft`, so the answer is almost always False — and it is the
             # caller's job to say so out loud rather than to imply a pin that did not happen.
+            "insertable": row.get("status") == "approved",
+        }
+
+
+    # --- the campaign shells (F4.1, rulings R23-1/2/3) -----------------------------------------
+
+    def campaign_shell_placeholder(self) -> JsonObject:
+        """Give the co-brand placeholder durable custody, and hand back what pins it.
+
+        Returns ``{asset_id, digest, media_type, byte_length, record}`` — the engine
+        ``AssetRecord`` the composing turn upserts into its scratch document, plus the digest the
+        artifact will cite. Idempotent: the blob is content-addressed, so calling this on every
+        mint costs one row lookup and no bytes after the first time.
+
+        It exists because the engine refuses an ``<img>`` with no asset (``LUMW0111``), and the
+        header must carry a co-brand image element whose default is NOTHING. See
+        :data:`~lumen_api.fragments.campaign_shell.COBRAND_PLACEHOLDER_PNG` for why an invisible
+        1×1 is the honest spelling of an empty logo slot rather than a synthesized one.
+        """
+        self.blobs.register(
+            COBRAND_PLACEHOLDER_PNG,
+            media_type=COBRAND_PLACEHOLDER_MEDIA_TYPE,
+            source_key=WEB_FRAGMENT_SOURCE_KEY,
+        )
+        digest = hashlib.sha256(COBRAND_PLACEHOLDER_PNG).hexdigest()
+        return {
+            "asset_id": COBRAND_PLACEHOLDER_ASSET_ID,
+            "digest": digest,
+            "media_type": COBRAND_PLACEHOLDER_MEDIA_TYPE,
+            "byte_length": len(COBRAND_PLACEHOLDER_PNG),
+            "record": {
+                "id": COBRAND_PLACEHOLDER_ASSET_ID,
+                "label": "Co-brand placeholder",
+                "kind": "raster_image",
+                "status": "ready",
+                "source": {
+                    "kind": "generated",
+                    "model": COMPOSED_CAMPAIGN_SHELL,
+                    "request_id": None,
+                },
+                "media": {
+                    "mime_type": COBRAND_PLACEHOLDER_MEDIA_TYPE,
+                    "filename": "campaign-shell-cobrand.png",
+                    "byte_length": len(COBRAND_PLACEHOLDER_PNG),
+                    "digest": {"algorithm": "sha256", "value": digest},
+                    "location": None,
+                },
+            },
+        }
+
+    #: How many harvested bands the legal-link scan opens. The client's legal links live in their
+    #: footer; a handful of the newest footer/nav clones is all the evidence there is, and each
+    #: one costs a payload read.
+    LEGAL_EVIDENCE_MAX = 4
+
+    def legal_link_evidence(self) -> List[tuple]:
+        """``[(html, page_url), …]`` from this workspace's harvested footer and nav clones.
+
+        The seller's own privacy and terms links, in the markup their own site produced — which
+        is the only place F4.1 will take them from. Fail-SOFT per row: a purged payload costs its
+        own evidence and nothing else, because a footer with no legal block is a correct footer
+        (R23-2's empty-and-clean) and must never be the reason a shell refuses to mint.
+        """
+        rows = [
+            row
+            for row in self._repository().list_web_fragments()
+            if row.get("section_role") in ("footer", "nav")
+        ]
+        evidence: List[tuple] = []
+        for row in rows[: self.LEGAL_EVIDENCE_MAX]:
+            try:
+                loaded = read_web_fragment(
+                    self.blobs.storage,
+                    workspace_id=self.workspace_id,
+                    fragment_id=str(row["fragment_id"]),
+                )
+            except (NotFoundError, FragmentRefused):
+                continue
+            evidence.append((loaded.html, _page_url(row) or ""))
+        return evidence
+
+    def mint_campaign_shell(
+        self,
+        *,
+        role: str,
+        html: str,
+        css: str,
+        label: str,
+        source_kit_id: Optional[str] = None,
+        source_kit_version: Optional[int] = None,
+        composition: Optional[Mapping[str, Any]] = None,
+    ) -> JsonObject:
+        """Mint one campaign shell — the identical fragment path, plus the no-escape-route gate.
+
+        ``html`` is the ENGINE's own render of the composed shell (ruling R23-1, the same rule the
+        repair mint obeys) and ``css`` the utilities that render compiles against the kit's theme.
+        The order below is the mint pipeline's own, unchanged:
+
+        sanitize (fail-closed on an un-rehostable byte reference, handlers stripped, banned
+        elements dropped) → **the campaign-shell shape gate** → annotate the RULED slots → scope
+        the CSS under the fragment's wrapper → content-address → insert the row.
+
+        The one addition is :func:`assert_campaign_shell_shape`, and it sits HERE rather than in
+        the composer on purpose (ruling R23-3): the rule is that a shell cannot contain an escape
+        route, and a rule enforced only by the thing that writes the markup is a rule about that
+        writer, not about shells. It runs on the SANITIZED form — what the artifact will
+        literally be — so a link the sanitizer would have kept is a link the gate has seen.
+
+        Slots are the RULED ones, not detected ones. A campaign shell's editing surface is the
+        contract in R23-2, and running the harvest detector over it would offer whatever the
+        composition happened to look like — a different surface every time the strip changes.
+
+        Born ``draft`` like every other fragment (ruling R-I5): a human releases the shells by
+        approving the brand kit they belong to. Content-addressed like every other fragment, so
+        re-minting the same shell for the same kit converges onto the row that already holds it
+        rather than growing a second one.
+        """
+        if role not in CAMPAIGN_SHELL_ROLES:
+            raise ValueError(
+                f"{role!r} is not a campaign shell role; expected one of "
+                f"{', '.join(CAMPAIGN_SHELL_ROLES)}"
+            )
+        sanitized = sanitize_fragment_html(html, rehosted={})
+        assert_campaign_shell_shape(role, sanitized.html)
+        slots = campaign_shell_slots(role)
+
+        probe = build_fragment_artifact(
+            html=sanitized.html,
+            css=css,
+            rehosted={},
+            slots=list(slots),
+            preview_digest=None,
+            prelude_reference=PRELUDE_REFERENCE_STRIP,
+        )
+        already = self._repository().find_web_fragment(probe.fragment_id)
+
+        provenance: JsonObject = {
+            # The marker every surface reads to tell a shell from a harvested clone.
+            "composed": COMPOSED_CAMPAIGN_SHELL,
+            "shell_role": role,
+            "slots": [spec.key for spec in slots],
+            # NOT a page url, and deliberately absent rather than faked: a shell sat on no page,
+            # so it takes part in no page's recreate and no page's ordering.
+            "page_url": None,
+            "section_index": None,
+            "section_role": role,
+        }
+        if composition:
+            provenance["composition"] = dict(composition)
+
+        row, artifact = create_web_fragment(
+            self.blobs.storage,
+            workspace_id=self.workspace_id,
+            html=sanitized.html,
+            css=css,
+            rehosted={},
+            slots=list(slots),
+            source_url=CAMPAIGN_SHELL_SOURCE_URL,
+            section_role=role,
+            label=label,
+            source_kit_id=source_kit_id,
+            source_kit_version=source_kit_version,
+            preview=None,
+            provenance=provenance,
+            prelude_reference=PRELUDE_REFERENCE_STRIP,
+        )
+        return {
+            "fragment_id": artifact.fragment_id,
+            "shell_role": role,
+            "section_role": row.get("section_role"),
+            "status": row.get("status"),
+            "label": row.get("label"),
+            "composed": COMPOSED_CAMPAIGN_SHELL,
+            "slot_keys": [spec.key for spec in slots],
+            "slot_manifest": dict(artifact.payload.get("slot_manifest") or {}),
+            "asset_digests": list(artifact.payload.get("asset_digests") or []),
+            # The FIRST pass's notes are the real ones (`create_web_fragment` sanitizes again,
+            # idempotently, over markup this method already cleaned).
+            "sanitizer_notes": list(sanitized.notes) + list(artifact.notes),
+            # Content addressing, said out loud: the same shell for the same kit converges.
+            "converged": already is not None,
             "insertable": row.get("status") == "approved",
         }
 

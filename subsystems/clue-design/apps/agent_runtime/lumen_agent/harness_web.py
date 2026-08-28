@@ -287,6 +287,11 @@ def create_web_deepagent(
                 # Both write to the document, so both belong to the author and to no one else.
                 tools.recreate_cloned_page,
                 tools.repair_cloned_section,
+                # F4.1: the ABM page's own chrome. A library operation, not a document write —
+                # it mints the two shells and touches no page — but it belongs to the author for
+                # the same reason the other two do: the author is the role that decides what a
+                # page wears, and the shells exist to be worn INSTEAD of the cloned nav.
+                tools.mint_campaign_shells,
                 tools.provenance,
                 tools.asset,
                 tools.list_custom_components,

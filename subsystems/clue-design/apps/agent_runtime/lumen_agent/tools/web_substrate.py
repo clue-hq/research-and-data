@@ -48,6 +48,16 @@ from lumen_api.clone_review import (
 )
 from lumen_api.clone_review.blind import PANEL_LABELS as _BLIND_PANEL_LABELS
 from lumen_api.clone_review.walk import TAILWIND_RUNTIME_MARKER, capture_behavioural_walk
+from lumen_api.fragments.campaign_shell import (
+    CAMPAIGN_SHELL_FOOTER,
+    CAMPAIGN_SHELL_HEADER,
+    CAMPAIGN_SHELL_ROLES,
+    CAMPAIGN_SHELL_SECTION_IDS,
+    COMPOSED_CAMPAIGN_SHELL,
+    compose_campaign_footer,
+    compose_campaign_header,
+    discover_legal_links,
+)
 from lumen_api.fragments.degraded import REPAIR_RUNGS
 from lumen_api.fragments.refs import (
     ASSET_URL_PREFIX,
@@ -4599,6 +4609,16 @@ class LumenWebTools:
                     "and none replaces the others, so a whole-page recreate refuses until a "
                     "human retires all but one. Pin the one you want explicitly, or ask."
                 )
+            # F4.1: a COMPOSED shell is not a band off the client's site, and a picker that
+            # showed the campaign header the same way it shows the real nav is how the wrong one
+            # ends up on a page. Only present when there is something to say.
+            if section.get("composed"):
+                row["composed"] = section.get("composed")
+                row["composed_note"] = (
+                    "composed for ABM pages, not lifted off the client's site: a page-local "
+                    "shell with one call to action and no navigation. Use it on account pages "
+                    "instead of the cloned nav or footer."
+                )
             if section.get("repairs"):
                 row["repairs"] = section.get("repairs")
             if section.get("derived_from"):
@@ -5063,6 +5083,14 @@ class LumenWebTools:
             section
             for section in (listing or {}).get("sections") or []
             if isinstance(section, dict) and section.get("fragment_id")
+            # A COMPOSED section came off no page, so it is not part of any page's recreate
+            # (F4.1). Two things would otherwise go wrong the moment a workspace holds campaign
+            # shells: the shells would be planted on the recreated homepage, which is exactly the
+            # "adds nothing" property this operation exists to guarantee; and their own
+            # `page_url` would make every workspace that owns them answer `page_ambiguous` to a
+            # recreate that was never ambiguous. The shells are reached by name, through
+            # discovery and the ABM recipe.
+            and not section.get("composed")
         ]
         if not sections:
             return self._tool_error(
@@ -5724,6 +5752,342 @@ class LumenWebTools:
             sink_extra={"fragment_id": minted.get("fragment_id")},
         )
         return json.dumps(result, indent=2)
+
+    # --- the campaign shells (F4.1, rulings R23-1/2/3) -----------------------------------------
+
+    def mint_campaign_shells(self) -> str:
+        """Mint this brand's ABM page shells: a minimal header and a legal-only footer.
+
+        An ABM page NEVER wears the client's cloned global navigation. Every link in a nav is a
+        way off the one page that was written for this account — the visitor leaves for pricing,
+        for careers, for the blog, and the campaign is over. An ABM page wears a page-local shell
+        instead, and this is the tool that makes it.
+
+        THE HEADER is a strip, not a hero: the seller's own mark, the words "Prepared for
+        <account>", the target company's logo when we hold one, and exactly ONE call to action.
+        THE FOOTER carries the seller's mark, a copyright line, and their privacy/terms links —
+        read off their own site's footer — and nothing else.
+
+        You compose neither. The shells are composed from the approved brand kit, rendered by the
+        engine, and minted as ordinary cloned sections, so their markup, their styling and their
+        editing surface are the same kind of thing every other cloned section is. Call this once
+        per brand: it is content-addressed, so calling it again converges on the same two
+        sections rather than making more of them.
+
+        THE SLOTS on the header are `prepared_for` (the account's display name), `target_logo`
+        (the account's own mark), `cta_href` and `cta_label`. Bind them per account exactly as
+        you bind any cloned section's slots. AN EMPTY `target_logo` IS CORRECT: we never invent a
+        company's logo, and the header is composed so that an unbound one shows nothing at all.
+        The footer has no slots — nothing in it changes per account.
+
+        The shells are born UNRELEASED like every cloned section: a human releases them by
+        approving the brand kit. Until then they are not on any page and `insert_cloned_section`
+        will refuse them. Say so; do not claim a page carries a shell it cannot pin yet.
+        """
+        registry = self._cloned_section_registry()
+        if registry is None:
+            return self._cloned_section_registry_missing()
+        brand_kit = self.config.brand_kit
+        if not isinstance(brand_kit, dict) or not brand_kit:
+            return self._tool_error(
+                "shell.no_brand_kit",
+                "this turn carries no brand kit, so there is no seller whose chrome a campaign "
+                "shell could be. The shells are the SELLER's header and footer — composed from "
+                "their kit's own mark and tokens — and cannot be invented without one.",
+            )
+        seller_name = str(
+            brand_kit.get("name") or brand_kit.get("brand_name") or ""
+        ).strip()
+        if not seller_name:
+            return self._tool_error(
+                "shell.no_seller_name",
+                "the attached brand kit has no name, and the footer's copyright line and the "
+                "marks' alt text are the client's name. Nothing here guesses it.",
+            )
+        seller_mark = self._campaign_shell_seller_mark(brand_kit)
+        if seller_mark is None:
+            return self._tool_error(
+                "shell.no_seller_mark",
+                "the attached brand kit holds no usable logo asset, and the seller's mark is "
+                "the kit's own logo — never refetched and never redrawn. Add a logo to the "
+                "brand kit and call this again.",
+            )
+        seller_asset_id, seller_record = seller_mark
+
+        try:
+            placeholder = registry.campaign_shell_placeholder()
+            legal_links = discover_legal_links(registry.legal_link_evidence())
+        except Exception as error:  # noqa: BLE001 - capability boundary
+            return self._tool_error(
+                "cloned_section.registry_failed",
+                f"the cloned-section library could not be read: "
+                f"{type(error).__name__}: {error}",
+            )
+
+        markup = {
+            CAMPAIGN_SHELL_HEADER: compose_campaign_header(
+                seller_name=seller_name,
+                seller_logo_asset_id=seller_asset_id,
+                cobrand_asset_id=str(placeholder["asset_id"]),
+            ),
+            CAMPAIGN_SHELL_FOOTER: compose_campaign_footer(
+                seller_name=seller_name,
+                seller_logo_asset_id=seller_asset_id,
+                legal_links=legal_links,
+            ),
+        }
+        assets = [seller_record, placeholder["record"]]
+
+        shells: List[JsonObject] = []
+        for role in CAMPAIGN_SHELL_ROLES:
+            composed = self._render_campaign_shell(role, markup[role], assets)
+            if isinstance(composed, str):
+                return composed
+            subtree, css = composed
+            try:
+                minted = registry.mint_campaign_shell(
+                    role=role,
+                    html=subtree,
+                    css=css,
+                    label=f"{'Campaign header' if role == CAMPAIGN_SHELL_HEADER else 'Campaign footer'} — {seller_name}",
+                    source_kit_id=brand_kit.get("id"),
+                    source_kit_version=(
+                        int(brand_kit["version"])
+                        if isinstance(brand_kit.get("version"), int)
+                        else None
+                    ),
+                    composition={
+                        "seller_name": seller_name,
+                        "seller_logo_asset_id": seller_asset_id,
+                        "legal_links": [link.href for link in legal_links],
+                    },
+                )
+            except FragmentRefused as refusal:
+                self.record(
+                    "author",
+                    "campaign_shell_refused",
+                    input_summary=role,
+                    output_summary=f"{refusal.code}: {refusal.message}"[:500],
+                    payload={"shell_role": role, "error_code": refusal.code},
+                )
+                return self._tool_error(
+                    str(refusal.code),
+                    f"the {role} could not be minted: {refusal.message}",
+                    shell_role=role,
+                    minted=[shell["fragment_id"] for shell in shells],
+                )
+            except Exception as error:  # noqa: BLE001 - capability boundary
+                return self._tool_error(
+                    "shell.mint_failed",
+                    f"the {role} could not be minted: {type(error).__name__}: {error}",
+                    shell_role=role,
+                    minted=[shell["fragment_id"] for shell in shells],
+                )
+            shells.append(
+                {
+                    "fragment_id": minted["fragment_id"],
+                    "shell_role": role,
+                    "section_role": minted["section_role"],
+                    "label": minted["label"],
+                    "status": minted["status"],
+                    "slots": [
+                        {"key": key, "kind": entry.get("kind")}
+                        for key, entry in sorted(
+                            (minted.get("slot_manifest") or {}).items()
+                        )
+                    ],
+                    "converged": bool(minted.get("converged")),
+                    "insertable": bool(minted.get("insertable")),
+                }
+            )
+
+        result: JsonObject = {
+            "status": "ok",
+            "seller": seller_name,
+            "composed": COMPOSED_CAMPAIGN_SHELL,
+            "shells": shells,
+            "legal_links": [link.href for link in legal_links],
+            "target_logo": (
+                "empty by default — an unbound target_logo shows nothing at all, which is the "
+                "correct answer when we hold no logo for the account. Never substitute a drawn "
+                "or guessed mark."
+            ),
+        }
+        if not legal_links:
+            # Empty-and-clean is a correct footer, but a human who expected legal links should
+            # hear that we looked and found none rather than notice the absence on a live page.
+            result["legal_links_note"] = (
+                "no privacy or terms link was found in this workspace's harvested footers, so "
+                "the footer carries none. That is a clean footer, not a broken one — say so, and "
+                "ask the client for the URLs if the campaign needs them."
+            )
+        unreleased = [shell for shell in shells if not shell["insertable"]]
+        if unreleased:
+            result["release"] = (
+                "the shells are "
+                + ", ".join(sorted({str(shell["status"]) for shell in unreleased}))
+                + ": a human releases them by approving the brand kit, exactly as for every "
+                "other cloned section. They cannot be pinned until then."
+            )
+        self.record(
+            "author",
+            "campaign_shells_minted",
+            input_summary=seller_name,
+            output_summary=", ".join(
+                f"{shell['shell_role']}={shell['fragment_id']}" for shell in shells
+            )[:300],
+            payload={
+                "shells": [shell["fragment_id"] for shell in shells],
+                "converged": [shell["fragment_id"] for shell in shells if shell["converged"]],
+                "legal_links": len(legal_links),
+            },
+        )
+        return json.dumps(result, indent=2)
+
+    def _campaign_shell_seller_mark(
+        self, brand_kit: JsonObject
+    ) -> Optional[tuple[str, JsonObject]]:
+        """The kit's own logo asset and its engine record — never refetched, never redrawn.
+
+        The kit holds its logos as slots (`primary` / `wordmark` / `mark` / …), each with
+        variants. A campaign shell sits on a LIGHT surface, so the preference runs full-colour →
+        dark → one-colour and only then whatever the slot holds; a reversed mark on a white strip
+        is the defect `logo_policy` was written about. A variant whose record is not in this
+        turn's by-value manifest is skipped rather than named, because the record is what the
+        scratch document needs to render it at all.
+        """
+        manifest = self.config.brand_kit_assets or {}
+        logos = ((brand_kit.get("assets") or {}).get("logos") or {})
+        if not isinstance(logos, dict):
+            return None
+        slot_rank = {"primary": 0, "wordmark": 1, "mark": 2, "logo": 3}
+        mode_rank = {"full_color": 0, "dark": 1, "one_color": 2, "light": 4, "reversed": 5}
+        best: Optional[tuple] = None
+        for slot_key, slot in sorted(logos.items()):
+            if not isinstance(slot, dict):
+                continue
+            for position, variant in enumerate(slot.get("variants") or []):
+                if not isinstance(variant, dict):
+                    continue
+                asset_id = str(variant.get("asset_id") or "").strip()
+                entry = manifest.get(asset_id) if asset_id else None
+                record = (entry or {}).get("record") if isinstance(entry, dict) else None
+                if not isinstance(record, dict) or not record.get("id"):
+                    continue
+                mode = str(variant.get("color_mode") or variant.get("name") or "").lower()
+                rank = (
+                    slot_rank.get(str(slot_key).lower(), 9),
+                    mode_rank.get(mode, 3),
+                    position,
+                    str(slot_key).lower(),
+                    asset_id,
+                )
+                if best is None or rank < best[0]:
+                    best = (rank, asset_id, copy.deepcopy(record))
+        if best is None:
+            return None
+        return best[1], best[2]
+
+    def _render_campaign_shell(
+        self, role: str, html: str, assets: List[JsonObject]
+    ) -> Any:
+        """Compose one shell on a SCRATCH document and lift the engine's own render of it.
+
+        A scratch document, not the working one: minting a brand's shells is a library operation
+        and must not put a section on — or take one off — the page the author is building. The
+        engine still judges every byte, which is the whole point of ruling R23-1: the mint source
+        is what the ENGINE emitted, never a string this process typed.
+
+        Returns ``(subtree, css)``, or the tool-error envelope to return verbatim.
+        """
+        try:
+            scratch = self.core.web_new_doc(
+                f"doc_campaign_shell_{role}", f"Campaign shell — {role}"
+            )["web_doc"]
+            scratch = self.core.web_apply_ops(
+                scratch, [{"kind": "upsert_asset", "record": record} for record in assets]
+            )["web_doc"]
+            ingested = self.core.web_ingest_html(
+                scratch, HOME_PAGE_ID, html, brand_kit=self.config.brand_kit
+            )
+        except CoreError as error:
+            return self._tool_error(
+                "shell.compose_rejected",
+                f"the composed {role} was rejected by the engine, so nothing was minted: "
+                f"{error.message}",
+                shell_role=role,
+                diagnostics=list(error.diagnostics or []),
+            )
+        # An ingest ERROR does not raise — it comes back as a diagnostic and the offending node
+        # is simply absent from the document. Left unread, the next step would lift a shell with
+        # a band missing out of the render, or (as it did on the first walk) find no section at
+        # all and blame the render. The composition is ours, so an error here is OUR bug: it is
+        # reported with the diagnostics rather than swallowed.
+        rejections = [
+            diagnostic
+            for diagnostic in (ingested.get("diagnostics") or [])
+            if isinstance(diagnostic, dict) and diagnostic.get("severity") == "error"
+        ]
+        if rejections:
+            return self._tool_error(
+                "shell.compose_rejected",
+                f"the composed {role} was rejected by the engine, so nothing was minted: "
+                + "; ".join(
+                    f"{item.get('code')}: {item.get('message')}" for item in rejections[:4]
+                ),
+                shell_role=role,
+                diagnostics=rejections,
+            )
+        scratch = ingested["web_doc"]
+        try:
+            rendered = self.core.web_render(
+                scratch,
+                HOME_PAGE_ID,
+                mode="delivery",
+                asset_base_url=ASSET_URL_PREFIX.rstrip("/"),
+                brand_kit=self.config.brand_kit,
+                fragments={},
+                fragment_css="",
+            )
+        except CoreError as error:
+            return self._tool_error(
+                "shell.render_failed",
+                f"the composed {role} could not be rendered, so nothing was minted: "
+                f"{error.message}",
+                shell_role=role,
+            )
+        subtree = _section_subtree(
+            rendered.get("html") or "", CAMPAIGN_SHELL_SECTION_IDS[role]
+        )
+        if not subtree:
+            return self._tool_error(
+                "shell.section_not_rendered",
+                f"the composed {role} did not appear in the render, so there is nothing to mint.",
+                shell_role=role,
+            )
+        try:
+            css = compile_section_css(
+                self.core,
+                scratch,
+                brand_kit=self.config.brand_kit,
+                section_html=subtree,
+            )
+        except WebExportToolchainMissing as error:
+            return self._tool_error(
+                "shell.toolchain_unavailable",
+                f"this worker cannot compile a section's styling, so no shell was minted: "
+                f"{error}. Do not retry — nothing about this call will change the answer.",
+                shell_role=role,
+            )
+        except Exception as error:  # noqa: BLE001 - the toolchain boundary
+            return self._tool_error(
+                "shell.css_compile_failed",
+                f"the composed {role}'s styling could not be compiled, so nothing was minted "
+                f"rather than minting a shell that would publish unstyled: "
+                f"{type(error).__name__}: {error}",
+                shell_role=role,
+            )
+        return subtree, css
 
     def _anchor_id(self, node_id: str) -> str:
         """The `id` attribute the engine renders for a section node.
