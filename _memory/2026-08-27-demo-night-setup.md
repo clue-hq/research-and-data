@@ -104,3 +104,17 @@ canvas requires TTF/OTF; server skia reads it too). POST /documents/doc_c451f16c
 (format png) re-rendered and applied the recomputed text geometry (headline reflowed 2 lines→1,
 proving the new metrics; doc at current_version 93). Re-render saved to the fallback deck
 (stripe-chat-generated-REAL-SOHNE.png). Any open editor tab needs ⌘⇧R to pick the face up.
+
+### Cursor ABM ad chain — asset-placement law confirmed (2026-08-29)
+The account-personalized Cursor ad (thr_0f100eea…, doc_75111d69…) surfaced the W-B5 class from the
+OTHER side: a design_asset row hand-inserted at the DB (with artifact+blob) is **viewable in the
+library but NOT scene-placeable** — `place` returns `op.asset_missing`; the engine's placement
+registry only knows assets that entered through a real ingestion/upload/generation path. The
+product-correct route is `POST /assets` (multipart), which did register placement-valid
+(asset_8e515b482cdd, the founder's official Cursor lockup file). Law: **every asset source needs
+BOTH channels (view + place) — DB-seeded assets have neither guarantee; always enter through the
+API.** Also: Cursor's own published light-lockup SVG ships a baked #F0EFEA background rect
+(fetch_logo cannot strip it, by design — it never redraws logos); founder now supplies official
+lockup files for co-brand work. fetch_logo tool contract now demands full lockups for
+account-personalized ads (commit on this branch). Failed turns run_2a6dcf50 (plate/leading),
+run_222f29d4 (op.asset_missing on the hand-seeded asset), run_617dff06 (same, cancelled-by-wait).
