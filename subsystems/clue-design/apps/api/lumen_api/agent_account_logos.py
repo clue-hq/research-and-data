@@ -19,6 +19,14 @@ handle — the rule
 the same reason. The API composes this object at turn setup, the runtime receives typed methods,
 and the tenant comes from the injected blob store rather than from anything the agent says.
 
+**Both durable writes go through the GOVERNED tools** (``design_register_asset_record`` and
+``design_update_web_account``), exactly as
+:class:`~lumen_api.agent_custom_components.DurableAgentCustomComponentRegistry`'s two writes do
+— ruling R-D6-5 and the no-bypass guard that enforces it. So an agent-bound account logo is
+journaled and A9-keyed exactly like the human PATCH of the same field, and the account tool's
+own precondition (the logo must resolve to a known asset) becomes a second, independent check
+on G1 having actually happened.
+
 **Four laws this write obeys, in the order it checks them.**
 
 1. **Workspace-scoped, fail-closed** (the B3 law). The account is read through
@@ -44,6 +52,7 @@ from pathlib import Path
 from typing import Any, Dict
 
 from clue_storage import StorageError
+from clue_toolbelt import PreconditionFailed
 from py_lumen_obs import get_logger
 
 from clue_design.storage import SOURCE_KEY_ASSET
@@ -98,7 +107,13 @@ def is_ladder_fetched(record: Any) -> bool:
 class DurableAgentAccountLogoBinder:
     """The sole account-logo capability exposed to one website-mode agent turn."""
 
-    def __init__(self, *, blobs: DesignBlobStore, cache_dir: str | Path) -> None:
+    def __init__(
+        self,
+        *,
+        blobs: DesignBlobStore,
+        cache_dir: str | Path,
+        invocations: Any,
+    ) -> None:
         # The byte store carries the tenant and the row store is built from it, so the two can
         # never name different workspaces — the D4/D5 rule the cloned-section registry follows.
         self.blobs = blobs
@@ -106,9 +121,29 @@ class DurableAgentAccountLogoBinder:
         # The TURN's engine cache: the ladder's ``ingest_asset`` wrote the bytes there, and a
         # fleet worker injects its own tree.
         self.cache_dir = Path(cache_dir)
+        # The governed write path (R-D6-5). Required, not optional: a binder that could fall
+        # back to the repository would be the bypass the guard exists to prevent.
+        self.invocations = invocations
 
     def _repository(self) -> HybridRepository:
         return HybridRepository(self.workspace_id)
+
+    def _invoke(self, name: str, body: JsonObject) -> JsonObject:
+        """Run one governed design tool as the agent. A refusal RAISES, typed."""
+        try:
+            result = self.invocations.invoke(
+                name, body, workspace_id=self.workspace_id, actor="agent"
+            )
+        except PreconditionFailed as refused:
+            # The tool's own reason codes, relayed rather than re-worded: the account tool
+            # already refuses an unknown account and a logo that resolves to nothing, and
+            # inventing a second vocabulary for the same refusal is how two truths start.
+            raise AccountLogoRefused(
+                f"account_logo.{'_'.join(refused.reason_codes[:1]) or 'refused'}",
+                "; ".join(failure.message for failure in refused.failures)
+                or "the governed write refused",
+            ) from refused
+        return dict(result.references)
 
     def bind(self, *, account_id: str, record: JsonObject) -> JsonObject:
         """Register ``record`` durably (G1) and stamp it on ``account_id`` (G2). One gesture.
@@ -172,8 +207,8 @@ class DurableAgentAccountLogoBinder:
             )
 
         # G1 — the registry `require_asset_record` (and therefore `account_values`) reads. The
-        # write is a content-addressed upsert, so re-binding the same mark is one cheap no-op.
-        repository.create_asset_record(stored_record)
+        # store write is a content-addressed upsert, so re-binding the same mark converges.
+        self._invoke("design_register_asset_record", {"record": stored_record})
         try:
             repository.require_asset_record(asset_id)
         except NotFoundError as error:  # pragma: no cover - a write that did not write
@@ -183,11 +218,14 @@ class DurableAgentAccountLogoBinder:
                 "written. Nothing was stamped.",
             ) from error
 
-        # G2 — the one column the F1.4 account derive reads.
+        # G2 — the one column the F1.4 account derive reads. The tool's own precondition
+        # re-checks that the logo resolves, which is an independent verdict on G1 above.
         previous = account.get("logo_asset_id")
-        updated = repository.update_web_account(
-            str(account_id), {"logo_asset_id": asset_id}
+        self._invoke(
+            "design_update_web_account",
+            {"account_id": str(account_id), "patch": {"logo_asset_id": asset_id}},
         )
+        updated = repository.require_web_account(str(account_id))
         log_event(
             _logger,
             logging.INFO,

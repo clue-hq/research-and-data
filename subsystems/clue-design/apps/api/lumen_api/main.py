@@ -8446,6 +8446,7 @@ def run_web_agent_turn(
     account_card: Optional[JsonObject] = None,
     asset_library: Optional[JsonObject] = None,
     custom_component_registry: Any = None,
+    account_logo_binder: Any = None,
     *,
     workspace_id: str,
     blobs: Optional[DesignBlobStore] = None,
@@ -8477,6 +8478,12 @@ def run_web_agent_turn(
     brand/assets it is not passed by value because source/compile operations
     must be durable between runs; the runtime receives typed methods, never
     database/store paths.
+
+    `account_logo_binder` (F4.3): the G1+G2 bridge, the same kind of capability
+    and passed in for the same reason — its two durable writes are the GOVERNED
+    asset/account tools, and the invoker that runs them lives at the worker
+    seam. None means this turn cannot bind a fetched mark to an account; the
+    tool says so and refuses, and an empty account logo stays correct.
 
     The workspace's CLONED SECTIONS (F2.3) ride the same way, and are built here
     rather than taken as an argument: unlike the component registry they need no
@@ -8571,17 +8578,18 @@ def run_web_agent_turn(
             cloned_section_registry=DurableAgentClonedSectionRegistry(
                 blobs=turn_blobs, cache_dir=turn_cache_root
             ),
-            # F4.3 (ruling R25-1): the G1+G2 bridge, composed the same way and for the same
-            # reason. It is NOT gated on `account_card`: an ABM template is authored for the
-            # whole campaign rather than for one account, so the turn that fetches a target's
-            # mark usually carries no card — and refusing to bind then would leave exactly the
-            # gap this closes. The binder's own doors (the account must exist in THIS workspace,
-            # the bytes must be durably readable) are the permission answer, taken at the moment
-            # it is asked.
-            account_logo_binder=DurableAgentAccountLogoBinder(
-                blobs=turn_blobs, cache_dir=turn_cache_root
-            ),
         )
+        if account_logo_binder is not None:
+            # F4.3 (ruling R25-1): the G1+G2 bridge. Passed IN rather than built here — unlike
+            # the cloned-section registry it needs the governed tool invoker, which lives at the
+            # worker seam (the `custom_component_registry` shape, and for the same reason).
+            #
+            # It is NOT gated on `account_card`: an ABM template is authored for the whole
+            # campaign rather than for one account, so the turn that fetches a target's mark
+            # usually carries no card — and refusing to bind then would leave exactly the gap
+            # this closes. The binder's own doors (the account must exist in THIS workspace, the
+            # bytes must be durably readable) are the permission answer, taken when it is asked.
+            config = replace(config, account_logo_binder=account_logo_binder)
         if custom_component_registry is not None:
             config = replace(
                 config,
@@ -9530,6 +9538,15 @@ def execute_web_turn_job(
                 account_card=account_card,
                 asset_library=asset_library,
                 custom_component_registry=custom_component_registry,
+                # F4.3 (R25-1): composed HERE, beside the component registry, because like it
+                # this capability's durable writes go through the governed design tools and the
+                # invoker is only assemblable at this seam. Unlike it there is no account or
+                # document to gate on — the binder's own workspace-scoped doors decide.
+                account_logo_binder=DurableAgentAccountLogoBinder(
+                    blobs=_turn_blob_store(host, workspace_id),
+                    cache_dir=_host_engine_cache_root(host, workspace_id),
+                    invocations=_turn_design_tools(host, run_subject),
+                ),
                 workspace_id=workspace_id,
                 # D5 Round C: see the scene executor.
                 blobs=_turn_blob_store(host, workspace_id),

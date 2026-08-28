@@ -463,11 +463,14 @@ def _fetched_record(body: bytes, asset_id: str = "asset_ing_deadbeefdeadbeef") -
     }
 
 
-def _binder(workspace_id: str, storage: FsStorage, cache: Path):
+def _binder(client: TestClient, workspace_id: str, storage: FsStorage, cache: Path):
+    """The REAL binder, on the app's REAL governed invoker — both its writes are tools."""
     from lumen_api.agent_account_logos import DurableAgentAccountLogoBinder
 
     return DurableAgentAccountLogoBinder(
-        blobs=DesignBlobStore(storage, workspace_id), cache_dir=cache
+        blobs=DesignBlobStore(storage, workspace_id),
+        cache_dir=cache,
+        invocations=client.app.state.design_tools,
     )
 
 
@@ -488,7 +491,7 @@ def test_the_bridge_registers_the_asset_and_stamps_the_account(
     template = _abm_template(client, workspace_id, design_storage, cache)
     account = _account(client, "Goodman Campbell")
 
-    result = _binder(workspace_id, design_storage, cache).bind(
+    result = _binder(client, workspace_id, design_storage, cache).bind(
         account_id=account, record=dict(record)
     )
 
@@ -516,7 +519,7 @@ def test_the_bridge_refuses_another_workspaces_account_and_stamps_nothing(
     cache = tmp_path / "cache"
     _stage_bytes(cache, TINY_PNG)
     account = _account(client, "Goodman Campbell")
-    stranger = _binder("ws_someone_else", design_storage, cache)
+    stranger = _binder(client, "ws_someone_else", design_storage, cache)
 
     with pytest.raises(AccountLogoRefused) as raised:
         stranger.bind(account_id=account, record=_fetched_record(TINY_PNG))
@@ -538,7 +541,7 @@ def test_the_bridge_refuses_a_record_whose_bytes_nothing_holds(
     account = _account(client, "Goodman Campbell")
 
     with pytest.raises(AccountLogoRefused) as raised:
-        _binder(workspace_id, design_storage, cache).bind(
+        _binder(client, workspace_id, design_storage, cache).bind(
             account_id=account, record=_fetched_record(TINY_PNG)
         )
 
@@ -553,7 +556,7 @@ def test_re_binding_the_same_mark_converges(
     cache = tmp_path / "cache"
     _stage_bytes(cache, TINY_PNG)
     account = _account(client, "Goodman Campbell")
-    binder = _binder(workspace_id, design_storage, cache)
+    binder = _binder(client, workspace_id, design_storage, cache)
 
     first = binder.bind(account_id=account, record=_fetched_record(TINY_PNG))
     second = binder.bind(account_id=account, record=_fetched_record(TINY_PNG))
@@ -603,7 +606,7 @@ def test_a_bound_record_resolves_by_digest_whichever_arm_the_resolver_takes(
     assert record["media"]["location"]["opaque_ref"] == f"sha256/{digest[:2]}/{digest}"
     assert location_digest(record["media"]["location"]) == digest
 
-    _binder(workspace_id, design_storage, cache).bind(account_id=account, record=record)
+    _binder(client, workspace_id, design_storage, cache).bind(account_id=account, record=record)
 
     stored = HybridRepository(workspace_id=workspace_id).require_asset_record(record["id"])[
         "asset"
