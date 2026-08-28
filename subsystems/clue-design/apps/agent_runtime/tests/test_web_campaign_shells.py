@@ -144,7 +144,9 @@ class FakeRegistry:
             },
         }
 
-    def legal_link_evidence(self):
+    def legal_link_evidence(self, *, kit_id=None):
+        self.legal_kit_ids = getattr(self, "legal_kit_ids", [])
+        self.legal_kit_ids.append(kit_id)
         return [(self.legal_html, PAGE)] if self.legal_html else []
 
     def mint_campaign_shell(self, *, role, html, css, label, **kwargs):
@@ -323,7 +325,10 @@ def test_the_walk_mints_one_header_and_one_footer_for_the_kit(minted: dict) -> N
     assert result["seller"] == "Insight Health"
     assert all(shell["status"] == "draft" for shell in result["shells"])
     assert all(shell["insertable"] is False for shell in result["shells"])
-    assert "a human releases them by approving the brand kit" in result["release"]
+    # Truthful release wording (fix-round I1): the kit is usually ALREADY approved when the
+    # shells mint, so the release act is re-approval — the message must not send a human to a
+    # gate that already fired.
+    assert "RE-approving the brand kit" in result["release"]
 
 
 def test_the_header_reports_exactly_the_ruled_slots(minted: dict) -> None:
@@ -592,3 +597,93 @@ def test_the_picker_tells_a_shell_from_the_clients_own_footer(tmp_path: Path) ->
     assert rows["frag_00000000000000b2"]["composed"] == COMPOSED_CAMPAIGN_SHELL
     assert "not lifted off the client's site" in rows["frag_00000000000000b2"]["composed_note"]
     assert "composed" not in rows["frag_00000000000000a4"]
+
+
+# --------------------------------------------------------------------------- #
+# Fix round — the review's seam and honesty findings, pinned
+# --------------------------------------------------------------------------- #
+
+
+def test_the_real_render_annotates_through_the_real_slot_annotator(tmp_path: Path) -> None:
+    """Fix-round I5 — the §4 class of gap, one seam over. The gate test joins render+gate; this
+    joins render+ANNOTATOR, which is equally class-dependent (`inline.rs` bit the footer's links
+    on exactly this): a `<span>` class drop would raise `fragment.slot_selector_unmatched` in
+    production while both isolated suites stayed green."""
+    from lumen_api.fragments import sanitize_fragment_html
+    from lumen_api.fragments.campaign_shell import campaign_shell_slots
+    from lumen_api.fragments.slots import annotate_fragment_slots
+
+    registry = FakeRegistry(tmp_path)
+    tools = _tools(tmp_path, registry)
+
+    assert json.loads(tools.mint_campaign_shells())["status"] == "ok"
+
+    for call in registry.mint_calls:
+        sanitized = sanitize_fragment_html(call["html"], rehosted={}).html
+        annotated = annotate_fragment_slots(
+            sanitized, list(campaign_shell_slots(call["role"]))
+        )
+        manifest = annotated.slot_manifest
+        if call["role"] == CAMPAIGN_SHELL_HEADER:
+            assert {key: entry["kind"] for key, entry in manifest.items()} == {
+                "prepared_for": "text",
+                "target_logo": "image",
+                "cta_href": "href",
+                "cta_label": "text",
+            }
+            assert manifest["target_logo"]["fallback"] == COBRAND_DIGEST
+        else:
+            assert manifest == {}
+
+
+def test_the_evidence_read_is_scoped_to_the_turns_kit(minted: dict) -> None:
+    """Fix-round I3, the tool half: the legal-link evidence read names THIS kit, so another
+    brand's footer can never supply the links in a multi-brand workspace."""
+    registry = minted["tools"]._cloned_section_registry()
+    assert registry.legal_kit_ids == ["brand_kit_1"]
+
+
+def test_a_foreign_hosted_legal_link_is_dropped_and_said(tmp_path: Path) -> None:
+    """Fix-round C1, the honesty half: a legal-looking link on a third party's host is dropped —
+    and the tool SAYS so, because "found none" would be a lie about a footer whose policy is
+    genuinely hosted elsewhere."""
+    registry = FakeRegistry(
+        tmp_path,
+        legal_html=(
+            '<section><a href="https://trustarc.example/privacy-certified">Privacy'
+            "</a></section>"
+        ),
+    )
+    tools = _tools(tmp_path, registry)
+
+    result = json.loads(tools.mint_campaign_shells())
+
+    assert result["status"] == "ok"
+    assert result["legal_links"] == []
+    assert result["legal_links_dropped"] == ["https://trustarc.example/privacy-certified"]
+    assert "different host" in result["legal_links_dropped_note"]
+    # And the empty footer is still said to be empty, clean rather than broken.
+    assert "legal_links_note" in result
+
+
+def test_an_only_inverse_mark_kit_composes_but_says_so(tmp_path: Path) -> None:
+    """Fix-round M4: a kit holding ONLY light/reversed logo variants still gets its shells (a
+    mark the client owns beats none), but the tool says the mark was drawn for dark surfaces so
+    a human reviews the header before release."""
+    registry = FakeRegistry(tmp_path)
+    kit = _brand_kit()
+    kit["assets"]["logos"]["primary"]["variants"] = [
+        {"name": "reversed", "color_mode": "reversed", "asset_id": "logo_rev"}
+    ]
+    tools = _tools(tmp_path, registry, brand_kit=kit)
+
+    result = json.loads(tools.mint_campaign_shells())
+
+    assert result["status"] == "ok"
+    assert "seller_mark_note" in result
+    assert "DARK surfaces" in result["seller_mark_note"]
+
+
+def test_a_full_colour_mark_carries_no_dark_surface_warning(minted: dict) -> None:
+    """The note is about the inverse-only kit, never noise on a healthy one."""
+    assert "seller_mark_note" not in minted["result"]

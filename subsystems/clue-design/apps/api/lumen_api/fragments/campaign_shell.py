@@ -85,8 +85,9 @@ MARK_LEGAL = "lumen-shell-legal"
 MARK_SELLER_MARK = "lumen-shell-seller-mark"
 
 #: The classes the engine will warn about as unknown utilities (``LUMW0220``). Ours, deliberately
-#: — named here so the mint can drop that one warning from its report instead of handing the
-#: caller noise about a marker it planted itself.
+#: — named here for the reader (and the tests). The compose-time warnings about them are NOT
+#: currently surfaced in the tool's report, so nothing filters on this set yet; if mint reporting
+#: ever starts carrying render warnings, this is the set to exempt (fix-round M1).
 CAMPAIGN_SHELL_MARKER_CLASSES: frozenset[str] = frozenset(
     {MARK_PREPARED_FOR, MARK_TARGET_LOGO, MARK_CTA, MARK_CTA_LABEL, MARK_LEGAL, MARK_SELLER_MARK}
 )
@@ -186,29 +187,87 @@ class LegalLink:
     href: str
 
 
-#: What counts as a legal page, in the order a footer lists them. Matched against the link's
-#: path and its own words — never against a guess about a url we never saw.
-_LEGAL_PATTERNS: tuple[tuple[str, str, re.Pattern[str]], ...] = (
-    ("privacy", "Privacy", re.compile(r"privacy", re.I)),
-    ("terms", "Terms", re.compile(r"terms|conditions|tos\b", re.I)),
+#: What counts as a legal page, in the order a footer lists them, with the CANONICAL label each
+#: ships under. The label is what the link IS, never the anchor's arbitrary words — a truncated
+#: blog title is not a footer label (fix-round C1).
+_LEGAL_KINDS: tuple[tuple[str, str], ...] = (
+    ("privacy", "Privacy Policy"),
+    ("terms", "Terms of Service"),
 )
 
 #: An honest cap. A footer that discovered nine "legal" links found a nav, not a legal block.
-MAX_LEGAL_LINKS = len(_LEGAL_PATTERNS)
+MAX_LEGAL_LINKS = len(_LEGAL_KINDS)
+
+#: Splits a path segment into words: `privacy-policy` → {privacy, policy}.
+_SEGMENT_WORDS = re.compile(r"[^a-z0-9]+")
+
+#: The words that, inside ONE path segment, make "conditions" mean terms-and-conditions rather
+#: than a medical conditions page ("Conditions we treat" was the review's live false positive).
+_CONDITIONS_COMPANIONS = frozenset({"terms", "use", "service", "sale"})
 
 
-def discover_legal_links(evidence: Iterable[tuple[str, str]]) -> tuple[LegalLink, ...]:
+def _classify_legal_path(path: str) -> str | None:
+    """``privacy``/``terms`` when a WHOLE path segment says so, else ``None``.
+
+    The path decides and the anchor's words never do (fix-round C1): the review broke the old
+    substring match live — ``tos`` inside ``/photos``, "conditions" on ``/conditions/diabetes``,
+    a blog title carrying the word "privacy". Segment words are exact, so none of those match,
+    while ``/privacy-policy``, ``/legal/terms`` and ``/terms-and-conditions`` all still do.
+    """
+    for segment in (path or "").lower().split("/"):
+        words = {word for word in _SEGMENT_WORDS.split(segment) if word}
+        if "privacy" in words:
+            return "privacy"
+        if "terms" in words or "tos" in words:
+            return "terms"
+        if "conditions" in words and words & _CONDITIONS_COMPANIONS:
+            return "terms"
+    return None
+
+
+def _same_site(candidate_host: str, base_host: str) -> bool:
+    """Is this the seller's own host? Equal or subdomain-of, ``www.`` disregarded.
+
+    Deliberately suffix-of rather than a registrable-domain guess: without a public-suffix list,
+    "last two labels" would call every ``*.co.uk`` pair the same site. Suffix-of errs the safe
+    way — a genuine sibling host is dropped (and reported) rather than a stranger shipped.
+    """
+    trimmed_candidate = candidate_host.lower().removeprefix("www.")
+    trimmed_base = base_host.lower().removeprefix("www.")
+    if not trimmed_candidate or not trimmed_base:
+        return False
+    return (
+        trimmed_candidate == trimmed_base
+        or trimmed_candidate.endswith("." + trimmed_base)
+        or trimmed_base.endswith("." + trimmed_candidate)
+    )
+
+
+def discover_legal_links(
+    evidence: Iterable[tuple[str, str]], *, dropped_foreign: list[str] | None = None
+) -> tuple[LegalLink, ...]:
     """The seller's privacy/terms links, read out of markup their own site produced.
 
-    ``evidence`` is ``(html, base_url)`` pairs — harvested footer/nav fragments, whose anchors are
+    ``evidence`` is ``(html, base_url)`` pairs — harvested footer fragments, whose anchors are
     the client's actual legal links. Relative hrefs are resolved against the page they came from,
     because a campaign page is served from OUR origin and a bare ``/privacy`` on it would 404;
     an href that cannot be made absolute is DROPPED rather than shipped broken.
+
+    Three rules, each the fix for a live false positive (fix-round C1) — a false positive here is
+    a gate-blessed escape route in the footer of every account page, so every rule errs empty:
+
+    * **the path decides; the anchor's words never do** (:func:`_classify_legal_path`);
+    * **the link must be the seller's own site** — same host as the evidence page or a subdomain
+      of it. A legal-looking URL on a third party's host is dropped, and NAMED into
+      ``dropped_foreign`` when the caller passes a list, because "found none" would be a lie
+      about a footer whose policy is genuinely hosted elsewhere;
+    * **the label is canonical** ("Privacy Policy" / "Terms of Service"), never anchor text.
 
     Finds nothing → returns nothing, and the footer is composed without a legal block. That is
     the empty-and-clean answer R23-2 asks for, not a failure.
     """
     found: dict[str, LegalLink] = {}
+    labels = dict(_LEGAL_KINDS)
     for html, base_url in evidence:
         if not html:
             continue
@@ -220,20 +279,18 @@ def discover_legal_links(evidence: Iterable[tuple[str, str]]) -> tuple[LegalLink
             href = (node.attributes.get("href") or "").strip()
             if not href:
                 continue
-            words = " ".join((node.text(deep=True) or "").split())
             absolute = _absolute_http_href(href, base_url)
             if absolute is None:
                 continue
-            for kind, label, pattern in _LEGAL_PATTERNS:
-                if kind in found:
-                    continue
-                # The PATH, not the whole url: a link to `https://privacy.example/about` is not a
-                # privacy policy, and the host is where that false positive lives.
-                path = urlsplit(absolute).path or ""
-                if pattern.search(path) or pattern.search(words):
-                    found[kind] = LegalLink(kind=kind, label=words[:40] or label, href=absolute)
-                    break
-    return tuple(found[kind] for kind, _label, _pattern in _LEGAL_PATTERNS if kind in found)
+            kind = _classify_legal_path(urlsplit(absolute).path or "")
+            if kind is None or kind in found:
+                continue
+            if not _same_site(urlsplit(absolute).netloc, urlsplit(base_url or "").netloc):
+                if dropped_foreign is not None and absolute not in dropped_foreign:
+                    dropped_foreign.append(absolute)
+                continue
+            found[kind] = LegalLink(kind=kind, label=labels[kind], href=absolute)
+    return tuple(found[kind] for kind, _label in _LEGAL_KINDS if kind in found)
 
 
 def _absolute_http_href(href: str, base_url: str) -> str | None:
@@ -284,8 +341,13 @@ def compose_campaign_header(
         f'<span class="{MARK_PREPARED_FOR}">{escape(prepared_for)}</span>'
         "</p>"
         "</div>"
+        # `rounded-button`, not a platform radius: the engine resolves it through the kit's
+        # measured `radius.button` chain (theme.rs GEOMETRY_UTILITIES), so the Grammar Audit's
+        # measured corner law governs the one control the shell has (fix-round I4 / R23-F4).
+        # Container width and the strip's type size have no engine token to consume — those
+        # stay platform defaults, stated here rather than silently.
         f'<div data-href="{escape(cta_href, quote=True)}" '
-        f'class="{MARK_CTA} inline-flex items-center rounded-md bg-primary px-5 py-2">'
+        f'class="{MARK_CTA} inline-flex items-center rounded-button bg-primary px-5 py-2">'
         '<p class="text-sm font-semibold text-inverse">'
         f'<span class="{MARK_CTA_LABEL}">{escape(cta_label)}</span>'
         "</p>"
@@ -342,9 +404,20 @@ def compose_campaign_footer(
 # the no-escape-route rule (ruling R23-3)
 # --------------------------------------------------------------------------- #
 
-#: Elements a shell may not contain at all. A ``<nav>`` is a menu by declaration; a ``<button>``
-#: or a ``<select>`` is a second action competing with the one the page is for.
-_FORBIDDEN_SHELL_ELEMENTS = ("nav", "button", "select", "menu")
+#: Elements a shell may not contain at all. A ``<nav>`` is a menu by declaration; a ``<button>``,
+#: a ``<select>``, an ``<input>`` or a ``<textarea>`` is a second control competing with the one
+#: action the page is for; and a ``<map>``/``<area>`` is a navigation target ``css("a")`` does
+#: not count (fix-round M3).
+_FORBIDDEN_SHELL_ELEMENTS = (
+    "nav",
+    "button",
+    "select",
+    "menu",
+    "input",
+    "textarea",
+    "map",
+    "area",
+)
 
 
 def assert_campaign_shell_shape(role: str, html: str) -> None:

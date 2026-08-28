@@ -90,7 +90,8 @@ def _rendered_header(
         f'class="{MARK_TARGET_LOGO} max-h-8 w-auto">'
         '<div data-tv="body" class="text-sm text-muted"><p>Prepared for '
         f'<span class="{MARK_PREPARED_FOR}">{prepared_for}</span></p></div></div>'
-        f'<a href="{cta_href}" class="{MARK_CTA} inline-flex items-center rounded-md bg-primary '
+        f'<a href="{cta_href}" data-lumen-container-link="" '
+        f'class="{MARK_CTA} inline-flex items-center rounded-button bg-primary '
         'px-5 py-2"><div data-tv="body" class="text-sm font-semibold text-inverse"><p>'
         f'<span class="{MARK_CTA_LABEL}">{cta_label}</span></p></div></a>'
         f"{extra}</div></section>"
@@ -224,17 +225,24 @@ def test_a_shell_naming_bytes_we_do_not_hold_refuses_like_any_other_fragment(
 def test_a_released_shell_is_released_by_the_kit_approval_surface_and_then_pins(
     workspace_id: str, design_storage: FsStorage, tmp_path
 ) -> None:
-    """Nothing in the mint can put a shell on a page; a human's kit approval can (R-I5)."""
+    """Nothing in the mint can put a shell on a page; a human's kit approval can (R-I5).
+
+    Through the REAL cascade, not `set_web_fragment_status` (fix-round I1): the shells bind to a
+    kit that is normally ALREADY approved when they mint, so the release act is RE-approving it —
+    `update_brand_kit_approval` is not transition-gated, and the version-scoped cascade then moves
+    every draft fragment of that kit version, these shells included.
+    """
     kit = _seed_kit(workspace_id)
     registry = _registry(workspace_id, design_storage, tmp_path / "cache")
     minted = _mint_header(registry, kit)
 
     assert registry.list_sections()["sections"] == []
 
-    set_web_fragment_status(
-        workspace_id=workspace_id, fragment_id=minted["fragment_id"], status="approved"
+    HybridRepository(workspace_id=workspace_id).update_brand_kit_approval(
+        kit["brand_kit_id"], "approved"
     )
 
+    assert _fragment(workspace_id, minted["fragment_id"])["status"] == "approved"
     resolved = registry.resolve_insertable(minted["fragment_id"])
     assert resolved["fragment_id"] == minted["fragment_id"]
     assert resolved["render"]["slot_kinds"]["prepared_for"] == "text"
@@ -534,6 +542,94 @@ def test_a_privacy_hostname_is_not_a_privacy_policy() -> None:
 
 
 # --------------------------------------------------------------------------- #
+# Fix round — C1: the classifier's false positives, each the review's live repro
+# --------------------------------------------------------------------------- #
+
+
+def test_the_legal_classifier_decides_by_path_segments_never_by_words() -> None:
+    """Fix-round C1, the reviewer's own table. A footer anchor whose PATH is not a legal page is
+    not a legal link, whatever its words say — because whatever discovery returns is structurally
+    gate-blessed on every account page, a false positive here is a permanent escape route."""
+    for html in (
+        # `tos` matched inside "photos" (no leading boundary).
+        '<footer><a href="/photos">Photos</a></footer>',
+        # The words decided while the path said otherwise.
+        '<footer><a href="/gallery">Our Photos</a></footer>',
+        # "conditions" alone is a medical page on exactly the persona the walk used.
+        '<footer><a href="/conditions/diabetes">Conditions we treat</a></footer>',
+        # A blog title carrying the word "privacy".
+        '<footer><a href="/blog/2026-outlook">Privacy in healthcare: what changes</a></footer>',
+    ):
+        assert discover_legal_links([(html, PAGE)]) == (), html
+
+    # And the real shapes still classify — by their path, not their words.
+    links = discover_legal_links(
+        [
+            (
+                '<footer><a href="/privacy-policy">whatever the anchor says</a>'
+                '<a href="/terms-and-conditions">also unread</a></footer>',
+                PAGE,
+            )
+        ]
+    )
+    assert [link.kind for link in links] == ["privacy", "terms"]
+    links = discover_legal_links([('<footer><a href="/tos">TOS</a></footer>', PAGE)])
+    assert [link.kind for link in links] == ["terms"]
+
+
+def test_a_third_party_legal_host_is_dropped_and_named() -> None:
+    """Fix-round C1: a legal-looking URL on somebody else's host never ships on an ABM page —
+    and the drop is REPORTED, because "no legal links were found" would be a lie."""
+    dropped: list[str] = []
+    links = discover_legal_links(
+        [
+            (
+                '<footer><a href="https://trustarc.example/privacy-certified">Privacy '
+                "certified</a></footer>",
+                PAGE,
+            )
+        ],
+        dropped_foreign=dropped,
+    )
+
+    assert links == ()
+    assert dropped == ["https://trustarc.example/privacy-certified"]
+
+
+def test_a_www_subdomain_is_the_sellers_own_site() -> None:
+    """The same-site rule is host-or-subdomain, so `www.` never costs a real legal link."""
+    links = discover_legal_links(
+        [
+            (
+                '<footer><a href="https://www.insight.example/privacy">P</a></footer>',
+                "https://insight.example/",
+            )
+        ]
+    )
+
+    assert [link.href for link in links] == ["https://www.insight.example/privacy"]
+
+
+def test_legal_labels_are_canonical_never_the_anchors_words() -> None:
+    """Fix-round C1: the label is what the link IS ("Privacy Policy" / "Terms of Service"),
+    never the anchor's arbitrary words — a 40-char blog title is not a footer label."""
+    links = discover_legal_links(
+        [
+            (
+                '<footer><a href="/privacy">Read all about how we handle your data here</a>'
+                '<a href="/terms">The fine print, every last word of it</a></footer>',
+                PAGE,
+            )
+        ]
+    )
+
+    assert [(link.kind, link.label) for link in links] == [
+        ("privacy", "Privacy Policy"),
+        ("terms", "Terms of Service"),
+    ]
+
+
+# --------------------------------------------------------------------------- #
 # Red case 5 — the provenance marker, and discovery
 # --------------------------------------------------------------------------- #
 
@@ -695,7 +791,7 @@ def test_a_role_that_is_not_a_shell_cannot_be_minted_as_one(
 def test_the_legal_link_evidence_is_read_from_this_workspaces_footer_clones(
     workspace_id: str, design_storage: FsStorage, tmp_path
 ) -> None:
-    create_web_fragment(
+    row, _artifact = create_web_fragment(
         design_storage,
         workspace_id=workspace_id,
         html='<section class="f"><a href="/privacy">Privacy</a></section>',
@@ -706,10 +802,77 @@ def test_the_legal_link_evidence_is_read_from_this_workspaces_footer_clones(
         label="Footer",
         provenance={"page_url": PAGE, "section_index": 4},
     )
+    # RELEASED evidence only (fix-round I3): a draft footer has not been judged fit to reuse,
+    # and dormant/deprecated ones are excluded for their own reasons.
+    set_web_fragment_status(
+        workspace_id=workspace_id, fragment_id=row["fragment_id"], status="approved"
+    )
     registry = _registry(workspace_id, design_storage, tmp_path / "cache")
 
     links = discover_legal_links(registry.legal_link_evidence())
 
+    assert [link.href for link in links] == ["https://insight.example/privacy"]
+
+
+def test_legal_evidence_reads_only_approved_footer_clones_of_the_kit(
+    workspace_id: str, design_storage: FsStorage, tmp_path
+) -> None:
+    """Fix-round I3. A dormant footer is hidden on the source site (D-F8) and a deprecated one is
+    retired; a nav is full of product links; another brand's footer is another brand's law. None
+    of them may supply the legal links that ship on every ABM page for THIS kit."""
+    _seed_kit(workspace_id, kit_id="brand_kit_other", version=1)
+    _seed_kit(workspace_id, kit_id="brand_kit_ours", version=1)
+
+    def _seed(html: str, *, role: str, status: str, kit: str | None = None) -> str:
+        seeded, _ = create_web_fragment(
+            design_storage,
+            workspace_id=workspace_id,
+            html=html,
+            css=".f { color: #111 }",
+            rehosted={},
+            source_url=PAGE,
+            section_role=role,
+            label=f"{role} ({status})",
+            source_kit_id=kit,
+            source_kit_version=1 if kit else None,
+            provenance={"page_url": PAGE, "section_index": 1},
+            # Dormancy is a BIRTH fact (D-F8); approval is a transition.
+            status="dormant" if status == "dormant" else None,
+        )
+        if status not in ("draft", "dormant"):
+            set_web_fragment_status(
+                workspace_id=workspace_id, fragment_id=seeded["fragment_id"], status=status
+            )
+        return str(seeded["fragment_id"])
+
+    _seed('<section><a href="/its-privacy">A</a></section>', role="footer", status="draft")
+    _seed('<section><a href="/its-privacy">B</a></section>', role="footer", status="dormant")
+    deprecated = _seed(
+        '<section><a href="/its-privacy">C</a></section>', role="footer", status="approved"
+    )
+    set_web_fragment_status(
+        workspace_id=workspace_id, fragment_id=deprecated, status="deprecated"
+    )
+    _seed(
+        '<section><a href="/its-privacy">D</a></section>',
+        role="footer",
+        status="approved",
+        kit="brand_kit_other",
+    )
+    _seed('<section><a href="/its-privacy">E</a></section>', role="nav", status="approved")
+    _seed(
+        '<section><a href="/privacy">Ours</a></section>',
+        role="footer",
+        status="approved",
+        kit="brand_kit_ours",
+    )
+    registry = _registry(workspace_id, design_storage, tmp_path / "cache")
+
+    evidence = registry.legal_link_evidence(kit_id="brand_kit_ours")
+
+    assert len(evidence) == 1
+    assert 'href="/privacy"' in evidence[0][0]
+    links = discover_legal_links(evidence)
     assert [link.href for link in links] == ["https://insight.example/privacy"]
 
 
@@ -879,3 +1042,83 @@ def test_an_account_with_no_logo_renders_a_clean_header_not_a_broken_one(
         assert f">{placeholder}<" not in html
     # And nothing about the missing logo broke the rest of the strip.
     assert "See the Acme Health walkthrough" in html
+
+
+# --------------------------------------------------------------------------- #
+# Fix round — I2: the sibling repair door mints under the shell contract too
+# --------------------------------------------------------------------------- #
+#
+# `mint_repair` is the shells' one other producer: an agent may repair a pinned shell. Without
+# these rules a "repair" of a campaign header could carry a nav full of escape routes (the gate
+# never ran), drop the `composed` marker (the picker reads it as a harvested clone, and the
+# recreate's page-set sees its sentinel source_url again), and swap the RULED editing surface for
+# whatever the harvest detector found. Ruling R23-F1: a shell-role repair goes through the shell
+# gate, keeps the ruled slots, and inherits `composed`.
+
+
+def test_a_repair_of_a_shell_cannot_carry_a_nav_the_shell_gate_refuses_it(
+    workspace_id: str, design_storage: FsStorage, tmp_path
+) -> None:
+    registry = _registry(workspace_id, design_storage, tmp_path / "cache")
+    minted = _mint_header(registry)
+
+    with pytest.raises(FragmentRefused) as refusal:
+        registry.mint_repair(
+            replaces=minted["fragment_id"],
+            html=_rendered_header(extra="<nav><p>Products</p></nav>"),
+            css=SHELL_CSS,
+            rung=2,
+            note="a nav wearing a repair's clothes",
+        )
+
+    assert refusal.value.code == "fragment.shell_escape_route"
+
+
+def test_a_lawful_shell_repair_stays_composed_and_keeps_the_ruled_slots(
+    workspace_id: str, design_storage: FsStorage, tmp_path
+) -> None:
+    registry = _registry(workspace_id, design_storage, tmp_path / "cache")
+    minted = _mint_header(registry)
+
+    repair = registry.mint_repair(
+        replaces=minted["fragment_id"],
+        html=_rendered_header(cta_label="Talk to us"),
+        css=SHELL_CSS,
+        rung=2,
+        note="a calmer call to action",
+    )
+
+    row = _fragment(workspace_id, repair["fragment_id"])
+    provenance = row["provenance"]
+    assert provenance["composed"] == COMPOSED_CAMPAIGN_SHELL
+    # A shell sat on no page, and neither does its repair: never the sentinel source_url.
+    assert provenance["page_url"] is None
+    assert row["derived_from"] == minted["fragment_id"]
+    stored = read_web_fragment(
+        design_storage, workspace_id=workspace_id, fragment_id=repair["fragment_id"]
+    )
+    # The RULED surface, not the harvest detector's: exactly the four header slots.
+    assert sorted(stored.slot_manifest) == ["cta_href", "cta_label", "prepared_for", "target_logo"]
+
+
+def test_a_shell_repair_that_loses_the_marker_classes_refuses(
+    workspace_id: str, design_storage: FsStorage, tmp_path
+) -> None:
+    """A repair that dropped a marker has no place for the ruled slot to live — refused typed,
+    telling the composer to keep the markers, never minted with a shrunken surface."""
+    registry = _registry(workspace_id, design_storage, tmp_path / "cache")
+    minted = _mint_header(registry)
+    unmarked = _rendered_header(cta_label="Different words").replace(
+        f'class="{MARK_PREPARED_FOR}"', 'class=""'
+    )
+
+    with pytest.raises(FragmentRefused) as refusal:
+        registry.mint_repair(
+            replaces=minted["fragment_id"],
+            html=unmarked,
+            css=SHELL_CSS,
+            rung=2,
+            note="lost the prepared-for marker",
+        )
+
+    assert refusal.value.code == "fragment.slot_selector_unmatched"

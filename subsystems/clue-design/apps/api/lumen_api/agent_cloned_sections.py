@@ -826,7 +826,20 @@ class DurableAgentClonedSectionRegistry:
         # The mint path's own order, not a re-arrangement of it: a slot must never be stamped on
         # an element the sanitizer was about to remove (`sections/mint.py`'s standing rule).
         sanitized = sanitize_fragment_html(html, rehosted={})
-        detected = detect_slots(sanitized.html)
+
+        # A shell-role repair mints under the SHELL contract (ruling R23-F1, fix-round I2): the
+        # no-escape-route gate runs on it exactly as on the shell it replaces — this door was the
+        # one producer of `campaign_header` fragments the gate never saw, and the review minted a
+        # nav-carrying "repair" through it live — and its editing surface is the RULED slots, not
+        # whatever the harvest detector finds. A repair whose markup dropped a marker class has
+        # no place for a ruled slot to live and refuses typed at the annotator
+        # (`fragment.slot_selector_unmatched`) rather than minting with a shrunken surface.
+        original_role = str(original.get("section_role") or "other")
+        if original_role in CAMPAIGN_SHELL_ROLES:
+            assert_campaign_shell_shape(original_role, sanitized.html)
+            slot_specs = list(campaign_shell_slots(original_role))
+        else:
+            slot_specs = list(detect_slots(sanitized.html).specs)
 
         # What the original's markup literally is, for the "did this repair anything?" check
         # below. Fail-SOFT on an unreadable original: a purged payload must not block repairing
@@ -843,7 +856,7 @@ class DurableAgentClonedSectionRegistry:
             html=sanitized.html,
             css=css,
             rehosted={},
-            slots=list(detected.specs),
+            slots=slot_specs,
             preview_digest=None,
             prelude_reference=PRELUDE_REFERENCE_STRIP,
         )
@@ -878,7 +891,7 @@ class DurableAgentClonedSectionRegistry:
             html=sanitized.html,
             css=css,
             rehosted={},
-            slots=list(detected.specs),
+            slots=slot_specs,
             source_url=str(original.get("source_url") or ""),
             section_role=str(original.get("section_role") or "other"),
             label=_repair_label(original),
@@ -900,7 +913,7 @@ class DurableAgentClonedSectionRegistry:
             "derived_from": row.get("derived_from"),
             "derived_reason": row.get("derived_reason"),
             "requested_derived_reason": reason,
-            "slot_keys": list(detected.keys),
+            "slot_keys": [spec.key for spec in slot_specs],
             "asset_digests": list(artifact.payload.get("asset_digests") or []),
             # The FIRST pass's notes are the real ones. `create_web_fragment` sanitizes again
             # (idempotently) over markup this method already cleaned, so the artifact's own notes
@@ -969,18 +982,31 @@ class DurableAgentClonedSectionRegistry:
     #: one costs a payload read.
     LEGAL_EVIDENCE_MAX = 4
 
-    def legal_link_evidence(self) -> List[tuple]:
-        """``[(html, page_url), …]`` from this workspace's harvested footer and nav clones.
+    def legal_link_evidence(self, *, kit_id: Optional[str] = None) -> List[tuple]:
+        """``[(html, page_url), …]`` from this workspace's RELEASED footer clones.
 
         The seller's own privacy and terms links, in the markup their own site produced — which
         is the only place F4.1 will take them from. Fail-SOFT per row: a purged payload costs its
         own evidence and nothing else, because a footer with no legal block is a correct footer
         (R23-2's empty-and-clean) and must never be the reason a shell refuses to mint.
+
+        Three filters, each a fix-round I3 rule about what may supply the links that ship on
+        every ABM page:
+
+        * **``approved`` only.** A ``dormant`` footer is hidden on the source site (D-F8), a
+          ``deprecated`` one is retired, and a ``draft`` one has not been judged fit to reuse —
+          none of them is evidence of what the seller's live site links.
+        * **``footer`` role only.** A nav is full of product links — the exact false-positive
+          surface C1 closed — and the legal block lives in the footer.
+        * **This kit's rows, when ``kit_id`` is given.** In a multi-brand workspace another
+          brand's footer is another brand's law.
         """
         rows = [
             row
             for row in self._repository().list_web_fragments()
-            if row.get("section_role") in ("footer", "nav")
+            if row.get("section_role") == "footer"
+            and row.get("status") == "approved"
+            and (kit_id is None or row.get("source_kit_id") == kit_id)
         ]
         evidence: List[tuple] = []
         for row in rows[: self.LEGAL_EVIDENCE_MAX]:
@@ -1142,11 +1168,20 @@ def _repair_provenance(
     order is what makes the picker read like the page (W5), and a repair that recorded no
     position would drop to the end of a recreated homepage — which is precisely the "adds
     nothing, reorders nothing" property F3.1 exists to guarantee.
+
+    ``composed`` is inherited too (ruling R23-F1, fix-round I2): a repair of a campaign shell is
+    still a composed shell, and every surface that reads the marker — the picker's note, the
+    recreate's exclusion — must see it on the repair or the §1.8 defects re-enter through this
+    door. For a composed original, ``page_url`` stays ``None`` rather than falling back to the
+    ``composed:`` sentinel ``source_url``: a shell sat on no page, and neither does its repair.
     """
     inherited = original.get("provenance")
     inherited = inherited if isinstance(inherited, dict) else {}
-    return {
-        "page_url": inherited.get("page_url") or original.get("source_url"),
+    composed = inherited.get("composed")
+    composed = composed if isinstance(composed, str) and composed else None
+    provenance: JsonObject = {
+        "page_url": inherited.get("page_url")
+        or (None if composed else original.get("source_url")),
         "section_index": inherited.get("section_index"),
         "section_role": original.get("section_role"),
         "repair": {
@@ -1159,6 +1194,12 @@ def _repair_provenance(
             "source": "engine_render",
         },
     }
+    if composed:
+        provenance["composed"] = composed
+        shell_role = inherited.get("shell_role")
+        if isinstance(shell_role, str) and shell_role:
+            provenance["shell_role"] = shell_role
+    return provenance
 
 
 __all__ = [

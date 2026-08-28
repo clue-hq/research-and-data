@@ -80,6 +80,10 @@ from lumen_api.fragments.slots import SLOT_KIND_TO_NODE_TAG
 # toolchain says so instead of failing obscurely — but a fleet worker that is expected to repair
 # clones needs a full checkout, not just this package's Python dependencies.
 from lumen_api.web_export import WebExportToolchainMissing, compile_section_css
+
+# `logo_policy`'s own vocabulary for marks drawn for dark surfaces (fix-round M4): one home,
+# imported, so a retune of what counts as inverse-capable moves the shell picker with it.
+from lumen_ingestion.logo_policy import INVERSE_CAPABLE_COLOR_MODES
 from lumen_ingestion.capture.net import (
     REQUEST_TIMEOUT_SECONDS,
     BoundedFetcher,
@@ -5780,9 +5784,12 @@ class LumenWebTools:
         company's logo, and the header is composed so that an unbound one shows nothing at all.
         The footer has no slots — nothing in it changes per account.
 
-        The shells are born UNRELEASED like every cloned section: a human releases them by
-        approving the brand kit. Until then they are not on any page and `insert_cloned_section`
-        will refuse them. Say so; do not claim a page carries a shell it cannot pin yet.
+        The shells are born UNRELEASED like every cloned section, and the kit you composed them
+        from is usually ALREADY approved — so the release act is a human RE-approving the brand
+        kit (posting its approval again), which releases every draft fragment minted against
+        that kit version, these shells included. Until then they are not on any page and
+        `insert_cloned_section` will refuse them. Say so; do not claim a page carries a shell it
+        cannot pin yet.
         """
         registry = self._cloned_section_registry()
         if registry is None:
@@ -5812,11 +5819,19 @@ class LumenWebTools:
                 "the kit's own logo — never refetched and never redrawn. Add a logo to the "
                 "brand kit and call this again.",
             )
-        seller_asset_id, seller_record = seller_mark
+        seller_asset_id, seller_record, seller_mark_mode = seller_mark
 
+        dropped_foreign: List[str] = []
         try:
             placeholder = registry.campaign_shell_placeholder()
-            legal_links = discover_legal_links(registry.legal_link_evidence())
+            # Evidence is this KIT's released footers (fix-round I3), and a legal-looking link
+            # on a third party's host is dropped and named (fix-round C1) rather than shipped.
+            legal_links = discover_legal_links(
+                registry.legal_link_evidence(
+                    kit_id=str(brand_kit["id"]) if brand_kit.get("id") else None
+                ),
+                dropped_foreign=dropped_foreign,
+            )
         except Exception as error:  # noqa: BLE001 - capability boundary
             return self._tool_error(
                 "cloned_section.registry_failed",
@@ -5913,11 +5928,34 @@ class LumenWebTools:
                 "or guessed mark."
             ),
         }
+        if seller_mark_mode in INVERSE_CAPABLE_COLOR_MODES:
+            # The kit holds ONLY light/reversed marks, so the best available is still an
+            # inverse-drawn one on the shell's light surface — the exact defect `logo_policy`
+            # names. Composed anyway (a mark the client owns beats none), but SAID, so a human
+            # reviews the header before release (fix-round M4).
+            result["seller_mark_note"] = (
+                f"the kit's best available logo variant is {seller_mark_mode!r}, a mark drawn "
+                "for DARK surfaces, and the shell strip is light — it may be hard to see. "
+                "Review the header before releasing it, or add a full-colour or dark-surface "
+                "logo variant to the brand kit and re-mint."
+            )
+        if dropped_foreign:
+            # "Found none" would be a lie about a footer whose policy is genuinely hosted
+            # elsewhere (fix-round C1): the drop is deliberate — a legal link on an ABM page
+            # must be the seller's own site — and it is said, so a human can supply the
+            # canonical URLs if these were real.
+            result["legal_links_dropped"] = dropped_foreign
+            result["legal_links_dropped_note"] = (
+                "these legal-looking links live on a different host than the seller's own "
+                "pages, so they were dropped rather than shipped on every account page. If "
+                "one of them really is the seller's policy, ask the client for the URL on "
+                "their own domain."
+            )
         if not legal_links:
             # Empty-and-clean is a correct footer, but a human who expected legal links should
             # hear that we looked and found none rather than notice the absence on a live page.
             result["legal_links_note"] = (
-                "no privacy or terms link was found in this workspace's harvested footers, so "
+                "no privacy or terms link was found in this kit's released footer clones, so "
                 "the footer carries none. That is a clean footer, not a broken one — say so, and "
                 "ask the client for the URLs if the campaign needs them."
             )
@@ -5926,8 +5964,10 @@ class LumenWebTools:
             result["release"] = (
                 "the shells are "
                 + ", ".join(sorted({str(shell["status"]) for shell in unreleased}))
-                + ": a human releases them by approving the brand kit, exactly as for every "
-                "other cloned section. They cannot be pinned until then."
+                + ": a human releases them by RE-approving the brand kit — the kit you composed "
+                "from is usually already approved, so the release act is posting its approval "
+                "again, which moves every draft fragment minted against this kit version, these "
+                "shells included. They cannot be pinned until then."
             )
         self.record(
             "author",
@@ -5961,7 +6001,12 @@ class LumenWebTools:
         if not isinstance(logos, dict):
             return None
         slot_rank = {"primary": 0, "wordmark": 1, "mark": 2, "logo": 3}
-        mode_rank = {"full_color": 0, "dark": 1, "one_color": 2, "light": 4, "reversed": 5}
+        # The light-surface penalty band starts after unknown (3); the modes it penalizes are
+        # `logo_policy`'s own vocabulary, imported rather than restated (fix-round M4).
+        mode_rank = {"full_color": 0, "dark": 1, "one_color": 2}
+        mode_rank.update(
+            {mode: 4 + index for index, mode in enumerate(sorted(INVERSE_CAPABLE_COLOR_MODES))}
+        )
         best: Optional[tuple] = None
         for slot_key, slot in sorted(logos.items()):
             if not isinstance(slot, dict):
@@ -5983,10 +6028,10 @@ class LumenWebTools:
                     asset_id,
                 )
                 if best is None or rank < best[0]:
-                    best = (rank, asset_id, copy.deepcopy(record))
+                    best = (rank, asset_id, copy.deepcopy(record), mode)
         if best is None:
             return None
-        return best[1], best[2]
+        return best[1], best[2], best[3]
 
     def _render_campaign_shell(
         self, role: str, html: str, assets: List[JsonObject]
@@ -6450,11 +6495,19 @@ class LumenWebTools:
                 input_summary=target,
                 output_summary="cloned_section_no_preview",
             )
+            # Two different truths (fix-round M2): a harvested band with no preview is one the
+            # browser could not crop; a COMPOSED shell was never photographed off a site at all,
+            # and saying "the browser measured" about it would be false.
+            why = (
+                "it was composed from the brand kit, not lifted off a site, and no picture of "
+                "it has been rendered yet"
+                if seen.get("composed")
+                else "no crop could be derived for this band from what the browser measured"
+            )
             return [
                 _text_block(
                     f"view: cloned section {fragment_id} — {label}. It has no preview image to "
-                    "look at: no crop could be derived for this band from what the browser "
-                    "measured. Judge it from its role, its label and its slots."
+                    f"look at: {why}. Judge it from its role, its label and its slots."
                 )
             ]
         self.record(
