@@ -194,6 +194,13 @@ class AgentRuntimeConfig:
     # `scene_reviewer_enabled`, never directly — that property is the single
     # place R3 is expressed.
     scene_reviewer: bool = False
+    # --- the WEB lane's own fast loop (clone-fidelity F3.3, founder rulings D-F7 / P-6) ------
+    # `fast_loop` above is scene-turn-only (§3 non-goal), so these two mirror its shape for web
+    # turns. Read `web_reviewer_enabled`, never these directly — that property is the single
+    # place the web quarantine rule is expressed, exactly as `scene_reviewer_enabled` is for
+    # scenes. Default OFF, and the default is a decision (see py_lumen_config for why).
+    web_fast_loop: bool = False
+    web_reviewer: bool = False
     # R4 budgets, re-shaped by ruling D1 (2026-08-26). Only consulted under
     # `fast_loop`. Two pairs, two jobs:
     #   * `fast_loop_target_*` — GUIDANCE. Communicated to the orchestrator in
@@ -254,6 +261,8 @@ class AgentRuntimeConfig:
             auto_defaults=settings.lumen_agent_auto_defaults,
             fast_loop=settings.lumen_agent_fast_loop,
             scene_reviewer=settings.lumen_agent_scene_reviewer,
+            web_fast_loop=settings.lumen_agent_web_fast_loop,
+            web_reviewer=settings.lumen_agent_web_reviewer,
             fast_loop_target_llm_calls=settings.lumen_agent_fast_loop_target_llm_calls,
             fast_loop_target_wall_clock_s=settings.lumen_agent_fast_loop_target_wall_clock_s,
             fast_loop_max_llm_calls=settings.lumen_agent_fast_loop_max_llm_calls,
@@ -275,6 +284,22 @@ class AgentRuntimeConfig:
         `LUMEN_AGENT_SCENE_REVIEWER=1` puts it back.
         """
         return (not self.fast_loop) or self.scene_reviewer
+
+    @property
+    def web_reviewer_enabled(self) -> bool:
+        """Whether a WEB turn dispatches the `lumen-web-reviewer` subagent (F3.3, D-F7).
+
+        The scene property's twin, one line for one rule. Off the web fast loop the reviewer is
+        always dispatched. On it the reviewer is QUARANTINED — its prompt builder, its model, its
+        `ToolStrategy(VisualCritique)` and its whole subagent dict are still constructed on every
+        turn; it is simply absent from the orchestrator's subagent list, which is tool-absence
+        enforcement rather than a prompt asking nicely.
+
+        What does NOT change with the flag is the rubric: quarantined or not, the review is made
+        against the same shared artifact, because D-F7 says the flag changes who checks and never
+        what is checked. `LUMEN_AGENT_WEB_REVIEWER=1` puts the reviewer back.
+        """
+        return (not self.web_fast_loop) or self.web_reviewer
 
     @property
     def orchestrator_model(self) -> str:

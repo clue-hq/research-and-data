@@ -318,6 +318,24 @@ def create_web_deepagent(
         },
     ]
 
+    # --- the web lane's fast loop / ruling D-F7: reviewer QUARANTINED, not deleted -------------
+    # The scene lane's R3 quarantine, mirrored for web turns (F3.3). Under the web fast loop the
+    # `lumen-web-reviewer` subagent is not registered, so the orchestrator cannot dispatch it —
+    # tool-absence enforcement, not a prompt asking nicely — and it self-reviews against the SAME
+    # shared rubric artifact instead (the prompt builder interpolates it; see prompts_web).
+    #
+    # Everything about the reviewer stays BUILT above: its prompt (rubric included), its own
+    # model instance, its ToolStrategy(VisualCritique), its whole dict. It is one config flag
+    # from being live again, and `LUMEN_AGENT_WEB_REVIEWER=1` is that flag.
+    if not runtime_config.web_reviewer_enabled:
+        subagents = [sa for sa in subagents if sa["name"] != _REVIEWER_SUBAGENT]
+        logger.info(
+            "web_reviewer_quarantined",
+            run_id=tools.run_id,
+            quarantined=[_REVIEWER_SUBAGENT],
+            reason="web_fast_loop_d_f7",
+        )
+
     orchestrator_tools = [
         view,
         tools.fetch_page,
@@ -330,6 +348,11 @@ def create_web_deepagent(
         tools.list_custom_components,
         tools.inspect_custom_component,
         tools.render_web_preview,
+        # F3.3: the behavioural review gate. The ORCHESTRATOR's, in both flag states — it is the
+        # role that renders and the role that decides, and its findings are advice a director
+        # weighs rather than markup an author edits. The reviewer subagent, when it exists, reads
+        # the gate's captures through the director's brief exactly as it reads the previews.
+        tools.review_cloned_page,
         tools.finalize_web_run,
     ]
 
@@ -346,6 +369,8 @@ def create_web_deepagent(
             review_cap=WEB_REVIEW_DELEGATION_CAP,
             author_cap=WEB_AUTHOR_DELEGATION_CAP,
             account_card=tools.account_card_text,
+            # D-F7: the same rubric either way; only who applies it moves.
+            web_reviewer=runtime_config.web_reviewer_enabled,
         ),
         subagents=subagents,
         # G4/G6: the delegation budgets ride as ordinary tool-call middleware on the
