@@ -47,10 +47,16 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from lumen_api.fragments.degraded import DEGRADED_REASON_DEAD_HEIGHT
+
 #: The machine-readable ``degraded_reason`` this detector writes. The repair ladder (F3.1) reads
 #: it to know which rung to start on; it is a code, not a sentence, and the numbers behind it ride
 #: in the fragment's provenance.
-DEAD_HEIGHT_REASON = "dead_height"
+#:
+#: The spelling itself lives in :mod:`lumen_api.fragments.degraded`, the module BOTH sides import
+#: (review finding M6): F3.1 made this detector's code a thing another package reads, and a code
+#: two packages agree on by string-matching is a rename away from silently disagreeing.
+DEAD_HEIGHT_REASON = DEGRADED_REASON_DEAD_HEIGHT
 
 #: A band shorter than this is never dead height, however empty it looks. Roughly two desktop
 #: viewports: the ruling is about SCROLL COST (the reader dragging through nothing), and a band a

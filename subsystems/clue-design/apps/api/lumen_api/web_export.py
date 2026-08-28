@@ -953,6 +953,33 @@ def _compile_static_css(html: str, theme: _CompiledTheme, node_bin: str) -> str:
         return out_file.read_text(encoding="utf-8")
 
 
+def compile_section_css(
+    core: Any,
+    web_doc: JsonObject,
+    *,
+    brand_kit: Optional[JsonObject],
+    section_html: str,
+    node_bin: str = "node",
+) -> str:
+    """The utilities ONE rendered section needs, compiled against this document's own theme.
+
+    The repair mint's other half (clone-fidelity F3.1, ruling D-F6). A repair is a fragment, and
+    a fragment carries its own styling — which is not optional here, it is the only thing that
+    makes the artifact work: :func:`_document_only_html` deliberately keeps every fragment OUT of
+    the Tailwind scan (W7), so a repair minted with an empty stylesheet would render correctly in
+    the editor (whose browser runtime scans the live DOM) and publish completely unstyled. That
+    is the worst shape a bug can have, so the repair pays the compile at mint and ships sealed.
+
+    The SAME toolchain the export uses, not a second one, so a repaired section styles identically
+    to the page it was composed on. Raises :class:`WebExportCompileError` when node or the
+    compile is unavailable — a repair that cannot be styled refuses rather than minting an
+    artifact that looks fine until somebody publishes it.
+    """
+    return _compile_static_css(
+        section_html, _theme_tokens(core, web_doc, brand_kit), node_bin
+    )
+
+
 # --------------------------------------------------------------------------- #
 # Entry points                                                                #
 # --------------------------------------------------------------------------- #

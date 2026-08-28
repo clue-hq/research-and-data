@@ -735,7 +735,12 @@ def _author_prompt() -> str:
 
 
 def test_the_director_must_walk_the_reuse_ladder() -> None:
-    """The three rungs, in order, and the "look before you decide" rule beside them."""
+    """The three rungs, in order, and the "look before you decide" rule beside them.
+
+    The third rung's wording is F3.1's, not F2's (ruling D-F6): the absolutist "never edit a
+    cloned section's internals" protected brokenness, so it is replaced by "never CASUALLY
+    rewrite a WORKING one" plus a route for a broken one. The order is what is guarded.
+    """
     prompt = _director_prompt()
 
     assert "REUSE LADDER" in prompt
@@ -743,7 +748,7 @@ def test_the_director_must_walk_the_reuse_ladder() -> None:
     ladder = prompt.split("REUSE LADDER", 1)[1]
     reuse = ladder.index("REUSE a cloned section")
     compose = ladder.index("COMPOSE A NEW SECTION")
-    never = ladder.index("NEVER EDIT A CLONED SECTION")
+    never = ladder.index("NEVER CASUALLY REWRITE A WORKING CLONED SECTION")
     assert reuse < compose < never
     lowered = ladder.lower()
     assert "chrome" in lowered and "proof" in lowered

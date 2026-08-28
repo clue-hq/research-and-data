@@ -281,6 +281,12 @@ def create_web_deepagent(
                 # from scratch is what happens when none does.
                 tools.search_cloned_sections,
                 tools.insert_cloned_section,
+                # F3.1: the two halves of the recreate walk. `recreate_cloned_page` is the
+                # whole-page assembly (all of them, source order, nothing added);
+                # `repair_cloned_section` is D-F6's ladder for the ones that came back broken.
+                # Both write to the document, so both belong to the author and to no one else.
+                tools.recreate_cloned_page,
+                tools.repair_cloned_section,
                 tools.provenance,
                 tools.asset,
                 tools.list_custom_components,

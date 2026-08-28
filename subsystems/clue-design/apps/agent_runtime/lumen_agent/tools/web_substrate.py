@@ -38,6 +38,8 @@ from py_lumen_obs import bind_run_id, get_logger
 
 from lumen_api.core import CoreClient, CoreError
 from lumen_api.database import FragmentReferenceError
+from lumen_api.fragments.degraded import REPAIR_RUNGS
+from lumen_api.fragments.refs import ASSET_URL_PREFIX, FragmentRefused
 from lumen_api.fragments.render import (
     FRAGMENT_RENDER_PACKAGE_SCHEMA_VERSION,
     fragment_collision_diagnostics,
@@ -47,6 +49,7 @@ from lumen_api.fragments.render import (
     web_doc_fragment_ids,
 )
 from lumen_api.fragments.slots import SLOT_KIND_TO_NODE_TAG
+from lumen_api.web_export import compile_section_css
 from lumen_ingestion.capture.net import (
     REQUEST_TIMEOUT_SECONDS,
     BoundedFetcher,
@@ -298,6 +301,11 @@ _CLONED_SECTION_SEARCH_LIMIT_MAX = 20
 #: the AGENT substrate speaking, not the engine (whose codes are `LUMW`/`LUMI`) — nothing in the
 #: engine can know that a lost pin was something a human released and a director chose.
 _CLONED_SECTION_DROPPED_CODE = "LUMA0601"
+#: The diagnostic code for "a cloned section on this page is marked broken and has no released
+#: repair" (F3.1, ruling D-F6). `LUMA` for the same reason as its neighbour: the engine renders a
+#: degraded band exactly as it renders a healthy one and cannot know the difference — the
+#: judgement is the registry's, and this is the agent substrate relaying it as work.
+_CLONED_SECTION_DEGRADED_CODE = "LUMA0602"
 #: The wrapper section a pinned cloned section lives inside. `w-full` and nothing else: the clone
 #: brings its own padding, background and rhythm (that is what makes it a clone), so a wrapper
 #: that imposed the platform's section rhythm on top would double it.
@@ -564,6 +572,25 @@ def web_theme_token_names(brand_kit: Optional[JsonObject]) -> str:
         seen.add(web_name)
         names.append(web_name)
     return " ".join(names)
+
+
+def _section_subtree(page_html: str, anchor_id: str) -> str:
+    """One rendered section, lifted whole out of the page the engine just rendered.
+
+    The repair mint's source (F3.1, ruling R17-1): a repair is minted from what the ENGINE
+    produced, not from what a model typed, so this has to find the section in the render rather
+    than trust the submission. Sections render with `id="<anchor or node id>"` (`render.rs`), and
+    an id is unique in a document, so the lookup is exact.
+
+    Parsed rather than sliced with a regex: a section's own markup contains `</section>` for
+    every nested one, and counting tags by hand is the classic way to mint half a band. Returns
+    `""` when the id is not in the render, which the caller treats as "there is nothing to mint"
+    rather than as "mint whatever was closest".
+    """
+    if not page_html or not anchor_id:
+        return ""
+    node = HTMLParser(page_html).css_first(f'[id="{anchor_id}"]')
+    return node.html or "" if node is not None else ""
 
 
 def _count_subtree(nodes: JsonObject, node_id: str) -> int:
@@ -875,6 +902,11 @@ class LumenWebTools:
         # lets a drop report say WHICH band went rather than only which id.
         self._cloned_section_previews: Dict[str, Optional[str]] = {}
         self._cloned_section_seen: Dict[str, JsonObject] = {}
+        # F3.1: the clone a repair is DELIBERATELY taking off the page, for the length of that
+        # one swap. The dropped-clone report exists for rewrites that lose a band by accident;
+        # telling an author to re-pin the broken section they were just told to replace would be
+        # the substrate arguing with itself.
+        self._repair_replacing: Optional[str] = None
         # Staleness contract (mirrors the scene view): a monotonic doc-mutation
         # count, and the count stamped at the last successful render. view()
         # refuses a preview older than the current doc.
@@ -4391,9 +4423,18 @@ class LumenWebTools:
             before choosing it. A row whose `preview` is `"none"` has no image to show;
           - `source_url` and `brand_kit` — which page it came from and whose approval released it.
 
-        NEVER EDIT A CLONED SECTION'S INTERNALS. Its markup is the client's, verbatim; the slots
-        are the whole of what may change. If a band needs different structure, compose a new
-        section instead of trying to rewrite a clone.
+        A row may also say the clone is BROKEN. `degraded: true` means something about this
+        harvested band does not work in a clone — `degraded_note` says what, in words. Never put
+        a degraded clone on a page and walk away: repair it with `repair_cloned_section`, which
+        preserves the original as evidence and mints your replacement as a new section with the
+        lineage recorded. `superseded_by` names a released repair that should be pinned INSTEAD
+        of this row; `repairs` lists every repair of it, including ones still waiting for a human
+        to release them (so you do not compose the same replacement twice).
+
+        NEVER CASUALLY REWRITE A WORKING CLONED SECTION. Its markup is the client's, verbatim, and
+        its slots are the whole of what may change on a healthy one. When a clone is visibly or
+        functionally broken, preserve the original artifact and repair, rebuild or replace it
+        through `repair_cloned_section` — never by retyping the band into your own page markup.
         """
         registry = self._cloned_section_registry()
         if registry is None:
@@ -4473,6 +4514,21 @@ class LumenWebTools:
                 "view": f"cloned_section:{fragment_id}",
                 "preview": "available" if preview_path else "none",
             }
+            # D-F6: brokenness and lineage travel with the row, because a picker that shows a
+            # degraded clone the same way it shows a healthy one is how a broken band ends up on
+            # a page. Only present when there is something to say — an unbroken, never-repaired
+            # section reads exactly as it did before F3.1.
+            if section.get("degraded"):
+                row["degraded"] = True
+                row["degraded_reason"] = section.get("degraded_reason")
+                row["degraded_note"] = section.get("degraded_note")
+            if section.get("superseded_by"):
+                row["superseded_by"] = section.get("superseded_by")
+            if section.get("repairs"):
+                row["repairs"] = section.get("repairs")
+            if section.get("derived_from"):
+                row["derived_from"] = section.get("derived_from")
+                row["derived_reason"] = section.get("derived_reason")
             if id_match:
                 row["id_match"] = True
             results.append(row)
@@ -4693,30 +4749,16 @@ class LumenWebTools:
         else:
             position = min(index, len(siblings))
 
-        section_id, node_id = self._cloned_section_node_ids(set(nodes))
-        # LUMW0011: the page root holds sections and nothing else, and a fragment node is a LEAF.
-        # Wrapping is therefore not a style choice — it is the only shape the engine accepts.
-        section_node: JsonObject = {
-            "id": section_id,
-            "kind": "section",
-            "tag": "section",
-            "classes": _CLONED_SECTION_WRAPPER_CLASSES,
-            "children": [node_id],
-        }
-        fragment_node: JsonObject = {
-            "id": node_id,
-            "kind": "fragment",
-            "classes": "",
-            "fragment_id": clean_id,
-            "slots": slots,
-        }
+        section_id, node_id, pin_nodes = self._cloned_section_pin_nodes(
+            clean_id, slots, set(nodes)
+        )
         operations = [
             {
                 "kind": "insert_node",
                 "page_id": self.page_id,
                 "parent": parent,
                 "index": position,
-                "nodes": [section_node, fragment_node],
+                "nodes": pin_nodes,
                 "root": section_id,
             }
         ]
@@ -4839,6 +4881,675 @@ class LumenWebTools:
             tagged[key] = {tag: value}
         return tagged, None
 
+    # --- the recreate walk (clone-fidelity F3.1) ----------------------------------------------
+    #
+    # "Recreate our homepage" is not a design brief — it is an ASSEMBLY: every released cloned
+    # section of the client's own page, in the order it sits on that page, with nothing added and
+    # nothing reordered. Doing that as ten separate `insert_cloned_section` calls makes the
+    # property a matter of the model's obedience; doing it as one batch makes it true by
+    # construction, which is why this tool exists rather than a paragraph of prompt asking nicely.
+
+    def recreate_cloned_page(
+        self, slot_values_json: Optional[str] = None, page_url: Optional[str] = None
+    ) -> str:
+        """Rebuild the client's own page from its cloned sections: ALL of them, in source order.
+
+        Use this when the brief is "recreate our homepage" / "rebuild our site's landing page" —
+        a request to reproduce a page that already exists, not to design a new one. It pins every
+        RELEASED cloned section of that page, in the order it sat on the page, as one atomic
+        batch. It adds no section, invents no section, and reorders nothing.
+
+        `page_url` picks the page when this workspace has clones from more than one; with clones
+        from a single page it is unnecessary, and with several and no choice made this REFUSES and
+        names them rather than mixing two pages into one.
+
+        `slot_values_json` is an OPTIONAL JSON object of `{fragment_id: {slot key: value}}` —
+        the same values `insert_cloned_section` takes, for as many sections as you want to
+        re-fill in the same call. Omit a section and its clone keeps the words the original page
+        said, which is usually right for a recreate.
+
+        WHAT COMES BACK IS WORK. `pinned` lists what landed and where. `substituted` names each
+        clone that was replaced by its released REPAIR (D-F6) instead of being pinned broken.
+        `needs_repair` names every clone that went on the page still marked broken — each one is
+        a `repair_cloned_section` call you owe before this page can ship, because a degraded band
+        is dead space a visitor scrolls through.
+
+        REFUSALS: `recreate.page_not_empty` means this page already has sections, so a recreate
+        would be adding to somebody's work — clear it first or pin sections individually.
+        `recreate.nothing_released` means this workspace has no released cloned sections at all.
+        """
+        refusal = self._consume_round_budget("recreate_cloned_page")
+        if refusal is not None:
+            return refusal
+        registry = self._cloned_section_registry()
+        if registry is None:
+            return self._cloned_section_registry_missing()
+
+        raw_slots: JsonObject = {}
+        if slot_values_json is not None:
+            try:
+                decoded = json.loads(slot_values_json)
+            except (TypeError, json.JSONDecodeError) as error:
+                return self._tool_error(
+                    "cloned_section.bad_slot_values",
+                    f"slot_values_json must be a JSON object: {error}",
+                )
+            if not isinstance(decoded, dict) or any(
+                not isinstance(value, dict) for value in decoded.values()
+            ):
+                return self._tool_error(
+                    "cloned_section.bad_slot_values",
+                    "slot_values_json must be a JSON object of "
+                    "{fragment_id: {slot key: value}}.",
+                )
+            raw_slots = decoded
+
+        page = self._home_page()
+        nodes = page.get("nodes") or {}
+        root_id = page.get("root")
+        root = nodes.get(root_id) if isinstance(root_id, str) else None
+        existing = list(root.get("children") or []) if isinstance(root, dict) else []
+        if existing:
+            # A recreate that appended to a page somebody else built would be "adds nothing"
+            # only in the narrowest sense. Refuse rather than quietly extend.
+            return self._tool_error(
+                "recreate.page_not_empty",
+                f"page {self.page_id!r} already has {len(existing)} top-level section(s), so a "
+                "recreate would be adding to a page that is already built. Use "
+                "insert_cloned_section for a targeted pin, or start from an empty page.",
+                section_ids=existing,
+            )
+
+        try:
+            listing = registry.list_sections()
+        except Exception as error:  # noqa: BLE001 - capability boundary, same as search's
+            self.record(
+                "author",
+                "cloned_page_recreate_failed",
+                input_summary=f"page_url={page_url or '*'}",
+                output_summary=f"{type(error).__name__}: {error}"[:500],
+            )
+            return self._tool_error(
+                "cloned_section.registry_failed",
+                f"the cloned-section library could not be read: "
+                f"{type(error).__name__}: {error}",
+            )
+        sections = [
+            section
+            for section in (listing or {}).get("sections") or []
+            if isinstance(section, dict) and section.get("fragment_id")
+        ]
+        if not sections:
+            return self._tool_error(
+                "recreate.nothing_released",
+                "this workspace has no released cloned sections, so there is no page to "
+                "recreate. Either its website has not been ingested, or the brand kit those "
+                "sections were cloned into has not been approved yet.",
+            )
+
+        pages = sorted({str(section.get("page_url") or "") for section in sections})
+        if page_url is not None:
+            wanted = page_url.strip()
+            sections = [
+                section
+                for section in sections
+                if str(section.get("page_url") or "") == wanted
+            ]
+            if not sections:
+                return self._tool_error(
+                    "recreate.page_unknown",
+                    f"no released cloned section came from {wanted!r}.",
+                    pages=pages,
+                )
+        elif len(pages) > 1:
+            return self._tool_error(
+                "recreate.page_ambiguous",
+                "this workspace holds cloned sections from more than one page, so which page "
+                "to recreate has to be said out loud. Pass page_url.",
+                pages=pages,
+            )
+
+        # `list_sections` already returns DOCUMENT ORDER (page, then the section's own index on
+        # it). This walk keeps that order and does not re-sort: the order the page had is the
+        # whole point, and a second opinion about it here could only disagree with the registry.
+        #
+        # A released repair is an approved cloned section in its own right, so it comes back in
+        # the listing beside the clone it replaces. It is planned ONCE, at the position of that
+        # clone — pinning it again on its own row would put the same band on the page twice,
+        # which is precisely the "adds nothing" property this tool exists to guarantee.
+        substitutes = {
+            str(section["superseded_by"])
+            for section in sections
+            if section.get("superseded_by")
+        }
+        plan: List[JsonObject] = []
+        planned: set = set()
+        for section in sections:
+            fragment_id = str(section["fragment_id"])
+            if fragment_id in substitutes:
+                continue
+            # D-F6: a clone somebody has already repaired and released is pinned INSTEAD of the
+            # broken original. The repair inherits the original's page position (its provenance
+            # copies `section_index`), so this substitution never moves a band.
+            target = str(section.get("superseded_by") or fragment_id)
+            if target in planned:
+                continue
+            planned.add(target)
+            plan.append(
+                {
+                    "fragment_id": target,
+                    "substituted_for": fragment_id if target != fragment_id else None,
+                    "section": section,
+                }
+            )
+
+        operations: List[JsonObject] = []
+        pinned: List[JsonObject] = []
+        taken = set(nodes)
+        for position, entry in enumerate(plan):
+            fragment_id = entry["fragment_id"]
+            try:
+                resolved = registry.resolve_insertable(fragment_id)
+            except FragmentReferenceError as error:
+                # Every id in the plan came back from an approved-only listing, so a refusal here
+                # is a race, not a routine "not released yet" — and a half-built homepage is
+                # worse than none, so the whole batch stops and says which band and why.
+                code = error.code or "cloned_section.not_insertable"
+                self.record(
+                    "author",
+                    "cloned_page_recreate_refused",
+                    input_summary=fragment_id,
+                    output_summary=f"{code}: {error.message}"[:500],
+                    payload={"fragment_id": fragment_id, "error_code": code},
+                )
+                return self._tool_error(
+                    str(code),
+                    f"the recreate stopped at {fragment_id}: {error.message} Nothing was "
+                    "pinned.",
+                    fragment_id=fragment_id,
+                )
+            except Exception as error:  # noqa: BLE001 - capability boundary
+                return self._tool_error(
+                    "cloned_section.registry_failed",
+                    f"the cloned-section library could not be read: "
+                    f"{type(error).__name__}: {error}. This is not a refusal — try again.",
+                    fragment_id=fragment_id,
+                )
+            slot_kinds = (resolved.get("render") or {}).get("slot_kinds") or {}
+            slots, slot_error = self._tagged_slot_values(
+                raw_slots.get(fragment_id) or {}, slot_kinds, fragment_id
+            )
+            if slot_error is not None:
+                return slot_error
+            section_id, node_id, pin_nodes = self._cloned_section_pin_nodes(
+                fragment_id, slots, taken
+            )
+            taken.update({section_id, node_id})
+            operations.append(
+                {
+                    "kind": "insert_node",
+                    "page_id": self.page_id,
+                    "parent": root_id,
+                    "index": position,
+                    "nodes": pin_nodes,
+                    "root": section_id,
+                }
+            )
+            source = entry["section"]
+            pinned.append(
+                {
+                    "fragment_id": fragment_id,
+                    "index": position,
+                    "section_role": resolved.get("section_role"),
+                    "label": resolved.get("label"),
+                    "section_node_id": section_id,
+                    "node_id": node_id,
+                    "slots_bound": sorted(slots),
+                    "substituted_for": entry["substituted_for"],
+                    "degraded": bool(source.get("degraded"))
+                    if entry["substituted_for"] is None
+                    else False,
+                    "resolved": resolved,
+                }
+            )
+
+        try:
+            response = self.core.web_apply_ops(self.web_doc, operations)
+        except CoreError as error:
+            diagnostics = list(error.diagnostics or [])
+            self.record(
+                "author",
+                "cloned_page_recreate_rejected",
+                input_summary=f"{len(operations)} section(s)",
+                output_summary=error.message[:500],
+                diagnostics=diagnostics,
+            )
+            return self._rejected(diagnostics)
+        if not response.get("ok"):
+            return self._rejected(response.get("diagnostics") or [])
+
+        self.web_doc = response["web_doc"]
+        self._record_operations(operations)
+        self._doc_version += 1
+        for entry in pinned:
+            resolved = entry.pop("resolved")
+            fragment_id = entry["fragment_id"]
+            self._admit_fragment_artifact(fragment_id, resolved.get("render") or {})
+            self._cloned_section_previews[fragment_id] = resolved.get("preview_path")
+            self._cloned_section_seen[fragment_id] = {
+                "label": resolved.get("label"),
+                "section_role": resolved.get("section_role"),
+            }
+
+        needs_repair = [
+            {
+                "fragment_id": entry["fragment_id"],
+                "index": entry["index"],
+                "section_node_id": entry["section_node_id"],
+                "label": entry["label"],
+                "reason": source.get("degraded_reason"),
+                "note": source.get("degraded_note"),
+            }
+            for entry, source in zip(pinned, [item["section"] for item in plan])
+            if entry["degraded"]
+        ]
+        substituted = [entry for entry in pinned if entry["substituted_for"]]
+        warnings, advice = _split_non_error_diagnostics(response.get("diagnostics"))
+        if needs_repair:
+            warnings.insert(0, self._degraded_pin_warning(needs_repair))
+        self.record(
+            "author",
+            "cloned_page_recreated",
+            input_summary=f"page_url={page_url or pages[0]}",
+            output_summary=(
+                f"{len(pinned)} cloned section(s) in source order; "
+                f"{len(substituted)} substituted by a repair; {len(needs_repair)} still broken"
+            ),
+            diagnostics=response.get("diagnostics") or [],
+            payload={
+                "fragment_ids": [entry["fragment_id"] for entry in pinned],
+                "needs_repair": copy.deepcopy(needs_repair),
+                "operations": copy.deepcopy(operations),
+            },
+            sink_extra={"pinned_count": len(pinned)},
+        )
+        return json.dumps(
+            {
+                "status": "ok",
+                "page_id": self.page_id,
+                "page_url": page_url or pages[0],
+                "pinned": pinned,
+                "substituted": substituted,
+                "needs_repair": needs_repair,
+                "warnings": warnings,
+                "advice": advice,
+            },
+            indent=2,
+        )
+
+    @staticmethod
+    def _degraded_pin_warning(needs_repair: List[JsonObject]) -> JsonObject:
+        """A degraded clone that went on the page, as WORK rather than as a note.
+
+        Same bucket and the same reasoning as the dropped-clone warning: a band the pipeline has
+        already measured as broken is not a matter of taste, and the page renders either way — so
+        the only thing standing between this and a published page full of dead space is the
+        author being told, in the bucket the prompt calls mandatory.
+        """
+        named = ", ".join(
+            f"{entry['fragment_id']} ({entry.get('reason') or 'broken'})"
+            for entry in needs_repair
+        )
+        return {
+            "severity": "warning",
+            "phase": "agent",
+            "code": _CLONED_SECTION_DEGRADED_CODE,
+            "message": (
+                f"{len(needs_repair)} cloned section(s) on this page are marked BROKEN and have "
+                f"no released repair: {named}"
+            ),
+            "hint": (
+                "Repair each one with repair_cloned_section(fragment_id, html, rung, note): "
+                "compose the replacement with engine primitives under the brand's Grammar "
+                "Audit, preserving the original's content order, typography, colors, imagery "
+                "treatment, proportions, spacing and rhythm. The original clone is preserved as "
+                "evidence; your replacement is minted as a new section with the lineage recorded."
+            ),
+            "needs_repair": copy.deepcopy(needs_repair),
+        }
+
+    # --- the D-F6 repair ladder ---------------------------------------------------------------
+
+    def repair_cloned_section(
+        self, fragment_id: str, html: str, rung: int, note: str
+    ) -> str:
+        """Replace a BROKEN cloned section with one you compose — original preserved, lineage kept.
+
+        A clone is the starting reference, not an untouchable artifact. Never preserve a broken
+        result merely because it came from the original site. Use this the moment a cloned
+        section is visibly or functionally broken on the page you are building — a band that is
+        mostly dead scroll height, a control that does nothing, content that does not appear.
+
+        WALK THE LADDER IN ORDER and say which rung you reached:
+          1. reproduce the original experience with supported primitives;
+          2. build an equivalent interaction serving the same storytelling purpose;
+          3. a deliberate, compact static fallback — the artificial height removed ENTIRELY.
+        Rung 1 is often unreachable (the interaction vocabulary is deliberately bounded); rungs 2
+        and 3 are the common case. Blank dead space is never an acceptable outcome at any rung.
+
+        WHATEVER THE RUNG, THE REPAIR PRESERVES: content hierarchy and order, typography and
+        colors, image treatment, proportions and density, spacing, section rhythm, the
+        interaction's storytelling purpose, and the brand's character. The brand's Grammar Audit
+        (in your brand card) governs the adaptation — it is the measured law of this brand's own
+        site, and a repair that ignores it stops looking like the client.
+
+        `fragment_id` is the broken clone, which must be PINNED on the page right now.
+        `html` is the COMPLETE replacement markup for that band, in the same constrained-HTML wire
+        format `author_web_subtree` takes: one `<section id="...">...</section>` using theme
+        tokens, brand geometry utilities and the icon vocabulary. It is engine-validated exactly
+        like any authored section.
+        `rung` is 1, 2 or 3. `note` is one line: what was broken, and what your replacement does
+        about it. Both are recorded permanently on the repair's lineage.
+
+        WHAT HAPPENS: the broken clone comes off the page and your section takes its exact place;
+        the ENGINE's own render of that section is then minted as a NEW cloned section carrying
+        `derived_from` (the original) and your rung + note. The original artifact is untouched —
+        it stays in the library as the evidence of what the source site actually did.
+
+        The repair is born UNRELEASED, like every cloned section: a human releases it by approving
+        the brand kit. So `pinned` is normally false and the page carries your composed section
+        directly, which renders identically. Say so in your report; do not claim the page pins a
+        repair it does not.
+        """
+        registry = self._cloned_section_registry()
+        if registry is None:
+            return self._cloned_section_registry_missing()
+        if rung not in REPAIR_RUNGS:
+            return self._tool_error(
+                "repair.bad_rung",
+                f"rung must be 1, 2 or 3 (D-F6's ladder), not {rung!r}: "
+                + "; ".join(f"{key} = {value}" for key, value in sorted(REPAIR_RUNGS.items())),
+            )
+        cleaned_note = " ".join((note or "").split())
+        if not cleaned_note:
+            return self._tool_error(
+                "repair.note_missing",
+                "note is one line saying what was broken and what your replacement does about "
+                "it. It is recorded permanently on the repair's lineage, so it cannot be blank.",
+            )
+        clean_id = (fragment_id or "").strip()
+        pinned = self._pinned_cloned_sections(self.web_doc)
+        if clean_id not in pinned:
+            return self._tool_error(
+                "repair.not_pinned",
+                f"cloned section {clean_id!r} is not on page {self.page_id!r}, so there is "
+                "nothing to repair in place. Pin it first (or name one that is pinned).",
+                pinned_fragment_ids=sorted(pinned),
+            )
+
+        # 1) The swap, through the SAME scoped-edit path an ordinary section rewrite takes: the
+        #    engine parses, validates and canonicalizes the replacement markup, and a rejection
+        #    comes back as the author's own repair loop rather than as a new failure mode. The
+        #    clone this deliberately takes off the page is not reported as a lost pin — that
+        #    report exists for rewrites that lose a band by accident, and this is the opposite.
+        self._repair_replacing = clean_id
+        try:
+            swapped = json.loads(self.author_web_subtree(pinned[clean_id], html))
+        finally:
+            self._repair_replacing = None
+        if swapped.get("status") != "ok":
+            return json.dumps(swapped, indent=2)
+
+        roots = [root for root in swapped.get("roots") or [] if isinstance(root, str)]
+        if len(roots) != 1:
+            return self._tool_error(
+                "repair.not_one_section",
+                "a repair replaces one band with ONE section; this markup produced "
+                f"{len(roots)}. Compose the replacement as a single "
+                '<section id="...">...</section>.',
+                roots=roots,
+            )
+
+        # 2) The MINT SOURCE is the engine's own render of what it just accepted — never the
+        #    markup the model typed (ruling R17-1). Rendered with the artifact's own byte
+        #    spelling (`/asset-store/<digest>`) so every image the section shows is already in
+        #    the shape the fragment sanitizer recognises, and with no fragment map, because the
+        #    only thing being extracted is this section and it holds no pins of its own.
+        try:
+            rendered = self.core.web_render(
+                self.web_doc,
+                self.page_id,
+                mode="delivery",
+                asset_base_url=ASSET_URL_PREFIX.rstrip("/"),
+                brand_kit=self.config.brand_kit,
+                fragments={},
+                fragment_css="",
+            )
+        except CoreError as error:
+            return self._tool_error(
+                "repair.render_failed",
+                f"the replacement section could not be rendered, so nothing was minted: "
+                f"{error.message}",
+            )
+        subtree = _section_subtree(rendered.get("html") or "", self._anchor_id(roots[0]))
+        if not subtree:
+            return self._tool_error(
+                "repair.section_not_rendered",
+                f"section {roots[0]!r} is on the page but did not appear in the render, so "
+                "there is nothing to mint. The page still carries your replacement.",
+            )
+
+        # 3) Its styling, compiled by the SAME toolchain that compiles a published page, so the
+        #    minted artifact carries its own sealed stylesheet and looks identical wherever it is
+        #    pinned. A fragment's CSS is deliberately outside the page's utility scan, so an
+        #    unstyled mint here would publish unstyled and look fine in the editor.
+        try:
+            css = compile_section_css(
+                self.core,
+                self.web_doc,
+                brand_kit=self.config.brand_kit,
+                section_html=subtree,
+            )
+        except Exception as error:  # noqa: BLE001 - the toolchain boundary
+            return self._tool_error(
+                "repair.css_compile_failed",
+                f"the replacement section's styling could not be compiled, so nothing was "
+                f"minted rather than minting a section that would publish unstyled: "
+                f"{type(error).__name__}: {error}. The page still carries your replacement.",
+            )
+
+        try:
+            minted = registry.mint_repair(
+                replaces=clean_id,
+                html=subtree,
+                css=css,
+                rung=int(rung),
+                note=cleaned_note,
+            )
+        except FragmentRefused as refusal:
+            self.record(
+                "author",
+                "cloned_section_repair_refused",
+                input_summary=clean_id,
+                output_summary=f"{refusal.code}: {refusal.message}"[:500],
+                payload={"fragment_id": clean_id, "error_code": refusal.code},
+            )
+            return self._tool_error(
+                str(refusal.code),
+                f"{refusal.message}. The page still carries your replacement section; only the "
+                "durable repair was not minted.",
+                fragment_id=clean_id,
+            )
+        except Exception as error:  # noqa: BLE001 - capability boundary
+            return self._tool_error(
+                "repair.mint_failed",
+                f"the repair could not be minted: {type(error).__name__}: {error}. The page "
+                "still carries your replacement section.",
+                fragment_id=clean_id,
+            )
+
+        result: JsonObject = {
+            "status": "ok",
+            "repaired": clean_id,
+            "repair_fragment_id": minted.get("fragment_id"),
+            "rung": int(rung),
+            "note": cleaned_note,
+            "derived_from": minted.get("derived_from"),
+            "derived_reason": minted.get("derived_reason"),
+            "repair_status": minted.get("status"),
+            "slot_keys": minted.get("slot_keys"),
+            "section_node_id": roots[0],
+            "original_preserved": True,
+            "warnings": swapped.get("warnings") or [],
+            "advice": swapped.get("advice") or [],
+        }
+        # Content addressing, said out loud (F3.0 §6.4): an identical repair converges onto the
+        # row that already holds those bytes and keeps ITS lineage, so the id that comes back may
+        # record somebody else's repair of the same clone. Reporting it is the difference between
+        # a no-op and a silent lineage overwrite.
+        if minted.get("converged"):
+            result["converged"] = True
+            result["lineage_kept"] = bool(minted.get("lineage_kept"))
+            if not minted.get("lineage_kept"):
+                result["note_on_lineage"] = (
+                    f"this exact section already existed as {minted.get('fragment_id')}, so it "
+                    "kept the lineage it was minted with: "
+                    f"{minted.get('derived_reason')!r}. Your rung and note were not recorded — "
+                    "the artifact is byte-identical to one this workspace already holds."
+                )
+        if minted.get("insertable"):
+            # Already released (the converged case), so the page can hold the ARTIFACT rather
+            # than a copy of it — D-F6's "the page pins the repaired one", in the one situation
+            # where a pin is lawful without a human first releasing something.
+            pin_error = self._pin_repair_in_place(str(minted["fragment_id"]), roots[0], result)
+            if pin_error is not None:
+                return pin_error
+        else:
+            result["pinned"] = False
+            result["release"] = (
+                f"the repair {minted.get('fragment_id')} is {minted.get('status')}: a human "
+                "releases it by approving the brand kit it belongs to, exactly as for every "
+                "other cloned section. Until then the page carries your composed section, which "
+                "renders identically. Say this in your report rather than claiming a pin."
+            )
+        self.record(
+            "author",
+            "cloned_section_repaired",
+            input_summary=f"{clean_id} -> {minted.get('fragment_id')} (rung {rung})",
+            output_summary=cleaned_note[:300],
+            payload={
+                "repaired": clean_id,
+                "repair_fragment_id": minted.get("fragment_id"),
+                "rung": int(rung),
+                "converged": bool(minted.get("converged")),
+                "pinned": bool(result.get("pinned")),
+            },
+            sink_extra={"fragment_id": minted.get("fragment_id")},
+        )
+        return json.dumps(result, indent=2)
+
+    def _anchor_id(self, node_id: str) -> str:
+        """The `id` attribute the engine renders for a section node.
+
+        `render.rs` emits `anchor_id` when the section carries one and the node id otherwise, so
+        a section the author gave its own anchor is still findable in the rendered page.
+        """
+        node = (self._home_page().get("nodes") or {}).get(node_id)
+        anchor = node.get("anchor_id") if isinstance(node, dict) else None
+        return anchor if isinstance(anchor, str) and anchor else node_id
+
+    def _pin_repair_in_place(
+        self, repair_id: str, section_node_id: str, result: JsonObject
+    ) -> Optional[str]:
+        """Swap the composed section for the minted artifact, at the same position.
+
+        Only ever called for a repair the gate will accept. Returns an error envelope when the
+        swap itself fails, in which case the page keeps the composed section — which renders the
+        same pixels, so the failure costs the artifact's reuse, never the page.
+        """
+        try:
+            resolved = self._cloned_section_registry().resolve_insertable(repair_id)
+        except Exception as error:  # noqa: BLE001 - capability boundary
+            result["pinned"] = False
+            result["pin_refusal"] = f"{type(error).__name__}: {error}"
+            return None
+        page = self._home_page()
+        nodes = page.get("nodes") or {}
+        root_id = page.get("root")
+        root = nodes.get(root_id) if isinstance(root_id, str) else None
+        children = list(root.get("children") or []) if isinstance(root, dict) else []
+        if section_node_id not in children:
+            result["pinned"] = False
+            result["pin_refusal"] = "the composed section is no longer a top-level section"
+            return None
+        index = children.index(section_node_id)
+        wrapper_id, node_id, pin_nodes = self._cloned_section_pin_nodes(
+            repair_id, {}, set(nodes)
+        )
+        batch = [
+            {"kind": "remove_node", "page_id": self.page_id, "id": section_node_id},
+            {
+                "kind": "insert_node",
+                "page_id": self.page_id,
+                "parent": root_id,
+                "index": index,
+                "nodes": pin_nodes,
+                "root": wrapper_id,
+            },
+        ]
+        try:
+            applied = self.core.web_apply_ops(self.web_doc, batch)
+        except CoreError as error:
+            result["pinned"] = False
+            result["pin_refusal"] = error.message
+            return None
+        if not applied.get("ok"):
+            result["pinned"] = False
+            result["pin_refusal"] = "the engine refused the pin"
+            return None
+        self.web_doc = applied["web_doc"]
+        self._record_operations(batch)
+        self._doc_version += 1
+        self._admit_fragment_artifact(repair_id, resolved.get("render") or {})
+        self._cloned_section_previews[repair_id] = resolved.get("preview_path")
+        self._cloned_section_seen[repair_id] = {
+            "label": resolved.get("label"),
+            "section_role": resolved.get("section_role"),
+        }
+        result["pinned"] = True
+        result["section_node_id"] = wrapper_id
+        result["node_id"] = node_id
+        return None
+
+    def _cloned_section_pin_nodes(
+        self, fragment_id: str, slots: JsonObject, taken: set
+    ) -> tuple[str, str, List[JsonObject]]:
+        """The `(wrapper section, fragment leaf)` pair one pinned clone occupies on the page.
+
+        LUMW0011: the page root holds sections and nothing else, and a fragment node is a LEAF.
+        Wrapping is therefore not a style choice — it is the only shape the engine accepts.
+
+        Shared by the single pin and the whole-page recreate so the two cannot produce different
+        shapes for the same act. ``taken`` is the caller's running set of ids, so a batch that
+        pins ten sections at once still mints ten distinct pairs.
+        """
+        section_id, node_id = self._cloned_section_node_ids(taken)
+        section_node: JsonObject = {
+            "id": section_id,
+            "kind": "section",
+            "tag": "section",
+            "classes": _CLONED_SECTION_WRAPPER_CLASSES,
+            "children": [node_id],
+        }
+        fragment_node: JsonObject = {
+            "id": node_id,
+            "kind": "fragment",
+            "classes": "",
+            "fragment_id": fragment_id,
+            "slots": slots,
+        }
+        return section_id, node_id, [section_node, fragment_node]
+
     def _cloned_section_node_ids(self, taken: set) -> tuple[str, str]:
         """A fresh `(section id, fragment node id)` pair, deterministic per run + ledger position.
 
@@ -4944,7 +5655,7 @@ class LumenWebTools:
         surviving = self._pinned_cloned_sections(after)
         dropped: List[JsonObject] = []
         for fragment_id, node_id in gone.items():
-            if fragment_id in surviving:
+            if fragment_id in surviving or fragment_id == self._repair_replacing:
                 continue
             seen = self._cloned_section_seen.get(fragment_id) or {}
             dropped.append(

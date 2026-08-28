@@ -33,6 +33,14 @@ from .cssscope import (
     rewrite_declaration_urls,
     scope_fragment_css,
 )
+from .degraded import (
+    DEGRADED_REASON_DEAD_HEIGHT,
+    DEGRADED_REASONS,
+    REPAIR_NOTE_MAX_CHARS,
+    REPAIR_RUNGS,
+    degraded_headline,
+    repair_reason,
+)
 from .refs import (
     ASSET_URL_PREFIX,
     FRAGMENT_ID_RE,
@@ -71,6 +79,8 @@ from .slots import (
 
 __all__ = [
     "ASSET_URL_PREFIX",
+    "DEGRADED_REASONS",
+    "DEGRADED_REASON_DEAD_HEIGHT",
     "DROPPED_ELEMENTS",
     "FRAGMENT_ID_RE",
     "FRAGMENT_PAYLOAD_SCHEMA_VERSION",
@@ -80,6 +90,8 @@ __all__ = [
     "PRELUDE_REFERENCE_MODES",
     "PRELUDE_REFERENCE_REFUSE",
     "PRELUDE_REFERENCE_STRIP",
+    "REPAIR_NOTE_MAX_CHARS",
+    "REPAIR_RUNGS",
     "SLOT_KINDS",
     "SLOT_MARKER_ATTR",
     "WEB_FRAGMENT_SOURCE_KEY",
@@ -96,11 +108,13 @@ __all__ = [
     "build_fragment_artifact",
     "canonical_bytes",
     "create_web_fragment",
+    "degraded_headline",
     "fragment_wrapper_class",
     "list_web_fragments",
     "parse_fragment_payload",
     "parse_srcset_candidates",
     "read_web_fragment",
+    "repair_reason",
     "sanitize_fragment_html",
     "scope_fragment_css",
     "set_web_fragment_degraded",
