@@ -127,13 +127,16 @@ def newest_released_shell(
 # personalization: the account markers the F1.4 derive substitutes
 # --------------------------------------------------------------------------- #
 
-#: The three values ``account_values()`` (``main.py``) builds for EVERY account. An account's own
-#: ``data`` entries reach the derive as ``account.<key>`` too — allowed, just not guaranteed, so
-#: a binding that leans on one is the author's judgement rather than a promise this module makes.
+#: The three account markers the F1.4 derive substitutes. NOT a guarantee that every account
+#: carries all three (fix-round M2): ``account_values()`` (``main.py``) always builds ``name``,
+#: but emits ``domain`` only when the account has one and ``logo`` only when a logo asset is
+#: bound — an unbound marker leaves the artifact's own fallback, reported in the derive's
+#: coverage, which is exactly the empty-logo-is-correct behaviour. An account's own ``data``
+#: entries reach the derive as ``account.<key>`` too — allowed, just not promised.
 ACCOUNT_NAME_MARKER = "{{account.name}}"
 ACCOUNT_DOMAIN_MARKER = "{{account.domain}}"
 ACCOUNT_LOGO_MARKER = "{{account.logo}}"
-GUARANTEED_ACCOUNT_MARKERS: tuple[str, ...] = (
+ACCOUNT_MARKERS: tuple[str, ...] = (
     ACCOUNT_NAME_MARKER,
     ACCOUNT_DOMAIN_MARKER,
     ACCOUNT_LOGO_MARKER,
@@ -239,7 +242,7 @@ def account_slot_binding(key: str, kind: Any, value: Any) -> JsonObject:
         raise AbmAssemblyRefused(
             "abm.unknown_marker",
             f"slot {key!r} carries {named}, which the account derive cannot substitute — its "
-            "values are the account's own (" + ", ".join(GUARANTEED_ACCOUNT_MARKERS) + ", plus "
+            "values are the account's own (" + ", ".join(ACCOUNT_MARKERS) + ", plus "
             "{{account.<key>}} for the account's data entries). An unknown marker is printed to "
             "the visitor as it stands.",
             reference=key,
@@ -316,7 +319,7 @@ __all__ = [
     "ACCOUNT_NAME_MARKER",
     "ACCOUNT_NAMESPACE",
     "ESCAPE_ROUTE_ROLES",
-    "GUARANTEED_ACCOUNT_MARKERS",
+    "ACCOUNT_MARKERS",
     "RELATIONSHIP_CLAIM_WORDS",
     "SHELL_ACCOUNT_SLOT_MARKERS",
     "AbmAssemblyRefused",

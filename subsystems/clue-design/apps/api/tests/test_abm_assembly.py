@@ -47,7 +47,7 @@ from lumen_api.fragments.abm_page import (
     ACCOUNT_LOGO_MARKER,
     ACCOUNT_NAME_MARKER,
     ESCAPE_ROUTE_ROLES,
-    GUARANTEED_ACCOUNT_MARKERS,
+    ACCOUNT_MARKERS,
     RELATIONSHIP_CLAIM_WORDS,
     AbmAssemblyRefused,
     account_slot_binding,
@@ -58,6 +58,7 @@ from lumen_api.fragments.abm_page import (
 )
 from lumen_api.fragments.campaign_shell import (
     COBRAND_PLACEHOLDER_ASSET_ID,
+    COMPOSED_CAMPAIGN_SHELL,
     MARK_PREPARED_FOR,
     MARK_TARGET_LOGO,
 )
@@ -148,8 +149,10 @@ def test_a_marker_the_derive_cannot_substitute_is_refused_by_name() -> None:
     assert "{{brand.name}}" in refusal.value.message
 
 
-def test_the_three_guaranteed_markers_are_the_ones_every_account_has() -> None:
-    assert GUARANTEED_ACCOUNT_MARKERS == (
+def test_the_account_markers_are_the_three_the_derive_substitutes() -> None:
+    """Renamed from "guaranteed…every account has" (fix-round M2): `account_values()` emits
+    domain/logo only when the account carries them — unbound markers fall back gracefully."""
+    assert ACCOUNT_MARKERS == (
         ACCOUNT_NAME_MARKER,
         ACCOUNT_DOMAIN_MARKER,
         ACCOUNT_LOGO_MARKER,
@@ -585,3 +588,25 @@ def test_the_stored_shell_artifacts_carry_no_relationship_claim(
         lowered = stored.html.lower()
         for word in RELATIONSHIP_CLAIM_WORDS:
             assert word not in lowered, (role, word)
+
+
+# --------------------------------------------------------------------------- #
+# Fix round (T24 review I2) — R24-7's API half, pinned on the REAL registry
+# --------------------------------------------------------------------------- #
+
+
+def test_resolve_insertable_reports_composed_for_a_shell_and_none_for_a_clone(
+    workspace_id: str, design_storage: FsStorage, tmp_path
+) -> None:
+    """The agent-side pin doors carry `composed` from THIS read (R24-7). Every agent test fakes
+    the registry, so without this assertion the real `resolve_insertable` could stop returning
+    the key and every suite would stay green while production regressed to the N6 defect."""
+    registry = _registry(workspace_id, design_storage, tmp_path / "cache")
+    shell_id = _released_shell(registry, CAMPAIGN_SHELL_HEADER)
+    hero_id = _released_hero(workspace_id, design_storage)
+
+    shell = registry.resolve_insertable(shell_id)
+    hero = registry.resolve_insertable(hero_id)
+
+    assert shell["composed"] == COMPOSED_CAMPAIGN_SHELL
+    assert hero["composed"] is None

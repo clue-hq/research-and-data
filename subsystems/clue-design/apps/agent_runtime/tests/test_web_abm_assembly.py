@@ -967,3 +967,95 @@ def test_the_walk_is_registered_on_the_author_role(tmp_path: Path, monkeypatch) 
     )
     assert {"assemble_abm_page", "mint_campaign_shells"} <= names(author["tools"])
     assert "assemble_abm_page" not in names(capture["tools"])
+
+
+# =============================================================================================
+# Fix round (T24 review I1 / M1 / M4) — the hero door's holes, and the scan's honesty
+# =============================================================================================
+
+
+def test_naming_a_campaign_shell_as_the_hero_is_refused_not_double_pinned(
+    tmp_path: Path,
+) -> None:
+    """T24 review I1, live-reproduced there: the header shell named as hero pinned TWO campaign
+    headers ([header, header, footer]); the footer shell gave [footer, header, footer]. A shell
+    is this walk's CHROME — naming one as the hero refuses typed, and the page is untouched."""
+    registry = _seeded(tmp_path)
+    tools = _tools(tmp_path, registry)
+    before = _children(tools)
+
+    for shell_id in (HEADER_ID, FOOTER_ID):
+        result = json.loads(tools.assemble_abm_page(hero_fragment_id=shell_id))
+        assert result["error_code"] == "abm.shell_is_chrome", shell_id
+        assert shell_id in result["message"]
+        assert _children(tools) == before
+
+
+def test_another_brands_shell_cannot_ride_in_as_the_hero(tmp_path: Path) -> None:
+    """The brand scoping the chrome pick applies was absent on the hero door (I1's third
+    repro): a foreign-kit shell named explicitly as hero pinned another brand's chrome."""
+    registry = _seeded(tmp_path)
+    foreign = "frag_00000000000000f9"
+    registry.add(
+        foreign,
+        role=CAMPAIGN_SHELL_HEADER,
+        label="Campaign header — Other Brand",
+        composed=COMPOSED_CAMPAIGN_SHELL,
+    )
+    registry.rows[foreign]["source_kit_id"] = "brand_kit_other"
+    tools = _tools(tmp_path, registry)
+
+    result = json.loads(tools.assemble_abm_page(hero_fragment_id=foreign))
+
+    assert result["error_code"] == "abm.shell_is_chrome"
+
+
+def test_a_pinned_fragment_the_listing_cannot_resolve_fails_closed(tmp_path: Path) -> None:
+    """T24 review M1, live-reproduced there: a pinned nav whose row is absent from the bounded
+    approved listing (retired later, or beyond the listing cap) sailed past the escape-route
+    scan — the one fail-open in a fail-closed module. Now: the walk refuses typed, because
+    "I don't know what this is" is not "it's fine"."""
+    registry = _seeded(tmp_path)
+    tools = _tools(tmp_path, registry)
+    assert json.loads(tools.insert_cloned_section(NAV_ID))["status"] == "ok"
+    del registry.rows[NAV_ID]
+    before = _children(tools)
+
+    result = json.loads(tools.assemble_abm_page(hero_fragment_id=HERO_ID))
+
+    assert result["error_code"] == "abm.unresolved_pinned_fragment"
+    assert NAV_ID in result["message"]
+    assert _children(tools) == before
+
+
+def test_degraded_and_superseded_heroes_are_not_offered_silently(tmp_path: Path) -> None:
+    """T24 review M4: everywhere else in this family a degraded band is announced loudly;
+    the hero candidates offered one silently, and a superseded one whose repair is the real
+    candidate was listed beside its repair."""
+    registry = _seeded(tmp_path)
+    broken = "frag_00000000000000c8"
+    superseded = "frag_00000000000000c9"
+    registry.add(broken, role="hero", label="Hero — broken carousel")
+    registry.rows[broken]["degraded"] = True
+    registry.add(superseded, role="hero", label="Hero — old")
+    registry.rows[superseded]["superseded_by"] = HERO_ID
+    tools = _tools(tmp_path, registry)
+
+    result = json.loads(tools.assemble_abm_page())
+
+    assert superseded not in result["hero_candidates"]
+    assert broken in result["hero_candidates"]
+    assert "degraded" in result["hero_note"]
+    assert broken in result["hero_note"]
+
+
+def test_the_hero_note_with_no_candidates_does_not_dangle(tmp_path: Path) -> None:
+    """A workspace with no released hero must not be told to pick "one of these"."""
+    registry = _seeded(tmp_path, hero=False)
+    tools = _tools(tmp_path, registry)
+
+    result = json.loads(tools.assemble_abm_page())
+
+    assert result["status"] == "ok"
+    assert result["hero_candidates"] == []
+    assert "Released heroes" not in result["hero_note"]

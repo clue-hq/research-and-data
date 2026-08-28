@@ -51,7 +51,7 @@ from lumen_api.clone_review.walk import TAILWIND_RUNTIME_MARKER, capture_behavio
 from lumen_api.fragments.abm_page import (
     ABM_SECTION_ID_PREFIX,
     ACCOUNT_LOGO_MARKER,
-    GUARANTEED_ACCOUNT_MARKERS,
+    ACCOUNT_MARKERS,
     AbmAssemblyRefused,
     account_slot_binding,
     is_abm_section_id,
@@ -6328,7 +6328,23 @@ class LumenWebTools:
         children = list(root.get("children") or []) if isinstance(root, dict) else []
         pinned_now = self._pinned_cloned_sections(self.web_doc)
         for fragment_id in sorted(pinned_now):
-            row = by_id.get(fragment_id) or {}
+            row = by_id.get(fragment_id)
+            if row is None:
+                # Fail CLOSED (fix-round M1): a pinned fragment absent from the bounded,
+                # approved-only listing — retired since it was pinned, or beyond the listing
+                # cap — is one this walk cannot classify, and "I don't know what this is" must
+                # never read as "it's fine": the review pinned a nav, dropped its row, and the
+                # walk assembled campaign chrome around it.
+                return self._tool_error(
+                    "abm.unresolved_pinned_fragment",
+                    f"this page pins {fragment_id}, which is not in the released cloned-"
+                    "section listing this walk reads (it may have been retired since it was "
+                    "pinned, or the workspace's listing is larger than the walk's bound) — so "
+                    "the walk cannot tell whether it is an escape route. Remove it from the "
+                    "page, or release it so it lists, then run this again. Nothing was pinned.",
+                    fragment_id=fragment_id,
+                    section_node_ids=list(pinned_now[fragment_id]),
+                )
             if is_escape_route_role(row.get("section_role")):
                 return self._tool_error(
                     "abm.escape_route_chrome",
@@ -6353,6 +6369,25 @@ class LumenWebTools:
                     "Search for one with search_cloned_sections, or leave the hero out and "
                     "compose it. Nothing was pinned.",
                     fragment_id=clean_hero,
+                )
+            if hero.get("composed") or str(hero.get("section_role") or "") in (
+                CAMPAIGN_SHELL_ROLES
+            ):
+                # Fix-round I1, live-reproduced by the review three ways: the workspace's own
+                # header shell named as hero pinned TWO campaign headers; the footer shell put
+                # a footer where the hero goes; and a FOREIGN brand's shell rode in as the
+                # hero, bypassing the brand scoping the chrome pick applies. A composed shell
+                # is this walk's CHROME — it is never the hero, whichever brand minted it.
+                return self._tool_error(
+                    "abm.shell_is_chrome",
+                    f"{clean_hero} is a composed campaign shell, and the shells are this "
+                    "walk's CHROME — it pins the newest released header and footer itself. "
+                    "Naming one as the hero would put the same chrome on the page twice, or "
+                    "another brand's chrome where the hero goes. The hero is a harvested "
+                    "cloned section (search_cloned_sections, role 'hero') or a section you "
+                    "compose. Nothing was pinned.",
+                    fragment_id=clean_hero,
+                    section_role=hero.get("section_role"),
                 )
             if is_escape_route_role(hero.get("section_role")):
                 return self._tool_error(
@@ -6667,10 +6702,12 @@ class LumenWebTools:
             # R24-2, said where the author is looking rather than only in the prompt.
             "personalization": (
                 "this page is a TEMPLATE, not one account's page. Its slots hold "
-                + ", ".join(GUARANTEED_ACCOUNT_MARKERS)
+                + ", ".join(ACCOUNT_MARKERS)
                 + " markers, which the account derive substitutes per account — so one document "
-                "serves every account and stays re-derivable. Never bake one account's name or "
-                "logo into the markup."
+                "serves every account and stays re-derivable. A value an account does not carry "
+                "(no domain recorded, no logo bound) leaves the artifact's own fallback, "
+                "reported in the derive's coverage. Never bake one account's name or logo into "
+                "the markup."
             ),
             "target_logo": (
                 f"the target's logo reaches the page ONLY through the ladder: the "
@@ -6693,19 +6730,37 @@ class LumenWebTools:
                 "be another brand's chrome. Check the header before this page ships."
             )
         if hero is None:
-            candidates = [
-                str(section["fragment_id"])
-                for section in sections
-                if str(section.get("section_role") or "") == "hero"
-                and not section.get("composed")
-            ]
+            # Fix-round M4: a SUPERSEDED hero's repair is the real candidate (and it is in this
+            # same listing), so listing both offers the same band twice; a degraded one may be
+            # offered — it might be the only hero there is — but never silently, because
+            # everywhere else in this family a broken band is announced loudly.
+            candidates: List[str] = []
+            degraded_candidates: List[str] = []
+            for section in sections:
+                if (
+                    str(section.get("section_role") or "") != "hero"
+                    or section.get("composed")
+                    or section.get("superseded_by")
+                ):
+                    continue
+                candidate_id = str(section["fragment_id"])
+                candidates.append(candidate_id)
+                if section.get("degraded"):
+                    degraded_candidates.append(candidate_id)
             result["hero_candidates"] = candidates
-            result["hero_note"] = (
-                "no hero was named, so none was pinned — the page's hero is either one of these "
-                "released cloned heroes (pass hero_fragment_id) or a section you compose. An "
-                "ABM hero names the ACCOUNT, so bind its slots to the account markers either "
-                "way." + (f" Released heroes: {', '.join(candidates)}." if candidates else "")
+            note = (
+                "no hero was named, so none was pinned — the page's hero is a released cloned "
+                "hero (pass hero_fragment_id) or a section you compose. An ABM hero names the "
+                "ACCOUNT, so bind its slots to the account markers either way."
             )
+            if candidates:
+                note += f" Released heroes: {', '.join(candidates)}."
+            if degraded_candidates:
+                note += (
+                    f" {', '.join(degraded_candidates)} is marked degraded — repair it through "
+                    "the ladder or compose the band rather than pinning it broken."
+                )
+            result["hero_note"] = note
         if converged:
             result["converged_note"] = (
                 ", ".join(entry["fragment_id"] for entry in converged)
