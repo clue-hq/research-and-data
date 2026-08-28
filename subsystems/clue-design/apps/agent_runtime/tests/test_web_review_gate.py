@@ -827,3 +827,47 @@ def test_the_review_result_carries_its_new_schema_version(tmp_path, monkeypatch)
     tools = _tools(tmp_path, FakeRegistry())
     _patch_walk(monkeypatch, _fake_walk(tmp_path))
     assert json.loads(tools.review_cloned_page())["schema_version"] == 2
+
+
+def test_the_review_states_its_section_coverage_when_it_is_partial():
+    """Final-review X1: the gate probes only fragment-wrapped bands, so a draft repair or a
+    composed section is structurally invisible to it — the CP1 walk measured 4 of 11 bands and
+    the incompleteness line counted walk classes only. Partial coverage is now a named gap in
+    the same LUMA0801 breath, with both numbers."""
+    from types import SimpleNamespace
+
+    from lumen_agent.tools.web_substrate import LumenWebTools
+
+    walk = SimpleNamespace(abstentions=[])
+    diagnostics = LumenWebTools._review_diagnostics(
+        object(),
+        walk,
+        broken=(),
+        advice_failure=None,
+        mark_failures=[],
+        reference_note=None,
+        settled=True,
+        probed=4,
+        section_total=11,
+    )
+    incomplete = [d for d in diagnostics if d["code"] == "LUMA0801"]
+    assert len(incomplete) == 1
+    message = incomplete[0]["message"]
+    assert "4 of the page's 11 bands" in message
+    assert "were not measured" in message
+
+    # Full coverage says nothing — the line exists for the gap, not as ceremony.
+    assert (
+        LumenWebTools._review_diagnostics(
+            object(),
+            walk,
+            broken=(),
+            advice_failure=None,
+            mark_failures=[],
+            reference_note=None,
+            settled=True,
+            probed=11,
+            section_total=11,
+        )
+        == []
+    )

@@ -55,6 +55,13 @@ HOW TO READ THE GATE'S MEASUREMENTS:
   measurement is of the rendered DOM and the screenshot is one moment of it.
 - A band the gate did NOT mark is not thereby fine. The gate sees the six things it can
   measure; missing content, a dead control and a wrong-feeling band are yours to catch.
+- The height and mobile measurements cover PINNED CLONED bands only — a draft repair or a
+  composed section carries no fragment wrapper, so the gate cannot probe it and its
+  coverage line in the review says how many bands went unmeasured. Those bands are
+  entirely yours to judge from the captures.
+- A DORMANT section's absence is CORRECT, never "missing content": the source site hides
+  it, a human has not activated it, and a page without it matches the site a visitor
+  actually sees. Flag its absence only if a human activated it and it still is not there.
 
 WHAT TO DO ABOUT A BROKEN BAND — D-F6's ladder, in order, and say which rung you reached:
   1. reproduce the original experience with supported primitives;

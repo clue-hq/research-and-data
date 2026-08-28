@@ -133,6 +133,35 @@ def _reachable_nodes(web_doc: Any, page_id: str) -> list[dict[str, Any]]:
     return found
 
 
+def web_doc_page_section_count(web_doc: Any, page_id: str) -> int:
+    """How many top-level bands this page carries — sections AND pinned fragments.
+
+    The behavioural gate probes only fragment-wrapped bands (`.lumen-frag-…`), so a draft
+    repair or a composed section riding as a plain document node is invisible to it. This
+    count is the denominator that lets the gate SAY so (phase fix wave, final-review X1):
+    "measured N of M bands" instead of a silence that reads as full coverage.
+    """
+    page = _page(web_doc, page_id)
+    if page is None:
+        return 0
+    nodes = page.get("nodes")
+    if not isinstance(nodes, dict):
+        return 0
+    root_id = page.get("root") if isinstance(page.get("root"), str) else "root"
+    root = nodes.get(root_id)
+    if not isinstance(root, dict):
+        return 0
+    children = root.get("children")
+    if not isinstance(children, list):
+        return 0
+    count = 0
+    for child_id in children:
+        child = nodes.get(child_id) if isinstance(child_id, str) else None
+        if isinstance(child, dict) and child.get("kind") in ("section", "fragment"):
+            count += 1
+    return count
+
+
 def web_doc_fragment_ids(web_doc: Any, page_id: str) -> list[str]:
     """Every fragment artifact id this page references, in document order, once each.
 

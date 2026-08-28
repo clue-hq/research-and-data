@@ -398,3 +398,26 @@ def test_a_foreign_workspaces_fragment_cannot_be_given_a_preview(
             preview=PNG,
             preview_basis=ISOLATION_RENDER_BASIS,
         )
+
+
+def test_an_invisible_render_refuses_typed_instead_of_timing_out():
+    """Phase fix wave, walk F-3's inspector half: a pre-wave dormant artifact still obeys the
+    source's hiding CSS, and screenshotting an invisible element would only wait out the
+    timeout. `_shoot` refuses first, with a code that tells the human the honest remedy
+    (re-ingest; new mints carry the un-hide counter-rules)."""
+    import inspect
+
+    from lumen_api.fragments.isolation import IsolationRenderFailed, _shoot
+
+    # The premise, pinned at the source (the browser half stays unexecuted until a live walk,
+    # the established pattern): the visibility check sits between finding the element and
+    # photographing it.
+    source = inspect.getsource(_shoot)
+    assert "is_visible" in source
+    assert source.index("is_visible") < source.index('element.screenshot(type="png")')
+
+    refusal = IsolationRenderFailed(
+        "isolation.section_hidden_by_its_own_css", "hidden by its own css"
+    )
+    assert refusal.code == "isolation.section_hidden_by_its_own_css"
+    assert refusal.code != "isolation.section_not_rendered"

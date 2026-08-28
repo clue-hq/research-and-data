@@ -61,6 +61,7 @@ from lumen_api.fragments.render import (
     fragment_package_schema_refusal,
     fragment_render_map,
     web_doc_fragment_ids,
+    web_doc_page_section_count,
 )
 from lumen_api.fragments.slots import SLOT_KIND_TO_NODE_TAG
 # The repair mint's styling half. NOTE the dependency this brings into the AGENT RUNTIME: the
@@ -6211,7 +6212,14 @@ class LumenWebTools:
             ),
             "comparison": comparison,
             "diagnostics": diagnostics + self._review_diagnostics(
-                walk, broken, advice_failure, mark_failures, reference_note, settled
+                walk,
+                broken,
+                advice_failure,
+                mark_failures,
+                reference_note,
+                settled,
+                probed=len(fragment_ids),
+                section_total=web_doc_page_section_count(self.web_doc, self.page_id),
             ),
         }
         if advice_failure is not None:
@@ -6351,6 +6359,9 @@ class LumenWebTools:
         mark_failures: List[str],
         reference_note: Optional[str],
         settled: bool = True,
+        *,
+        probed: int = 0,
+        section_total: int = 0,
     ) -> List[JsonObject]:
         """The gate's own diagnostics — work, gaps, and the two ways it can fall short."""
         diagnostics: List[JsonObject] = []
@@ -6383,6 +6394,17 @@ class LumenWebTools:
         gaps = [item.label for item in walk.abstentions]
         if reference_note is not None:
             gaps.append(f"the comparison against the client's own page ({reference_note})")
+        if section_total > probed:
+            # Final-review X1: the walk probes only fragment-wrapped bands, so a draft repair or
+            # a composed section riding as a plain document node is structurally invisible to
+            # it. The CP1 walk measured 4 of 11 bands and nothing said so — coverage is now
+            # stated whenever it is partial, in the same breath as the other gaps.
+            gaps.append(
+                f"the per-section measurements ({probed} of the page's {section_total} bands "
+                "are pinned cloned sections the probe can find; the other "
+                f"{section_total - probed} — draft repairs and composed sections — carry no "
+                "fragment wrapper and were not measured)"
+            )
         if gaps:
             diagnostics.append(
                 {

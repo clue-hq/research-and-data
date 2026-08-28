@@ -900,3 +900,21 @@ def test_a_page_with_no_cloned_sections_is_not_rendered_a_second_time() -> None:
         "<main>document only</main>"
     )
     assert core.renders == 1
+
+
+# --- the meta CSP (phase fix wave, walk criterion 4 / final-review X7) ----------------------------
+
+
+def test_the_meta_csp_carries_no_frame_ancestors_while_the_header_keeps_it():
+    """`frame-ancestors` inside a `<meta http-equiv>` CSP is ignored by spec, and the browser
+    says so on the console — the walk's ONE console error, and it was ours. The serving header
+    (main.py) still enforces it; the meta emitters stop claiming it."""
+    from lumen_api.web_export import _delivery_csp
+
+    header = _delivery_csp("https://pages.example")
+    assert "frame-ancestors 'self'" in header
+
+    meta = _delivery_csp("https://pages.example", meta=True)
+    assert "frame-ancestors" not in meta
+    # Everything else is unchanged between the two shapes.
+    assert meta == header.replace("; frame-ancestors 'self'", "")

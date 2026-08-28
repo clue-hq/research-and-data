@@ -292,7 +292,14 @@ _SECTIONING_CONTENT_TAGS = frozenset({"section", "article", "aside", "nav", "hea
 #:
 #: ``main``/``form``/``table`` were never in either set: a form is a control group and a table is
 #: content, so they are section-SHAPED without being a declaration.
-_AUTHORED_SECTION_TAGS = frozenset({"section", "aside", "nav"})
+#:
+#: ``<aside>`` and ``<nav>`` left the set in the phase fix wave (the re-review's CMS repro):
+#: ``aside`` is the standard's TANGENTIAL-content tag and CMS themes emit widget stacks with it —
+#: a ``<div class="sidebar">`` of four ``<aside>`` widgets split into four preview-less
+#: "sections"; and two ``<nav>``s in one wrapper are one navigation band (a primary plus a
+#: utility menu), not two page sections. What remains is exactly ``<section>``: the one tag whose
+#: only meaning is "a section of this document".
+_AUTHORED_SECTION_TAGS = frozenset({"section"})
 #: How many authored sections a wrapper needs before it is a GROUP of them rather than one of
 #: them wearing an extra div. One is a wrapper; two is a compound band.
 _COMPOUND_MIN_PARTS = 2

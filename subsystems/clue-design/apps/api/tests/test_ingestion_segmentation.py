@@ -1609,3 +1609,29 @@ def test_a_corroboration_bonus_never_overrides_position_between_equal_kinds_of_c
     assert roles.count("nav") == 1, roles
     # Both navs are landmark claims; the corroborated later one does not unseat the first.
     assert result.sections[0].role == "nav", roles
+
+
+def test_a_sidebar_of_asides_and_a_nav_pair_are_one_band_each():
+    """Phase fix wave item 8 (re-review's CMS repro): a `<div class="sidebar">` of four
+    `<aside>` widgets is one band, not four — `aside` is the standard's tangential-content tag
+    and CMS themes emit widget stacks with it; likewise two `<nav>`s in one wrapper are one
+    navigation band (a primary + a utility menu), not a compound of page sections. Only
+    `<section>` children remain the author saying "these are sections of this document"."""
+    html = """
+    <html><body><main>
+      <section class="hero"><h1>Ship</h1></section>
+      <div class="sidebar">
+        <aside><h3>Recent posts</h3></aside>
+        <aside><h3>Categories</h3></aside>
+        <aside><h3>Tags</h3></aside>
+        <aside><h3>Archive</h3></aside>
+      </div>
+      <div class="menus">
+        <nav><a href="/a">A</a><a href="/b">B</a><a href="/c">C</a></nav>
+        <nav><a href="/d">D</a><a href="/e">E</a><a href="/f">F</a></nav>
+      </div>
+    </main></body></html>
+    """
+    result = segment_page(html, page_url="https://x.example/")
+    # Three flow children, three sections — nothing was taken apart.
+    assert len(result.sections) == 3

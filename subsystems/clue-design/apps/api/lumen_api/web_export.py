@@ -1217,22 +1217,31 @@ def _font_manifest_entries(gate: _FontGate) -> JsonObject:
     }
 
 
-def _delivery_csp(public_base: Optional[str] = None) -> str:
+def _delivery_csp(public_base: Optional[str] = None, *, meta: bool = False) -> str:
+    """The published page's CSP. ``meta=True`` is the ``<meta http-equiv>`` shape.
+
+    The one difference: ``frame-ancestors`` is ignored inside a meta CSP by spec, and the
+    browser says so on the console — which was the published page's ONE console error at the
+    CP1 walk, and it was ours (walk criterion 4, final-review X7). The serving header keeps the
+    directive; the meta tag stops claiming it.
+    """
     origin = ""
     if public_base:
         parsed = urlsplit(public_base)
         if parsed.scheme in {"http", "https"} and parsed.netloc:
             origin = f" {parsed.scheme}://{parsed.netloc}"
-    return (
+    policy = (
         "default-src 'none'; "
         f"script-src 'unsafe-inline' data:{origin}; "
         f"style-src 'unsafe-inline'{origin}; "
         f"img-src data: blob:{origin}; "
         f"font-src data:{origin}; "
         "connect-src 'none'; object-src 'none'; worker-src 'none'; "
-        "frame-src 'self' data: blob:; base-uri 'none'; form-action 'none'; "
-        "frame-ancestors 'self'"
+        "frame-src 'self' data: blob:; base-uri 'none'; form-action 'none'"
     )
+    if meta:
+        return policy
+    return policy + "; frame-ancestors 'self'"
 
 
 def build_export_bundle(
@@ -1373,7 +1382,7 @@ def build_export_bundle(
     head += '<link rel="stylesheet" href="site.css">\n'
     head += (
         '<meta http-equiv="Content-Security-Policy" content="'
-        f'{_escape_attr(_delivery_csp())}">\n'
+        f'{_escape_attr(_delivery_csp(meta=True))}">\n'
     )
     head += '<link rel="lumen-component-manifest" href="components/manifest.json">\n'
     html = _inject_before_head_close(html, head)
@@ -1530,7 +1539,7 @@ def build_publish_package(
     manifest_digest = _sha256(_canonical_json(publish_manifest))
     head += (
         '<meta http-equiv="Content-Security-Policy" content="'
-        f'{_escape_attr(_delivery_csp(base))}">\n'
+        f'{_escape_attr(_delivery_csp(base, meta=True))}">\n'
     )
     head += (
         '<meta name="lumen-publish-manifest-digest" content="'

@@ -242,6 +242,19 @@ async def _shoot(page_html: str, selector: str, assets: Mapping[str, tuple[str, 
                     f"the fragment did not render in isolation ({selector} is absent), so there "
                     "is nothing to photograph",
                 )
+            if not await element.is_visible():
+                # The walk's F-3, said honestly instead of timed out: a dormant section's
+                # harvested CSS carries the source's own hiding rules, and an artifact minted
+                # BEFORE the phase fix wave's un-hide block still obeys them — Playwright would
+                # wait the full timeout for an element that can never become visible. New mints
+                # carry the counter-rules, so reaching this refusal means the artifact predates
+                # them and a re-ingest re-mints it renderable.
+                raise IsolationRenderFailed(
+                    "isolation.section_hidden_by_its_own_css",
+                    "the fragment rendered but is invisible: its harvested CSS still hides the "
+                    "section's root — this artifact predates the un-hide mint mechanics, so "
+                    "re-ingest the site to re-mint it with the counter-rules appended",
+                )
             return await element.screenshot(type="png")
         finally:
             await browser.close()
