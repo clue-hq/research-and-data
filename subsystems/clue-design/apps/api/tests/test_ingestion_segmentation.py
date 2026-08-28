@@ -890,10 +890,13 @@ def test_a_shell_whose_only_content_is_source_is_not_a_section():
 
 
 @pytest.mark.parametrize("token", ["hide", "hidden", "d-none", "sr-only", "w-condition-invisible"])
-def test_a_section_the_page_hides_by_class_is_not_offered_as_a_clone(token: str):
+def test_a_section_the_page_hides_by_class_is_not_one_of_the_pages_sections(token: str):
     """The vocabulary, exercised on an EVIDENCED page. The class token alone never removes a
     section (N2) — here the browser measured the page and did not measure this child, which is
-    the corroboration the drop requires."""
+    the corroboration removing it from the page requires.
+
+    Still literally accurate under its old name (a dormant clone is never offered), and renamed
+    with its two neighbours so the file says one thing about this population rather than three."""
     html = (
         f'<html><body><main><section class="banner {token}"><h2>Announcing</h2></section>'
         '<section class="real"><h1>Real</h1></section>'
@@ -1021,9 +1024,13 @@ def test_a_desktop_only_section_is_not_dropped_on_a_bandless_capture():
     assert result.sections[0].heading == "Desktop hero"
 
 
-def test_a_hidden_named_section_the_browser_skipped_is_still_dropped():
+def test_a_hidden_named_section_the_browser_skipped_is_off_the_page_and_kept_dormant():
     """The evidence-backed half, unchanged: the probe measured this page and did not measure this
-    child, so `hidden` in its class list is corroborated rather than guessed."""
+    child, so `hidden` in its class list is corroborated rather than guessed.
+
+    Named for what F3.0 made it do (D-F8). The behaviour asserted here has never changed — the
+    section is not one of the page's — but "dropped" stopped being true when the section started
+    being preserved in ``hidden_sections`` for a human to activate."""
     html = """
     <html><body><main>
       <section class="section_hero"><h1>Hero</h1></section>
@@ -1043,9 +1050,9 @@ def test_a_hidden_named_section_the_browser_skipped_is_still_dropped():
     assert [s.role for s in result.sections] == ["hero", "proof"]
 
 
-def test_a_probe_skip_record_drops_a_hidden_section_with_no_bands_at_all():
+def test_a_probe_skip_record_takes_a_section_off_the_page_with_no_bands_at_all():
     """The other evidence path: the browser said so directly, so no binding is needed to believe
-    it."""
+    it. Renamed for the same reason as its neighbour above: off the page, not gone."""
     html = """
     <html><body><main>
       <section class="banner hide"><h2>Announcing</h2></section>

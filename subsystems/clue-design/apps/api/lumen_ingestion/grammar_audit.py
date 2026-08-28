@@ -93,6 +93,15 @@ _HEAVY_WEIGHT = 700
 #: whose own controls sit at 4px does not want a 24px pill.
 _TIGHT_RADIUS_PX = 8.0
 
+#: The range a unitless line-height can plausibly be, outside which the number is not a leading
+#: at all (F3.4). The F2 walk's audit legislated `type.title` at **leading 2.2** and, before the
+#: anchor picking was fixed, `type.headline` at **3.45** — measurements taken off a collapsed
+#: element, stated to an agent as this brand's law. There is no honest way to correct such a
+#: number, so the line ABSTAINS from it: an audit that says nothing about leading leaves the
+#: theme ramp to decide, while one that says 2.2 makes every heading on every generated page wrong
+#: and cites the brand's own site as the reason.
+_PLAUSIBLE_LEADING = (0.8, 2.0)
+
 Text = Annotated[str, StringConstraints(min_length=1, max_length=_MAX_TEXT)]
 
 #: `measured` — read off the brand's own site. `derived` — an engine scale/ramp
@@ -267,9 +276,83 @@ def _type_treatment(evidence: BrandEvidence, brand_kit: dict[str, Any]) -> Gramm
             )
         )
 
+    unpaintable = _families_without_binaries(brand_kit, typography)
+    if unpaintable:
+        # The Sohne caveat (F2 close-out, F3.4). stripe.com's first walk produced an audit that
+        # legislated in `sohne-var` — a family the kit held no binaries for, because the capture
+        # never descended into the `@media`-nested `@font-face` that named it. The root cause is
+        # closed, and the SHAPE is not: an audit's type roles come off the kit's tokens and the
+        # kit's faces come off the capture, and nothing made the two agree. Whenever they do not,
+        # the audit is legislating in a typeface nothing downstream can paint, and the honest
+        # move is to say so in the same breath rather than to leave an agent obeying a font that
+        # will silently fall back.
+        named = ", ".join(f"`{family}`" for family in unpaintable[:_MAX_TOKENS_PER_LINE])
+        rules.append(
+            GrammarRule(
+                rule=(
+                    f"CAVEAT — this kit holds no font files for {named}, so the treatment below "
+                    "names a typeface nothing here can paint; expect the fallback stack. Do not "
+                    "read the face as available."
+                ),
+                evidence="the kit's own font assets carry no faces for that family",
+                basis="measured",
+            )
+        )
+
     # A measured fact about the whole ramp outranks any single role's listing, so
     # it sits above them and below the law.
     return GrammarField(rules=_capped(rules + role_rules))
+
+
+def _families_without_binaries(
+    brand_kit: dict[str, Any], typography: dict[str, Any]
+) -> list[str]:
+    """The families this audit's type roles name that the kit holds no faces for.
+
+    Compares on the FIRST family of each role's stack, because that is the one a browser reaches
+    for and the rest are the fallback the caveat is warning about. Case- and quote-insensitive: a
+    kit writes ``sohne-var`` and a stylesheet writes ``"Sohne Var"`` for the same thing often
+    enough that an exact match would report a caveat about every site.
+
+    Returns ``[]`` when the kit declares no font assets at all — that is "nothing is known about
+    this kit's faces", not "this kit cannot paint anything", and a caveat off no evidence is the
+    kind of confident wrongness the whole audit is written against.
+    """
+    fonts = ((brand_kit.get("assets") or {}).get("fonts")) or {}
+    if not isinstance(fonts, dict) or not fonts:
+        return []
+    paintable = {
+        _family_key(font.get("family"))
+        for font in fonts.values()
+        if isinstance(font, dict) and (font.get("faces") or [])
+    }
+    paintable.discard("")
+    if not paintable:
+        return []
+    missing: list[str] = []
+    for role, _where in _WEB_TYPE_ROLES:
+        style = _style_value(typography.get(role))
+        if style is None:
+            continue
+        family = _first_family(style.get("font_family"))
+        key = _family_key(family)
+        if not key or key in paintable or family in missing:
+            continue
+        missing.append(family)
+    return missing
+
+
+def _first_family(stack: Any) -> str:
+    """``'sohne-var, Helvetica, sans-serif'`` -> ``'sohne-var'``."""
+    if not isinstance(stack, str):
+        return ""
+    return stack.split(",")[0].strip().strip("\"'")[:_MAX_FAMILY]
+
+
+def _family_key(family: Any) -> str:
+    if not isinstance(family, str):
+        return ""
+    return " ".join(family.strip().strip("\"'").lower().replace("-", " ").split())
 
 
 def _style_value(entry: Any) -> Optional[dict[str, Any]]:
@@ -291,7 +374,17 @@ def _style_text(style: dict[str, Any]) -> str:
         parts.append(f"weight {weight}")
     line_height = style.get("line_height")
     if isinstance(line_height, (int, float)):
-        parts.append(f"leading {_trim(line_height)}")
+        low, high = _PLAUSIBLE_LEADING
+        if low <= line_height <= high:
+            parts.append(f"leading {_trim(line_height)}")
+        else:
+            # Said, not silently swallowed: the number is evidence that the anchor measured the
+            # wrong thing, and a reader who sees the gap should be able to tell "this brand has
+            # no measured leading" from "we measured one and would not repeat it".
+            parts.append(
+                f"leading not stated (the anchor measured {_trim(line_height)}, which is not a "
+                "line-height)"
+            )
     spacing = style.get("letter_spacing")
     if isinstance(spacing, (int, float)) and spacing:
         parts.append(f"tracking {_trim(spacing)}em")
@@ -689,11 +782,25 @@ def _anti_patterns(
     # speaks only where there IS a dark band to be extra to; otherwise it abstains rather than
     # legislating from a count of nothing.
     if _counts_for_the_page(bands, sequence) and dark and len(dark) * 3 <= len(bands):
+        # The sentence has to be TRUE OF THE COUNT (F3.4). "A second dark band is a rhythm this
+        # brand does not have" is right about a site with ONE dark band and plainly false about
+        # stripe.com, which has two — the F2 walk's audit said exactly that, of a page whose own
+        # sequence one heading above reads `light, light, light, dark, light, dark, light, light`.
+        # An exclusion that contradicts the evidence printed beside it teaches an agent to
+        # discount both. So at n=1 the law names the second band, and at n>=2 it names the count
+        # it actually has and forbids going past it.
+        count = len(dark)
+        law = (
+            "A second dark band is a rhythm this brand does not have."
+            if count == 1
+            else f"Use dark exactly that sparingly: a {_ordinal(count + 1)} dark band is a rhythm "
+            "this brand does not have."
+        )
         rules.append(
             GrammarRule(
                 rule=(
-                    f"No extra dark sections: {len(dark)} of {len(bands)} {_band_noun(unread)} "
-                    "is dark. A second dark band is a rhythm this brand does not have."
+                    f"No extra dark sections: {count} of {len(bands)} "
+                    f"{_band_noun(unread)} {'is' if count == 1 else 'are'} dark. {law}"
                     + _unread_caveat(unread, len(sequence))
                 ),
                 evidence="counted over the measured band sequence",
@@ -754,6 +861,23 @@ def _anti_patterns(
 
 
 # --- shared helpers -----------------------------------------------------------------
+
+
+def _ordinal(number: int) -> str:
+    """``3`` -> ``"third"``. Small and closed: the dark-band law is the only caller, and past a
+    handful of dark bands the rule that uses it has already stopped firing."""
+    names = {
+        2: "second",
+        3: "third",
+        4: "fourth",
+        5: "fifth",
+        6: "sixth",
+        7: "seventh",
+        8: "eighth",
+        9: "ninth",
+        10: "tenth",
+    }
+    return names.get(number, f"{number}th")
 
 
 def _counts_for_the_page(

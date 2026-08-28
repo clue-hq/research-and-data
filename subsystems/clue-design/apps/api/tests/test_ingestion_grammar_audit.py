@@ -644,3 +644,123 @@ def test_an_extraction_failure_leaves_the_kit_auditless_and_says_so(
     assert "grammar_audit" not in detail["brand_kit_json"]
     codes = {d.get("code") for d in detail["diagnostics"]["audit"]}
     assert "LUMI0910" in codes
+
+
+# --- F3.4 prose round: the wording has to be true of the evidence beside it --------
+
+
+def test_the_dark_exclusion_names_the_band_count_the_site_actually_has() -> None:
+    """The F2 walk's stripe audit printed, one heading apart:
+
+        The site's own band sequence, top to bottom: light, light, light, dark, light, dark, …
+        No extra dark sections: 2 of 8 measured bands is dark. A SECOND dark band is a rhythm
+        this brand does not have.
+
+    The site plainly has a second dark band — the sequence above says so. An exclusion that
+    contradicts the evidence printed beside it teaches an agent to discount both.
+    """
+    evidence = _measured_evidence()
+    audit = extract_grammar_audit(evidence, _kit_for(evidence))
+    exclusions = _rules_text(audit.anti_patterns)
+
+    assert "2 of 8 measured bands are dark" in exclusions
+    assert "a third dark band is a rhythm this brand does not have" in exclusions.lower()
+    assert "a second dark band" not in exclusions.lower()
+
+
+def test_a_site_with_exactly_one_dark_band_is_still_told_about_the_second() -> None:
+    """The n=1 wording was right and stays right: there is no second band here to contradict it."""
+    bands = [
+        _band(0, "#FFFFFF"),
+        _band(1, "#0D1738"),
+        _band(2, "#FFFFFF"),
+        _band(3, "#FFFFFF"),
+        _band(4, "#FFFFFF"),
+        _band(5, "#FFFFFF"),
+    ]
+    evidence = _evidence().model_copy(
+        update={"geometry": GeometryEvidence(background_sequence=bands, surfaces=[])}
+    )
+    exclusions = _rules_text(
+        extract_grammar_audit(evidence, _kit_for(evidence)).anti_patterns
+    )
+    assert "1 of 6 measured bands is dark" in exclusions
+    assert "A second dark band is a rhythm this brand does not have." in exclusions
+
+
+def test_an_implausible_leading_is_abstained_from_rather_than_legislated() -> None:
+    """The F2 walk's audit told an agent this brand's `type.title` is `leading 2.2` — a number
+    taken off a collapsed element. There is no honest correction available, so the line says it
+    did not read one, and says what it saw instead of quietly dropping it."""
+    evidence = _evidence()
+    kit = _kit_for(evidence)
+    typography = kit["tokens"]["typography"]
+    role = next(iter(typography))
+    typography[role]["value"]["default"]["line_height"] = 2.2
+
+    treatment = _rules_text(extract_grammar_audit(evidence, kit).type_treatment)
+
+    assert "leading 2.2" not in treatment
+    assert "leading not stated" in treatment
+    assert "which is not a line-height" in treatment
+
+
+def test_a_plausible_leading_is_still_stated() -> None:
+    evidence = _evidence()
+    kit = _kit_for(evidence)
+    typography = kit["tokens"]["typography"]
+    role = next(iter(typography))
+    typography[role]["value"]["default"]["line_height"] = 1.15
+
+    treatment = _rules_text(extract_grammar_audit(evidence, kit).type_treatment)
+
+    assert "leading 1.15" in treatment
+    assert "leading not stated" not in treatment
+
+
+def test_the_audit_says_so_when_it_legislates_in_a_font_the_kit_cannot_paint() -> None:
+    """The Sohne caveat (F2 close-out). stripe.com's first walk produced an audit legislating in
+    `sohne-var`, a family the kit held no binaries for. The root cause is closed; the SHAPE is
+    not — the type roles come off the kit's tokens and the faces off the capture, and nothing
+    made the two agree."""
+    evidence = _evidence()
+    kit = _kit_for(evidence)
+    role = next(iter(kit["tokens"]["typography"]))
+    kit["tokens"]["typography"][role]["value"]["default"]["font_family"] = (
+        "sohne-var, Helvetica, sans-serif"
+    )
+    kit.setdefault("assets", {})["fonts"] = {
+        "brand": {"family": "Aeonik", "faces": [{"asset_id": "asset_1"}]}
+    }
+
+    treatment = _rules_text(extract_grammar_audit(evidence, kit).type_treatment)
+
+    assert "CAVEAT" in treatment
+    assert "`sohne-var`" in treatment
+    assert "nothing here can paint" in treatment
+
+
+def test_a_font_the_kit_does_hold_binaries_for_draws_no_caveat() -> None:
+    evidence = _evidence()
+    kit = _kit_for(evidence)
+    for entry in kit["tokens"]["typography"].values():
+        entry["value"]["default"]["font_family"] = '"Sohne Var", Helvetica, sans-serif'
+    kit.setdefault("assets", {})["fonts"] = {
+        "brand": {"family": "sohne-var", "faces": [{"asset_id": "asset_1"}]}
+    }
+
+    assert "CAVEAT" not in _rules_text(
+        extract_grammar_audit(evidence, kit).type_treatment
+    )
+
+
+def test_a_kit_that_declares_no_fonts_at_all_draws_no_caveat_either() -> None:
+    """"Nothing is known about this kit's faces" is not "this kit can paint nothing", and a
+    caveat off no evidence is the confident wrongness the whole audit is written against."""
+    evidence = _evidence()
+    kit = _kit_for(evidence)
+    kit.setdefault("assets", {})["fonts"] = {}
+
+    assert "CAVEAT" not in _rules_text(
+        extract_grammar_audit(evidence, kit).type_treatment
+    )
