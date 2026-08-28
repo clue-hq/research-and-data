@@ -34,7 +34,11 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_design._codec import JsonObject, dump_json, iso, load_json
-from clue_design.errors import DesignFragmentActivationError, DesignNotFoundError
+from clue_design.errors import (
+    DesignFragmentActivationError,
+    DesignFragmentPreviewError,
+    DesignNotFoundError,
+)
 
 #: The row-level lifecycle, mirroring ``design_brand_approval_status`` (see the migration's
 #: docstring for why ``generated_unreviewed`` is not among them). Kept here as the ONE Python
@@ -466,6 +470,54 @@ async def set_web_fragment_status(
     )
     if result.rowcount == 0:
         raise DesignNotFoundError("design_web_fragment", fragment_id)
+    return await get_web_fragment(conn, workspace_id=workspace_id, fragment_id=fragment_id)
+
+
+async def attach_web_fragment_preview(
+    conn: AsyncConnection, *, workspace_id: str, fragment_id: str, preview_digest: str
+) -> JsonObject:
+    """Give a fragment that has no preview one — once, and never again (F3.2, ruling P-7).
+
+    The third permitted write, and the narrowest: NULL → a digest. A row that already carries a
+    preview is refused HERE with a sentence, and refused again by the trigger the migration
+    installs, for the same reason the lineage rule is written twice — one makes it legible to the
+    writer we have, the other makes it true of every writer.
+
+    **Why the column can move at all.** ``preview_digest`` is part of the artifact's identity
+    bytes, so it is content in the sense that changing it at MINT time makes a different fragment.
+    What is attached here is not that: a section the source site hides was never rendered, so the
+    capture holds no pixels of it and the row is born with nothing to look at — and D-F8 makes
+    "something to look at" the condition a human activates it on. The picture attached later is
+    an isolation render OF the artifact's own bytes, taken after the fact, and the payload's own
+    record of what was minted is untouched. Adding a fact is not editing one.
+
+    The two callers are the two rows that can never have a preview at birth: a dormant clone
+    (D-F8) and a composed repair (ruling R17-2, where the human releasing it is otherwise
+    approving a section nobody can see).
+    """
+    if not (preview_digest or "").strip():
+        raise ValueError("a preview digest is the sha256 of the bytes stored, not an empty string")
+    current = await get_web_fragment(conn, workspace_id=workspace_id, fragment_id=fragment_id)
+    if current.get("preview_digest"):
+        raise DesignFragmentPreviewError(
+            fragment_id,
+            "preview_present",
+            f"fragment {fragment_id} already carries a preview: a preview is attached once and "
+            "never replaced, because a human's decision was made against the picture that is "
+            "there. Mint a new fragment rather than re-picturing this one",
+        )
+    await conn.execute(
+        text(
+            "UPDATE design_web_fragment SET preview_digest = :preview_digest, updated_at = now() "
+            "WHERE fragment_id = :fragment_id AND workspace_id = :workspace_id "
+            "AND preview_digest IS NULL"
+        ),
+        {
+            "preview_digest": preview_digest,
+            "fragment_id": fragment_id,
+            "workspace_id": workspace_id,
+        },
+    )
     return await get_web_fragment(conn, workspace_id=workspace_id, fragment_id=fragment_id)
 
 

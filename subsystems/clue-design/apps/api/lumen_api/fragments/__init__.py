@@ -14,6 +14,8 @@ The pieces, in the order a fragment goes through them:
 * :mod:`~lumen_api.fragments.artifact` — content addressing, the payload shape
 * :mod:`~lumen_api.fragments.registry` — durable custody: bytes to the design blob namespace,
   rows to ``design_web_fragment``
+* :mod:`~lumen_api.fragments.isolation` — the isolation render (F3.2, ruling P-7): a picture of a
+  section that was never on a page, so a human can decide about a dormant clone or a repair
 """
 
 from __future__ import annotations
@@ -41,6 +43,14 @@ from .degraded import (
     degraded_headline,
     repair_reason,
 )
+from .isolation import (
+    ISOLATION_PREVIEW_MEDIA_TYPE,
+    ISOLATION_RENDER_BASIS,
+    IsolationPage,
+    IsolationRenderFailed,
+    build_isolation_page,
+    render_isolation_preview,
+)
 from .refs import (
     ASSET_URL_PREFIX,
     FRAGMENT_ID_RE,
@@ -54,6 +64,7 @@ from .registry import (
     FRAGMENT_STATUSES,
     WEB_FRAGMENT_SOURCE_KEY,
     LoadedFragment,
+    attach_web_fragment_preview,
     create_web_fragment,
     list_web_fragments,
     read_web_fragment,
@@ -86,6 +97,8 @@ __all__ = [
     "FRAGMENT_PAYLOAD_SCHEMA_VERSION",
     "FRAGMENT_STATUSES",
     "FRAGMENT_STATUS_DORMANT",
+    "ISOLATION_PREVIEW_MEDIA_TYPE",
+    "ISOLATION_RENDER_BASIS",
     "MAX_FRAGMENT_SLOTS",
     "PRELUDE_REFERENCE_MODES",
     "PRELUDE_REFERENCE_REFUSE",
@@ -98,6 +111,8 @@ __all__ = [
     "AnnotatedHtml",
     "FragmentArtifact",
     "FragmentRefused",
+    "IsolationPage",
+    "IsolationRenderFailed",
     "LoadedFragment",
     "SanitizedHtml",
     "ScopedCss",
@@ -105,7 +120,9 @@ __all__ = [
     "annotate_fragment_slots",
     "asset_url",
     "asset_url_digest",
+    "attach_web_fragment_preview",
     "build_fragment_artifact",
+    "build_isolation_page",
     "canonical_bytes",
     "create_web_fragment",
     "degraded_headline",
@@ -114,6 +131,7 @@ __all__ = [
     "parse_fragment_payload",
     "parse_srcset_candidates",
     "read_web_fragment",
+    "render_isolation_preview",
     "repair_reason",
     "sanitize_fragment_html",
     "scope_fragment_css",

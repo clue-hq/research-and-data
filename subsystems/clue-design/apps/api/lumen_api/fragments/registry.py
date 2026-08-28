@@ -300,6 +300,46 @@ def set_web_fragment_degraded(
     )
 
 
+def attach_web_fragment_preview(
+    storage: StorageBackend,
+    *,
+    workspace_id: str,
+    fragment_id: str,
+    preview: bytes,
+    media_type: str = _DEFAULT_PREVIEW_MEDIA_TYPE,
+) -> dict[str, Any]:
+    """Store an isolation-render PNG and hang it on a fragment that had no preview (F3.2, P-7).
+
+    The blob and the row move in ONE transaction, like creation: a row naming bytes that never
+    landed is a dangling reference nothing downstream could tell from a real one, and the reverse
+    leaves a picture nobody can find.
+
+    Deliberately NOT part of :func:`create_web_fragment`. A preview at MINT time is content — it
+    is in the artifact's identity bytes, so a different picture is a different fragment — while
+    this one is a picture taken of an already-minted artifact, after the fact, because nothing
+    photographed it at birth. The DAL enforces the difference: once, never replaced.
+    """
+    digest = _digest(preview)
+
+    async def _persist(conn: Any) -> dict[str, Any]:
+        await register_design_bytes(
+            conn,
+            storage,
+            workspace_id=workspace_id,
+            data=preview,
+            media_type=media_type,
+            source_key=WEB_FRAGMENT_SOURCE_KEY,
+        )
+        return await dal.attach_web_fragment_preview(
+            conn,
+            workspace_id=workspace_id,
+            fragment_id=fragment_id,
+            preview_digest=digest,
+        )
+
+    return DesignStoreBridge(workspace_id)._run(_persist)
+
+
 def _with_payload_sizes(
     provenance: Mapping[str, Any] | None, artifact: FragmentArtifact
 ) -> dict[str, Any]:
@@ -333,6 +373,7 @@ __all__ = [
     "FRAGMENT_STATUS_DORMANT",
     "WEB_FRAGMENT_SOURCE_KEY",
     "LoadedFragment",
+    "attach_web_fragment_preview",
     "create_web_fragment",
     "list_web_fragments",
     "read_web_fragment",

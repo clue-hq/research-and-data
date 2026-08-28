@@ -167,3 +167,23 @@ class DesignFragmentActivationError(DesignStoreError):
         super().__init__(message)
         self.fragment_id = fragment_id
         self.reason = reason
+
+
+class DesignFragmentPreviewError(DesignStoreError):
+    """A preview was offered to a fragment that already has one (F3.2, ruling P-7).
+
+    The mirror of :class:`DesignFragmentActivationError`, and deliberately its sibling rather
+    than a ``ValueError``: both are refusals a HUMAN reads on the way to a decision about a
+    cloned section, and both carry a ``reason`` code the surface renders rather than a sentence
+    it has to parse.
+
+    A preview is attached once. The row's ``preview_digest`` is part of the artifact's identity
+    bytes, so replacing it would rewrite the picture somebody's activation or release decision was
+    made against, while leaving the id — the content address of what was actually minted —
+    unchanged. Re-picturing a section is minting a new one.
+    """
+
+    def __init__(self, fragment_id: str, reason: str, message: str) -> None:
+        super().__init__(message)
+        self.fragment_id = fragment_id
+        self.reason = reason
