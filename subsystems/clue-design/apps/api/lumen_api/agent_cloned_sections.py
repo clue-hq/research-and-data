@@ -679,17 +679,24 @@ class DurableAgentClonedSectionRegistry:
         }
         if comparison.get("status") != "ok":
             result["because"] = comparison.get("because")
-            return result
         # The blind artifact is composed HERE because this is the only place both pictures are in
         # hand at once — the reference never leaves the workspace's byte custody otherwise.
-        blind = build_blind_side_by_side(
-            published_png=capture_png or b"",
-            reference_png=reference_png or b"",
-            seed=blind_seed or f"{snapshot_id}:{self.workspace_id}",
-            published_caption=f"the page we rendered for {snapshot.get('page_url')}",
-        )
-        result["blind_png"] = blind.image_png
-        result["blind_key"] = blind.key
+        #
+        # **It is built whenever both pictures exist, even when the COMPARISON abstained**
+        # (round-2 re-review, breakage #4). The two are different artifacts answering different
+        # questions: the comparison needs matching viewports and readable geometry to report a
+        # number, while the blind side-by-side needs two images and a founder's eyes. Gating the
+        # artifact on the comparison meant a reference recorded at 1425px (a classic scrollbar)
+        # destroyed the CP1 acceptance walk as a side effect of a measurement it does not use.
+        if reference_png and capture_png:
+            blind = build_blind_side_by_side(
+                published_png=capture_png,
+                reference_png=reference_png,
+                seed=blind_seed or f"{snapshot_id}:{self.workspace_id}",
+                published_caption=f"the page we rendered for {snapshot.get('page_url')}",
+            )
+            result["blind_png"] = blind.image_png
+            result["blind_key"] = blind.key
         return result
 
     def _snapshot_row(self, snapshot_id: str) -> JsonObject:

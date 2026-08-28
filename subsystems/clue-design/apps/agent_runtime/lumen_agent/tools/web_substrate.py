@@ -47,7 +47,7 @@ from lumen_api.clone_review import (
     walk_plan,
 )
 from lumen_api.clone_review.blind import PANEL_LABELS as _BLIND_PANEL_LABELS
-from lumen_api.clone_review.walk import capture_behavioural_walk
+from lumen_api.clone_review.walk import TAILWIND_RUNTIME_MARKER, capture_behavioural_walk
 from lumen_api.fragments.degraded import REPAIR_RUNGS
 from lumen_api.fragments.refs import (
     ASSET_URL_PREFIX,
@@ -346,7 +346,10 @@ _REVIEW_INCOMPLETE_CODE = "LUMA0801"
 _REVIEW_ADVICE_UNAVAILABLE_CODE = "LUMA0802"
 _REVIEW_MARK_FAILED_CODE = "LUMA0803"
 #: The review result's own shape version. Bump only for a change a previous reader would MISREAD.
-_REVIEW_SCHEMA_VERSION = 1
+#: Bumped to 2 in the round-2 fix: the result gained `evidence_settled`, and its nested walk and
+#: critique payloads gained `measured` / console `source`. Additive, but a reader that branched on
+#: `evidence_settled` would read a v1 result's silence as "settled", which is the wrong default.
+_REVIEW_SCHEMA_VERSION = 2
 #: The wrapper section a pinned cloned section lives inside. `w-full` and nothing else: the clone
 #: brings its own padding, background and rhythm (that is what makes it a clone), so a wrapper
 #: that imposed the platform's section rhythm on top would double it.
@@ -6088,7 +6091,12 @@ class LumenWebTools:
         # RULING R19-1: a DURABLE degraded write requires SETTLED evidence. An unsettled walk's
         # findings are still reported — as advice, with their numbers — but nothing is written to
         # a marker the gate can never clear. `compose_critique` has already said so in words.
-        settled = critique.settled if critique is not None else False
+        # ...and a render carrying NO Tailwind runtime is never settled, whatever the page says
+        # (round-2 re-review, breakage #1). `_render_page_html` already knows this and used to
+        # only decorate the result with it; a page with no utility CSS overflows every viewport,
+        # so believing it would write unclearable `mobile_unusable` markers across a healthy
+        # library — the exact damage R19-1 exists to prevent.
+        settled = (critique.settled if critique is not None else False) and not tailwind_missing
         marked, mark_failures = (
             self._record_broken_clones(registry, broken) if settled else ([], [])
         )
@@ -6186,8 +6194,15 @@ class LumenWebTools:
         except Exception as error:  # noqa: BLE001 — the comparison is evidence, never the gate
             logger.warning("web_review_reference_failed: %s: %s", type(error).__name__, error)
             return None, None, f"{type(error).__name__}"
-        if review.get("status") != "ok":
-            return review.get("comparison"), None, str(review.get("because") or "unavailable")
+        # A comparison that abstained is a missing NUMBER, not a missing artifact: the blind
+        # side-by-side needs two pictures, and the registry composes it whenever it has them
+        # (round-2 re-review, breakage #4). So the `because` is carried through and the artifact
+        # is still written.
+        unavailable = (
+            None
+            if review.get("status") == "ok"
+            else str(review.get("because") or "unavailable")
+        )
 
         blind: Optional[JsonObject] = None
         blind_png = review.get("blind_png")
@@ -6210,7 +6225,7 @@ class LumenWebTools:
                     "one is our page BEFORE opening the answer key"
                 ),
             }
-        return review.get("comparison"), blind, None
+        return review.get("comparison"), blind, unavailable
 
     def _record_broken_clones(
         self, registry: Any, broken: Any
@@ -6920,7 +6935,15 @@ class LumenWebTools:
         tailwind_missing = False
         runtime_path = tailwind_runtime_path(Path(self.config.repo_root))
         if runtime_path is not None:
-            script = "<script>" + runtime_path.read_text(encoding="utf-8") + "</script>"
+            # The marker is what the F3.3 review gate's readiness check anchors on: the compiled
+            # utilities can only land AFTER this element, so "an untyped style following this
+            # script" means the JIT has run, and a page with no such script can never be mistaken
+            # for a compiled one. The attribute is inert to every other reader.
+            script = (
+                f"<script {TAILWIND_RUNTIME_MARKER}>"
+                + runtime_path.read_text(encoding="utf-8")
+                + "</script>"
+            )
             if "</head>" in html:
                 html = html.replace("</head>", script + "\n</head>", 1)
             else:

@@ -691,3 +691,139 @@ def test_the_rubric_no_longer_claims_the_walked_page_is_script_free() -> None:
     assert "are not the page's fault" in rubric
     # The old, false, unqualified claim is gone.
     assert "A cloned band carries no scripts, so an error has a real cause." not in rubric
+
+
+# =================================================================================================
+# Round-2 fixes — the readiness gate fails CLOSED, and the blind artifact survives an abstention
+# =================================================================================================
+
+
+def _head_of(tools: LumenWebTools) -> str:
+    html, _diagnostics, _missing = tools._render_page_html()
+    lowered = html.lower()
+    start = lowered.find("<head")
+    end = lowered.find("</head>")
+    assert start >= 0 and end > start, "the engine emitted no head to anchor on"
+    return html[start:end]
+
+
+def test_the_readiness_anchor_is_real_in_the_page_we_actually_render(tmp_path) -> None:
+    """The PREMISE, tested against a real editor-mode render rather than against a fake.
+
+    Two properties, and the second is the one round 2 exists for:
+
+    1. with the runtime present our marked `<script>` is in `<head>`, so the predicate has an
+       anchor to look forward from — and at PARSE time no untyped, non-empty `<style>` follows it,
+       so the predicate is honestly `false` until the JIT appends its output;
+    2. with the runtime ABSENT the marked script does not exist anywhere, so the predicate's first
+       clause fails and it can never answer `true` — which is the exact case the previous version
+       got wrong, because the engine's own unconditional untyped `@layer base` style satisfied it.
+    """
+    from selectolax.lexbor import LexborHTMLParser
+
+    from lumen_api.clone_review.walk import TAILWIND_RUNTIME_MARKER
+
+    tools = _tools(tmp_path, FakeRegistry())
+    head = _head_of(tools)
+    tree = LexborHTMLParser(head)
+
+    anchors = tree.css(f"script[{TAILWIND_RUNTIME_MARKER}]")
+    assert len(anchors) == 1, "the review gate's readiness anchor is missing from the render"
+
+    # The engine DOES emit an untyped, non-empty <style> — that is what the old predicate
+    # wrongly accepted — and every one of them sits BEFORE our anchor.
+    styles = [
+        node
+        for node in tree.css("style")
+        if not node.attributes.get("type") and (node.text() or "").strip()
+    ]
+    assert styles, "the engine's own untyped style block is gone; this test's premise moved"
+    marker_at = head.index(TAILWIND_RUNTIME_MARKER)
+    for node in styles:
+        assert head.index(node.html or "") < marker_at, (
+            "an untyped engine style follows the runtime anchor, which would make the readiness "
+            "predicate answer true before the JIT has compiled anything"
+        )
+
+
+def test_a_render_with_no_tailwind_runtime_can_never_be_settled(tmp_path, monkeypatch) -> None:
+    """Breakage #1: the vendored runtime is untracked, so this is a reachable deployment state."""
+    from selectolax.lexbor import LexborHTMLParser
+
+    import lumen_agent.tools.web_substrate as substrate
+    from lumen_api.clone_review.walk import TAILWIND_RUNTIME_MARKER
+
+    monkeypatch.setattr(substrate, "tailwind_runtime_path", lambda _root: None)
+    registry = FakeRegistry()
+    tools = _tools(tmp_path, registry)
+
+    # No anchor in the rendered head at all.
+    head = _head_of(tools)
+    assert TAILWIND_RUNTIME_MARKER not in head
+    assert LexborHTMLParser(head).css("style"), "the engine still emits its own style blocks"
+
+    # ...and the tool refuses to call the evidence settled, even for a page that claims readiness.
+    _patch_walk(
+        monkeypatch,
+        _fake_walk(
+            tmp_path,
+            desktop=(_measurement(height_px=3200.0, content_extent_px=200.0),),
+            mobile=(
+                _measurement(
+                    viewport="mobile", width_px=375.0, scroll_width_px=900.0, height_px=600.0
+                ),
+            ),
+            styles_ready=True,
+        ),
+    )
+    result = json.loads(tools.review_cloned_page())
+
+    assert result["tailwind_runtime_missing"] is True
+    assert result["evidence_settled"] is False
+    assert registry.marked == []
+    assert result["marked_degraded"] == []
+    assert result["broken_clones"], "the finding is still reported — it is advice, not a secret"
+
+
+def test_the_blind_artifact_survives_a_comparison_that_abstained(tmp_path, monkeypatch) -> None:
+    """Breakage #4: a viewport mismatch is a missing number, not a missing acceptance artifact."""
+    from io import BytesIO
+
+    from PIL import Image
+
+    from lumen_api.clone_review import build_blind_side_by_side
+
+    def _png(fill: int) -> bytes:
+        buffer = BytesIO()
+        Image.new("L", (600, 900), fill).save(buffer, format="PNG")
+        return buffer.getvalue()
+
+    blind = build_blind_side_by_side(
+        published_png=_png(250), reference_png=_png(200), seed="mismatch"
+    )
+    registry = FakeRegistry(
+        reference={
+            "status": "unavailable",
+            "because": "reference_viewport_mismatch",
+            "snapshot_id": "snap_1",
+            "page_url": "https://insight.example/",
+            "comparison": {"status": "unavailable", "because": "reference_viewport_mismatch"},
+            "blind_png": blind.image_png,
+            "blind_key": blind.key,
+        }
+    )
+    tools = _tools(tmp_path, registry)
+    _patch_walk(monkeypatch, _fake_walk(tmp_path, desktop=(_measurement(),)))
+
+    result = json.loads(tools.review_cloned_page())
+
+    assert result["reference_unavailable"] == "reference_viewport_mismatch"
+    artifact = result["blind_side_by_side"]
+    assert Path(artifact["image_path"]).exists()
+    assert Path(artifact["answer_key_path"]).exists()
+
+
+def test_the_review_result_carries_its_new_schema_version(tmp_path, monkeypatch) -> None:
+    tools = _tools(tmp_path, FakeRegistry())
+    _patch_walk(monkeypatch, _fake_walk(tmp_path))
+    assert json.loads(tools.review_cloned_page())["schema_version"] == 2
