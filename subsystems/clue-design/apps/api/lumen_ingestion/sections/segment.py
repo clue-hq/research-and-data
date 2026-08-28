@@ -1941,19 +1941,23 @@ def _enforce_singular_roles(candidates: list[_Candidate]) -> None:
     decided until the F3.4 fix round, and the strict contest margin turned that into a theft
     (finding N-1): an opening band NEWLY resolving ``hero`` at 0.75 stripped the role from the
     following band whose author had declared it (``class="hero-section"``, 0.80). A weaker claim
-    never displaces a stronger one; between equals, the positional rule is unchanged.
-    Confidences are compared at :data:`_MARGIN_PRECISION`, the same rounding the contest itself
-    decides at, so the float representation of a rung can never pick the keeper.
+    never displaces a stronger one; between equals, the positional rule is unchanged. And
+    "stronger" means a stronger KIND of claim — the strongest single rung backing the role
+    (:func:`_strongest_rung`), not the corroborated total, so one extra vocabulary word in a
+    later band's class list can never unseat the page's first declaration (finding D-1).
     """
     for role, which in _SINGULAR_ROLES.items():
         holders = [candidate for candidate in candidates if candidate.role == role]
         if len(holders) < 2:
             continue
-        best = max(round(holder.confidence, _MARGIN_PRECISION) for holder in holders)
+        # The comparison is the strongest single RUNG backing the role, not the corroborated
+        # total (fix round 3, finding D-1): between two declarations of the same kind — two nav
+        # landmarks, two hero class-hints — a 0.05 corroboration bonus (one extra vocabulary
+        # word in a class list) must not override the positional law. Corroboration seasons
+        # confidence; it does not change what KIND of claim was made.
+        best = max(_strongest_rung(holder, role) for holder in holders)
         strongest = [
-            holder
-            for holder in holders
-            if round(holder.confidence, _MARGIN_PRECISION) == best
+            holder for holder in holders if _strongest_rung(holder, role) == best
         ]
         keeper = strongest[0] if which == "first" else strongest[-1]
         for candidate in holders:
@@ -1964,12 +1968,28 @@ def _enforce_singular_roles(candidates: list[_Candidate]) -> None:
                     "resolution",
                     OTHER,
                     0.0,
-                    f"the page already has a {role} ({which} one wins) — demoted to `other` "
-                    "rather than named twice",
+                    f"the page already has a {role} (the strongest claim keeps it; position "
+                    "breaks ties) — demoted to `other` rather than named twice",
                 )
             )
             candidate.role = OTHER
             candidate.confidence = OTHER_CONFIDENCE
+
+
+def _strongest_rung(candidate: _Candidate, role: str) -> float:
+    """The heaviest single vote backing this candidate's claim to ``role``.
+
+    ``resolution`` entries carry no vote and other roles' votes are not claims to THIS role;
+    the fallback (no explicit vote found) is the candidate's own confidence, which keeps the
+    function total. Rounded at :data:`_MARGIN_PRECISION` — the contest's own rounding — so a
+    rung's float representation can never pick the keeper.
+    """
+    weights = [
+        evidence.weight
+        for evidence in candidate.evidence
+        if evidence.role == role and evidence.signal != "resolution"
+    ]
+    return round(max(weights) if weights else candidate.confidence, _MARGIN_PRECISION)
 
 
 # --- DOM helpers -----------------------------------------------------------------------------

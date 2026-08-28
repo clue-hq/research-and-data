@@ -1571,3 +1571,41 @@ def test_between_equal_singular_claims_the_positional_one_still_wins():
     assert roles.count("hero") == 1, roles
     assert result.sections[0].role == "hero"
     assert result.sections[1].role != "hero"
+
+
+def test_a_corroboration_bonus_never_overrides_position_between_equal_kinds_of_claim():
+    """The keeper comparison is the strongest single RUNG, not the corroborated total.
+
+    (F3.4 fix round 3, finding D-1.) Between two declarations of the same kind — two nav
+    landmarks, two hero class-hints — a 0.05 corroboration bonus on the later one must not
+    override "a page's nav and hero are its first". The strongest-claim rule (R20-5) compares
+    kinds; corroboration seasons confidence, it does not change what KIND of claim was made.
+    """
+    hero_html = """
+    <html><body><main>
+      <section class="hero"><p>First hero.</p><a href="/demo">Go</a></section>
+      <section class="hero-section banner"><p>Later, corroborated.</p><a href="/d">Go</a></section>
+    </main></body></html>
+    """
+    result = segment_page(hero_html, page_url="https://x.example/")
+    roles = [section.role for section in result.sections]
+    assert roles.count("hero") == 1, roles
+    # The FIRST class-hint hero keeps the role; the later band's extra vocabulary word is a
+    # corroboration bonus, not a stronger kind of claim.
+    assert result.sections[0].role == "hero", roles
+    assert result.sections[1].role != "hero", roles
+
+    nav_html = """
+    <html><body>
+      <nav><a href="/">Home</a><a href="/a">Product</a></nav>
+      <main>
+        <nav class="menu"><a href="/x">One</a><a href="/y">Two</a><a href="/z">Three</a></nav>
+        <section class="hero"><p>Hero.</p><a href="/demo">Go</a></section>
+      </main>
+    </body></html>
+    """
+    result = segment_page(nav_html, page_url="https://x.example/")
+    roles = [section.role for section in result.sections]
+    assert roles.count("nav") == 1, roles
+    # Both navs are landmark claims; the corroborated later one does not unseat the first.
+    assert result.sections[0].role == "nav", roles
