@@ -40,13 +40,23 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence
+
+from clue_design import site_snapshots as snapshot_dal
 
 from .asset_custody import cache_blob_path, ensure_materialized
+from .clone_review import (
+    DESKTOP_VIEWPORT,
+    RenderedBand,
+    build_blind_side_by_side,
+    compare_to_reference,
+    reference_bands_from_fragments,
+)
 from .database import NotFoundError
-from .design_store import DesignBlobStore, HybridRepository
+from .design_store import DesignBlobStore, DesignStoreBridge, HybridRepository
 from .fragments import (
     FRAGMENT_STATUS_DORMANT,
+    GATE_REASONS,
     REPAIR_NOTE_MAX_CHARS,
     FragmentRefused,
     build_fragment_artifact,
@@ -54,6 +64,7 @@ from .fragments import (
     degraded_headline,
     read_web_fragment,
     repair_reason,
+    set_web_fragment_degraded,
 )
 from .fragments.cssscope import PRELUDE_REFERENCE_STRIP
 from .fragments.render import slot_kinds
@@ -570,6 +581,128 @@ class DurableAgentClonedSectionRegistry:
                 "derived": bool(row.get("derived_from")),
             },
         }
+
+    # --- the behavioural review gate (F3.3, rulings D-F6 / D-F7) -------------------------------
+
+    def mark_degraded(self, fragment_id: str, *, reason: str) -> JsonObject:
+        """Record that the behavioural walk measured this clone as broken (F3.3).
+
+        The gate's ONE durable write, and it is deliberately narrow in three ways:
+
+        * **Only the gate's own reason codes** (:data:`~lumen_api.fragments.degraded.GATE_REASONS`)
+          are accepted. ``dead_height`` in particular is refused: that code belongs to the
+          mint-time detector, whose reconciler re-measures it from a fresh capture and would
+          silently clear a verdict about how OUR page renders — the R-I1-narrow rule protects
+          these findings precisely because they are spelled differently.
+        * **Only ON.** Nothing here can un-break a clone. A marker is cleared by its own
+          detector re-measuring (the mint path) or by a human; a review pass that happens not to
+          reproduce a defect has not proven the defect is gone.
+        * **Never at the model's word.** The tool that calls this computes the reason from
+          measured numbers; there is no route by which an agent's argument becomes a marker.
+        """
+        if reason not in GATE_REASONS:
+            raise ValueError(
+                f"the behavioural review gate may only record its own reasons {GATE_REASONS!r}; "
+                f"{reason!r} belongs to another producer and would be cleared by it"
+            )
+        return set_web_fragment_degraded(
+            workspace_id=self.workspace_id,
+            fragment_id=fragment_id,
+            degraded=True,
+            reason=reason,
+        )
+
+    def reference_review(
+        self,
+        fragment_ids: Iterable[str],
+        *,
+        capture_png: bytes | None,
+        rendered_bands: Sequence[Mapping[str, Any]] = (),
+        rendered_viewport_width: int = DESKTOP_VIEWPORT.width,
+        blind_seed: str = "",
+    ) -> JsonObject:
+        """Our page against F0's reference capture, plus the blind side-by-side artifact.
+
+        Lives on the registry rather than in the agent runtime because it is a DATABASE read: the
+        reference is the ``design_site_snapshot`` row the ingestion job kept (F0.1), found through
+        the pinned fragments' own mint provenance rather than by matching a url — the provenance
+        names the exact snapshot each band was cut from, so there is no guessing about which
+        capture of which page this page is a clone of.
+
+        Returns an honest ``status: "unavailable"`` with a ``because`` code whenever any half of
+        the comparison is missing. A page whose clones predate snapshot custody, a static-tier
+        capture that never took a screenshot, and a walk that could not photograph our own page
+        are three different problems, and the caller is told which.
+        """
+        rows = [
+            row
+            for row in self._repository().list_web_fragments()
+            if row.get("fragment_id") in set(fragment_ids)
+        ]
+        bands, viewport_width, snapshot_id = reference_bands_from_fragments(rows)
+        if snapshot_id is None:
+            return {"status": "unavailable", "because": "no_snapshot_provenance"}
+        try:
+            snapshot = self._snapshot_row(snapshot_id)
+        except NotFoundError:
+            return {"status": "unavailable", "because": "snapshot_missing"}
+        screenshot_digest = snapshot.get("screenshot_digest")
+        reference_png: bytes | None = None
+        if screenshot_digest:
+            try:
+                reference_png = self.blobs.read(str(screenshot_digest))
+            except NotFoundError:
+                reference_png = None
+
+        comparison = compare_to_reference(
+            reference_png=reference_png,
+            capture_png=capture_png,
+            reference_viewport_width=viewport_width or snapshot.get("viewport_width"),
+            rendered_viewport_width=rendered_viewport_width,
+            reference_bands=bands,
+            rendered_bands=[
+                RenderedBand(
+                    fragment_id=str(band.get("fragment_id") or ""),
+                    top_px=float(band.get("top_px") or 0.0),
+                    height_px=float(band.get("height_px") or 0.0),
+                )
+                for band in rendered_bands
+                if band.get("fragment_id")
+            ],
+        )
+
+        result: JsonObject = {
+            "status": comparison.get("status"),
+            "snapshot_id": snapshot_id,
+            "page_url": snapshot.get("page_url"),
+            "comparison": comparison,
+        }
+        if comparison.get("status") != "ok":
+            result["because"] = comparison.get("because")
+            return result
+        # The blind artifact is composed HERE because this is the only place both pictures are in
+        # hand at once — the reference never leaves the workspace's byte custody otherwise.
+        blind = build_blind_side_by_side(
+            published_png=capture_png or b"",
+            reference_png=reference_png or b"",
+            seed=blind_seed or f"{snapshot_id}:{self.workspace_id}",
+            published_caption=f"the page we rendered for {snapshot.get('page_url')}",
+        )
+        result["blind_png"] = blind.image_png
+        result["blind_key"] = blind.key
+        return result
+
+    def _snapshot_row(self, snapshot_id: str) -> JsonObject:
+        """One ``design_site_snapshot`` row — the row only, no html and no stylesheet bytes.
+
+        Deliberately not ``read_site_snapshot``: that loads the page's html and every stylesheet
+        it fetched, which for a real homepage is megabytes this comparison never looks at.
+        """
+        return DesignStoreBridge(self.workspace_id)._run(
+            lambda conn: snapshot_dal.get_site_snapshot(
+                conn, workspace_id=self.workspace_id, snapshot_id=snapshot_id
+            )
+        )
 
     # --- the repair mint (F3.1, ruling D-F6) --------------------------------------------------
 
