@@ -1,0 +1,613 @@
+"""ABM batch personalization + publish (clone-fidelity F4.3, rulings R25-1…R25-7).
+
+F4.2 made the ABM page a TEMPLATE: one document whose slots hold `{{account.name}}` /
+`{{account.logo}}` / `{{account.domain}}`. This is the run that turns it into N published pages,
+and the four things it had to grow to do that honestly:
+
+* **The G1+G2 bridge** (R25-1). `DurableAgentAccountLogoBinder` puts a ladder-fetched mark into
+  the `design_asset` registry (G1) and stamps `design_account.logo_asset_id` (G2), so
+  `account_values()` — which reads exactly that one column — finally resolves
+  `{{account.logo}}`. Workspace-scoped and fail-closed at every door; an account we hold no mark
+  for derives the empty-logo page, which is CORRECT and permanent.
+* **`abm-<account>` slugs** (R25-3 / D-F5), deterministic and collision-suffixed.
+* **`noindex` as a per-page publish OPTION** (R25-4). The account page carries the robots meta;
+  an ordinary homepage publish is byte-identical to what it was before this task. Both
+  directions pinned, because a global flip would quietly de-index every client homepage we host.
+* **The template never publishes** (R25-7). An un-derived ABM page renders literal `{{…}}` to a
+  visitor, so the publish seam refuses it by name. The batch path is structurally safe already —
+  it publishes what it derived — and that is pinned too rather than assumed.
+
+DB-backed, with the suite's per-test workspace + disposable `FsStorage`. The agent half of the
+bridge — the tool, its refusals — is `apps/agent_runtime/tests/test_web_account_logo_bind.py`.
+"""
+
+from __future__ import annotations
+
+import hashlib
+from pathlib import Path
+
+import pytest
+from clue_storage import FsStorage
+from fastapi.testclient import TestClient
+
+from conftest import make_client
+
+from lumen_api.design_store import DesignBlobStore, HybridRepository
+from lumen_api.fragments.campaign_shell import CAMPAIGN_SHELL_FOOTER, CAMPAIGN_SHELL_HEADER
+from lumen_api.main import create_app
+
+from test_abm_assembly import (  # the F4.2 template, reused rather than re-built
+    TINY_PNG,
+    _assembled_doc,
+    _registry,
+    _released_hero,
+    _released_shell,
+)
+
+
+# --------------------------------------------------------------------------- #
+# fixtures
+# --------------------------------------------------------------------------- #
+
+
+@pytest.fixture()
+def client(tmp_path: Path, design_storage: FsStorage) -> TestClient:
+    return make_client(create_app(tmp_path / "engine-cache", storage=design_storage))
+
+
+def _abm_template(
+    client: TestClient,
+    workspace_id: str,
+    storage: FsStorage,
+    cache: Path,
+    document_id: str = "doc_abm_template",
+) -> str:
+    registry = _registry(workspace_id, storage, cache)
+    registry.campaign_shell_placeholder()
+    header = _released_shell(registry, CAMPAIGN_SHELL_HEADER)
+    footer = _released_shell(registry, CAMPAIGN_SHELL_FOOTER)
+    hero = _released_hero(workspace_id, storage)
+    HybridRepository(workspace_id=workspace_id).create_document(
+        _assembled_doc(document_id, header, hero, footer), doc_kind="web"
+    )
+    return document_id
+
+
+def _account(client: TestClient, name: str, *, logo_asset_id: str | None = None) -> str:
+    body = {"name": name, "domain": f"{name.split()[0].lower()}.example"}
+    if logo_asset_id:
+        body["logo_asset_id"] = logo_asset_id
+    response = client.post("/web/accounts", json=body)
+    assert response.status_code == 200, response.text
+    return response.json()["account_id"]
+
+
+def _upload_logo(client: TestClient, label: str) -> str:
+    return client.post(
+        "/assets",
+        files={"file": ("mark.png", TINY_PNG, "image/png")},
+        data={"label": label, "kind": "raster_image"},
+    ).json()["asset"]["id"]
+
+
+# --------------------------------------------------------------------------- #
+# R25-3 — the slug rule, stated exactly and pinned
+# --------------------------------------------------------------------------- #
+
+
+def test_the_abm_slug_rule_is_the_prefix_plus_the_slugified_account_name() -> None:
+    """D-F5, spelled out: `abm-` + the display name lowercased, non-alnum runs collapsed to one
+    dash, dashes trimmed. Nothing about the template's title enters an ABM slug."""
+    from lumen_api.main import ABM_SLUG_BASE, abm_account_slug
+
+    assert ABM_SLUG_BASE == "abm"
+    assert abm_account_slug("Goodman Campbell Brain & Spine") == (
+        "abm-goodman-campbell-brain-spine"
+    )
+    assert abm_account_slug("Privia Health") == "abm-privia-health"
+    assert abm_account_slug("  ACME   Health, Inc.  ") == "abm-acme-health-inc"
+    # An unslugifiable name still yields a legal slug rather than a crash.
+    assert abm_account_slug("...") == "abm-site"
+
+
+def test_two_accounts_with_one_name_take_suffixed_slugs_not_one_page(
+    client: TestClient, workspace_id: str, design_storage: FsStorage, tmp_path: Path
+) -> None:
+    template = _abm_template(client, workspace_id, design_storage, tmp_path / "cache")
+    accounts = [_account(client, "Acme Health"), _account(client, "Acme Health")]
+
+    body = client.post(
+        f"/documents/{template}/web/batch",
+        json={"account_ids": accounts, "publish": True, "abm": True},
+    ).json()
+
+    slugs = [row["slug"] for row in body["manifest"]]
+    assert slugs == ["abm-acme-health", "abm-acme-health-2"]
+
+
+def test_an_abm_batch_refuses_a_caller_supplied_slug_base_rather_than_overriding_it(
+    client: TestClient, workspace_id: str, design_storage: FsStorage, tmp_path: Path
+) -> None:
+    template = _abm_template(client, workspace_id, design_storage, tmp_path / "cache")
+
+    response = client.post(
+        f"/documents/{template}/web/batch",
+        json={
+            "account_ids": [_account(client, "Acme Health")],
+            "publish": True,
+            "abm": True,
+            "slug_base": "spring-campaign",
+        },
+    )
+
+    assert response.status_code == 422, response.text
+    assert response.json()["detail"]["code"] == "web_batch.slug_base_conflict"
+
+
+# --------------------------------------------------------------------------- #
+# R25-2 / R25-5 — the batch walk and what its manifest says
+# --------------------------------------------------------------------------- #
+
+
+def test_the_batch_derives_and_publishes_one_page_per_account_and_says_which_carried_a_logo(
+    client: TestClient, workspace_id: str, design_storage: FsStorage, tmp_path: Path
+) -> None:
+    """Red case 3. A mixed run — one account with a bound logo, one without — is N documents at
+    `abm-<account>` slugs, every one publishable, and the manifest reads afterwards."""
+    template = _abm_template(client, workspace_id, design_storage, tmp_path / "cache")
+    logo = _upload_logo(client, "Goodman Campbell logo")
+    with_logo = _account(client, "Goodman Campbell", logo_asset_id=logo)
+    without_logo = _account(client, "Privia Health")
+
+    body = client.post(
+        f"/documents/{template}/web/batch",
+        json={"account_ids": [with_logo, without_logo], "publish": True, "abm": True},
+    ).json()
+
+    assert body["status"] == "completed"
+    rows = {row["account_id"]: row for row in body["manifest"]}
+    assert set(rows) == {with_logo, without_logo}
+    for row in rows.values():
+        assert row["status"] == "published"
+        assert row["document_id"]
+        assert row["slug"].startswith("abm-")
+        assert row["url"] == f"/w/{workspace_id}/p/{row['slug']}"
+        assert row["noindex"] is True
+        assert row["error"] is None
+        assert client.get(row["url"]).status_code == 200
+    # R25-2: the manifest SAYS, per account, whether a logo was bound or the slot derived empty.
+    assert rows[with_logo]["logo"] == {"bound": True, "asset_id": logo}
+    assert rows[without_logo]["logo"] == {"bound": False, "reason": "no_logo_on_account"}
+    # R25-5: readable after the fact, not only in the call's response.
+    later = client.get(f"/web/batches/{body['batch_id']}").json()
+    assert later["manifest"] == body["manifest"]
+
+
+def test_the_batch_fires_no_logo_fetch_of_its_own(
+    client: TestClient, workspace_id: str, design_storage: FsStorage, tmp_path: Path
+) -> None:
+    """Ruling R25-2: populating logos is an EXPLICIT prior per-account act, never a fan-out the
+    batch route starts. An account with no bound logo derives the empty-logo page and the run
+    reaches out to nobody."""
+    import lumen_agent.tools.logo_fetch as logo_fetch
+
+    template = _abm_template(client, workspace_id, design_storage, tmp_path / "cache")
+    calls: list = []
+
+    original = logo_fetch.fetch_logo_family
+    logo_fetch.fetch_logo_family = lambda *a, **k: calls.append(a) or original(*a, **k)
+    try:
+        body = client.post(
+            f"/documents/{template}/web/batch",
+            json={"account_ids": [_account(client, "Privia Health")], "publish": True, "abm": True},
+        ).json()
+    finally:
+        logo_fetch.fetch_logo_family = original
+
+    assert calls == []
+    assert body["manifest"][0]["logo"] == {"bound": False, "reason": "no_logo_on_account"}
+
+
+def test_a_bound_logo_reaches_the_published_account_page(
+    client: TestClient, workspace_id: str, design_storage: FsStorage, tmp_path: Path
+) -> None:
+    template = _abm_template(client, workspace_id, design_storage, tmp_path / "cache")
+    logo = _upload_logo(client, "Goodman Campbell logo")
+    account = _account(client, "Goodman Campbell", logo_asset_id=logo)
+    digest = HybridRepository(workspace_id=workspace_id).require_asset_record(logo)["asset"][
+        "media"
+    ]["digest"]["value"]
+
+    body = client.post(
+        f"/documents/{template}/web/batch",
+        json={"account_ids": [account], "publish": True, "abm": True},
+    ).json()
+
+    page = client.get(body["manifest"][0]["url"]).text
+    assert f"/asset-store/{digest}" in page
+    assert "Goodman Campbell" in page
+
+
+def test_re_running_an_abm_batch_converges_on_one_document_per_account(
+    client: TestClient, workspace_id: str, design_storage: FsStorage, tmp_path: Path
+) -> None:
+    """Red case 8. Fifty accounts re-derived after a template edit must be fifty pages, not a
+    hundred — and the slug must stay the slug somebody already sent out."""
+    template = _abm_template(client, workspace_id, design_storage, tmp_path / "cache")
+    account = _account(client, "Goodman Campbell")
+
+    first = client.post(
+        f"/documents/{template}/web/batch",
+        json={"account_ids": [account], "publish": True, "abm": True},
+    ).json()["manifest"][0]
+    second = client.post(
+        f"/documents/{template}/web/batch",
+        json={"account_ids": [account], "publish": True, "abm": True},
+    ).json()["manifest"][0]
+
+    assert second["document_id"] == first["document_id"]
+    assert second["slug"] == first["slug"] == "abm-goodman-campbell"
+    assert second["status"] == "published"
+    # The id is the (template, account) pair's own, and the second run gained a REVISION on it
+    # rather than a twin document beside it.
+    from lumen_api.main import abm_derived_document_id
+
+    assert first["document_id"] == abm_derived_document_id(template, account)
+    document = HybridRepository(workspace_id=workspace_id).require_document(
+        first["document_id"]
+    )
+    assert document["current_version"] > 0
+    assert document["account_id"] == account
+
+
+# --------------------------------------------------------------------------- #
+# R25-4 — noindex is an OPTION, and both directions are pinned
+# --------------------------------------------------------------------------- #
+
+ROBOTS_META = '<meta name="robots" content="noindex">'
+
+
+def test_the_account_page_carries_the_robots_meta(
+    client: TestClient, workspace_id: str, design_storage: FsStorage, tmp_path: Path
+) -> None:
+    template = _abm_template(client, workspace_id, design_storage, tmp_path / "cache")
+    body = client.post(
+        f"/documents/{template}/web/batch",
+        json={"account_ids": [_account(client, "Acme Health")], "publish": True, "abm": True},
+    ).json()
+
+    page = client.get(body["manifest"][0]["url"]).text
+    assert ROBOTS_META in page
+
+
+def test_an_ordinary_publish_is_byte_identical_to_what_it_was_before_this_task(
+    client: TestClient, workspace_id: str, design_storage: FsStorage, tmp_path: Path
+) -> None:
+    """The other direction, and the one that matters more: a homepage publish must not have
+    quietly become noindex. The default is off, and the ONLY difference the option makes is the
+    one meta line."""
+    from lumen_api import web_export
+
+    template = _abm_template(client, workspace_id, design_storage, tmp_path / "cache")
+    published = client.post(
+        f"/documents/{template}/web/publish", json={"slug": "insight-home"}
+    )
+    # The template itself refuses (R25-7), so publish a DERIVED page through the ordinary route.
+    assert published.status_code == 422
+    account = _account(client, "Acme Health")
+    derived = client.post(
+        f"/documents/{template}/web/derive", json={"account_id": account}
+    ).json()["document_id"]
+    ordinary = client.post(f"/documents/{derived}/web/publish", json={"slug": "acme-home"})
+    assert ordinary.status_code == 200, ordinary.text
+
+    page = client.get(f"/w/{workspace_id}/p/acme-home").text
+    assert "robots" not in page
+    row = HybridRepository(workspace_id=workspace_id).get_web_publish("acme-home")
+    assert "robots" not in (row.get("manifest") or {})
+
+    # And the option's whole effect is additive: same package, one extra meta line.
+    app = client.app
+    document = HybridRepository(workspace_id=workspace_id).require_document(derived)
+    blobs = DesignBlobStore(design_storage, workspace_id)
+    kwargs = dict(
+        blobs=blobs,
+        slug="acme-home",
+        public_base="http://testserver",
+        workspace_id=workspace_id,
+        node_bin=app.state.web_export_node_bin,
+    )
+    plain = web_export.build_publish_package(
+        app.state.core, HybridRepository(workspace_id=workspace_id), document, **kwargs
+    )
+    hidden = web_export.build_publish_package(
+        app.state.core,
+        HybridRepository(workspace_id=workspace_id),
+        document,
+        noindex=True,
+        **kwargs,
+    )
+    assert ROBOTS_META not in plain.html
+    assert "noindex" not in plain.html
+    assert "robots" not in plain.manifest
+    assert ROBOTS_META in hidden.html
+    assert hidden.manifest["robots"] == "noindex"
+    # The option's effect is BOUNDED: one meta line, plus the manifest digest that line's
+    # manifest entry moves (which is what a content-addressed manifest is for). Nothing else.
+    normalized = hidden.html.replace(ROBOTS_META + "\n", "").replace(
+        hidden.manifest_digest, plain.manifest_digest
+    )
+    assert normalized == plain.html
+
+
+# --------------------------------------------------------------------------- #
+# R25-7 — the template never publishes
+# --------------------------------------------------------------------------- #
+
+
+def test_publishing_the_un_derived_template_is_refused_by_name(
+    client: TestClient, workspace_id: str, design_storage: FsStorage, tmp_path: Path
+) -> None:
+    """T24 review M3. The un-derived page renders literal `{{account.name}}`; a visitor must
+    never see it, so the publish seam refuses rather than warning into a manifest nobody reads."""
+    template = _abm_template(client, workspace_id, design_storage, tmp_path / "cache")
+
+    response = client.post(
+        f"/documents/{template}/web/publish", json={"slug": "abm-template"}
+    )
+
+    assert response.status_code == 422, response.text
+    detail = response.json()["detail"]
+    assert detail["code"] == "web_publish.unresolved_markers"
+    assert "{{account.name}}" in detail["message"]
+    assert "derive" in detail["message"]
+    # Nothing was published.
+    assert HybridRepository(workspace_id=workspace_id).get_web_publish("abm-template") is None
+
+
+def test_the_derived_page_publishes_because_it_has_no_markers_left(
+    client: TestClient, workspace_id: str, design_storage: FsStorage, tmp_path: Path
+) -> None:
+    template = _abm_template(client, workspace_id, design_storage, tmp_path / "cache")
+    account = _account(client, "Acme Health")
+    derived = client.post(
+        f"/documents/{template}/web/derive", json={"account_id": account}
+    ).json()["document_id"]
+
+    response = client.post(f"/documents/{derived}/web/publish", json={"slug": "abm-acme"})
+
+    assert response.status_code == 200, response.text
+    page = client.get(f"/w/{workspace_id}/p/abm-acme").text
+    assert "{{account." not in page
+
+
+def test_the_batch_publishes_only_what_it_derived(
+    client: TestClient, workspace_id: str, design_storage: FsStorage, tmp_path: Path
+) -> None:
+    """Structural half of R25-7: every slug the batch mints points at a DERIVED document, never
+    at the template it read."""
+    template = _abm_template(client, workspace_id, design_storage, tmp_path / "cache")
+    accounts = [_account(client, "Acme Health"), _account(client, "Privia Health")]
+
+    body = client.post(
+        f"/documents/{template}/web/batch",
+        json={"account_ids": accounts, "publish": True, "abm": True},
+    ).json()
+
+    repo = HybridRepository(workspace_id=workspace_id)
+    for row in body["manifest"]:
+        assert row["document_id"] != template
+        publish = repo.get_web_publish(row["slug"])
+        assert publish["document_id"] == row["document_id"]
+        assert repo.require_document(row["document_id"])["account_id"] == row["account_id"]
+
+
+def test_an_export_of_the_template_warns_loudly_rather_than_refusing(
+    client: TestClient, workspace_id: str, design_storage: FsStorage, tmp_path: Path
+) -> None:
+    """The split, ruled: refuse where a VISITOR would see the markers, warn where a HUMAN is
+    looking. An export is an inspection surface — refusing it would remove the only way to look
+    at a template's package."""
+    from lumen_api import web_export
+
+    template = _abm_template(client, workspace_id, design_storage, tmp_path / "cache")
+    document = HybridRepository(workspace_id=workspace_id).require_document(template)
+    bundle = web_export.build_export_bundle(
+        client.app.state.core,
+        HybridRepository(workspace_id=workspace_id),
+        document,
+        blobs=DesignBlobStore(design_storage, workspace_id),
+        generated_at="2026-08-29T00:00:00Z",
+        node_bin=client.app.state.web_export_node_bin,
+    )
+    assert any("{{account.name}}" in warning for warning in bundle.warnings)
+
+
+def test_the_marker_guard_is_the_account_namespace_and_nothing_wider() -> None:
+    """A cloned site's own markup can legitimately carry `{{ }}` (a template engine's braces left
+    in static HTML). The guard reads OUR grammar — `{{account.…}}` — and nothing else."""
+    from lumen_api.fragments.abm_page import unresolved_account_markers
+
+    assert unresolved_account_markers("<p>{{account.name}}</p>") == ("{{account.name}}",)
+    assert unresolved_account_markers("<p>{{ account.beds }}</p>") == ("{{ account.beds }}",)
+    assert unresolved_account_markers("<p>{{ price | currency }}</p>") == ()
+    assert unresolved_account_markers("<p>{{campaign.headline}}</p>") == ()
+    assert unresolved_account_markers("<p>Acme Health</p>") == ()
+
+
+# --------------------------------------------------------------------------- #
+# R25-1 — the G1+G2 bridge, on the real binder
+# --------------------------------------------------------------------------- #
+
+
+def _fetched_record(body: bytes, asset_id: str = "asset_ing_deadbeefdeadbeef") -> dict:
+    digest = hashlib.sha256(body).hexdigest()
+    return {
+        "id": asset_id,
+        "label": "Goodman Campbell logo (light)",
+        "kind": "raster_image",
+        "status": "ready",
+        "source": {"kind": "website", "url": "https://goodmancampbell.com/brand/logo.png"},
+        "media": {
+            "mime_type": "image/png",
+            "byte_length": len(body),
+            "digest": {"algorithm": "sha256", "value": digest},
+            "location": {
+                "provider": "local-store",
+                "opaque_ref": f"sha256/{digest[:2]}/{digest}",
+                "url": None,
+            },
+        },
+        "provenance": {"created_by": "logo_ladder", "source_label": "website"},
+        "tags": ["target-account", "logo-ladder"],
+    }
+
+
+def _binder(workspace_id: str, storage: FsStorage, cache: Path):
+    from lumen_api.agent_account_logos import DurableAgentAccountLogoBinder
+
+    return DurableAgentAccountLogoBinder(
+        blobs=DesignBlobStore(storage, workspace_id), cache_dir=cache
+    )
+
+
+def _stage_bytes(cache: Path, body: bytes) -> None:
+    from lumen_api.asset_custody import write_cache_blob
+
+    write_cache_blob(cache, hashlib.sha256(body).hexdigest(), body)
+
+
+def test_the_bridge_registers_the_asset_and_stamps_the_account(
+    client: TestClient, workspace_id: str, design_storage: FsStorage, tmp_path: Path
+) -> None:
+    """Red case 1, end to end: bind → `require_asset_record` resolves it → the derive of the F4.2
+    template renders that account's real digest on its own page."""
+    cache = tmp_path / "cache"
+    _stage_bytes(cache, TINY_PNG)
+    record = _fetched_record(TINY_PNG)
+    template = _abm_template(client, workspace_id, design_storage, cache)
+    account = _account(client, "Goodman Campbell")
+
+    result = _binder(workspace_id, design_storage, cache).bind(
+        account_id=account, record=dict(record)
+    )
+
+    assert result["asset_id"] == record["id"]
+    repo = HybridRepository(workspace_id=workspace_id)
+    # G1: the registry the derive reads resolves it.
+    assert repo.require_asset_record(record["id"])["asset"]["id"] == record["id"]
+    # G2: the column `account_values()` reads is stamped.
+    assert repo.require_web_account(account)["logo_asset_id"] == record["id"]
+
+    derived = client.post(
+        f"/documents/{template}/web/derive", json={"account_id": account}
+    ).json()["document_id"]
+    html = client.get(f"/documents/{derived}/web/render").json()["html"]
+    assert f"/asset-store/{record['media']['digest']['value']}" in html
+
+
+def test_the_bridge_refuses_another_workspaces_account_and_stamps_nothing(
+    client: TestClient, workspace_id: str, design_storage: FsStorage, tmp_path: Path
+) -> None:
+    """Red case 6 — the B3 law. The binder's tenant comes from its blob store; a foreign account
+    id is as unresolvable as an absent one."""
+    from lumen_api.agent_account_logos import AccountLogoRefused
+
+    cache = tmp_path / "cache"
+    _stage_bytes(cache, TINY_PNG)
+    account = _account(client, "Goodman Campbell")
+    stranger = _binder("ws_someone_else", design_storage, cache)
+
+    with pytest.raises(AccountLogoRefused) as raised:
+        stranger.bind(account_id=account, record=_fetched_record(TINY_PNG))
+
+    assert raised.value.code == "account_logo.unknown_account"
+    assert HybridRepository(workspace_id=workspace_id).require_web_account(account)[
+        "logo_asset_id"
+    ] is None
+
+
+def test_the_bridge_refuses_a_record_whose_bytes_nothing_holds(
+    client: TestClient, workspace_id: str, design_storage: FsStorage, tmp_path: Path
+) -> None:
+    """An account logo bound to bytes nobody can serve is the white-chip failure with extra
+    steps. Nothing is registered and nothing is stamped."""
+    from lumen_api.agent_account_logos import AccountLogoRefused
+
+    cache = tmp_path / "cache"  # deliberately NOT staged
+    account = _account(client, "Goodman Campbell")
+
+    with pytest.raises(AccountLogoRefused) as raised:
+        _binder(workspace_id, design_storage, cache).bind(
+            account_id=account, record=_fetched_record(TINY_PNG)
+        )
+
+    assert raised.value.code == "account_logo.bytes_unavailable"
+    repo = HybridRepository(workspace_id=workspace_id)
+    assert repo.require_web_account(account)["logo_asset_id"] is None
+
+
+def test_re_binding_the_same_mark_converges(
+    client: TestClient, workspace_id: str, design_storage: FsStorage, tmp_path: Path
+) -> None:
+    cache = tmp_path / "cache"
+    _stage_bytes(cache, TINY_PNG)
+    account = _account(client, "Goodman Campbell")
+    binder = _binder(workspace_id, design_storage, cache)
+
+    first = binder.bind(account_id=account, record=_fetched_record(TINY_PNG))
+    second = binder.bind(account_id=account, record=_fetched_record(TINY_PNG))
+
+    assert first["changed"] is True and second["changed"] is False
+    assert second["previous_asset_id"] == first["asset_id"]
+    assert HybridRepository(workspace_id=workspace_id).require_web_account(account)[
+        "logo_asset_id"
+    ] == first["asset_id"]
+
+
+# --------------------------------------------------------------------------- #
+# R25-6 — the chosen arm: the registration path never depends on `opaque_ref`
+# --------------------------------------------------------------------------- #
+
+
+def test_a_bound_record_resolves_by_digest_whichever_arm_the_resolver_takes(
+    client: TestClient, workspace_id: str, design_storage: FsStorage, tmp_path: Path
+) -> None:
+    """Ruling R25-6, arm (b). `store_resolver.rs:29-32` reads `location.opaque_ref` FIRST when
+    the provider is `local-store`, so a record carrying a stale or foreign ref renders a white
+    chip. Every record this bridge writes is immune, and this is why:
+
+    * the engine's `ingest_asset` sets `opaque_ref = digest_relative_path(digest)` — the SAME
+      path the digest fallback computes, so the two arms agree by construction;
+    * the bind's custody step then re-points `location` at platform storage
+      (`provider: "clue-storage"`), which is not `local-store` at all, so the resolver takes the
+      digest arm outright.
+
+    The residual — a hand-authored `local-store` record whose ref names other bytes — cannot be
+    produced by this path and is ledgered for the CP2 walk rather than fixed in Rust.
+    """
+    from clue_design.storage import (
+        DESIGN_LOCATION_PROVIDER,
+        LEGACY_LOCATION_PROVIDERS,
+        location_digest,
+    )
+
+    cache = tmp_path / "cache"
+    _stage_bytes(cache, TINY_PNG)
+    account = _account(client, "Goodman Campbell")
+    record = _fetched_record(TINY_PNG)
+    digest = record["media"]["digest"]["value"]
+
+    # As handed over by `ingest_asset`: the local-store arm already points at the digest path.
+    assert record["media"]["location"]["provider"] in LEGACY_LOCATION_PROVIDERS
+    assert record["media"]["location"]["opaque_ref"] == f"sha256/{digest[:2]}/{digest}"
+    assert location_digest(record["media"]["location"]) == digest
+
+    _binder(workspace_id, design_storage, cache).bind(account_id=account, record=record)
+
+    stored = HybridRepository(workspace_id=workspace_id).require_asset_record(record["id"])[
+        "asset"
+    ]
+    location = stored["media"]["location"]
+    assert location["provider"] == DESIGN_LOCATION_PROVIDER  # not `local-store`
+    assert location_digest(location) == stored["media"]["digest"]["value"] == digest

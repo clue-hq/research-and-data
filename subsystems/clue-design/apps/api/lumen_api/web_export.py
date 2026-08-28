@@ -29,7 +29,7 @@ import subprocess
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, NamedTuple, Optional, Tuple
+from typing import Any, Dict, List, NamedTuple, Optional, Sequence, Tuple
 from urllib.parse import urlsplit
 
 from clue_design.storage import SOURCE_KEY_PUBLISH_ASSET
@@ -43,6 +43,7 @@ from .custom_component_runtime import (
 )
 from .database import NotFoundError
 from .design_store import CustodyState, DesignBlobStore
+from .fragments.abm_page import unresolved_account_markers
 from .fragments.render import (
     build_fragment_render_package,
     css_class_names,
@@ -78,6 +79,12 @@ UNSERVABLE_ASSET_MEDIA_TYPE = "application/octet-stream"
 
 # The one page every website-mode doc renders (mirrors the render endpoint).
 HOME_PAGE_ID = "home"
+
+# Clone-fidelity F4.3, ruling R25-4: the whole of the `noindex` publish option, as one line.
+# CP2's ABM account pages are reachable by their explicit URL and by nothing else (they are
+# absent from every navigation, because the campaign shells have no way out) — so they must also
+# be absent from the index. Per page, never global.
+ROBOTS_NOINDEX_META = '<meta name="robots" content="noindex">'
 
 # SEO description budget.
 DESCRIPTION_MAX = 155
@@ -138,6 +145,19 @@ class WebExportToolchainMissing(WebExportCompileError):
     reports them: "the compile ran and rejected your CSS" is about the input, and "there is no
     compiler on this machine" is about the environment. A caller that only knows
     ``WebExportCompileError`` still catches it and is no worse off than before."""
+
+
+class WebExportUnresolvedMarkers(WebExportError):
+    """A publish was asked for a page that still shows its `{{account.…}}` markers (R25-7).
+
+    Not a build failure — the build succeeded, and what it built is a TEMPLATE. So the caller
+    maps it to a 422 naming the remedy (derive it for an account, publish the derived page)
+    rather than to the 502 every other :class:`WebExportError` becomes.
+    """
+
+    def __init__(self, message: str, markers: Sequence[str]) -> None:
+        super().__init__(message)
+        self.markers = tuple(markers)
 
 
 def persist_publish_assets(
@@ -1327,6 +1347,16 @@ def build_export_bundle(
     )
     html = render.get("html") or ""
 
+    # R25-7, the export half of the split. Publishing an un-derived template is REFUSED (a
+    # visitor would read the markers); exporting one is WARNED, loudly, on the manifest a human
+    # is already opening. A zip is an inspection surface — refusing it would remove the only way
+    # to look at a template's package, and the person holding the file can see what it says.
+    for marker in unresolved_account_markers(html):
+        warnings.append(
+            f"the exported page still shows the account marker {marker}: this is a TEMPLATE, "
+            "not one account's page. Derive it for an account and export the derived page."
+        )
+
     # 3. Assets: copy referenced image bytes, rewrite the html to the
     #    extensioned path.
     images = _resolve_images(web_doc)
@@ -1425,6 +1455,7 @@ def build_publish_package(
     public_base: str,
     workspace_id: str,
     node_bin: str = "node",
+    noindex: bool = False,
 ) -> PublishPackage:
     """Build one immutable publish package for same-origin delivery.
 
@@ -1439,6 +1470,12 @@ def build_publish_package(
     is ambiguous. This is the interim O6b scheme — Part-IV item 5 replaces it.
     The ``/asset-store`` URLs stay unprefixed: that route is not part of the
     public publish surface and is unchanged by O6b.
+
+    ``noindex`` (clone-fidelity F4.3, ruling R25-4) adds ONE line to the head:
+    ``<meta name="robots" content="noindex">``. It is a per-page option and it
+    defaults off, so every publish that does not ask for it is byte-identical to
+    what this function produced before the option existed — which matters,
+    because a global flip would quietly de-index every client homepage we host.
     """
     web_doc = document["scene"]
     brand_kit = _resolve_brand_kit(web_doc, blobs)
@@ -1499,6 +1536,24 @@ def build_publish_package(
     )
     html = render.get("html") or ""
 
+    # R25-7 — THE TEMPLATE NEVER PUBLISHES. An ABM page is a template whose slots hold
+    # `{{account.name}}` / `{{account.logo}}` / `{{account.domain}}`; the F1.4 account derive
+    # substitutes them per account, and an UN-derived one renders the markers verbatim to
+    # whoever opens the URL. Refused here rather than warned, because this seam is the one a
+    # visitor reads: a warning on a manifest nobody opens is not a guard, and the remedy is one
+    # derive away. (The EXPORT path warns instead — see `build_export_bundle`: a zip is an
+    # inspection surface a human is already looking at, and refusing it would remove the only
+    # way to examine a template's package.)
+    markers = unresolved_account_markers(html)
+    if markers:
+        raise WebExportUnresolvedMarkers(
+            f"document {document['id']!r} still carries unsubstituted account markers "
+            f"({', '.join(markers)}), so publishing it would show them to a visitor. This is a "
+            "TEMPLATE: derive it for an account (POST /documents/{id}/web/derive, or an ABM "
+            "batch) and publish the derived page.",
+            markers,
+        )
+
     images = _resolve_images(web_doc)
 
     # Static CSS compiled and INLINED (no external stylesheet for a single-file
@@ -1522,6 +1577,8 @@ def build_publish_package(
         canonical=f"{public_prefix}/p/{slug}",
         og_url=f"{public_prefix}/p/{slug}",
     )
+    if noindex:
+        head += ROBOTS_NOINDEX_META + "\n"
     head += f'<style id="lumen-static-css">{site_css}</style>\n'
     publish_manifest = {
         **_delivery_manifest(
@@ -1535,6 +1592,10 @@ def build_publish_package(
         **_font_manifest_entries(font_gate),
         "slug": slug,
         "canonical_url": f"{public_prefix}/p/{slug}",
+        # Present ONLY when the page asked for it, so an ordinary publish's manifest — and
+        # therefore its `manifest_digest`, and therefore its `package_digest` — is byte-identical
+        # to what it was before the option existed.
+        **({"robots": "noindex"} if noindex else {}),
     }
     manifest_digest = _sha256(_canonical_json(publish_manifest))
     head += (

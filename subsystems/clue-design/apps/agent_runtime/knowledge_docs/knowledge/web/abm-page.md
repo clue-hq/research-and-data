@@ -28,6 +28,21 @@ the account derive substitutes per account, so one document serves every
 account and stays re-derivable. Never write one account's name or logo into the
 markup.
 
+**PUBLISH THE DERIVED PAGE, NEVER THE TEMPLATE.** This page renders its
+`{{account.…}}` markers to whoever opens it, so it is derived per account first
+and the DERIVED pages are what publish — one page per account, at
+`abm-<account>` slugs, each `noindex` and reachable only by its own URL. A
+publish of the template itself is refused by name; the answer is to derive it,
+never to bake one account's name into the markup.
+
+**A target account's logo is bound to the ACCOUNT, once.** `fetch_logo` gets
+their real published mark; `bind_account_logo(account_id, asset_id)` saves it
+onto that account, and from then on `{{account.logo}}` resolves for them on
+every page derived from any template. Placing a mark dresses one page; binding
+it makes it theirs. The derive uses whatever the account already holds and
+fetches nothing of its own, so an account nobody bound a logo for derives the
+clean empty-logo page — which is CORRECT, not a gap to fill.
+
 **Every section you compose for this page carries a section id beginning
 `abm_`** (`<section id="abm_peer_proof">`), so a reviewer can tell a new band
 from cloned chrome. Pinned clones keep their own ids.

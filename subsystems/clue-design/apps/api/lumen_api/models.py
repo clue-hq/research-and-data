@@ -247,6 +247,13 @@ class WebBatchRequest(BaseModel):
     account_ids: List[str] = Field(default_factory=list)
     publish: bool = True
     slug_base: Optional[str] = None
+    #: CP2 (clone-fidelity F4.3, D-F5): this is an ABM run over a campaign template. It is sugar
+    #: for ``slug_base="abm"`` — the PERSISTED slug base is the mode, so a resumed batch behaves
+    #: identically — and it brings three things with it: ``abm-<account>`` slugs, ``noindex`` on
+    #: every published account page (these are explicit-URL-only pages), and one derived document
+    #: per (template, account) converged across re-runs. Passing ``slug_base`` as well is REFUSED
+    #: rather than silently overridden.
+    abm: bool = False
 
 
 class WebPublishRequest(BaseModel):

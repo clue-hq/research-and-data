@@ -97,6 +97,7 @@ def publish_web_document(
     document: dict[str, Any],
     slug: str,
     public_base: str,
+    noindex: bool = False,
 ) -> WebPublishRef:
     """Build, persist and point one publish at ``slug``. The ONE publish write path."""
 
@@ -112,6 +113,7 @@ def publish_web_document(
         public_base=public_base,
         workspace_id=repository.workspace_id,
         node_bin=node_bin,
+        noindex=noindex,
     )
     web_export.persist_publish_assets(
         blobs,
@@ -167,6 +169,12 @@ class PublishWebDocumentInput(ToolInput):
     #: rendered bytes, so it is part of the idempotency body — two origins are two publishes.
     public_base: str
     slug: str
+    #: Emit ``<meta name="robots" content="noindex">`` on this page (clone-fidelity F4.3, ruling
+    #: R25-4). PER PAGE, defaulting off: CP2's ABM account pages are reachable by their explicit
+    #: URL and by nothing else, so they ask for it; a homepage publish never does and stays
+    #: byte-identical. Like ``public_base`` it is part of the rendered bytes, so it belongs in
+    #: the idempotency body — an indexed and a de-indexed page are two publishes.
+    noindex: bool = False
 
 
 class PublishWebDocumentTool(DesignTool):
@@ -251,6 +259,7 @@ class PublishWebDocumentTool(DesignTool):
             document=repository.require_document(inputs.document_id),
             slug=inputs.slug,
             public_base=inputs.public_base,
+            noindex=inputs.noindex,
         )
 
 

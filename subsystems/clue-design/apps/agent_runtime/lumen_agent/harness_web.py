@@ -275,6 +275,12 @@ def create_web_deepagent(
                 tools.patch_web_page,
                 tools.fetch_page,
                 tools.fetch_logo,
+                # F4.3 (ruling R25-1): the other half of the ladder. `fetch_logo` puts a target's
+                # real mark on THIS page; this saves it onto the ACCOUNT, so `{{account.logo}}`
+                # resolves for them on every page derived from any campaign template. Without it
+                # a fetched logo dies with the turn and a fifty-account batch publishes fifty
+                # empty logo slots. It is a named, per-account act on purpose — never a sweep.
+                tools.bind_account_logo,
                 tools.search_assets,
                 # F2.3: the reuse ladder's bottom rung. The AUTHOR gets both halves — chrome and
                 # proof bands are reused where a released clone serves the job, and composing one

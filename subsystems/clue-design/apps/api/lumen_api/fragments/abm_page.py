@@ -173,11 +173,33 @@ _SHELL_SLOT_KINDS: dict[str, str] = {
 }
 
 
+#: The whole ``{{account.…}}`` occurrence, padding and all — the SUBSTRING the delivery guard
+#: reports, so a refusal quotes what a visitor would have seen rather than a normalized name.
+_ACCOUNT_MARKER_RE = re.compile(r"\{\{\s*account\.[A-Za-z0-9_.]+\s*\}\}")
+
+
 def template_markers(value: Any) -> tuple[str, ...]:
     """Every ``{{name}}`` in a value, in the order it appears. Non-strings have none."""
     if not isinstance(value, str):
         return ()
     return tuple(match.group(1) for match in _MARKER_RE.finditer(value))
+
+
+def unresolved_account_markers(html: Any) -> tuple[str, ...]:
+    """Every account marker still standing in rendered HTML, deduped, in order (ruling R25-7).
+
+    The delivery guard: an ABM page is a TEMPLATE, and an UN-derived one renders
+    ``{{account.name}}`` to whoever opens the URL (reproduced by the T24 review, finding M3).
+
+    Deliberately narrow — ``account.`` and nothing wider. A cloned section is somebody's real
+    markup, and a site built on a template engine can legitimately serve ``{{ price }}`` as
+    static text; refusing on any pair of braces would refuse a faithful clone for being
+    faithful. ``account.`` is OUR grammar (the namespace ``account_values()`` builds and
+    ``substitute_vars`` consumes), so a match here is always our own unfinished work.
+    """
+    if not isinstance(html, str):
+        return ()
+    return tuple(dict.fromkeys(match.group(0) for match in _ACCOUNT_MARKER_RE.finditer(html)))
 
 
 def account_slot_binding(key: str, kind: Any, value: Any) -> JsonObject:
@@ -329,4 +351,5 @@ __all__ = [
     "newest_released_shell",
     "shell_slot_bindings",
     "template_markers",
+    "unresolved_account_markers",
 ]

@@ -36,6 +36,7 @@ from selectolax.parser import HTMLParser
 
 from py_lumen_obs import bind_run_id, get_logger
 
+from lumen_api.agent_account_logos import AccountLogoRefused, is_ladder_fetched
 from lumen_api.core import CoreClient, CoreError
 from lumen_api.database import FragmentReferenceError
 from lumen_api.clone_review import (
@@ -3424,6 +3425,108 @@ class LumenWebTools:
             payload={"site": outcome.site, "slots": [p["slot"] for p in placed]},
         )
         return json.dumps(payload, indent=2)
+
+    def bind_account_logo(self, account_id: str, asset_id: str) -> str:
+        """Save a fetched logo ONTO a target account, so every page for them uses it.
+
+        Call this after `fetch_logo` when the mark belongs to a target account you
+        hold in the workspace. `asset_id` is one of the ids `fetch_logo` just
+        returned — usually `light`.
+
+        Placing a logo on this page dresses THIS page. Binding it to the account
+        makes it the account's own: the `{{account.logo}}` marker then resolves
+        for them on every page derived from any campaign template, including the
+        batch that publishes one page per account. Without the bind, a batch of
+        fifty accounts personalizes fifty names and no logos.
+
+        It binds only a mark the ladder fetched from that company's own website.
+        A generated image is not a company's logo, and neither is a placeholder.
+        If `fetch_logo` came back `needs_review` there is nothing to bind: say so
+        and ask for the file. AN EMPTY ACCOUNT LOGO IS CORRECT — a page that
+        renders one is a clean page with the seller's mark on it, never a broken
+        one. Never draw, recolour, letter or approximate a company's mark.
+
+        One account per call, deliberately: binding a logo is a decision about a
+        named company, not a sweep.
+        """
+        binder = getattr(self.config, "account_logo_binder", None)
+        if binder is None:
+            return self._tool_error(
+                "account_logo.binder_unavailable",
+                "This turn was passed no account-logo binder, so a fetched mark cannot be "
+                "saved onto an account here. Place it on the page if it belongs on the page, "
+                "and tell the user the account itself was not updated.",
+            )
+        account = (account_id or "").strip()
+        asset = (asset_id or "").strip()
+        if not account or not asset:
+            return self._tool_error(
+                "account_logo.bad_request",
+                "bind_account_logo needs both an `account_id` and the `asset_id` fetch_logo "
+                "returned.",
+            )
+
+        record = (self.web_doc.get("assets") or {}).get(asset)
+        if not isinstance(record, dict) or record.get("id") != asset:
+            return self._tool_error(
+                "account_logo.unknown_asset",
+                f"'{asset}' is not an asset on this document, so there is nothing to bind. "
+                "Call fetch_logo first and pass an id it returned. If fetch_logo came back "
+                "needs_review it registered NOTHING — no asset could be attributed to that "
+                "company with confidence — so there is genuinely nothing to bind: say so and "
+                "ask for the file. An empty account logo is CORRECT; never draw, recolour or "
+                "approximate one.",
+            )
+        if not is_ladder_fetched(record):
+            return self._tool_error(
+                "account_logo.not_a_fetched_logo",
+                f"'{asset}' was not fetched from that company's own website, so it cannot "
+                "become their logo. Only a mark the logo ladder retrieved and attributed binds "
+                "here — a generated image, a placeholder or a section's own artwork is not a "
+                "company's logo. Call fetch_logo with their domain; if it finds nothing, an "
+                "empty account logo is CORRECT.",
+            )
+
+        try:
+            result = binder.bind(account_id=account, record=copy.deepcopy(record))
+        except AccountLogoRefused as error:
+            self.record(
+                "agent",
+                "web_account_logo_refused",
+                input_summary=f"{account}:{asset}"[:500],
+                output_summary=f"{error.code}: {error.message}"[:500],
+            )
+            return self._tool_error(error.code, error.message)
+        except Exception as error:  # noqa: BLE001 - tool failures are envelopes
+            return self._tool_error(
+                "account_logo.failed",
+                f"binding the account logo failed: {type(error).__name__}: {error}",
+            )
+
+        self.record(
+            "agent",
+            "web_account_logo_bound",
+            input_summary=f"{account}:{asset}"[:500],
+            output_summary=f"{result.get('account_name') or account} -> {asset}"[:500],
+            payload={"account_id": account, "asset_id": asset},
+        )
+        return json.dumps(
+            {
+                "status": "ok",
+                "account_id": result.get("account_id"),
+                "account_name": result.get("account_name"),
+                "asset_id": result.get("asset_id"),
+                "changed": result.get("changed"),
+                "previous_asset_id": result.get("previous_asset_id"),
+                "note": (
+                    f"{result.get('account_name') or account} now has this mark as their own, "
+                    f"so {ACCOUNT_LOGO_MARKER} resolves to it on every page derived for them — "
+                    "this one and every future campaign. It changes no page by itself: a page "
+                    "shows it once it is derived for this account."
+                ),
+            },
+            indent=2,
+        )
 
     def _register_fetched_logo_custody(self, outcome) -> None:
         """Give the fetched bytes durable custody now, not at accept.
