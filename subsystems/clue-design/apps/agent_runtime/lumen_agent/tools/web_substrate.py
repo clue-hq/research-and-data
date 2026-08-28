@@ -38,8 +38,22 @@ from py_lumen_obs import bind_run_id, get_logger
 
 from lumen_api.core import CoreClient, CoreError
 from lumen_api.database import FragmentReferenceError
+from lumen_api.clone_review import (
+    WALK_CLASS_FULL_PAGE,
+    WALK_CLASS_HEIGHT_COLLAPSE,
+    CloneReviewRefused,
+    compose_critique,
+    safe_critique,
+    walk_plan,
+)
+from lumen_api.clone_review.blind import PANEL_LABELS as _BLIND_PANEL_LABELS
+from lumen_api.clone_review.walk import capture_behavioural_walk
 from lumen_api.fragments.degraded import REPAIR_RUNGS
-from lumen_api.fragments.refs import ASSET_URL_PREFIX, FragmentRefused
+from lumen_api.fragments.refs import (
+    ASSET_URL_PREFIX,
+    FragmentRefused,
+    fragment_wrapper_class,
+)
 from lumen_api.fragments.render import (
     FRAGMENT_RENDER_PACKAGE_SCHEMA_VERSION,
     fragment_collision_diagnostics,
@@ -316,6 +330,23 @@ _CLONED_SECTION_DEGRADED_CODE = "LUMA0602"
 #: by code alone must not get two entries that mean different things, and "this band is broken"
 #: (work) and "here is which broken version was chosen" (a note) are different things.
 _CLONED_SECTION_RANKED_CODE = "LUMA0603"
+#: The behavioural review gate's four codes (F3.3). `LUMA08xx` rather than a continuation of the
+#: `LUMA060x` block above, deliberately: that block already COLLIDES with the asset-ingest
+#: family documented in `docs/phase-e-asset-runtime-implementation.md` (`LUMA0600`–`LUMA0605`),
+#: a collision F3.4 owns the sweep of. `LUMA08xx` is unallocated in both registries, so this
+#: gate does not add a third clash to the pile the sweep has to untangle.
+#:
+#: `_REVIEW_BROKEN_CODE` is WORK; `_REVIEW_INCOMPLETE_CODE` is a gap in the review itself;
+#: `_REVIEW_ADVICE_UNAVAILABLE_CODE` is "the walk ran and has no opinion"; and
+#: `_REVIEW_MARK_FAILED_CODE` is a measured verdict the library never received. Four codes
+#: because a consumer filtering by code alone must not get two entries that mean different
+#: things — the same rule that split `LUMA0603` off `LUMA0602` (ruling X4).
+_REVIEW_BROKEN_CODE = "LUMA0800"
+_REVIEW_INCOMPLETE_CODE = "LUMA0801"
+_REVIEW_ADVICE_UNAVAILABLE_CODE = "LUMA0802"
+_REVIEW_MARK_FAILED_CODE = "LUMA0803"
+#: The review result's own shape version. Bump only for a change a previous reader would MISREAD.
+_REVIEW_SCHEMA_VERSION = 1
 #: The wrapper section a pinned cloned section lives inside. `w-full` and nothing else: the clone
 #: brings its own padding, background and rhythm (that is what makes it a clone), so a wrapper
 #: that imposed the platform's section rhythm on top would double it.
@@ -879,6 +910,10 @@ class LumenWebTools:
         # burned ~25 retry model calls against a dead renderer).
         self._consecutive_render_failures = 0
         self.preview_paths: List[str] = []
+        # F3.3: how many behavioural review walks this turn has made. Names the walk's own
+        # output directory so a second review does not overwrite the captures (and the blind
+        # artifact) the first one produced and the orchestrator may still be looking at.
+        self._review_iteration = 0
         # The latest screenshot path per width + the iteration that produced it.
         self._preview_by_width: Dict[int, str] = {}
         self._preview_iteration: Optional[int] = None
@@ -5976,6 +6011,282 @@ class LumenWebTools:
             _image_block(Path(preview_path), max_px=_VISION_MANY_IMAGE_MAX_PX),
         ]
 
+    # --- the behavioural review gate (F3.3, rulings D-F6 / D-F7) -------------
+
+    def review_cloned_page(self) -> str:
+        """Walk the rendered page in a browser and report what it actually DOES.
+
+        Six observations: the full-page screenshot at 1440, a scroll-through at several
+        positions, the phone width, console errors, the artificial-height-collapse check
+        (the runtime sibling of the mint-time dead-height detector) and a reduced-motion
+        pass. Then compares the full-page capture against the stored capture of the
+        client's real page, band by band where both sides can be placed.
+
+        Two kinds of output, and they are not the same kind of thing:
+        - `broken_clones` are MEASURED verdicts about a cloned section. They are recorded
+          on the section itself, so the library, the repair ladder and the inspector all
+          see them. Brief the author to repair each one through the ladder.
+        - `page_findings` are ADVICE — console errors, a reduced-motion divergence, a band
+          that drifted from the reference. Judge them; act where they are right; say what
+          you left. Nothing here blocks a publish by itself.
+
+        Whatever the walk could not observe is reported as not observed. That is a gap in
+        the review, never a pass. Returns the structured critique, the capture paths, and
+        the blind side-by-side artifact when a reference capture exists.
+        """
+        self._review_iteration += 1
+        registry = self._cloned_section_registry()
+        fragment_ids = self._fragment_ids()
+
+        try:
+            html, diagnostics, tailwind_missing = self._render_page_html()
+        except CoreError as error:
+            return self._tool_error(
+                "web_render.failed", error.message, diagnostics=list(error.diagnostics or [])
+            )
+
+        plan = walk_plan(
+            [
+                {"fragment_id": fragment_id, "selector": f".{fragment_wrapper_class(fragment_id)}"}
+                for fragment_id in fragment_ids
+            ]
+        )
+        review_dir = self.trace_dir / f"review_{self._review_iteration}"
+        try:
+            walk = capture_behavioural_walk(html, plan, output_dir=review_dir)
+        except CloneReviewRefused as refusal:
+            # No browser, no walk, and NO verdict. The one thing this gate must never do is
+            # report a page it did not open as a page with no problems.
+            self.record(
+                "orchestrator",
+                "web_review_refused",
+                output_summary=f"{refusal.code}: {refusal.message}",
+            )
+            return self._tool_error(
+                refusal.code, refusal.message, diagnostics=diagnostics
+            )
+
+        comparison, blind, reference_note = self._reference_review(
+            registry, walk, fragment_ids, plan, review_dir
+        )
+        critique, advice_failure = safe_critique(
+            lambda: compose_critique(walk, comparison=comparison)
+        )
+
+        broken = critique.broken if critique is not None else ()
+        marked, mark_failures = self._record_broken_clones(registry, broken)
+
+        result: JsonObject = {
+            "status": "ok",
+            "schema_version": _REVIEW_SCHEMA_VERSION,
+            "advice_only": True,
+            "captures": [
+                observation.as_result() for observation in walk.observations
+            ],
+            "broken_clones": [item.as_result() for item in broken],
+            "marked_degraded": marked,
+            "page_findings": (
+                [item.as_result() for item in critique.page_findings]
+                if critique is not None
+                else []
+            ),
+            "comparison": comparison,
+            "diagnostics": diagnostics + self._review_diagnostics(
+                walk, broken, advice_failure, mark_failures, reference_note
+            ),
+        }
+        if advice_failure is not None:
+            # Advice-absent, loudly. The walk happened and its captures are real; only the
+            # opinion is missing, and saying so is better than inventing one.
+            result["page_findings"] = [advice_failure.as_result()]
+            result["advice_available"] = False
+        if blind is not None:
+            result["blind_side_by_side"] = blind
+        if reference_note is not None:
+            result["reference_unavailable"] = reference_note
+        if tailwind_missing:
+            result["tailwind_runtime_missing"] = True
+
+        self.record(
+            "orchestrator",
+            "web_review_walked",
+            output_summary=(
+                f"review {self._review_iteration}: "
+                f"{len([o for o in walk.observations if o.made])}/{len(walk.observations)} "
+                f"observations, {len(broken)} broken clone(s), "
+                f"{len(result['page_findings'])} page finding(s)"
+            ),
+            payload={
+                "broken": [item.fragment_id for item in broken],
+                "abstained": [item.walk_class for item in walk.abstentions],
+            },
+        )
+        return json.dumps(result, indent=2)
+
+    def _reference_review(
+        self,
+        registry: Any,
+        walk: Any,
+        fragment_ids: List[str],
+        plan: Any,
+        review_dir: Path,
+    ) -> tuple[Optional[JsonObject], Optional[JsonObject], Optional[str]]:
+        """The comparison against F0's capture, and the blind side-by-side built from it.
+
+        Returns ``(comparison, blind, unavailable_because)``. Every failure here is a NOTE, never
+        a refusal: a reference the workspace does not hold says nothing about whether the page
+        renders correctly, and the behavioural half of the walk is the half that finds brokenness.
+        """
+        full_page = walk.by_class(WALK_CLASS_FULL_PAGE)
+        if registry is None:
+            return None, None, "no_cloned_section_registry"
+        if not fragment_ids:
+            return None, None, "no_cloned_sections_on_page"
+        if not full_page.made or not full_page.shots:
+            return None, None, "no_page_capture"
+        collapse = walk.by_class(WALK_CLASS_HEIGHT_COLLAPSE)
+        rendered_bands = [
+            {
+                "fragment_id": item.fragment_id,
+                "top_px": item.top_px,
+                "height_px": item.height_px,
+            }
+            for item in (collapse.measurements if collapse.made else ())
+            if item.present
+        ]
+        try:
+            capture_png = Path(full_page.shots[0].path).read_bytes()
+            review = registry.reference_review(
+                fragment_ids,
+                capture_png=capture_png,
+                rendered_bands=rendered_bands,
+                rendered_viewport_width=plan.desktop.width,
+                blind_seed=f"{self.run_id}:{self._review_iteration}",
+            )
+        except Exception as error:  # noqa: BLE001 — the comparison is evidence, never the gate
+            logger.warning("web_review_reference_failed: %s: %s", type(error).__name__, error)
+            return None, None, f"{type(error).__name__}"
+        if review.get("status") != "ok":
+            return review.get("comparison"), None, str(review.get("because") or "unavailable")
+
+        blind: Optional[JsonObject] = None
+        blind_png = review.get("blind_png")
+        blind_key = review.get("blind_key")
+        if blind_png and blind_key:
+            # The artifact and its answer key go to SEPARATE files. That is the whole mechanism:
+            # a judge opens the picture, decides which panel is ours, and only then opens the key
+            # — which is sealed to this exact image by its sha256.
+            review_dir.mkdir(parents=True, exist_ok=True)
+            image_path = review_dir / "blind_side_by_side.png"
+            key_path = review_dir / "blind_side_by_side.key.json"
+            image_path.write_bytes(blind_png)
+            key_path.write_text(json.dumps(blind_key, indent=2), encoding="utf-8")
+            blind = {
+                "image_path": str(image_path),
+                "answer_key_path": str(key_path),
+                "panels": list(_BLIND_PANEL_LABELS),
+                "note": (
+                    "the two panels are unlabelled on purpose (CP1 acceptance): decide which "
+                    "one is our page BEFORE opening the answer key"
+                ),
+            }
+        return review.get("comparison"), blind, None
+
+    def _record_broken_clones(
+        self, registry: Any, broken: Any
+    ) -> tuple[List[JsonObject], List[str]]:
+        """Persist the measured verdicts. The model has no say in what is written here.
+
+        The reason code comes from the measurement, the registry refuses any code the gate does
+        not own, and a write that fails is REPORTED rather than swallowed — a verdict the library
+        never received is a band the next turn will offer as healthy.
+        """
+        marked: List[JsonObject] = []
+        failures: List[str] = []
+        for finding in broken:
+            if registry is None:
+                failures.append(
+                    f"{finding.fragment_id}: this turn has no cloned-section library to record it in"
+                )
+                continue
+            try:
+                registry.mark_degraded(finding.fragment_id, reason=finding.reason)
+            except Exception as error:  # noqa: BLE001 — one failed write is not a failed review
+                failures.append(f"{finding.fragment_id}: {type(error).__name__}: {error}")
+                continue
+            marked.append({"fragment_id": finding.fragment_id, "reason": finding.reason})
+        return marked, failures
+
+    def _review_diagnostics(
+        self,
+        walk: Any,
+        broken: Any,
+        advice_failure: Any,
+        mark_failures: List[str],
+        reference_note: Optional[str],
+    ) -> List[JsonObject]:
+        """The gate's own diagnostics — work, gaps, and the two ways it can fall short."""
+        diagnostics: List[JsonObject] = []
+        if broken:
+            named = ", ".join(f"{item.fragment_id} ({item.reason})" for item in broken)
+            diagnostics.append(
+                {
+                    "severity": "warning",
+                    "phase": "agent",
+                    "code": _REVIEW_BROKEN_CODE,
+                    "message": (
+                        f"the behavioural walk measured {len(broken)} cloned section(s) as "
+                        f"BROKEN on the rendered page: {named}"
+                    ),
+                    "hint": (
+                        "Each one is recorded on the section itself. Brief the author to repair "
+                        "it with repair_cloned_section(fragment_id, html, rung, note), climbing "
+                        "D-F6's ladder in order and preserving the original's content order, "
+                        "typography, colors, imagery treatment, proportions, spacing and rhythm."
+                    ),
+                }
+            )
+        gaps = [item.label for item in walk.abstentions]
+        if reference_note is not None:
+            gaps.append(f"the comparison against the client's own page ({reference_note})")
+        if gaps:
+            diagnostics.append(
+                {
+                    "severity": "warning",
+                    "phase": "agent",
+                    "code": _REVIEW_INCOMPLETE_CODE,
+                    "message": (
+                        "this review could not make part of its walk: "
+                        + "; ".join(gaps)
+                        + " — it says NOTHING about those, which is not the same as saying they "
+                        "are fine"
+                    ),
+                }
+            )
+        if advice_failure is not None:
+            diagnostics.append(
+                {
+                    "severity": "error",
+                    "phase": "agent",
+                    "code": _REVIEW_ADVICE_UNAVAILABLE_CODE,
+                    "message": advice_failure.message,
+                }
+            )
+        if mark_failures:
+            diagnostics.append(
+                {
+                    "severity": "warning",
+                    "phase": "agent",
+                    "code": _REVIEW_MARK_FAILED_CODE,
+                    "message": (
+                        "the walk measured a broken cloned section but could not record it in "
+                        "the library: " + "; ".join(mark_failures) + ". The finding is real; the "
+                        "library will keep offering that band as healthy until it is recorded"
+                    ),
+                }
+            )
+        return diagnostics
+
     # --- cloned sections: rendering (F1.3) -----------------------------------
 
     def _fragment_ids(self) -> List[str]:
@@ -6464,20 +6775,7 @@ class LumenWebTools:
         iter_dir.mkdir(parents=True, exist_ok=True)
 
         try:
-            response = self.core.web_render(
-                self.web_doc,
-                self.page_id,
-                mode="editor",
-                asset_base_url=self.asset_base_url,
-                tailwind_runtime_src=None,
-                brand_kit=self.config.brand_kit,
-                font_face_css=self._font_face_css(),
-                # F1.3: the same two things the editor render route threads, so
-                # a cloned section cannot render in one preview and vanish from
-                # the other.
-                fragments=self._fragment_render_map(),
-                fragment_css=self._fragment_css(),
-            )
+            html, diagnostics, tailwind_missing = self._render_page_html()
         except CoreError as error:
             self.record(
                 "orchestrator",
@@ -6487,37 +6785,6 @@ class LumenWebTools:
             )
             return self._tool_error(
                 "web_render.failed", error.message, diagnostics=list(error.diagnostics or [])
-            )
-
-        html = response.get("html") or ""
-        # The engine's diagnostics plus the API-layer cascade warning, in one
-        # list — the author reads one surface, not two.
-        diagnostics = list(response.get("diagnostics") or []) + self._fragment_diagnostics()
-
-        # Inline the vendored Tailwind browser runtime so the editor-mode
-        # `<style type="text/tailwindcss">` block is processed at set_content
-        # time (the runtime scans on load). Absent → render bare + warn.
-        tailwind_missing = False
-        runtime_path = tailwind_runtime_path(Path(self.config.repo_root))
-        if runtime_path is not None:
-            script = "<script>" + runtime_path.read_text(encoding="utf-8") + "</script>"
-            if "</head>" in html:
-                html = html.replace("</head>", script + "\n</head>", 1)
-            else:
-                html = script + html
-        else:
-            tailwind_missing = True
-            # Loud in the process log too, not only in the tool result: a
-            # screenshot with no utility CSS still LOOKS like a page, so a
-            # silent miss is graded as a real render by the visual reviewer.
-            logger.warning(
-                "tailwind_runtime_missing: no Tailwind browser runtime found "
-                "(searched %s=%r then %s under %s) — preview screenshots will "
-                "carry NO layout utilities",
-                _TAILWIND_RUNTIME_ENV,
-                os.environ.get(_TAILWIND_RUNTIME_ENV),
-                [str(Path(*parts)) for parts in _TAILWIND_RUNTIME_CANDIDATES],
-                self.config.repo_root,
             )
 
         try:
@@ -6588,6 +6855,63 @@ class LumenWebTools:
             diagnostics=diagnostics,
         )
         return json.dumps(result, indent=2)
+
+    def _render_page_html(self) -> tuple[str, List[JsonObject], bool]:
+        """The live page as a browser will see it: engine html + the Tailwind runtime inlined.
+
+        Extracted from `render_web_preview` when F3.3's behavioural review gate arrived, because
+        the two must walk THE SAME PIXELS. A gate that composed its own render — a different
+        mode, a forgotten fragment map, a missing font sheet — would grade a page the reviewer
+        never saw, and every disagreement between them would be unfalsifiable.
+
+        Raises `CoreError` (the caller owns the refusal wording); returns
+        ``(html, diagnostics, tailwind_missing)``.
+        """
+        response = self.core.web_render(
+            self.web_doc,
+            self.page_id,
+            mode="editor",
+            asset_base_url=self.asset_base_url,
+            tailwind_runtime_src=None,
+            brand_kit=self.config.brand_kit,
+            font_face_css=self._font_face_css(),
+            # F1.3: the same two things the editor render route threads, so
+            # a cloned section cannot render in one preview and vanish from
+            # the other.
+            fragments=self._fragment_render_map(),
+            fragment_css=self._fragment_css(),
+        )
+        html = response.get("html") or ""
+        # The engine's diagnostics plus the API-layer cascade warning, in one
+        # list — the author reads one surface, not two.
+        diagnostics = list(response.get("diagnostics") or []) + self._fragment_diagnostics()
+
+        # Inline the vendored Tailwind browser runtime so the editor-mode
+        # `<style type="text/tailwindcss">` block is processed at set_content
+        # time (the runtime scans on load). Absent → render bare + warn.
+        tailwind_missing = False
+        runtime_path = tailwind_runtime_path(Path(self.config.repo_root))
+        if runtime_path is not None:
+            script = "<script>" + runtime_path.read_text(encoding="utf-8") + "</script>"
+            if "</head>" in html:
+                html = html.replace("</head>", script + "\n</head>", 1)
+            else:
+                html = script + html
+        else:
+            tailwind_missing = True
+            # Loud in the process log too, not only in the tool result: a
+            # screenshot with no utility CSS still LOOKS like a page, so a
+            # silent miss is graded as a real render by the visual reviewer.
+            logger.warning(
+                "tailwind_runtime_missing: no Tailwind browser runtime found "
+                "(searched %s=%r then %s under %s) — preview screenshots will "
+                "carry NO layout utilities",
+                _TAILWIND_RUNTIME_ENV,
+                os.environ.get(_TAILWIND_RUNTIME_ENV),
+                [str(Path(*parts)) for parts in _TAILWIND_RUNTIME_CANDIDATES],
+                self.config.repo_root,
+            )
+        return html, diagnostics, tailwind_missing
 
     def _capture_pass(
         self, html: str, iter_dir: Path, diagnostics: List[JsonObject]
