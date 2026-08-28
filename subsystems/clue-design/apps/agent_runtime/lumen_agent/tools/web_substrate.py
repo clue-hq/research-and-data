@@ -37,6 +37,53 @@ from selectolax.parser import HTMLParser
 from py_lumen_obs import bind_run_id, get_logger
 
 from lumen_api.core import CoreClient, CoreError
+from lumen_api.database import FragmentReferenceError
+from lumen_api.clone_review import (
+    WALK_CLASS_FULL_PAGE,
+    WALK_CLASS_HEIGHT_COLLAPSE,
+    CloneReviewRefused,
+    compose_critique,
+    safe_critique,
+    walk_plan,
+)
+from lumen_api.clone_review.blind import PANEL_LABELS as _BLIND_PANEL_LABELS
+from lumen_api.clone_review.walk import TAILWIND_RUNTIME_MARKER, capture_behavioural_walk
+from lumen_api.fragments.campaign_shell import (
+    CAMPAIGN_SHELL_FOOTER,
+    CAMPAIGN_SHELL_HEADER,
+    CAMPAIGN_SHELL_ROLES,
+    CAMPAIGN_SHELL_SECTION_IDS,
+    COMPOSED_CAMPAIGN_SHELL,
+    compose_campaign_footer,
+    compose_campaign_header,
+    discover_legal_links,
+)
+from lumen_api.fragments.degraded import REPAIR_RUNGS
+from lumen_api.fragments.refs import (
+    ASSET_URL_PREFIX,
+    FragmentRefused,
+    fragment_wrapper_class,
+)
+from lumen_api.fragments.render import (
+    FRAGMENT_RENDER_PACKAGE_SCHEMA_VERSION,
+    fragment_collision_diagnostics,
+    fragment_css_sheet,
+    fragment_package_schema_refusal,
+    fragment_render_map,
+    web_doc_fragment_ids,
+    web_doc_page_section_count,
+)
+from lumen_api.fragments.slots import SLOT_KIND_TO_NODE_TAG
+# The repair mint's styling half. NOTE the dependency this brings into the AGENT RUNTIME: the
+# compile shells out to `node` plus the EDITOR app's `node_modules` (F3.1, ruling R-I3). It is
+# checked by name before it is used and refuses typed when absent, so a worker without the
+# toolchain says so instead of failing obscurely — but a fleet worker that is expected to repair
+# clones needs a full checkout, not just this package's Python dependencies.
+from lumen_api.web_export import WebExportToolchainMissing, compile_section_css
+
+# `logo_policy`'s own vocabulary for marks drawn for dark surfaces (fix-round M4): one home,
+# imported, so a retune of what counts as inverse-capable moves the shell picker with it.
+from lumen_ingestion.logo_policy import INVERSE_CAPABLE_COLOR_MODES
 from lumen_ingestion.capture.net import (
     REQUEST_TIMEOUT_SECONDS,
     BoundedFetcher,
@@ -104,6 +151,11 @@ _BRAND_REFERENCE_MIN_LONG_SIDE_PX = 512
 # fine for the user: the agent was blind to its own images working. Any future
 # edit here must keep the value CONFIGURED, and must keep the preflight below.
 _FALLBACK_ASSET_BASE_URL = "http://127.0.0.1:8010/asset-store"
+
+#: A byte reference inside a cloned section's markup or CSS, as the preview will fetch it —
+#: whatever prefix it carries, ending in a sha256. Used by the asset preflight to probe the URL
+#: the page really names rather than one the probe built for itself.
+_ASSET_REFERENCE_RE = re.compile(r"""[^"'()\s]*asset-store/[0-9a-f]{64}""")
 # Seconds allowed for the once-per-turn asset-origin preflight probe. Short: a
 # dead origin is a connection refusal (instant) and a live one is a loopback GET.
 _ASSET_PREFLIGHT_TIMEOUT_S = 5.0
@@ -276,6 +328,60 @@ _NAMED_ENDPOINT_RE = re.compile(
 _GROUNDED_PAGE_TEXT_MAX_CHARS = 30_000
 _GROUNDED_PAGE_LINK_MAX = 100
 _ASSET_SEARCH_LIMIT_MAX = 20
+#: F2.3. Same ceiling as the asset search for the same reason — a discovery result is something
+#: the model READS, and twenty sections is already more than a page has room for.
+_CLONED_SECTION_SEARCH_LIMIT_MAX = 20
+#: THE AGENT SUBSTRATE'S OWN BLOCK — ``LUMA08xx``, and the whole of it (F3.4).
+#:
+#: These three lived at ``LUMA0601``–``LUMA0603`` and COLLIDED, code for code, with the
+#: asset-ingest family the Rust asset crate emits and
+#: ``docs/phase-e-asset-runtime-implementation.md`` documents (``LUMA0600``–``LUMA0605``). Both
+#: streams surface as ``diagnostics`` entries with a ``code``, and a reader filtering by code
+#: alone got "this cloned section is broken" and "this asset's declared MIME contradicts its
+#: bytes" under one label — the exact defect ruling X4 split ``LUMA0603`` off ``LUMA0602`` to
+#: avoid, one level up. ``apps/api/tests/test_api.py`` asserts the ASSET meaning of ``LUMA0603``,
+#: so the collision was live in the tree rather than theoretical.
+#:
+#: Task 19 took ``LUMA0800``–``LUMA0803`` for the review gate precisely because ``LUMA08xx`` was
+#: unallocated in both registries; the sweep it deferred to F3.4 is this, and it moves the three
+#: older codes into the same block rather than renumbering the documented asset family, which is
+#: older, is Rust, and is nobody's to move. ``LUMA0810``–``LUMA0812`` keeps the two agent families
+#: adjacent and separately readable: ``080x`` is the review gate, ``081x`` is cloned sections.
+#:
+#: "this rewrite took cloned sections off the page". ``LUMA`` because it is the AGENT substrate
+#: speaking, not the engine (whose codes are ``LUMW``/``LUMI``) — nothing in the engine can know
+#: that a lost pin was something a human released and a director chose.
+_CLONED_SECTION_DROPPED_CODE = "LUMA0810"
+#: "a cloned section on this page is marked broken and has no released repair" (F3.1, ruling
+#: D-F6). ``LUMA`` for the same reason as its neighbour: the engine renders a degraded band
+#: exactly as it renders a healthy one and cannot know the difference — the judgement is the
+#: registry's, and this is the agent substrate relaying it as work.
+_CLONED_SECTION_DEGRADED_CODE = "LUMA0811"
+#: A band whose every released version is broken, so the fallback had to RANK them (F3.1, ruling
+#: N4). Its own code rather than a second severity on its neighbour (ruling X4): a consumer
+#: filtering by code alone must not get two entries that mean different things, and "this band is
+#: broken" (work) and "here is which broken version was chosen" (a note) are different things.
+_CLONED_SECTION_RANKED_CODE = "LUMA0812"
+#: The behavioural review gate's four codes (F3.3), the first tenants of this block.
+#:
+#: `_REVIEW_BROKEN_CODE` is WORK; `_REVIEW_INCOMPLETE_CODE` is a gap in the review itself;
+#: `_REVIEW_ADVICE_UNAVAILABLE_CODE` is "the walk ran and has no opinion"; and
+#: `_REVIEW_MARK_FAILED_CODE` is a measured verdict the library never received. Four codes
+#: because a consumer filtering by code alone must not get two entries that mean different
+#: things — the same rule that gave the ranked-fallback note its own code (ruling X4).
+_REVIEW_BROKEN_CODE = "LUMA0800"
+_REVIEW_INCOMPLETE_CODE = "LUMA0801"
+_REVIEW_ADVICE_UNAVAILABLE_CODE = "LUMA0802"
+_REVIEW_MARK_FAILED_CODE = "LUMA0803"
+#: The review result's own shape version. Bump only for a change a previous reader would MISREAD.
+#: Bumped to 2 in the round-2 fix: the result gained `evidence_settled`, and its nested walk and
+#: critique payloads gained `measured` / console `source`. Additive, but a reader that branched on
+#: `evidence_settled` would read a v1 result's silence as "settled", which is the wrong default.
+_REVIEW_SCHEMA_VERSION = 2
+#: The wrapper section a pinned cloned section lives inside. `w-full` and nothing else: the clone
+#: brings its own padding, background and rhythm (that is what makes it a clone), so a wrapper
+#: that imposed the platform's section rhythm on top would double it.
+_CLONED_SECTION_WRAPPER_CLASSES = "w-full"
 _GROUNDED_SOURCE_MAX = 64
 _GROUNDED_PAGE_SOURCE_MAX = 8
 _GROUNDED_CITATION_MAX = 100
@@ -538,6 +644,28 @@ def web_theme_token_names(brand_kit: Optional[JsonObject]) -> str:
         seen.add(web_name)
         names.append(web_name)
     return " ".join(names)
+
+
+def _section_subtree(page_html: str, anchor_id: str) -> str:
+    """One rendered section, lifted whole out of the page the engine just rendered.
+
+    The repair mint's source (F3.1, ruling R17-1): a repair is minted from what the ENGINE
+    produced, not from what a model typed, so this has to find the section in the render rather
+    than trust the submission. Sections render with `id="<anchor or node id>"` (`render.rs`), and
+    an id is unique in a document, so the lookup is exact.
+
+    Parsed rather than sliced with a regex: a section's own markup contains `</section>` for
+    every nested one, and counting tags by hand is the classic way to mint half a band. Returns
+    `""` when the id is not in the render, which the caller treats as "there is nothing to mint"
+    rather than as "mint whatever was closest".
+    """
+    if not page_html or not anchor_id or '"' in anchor_id or "\\" in anchor_id:
+        # An id that could break out of the attribute selector is not one the engine mints, and
+        # guessing at an escaping scheme to accommodate it would be a worse answer than "not
+        # found" — which the caller already handles as "there is nothing to mint".
+        return ""
+    node = HTMLParser(page_html).css_first(f'[id="{anchor_id}"]')
+    return node.html or "" if node is not None else ""
 
 
 def _count_subtree(nodes: JsonObject, node_id: str) -> int:
@@ -813,6 +941,10 @@ class LumenWebTools:
         # burned ~25 retry model calls against a dead renderer).
         self._consecutive_render_failures = 0
         self.preview_paths: List[str] = []
+        # F3.3: how many behavioural review walks this turn has made. Names the walk's own
+        # output directory so a second review does not overwrite the captures (and the blind
+        # artifact) the first one produced and the orchestrator may still be looking at.
+        self._review_iteration = 0
         # The latest screenshot path per width + the iteration that produced it.
         self._preview_by_width: Dict[int, str] = {}
         self._preview_iteration: Optional[int] = None
@@ -822,6 +954,38 @@ class LumenWebTools:
         # Cached @font-face data-URL CSS (fonts cannot change mid-run). The
         # sentinel distinguishes "not computed" from a resolved None.
         self._font_face_css_cache: Any = _FONT_CSS_UNSET
+        # F1.3: the API-resolved cloned-section artifacts for this turn's
+        # document, by value (the runtime reads no database). Resolved ONCE at
+        # composition, which is sound because nothing in a turn can mint a
+        # fragment — a node that appears mid-turn pinning something the package
+        # never saw renders the engine's placeholder rather than being guessed
+        # at. Read through `_fragment_package`, never directly.
+        # F1.5: and read through the version guard, because THIS is the process the version was
+        # written for — the API resolves the package, a fleet worker renders it, and the two can
+        # be different builds across a deploy. A shape this code does not know is dropped whole
+        # (placeholders + a named diagnostic) rather than read under the wrong rules.
+        self._fragment_render_package: Dict[str, Any] = (
+            getattr(config, "fragment_render_package", None) or {}
+        )
+        self._fragment_package_refusal: Optional[JsonObject] = (
+            fragment_package_schema_refusal(self._fragment_render_package)
+        )
+        if self._fragment_package_refusal is not None:
+            self._fragment_render_package = {}
+        # F2.3: what `search_cloned_sections` has already looked up this turn, so
+        # `view("cloned_section:<id>")` can show real pixels without a second registry round
+        # trip — the same "search hands the view its target" contract `search_assets` has.
+        # Written by discovery AND by a successful insert (the agent may want to look at what it
+        # just pinned), never invented: an id absent here has genuinely not been resolved.
+        # `_cloned_section_seen` carries `{label, section_role}` for the same ids, which is what
+        # lets a drop report say WHICH band went rather than only which id.
+        self._cloned_section_previews: Dict[str, Optional[str]] = {}
+        self._cloned_section_seen: Dict[str, JsonObject] = {}
+        # F3.1: the clone a repair is DELIBERATELY taking off the page, for the length of that
+        # one swap. The dropped-clone report exists for rewrites that lose a band by accident;
+        # telling an author to re-pin the broken section they were just told to replace would be
+        # the substrate arguing with itself.
+        self._repair_replacing: Optional[str] = None
         # Staleness contract (mirrors the scene view): a monotonic doc-mutation
         # count, and the count stamped at the last successful render. view()
         # refuses a preview older than the current doc.
@@ -855,6 +1019,10 @@ class LumenWebTools:
             config.brand_kit,
             source=config.brand_kit_source,
             include_brief=True,
+            # F2.4: and the measured grammar audit — the law for the sections
+            # this turn COMPOSES, beside the brief that says what the brand feels
+            # like. Web lane only, same as the brief.
+            include_grammar_audit=True,
             # W1.3: the manifest is where an asset's pixel dimensions live, so
             # the card's image/logo rows can state a size instead of leaving a
             # 296px crop and a 2460px panel indistinguishable.
@@ -1625,6 +1793,9 @@ class LumenWebTools:
             "warnings": warnings,
             "advice": advice,
         }
+        # F2.3: this tool replaces the WHOLE page, so any cloned section that was pinned on it is
+        # gone. Say which ones, in the bucket the author owes an answer for.
+        self._report_dropped_cloned_sections(result, before)
         self._decorate_success(result, origin, patch_count)
         return json.dumps(result, indent=2)
 
@@ -1683,6 +1854,7 @@ class LumenWebTools:
         root = nodes.get(root_id) or {}
         root_children = list(root.get("children") or [])
 
+        before = copy.deepcopy(self.web_doc)
         target_section = self._enclosing_section(node_id, nodes, root_children)
         if target_section is None:
             return self._tool_error(
@@ -1859,6 +2031,9 @@ class LumenWebTools:
             "warnings": warnings,
             "advice": advice,
         }
+        # F2.3: the same wipe, narrower — recomposing a section that HELD a cloned section drops
+        # it exactly as a whole-page rewrite does. One report, both doors.
+        self._report_dropped_cloned_sections(result, before)
         self._decorate_success(result, origin, patch_count)
         return json.dumps(result, indent=2)
 
@@ -4280,6 +4455,2500 @@ class LumenWebTools:
         )
         return json.dumps(result, indent=2)
 
+    # --- cloned sections: discovery + the insert action (F2.3) ---------------
+    #
+    # A cloned section is one verbatim band lifted off a site the client already owns, minted at
+    # ingestion time and released by a human approving the brand kit it came from (F2.2). These
+    # two tools are the whole of the agent's access to them: find one, pin one. The registry is a
+    # capability, not a manifest, because the pin's permission question is answered by the
+    # DOCUMENT WRITE's own gate — see `lumen_api.agent_cloned_sections`.
+
+    def _cloned_section_registry(self):
+        return getattr(self.config, "cloned_section_registry", None)
+
+    def _cloned_section_registry_missing(self) -> str:
+        return self._tool_error(
+            "cloned_section.registry_unavailable",
+            "This turn was passed no cloned-section library, so there is nothing to reuse. "
+            "Compose the section instead.",
+        )
+
+    def search_cloned_sections(
+        self, q: str = "", role: Optional[str] = None, limit: int = 8
+    ) -> str:
+        """Find CLONED SECTIONS — real bands lifted verbatim off this client's own website.
+
+        A cloned section is not a template and not generated markup: it is the client's actual
+        nav, footer, proof band or hero, with its own markup, its own CSS and its own images,
+        pinned by id. Reusing one is how a page gets chrome that is right by construction instead
+        of approximated.
+
+        ONLY RELEASED SECTIONS ARE LISTED. Ingestion mints every section it clones as a draft; a
+        human releases them by approving the brand kit they came from. A draft or a retired
+        section is not offered here, because pinning one is refused.
+
+        `q` is optional — call it with no query to see everything this workspace has released.
+        With a query it matches over the label, the role, the page it came from and the slot
+        names. Naming a `frag_…` id anywhere in the query returns that section first.
+        `role` filters to one section role (`nav`, `hero`, `footer`, `proof`, …).
+
+        EACH ROW carries:
+          - `fragment_id`   — what `insert_cloned_section` takes;
+          - `section_role` + `label` — what the band is and what it says;
+          - `slots`         — every spot in it you may re-fill, as `{key, kind}`; `text` and
+            `href` take a string, `image` takes an asset id, `visibility` takes true/false.
+            A section with no slots is reusable exactly as it is;
+          - `view`          — paste into `view("cloned_section:<id>")` to SEE the real band
+            before choosing it. A row whose `preview` is `"none"` has no image to show;
+          - `source_url` and `brand_kit` — which page it came from and whose approval released it.
+
+        A row may also say the clone is BROKEN. `degraded: true` means something about this
+        harvested band does not work in a clone — `degraded_note` says what, in words. Never put
+        a degraded clone on a page and walk away: repair it with `repair_cloned_section`, which
+        preserves the original as evidence and mints your replacement as a new section with the
+        lineage recorded. `superseded_by` names a released repair that should be pinned INSTEAD
+        of this row; `repairs` lists every repair of it, including ones still waiting for a human
+        to release them (so you do not compose the same replacement twice).
+
+        NEVER CASUALLY REWRITE A WORKING CLONED SECTION. Its markup is the client's, verbatim, and
+        its slots are the whole of what may change on a healthy one. When a clone is visibly or
+        functionally broken, preserve the original artifact and repair, rebuild or replace it
+        through `repair_cloned_section` — never by retyping the band into your own page markup.
+        """
+        registry = self._cloned_section_registry()
+        if registry is None:
+            return self._cloned_section_registry_missing()
+        if (
+            not isinstance(limit, int)
+            or isinstance(limit, bool)
+            or limit < 1
+            or limit > _CLONED_SECTION_SEARCH_LIMIT_MAX
+        ):
+            return self._tool_error(
+                "cloned_section.bad_limit",
+                f"limit must be an integer from 1 to {_CLONED_SECTION_SEARCH_LIMIT_MAX}.",
+            )
+        requested_role = (role or "").strip().lower() or None
+        try:
+            listing = registry.list_sections(requested_role)
+        except Exception as error:  # noqa: BLE001 - capability boundary
+            self.record(
+                "author",
+                "cloned_sections_search_failed",
+                input_summary=f"q={q!r} role={requested_role or '*'}",
+                output_summary=f"{type(error).__name__}: {error}"[:500],
+            )
+            return self._tool_error(
+                "cloned_section.registry_failed",
+                f"the cloned-section library could not be read: "
+                f"{type(error).__name__}: {error}",
+            )
+        candidates = [
+            section
+            for section in (listing or {}).get("sections") or []
+            if isinstance(section, dict) and section.get("fragment_id")
+        ]
+        ranked = self._rank_cloned_sections(candidates, q or "")
+        ordered = ranked[:limit]
+        # DESCRIBE ONLY WHAT IS RETURNED. The slot kinds live in each artifact's payload and the
+        # preview lives in durable storage, so describing the whole library to answer one query
+        # would read a blob per section the agent never sees.
+        described: Dict[str, Any] = {}
+        if ordered:
+            try:
+                described = registry.describe(
+                    [str(section["fragment_id"]) for section, _id_match in ordered]
+                )
+            except Exception as error:  # noqa: BLE001 - detail is a bonus, never the answer
+                self._obs_log.warning(
+                    "cloned_section_describe_failed",
+                    error=str(error),
+                    error_type=type(error).__name__,
+                )
+                described = {}
+
+        results: List[JsonObject] = []
+        for section, id_match in ordered:
+            fragment_id = str(section["fragment_id"])
+            detail = described.get(fragment_id) or {}
+            preview_path = detail.get("preview_path")
+            self._cloned_section_previews[fragment_id] = preview_path
+            self._cloned_section_seen[fragment_id] = {
+                "label": section.get("label"),
+                "section_role": section.get("section_role"),
+                # The view tool's no-preview sentence branches on this (fix-round N1): without
+                # it the M2 fix was dead code and a composed shell still claimed a browser
+                # had measured it.
+                "composed": section.get("composed"),
+            }
+            row: JsonObject = {
+                "fragment_id": fragment_id,
+                "section_role": section.get("section_role"),
+                "label": section.get("label"),
+                # The kinds are authoritative (they come out of the artifact); the row's
+                # `slot_keys` is only what the harvest recorded, so it is the fallback.
+                "slots": detail.get("slots")
+                or [{"key": key, "kind": "unknown"} for key in section.get("slot_keys") or []],
+                "source_url": section.get("source_url"),
+                "brand_kit": {
+                    "id": section.get("source_kit_id"),
+                    "version": section.get("source_kit_version"),
+                },
+                "view": f"cloned_section:{fragment_id}",
+                "preview": "available" if preview_path else "none",
+            }
+            # D-F6: brokenness and lineage travel with the row, because a picker that shows a
+            # degraded clone the same way it shows a healthy one is how a broken band ends up on
+            # a page. Only present when there is something to say — an unbroken, never-repaired
+            # section reads exactly as it did before F3.1.
+            if section.get("degraded"):
+                row["degraded"] = True
+                row["degraded_reason"] = section.get("degraded_reason")
+                row["degraded_note"] = section.get("degraded_note")
+            if section.get("superseded_by"):
+                row["superseded_by"] = section.get("superseded_by")
+            if section.get("lineage_ambiguous"):
+                # Where the human is actually looking (ruling N5). Without it, the first contact
+                # with a family that has two released repairs is the recreate's total refusal,
+                # and the picker gives no hint that the escape hatch is to retire one.
+                row["lineage_ambiguous"] = section.get("lineage_ambiguous")
+                row["lineage_note"] = (
+                    f"{len(section['lineage_ambiguous'])} released repairs of this band exist "
+                    "and none replaces the others, so a whole-page recreate refuses until a "
+                    "human retires all but one. Pin the one you want explicitly, or ask."
+                )
+            # F4.1: a COMPOSED shell is not a band off the client's site, and a picker that
+            # showed the campaign header the same way it shows the real nav is how the wrong one
+            # ends up on a page. Only present when there is something to say.
+            if section.get("composed"):
+                row["composed"] = section.get("composed")
+                row["composed_note"] = (
+                    "composed for ABM pages, not lifted off the client's site: a page-local "
+                    "shell with one call to action and no navigation. Use it on account pages "
+                    "instead of the cloned nav or footer."
+                )
+            if section.get("repairs"):
+                row["repairs"] = section.get("repairs")
+            if section.get("derived_from"):
+                row["derived_from"] = section.get("derived_from")
+                row["derived_reason"] = section.get("derived_reason")
+            if id_match:
+                row["id_match"] = True
+            results.append(row)
+
+        payload: JsonObject = {
+            "status": "ok",
+            "query": q or None,
+            "role": requested_role,
+            "count": len(results),
+            # What MATCHED, beside what is shown (W5). `count` alone cannot tell a complete
+            # answer from a truncated one, and the default limit is 8 — so on the F2 walk's own
+            # site an unqualified call showed 8 of 13 with nothing saying the other 5 existed.
+            "total": len(ranked),
+            "results": results,
+        }
+        if len(ranked) > len(results):
+            payload["note"] = (
+                f"showing {len(results)} of {len(ranked)} matching cloned section(s) — raise "
+                "`limit` (max "
+                f"{_CLONED_SECTION_SEARCH_LIMIT_MAX}) or narrow the query to see the rest."
+            )
+        if not results:
+            payload["note"] = self._cloned_section_empty_note(
+                q or "", requested_role, len(candidates)
+            )
+        self.record(
+            "author",
+            "cloned_sections_searched",
+            input_summary=f"q={q!r} role={requested_role or '*'}",
+            output_summary=f"{len(results)} released cloned section(s)",
+            payload={"fragment_ids": [row["fragment_id"] for row in results]},
+            sink_extra={"result_count": len(results)},
+        )
+        return json.dumps(payload, indent=2)
+
+    @staticmethod
+    def _cloned_section_text(section: JsonObject) -> str:
+        """The searchable text of one section row — everything a human would recognise it by."""
+        parts = [
+            section.get("fragment_id"),
+            section.get("label"),
+            section.get("section_role"),
+            section.get("source_url"),
+            section.get("page_url"),
+            *(section.get("slot_keys") or []),
+        ]
+        return " ".join(str(part) for part in parts if part).lower()
+
+    def _rank_cloned_sections(
+        self, candidates: List[JsonObject], query: str
+    ) -> List[tuple]:
+        """`[(section, id_match), …]`, best first. The `search_assets` ranking, one library.
+
+        An EMPTY query keeps the registry's own order (newest first) rather than inventing one:
+        "show me what I have" is a legitimate call, and reordering an unfiltered list by a
+        relevance score computed from nothing would be noise dressed as ranking.
+        """
+        query_lower = query.strip().lower()
+        if not query_lower:
+            return [(section, False) for section in candidates]
+        by_id = {str(section["fragment_id"]): section for section in candidates}
+        tokens = _asset_search_tokens(query_lower)
+        named = [
+            token for token in dict.fromkeys([query_lower, *tokens]) if token in by_id
+        ]
+        ranked: List[tuple] = [(by_id[fragment_id], True) for fragment_id in named]
+        scored: List[tuple] = []
+        for section in candidates:
+            fragment_id = str(section["fragment_id"])
+            if fragment_id in named:
+                continue
+            haystack = self._cloned_section_text(section)
+            words = frozenset(word for word in re.split(r"\W+", haystack) if word)
+            hits = sum(1 for token in tokens if _asset_text_hit(token, haystack, words))
+            phrase = 1 if _asset_text_hit(query_lower, haystack, words) else 0
+            if not phrase and not hits:
+                continue
+            scored.append((-phrase, -hits, fragment_id, section))
+        scored.sort(key=lambda item: item[:3])
+        return ranked + [(item[3], False) for item in scored]
+
+    def _cloned_section_empty_note(
+        self, query: str, role: Optional[str], released: int
+    ) -> str:
+        """Why zero, in the terms that decide what to do next.
+
+        "This client has no released cloned sections" and "none of them match your words" are
+        different facts with different remedies (compose the band vs. try another query), and a
+        bare empty list reads as the first no matter which it was.
+        """
+        if not released:
+            return (
+                "This workspace has no cloned sections released for reuse"
+                + (f" with role {role!r}" if role else "")
+                + ". Either its website has not been ingested, or the brand kit those sections "
+                "were cloned into has not been approved yet. Compose the section instead."
+            )
+        filters = f" with role {role!r}" if role else ""
+        return (
+            f"0 of {released} released cloned section(s) matched {query!r}{filters}. "
+            "Try the band's role (nav, hero, footer, proof), a word from its heading, or call "
+            "this tool with no query to see everything."
+        )
+
+    def insert_cloned_section(
+        self,
+        fragment_id: str,
+        index: Optional[int] = None,
+        slot_values_json: Optional[str] = None,
+        parent_node_id: Optional[str] = None,
+    ) -> str:
+        """Pin one cloned section into the page. The band arrives verbatim; slots re-fill it.
+
+        `fragment_id` is a `frag_…` id from `search_cloned_sections` — never one you composed.
+        `index` places it among the page's top-level sections (0 is first; omit to append).
+        `parent_node_id` is for the rare nested case; omit it and the section lands on the page.
+
+        `slot_values_json` is a JSON OBJECT of `{slot key: value}` using the section's OWN slot
+        keys (`search_cloned_sections` lists them with their kinds). Values are plain, and the
+        artifact's kind decides how each is bound: a `text` or `href` slot takes a string, an
+        `image` slot takes a registered asset id, a `visibility` slot takes true/false. Omit a
+        slot and the clone keeps what the original page said there, which is usually right.
+
+        THE SECTION IS WRAPPED for you: a fragment may not be a direct child of the page root, so
+        this composes a section container around it. You get both ids back.
+
+        REFUSALS ARE REAL ANSWERS. `fragment.not_approved` means a human has not released that
+        section yet — say so and compose the band instead; do not retry. `fragment.unresolved`
+        means the id is not one this workspace holds — search again rather than guessing an id.
+        `cloned_section.registry_failed` is NOT a refusal: the library could not be read at all,
+        so the section may be perfectly reusable — retry before you give up on it.
+        """
+        refusal = self._consume_round_budget("insert_cloned_section")
+        if refusal is not None:
+            return refusal
+        registry = self._cloned_section_registry()
+        if registry is None:
+            return self._cloned_section_registry_missing()
+        clean_id = (fragment_id or "").strip()
+
+        raw_slots: JsonObject = {}
+        if slot_values_json is not None:
+            try:
+                decoded = json.loads(slot_values_json)
+            except (TypeError, json.JSONDecodeError) as error:
+                return self._tool_error(
+                    "cloned_section.bad_slot_values",
+                    f"slot_values_json must be a JSON object: {error}",
+                )
+            if not isinstance(decoded, dict):
+                return self._tool_error(
+                    "cloned_section.bad_slot_values",
+                    "slot_values_json must be a JSON object of {slot key: value}.",
+                )
+            raw_slots = decoded
+
+        # THE GATE. Not re-implemented here: the registry asks the same check the document write
+        # will make, so a section this refuses is exactly a section that commit would refuse —
+        # and the agent learns it now, in words, instead of at the end of the turn.
+        #
+        # The two failures are told apart by TYPE, and the distinction is the whole point. A
+        # PERMISSION refusal says "nobody released this band; compose it instead" and the agent
+        # is right to stop asking. A database blip says the opposite, and an agent that read one
+        # for the other would abandon the client's real chrome over a timeout.
+        try:
+            resolved = registry.resolve_insertable(clean_id)
+        except FragmentReferenceError as error:
+            code = error.code or "cloned_section.not_insertable"
+            self.record(
+                "author",
+                "cloned_section_insert_refused",
+                input_summary=clean_id,
+                output_summary=f"{code}: {error.message}"[:500],
+                payload={"fragment_id": clean_id, "error_code": code},
+            )
+            return self._tool_error(str(code), str(error.message), fragment_id=clean_id)
+        except Exception as error:  # noqa: BLE001 - capability boundary, same as search's
+            self.record(
+                "author",
+                "cloned_section_insert_failed",
+                input_summary=clean_id,
+                output_summary=f"{type(error).__name__}: {error}"[:500],
+                payload={"fragment_id": clean_id},
+            )
+            return self._tool_error(
+                "cloned_section.registry_failed",
+                f"the cloned-section library could not be read: "
+                f"{type(error).__name__}: {error}. This is not a refusal — the section may be "
+                "perfectly reusable; try again before composing the band instead.",
+                fragment_id=clean_id,
+            )
+
+        slot_kinds = (resolved.get("render") or {}).get("slot_kinds") or {}
+        slots, slot_error = self._tagged_slot_values(raw_slots, slot_kinds, clean_id)
+        if slot_error is not None:
+            return slot_error
+
+        page = self._home_page()
+        nodes = page.get("nodes") or {}
+        root_id = page.get("root")
+        root = nodes.get(root_id) if isinstance(root_id, str) else None
+        root_children = list(root.get("children") or []) if isinstance(root, dict) else []
+        parent = parent_node_id if isinstance(parent_node_id, str) and parent_node_id else root_id
+        if parent not in nodes:
+            return self._tool_error(
+                "cloned_section.parent_unknown",
+                f"parent node {parent!r} is not on page {self.page_id!r}.",
+                section_ids=root_children,
+            )
+        siblings = list((nodes.get(parent) or {}).get("children") or [])
+        if index is None:
+            position = len(siblings)
+        elif not isinstance(index, int) or isinstance(index, bool) or index < 0:
+            return self._tool_error(
+                "cloned_section.bad_index",
+                "index must be a non-negative integer, or omitted to append.",
+            )
+        else:
+            position = min(index, len(siblings))
+
+        section_id, node_id, pin_nodes = self._cloned_section_pin_nodes(
+            clean_id, slots, set(nodes)
+        )
+        operations = [
+            {
+                "kind": "insert_node",
+                "page_id": self.page_id,
+                "parent": parent,
+                "index": position,
+                "nodes": pin_nodes,
+                "root": section_id,
+            }
+        ]
+
+        try:
+            response = self.core.web_apply_ops(self.web_doc, operations)
+        except CoreError as error:
+            diagnostics = list(error.diagnostics or [])
+            self.record(
+                "author",
+                "cloned_section_insert_rejected",
+                input_summary=clean_id,
+                output_summary=error.message[:500],
+                diagnostics=diagnostics,
+                payload={"fragment_id": clean_id},
+            )
+            return self._rejected(diagnostics)
+        if not response.get("ok"):
+            return self._rejected(response.get("diagnostics") or [])
+
+        self.web_doc = response["web_doc"]
+        self._record_operations(operations)
+        self._doc_version += 1
+        # F1.3's package is resolved ONCE, at composition, from what the document pinned THEN —
+        # so without this the section the agent just pinned would render as the engine's
+        # placeholder in the agent's own screenshots, and the visual reviewer would judge a page
+        # with a hole in it. The artifact travels with the resolution that let it be pinned.
+        self._admit_fragment_artifact(clean_id, resolved.get("render") or {})
+        self._cloned_section_previews[clean_id] = resolved.get("preview_path")
+        self._cloned_section_seen[clean_id] = {
+            "label": resolved.get("label"),
+            "section_role": resolved.get("section_role"),
+        }
+        warnings, advice = _split_non_error_diagnostics(response.get("diagnostics"))
+        self.record(
+            "author",
+            "cloned_section_inserted",
+            input_summary=f"{clean_id} -> {parent}[{position}]",
+            output_summary=f"{section_id} > {node_id}",
+            diagnostics=response.get("diagnostics") or [],
+            payload={
+                "fragment_id": clean_id,
+                "section_role": resolved.get("section_role"),
+                "page_id": self.page_id,
+                "section_node_id": section_id,
+                "node_id": node_id,
+                "slots_bound": sorted(slots),
+                "operations": copy.deepcopy(operations),
+            },
+            sink_extra={"fragment_id": clean_id},
+        )
+        result: JsonObject = {
+            "status": "ok",
+            "fragment_id": clean_id,
+            "section_role": resolved.get("section_role"),
+            "label": resolved.get("label"),
+            "page_id": self.page_id,
+            "section_node_id": section_id,
+            "node_id": node_id,
+            "index": position,
+            "slots_bound": sorted(slots),
+            "view": f"cloned_section:{clean_id}",
+            "warnings": warnings,
+            "advice": advice,
+        }
+        # D-F6 reaches this door too (ruling R-I4). Pinning a band the pipeline has already
+        # measured as broken used to return a clean `ok`, leaving nothing between it and a
+        # published page full of dead space but a picker attribute the model saw turns ago.
+        broken = self._degraded_pin_entry(
+            resolved, index=position, section_node_id=section_id
+        )
+        self._note_degraded_pins(result, [broken] if broken is not None else [])
+        return json.dumps(result, indent=2)
+
+    def _tagged_slot_values(
+        self, raw: JsonObject, slot_kinds: Dict[str, Any], fragment_id: str
+    ) -> tuple[JsonObject, Optional[str]]:
+        """Plain agent-supplied values → the engine's TAGGED slot values, by the artifact's kinds.
+
+        The tag is load-bearing and cannot be inferred from the value: an href and a paragraph are
+        both JSON strings, so `{"text": …}` from an href slot is how a link target avoids being
+        written into a heading (`FragmentSlotValue` is serde-tagged precisely because of this).
+        The artifact's manifest is the only thing that knows, which is why an unknown key is
+        refused here rather than passed on — the engine would accept it as a well-formed key and
+        it would simply never bind, which is a silent nothing.
+
+        Everything the ENGINE can judge is left to the engine: key grammar, the 64-slot ceiling,
+        the 8 KB value bound and asset-id shape are all checked by the same `insert_node`
+        validation a human's operation goes through.
+        """
+        tagged: JsonObject = {}
+        for key, value in raw.items():
+            kind = slot_kinds.get(key)
+            if kind is None:
+                available = ", ".join(sorted(slot_kinds)) or "none"
+                return {}, self._tool_error(
+                    "cloned_section.unknown_slot",
+                    f"cloned section {fragment_id} has no slot {key!r}. Its slots are: "
+                    f"{available}.",
+                    fragment_id=fragment_id,
+                    slots=sorted(slot_kinds),
+                )
+            tag = SLOT_KIND_TO_NODE_TAG.get(str(kind))
+            if tag is None:
+                return {}, self._tool_error(
+                    "cloned_section.unknown_slot",
+                    f"slot {key!r} has kind {kind!r}, which this build cannot bind.",
+                    fragment_id=fragment_id,
+                )
+            if tag == "visible":
+                if not isinstance(value, bool):
+                    return {}, self._tool_error(
+                        "cloned_section.bad_slot_value",
+                        f"slot {key!r} controls whether part of the section is shown, so it "
+                        "takes true or false.",
+                        fragment_id=fragment_id,
+                    )
+            elif not isinstance(value, str):
+                expected = "an asset id" if tag == "asset" else "a string"
+                return {}, self._tool_error(
+                    "cloned_section.bad_slot_value",
+                    f"slot {key!r} is a {kind} slot, so it takes {expected}.",
+                    fragment_id=fragment_id,
+                )
+            tagged[key] = {tag: value}
+        return tagged, None
+
+    # --- the recreate walk (clone-fidelity F3.1) ----------------------------------------------
+    #
+    # "Recreate our homepage" is not a design brief — it is an ASSEMBLY: every released cloned
+    # section of the client's own page, in the order it sits on that page, with nothing added and
+    # nothing reordered. Doing that as ten separate `insert_cloned_section` calls makes the
+    # property a matter of the model's obedience; doing it as one batch makes it true by
+    # construction, which is why this tool exists rather than a paragraph of prompt asking nicely.
+
+    def recreate_cloned_page(
+        self, slot_values_json: Optional[str] = None, page_url: Optional[str] = None
+    ) -> str:
+        """Rebuild the client's own page from its cloned sections: ALL of them, in source order.
+
+        Use this when the brief is "recreate our homepage" / "rebuild our site's landing page" —
+        a request to reproduce a page that already exists, not to design a new one. It pins every
+        RELEASED cloned section of that page, in the order it sat on the page, as one atomic
+        batch. It adds no section, invents no section, and reorders nothing.
+
+        `page_url` picks the page when this workspace has clones from more than one; with clones
+        from a single page it is unnecessary, and with several and no choice made this REFUSES and
+        names them rather than mixing two pages into one.
+
+        `slot_values_json` is an OPTIONAL JSON object of `{fragment_id: {slot key: value}}` —
+        the same values `insert_cloned_section` takes, for as many sections as you want to
+        re-fill in the same call. Omit a section and its clone keeps the words the original page
+        said, which is usually right for a recreate.
+
+        WHAT COMES BACK IS WORK. `pinned` lists what landed and where. `substituted` names each
+        clone that was replaced by its released REPAIR (D-F6) instead of being pinned broken.
+        `needs_repair` names every clone that went on the page still marked broken — each one is
+        a `repair_cloned_section` call you owe before this page can ship, because a degraded band
+        is dead space a visitor scrolls through.
+
+        REFUSALS: `recreate.page_not_empty` means this page already has sections, so a recreate
+        would be adding to somebody's work — clear it first or pin sections individually.
+        `recreate.nothing_released` means this workspace has no released cloned sections at all.
+        """
+        # CHARGED FIRST, before the preconditions below are known (ledger T17-M7). A refusal
+        # therefore costs a mutation, and that is deliberate rather than an oversight: the budget
+        # exists to end a round that is churning, and a tool that refuses for free is one a model
+        # can call forever inside a round it should already have ended. The cost of the choice is
+        # that a page which was never going to recreate spends one of five edits saying so.
+        refusal = self._consume_round_budget("recreate_cloned_page")
+        if refusal is not None:
+            return refusal
+        registry = self._cloned_section_registry()
+        if registry is None:
+            return self._cloned_section_registry_missing()
+
+        raw_slots: JsonObject = {}
+        if slot_values_json is not None:
+            try:
+                decoded = json.loads(slot_values_json)
+            except (TypeError, json.JSONDecodeError) as error:
+                return self._tool_error(
+                    "cloned_section.bad_slot_values",
+                    f"slot_values_json must be a JSON object: {error}",
+                )
+            if not isinstance(decoded, dict) or any(
+                not isinstance(value, dict) for value in decoded.values()
+            ):
+                return self._tool_error(
+                    "cloned_section.bad_slot_values",
+                    "slot_values_json must be a JSON object of "
+                    "{fragment_id: {slot key: value}}.",
+                )
+            raw_slots = decoded
+
+        page = self._home_page()
+        nodes = page.get("nodes") or {}
+        root_id = page.get("root")
+        root = nodes.get(root_id) if isinstance(root_id, str) else None
+        existing = list(root.get("children") or []) if isinstance(root, dict) else []
+        if existing:
+            # A recreate that appended to a page somebody else built would be "adds nothing"
+            # only in the narrowest sense. Refuse rather than quietly extend.
+            return self._tool_error(
+                "recreate.page_not_empty",
+                f"page {self.page_id!r} already has {len(existing)} top-level section(s), so a "
+                "recreate would be adding to a page that is already built. Use "
+                "insert_cloned_section for a targeted pin, or start from an empty page.",
+                section_ids=existing,
+            )
+
+        try:
+            listing = registry.list_sections()
+        except Exception as error:  # noqa: BLE001 - capability boundary, same as search's
+            self.record(
+                "author",
+                "cloned_page_recreate_failed",
+                input_summary=f"page_url={page_url or '*'}",
+                output_summary=f"{type(error).__name__}: {error}"[:500],
+            )
+            return self._tool_error(
+                "cloned_section.registry_failed",
+                f"the cloned-section library could not be read: "
+                f"{type(error).__name__}: {error}",
+            )
+        sections = [
+            section
+            for section in (listing or {}).get("sections") or []
+            if isinstance(section, dict) and section.get("fragment_id")
+            # A COMPOSED section came off no page, so it is not part of any page's recreate
+            # (F4.1). Two things would otherwise go wrong the moment a workspace holds campaign
+            # shells: the shells would be planted on the recreated homepage, which is exactly the
+            # "adds nothing" property this operation exists to guarantee; and their own
+            # `page_url` would make every workspace that owns them answer `page_ambiguous` to a
+            # recreate that was never ambiguous. The shells are reached by name, through
+            # discovery and the ABM recipe.
+            and not section.get("composed")
+        ]
+        if not sections:
+            return self._tool_error(
+                "recreate.nothing_released",
+                "this workspace has no released cloned sections, so there is no page to "
+                "recreate. Either its website has not been ingested, or the brand kit those "
+                "sections were cloned into has not been approved yet.",
+            )
+
+        pages = sorted({str(section.get("page_url") or "") for section in sections})
+        if page_url is not None:
+            wanted = page_url.strip()
+            sections = [
+                section
+                for section in sections
+                if str(section.get("page_url") or "") == wanted
+            ]
+            if not sections:
+                return self._tool_error(
+                    "recreate.page_unknown",
+                    f"no released cloned section came from {wanted!r}.",
+                    pages=pages,
+                )
+        elif len(pages) > 1:
+            return self._tool_error(
+                "recreate.page_ambiguous",
+                "this workspace holds cloned sections from more than one page, so which page "
+                "to recreate has to be said out loud. Pass page_url.",
+                pages=pages,
+            )
+
+        # `list_sections` already returns DOCUMENT ORDER (page, then the section's own index on
+        # it). This walk keeps that order and does not re-sort: the order the page had is the
+        # whole point, and a second opinion about it here could only disagree with the registry.
+        #
+        # ONE SECTION PER LINEAGE (ruling R-C1). A released repair is an ordinary approved cloned
+        # section, so a clone and every repair of it all come back in the listing side by side.
+        # Walking rows and skipping "the one thing `superseded_by` names" is not enough: a second
+        # released repair is named by nobody and gets pinned on its own row (the same band
+        # twice), and a chain whose middle repair is itself degraded leaves the BROKEN ORIGINAL
+        # named by nobody and back on the page. So the unit of assembly is the LINEAGE, resolved
+        # by the registry over the whole family, and this loop plants each family exactly once,
+        # at the position of whichever of its members the page order reaches first.
+        by_id = {str(section["fragment_id"]): section for section in sections}
+        plan: List[JsonObject] = []
+        planned_roots: set = set()
+        for section in sections:
+            fragment_id = str(section["fragment_id"])
+            root = str(section.get("lineage_root") or fragment_id)
+            if root in planned_roots:
+                continue
+            planned_roots.add(root)
+            ambiguous = [str(item) for item in section.get("lineage_ambiguous") or []]
+            if ambiguous:
+                # Two released repairs of one band, neither superseding the other. Picking one
+                # would silently discard somebody's deliberate work and picking both would put
+                # the band down twice, so this is a human's decision and the assembly stops.
+                return self._tool_error(
+                    "recreate.lineage_ambiguous",
+                    f"cloned section {root} has {len(ambiguous)} released repairs and none of "
+                    "them replaces the others, so which one belongs on the page is not something "
+                    "this can decide: "
+                    + ", ".join(ambiguous)
+                    + ". Nothing was pinned. Ask the user which repair to keep and retire the "
+                    "rest (a retired section is never offered), or pin one explicitly with "
+                    "insert_cloned_section.",
+                    lineage_root=root,
+                    candidates=ambiguous,
+                )
+            # D-F6: a clone somebody has already repaired and released is pinned INSTEAD of the
+            # broken original, transitively — a repair of a repair wins over its own parent. The
+            # repair inherits the original's page position (its provenance copies
+            # `section_index`), so this substitution never moves a band.
+            target = str(section.get("superseded_by") or fragment_id)
+            # The TARGET's own row decides whether this band is still broken; the row the page
+            # order happened to reach first may be the original, the repair, or a superseded
+            # middle of the chain.
+            source = by_id.get(target) or section
+            plan.append(
+                {
+                    "fragment_id": target,
+                    "substituted_for": root if target != root else None,
+                    # When the whole family is broken there is no leaf to choose, so the
+                    # fallback ranks — and a ranking nobody is told about is exactly what the
+                    # ambiguity refusal exists to prevent (ruling N4). It cannot refuse here (a
+                    # hole where the band goes is worse than a flagged band), so it says.
+                    "ranked_over": [
+                        str(item) for item in source.get("lineage_ranked_over") or []
+                    ],
+                    "section": source,
+                }
+            )
+
+        operations: List[JsonObject] = []
+        pinned: List[JsonObject] = []
+        taken = set(nodes)
+        for position, entry in enumerate(plan):
+            fragment_id = entry["fragment_id"]
+            try:
+                resolved = registry.resolve_insertable(fragment_id)
+            except FragmentReferenceError as error:
+                # Every id in the plan came back from an approved-only listing, so a refusal here
+                # is a race, not a routine "not released yet" — and a half-built homepage is
+                # worse than none, so the whole batch stops and says which band and why.
+                code = error.code or "cloned_section.not_insertable"
+                self.record(
+                    "author",
+                    "cloned_page_recreate_refused",
+                    input_summary=fragment_id,
+                    output_summary=f"{code}: {error.message}"[:500],
+                    payload={"fragment_id": fragment_id, "error_code": code},
+                )
+                return self._tool_error(
+                    str(code),
+                    f"the recreate stopped at {fragment_id}: {error.message} Nothing was "
+                    "pinned.",
+                    fragment_id=fragment_id,
+                )
+            except Exception as error:  # noqa: BLE001 - capability boundary
+                return self._tool_error(
+                    "cloned_section.registry_failed",
+                    f"the cloned-section library could not be read: "
+                    f"{type(error).__name__}: {error}. This is not a refusal — try again.",
+                    fragment_id=fragment_id,
+                )
+            slot_kinds = (resolved.get("render") or {}).get("slot_kinds") or {}
+            slots, slot_error = self._tagged_slot_values(
+                raw_slots.get(fragment_id) or {}, slot_kinds, fragment_id
+            )
+            if slot_error is not None:
+                return slot_error
+            section_id, node_id, pin_nodes = self._cloned_section_pin_nodes(
+                fragment_id, slots, taken
+            )
+            taken.update({section_id, node_id})
+            operations.append(
+                {
+                    "kind": "insert_node",
+                    "page_id": self.page_id,
+                    "parent": root_id,
+                    "index": position,
+                    "nodes": pin_nodes,
+                    "root": section_id,
+                }
+            )
+            pinned.append(
+                {
+                    "fragment_id": fragment_id,
+                    "index": position,
+                    "section_role": resolved.get("section_role"),
+                    "label": resolved.get("label"),
+                    "section_node_id": section_id,
+                    "node_id": node_id,
+                    "slots_bound": sorted(slots),
+                    "substituted_for": entry["substituted_for"],
+                    # The band that is actually ON the page decides this, not the row the page
+                    # order happened to reach first: after a substitution the pinned section is
+                    # the repair, and it is the repair's own marker that matters.
+                    "degraded": bool(resolved.get("degraded")),
+                    "ranked_over": entry["ranked_over"],
+                    "resolved": resolved,
+                }
+            )
+
+        try:
+            response = self.core.web_apply_ops(self.web_doc, operations)
+        except CoreError as error:
+            diagnostics = list(error.diagnostics or [])
+            self.record(
+                "author",
+                "cloned_page_recreate_rejected",
+                input_summary=f"{len(operations)} section(s)",
+                output_summary=error.message[:500],
+                diagnostics=diagnostics,
+            )
+            return self._rejected(diagnostics)
+        if not response.get("ok"):
+            return self._rejected(response.get("diagnostics") or [])
+
+        self.web_doc = response["web_doc"]
+        self._record_operations(operations)
+        self._doc_version += 1
+        degraded_pins: List[JsonObject] = []
+        for entry in pinned:
+            resolved = entry.pop("resolved")
+            fragment_id = entry["fragment_id"]
+            self._admit_fragment_artifact(fragment_id, resolved.get("render") or {})
+            self._cloned_section_previews[fragment_id] = resolved.get("preview_path")
+            self._cloned_section_seen[fragment_id] = {
+                "label": resolved.get("label"),
+                "section_role": resolved.get("section_role"),
+            }
+            broken = self._degraded_pin_entry(
+                resolved, index=entry["index"], section_node_id=entry["section_node_id"]
+            )
+            if broken is not None:
+                degraded_pins.append(broken)
+
+        substituted = [entry for entry in pinned if entry["substituted_for"]]
+        warnings, advice = _split_non_error_diagnostics(response.get("diagnostics"))
+        self.record(
+            "author",
+            "cloned_page_recreated",
+            input_summary=f"page_url={page_url or pages[0]}",
+            output_summary=(
+                f"{len(pinned)} cloned section(s) in source order; "
+                f"{len(substituted)} substituted by a repair; "
+                f"{len(degraded_pins)} still broken"
+            ),
+            diagnostics=response.get("diagnostics") or [],
+            payload={
+                "fragment_ids": [entry["fragment_id"] for entry in pinned],
+                "needs_repair": copy.deepcopy(degraded_pins),
+                "operations": copy.deepcopy(operations),
+            },
+            sink_extra={"pinned_count": len(pinned)},
+        )
+        ranked = [entry for entry in pinned if entry["ranked_over"]]
+        result: JsonObject = {
+            "status": "ok",
+            "page_id": self.page_id,
+            "page_url": page_url or pages[0],
+            "pinned": pinned,
+            "substituted": substituted,
+            "ranked": ranked,
+            "warnings": warnings,
+            "advice": advice,
+        }
+        if ranked:
+            # ADVICE, not a warning: the band is already reported as work through `needs_repair`
+            # (every candidate in a ranked family is broken), so this is the second half of the
+            # story — which broken candidate was chosen and what it beat — and the house rule is
+            # that advice is judged, never obligatory.
+            advice.append(
+                {
+                    "severity": "advice",
+                    "phase": "agent",
+                    "code": _CLONED_SECTION_RANKED_CODE,
+                    "message": (
+                        "every released version of "
+                        + ", ".join(
+                            f"{entry['fragment_id']} (over {', '.join(entry['ranked_over'])})"
+                            for entry in ranked
+                        )
+                        + " is marked broken, so the oldest was pinned rather than none. If the "
+                        "one you want is not the one on the page, pin it explicitly."
+                    ),
+                    "hint": "",
+                }
+            )
+        self._note_degraded_pins(result, degraded_pins)
+        return json.dumps(result, indent=2)
+
+    # --- the one place a degraded pin is reported (ruling R-I4) --------------------------------
+    #
+    # D-F6's trigger has to reach the author from EVERY door that puts a cloned section on a page,
+    # not only from the recreate walk: composing a page and reaching for one broken band with
+    # `insert_cloned_section` is the commoner shape, and it used to return a clean `ok`. So the
+    # entry and the warning are built here, once, from what `resolve_insertable` says — the same
+    # answer both doors already hold.
+
+    @staticmethod
+    def _degraded_pin_entry(
+        resolved: JsonObject, *, index: Optional[int], section_node_id: str
+    ) -> Optional[JsonObject]:
+        """One `needs_repair` entry for a band that was just pinned, or None if it is healthy."""
+        if not resolved.get("degraded"):
+            return None
+        return {
+            "fragment_id": resolved.get("fragment_id"),
+            "index": index,
+            "section_node_id": section_node_id,
+            "label": resolved.get("label"),
+            "reason": resolved.get("degraded_reason"),
+            "note": resolved.get("degraded_note"),
+            # The lineage answer the gate resolved for this band (ruling N2). It is what stops
+            # the warning from telling an author to compose a repair for a band that already has
+            # a released one — the mistake that manufactures two sibling repairs and, after the
+            # next bulk kit approval, an assembly that refuses.
+            "superseded_by": resolved.get("superseded_by"),
+            # ...and BOTH halves of it (ruling X2). `superseded_by` alone is `None` in two
+            # different worlds — "no repair exists" and "two released repairs exist and neither
+            # replaces the other" — and reading the second as the first is how the warning ended
+            # up advising a THIRD repair of the one band that could least afford another.
+            "lineage_ambiguous": list(resolved.get("lineage_ambiguous") or []),
+        }
+
+    def _note_degraded_pins(
+        self, result: JsonObject, degraded_pins: List[JsonObject]
+    ) -> None:
+        """Fold degraded pins into an accepted result, or leave it byte-identical.
+
+        `needs_repair` is always present on a result that could carry one, empty or not: a key
+        that appears only in the bad case teaches a reader that its absence means "fine", when it
+        equally means "this build did not look".
+        """
+        result["needs_repair"] = degraded_pins
+        if not degraded_pins:
+            return
+        result.setdefault("warnings", []).insert(
+            0, self._degraded_pin_warning(degraded_pins)
+        )
+        self.record(
+            "author",
+            "cloned_section_degraded_pinned",
+            output_summary=", ".join(
+                f"{entry['fragment_id']} ({entry.get('reason') or 'broken'})"
+                for entry in degraded_pins
+            ),
+            payload={"needs_repair": copy.deepcopy(degraded_pins)},
+            sink_extra={"degraded_count": len(degraded_pins)},
+        )
+
+    @staticmethod
+    def _degraded_pin_warning(needs_repair: List[JsonObject]) -> JsonObject:
+        """A degraded clone that went on the page, as WORK rather than as a note.
+
+        Same bucket and the same reasoning as the dropped-clone warning: a band the pipeline has
+        already measured as broken is not a matter of taste, and the page renders either way — so
+        the only thing standing between this and a published page full of dead space is the
+        author being told, in the bucket the prompt calls mandatory.
+
+        **What it says is computed from what was actually resolved, not from which door called**
+        (ruling N2). The old text claimed every pinned broken band "has no released repair" —
+        true by construction of the recreate walk, which substitutes one when it exists, and a
+        guess anywhere else. A band that DOES have a released repair now gets the instruction
+        that fixes it in one call (pin the repair) instead of the instruction that makes the
+        problem worse (compose a second repair, which after the next bulk kit approval leaves two
+        released siblings and an assembly that refuses).
+        """
+        named = ", ".join(
+            f"{entry['fragment_id']} ({entry.get('reason') or 'broken'})"
+            for entry in needs_repair
+        )
+        # THREE worlds, not two (ruling X2). `superseded_by` being falsy does not mean "nothing
+        # has repaired this": it is also what an AMBIGUOUS family answers, and that is the one
+        # band on the page that can least afford another repair — a third sibling deepens an
+        # ambiguity that already refuses the whole-page assembly.
+        replaceable = [entry for entry in needs_repair if entry.get("superseded_by")]
+        contested = [
+            entry
+            for entry in needs_repair
+            if not entry.get("superseded_by") and entry.get("lineage_ambiguous")
+        ]
+        unrepaired = len(needs_repair) - len(replaceable) - len(contested)
+        message = f"{len(needs_repair)} cloned section(s) on this page are marked BROKEN: {named}"
+        if unrepaired == len(needs_repair):
+            message += " — and none of them has a released repair"
+        hint_parts = []
+        if replaceable:
+            swaps = "; ".join(
+                f"{entry['fragment_id']} -> {entry['superseded_by']}" for entry in replaceable
+            )
+            hint_parts.append(
+                f"{len(replaceable)} of these ALREADY HAVE a released repair. Do not compose "
+                f"another one: remove the broken pin and insert_cloned_section the repair "
+                f"instead ({swaps})."
+            )
+        if contested:
+            choices = "; ".join(
+                f"{entry['fragment_id']} -> one of "
+                + ", ".join(str(item) for item in entry["lineage_ambiguous"])
+                for entry in contested
+            )
+            hint_parts.append(
+                f"{len(contested)} of these have MORE THAN ONE released repair and none of them "
+                f"replaces the others ({choices}). Do not compose another — a third would only "
+                "deepen it, and a whole-page recreate already refuses on this band. Pin one of "
+                "the existing repairs explicitly with insert_cloned_section, and ask the user "
+                "which one to keep so the rest can be retired."
+            )
+        if unrepaired:
+            hint_parts.append(
+                f"Repair {'the rest' if hint_parts else 'each one'} with "
+                "repair_cloned_section(fragment_id, html, rung, note): "
+                "compose the replacement with engine primitives under the brand's Grammar "
+                "Audit, preserving the original's content order, typography, colors, imagery "
+                "treatment, proportions, spacing and rhythm. The original clone is preserved as "
+                "evidence; your replacement is minted as a new section with the lineage recorded."
+            )
+        return {
+            "severity": "warning",
+            "phase": "agent",
+            "code": _CLONED_SECTION_DEGRADED_CODE,
+            "message": message,
+            "hint": " ".join(hint_parts),
+            "needs_repair": copy.deepcopy(needs_repair),
+        }
+
+    # --- the D-F6 repair ladder ---------------------------------------------------------------
+
+    def repair_cloned_section(
+        self, fragment_id: str, html: str, rung: int, note: str
+    ) -> str:
+        """Replace a BROKEN cloned section with one you compose — original preserved, lineage kept.
+
+        A clone is the starting reference, not an untouchable artifact. Never preserve a broken
+        result merely because it came from the original site. Use this the moment a cloned
+        section is visibly or functionally broken on the page you are building — a band that is
+        mostly dead scroll height, a control that does nothing, content that does not appear.
+
+        WALK THE LADDER IN ORDER and say which rung you reached:
+          1. reproduce the original experience with supported primitives;
+          2. build an equivalent interaction serving the same storytelling purpose;
+          3. a deliberate, compact static fallback — the artificial height removed ENTIRELY.
+        Rung 1 is often unreachable (the interaction vocabulary is deliberately bounded); rungs 2
+        and 3 are the common case. Blank dead space is never an acceptable outcome at any rung.
+
+        WHATEVER THE RUNG, THE REPAIR PRESERVES: content hierarchy and order, typography and
+        colors, image treatment, proportions and density, spacing, section rhythm, the
+        interaction's storytelling purpose, and the brand's character. The brand's Grammar Audit
+        (in your brand card) governs the adaptation — it is the measured law of this brand's own
+        site, and a repair that ignores it stops looking like the client.
+
+        `fragment_id` is the broken clone, which must be PINNED on the page right now.
+        `html` is the COMPLETE replacement markup for that band, in the same constrained-HTML wire
+        format `author_web_subtree` takes: one `<section id="...">...</section>` using theme
+        tokens, brand geometry utilities and the icon vocabulary. It is engine-validated exactly
+        like any authored section.
+        `rung` is 1, 2 or 3. `note` is one line: what was broken, and what your replacement does
+        about it. Both are recorded permanently on the repair's lineage.
+
+        WHAT HAPPENS: the broken clone comes off the page and your section takes its exact place;
+        the ENGINE's own render of that section is then minted as a NEW cloned section carrying
+        `derived_from` (the original) and your rung + note. The original artifact is untouched —
+        it stays in the library as the evidence of what the source site actually did.
+
+        The repair is born UNRELEASED, like every cloned section: a human releases it by approving
+        the brand kit. So `pinned` is normally false and the page carries your composed section
+        directly, which renders identically. Say so in your report; do not claim the page pins a
+        repair it does not.
+        """
+        registry = self._cloned_section_registry()
+        if registry is None:
+            return self._cloned_section_registry_missing()
+        # A tool call that arrives with the rung as `"3"` means the same thing as `3` and should
+        # not cost a round to say so. Anything that is not a plain integer still refuses.
+        if isinstance(rung, str) and rung.strip().isdigit():
+            rung = int(rung.strip())
+        if isinstance(rung, bool) or rung not in REPAIR_RUNGS:
+            return self._tool_error(
+                "repair.bad_rung",
+                f"rung must be 1, 2 or 3 (D-F6's ladder), not {rung!r}: "
+                + "; ".join(f"{key} = {value}" for key, value in sorted(REPAIR_RUNGS.items())),
+            )
+        cleaned_note = " ".join((note or "").split())
+        if not cleaned_note:
+            return self._tool_error(
+                "repair.note_missing",
+                "note is one line saying what was broken and what your replacement does about "
+                "it. It is recorded permanently on the repair's lineage, so it cannot be blank.",
+            )
+        clean_id = (fragment_id or "").strip()
+        pinned = self._pinned_cloned_sections(self.web_doc)
+        if clean_id not in pinned:
+            return self._tool_error(
+                "repair.not_pinned",
+                f"cloned section {clean_id!r} is not on page {self.page_id!r}, so there is "
+                "nothing to repair in place. Pin it first (or name one that is pinned).",
+                pinned_fragment_ids=sorted(pinned),
+            )
+
+        # 1) The swap, through the SAME scoped-edit path an ordinary section rewrite takes: the
+        #    engine parses, validates and canonicalizes the replacement markup, and a rejection
+        #    comes back as the author's own repair loop rather than as a new failure mode. The
+        #    clone this deliberately takes off the page is not reported as a lost pin — that
+        #    report exists for rewrites that lose a band by accident, and this is the opposite.
+        self._repair_replacing = clean_id
+        instances = pinned[clean_id]
+        try:
+            swapped = json.loads(self.author_web_subtree(instances[0], html))
+        finally:
+            self._repair_replacing = None
+        if swapped.get("status") != "ok":
+            return json.dumps(swapped, indent=2)
+
+        roots = [root for root in swapped.get("roots") or [] if isinstance(root, str)]
+        if len(roots) != 1:
+            return self._tool_error(
+                "repair.not_one_section",
+                "a repair replaces one band with ONE section; this markup produced "
+                f"{len(roots)}. Compose the replacement as a single "
+                '<section id="...">...</section>.',
+                roots=roots,
+            )
+
+        # 2) The MINT SOURCE is the engine's own render of what it just accepted — never the
+        #    markup the model typed (ruling R17-1). Rendered with the artifact's own byte
+        #    spelling (`/asset-store/<digest>`) so every image the section shows is already in
+        #    the shape the fragment sanitizer recognises, and with no fragment map, because the
+        #    only thing being extracted is this section and it holds no pins of its own.
+        try:
+            rendered = self.core.web_render(
+                self.web_doc,
+                self.page_id,
+                mode="delivery",
+                asset_base_url=ASSET_URL_PREFIX.rstrip("/"),
+                brand_kit=self.config.brand_kit,
+                fragments={},
+                fragment_css="",
+            )
+        except CoreError as error:
+            return self._tool_error(
+                "repair.render_failed",
+                f"the replacement section could not be rendered, so nothing was minted: "
+                f"{error.message}",
+            )
+        subtree = _section_subtree(rendered.get("html") or "", self._anchor_id(roots[0]))
+        if not subtree:
+            return self._tool_error(
+                "repair.section_not_rendered",
+                f"section {roots[0]!r} is on the page but did not appear in the render, so "
+                "there is nothing to mint. The page still carries your replacement.",
+            )
+
+        # 3) Its styling, compiled by the SAME toolchain that compiles a published page, so the
+        #    minted artifact carries its own sealed stylesheet and looks identical wherever it is
+        #    pinned. A fragment's CSS is deliberately outside the page's utility scan, so an
+        #    unstyled mint here would publish unstyled and look fine in the editor.
+        try:
+            css = compile_section_css(
+                self.core,
+                self.web_doc,
+                brand_kit=self.config.brand_kit,
+                section_html=subtree,
+            )
+        except WebExportToolchainMissing as error:
+            # The ENVIRONMENT, not the markup. Told apart from a compile failure because the
+            # remedy is somebody else's (install the toolchain) and retrying is pointless.
+            return self._tool_error(
+                "repair.toolchain_unavailable",
+                f"this worker cannot compile a section's styling, so no durable repair was "
+                f"minted: {error}. The page still carries your replacement section and renders "
+                "correctly; report that the repair could not be saved to the library. Do not "
+                "retry — nothing about this call will change the answer.",
+            )
+        except Exception as error:  # noqa: BLE001 - the toolchain boundary
+            return self._tool_error(
+                "repair.css_compile_failed",
+                f"the replacement section's styling could not be compiled, so nothing was "
+                f"minted rather than minting a section that would publish unstyled: "
+                f"{type(error).__name__}: {error}. The page still carries your replacement.",
+            )
+
+        try:
+            minted = registry.mint_repair(
+                replaces=clean_id,
+                html=subtree,
+                css=css,
+                rung=int(rung),
+                note=cleaned_note,
+            )
+        except FragmentRefused as refusal:
+            self.record(
+                "author",
+                "cloned_section_repair_refused",
+                input_summary=clean_id,
+                output_summary=f"{refusal.code}: {refusal.message}"[:500],
+                payload={"fragment_id": clean_id, "error_code": refusal.code},
+            )
+            return self._tool_error(
+                str(refusal.code),
+                f"{refusal.message}. The page still carries your replacement section; only the "
+                "durable repair was not minted.",
+                fragment_id=clean_id,
+            )
+        except Exception as error:  # noqa: BLE001 - capability boundary
+            return self._tool_error(
+                "repair.mint_failed",
+                f"the repair could not be minted: {type(error).__name__}: {error}. The page "
+                "still carries your replacement section.",
+                fragment_id=clean_id,
+            )
+
+        result: JsonObject = {
+            "status": "ok",
+            "repaired": clean_id,
+            "repair_fragment_id": minted.get("fragment_id"),
+            "rung": int(rung),
+            "note": cleaned_note,
+            "derived_from": minted.get("derived_from"),
+            "derived_reason": minted.get("derived_reason"),
+            "repair_status": minted.get("status"),
+            "slot_keys": minted.get("slot_keys"),
+            "section_node_id": roots[0],
+            "original_preserved": True,
+            "warnings": swapped.get("warnings") or [],
+            "advice": swapped.get("advice") or [],
+        }
+        # A band pinned in more than one place is repaired in ONE of them, and the others still
+        # carry the broken clone (F3.4). Said, because "repaired" about a page that still shows
+        # the defect two screens down is the kind of half-truth the ladder exists to prevent —
+        # and the remedy is the same tool again, so this is a note rather than a refusal.
+        #
+        # Under the DEGRADED code rather than one of its own, and deliberately so given that this
+        # same change is about one code meaning one thing: `_CLONED_SECTION_DEGRADED_CODE` says
+        # "a cloned section on this page is marked broken and no released repair is applied to
+        # it", and that is exactly true of every remaining pin. The instance count is detail on
+        # that fact, not a different fact.
+        if len(instances) > 1:
+            result["other_pins_of_this_band"] = instances[1:]
+            result["advice"] = list(result["advice"]) + [
+                {
+                    "severity": "warning",
+                    "phase": "agent",
+                    "code": _CLONED_SECTION_DEGRADED_CODE,
+                    "message": (
+                        f"cloned section {clean_id} is pinned {len(instances)} times on this "
+                        f"page; this repair replaced ONE of them ({instances[0]}). The others "
+                        f"still carry the broken clone: {', '.join(instances[1:])}"
+                    ),
+                    "hint": (
+                        "Repair or re-pin each remaining instance, or remove the ones that were "
+                        "duplicates."
+                    ),
+                }
+            ]
+        # Content addressing, said out loud (F3.0 §6.4): an identical repair converges onto the
+        # row that already holds those bytes and keeps ITS lineage, so the id that comes back may
+        # record somebody else's repair of the same clone. Reporting it is the difference between
+        # a no-op and a silent lineage overwrite.
+        if minted.get("converged"):
+            result["converged"] = True
+            result["lineage_kept"] = bool(minted.get("lineage_kept"))
+            if not minted.get("lineage_kept"):
+                result["note_on_lineage"] = (
+                    f"this exact section already existed as {minted.get('fragment_id')}, so it "
+                    "kept the lineage it was minted with: "
+                    f"{minted.get('derived_reason')!r}. Your rung and note were not recorded — "
+                    "the artifact is byte-identical to one this workspace already holds."
+                )
+        if minted.get("insertable"):
+            # Already released (the converged case), so the page can hold the ARTIFACT rather
+            # than a copy of it — D-F6's "the page pins the repaired one", in the one situation
+            # where a pin is lawful without a human first releasing something.
+            pin_error = self._pin_repair_in_place(str(minted["fragment_id"]), roots[0], result)
+            if pin_error is not None:
+                return pin_error
+        else:
+            result["pinned"] = False
+            result["release"] = (
+                f"the repair {minted.get('fragment_id')} is {minted.get('status')}: a human "
+                "releases it by approving the brand kit it belongs to, exactly as for every "
+                "other cloned section. Until then the page carries your composed section, which "
+                "renders identically. Say this in your report rather than claiming a pin."
+            )
+        self.record(
+            "author",
+            "cloned_section_repaired",
+            input_summary=f"{clean_id} -> {minted.get('fragment_id')} (rung {rung})",
+            output_summary=cleaned_note[:300],
+            payload={
+                "repaired": clean_id,
+                "repair_fragment_id": minted.get("fragment_id"),
+                "rung": int(rung),
+                "converged": bool(minted.get("converged")),
+                "pinned": bool(result.get("pinned")),
+            },
+            sink_extra={"fragment_id": minted.get("fragment_id")},
+        )
+        return json.dumps(result, indent=2)
+
+    # --- the campaign shells (F4.1, rulings R23-1/2/3) -----------------------------------------
+
+    def mint_campaign_shells(self) -> str:
+        """Mint this brand's ABM page shells: a minimal header and a legal-only footer.
+
+        An ABM page NEVER wears the client's cloned global navigation. Every link in a nav is a
+        way off the one page that was written for this account — the visitor leaves for pricing,
+        for careers, for the blog, and the campaign is over. An ABM page wears a page-local shell
+        instead, and this is the tool that makes it.
+
+        THE HEADER is a strip, not a hero: the seller's own mark, the words "Prepared for
+        <account>", the target company's logo when we hold one, and exactly ONE call to action.
+        THE FOOTER carries the seller's mark, a copyright line, and their privacy/terms links —
+        read off their own site's footer — and nothing else.
+
+        You compose neither. The shells are composed from the approved brand kit, rendered by the
+        engine, and minted as ordinary cloned sections, so their markup, their styling and their
+        editing surface are the same kind of thing every other cloned section is. Call this once
+        per brand: it is content-addressed, so calling it again converges on the same two
+        sections rather than making more of them.
+
+        THE SLOTS on the header are `prepared_for` (the account's display name), `target_logo`
+        (the account's own mark), `cta_href` and `cta_label`. Bind them per account exactly as
+        you bind any cloned section's slots. AN EMPTY `target_logo` IS CORRECT: we never invent a
+        company's logo, and the header is composed so that an unbound one shows nothing at all.
+        The footer has no slots — nothing in it changes per account.
+
+        The shells are born UNRELEASED like every cloned section, and the kit you composed them
+        from is usually ALREADY approved — so the release act is a human RE-approving the brand
+        kit (posting its approval again), which releases every draft fragment minted against
+        that kit version, these shells included. Until then they are not on any page and
+        `insert_cloned_section` will refuse them. Say so; do not claim a page carries a shell it
+        cannot pin yet.
+        """
+        registry = self._cloned_section_registry()
+        if registry is None:
+            return self._cloned_section_registry_missing()
+        brand_kit = self.config.brand_kit
+        if not isinstance(brand_kit, dict) or not brand_kit:
+            return self._tool_error(
+                "shell.no_brand_kit",
+                "this turn carries no brand kit, so there is no seller whose chrome a campaign "
+                "shell could be. The shells are the SELLER's header and footer — composed from "
+                "their kit's own mark and tokens — and cannot be invented without one.",
+            )
+        if not brand_kit.get("id"):
+            # Refused by name BEFORE anything is spent (fix-round N5): the engine itself
+            # refuses a kit with no id at ingest, and without one the legal-evidence read
+            # cannot be scoped to this brand — an unscoped read in a multi-brand workspace
+            # would take another brand's footer as this seller's law.
+            return self._tool_error(
+                "shell.no_brand_kit",
+                "the attached brand kit carries no id, so it can neither be named to the "
+                "engine nor scope the legal-evidence read to this brand. Attach an "
+                "identified brand kit and call this again.",
+            )
+        seller_name = str(
+            brand_kit.get("name") or brand_kit.get("brand_name") or ""
+        ).strip()
+        if not seller_name:
+            return self._tool_error(
+                "shell.no_seller_name",
+                "the attached brand kit has no name, and the footer's copyright line and the "
+                "marks' alt text are the client's name. Nothing here guesses it.",
+            )
+        seller_mark = self._campaign_shell_seller_mark(brand_kit)
+        if seller_mark is None:
+            return self._tool_error(
+                "shell.no_seller_mark",
+                "the attached brand kit holds no usable logo asset, and the seller's mark is "
+                "the kit's own logo — never refetched and never redrawn. Add a logo to the "
+                "brand kit and call this again.",
+            )
+        seller_asset_id, seller_record, seller_mark_mode = seller_mark
+
+        dropped_foreign: List[str] = []
+        try:
+            placeholder = registry.campaign_shell_placeholder()
+            # Evidence is this KIT's released footers (fix-round I3), and a legal-looking link
+            # on a third party's host is dropped and named (fix-round C1) rather than shipped.
+            # A kit with no id cannot scope that read, so it gets NO evidence rather than the
+            # whole workspace's (fix-round N5): in a multi-brand workspace an unscoped read is
+            # another brand's law, and an honestly-empty footer is the correct answer.
+            legal_links = (
+                discover_legal_links(
+                    registry.legal_link_evidence(kit_id=str(brand_kit["id"])),
+                    dropped_foreign=dropped_foreign,
+                )
+                if brand_kit.get("id")
+                else ()
+            )
+        except Exception as error:  # noqa: BLE001 - capability boundary
+            return self._tool_error(
+                "cloned_section.registry_failed",
+                f"the cloned-section library could not be read: "
+                f"{type(error).__name__}: {error}",
+            )
+
+        markup = {
+            CAMPAIGN_SHELL_HEADER: compose_campaign_header(
+                seller_name=seller_name,
+                seller_logo_asset_id=seller_asset_id,
+                cobrand_asset_id=str(placeholder["asset_id"]),
+            ),
+            CAMPAIGN_SHELL_FOOTER: compose_campaign_footer(
+                seller_name=seller_name,
+                seller_logo_asset_id=seller_asset_id,
+                legal_links=legal_links,
+            ),
+        }
+        assets = [seller_record, placeholder["record"]]
+
+        shells: List[JsonObject] = []
+        for role in CAMPAIGN_SHELL_ROLES:
+            composed = self._render_campaign_shell(role, markup[role], assets)
+            if isinstance(composed, str):
+                return composed
+            subtree, css = composed
+            try:
+                minted = registry.mint_campaign_shell(
+                    role=role,
+                    html=subtree,
+                    css=css,
+                    label=f"{'Campaign header' if role == CAMPAIGN_SHELL_HEADER else 'Campaign footer'} — {seller_name}",
+                    source_kit_id=brand_kit.get("id"),
+                    source_kit_version=(
+                        int(brand_kit["version"])
+                        if isinstance(brand_kit.get("version"), int)
+                        else None
+                    ),
+                    composition={
+                        "seller_name": seller_name,
+                        "seller_logo_asset_id": seller_asset_id,
+                        "legal_links": [link.href for link in legal_links],
+                    },
+                )
+            except FragmentRefused as refusal:
+                self.record(
+                    "author",
+                    "campaign_shell_refused",
+                    input_summary=role,
+                    output_summary=f"{refusal.code}: {refusal.message}"[:500],
+                    payload={"shell_role": role, "error_code": refusal.code},
+                )
+                return self._tool_error(
+                    str(refusal.code),
+                    f"the {role} could not be minted: {refusal.message}",
+                    shell_role=role,
+                    minted=[shell["fragment_id"] for shell in shells],
+                )
+            except Exception as error:  # noqa: BLE001 - capability boundary
+                return self._tool_error(
+                    "shell.mint_failed",
+                    f"the {role} could not be minted: {type(error).__name__}: {error}",
+                    shell_role=role,
+                    minted=[shell["fragment_id"] for shell in shells],
+                )
+            shells.append(
+                {
+                    "fragment_id": minted["fragment_id"],
+                    "shell_role": role,
+                    "section_role": minted["section_role"],
+                    "label": minted["label"],
+                    "status": minted["status"],
+                    "slots": [
+                        {"key": key, "kind": entry.get("kind")}
+                        for key, entry in sorted(
+                            (minted.get("slot_manifest") or {}).items()
+                        )
+                    ],
+                    "converged": bool(minted.get("converged")),
+                    "insertable": bool(minted.get("insertable")),
+                }
+            )
+
+        result: JsonObject = {
+            "status": "ok",
+            "seller": seller_name,
+            "composed": COMPOSED_CAMPAIGN_SHELL,
+            "shells": shells,
+            "legal_links": [link.href for link in legal_links],
+            "target_logo": (
+                "empty by default — an unbound target_logo shows nothing at all, which is the "
+                "correct answer when we hold no logo for the account. Never substitute a drawn "
+                "or guessed mark."
+            ),
+        }
+        if seller_mark_mode in INVERSE_CAPABLE_COLOR_MODES:
+            # The kit holds ONLY light/reversed marks, so the best available is still an
+            # inverse-drawn one on the shell's light surface — the exact defect `logo_policy`
+            # names. Composed anyway (a mark the client owns beats none), but SAID, so a human
+            # reviews the header before release (fix-round M4).
+            result["seller_mark_note"] = (
+                f"the kit's best available logo variant is {seller_mark_mode!r}, a mark drawn "
+                "for DARK surfaces, and the shell strip is light — it may be hard to see. "
+                "Review the header before releasing it, or add a full-colour or dark-surface "
+                "logo variant to the brand kit and re-mint."
+            )
+        if dropped_foreign:
+            # "Found none" would be a lie about a footer whose policy is genuinely hosted
+            # elsewhere (fix-round C1): the drop is deliberate — a legal link on an ABM page
+            # must be the seller's own site — and it is said, so a human can supply the
+            # canonical URLs if these were real.
+            result["legal_links_dropped"] = dropped_foreign
+            result["legal_links_dropped_note"] = (
+                "these legal-looking links live on a different host than the seller's own "
+                "pages, so they were dropped rather than shipped on every account page. If "
+                "one of them really is the seller's policy, ask the client for the URL on "
+                "their own domain."
+            )
+        if not legal_links:
+            # Empty-and-clean is a correct footer, but a human who expected legal links should
+            # hear that we looked and found none rather than notice the absence on a live page.
+            result["legal_links_note"] = (
+                "no privacy or terms link was found in this kit's released footer clones, so "
+                "the footer carries none. That is a clean footer, not a broken one — say so, and "
+                "ask the client for the URLs if the campaign needs them."
+            )
+        unreleased = [shell for shell in shells if not shell["insertable"]]
+        if unreleased:
+            result["release"] = (
+                "the shells are "
+                + ", ".join(sorted({str(shell["status"]) for shell in unreleased}))
+                + ": a human releases them by RE-approving the brand kit — the kit you composed "
+                "from is usually already approved, so the release act is posting its approval "
+                "again, which moves every draft fragment minted against this kit version, these "
+                "shells included. They cannot be pinned until then."
+            )
+        self.record(
+            "author",
+            "campaign_shells_minted",
+            input_summary=seller_name,
+            output_summary=", ".join(
+                f"{shell['shell_role']}={shell['fragment_id']}" for shell in shells
+            )[:300],
+            payload={
+                "shells": [shell["fragment_id"] for shell in shells],
+                "converged": [shell["fragment_id"] for shell in shells if shell["converged"]],
+                "legal_links": len(legal_links),
+            },
+        )
+        return json.dumps(result, indent=2)
+
+    def _campaign_shell_seller_mark(
+        self, brand_kit: JsonObject
+    ) -> Optional[tuple[str, JsonObject]]:
+        """The kit's own logo asset and its engine record — never refetched, never redrawn.
+
+        The kit holds its logos as slots (`primary` / `wordmark` / `mark` / …), each with
+        variants. A campaign shell sits on a LIGHT surface, so the preference runs full-colour →
+        dark → one-colour and only then whatever the slot holds; a reversed mark on a white strip
+        is the defect `logo_policy` was written about. A variant whose record is not in this
+        turn's by-value manifest is skipped rather than named, because the record is what the
+        scratch document needs to render it at all.
+        """
+        manifest = self.config.brand_kit_assets or {}
+        logos = ((brand_kit.get("assets") or {}).get("logos") or {})
+        if not isinstance(logos, dict):
+            return None
+        slot_rank = {"primary": 0, "wordmark": 1, "mark": 2, "logo": 3}
+        # The light-surface penalty band starts after unknown (3); the modes it penalizes are
+        # `logo_policy`'s own vocabulary, imported rather than restated (fix-round M4).
+        mode_rank = {"full_color": 0, "dark": 1, "one_color": 2}
+        mode_rank.update(
+            {mode: 4 + index for index, mode in enumerate(sorted(INVERSE_CAPABLE_COLOR_MODES))}
+        )
+        best: Optional[tuple] = None
+        for slot_key, slot in sorted(logos.items()):
+            if not isinstance(slot, dict):
+                continue
+            for position, variant in enumerate(slot.get("variants") or []):
+                if not isinstance(variant, dict):
+                    continue
+                asset_id = str(variant.get("asset_id") or "").strip()
+                entry = manifest.get(asset_id) if asset_id else None
+                record = (entry or {}).get("record") if isinstance(entry, dict) else None
+                if not isinstance(record, dict) or not record.get("id"):
+                    continue
+                mode = str(variant.get("color_mode") or variant.get("name") or "").lower()
+                rank = (
+                    slot_rank.get(str(slot_key).lower(), 9),
+                    mode_rank.get(mode, 3),
+                    position,
+                    str(slot_key).lower(),
+                    asset_id,
+                )
+                if best is None or rank < best[0]:
+                    best = (rank, asset_id, copy.deepcopy(record), mode)
+        if best is None:
+            return None
+        return best[1], best[2], best[3]
+
+    def _render_campaign_shell(
+        self, role: str, html: str, assets: List[JsonObject]
+    ) -> Any:
+        """Compose one shell on a SCRATCH document and lift the engine's own render of it.
+
+        A scratch document, not the working one: minting a brand's shells is a library operation
+        and must not put a section on — or take one off — the page the author is building. The
+        engine still judges every byte, which is the whole point of ruling R23-1: the mint source
+        is what the ENGINE emitted, never a string this process typed.
+
+        Returns ``(subtree, css)``, or the tool-error envelope to return verbatim.
+        """
+        try:
+            scratch = self.core.web_new_doc(
+                f"doc_campaign_shell_{role}", f"Campaign shell — {role}"
+            )["web_doc"]
+            scratch = self.core.web_apply_ops(
+                scratch, [{"kind": "upsert_asset", "record": record} for record in assets]
+            )["web_doc"]
+            ingested = self.core.web_ingest_html(
+                scratch, HOME_PAGE_ID, html, brand_kit=self.config.brand_kit
+            )
+        except CoreError as error:
+            return self._tool_error(
+                "shell.compose_rejected",
+                f"the composed {role} was rejected by the engine, so nothing was minted: "
+                f"{error.message}",
+                shell_role=role,
+                diagnostics=list(error.diagnostics or []),
+            )
+        # An ingest ERROR does not raise — it comes back as a diagnostic and the offending node
+        # is simply absent from the document. Left unread, the next step would lift a shell with
+        # a band missing out of the render, or (as it did on the first walk) find no section at
+        # all and blame the render. The composition is ours, so an error here is OUR bug: it is
+        # reported with the diagnostics rather than swallowed.
+        rejections = [
+            diagnostic
+            for diagnostic in (ingested.get("diagnostics") or [])
+            if isinstance(diagnostic, dict) and diagnostic.get("severity") == "error"
+        ]
+        if rejections:
+            return self._tool_error(
+                "shell.compose_rejected",
+                f"the composed {role} was rejected by the engine, so nothing was minted: "
+                + "; ".join(
+                    f"{item.get('code')}: {item.get('message')}" for item in rejections[:4]
+                ),
+                shell_role=role,
+                diagnostics=rejections,
+            )
+        scratch = ingested["web_doc"]
+        try:
+            rendered = self.core.web_render(
+                scratch,
+                HOME_PAGE_ID,
+                mode="delivery",
+                asset_base_url=ASSET_URL_PREFIX.rstrip("/"),
+                brand_kit=self.config.brand_kit,
+                fragments={},
+                fragment_css="",
+            )
+        except CoreError as error:
+            return self._tool_error(
+                "shell.render_failed",
+                f"the composed {role} could not be rendered, so nothing was minted: "
+                f"{error.message}",
+                shell_role=role,
+            )
+        subtree = _section_subtree(
+            rendered.get("html") or "", CAMPAIGN_SHELL_SECTION_IDS[role]
+        )
+        if not subtree:
+            return self._tool_error(
+                "shell.section_not_rendered",
+                f"the composed {role} did not appear in the render, so there is nothing to mint.",
+                shell_role=role,
+            )
+        try:
+            css = compile_section_css(
+                self.core,
+                scratch,
+                brand_kit=self.config.brand_kit,
+                section_html=subtree,
+            )
+        except WebExportToolchainMissing as error:
+            return self._tool_error(
+                "shell.toolchain_unavailable",
+                f"this worker cannot compile a section's styling, so no shell was minted: "
+                f"{error}. Do not retry — nothing about this call will change the answer.",
+                shell_role=role,
+            )
+        except Exception as error:  # noqa: BLE001 - the toolchain boundary
+            return self._tool_error(
+                "shell.css_compile_failed",
+                f"the composed {role}'s styling could not be compiled, so nothing was minted "
+                f"rather than minting a shell that would publish unstyled: "
+                f"{type(error).__name__}: {error}",
+                shell_role=role,
+            )
+        return subtree, css
+
+    def _anchor_id(self, node_id: str) -> str:
+        """The `id` attribute the engine renders for a section node.
+
+        `render.rs` emits `anchor_id` when the section carries one and the node id otherwise, so
+        a section the author gave its own anchor is still findable in the rendered page.
+        """
+        node = (self._home_page().get("nodes") or {}).get(node_id)
+        anchor = node.get("anchor_id") if isinstance(node, dict) else None
+        return anchor if isinstance(anchor, str) and anchor else node_id
+
+    def _pin_repair_in_place(
+        self, repair_id: str, section_node_id: str, result: JsonObject
+    ) -> Optional[str]:
+        """Swap the composed section for the minted artifact, at the same position.
+
+        Only ever called for a repair the gate will accept. Returns an error envelope when the
+        swap itself fails, in which case the page keeps the composed section — which renders the
+        same pixels, so the failure costs the artifact's reuse, never the page.
+
+        **Charges no round budget of its own** (ledger T17-M7), though it runs a second
+        ``web_apply_ops``. Also deliberate, and the mirror of the charge on the caller: this is
+        not a call the model made, it is the second half of the one it did make — the composed
+        section is swapped for its own artifact at the same position, and the page after is the
+        page the model already paid for. Charging it would mean a repair costs twice what an
+        insert costs for producing the same band.
+        """
+        try:
+            resolved = self._cloned_section_registry().resolve_insertable(repair_id)
+        except Exception as error:  # noqa: BLE001 - capability boundary
+            result["pinned"] = False
+            result["pin_refusal"] = f"{type(error).__name__}: {error}"
+            return None
+        page = self._home_page()
+        nodes = page.get("nodes") or {}
+        root_id = page.get("root")
+        root = nodes.get(root_id) if isinstance(root_id, str) else None
+        children = list(root.get("children") or []) if isinstance(root, dict) else []
+        if section_node_id not in children:
+            result["pinned"] = False
+            result["pin_refusal"] = "the composed section is no longer a top-level section"
+            return None
+        index = children.index(section_node_id)
+        wrapper_id, node_id, pin_nodes = self._cloned_section_pin_nodes(
+            repair_id, {}, set(nodes)
+        )
+        batch = [
+            {"kind": "remove_node", "page_id": self.page_id, "id": section_node_id},
+            {
+                "kind": "insert_node",
+                "page_id": self.page_id,
+                "parent": root_id,
+                "index": index,
+                "nodes": pin_nodes,
+                "root": wrapper_id,
+            },
+        ]
+        try:
+            applied = self.core.web_apply_ops(self.web_doc, batch)
+        except CoreError as error:
+            result["pinned"] = False
+            result["pin_refusal"] = error.message
+            return None
+        if not applied.get("ok"):
+            result["pinned"] = False
+            result["pin_refusal"] = "the engine refused the pin"
+            return None
+        self.web_doc = applied["web_doc"]
+        self._record_operations(batch)
+        self._doc_version += 1
+        self._admit_fragment_artifact(repair_id, resolved.get("render") or {})
+        self._cloned_section_previews[repair_id] = resolved.get("preview_path")
+        self._cloned_section_seen[repair_id] = {
+            "label": resolved.get("label"),
+            "section_role": resolved.get("section_role"),
+        }
+        result["pinned"] = True
+        result["section_node_id"] = wrapper_id
+        result["node_id"] = node_id
+        # The THIRD pin door, through the same seam as the other two (ruling N3). Benign for a
+        # fresh repair, which is born un-degraded — but this branch only runs on CONVERGENCE, and
+        # a mint whose bytes converge onto some OTHER already-approved row can land on one that a
+        # later pass marked broken. `fragment.repair_unchanged` blocks convergence onto the
+        # original and nothing else, so without this the tool would pin a broken band and report
+        # a clean repair.
+        broken = self._degraded_pin_entry(
+            resolved, index=index, section_node_id=wrapper_id
+        )
+        self._note_degraded_pins(result, [broken] if broken is not None else [])
+        return None
+
+    def _cloned_section_pin_nodes(
+        self, fragment_id: str, slots: JsonObject, taken: set
+    ) -> tuple[str, str, List[JsonObject]]:
+        """The `(wrapper section, fragment leaf)` pair one pinned clone occupies on the page.
+
+        LUMW0011: the page root holds sections and nothing else, and a fragment node is a LEAF.
+        Wrapping is therefore not a style choice — it is the only shape the engine accepts.
+
+        Shared by the single pin and the whole-page recreate so the two cannot produce different
+        shapes for the same act. ``taken`` is the caller's running set of ids, so a batch that
+        pins ten sections at once still mints ten distinct pairs.
+        """
+        section_id, node_id = self._cloned_section_node_ids(taken)
+        section_node: JsonObject = {
+            "id": section_id,
+            "kind": "section",
+            "tag": "section",
+            "classes": _CLONED_SECTION_WRAPPER_CLASSES,
+            "children": [node_id],
+        }
+        fragment_node: JsonObject = {
+            "id": node_id,
+            "kind": "fragment",
+            "classes": "",
+            "fragment_id": fragment_id,
+            "slots": slots,
+        }
+        return section_id, node_id, [section_node, fragment_node]
+
+    def _cloned_section_node_ids(self, taken: set) -> tuple[str, str]:
+        """A fresh `(section id, fragment node id)` pair, deterministic per run + ledger position.
+
+        The digest recipe `place_custom_component` uses, for the same reason: ids must be stable
+        for a replay of this turn's operations and unique against everything already on the page.
+        """
+        salt = 0
+        while True:
+            digest = hashlib.sha256(
+                (
+                    f"{self.run_id}\0cloned_section\0"
+                    f"{len(self.operations_ledger)}\0{salt}"
+                ).encode("utf-8")
+            ).hexdigest()[:8]
+            section_id, node_id = f"sec_{digest}", f"frg_{digest}"
+            if section_id not in taken and node_id not in taken:
+                return section_id, node_id
+            salt += 1
+
+    def _admit_fragment_artifact(self, fragment_id: str, render: JsonObject) -> None:
+        """Add one just-pinned artifact to this turn's render package, in the package's own shape.
+
+        Deliberately the same dict `build_fragment_render_package` writes — html, css, slot_kinds,
+        asset_digests — so there is exactly one artifact shape in the runtime and no second render
+        path to keep in step.
+        """
+        package = self._fragment_render_package
+        if not isinstance(package, dict) or not package:
+            package = {
+                "schema_version": FRAGMENT_RENDER_PACKAGE_SCHEMA_VERSION,
+                "fragments": {},
+                "missing": [],
+            }
+            self._fragment_render_package = package
+        fragments = package.setdefault("fragments", {})
+        if not isinstance(fragments, dict):
+            fragments = {}
+            package["fragments"] = fragments
+        fragments[fragment_id] = {
+            "html": str(render.get("html") or ""),
+            "css": str(render.get("css") or ""),
+            "slot_kinds": dict(render.get("slot_kinds") or {}),
+            "asset_digests": list(render.get("asset_digests") or []),
+            # F3.1: carried through so the collision report sees a repair as a repair mid-turn,
+            # exactly as it does at publish (ruling R-I1).
+            "derived": bool(render.get("derived")),
+        }
+        missing = package.get("missing")
+        if isinstance(missing, list) and fragment_id in missing:
+            # It resolved. A stale "missing" entry beside a live artifact would make the
+            # collision/missing diagnostics contradict the page.
+            package["missing"] = [item for item in missing if item != fragment_id]
+
+    def _pinned_cloned_sections(self, web_doc: JsonObject) -> Dict[str, List[str]]:
+        """`{fragment id: [node id, …]}` for every cloned section reachable on this page.
+
+        Node-keyed rather than a bare set, because a drop report that cannot say WHERE the band
+        was is much harder to act on than one that can.
+
+        **Every instance, not the first one** (F3.4; the structural fix the F1 wave carried).
+        One fragment may legitimately be pinned twice — the same CTA band above and below a long
+        section is an ordinary page — and this used to keep only whichever node id it met first.
+        The drop report is built by differencing these maps, so a rewrite that removed one of the
+        two instances left the fragment id present on both sides and said nothing at all: the
+        band-level truth ("this section is still on the page") held, and the page had silently
+        lost half of it.
+
+        Instances stay in the document's own node order — the order `nodes` was written in, which
+        is the order the previous single-value version happened to take its one answer from. So
+        ``[0]`` is the same node the old code returned, and a caller that has to act on one
+        instance acts on the same one it always did.
+        """
+        page = next(
+            (
+                item
+                for item in (web_doc.get("pages") or [])
+                if isinstance(item, dict) and item.get("id") == self.page_id
+            ),
+            None,
+        )
+        if not isinstance(page, dict):
+            return {}
+        nodes = page.get("nodes")
+        if not isinstance(nodes, dict):
+            return {}
+        wanted = set(web_doc_fragment_ids(web_doc, self.page_id))
+        pinned: Dict[str, List[str]] = {}
+        for key, node in nodes.items():
+            if not isinstance(node, dict) or node.get("kind") != "fragment":
+                continue
+            fragment_id = node.get("fragment_id")
+            if not isinstance(fragment_id, str) or fragment_id not in wanted:
+                continue
+            pinned.setdefault(fragment_id, []).append(str(key))
+        return pinned
+
+    def _dropped_cloned_sections(
+        self, before: JsonObject, after: JsonObject
+    ) -> List[JsonObject]:
+        """Which cloned sections an accepted rewrite just took off the page.
+
+        `author_web_page` replaces the whole page and `author_web_subtree` replaces one section,
+        and a cloned section cannot be expressed in the constrained-HTML wire format — so a
+        rewrite over a band that was pinned simply loses it. That is the correct behaviour for
+        now (where a clone belongs in freshly authored markup is genuinely ambiguous, so
+        preserving it through a rewrite is deferred), but it must never be SILENT: the page still
+        renders, just without the client's own chrome, and nothing downstream notices.
+
+        `label`/`section_role` are filled from what this turn has resolved, and are ``None`` when
+        the pin came from a stored document an earlier turn wrote. Naming the id alone is honest;
+        inventing a label for a band this process never looked up would not be.
+        """
+        gone = self._pinned_cloned_sections(before)
+        surviving = self._pinned_cloned_sections(after)
+        dropped: List[JsonObject] = []
+        for fragment_id, node_ids in gone.items():
+            if fragment_id == self._repair_replacing:
+                continue
+            remaining = surviving.get(fragment_id) or []
+            lost = [node_id for node_id in node_ids if node_id not in remaining]
+            if not lost:
+                continue
+            seen = self._cloned_section_seen.get(fragment_id) or {}
+            dropped.append(
+                {
+                    "fragment_id": fragment_id,
+                    # The first lost node, kept under its old key so every existing reader of
+                    # this report still finds a place to point at.
+                    "node_id": lost[0],
+                    "node_ids": lost,
+                    # How many of this band's pins survived. Zero is the ordinary drop; anything
+                    # else is an INSTANCE drop — the band is still on the page and one of the
+                    # places it appeared is gone, which the fragment-id-keyed report used to miss
+                    # entirely (F3.4).
+                    "surviving_pins": len(remaining),
+                    "label": seen.get("label"),
+                    "section_role": seen.get("section_role"),
+                }
+            )
+        return dropped
+
+    @staticmethod
+    def _dropped_cloned_section_warning(dropped: List[JsonObject]) -> JsonObject:
+        """The drop, as a WARNING — the bucket the author prompt calls mandatory work.
+
+        Not `advice`: advice is an observation to judge, and a page that quietly lost the
+        client's real nav is not a matter of taste. Not an error either — the rewrite itself
+        succeeded and refusing it would make a whole-page repair impossible on any page holding
+        a clone.
+        """
+        named = ", ".join(
+            f"{entry['fragment_id']}"
+            + (f" ({entry['label']})" if entry.get("label") else "")
+            # An INSTANCE drop reads differently from a whole one, and the sentence has to say
+            # which happened (F3.4): "no longer on the page" is false about a band that is still
+            # pinned somewhere else, and a reader told that would go looking for the wrong thing.
+            + (
+                f" — {len(entry['node_ids'])} of its pins, {entry['surviving_pins']} still on "
+                "the page"
+                if entry.get("surviving_pins")
+                else ""
+            )
+            for entry in dropped
+        )
+        wholly = [entry for entry in dropped if not entry.get("surviving_pins")]
+        return {
+            "severity": "warning",
+            "phase": "agent",
+            "code": _CLONED_SECTION_DROPPED_CODE,
+            "message": (
+                f"this rewrite replaced markup that held cloned sections; "
+                f"{len(wholly)} of them are no longer on the page at all"
+                + (
+                    ""
+                    if len(wholly) == len(dropped)
+                    else f" and {len(dropped) - len(wholly)} lost some of the places they "
+                    "appeared"
+                )
+                + f": {named}"
+            ),
+            "hint": (
+                "A cloned section cannot be written as page markup, so a rewrite always loses "
+                "it. Re-pin each one you still want with "
+                "insert_cloned_section(fragment_id, index?), and report any you deliberately "
+                "dropped."
+            ),
+            "dropped_cloned_sections": copy.deepcopy(dropped),
+        }
+
+    def _report_dropped_cloned_sections(
+        self, result: JsonObject, before: JsonObject
+    ) -> None:
+        """Fold the drop into an accepted authoring result, or leave it byte-identical."""
+        dropped = self._dropped_cloned_sections(before, self.web_doc)
+        if not dropped:
+            return
+        result["dropped_cloned_sections"] = dropped
+        result.setdefault("warnings", []).insert(
+            0, self._dropped_cloned_section_warning(dropped)
+        )
+        self.record(
+            "author",
+            "cloned_sections_dropped",
+            output_summary=", ".join(entry["fragment_id"] for entry in dropped),
+            payload={"dropped_cloned_sections": copy.deepcopy(dropped)},
+            sink_extra={"dropped_count": len(dropped)},
+        )
+
+    def _view_cloned_section(self, target: str) -> list:
+        """The view content for a `cloned_section:<fragment_id>` target — the real band's pixels.
+
+        A cloned section is chosen by LOOK. Its label says "Proof — Trusted by 400 clinics"; only
+        the preview says whether it is a logo wall, a quote card or a stat row, and that decides
+        whether it belongs on this page. Every non-viewable outcome is an honest text block: an id
+        this turn has not resolved (with the ones it has), a section minted without a preview, or
+        a preview whose bytes are gone.
+        """
+        fragment_id = target[len("cloned_section:") :]
+        if fragment_id not in self._cloned_section_previews:
+            self.record(
+                "agent",
+                "web_view_called",
+                input_summary=target,
+                output_summary="cloned_section_unknown",
+            )
+            known = _capped_id_list(sorted(self._cloned_section_previews))
+            return [
+                _text_block(
+                    f"view: cloned section {fragment_id!r} has not been looked up in this turn. "
+                    f"Call search_cloned_sections first. Resolved so far: {known}"
+                )
+            ]
+        seen = self._cloned_section_seen.get(fragment_id) or {}
+        label = seen.get("label") or seen.get("section_role") or fragment_id
+        preview_path = self._cloned_section_previews.get(fragment_id)
+        if not preview_path or not Path(preview_path).exists():
+            self.record(
+                "agent",
+                "web_view_called",
+                input_summary=target,
+                output_summary="cloned_section_no_preview",
+            )
+            # Two different truths (fix-round M2): a harvested band with no preview is one the
+            # browser could not crop; a COMPOSED shell was never photographed off a site at all,
+            # and saying "the browser measured" about it would be false.
+            why = (
+                "it was composed from the brand kit, not lifted off a site, and no picture of "
+                "it has been rendered yet"
+                if seen.get("composed")
+                else "no crop could be derived for this band from what the browser measured"
+            )
+            return [
+                _text_block(
+                    f"view: cloned section {fragment_id} — {label}. It has no preview image to "
+                    f"look at: {why}. Judge it from its role, its label and its slots."
+                )
+            ]
+        self.record(
+            "agent",
+            "web_view_called",
+            input_summary=target,
+            output_summary="cloned_section_viewed",
+        )
+        return [
+            _text_block(f"view: cloned section {fragment_id} — {label}"),
+            # G5: every web view image rides the many-image ceiling — these accumulate in the
+            # same conversation as the page captures.
+            _image_block(Path(preview_path), max_px=_VISION_MANY_IMAGE_MAX_PX),
+        ]
+
+    # --- the behavioural review gate (F3.3, rulings D-F6 / D-F7) -------------
+
+    def review_cloned_page(self) -> str:
+        """Walk the rendered page in a browser and report what it actually DOES.
+
+        Six observations: the full-page screenshot at 1440, a scroll-through at several
+        positions, the phone width, console errors, the artificial-height-collapse check
+        (the runtime sibling of the mint-time dead-height detector) and a reduced-motion
+        pass. Then compares the full-page capture against the stored capture of the
+        client's real page, band by band where both sides can be placed.
+
+        Two kinds of output, and they are not the same kind of thing:
+        - `broken_clones` are MEASURED verdicts about a cloned section. They are recorded
+          on the section itself, so the library, the repair ladder and the inspector all
+          see them. Brief the author to repair each one through the ladder.
+        - `page_findings` are ADVICE — console errors, a reduced-motion divergence, a band
+          that drifted from the reference. Judge them; act where they are right; say what
+          you left. Nothing here blocks a publish by itself.
+
+        Whatever the walk could not observe is reported as not observed. That is a gap in
+        the review, never a pass. Returns the structured critique, the capture paths, and
+        the blind side-by-side artifact when a reference capture exists.
+        """
+        self._review_iteration += 1
+        registry = self._cloned_section_registry()
+        fragment_ids = self._fragment_ids()
+
+        try:
+            html, diagnostics, tailwind_missing = self._render_page_html()
+        except CoreError as error:
+            return self._tool_error(
+                "web_render.failed", error.message, diagnostics=list(error.diagnostics or [])
+            )
+
+        try:
+            plan = walk_plan(
+                [
+                    {
+                        "fragment_id": fragment_id,
+                        "selector": f".{fragment_wrapper_class(fragment_id)}",
+                    }
+                    for fragment_id in fragment_ids
+                ]
+            )
+        except FragmentRefused as refusal:
+            # The one call in this tool that can raise at the agent (review finding M8): the id
+            # comes from the validated document, so this is latent — but a tool that throws
+            # instead of answering is a turn that dies, and the whole gate is advice.
+            return self._tool_error(
+                refusal.code, str(refusal), diagnostics=diagnostics
+            )
+        review_dir = self.trace_dir / f"review_{self._review_iteration}"
+        try:
+            walk = capture_behavioural_walk(html, plan, output_dir=review_dir)
+        except CloneReviewRefused as refusal:
+            # No browser, no walk, and NO verdict. The one thing this gate must never do is
+            # report a page it did not open as a page with no problems.
+            self.record(
+                "orchestrator",
+                "web_review_refused",
+                output_summary=f"{refusal.code}: {refusal.message}",
+            )
+            return self._tool_error(
+                refusal.code, refusal.message, diagnostics=diagnostics
+            )
+
+        comparison, blind, reference_note = self._reference_review(
+            registry, walk, fragment_ids, plan, review_dir
+        )
+        critique, advice_failure = safe_critique(
+            lambda: compose_critique(walk, comparison=comparison)
+        )
+
+        broken = critique.broken if critique is not None else ()
+        # RULING R19-1: a DURABLE degraded write requires SETTLED evidence. An unsettled walk's
+        # findings are still reported — as advice, with their numbers — but nothing is written to
+        # a marker the gate can never clear. `compose_critique` has already said so in words.
+        # ...and a render carrying NO Tailwind runtime is never settled, whatever the page says
+        # (round-2 re-review, breakage #1). `_render_page_html` already knows this and used to
+        # only decorate the result with it; a page with no utility CSS overflows every viewport,
+        # so believing it would write unclearable `mobile_unusable` markers across a healthy
+        # library — the exact damage R19-1 exists to prevent.
+        settled = (critique.settled if critique is not None else False) and not tailwind_missing
+        marked, mark_failures = (
+            self._record_broken_clones(registry, broken) if settled else ([], [])
+        )
+
+        result: JsonObject = {
+            "status": "ok",
+            "schema_version": _REVIEW_SCHEMA_VERSION,
+            "advice_only": True,
+            "captures": [
+                observation.as_result() for observation in walk.observations
+            ],
+            "broken_clones": [item.as_result() for item in broken],
+            # False means the findings above are ADVICE ONLY this round: the page's styling had
+            # not settled when the walk measured it, so nothing was written down (R19-1).
+            "evidence_settled": settled,
+            "marked_degraded": marked,
+            "page_findings": (
+                [item.as_result() for item in critique.page_findings]
+                if critique is not None
+                else []
+            ),
+            "comparison": comparison,
+            "diagnostics": diagnostics + self._review_diagnostics(
+                walk,
+                broken,
+                advice_failure,
+                mark_failures,
+                reference_note,
+                settled,
+                probed=len(fragment_ids),
+                section_total=web_doc_page_section_count(self.web_doc, self.page_id),
+            ),
+        }
+        if advice_failure is not None:
+            # Advice-absent, loudly. The walk happened and its captures are real; only the
+            # opinion is missing, and saying so is better than inventing one.
+            result["page_findings"] = [advice_failure.as_result()]
+            result["advice_available"] = False
+        if blind is not None:
+            result["blind_side_by_side"] = blind
+        if reference_note is not None:
+            result["reference_unavailable"] = reference_note
+        if tailwind_missing:
+            result["tailwind_runtime_missing"] = True
+
+        self.record(
+            "orchestrator",
+            "web_review_walked",
+            output_summary=(
+                f"review {self._review_iteration}: "
+                f"{len([o for o in walk.observations if o.made])}/{len(walk.observations)} "
+                f"observations, {len(broken)} broken clone(s), "
+                f"{len(result['page_findings'])} page finding(s)"
+            ),
+            payload={
+                "broken": [item.fragment_id for item in broken],
+                "abstained": [item.walk_class for item in walk.abstentions],
+            },
+        )
+        return json.dumps(result, indent=2)
+
+    def _reference_review(
+        self,
+        registry: Any,
+        walk: Any,
+        fragment_ids: List[str],
+        plan: Any,
+        review_dir: Path,
+    ) -> tuple[Optional[JsonObject], Optional[JsonObject], Optional[str]]:
+        """The comparison against F0's capture, and the blind side-by-side built from it.
+
+        Returns ``(comparison, blind, unavailable_because)``. Every failure here is a NOTE, never
+        a refusal: a reference the workspace does not hold says nothing about whether the page
+        renders correctly, and the behavioural half of the walk is the half that finds brokenness.
+        """
+        full_page = walk.by_class(WALK_CLASS_FULL_PAGE)
+        if registry is None:
+            return None, None, "no_cloned_section_registry"
+        if not fragment_ids:
+            return None, None, "no_cloned_sections_on_page"
+        if not full_page.made or not full_page.shots:
+            return None, None, "no_page_capture"
+        collapse = walk.by_class(WALK_CLASS_HEIGHT_COLLAPSE)
+        rendered_bands = [
+            {
+                "fragment_id": item.fragment_id,
+                "top_px": item.top_px,
+                "height_px": item.height_px,
+            }
+            for item in (collapse.measurements if collapse.made else ())
+            if item.present
+        ]
+        try:
+            capture_png = Path(full_page.shots[0].path).read_bytes()
+            review = registry.reference_review(
+                fragment_ids,
+                capture_png=capture_png,
+                rendered_bands=rendered_bands,
+                rendered_viewport_width=plan.desktop.width,
+                blind_seed=f"{self.run_id}:{self._review_iteration}",
+            )
+        except Exception as error:  # noqa: BLE001 — the comparison is evidence, never the gate
+            logger.warning("web_review_reference_failed: %s: %s", type(error).__name__, error)
+            return None, None, f"{type(error).__name__}"
+        # A comparison that abstained is a missing NUMBER, not a missing artifact: the blind
+        # side-by-side needs two pictures, and the registry composes it whenever it has them
+        # (round-2 re-review, breakage #4). So the `because` is carried through and the artifact
+        # is still written.
+        unavailable = (
+            None
+            if review.get("status") == "ok"
+            else str(review.get("because") or "unavailable")
+        )
+
+        blind: Optional[JsonObject] = None
+        blind_png = review.get("blind_png")
+        blind_key = review.get("blind_key")
+        if blind_png and blind_key:
+            # The artifact and its answer key go to SEPARATE files. That is the whole mechanism:
+            # a judge opens the picture, decides which panel is ours, and only then opens the key
+            # — which is sealed to this exact image by its sha256.
+            review_dir.mkdir(parents=True, exist_ok=True)
+            image_path = review_dir / "blind_side_by_side.png"
+            key_path = review_dir / "blind_side_by_side.key.json"
+            image_path.write_bytes(blind_png)
+            key_path.write_text(json.dumps(blind_key, indent=2), encoding="utf-8")
+            blind = {
+                "image_path": str(image_path),
+                "answer_key_path": str(key_path),
+                "panels": list(_BLIND_PANEL_LABELS),
+                "note": (
+                    "the two panels are unlabelled on purpose (CP1 acceptance): decide which "
+                    "one is our page BEFORE opening the answer key"
+                ),
+            }
+        return review.get("comparison"), blind, unavailable
+
+    def _record_broken_clones(
+        self, registry: Any, broken: Any
+    ) -> tuple[List[JsonObject], List[str]]:
+        """Persist the measured verdicts. The model has no say in what is written here.
+
+        The reason code comes from the measurement, the registry refuses any code the gate does
+        not own, and a write that fails is REPORTED rather than swallowed — a verdict the library
+        never received is a band the next turn will offer as healthy.
+        """
+        marked: List[JsonObject] = []
+        failures: List[str] = []
+        for finding in broken:
+            if registry is None:
+                failures.append(
+                    f"{finding.fragment_id}: this turn has no cloned-section library to record it in"
+                )
+                continue
+            try:
+                registry.mark_degraded(finding.fragment_id, reason=finding.reason)
+            except Exception as error:  # noqa: BLE001 — one failed write is not a failed review
+                failures.append(f"{finding.fragment_id}: {type(error).__name__}: {error}")
+                continue
+            marked.append({"fragment_id": finding.fragment_id, "reason": finding.reason})
+        return marked, failures
+
+    def _review_diagnostics(
+        self,
+        walk: Any,
+        broken: Any,
+        advice_failure: Any,
+        mark_failures: List[str],
+        reference_note: Optional[str],
+        settled: bool = True,
+        *,
+        probed: int = 0,
+        section_total: int = 0,
+    ) -> List[JsonObject]:
+        """The gate's own diagnostics — work, gaps, and the two ways it can fall short."""
+        diagnostics: List[JsonObject] = []
+        if broken:
+            named = ", ".join(f"{item.fragment_id} ({item.reason})" for item in broken)
+            diagnostics.append(
+                {
+                    "severity": "warning",
+                    "phase": "agent",
+                    "code": _REVIEW_BROKEN_CODE,
+                    "message": (
+                        f"the behavioural walk measured {len(broken)} cloned section(s) as "
+                        f"BROKEN on the rendered page: {named}"
+                    ),
+                    "hint": (
+                        (
+                            "Each one is recorded on the section itself. "
+                            if settled
+                            else "NOTHING was recorded: the page's styling had not settled when "
+                            "the walk measured it, so these are advice this round and a re-run "
+                            "is what settles them. "
+                        )
+                        + "Brief the author to repair "
+                        "it with repair_cloned_section(fragment_id, html, rung, note), climbing "
+                        "D-F6's ladder in order and preserving the original's content order, "
+                        "typography, colors, imagery treatment, proportions, spacing and rhythm."
+                    ),
+                }
+            )
+        gaps = [item.label for item in walk.abstentions]
+        if reference_note is not None:
+            gaps.append(f"the comparison against the client's own page ({reference_note})")
+        if section_total > probed:
+            # Final-review X1: the walk probes only fragment-wrapped bands, so a draft repair or
+            # a composed section riding as a plain document node is structurally invisible to
+            # it. The CP1 walk measured 4 of 11 bands and nothing said so — coverage is now
+            # stated whenever it is partial, in the same breath as the other gaps.
+            gaps.append(
+                f"the per-section measurements ({probed} of the page's {section_total} bands "
+                "are pinned cloned sections the probe can find; the other "
+                f"{section_total - probed} — draft repairs and composed sections — carry no "
+                "fragment wrapper and were not measured)"
+            )
+        if gaps:
+            diagnostics.append(
+                {
+                    "severity": "warning",
+                    "phase": "agent",
+                    "code": _REVIEW_INCOMPLETE_CODE,
+                    "message": (
+                        "this review could not make part of its walk: "
+                        + "; ".join(gaps)
+                        + " — it says NOTHING about those, which is not the same as saying they "
+                        "are fine"
+                    ),
+                }
+            )
+        if advice_failure is not None:
+            diagnostics.append(
+                {
+                    "severity": "error",
+                    "phase": "agent",
+                    "code": _REVIEW_ADVICE_UNAVAILABLE_CODE,
+                    "message": advice_failure.message,
+                }
+            )
+        if mark_failures:
+            diagnostics.append(
+                {
+                    "severity": "warning",
+                    "phase": "agent",
+                    "code": _REVIEW_MARK_FAILED_CODE,
+                    "message": (
+                        "the walk measured a broken cloned section but could not record it in "
+                        "the library: " + "; ".join(mark_failures) + ". The finding is real; the "
+                        "library will keep offering that band as healthy until it is recorded"
+                    ),
+                }
+            )
+        return diagnostics
+
+    # --- cloned sections: rendering (F1.3) -----------------------------------
+
+    def _fragment_ids(self) -> List[str]:
+        """The artifact ids the CURRENT document pins, recomputed per render.
+
+        Per render rather than once, because the document moves under this
+        object: a section the author deleted must stop pulling its CSS into the
+        head, and a section they added must be looked up (and, when the package
+        has never heard of it, render the placeholder).
+        """
+        return web_doc_fragment_ids(self.web_doc, self.page_id)
+
+    def _fragment_render_map(self) -> Dict[str, Any]:
+        # The artifact's OWN byte references are rebased onto this turn's asset origin (F1.5 fix
+        # wave). Playwright renders through `set_content`, which has no document origin, so the
+        # stored root-relative `/asset-store/<digest>` resolved against nothing and every image
+        # inside a cloned section came out broken in the screenshots the reviewer judges.
+        return fragment_render_map(
+            self._fragment_render_package,
+            self._fragment_ids(),
+            asset_base_url=self.asset_base_url,
+        )
+
+    def _fragment_css(self) -> Optional[str]:
+        # Same rebase: a cloned hero's background image lives in the sheet, not in the markup.
+        return fragment_css_sheet(
+            self._fragment_render_package,
+            self._fragment_ids(),
+            asset_base_url=self.asset_base_url,
+        )
+
+    def _fragment_asset_probe_urls(self) -> List[str]:
+        """The asset URLs this turn's cloned sections will ACTUALLY fetch.
+
+        Read out of the composed render map and sheet rather than rebuilt from digests, because
+        the thing worth probing is the reference as it will appear in the markup. A probe that
+        builds `{base}/{digest}` itself answers 200 whether or not anything rebased the markup —
+        which is why the original preflight could not have caught the class this wave fixed.
+        """
+        found: List[str] = []
+        for record in self._fragment_render_map().values():
+            found.extend(_ASSET_REFERENCE_RE.findall(str(record.get("html") or "")))
+        found.extend(_ASSET_REFERENCE_RE.findall(self._fragment_css() or ""))
+        return list(dict.fromkeys(found))
+
+    def _unfetchable_probe_urls(self, urls: List[str]) -> List[str]:
+        """The ones a preview cannot fetch at all: anything without a scheme.
+
+        `set_content` and an srcDoc iframe have no base URL, so a root-relative reference is not
+        "probably fine", it is a guaranteed broken image. Naming it is the whole point.
+        """
+        return [url for url in urls if not re.match(r"[a-zA-Z][a-zA-Z0-9+.-]*:", url)]
+
+    def _fragment_diagnostics(self) -> List[JsonObject]:
+        """The API-layer cascade warning, recomputed against the current doc.
+
+        A package this build cannot read is reported FIRST and every render: the placeholders on
+        the page have a cause, and the cause is not the document.
+        """
+        diagnostics: List[JsonObject] = []
+        if self._fragment_package_refusal is not None:
+            diagnostics.append(dict(self._fragment_package_refusal))
+        diagnostics.extend(
+            fragment_collision_diagnostics(
+                self._fragment_render_package, self.web_doc, self.page_id
+            )
+        )
+        return diagnostics
+
     def _font_face_css(self) -> Optional[str]:
         """@font-face CSS embedding the kit's real font faces as data: URLs so
         the preview render shapes in the brand fonts, not the fallback stack.
@@ -4471,6 +7140,72 @@ class LumenWebTools:
                     _take((entry or {}).get("record") if isinstance(entry, dict) else None)
         return list(dict.fromkeys(digests))
 
+    def _preflight_fragment_assets(self, base: str) -> None:
+        """Prove the bytes a CLONED SECTION shows are fetchable — the other asset class.
+
+        The origin probe below builds ``{base}/{digest}`` itself, so it answers 200 whether or
+        not anything ever rebased the artifact's own markup. That is exactly how a whole class of
+        broken imagery reached an acceptance walk: slot-bound assets went through the engine's
+        ``asset_base_url`` and were fine, artifact-owned references were emitted verbatim and
+        404'd, and the only probe anybody ran tested the working kind.
+
+        So this probes the reference AS THE PAGE NAMES IT. A reference with no scheme cannot be
+        fetched by ``set_content`` at all and is reported without a request; one with a scheme is
+        fetched like any other. Non-fatal, like its sibling: broken imagery degrades a turn, it
+        does not invalidate the page.
+        """
+        urls = self._fragment_asset_probe_urls()
+        if not urls:
+            return
+        payload: JsonObject = {"asset_base_url": base, "reference_count": len(urls)}
+        unfetchable = self._unfetchable_probe_urls(urls)
+        if unfetchable:
+            payload["unfetchable"] = unfetchable[:5]
+            logger.warning(
+                "CLONED-SECTION ASSETS UNFETCHABLE: %d reference(s) such as %s carry no origin, "
+                "so every image and background inside a cloned section will render BROKEN in "
+                "this turn's preview screenshots.",
+                len(unfetchable),
+                unfetchable[0],
+            )
+            self.record(
+                "orchestrator",
+                "fragment_asset_references_unfetchable",
+                output_summary=(
+                    f"{len(unfetchable)} cloned-section asset reference(s) have no origin "
+                    "(e.g. {}) — preview screenshots will show broken imagery".format(
+                        unfetchable[0]
+                    )
+                ),
+                payload=payload,
+            )
+            return
+        url = urls[0]
+        payload["probe_url"] = url
+        try:
+            response = httpx.get(url, timeout=_ASSET_PREFLIGHT_TIMEOUT_S)
+            payload["status_code"] = response.status_code
+            payload["reachable"] = response.status_code == 200
+        except Exception as error:  # noqa: BLE001 - a probe must never break a turn
+            payload["reachable"] = False
+            payload["reason"] = f"{error.__class__.__name__}: {error}"
+        summary = (
+            f"cloned-section assets fetchable ({url})"
+            if payload.get("reachable")
+            else f"cloned-section asset {url} did not serve "
+            f"({payload.get('reason') or payload.get('status_code')})"
+        )
+        if not payload.get("reachable"):
+            logger.warning("CLONED-SECTION ASSET UNREACHABLE: %s", summary)
+        self.record(
+            "orchestrator",
+            "fragment_asset_preflight"
+            if payload.get("reachable")
+            else "fragment_asset_unreachable",
+            output_summary=summary,
+            payload=payload,
+        )
+
     def _preflight_asset_base_url(self) -> None:
         """Prove — once per turn, loudly — that `self.asset_base_url` actually
         serves bytes, and record the verdict in the run trace.
@@ -4495,6 +7230,7 @@ class LumenWebTools:
             "asset_base_url": base,
             "source": "config" if self.config.asset_base_url else "fallback",
         }
+        self._preflight_fragment_assets(base)
         digests = self._probe_digests()
         if not digests:
             payload["reachable"] = None
@@ -4632,15 +7368,7 @@ class LumenWebTools:
         iter_dir.mkdir(parents=True, exist_ok=True)
 
         try:
-            response = self.core.web_render(
-                self.web_doc,
-                self.page_id,
-                mode="editor",
-                asset_base_url=self.asset_base_url,
-                tailwind_runtime_src=None,
-                brand_kit=self.config.brand_kit,
-                font_face_css=self._font_face_css(),
-            )
+            html, diagnostics, tailwind_missing = self._render_page_html()
         except CoreError as error:
             self.record(
                 "orchestrator",
@@ -4650,35 +7378,6 @@ class LumenWebTools:
             )
             return self._tool_error(
                 "web_render.failed", error.message, diagnostics=list(error.diagnostics or [])
-            )
-
-        html = response.get("html") or ""
-        diagnostics = response.get("diagnostics") or []
-
-        # Inline the vendored Tailwind browser runtime so the editor-mode
-        # `<style type="text/tailwindcss">` block is processed at set_content
-        # time (the runtime scans on load). Absent → render bare + warn.
-        tailwind_missing = False
-        runtime_path = tailwind_runtime_path(Path(self.config.repo_root))
-        if runtime_path is not None:
-            script = "<script>" + runtime_path.read_text(encoding="utf-8") + "</script>"
-            if "</head>" in html:
-                html = html.replace("</head>", script + "\n</head>", 1)
-            else:
-                html = script + html
-        else:
-            tailwind_missing = True
-            # Loud in the process log too, not only in the tool result: a
-            # screenshot with no utility CSS still LOOKS like a page, so a
-            # silent miss is graded as a real render by the visual reviewer.
-            logger.warning(
-                "tailwind_runtime_missing: no Tailwind browser runtime found "
-                "(searched %s=%r then %s under %s) — preview screenshots will "
-                "carry NO layout utilities",
-                _TAILWIND_RUNTIME_ENV,
-                os.environ.get(_TAILWIND_RUNTIME_ENV),
-                [str(Path(*parts)) for parts in _TAILWIND_RUNTIME_CANDIDATES],
-                self.config.repo_root,
             )
 
         try:
@@ -4749,6 +7448,71 @@ class LumenWebTools:
             diagnostics=diagnostics,
         )
         return json.dumps(result, indent=2)
+
+    def _render_page_html(self) -> tuple[str, List[JsonObject], bool]:
+        """The live page as a browser will see it: engine html + the Tailwind runtime inlined.
+
+        Extracted from `render_web_preview` when F3.3's behavioural review gate arrived, because
+        the two must walk THE SAME PIXELS. A gate that composed its own render — a different
+        mode, a forgotten fragment map, a missing font sheet — would grade a page the reviewer
+        never saw, and every disagreement between them would be unfalsifiable.
+
+        Raises `CoreError` (the caller owns the refusal wording); returns
+        ``(html, diagnostics, tailwind_missing)``.
+        """
+        response = self.core.web_render(
+            self.web_doc,
+            self.page_id,
+            mode="editor",
+            asset_base_url=self.asset_base_url,
+            tailwind_runtime_src=None,
+            brand_kit=self.config.brand_kit,
+            font_face_css=self._font_face_css(),
+            # F1.3: the same two things the editor render route threads, so
+            # a cloned section cannot render in one preview and vanish from
+            # the other.
+            fragments=self._fragment_render_map(),
+            fragment_css=self._fragment_css(),
+        )
+        html = response.get("html") or ""
+        # The engine's diagnostics plus the API-layer cascade warning, in one
+        # list — the author reads one surface, not two.
+        diagnostics = list(response.get("diagnostics") or []) + self._fragment_diagnostics()
+
+        # Inline the vendored Tailwind browser runtime so the editor-mode
+        # `<style type="text/tailwindcss">` block is processed at set_content
+        # time (the runtime scans on load). Absent → render bare + warn.
+        tailwind_missing = False
+        runtime_path = tailwind_runtime_path(Path(self.config.repo_root))
+        if runtime_path is not None:
+            # The marker is what the F3.3 review gate's readiness check anchors on: the compiled
+            # utilities can only land AFTER this element, so "an untyped style following this
+            # script" means the JIT has run, and a page with no such script can never be mistaken
+            # for a compiled one. The attribute is inert to every other reader.
+            script = (
+                f"<script {TAILWIND_RUNTIME_MARKER}>"
+                + runtime_path.read_text(encoding="utf-8")
+                + "</script>"
+            )
+            if "</head>" in html:
+                html = html.replace("</head>", script + "\n</head>", 1)
+            else:
+                html = script + html
+        else:
+            tailwind_missing = True
+            # Loud in the process log too, not only in the tool result: a
+            # screenshot with no utility CSS still LOOKS like a page, so a
+            # silent miss is graded as a real render by the visual reviewer.
+            logger.warning(
+                "tailwind_runtime_missing: no Tailwind browser runtime found "
+                "(searched %s=%r then %s under %s) — preview screenshots will "
+                "carry NO layout utilities",
+                _TAILWIND_RUNTIME_ENV,
+                os.environ.get(_TAILWIND_RUNTIME_ENV),
+                [str(Path(*parts)) for parts in _TAILWIND_RUNTIME_CANDIDATES],
+                self.config.repo_root,
+            )
+        return html, diagnostics, tailwind_missing
 
     def _capture_pass(
         self, html: str, iter_dir: Path, diagnostics: List[JsonObject]
@@ -5019,6 +7783,8 @@ class LumenWebTools:
             return self._view_state(target)
         if target.startswith("asset:"):
             return self._view_asset(target)
+        if target.startswith("cloned_section:"):
+            return self._view_cloned_section(target)
         self.record(
             "agent", "web_view_called", input_summary=target, output_summary="unknown_target"
         )
@@ -5026,7 +7792,7 @@ class LumenWebTools:
             _text_block(
                 f"view: unknown target {target!r}. Use \"preview:1440\", "
                 '"preview:768", "preview:375", "state:<n>", "asset:<asset_id>", '
-                '"doc", "brand", or "account".'
+                '"cloned_section:<fragment_id>", "doc", "brand", or "account".'
             )
         ]
 
@@ -5324,8 +8090,10 @@ def make_web_view_tool(tools: LumenWebTools, can_render: bool = True):
     nth interactive STATE capture (dialog opened / accordion expanded) from the
     latest render; "asset:<asset_id>" returns that asset's preview image (from
     the document's own registry, the kit manifest, or the workspace library);
-    "doc" returns a compact section/asset summary; "brand" returns the brand
-    card; "account" returns the target account card (P5).
+    "cloned_section:<fragment_id>" returns the picture of a cloned section
+    `search_cloned_sections` returned (F2.3); "doc" returns a compact
+    section/asset summary; "brand" returns the brand card; "account" returns the
+    target account card (P5).
     Mirrors tools/view.make_view_tool: any failure inside returns an honest error
     STRING so a bad/unreadable image can never kill the turn unfinalized."""
     from langchain_core.tools import tool
@@ -5339,7 +8107,10 @@ def make_web_view_tool(tools: LumenWebTools, can_render: bool = True):
         opened or accordions expanded) from the latest render;
         "asset:<asset_id>" returns that asset's preview image with its SOURCE
         pixel dimensions (a brand kit asset, a `search_assets` library result, or
-        one already registered in the document); "doc" returns a section + asset
+        one already registered in the document);
+        "cloned_section:<fragment_id>" returns the picture of a cloned section
+        `search_cloned_sections` returned, so you can see the band before
+        reusing it; "doc" returns a section + asset
         summary; "brand" returns the brand card; "account" returns the target
         account card. Returns image content so you judge by looking, not
         guessing."""

@@ -9,6 +9,19 @@ the ship bar is the review-website checklist instead of preflight.
 
 from __future__ import annotations
 
+from .rubrics import load_clone_review_rubric
+
+
+def _rubric_block() -> str:
+    """The shared clone-review rubric, as both readers receive it (D-F7).
+
+    One function, called from both prompt builders, so the two cannot render different bytes
+    even by accident. The rubric itself is a file (``lumen_agent/rubrics/``) — see that package's
+    docstring for why review knowledge is not allowed to be a string in here.
+    """
+    return load_clone_review_rubric()
+
+
 # The complete curated icon vocabulary, mirroring `lumen_core::icons::ICONS`
 # (crates/lumen-core/src/icons.rs) in registry order.
 #
@@ -54,6 +67,38 @@ p-card — the brand's measured card padding
 """
 
 
+#: Steps 5–6 when a reviewer subagent exists (the flag-off default). Byte for byte what this
+#: prompt has always said.
+_ORCHESTRATOR_DELEGATED_REVIEW = """\
+5. Delegate `lumen-web-reviewer` for the structured pass — its brief always
+   carries the brand anchor (the reviewer must point at one element that
+   could only belong to this brand) AND your imagery decision (so it can
+   judge whether the render delivered it, and call out imagery that went
+   missing or came back brand-generic). Blocking issues go back to the
+   author as a scoped repair brief (name the section ids and the exact
+   fixes); advisory notes are yours to judge.
+6. Repeat render → review ONLY for a blocking issue you cannot judge yourself.
+   A cosmetic-only repair (spacing, a word, a token swap) is verified by your
+   own eyes on the re-render — never spend a review round on it. If a round
+   changes nothing material, stop and ship the best state you have."""
+
+#: Steps 5–6 when the web fast loop has quarantined the reviewer (D-F7). The SAME rubric is
+#: interpolated below this block; what changes here is only who applies it.
+_ORCHESTRATOR_SELF_REVIEW = """\
+5. REVIEW THE PAGE YOURSELF. There is no reviewer subagent on this turn — you
+   are the reviewer, and you judge against the CLONE-REVIEW RUBRIC below, which
+   is the same rubric a reviewer subagent would have been given. Work through it
+   in order: the STRICT list first (blank space, missing content, broken
+   controls, unusable height, invisible elements, failed mobile behaviour,
+   console errors), then, on any band that was repaired, the coherence checks.
+   Say out loud, in your finalize summary, which STRICT items you checked and
+   what you found — a self-review nobody can read is not a review.
+6. Repair a blocking issue and re-render; verify the fix with your own eyes.
+   A cosmetic-only repair (spacing, a word, a token swap) is verified on the
+   re-render. If a round changes nothing material, stop and ship the best state
+   you have."""
+
+
 def build_web_orchestrator_prompt(
     *,
     doc_title: str,
@@ -62,12 +107,20 @@ def build_web_orchestrator_prompt(
     review_cap: int,
     author_cap: int,
     account_card: str | None = None,
+    web_reviewer: bool = True,
 ) -> str:
     """The director's prompt.
 
     ``review_cap``/``author_cap`` are passed in rather than read here: the harness OWNS the
     budgets (it is the thing that actually refuses the delegation), and the prompt must
     never be able to promise a different number than the runtime enforces.
+
+    ``web_reviewer=False`` is the web lane's fast-loop quarantine (F3.3, founder ruling D-F7):
+    the `lumen-web-reviewer` subagent is not registered this turn, so the delegation steps are
+    REPLACED rather than contradicted, the review budget stops being promised (a prompt must
+    never name a cap for a delegation the runtime will reject as an unknown subagent), and the
+    shared clone-review rubric is interpolated HERE instead — the same artifact, the same bytes,
+    a different reader. Every other line of this prompt is identical in both states.
     """
     starting_state = (
         "The document already has content; treat the turn as an edit of the "
@@ -95,6 +148,23 @@ Account rules (binding):
         if account_card
         else ""
     )
+    budget_block = (
+        f"""You have HARD BUDGETS for this whole turn: {author_cap} `lumen-web-author`
+delegations and {review_cap} `lumen-web-reviewer` delegations. Past either one
+the runtime refuses the delegation and you must finish from what you already
+hold — the author budget exhausted means the page as it stands is the page that
+ships. Spend them deliberately and expect to use far fewer."""
+        if web_reviewer
+        else f"""You have a HARD BUDGET for this whole turn: {author_cap}
+`lumen-web-author` delegations. Past it the runtime refuses the delegation and
+you must finish from what you already hold — the page as it stands is then the
+page that ships. Spend them deliberately and expect to use far fewer. There is
+NO reviewer subagent on this turn; you review the page yourself (step 5)."""
+    )
+    review_steps = (
+        _ORCHESTRATOR_DELEGATED_REVIEW if web_reviewer else _ORCHESTRATOR_SELF_REVIEW
+    )
+    rubric_block = "" if web_reviewer else f"\n{_rubric_block()}\n"
     return f"""You direct a website-building turn for the document "{doc_title}".
 You do not author markup yourself — you delegate, verify with your own eyes,
 and decide when the page is genuinely done.
@@ -111,11 +181,7 @@ section by section, or sending the header now and the rest after you have
 looked at it, costs a full round each time and buys nothing the first brief
 could not have said. A simple landing page is ONE author brief.
 
-You have HARD BUDGETS for this whole turn: {author_cap} `lumen-web-author`
-delegations and {review_cap} `lumen-web-reviewer` delegations. Past either one
-the runtime refuses the delegation and you must finish from what you already
-hold — the author budget exhausted means the page as it stands is the page that
-ships. Spend them deliberately and expect to use far fewer.
+{budget_block}
 
 {starting_state}
 
@@ -171,6 +237,57 @@ OPERATING SHAPE
    skip — a branded page shows its brand's mark. The imagery decision goes
    verbatim into BOTH the author's and the reviewer's briefs, exactly like
    the anchor.
+1c. WALK THE REUSE LADDER, ON EVERY CREATE OR FULL-REBUILD TURN. This
+   client's own website has been cloned band by band, so some of this page
+   already exists. Call `search_cloned_sections` and LOOK at what comes back
+   with `view("cloned_section:<id>")` before you plan the sections. Then, in
+   this order:
+   - CHROME (nav, header, footer) and PROOF (logo walls, testimonials, stat
+     bands): REUSE a cloned section wherever one serves the job. It is the
+     client's real chrome, not our approximation of it.
+   - COMPOSE A NEW SECTION only where no cloned section serves — a band the
+     library does not have, or one this page needs to say something different
+     in.
+   - NEVER CASUALLY REWRITE A WORKING CLONED SECTION. When a clone is visibly
+     or functionally broken, preserve the original artifact and repair,
+     rebuild, or replace it through the clone-repair ladder (1d).
+   Declare it per band in the author's brief — reuse `frag_…`, or compose —
+   exactly as you declare the imagery. A workspace with no released cloned
+   sections is a legitimate "compose everything"; silence is not.
+1d. A CLONE IS THE STARTING REFERENCE, NOT AN UNTOUCHABLE ARTIFACT. Never
+   preserve a broken result merely because it came from the original site. A
+   cloned section comes back marked `degraded` when the pipeline has already
+   measured it as broken — most often a band that is mostly artificial scroll
+   height, because the source page animated through it with JavaScript the
+   clone does not carry. Look at the pixels yourself too: dead space, content
+   that never appears, a control that does nothing.
+   When a band is broken, brief the author to REPAIR IT, in this order:
+     1. reproduce the original experience with supported primitives;
+     2. build an equivalent interaction serving the same storytelling purpose;
+     3. a deliberate, compact static fallback — the artificial scroll height
+        removed ENTIRELY.
+   Expect rung 1 to be unreachable more often than not: our interaction
+   vocabulary is deliberately bounded. Rungs 2 and 3 are the normal answer, and
+   a well-made rung-3 band is a good outcome, not a failure. Blank dead space
+   is never acceptable at any rung.
+   WHATEVER THE RUNG, THE REPAIR PRESERVES: content hierarchy and order,
+   typography and colors, image treatment, proportions and density, spacing,
+   section rhythm, the interaction's storytelling purpose, and the brand's
+   character. The BRAND GRAMMAR AUDIT in your brand card governs the
+   adaptation — it is this brand's own measured law, and a repair that ignores
+   it stops looking like the client.
+   The mechanics are the author's tool `repair_cloned_section`: the harvested
+   original stays IMMUTABLE as evidence and the replacement is minted as a NEW
+   cloned section carrying the lineage. Name the rung in your finalize summary.
+1e. "RECREATE OUR HOMEPAGE" IS AN ASSEMBLY, NOT A DESIGN BRIEF. When the brief
+   asks to rebuild the client's own existing page, the answer is their page:
+   every released cloned section of it, in the order it sat on the page, slots
+   filled from real workspace values, and NOTHING ADDED — no extra CTA band, no
+   improved section order, no section we thought was missing. Brief the author
+   to use `recreate_cloned_page` (one call, one atomic assembly) and then to
+   repair anything it reports under `needs_repair` per 1d. A section the source
+   site HIDES never appears on a recreated page and is never offered; it
+   surfaces only if the user asks for something it serves.
 2. Delegate authoring to the `lumen-web-author` subagent with a concrete
    brief: the brand anchor, the imagery decision, the section plan, the copy
    angles, the primary CTA destination. The author owns markup; you own
@@ -183,17 +300,17 @@ OPERATING SHAPE
 4. Look at all three with `view("preview:1440")`, `view("preview:768")`,
    `view("preview:375")` — and every state capture the render reported.
    Form your own opinion before asking the reviewer.
-5. Delegate `lumen-web-reviewer` for the structured pass — its brief always
-   carries the brand anchor (the reviewer must point at one element that
-   could only belong to this brand) AND your imagery decision (so it can
-   judge whether the render delivered it, and call out imagery that went
-   missing or came back brand-generic). Blocking issues go back to the
-   author as a scoped repair brief (name the section ids and the exact
-   fixes); advisory notes are yours to judge.
-6. Repeat render → review ONLY for a blocking issue you cannot judge yourself.
-   A cosmetic-only repair (spacing, a word, a token swap) is verified by your
-   own eyes on the re-render — never spend a review round on it. If a round
-   changes nothing material, stop and ship the best state you have.
+4b. ON ANY PAGE THAT CARRIES CLONED SECTIONS, run `review_cloned_page` once the
+   page is otherwise finished. It WALKS the rendered page in a browser — full
+   page, a scroll-through, the phone width, console errors, the
+   artificial-height-collapse check and a reduced-motion pass — and compares it
+   against the capture of the client's real page. A band it reports under
+   `broken_clones` has been MEASURED as broken and is marked as such in the
+   library; brief the author to repair it per 1d. Its `page_findings` are
+   ADVICE: judge each one, act where it is right, and say what you left. What
+   it could not observe is reported as not observed — treat that as a gap in
+   the review, never as a pass.
+{review_steps}
 7. Finish with `finalize_web_run(outcome, summary, ladder_gap?)`: `accepted`
    when the page meets the ship bar, `completed_with_warnings` when advisory
    issues remain, `failed` only when you could not produce a usable page at
@@ -209,7 +326,7 @@ page follows the recipe's hard rules (no invented facts, real links AND real
 endpoints only, one primary CTA destination); every command button targets a
 dialog that exists, and interactive states were verified from the state
 captures when the page has components; zero ingestion errors outstanding.
-
+{rubric_block}
 SCOPED TURNS
 When the brief carries a TURN TARGET (the user selected an element in the
 editor), this is an edit of THAT section, not a rebuild: brief the author to
@@ -322,6 +439,47 @@ WORKING RULES
   used page claim/link with `provenance(action="cite", source_ids_json=...,
   note=..., node_ids_json=...)`; `asset(action="use_library_asset")`
   automatically cites the exact library record it registers.
+- REUSE BEFORE YOU COMPOSE, per the director's reuse ladder. This client's own
+  nav, footer and proof bands exist as CLONED SECTIONS — real markup lifted off
+  their site, not templates. `search_cloned_sections` finds them,
+  `view("cloned_section:<id>")` shows one, and
+  `insert_cloned_section(fragment_id, index?, slot_values_json?)` pins it. On a
+  healthy clone its SLOTS are the only thing you change: never retype a WORKING
+  cloned section's markup into your own page — a clone you rewrite for no reason
+  is an imitation. (A BROKEN one is a different question entirely; see the
+  repair rule below.) Insert them AFTER `author_web_page`: a
+  rewrite cannot carry a cloned section, so it drops every one that was pinned
+  and the result NAMES them under `dropped_cloned_sections`. Treat that list as
+  work — re-pin each band you still want with `insert_cloned_section`, and say
+  which ones you dropped on purpose. A refusal is a real answer too:
+  `fragment.not_approved` means nobody has released that section, so compose
+  the band and report it; do not retry.
+- RECREATING THE CLIENT'S OWN PAGE is one call, not a section plan:
+  `recreate_cloned_page(slot_values_json?)` pins every released cloned section
+  of that page in the order it sat on the page, as one atomic assembly. Add
+  nothing to it — no extra band, no reordering, no section you think is
+  missing. What it returns under `needs_repair` is work, not a note.
+- A CLONE IS THE STARTING REFERENCE, NOT AN UNTOUCHABLE ARTIFACT. Never
+  preserve a broken result merely because it came from the original site. NEVER
+  CASUALLY REWRITE A WORKING CLONED SECTION; when a clone is visibly or
+  functionally broken — marked `degraded`, or plainly broken in the pixels —
+  preserve the original artifact and repair, rebuild or replace it through
+  `repair_cloned_section(fragment_id, html, rung, note)`, never by retyping the
+  band into your own markup. Climb the ladder in order and say which rung you
+  reached: (1) reproduce the original experience with supported primitives;
+  (2) build an equivalent interaction serving the same storytelling purpose;
+  (3) a deliberate, compact static fallback with the artificial scroll height
+  removed ENTIRELY. Rung 1 is often unreachable — the interaction vocabulary is
+  deliberately bounded — so rungs 2 and 3 are the normal answer. Blank dead
+  space is never acceptable at any rung.
+  WHATEVER THE RUNG, THE REPAIR PRESERVES: content hierarchy and order,
+  typography and colors, image treatment, proportions and density, spacing,
+  section rhythm, the interaction's storytelling purpose, and the brand's
+  character. The BRAND GRAMMAR AUDIT in the brand card governs the adaptation.
+  The original clone stays in the library untouched as evidence; your
+  replacement is minted as a new cloned section with the lineage recorded, and
+  it is born unreleased — so say the page carries your composed section, not
+  that it pins a repair.
 - AUTHOR ONCE, at structural altitude: decide the section plan, then produce
   the `author_web_page` call directly — the tool call IS the artifact. Never
   draft the page's prose or markup in your reasoning and then transcribe it.
@@ -417,8 +575,16 @@ def build_web_reviewer_prompt(
     delegation, which is what makes `review-website`'s brief checks fire on
     every round. None (no kit, or a kit with no brief) leaves this prompt byte
     for byte what it was before the brief existed.
+
+    Since F3.3 it also carries the SHARED clone-review rubric (founder ruling D-F7) — the same
+    artifact, byte for byte, that the orchestrator receives when the web fast-loop flag has
+    quarantined this subagent. It is unconditional rather than clone-page-only: its STRICT half
+    (blank space, broken controls, unusable height, failed mobile behaviour, console errors) is a
+    bar every page has to clear, and only the post-repair coherence half is clone-specific, which
+    it says of itself.
     """
     brief_block = f"\n{brief}\n" if brief else ""
+    rubric_block = _rubric_block()
     account_line = (
         "\nThis is a 1:1 account page: additionally run the skill's "
         "personalization check — no generic template fallback text where the "
@@ -462,4 +628,6 @@ the page cannot ship as it is. An advisory is a note for the director's final
 summary, not a request for another author/review round — a taste preference, a
 nicer-if variant, or a polish idea is advisory. Say everything you have in ONE
 critique; there may be no next round to say it in.
+
+{rubric_block}
 """

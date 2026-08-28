@@ -101,6 +101,37 @@ GEOMETRY_TOKEN_UTILITIES = {
 }
 
 
+#: `BrandGrammarAudit@1` (clone-fidelity F2.4) — the kit's OTHER grammar section.
+#: Same envelope discipline as the brief: an unknown version is not an audit.
+GRAMMAR_AUDIT_SCHEMA_VERSION = 1
+
+#: The audit's budget is denominated in CHARACTERS, not tokens: unlike the brief
+#: (whose size is whatever a model wrote) every line of it is a short, templated
+#: rule, so the honest instrument is the one that needs no estimator. 4,000 chars
+#: is ~1,000 tokens — a sixth of the brief's ceiling — which is the right size for
+#: a block that rides in EVERY web role prompt beside the brief and the card.
+GRAMMAR_AUDIT_CHAR_BUDGET = 4000
+
+#: The five fields, in reading order, with the heading each renders under.
+#: `anti_patterns` reads as "Never" because that is what the agent must do with
+#: it — the exclusions are instructions, not a taxonomy.
+GRAMMAR_AUDIT_FIELDS: tuple[tuple[str, str], ...] = (
+    ("type_treatment", "Type treatment"),
+    ("cadence", "Cadence"),
+    ("color_frequency", "Color frequency"),
+    ("surface_language", "Surface language"),
+    ("anti_patterns", "Never — this brand's exclusions"),
+)
+
+#: What a non-measured rule is marked with. A rule with no marker was read off
+#: the brand's own site; these two were not, and an agent that mistakes an engine
+#: default for a brand fact reproduces the default as identity.
+_BASIS_MARKERS = {
+    "derived": " [engine default, not a brand fact]",
+    "default": " [house default, not measured on this brand]",
+}
+
+
 @dataclass(frozen=True)
 class BriefRender:
     """One rendered, budgeted block of brief prose."""
@@ -109,6 +140,19 @@ class BriefRender:
     truncated: bool
     omitted: tuple[str, ...]
     estimated_tokens: int
+
+
+@dataclass(frozen=True)
+class GrammarAuditRender:
+    """One rendered, budgeted block of grammar-audit prose."""
+
+    markdown: str
+    truncated: bool
+    #: How many whole rules did not fit.
+    dropped_rules: int
+    #: The headings they came from, in reading order.
+    dropped_from: tuple[str, ...]
+    characters: int
 
 
 def estimate_tokens(text: str) -> int:
@@ -176,6 +220,147 @@ def render_reviewer_brief(brief: Optional[JsonObject]) -> Optional[str]:
     return _budgeted(_REVIEWER_HEADER, sections).markdown
 
 
+def read_grammar_audit(brand_kit: Any) -> Optional[JsonObject]:
+    """The kit's `BrandGrammarAudit@1`, or None when it carries none.
+
+    Strict about the envelope for the same reason `read_brief` is: a section this
+    build cannot read whole is not a section it may read half of. A kit from
+    before F2.4 simply has no key, and the card renders exactly as it did.
+    """
+    if not isinstance(brand_kit, dict):
+        return None
+    audit = brand_kit.get("grammar_audit")
+    if not isinstance(audit, dict):
+        return None
+    if audit.get("schema_version") != GRAMMAR_AUDIT_SCHEMA_VERSION:
+        return None
+    if any(not isinstance(audit.get(name), dict) for name, _ in GRAMMAR_AUDIT_FIELDS):
+        return None
+    return audit
+
+
+def render_grammar_audit(audit: JsonObject) -> GrammarAuditRender:
+    """The whole injected block, under the character budget.
+
+    Overflow drops WHOLE RULES, lowest-value first, and says so. "Lowest value"
+    is defined structurally: each field emits its rules strongest-first, so a
+    field's fifth rule is worth less than any field's first, and the cut walks
+    that order from the tail. The consequence is the one that matters — every
+    field keeps its strongest rule while any field still holds a weaker one, so
+    no field silently vanishes to make room for another's tail. A rule is never
+    cut in half: half a rule is a rule the agent cannot follow.
+    """
+    entries: list[tuple[int, str, int, str]] = []
+    absences: dict[str, str] = {}
+    for position, (name, heading) in enumerate(GRAMMAR_AUDIT_FIELDS):
+        field = _obj(audit.get(name))
+        rules = _objs(field.get("rules"))
+        lines = [line for line in (_audit_rule_line(rule) for rule in rules) if line]
+        for index, line in enumerate(lines):
+            entries.append((position, heading, index, line))
+        if not lines:
+            # A field with no rules is an absence — the extractor guarantees a
+            # reason, and a payload that arrives without one still says NOT KNOWN
+            # rather than inventing a cause.
+            absences[heading] = (
+                _text(field.get("absent")) or "no rule was recorded for this field."
+            )
+
+    # The drop order: latest rule within a field first, later field breaking ties.
+    order = sorted(
+        range(len(entries)), key=lambda index: (-entries[index][2], -entries[index][0])
+    )
+    dropped: set[int] = set()
+    while True:
+        markdown, dropped_from = _assemble_audit(entries, dropped, absences)
+        if len(markdown) <= GRAMMAR_AUDIT_CHAR_BUDGET or len(dropped) == len(entries):
+            break
+        dropped.add(next(index for index in order if index not in dropped))
+    return GrammarAuditRender(
+        markdown=markdown,
+        truncated=bool(dropped),
+        dropped_rules=len(dropped),
+        dropped_from=dropped_from,
+        characters=len(markdown),
+    )
+
+
+def _audit_rule_line(rule: Any) -> str:
+    """One rule as the agent reads it: the law, then what it is worth."""
+    entry = _obj(rule)
+    text = _text(entry.get("rule"))
+    if not text:
+        return ""
+    return f"- {_with_utilities(text)}{_BASIS_MARKERS.get(_text(entry.get('basis')), '')}"
+
+
+def _with_utilities(text: str) -> str:
+    """`radius.button` -> `rounded-button` (radius.button).
+
+    The audit is stored in kit TOKEN names (the token law — a class name is
+    authoring vocabulary and does not belong in a durable kit section). This is
+    the same agent-side divergence `_slot_value` makes for a component recipe,
+    and for the same reason: a rule the author cannot deploy is a rule that gets
+    approximated.
+    """
+    for token, utility in GEOMETRY_TOKEN_UTILITIES.items():
+        text = text.replace(f"`{token}`", f"`{utility}` ({token})")
+    return text
+
+
+def _assemble_audit(
+    entries: list[tuple[int, str, int, str]],
+    dropped: set[int],
+    absences: dict[str, str],
+) -> tuple[str, tuple[str, ...]]:
+    parts = [_AUDIT_HEADER]
+    dropped_from: list[str] = []
+    for _, heading in GRAMMAR_AUDIT_FIELDS:
+        kept = [
+            entry[3]
+            for index, entry in enumerate(entries)
+            if entry[1] == heading and index not in dropped
+        ]
+        lost = [
+            entry
+            for index, entry in enumerate(entries)
+            if entry[1] == heading and index in dropped
+        ]
+        if lost:
+            dropped_from.append(heading)
+        if kept:
+            body = kept
+        elif heading in absences:
+            body = [f"NOT KNOWN — {absences[heading]}"]
+        else:
+            # The field HAD rules and the budget took all of them. Saying NOT
+            # KNOWN here would be a lie: the kit knows, this rendering does not.
+            body = [
+                "(every rule in this field was dropped to fit the budget — treat it as "
+                "unknown, not as absent)"
+            ]
+        parts.append("\n".join([f"## {heading}", "", *body, ""]))
+    if dropped:
+        parts.append(_audit_truncation_note(len(dropped), dropped_from))
+    return "\n".join(parts), tuple(dropped_from)
+
+
+def _audit_truncation_note(count: int, headings: list[str]) -> str:
+    return "\n".join(
+        [
+            "## This audit is truncated",
+            "",
+            (
+                f"{count} rule(s) did not fit the "
+                f"{GRAMMAR_AUDIT_CHAR_BUDGET:,}-character budget and are NOT shown, from: "
+                + ", ".join(headings)
+                + ". Treat them as unknown rather than absent."
+            ),
+            "",
+        ]
+    )
+
+
 # --- the rendered headers ---------------------------------------------------------
 
 _GRAMMAR_HEADER = """CREATIVE BRIEF — this brand's own deployment grammar (BrandBrief@1), extracted
@@ -193,6 +378,22 @@ against the rhythm's spirit.
 
 #: The three sections the reviewer is given, by heading.
 _REVIEWER_SECTIONS = ("Characterization", "Constraints", "Background rhythm")
+
+#: DRAFT WORDING — pending founder review (F2.4). The machinery around it is
+#: settled; these six sentences are a proposal. Two of them are load-bearing and
+#: should survive any rewrite: the SCOPE line (this governs composed sections,
+#: and the reuse ladder — not this block — governs a cloned one, so the two laws
+#: never contradict each other) and the NOT KNOWN line (an empty field is a
+#: finding, and filling it from habit is the failure this artifact exists to
+#: prevent).
+_AUDIT_HEADER = """BRAND GRAMMAR AUDIT — the law for the sections you COMPOSE. It was extracted
+from this brand's own site and approved with this kit version, so it is evidence,
+not taste: a line carrying no marker was measured, and a line marked as an engine
+or house default was not. It governs NEW sections only — a cloned section lifted
+from the client's site is governed by the reuse ladder in your prompt, never by
+this. Where a field says NOT KNOWN, nothing was measured to support a rule; leave
+the gap rather than filling it from habit.
+"""
 
 
 # --- budgeting --------------------------------------------------------------------

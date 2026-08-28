@@ -15,11 +15,15 @@ from urllib.parse import urljoin, urlparse
 import tinycss2
 from selectolax.parser import HTMLParser
 
-from .imgsrc import (
-    IMAGE_CANDIDATE_CAP,
-    background_image_urls,
-    image_source_ladder,
+from .budget import (
+    MAX_ASSET_COUNT,
+    MAX_STATE_STYLE_COUNT,
+    STATE_BUDGET_DIAGNOSTIC_CODE,
+    budget_diagnostic,
 )
+from .cssurl import iter_css_urls
+from .declared_roles import DeclaredRole, declared_roles
+from .imgsrc import background_image_urls, image_source_ladder
 from .snapshot import SiteSnapshot
 
 # --- parsed pieces (internal, pre-asset-ingest) ---------------------------------
@@ -52,6 +56,12 @@ class ParsedFontFace:
     style: str
     source_url: str | None
     format: str | None
+    # EVERY ``src`` rung this face declares, best-format first (clone-fidelity F0.2 fix
+    # round 1). ``source_url`` stays the ONE rung the kit binds — the browser would pick the
+    # best format it supports and so do we — but F2 rewrites a captured ``@font-face`` block
+    # verbatim, so every rung a browser might pick has to resolve on our store. Defaulted so
+    # a hand-built face (fixtures, the PDF path) stays valid.
+    source_urls: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -89,6 +99,38 @@ class ParsedNarrative:
 
 
 @dataclass
+class ParsedStateStyle:
+    """One ``:hover``/``:focus``/``:active``/``:disabled`` rule on an interactive selector.
+
+    Mirrors ``evidence.StateStyle``; only properties the rule actually declares are set.
+    """
+
+    selector: str
+    state: str
+    scheme: str = "light"
+    background: str | None = None
+    color: str | None = None
+    border_color: str | None = None
+    box_shadow: str | None = None
+    opacity: float | None = None
+    text_decoration: str | None = None
+    locator: str = ""
+
+    def declares_anything(self) -> bool:
+        return any(
+            value is not None
+            for value in (
+                self.background,
+                self.color,
+                self.border_color,
+                self.box_shadow,
+                self.opacity,
+                self.text_decoration,
+            )
+        )
+
+
+@dataclass
 class ParsedSite:
     colors: list[ParsedColor] = field(default_factory=list)
     type_samples: list[ParsedType] = field(default_factory=list)
@@ -98,6 +140,12 @@ class ParsedSite:
     screenshots: list[str] = field(default_factory=list)  # download sha256s
     narrative: ParsedNarrative = field(default_factory=ParsedNarrative)
     custom_props: dict[str, str] = field(default_factory=dict)
+    # Source-truth styling (clone-fidelity F0.3).
+    #: `--…: value` overrides declared inside `@media (prefers-color-scheme: dark)`.
+    dark_custom_props: dict[str, str] = field(default_factory=dict)
+    #: At most one per anchor role — see `declared_roles.declared_roles`.
+    declared_roles: list[DeclaredRole] = field(default_factory=list)
+    state_styles: list[ParsedStateStyle] = field(default_factory=list)
     diagnostics: list[dict] = field(default_factory=list)
 
 
@@ -170,12 +218,16 @@ def _hsl_to_hex(h: float, s: float, lightness: float) -> str:
     )
 
 
+_VAR_RE = re.compile(r"var\(\s*(--[\w-]+)\s*(?:,\s*([^)]+))?\)", re.IGNORECASE)
+
+
 def parse_color_value(
     raw: str,
     custom_props: dict[str, str],
     *,
     diagnostics: list[dict] | None = None,
     _depth: int = 0,
+    _seen: tuple[str, ...] = (),
 ) -> str | None:
     """Parse a CSS color token to #RRGGBB(AA). var() hops resolved (bounded).
 
@@ -194,27 +246,40 @@ def parse_color_value(
     if lowered in _SKIP_COLOR_KEYWORDS:
         return None
 
-    var_match = re.match(r"var\(\s*(--[\w-]+)\s*(?:,\s*([^)]+))?\)", text, re.IGNORECASE)
+    var_match = _VAR_RE.match(text)
     if var_match:
-        # A custom property may point at another one. Real sites ship cyclic
-        # chains (cursor.com/about does), so the walk is bounded: unbounded
-        # recursion here is a RecursionError, i.e. another whole-job failure.
-        if _depth >= _MAX_VAR_HOPS:
+        # A custom property may point at another one. Real sites ship cyclic chains
+        # (cursor.com/about does), so the walk carries the chain it has already walked:
+        # revisiting a name IS the cycle, caught at the hop that closes it rather than 24
+        # frames later, and named in full so a human can go delete it. `_MAX_VAR_HOPS`
+        # stays as the backstop for a chain that is merely absurd rather than cyclic —
+        # unbounded recursion here is a RecursionError, i.e. another whole-job failure.
+        name = var_match.group(1)
+        if name in _seen or _depth >= _MAX_VAR_HOPS:
+            chain = " → ".join((*_seen, name))
             _record_color_skip(
-                diagnostics, f"custom-property chain did not resolve (cycle?): {text}"
+                diagnostics,
+                f"custom-property chain did not resolve (cycle?): {chain}",
             )
             return None
-        name = var_match.group(1)
         resolved = custom_props.get(name)
         if resolved is None:
             fallback = var_match.group(2)
             if fallback is None:
                 return None
             return parse_color_value(
-                fallback, custom_props, diagnostics=diagnostics, _depth=_depth + 1
+                fallback,
+                custom_props,
+                diagnostics=diagnostics,
+                _depth=_depth + 1,
+                _seen=(*_seen, name),
             )
         return parse_color_value(
-            resolved, custom_props, diagnostics=diagnostics, _depth=_depth + 1
+            resolved,
+            custom_props,
+            diagnostics=diagnostics,
+            _depth=_depth + 1,
+            _seen=(*_seen, name),
         )
 
     if lowered in _NAMED_COLORS:
@@ -234,10 +299,9 @@ def parse_color_value(
 
     # Both the legacy comma form `rgb(15, 23, 42)` and the modern
     # space-separated/slash form `rgb(15 23 42 / 60%)` split the same way.
-    rgb = re.match(r"rgba?\(([^)]+)\)", text, re.IGNORECASE)
-    if rgb:
-        parts = re.split(r"[,\s/]+", rgb.group(1).strip())
-        parts = [p for p in parts if p]
+    rgb_body = _function_body(text, ("rgba", "rgb"))
+    if rgb_body is not None:
+        parts, alpha_slot = _split_color_args(rgb_body)
         if len(parts) >= 3:
             try:
                 comps = [_parse_channel(parts[i]) for i in range(3)]
@@ -245,18 +309,19 @@ def parse_color_value(
                 _record_color_skip(diagnostics, f"unreadable rgb() channels: {text}")
                 return None
             hex6 = "#%02X%02X%02X" % (comps[0], comps[1], comps[2])
-            if len(parts) >= 4:
-                alpha = _alpha_or_opaque(parts[3], text, diagnostics)
+            if alpha_slot is None and len(parts) >= 4:
+                alpha_slot = parts[3]
+            if alpha_slot is not None:
+                alpha = _alpha_or_opaque(alpha_slot, text, custom_props, diagnostics)
                 if alpha < 255:
                     return hex6 + "%02X" % alpha
             return hex6
         _record_color_skip(diagnostics, f"unreadable rgb() value: {text}")
         return None
 
-    hsl = re.match(r"hsla?\(([^)]+)\)", text, re.IGNORECASE)
-    if hsl:
-        parts = re.split(r"[,\s/]+", hsl.group(1).strip())
-        parts = [p for p in parts if p]
+    hsl_body = _function_body(text, ("hsla", "hsl"))
+    if hsl_body is not None:
+        parts, alpha_slot = _split_color_args(hsl_body)
         if len(parts) >= 3:
             try:
                 h = float(parts[0].rstrip("deg"))
@@ -266,8 +331,10 @@ def parse_color_value(
                 _record_color_skip(diagnostics, f"unreadable hsl() channels: {text}")
                 return None
             hex6 = _hsl_to_hex(h, s, lightness)
-            if len(parts) >= 4:
-                alpha = _alpha_or_opaque(parts[3], text, diagnostics)
+            if alpha_slot is None and len(parts) >= 4:
+                alpha_slot = parts[3]
+            if alpha_slot is not None:
+                alpha = _alpha_or_opaque(alpha_slot, text, custom_props, diagnostics)
                 if alpha < 255:
                     return hex6 + "%02X" % alpha
             return hex6
@@ -275,6 +342,48 @@ def parse_color_value(
         return None
 
     return None
+
+
+def _function_body(text: str, names: tuple[str, ...]) -> str | None:
+    """The argument text of the leading ``<name>( … )`` call in ``text``, else ``None``.
+
+    Paren-BALANCED rather than the old ``[^)]+``, because the alpha slot routinely holds a
+    nested call — Tailwind's ``rgb(15 23 42 / var(--tw-text-opacity))`` — and stopping at the
+    first ``)`` cut that var in half. Balanced-but-leading (rather than anchored to the end
+    of the string) so a value carrying trailing junk still yields its first color, exactly as
+    the old permissive regex did.
+    """
+    lowered = text.lower()
+    for name in names:
+        if not lowered.startswith(name + "("):
+            continue
+        start = len(name) + 1
+        depth = 1
+        for index in range(start, len(text)):
+            char = text[index]
+            if char == "(":
+                depth += 1
+            elif char == ")":
+                depth -= 1
+                if depth == 0:
+                    return text[start:index]
+        return None  # unclosed call — unreadable, never a guess
+    return None
+
+
+def _split_color_args(body: str) -> tuple[list[str], str | None]:
+    """Split an ``rgb()``/``hsl()`` argument list into channels and the alpha SLOT.
+
+    The modern slash form's alpha is taken verbatim rather than tokenized, because the thing
+    living in that slot is routinely a whole function call: Tailwind serves
+    ``rgb(15 23 42 / var(--tw-text-opacity))``, and splitting on commas as well would tear
+    ``var(--o, 0.5)`` in half and lose the fallback that makes it readable. Returns
+    ``(channel tokens, alpha slot or None)``; a legacy fourth comma-separated channel stays
+    an ordinary token and is handled by the caller.
+    """
+    head, slash, tail = body.strip().partition("/")
+    tokens = [token for token in re.split(r"[,\s]+", head.strip()) if token]
+    return tokens, tail.strip() if slash else None
 
 
 def _parse_channel(token: str) -> int:
@@ -291,22 +400,67 @@ def _parse_alpha(token: str) -> int:
     return _clamp8(float(token) * 255)
 
 
-def _alpha_or_opaque(token: str, source: str, diagnostics: list[dict] | None) -> int:
+def _resolve_var_scalar(
+    token: str, custom_props: dict[str, str], _seen: tuple[str, ...] = ()
+) -> str | None:
+    """Follow a ``var()`` chain to the non-``var`` text it points at, or ``None``.
+
+    The color path resolves vars on its way to a hex; the ALPHA slot needs the same walk but
+    ends at a plain number, so it cannot reuse `parse_color_value`. Same cycle discipline:
+    the chain walked so far rides along, and revisiting a name ends the walk.
+    """
+    text = token.strip()
+    for _ in range(_MAX_VAR_HOPS):
+        match = _VAR_RE.match(text)
+        if match is None:
+            return text or None
+        name = match.group(1)
+        if name in _seen:
+            return None
+        _seen = (*_seen, name)
+        resolved = custom_props.get(name)
+        if resolved is None:
+            fallback = match.group(2)
+            if fallback is None:
+                return None
+            text = fallback.strip()
+        else:
+            text = resolved.strip()
+    return None
+
+
+def _alpha_or_opaque(
+    token: str,
+    source: str,
+    custom_props: dict[str, str],
+    diagnostics: list[dict] | None,
+) -> int:
     """Read an alpha channel, falling back to fully opaque when it is unreadable.
 
-    Tailwind serves `rgb(15 23 42 / var(--tw-text-opacity))`: the three channels
-    carry the site's real color and only the alpha is an unresolved custom
-    property. Dropping the whole swatch there would throw away good brand
-    evidence, so we keep the color and read it as opaque — which is also what
-    the browser shows when the opacity var is unset.
+    Tailwind serves `rgb(15 23 42 / var(--tw-text-opacity))`. When that custom
+    property is one this page actually declares we now follow it and honour the
+    real transparency (clone-fidelity F0.3 — reading a 50%-opaque overlay as
+    solid is a visible clone defect).
+
+    When it is not resolvable the three channels still carry the site's real
+    color and only the alpha is unknown. Dropping the whole swatch there would
+    throw away good brand evidence, so we keep the color and read it as opaque —
+    which is also what the browser shows when the opacity var is unset.
     """
     try:
         return _parse_alpha(token)
     except (ValueError, TypeError):
-        _record_color_skip(
-            diagnostics, f"alpha channel unreadable, color read as opaque: {source}"
-        )
-        return 255
+        pass
+    resolved = _resolve_var_scalar(token, custom_props)
+    if resolved is not None and resolved != token.strip():
+        try:
+            return _parse_alpha(resolved)
+        except (ValueError, TypeError):
+            pass
+    _record_color_skip(
+        diagnostics, f"alpha channel unreadable, color read as opaque: {source}"
+    )
+    return 255
 
 
 def _record_color_skip(diagnostics: list[dict] | None, message: str) -> None:
@@ -368,6 +522,145 @@ def _selector_role(selector: str) -> tuple[list[str], list[str], float]:
     return ([], [], 0.5)
 
 
+# --- interaction states ---------------------------------------------------------
+#
+# A clone that paints a site's buttons the right color and then does nothing when the pointer
+# lands on them is visibly not the site. The states are DECLARED in the stylesheet we already
+# parse rule by rule, so F0.3 records them verbatim instead of leaving F2 to invent a hover.
+
+#: Recognized states, in the order a selector carrying several is read. `hover` leads because
+#: it is the state a clone most needs; `focus-visible` precedes `focus` so the modern form is
+#: not swallowed by the older one.
+_STATE_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    ("hover", re.compile(r":hover(?![-\w])", re.IGNORECASE)),
+    ("focus-visible", re.compile(r":focus-visible(?![-\w])", re.IGNORECASE)),
+    ("focus", re.compile(r":focus(?![-\w])", re.IGNORECASE)),
+    ("active", re.compile(r":active(?![-\w])", re.IGNORECASE)),
+    ("disabled", re.compile(r":disabled(?![-\w])", re.IGNORECASE)),
+)
+
+#: Elements a user can actually interact with. Same vocabulary `_selector_role` weights,
+#: plus the form controls it never needed to name.
+_INTERACTIVE_TAGS = frozenset(
+    {"a", "button", "input", "select", "textarea", "summary", "option"}
+)
+
+#: Class fragments that mean "this is a control". Substring matches, mirroring the
+#: `[class*="btn"]` selectors these sites are built from.
+_INTERACTIVE_CLASS_FRAGMENTS = ("btn", "button", "cta")
+
+#: Class WORDS that mean the same but are too short to substring-match safely (`.blink` is
+#: not a link), so they are matched against the class's own hyphen/underscore-separated words.
+_INTERACTIVE_CLASS_WORDS = frozenset({"link", "nav", "menu", "tab", "chip", "toggle"})
+
+
+def _state_of(selector: str) -> str | None:
+    for state, pattern in _STATE_PATTERNS:
+        if pattern.search(selector):
+            return state
+    return None
+
+
+def _is_interactive_selector(selector: str) -> bool:
+    """Does this selector's SUBJECT name something a user interacts with?
+
+    Only the rightmost compound is consulted: in ``.card a:hover`` the thing that hovers is
+    the link, and in ``.card:hover .icon`` the thing being styled is an icon inside a hovered
+    card — which is a card state, not a control state, and is deliberately not recorded.
+    """
+    compounds = [part for part in re.split(r"[\s>+~]+", selector.strip()) if part]
+    if not compounds:
+        return False
+    subject = compounds[-1].lower()
+    if _state_of(subject) is None:
+        return False  # the state lives on an ancestor, not on the styled element
+    tag = re.match(r"^[a-z][a-z0-9]*", subject)
+    if tag and tag.group(0) in _INTERACTIVE_TAGS:
+        return True
+    if any(fragment in subject for fragment in _INTERACTIVE_CLASS_FRAGMENTS):
+        return True
+    words = {word for word in re.split(r"[^a-z0-9]+", subject) if word}
+    return bool(words & _INTERACTIVE_CLASS_WORDS)
+
+
+def _parse_opacity(value: str) -> float | None:
+    text = value.strip().rstrip("%")
+    try:
+        number = float(text)
+    except ValueError:
+        return None
+    if value.strip().endswith("%"):
+        number /= 100.0
+    return max(0.0, min(1.0, number))
+
+
+def _collect_state_styles(
+    parsed: ParsedSite,
+    selectors: list[str],
+    decls,
+    theme: str,
+    custom_props: dict[str, str],
+    stylesheet_url: str,
+) -> None:
+    """Record every interaction state this rule declares, one record per selector."""
+    for selector in selectors:
+        state = _state_of(selector)
+        if state is None or not _is_interactive_selector(selector):
+            continue
+        record = ParsedStateStyle(
+            selector=selector,
+            state=state,
+            scheme="dark" if theme == "dark" else "light",
+            locator=f"{stylesheet_url} :: {selector}",
+        )
+        for decl in decls:
+            if getattr(decl, "type", None) != "declaration":
+                continue
+            name = decl.name.lower()
+            value = _decl_value_text(decl)
+            if name in ("background", "background-color"):
+                record.background = parse_color_value(
+                    value.split()[0] if value else value,
+                    custom_props,
+                    diagnostics=parsed.diagnostics,
+                )
+            elif name in ("color", "fill"):
+                record.color = parse_color_value(
+                    value, custom_props, diagnostics=parsed.diagnostics
+                )
+            elif name in ("border-color", "border"):
+                record.border_color = _extract_first_color(
+                    value, custom_props, diagnostics=parsed.diagnostics
+                )
+            elif name == "box-shadow":
+                # Composite value kept as declared text: the kit models shadows with its own
+                # shape, and re-serializing here would lose more than it gained.
+                record.box_shadow = value if value.lower() != "none" else None
+            elif name == "opacity":
+                record.opacity = _parse_opacity(value)
+            elif name in ("text-decoration", "text-decoration-line"):
+                record.text_decoration = value or None
+        if record.declares_anything():
+            parsed.state_styles.append(record)
+
+
+def _cap_state_styles(parsed: ParsedSite) -> None:
+    """Trim the state evidence to its budget, LOUDLY (clone-fidelity F0.2's pattern)."""
+    if len(parsed.state_styles) <= MAX_STATE_STYLE_COUNT:
+        return
+    dropped = [record.selector for record in parsed.state_styles[MAX_STATE_STYLE_COUNT:]]
+    del parsed.state_styles[MAX_STATE_STYLE_COUNT:]
+    parsed.diagnostics.append(
+        budget_diagnostic(
+            budget="interaction state",
+            limit=MAX_STATE_STYLE_COUNT,
+            dropped=dropped,
+            code=STATE_BUDGET_DIAGNOSTIC_CODE,
+            noun="interaction state rule(s) were not recorded",
+        )
+    )
+
+
 # --- CSS iteration --------------------------------------------------------------
 
 
@@ -381,22 +674,79 @@ def _collect_custom_props(stylesheets, existing: dict[str, str]) -> dict[str, st
         rules = tinycss2.parse_stylesheet(
             sheet.text, skip_comments=True, skip_whitespace=True
         )
-        for rule in rules:
-            if rule.type != "qualified-rule":
+        # Through the shared iterator (W2), so a `:root` block inside `@layer base` — how a
+        # Tailwind-era site ships its palette — is not invisible here while being visible to
+        # the dark walker three functions down.
+        for selectors, decls, theme in _iter_qualified_rules(rules, "light"):
+            if theme == "dark":
+                continue  # `_collect_dark_custom_props` owns those; the two tables never merge
+            if not any(_is_root_selector(selector) for selector in selectors):
                 continue
-            selector = tinycss2.serialize(rule.prelude).strip().lower()
-            if not any(part.strip() in ("html", ":root") for part in selector.split(",")):
-                continue
-            for decl in tinycss2.parse_declaration_list(
-                rule.content, skip_comments=True, skip_whitespace=True
-            ):
+            for decl in decls:
                 if getattr(decl, "type", None) == "declaration" and decl.name.startswith("--"):
                     props[decl.name] = _decl_value_text(decl)
     return props
 
 
-def _iter_qualified_rules(rules, theme: str):
-    """Yield (selector_list, declarations, theme) flattening dark-scheme media."""
+def _is_root_selector(selector: str) -> bool:
+    """Does this one selector target the document root a custom property is declared on?"""
+    return selector.strip().lower() in ("html", ":root")
+
+
+def _collect_dark_custom_props(stylesheets) -> dict[str, str]:
+    """The custom-property OVERRIDES a site declares for dark mode (clone-fidelity F0.3).
+
+    ``_collect_custom_props`` walks top-level rules only, so a
+    ``@media (prefers-color-scheme: dark) { :root { --bg: #0b0f14 } }`` block — how every
+    modern site ships its dark palette — was invisible: the overrides reached neither the
+    light table (correctly, they are not light values) nor anything else (incorrectly), and
+    the kit's dark colorway was synthesized from the light palette even for sites that had
+    written theirs down. Kept in its own table rather than merged, so the light table stays
+    byte-identical and the two colorways can never shadow each other.
+    """
+    props: dict[str, str] = {}
+    for sheet in stylesheets:
+        rules = tinycss2.parse_stylesheet(
+            sheet.text, skip_comments=True, skip_whitespace=True
+        )
+        for selectors, decls, theme in _iter_qualified_rules(rules, "light"):
+            if theme != "dark":
+                continue
+            if not any(_is_root_selector(selector) for selector in selectors):
+                continue
+            for decl in decls:
+                if getattr(decl, "type", None) == "declaration" and decl.name.startswith("--"):
+                    props[decl.name] = _decl_value_text(decl)
+    return props
+
+
+#: At-rules whose block holds NESTED RULES rather than declarations. Every structure-aware CSS
+#: walker in this module descends into them (clone-fidelity F2 wave W2). The bug this closes had
+#: already been found and fixed once, narrowly, for dark custom properties
+#: (:func:`_collect_dark_custom_props`) and never generalized — so ``iter_font_faces`` stayed the
+#: one non-recursive walker here, and a single ``@media``-wrapped ``@font-face`` on stripe.com
+#: meant its brand font was never fetched and every section of the site refused to mint.
+CONDITIONAL_GROUP_AT_RULES = frozenset({"media", "supports", "layer", "container", "scope"})
+
+#: How deep the descent goes. Real stylesheets nest two or three of these (`@layer` inside
+#: `@supports` inside `@media` is a shipped Tailwind/Next shape); the cap is a guard against a
+#: pathological or hostile sheet, not a judgement about how sites are written.
+MAX_AT_RULE_DEPTH = 8
+
+
+def _nested_rules(rule, depth: int):
+    """The rule list inside one conditional group at-rule, or ``None`` if it is not one."""
+    if rule.type != "at-rule" or rule.content is None:
+        return None
+    if rule.lower_at_keyword not in CONDITIONAL_GROUP_AT_RULES:
+        return None
+    if depth >= MAX_AT_RULE_DEPTH:
+        return None
+    return tinycss2.parse_rule_list(rule.content, skip_comments=True, skip_whitespace=True)
+
+
+def _iter_qualified_rules(rules, theme: str, depth: int = 0):
+    """Yield (selector_list, declarations, theme) flattening every conditional group at-rule."""
     for rule in rules:
         if rule.type == "qualified-rule":
             selectors = [
@@ -408,17 +758,16 @@ def _iter_qualified_rules(rules, theme: str):
                 rule.content, skip_comments=True, skip_whitespace=True
             )
             yield selectors, decls, theme
-        elif rule.type == "at-rule" and (rule.lower_at_keyword == "media"):
+            continue
+        inner = _nested_rules(rule, depth)
+        if inner is None:
+            continue
+        inner_theme = theme
+        if rule.lower_at_keyword == "media":
             prelude = tinycss2.serialize(rule.prelude).lower()
-            inner_theme = theme
             if "prefers-color-scheme" in prelude and "dark" in prelude:
                 inner_theme = "dark"
-            if rule.content is None:
-                continue
-            inner = tinycss2.parse_rule_list(
-                rule.content, skip_comments=True, skip_whitespace=True
-            )
-            yield from _iter_qualified_rules(inner, inner_theme)
+        yield from _iter_qualified_rules(inner, inner_theme, depth + 1)
 
 
 def _px_from_length(value: str) -> float | None:
@@ -535,18 +884,28 @@ def _parse_font_face(decls, base_url: str) -> ParsedFontFace | None:
         elif name == "font-style":
             style = value.strip().lower() or "normal"
         elif name == "src":
-            for m in re.finditer(r"url\(\s*['\"]?([^'\")]+)['\"]?\s*\)", value):
-                src_urls.append(_absolutize(base_url, m.group(1)))
+            # `value` is tinycss2's re-serialization, which RE-ESCAPES a url token: a face
+            # declared `url(…/A%20\(1\).woff2)` serializes back with those `\(`/`\)` intact.
+            # So this reads it with the same escape-aware reader the collector uses — which
+            # is also what keeps capture and parse agreeing on the URL to the character, the
+            # invariant `iter_font_faces`'s docstring exists to protect.
+            for raw in iter_css_urls(value):
+                src_urls.append(_absolutize(base_url, raw))
     if family is None:
         return None
+    src_urls = list(dict.fromkeys(src_urls))
     chosen = None
     if src_urls:
         chosen = sorted(src_urls, key=lambda u: _FORMAT_RANK.get(_font_format(u), 3))[0]
+    # Bound rung first, then the rest in declaration order: the asset budget drops the tail,
+    # so under pressure the file the kit actually binds is the one that survives.
+    rungs = ([chosen] if chosen else []) + [u for u in src_urls if u != chosen]
     face = ParsedFontFace(
         weight=weight if weight is not None else 400,
         style=style,
         source_url=chosen,
         format=_font_format(chosen) if chosen else None,
+        source_urls=rungs,
     )
     face._family = family  # type: ignore[attr-defined]
     return face
@@ -595,26 +954,62 @@ def iter_font_faces(stylesheets, page_url: str):
         rules = tinycss2.parse_stylesheet(
             sheet.text, skip_comments=True, skip_whitespace=True
         )
-        for rule in rules:
-            if rule.type == "at-rule" and rule.lower_at_keyword == "font-face":
-                decls = tinycss2.parse_declaration_list(
-                    rule.content or [], skip_comments=True, skip_whitespace=True
-                )
-                face = _parse_font_face(decls, base)
-                if face is not None:
-                    yield sheet.url, face
+        for face in _font_faces_in(rules, base, 0):
+            yield sheet.url, face
 
 
-def font_face_sources(stylesheets, page_url: str) -> list[str]:
-    """Absolute URLs of the font files ``@font-face`` actually selects.
+def _font_faces_in(rules, base: str, depth: int):
+    """Every ``@font-face`` at any conditional-group depth, resolved against ITS OWN sheet.
 
-    Capture downloads exactly these, so every face the evidence builder later
-    looks up has bytes waiting under the same key.
+    A media-wrapped face is the ordinary modern shape — a responsive or `@layer`-scoped font
+    stack — and it declares a real file the page really loads. The base URL stays the sheet's,
+    which is the capture↔parse exact-URL invariant this function exists to keep.
     """
+    for rule in rules:
+        if rule.type == "at-rule" and rule.lower_at_keyword == "font-face":
+            decls = tinycss2.parse_declaration_list(
+                rule.content or [], skip_comments=True, skip_whitespace=True
+            )
+            face = _parse_font_face(decls, base)
+            if face is not None:
+                yield face
+            continue
+        inner = _nested_rules(rule, depth)
+        if inner is not None:
+            yield from _font_faces_in(inner, base, depth + 1)
+
+
+def font_face_source_rungs(stylesheets, page_url: str) -> list[str]:
+    """EVERY ``src`` URL every ``@font-face`` declares — EVERY face's BOUND rung first.
+
+    What capture downloads (clone-fidelity F0.2). A face routinely lists ``woff2, woff,
+    ttf``; the kit binds the best format the same way a browser would, but F2 rewrites the
+    captured ``@font-face`` block verbatim onto our store, so a rung we never fetched is a
+    font that fails to load for whichever browser picks it.
+
+    **Why bound rungs come first GLOBALLY, not per face.** The asset budget keeps a PREFIX of
+    this list and drops the tail. Emitting face by face meant a budget that cut mid-list kept
+    face 1's ``ttf`` alternate while dropping face 9's bound ``woff2`` — the exact opposite
+    of "the file the kit binds survives budget pressure". Two passes make that promise true
+    across the whole page: every bound rung, then every alternate.
+
+    (This replaced ``font_face_sources``, which returned only the bound URLs and became the
+    binding set nobody called once the fetch list grew — the binding choice itself lives in
+    ``_parse_font_face``'s ``chosen`` and rides on ``ParsedFontFace.source_url``.)
+    """
+    faces = [face for _sheet_url, face in iter_font_faces(stylesheets, page_url)]
+
+    def rungs_of(face) -> list[str]:
+        return face.source_urls or ([face.source_url] if face.source_url else [])
+
     urls: list[str] = []
-    for _sheet_url, face in iter_font_faces(stylesheets, page_url):
+    for face in faces:
         if face.source_url and face.source_url not in urls:
             urls.append(face.source_url)
+    for face in faces:
+        for url in rungs_of(face):
+            if url and url not in urls:
+                urls.append(url)
     return urls
 
 
@@ -628,6 +1023,7 @@ def parse_site(snapshot: SiteSnapshot) -> ParsedSite:
     custom_props = dict(snapshot.custom_props or {})
     custom_props = _collect_custom_props(snapshot.stylesheets, custom_props)
     parsed.custom_props = custom_props
+    parsed.dark_custom_props = _collect_dark_custom_props(snapshot.stylesheets)
 
     _parse_css(snapshot, parsed, custom_props, base_url)
     if snapshot.computed_samples:
@@ -658,6 +1054,41 @@ def _parse_css(
                 )
             )
 
+    # The same properties read a SECOND way (clone-fidelity F0.3): a name that states a role
+    # — `--base-color-brand--green` — is the site telling us what the color is FOR, and the
+    # normalizer applies it as a direct role assignment above the clustering heuristic. The
+    # weighted-evidence emission above is deliberately untouched: a name we cannot read a
+    # role off of keeps exactly today's behaviour, and one we can still contributes its
+    # swatch to the clusters everything else is derived from.
+    parsed.declared_roles = declared_roles(
+        custom_props,
+        lambda value: parse_color_value(
+            value, custom_props, diagnostics=parsed.diagnostics
+        ),
+    )
+
+    # Dark-mode custom-property overrides → dark color evidence, which is what turns the
+    # kit's dark colorway from `synthesized` into `captured`. Resolved against the dark table
+    # FIRST so an override pointing at another override reads the dark value, falling back to
+    # the light table for the (common) chain that only re-points its top link.
+    dark_scope = {**custom_props, **parsed.dark_custom_props}
+    if parsed.dark_custom_props:
+        for name, value in parsed.dark_custom_props.items():
+            hex_value = parse_color_value(
+                value, dark_scope, diagnostics=parsed.diagnostics
+            )
+            if hex_value:
+                parsed.colors.append(
+                    ParsedColor(
+                        value=hex_value,
+                        weight=3.0,
+                        theme="dark",
+                        role_hints=[f"custom-prop:{name}"],
+                        name=None,
+                        locator=f"css :: {name} :: prefers-color-scheme: dark",
+                    )
+                )
+
     # @font-face — the shared walk capture also downloads from, so a face's
     # source_url is always the key its bytes were fetched under.
     for sheet_url, face in iter_font_faces(snapshot.stylesheets, base_url):
@@ -668,7 +1099,14 @@ def _parse_css(
             sheet.text, skip_comments=True, skip_whitespace=True
         )
         for selectors, decls, theme in _iter_qualified_rules(rules, "light"):
-            _parse_rule(parsed, selectors, decls, theme, custom_props, sheet.url)
+            # A rule inside the dark block resolves its vars against the dark overrides —
+            # otherwise `@media dark { body { background: var(--bg) } }` reads the LIGHT
+            # `--bg` and the captured dark page comes out white. Identical to the light
+            # table for any site that declares no dark overrides.
+            scope = dark_scope if theme == "dark" else custom_props
+            _parse_rule(parsed, selectors, decls, theme, scope, sheet.url)
+            _collect_state_styles(parsed, selectors, decls, theme, scope, sheet.url)
+    _cap_state_styles(parsed)
 
 
 def _parse_rule(
@@ -839,6 +1277,18 @@ def _download_by_url(snapshot: SiteSnapshot, url: str) -> str | None:
         if entry.url == url:
             return entry.sha256
     return None
+
+
+def _is_dark_scheme(snapshot: SiteSnapshot, url: str) -> bool:
+    """Did every reference to this URL come from a ``prefers-color-scheme: dark`` source?
+
+    The collector decides this (``candidates._dedupe``) and stamps it on the download; parse
+    only reads it, so the two can never disagree about which rendition is the dark one.
+    """
+    for entry in snapshot.downloads:
+        if entry.url == url:
+            return bool(entry.dark_scheme)
+    return False
 
 
 # --- primary-logo identification: multi-signal scoring ---------------------------
@@ -1179,8 +1629,11 @@ def _parse_images(snapshot: SiteSnapshot, tree, parsed: ParsedSite, base_url: st
             continue
         area = float((width or 0) * (height or 0))
         # Provenance stays honest about WHICH rendition we hold: a chosen URL that is not
-        # the element's own `src` says so in the locator.
+        # the element's own `src` says so in the locator, and a rendition that exists only
+        # for dark mode says THAT — the signal is worthless if it dies in the snapshot.
         locator = "dom :: img" if url == ladder[-1] else "dom :: img :: hi-res rendition"
+        if _is_dark_scheme(snapshot, url):
+            locator += " :: prefers-color-scheme: dark"
         candidates.append(
             (
                 area,
@@ -1222,21 +1675,21 @@ def _parse_images(snapshot: SiteSnapshot, tree, parsed: ParsedSite, base_url: st
             )
         )
 
+    # The old hard cap of 50 lived here and whispered a LUMI0504 at `info`. It is now the
+    # shared asset budget, and overflow is LOUD and NAMED (clone-fidelity F0.2): an image the
+    # kit does not carry is an image the F2 clone cannot rehost, so a human has to be told
+    # which ones. Sorted best-first (largest rendered area, then file size), so if the budget
+    # ever does trip, what it costs is the smallest imagery on the page.
     candidates.sort(key=lambda item: (item[0], item[1]), reverse=True)
-    kept = candidates[:IMAGE_CANDIDATE_CAP]
-    skipped = len(candidates) - len(kept)
+    kept = candidates[:MAX_ASSET_COUNT]
+    dropped = [asset.source_url for _, _, asset in candidates[MAX_ASSET_COUNT:]]
     for _, _, asset in kept:
         parsed.images.append(asset)
-    if skipped > 0:
+    if dropped:
         parsed.diagnostics.append(
-            {
-                "code": "LUMI0504",
-                "severity": "info",
-                "message": (
-                    f"image candidate cap of {IMAGE_CANDIDATE_CAP} reached; "
-                    f"skipped {skipped} image(s)"
-                ),
-            }
+            budget_diagnostic(
+                budget="image candidate", limit=MAX_ASSET_COUNT, dropped=dropped
+            )
         )
 
 

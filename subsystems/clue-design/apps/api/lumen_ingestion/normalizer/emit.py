@@ -20,7 +20,12 @@ from .required import (
     REQUIRED_ASSET_TOKENS,
     REQUIRED_COLOR_TOKENS,
 )
-from .roles import DarkColorway, LightRoles, RoleAssignment
+from .roles import (
+    DECLARED_ROLE_CONFIDENCE,
+    DarkColorway,
+    LightRoles,
+    RoleAssignment,
+)
 
 _COLOR_ROLE_MAP = {
     "surface": "surface",
@@ -34,6 +39,47 @@ _COLOR_ROLE_MAP = {
 _PRINT_FONT_CAUTION = (
     "Font licensing was not verified at ingestion; confirm embeddability before print export."
 )
+
+
+#: D-F2 (ruled): a font ingested from a workspace's OWN brand material is embeddable on this
+#: platform, and the basis for that is the platform's Terms of Use — not a license we read off
+#: the site. The old hardcoded ``embeddable: False`` made the publish gate
+#: (``web_export._family_embeddable``) exclude every ingested family from every web export,
+#: so a brand's own site font never shipped on its own generated pages.
+#:
+#: THE BASIS IS ITS OWN FIELD SINCE F1.5. F0 had to encode it inside a ``restrictions`` line:
+#: the engine's ``FontLicense`` (``crates/lumen-core/src/brand.rs``) was a fixed struct, and
+#: while serde ACCEPTS an unknown key, ``validate_brand_kit`` deserializes into that struct and
+#: RE-SERIALIZES it — so the extra key never came back, and the pipeline persists what comes
+#: back. F1.5 added the real ``basis`` field, so the machine-readable answer now rides where a
+#: reader can find it and the round trip is pinned by
+#: ``test_the_basis_survives_the_real_rust_brand_kit_round_trip``.
+#:
+#: The human-readable caveat stays a restriction, because that is what it is: a limit on use,
+#: not an answer to "why may this embed".
+PLATFORM_TERMS_BASIS = "platform-terms"
+_PLATFORM_TERMS_LIMIT = (
+    "Embed permission for this workspace's own brand font comes from the platform Terms of "
+    "Use, not from a license verified at ingestion: off-platform or print reuse still requires "
+    "license confirmation, and the license name above is what the source declared."
+)
+
+
+def _workspace_brand_font_license(license_hint: str | None) -> dict:
+    """The license object for a font ingested from the workspace's own brand material.
+
+    The NAME stays exactly as honest as it was — whatever the source declared, or
+    ``"unknown"``. Nothing here fabricates an "OFL". ``subsettable`` stays ``False``: nobody
+    verified subsetting rights, and D-F2 ruled on embedding only.
+    """
+    return {
+        "name": license_hint or "unknown",
+        "embeddable": True,
+        "subsettable": False,
+        "source_url": None,
+        "basis": PLATFORM_TERMS_BASIS,
+        "restrictions": [_PLATFORM_TERMS_LIMIT],
+    }
 
 
 def _slug(name: str) -> str:
@@ -255,15 +301,7 @@ class KitBuilder:
             "faces": faces,
             "fallback_stack": font.fallback_stack or fallback,
             "scripts": ["latin"],
-            "license": {
-                "name": font.license_hint or "unknown",
-                "embeddable": False,
-                "subsettable": False,
-                "source_url": None,
-                "restrictions": [
-                    "License not verified at ingestion; do not embed in print exports without confirmation."
-                ],
-            },
+            "license": _workspace_brand_font_license(font.license_hint),
             "provenance": _provenance(f"{font.pointer.source}:{font.pointer.locator}", 0.7),
         }
 
@@ -479,6 +517,11 @@ def _merge_style_tags(existing: list[str], tags: list[str]) -> list[str]:
 
 
 def _confidence_for(basis: str) -> float:
+    # The site stated this role in its own stylesheet (clone-fidelity F0.3). As good as a
+    # directly observed swatch and no better: 1.0 stays reserved for things that cannot be
+    # wrong, and a declaration can still be stale or aspirational.
+    if basis == "declared":
+        return DECLARED_ROLE_CONFIDENCE
     if basis == "evidence":
         return 0.9
     # Read off the brand's own rendered page, but a cluster representative

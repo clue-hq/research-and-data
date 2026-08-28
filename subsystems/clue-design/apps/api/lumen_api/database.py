@@ -129,6 +129,64 @@ class CustomComponentReferenceError(RuntimeError):
         self.artifact_id = artifact_id
 
 
+class FragmentReferenceError(RuntimeError):
+    """A document write introduced a fragment pin this workspace cannot resolve.
+
+    The custom-component twin (:class:`CustomComponentReferenceError`), kept a SEPARATE type for
+    the same reason its ingestion-fence sibling is: the two name different registries with
+    different identifiers, their handlers word different messages, and a caller that catches one
+    must not silently swallow the other. Fragments are workspace-scoped rather than
+    account-scoped, so there is no ``account_id`` here and no slug to agree with — the pin is
+    just the id, and the id is the content.
+    """
+
+    def __init__(self, code: str, message: str, *, node_id: str, fragment_id: str) -> None:
+        super().__init__(message)
+        self.code = code
+        self.message = message
+        self.node_id = node_id
+        self.fragment_id = fragment_id
+
+
+def fragment_nodes(web_doc: JsonObject) -> Dict[Tuple[str, str], JsonObject]:
+    """Index every ``fragment`` node in a web document by page and node id.
+
+    The exact shape of :func:`custom_component_nodes`, and for the same reason: location is
+    stable across ordinary move/reparent/resize edits, so those operations do not re-resolve an
+    unchanged pin, while duplicate mints a new node id and is therefore correctly treated as a
+    new reference.
+    """
+    nodes_by_location: Dict[Tuple[str, str], JsonObject] = {}
+    pages = web_doc.get("pages")
+    if not isinstance(pages, list):
+        return nodes_by_location
+    for page in pages:
+        if not isinstance(page, dict):
+            continue
+        page_id = page.get("id")
+        nodes = page.get("nodes")
+        if not isinstance(page_id, str) or not isinstance(nodes, dict):
+            continue
+        for node_id, node in nodes.items():
+            if (
+                isinstance(node_id, str)
+                and isinstance(node, dict)
+                and node.get("kind") == "fragment"
+            ):
+                nodes_by_location[(page_id, node_id)] = node
+    return nodes_by_location
+
+
+def fragment_references(web_doc: JsonObject) -> Dict[Tuple[str, str], Tuple[str, str]]:
+    """Every pinned fragment node as ``location -> (node_id, fragment_id)``."""
+    references: Dict[Tuple[str, str], Tuple[str, str]] = {}
+    for (page_id, node_id), node in fragment_nodes(web_doc).items():
+        fragment_id = node.get("fragment_id")
+        if isinstance(fragment_id, str):
+            references[(page_id, node_id)] = (node_id, fragment_id)
+    return references
+
+
 def custom_component_opaque_ref_is_canonical(opaque_ref: str, digest: str) -> bool:
     """Whether a blob descriptor's ``opaque_ref`` is one this API is allowed to have minted.
 

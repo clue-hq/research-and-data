@@ -17,6 +17,7 @@ use crate::doc::{
     MAX_TREE_DEPTH,
 };
 use crate::inline::sanitize_inline;
+use crate::util::quoted_id;
 use crate::rich_text::RichTextDocument;
 use crate::theme::WebTheme;
 use crate::util::{href_is_allowed, line_col, normalize_entities, self_close_voids};
@@ -895,7 +896,10 @@ impl<'a> IngestState<'a> {
                         Err(_) => {
                             self.error(
                                 "LUMW0112",
-                                format!("invalid data-asset id `{value}` on image `{id}`"),
+                                format!(
+                                    "invalid data-asset id `{}` on image `{id}`",
+                                    quoted_id(&value)
+                                ),
                                 "Asset ids are alphanumeric with _ or -.",
                                 Some(&id),
                             );
@@ -1214,7 +1218,10 @@ impl<'a> IngestState<'a> {
             Err(_) => {
                 self.error(
                     "LUMW0135",
-                    format!("invalid background asset id `{asset_raw}` on `{id}`"),
+                    format!(
+                        "invalid background asset id `{}` on `{id}`",
+                        quoted_id(&asset_raw)
+                    ),
                     "Asset ids are alphanumeric with _ or -.",
                     Some(id),
                 );

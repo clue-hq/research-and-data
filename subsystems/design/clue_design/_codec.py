@@ -14,7 +14,7 @@ endpoints already serve), so the port is a storage swap, not an API change:
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 JsonObject = dict[str, Any]
@@ -45,3 +45,18 @@ def iso(value: object) -> Any:
     if isinstance(value, datetime):
         return value.isoformat()
     return value
+
+
+def as_datetime(value: object) -> datetime:
+    """Coerce a caller-supplied instant into a real aware ``datetime`` (the ``iso`` inverse).
+
+    Every ``timestamptz`` column whose value is the CALLER's (rather than the database's
+    ``now()``) needs this: asyncpg binds parameters by inferred type, so a string does not
+    survive a SQL-level ``CAST(:param AS timestamptz)`` — it is rejected at encode time, before
+    Postgres ever sees the cast.
+
+    A naive datetime is read as UTC rather than refused: every producer in this codebase stamps
+    UTC, and silently storing a local-clock instant would be the worse answer.
+    """
+    parsed = value if isinstance(value, datetime) else datetime.fromisoformat(str(value))
+    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)

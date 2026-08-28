@@ -128,3 +128,21 @@ changes into A's worktree (happened live 2026-08-26 during the W1 wave; work
 was recovered from the dangling stash commit, but only by luck and forensics).
 For temporary saves in a worktree, commit to the worktree branch (and reset
 afterwards) or copy files aside — anything but `git stash`.
+
+## 5. Clone-fidelity runtime dependencies (F3, recorded at the CP1 walk)
+
+Three environmental dependencies the clone-fidelity surfaces refuse loudly without — a fresh
+checkout or a new worker host must carry all three before the flows run:
+
+- **Playwright chromium on the API process** — the isolation render (dormant previews) and the
+  behavioural review gate both launch it (typed refusal when absent).
+- **node + `apps/editor/node_modules` on any worker that repairs clones** —
+  `repair_cloned_section` shells out to the editor's Tailwind toolchain (declared, checked,
+  20s-bounded).
+- **the vendored Tailwind runtime** (`apps/editor/public/vendor/tailwind-browser.js`, mirrored
+  under `apps/frontend/public/vendor/`) — UNTRACKED IN GIT; without it every editor-mode
+  preview renders with no utility CSS and the review gate refuses to write durable verdicts
+  (`evidence_settled` stays false, loudly).
+
+Env-var trap (walk finding F-6): the design agent reads `LUMEN_AGENT_API_KEY`; a workspace
+`.env` carrying only `CLUE_OPENROUTER_API_KEY` is a guaranteed first-run stumble — set both.

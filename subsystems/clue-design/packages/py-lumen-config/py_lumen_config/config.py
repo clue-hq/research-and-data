@@ -94,6 +94,14 @@ class Settings(BaseSettings):
     # Deliberately slow: it is a safety net over a rare failure, not a control loop, and every
     # pass is a query against three indexed status predicates.
     lumen_design_reaper_interval_s: float = 300.0
+    # Clone-fidelity F2.2: the RUNAWAY BACKSTOP on how many website sections one ingestion may
+    # mint as fragments. FOUNDER RULING (2026-08-27): extraction yields as many fragments as the
+    # page honestly offers — the acceptance's "at least five" is a floor, not a target — so this
+    # must never be the thing that truncates a real page. 40 is the capture probe's own
+    # MAX_SECTIONS (capture/geometry.py) and the persisted-band ceiling (sections/bands.py), so
+    # minting cannot be a SECOND, tighter ceiling on a page the capture layer was willing to
+    # measure in full. Tripping it is reported loudly (LUMI0532), never silently truncated.
+    lumen_fragment_mint_cap: int = 40
 
     # --- Image generation (image_provider) ---
     # Blank base_url/api_key → /assets/generate returns a clean 503.
@@ -311,6 +319,23 @@ class Settings(BaseSettings):
     # (and ignored) when the fast loop is off — the reviewer is always dispatched
     # there.
     lumen_agent_scene_reviewer: bool = False
+    # --- the WEB lane's own fast-loop flag (clone-fidelity F3.3, ruling D-F7) ------------
+    # The flag above is scene-turn-only by §3 non-goal, so the web lane gets its own,
+    # mirroring its shape exactly (founder preflight ruling P-6). OFF — the default — leaves
+    # a web turn byte-identical to the pre-F3.3 loop: the `lumen-web-reviewer` subagent is
+    # dispatched as always. ON quarantines it (built, never registered) and the orchestrator
+    # self-reviews against the SAME shared rubric artifact. D-F7's closing line is the whole
+    # contract: the flag changes WHO checks, never WHAT is checked.
+    #
+    # Default OFF rather than the scene flag's True, deliberately. The scene default was
+    # flipped only after the fast loop had been proven live across the reference-ads
+    # acceptance runs; nothing has been proven for web self-review yet, and a flag that
+    # removes a reviewer earns its default from evidence rather than from its sibling's.
+    lumen_agent_web_fast_loop: bool = False
+    # The twin of `lumen_agent_scene_reviewer`: put the web reviewer back WITHOUT leaving the
+    # web fast loop. Meaningless (and ignored) when that flag is off — the reviewer is always
+    # dispatched there.
+    lumen_agent_web_reviewer: bool = False
     # §5.6 budgets. RULING D1 (founder, 2026-08-26) SPLIT THESE IN TWO: budgets
     # are GUIDANCE, not gates.
     #

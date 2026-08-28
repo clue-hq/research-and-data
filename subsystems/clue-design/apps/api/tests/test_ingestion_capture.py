@@ -399,22 +399,26 @@ def test_parse_computed_samples_rendered() -> None:
     assert body_bg  # area-weighted body bg exceeds the flat CSS-rule weight
 
 
-def test_image_cap_logic() -> None:
-    """The cap holds and announces itself. Raised 12 → 50 by founder order 2026-08-20;
-    the exact boundary behaviour is pinned in ``test_ingestion_image_sources.py``."""
-    from lumen_ingestion.capture.imgsrc import IMAGE_CANDIDATE_CAP
+def test_image_budget_logic() -> None:
+    """The budget holds and announces itself.
+
+    Was a hard cap (12 → 50 by founder order 2026-08-20); replaced by the shared asset budget
+    at clone-fidelity F0.2, whose ``LUMI0514`` names every dropped URL. The exact boundary
+    behaviour is pinned in ``test_ingestion_image_sources.py``.
+    """
+    from lumen_ingestion.capture.budget import MAX_ASSET_COUNT
     from lumen_ingestion.capture.snapshot import SiteSnapshot
 
     snapshot = load("insight_static")
     extra_imgs = "".join(
         f'<img src="/img/x{i}.png" width="{100 + i}" height="{100 + i}">'
-        for i in range(IMAGE_CANDIDATE_CAP + 5)
+        for i in range(MAX_ASSET_COUNT + 5)
     )
     html = snapshot.html.replace("</main>", extra_imgs + "</main>")
     mutated = SiteSnapshot(**{**snapshot.model_dump(), "html": html})
     parsed = parse_site(mutated)
-    assert len(parsed.images) <= IMAGE_CANDIDATE_CAP + 1  # +1 tolerance for og_image
-    assert any(d["code"] == "LUMI0504" for d in parsed.diagnostics)
+    assert len(parsed.images) <= MAX_ASSET_COUNT + 1  # +1 tolerance for og_image
+    assert any(d["code"] == "LUMI0514" for d in parsed.diagnostics)
 
 
 # --------------------------------------------------------------------------- #
@@ -632,6 +636,203 @@ def test_capture_redirect_reguard_rejects_private() -> None:
     with pytest.raises(CaptureError) as excinfo:
         asyncio.run(run())
     assert excinfo.value.code == "LUMI0501"
+
+
+# --------------------------------------------------------------------------- #
+# F0.4 — the multi-page provision
+# --------------------------------------------------------------------------- #
+
+
+_MULTIPAGE_HTML = {
+    "/": "<html><head><title>Home</title></head><body><p>home page words</p></body></html>",
+    "/about": "<html><head><title>About</title></head><body><p>about page words</p></body></html>",
+}
+
+
+def _multipage_transport(broken: set[str] | None = None) -> httpx.MockTransport:
+    broken = broken or set()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path in broken:
+            raise httpx.ConnectError("connection refused", request=request)
+        if path in _MULTIPAGE_HTML:
+            return httpx.Response(200, html=_MULTIPAGE_HTML[path])
+        return httpx.Response(404)
+
+    return httpx.MockTransport(handler)
+
+
+def _capture(url: str, transport: httpx.MockTransport, **kwargs) -> CaptureOutcome:
+    async def run() -> CaptureOutcome:
+        async with httpx.AsyncClient(transport=transport) as client:
+            return await capture_website(
+                url, reporter=_noop, render_available=False, http_client=client, **kwargs
+            )
+
+    return asyncio.run(asyncio.wait_for(run(), timeout=10.0))
+
+
+def test_capture_website_yields_one_snapshot_for_the_entry_page_by_default() -> None:
+    outcome = _capture("https://example.com/", _multipage_transport())
+    assert [s.requested_url for s in outcome.snapshots] == ["https://example.com/"]
+    # `.snapshot` stays the entry page — every pre-F0.4 caller reads it and must not move.
+    assert outcome.snapshots[0] is outcome.snapshot
+
+
+def test_capture_website_captures_every_requested_page_in_order() -> None:
+    outcome = _capture(
+        "https://example.com/",
+        _multipage_transport(),
+        page_urls=["https://example.com/about"],
+    )
+    assert [s.requested_url for s in outcome.snapshots] == [
+        "https://example.com/",
+        "https://example.com/about",
+    ]
+    assert outcome.snapshot is outcome.snapshots[0]
+    assert "about page words" in outcome.snapshots[1].html
+
+
+def test_the_entry_page_is_captured_once_even_when_the_page_list_repeats_it() -> None:
+    outcome = _capture(
+        "https://example.com/",
+        _multipage_transport(),
+        page_urls=["https://example.com/", "https://example.com/about", "https://example.com/"],
+    )
+    assert [s.requested_url for s in outcome.snapshots] == [
+        "https://example.com/",
+        "https://example.com/about",
+    ]
+
+
+def test_a_non_entry_page_failure_is_a_loud_diagnostic_and_the_capture_continues() -> None:
+    outcome = _capture(
+        "https://example.com/",
+        _multipage_transport(broken={"/about"}),
+        page_urls=["https://example.com/about"],
+    )
+    assert [s.requested_url for s in outcome.snapshots] == ["https://example.com/"]
+    failures = [d for d in outcome.diagnostics if d["code"] == "LUMI0513"]
+    assert len(failures) == 1
+    assert "https://example.com/about" in failures[0]["message"]
+    assert failures[0]["severity"] == "warning"
+
+
+def test_an_entry_page_failure_still_fails_the_whole_capture() -> None:
+    with pytest.raises(httpx.ConnectError):
+        _capture(
+            "https://example.com/",
+            _multipage_transport(broken={"/"}),
+            page_urls=["https://example.com/about"],
+        )
+
+
+# --------------------------------------------------------------------------- #
+# Diagnostics are recorded once (F0 fix wave, FIX 2)
+# --------------------------------------------------------------------------- #
+#
+# A failed fetch is reported twice by construction: `net.BoundedFetcher` puts the diagnostic
+# on the per-item `FetchResult` — which `static._collect_assets` folds into the SNAPSHOT —
+# and on its own accumulating list, which `_capture_page` reads as a delta. The acceptance
+# walk against insighthealth.ai turned three distinct failures into six LUMI0503s. These land
+# on the published kit UNCAPPED (`budget.MAX_NAMED_DROPS` bounds the evidence builder's
+# LUMI0515/LUMI0516 lists, not this one), so the doubling is both twice the noise a human
+# reads and a wrong answer to "how much did this capture lose".
+
+
+_DEAD_ASSET_PAGE = (
+    "<html><head><title>Doubled</title>"
+    '<link rel="stylesheet" href="/css/site.css">'
+    "</head><body>"
+    '<img src="/i/one.png"><img src="/i/two.png">'
+    "<p>enough words on the page that the quality gate has something to read</p>"
+    "</body></html>"
+)
+_DEAD_ASSET_CSS = "body{background-image:url(/i/three.png);color:#123456}"
+_DEAD_ASSETS = ("/i/one.png", "/i/two.png", "/i/three.png")
+_PNG = base64.b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+)
+
+
+def _dead_asset_transport() -> httpx.MockTransport:
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path in _DEAD_ASSETS:
+            return httpx.Response(403)
+        if path == "/css/site.css":
+            return httpx.Response(200, text=_DEAD_ASSET_CSS, headers={"content-type": "text/css"})
+        if path == "/":
+            return httpx.Response(200, html=_DEAD_ASSET_PAGE)
+        if path == "/favicon.ico":
+            # The logo ladder probes this on every page; serving it keeps the three dead
+            # assets the only failures, so the count below means what it says.
+            return httpx.Response(200, content=_PNG, headers={"content-type": "image/png"})
+        return httpx.Response(404)
+
+    return httpx.MockTransport(handler)
+
+
+def test_each_failed_fetch_is_reported_exactly_once_on_the_outcome() -> None:
+    outcome = _capture("https://example.com/", _dead_asset_transport())
+    failures = [d for d in outcome.diagnostics if d["code"] == "LUMI0503"]
+
+    assert sorted(d["url"] for d in failures) == [
+        f"https://example.com{path}" for path in sorted(_DEAD_ASSETS)
+    ], [d["url"] for d in failures]
+    assert len(failures) == len(_DEAD_ASSETS), failures
+
+
+def test_a_fetcher_diagnostic_with_no_snapshot_twin_still_reaches_the_outcome(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The fetcher delta is still READ, not dropped — the dedupe removes twins, not sources.
+
+    The page fetch itself records onto the fetcher, and a future caller can hand the fetcher
+    work whose result never becomes part of a snapshot; an entry with no twin must survive.
+    """
+    from lumen_ingestion import capture as capture_pkg
+    from lumen_ingestion.capture.snapshot import SiteSnapshot
+
+    twinned = {
+        "code": "LUMI0503",
+        "severity": "warning",
+        "message": "fetch failed for https://example.com/i/twinned.png: HTTP 403",
+        "url": "https://example.com/i/twinned.png",
+        "reason": "HTTP 403",
+    }
+    fetcher_only = {
+        "code": "LUMI0502",
+        "severity": "warning",
+        "message": "resource exceeded its cap and was skipped: https://example.com/",
+        "url": "https://example.com/",
+        "reason": "exceeded the cap for its resource class",
+    }
+
+    async def _fake_static(url, fetcher, reporter, *, fetched_at):
+        fetcher.diagnostics.append(fetcher_only)
+        fetcher.diagnostics.append(twinned)
+        return SiteSnapshot(
+            requested_url=url,
+            final_url=url,
+            fetched_at=fetched_at,
+            tier="static",
+            html="<html><body><p>" + ("word " * 80) + "</p></body></html>",
+            diagnostics=[twinned],
+        )
+
+    monkeypatch.setattr(capture_pkg, "fetch_static", _fake_static)
+
+    async def run() -> CaptureOutcome:
+        return await capture_website(
+            "https://example.com/", reporter=_noop, render_available=False
+        )
+
+    outcome = asyncio.run(asyncio.wait_for(run(), timeout=10.0))
+
+    assert outcome.diagnostics.count(twinned) == 1, outcome.diagnostics
+    assert fetcher_only in outcome.diagnostics, outcome.diagnostics
 
 
 # --------------------------------------------------------------------------- #

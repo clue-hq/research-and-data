@@ -482,7 +482,7 @@ def _run_website_ingestion_through_the_route(
 
     png_bytes = LOGO_PNG_PATH.read_bytes()
 
-    async def fake_capture(url, *, reporter, force_render=False):
+    async def fake_capture(url, *, reporter, force_render=False, page_urls=None):
         class Outcome:
             tier = "static"
             escalated = False

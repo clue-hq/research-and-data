@@ -3,8 +3,14 @@
 Light-theme semantic roles are assigned from clustered evidence by fixed rules;
 the dark colorway is assigned from captured dark evidence when present, else
 synthesized from the light palette. Every decision records a `basis`
-("evidence" | "derived" | "default") and a compact provenance string so the
-emitter can stamp per-token provenance and the report can explain choices.
+("declared" | "evidence" | "derived" | "default") and a compact provenance
+string so the emitter can stamp per-token provenance and the report can explain
+choices.
+
+`declared` is the top of that order (clone-fidelity F0.3): when the site itself
+named the role in a custom property, that statement beats anything we can infer
+by clustering its swatches. See `capture/declared_roles.py` for what counts as a
+declaration and — just as importantly — what does not.
 """
 
 from __future__ import annotations
@@ -18,6 +24,7 @@ from ..colorspace import (
     with_lch,
     with_lightness,
 )
+from ..evidence import DeclaredRoleEvidence
 from .cluster import ColorCluster
 
 NEAR_NEUTRAL_C = 0.03
@@ -26,6 +33,11 @@ _CONTRAST_MIN = 4.5
 
 _SATURATED_HINTS = {"button-bg", "accent", "link"}
 _BRAND_FALLBACK = "#0F766E"
+
+#: What a `declared` basis is worth (clone-fidelity F0.3). A role the site named in its own
+#: stylesheet is as good as a directly observed swatch — and no better: 1.0 stays reserved
+#: for things that cannot be wrong, and a declaration can be stale or aspirational.
+DECLARED_ROLE_CONFIDENCE = 0.9
 
 
 @dataclass
@@ -52,7 +64,20 @@ def _pointer(cluster: ColorCluster) -> str:
 
 
 def _is_near_neutral(cluster: ColorCluster) -> bool:
-    return hex_to_oklch(cluster.representative)[1] < NEAR_NEUTRAL_C
+    return _is_near_neutral_hex(cluster.representative)
+
+
+def _is_near_neutral_hex(hex_value: str) -> bool:
+    """Is this color a neutral — a black, white or grey — rather than a hue?
+
+    Deliberately `NEAR_NEUTRAL_C` (0.03) and NOT the `_is_saturated` floor (0.07) that the
+    clustered brand search uses. The gate exists to catch a declaration that names a NEUTRAL
+    as the brand, not to impose a saturation minimum: plenty of real brands are muted, and a
+    declaration is exactly the evidence that lets us keep one clustering would have discarded
+    (`_is_saturated` would have refused a slate-blue brand and fallen through to the platform
+    teal — strictly worse than believing the site).
+    """
+    return hex_to_oklch(hex_value)[1] < NEAR_NEUTRAL_C
 
 
 def _is_saturated(cluster: ColorCluster) -> bool:
@@ -67,89 +92,190 @@ def _has_custom_prop(cluster: ColorCluster) -> bool:
     return any(hint.startswith("custom-prop:") for hint in cluster.role_hints)
 
 
-def assign_light_roles(clusters: list[ColorCluster]) -> LightRoles:
+def _declared_map(
+    declared: list[DeclaredRoleEvidence] | None,
+) -> dict[str, DeclaredRoleEvidence]:
+    """role → the declaration for it. Later duplicates lose (capture emits at most one)."""
+    out: dict[str, DeclaredRoleEvidence] = {}
+    for entry in declared or []:
+        out.setdefault(entry.role, entry)
+    return out
+
+
+def _declared_assignment(entry: DeclaredRoleEvidence) -> RoleAssignment:
+    return RoleAssignment(entry.value, "declared", f"custom-prop:{entry.property_name}")
+
+
+def _claim_matching_clusters(
+    light: list[ColorCluster], hex_value: str, chosen_ids: set[int]
+) -> None:
+    """Retire the clusters a declared role has just spoken for.
+
+    A declaration carries no cluster of its own, so without this the very same swatch would
+    still be sitting in the pool — free to be crowned the accent, or to reappear as a named
+    extra beside the role it already fills.
+    """
+    for cluster in light:
+        if cluster.representative.upper() == hex_value.upper():
+            chosen_ids.add(id(cluster))
+
+
+def assign_light_roles(
+    clusters: list[ColorCluster],
+    declared: list[DeclaredRoleEvidence] | None = None,
+) -> LightRoles:
     light = [c for c in clusters if c.theme == "light"]
     diagnostics: list[dict] = []
     assignments: dict[str, RoleAssignment] = {}
     chosen_ids: set[int] = set()
+    stated = _declared_map(declared)
 
     # 1. page_bg
-    page_hinted = _first(light, lambda c: _has_hint(c, "page-bg"))
-    if page_hinted is not None:
-        page = RoleAssignment(page_hinted.representative, "evidence", _pointer(page_hinted), page_hinted)
-        chosen_ids.add(id(page_hinted))
+    declared_page = stated.get("surface.page")
+    if declared_page is not None:
+        page = _declared_assignment(declared_page)
+        _claim_matching_clusters(light, page.hex, chosen_ids)
     else:
-        bright_neutral = _first(
-            light,
-            lambda c: _is_near_neutral(c) and hex_to_oklch(c.representative)[0] > 0.9,
-        )
-        if bright_neutral is not None:
-            page = RoleAssignment(bright_neutral.representative, "evidence", _pointer(bright_neutral), bright_neutral)
-            chosen_ids.add(id(bright_neutral))
+        page_hinted = _first(light, lambda c: _has_hint(c, "page-bg"))
+        if page_hinted is not None:
+            page = RoleAssignment(page_hinted.representative, "evidence", _pointer(page_hinted), page_hinted)
+            chosen_ids.add(id(page_hinted))
         else:
-            page = RoleAssignment("#FFFFFF", "default", "default:surface.page defaulted")
-            diagnostics.append(_diag("LUMI0201", "info", "surface.page defaulted"))
+            bright_neutral = _first(
+                light,
+                lambda c: _is_near_neutral(c) and hex_to_oklch(c.representative)[0] > 0.9,
+            )
+            if bright_neutral is not None:
+                page = RoleAssignment(bright_neutral.representative, "evidence", _pointer(bright_neutral), bright_neutral)
+                chosen_ids.add(id(bright_neutral))
+            else:
+                page = RoleAssignment("#FFFFFF", "default", "default:surface.page defaulted")
+                diagnostics.append(_diag("LUMI0201", "info", "surface.page defaulted"))
     assignments["surface.page"] = page
 
-    # 2. text_primary
-    text_hinted = _first(
-        light,
-        lambda c: _has_hint(c, "body-text") and contrast_ratio(c.representative, page.hex) >= _CONTRAST_MIN,
-    )
-    if text_hinted is not None:
-        text = RoleAssignment(text_hinted.representative, "evidence", _pointer(text_hinted), text_hinted)
-        chosen_ids.add(id(text_hinted))
-    else:
-        dark_neutral = _last(
-            sorted(
-                [c for c in light if _is_near_neutral(c) and c.weight > 0],
-                key=lambda c: (-hex_to_oklch(c.representative)[0],),
+    # 2. text_primary. A DECLARED text color still has to clear the same AA gate the
+    # clustered one always has: a site can name `--primary-foreground` (shadcn's INVERSE
+    # text) as readily as `--text-color`, and a declaration we cannot read on the page is
+    # worse than the heuristic it displaced. Refusal is loud, never silent.
+    declared_text = stated.get("text.primary")
+    if declared_text is not None and contrast_ratio(declared_text.value, page.hex) < _CONTRAST_MIN:
+        diagnostics.append(
+            _diag(
+                "LUMI0518",
+                "warning",
+                f"declared text role {declared_text.property_name} ({declared_text.value}) "
+                f"cannot be read on the page surface ({page.hex}); clustered evidence used",
             )
         )
-        if dark_neutral is not None:
-            text = RoleAssignment(dark_neutral.representative, "evidence", _pointer(dark_neutral), dark_neutral)
-            chosen_ids.add(id(dark_neutral))
+        declared_text = None
+    if declared_text is not None:
+        text = _declared_assignment(declared_text)
+        _claim_matching_clusters(light, text.hex, chosen_ids)
+    else:
+        text_hinted = _first(
+            light,
+            lambda c: _has_hint(c, "body-text") and contrast_ratio(c.representative, page.hex) >= _CONTRAST_MIN,
+        )
+        if text_hinted is not None:
+            text = RoleAssignment(text_hinted.representative, "evidence", _pointer(text_hinted), text_hinted)
+            chosen_ids.add(id(text_hinted))
         else:
-            derived = with_lightness(page.hex, 0.25)
-            text = RoleAssignment(derived, "derived", "derived:text.primary(page-25)")
+            dark_neutral = _last(
+                sorted(
+                    [c for c in light if _is_near_neutral(c) and c.weight > 0],
+                    key=lambda c: (-hex_to_oklch(c.representative)[0],),
+                )
+            )
+            if dark_neutral is not None:
+                text = RoleAssignment(dark_neutral.representative, "evidence", _pointer(dark_neutral), dark_neutral)
+                chosen_ids.add(id(dark_neutral))
+            else:
+                derived = with_lightness(page.hex, 0.25)
+                text = RoleAssignment(derived, "derived", "derived:text.primary(page-25)")
     text = _ensure_contrast_light(text, page.hex, diagnostics)
     assignments["text.primary"] = text
 
-    # 3. brand
-    brand_hinted = _first(
-        light,
-        lambda c: _is_saturated(c) and (_has_hint(c, *_SATURATED_HINTS) or _has_custom_prop(c)),
-    )
-    if brand_hinted is not None:
-        brand = RoleAssignment(brand_hinted.representative, "evidence", _pointer(brand_hinted), brand_hinted)
-        chosen_ids.add(id(brand_hinted))
+    # 3. brand. Like the text gate above, a DECLARED brand still has to be the kind of color
+    # the role is for. Webflow's Client-First convention names a brand's whole family off one
+    # prefix — `--base-color-brand--black`, `--…--green`, `--…--white` — so "the site called
+    # it brand" is not on its own evidence that a given member IS the brand. Capture already
+    # ranks the family by chroma; if even the most chromatic member is a neutral, the site
+    # named a family and not a brand, and clustering (which has always required saturation)
+    # is the better answer. Loud, never silent.
+    declared_brand = stated.get("surface.brand")
+    if declared_brand is not None and _is_near_neutral_hex(declared_brand.value):
+        diagnostics.append(
+            _diag(
+                "LUMI0519",
+                "warning",
+                f"declared brand role {declared_brand.property_name} "
+                f"({declared_brand.value}) is a neutral, not a brand color; "
+                f"clustered evidence used",
+            )
+        )
+        declared_brand = None
+    if declared_brand is not None:
+        brand = _declared_assignment(declared_brand)
+        _claim_matching_clusters(light, brand.hex, chosen_ids)
     else:
-        brand_any = _first(light, _is_saturated)
-        if brand_any is not None:
-            brand = RoleAssignment(brand_any.representative, "evidence", _pointer(brand_any), brand_any)
-            chosen_ids.add(id(brand_any))
+        brand_hinted = _first(
+            light,
+            lambda c: _is_saturated(c) and (_has_hint(c, *_SATURATED_HINTS) or _has_custom_prop(c)),
+        )
+        if brand_hinted is not None:
+            brand = RoleAssignment(brand_hinted.representative, "evidence", _pointer(brand_hinted), brand_hinted)
+            chosen_ids.add(id(brand_hinted))
         else:
-            brand = RoleAssignment(_BRAND_FALLBACK, "default", "default:no brand color found")
-            diagnostics.append(_diag("LUMI0203", "warning", "no brand color found — platform teal used"))
+            brand_any = _first(light, _is_saturated)
+            if brand_any is not None:
+                brand = RoleAssignment(brand_any.representative, "evidence", _pointer(brand_any), brand_any)
+                chosen_ids.add(id(brand_any))
+            else:
+                brand = RoleAssignment(_BRAND_FALLBACK, "default", "default:no brand color found")
+                diagnostics.append(_diag("LUMI0203", "warning", "no brand color found — platform teal used"))
     assignments["surface.brand"] = brand
 
     # 4. accent_secondary. Named clusters are author-labelled swatches destined
     # for the extras list (rule 5), so they are not auto-promoted to accent here;
     # accent auto-selection only considers unnamed saturated evidence.
-    brand_h = hex_to_oklch(brand.hex)[2]
-    accent_cluster = _first(
-        light,
-        lambda c: _is_saturated(c)
-        and id(c) not in chosen_ids
-        and c.name is None
-        and not any(h.startswith("named:") for h in c.role_hints)
-        and hue_distance(hex_to_oklch(c.representative)[2], brand_h) > 30.0,
-    )
-    if accent_cluster is not None:
-        assignments["surface.accent"] = RoleAssignment(
-            accent_cluster.representative, "evidence", _pointer(accent_cluster), accent_cluster
+    # A declared accent that merely restates the brand color is dropped: the kit already
+    # carries that hex under its own role, and `surface.accent` exists to be the OTHER one.
+    declared_accent = stated.get("surface.accent")
+    if declared_accent is not None and declared_accent.value.upper() == brand.hex.upper():
+        declared_accent = None
+    # The accent is the brand's twin: the clustered path only ever filled it from a saturated
+    # cluster, so the same neutrality guard applies for the same reason (`--…-accent--white`
+    # is as real a Client-First name as `--…-brand--white`). Smaller blast radius than brand
+    # — `surface.accent`, `text.accent`, the `accent.primary` alias — but the identical bug.
+    elif declared_accent is not None and _is_near_neutral_hex(declared_accent.value):
+        diagnostics.append(
+            _diag(
+                "LUMI0519",
+                "warning",
+                f"declared accent role {declared_accent.property_name} "
+                f"({declared_accent.value}) is a neutral, not an accent color; "
+                f"clustered evidence used",
+            )
         )
-        chosen_ids.add(id(accent_cluster))
+        declared_accent = None
+    if declared_accent is not None:
+        assignments["surface.accent"] = _declared_assignment(declared_accent)
+        _claim_matching_clusters(light, declared_accent.value, chosen_ids)
+    else:
+        brand_h = hex_to_oklch(brand.hex)[2]
+        accent_cluster = _first(
+            light,
+            lambda c: _is_saturated(c)
+            and id(c) not in chosen_ids
+            and c.name is None
+            and not any(h.startswith("named:") for h in c.role_hints)
+            and hue_distance(hex_to_oklch(c.representative)[2], brand_h) > 30.0,
+        )
+        if accent_cluster is not None:
+            assignments["surface.accent"] = RoleAssignment(
+                accent_cluster.representative, "evidence", _pointer(accent_cluster), accent_cluster
+            )
+            chosen_ids.add(id(accent_cluster))
 
     # 5. extras — named clusters not otherwise chosen
     extras = [

@@ -16,7 +16,14 @@ import json
 import math
 from typing import Any, Optional
 
-from .brand_brief import BRAND_BRIEF_TOKEN_BUDGET, read_brief, render_brand_grammar
+from .brand_brief import (
+    BRAND_BRIEF_TOKEN_BUDGET,
+    GRAMMAR_AUDIT_CHAR_BUDGET,
+    read_brief,
+    read_grammar_audit,
+    render_brand_grammar,
+    render_grammar_audit,
+)
 from .engine_mirror import (
     ALIAS_DEPTH_CAP,
     record_pixel_dims,
@@ -75,6 +82,7 @@ def build_brand_card(
     source: Optional[str] = None,
     notice: Optional[str] = None,
     include_brief: bool = False,
+    include_grammar_audit: bool = False,
     asset_manifest: Optional[JsonObject] = None,
 ) -> Optional[JsonObject]:
     """The compact card, or None when the run has no attached kit.
@@ -85,6 +93,14 @@ def build_brand_card(
     kit that carries no `BrandBrief@1` renders today's card either way — the
     brief and the geometry ride together, so "no brief" is one clean switch
     back to pre-slice-4 behavior rather than two half-states.
+
+    ``include_grammar_audit`` (clone-fidelity F2.4) adds the kit's
+    `BrandGrammarAudit@1` — the measured law for sections the agent COMPOSES.
+    Its own switch rather than a ride-along on ``include_brief``: the two are
+    independently owned (a model writes the brief, arithmetic extracts the
+    audit), a kit can carry either, both or neither, and folding them together
+    would make a kit with one and not the other unrepresentable. It also defaults
+    OFF, so the scene/ad card stays byte-identical.
 
     ``asset_manifest`` is the run's by-value kit asset manifest (the same
     ``config.brand_kit_assets`` ``use_brand_asset`` reads: ``{asset_id: {"record":
@@ -148,25 +164,49 @@ def build_brand_card(
                 "estimated_tokens": render.estimated_tokens,
                 "token_budget": BRAND_BRIEF_TOKEN_BUDGET,
             }
+    if include_grammar_audit:
+        audit = read_grammar_audit(brand_kit)
+        if audit is not None:
+            rendered = render_grammar_audit(audit)
+            card["grammar_audit"] = {
+                "schema": "BrandGrammarAudit@1",
+                "rendered": rendered.markdown,
+                "truncated": rendered.truncated,
+                "dropped_rules": rendered.dropped_rules,
+                "dropped_from": list(rendered.dropped_from),
+                "characters": rendered.characters,
+                "char_budget": GRAMMAR_AUDIT_CHAR_BUDGET,
+            }
     return card
+
+
+#: The card keys whose value is PROSE, in the order they are appended below.
+#: Serializing prose inside the JSON escapes every newline and hands the model a
+#: thousand-token single line, so each one is spliced out and set beside it.
+_PROSE_BLOCKS = ("creative_brief", "grammar_audit")
 
 
 def render_brand_card_text(card: JsonObject) -> str:
     """The card as it is INJECTED into a role prompt.
 
-    The card is JSON; the brief is prose. Serializing the prose inside the JSON
-    would escape every newline and hand the model a 6,000-token single line, so
-    the brief is spliced out and appended beside it. A card with no brief
-    renders exactly the `json.dumps(card, indent=2)` this seam has always
+    The card is JSON; the brief and the grammar audit are prose. A card carrying
+    neither renders exactly the `json.dumps(card, indent=2)` this seam has always
     injected — byte for byte, which is the back-compat guarantee.
     """
-    brief_block = card.get("creative_brief")
-    if not isinstance(brief_block, dict):
+    prose = [
+        rendered
+        for rendered in (
+            (card.get(key) or {}).get("rendered")
+            if isinstance(card.get(key), dict)
+            else None
+            for key in _PROSE_BLOCKS
+        )
+        if isinstance(rendered, str) and rendered
+    ]
+    if not prose:
         return json.dumps(card, indent=2)
-    body = {key: value for key, value in card.items() if key != "creative_brief"}
-    rendered = brief_block.get("rendered")
-    prose = rendered if isinstance(rendered, str) else ""
-    return json.dumps(body, indent=2) + "\n\n" + prose
+    body = {key: value for key, value in card.items() if key not in _PROSE_BLOCKS}
+    return json.dumps(body, indent=2) + "\n\n" + "\n\n".join(prose)
 
 
 def _font_gaps(fonts: JsonObject) -> list[str]:

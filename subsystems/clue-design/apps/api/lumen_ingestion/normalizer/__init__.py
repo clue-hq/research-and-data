@@ -56,7 +56,11 @@ def normalize_evidence(
     diagnostics: list[dict] = []
 
     clusters = cluster_colors(evidence.colors)
-    light = assign_light_roles(clusters)
+    # Declared roles ride alongside the clusters, not through them (clone-fidelity F0.3):
+    # the site's own naming of a color outranks anything we can infer from how often that
+    # color appears. Empty for every non-website capture and every pre-F0.3 bundle, in
+    # which case `assign_light_roles` behaves exactly as it always has.
+    light = assign_light_roles(clusters, evidence.declared_roles)
     diagnostics.extend(light.diagnostics)
 
     page_hex = light.assignments["surface.page"].hex

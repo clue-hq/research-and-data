@@ -25,13 +25,14 @@ import json
 import logging
 from functools import partial
 from pathlib import Path
-from typing import Any, Awaitable, Callable, Optional, Protocol
+from typing import Any, Awaitable, Callable, Optional, Protocol, Sequence
 
 from clue_storage import StorageBackend, storage_from_settings
 from lumen_api.database import NotFoundError
 from lumen_api.design_store import DesignBlobStore, HybridRepository
 from py_lumen_config import settings
 
+from .grammar_audit import extract_grammar_audit
 from .jobs import IngestionJobStore, StageReporter, run_ingestion_job
 from .normalizer import normalize_evidence
 
@@ -42,7 +43,12 @@ logger = logging.getLogger(__name__)
 
 class _CaptureCallable(Protocol):
     def __call__(
-        self, url: str, *, reporter: StageReporter, force_render: bool = ...
+        self,
+        url: str,
+        *,
+        reporter: StageReporter,
+        force_render: bool = ...,
+        page_urls: "Sequence[str] | None" = ...,
     ) -> Awaitable[Any]: ...
 
 
@@ -53,11 +59,17 @@ class _BuildEvidenceCallable(Protocol):
 
 
 def _default_capture(
-    url: str, *, reporter: StageReporter, force_render: bool = False
+    url: str,
+    *,
+    reporter: StageReporter,
+    force_render: bool = False,
+    page_urls: "Sequence[str] | None" = None,
 ) -> Awaitable[Any]:
     from .capture import capture_website
 
-    return capture_website(url, reporter=reporter, force_render=force_render)
+    return capture_website(
+        url, reporter=reporter, force_render=force_render, page_urls=page_urls
+    )
 
 
 def _default_build_evidence(
@@ -296,6 +308,89 @@ def _validation_diagnostics(validation: JsonObject) -> list[JsonObject]:
 
 
 # ---------------------------------------------------------------------------
+# Snapshot custody (clone-fidelity F0.1) — additive, loud, never fatal.
+# ---------------------------------------------------------------------------
+
+
+def _requested_page_urls(request: JsonObject) -> "list[str] | None":
+    """The extra pages this job asked for (F0.4), or ``None`` — the entry page alone.
+
+    Read off the durable job request rather than added to the route DTO: F0.4 is a PROVISION.
+    Nothing produces a page list yet (nav discovery is later work), and a request shape that
+    exists before a producer does is a shape nobody has tested against real input. Read
+    defensively for the same reason — the request is stored JSON, so a malformed value is a
+    thing that can happen, and it must not take an ingestion down with it.
+    """
+    raw = request.get("page_urls")
+    if not isinstance(raw, list):
+        return None
+    pages = [page for page in raw if isinstance(page, str) and page]
+    return pages or None
+
+
+def _outcome_snapshots(outcome: Any) -> list[Any]:
+    """Every page this capture produced, entry page first.
+
+    ``CaptureOutcome.snapshots`` is the F0.4 multi-page list; ``.snapshot`` is the entry page
+    every pre-F0.4 caller (and every capture stub in the suites) still speaks. Reading both means
+    a stubbed outcome that only sets ``.snapshot`` is persisted exactly like a real single-page
+    capture, and one that sets neither simply has nothing to persist.
+    """
+    snapshots = getattr(outcome, "snapshots", None)
+    if snapshots:
+        return list(snapshots)
+    snapshot = getattr(outcome, "snapshot", None)
+    return [snapshot] if snapshot is not None else []
+
+
+def _persist_site_snapshots(
+    outcome: Any,
+    *,
+    workspace_id: str,
+    job_id: str,
+    storage: StorageBackend,
+    diagnostics: "list[JsonObject]",
+) -> list[Any]:
+    """Give the capture durable custody. A failure is a DIAGNOSTIC, not the end of the job.
+
+    Snapshot custody is additive to the ingestion's real product (the brand kit its evidence
+    produced). Two failure modes are wrong here and this function exists to avoid both: a silent
+    pass, which is how a clone tier later discovers it has no source to read and nobody knows
+    when that started; and a raise, which would throw away a perfectly good kit because the blob
+    store hiccuped after the evidence was already built. So the failure is recorded loudly —
+    ``LUMI0512`` on the kit's diagnostics, with the exception in the worker log — and the
+    ingestion carries on with an empty ref list.
+    """
+    from .site_snapshot import SNAPSHOT_PERSIST_FAILED_CODE, persist_site_snapshots
+
+    snapshots = _outcome_snapshots(outcome)
+    if not snapshots:
+        return []
+    try:
+        return list(
+            persist_site_snapshots(
+                snapshots,
+                workspace_id=workspace_id,
+                job_id=job_id,
+                storage=storage,
+            )
+        )
+    except Exception as error:  # noqa: BLE001 — custody must not kill an ingestion
+        logger.exception("site snapshot persistence failed for job %s", job_id)
+        diagnostics.append(
+            {
+                "code": SNAPSHOT_PERSIST_FAILED_CODE,
+                "severity": "error",
+                "message": (
+                    "captured site snapshots were not persisted; this ingestion's html, "
+                    f"stylesheets and screenshot are not durable: {type(error).__name__}: {error}"
+                ),
+            }
+        )
+        return []
+
+
+# ---------------------------------------------------------------------------
 # Description engine hook (slice 3 §6) — shared by all three ingestion paths.
 #
 # ``describe.py`` (Agent A) may not exist while this module is edited, so the
@@ -448,6 +543,36 @@ def _maybe_write_brief(
                 "code": "LUMI0903",
                 "severity": "warning",
                 "message": f"the brief stage could not run ({type(error).__name__}): {error}",
+            }
+        )
+        return None
+
+
+def _maybe_extract_grammar_audit(
+    evidence: Any, brand_kit: JsonObject, *, diagnostics: list
+) -> "JsonObject | None":
+    """The kit's `BrandGrammarAudit@1`, or None with a diagnostic.
+
+    Deterministic arithmetic over evidence already in hand — no agent, no
+    screenshots, nothing to configure — so unlike the brief there is no "silent
+    when unconfigured" branch: a website kit always gets one. It is still never a
+    gate: an extraction that throws publishes the kit auditless and says so, the
+    same posture the brief stage takes.
+    """
+    try:
+        return extract_grammar_audit(evidence, brand_kit).model_dump()
+    except Exception as error:  # noqa: BLE001 - the stage may never fail an ingest
+        logger.warning(
+            "the grammar audit could not be extracted; publishing without one", exc_info=True
+        )
+        diagnostics.append(
+            {
+                "code": "LUMI0910",
+                "severity": "warning",
+                "message": (
+                    "the brand grammar audit could not be extracted "
+                    f"({type(error).__name__}): {error}"
+                ),
             }
         )
         return None
@@ -824,6 +949,7 @@ def _ingest(
     url = request["url"]
     requested_kit_id = request.get("brand_kit_id")
     requested_name = request.get("name")
+    page_urls = _requested_page_urls(request)
 
     # FOUNDER RULING (2026-08-20): website ingestion ALWAYS captures at the RENDERED tier —
     # "geometry needs a live page by definition". The brand's measured geometry (radii, stroke
@@ -846,9 +972,25 @@ def _ingest(
     # and drained asynchronously by a fleet worker and the checklist row streams its stage and
     # progress the whole time. If ingestion ever becomes synchronous again, this is the line
     # that makes it unaffordable.
-    outcome = asyncio.run(capture(url, reporter=reporter, force_render=True))
+    outcome = asyncio.run(
+        capture(url, reporter=reporter, force_render=True, page_urls=page_urls)
+    )
     evidence = build_evidence(
         outcome, core=core, store_root=cache_dir, reporter=reporter
+    )
+
+    # Give the capture itself durable custody (clone-fidelity F0.1) — the post-JS html, every
+    # stylesheet fetched, and the full-page screenshot, one row per captured page. Placed HERE,
+    # right after the snapshot is in scope and the evidence is built: the evidence is the job's
+    # product and must not be at risk from a byte-store hiccup, so this runs after it and cannot
+    # fail the job (see ``_persist_site_snapshots``).
+    snapshot_diagnostics: list = []
+    snapshot_refs = _persist_site_snapshots(
+        outcome,
+        workspace_id=repo.workspace_id,
+        job_id=job_id,
+        storage=blobs.storage,
+        diagnostics=snapshot_diagnostics,
     )
 
     # Persist DB asset records for everything the capture layer ingested so
@@ -925,12 +1067,24 @@ def _ingest(
     if brief is not None:
         validated_kit = {**validated_kit, "brief": brief}
 
+    # The grammar audit rides the same slot for the same reason (the engine's
+    # BrandKit has no field for it), and is attached after the brief so the two
+    # kit sections land in a stable order.
+    audit_diagnostics: list = []
+    audit = _maybe_extract_grammar_audit(
+        evidence, validated_kit, diagnostics=audit_diagnostics
+    )
+    if audit is not None:
+        validated_kit = {**validated_kit, "grammar_audit": audit}
+
     diagnostics = (
         result.diagnostics
         + _capture_diagnostics(outcome)
         + _validation_diagnostics(validation)
         + describe_diagnostics
         + brief_diagnostics
+        + audit_diagnostics
+        + snapshot_diagnostics
     )
 
     record = _publish_ingested_kit(
@@ -943,7 +1097,24 @@ def _ingest(
         job_derived_id=requested_kit_id is None,
     )
 
-    evidence_json = _evidence_dump(evidence)
+    # Clone the pages' sections into fragments (clone-fidelity F2.2). AFTER the publish, because
+    # a fragment is bound to the kit VERSION it was cloned into and an existing lineage's version
+    # is allocated inside that write — so this is the first moment the binding can be honest.
+    mint_refs, mint_diagnostics = _mint_page_fragments(
+        outcome,
+        repo=repo,
+        blobs=blobs,
+        brand_kit_id=str(record["brand_kit_id"]),
+        brand_kit_version=int(record["version"]),
+        snapshot_refs=snapshot_refs,
+    )
+
+    evidence_json = _evidence_dump(
+        evidence,
+        site_snapshots=snapshot_refs,
+        web_fragments=mint_refs,
+        fragment_diagnostics=mint_diagnostics,
+    )
     return (record["brand_kit_id"], int(record["version"]), evidence_json)
 
 
@@ -958,13 +1129,211 @@ def _kit_name(evidence: Any, url: str) -> str:
     return host or url
 
 
-def _evidence_dump(evidence: Any) -> Optional[str]:
-    """Dump BrandEvidence to JSON for the job row (it carries no raw bytes)."""
+def _mint_page_fragments(
+    outcome: Any,
+    *,
+    repo: HybridRepository,
+    blobs: DesignBlobStore,
+    brand_kit_id: str,
+    brand_kit_version: int,
+    snapshot_refs: "list[Any]",
+) -> "tuple[list[JsonObject], list[JsonObject]]":
+    """Mint one fragment per section of every page this capture produced (clone-fidelity F2.2).
+
+    **Additive, and never fatal.** The ingestion's product is the brand kit; a cloned section is
+    a bonus on top of it. So this runs after the publish, per page, inside a guard — a byte store
+    that hiccups or a page whose markup defeats the segmenter costs diagnostics on the job's
+    evidence payload and a line in the worker log, never the kit a human was waiting for. It is
+    the same posture ``_persist_site_snapshots`` takes, for the same reason.
+
+    The BUDGET is per ingest, not per page: an eight-page walk must not mint ninety-six sections
+    because each page was individually under the cap. Pages are minted entry-page first, so what
+    the cap keeps is the homepage — which is what anyone cloning a site wants.
+
+    Reads the LIVE capture rather than the persisted snapshot, deliberately: the rehost map needs
+    the downloaded BYTES, and ``design_site_snapshot`` stores the html, the stylesheets and the
+    screenshot but not the assets. Re-reading them would mean re-fetching somebody's site.
+    """
+    from lumen_ingestion.sections import mint as section_mint
+    from lumen_ingestion.sections.segment import segment_snapshot
+
+    refs: list[JsonObject] = []
+    diagnostics: list[JsonObject] = []
+    snapshots = _outcome_snapshots(outcome)
+    if not snapshots:
+        return refs, diagnostics
+
+    by_index = {ref.page_index: ref for ref in snapshot_refs}
+    snapshots = list(snapshots)
+    budget = section_mint.SECTION_MINT_CAP
+    # A SEPARATE ingestion-wide pool for the sections the site hides (F3.0, ruling R-I2). Sharing
+    # one budget let a single CMS homepage carrying a dozen `w-condition-invisible` variants
+    # exhaust the cap and leave later pages' VISIBLE sections uncloned — the clone losing the
+    # thing it exists for in order to keep sections nobody can see. Same size, because it is the
+    # same runaway backstop and not a working limit; separate, so it can never take from the
+    # visible one.
+    dormant_budget = section_mint.SECTION_MINT_CAP
+
+    rehost = section_mint.make_asset_rehoster(blobs)
+    mark_degraded = section_mint.make_degraded_marker(workspace_id=repo.workspace_id)
+
+    for page_index, snapshot in enumerate(snapshots):
+        if budget <= 0:
+            # The per-page cap already says "this page had more"; nothing said "and these pages
+            # were not looked at" — so a three-page walk could clone page one and drop the rest
+            # in silence, which is the same silent truncation one level up.
+            dropped = [
+                getattr(later, "requested_url", "") or f"page {index}"
+                for index, later in enumerate(snapshots[page_index:], start=page_index)
+            ]
+            diagnostics.append(
+                {
+                    "code": section_mint.MINT_CAPPED_CODE,
+                    "severity": "warning",
+                    "message": (
+                        f"this ingestion's {section_mint.SECTION_MINT_CAP}-section budget was "
+                        f"spent before reaching {len(dropped)} more captured page(s), which were "
+                        f"not cloned at all: {', '.join(dropped[:10])}"
+                    ),
+                    # Every LUMI0532 says which pool it is about: the mint path emits
+                    # "visible"/"dormant" per page, and this one is the whole-pages case.
+                    "scope": "pages",
+                    "cap": section_mint.SECTION_MINT_CAP,
+                    "pages_not_minted": dropped[:10],
+                    "remaining_pages": len(dropped),
+                }
+            )
+            break
+        try:
+            segmentation = segment_snapshot(
+                _SnapshotView(snapshot, snapshot_id=getattr(by_index.get(page_index), "snapshot_id", None))
+            )
+            diagnostics.extend(dict(entry) for entry in segmentation.diagnostics)
+            result = section_mint.mint_sections(
+                segmentation,
+                html=snapshot.html,
+                stylesheets=list(getattr(snapshot, "stylesheets", None) or []),
+                captured=section_mint.captured_assets(snapshot),
+                screenshot=_screenshot_bytes(snapshot),
+                source_kit_id=brand_kit_id,
+                source_kit_version=brand_kit_version,
+                register_bytes=rehost,
+                create_fragment=section_mint.make_fragment_writer(
+                    blobs.storage, workspace_id=repo.workspace_id
+                ),
+                mark_degraded=mark_degraded,
+                limit=budget,
+                dormant_limit=dormant_budget,
+            )
+        except Exception as error:  # noqa: BLE001 — cloning must not kill an ingestion
+            logger.exception("fragment minting failed for page %s", page_index)
+            diagnostics.append(
+                {
+                    "code": section_mint.MINT_FAILED_CODE,
+                    "severity": "error",
+                    "message": (
+                        f"no sections were cloned from page {page_index}: "
+                        f"{type(error).__name__}: {error}"
+                    ),
+                    "page_index": page_index,
+                }
+            )
+            continue
+        dormant = sum(1 for minted in result.minted if minted.hidden_on_source)
+        budget -= len(result.minted) - dormant
+        dormant_budget -= dormant
+        refs.extend(minted.as_job_ref() for minted in result.minted)
+        diagnostics.extend(dict(entry) for entry in result.diagnostics)
+    return refs, diagnostics
+
+
+class _SnapshotView:
+    """The shape :func:`segment_snapshot` reads, over a LIVE capture rather than a stored row.
+
+    The segmenter is duck-typed on ``LoadedSiteSnapshot`` (Task 11's D2), and a ``SiteSnapshot``
+    is nearly that shape already — it just spells its geometry differently and does not know its
+    own persisted id. Three lines of adapter beats either loading the row back (bytes we already
+    hold, a round trip we already paid for) or teaching the segmenter a second input shape.
+    """
+
+    def __init__(self, snapshot: Any, *, snapshot_id: "str | None") -> None:
+        geometry = getattr(snapshot, "geometry", None)
+        self.html = getattr(snapshot, "html", "") or ""
+        self.page_url = getattr(snapshot, "requested_url", "") or ""
+        self.snapshot_id = snapshot_id
+        self.viewport_width = _viewport_from_geometry(geometry)
+        from .sections.bands import (
+            SNAPSHOT_META_BANDS_KEY,
+            SNAPSHOT_META_SKIPPED_KEY,
+            SNAPSHOT_META_TRUNCATED_KEY,
+            bands_for_meta,
+            skipped_for_meta,
+        )
+
+        # PROJECT THE SAME THREE KEYS the persisted snapshot row carries (`site_snapshot.py`),
+        # not just the bands. The skip records are the browser's own answer to "is this hidden?"
+        # — the strongest evidence the segmenter has, both for binding a band sequence and (F3.0)
+        # for deciding a section is hidden on the source site rather than merely class-named. The
+        # live path was reading the row's shape minus that key, so a real ingestion made those
+        # judgements from markup alone while the persisted snapshot beside it held the answer.
+        self.meta = {
+            SNAPSHOT_META_BANDS_KEY: bands_for_meta(geometry),
+            SNAPSHOT_META_SKIPPED_KEY: skipped_for_meta(geometry),
+            SNAPSHOT_META_TRUNCATED_KEY: bool(
+                isinstance(geometry, dict) and geometry.get("truncated")
+            ),
+        }
+
+
+def _viewport_from_geometry(geometry: Any) -> "int | None":
+    if not isinstance(geometry, dict):
+        return None
+    try:
+        width = int(geometry.get("viewport"))  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+    return width if width > 0 else None
+
+
+def _screenshot_bytes(snapshot: Any) -> "bytes | None":
+    import base64 as _base64
+
+    for download in getattr(snapshot, "downloads", None) or []:
+        if getattr(download, "kind", None) != "screenshot":
+            continue
+        try:
+            return _base64.b64decode(getattr(download, "bytes_b64", "") or "")
+        except Exception:  # noqa: BLE001 — a corrupt shot costs a preview, not the job
+            return None
+    return None
+
+
+def _evidence_dump(
+    evidence: Any,
+    *,
+    site_snapshots: "list[Any] | None" = None,
+    web_fragments: "list[JsonObject] | None" = None,
+    fragment_diagnostics: "list[JsonObject] | None" = None,
+) -> Optional[str]:
+    """Dump BrandEvidence to JSON for the job row (it carries no raw bytes).
+
+    ``site_snapshots`` (clone-fidelity F0.1) rides along on the website lane: the bounded refs
+    — snapshot id, page url, html digest, screenshot digest — for the pages this job captured,
+    so "what did this ingestion actually keep?" is answerable from the job row itself rather
+    than only by querying the snapshot table. ``evidence_json`` is the JOB's evidence payload,
+    not a serialized ``BrandEvidence`` (the ad-assets lane writes a step report into the same
+    column), which is why the key can live at the top level.
+    """
     if evidence is None:
         return None
-    if hasattr(evidence, "model_dump"):
-        return json.dumps(evidence.model_dump(), sort_keys=True, separators=(",", ":"))
-    return json.dumps(evidence, sort_keys=True, separators=(",", ":"))
+    payload = evidence.model_dump() if hasattr(evidence, "model_dump") else evidence
+    if site_snapshots is not None:
+        payload = {**payload, "site_snapshots": [ref.as_job_ref() for ref in site_snapshots]}
+    if web_fragments is not None:
+        payload = {**payload, "web_fragments": list(web_fragments)}
+    if fragment_diagnostics:
+        payload = {**payload, "web_fragment_diagnostics": list(fragment_diagnostics)}
+    return json.dumps(payload, sort_keys=True, separators=(",", ":"))
 
 
 # ---------------------------------------------------------------------------
