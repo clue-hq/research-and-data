@@ -1068,10 +1068,19 @@ def _fit_preview(
                     outcome=OUTCOME_REFUSED,
                     message=(
                         f"section {record.index} ({record.role}) of {segmentation.page_url} was "
-                        f"minted WITHOUT a preview: its crop was {original} bytes and would not "
-                        f"fit the {MAX_PREVIEW_BYTES}-byte budget even re-encoded at "
-                        f"{MIN_PREVIEW_WIDTH}px wide. An isolation render can photograph it on "
-                        "demand"
+                        f"minted WITHOUT a preview: its crop was {original} bytes and does not "
+                        f"fit the {MAX_PREVIEW_BYTES}-byte budget"
+                        + (
+                            f", even re-encoded at {MIN_PREVIEW_WIDTH}px wide"
+                            if width is not None
+                            # The crop came out of PIL moments ago, so this is close to
+                            # unreachable — and a message claiming a re-encode that never
+                            # happened would be exactly the kind of confident wrongness the
+                            # rest of this module is written against.
+                            else "; it could not be re-encoded, because it did not decode as an "
+                            "image"
+                        )
+                        + ". An isolation render can photograph it on demand"
                     ),
                     section_index=record.index,
                     role=record.role,

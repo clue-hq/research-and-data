@@ -1287,6 +1287,7 @@ def test_a_preview_that_will_not_fit_even_at_the_floor_width_is_dropped_and_says
     lines = _budget_lines(outcome, "preview bytes")
     assert lines and all(line["outcome"] == "refused" for line in lines)
     assert lines[0]["encoded_width"] == mint_module.MIN_PREVIEW_WIDTH
+    assert "even re-encoded at 320px wide" in lines[0]["message"]
     assert "isolation render" in lines[0]["message"]
     # Minted in full, without a picture — never refused for want of a thumbnail.
     assert len(outcome.minted) == 4
