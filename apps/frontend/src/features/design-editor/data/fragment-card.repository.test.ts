@@ -89,7 +89,7 @@ test("a preview is attached once", async () => {
   await repository.generatePreview(DORMANT);
   await assert.rejects(
     () => repository.generatePreview(DORMANT),
-    (error: unknown) => error instanceof FragmentCardError && error.reason === "preview_present",
+    (error: unknown) => error instanceof FragmentCardError && error.reason === "already_present",
   );
 });
 
@@ -100,8 +100,9 @@ test("the lineage reads from both ends", async () => {
   assert.equal(original.degradedReason, "dead_height");
   // The reason CODE is not what a human reads; the note is what the decision turns on.
   assert.ok(original.degradedNote?.includes("artificial scroll height"));
+  // The repairs of a row are read off the FAMILY, which is the card's one lineage list (R18-1).
   assert.deepEqual(
-    original.repairs.map((entry) => entry.fragmentId),
+    original.family.filter((entry) => entry.derivedFrom === ORIGINAL).map((entry) => entry.fragmentId),
     [REPAIR],
   );
 
@@ -126,7 +127,8 @@ test("a repair can be retired and the harvested original never can", async () =>
 
   const retired = await repository.retire(REPAIR);
   assert.equal(retired.status, "deprecated");
-  assert.equal((await repository.get(ORIGINAL)).repairs[0]?.status, "deprecated");
+  const family = (await repository.get(ORIGINAL)).family;
+  assert.equal(family.find((entry) => entry.fragmentId === REPAIR)?.status, "deprecated");
 });
 
 test("the fixture seed is a valid card set", () => {

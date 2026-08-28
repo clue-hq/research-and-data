@@ -243,7 +243,7 @@ def _run_isolated[T](coro: Awaitable[T]) -> T:
 
     A sync FastAPI endpoint already qualifies; the ingestion pipeline and the fleet handler's
     turn body do not, so those callers get a one-shot worker thread instead. Shares the reasoning
-    (and the fate) of ``design_store._run_isolated``.
+    (and the fate) of ``design_store.run_isolated``.
     """
     try:
         asyncio.get_running_loop()

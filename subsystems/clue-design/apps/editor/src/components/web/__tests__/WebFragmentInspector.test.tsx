@@ -50,7 +50,6 @@ function card(overrides: Partial<FragmentCard> = {}): FragmentCard {
     degradedNote: null,
     derivedFrom: null,
     derivedReason: null,
-    repairs: [],
     repairsWhat: null,
     supersededBy: null,
     lineageAmbiguous: [],

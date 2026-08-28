@@ -85,7 +85,6 @@ export interface FragmentCard {
   degradedNote: string | null;
   derivedFrom: string | null;
   derivedReason: string | null;
-  repairs: FragmentLineageEntry[];
   repairsWhat: FragmentLineageEntry | null;
   supersededBy: string | null;
   lineageAmbiguous: string[];
@@ -181,9 +180,6 @@ export function readFragmentCard(value: unknown): FragmentCard | null {
     degradedNote: text(record.degraded_note),
     derivedFrom: text(record.derived_from),
     derivedReason: text(record.derived_reason),
-    repairs: (Array.isArray(record.repairs) ? record.repairs : [])
-      .map(readLineageEntry)
-      .filter((entry): entry is FragmentLineageEntry => entry !== null),
     repairsWhat: readLineageEntry(record.repairs_what),
     supersededBy: text(record.superseded_by),
     lineageRoot: text(record.lineage_root),

@@ -264,6 +264,21 @@ def list_web_fragments(
     )
 
 
+def list_web_fragment_lineage(
+    *, workspace_id: str, fragment_id: str
+) -> list[dict[str, Any]]:
+    """One fragment's whole repair family, statuses unfiltered — the lineage resolver's input.
+
+    The bounded alternative to reading every row in the workspace to answer a question about one
+    family. See the DAL for why the read is two recursive halves and why it filters no status.
+    """
+    return DesignStoreBridge(workspace_id)._run(
+        lambda conn: dal.list_web_fragment_lineage(
+            conn, workspace_id=workspace_id, fragment_id=fragment_id
+        )
+    )
+
+
 def set_web_fragment_status(
     *, workspace_id: str, fragment_id: str, status: str
 ) -> dict[str, Any]:
@@ -381,6 +396,7 @@ __all__ = [
     "LoadedFragment",
     "attach_web_fragment_preview",
     "create_web_fragment",
+    "list_web_fragment_lineage",
     "list_web_fragments",
     "read_web_fragment",
     "set_web_fragment_degraded",

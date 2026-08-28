@@ -54,21 +54,14 @@ SLOTS = (
 @pytest.fixture()
 def client(tmp_path: Path, design_storage: FsStorage) -> TestClient:
     app = create_app(tmp_path / "engine-cache", storage=design_storage)
-    # The camera, injected: `render_isolation_preview` still builds the real isolation page out
-    # of the real artifact (that is what `test_fragment_isolation_preview.py` asserts); only the
-    # shutter is faked, so these tests do not need a browser.
-    import lumen_api.main as main_module
-
-    real = main_module.render_isolation_preview
-
-    def _no_camera(core: Any, loaded: Any, **kwargs: Any):
-        return real(core, loaded, shoot=lambda page, assets: PNG, **kwargs)
-
-    main_module.render_isolation_preview = _no_camera  # type: ignore[assignment]
-    try:
-        yield make_client(app)
-    finally:
-        main_module.render_isolation_preview = real  # type: ignore[assignment]
+    # The camera, injected at the seam the composition root uses (F3.4, ledger T18-M-13).
+    # `render_isolation_preview` still builds the real isolation page out of the real artifact
+    # (that is what `test_fragment_isolation_preview.py` asserts) and still runs the real
+    # fail-closed asset route; only the shutter is this fake, so these tests need no browser.
+    # Nothing is monkeypatched: `app.state.isolation_shooter` is how the browser half is supplied
+    # in production too, so the test exercises the wiring rather than stepping around it.
+    app.state.isolation_shooter = lambda page, assets: PNG
+    yield make_client(app)
 
 
 def _mint(
@@ -254,7 +247,7 @@ def test_a_preview_is_generated_once_and_the_second_attempt_says_so(
     assert client.post(f"/web/fragments/{row['fragment_id']}/preview").status_code == 200
     again = client.post(f"/web/fragments/{row['fragment_id']}/preview")
     assert again.status_code == 409, again.text
-    assert again.json()["detail"]["reason"] == "preview_present"
+    assert again.json()["detail"]["reason"] == "already_present"
 
 
 def test_a_section_that_is_not_hidden_has_nothing_to_activate(
@@ -369,9 +362,11 @@ def test_the_broken_originals_card_shows_the_marker_its_reason_and_its_repairs(
     assert card["degraded_reason"] == "dead_height"
     # The reason CODE is not what a human reads; the note is what the decision turns on.
     assert "artificial scroll height" in card["degraded_note"]
-    assert [entry["fragment_id"] for entry in card["repairs"]] == [repair["fragment_id"]]
+    # The repair is reachable through the FAMILY, which is the card's one lineage list (R18-1).
+    children = [entry for entry in card["family"] if entry["derived_from"] == original["fragment_id"]]
+    assert [entry["fragment_id"] for entry in children] == [repair["fragment_id"]]
     # A repair is born draft, so it is listed and it is honestly unreleased.
-    assert card["repairs"][0]["status"] == "draft"
+    assert children[0]["status"] == "draft"
     assert card["superseded_by"] is None
 
 
@@ -673,7 +668,7 @@ def test_an_unbroken_never_repaired_clone_carries_no_lineage_noise(
     card = client.get(f"/web/fragments/{row['fragment_id']}").json()
     assert card["degraded"] is False
     assert card["degraded_note"] is None
-    assert card["repairs"] == []
+    assert [entry["fragment_id"] for entry in card["family"]] == [row["fragment_id"]]
     assert card["repairs_what"] is None
     assert card["superseded_by"] is None
     assert card["lineage_ambiguous"] == []

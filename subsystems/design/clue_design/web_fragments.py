@@ -379,6 +379,63 @@ async def list_web_fragments(
     return [_from_row(row) for row in rows]
 
 
+async def list_web_fragment_lineage(
+    conn: AsyncConnection, *, workspace_id: str, fragment_id: str
+) -> list[JsonObject]:
+    """One fragment's whole repair FAMILY — itself, every ancestor, every descendant.
+
+    The lineage question ("which repair of this band should the page carry?") is answered by
+    :func:`lumen_api.agent_cloned_sections.resolve_fragment_lineages`, which is a pure function of
+    a row set. Handing it every row the workspace holds answers the question correctly and reads
+    a whole library to do it; handing it this reads the family. The two answers are identical
+    because the resolver never looks outside a family: roots are found by walking ``derived_from``
+    and families never intersect.
+
+    Two recursive halves, and both are needed. UP first, through ``derived_from``, because the
+    row asked about may be a repair-of-a-repair and its siblings hang off an ancestor. Then DOWN
+    from everything found, through the partial index the F3.0 migration installed on
+    ``(workspace_id, derived_from)``, which is what makes this a lookup rather than a scan.
+
+    Statuses are not filtered. A repair is born ``draft`` (ruling R-I5) and a retired one is
+    ``deprecated``, and the resolution rule (R-X1) walks links of ANY status on purpose — a
+    filtered read here would silently re-decide the rule at the database.
+
+    An id this workspace does not hold returns ``[]``, like the rest of this module: absent and
+    another tenant's are the same answer.
+    """
+    rows = await conn.execute(
+        text(
+            f"""
+            WITH RECURSIVE ancestry AS (
+                SELECT fragment_id, derived_from
+                  FROM design_web_fragment
+                 WHERE workspace_id = :workspace_id AND fragment_id = :fragment_id
+                 UNION
+                SELECT parent.fragment_id, parent.derived_from
+                  FROM design_web_fragment parent
+                  JOIN ancestry ON parent.fragment_id = ancestry.derived_from
+                 WHERE parent.workspace_id = :workspace_id
+            ),
+            family AS (
+                SELECT fragment_id FROM ancestry
+                 UNION
+                SELECT child.fragment_id
+                  FROM design_web_fragment child
+                  JOIN family ON child.derived_from = family.fragment_id
+                 WHERE child.workspace_id = :workspace_id
+            )
+            SELECT {_COLUMNS}
+              FROM design_web_fragment
+             WHERE workspace_id = :workspace_id
+               AND fragment_id IN (SELECT fragment_id FROM family)
+             ORDER BY created_at DESC, fragment_id
+            """
+        ),
+        {"workspace_id": workspace_id, "fragment_id": fragment_id},
+    )
+    return [_from_row(row) for row in rows]
+
+
 async def sync_kit_fragment_approval(
     conn: AsyncConnection,
     *,
@@ -559,7 +616,7 @@ def _preview_present(fragment_id: str) -> DesignFragmentPreviewError:
     """
     return DesignFragmentPreviewError(
         fragment_id,
-        "preview_present",
+        "already_present",
         f"fragment {fragment_id} already carries a preview: a preview is attached once and "
         "never replaced, because a human's decision was made against the picture that is "
         "there. Mint a new fragment rather than re-picturing this one",

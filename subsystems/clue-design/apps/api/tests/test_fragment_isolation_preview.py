@@ -354,7 +354,7 @@ def test_a_preview_is_attached_once_and_never_replaced(
             preview=PNG + b"-different",
             preview_basis=ISOLATION_RENDER_BASIS,
         )
-    assert refusal.value.reason == "preview_present"
+    assert refusal.value.reason == "already_present"
     assert row["fragment_id"] in str(refusal.value)
 
 

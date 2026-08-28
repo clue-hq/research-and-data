@@ -215,8 +215,12 @@ def _run_stream() -> Any:
     return run_stream
 
 
-def _run_isolated[T](coro: "Awaitable[T]") -> T:
+def run_isolated[T](coro: "Awaitable[T]") -> T:
     """``asyncio.run`` the coroutine on a thread that owns no event loop.
+
+    PUBLIC on purpose (F3.4, ledger T18-M-13). It was ``_run_isolated`` and had two consumers
+    outside this module anyway — the isolation shutter and, in shape, the toolbelt's copy — so
+    the underscore was documentation that had stopped being true.
 
     Normally that is the caller's own thread (a sync FastAPI endpoint runs in the threadpool).
     But some ported call sites run INSIDE a loop: the ingestion pipeline drives capture with its
@@ -263,7 +267,7 @@ class DesignStoreBridge:
                 await engine.dispose()
 
         try:
-            return _run_isolated(_one_transaction())
+            return run_isolated(_one_transaction())
         except DesignNotFoundError as exc:
             raise NotFoundError(exc.kind, exc.key) from exc
         except DesignVersionConflictError as exc:
@@ -1582,6 +1586,19 @@ class HybridRepository:
                 workspace_id=self.workspace_id,
                 section_role=section_role,
                 status=status,
+            )
+        )
+
+    def list_web_fragment_lineage(self, fragment_id: str) -> List[JsonObject]:
+        """The rows of ONE fragment's repair family — the lineage resolver's bounded input.
+
+        Same answer as filtering :meth:`list_web_fragments` by family, at the cost of the family
+        rather than of the library: the resolver never looks outside a family, so the smaller
+        read is not an approximation.
+        """
+        return self._bridge._run(
+            lambda conn: design_web_fragments.list_web_fragment_lineage(
+                conn, workspace_id=self.workspace_id, fragment_id=fragment_id
             )
         )
 

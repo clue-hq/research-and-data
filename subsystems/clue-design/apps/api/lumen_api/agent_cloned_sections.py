@@ -227,20 +227,38 @@ def _resolve_lineages(rows: List[JsonObject]) -> Dict[str, LineageVerdict]:
     healthy_below: Dict[str, bool] = {}
 
     def has_healthy_descendant(fragment_id: str) -> bool:
-        """Is anything at all below this row pinnable? Memoised, so a family costs one pass."""
+        """Is anything at all below this row pinnable? Memoised, so a family costs one pass.
+
+        Iterative rather than recursive, with its own explicit stack: a lineage is shallow in
+        practice, but a walk whose depth limit is the interpreter's fails with a ``RecursionError``
+        rather than an answer, and a thousand-link chain is reachable by repair-of-repair. (This
+        walk was recursive under a comment claiming it was not — the comment was the defect.)
+
+        The stack is always the path from ``fragment_id`` down to the row being examined, which is
+        what makes the short-circuit sound: the moment anything on it sees a healthy child, every
+        row on the stack is an ancestor of that child and is answered in the same breath.
+        """
         cached = healthy_below.get(fragment_id)
         if cached is not None:
             return cached
-        # Iterative rather than recursive: a lineage is shallow in practice, but a walk whose
-        # depth limit is the interpreter's is a walk that fails in an unhelpful way.
         healthy_below[fragment_id] = False  # cycle guard: a row is not below itself
-        found = False
-        for child_id in children.get(fragment_id, ()):
-            if is_healthy(by_id[child_id]) or has_healthy_descendant(child_id):
-                found = True
-                break
-        healthy_below[fragment_id] = found
-        return found
+        stack: List[tuple[str, Any]] = [(fragment_id, iter(children.get(fragment_id, ())))]
+        while stack:
+            _node_id, child_iter = stack[-1]
+            descended = False
+            for child_id in child_iter:
+                if is_healthy(by_id[child_id]) or healthy_below.get(child_id):
+                    for ancestor_id, _ in stack:
+                        healthy_below[ancestor_id] = True
+                    return True
+                if child_id not in healthy_below:
+                    healthy_below[child_id] = False
+                    stack.append((child_id, iter(children.get(child_id, ()))))
+                    descended = True
+                    break
+            if not descended:
+                stack.pop()
+        return False
 
     verdicts: Dict[str, LineageVerdict] = {}
     for root, members in families.items():
@@ -541,7 +559,13 @@ class DurableAgentClonedSectionRegistry:
         degraded = bool(row.get("degraded"))
         verdict = None
         if degraded:
-            verdict = _resolve_lineages(repository.list_web_fragments()).get(fragment_id)
+            # The FAMILY, not the library (ledger T17-M2/X3). The resolver never looks outside a
+            # family, so reading one through the F3.0 `(workspace_id, derived_from)` index gives
+            # the identical verdict for the cost of the lineage instead of the cost of every
+            # cloned section this workspace holds — and a pin gate runs on every pin.
+            verdict = _resolve_lineages(
+                repository.list_web_fragment_lineage(fragment_id)
+            ).get(fragment_id)
         return {
             "fragment_id": fragment_id,
             "section_role": row.get("section_role"),

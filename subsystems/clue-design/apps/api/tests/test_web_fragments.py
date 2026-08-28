@@ -23,8 +23,10 @@ from lumen_api.fragments import (
     WEB_FRAGMENT_SOURCE_KEY,
     FragmentRefused,
     SlotSpec,
+    attach_web_fragment_preview,
     create_web_fragment,
     fragment_wrapper_class,
+    list_web_fragment_lineage,
     list_web_fragments,
     read_web_fragment,
     set_web_fragment_status,
@@ -128,6 +130,52 @@ def test_re_minting_the_same_section_converges_on_one_row_and_one_blob(
     # First writer wins the provenance/label; the row was never updated.
     assert second_row["label"] == "first"
     assert second_row["created_at"] == first_row["created_at"]
+
+
+def test_a_re_mint_converges_on_a_row_whose_preview_was_attached_afterwards(
+    workspace_id: str, design_storage: FsStorage
+) -> None:
+    """The payload/row ``preview_digest`` divergence, pinned rather than merely disclosed (M-14).
+
+    ``preview_digest`` is inside the artifact's IDENTITY bytes and inside the payload, so a
+    picture attached later leaves the immutable payload saying ``null`` while the row carries a
+    digest. That is deliberate — the payload is a record of what was minted, and a photograph
+    taken afterwards is not part of what was minted — and it is inert only because the re-mint
+    path passes ``preview=None`` and converges with ``ON CONFLICT DO NOTHING``.
+
+    Nothing tested that. A future writer that upserted ``preview_digest`` on conflict would break
+    the immutability trigger and re-ingest at once, with every existing test still green. This is
+    the test that would go red.
+    """
+    row, artifact = _create(workspace_id, design_storage, preview=None)
+    assert row["preview_digest"] is None
+
+    attached = attach_web_fragment_preview(
+        design_storage,
+        workspace_id=workspace_id,
+        fragment_id=artifact.fragment_id,
+        preview=PNG,
+        preview_basis="isolation_render",
+    )
+    assert attached["preview_digest"] == _sha(PNG)
+
+    # Re-harvesting the SAME section: same bytes in, same content address out.
+    again_row, again = _create(workspace_id, design_storage, preview=None)
+
+    assert again.fragment_id == artifact.fragment_id
+    assert len(list_web_fragments(workspace_id=workspace_id)) == 1
+    # The attached picture survived the convergence…
+    assert again_row["preview_digest"] == _sha(PNG)
+    assert again_row["preview_basis"] == "isolation_render"
+    # …and the payload still records what was MINTED, which had no picture. Re-deriving the id
+    # from the row's digest would therefore not reproduce `fragment_id`, and that is the
+    # documented shape, not a bug: the identity is the mint's, the photograph is later.
+    assert again.payload["preview_digest"] is None
+    loaded = read_web_fragment(
+        design_storage, workspace_id=workspace_id, fragment_id=artifact.fragment_id
+    )
+    assert loaded.payload["preview_digest"] is None
+    assert loaded.row["preview_digest"] == _sha(PNG)
 
 
 def test_a_changed_section_is_a_different_fragment(
@@ -245,6 +293,101 @@ def test_a_refused_fragment_writes_neither_row_nor_blob(
             html='<section><img src="https://cdn.example/never-rehosted.png"></section>',
         )
     assert list_web_fragments(workspace_id=workspace_id) == []
+
+
+# --------------------------------------------------------------------------- #
+# The lineage read: one family, through the derived_from index
+# --------------------------------------------------------------------------- #
+
+
+def _repair_of(
+    workspace_id: str, design_storage: FsStorage, parent: dict, sentinel: str
+) -> dict:
+    row, _artifact = _create(
+        workspace_id,
+        design_storage,
+        html=f'<section class="hero"><h1 class="head">{sentinel}</h1></section>',
+        derived_from=parent["fragment_id"],
+        derived_reason="dead_height",
+    )
+    return row
+
+
+def test_the_lineage_read_returns_the_whole_family_from_any_member(
+    workspace_id: str, design_storage: FsStorage
+) -> None:
+    """Ancestors AND descendants, whichever end you ask from — the resolver needs both halves."""
+    original, _ = _create(workspace_id, design_storage)
+    repair = _repair_of(workspace_id, design_storage, original, "Repair one")
+    grandchild = _repair_of(workspace_id, design_storage, repair, "Repair two")
+    sibling = _repair_of(workspace_id, design_storage, original, "Repair three")
+    family = {
+        original["fragment_id"],
+        repair["fragment_id"],
+        grandchild["fragment_id"],
+        sibling["fragment_id"],
+    }
+
+    for member in family:
+        read = list_web_fragment_lineage(workspace_id=workspace_id, fragment_id=member)
+        assert {row["fragment_id"] for row in read} == family, member
+
+
+def test_the_lineage_read_never_reaches_into_an_unrelated_family(
+    workspace_id: str, design_storage: FsStorage
+) -> None:
+    original, _ = _create(workspace_id, design_storage)
+    repair = _repair_of(workspace_id, design_storage, original, "Repair one")
+    # Different bytes, so a different content address — a fragment id is the content, and the
+    # section role is not part of it.
+    stranger, _ = _create(
+        workspace_id,
+        design_storage,
+        html='<section class="foot"><p class="fine">Unrelated</p></section>',
+        css=".foot { padding: 8px }",
+        section_role="footer",
+    )
+
+    read = list_web_fragment_lineage(
+        workspace_id=workspace_id, fragment_id=original["fragment_id"]
+    )
+
+    assert {row["fragment_id"] for row in read} == {
+        original["fragment_id"],
+        repair["fragment_id"],
+    }
+    assert stranger["fragment_id"] not in {row["fragment_id"] for row in read}
+
+
+def test_the_lineage_read_filters_no_status(
+    workspace_id: str, design_storage: FsStorage
+) -> None:
+    """Ruling R-X1 walks links of ANY status; a filtered read would re-decide it at the database."""
+    original, _ = _create(workspace_id, design_storage)
+    repair = _repair_of(workspace_id, design_storage, original, "Repair one")
+    set_web_fragment_status(
+        workspace_id=workspace_id, fragment_id=repair["fragment_id"], status="approved"
+    )
+    set_web_fragment_status(
+        workspace_id=workspace_id, fragment_id=repair["fragment_id"], status="deprecated"
+    )
+    grandchild = _repair_of(workspace_id, design_storage, repair, "Repair two")
+
+    read = list_web_fragment_lineage(
+        workspace_id=workspace_id, fragment_id=grandchild["fragment_id"]
+    )
+
+    assert {row["status"] for row in read} == {"draft", "deprecated"}
+    assert original["fragment_id"] in {row["fragment_id"] for row in read}
+
+
+def test_the_lineage_read_answers_nothing_for_an_id_this_workspace_does_not_hold(
+    workspace_id: str, design_storage: FsStorage
+) -> None:
+    _create(workspace_id, design_storage)
+    assert list_web_fragment_lineage(
+        workspace_id=workspace_id, fragment_id="frag_" + "0" * 16
+    ) == []
 
 
 def test_half_a_source_kit_reference_is_refused(

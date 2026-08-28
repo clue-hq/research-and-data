@@ -15,8 +15,8 @@ import { z } from "zod";
  *   nothing else. `slots` is therefore the whole editing surface; there is no field here that
  *   describes the section's internals, because nothing may edit them.
  * * **D-F6** — the degraded → repaired lineage is visible: `degraded` + what the reason MEANS,
- *   `repairsWhat` on a repair, `repairs` under an original, and `lineageAmbiguous` when two
- *   released repairs contest the same band.
+ *   `repairsWhat` on a repair, the whole `family` under any member, and `lineageAmbiguous`
+ *   when two released repairs contest the same band.
  * * **D-F8** — a hidden-on-source section is shown as one (`hiddenOnSource`), and activated only
  *   by a human, only with a usable preview: `activation` carries the verdict AND the sentence
  *   the human has to act on.
@@ -52,7 +52,7 @@ export type FragmentLineageEntry = z.infer<typeof FragmentLineageEntrySchema>;
  * One member of the whole lineage — **ruling R18-1**: every repair in a family must be
  * retire-reachable from the card of any family member selectable on the page.
  *
- * The parent/child list (`repairs`) cannot deliver that. A repair is on no page unless somebody
+ * A parent/child list cannot deliver that. A repair is on no page unless somebody
  * pinned it, so "select the repair" is not a way to reach one, and a repair-of-a-repair is
  * nobody's direct child except its own parent's — so a grandchild leaf had a retire affordance
  * nowhere at all, and the contested-lineage dead end stayed a dead end with the button built.
@@ -97,7 +97,6 @@ export const FragmentCardSchema = z.object({
   degradedNote: z.string().nullable().default(null),
   derivedFrom: z.string().nullable().default(null),
   derivedReason: z.string().nullable().default(null),
-  repairs: z.array(FragmentLineageEntrySchema).default([]),
   repairsWhat: FragmentLineageEntrySchema.nullable().default(null),
   supersededBy: z.string().nullable().default(null),
   lineageAmbiguous: z.array(z.string()).default([]),
@@ -166,7 +165,6 @@ export const FragmentCardWireSchema = z
     degraded_note: z.string().nullish(),
     derived_from: z.string().nullish(),
     derived_reason: z.string().nullish(),
-    repairs: z.array(FragmentLineageEntryWireSchema).optional(),
     repairs_what: FragmentLineageEntryWireSchema.nullish(),
     superseded_by: z.string().nullish(),
     lineage_ambiguous: z.array(z.string()).optional(),
@@ -229,7 +227,6 @@ export const FragmentCardWireSchema = z
       degradedNote: wire.degraded_note ?? null,
       derivedFrom: wire.derived_from ?? null,
       derivedReason: wire.derived_reason ?? null,
-      repairs: wire.repairs ?? [],
       repairsWhat: wire.repairs_what ?? null,
       supersededBy: wire.superseded_by ?? null,
       lineageAmbiguous: wire.lineage_ambiguous ?? [],

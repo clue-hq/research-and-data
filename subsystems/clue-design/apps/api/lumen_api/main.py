@@ -87,6 +87,7 @@ from .fragments import (
     attach_web_fragment_preview,
     read_web_fragment,
     render_isolation_preview,
+    screenshot_isolation_page,
     set_web_fragment_status,
 )
 from .fragment_inspector import (
@@ -733,6 +734,12 @@ def create_app(
     )
     app.state.custom_component_runtime_host = default_runtime_host_path()
     app.state.core = CoreClient()
+    # The isolation render's BROWSER half, injected at the composition root (F3.4, ledger
+    # T18-M-13). Production takes the Playwright shutter; a test hands in its own callable and
+    # gets the real render — the real engine page, the real fail-closed asset route — without a
+    # Chromium. Previously a test reached in and rebound `main.render_isolation_preview`, which
+    # worked and taught nothing about how the browser dependency is actually supplied.
+    app.state.isolation_shooter = screenshot_isolation_page
     app.state.agent_turn_runner = None
     # Website-mode turn test seam: a callable (document, prompt, model, root) ->
     # envelope that replaces the real run_web_agent_turn in tests. None = live.
@@ -1787,7 +1794,7 @@ def create_app(
         #
         # The ``run_in_threadpool`` dance that used to wrap the store call is gone with it: it
         # existed because this is the one ASYNC ingestion endpoint and the sync store facade
-        # cannot ``asyncio.run`` inside a live loop. ``DesignStoreBridge._run_isolated`` has
+        # cannot ``asyncio.run`` inside a live loop. ``design_store.run_isolated`` has
         # handled exactly that since D2.3 by handing the coroutine to a one-shot worker thread,
         # so the extra hop was doing nothing the bridge does not already do.
         job = _offer_ingestion(repo, "website", payload.model_dump())
@@ -4610,7 +4617,7 @@ def create_app(
         if loaded.row.get("preview_digest"):
             raise DesignFragmentPreviewError(
                 fragment_id,
-                "preview_present",
+                "already_present",
                 f"fragment {fragment_id} already carries a preview: a preview is attached once "
                 "and never replaced, because a human's decision was made against the picture "
                 "that is there",
@@ -4621,7 +4628,10 @@ def create_app(
         # second opinion about how the section looks.
         try:
             png, page = render_isolation_preview(
-                app.state.core, loaded, read_blob=blob_store(repo).read_blob
+                app.state.core,
+                loaded,
+                read_blob=blob_store(repo).read_blob,
+                shoot=app.state.isolation_shooter,
             )
         except IsolationRenderFailed as failure:
             raise HTTPException(

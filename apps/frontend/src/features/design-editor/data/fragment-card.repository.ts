@@ -81,18 +81,6 @@ const FIXTURE_ORIGINAL = FragmentCardSchema.parse({
   degradedNote:
     "the captured band is mostly artificial scroll height — a screenful of content followed " +
     "by dead space. The repair must remove the empty height entirely.",
-  repairs: [
-    {
-      fragmentId: "frag_00000000repair1",
-      label: "Repaired — Products",
-      status: "draft",
-      degraded: false,
-      derivedReason:
-        "repair rung 3 (a deliberate, compact static fallback with the artificial height " +
-        "removed entirely); trigger dead_height; same three products at natural height",
-      createdAt: "2026-08-28T09:00:00+00:00",
-    },
-  ],
   activation: { allowed: false, reason: "not_dormant", message: null },
   retirement: {
     allowed: false,
@@ -112,7 +100,9 @@ const FIXTURE_REPAIR = FragmentCardSchema.parse({
   sectionIndex: 4,
   slots: FIXTURE_ORIGINAL.slots,
   derivedFrom: FIXTURE_ORIGINAL.fragmentId,
-  derivedReason: FIXTURE_ORIGINAL.repairs[0]?.derivedReason ?? null,
+  derivedReason:
+    "repair rung 3 (a deliberate, compact static fallback with the artificial height " +
+    "removed entirely); trigger dead_height; same three products at natural height",
   repairsWhat: {
     fragmentId: FIXTURE_ORIGINAL.fragmentId,
     label: "Products",
@@ -248,7 +238,7 @@ export function fixtureFragmentCardRepository(
       if (card.previewPath) {
         throw new FragmentCardError(
           "this section already carries a preview: a preview is attached once and never replaced",
-          { code: "fragment.preview_preview_present", status: 409, reason: "preview_present" },
+          { code: "fragment.preview_already_present", status: 409, reason: "already_present" },
         );
       }
       const next: FragmentCard = {
@@ -307,9 +297,6 @@ export function fixtureFragmentCardRepository(
         cards.set(card.derivedFrom, {
           ...original,
           lineageAmbiguous: original.lineageAmbiguous.filter((id) => id !== fragmentId),
-          repairs: original.repairs.map((entry) =>
-            entry.fragmentId === fragmentId ? { ...entry, status: "deprecated" } : entry,
-          ),
         });
       }
       return served(next);

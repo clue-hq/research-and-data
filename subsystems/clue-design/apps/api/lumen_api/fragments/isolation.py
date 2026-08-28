@@ -260,10 +260,10 @@ def screenshot_isolation_page(
     page: IsolationPage, assets: Mapping[str, tuple[str, bytes]]
 ) -> bytes:
     """Photograph one isolation page. The default browser half; injected everywhere it is used."""
-    from ..design_store import _run_isolated
+    from ..design_store import run_isolated
 
     try:
-        return _run_isolated(_shoot(page.html, page.element_selector, assets))
+        return run_isolated(_shoot(page.html, page.element_selector, assets))
     except IsolationRenderFailed:
         raise
     except Exception as error:  # noqa: BLE001 — every browser fault is one refusal to the human

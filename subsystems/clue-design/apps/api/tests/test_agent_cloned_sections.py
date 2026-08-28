@@ -26,7 +26,10 @@ from typing import Any
 import pytest
 from clue_storage import FsStorage
 
-from lumen_api.agent_cloned_sections import DurableAgentClonedSectionRegistry
+from lumen_api.agent_cloned_sections import (
+    DurableAgentClonedSectionRegistry,
+    resolve_fragment_lineages,
+)
 from lumen_api.database import FragmentReferenceError
 from lumen_api.design_store import DesignBlobStore, HybridRepository
 from lumen_api.fragments import (
@@ -108,6 +111,305 @@ def _registry(
     return DurableAgentClonedSectionRegistry(
         blobs=DesignBlobStore(storage, workspace_id), cache_dir=cache_dir
     )
+
+
+# --------------------------------------------------------------------------- #
+# The lineage resolution matrix (ruling R-X1) — pure, table-driven, no database
+# --------------------------------------------------------------------------- #
+#
+# The resolution rule moved three times in three review rounds, and each move was argued from a
+# handful of shapes held in somebody's head. The record of what "settled" means was a table in a
+# task report and a scratch probe; this is that table, executable.
+#
+# Ruling R-X1, stated once: a member is HEALTHY when it is approved and un-degraded. A healthy
+# member is SUPERSEDED iff any descendant of it is healthy — at any depth, through links of any
+# status. The REPRESENTATIVE SET is the healthy members with no healthy descendant, and it is
+# necessarily an antichain. Exactly one → pin it. Two or more → ambiguous, nothing pinned. None →
+# fall back to exactly ONE member (the oldest approved), naming what it passed over.
+#
+# Every expectation below is read off that paragraph, not off the implementation.
+
+
+def _lineage_row(
+    fragment_id: str,
+    *,
+    status: str = "approved",
+    degraded: bool = False,
+    derived_from: str | None = None,
+    created_at: str | None = None,
+) -> dict:
+    """One listing row, reduced to the four columns the resolver actually reads.
+
+    ``created_at`` defaults to the id, which makes the ids themselves the age ordering: ``a`` is
+    older than ``r1`` is older than ``r2``. The fallback branch ("oldest approved") is the only
+    place ordering is load-bearing, and a case that cares states its own timestamps.
+    """
+    return {
+        "fragment_id": fragment_id,
+        "status": status,
+        "degraded": degraded,
+        "derived_from": derived_from,
+        "created_at": created_at or fragment_id,
+    }
+
+
+#: ``(name, rows, {root: (representative, ambiguous, ranked_over)})``.
+#:
+#: The expectation is keyed by FAMILY ROOT and the test asserts three things from it: that the
+#: families are exactly these, that every member of a family resolves to the same verdict, and
+#: that the verdict is this one. A shape that splits into two families therefore cannot pass by
+#: accident — it has to name both.
+LINEAGE_MATRIX: tuple[tuple[str, list[dict], dict[str, tuple]], ...] = (
+    # --- the fifteen shapes ruling R-X1 was settled against ------------------------------------
+    (
+        "healthy unrepaired — a lone clone is its own representative",
+        [_lineage_row("a")],
+        {"a": ("a", (), ())},
+    ),
+    (
+        "healthy + healthy repair — the repair supersedes the original",
+        [_lineage_row("a"), _lineage_row("r1", derived_from="a")],
+        {"a": ("r1", (), ())},
+    ),
+    (
+        "X1 — a degraded middle never hides the healthy leaf below it",
+        [
+            _lineage_row("a"),
+            _lineage_row("r1", derived_from="a", degraded=True),
+            _lineage_row("r2", derived_from="r1"),
+        ],
+        {"a": ("r2", (), ())},
+    ),
+    (
+        "X1 deep — two degraded middles are stepped over just the same",
+        [
+            _lineage_row("a"),
+            _lineage_row("r1", derived_from="a", degraded=True),
+            _lineage_row("r2", derived_from="r1", degraded=True),
+            _lineage_row("r3", derived_from="r2"),
+        ],
+        {"a": ("r3", (), ())},
+    ),
+    (
+        "X1 deprecated middle — the descendant walk crosses links of ANY status",
+        [
+            _lineage_row("a"),
+            _lineage_row("r1", derived_from="a", status="deprecated"),
+            _lineage_row("r2", derived_from="r1"),
+        ],
+        {"a": ("r2", (), ())},
+    ),
+    (
+        "N1 — a degraded NEWEST repair never evicts its own healthy parent",
+        [
+            _lineage_row("a"),
+            _lineage_row("r1", derived_from="a"),
+            _lineage_row("r2", derived_from="r1", degraded=True),
+        ],
+        {"a": ("r1", (), ())},
+    ),
+    (
+        "Repro A — two healthy sibling repairs are ambiguous, never a double pin",
+        [
+            _lineage_row("a"),
+            _lineage_row("r1", derived_from="a"),
+            _lineage_row("r2", derived_from="a"),
+        ],
+        {"a": (None, ("r1", "r2"), ())},
+    ),
+    (
+        "Repro B — a broken root and a broken middle still resolve to the healthy leaf",
+        [
+            _lineage_row("a", degraded=True),
+            _lineage_row("r1", derived_from="a", degraded=True),
+            _lineage_row("r2", derived_from="r1"),
+        ],
+        {"a": ("r2", (), ())},
+    ),
+    (
+        "else-the-original — nothing healthy anywhere falls back to the oldest approved",
+        [
+            _lineage_row("a", degraded=True),
+            _lineage_row("r1", derived_from="a", degraded=True),
+        ],
+        {"a": ("a", (), ("r1",))},
+    ),
+    (
+        "a degraded child is the only APPROVED member — it is the fallback, and ranks over nothing",
+        [
+            _lineage_row("a", status="draft"),
+            _lineage_row("r1", derived_from="a", degraded=True),
+        ],
+        {"a": ("r1", (), ())},
+    ),
+    (
+        "the whole family degraded — the fallback names both members it passed over",
+        [
+            _lineage_row("a", degraded=True),
+            _lineage_row("r1", derived_from="a", degraded=True),
+            _lineage_row("r2", derived_from="r1", degraded=True),
+        ],
+        {"a": ("a", (), ("r1", "r2"))},
+    ),
+    (
+        "a draft repair is not released, so it supersedes nothing",
+        [_lineage_row("a"), _lineage_row("r1", derived_from="a", status="draft")],
+        {"a": ("a", (), ())},
+    ),
+    (
+        "a dormant leaf is not released either — D-F8 status, same answer",
+        [_lineage_row("a"), _lineage_row("r1", derived_from="a", status="dormant")],
+        {"a": ("a", (), ())},
+    ),
+    (
+        "an orphan — derived_from naming a row this workspace does not hold is its own root",
+        [_lineage_row("r1", derived_from="gone")],
+        {"r1": ("r1", (), ())},
+    ),
+    (
+        "a cycle terminates and every member still gets a verdict",
+        [
+            _lineage_row("a", derived_from="b"),
+            _lineage_row("b", derived_from="a"),
+        ],
+        {"a": ("a", (), ()), "b": ("b", (), ())},
+    ),
+    # --- the edges the three review rounds asked about afterwards ------------------------------
+    (
+        "no rows at all",
+        [],
+        {},
+    ),
+    (
+        "two unrelated clones are two families, resolved independently",
+        [
+            _lineage_row("a"),
+            _lineage_row("b", degraded=True),
+        ],
+        {"a": ("a", (), ()), "b": ("b", (), ())},
+    ),
+    (
+        "three healthy leaves are all named, sorted, and none of them is pinned",
+        [
+            _lineage_row("a"),
+            _lineage_row("r1", derived_from="a"),
+            _lineage_row("r2", derived_from="a"),
+            _lineage_row("r3", derived_from="a"),
+        ],
+        {"a": (None, ("r1", "r2", "r3"), ())},
+    ),
+    (
+        "an ambiguous pair on DIFFERENT branches of the same tree is still ambiguous",
+        [
+            _lineage_row("a"),
+            _lineage_row("r1", derived_from="a", degraded=True),
+            _lineage_row("r2", derived_from="r1"),
+            _lineage_row("r3", derived_from="a"),
+        ],
+        {"a": (None, ("r2", "r3"), ())},
+    ),
+    (
+        "one healthy branch and one wholly broken branch — the healthy branch answers alone",
+        [
+            _lineage_row("a"),
+            _lineage_row("r1", derived_from="a"),
+            _lineage_row("r2", derived_from="a", degraded=True),
+        ],
+        {"a": ("r1", (), ())},
+    ),
+    (
+        "the fallback reads its age off created_at, not off the id",
+        [
+            _lineage_row("a", degraded=True, created_at="2026-08-02"),
+            _lineage_row("r1", derived_from="a", degraded=True, created_at="2026-08-01"),
+        ],
+        {"a": ("r1", (), ("a",))},
+    ),
+    (
+        "a family with no approved member at all pins nothing and blames nobody",
+        [
+            _lineage_row("a", status="draft"),
+            _lineage_row("r1", derived_from="a", status="draft"),
+        ],
+        {"a": (None, (), ())},
+    ),
+    (
+        "a deep healthy chain resolves to its tip, not to the middle",
+        [
+            _lineage_row("a"),
+            _lineage_row("r1", derived_from="a"),
+            _lineage_row("r2", derived_from="r1"),
+            _lineage_row("r3", derived_from="r2"),
+        ],
+        {"a": ("r3", (), ())},
+    ),
+)
+
+
+@pytest.mark.parametrize(
+    "rows, expected",
+    [pytest.param(rows, expected, id=name) for name, rows, expected in LINEAGE_MATRIX],
+)
+def test_the_lineage_resolution_matrix(rows: list[dict], expected: dict[str, tuple]) -> None:
+    """Every shape ruling R-X1 was settled against, resolved by the one production resolver."""
+    verdicts = resolve_fragment_lineages(list(rows))
+
+    assert set(verdicts) == {row["fragment_id"] for row in rows}
+    assert {verdict.root for verdict in verdicts.values()} == set(expected)
+
+    for row in rows:
+        verdict = verdicts[row["fragment_id"]]
+        representative, ambiguous, ranked_over = expected[verdict.root]
+        assert verdict.representative == representative
+        assert verdict.ambiguous == ambiguous
+        assert verdict.ranked_over == ranked_over
+
+
+def test_a_lineage_deeper_than_the_interpreters_stack_still_resolves() -> None:
+    """A thousand-link repair-of-repair chain answers, rather than raising ``RecursionError``.
+
+    Unreachable in practice today, and that is not the point: the walk carried a comment saying it
+    was iterative while it was not, so the depth at which it stopped working was the interpreter's
+    rather than one anybody had chosen. 1200 links is comfortably past the default 1000 limit.
+    """
+    depth = 1200
+    # A HEALTHY root, so the walk is actually entered (an unhealthy row is never asked what is
+    # below it), then a chain of degraded middles, then one healthy tip. The root is superseded
+    # only if the descent reaches the far end.
+    rows = [_lineage_row("a")]
+    parent = "a"
+    for index in range(depth):
+        child = f"r{index:05d}"
+        rows.append(_lineage_row(child, derived_from=parent, degraded=index < depth - 1))
+        parent = child
+
+    verdicts = resolve_fragment_lineages(rows)
+
+    assert verdicts["a"].representative == parent
+    assert verdicts[parent].representative == parent
+
+
+def test_the_representative_set_is_always_an_antichain() -> None:
+    """The property that makes "neither replaces the other" a fact rather than an assumption.
+
+    Two members of the ambiguous set may never stand in an ancestor/descendant relation — if one
+    were an ancestor of the other it would have a healthy descendant and would not be in the set
+    at all. Asserted over the matrix's own shapes rather than as prose in a docstring.
+    """
+    for name, rows, _expected in LINEAGE_MATRIX:
+        parents = {row["fragment_id"]: row.get("derived_from") for row in rows}
+
+        def ancestors(fragment_id: str) -> set:
+            seen: set = set()
+            current = parents.get(fragment_id)
+            while isinstance(current, str) and current in parents and current not in seen:
+                seen.add(current)
+                current = parents.get(current)
+            return seen
+
+        for verdict in resolve_fragment_lineages(list(rows)).values():
+            for candidate in verdict.ambiguous:
+                assert not (set(verdict.ambiguous) - {candidate}) & ancestors(candidate), name
 
 
 # --------------------------------------------------------------------------- #

@@ -34,6 +34,7 @@ from .fragments import (
     ASSET_URL_PREFIX,
     FRAGMENT_STATUS_DORMANT,
     degraded_headline,
+    list_web_fragment_lineage,
     list_web_fragments,
     read_web_fragment,
 )
@@ -57,12 +58,13 @@ def fragment_card(
 ) -> JsonObject:
     """Everything the inspector shows about ONE cloned section.
 
-    Reads the payload (for the slot manifest) and the whole workspace's rows (for the lineage).
-    The row scan is the ledgered O(n) one every lineage reader pays; an inspector card is drawn
-    per human selection, so it is the cheapest of the three consumers.
+    Reads the payload (for the slot manifest) and this fragment's FAMILY rows (for the lineage).
+    Every row-derived field on the card — the direct repairs, what it repairs, the full family,
+    the verdict — is about the lineage and nothing else, so the family read answers all of them
+    exactly and reads a handful of rows rather than the workspace's whole library (ledger T17-M2).
     """
     loaded = read_web_fragment(storage, workspace_id=workspace_id, fragment_id=fragment_id)
-    rows = list_web_fragments(workspace_id=workspace_id)
+    rows = list_web_fragment_lineage(workspace_id=workspace_id, fragment_id=fragment_id)
     return _card(
         loaded.row,
         rows=rows,
@@ -141,25 +143,13 @@ def _card(
         "degraded_reason": row.get("degraded_reason"),
         "degraded_note": degraded_headline(row.get("degraded_reason")) if degraded else None,
         "degraded_measurement": provenance.get("degraded"),
-        # D-F6, the lineage half. `repairs` spans every status: a repair is born `draft` and a
-        # human releases it, so an approved-only list would tell somebody "nothing has repaired
-        # this" about work done an hour ago.
+        # D-F6, the lineage half. There is no direct-children list here on purpose (F3.4, T18
+        # re-review): ruling R18-1 made the card carry the whole FAMILY, every entry of which
+        # names its own `derived_from`, so "the repairs of this row" is a filter over `family`
+        # rather than a second list saying a subset of the same thing. It was carried for one
+        # release, rendered by nothing, and parsed by two clients that then ignored it.
         "derived_from": row.get("derived_from"),
         "derived_reason": row.get("derived_reason"),
-        "repairs": [
-            _lineage_entry(candidate)
-            for candidate in sorted(
-                (
-                    candidate
-                    for candidate in rows
-                    if candidate.get("derived_from") == fragment_id
-                ),
-                key=lambda candidate: (
-                    str(candidate.get("created_at") or ""),
-                    str(candidate["fragment_id"]),
-                ),
-            )
-        ],
         "repairs_what": (
             _lineage_entry(by_id[str(row["derived_from"])])
             if isinstance(row.get("derived_from"), str)
