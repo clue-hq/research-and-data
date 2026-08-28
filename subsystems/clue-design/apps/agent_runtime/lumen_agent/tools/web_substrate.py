@@ -5655,6 +5655,12 @@ class LumenWebTools:
         # carry the broken clone (F3.4). Said, because "repaired" about a page that still shows
         # the defect two screens down is the kind of half-truth the ladder exists to prevent —
         # and the remedy is the same tool again, so this is a note rather than a refusal.
+        #
+        # Under the DEGRADED code rather than one of its own, and deliberately so given that this
+        # same change is about one code meaning one thing: `_CLONED_SECTION_DEGRADED_CODE` says
+        # "a cloned section on this page is marked broken and no released repair is applied to
+        # it", and that is exactly true of every remaining pin. The instance count is detail on
+        # that fact, not a different fact.
         if len(instances) > 1:
             result["other_pins_of_this_band"] = instances[1:]
             result["advice"] = list(result["advice"]) + [
