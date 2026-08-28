@@ -80,7 +80,10 @@ WALK_CLASS_LABELS = {
 #: console entry gained ``source``. Additive, but a reader that branched on either would misread a
 #: v1 payload as "measured, page-attributed" by omission, which is the thing a version exists to
 #: prevent.
-WALK_SCHEMA_VERSION = 2
+#: Bumped to 3 in the wave's second round (review I2): the measurements INSIDE the walk payload
+#: gained ``largest_gap_px``, and a reader of a pre-wave row must treat its absence as "not
+#: measured that way", never as 0.0 ("no hole") — the same reasoning that moved this to 2.
+WALK_SCHEMA_VERSION = 3
 
 
 # --- viewports and stops -----------------------------------------------------------------------
@@ -535,10 +538,26 @@ SECTION_PROBE_SCRIPT = """
       }
     }
     // --- everything inside it ------------------------------------------------------------------
+    // Media and backgrounds cover their whole box; DIRECT TEXT covers only the text, so it is
+    // Range-measured exactly as the wrapper branch does (wave round 2, I3) — a full-height
+    // inner container with one line of text used to contribute its whole box, zeroing the
+    // internal-gap measure while the mint's pixel detector still saw the hole: the two
+    // detectors' must-agree invariant, broken by the easier branch.
     el.querySelectorAll('*').forEach((node) => {
       const s = getComputedStyle(node);
-      if (node.matches(INK_TAGS) || hasBackgroundImage(s) || hasDirectText(node)) {
-        consider(node);
+      if (invisible(s)) return;
+      if (node.matches(INK_TAGS) || hasBackgroundImage(s)) {
+        considerRect(node.getBoundingClientRect());
+        return;
+      }
+      if (hasDirectText(node)) {
+        for (const child of node.childNodes) {
+          if (child.nodeType !== 3 || child.textContent.trim().length === 0) continue;
+          const range = document.createRange();
+          range.selectNode(child);
+          considerRect(range.getBoundingClientRect());
+          range.detach && range.detach();
+        }
       }
     });
     const clamp = (value) => Math.max(pageTop, Math.min(pageTop + rect.height, value));

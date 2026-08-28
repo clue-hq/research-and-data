@@ -116,8 +116,9 @@ class DeadHeight:
     content_fraction: float
     preview_rows: int
     content_rows: int
-    #: The largest internal ink-free run, in CSS px (the F-1 condition). 0.0 on findings made
-    #: by the extent condition alone.
+    #: The largest internal ink-free run, in CSS px (the F-1 condition) — always the MEASURED
+    #: value, whichever condition produced the finding. 0.0 only when the crop genuinely has no
+    #: internal gap (or on a row written by the pre-wave detector, which never measured one).
     largest_gap_px: float = 0.0
 
     def as_provenance(self) -> dict[str, object]:

@@ -474,10 +474,14 @@ def _parse_simple_compound(compound: str) -> tuple[str | None, list[str], list[s
 
 # --- the un-hide block (phase fix wave, walk finding F-3 / final-review X3) ----------------------
 
-#: The counter-declarations. ``revert`` rather than a guessed ``block``/``flex``: it returns the
-#: element to what it would have been WITHOUT the hiding rule, which is the honest opposite of
-#: "the source hid it" — guessing a display type would be a small fabrication.
-UNHIDE_DECLARATIONS = "display: revert !important; visibility: visible !important;"
+#: The counter-declarations, one per property a rule can hide with. ``revert`` rather than a
+#: guessed ``block``/``flex``: it returns the element to what it would have been WITHOUT the
+#: hiding rule, which is the honest opposite of "the source hid it" — guessing a display type
+#: would be a small fabrication. Only the property the rule actually hid is countered (wave
+#: round 2, M1): a rule that hid with ``visibility`` alone gets no ``display: revert``, which
+#: would clobber a separate author ``display`` on the same element.
+UNHIDE_DISPLAY = "display: revert !important;"
+UNHIDE_VISIBILITY = "visibility: visible !important;"
 
 UNHIDE_BLOCK_HEADER = (
     "/* lumen un-hide (D-F8): the source site hides this section, and its harvested CSS carries\n"
@@ -522,17 +526,26 @@ def _collect_unhide(
 ) -> None:
     for rule in rules:
         if isinstance(rule, ast.QualifiedRule):
-            if not _declarations_hide(rule.content):
+            hides_display, hides_visibility = _hiding_properties(rule.content)
+            if not (hides_display or hides_visibility):
                 continue
             prelude = tinycss2.serialize(rule.prelude).strip()
             matching = [
                 part
                 for part in _split_selector_list(prelude)
-                if _selector_could_match(part, inventory)
+                if _positively_names_root(part, inventory)
             ]
             if not matching:
                 continue
-            counter = f"{', '.join(matching)} {{ {UNHIDE_DECLARATIONS} }}"
+            declarations = " ".join(
+                part
+                for part, hides in (
+                    (UNHIDE_DISPLAY, hides_display),
+                    (UNHIDE_VISIBILITY, hides_visibility),
+                )
+                if hides
+            )
+            counter = f"{', '.join(matching)} {{ {declarations} }}"
             if media_prelude is not None:
                 # The hiding rule applies only under its media condition, so the counter-rule
                 # rides the same condition — un-hiding wider than the hiding would be a change,
@@ -557,7 +570,10 @@ def _collect_unhide(
             )
 
 
-def _declarations_hide(content: Sequence[object]) -> bool:
+def _hiding_properties(content: Sequence[object]) -> tuple[bool, bool]:
+    """``(hides via display, hides via visibility)`` for one rule's declarations."""
+    hides_display = False
+    hides_visibility = False
     declarations = tinycss2.parse_declaration_list(
         tinycss2.serialize(list(content)), skip_comments=True, skip_whitespace=True
     )
@@ -566,10 +582,95 @@ def _declarations_hide(content: Sequence[object]) -> bool:
             continue
         value = tinycss2.serialize(declaration.value).strip().lower()
         if declaration.lower_name == "display" and "none" in value:
-            return True
+            hides_display = True
         if declaration.lower_name == "visibility" and "hidden" in value:
-            return True
-    return False
+            hides_visibility = True
+    return hides_display, hides_visibility
 
 
-__all__ = ["MatchedCss", "rules_for_subtree", "unhide_root_rules"]
+def _positively_names_root(part: str, inventory: _Inventory) -> bool:
+    """May this selector part be COUNTERMANDED as a rule that hides the root? (Wave round 2, I1.)
+
+    Countermanding needs certainty in the opposite direction from keeping: `could match` keeps
+    a rule on any doubt, and re-used here it un-hid ``[hidden]`` resets, ``*``,
+    ``.card:not(.active)`` and every descendant selector whose rightmost name the root happens
+    to share — the mega-menu shape the un-hide's own header forbids. So a countermand requires:
+    ONE compound (no combinators — a descendant selector targets something inside the section),
+    no functional pseudos (a ``:not(…)`` can invert the match), and at least one concrete name
+    (tag, class or id) that the root actually carries, with every named constraint matching.
+    A hiding rule this cannot certify (``[hidden]``, an in-situ ancestor chain) is left alone —
+    the root markup strip covers the attribute case, and anything still hidden reaches the
+    isolation render's typed refusal instead of a wrong guess.
+    """
+    part = part.strip()
+    if not part or _rightmost_compound(part) != part:
+        return False
+    stripped, had_functional_pseudo = _strip_pseudos_and_attributes(part)
+    if had_functional_pseudo:
+        return False
+    tag, ids, classes = _parse_simple_compound(stripped)
+    if tag in _DOCUMENT_TAGS:
+        return False
+    named = (tag is not None and tag != "*") or bool(ids) or bool(classes)
+    if not named:
+        return False
+    if tag is not None and tag != "*" and tag not in inventory.tags:
+        return False
+    if any(element_id not in inventory.ids for element_id in ids):
+        return False
+    return all(name in inventory.classes for name in classes)
+
+
+def unhide_root_markup(html: str) -> tuple[str, tuple[str, ...]]:
+    """Strip the ROOT element's own inline hiding — the commonest way a CMS parks a section.
+
+    (Wave round 2, C1.) The stylesheet counter-rules above cannot reach ``style="display:none"``
+    (inline-``!important`` beats any sheet) or the ``hidden`` attribute (a UA rule no
+    same-selector counter targets certainly), so those two are countermanded at the MARKUP
+    seam instead: removed from the stored artifact's root element, deterministically, and named
+    in the returned record so provenance can say what changed. Descendants are untouched —
+    their hiding is the section's own design.
+
+    Returns ``(html, what_was_removed)`` — unchanged html and ``()`` when the root hides
+    nothing inline.
+    """
+    tree = HTMLParser(html or "")
+    body = tree.body
+    root = None
+    if body is not None:
+        for child in body.iter(include_text=False):
+            root = child
+            break
+    if root is None:
+        return html, ()
+    removed: list[str] = []
+    if "hidden" in root.attributes:
+        del root.attrs["hidden"]
+        removed.append("hidden attribute")
+    style = root.attributes.get("style") or ""
+    if style:
+        kept: list[str] = []
+        for declaration in style.split(";"):
+            name, _, value = declaration.partition(":")
+            name_l = name.strip().lower()
+            value_l = value.strip().lower()
+            if name_l == "display" and "none" in value_l:
+                removed.append("inline display: none")
+                continue
+            if name_l == "visibility" and "hidden" in value_l:
+                removed.append("inline visibility: hidden")
+                continue
+            if declaration.strip():
+                kept.append(declaration.strip())
+        if len(kept) != len([d for d in style.split(";") if d.strip()]):
+            if kept:
+                root.attrs["style"] = "; ".join(kept)
+            else:
+                del root.attrs["style"]
+    if not removed:
+        return html, ()
+    rendered = root.html or html
+    return rendered, tuple(removed)
+
+
+__all__ = ["MatchedCss", "rules_for_subtree", "unhide_root_markup", "unhide_root_rules"]

@@ -1310,16 +1310,33 @@ def test_the_console_note_names_every_pass_whose_console_was_actually_heard(tmp_
 def test_the_result_shapes_carry_their_new_version(tmp_path):
     """Round-2 rider (and the phase fix wave): fields were added, so the versions move.
 
-    The critique moved to 3 when measurements gained `largest_gap_px` (walk finding F-1); the
-    walk shape itself did not change fields, so it stays at 2.
+    Both moved to 3 with `largest_gap_px` (walk finding F-1): the measurements ride INSIDE the
+    walk payload too (wave round 2, I2), and a reader of a pre-wave row must treat the field's
+    absence as "not measured that way", never as 0.0 ("no hole").
     """
     from lumen_api.clone_review import CRITIQUE_SCHEMA_VERSION, WALK_SCHEMA_VERSION
 
-    assert WALK_SCHEMA_VERSION == 2
+    assert WALK_SCHEMA_VERSION == 3
     assert CRITIQUE_SCHEMA_VERSION == 3
     walk = _run(_FakeBrowser(), tmp_path)
-    assert walk.as_result()["schema_version"] == 2
+    assert walk.as_result()["schema_version"] == 3
     assert compose_critique(walk).as_result()["schema_version"] == 3
+
+
+def test_descendant_direct_text_is_range_measured_like_the_wrapper_branch():
+    """Wave round 2, I3 (premise-pinned like the readiness anchor): a full-height inner
+    container with one line of text must contribute the TEXT's rect, not its whole box —
+    box-measuring it zeroed the internal-gap measure while the mint's pixel detector still saw
+    the hole, breaking the two detectors' stated must-agree invariant."""
+    from lumen_api.clone_review.walk import SECTION_PROBE_SCRIPT
+
+    descendants = SECTION_PROBE_SCRIPT[SECTION_PROBE_SCRIPT.index("everything inside it") :]
+    assert "createRange" in descendants
+    assert "selectNode" in descendants
+    # The ELEMENT box rect is reserved for media/backgrounds in that branch — exactly one call
+    # on the node; text is measured through the Range's own rect.
+    assert descendants.count("node.getBoundingClientRect") == 1
+    assert "range.getBoundingClientRect" in descendants
 
 
 # --- the middle hole, runtime half (phase fix wave, walk finding F-1) -----------------------------

@@ -63,7 +63,7 @@ from .budget import (
     PageWeight,
     budget_diagnostic,
 )
-from .cssmatch import rules_for_subtree, unhide_root_rules
+from .cssmatch import rules_for_subtree, unhide_root_markup, unhide_root_rules
 from .deadheight import (
     DEAD_HEIGHT_REASON,
     DeadHeight,
@@ -751,7 +751,9 @@ def _mint_one(
     # agree by construction (walk finding F-3, final-review X3; shell-side un-hiding alone would
     # preview something the page never shows, which is P-7's forbidden shape one level up).
     css_for_artifact = matched.css
+    html_for_artifact = sanitized.html
     unhidden_selectors: tuple[str, ...] = ()
+    unhidden_inline: tuple[str, ...] = ()
     if record.hidden_on_source:
         css_for_artifact, unhidden_selectors = unhide_root_rules(
             matched.css,
@@ -759,6 +761,11 @@ def _mint_one(
             element_id=record.element_id,
             classes=record.class_names,
         )
+        # The commonest dormancy cause is the root's OWN inline hiding (wave round 2, C1) —
+        # `style="display:none"` beats any sheet when important, and the `hidden` attribute is
+        # a UA rule no same-selector counter targets certainly. Both are stripped from the
+        # stored root, named in provenance.
+        html_for_artifact, unhidden_inline = unhide_root_markup(sanitized.html)
     if record.hidden_on_source:
         diagnostics.append(
             _diag(
@@ -774,12 +781,21 @@ def _mint_one(
         )
 
     provenance = _provenance(
-        segmentation, record, matched, detected, harvest, extent, dead, assessment
+        segmentation,
+        record,
+        matched,
+        detected,
+        harvest,
+        extent,
+        dead,
+        assessment,
+        preview_refused_by=preview_refused_by,
     )
     if record.hidden_on_source:
         provenance["hidden_on_source"]["unhidden_selectors"] = list(unhidden_selectors)
+        provenance["hidden_on_source"]["unhidden_inline"] = list(unhidden_inline)
     row, artifact = create_fragment(
-        html=sanitized.html,
+        html=html_for_artifact,
         css=css_for_artifact,
         rehosted=rehosted,
         slots=list(detected.specs),
@@ -1279,6 +1295,7 @@ def _provenance(
     extent: CropExtent | None,
     dead: DeadHeight | None = None,
     assessment: DeadHeightAssessment | None = None,
+    preview_refused_by: str | None = None,
 ) -> dict[str, Any]:
     """Everything needed to answer "where did this fragment come from, and how sure were we?".
 
@@ -1335,8 +1352,19 @@ def _provenance(
         # a row with no marker can be told apart from a row that was looked at. `degraded: null`
         # beside `dead_height_check: {"assessed": false, …}` is "nobody looked"; `degraded: null`
         # alone is "looked, and it is fine".
+        # `refused_by` discriminates the two shapes that share `because: no_preview` (wave
+        # round 2, M2): a byte budget refused to store the crop vs the capture never had a
+        # screenshot to crop. Present only when a budget was the reason.
         "dead_height_check": (
-            {"assessed": False, "because": assessment.abstained_because}
+            {
+                "assessed": False,
+                "because": assessment.abstained_because,
+                **(
+                    {"refused_by": preview_refused_by}
+                    if preview_refused_by is not None
+                    else {}
+                ),
+            }
             if assessment is not None and not assessment.judged
             else None
         ),

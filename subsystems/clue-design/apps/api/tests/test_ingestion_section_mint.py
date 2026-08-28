@@ -1447,9 +1447,12 @@ def test_a_budget_refused_preview_says_the_dead_height_check_did_not_run() -> No
     # …and the row's own provenance keeps the distinction, so it survives the diagnostics.
     hero = next(call for call in recorder.created if call["section_role"] == "hero")
     assert hero["provenance"]["degraded"] is None
+    # `refused_by` discriminates this shape from a capture that never had a screenshot (wave
+    # round 2, M2) — both share `because: no_preview`, and only the budget refusal carries it.
     assert hero["provenance"]["dead_height_check"] == {
         "assessed": False,
         "because": "no_preview",
+        "refused_by": "preview bytes",
     }
 
 

@@ -1119,3 +1119,111 @@ def test_every_unjudged_mint_says_its_dead_height_check_did_not_run() -> None:
         assert diagnostic["check"] == "dead_height"
         assert diagnostic["because"]
         assert "budget" not in diagnostic
+
+
+def test_the_roots_own_inline_hiding_is_stripped_and_named() -> None:
+    """Wave round 2, C1 (the wave review's Critical): the commonest way a CMS parks a section is
+    the root's own `style="display:none"` (which beats any sheet when important) or the `hidden`
+    attribute (a UA rule no same-selector counter targets certainly). Both are countermanded at
+    the MARKUP seam — stripped from the stored root, named in provenance — while a DESCENDANT's
+    inline hiding stays: that is the section's own design."""
+    page = HIDDEN_PAGE.replace(
+        '<section class="section_pricing hide">',
+        '<section class="section_pricing hide" style="display: none !important; color: navy" hidden>',
+    ).replace(
+        "<p>From $99.</p>",
+        '<p style="display:none">From $99.</p>',
+    )
+    recorder = _Recorder()
+    segmentation = segment_page(
+        page,
+        page_url=PAGE_URL,
+        bands=measured_bands({SNAPSHOT_META_BANDS_KEY: HIDDEN_PAGE_BANDS}),
+    )
+    mint_sections(
+        segmentation,
+        html=page,
+        stylesheets=[],
+        captured={},
+        screenshot=None,
+        source_kit_id="brand_kit_x",
+        source_kit_version=1,
+        register_bytes=recorder.register_bytes,
+        create_fragment=recorder.create_fragment,
+        mark_degraded=recorder.mark_degraded,
+        limit=SECTION_MINT_CAP,
+        dormant_limit=SECTION_MINT_CAP,
+    )
+    dormant = [call for call in recorder.created if call.get("status") == "dormant"]
+    assert len(dormant) == 1
+    html = dormant[0]["html"]
+    root_tag = html[: html.index(">") + 1]
+    assert "display" not in root_tag and "hidden" not in root_tag
+    # The rest of the inline style survives; the descendant's hiding survives.
+    assert "color: navy" in root_tag
+    assert '<p style="display:none">' in html
+    inline = dormant[0]["provenance"]["hidden_on_source"]["unhidden_inline"]
+    assert "hidden attribute" in inline
+    assert "inline display: none" in inline
+
+
+def test_a_countermand_requires_a_selector_that_positively_names_the_root() -> None:
+    """Wave round 2, I1: could-match kept rules on any doubt, and reused for countermanding it
+    un-hid `[hidden]` resets, `*`, `:not(…)` shapes and descendant selectors — the mega-menu
+    shape the un-hide's own header forbids. A countermand now needs one compound that names the
+    root; everything else is left alone (the markup strip and the typed refusal carry those)."""
+    recorder = _Recorder()
+    segmentation = segment_page(
+        HIDDEN_PAGE,
+        page_url=PAGE_URL,
+        bands=measured_bands({SNAPSHOT_META_BANDS_KEY: HIDDEN_PAGE_BANDS}),
+    )
+    mint_sections(
+        segmentation,
+        html=HIDDEN_PAGE,
+        stylesheets=[
+            SimpleNamespace(
+                url="https://site.example/site.css",
+                text=(
+                    "[hidden] { display: none !important; }\n"
+                    "* { visibility: hidden; }\n"
+                    ".hide:not(.shown) { display: none; }\n"
+                    "body .hide { display: none; }\n"
+                    ".hide { display: none !important; }\n"
+                    ".section_pricing { visibility: hidden; }\n"
+                ),
+            )
+        ],
+        captured={},
+        screenshot=None,
+        source_kit_id="brand_kit_x",
+        source_kit_version=1,
+        register_bytes=recorder.register_bytes,
+        create_fragment=recorder.create_fragment,
+        mark_degraded=recorder.mark_degraded,
+        limit=SECTION_MINT_CAP,
+        dormant_limit=SECTION_MINT_CAP,
+    )
+    dormant = [call for call in recorder.created if call.get("status") == "dormant"]
+    assert len(dormant) == 1
+    unhidden = dormant[0]["provenance"]["hidden_on_source"]["unhidden_selectors"]
+    assert unhidden == [".hide", ".section_pricing"]
+    css = dormant[0]["css"]
+    # M1: only the property each rule hid is countered.
+    assert ".hide { display: revert !important; }" in css
+    assert ".section_pricing { visibility: visible !important; }" in css
+    assert ".section_pricing { display: revert" not in css
+    # The loose shapes appear only as their original rules — never countermanded.
+    counter_block = css[css.index("lumen un-hide") :]
+    assert "[hidden]" not in counter_block
+    counter_lines = [
+        line.strip()
+        for line in counter_block.splitlines()
+        if "{" in line  # the counter RULES; the header comment legitimately contains `*/`
+    ]
+    assert counter_lines == [
+        ".hide { display: revert !important; }",
+        ".section_pricing { visibility: visible !important; }",
+    ]
+    assert ":not(" not in counter_block
+    assert "body .hide" not in counter_block
